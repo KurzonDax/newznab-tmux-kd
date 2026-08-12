@@ -270,6 +270,8 @@ class RecordingTempWorkspaceService extends TempWorkspaceService
     ): string {
         $this->ensureMainTempPathCalls++;
 
+        // A stub value only: clearDirectory() below is a counter, so nothing is
+        // ever created here and the path never reaches the filesystem.
         return sys_get_temp_dir().'/nntmux-orchestrator-claim-workspace/';
     }
 

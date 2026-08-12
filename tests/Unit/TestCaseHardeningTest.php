@@ -72,7 +72,12 @@ class TestCaseHardeningTest extends TestCase
             $reflection->setStaticPropertyValue('previousTestAllowedSwap', $previousAllowed);
         }
 
-        $this->assertSame(':memory:', getenv('DB_DATABASE'), 'The guard must restore the baseline environment.');
+        $baseline = (new ReflectionClass(TestCase::class))->getStaticPropertyValue('databaseEnvironmentBaseline');
+        $this->assertSame(
+            $baseline['DB_DATABASE'],
+            getenv('DB_DATABASE'),
+            'The guard must restore the baseline environment.'
+        );
     }
 
     public function test_guard_stays_silent_when_the_previous_test_opted_out(): void
@@ -88,8 +93,9 @@ class TestCaseHardeningTest extends TestCase
             $this->assertTrue(true);
         } finally {
             $reflection->setStaticPropertyValue('previousTestAllowedSwap', $previousAllowed);
-            putenv('DB_DATABASE=:memory:');
-            $_ENV['DB_DATABASE'] = $_SERVER['DB_DATABASE'] = ':memory:';
+            $baseline = $reflection->getStaticPropertyValue('databaseEnvironmentBaseline');
+            putenv('DB_DATABASE='.$baseline['DB_DATABASE']);
+            $_ENV['DB_DATABASE'] = $_SERVER['DB_DATABASE'] = $baseline['DB_DATABASE'];
         }
     }
 

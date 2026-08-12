@@ -14,9 +14,11 @@ abstract class TestCase extends BaseTestCase
     use CreatesApplication; // Boot Laravel application for tests.
 
     /**
-     * Database environment keys guarded against leaking between test classes.
+     * Environment keys guarded against leaking between test classes: the phpunit.xml
+     * values every test depends on and that a class booting its own application is
+     * most likely to rewire.
      */
-    private const GUARDED_DATABASE_ENV_KEYS = ['DB_CONNECTION', 'DB_DATABASE'];
+    private const GUARDED_DATABASE_ENV_KEYS = ['DB_CONNECTION', 'DB_DATABASE', 'LOG_CHANNEL'];
 
     /**
      * Set to true by tests that deliberately leave DB_CONNECTION/DB_DATABASE
@@ -128,6 +130,13 @@ abstract class TestCase extends BaseTestCase
      * silently repoints every later class at its own database — the failure mode
      * behind the 2026-08-12 CI incident. The check runs before the application is
      * booted, so it sees whatever the previous test left behind and names it.
+     *
+     * The environment is the only channel that actually leaks: config(['database.…'])
+     * swaps die with the application, which is rebuilt for every test, so a dozen
+     * classes swap the default connection in setUp() without ever affecting another.
+     * Running here rather than in tearDown() also keeps the check independent of
+     * where a subclass calls parent::tearDown() relative to its own restore code;
+     * the trade-off is that a leak from the very last test in a run is not reported.
      */
     private function guardAgainstLeakedDatabaseEnvironment(): void
     {
