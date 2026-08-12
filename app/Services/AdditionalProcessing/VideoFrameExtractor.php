@@ -12,12 +12,12 @@ use Throwable;
 class VideoFrameExtractor
 {
     /**
-     * @var Closure(list<string>, int): array{successful: bool, output: string}
+     * @var Closure(list<string>, int): string
      */
     private readonly Closure $commandRunner;
 
     /**
-     * @param  (callable(list<string>, int): array{successful: bool, output: string})|null  $commandRunner
+     * @param  (callable(list<string>, int): string)|null  $commandRunner
      */
     public function __construct(
         private readonly ProcessingConfiguration $config,
@@ -46,7 +46,7 @@ class VideoFrameExtractor
             '-',
         ], $this->timeoutSeconds());
 
-        if (preg_match_all('/time=\s*(\d{1,2}):(\d{2}):(\d{2}(?:\.\d+)?)/i', $result['output'], $matches, PREG_SET_ORDER) === 0) {
+        if (preg_match_all('/time=\s*(\d{1,2}):(\d{2}):(\d{2}(?:\.\d+)?)/i', $result, $matches, PREG_SET_ORDER) === 0) {
             return null;
         }
 
@@ -63,7 +63,7 @@ class VideoFrameExtractor
             return 0.0;
         }
 
-        return round($decodableDuration * 0.85, 3);
+        return floor($decodableDuration * 0.85 * 1000) / 1000;
     }
 
     public function extractRepresentativeFrame(string $videoPath, string $framePath): bool
@@ -137,11 +137,22 @@ class VideoFrameExtractor
 
     private function isValidJpeg(string $framePath): bool
     {
-        if (! is_file($framePath) || filesize($framePath) < 4 || @exif_imagetype($framePath) !== IMAGETYPE_JPEG) {
+        if (! is_file($framePath) || filesize($framePath) < 4) {
             return false;
         }
 
-        $image = @imagecreatefromjpeg($framePath);
+        $header = file_get_contents($framePath, false, null, 0, 2);
+        if ($header !== "\xFF\xD8") {
+            return false;
+        }
+
+        set_error_handler(static fn (): bool => true);
+        try {
+            $image = imagecreatefromjpeg($framePath);
+        } finally {
+            restore_error_handler();
+        }
+
         if ($image === false) {
             return false;
         }
@@ -151,24 +162,17 @@ class VideoFrameExtractor
 
     /**
      * @param  list<string>  $command
-     * @return array{successful: bool, output: string}
      */
-    private function runProcess(array $command, int $timeoutSeconds): array
+    private function runProcess(array $command, int $timeoutSeconds): string
     {
         $process = new Process($command);
         $process->setTimeout($timeoutSeconds);
         try {
             $process->run();
         } catch (Throwable) {
-            return [
-                'successful' => false,
-                'output' => $process->getOutput().$process->getErrorOutput(),
-            ];
+            return $process->getOutput().$process->getErrorOutput();
         }
 
-        return [
-            'successful' => $process->isSuccessful(),
-            'output' => $process->getOutput().$process->getErrorOutput(),
-        ];
+        return $process->getOutput().$process->getErrorOutput();
     }
 }

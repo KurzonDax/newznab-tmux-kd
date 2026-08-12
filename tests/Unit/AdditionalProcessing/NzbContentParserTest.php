@@ -57,6 +57,26 @@ class NzbContentParserTest extends TestCase
         $this->assertSame(['main-1', 'main-2'], $result['mediaInfoMessageIDs']);
     }
 
+    public function test_it_does_not_treat_sample_in_the_release_title_as_a_sample_file(): void
+    {
+        $parser = $this->makeParser();
+        $config = $this->makeConfig([
+            'processMediaInfo' => true,
+            'processThumbnails' => true,
+            'segmentsToDownload' => 2,
+        ]);
+
+        $result = $parser->extractMessageIDs([
+            [
+                'title' => 'The.Sample.2026.1080p.WEB-DL.mkv" yEnc (1/3)',
+                'segments' => ['main-1', 'main-2', 'main-3'],
+            ],
+        ], 'alt.binaries.movies', $config);
+
+        $this->assertSame([], $result['sampleMessageIDs']);
+        $this->assertSame(['main-1', 'main-2'], $result['mediaInfoMessageIDs']);
+    }
+
     private function makeParser(): NzbContentParser
     {
         return new NzbContentParser(

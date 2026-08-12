@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Console;
 
 use App\Models\Category;
+use App\Models\Release;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -25,25 +26,32 @@ class RequeueMissingVideoPreviewsCommandTest extends TestCase
 
         Schema::create('releases', function (Blueprint $table): void {
             $table->id();
+            $table->string('name');
+            $table->string('searchname');
+            $table->string('fromname');
+            $table->dateTime('postdate');
+            $table->dateTime('adddate');
+            $table->string('guid');
             $table->unsignedInteger('categories_id');
+            $table->integer('nzbstatus');
             $table->integer('haspreview');
             $table->integer('passwordstatus');
             $table->integer('rarinnerfilecount');
-            $table->timestamps();
+            $table->integer('isrenamed');
         });
     }
 
     public function test_it_dry_runs_then_requeues_only_stuck_non_rar_video_releases_idempotently(): void
     {
-        DB::table('releases')->insert([
-            $this->release(1, Category::TV_WEBDL),
-            $this->release(2, Category::MOVIE_HD),
-            $this->release(3, Category::TV_HD, hasPreview: 1),
-            $this->release(4, Category::MOVIE_WEBDL, rarInnerFileCount: 2),
-            $this->release(5, Category::TV_UHD, hasPreview: -1, passwordStatus: -1),
-            $this->release(6, Category::MUSIC_MP3),
-            $this->release(7, Category::TV_SD, passwordStatus: -1),
-        ]);
+        Release::withoutEvents(function (): void {
+            Release::factory()->create($this->release(1, Category::TV_WEBDL));
+            Release::factory()->create($this->release(2, Category::MOVIE_HD));
+            Release::factory()->create($this->release(3, Category::TV_HD, hasPreview: 1));
+            Release::factory()->create($this->release(4, Category::MOVIE_WEBDL, rarInnerFileCount: 2));
+            Release::factory()->create($this->release(5, Category::TV_UHD, hasPreview: -1, passwordStatus: -1));
+            Release::factory()->create($this->release(6, Category::MUSIC_MP3));
+            Release::factory()->create($this->release(7, Category::TV_SD, passwordStatus: -1));
+        });
 
         $this->artisan('releases:requeue-missing-video-previews', ['--dry-run' => true])
             ->expectsOutputToContain('Dry run: 2 releases would be re-queued.')
@@ -70,6 +78,16 @@ class RequeueMissingVideoPreviewsCommandTest extends TestCase
             ->assertSuccessful();
     }
 
+    public function test_it_rejects_conflicting_execution_modes(): void
+    {
+        $this->artisan('releases:requeue-missing-video-previews', [
+            '--dry-run' => true,
+            '--apply' => true,
+        ])
+            ->expectsOutputToContain('Choose either --dry-run or --apply, not both.')
+            ->assertFailed();
+    }
+
     /**
      * @return array<string, int>
      */
@@ -86,8 +104,6 @@ class RequeueMissingVideoPreviewsCommandTest extends TestCase
             'haspreview' => $hasPreview,
             'passwordstatus' => $passwordStatus,
             'rarinnerfilecount' => $rarInnerFileCount,
-            'created_at' => 0,
-            'updated_at' => 0,
         ];
     }
 }

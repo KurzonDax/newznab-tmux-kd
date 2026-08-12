@@ -193,8 +193,7 @@ class NzbContentParser
 
                 // Look for a video sample (not an image)
                 if ($config->processThumbnails && empty($result['sampleMessageIDs']) && ! empty($segments)
-                    && stripos($title, 'sample') !== false
-                    && ! preg_match('/\.jpe?g$/i', $title)
+                    && $this->isExplicitVideoSample($title, $config)
                 ) {
                     $result['sampleMessageIDs'] = $this->extractSegments($segments, $config->segmentsToDownload);
                 }
@@ -209,7 +208,7 @@ class NzbContentParser
 
                 // Look for the main video file for MediaInfo and preview extraction.
                 if ($config->processMediaInfo && empty($result['mediaInfoMessageIDs']) && ! empty($segments)
-                    && stripos($title, 'sample') === false
+                    && ! $this->isExplicitVideoSample($title, $config)
                     && preg_match('/'.$config->videoFileRegex.'[. ")\]]/i', $title)
                 ) {
                     $result['mediaInfoMessageIDs'] = $this->extractSegments($segments, $config->segmentsToDownload);
@@ -233,6 +232,14 @@ class NzbContentParser
         }
 
         return $result;
+    }
+
+    private function isExplicitVideoSample(string $title, ProcessingConfiguration $config): bool
+    {
+        return preg_match(
+            '/(?:^|[._\-\s])sample'.$config->videoFileRegex.'[. ")\]]/i',
+            $title,
+        ) === 1;
     }
 
     /**
