@@ -31,7 +31,7 @@ class AdditionalProcessingOrchestratorClaimTest extends TestCase
 
     public function createApplication()
     {
-        $this->databasePath = sys_get_temp_dir().'/nntmux-orchestrator-claim-test.sqlite';
+        $this->databasePath = $this->makeTempPath('nntmux-orchestrator-claim-test', '.sqlite');
 
         $this->originalEnvironment = [
             'APP_ENV' => getenv('APP_ENV'),
@@ -270,7 +270,7 @@ class RecordingTempWorkspaceService extends TempWorkspaceService
     ): string {
         $this->ensureMainTempPathCalls++;
 
-        return '/tmp/additional/';
+        return sys_get_temp_dir().'/nntmux-orchestrator-claim-workspace/';
     }
 
     public function clearDirectory(string $path, bool $preserveRoot = true): void
