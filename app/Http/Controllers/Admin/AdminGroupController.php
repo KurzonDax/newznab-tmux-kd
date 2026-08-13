@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\BasePageController;
 use App\Http\Requests\Admin\AdminGroupListRequest;
 use App\Models\UsenetGroup;
+use App\Support\SizeUnit;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -76,16 +77,22 @@ class AdminGroupController extends BasePageController
 
         switch ($action) {
             case 'submit':
-                $minimumSize = $request->input('minsizetoformrelease');
-                if ($minimumSize !== null && trim((string) $minimumSize) !== '') {
+                $minSizeInput = $request->input('minsizetoformrelease');
+                if ($minSizeInput !== null && $minSizeInput !== '') {
                     try {
-                        $request->merge(['minsizetoformrelease' => parse_group_file_size($minimumSize)]);
+                        $minSizeUnit = $request->input('minsizetoformrelease_unit');
+                        $minimumSizeInBytes = is_string($minSizeUnit)
+                            ? SizeUnit::toBytes($minSizeInput, $minSizeUnit)
+                            : parse_group_file_size($minSizeInput);
+
+                        $request->merge(['minsizetoformrelease' => $minimumSizeInBytes]);
                     } catch (\InvalidArgumentException $exception) {
                         throw ValidationException::withMessages([
                             'minsizetoformrelease' => $exception->getMessage(),
                         ]);
                     }
                 }
+                $request->request->remove('minsizetoformrelease_unit');
 
                 if (empty($request->input('id'))) {
                     // Add a new group.
@@ -113,7 +120,9 @@ class AdminGroupController extends BasePageController
                 break;
         }
 
-        return view('admin.groups.edit', compact('title', 'group'));
+        $groupMinSize = SizeUnit::fromBytes($group['minsizetoformrelease'] ?? 0);
+
+        return view('admin.groups.edit', compact('title', 'group', 'groupMinSize') + ['sizeUnits' => SizeUnit::UNITS]);
     }
 
     /**
