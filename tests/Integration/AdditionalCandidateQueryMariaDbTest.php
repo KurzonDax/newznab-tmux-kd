@@ -58,6 +58,11 @@ final class AdditionalCandidateQueryMariaDbTest extends TestCase
             $this->markTestSkipped('MariaDB integration test.');
         }
 
+        config([
+            'nntmux_settings.check_passworded_rars' => true,
+            'nntmux_settings.unrar_path' => '/usr/bin/unrar',
+        ]);
+
         $this->createSchema();
     }
 
