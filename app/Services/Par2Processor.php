@@ -10,6 +10,7 @@ use App\Models\ReleaseFile;
 use App\Models\UsenetGroup;
 use App\Services\NameFixing\NameFixingService;
 use App\Services\NNTP\NNTPService;
+use App\Services\Releases\ExecutableReleaseDiscardService;
 use dariusiii\rarinfo\Par2Info;
 use Illuminate\Support\Carbon;
 
@@ -26,12 +27,20 @@ class Par2Processor
 
     private bool $alternateNNTP;
 
-    public function __construct(NameFixingService $nameFixingService, Par2Info $par2Info, bool $addPar2, bool $alternateNNTP)
-    {
+    private ExecutableReleaseDiscardService $discardService;
+
+    public function __construct(
+        NameFixingService $nameFixingService,
+        Par2Info $par2Info,
+        bool $addPar2,
+        bool $alternateNNTP,
+        ?ExecutableReleaseDiscardService $discardService = null
+    ) {
         $this->nameFixingService = $nameFixingService;
         $this->par2Info = $par2Info;
         $this->addPar2 = $addPar2;
         $this->alternateNNTP = $alternateNNTP;
+        $this->discardService = $discardService ?? new ExecutableReleaseDiscardService;
     }
 
     /**
@@ -78,6 +87,17 @@ class Par2Processor
 
         // Get the file list from Par2Info.
         $files = $this->par2Info->getFileList();
+
+        // Executable check runs against the complete file list before any
+        // recording caps, so a payload buried past the cap is still caught.
+        $discardableFileName = $this->discardService->firstDiscardableFileName($files, (int) $query['categories_id']);
+
+        if ($discardableFileName !== null) {
+            $this->discardService->discardById($relID, $discardableFileName);
+
+            return false;
+        }
+
         if (\count($files) > 0) {
             $filesAdded = 0;
 

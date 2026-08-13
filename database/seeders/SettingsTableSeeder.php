@@ -661,6 +661,10 @@ class SettingsTableSeeder extends Seeder
                 'name' => 'single_active_session',
                 'value' => '0',
             ],
+            242 => [
+                'name' => 'discard_executable_extensions',
+                'value' => 'dll|exe|msi|scr|com|bat|cmd|pif',
+            ],
         ]);
     }
 }

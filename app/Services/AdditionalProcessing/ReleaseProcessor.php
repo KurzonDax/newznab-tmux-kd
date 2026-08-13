@@ -155,6 +155,9 @@ class ReleaseProcessor
                             $this->processNzbCompressedFiles($context, false, $triedCompressedMids);
                         },
                     );
+                    if (($discardedResult = $this->discardedResult($context)) !== null) {
+                        return $discardedResult;
+                    }
                     if (($timeoutResult = $this->processingTimeoutResult($context, $metrics)) !== null) {
                         return $timeoutResult;
                     }
@@ -166,6 +169,9 @@ class ReleaseProcessor
                                 $this->processNzbCompressedFiles($context, true, $triedCompressedMids);
                             },
                         );
+                        if (($discardedResult = $this->discardedResult($context)) !== null) {
+                            return $discardedResult;
+                        }
                         if (($timeoutResult = $this->processingTimeoutResult($context, $metrics)) !== null) {
                             return $timeoutResult;
                         }
@@ -176,6 +182,9 @@ class ReleaseProcessor
                             ProcessingStage::ExtractedFiles,
                             fn () => $this->processExtractedFiles($context),
                         );
+                        if (($discardedResult = $this->discardedResult($context)) !== null) {
+                            return $discardedResult;
+                        }
                         if (($timeoutResult = $this->processingTimeoutResult($context, $metrics)) !== null) {
                             return $timeoutResult;
                         }
@@ -195,6 +204,10 @@ class ReleaseProcessor
                         $this->archiveFallback->processNfoFromReleaseFiles($context);
                     }
                 });
+            }
+
+            if (($discardedResult = $this->discardedResult($context)) !== null) {
+                return $discardedResult;
             }
 
             $metrics->measure(
@@ -351,6 +364,19 @@ class ReleaseProcessor
             reason: $reason,
             duplicateMessageIdCount: $context->duplicateMessageIdCount(),
             unsupportedReasons: $context->unsupportedReasons(),
+        );
+    }
+
+    private function discardedResult(ReleaseProcessingContext $context): ?ReleaseProcessingResult
+    {
+        if (! $context->releaseDiscarded) {
+            return null;
+        }
+
+        return $this->result(
+            $context,
+            ProcessingOutcome::Discarded,
+            reason: 'Release contained an executable file and was discarded.',
         );
     }
 
@@ -607,6 +633,10 @@ class ReleaseProcessor
             if ($this->releaseManager->addFileInfo($file, $context, $this->config->supportFileRegex)) {
                 $this->output->echoFileInfoAdded();
             }
+
+            if ($context->releaseDiscarded) {
+                return false;
+            }
         }
 
         if ($context->releaseHasNoNFO
@@ -642,7 +672,9 @@ class ReleaseProcessor
         $nestedLevels = 0;
 
         while ($nestedLevels < $this->config->maxNestedLevels) {
-            if ($context->compressedFilesChecked >= AdditionalProcessingOrchestrator::MAX_COMPRESSED_FILES_TO_CHECK) {
+            if ($context->releaseDiscarded
+                || $context->compressedFilesChecked >= AdditionalProcessingOrchestrator::MAX_COMPRESSED_FILES_TO_CHECK
+            ) {
                 break;
             }
 
@@ -682,6 +714,10 @@ class ReleaseProcessor
         }
 
         foreach ($files as $file) {
+            if ($context->releaseDiscarded) {
+                return;
+            }
+
             $filePath = is_object($file) ? $file->getPathname() : $file;
 
             if (preg_match('/[\/\\\\]\.{1,2}$/', $filePath) === 1 || ! File::isFile($filePath)) {

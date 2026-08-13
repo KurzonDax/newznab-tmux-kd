@@ -21,6 +21,7 @@ use App\Services\NfoService;
 use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseImageService;
+use App\Services\Releases\ExecutableReleaseDiscardService;
 use App\Services\Releases\ReleaseBrowseService;
 use dariusiii\rarinfo\Par2Info;
 use Illuminate\Contracts\Filesystem\FileNotFoundException;
@@ -41,6 +42,8 @@ class ReleaseFileManager
 
     private readonly ReleaseSearchSyncCoordinator $searchSyncCoordinator;
 
+    private readonly ExecutableReleaseDiscardService $discardService;
+
     public function __construct(
         private readonly ProcessingConfiguration $config,
         private readonly ReleaseImageService $releaseImage,
@@ -50,6 +53,7 @@ class ReleaseFileManager
         ?ReleaseUpdateService $releaseUpdateService = null,
         ?FileNameCleaner $fileNameCleaner = null,
         ?ReleaseSearchSyncCoordinator $searchSyncCoordinator = null,
+        ?ExecutableReleaseDiscardService $discardService = null,
     ) {
         $this->searchSyncCoordinator = $searchSyncCoordinator
             ?? new ReleaseSearchSyncCoordinator(
@@ -58,6 +62,7 @@ class ReleaseFileManager
         $this->releaseUpdateService = $releaseUpdateService
             ?? new ReleaseUpdateService(searchSyncCoordinator: $this->searchSyncCoordinator);
         $this->fileNameCleaner = $fileNameCleaner ?? new FileNameCleaner;
+        $this->discardService = $discardService ?? new ExecutableReleaseDiscardService;
     }
 
     /**
@@ -72,6 +77,10 @@ class ReleaseFileManager
         ReleaseProcessingContext $context,
         string $supportFileRegex
     ): bool {
+        if ($context->releaseDiscarded) {
+            return false;
+        }
+
         if (isset($file['error'])) {
             if ($this->config->debugMode) {
                 Log::debug("Error: {$file['error']} (in: {$file['source']})");
@@ -81,6 +90,15 @@ class ReleaseFileManager
         }
 
         if (! isset($file['name'])) {
+            return false;
+        }
+
+        // Executable check runs against every file name seen, before support-file
+        // skipping and before the recorded-file cap, so nothing can bypass it.
+        if ($this->discardService->shouldDiscard((string) $file['name'], (int) $context->release->categories_id)) {
+            $this->discardService->discard($context->release, (string) $file['name']);
+            $context->releaseDiscarded = true;
+
             return false;
         }
 
@@ -223,6 +241,15 @@ class ReleaseFileManager
      */
     public function finalizeRelease(ReleaseProcessingContext $context, bool $processPasswords): void
     {
+        // A discarded release no longer exists; updating rows or re-syncing the
+        // search index here would resurrect artifacts of the purged release.
+        if ($context->releaseDiscarded) {
+            $context->pendingReleaseFiles = [];
+            $context->pendingParHashes = [];
+
+            return;
+        }
+
         $updateRows = ['haspreview' => 0];
 
         // Check for existing samples
@@ -398,9 +425,29 @@ class ReleaseFileManager
         ReleaseProcessingContext $context,
         Par2Info $par2Info
     ): bool {
+        if ($context->releaseDiscarded) {
+            return false;
+        }
+
         $par2Info->open($fileLocation);
 
         if ($par2Info->error) {
+            return false;
+        }
+
+        $fileList = $par2Info->getFileList();
+
+        // Executable check runs against the complete PAR2 file list before any
+        // recording caps, so a payload buried past the cap is still caught.
+        $discardableFileName = $this->discardService->firstDiscardableFileName(
+            $fileList,
+            (int) $context->release->categories_id
+        );
+
+        if ($discardableFileName !== null) {
+            $this->discardService->discard($context->release, $discardableFileName);
+            $context->releaseDiscarded = true;
+
             return false;
         }
 
@@ -425,7 +472,7 @@ class ReleaseFileManager
 
         $filesAdded = 0;
 
-        foreach ($par2Info->getFileList() as $file) {
+        foreach ($fileList as $file) {
             if (! isset($file['name'])) {
                 continue;
             }

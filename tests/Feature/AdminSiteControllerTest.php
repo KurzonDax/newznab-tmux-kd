@@ -155,6 +155,67 @@ class AdminSiteControllerTest extends TestCase
         $this->assertSame(['MB', 'GB'], $response->getData()['sizeUnits']);
     }
 
+    public function test_submit_updates_discard_toggles_and_extension_pattern(): void
+    {
+        $request = Request::create('/admin/site-edit', 'POST', [
+            'action' => 'submit',
+            'discard_executable_extensions' => 'exe|bat',
+            'discard_executables' => [
+                '1000' => '1', // Console: was off, checked on
+                '2000' => '1', // Movies: stays on
+                // TV (5000) was on and is now unchecked: must turn off
+            ],
+        ]);
+
+        $response = app(AdminSiteController::class)->edit($request);
+
+        $this->assertTrue($response->isRedirect());
+        $this->assertSame('exe|bat', $this->settingValue('discard_executable_extensions'));
+
+        $toggles = DB::table('root_categories')->pluck('discard_executables', 'id');
+        $this->assertEquals(0, $toggles[1]);
+        $this->assertEquals(1, $toggles[1000]);
+        $this->assertEquals(1, $toggles[2000]);
+        $this->assertEquals(0, $toggles[4000]);
+        $this->assertEquals(0, $toggles[5000], 'Unchecking a previously-on root must disable it.');
+
+        $this->assertNull(
+            DB::table('settings')->where('name', 'discard_executables')->value('value'),
+            'The checkbox array must not leak into the settings table.'
+        );
+    }
+
+    public function test_submit_without_discard_checkboxes_disables_all_roots(): void
+    {
+        $request = Request::create('/admin/site-edit', 'POST', [
+            'action' => 'submit',
+        ]);
+
+        app(AdminSiteController::class)->edit($request);
+
+        $this->assertSame(0, DB::table('root_categories')->where('discard_executables', 1)->count());
+    }
+
+    public function test_view_exposes_discard_roots_with_current_state(): void
+    {
+        $request = Request::create('/admin/site-edit', 'GET');
+
+        $response = app(AdminSiteController::class)->edit($request);
+
+        $this->assertInstanceOf(View::class, $response);
+
+        $discardRoots = $response->getData()['discardRoots'];
+        $togglesById = $discardRoots->pluck('discard_executables', 'id');
+
+        $this->assertSame([1, 1000, 2000, 4000, 5000], $discardRoots->pluck('id')->map(fn ($id) => (int) $id)->all());
+        $this->assertEquals(1, $togglesById[2000]);
+        $this->assertEquals(0, $togglesById[4000]);
+        $this->assertSame(
+            'dll|exe|msi|scr|com|bat|cmd|pif',
+            $response->getData()['site']['discard_executable_extensions'] ?? null
+        );
+    }
+
     private function settingValue(string $name): ?string
     {
         $value = DB::table('settings')->where('name', $name)->value('value');
@@ -184,6 +245,25 @@ class AdminSiteControllerTest extends TestCase
                 $table->text('value')->nullable();
             });
         }
+
+        Schema::dropIfExists('root_categories');
+
+        Schema::create('root_categories', function (Blueprint $table): void {
+            $table->unsignedInteger('id')->primary();
+            $table->string('title');
+            $table->integer('status')->default(1);
+            $table->integer('disablepreview')->default(0);
+            $table->boolean('discard_executables')->default(false);
+            $table->timestamps();
+        });
+
+        DB::table('root_categories')->insert([
+            ['id' => 1, 'title' => 'Other', 'discard_executables' => 0],
+            ['id' => 1000, 'title' => 'Console', 'discard_executables' => 0],
+            ['id' => 2000, 'title' => 'Movies', 'discard_executables' => 1],
+            ['id' => 4000, 'title' => 'PC', 'discard_executables' => 0],
+            ['id' => 5000, 'title' => 'TV', 'discard_executables' => 1],
+        ]);
     }
 
     private function seedSettings(): void
@@ -199,6 +279,7 @@ class AdminSiteControllerTest extends TestCase
             ['name' => 'maxsizetopostprocess', 'value' => '107374182400'],
             ['name' => 'minsizetoprocessnfo', 'value' => '1048576'],
             ['name' => 'maxsizetoprocessnfo', 'value' => '107374182400'],
+            ['name' => 'discard_executable_extensions', 'value' => 'dll|exe|msi|scr|com|bat|cmd|pif'],
         ], ['name'], ['value']);
     }
 

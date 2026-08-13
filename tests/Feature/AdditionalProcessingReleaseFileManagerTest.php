@@ -264,6 +264,71 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         $this->assertSame(0, $context->addedFileInfo);
     }
 
+    public function test_executable_file_discards_release_when_root_toggle_enabled(): void
+    {
+        DB::table('releases')->insert($this->releaseRow(2045)); // Movies root, discarding on
+
+        Search::shouldReceive('deleteRelease')->once()->with(1);
+        Log::shouldReceive('warning')->once()->with(
+            'Discarding release containing executable file',
+            Mockery::type('array')
+        );
+
+        $manager = $this->makeManager();
+        $context = new ReleaseProcessingContext(Release::query()->findOrFail(1));
+
+        $this->assertTrue($manager->addFileInfo([
+            'name' => 'Example.Movie.2026.mkv',
+            'size' => 1024,
+            'date' => 1_788_600_000,
+        ], $context, '\\.(?:par2|sfv|nzb)'));
+
+        $this->assertFalse($manager->addFileInfo([
+            'name' => 'Fixer/Fixer.exe',
+            'size' => 2048,
+            'date' => 1_788_600_000,
+        ], $context, '\\.(?:par2|sfv|nzb)'));
+
+        $this->assertTrue($context->releaseDiscarded);
+        $this->assertSame(0, DB::table('releases')->count());
+
+        // Files seen after the discard are ignored entirely.
+        $this->assertFalse($manager->addFileInfo([
+            'name' => 'Another.File.mkv',
+            'size' => 512,
+            'date' => 1_788_600_000,
+        ], $context, '\\.(?:par2|sfv|nzb)'));
+
+        // Finalization is a no-op: nothing is flushed or resurrected.
+        $manager->finalizeRelease($context, false);
+        $this->assertSame(0, DB::table('release_files')->count());
+        $this->assertSame(0, DB::table('releases')->count());
+    }
+
+    public function test_executable_file_records_normally_when_root_toggle_disabled(): void
+    {
+        DB::table('releases')->insert($this->releaseRow(4050)); // PC root, discarding off
+
+        Search::shouldReceive('updateRelease')->once()->with(1);
+
+        $manager = $this->makeManager();
+        $context = new ReleaseProcessingContext(Release::query()->findOrFail(1));
+
+        $this->assertTrue($manager->addFileInfo([
+            'name' => 'Legit.App.Installer.exe',
+            'size' => 4096,
+            'date' => 1_788_600_000,
+        ], $context, '\\.(?:par2|sfv|nzb)'));
+
+        $this->assertFalse($context->releaseDiscarded);
+
+        $manager->finalizeRelease($context, false);
+
+        $this->assertSame(1, DB::table('releases')->count());
+        $this->assertSame(1, DB::table('release_files')->count());
+        $this->assertSame('Legit.App.Installer.exe', DB::table('release_files')->value('name'));
+    }
+
     public function test_finalize_recognizes_webp_preview_and_sample_without_moving_them(): void
     {
         DB::table('releases')->insert($this->releaseRow());
@@ -315,7 +380,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
     /**
      * @return array<string, mixed>
      */
-    private function releaseRow(): array
+    private function releaseRow(int $categoriesId = 10): array
     {
         return [
             'id' => 1,
@@ -325,7 +390,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
             'size' => 1024,
             'groups_id' => 1,
             'nfostatus' => -1,
-            'categories_id' => 10,
+            'categories_id' => $categoriesId,
             'passwordstatus' => -1,
             'haspreview' => -1,
             'nzbstatus' => 1,
@@ -367,6 +432,32 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         Schema::dropIfExists('par_hashes');
         Schema::dropIfExists('release_files');
         Schema::dropIfExists('releases');
+        Schema::dropIfExists('categories');
+        Schema::dropIfExists('root_categories');
+
+        Schema::create('root_categories', function (Blueprint $table): void {
+            $table->unsignedInteger('id')->primary();
+            $table->string('title');
+            $table->boolean('discard_executables')->default(false);
+        });
+
+        Schema::create('categories', function (Blueprint $table): void {
+            $table->unsignedInteger('id')->primary();
+            $table->string('title');
+            $table->unsignedInteger('root_categories_id');
+        });
+
+        DB::table('root_categories')->insert([
+            ['id' => 1, 'title' => 'Other', 'discard_executables' => 0],
+            ['id' => 2000, 'title' => 'Movies', 'discard_executables' => 1],
+            ['id' => 4000, 'title' => 'PC', 'discard_executables' => 0],
+        ]);
+
+        DB::table('categories')->insert([
+            ['id' => 10, 'title' => 'Other > Misc', 'root_categories_id' => 1],
+            ['id' => 2045, 'title' => 'Movies > SD', 'root_categories_id' => 2000],
+            ['id' => 4050, 'title' => 'PC > Games', 'root_categories_id' => 4000],
+        ]);
 
         Schema::create('releases', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();

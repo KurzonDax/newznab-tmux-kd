@@ -15,6 +15,7 @@ use Illuminate\Support\Carbon;
  * @property string $title
  * @property int $status
  * @property int $disablepreview
+ * @property bool $discard_executables
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Collection|Category[] $categories
@@ -34,6 +35,16 @@ use Illuminate\Support\Carbon;
 class RootCategory extends Model
 {
     protected $guarded = [];
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'discard_executables' => 'boolean',
+        ];
+    }
 
     /**
      * @return HasMany<mixed>
