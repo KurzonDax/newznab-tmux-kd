@@ -31,11 +31,17 @@
                                 <i class="fas fa-upload mr-1"></i>Maximum Release Size to Process NFOs
                             </label>
                             <div class="flex gap-2">
-                                <input type="text" id="maxsizetoprocessnfo" name="maxsizetoprocessnfo" value="{{ $site['maxsizetoprocessnfo'] ?? '' }}"
-                                       class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
-                                <span class="px-3 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md">GB</span>
+                                <x-input type="number" step="any" min="0" id="maxsizetoprocessnfo" name="maxsizetoprocessnfo"
+                                         class="flex-1" :value="$sizeFields['maxsizetoprocessnfo']['value'] ?? 0" />
+                                <div class="w-28 shrink-0">
+                                    <x-select id="maxsizetoprocessnfo_unit" name="maxsizetoprocessnfo_unit">
+                                        @foreach($sizeUnits as $unit)
+                                            <option value="{{ $unit }}" {{ ($sizeFields['maxsizetoprocessnfo']['unit'] ?? 'GB') === $unit ? 'selected' : '' }}>{{ $unit }}</option>
+                                        @endforeach
+                                    </x-select>
+                                </div>
                             </div>
-                            <p class="mt-1 text-sm text-gray-500">The maximum size in gigabytes of a release to process it for NFOs. If set to 0, then ignored.</p>
+                            <p class="mt-1 text-sm text-gray-500">The maximum size of a release to process it for NFOs, stored as bytes. If set to 0, then ignored.</p>
                         </div>
 
                         <div>
@@ -43,11 +49,17 @@
                                 <i class="fas fa-download mr-1"></i>Minimum Release Size to Process NFOs
                             </label>
                             <div class="flex gap-2">
-                                <input type="text" id="minsizetoprocessnfo" name="minsizetoprocessnfo" value="{{ $site['minsizetoprocessnfo'] ?? '' }}"
-                                       class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
-                                <span class="px-3 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md">MB</span>
+                                <x-input type="number" step="any" min="0" id="minsizetoprocessnfo" name="minsizetoprocessnfo"
+                                         class="flex-1" :value="$sizeFields['minsizetoprocessnfo']['value'] ?? 0" />
+                                <div class="w-28 shrink-0">
+                                    <x-select id="minsizetoprocessnfo_unit" name="minsizetoprocessnfo_unit">
+                                        @foreach($sizeUnits as $unit)
+                                            <option value="{{ $unit }}" {{ ($sizeFields['minsizetoprocessnfo']['unit'] ?? 'MB') === $unit ? 'selected' : '' }}>{{ $unit }}</option>
+                                        @endforeach
+                                    </x-select>
+                                </div>
                             </div>
-                            <p class="mt-1 text-sm text-gray-500">The minimum size in megabytes of a release to process it for NFOs. If set to 0, then ignored.</p>
+                            <p class="mt-1 text-sm text-gray-500">The minimum size of a release to process it for NFOs, stored as bytes. If set to 0, then ignored.</p>
                         </div>
 
                         <div>

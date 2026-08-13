@@ -201,7 +201,7 @@ class NzbContentParser
                 // Look for a JPG picture (not a CD cover)
                 if ($config->processJPGSample && empty($result['jpgMessageIDs']) && ! empty($segments)
                     && ! preg_match('/flac|lossless|mp3|music|inner-sanctum|sound/i', $groupName)
-                    && preg_match('/\.jpe?g[. ")\]]/i', $title)
+                    && preg_match('/\.(?:jpe?g|png|webp)[. ")\]]/i', $title)
                 ) {
                     $result['jpgMessageIDs'] = $this->extractSegments($segments, $config->segmentsToDownload);
                 }
@@ -245,18 +245,14 @@ class NzbContentParser
     /**
      * Extract segment message IDs up to a limit.
      *
-     * @param  array<array-key, mixed>  $segments
+     * @param  array<int|string, mixed>  $segments
      * @return list<string>
      */
     private function extractSegments(array $segments, int $limit): array
     {
         $ids = [];
-        $segCount = count($segments) - 1;
-        for ($i = 0; $i < $limit; $i++) {
-            if ($i > $segCount) {
-                break;
-            }
-            $ids[] = (string) $segments[$i];
+        foreach (array_slice(array_values($segments), 0, max(0, $limit)) as $segment) {
+            $ids[] = (string) $segment;
         }
 
         return $ids;

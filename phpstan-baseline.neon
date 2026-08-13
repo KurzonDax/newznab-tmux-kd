@@ -481,12 +481,6 @@ parameters:
 			path: app/Rules/RecaptchaRule.php
 
 		-
-			message: '#^Method App\\Services\\AdditionalProcessing\\ArchiveExtractionService\:\:sortFilesWithNfoPriority\(\) should return array\<string, mixed\> but returns list\<mixed\>\.$#'
-			identifier: return.type
-			count: 1
-			path: app/Services/AdditionalProcessing/ArchiveExtractionService.php
-
-		-
 			message: '#^PHPDoc tag @return with type list\<mixed\> is incompatible with native type void\.$#'
 			identifier: return.phpDocType
 			count: 1
@@ -503,12 +497,6 @@ parameters:
 			identifier: nullsafe.neverNull
 			count: 2
 			path: app/Services/AdditionalProcessing/ReleaseFileManager.php
-
-		-
-			message: '#^Right side of \|\| is always false\.$#'
-			identifier: booleanOr.rightAlwaysFalse
-			count: 2
-			path: app/Services/AdditionalProcessing/ReleaseProcessor.php
 
 		-
 			message: '#^Strict comparison using \=\=\= between non\-empty\-string and null will always evaluate to false\.$#'
@@ -539,7 +527,6 @@ parameters:
 			identifier: return.phpDocType
 			count: 1
 			path: app/Services/Categorization/CategorizationService.php
-
 
 		-
 			message: '#^Strict comparison using \!\=\= between non\-empty\-array\<mixed, mixed\> and array\{\} will always evaluate to true\.$#'

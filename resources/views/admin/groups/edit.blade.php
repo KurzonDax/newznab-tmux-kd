@@ -110,18 +110,29 @@
             <!-- Minimum Size -->
             <div class="mb-6">
                 <x-label for="minsizetoformrelease">Minimum File Size:</x-label>
-                <div class="relative">
-                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <i class="fas fa-download text-gray-400"></i>
+                <div class="flex gap-2">
+                    <div class="relative flex-1">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i class="fas fa-download text-gray-400"></i>
+                        </div>
+                        <x-input type="number"
+                                 step="any"
+                                 min="0"
+                                 id="minsizetoformrelease"
+                                 name="minsizetoformrelease"
+                                 class="pl-10"
+                                 :value="$groupMinSize['value'] ?? 0" />
                     </div>
-                    <x-input type="text"
-                             id="minsizetoformrelease"
-                             name="minsizetoformrelease"
-                             class="pl-10"
-                             :value="$group['minsizetoformrelease'] ?? 0" />
+                    <div class="w-28 shrink-0">
+                        <x-select id="minsizetoformrelease_unit" name="minsizetoformrelease_unit">
+                            @foreach($sizeUnits as $unit)
+                                <option value="{{ $unit }}" {{ ($groupMinSize['unit'] ?? 'MB') === $unit ? 'selected' : '' }}>{{ $unit }}</option>
+                            @endforeach
+                        </x-select>
+                    </div>
                 </div>
                 <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                    Enter bytes, or use M/MB/G/GB (for example 100M or 2.5G). If left blank, the site-wide setting is used.
+                    The minimum total size to make a release, stored as bytes. If left blank or set to 0, will use the site wide setting.
                 </p>
             </div>
 
