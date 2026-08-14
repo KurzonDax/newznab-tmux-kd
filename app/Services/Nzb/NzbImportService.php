@@ -16,6 +16,7 @@ use App\Services\ReleaseCleaningService;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use App\Support\Utf8;
 use Illuminate\Contracts\Filesystem\FileNotFoundException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
@@ -368,6 +369,7 @@ class NzbImportService
     protected function scanNZBFile(mixed &$nzbXML, mixed $nzbFileName = '', mixed $source = ''): NzbImportStatus
     {
         $binary_names = [];
+        $segmentMessageIds = [];
         $totalFiles = $totalSize = $groupID = 0;
         $isBlackListed = $groupName = $firstName = $posterName = $postDate = false;
 
@@ -435,10 +437,15 @@ class NzbImportService
 
             // If we found a group and it's not blacklisted.
             if ($groupID !== -1 && ! $isBlackListed) {
-                // Get the size of the release.
+                // Get the size of the release and collect the segment
+                // message-IDs for the deterministic import hash.
                 if (\count($file->segments->segment) > 0) {
                     foreach ($file->segments->segment as $segment) {
                         $totalSize += (int) $segment->attributes()->bytes;
+                        $messageId = trim((string) $segment);
+                        if ($messageId !== '') {
+                            $segmentMessageIds[] = $messageId;
+                        }
                     }
                 }
             } else {
@@ -471,6 +478,7 @@ class NzbImportService
                 'totalFiles' => $totalFiles,
                 'totalSize' => $totalSize,
                 'nzbCategoryId' => $this->resolveNzbCategoryId($nzbXML),
+                'segmentMessageIds' => $segmentMessageIds,
             ]
         );
     }
@@ -613,22 +621,53 @@ class NzbImportService
             $categoryId = (int) $determinedCategory['categories_id'];
         }
 
-        $relID = Release::insertRelease(
-            [
-                'name' => $escapedSubject,
-                'searchname' => $escapedSearchName,
-                'totalpart' => $nzbDetails['totalFiles'],
-                'groups_id' => $nzbDetails['groups_id'],
-                'guid' => $this->relGuid,
-                'postdate' => $nzbDetails['postDate'],
-                'fromname' => $escapedFromName,
-                'size' => $nzbDetails['totalSize'],
-                'categories_id' => $categoryId,
-                'isrenamed' => $renamed,
-                'predb_id' => $predbIdInt,
-                'nzbstatus' => NzbService::NZB_ADDED,
-            ]
-        );
+        $importHash = $this->computeSegmentMessageIdHash($nzbDetails['segmentMessageIds'] ?? []);
+
+        try {
+            $relID = Release::insertRelease(
+                [
+                    'name' => $escapedSubject,
+                    'searchname' => $escapedSearchName,
+                    'totalpart' => $nzbDetails['totalFiles'],
+                    'groups_id' => $nzbDetails['groups_id'],
+                    'guid' => $this->relGuid,
+                    'postdate' => $nzbDetails['postDate'],
+                    'fromname' => $escapedFromName,
+                    'size' => $nzbDetails['totalSize'],
+                    'categories_id' => $categoryId,
+                    'isrenamed' => $renamed,
+                    'predb_id' => $predbIdInt,
+                    'nzbstatus' => NzbService::NZB_ADDED,
+                    'collectionhash' => $importHash,
+                ]
+            );
+        } catch (UniqueConstraintViolationException $exception) {
+            $existing = $importHash === null
+                ? null
+                : Release::query()
+                    ->where('collectionhash', $importHash)
+                    ->first(['id', 'searchname', 'fromname', 'size', 'name']);
+
+            if ($existing === null) {
+                throw $exception;
+            }
+
+            Log::info('NZB import skipped as duplicate', [
+                'reason' => 'collectionhash_match',
+                'matched_release_id' => $existing->id,
+                'new_searchname' => $escapedSearchName,
+                'existing_searchname' => $existing->searchname,
+                'new_size' => (int) $nzbDetails['totalSize'],
+                'existing_size' => (int) $existing->size,
+                'new_fromname' => $escapedFromName,
+                'existing_fromname' => $existing->fromname,
+                'new_name' => $escapedSubject,
+                'existing_name' => $existing->name,
+            ]);
+            $this->echoOut('This release is already in our DB so skipping: '.$subject);
+
+            return NzbImportStatus::Duplicate;
+        }
 
         if ($relID === null) {
             $this->echoOut('ERROR: Problem inserting: '.$subject);
@@ -639,6 +678,39 @@ class NzbImportService
         $this->relId = (int) $relID;
 
         return NzbImportStatus::Inserted;
+    }
+
+    /**
+     * Deterministic identity for an imported NZB: sha1 over the sorted,
+     * de-duplicated set of segment message-IDs, raw binary to match
+     * releases.collectionhash BINARY(20). Sorting first makes the hash
+     * independent of segment order in the file. Message-IDs are globally
+     * unique per Usenet article, so the same NZB (or a re-generated NZB for
+     * the same upload) always hashes the same, while a true repost (new
+     * articles, new message-IDs) correctly remains a distinct release.
+     *
+     * Deliberate asymmetry with the native pipeline: releases created from
+     * collections carry sha1(cleanedSubject . totalFiles). Reconstructing
+     * that subject-derived hash from NZB file subjects would be fragile
+     * (cleaning regexes evolve), so matching an import against a
+     * natively-indexed release stays with the heuristic
+     * {@see ReleaseDuplicateFinder}.
+     *
+     * An NZB with no segments returns null — hashing the empty set would
+     * make every empty NZB collide on one value.
+     *
+     * @param  list<string>  $messageIds
+     */
+    protected function computeSegmentMessageIdHash(array $messageIds): ?string
+    {
+        if ($messageIds === []) {
+            return null;
+        }
+
+        $messageIds = array_values(array_unique($messageIds));
+        sort($messageIds);
+
+        return sha1(implode("\n", $messageIds), true);
     }
 
     protected function normalizeGroupName(\SimpleXMLElement|string $group): string
