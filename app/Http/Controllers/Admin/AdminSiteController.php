@@ -41,16 +41,29 @@ class AdminSiteController extends BasePageController
                     unset($data[$sizeKey.'_unit']);
                 }
 
-                // Per-root discard toggles live on root_categories, not in settings.
-                // HTML forms omit unchecked checkboxes, so absence means "off".
+                // Per-root discard and Preview Generation toggles live on
+                // root_categories, not in settings. HTML forms omit unchecked
+                // checkboxes, so absence means "off".
                 $discardToggles = (array) ($data['discard_executables'] ?? []);
                 unset($data['discard_executables']);
+                $previewToggles = (array) ($data['generate_previews'] ?? []);
+                unset($data['generate_previews']);
 
                 foreach (RootCategory::query()->get() as $rootCategory) {
-                    $enabled = ! empty($discardToggles[$rootCategory->id]);
+                    $updates = [];
 
-                    if ($rootCategory->discard_executables !== $enabled) {
-                        $rootCategory->update(['discard_executables' => $enabled]);
+                    $discardEnabled = ! empty($discardToggles[$rootCategory->id]);
+                    if ($rootCategory->discard_executables !== $discardEnabled) {
+                        $updates['discard_executables'] = $discardEnabled;
+                    }
+
+                    $previewsEnabled = ! empty($previewToggles[$rootCategory->id]);
+                    if ($rootCategory->generate_previews !== $previewsEnabled) {
+                        $updates['generate_previews'] = $previewsEnabled;
+                    }
+
+                    if ($updates !== []) {
+                        $rootCategory->update($updates);
                     }
                 }
 
@@ -70,11 +83,14 @@ class AdminSiteController extends BasePageController
             $sizeFields[$sizeKey] = SizeUnit::fromBytes($this->viewData['site'][$sizeKey] ?? 0);
         }
 
+        $rootCategories = RootCategory::query()->orderBy('id')->get();
+
         $this->viewData = array_merge($this->viewData, [
             'error' => $error,
             'sizeFields' => $sizeFields,
             'sizeUnits' => SizeUnit::UNITS,
-            'discardRoots' => RootCategory::query()->orderBy('id')->get(),
+            'discardRoots' => $rootCategories,
+            'previewRoots' => $rootCategories,
             'yesno' => [
                 'ids' => [1, 0],
                 'names' => ['Yes', 'No'],

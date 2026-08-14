@@ -1,0 +1,236 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Feature;
+
+use App\Facades\Search;
+use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
+use App\Services\Releases\PreviewGenerationPolicy;
+use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Mockery;
+use PDO;
+use Tests\TestCase;
+
+class PreviewGenerationPolicyTest extends TestCase
+{
+    private string $databasePath;
+
+    /**
+     * @var array<string, string|false>
+     */
+    private array $originalEnvironment = [];
+
+    public function createApplication()
+    {
+        $this->databasePath = $this->makeTempPath('nntmux-preview-policy-test', '.sqlite');
+
+        $this->originalEnvironment = [
+            'APP_ENV' => getenv('APP_ENV'),
+            'DB_CONNECTION' => getenv('DB_CONNECTION'),
+            'DB_DATABASE' => getenv('DB_DATABASE'),
+        ];
+
+        if (file_exists($this->databasePath)) {
+            unlink($this->databasePath);
+        }
+
+        $pdo = new PDO('sqlite:'.$this->databasePath);
+        $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
+        $pdo->exec("INSERT INTO settings (name, value) VALUES ('categorizeforeign', '0'), ('catwebdl', '0')");
+
+        $this->setEnvironmentValue('APP_ENV', 'testing');
+        $this->setEnvironmentValue('DB_CONNECTION', 'sqlite');
+        $this->setEnvironmentValue('DB_DATABASE', $this->databasePath);
+
+        $app = require __DIR__.'/../../bootstrap/app.php';
+        $app->make(Kernel::class)->bootstrap();
+
+        return $app;
+    }
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config([
+            'database.default' => 'sqlite',
+            'database.connections.sqlite.database' => $this->databasePath,
+        ]);
+
+        DB::purge();
+        DB::reconnect();
+        Cache::flush();
+
+        $this->createSchema();
+    }
+
+    protected function tearDown(): void
+    {
+        Mockery::close();
+
+        if ($this->databasePath !== '' && file_exists($this->databasePath)) {
+            unlink($this->databasePath);
+        }
+
+        parent::tearDown();
+
+        foreach ($this->originalEnvironment as $key => $value) {
+            $this->setEnvironmentValue($key, $value === false ? null : $value);
+        }
+    }
+
+    public function test_generation_follows_the_leaf_categories_root_toggle(): void
+    {
+        $policy = new PreviewGenerationPolicy;
+
+        $this->assertTrue($policy->generationEnabledForCategory(2040), 'Movies root has generation enabled.');
+        $this->assertFalse($policy->generationEnabledForCategory(6010), 'XXX root has generation disabled.');
+        $this->assertTrue($policy->generationEnabledForCategory(999999), 'Unknown categories stay enabled.');
+    }
+
+    public function test_enabled_category_ids_cover_only_roots_with_generation_on(): void
+    {
+        $ids = (new PreviewGenerationPolicy)->categoryIdsWithGenerationEnabled();
+        sort($ids);
+
+        $this->assertSame([2040, 2080, 5040], $ids);
+    }
+
+    public function test_restore_flips_skipped_releases_in_enabled_roots_back_to_pending(): void
+    {
+        $this->setPasswordInspection(true);
+        Search::shouldReceive('updateRelease')->andReturnNull();
+
+        DB::table('releases')->insert([
+            // Skipped by policy, now in an enabled root: owed regeneration.
+            $this->releaseRow(1, 2040, hasPreview: -2, passwordStatus: 0),
+            // Skipped by policy but in a disabled root: keeps the sentinel.
+            $this->releaseRow(2, 6010, hasPreview: -2, passwordStatus: 0),
+            // Attempted-none (0) is never flipped by a category move.
+            $this->releaseRow(3, 2040, hasPreview: 0, passwordStatus: 0),
+            // Already has a preview: untouched.
+            $this->releaseRow(4, 2040, hasPreview: 1, passwordStatus: 0),
+        ]);
+
+        $flipped = (new PreviewGenerationPolicy)->restoreOwedPreviews([1, 2, 3, 4]);
+
+        $this->assertSame(1, $flipped);
+
+        $this->assertSame(-1, (int) DB::table('releases')->where('id', 1)->value('haspreview'));
+        $this->assertSame(
+            PasswordInspectionMode::pendingReleaseStatus(),
+            (int) DB::table('releases')->where('id', 1)->value('passwordstatus')
+        );
+
+        $this->assertSame(-2, (int) DB::table('releases')->where('id', 2)->value('haspreview'));
+        $this->assertSame(0, (int) DB::table('releases')->where('id', 3)->value('haspreview'));
+        $this->assertSame(1, (int) DB::table('releases')->where('id', 4)->value('haspreview'));
+    }
+
+    public function test_restore_uses_the_mode_aware_pending_password_status_when_inspection_is_off(): void
+    {
+        $this->setPasswordInspection(false);
+        Search::shouldReceive('updateRelease')->andReturnNull();
+
+        DB::table('releases')->insert([
+            $this->releaseRow(1, 2040, hasPreview: -2, passwordStatus: 1),
+        ]);
+
+        $flipped = (new PreviewGenerationPolicy)->restoreOwedPreviews([1]);
+
+        $this->assertSame(1, $flipped);
+        $this->assertSame(0, PasswordInspectionMode::pendingReleaseStatus());
+        $this->assertSame(-1, (int) DB::table('releases')->where('id', 1)->value('haspreview'));
+        $this->assertSame(0, (int) DB::table('releases')->where('id', 1)->value('passwordstatus'));
+    }
+
+    public function test_restore_ignores_empty_and_invalid_ids(): void
+    {
+        $this->assertSame(0, (new PreviewGenerationPolicy)->restoreOwedPreviews([]));
+        $this->assertSame(0, (new PreviewGenerationPolicy)->restoreOwedPreviews([0, -5]));
+    }
+
+    private function setPasswordInspection(bool $enabled): void
+    {
+        config([
+            'nntmux_settings.check_passworded_rars' => $enabled,
+            'nntmux_settings.unrar_path' => '/usr/bin/unrar',
+        ]);
+    }
+
+    /**
+     * @return array<string, int|string>
+     */
+    private function releaseRow(int $id, int $categoryId, int $hasPreview, int $passwordStatus): array
+    {
+        return [
+            'id' => $id,
+            'guid' => 'guid-'.$id,
+            'categories_id' => $categoryId,
+            'haspreview' => $hasPreview,
+            'passwordstatus' => $passwordStatus,
+        ];
+    }
+
+    private function setEnvironmentValue(string $key, ?string $value): void
+    {
+        if ($value === null) {
+            putenv($key);
+            unset($_ENV[$key], $_SERVER[$key]);
+
+            return;
+        }
+
+        putenv($key.'='.$value);
+        $_ENV[$key] = $value;
+        $_SERVER[$key] = $value;
+    }
+
+    private function createSchema(): void
+    {
+        if (! Schema::hasTable('settings')) {
+            Schema::create('settings', function (Blueprint $table): void {
+                $table->string('name')->primary();
+                $table->text('value')->nullable();
+            });
+        }
+
+        Schema::create('root_categories', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->string('title')->default('');
+            $table->boolean('generate_previews')->default(true);
+        });
+
+        Schema::create('categories', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->string('title')->default('');
+            $table->integer('root_categories_id')->nullable();
+        });
+
+        Schema::create('releases', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->string('guid');
+            $table->integer('categories_id');
+            $table->integer('haspreview')->default(0);
+            $table->integer('passwordstatus')->default(0);
+        });
+
+        DB::table('root_categories')->insert([
+            ['id' => 2000, 'title' => 'Movies', 'generate_previews' => 1],
+            ['id' => 5000, 'title' => 'TV', 'generate_previews' => 1],
+            ['id' => 6000, 'title' => 'XXX', 'generate_previews' => 0],
+        ]);
+
+        DB::table('categories')->insert([
+            ['id' => 2040, 'title' => 'Movies HD', 'root_categories_id' => 2000],
+            ['id' => 2080, 'title' => 'Movies WEB-DL', 'root_categories_id' => 2000],
+            ['id' => 5040, 'title' => 'TV HD', 'root_categories_id' => 5000],
+            ['id' => 6010, 'title' => 'XXX DVD', 'root_categories_id' => 6000],
+        ]);
+    }
+}

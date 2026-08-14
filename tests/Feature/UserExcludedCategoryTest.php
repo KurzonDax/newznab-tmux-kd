@@ -155,7 +155,6 @@ final class UserExcludedCategoryTest extends TestCase
             id INTEGER PRIMARY KEY,
             title VARCHAR(255) NOT NULL,
             status INTEGER DEFAULT 1,
-            disablepreview INTEGER DEFAULT 0,
             created_at DATETIME,
             updated_at DATETIME
         )');
@@ -167,7 +166,6 @@ final class UserExcludedCategoryTest extends TestCase
             root_categories_id INTEGER NOT NULL,
             status INTEGER DEFAULT 1,
             description VARCHAR(255),
-            disablepreview INTEGER DEFAULT 0,
             minsizetoformrelease INTEGER DEFAULT 0,
             maxsizetoformrelease INTEGER DEFAULT 0
         )');

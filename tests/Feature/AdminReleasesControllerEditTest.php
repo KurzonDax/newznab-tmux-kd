@@ -217,6 +217,41 @@ class AdminReleasesControllerEditTest extends TestCase
         ], $overrides);
     }
 
+    public function test_valid_submit_restores_an_owed_preview_when_the_new_root_has_generation_enabled(): void
+    {
+        Search::shouldReceive('updateRelease')->andReturnNull();
+
+        $releaseId = $this->seedRelease();
+        DB::table('releases')->where('id', $releaseId)->update(['haspreview' => -2, 'passwordstatus' => 0]);
+
+        $request = Request::create('/admin/release-edit', 'POST', $this->payload($releaseId, [
+            'category' => '5040',
+        ]));
+
+        $response = app(AdminReleasesController::class)->edit($request);
+
+        $this->assertTrue($response->isRedirect());
+        $this->assertSame(-1, (int) DB::table('releases')->where('id', $releaseId)->value('haspreview'));
+    }
+
+    public function test_valid_submit_keeps_the_skip_sentinel_when_the_new_root_has_generation_disabled(): void
+    {
+        Search::shouldReceive('updateRelease')->andReturnNull();
+
+        DB::table('root_categories')->where('id', 5000)->update(['generate_previews' => 0]);
+
+        $releaseId = $this->seedRelease();
+        DB::table('releases')->where('id', $releaseId)->update(['haspreview' => -2, 'passwordstatus' => 0]);
+
+        $request = Request::create('/admin/release-edit', 'POST', $this->payload($releaseId, [
+            'category' => '5040',
+        ]));
+
+        app(AdminReleasesController::class)->edit($request);
+
+        $this->assertSame(-2, (int) DB::table('releases')->where('id', $releaseId)->value('haspreview'));
+    }
+
     private function seedRelease(): int
     {
         return (int) DB::table('releases')->insertGetId([
@@ -265,6 +300,8 @@ class AdminReleasesControllerEditTest extends TestCase
                 $table->string('imdbid', 100)->nullable();
                 $table->integer('anidbid')->nullable();
                 $table->integer('movieinfo_id')->nullable();
+                $table->integer('haspreview')->default(0);
+                $table->integer('passwordstatus')->default(0);
             });
         }
 
@@ -276,9 +313,21 @@ class AdminReleasesControllerEditTest extends TestCase
             });
         }
 
+        if (! Schema::hasTable('root_categories')) {
+            Schema::create('root_categories', function (Blueprint $table): void {
+                $table->unsignedInteger('id')->primary();
+                $table->string('title')->default('');
+                $table->boolean('generate_previews')->default(true);
+            });
+        }
+
         DB::table('categories')->insertOrIgnore([
             ['id' => 5000, 'title' => 'TV', 'root_categories_id' => 5000],
             ['id' => 5040, 'title' => 'TV HD', 'root_categories_id' => 5000],
+        ]);
+
+        DB::table('root_categories')->insertOrIgnore([
+            ['id' => 5000, 'title' => 'TV', 'generate_previews' => 1],
         ]);
     }
 

@@ -14,6 +14,7 @@ use App\Services\Categorization\CategorizationService;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\ReleaseExtraService;
 use App\Services\ReleaseImageService;
+use App\Services\Releases\PreviewGenerationPolicy;
 use FFMpeg\Coordinate\Dimension;
 use FFMpeg\Coordinate\TimeCode;
 use FFMpeg\FFMpeg;
@@ -325,6 +326,7 @@ class MediaExtractionService
                                 'proc_pp' => 1,
                             ]);
 
+                            (new PreviewGenerationPolicy)->restoreOwedPreviews([(int) $context->release->id]);
                             $this->searchSyncCoordinator->request((int) $context->release->id);
 
                             if ($this->config->echoCLI) {

@@ -315,6 +315,14 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             });
         }
 
+        if (! Schema::hasTable('root_categories')) {
+            Schema::create('root_categories', function (Blueprint $table): void {
+                $table->unsignedInteger('id')->primary();
+                $table->string('title')->default('');
+                $table->boolean('generate_previews')->default(true);
+            });
+        }
+
         if (! Schema::hasTable('usenet_groups')) {
             Schema::create('usenet_groups', function (Blueprint $table): void {
                 $table->increments('id');

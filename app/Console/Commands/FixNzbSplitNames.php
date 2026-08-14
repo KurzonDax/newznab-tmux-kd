@@ -8,6 +8,7 @@ use App\Facades\Search;
 use App\Models\Release;
 use App\Services\Categorization\CategorizationService;
 use App\Services\NameFixing\NzbSplitUnwrapper;
+use App\Services\Releases\PreviewGenerationPolicy;
 use Illuminate\Console\Command;
 
 class FixNzbSplitNames extends Command
@@ -47,11 +48,12 @@ class FixNzbSplitNames extends Command
         }
 
         $dryRun = (bool) $this->option('dry-run');
+        $previewPolicy = new PreviewGenerationPolicy;
         $updated = 0;
         $bar = $this->output->createProgressBar($count);
         $bar->start();
 
-        $query->chunkById(250, function ($releases) use ($categorizationService, $nzbSplitUnwrapper, $dryRun, &$updated, $bar): void {
+        $query->chunkById(250, function ($releases) use ($categorizationService, $nzbSplitUnwrapper, $previewPolicy, $dryRun, &$updated, $bar): void {
             foreach ($releases as $release) {
                 $bar->advance();
 
@@ -102,6 +104,7 @@ class FixNzbSplitNames extends Command
                         'anidbid' => null,
                     ]);
 
+                $previewPolicy->restoreOwedPreviews([(int) $release->id]);
                 Search::updateRelease((int) $release->id);
                 $updated++;
             }

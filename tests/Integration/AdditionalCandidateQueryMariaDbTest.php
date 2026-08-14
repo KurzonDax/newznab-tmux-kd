@@ -112,11 +112,9 @@ final class AdditionalCandidateQueryMariaDbTest extends TestCase
         $claimPlan = $this->analyze(<<<SQL
             SELECT r.id
             FROM `{$releasesTable}` r
-            LEFT JOIN `{$categoriesTable}` c ON c.id = r.categories_id
             WHERE r.passwordstatus = -1
               AND r.haspreview = -1
               AND r.nzbstatus = 1
-              AND c.disablepreview = 0
               AND r.size > 1048576
               AND r.size < 107374182400
               AND r.leftguid = 'a'
@@ -129,11 +127,9 @@ final class AdditionalCandidateQueryMariaDbTest extends TestCase
             SELECT r.leftguid, COUNT(*) AS total_count,
                    SUM(CASE WHEN r.additional_pp_claimed_at IS NULL OR r.additional_pp_claimed_at < DATE_SUB(NOW(), INTERVAL 300 SECOND) THEN 1 ELSE 0 END) AS available_count
             FROM `{$releasesTable}` r
-            LEFT JOIN `{$categoriesTable}` c ON c.id = r.categories_id
             WHERE r.passwordstatus = -1
               AND r.haspreview = -1
               AND r.nzbstatus = 1
-              AND c.disablepreview = 0
               AND r.size > 1048576
               AND r.size < 107374182400
             GROUP BY r.leftguid
@@ -143,11 +139,9 @@ final class AdditionalCandidateQueryMariaDbTest extends TestCase
             SELECT COUNT(*) AS total_count,
                    SUM(CASE WHEN r.additional_pp_claimed_at IS NULL OR r.additional_pp_claimed_at < DATE_SUB(NOW(), INTERVAL 300 SECOND) THEN 1 ELSE 0 END) AS available_count
             FROM `{$releasesTable}` r
-            LEFT JOIN `{$categoriesTable}` c ON c.id = r.categories_id
             WHERE r.passwordstatus = -1
               AND r.haspreview = -1
               AND r.nzbstatus = 1
-              AND c.disablepreview = 0
               AND r.size > 1048576
               AND r.size < 107374182400
             SQL);
@@ -225,11 +219,9 @@ final class AdditionalCandidateQueryMariaDbTest extends TestCase
                     $connection->query(<<<SQL
                         SELECT r.id
                         FROM `{$releasesTable}` r
-                        LEFT JOIN `{$categoriesTable}` c ON c.id = r.categories_id
                         WHERE r.passwordstatus = -1
                           AND r.haspreview = -1
                           AND r.nzbstatus = 1
-                          AND c.disablepreview = 0
                           AND r.leftguid = 'a'
                           AND (r.additional_pp_claimed_at IS NULL OR r.additional_pp_claimed_at < DATE_SUB(NOW(), INTERVAL 300 SECOND))
                         ORDER BY r.postdate DESC, r.id ASC
@@ -283,7 +275,7 @@ final class AdditionalCandidateQueryMariaDbTest extends TestCase
         $releasesTable = $this->tableName('releases');
 
         DB::statement("CREATE TABLE `{$settingsTable}` (`name` VARCHAR(255) PRIMARY KEY, `value` TEXT NULL) ENGINE=InnoDB");
-        DB::statement("CREATE TABLE `{$categoriesTable}` (id INT UNSIGNED PRIMARY KEY, disablepreview TINYINT(1) NOT NULL DEFAULT 0) ENGINE=InnoDB");
+        DB::statement("CREATE TABLE `{$categoriesTable}` (id INT UNSIGNED PRIMARY KEY) ENGINE=InnoDB");
         DB::statement(<<<SQL
             CREATE TABLE `{$releasesTable}` (
                 id INT UNSIGNED PRIMARY KEY,
@@ -306,7 +298,7 @@ final class AdditionalCandidateQueryMariaDbTest extends TestCase
             ['name' => 'catwebdl', 'value' => '0'],
             ['name' => 'releaseprocessingtimeout', 'value' => '120'],
         ]);
-        DB::table('categories')->insert(['id' => 1, 'disablepreview' => 0]);
+        DB::table('categories')->insert(['id' => 1]);
     }
 
     /** @return array<string, mixed> */

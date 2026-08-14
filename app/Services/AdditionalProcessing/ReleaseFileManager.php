@@ -22,6 +22,7 @@ use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseImageService;
 use App\Services\Releases\ExecutableReleaseDiscardService;
+use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use dariusiii\rarinfo\Par2Info;
 use Illuminate\Contracts\Filesystem\FileNotFoundException;
@@ -250,9 +251,17 @@ class ReleaseFileManager
             return;
         }
 
-        $updateRows = ['haspreview' => 0];
+        // Skipped-by-policy releases record the -2 sentinel instead of 0
+        // (attempted, none produced) so a later recategorization into a root
+        // with generation enabled knows regeneration is owed (ADR 0004).
+        $updateRows = [
+            'haspreview' => $context->previewGenerationSkippedByPolicy
+                ? PreviewGenerationPolicy::HASPREVIEW_SKIPPED_BY_POLICY
+                : 0,
+        ];
 
-        // Check for existing samples
+        // Check for existing samples; disabling a root never deletes existing
+        // previews, so an artifact already on disk keeps the release visible.
         if ($this->releaseImage->imageExists($this->releaseImage->imgSavePath, $context->release->guid.'_thumb')) {
             $updateRows = ['haspreview' => 1];
         }

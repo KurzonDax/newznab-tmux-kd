@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Models\Category;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
+use App\Services\Releases\PreviewGenerationPolicy;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -55,15 +56,19 @@ class RequeueMissingVideoPreviews extends Command
 
     /**
      * Releases whose preview generation completed without producing anything
-     * and that are safe to send through additional processing again.
+     * (haspreview 0) or was skipped by the per-root category policy (-2), and
+     * that are safe to send through additional processing again. Restricted to
+     * roots with Preview Generation enabled — this command is the explicit
+     * backfill tool after re-enabling a root (ADR 0004).
      *
      * @return Builder<Release>
      */
     private function candidates(): Builder
     {
         return $this->candidateUniverse()
-            ->where('haspreview', 0)
-            ->where('passwordstatus', 0);
+            ->whereIn('haspreview', [0, PreviewGenerationPolicy::HASPREVIEW_SKIPPED_BY_POLICY])
+            ->where('passwordstatus', 0)
+            ->whereIn('categories_id', (new PreviewGenerationPolicy)->categoryIdsWithGenerationEnabled());
     }
 
     /**

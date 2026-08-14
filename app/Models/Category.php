@@ -19,7 +19,6 @@ use Illuminate\Support\Facades\DB;
  * @property int|null $parentid
  * @property int $status
  * @property string|null $description
- * @property bool $disablepreview
  * @property int $minsizetoformrelease
  * @property int $maxsizetoformrelease
  * @property int|null $count Computed count from aggregate queries
@@ -28,7 +27,6 @@ use Illuminate\Support\Facades\DB;
  * @property-read Collection|Release[] $releases
  *
  * @method static \Illuminate\Database\Eloquent\Builder|\App\Models\Category whereDescription($value)
- * @method static \Illuminate\Database\Eloquent\Builder|\App\Models\Category whereDisablepreview($value)
  * @method static \Illuminate\Database\Eloquent\Builder|\App\Models\Category whereId($value)
  * @method static \Illuminate\Database\Eloquent\Builder|\App\Models\Category whereMaxsizetoformrelease($value)
  * @method static \Illuminate\Database\Eloquent\Builder|\App\Models\Category whereMinsizetoformrelease($value)
@@ -516,11 +514,10 @@ class Category extends Model
     /**
      * Update a category.
      */
-    public static function updateCategory(mixed $id, mixed $status, mixed $desc, mixed $disablepreview, mixed $minsize, mixed $maxsize): int
+    public static function updateCategory(mixed $id, mixed $status, mixed $desc, mixed $minsize, mixed $maxsize): int
     {
         return self::query()->where('id', $id)->update(
             [
-                'disablepreview' => $disablepreview,
                 'status' => $status,
                 'minsizetoformrelease' => $minsize,
                 'maxsizetoformrelease' => $maxsize,

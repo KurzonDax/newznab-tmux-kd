@@ -82,8 +82,8 @@ class AdditionalCandidateQueryTest extends TestCase
     public function test_bucket_chars_preserve_alphabetic_guid_buckets(): void
     {
         DB::table('categories')->insert([
-            ['id' => 1, 'disablepreview' => 0],
-            ['id' => 2, 'disablepreview' => 1],
+            ['id' => 1],
+            ['id' => 2],
         ]);
 
         DB::table('releases')->insert([
@@ -98,13 +98,13 @@ class AdditionalCandidateQueryTest extends TestCase
         $chars = AdditionalCandidateQuery::bucketChars();
         sort($chars);
 
-        $this->assertSame(['0', '9', 'a', 'f'], $chars);
+        $this->assertSame(['0', '9', 'a', 'b', 'f'], $chars);
     }
 
     public function test_bucket_chars_skip_active_claims_but_include_stale_claims(): void
     {
         DB::table('categories')->insert([
-            ['id' => 1, 'disablepreview' => 0],
+            ['id' => 1],
         ]);
 
         DB::table('releases')->insert([
@@ -122,12 +122,14 @@ class AdditionalCandidateQueryTest extends TestCase
     public function test_monitor_builder_can_include_claimed_releases_while_available_builder_excludes_them(): void
     {
         DB::table('categories')->insert([
-            ['id' => 1, 'disablepreview' => 0],
+            ['id' => 1],
         ]);
 
         DB::table('releases')->insert([
             $this->releaseRow(1, 'a', claimedAt: now()),
             $this->releaseRow(2, 'b'),
+            // Skipped by the per-root Preview Generation policy: never selected.
+            $this->releaseRow(3, 'c', hasPreview: -2),
         ]);
 
         $this->assertSame(1, AdditionalCandidateQuery::baseBuilder()->count());
@@ -136,7 +138,7 @@ class AdditionalCandidateQueryTest extends TestCase
 
     public function test_backlog_counts_are_aggregated_by_bucket_in_one_shape(): void
     {
-        DB::table('categories')->insert(['id' => 1, 'disablepreview' => 0]);
+        DB::table('categories')->insert(['id' => 1]);
         DB::table('releases')->insert([
             $this->releaseRow(1, 'a'),
             $this->releaseRow(2, 'a', claimedAt: now()),
@@ -157,7 +159,7 @@ class AdditionalCandidateQueryTest extends TestCase
     public function test_claim_batch_excludes_active_claims_and_recovers_stale_claims(): void
     {
         DB::table('categories')->insert([
-            ['id' => 1, 'disablepreview' => 0],
+            ['id' => 1],
         ]);
 
         DB::table('releases')->insert([
@@ -186,7 +188,7 @@ class AdditionalCandidateQueryTest extends TestCase
             'nntmux_settings.unrar_path' => '/usr/bin/unrar',
         ]);
 
-        DB::table('categories')->insert(['id' => 1, 'disablepreview' => 0]);
+        DB::table('categories')->insert(['id' => 1]);
         DB::table('releases')->insert([
             $this->releaseRow(1, 'a', passwordStatus: -1),
             $this->releaseRow(2, 'b', passwordStatus: 0),
@@ -202,7 +204,7 @@ class AdditionalCandidateQueryTest extends TestCase
             'nntmux_settings.unrar_path' => false,
         ]);
 
-        DB::table('categories')->insert(['id' => 1, 'disablepreview' => 0]);
+        DB::table('categories')->insert(['id' => 1]);
         DB::table('releases')->insert([
             $this->releaseRow(1, 'a', passwordStatus: 0),
             $this->releaseRow(2, 'b', passwordStatus: -1),
@@ -223,7 +225,7 @@ class AdditionalCandidateQueryTest extends TestCase
             'nntmux_settings.unrar_path' => '',
         ]);
 
-        DB::table('categories')->insert(['id' => 1, 'disablepreview' => 0]);
+        DB::table('categories')->insert(['id' => 1]);
         DB::table('releases')->insert($this->releaseRow(1, 'a', passwordStatus: 0));
 
         $this->assertSame([1], AdditionalCandidateQuery::baseBuilder()->pluck('r.id')->all());
@@ -290,7 +292,6 @@ class AdditionalCandidateQueryTest extends TestCase
 
         Schema::create('categories', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
-            $table->boolean('disablepreview')->default(false);
         });
 
         Schema::create('releases', function (Blueprint $table): void {

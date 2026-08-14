@@ -161,7 +161,7 @@ class AdditionalProcessingOrchestrator
      * Fetch releases for processing.
      *
      * The selection predicates (passwordstatus, haspreview, nzbstatus,
-     * disablepreview, size bounds) are owned by AdditionalCandidateQuery so
+     * size bounds) are owned by AdditionalCandidateQuery so
      * they stay consistent with the bucket-fanout SQL in
      * PostProcessRunner::processAdditional(). Do NOT inline new predicates
      * here; add them to AdditionalCandidateQuery instead.

@@ -95,7 +95,7 @@ class AdditionalProcessingOrchestratorClaimTest extends TestCase
     {
         Log::spy();
 
-        DB::table('categories')->insert(['id' => 1, 'disablepreview' => 0]);
+        DB::table('categories')->insert(['id' => 1]);
         DB::table('releases')->insert([
             'id' => 1,
             'guid' => 'a-guid-1',
@@ -176,7 +176,7 @@ class AdditionalProcessingOrchestratorClaimTest extends TestCase
 
     public function test_temp_setup_failure_does_not_claim_releases(): void
     {
-        DB::table('categories')->insert(['id' => 1, 'disablepreview' => 0]);
+        DB::table('categories')->insert(['id' => 1]);
         DB::table('releases')->insert([
             'id' => 1,
             'guid' => 'a-guid-1',
@@ -257,7 +257,6 @@ class AdditionalProcessingOrchestratorClaimTest extends TestCase
 
         Schema::create('categories', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
-            $table->boolean('disablepreview')->default(false);
         });
 
         Schema::create('releases', function (Blueprint $table): void {

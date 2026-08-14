@@ -165,6 +165,7 @@ class ReleaseManagementService
                 ->update(['categories_id' => $categoryId, 'iscategorized' => 1]);
 
             if ($updated > 0) {
+                (new PreviewGenerationPolicy)->restoreOwedPreviews($releaseIds);
                 $this->syncReleasesToSearchIndex($releaseIds);
                 Release::clearAdminReleasesRangeCache();
             }

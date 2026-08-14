@@ -47,7 +47,6 @@
                     </x-admin.th>
                     <x-admin.th>Parent</x-admin.th>
                     <x-admin.th align="center" width="24">Status</x-admin.th>
-                    <x-admin.th align="center" width="24">Preview</x-admin.th>
                     <x-admin.th align="center" width="28">Actions</x-admin.th>
                 </x-slot:head>
 
@@ -76,17 +75,6 @@
                             @else
                                 <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200">
                                     <i class="fas fa-times-circle mr-1"></i>Inactive
-                                </span>
-                            @endif
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-center">
-                            @if($category->disablepreview == 1)
-                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200">
-                                    <i class="fas fa-times-circle mr-1"></i>Disabled
-                                </span>
-                            @else
-                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
-                                    <i class="fas fa-check-circle mr-1"></i>Enabled
                                 </span>
                             @endif
                         </td>

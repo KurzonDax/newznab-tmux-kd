@@ -50,6 +50,11 @@ class ReleaseProcessingContext
     // detected); all remaining processing for it must be skipped.
     public bool $releaseDiscarded = false;
 
+    // Preview Generation was skipped because the release's root category has
+    // it disabled (ADR 0004); finalization records the skipped-by-policy
+    // haspreview sentinel instead of 0.
+    public bool $previewGenerationSkippedByPolicy = false;
+
     // NFO state
     public bool $releaseHasNoNFO = false;
 
@@ -195,6 +200,7 @@ class ReleaseProcessingContext
         $this->passwordStatus = 0;
         $this->releaseHasPassword = false;
         $this->releaseDiscarded = false;
+        $this->previewGenerationSkippedByPolicy = false;
         $this->nzbHasCompressedFile = false;
         $this->groupUnavailable = false;
         $this->workPlan = null;

@@ -105,7 +105,6 @@ class BooksControllerTest extends TestCase
             $table->unsignedInteger('id')->primary();
             $table->string('title');
             $table->integer('status')->default(1);
-            $table->boolean('disablepreview')->default(false);
             $table->timestamps();
         });
 
@@ -115,7 +114,6 @@ class BooksControllerTest extends TestCase
             $table->unsignedInteger('parentid')->nullable();
             $table->integer('status')->default(1);
             $table->text('description')->nullable();
-            $table->boolean('disablepreview')->default(false);
             $table->unsignedBigInteger('minsizetoformrelease')->default(0);
             $table->unsignedBigInteger('maxsizetoformrelease')->default(0);
             $table->unsignedInteger('root_categories_id')->nullable();
@@ -128,7 +126,6 @@ class BooksControllerTest extends TestCase
             'id' => Category::BOOKS_ROOT,
             'title' => 'Books',
             'status' => 1,
-            'disablepreview' => 0,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -139,7 +136,6 @@ class BooksControllerTest extends TestCase
             'parentid' => Category::BOOKS_ROOT,
             'status' => 1,
             'description' => 'Books',
-            'disablepreview' => 0,
             'minsizetoformrelease' => 0,
             'maxsizetoformrelease' => 0,
             'root_categories_id' => Category::BOOKS_ROOT,

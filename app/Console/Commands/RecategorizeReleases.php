@@ -8,6 +8,7 @@ use App\Facades\Search;
 use App\Models\Category;
 use App\Models\Release;
 use App\Services\Categorization\CategorizationService;
+use App\Services\Releases\PreviewGenerationPolicy;
 use Illuminate\Console\Command;
 
 class RecategorizeReleases extends Command
@@ -70,6 +71,7 @@ class RecategorizeReleases extends Command
         $count = $countQuery->count();
 
         $cat = new CategorizationService;
+        $previewPolicy = new PreviewGenerationPolicy;
         $results = $countQuery->select(['id', 'searchname', 'fromname', 'groups_id', 'categories_id'])->get();
         $bar = $this->output->createProgressBar($count);
         $bar->start();
@@ -93,6 +95,7 @@ class RecategorizeReleases extends Command
                         'categories_id' => $catId['categories_id'],
                     ]);
 
+                    $previewPolicy->restoreOwedPreviews([(int) $result->id]);
                     Search::updateRelease((int) $result->id);
 
                     /** @var Category|null $newCatName */

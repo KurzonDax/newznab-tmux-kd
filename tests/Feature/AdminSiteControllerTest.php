@@ -196,6 +196,70 @@ class AdminSiteControllerTest extends TestCase
         $this->assertSame(0, DB::table('root_categories')->where('discard_executables', 1)->count());
     }
 
+    public function test_submit_updates_preview_generation_toggles_with_absent_checkbox_meaning_off(): void
+    {
+        $request = Request::create('/admin/site-edit', 'POST', [
+            'action' => 'submit',
+            'generate_previews' => [
+                '1' => '1',
+                '1000' => '1',
+                '2000' => '1',
+                '4000' => '1',
+                // TV (5000) unchecked: generation must turn off for that root.
+            ],
+        ]);
+
+        $response = app(AdminSiteController::class)->edit($request);
+
+        $this->assertTrue($response->isRedirect());
+
+        $toggles = DB::table('root_categories')->pluck('generate_previews', 'id');
+        $this->assertEquals(1, $toggles[1]);
+        $this->assertEquals(1, $toggles[1000]);
+        $this->assertEquals(1, $toggles[2000]);
+        $this->assertEquals(1, $toggles[4000]);
+        $this->assertEquals(0, $toggles[5000], 'Unchecking a previously-on root must disable generation.');
+
+        $this->assertNull(
+            DB::table('settings')->where('name', 'generate_previews')->value('value'),
+            'The checkbox array must not leak into the settings table.'
+        );
+
+        // Re-checking the root turns generation back on; no release state is
+        // touched by the toggle itself.
+        $request = Request::create('/admin/site-edit', 'POST', [
+            'action' => 'submit',
+            'generate_previews' => [
+                '1' => '1',
+                '1000' => '1',
+                '2000' => '1',
+                '4000' => '1',
+                '5000' => '1',
+            ],
+        ]);
+
+        app(AdminSiteController::class)->edit($request);
+
+        $this->assertEquals(1, DB::table('root_categories')->where('id', 5000)->value('generate_previews'));
+    }
+
+    public function test_view_exposes_preview_roots_with_current_state(): void
+    {
+        DB::table('root_categories')->where('id', 4000)->update(['generate_previews' => 0]);
+
+        $request = Request::create('/admin/site-edit', 'GET');
+
+        $response = app(AdminSiteController::class)->edit($request);
+
+        $this->assertInstanceOf(View::class, $response);
+
+        $previewRoots = $response->getData()['previewRoots'];
+        $togglesById = $previewRoots->pluck('generate_previews', 'id');
+
+        $this->assertEquals(1, $togglesById[2000]);
+        $this->assertEquals(0, $togglesById[4000]);
+    }
+
     public function test_view_exposes_discard_roots_with_current_state(): void
     {
         $request = Request::create('/admin/site-edit', 'GET');
@@ -252,8 +316,8 @@ class AdminSiteControllerTest extends TestCase
             $table->unsignedInteger('id')->primary();
             $table->string('title');
             $table->integer('status')->default(1);
-            $table->integer('disablepreview')->default(0);
             $table->boolean('discard_executables')->default(false);
+            $table->boolean('generate_previews')->default(true);
             $table->timestamps();
         });
 

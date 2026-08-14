@@ -40,6 +40,34 @@ class RequeueMissingVideoPreviewsCommandTest extends TestCase
             $table->integer('rarinnerfilecount');
             $table->integer('isrenamed');
         });
+
+        Schema::create('root_categories', function (Blueprint $table): void {
+            $table->unsignedInteger('id')->primary();
+            $table->string('title')->default('');
+            $table->boolean('generate_previews')->default(true);
+        });
+
+        Schema::create('categories', function (Blueprint $table): void {
+            $table->unsignedInteger('id')->primary();
+            $table->string('title')->default('');
+            $table->unsignedInteger('root_categories_id')->nullable();
+        });
+
+        DB::table('root_categories')->insert([
+            ['id' => 2000, 'title' => 'Movies'],
+            ['id' => 3000, 'title' => 'Audio'],
+            ['id' => 5000, 'title' => 'TV'],
+        ]);
+
+        DB::table('categories')->insert([
+            ['id' => Category::MOVIE_HD, 'root_categories_id' => 2000],
+            ['id' => Category::MOVIE_WEBDL, 'root_categories_id' => 2000],
+            ['id' => Category::MUSIC_MP3, 'root_categories_id' => 3000],
+            ['id' => Category::TV_WEBDL, 'root_categories_id' => 5000],
+            ['id' => Category::TV_HD, 'root_categories_id' => 5000],
+            ['id' => Category::TV_UHD, 'root_categories_id' => 5000],
+            ['id' => Category::TV_SD, 'root_categories_id' => 5000],
+        ]);
     }
 
     public function test_it_dry_runs_then_requeues_only_stuck_non_rar_video_releases_idempotently(): void
@@ -177,6 +205,39 @@ class RequeueMissingVideoPreviewsCommandTest extends TestCase
 
         $this->assertSame(-1, DB::table('releases')->where('id', 1)->value('passwordstatus'));
         $this->assertSame(-1, DB::table('releases')->where('id', 2)->value('passwordstatus'));
+    }
+
+    public function test_apply_requeues_policy_skipped_releases_only_in_roots_with_generation_enabled(): void
+    {
+        $this->setPasswordInspection(true);
+
+        DB::table('root_categories')->where('id', 5000)->update(['generate_previews' => 0]);
+
+        Release::withoutEvents(function (): void {
+            // Skipped by policy, now under a root with generation enabled.
+            Release::factory()->create($this->release(1, Category::MOVIE_HD, hasPreview: -2));
+            // Skipped by policy, root still disabled: left alone.
+            Release::factory()->create($this->release(2, Category::TV_HD, hasPreview: -2));
+            // Attempted-none in the disabled root: not requeued either.
+            Release::factory()->create($this->release(3, Category::TV_WEBDL));
+            // Attempted-none in an enabled root: still requeued.
+            Release::factory()->create($this->release(4, Category::MOVIE_WEBDL));
+        });
+
+        $this->artisan('releases:requeue-missing-video-previews', ['--dry-run' => true])
+            ->expectsOutputToContain('Dry run: 2 releases would be re-queued.')
+            ->assertSuccessful();
+
+        $this->assertSame(-2, DB::table('releases')->where('id', 1)->value('haspreview'));
+
+        $this->artisan('releases:requeue-missing-video-previews', ['--apply' => true])
+            ->expectsOutputToContain('Re-queued 2 releases.')
+            ->assertSuccessful();
+
+        $this->assertSame(-1, DB::table('releases')->where('id', 1)->value('haspreview'));
+        $this->assertSame(-2, DB::table('releases')->where('id', 2)->value('haspreview'));
+        $this->assertSame(0, DB::table('releases')->where('id', 3)->value('haspreview'));
+        $this->assertSame(-1, DB::table('releases')->where('id', 4)->value('haspreview'));
     }
 
     public function test_it_rejects_conflicting_execution_modes(): void
