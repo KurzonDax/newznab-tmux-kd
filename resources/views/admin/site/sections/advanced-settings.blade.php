@@ -101,6 +101,23 @@
                         </div>
 
                         <div>
+                            <span class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                <i class="fas fa-photo-video mr-1"></i>Preview Generation per Root Category
+                            </span>
+                            <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                                @foreach ($previewRoots ?? [] as $previewRoot)
+                                    <label class="flex items-center">
+                                        <input type="checkbox" name="generate_previews[{{ $previewRoot->id }}]" value="1"
+                                               @checked($previewRoot->generate_previews)
+                                               class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700">
+                                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">{{ $previewRoot->title }}</span>
+                                    </label>
+                                @endforeach
+                            </div>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Preview Generation (the ffmpeg preview image and sample video above, plus the sample-article downloads that feed them) only runs for releases in checked root categories. Combined with the two global switches above: both the global switch and the root's checkbox must be on. Unchecking a root never deletes existing previews. Password inspection, extracted sample images, and mediainfo are unaffected.</p>
+                        </div>
+
+                        <div>
                             <label for="segmentstodownload" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                                 <i class="fas fa-download mr-1"></i>Number of Segments to Download
                             </label>

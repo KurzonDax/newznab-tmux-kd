@@ -17,6 +17,7 @@ use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
 use App\Services\Releases\ExecutableReleaseDiscardService;
+use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use App\Services\Releases\ReleaseManagementService;
@@ -303,6 +304,7 @@ final class ReleaseProcessingService
     public function categorizeRelease(string $type, int|string|null $groupId): int
     {
         $categorizer = new CategorizationService;
+        $previewPolicy = new PreviewGenerationPolicy;
         $categorized = 0;
 
         $query = Release::query()
@@ -321,7 +323,7 @@ final class ReleaseProcessingService
 
         $this->outputSubHeader('Categorizing Releases');
 
-        $query->chunkById(self::CATEGORIZE_CHUNK_SIZE, function ($releases) use ($categorizer, $type, &$categorized, $total): bool {
+        $query->chunkById(self::CATEGORIZE_CHUNK_SIZE, function ($releases) use ($categorizer, $previewPolicy, $type, &$categorized, $total): bool {
             foreach ($releases as $release) {
                 $categoryResult = $categorizer->determineCategory(
                     $release->groups_id,
@@ -336,6 +338,7 @@ final class ReleaseProcessingService
                         'iscategorized' => 1,
                     ]);
 
+                $previewPolicy->restoreOwedPreviews([(int) $release->id]);
                 ReleaseSearchIndexSync::forIds([(int) $release->id]);
 
                 $categorized++;

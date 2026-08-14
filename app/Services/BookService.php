@@ -12,6 +12,7 @@ use App\Models\Category;
 use App\Models\Release;
 use App\Models\Settings;
 use App\Services\NameFixing\Extractors\ObfuscatedSubjectExtractor;
+use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Support\BookMatchScorer;
 use App\Support\Data\BookParseResult;
@@ -540,6 +541,7 @@ class BookService
                     cli()->headerOver('Changing category to misc books: ').cli()->primary($releasename);
                 }
                 Release::query()->where('id', $releaseID)->update(['categories_id' => Category::BOOKS_UNKNOWN]);
+                (new PreviewGenerationPolicy)->restoreOwedPreviews([(int) $releaseID]);
                 Search::updateRelease((int) $releaseID);
 
                 return false;
@@ -550,6 +552,7 @@ class BookService
                     cli()->headerOver('Changing category to magazines: ').cli()->primary($releasename);
                 }
                 Release::query()->where('id', $releaseID)->update(['categories_id' => Category::BOOKS_MAGAZINES]);
+                (new PreviewGenerationPolicy)->restoreOwedPreviews([(int) $releaseID]);
                 Search::updateRelease((int) $releaseID);
 
                 return false;

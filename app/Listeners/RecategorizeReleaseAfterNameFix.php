@@ -7,11 +7,15 @@ namespace App\Listeners;
 use App\Events\ReleaseNameFixed;
 use App\Models\Release;
 use App\Services\Categorization\CategorizationService;
+use App\Services\Releases\PreviewGenerationPolicy;
 use Illuminate\Support\Facades\Log;
 
 class RecategorizeReleaseAfterNameFix
 {
-    public function __construct(private readonly CategorizationService $categorization) {}
+    public function __construct(
+        private readonly CategorizationService $categorization,
+        private readonly PreviewGenerationPolicy $previewPolicy = new PreviewGenerationPolicy,
+    ) {}
 
     public function handle(ReleaseNameFixed $event): void
     {
@@ -46,6 +50,8 @@ class RecategorizeReleaseAfterNameFix
                 'categories_id' => $newCategoryId,
                 'iscategorized' => 1,
             ]);
+
+        $this->previewPolicy->restoreOwedPreviews([(int) $release->id]);
 
         if (config('nntmux.categorization.log', false)) {
             Log::info('categorization.rename_recategorized', [

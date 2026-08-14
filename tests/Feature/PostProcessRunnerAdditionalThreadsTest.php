@@ -98,7 +98,7 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
 
     public function test_process_additional_uses_configured_postthreads_for_streaming_process_pool(): void
     {
-        DB::table('categories')->insert(['id' => 1, 'disablepreview' => 0]);
+        DB::table('categories')->insert(['id' => 1]);
         foreach (['0', '1', '2', '3', '4'] as $index => $leftguid) {
             DB::table('releases')->insert($this->releaseRow($index + 1, $leftguid));
         }
@@ -129,7 +129,7 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
 
     public function test_process_additional_repeats_hot_bucket_to_fill_configured_threads(): void
     {
-        DB::table('categories')->insert(['id' => 1, 'disablepreview' => 0]);
+        DB::table('categories')->insert(['id' => 1]);
         foreach (range(1, 125) as $id) {
             DB::table('releases')->insert($this->releaseRow($id, 'a'));
         }
@@ -162,7 +162,7 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
 
     public function test_process_additional_does_not_start_idle_workers_for_a_small_hot_bucket(): void
     {
-        DB::table('categories')->insert(['id' => 1, 'disablepreview' => 0]);
+        DB::table('categories')->insert(['id' => 1]);
         foreach (range(1, 5) as $id) {
             DB::table('releases')->insert($this->releaseRow($id, 'a'));
         }
@@ -261,7 +261,7 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
 
     public function test_targeted_additional_command_reports_a_successful_typed_outcome(): void
     {
-        DB::table('categories')->insert(['id' => 1, 'disablepreview' => 0]);
+        DB::table('categories')->insert(['id' => 1]);
         DB::table('releases')->insert($this->releaseRow(1, 'a'));
 
         $this->mock(AdditionalProcessingOrchestrator::class, function (MockInterface $mock): void {
@@ -296,7 +296,7 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
 
     public function test_targeted_additional_command_fails_for_an_unsuccessful_typed_outcome(): void
     {
-        DB::table('categories')->insert(['id' => 1, 'disablepreview' => 0]);
+        DB::table('categories')->insert(['id' => 1]);
         DB::table('releases')->insert($this->releaseRow(1, 'a'));
 
         $this->mock(AdditionalProcessingOrchestrator::class, function (MockInterface $mock): void {
@@ -330,7 +330,7 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
             ['name' => 'maxaddprocessed', 'value' => '25'],
             ['name' => 'maxpptimeoutcount', 'value' => '3'],
         ], ['name'], ['value']);
-        DB::table('categories')->insert(['id' => 1, 'disablepreview' => 0]);
+        DB::table('categories')->insert(['id' => 1]);
         DB::table('releases')->insert([
             ...$this->releaseRow(1, 'a'),
             'additional_pp_claimed_at' => now()->subHour(),
@@ -439,7 +439,6 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
 
         Schema::create('categories', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
-            $table->boolean('disablepreview')->default(false);
         });
 
         Schema::create('releases', function (Blueprint $table): void {

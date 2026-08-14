@@ -87,9 +87,8 @@ final class AdditionalCandidateQuery
     /**
      * Apply the candidate-selection predicates to an Eloquent builder.
      *
-     * The builder MUST already be aliased as `r` for releases and joined to
-     * `categories as c`. Optional group / GUID-character constraints can be
-     * applied on top.
+     * The builder MUST already be aliased as `r` for releases. Optional
+     * group / GUID-character constraints can be applied on top.
      *
      * @param  Builder<Release>  $query
      * @return Builder<Release>
@@ -107,8 +106,7 @@ final class AdditionalCandidateQuery
         $query
             ->where('r.passwordstatus', PasswordInspectionMode::pendingReleaseStatus())
             ->where('r.haspreview', -1)
-            ->where('r.nzbstatus', 1)
-            ->where('c.disablepreview', 0);
+            ->where('r.nzbstatus', 1);
         if ($min > 0) {
             $query->where('r.size', '>', $min);
         }
@@ -129,8 +127,8 @@ final class AdditionalCandidateQuery
     }
 
     /**
-     * Return a fresh Eloquent builder, joined and predicate-applied, ready for
-     * the orchestrator to add selects / order / limit.
+     * Return a fresh Eloquent builder, aliased and predicate-applied, ready
+     * for the orchestrator to add selects / order / limit.
      *
      * @return Builder<Release>
      */
@@ -141,9 +139,7 @@ final class AdditionalCandidateQuery
         ?int $maxSizeBytes = null,
         bool $includeClaimed = false,
     ): Builder {
-        $query = Release::query()
-            ->from('releases as r')
-            ->leftJoin('categories as c', 'c.id', '=', 'r.categories_id');
+        $query = Release::query()->from('releases as r');
 
         return self::applyPredicates($query, $groupID, $guidChar, $minSizeBytes, $maxSizeBytes, $includeClaimed);
     }

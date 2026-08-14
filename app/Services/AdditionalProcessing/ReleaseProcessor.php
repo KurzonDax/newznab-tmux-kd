@@ -13,6 +13,7 @@ use App\Services\AdditionalProcessing\Enums\ProcessingStage;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ProcessingMetrics;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
+use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\TempWorkspaceService;
 use Illuminate\Support\Facades\File;
@@ -40,6 +41,7 @@ class ReleaseProcessor
         private readonly ConsoleOutputService $output,
         private readonly ?ReleaseSearchSyncCoordinator $searchSyncCoordinator = null,
         private readonly ?PersistenceMetricsCollector $persistenceMetricsCollector = null,
+        private readonly PreviewGenerationPolicy $previewPolicy = new PreviewGenerationPolicy,
     ) {}
 
     public function process(ReleaseProcessingContext $context, string $mainTmpPath): ReleaseProcessingResult
@@ -273,13 +275,23 @@ class ReleaseProcessor
 
     private function initializeContext(ReleaseProcessingContext $context): void
     {
+        // Per-root Preview Generation toggle (ADR 0004): AND-ed with the
+        // site-wide switches, it can only disable the two ffmpeg artifacts
+        // (Generated Preview + Generated Sample Video) and the sample-article
+        // downloads dedicated to them. Pre-marking the found flags makes every
+        // downstream sample/video step skip naturally; mediainfo, passwords,
+        // audio and Extracted Sample Images are untouched.
+        $previewGenerationAllowed = $this->previewPolicy
+            ->generationEnabledForCategory((int) $context->release->categories_id);
+        $context->previewGenerationSkippedByPolicy = ! $previewGenerationAllowed;
+
         $context->initializeFromConfig(
-            $this->config->processVideo,
+            $this->config->processVideo && $previewGenerationAllowed,
             $this->config->processMediaInfo,
             $this->config->processAudioInfo,
             $this->config->processAudioSample,
             $this->config->processJPGSample,
-            $this->config->processThumbnails
+            $this->config->processThumbnails && $previewGenerationAllowed
         );
 
         $context->passwordStatus = ReleaseBrowseService::PASSWD_NONE;
@@ -338,11 +350,15 @@ class ReleaseProcessor
 
     private function createdArtifacts(ReleaseProcessingContext $context, bool $releaseNeededNfo): bool
     {
+        // Policy-skipped previews pre-mark foundVideo/foundSample; they must
+        // not count as created artifacts.
+        $previewGenerationAllowed = ! $context->previewGenerationSkippedByPolicy;
+
         return $context->releaseFilesChanged
             || $context->foundPAR2Info
             || ($releaseNeededNfo && ! $context->releaseHasNoNFO)
-            || ($this->config->processVideo && $context->foundVideo)
-            || ($this->config->processThumbnails && $context->foundSample)
+            || ($this->config->processVideo && $previewGenerationAllowed && $context->foundVideo)
+            || ($this->config->processThumbnails && $previewGenerationAllowed && $context->foundSample)
             || ($this->config->processJPGSample && $context->foundJPGSample)
             || ($this->config->processMediaInfo && $context->foundMediaInfo)
             || ($this->config->processAudioInfo && $context->foundAudioInfo)

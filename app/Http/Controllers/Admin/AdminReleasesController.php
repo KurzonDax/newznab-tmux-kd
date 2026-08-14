@@ -8,6 +8,7 @@ use App\Http\Controllers\BasePageController;
 use App\Http\Requests\Admin\AdminReleaseListRequest;
 use App\Models\Category;
 use App\Models\Release;
+use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseManagementService;
 use Illuminate\Foundation\Application;
 use Illuminate\Http\RedirectResponse;
@@ -111,6 +112,8 @@ class AdminReleasesController extends BasePageController
                     $validated['imdbid'] ?? null,
                     $validated['anidbid'] ?? null
                 );
+
+                app(PreviewGenerationPolicy::class)->restoreOwedPreviews([(int) $validated['id']]);
 
                 return redirect('details/'.$validated['guid'])->with('success', 'Release updated successfully');
 

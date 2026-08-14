@@ -19,6 +19,7 @@ use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
 use App\Services\AdditionalProcessing\UsenetDownloadService;
+use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\TempWorkspaceService;
 use Mockery;
@@ -125,6 +126,7 @@ class ReleaseProcessorTest extends TestCase
             $output,
             $searchSyncCoordinator,
             $persistenceMetrics,
+            previewPolicy: $this->stubPreviewPolicy(),
         );
 
         $context = $this->makeContext();
@@ -180,6 +182,7 @@ class ReleaseProcessorTest extends TestCase
                 ->shouldReceive('echoReleaseStart')->once()->andReturnNull()
                 ->shouldReceive('setProcessTitle')->once()->andReturnNull()
                 ->getMock(),
+            previewPolicy: $this->stubPreviewPolicy(),
         );
 
         $context = $this->makeContext();
@@ -225,7 +228,8 @@ class ReleaseProcessorTest extends TestCase
             $releaseManager,
             Mockery::mock(ReleaseFilesArchiveFallback::class),
             $tempWorkspace,
-            $output
+            $output,
+            previewPolicy: $this->stubPreviewPolicy(),
         );
 
         $context = $this->makeContext();
@@ -269,7 +273,8 @@ class ReleaseProcessorTest extends TestCase
             $releaseManager,
             Mockery::mock(ReleaseFilesArchiveFallback::class),
             $tempWorkspace,
-            $output
+            $output,
+            previewPolicy: $this->stubPreviewPolicy(),
         );
 
         $context = $this->makeContext();
@@ -341,7 +346,8 @@ class ReleaseProcessorTest extends TestCase
             $releaseManager,
             Mockery::mock(ReleaseFilesArchiveFallback::class),
             $this->successfulTempWorkspace(),
-            $this->passwordOutput()
+            $this->passwordOutput(),
+            previewPolicy: $this->stubPreviewPolicy(),
         );
 
         $context = $this->makeContext();
@@ -387,7 +393,8 @@ class ReleaseProcessorTest extends TestCase
             $releaseManager,
             Mockery::mock(ReleaseFilesArchiveFallback::class),
             $this->successfulTempWorkspace(),
-            $output
+            $output,
+            previewPolicy: $this->stubPreviewPolicy(),
         );
 
         $context = $this->makeContext();
@@ -454,6 +461,7 @@ class ReleaseProcessorTest extends TestCase
             Mockery::mock(ReleaseFilesArchiveFallback::class),
             $tempWorkspace,
             $output,
+            previewPolicy: $this->stubPreviewPolicy(),
         );
 
         $context = $this->makeContext();
@@ -467,6 +475,67 @@ class ReleaseProcessorTest extends TestCase
             @unlink($tmpPath.'media.avi');
             @rmdir($tmpPath);
         }
+    }
+
+    #[Test]
+    public function it_skips_sample_downloads_and_ffmpeg_when_the_root_category_disables_preview_generation(): void
+    {
+        $config = $this->makeConfig([
+            'processThumbnails' => true,
+            'processVideo' => true,
+        ]);
+
+        $nzbParser = Mockery::mock(NzbContentParser::class);
+        $nzbParser->shouldReceive('parseNzb')->once()->andReturn([
+            'error' => null,
+            'contents' => [['title' => 'movie.sample.mkv" yEnc', 'segments' => ['sample-message-id']]],
+        ]);
+
+        // No download() expectation: a sample-article download attempt would
+        // fail the test as an unexpected mock call.
+        $downloadService = $this->scopedDownloadService();
+
+        $releaseManager = Mockery::mock(ReleaseFileManager::class);
+        $releaseManager->shouldReceive('processReleaseNameFromNzbContents')->once()->andReturnFalse();
+        $finalizedContext = null;
+        $releaseManager->shouldReceive('finalizeRelease')
+            ->once()
+            ->andReturnUsing(static function (ReleaseProcessingContext $context) use (&$finalizedContext): void {
+                $finalizedContext = $context;
+            });
+
+        $tempWorkspace = Mockery::mock(TempWorkspaceService::class);
+        $tempWorkspace->shouldReceive('createReleaseTempFolder')->once()->andReturn($this->releaseTempPath);
+        $tempWorkspace->shouldReceive('clearDirectory')->once()->with($this->releaseTempPath, false)->andReturnNull();
+
+        $output = Mockery::mock(ConsoleOutputService::class);
+        $output->shouldReceive('echoReleaseStart')->once();
+        $output->shouldReceive('setProcessTitle')->once();
+
+        $processor = new ReleaseProcessor(
+            $config,
+            $nzbParser,
+            new AdditionalWorkPlanner($config),
+            Mockery::mock(ArchiveExtractionService::class),
+            Mockery::mock(MediaExtractionService::class),
+            $downloadService,
+            $releaseManager,
+            Mockery::mock(ReleaseFilesArchiveFallback::class),
+            $tempWorkspace,
+            $output,
+            previewPolicy: $this->stubPreviewPolicy(enabled: false),
+        );
+
+        $context = $this->makeContext();
+        $context->release->nfostatus = 1;
+        $result = $processor->process($context, $this->mainTempPath);
+
+        $this->assertNotNull($finalizedContext);
+        $this->assertTrue($finalizedContext->previewGenerationSkippedByPolicy);
+        $this->assertTrue($finalizedContext->foundSample, 'Pre-marked so the sample pipeline never runs.');
+        $this->assertTrue($finalizedContext->foundVideo, 'Pre-marked so the video pipeline never runs.');
+        $this->assertSame(ProcessingOutcome::NoUsefulArtifacts, $result->outcome);
+        $this->assertFalse($result->artifactsCreated, 'Pre-marked flags must not count as created artifacts.');
     }
 
     private function makeProcessor(
@@ -487,7 +556,8 @@ class ReleaseProcessorTest extends TestCase
             $releaseManager ?? Mockery::mock(ReleaseFileManager::class),
             Mockery::mock(ReleaseFilesArchiveFallback::class),
             $tempWorkspace ?? Mockery::mock(TempWorkspaceService::class),
-            $output ?? Mockery::mock(ConsoleOutputService::class)
+            $output ?? Mockery::mock(ConsoleOutputService::class),
+            previewPolicy: $this->stubPreviewPolicy(),
         );
     }
 
@@ -501,6 +571,23 @@ class ReleaseProcessorTest extends TestCase
             'nfostatus' => -1,
             'pp_timeout_count' => 0,
         ]));
+    }
+
+    /**
+     * DB-free policy double: the real service resolves the leaf category's
+     * root toggle from the database, which unit tests do not have.
+     */
+    private function stubPreviewPolicy(bool $enabled = true): PreviewGenerationPolicy
+    {
+        return new class($enabled) extends PreviewGenerationPolicy
+        {
+            public function __construct(private readonly bool $enabled) {}
+
+            public function generationEnabledForCategory(int $categoriesId): bool
+            {
+                return $this->enabled;
+            }
+        };
     }
 
     private function compressedNzbParser(): NzbContentParser

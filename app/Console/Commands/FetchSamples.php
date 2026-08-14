@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Models\Release;
+use App\Services\Releases\PreviewGenerationPolicy;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
 
@@ -47,6 +48,27 @@ class FetchSamples extends Command
 
             return self::SUCCESS;
         }
+
+        // Releases in roots with Preview Generation disabled are skipped; the
+        // reprocessing this command triggers would only re-record the skip.
+        $previewPolicy = new PreviewGenerationPolicy;
+        [$enabledCatIds, $disabledCatIds] = $catIds->partition(
+            fn (int $categoryId): bool => $previewPolicy->generationEnabledForCategory($categoryId)
+        );
+
+        if ($disabledCatIds->isNotEmpty()) {
+            $this->warn(
+                'Skipping category id(s) ['.$disabledCatIds->implode(', ').']: Preview Generation is disabled for their root categories.'
+            );
+        }
+
+        if ($enabledCatIds->isEmpty()) {
+            $this->info('All supplied categories belong to roots with Preview Generation disabled. Command will not run.');
+
+            return self::SUCCESS;
+        }
+
+        $catIds = $enabledCatIds->values();
 
         if ($limit < 0) {
             $this->error('Limit must be >= 0');

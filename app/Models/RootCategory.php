@@ -14,8 +14,8 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property string $title
  * @property int $status
- * @property int $disablepreview
  * @property bool $discard_executables
+ * @property bool $generate_previews
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Collection|Category[] $categories
@@ -24,7 +24,6 @@ use Illuminate\Support\Carbon;
  * @method static \Illuminate\Database\Eloquent\Builder|\App\Models\RootCategory newQuery()
  * @method static \Illuminate\Database\Eloquent\Builder|\App\Models\RootCategory query()
  * @method static \Illuminate\Database\Eloquent\Builder|\App\Models\RootCategory whereCreatedAt($value)
- * @method static \Illuminate\Database\Eloquent\Builder|\App\Models\RootCategory whereDisablepreview($value)
  * @method static \Illuminate\Database\Eloquent\Builder|\App\Models\RootCategory whereId($value)
  * @method static \Illuminate\Database\Eloquent\Builder|\App\Models\RootCategory whereStatus($value)
  * @method static \Illuminate\Database\Eloquent\Builder|\App\Models\RootCategory whereTitle($value)
@@ -43,6 +42,7 @@ class RootCategory extends Model
     {
         return [
             'discard_executables' => 'boolean',
+            'generate_previews' => 'boolean',
         ];
     }
 

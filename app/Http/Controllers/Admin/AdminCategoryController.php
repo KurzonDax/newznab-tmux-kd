@@ -63,7 +63,6 @@ class AdminCategoryController extends BasePageController
                 $category->root_categories_id = $request->input('root_categories_id') ?: null;
                 $category->status = Category::STATUS_ACTIVE;  // Always active
                 $category->description = $request->input('description');
-                $category->disablepreview = false;  // Always enabled
                 $category->minsizetoformrelease = 0;
                 $category->maxsizetoformrelease = 0;
                 $category->save();
@@ -108,7 +107,6 @@ class AdminCategoryController extends BasePageController
                     $category->root_categories_id = $request->input('root_categories_id') ?: null;
                     $category->status = Category::STATUS_ACTIVE;  // Always active
                     $category->description = $request->input('description');
-                    $category->disablepreview = false;  // Always enabled
                     $category->minsizetoformrelease = 0;
                     $category->maxsizetoformrelease = 0;
                     $category->save();

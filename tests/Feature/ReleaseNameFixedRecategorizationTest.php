@@ -8,6 +8,7 @@ use App\Facades\Search;
 use App\Models\Category;
 use App\Models\Release;
 use App\Models\UsenetGroup;
+use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use App\Services\NameFixing\ReleaseUpdateService;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Schema\Blueprint;
@@ -128,6 +129,54 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
         $this->assertSame(Category::TV_HD, $release->categories_id);
         $this->assertSame(1, (int) $release->iscategorized);
         $this->assertSame(1, (int) $release->isrenamed);
+    }
+
+    public function test_renaming_a_policy_skipped_release_flips_it_back_to_pending(): void
+    {
+        // Two syncs from the rename path plus one from the owed-preview flip.
+        Search::shouldReceive('updateRelease')->times(3);
+
+        $group = UsenetGroup::query()->create([
+            'name' => 'alt.binaries.hdtv',
+            'active' => 1,
+            'backfill' => 0,
+        ]);
+
+        $release = Release::factory()->create([
+            'name' => 'd41d8cd98f00b204e9800998ecf8427e',
+            'searchname' => 'd41d8cd98f00b204e9800998ecf8427e',
+            'fromname' => 'poster@example.com',
+            'groups_id' => $group->id,
+            'categories_id' => Category::OTHER_HASHED,
+            'iscategorized' => 1,
+            'isrenamed' => 0,
+            'guid' => str_repeat('b', 40),
+            'leftguid' => 'b',
+            'size' => 1,
+            'postdate' => now(),
+            'adddate' => now(),
+            'haspreview' => -2,
+            'passwordstatus' => 0,
+        ]);
+
+        app(ReleaseUpdateService::class)->updateRelease(
+            $release->fresh(),
+            'Show.Name.S03E05.720p.HDTV.x264-GROUP',
+            'nfoCheck: Title Match',
+            true,
+            'NFO, ',
+            true,
+            false,
+        );
+
+        $release->refresh();
+
+        $this->assertSame(Category::TV_HD, $release->categories_id);
+        $this->assertSame(-1, (int) $release->haspreview, 'The name-fix listener owes the release a regeneration.');
+        $this->assertSame(
+            PasswordInspectionMode::pendingReleaseStatus(),
+            (int) $release->passwordstatus
+        );
     }
 
     public function test_renaming_tv_episode_to_full_season_keeps_it_out_of_movies(): void
@@ -315,6 +364,14 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             });
         }
 
+        if (! Schema::hasTable('root_categories')) {
+            Schema::create('root_categories', function (Blueprint $table): void {
+                $table->unsignedInteger('id')->primary();
+                $table->string('title')->default('');
+                $table->boolean('generate_previews')->default(true);
+            });
+        }
+
         if (! Schema::hasTable('usenet_groups')) {
             Schema::create('usenet_groups', function (Blueprint $table): void {
                 $table->increments('id');
@@ -364,6 +421,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
                 $table->tinyInteger('proc_srr')->default(0);
                 $table->tinyInteger('proc_crc32')->default(0);
                 $table->tinyInteger('passwordstatus')->default(0);
+                $table->tinyInteger('haspreview')->default(0);
                 $table->tinyInteger('nzbstatus')->default(0);
             });
         }

@@ -85,7 +85,6 @@ class MusicControllerTest extends TestCase
             $table->unsignedInteger('id')->primary();
             $table->string('title');
             $table->integer('status')->default(1);
-            $table->boolean('disablepreview')->default(false);
             $table->timestamps();
         });
 
@@ -95,7 +94,6 @@ class MusicControllerTest extends TestCase
             $table->unsignedInteger('parentid')->nullable();
             $table->integer('status')->default(1);
             $table->text('description')->nullable();
-            $table->boolean('disablepreview')->default(false);
             $table->unsignedBigInteger('minsizetoformrelease')->default(0);
             $table->unsignedBigInteger('maxsizetoformrelease')->default(0);
             $table->unsignedInteger('root_categories_id')->nullable();
@@ -108,7 +106,6 @@ class MusicControllerTest extends TestCase
             'id' => Category::MUSIC_ROOT,
             'title' => 'Music',
             'status' => 1,
-            'disablepreview' => 0,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -119,7 +116,6 @@ class MusicControllerTest extends TestCase
             'parentid' => Category::MUSIC_ROOT,
             'status' => 1,
             'description' => 'Music',
-            'disablepreview' => 0,
             'minsizetoformrelease' => 0,
             'maxsizetoformrelease' => 0,
             'root_categories_id' => Category::MUSIC_ROOT,
