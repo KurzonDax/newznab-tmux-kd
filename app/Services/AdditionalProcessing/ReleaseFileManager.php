@@ -11,6 +11,7 @@ use App\Models\ParHash;
 use App\Models\Predb;
 use App\Models\Release;
 use App\Models\ReleaseFile;
+use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
@@ -45,6 +46,8 @@ class ReleaseFileManager
 
     private readonly ExecutableReleaseDiscardService $discardService;
 
+    private readonly PreviewGenerationPolicy $previewPolicy;
+
     public function __construct(
         private readonly ProcessingConfiguration $config,
         private readonly ReleaseImageService $releaseImage,
@@ -55,6 +58,7 @@ class ReleaseFileManager
         ?FileNameCleaner $fileNameCleaner = null,
         ?ReleaseSearchSyncCoordinator $searchSyncCoordinator = null,
         ?ExecutableReleaseDiscardService $discardService = null,
+        ?PreviewGenerationPolicy $previewPolicy = null,
     ) {
         $this->searchSyncCoordinator = $searchSyncCoordinator
             ?? new ReleaseSearchSyncCoordinator(
@@ -64,6 +68,7 @@ class ReleaseFileManager
             ?? new ReleaseUpdateService(searchSyncCoordinator: $this->searchSyncCoordinator);
         $this->fileNameCleaner = $fileNameCleaner ?? new FileNameCleaner;
         $this->discardService = $discardService ?? new ExecutableReleaseDiscardService;
+        $this->previewPolicy = $previewPolicy ?? new PreviewGenerationPolicy;
     }
 
     /**
@@ -251,18 +256,33 @@ class ReleaseFileManager
             return;
         }
 
+        $thumbExists = $this->releaseImage->imageExists($this->releaseImage->imgSavePath, $context->release->guid.'_thumb');
+
+        // The category can change mid-run (e.g. the audio-mediainfo rename);
+        // when a policy-skipped release now sits under a root with generation
+        // enabled, it is owed a full re-run: leave it pending instead of
+        // recording the skip sentinel (ADR 0004 owed regeneration).
+        $previewOwedRequeue = false;
+        if ($context->previewGenerationSkippedByPolicy && ! $thumbExists) {
+            $currentCategoryId = (int) (Release::query()->where('id', $context->release->id)->value('categories_id')
+                ?? $context->release->categories_id);
+            $previewOwedRequeue = $this->previewPolicy->generationEnabledForCategory($currentCategoryId);
+        }
+
         // Skipped-by-policy releases record the -2 sentinel instead of 0
         // (attempted, none produced) so a later recategorization into a root
         // with generation enabled knows regeneration is owed (ADR 0004).
         $updateRows = [
-            'haspreview' => $context->previewGenerationSkippedByPolicy
-                ? PreviewGenerationPolicy::HASPREVIEW_SKIPPED_BY_POLICY
-                : 0,
+            'haspreview' => match (true) {
+                ! $context->previewGenerationSkippedByPolicy => 0,
+                $previewOwedRequeue => -1,
+                default => PreviewGenerationPolicy::HASPREVIEW_SKIPPED_BY_POLICY,
+            },
         ];
 
         // Check for existing samples; disabling a root never deletes existing
         // previews, so an artifact already on disk keeps the release visible.
-        if ($this->releaseImage->imageExists($this->releaseImage->imgSavePath, $context->release->guid.'_thumb')) {
+        if ($thumbExists) {
             $updateRows = ['haspreview' => 1];
         }
 
@@ -293,6 +313,7 @@ class ReleaseFileManager
             $updateRows,
             $processPasswords,
             $passwordStatus,
+            $previewOwedRequeue,
         ): int {
             $inserted = $pendingReleaseFiles === []
                 ? 0
@@ -307,7 +328,11 @@ class ReleaseFileManager
             if (! $context->releaseHasPassword && $context->nzbHasCompressedFile && $releaseFilesCount === 0) {
                 Release::query()->where('id', $context->release->id)->update($updateRows);
             } else {
-                $updateRows['passwordstatus'] = $processPasswords ? $passwordStatus : ReleaseBrowseService::PASSWD_NONE;
+                // An owed re-run must stay selectable: the candidate query
+                // matches the mode-aware pending password sentinel.
+                $updateRows['passwordstatus'] = $previewOwedRequeue
+                    ? PasswordInspectionMode::pendingReleaseStatus()
+                    : ($processPasswords ? $passwordStatus : ReleaseBrowseService::PASSWD_NONE);
                 $updateRows['rarinnerfilecount'] = $releaseFilesCount;
                 Release::query()->where('id', $context->release->id)->update($updateRows);
             }

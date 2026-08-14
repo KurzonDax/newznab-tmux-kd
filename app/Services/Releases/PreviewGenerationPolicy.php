@@ -55,20 +55,25 @@ class PreviewGenerationPolicy
     }
 
     /**
-     * Leaf category ids under roots with generation enabled.
+     * Leaf category ids under roots with generation disabled. Expressed as a
+     * disabled-list so unknown or rootless categories default to enabled
+     * everywhere, matching {@see generationEnabledForCategory()}.
      *
      * @return list<int>
      */
-    public function categoryIdsWithGenerationEnabled(): array
+    public function categoryIdsWithGenerationDisabled(): array
     {
-        $enabledRootIds = array_keys(array_filter($this->rootToggles()));
+        $disabledRootIds = array_keys(array_filter(
+            $this->rootToggles(),
+            static fn (bool $enabled): bool => ! $enabled,
+        ));
 
-        if ($enabledRootIds === []) {
+        if ($disabledRootIds === []) {
             return [];
         }
 
         return Category::query()
-            ->whereIn('root_categories_id', $enabledRootIds)
+            ->whereIn('root_categories_id', $disabledRootIds)
             ->pluck('id')
             ->map(static fn ($id): int => (int) $id)
             ->all();
@@ -102,16 +107,10 @@ class PreviewGenerationPolicy
             return 0;
         }
 
-        $enabledCategoryIds = $this->categoryIdsWithGenerationEnabled();
-
-        if ($enabledCategoryIds === []) {
-            return 0;
-        }
-
         $owedIds = Release::query()
             ->whereIn('id', $ids)
             ->where('haspreview', self::HASPREVIEW_SKIPPED_BY_POLICY)
-            ->whereIn('categories_id', $enabledCategoryIds)
+            ->whereNotIn('categories_id', $this->categoryIdsWithGenerationDisabled())
             ->pluck('id')
             ->map(static fn ($id): int => (int) $id)
             ->all();

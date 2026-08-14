@@ -68,7 +68,7 @@ class RequeueMissingVideoPreviews extends Command
         return $this->candidateUniverse()
             ->whereIn('haspreview', [0, PreviewGenerationPolicy::HASPREVIEW_SKIPPED_BY_POLICY])
             ->where('passwordstatus', 0)
-            ->whereIn('categories_id', (new PreviewGenerationPolicy)->categoryIdsWithGenerationEnabled());
+            ->whereNotIn('categories_id', (new PreviewGenerationPolicy)->categoryIdsWithGenerationDisabled());
     }
 
     /**

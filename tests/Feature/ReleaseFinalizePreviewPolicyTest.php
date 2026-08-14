@@ -39,6 +39,7 @@ class ReleaseFinalizePreviewPolicyTest extends TestCase
         Schema::create('releases', function (Blueprint $table): void {
             $table->id();
             $table->string('guid');
+            $table->unsignedInteger('categories_id')->default(0);
             $table->integer('haspreview')->default(0);
             $table->integer('videostatus')->default(0);
             $table->integer('jpgstatus')->default(0);
@@ -47,6 +48,28 @@ class ReleaseFinalizePreviewPolicyTest extends TestCase
             $table->timestamp('additional_pp_claimed_at')->nullable();
             $table->string('additional_pp_claim_token', 64)->nullable();
         });
+
+        Schema::create('root_categories', function (Blueprint $table): void {
+            $table->unsignedInteger('id')->primary();
+            $table->string('title')->default('');
+            $table->boolean('generate_previews')->default(true);
+        });
+
+        Schema::create('categories', function (Blueprint $table): void {
+            $table->unsignedInteger('id')->primary();
+            $table->string('title')->default('');
+            $table->unsignedInteger('root_categories_id')->nullable();
+        });
+
+        DB::table('root_categories')->insert([
+            ['id' => 3000, 'title' => 'Audio', 'generate_previews' => 1],
+            ['id' => 6000, 'title' => 'XXX', 'generate_previews' => 0],
+        ]);
+
+        DB::table('categories')->insert([
+            ['id' => 3010, 'root_categories_id' => 3000],
+            ['id' => 6010, 'root_categories_id' => 6000],
+        ]);
 
         Schema::create('release_files', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
@@ -72,7 +95,7 @@ class ReleaseFinalizePreviewPolicyTest extends TestCase
 
     public function test_finalize_records_the_skipped_by_policy_sentinel(): void
     {
-        DB::table('releases')->insert(['id' => 1, 'guid' => 'guid-1', 'haspreview' => -1]);
+        DB::table('releases')->insert(['id' => 1, 'guid' => 'guid-1', 'categories_id' => 6010, 'haspreview' => -1]);
 
         $context = $this->makeContext();
         $context->previewGenerationSkippedByPolicy = true;
@@ -86,7 +109,7 @@ class ReleaseFinalizePreviewPolicyTest extends TestCase
 
     public function test_finalize_records_zero_when_generation_was_allowed_but_produced_nothing(): void
     {
-        DB::table('releases')->insert(['id' => 1, 'guid' => 'guid-1', 'haspreview' => -1]);
+        DB::table('releases')->insert(['id' => 1, 'guid' => 'guid-1', 'categories_id' => 3010, 'haspreview' => -1]);
 
         $this->makeManager()->finalizeRelease($this->makeContext(), false);
 
@@ -95,7 +118,7 @@ class ReleaseFinalizePreviewPolicyTest extends TestCase
 
     public function test_finalize_keeps_an_existing_preview_visible_even_when_skipped_by_policy(): void
     {
-        DB::table('releases')->insert(['id' => 1, 'guid' => 'guid-1', 'haspreview' => -1]);
+        DB::table('releases')->insert(['id' => 1, 'guid' => 'guid-1', 'categories_id' => 6010, 'haspreview' => -1]);
 
         $context = $this->makeContext();
         $context->previewGenerationSkippedByPolicy = true;
@@ -103,6 +126,27 @@ class ReleaseFinalizePreviewPolicyTest extends TestCase
         $this->makeManager(thumbExists: true)->finalizeRelease($context, false);
 
         $this->assertSame(1, (int) DB::table('releases')->where('id', 1)->value('haspreview'));
+    }
+
+    public function test_finalize_leaves_a_mid_run_recategorized_release_pending_instead_of_stamping_the_sentinel(): void
+    {
+        // Skip was decided against the disabled root, but the audio-mediainfo
+        // rename moved the release into an enabled root during the same run.
+        DB::table('releases')->insert(['id' => 1, 'guid' => 'guid-1', 'categories_id' => 3010, 'haspreview' => -1]);
+
+        config([
+            'nntmux_settings.check_passworded_rars' => false,
+            'nntmux_settings.unrar_path' => '/usr/bin/unrar',
+        ]);
+
+        $context = $this->makeContext();
+        $context->previewGenerationSkippedByPolicy = true;
+
+        $this->makeManager()->finalizeRelease($context, false);
+
+        $row = DB::table('releases')->where('id', 1)->first();
+        $this->assertSame(-1, (int) $row->haspreview, 'Owed a full re-run, so it stays pending.');
+        $this->assertSame(0, (int) $row->passwordstatus, 'Pending password sentinel is mode-aware.');
     }
 
     private function makeContext(): ReleaseProcessingContext

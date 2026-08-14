@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Facades\Search;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use App\Services\Releases\PreviewGenerationPolicy;
+use App\Services\Releases\ReleaseManagementService;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
@@ -93,12 +94,26 @@ class PreviewGenerationPolicyTest extends TestCase
         $this->assertTrue($policy->generationEnabledForCategory(999999), 'Unknown categories stay enabled.');
     }
 
-    public function test_enabled_category_ids_cover_only_roots_with_generation_on(): void
+    public function test_disabled_category_ids_cover_only_roots_with_generation_off(): void
     {
-        $ids = (new PreviewGenerationPolicy)->categoryIdsWithGenerationEnabled();
-        sort($ids);
+        $ids = (new PreviewGenerationPolicy)->categoryIdsWithGenerationDisabled();
 
-        $this->assertSame([2040, 2080, 5040], $ids);
+        $this->assertSame([6010], $ids);
+    }
+
+    public function test_restore_treats_rootless_categories_as_enabled(): void
+    {
+        Search::shouldReceive('updateRelease')->andReturnNull();
+
+        DB::table('categories')->insert([
+            ['id' => 7777, 'title' => 'Orphan', 'root_categories_id' => null],
+        ]);
+        DB::table('releases')->insert([
+            $this->releaseRow(1, 7777, hasPreview: -2, passwordStatus: 0),
+        ]);
+
+        $this->assertSame(1, (new PreviewGenerationPolicy)->restoreOwedPreviews([1]));
+        $this->assertSame(-1, (int) DB::table('releases')->where('id', 1)->value('haspreview'));
     }
 
     public function test_restore_flips_skipped_releases_in_enabled_roots_back_to_pending(): void
@@ -153,6 +168,24 @@ class PreviewGenerationPolicyTest extends TestCase
     {
         $this->assertSame(0, (new PreviewGenerationPolicy)->restoreOwedPreviews([]));
         $this->assertSame(0, (new PreviewGenerationPolicy)->restoreOwedPreviews([0, -5]));
+    }
+
+    public function test_bulk_recategorize_endpoint_service_flips_owed_previews(): void
+    {
+        $this->setPasswordInspection(true);
+        Search::shouldReceive('updateRelease')->andReturnNull();
+
+        DB::table('releases')->insert([
+            $this->releaseRow(1, 6010, hasPreview: -2, passwordStatus: 0),
+        ]);
+
+        $updated = (new ReleaseManagementService)->bulkUpdateCategory(['guid-1'], 2040);
+
+        $this->assertSame(1, $updated);
+        $row = DB::table('releases')->where('id', 1)->first();
+        $this->assertSame(2040, (int) $row->categories_id);
+        $this->assertSame(-1, (int) $row->haspreview, 'Bulk recategorize into an enabled root flips the sentinel.');
+        $this->assertSame(-1, (int) $row->passwordstatus);
     }
 
     private function setPasswordInspection(bool $enabled): void
@@ -218,6 +251,7 @@ class PreviewGenerationPolicyTest extends TestCase
             $table->integer('categories_id');
             $table->integer('haspreview')->default(0);
             $table->integer('passwordstatus')->default(0);
+            $table->integer('iscategorized')->default(0);
         });
 
         DB::table('root_categories')->insert([
