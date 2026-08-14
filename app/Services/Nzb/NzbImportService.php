@@ -642,17 +642,27 @@ class NzbImportService
                 ]
             );
         } catch (UniqueConstraintViolationException $exception) {
-            if ($importHash === null
-                || ! Release::query()->where('collectionhash', $importHash)->exists()) {
+            $existing = $importHash === null
+                ? null
+                : Release::query()
+                    ->where('collectionhash', $importHash)
+                    ->first(['id', 'searchname', 'fromname', 'size', 'name']);
+
+            if ($existing === null) {
                 throw $exception;
             }
 
             Log::info('NZB import skipped as duplicate', [
                 'reason' => 'collectionhash_match',
+                'matched_release_id' => $existing->id,
                 'new_searchname' => $escapedSearchName,
+                'existing_searchname' => $existing->searchname,
                 'new_size' => (int) $nzbDetails['totalSize'],
+                'existing_size' => (int) $existing->size,
                 'new_fromname' => $escapedFromName,
+                'existing_fromname' => $existing->fromname,
                 'new_name' => $escapedSubject,
+                'existing_name' => $existing->name,
             ]);
             $this->echoOut('This release is already in our DB so skipping: '.$subject);
 
