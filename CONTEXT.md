@@ -54,3 +54,17 @@ _Avoid_: plain "delete" when contrasting with Hide — the distinction is the po
 
 **Hide**:
 Marking a release passworded (via the `innerfileblacklist` regex) so browse, search, and API surfaces can exclude it while the release and all its artifacts are kept. The reversible counterpart to Discard; the two mechanisms are independent and both remain active.
+
+**Generated Preview**:
+The single still image the indexer captures (via ffmpeg) from a video file found inside a release. Created by the indexer, not shipped in the release.
+_Avoid_: "thumbnail" in UI copy — thumbnails are the small rendering of any image, not this artifact.
+
+**Generated Sample Video**:
+The short video clip the indexer cuts (via ffmpeg) from a video file found inside a release. Paired with the Generated Preview under Preview Generation.
+
+**Extracted Sample Image**:
+An image that already exists inside a release's archives (or as its own article) and is saved out as-is. Never produced by ffmpeg and never affected by Preview Generation controls.
+_Avoid_: plain "sample" when the generated/extracted distinction matters.
+
+**Preview Generation**:
+The umbrella for creating Generated Previews and Generated Sample Videos. Toggleable per root category (covering the root's entire subtree, no child overrides) and AND-ed with the site-wide switches — the per-root toggle can only disable, never enable. Disabling never deletes existing artifacts. A release skipped by the toggle is owed generation if later recategorized into a root where generation is enabled; re-enabling a root's toggle owes nothing (explicit requeue is the backfill tool).
