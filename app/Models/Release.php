@@ -214,6 +214,7 @@ class Release extends Model
                     'iscategorized' => 1,
                     'predb_id' => $parameters['predb_id'],
                     'source' => $parameters['source'] ?? null,
+                    'collectionhash' => $parameters['collectionhash'] ?? null,
                 ]
             );
 
