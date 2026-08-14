@@ -27,6 +27,12 @@
         </div>
     @endif
 
+    @if($errors->any())
+        <div class="bg-red-100 dark:bg-red-900/20 border border-red-400 dark:border-red-900 text-red-700 dark:text-red-300 px-4 py-3 rounded mb-4">
+            <i class="fas fa-exclamation-circle mr-2"></i>Please correct the errors below and try again.
+        </div>
+    @endif
+
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
         <form action="{{ route('admin.release-edit') }}" method="POST">
             @csrf
@@ -43,8 +49,11 @@
                     <input type="text"
                            id="name"
                            name="name"
-                           value="{{ $release->name ?? $release['name'] ?? '' }}"
+                           value="{{ old('name', $release->name ?? $release['name'] ?? '') }}"
                            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-gray-100">
+                    @error('name')
+                        <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                    @enderror
                 </div>
 
                 <!-- Search Name -->
@@ -55,8 +64,11 @@
                     <input type="text"
                            id="searchname"
                            name="searchname"
-                           value="{{ $release->searchname ?? $release['searchname'] ?? '' }}"
+                           value="{{ old('searchname', $release->searchname ?? $release['searchname'] ?? '') }}"
                            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-gray-100">
+                    @error('searchname')
+                        <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                    @enderror
                 </div>
 
                 <!-- From Name -->
@@ -67,8 +79,11 @@
                     <input type="text"
                            id="fromname"
                            name="fromname"
-                           value="{{ $release->fromname ?? $release['fromname'] ?? '' }}"
+                           value="{{ old('fromname', $release->fromname ?? $release['fromname'] ?? '') }}"
                            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-gray-100">
+                    @error('fromname')
+                        <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                    @enderror
                 </div>
 
                 <!-- Category -->
@@ -80,11 +95,14 @@
                             name="category"
                             class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-gray-100">
                         @foreach($catlist as $catId => $catTitle)
-                            <option value="{{ $catId }}" {{ ($release->categories_id ?? $release['categories_id'] ?? '') == $catId ? 'selected' : '' }}>
+                            <option value="{{ $catId }}" {{ old('category', $release->categories_id ?? $release['categories_id'] ?? '') == $catId ? 'selected' : '' }}>
                                 {{ $catTitle }}
                             </option>
                         @endforeach
                     </select>
+                    @error('category')
+                        <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                    @enderror
                 </div>
 
                 <!-- Total Parts -->
@@ -95,8 +113,11 @@
                     <input type="number"
                            id="totalpart"
                            name="totalpart"
-                           value="{{ $release->totalpart ?? $release['totalpart'] ?? 0 }}"
+                           value="{{ old('totalpart', $release->totalpart ?? $release['totalpart'] ?? 0) }}"
                            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-gray-100">
+                    @error('totalpart')
+                        <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                    @enderror
                 </div>
 
                 <!-- Grabs -->
@@ -107,8 +128,11 @@
                     <input type="number"
                            id="grabs"
                            name="grabs"
-                           value="{{ $release->grabs ?? $release['grabs'] ?? 0 }}"
+                           value="{{ old('grabs', $release->grabs ?? $release['grabs'] ?? 0) }}"
                            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-gray-100">
+                    @error('grabs')
+                        <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                    @enderror
                 </div>
 
                 <!-- Size (in bytes) -->
@@ -119,11 +143,14 @@
                     <input type="number"
                            id="size"
                            name="size"
-                           value="{{ $release->size ?? $release['size'] ?? 0 }}"
+                           value="{{ old('size', $release->size ?? $release['size'] ?? 0) }}"
                            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-gray-100">
                     <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
                         Current: {{ number_format(($release->size ?? $release['size'] ?? 0) / 1073741824, 2) }} GB
                     </p>
+                    @error('size')
+                        <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                    @enderror
                 </div>
 
                 <!-- Post Date -->
@@ -134,8 +161,11 @@
                     <input type="datetime-local"
                            id="postdate"
                            name="postdate"
-                           value="{{ isset($release->postdate) || isset($release['postdate']) ? date('Y-m-d\TH:i', strtotime($release->postdate ?? $release['postdate'])) : '' }}"
+                           value="{{ old('postdate', isset($release->postdate) || isset($release['postdate']) ? date('Y-m-d\TH:i', strtotime($release->postdate ?? $release['postdate'])) : '') }}"
                            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-gray-100">
+                    @error('postdate')
+                        <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                    @enderror
                 </div>
 
                 <!-- Add Date -->
@@ -146,8 +176,11 @@
                     <input type="datetime-local"
                            id="adddate"
                            name="adddate"
-                           value="{{ isset($release->adddate) || isset($release['adddate']) ? date('Y-m-d\TH:i', strtotime($release->adddate ?? $release['adddate'])) : '' }}"
+                           value="{{ old('adddate', isset($release->adddate) || isset($release['adddate']) ? date('Y-m-d\TH:i', strtotime($release->adddate ?? $release['adddate'])) : '') }}"
                            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-gray-100">
+                    @error('adddate')
+                        <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                    @enderror
                 </div>
 
                 <!-- Video ID -->
@@ -158,8 +191,11 @@
                     <input type="number"
                            id="videos_id"
                            name="videos_id"
-                           value="{{ $release->videos_id ?? $release['videos_id'] ?? 0 }}"
+                           value="{{ old('videos_id', $release->videos_id ?? $release['videos_id'] ?? 0) }}"
                            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-gray-100">
+                    @error('videos_id')
+                        <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                    @enderror
                 </div>
 
                 <!-- TV Episode ID -->
@@ -170,8 +206,11 @@
                     <input type="number"
                            id="tv_episodes_id"
                            name="tv_episodes_id"
-                           value="{{ $release->tv_episodes_id ?? $release['tv_episodes_id'] ?? 0 }}"
+                           value="{{ old('tv_episodes_id', $release->tv_episodes_id ?? $release['tv_episodes_id'] ?? 0) }}"
                            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-gray-100">
+                    @error('tv_episodes_id')
+                        <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                    @enderror
                 </div>
 
                 <!-- IMDB ID -->
@@ -182,9 +221,12 @@
                     <input type="text"
                            id="imdbid"
                            name="imdbid"
-                           value="{{ $release->imdbid ?? $release['imdbid'] ?? '' }}"
+                           value="{{ old('imdbid', $release->imdbid ?? $release['imdbid'] ?? '') }}"
                            placeholder="e.g., 0133093"
                            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400">
+                    @error('imdbid')
+                        <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                    @enderror
                 </div>
 
                 <!-- AniDB ID -->
@@ -195,8 +237,11 @@
                     <input type="number"
                            id="anidbid"
                            name="anidbid"
-                           value="{{ $release->anidbid ?? $release['anidbid'] ?? 0 }}"
+                           value="{{ old('anidbid', $release->anidbid ?? $release['anidbid'] ?? 0) }}"
                            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-gray-100">
+                    @error('anidbid')
+                        <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                    @enderror
                 </div>
             </div>
 
