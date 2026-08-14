@@ -22,6 +22,7 @@ final class ReleaseDeleteStats extends Data
         public int $completion = 0,
         public int $disabledCategory = 0,
         public int $categoryMinSize = 0,
+        public int $executableDiscard = 0,
         public int $disabledGenre = 0,
         public int $miscOther = 0,
         public int $miscHashed = 0,
@@ -36,6 +37,7 @@ final class ReleaseDeleteStats extends Data
             'completion' => $this->completion,
             'disabledCategory' => $this->disabledCategory,
             'categoryMinSize' => $this->categoryMinSize,
+            'executableDiscard' => $this->executableDiscard,
             'disabledGenre' => $this->disabledGenre,
             'miscOther' => $this->miscOther,
             'miscHashed' => $this->miscHashed,
@@ -55,6 +57,7 @@ final class ReleaseDeleteStats extends Data
             + $this->completion
             + $this->disabledCategory
             + $this->categoryMinSize
+            + $this->executableDiscard
             + $this->disabledGenre
             + $this->miscOther
             + $this->miscHashed;

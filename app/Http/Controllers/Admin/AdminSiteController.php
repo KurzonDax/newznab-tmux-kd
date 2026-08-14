@@ -8,6 +8,7 @@ use App\Http\Controllers\BasePageController;
 use App\Models\GrabStat;
 use App\Models\ReleaseStat;
 use App\Models\RoleStat;
+use App\Models\RootCategory;
 use App\Models\Settings;
 use App\Models\SignupStat;
 use App\Support\SizeUnit;
@@ -40,6 +41,19 @@ class AdminSiteController extends BasePageController
                     unset($data[$sizeKey.'_unit']);
                 }
 
+                // Per-root discard toggles live on root_categories, not in settings.
+                // HTML forms omit unchecked checkboxes, so absence means "off".
+                $discardToggles = (array) ($data['discard_executables'] ?? []);
+                unset($data['discard_executables']);
+
+                foreach (RootCategory::query()->get() as $rootCategory) {
+                    $enabled = ! empty($discardToggles[$rootCategory->id]);
+
+                    if ($rootCategory->discard_executables !== $enabled) {
+                        $rootCategory->update(['discard_executables' => $enabled]);
+                    }
+                }
+
                 Settings::settingsUpdate($data);
 
                 return redirect()->to('admin/site-edit')->with('success', 'Settings updated successfully');
@@ -60,6 +74,7 @@ class AdminSiteController extends BasePageController
             'error' => $error,
             'sizeFields' => $sizeFields,
             'sizeUnits' => SizeUnit::UNITS,
+            'discardRoots' => RootCategory::query()->orderBy('id')->get(),
             'yesno' => [
                 'ids' => [1, 0],
                 'names' => ['Yes', 'No'],

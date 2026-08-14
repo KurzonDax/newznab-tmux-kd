@@ -47,3 +47,10 @@ A browser the user chose to skip 2FA challenges on, for 30 days. Independent of 
 **Expire All Logins**:
 An admin breach-response action ending every Web Login Session, Remembered Login, and Trusted Device — site-wide or for a single user. Spares only the acting admin's current session; their other logins expire like everyone else's.
 _Avoid_: "logout all users" — it also revokes remembered state and trusted devices, not just live sessions.
+
+**Discard**:
+The permanent, complete purge of a release: database row (with cascaded file rows), NZB file on disk, preview/cover images, and search-index documents. Irreversible. Triggered when a release is found to contain an executable file, controlled per root category (`root_categories.discard_executables`) with the extension list in the `discard_executable_extensions` setting. See ADR 0003.
+_Avoid_: plain "delete" when contrasting with Hide — the distinction is the point.
+
+**Hide**:
+Marking a release passworded (via the `innerfileblacklist` regex) so browse, search, and API surfaces can exclude it while the release and all its artifacts are kept. The reversible counterpart to Discard; the two mechanisms are independent and both remain active.

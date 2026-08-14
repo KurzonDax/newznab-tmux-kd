@@ -46,6 +46,10 @@ class ReleaseProcessingContext
 
     public bool $releaseHasPassword = false;
 
+    // Discard state: the release was purged mid-processing (executable file
+    // detected); all remaining processing for it must be skipped.
+    public bool $releaseDiscarded = false;
+
     // NFO state
     public bool $releaseHasNoNFO = false;
 
@@ -190,6 +194,7 @@ class ReleaseProcessingContext
     {
         $this->passwordStatus = 0;
         $this->releaseHasPassword = false;
+        $this->releaseDiscarded = false;
         $this->nzbHasCompressedFile = false;
         $this->groupUnavailable = false;
         $this->workPlan = null;

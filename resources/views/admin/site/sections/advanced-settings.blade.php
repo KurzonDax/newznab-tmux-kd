@@ -141,5 +141,30 @@
                                       class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">{{ $site['innerfileblacklist'] ?? '' }}</textarea>
                             <p class="mt-1 text-sm text-gray-500">You can add a regex here to set releases to potentially passworded when a file name inside a rar/zip matches this regex. <strong>You must ensure this regex is valid, a non valid regex will cause errors during processing!</strong></p>
                         </div>
+
+                        <div>
+                            <x-label for="discard_executable_extensions">
+                                <i class="fas fa-trash-alt mr-1"></i>Discard Executables &mdash; Extension List
+                            </x-label>
+                            <x-input type="text" id="discard_executable_extensions" name="discard_executable_extensions" value="{{ $site['discard_executable_extensions'] ?? '' }}" />
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Pipe-separated list of file extensions treated as executable payloads (default: dll|exe|msi|scr|com|bat|cmd|pif). Used by the per-category discard toggles below.</p>
+                        </div>
+
+                        <div>
+                            <span class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                <i class="fas fa-trash-alt mr-1"></i>Discard Releases Containing Executables
+                            </span>
+                            <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                                @foreach ($discardRoots ?? [] as $discardRoot)
+                                    <label class="flex items-center">
+                                        <input type="checkbox" name="discard_executables[{{ $discardRoot->id }}]" value="1"
+                                               @checked($discardRoot->discard_executables)
+                                               class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700">
+                                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">{{ $discardRoot->title }}</span>
+                                    </label>
+                                @endforeach
+                            </div>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Releases in checked root categories are <strong>permanently deleted</strong> (database rows, NZB file, images, search index) when they are found to contain an executable file. Unlike the Inner File Black List above, which only hides releases as passworded, a discard is irreversible.</p>
+                        </div>
                     </div>
                 </div>

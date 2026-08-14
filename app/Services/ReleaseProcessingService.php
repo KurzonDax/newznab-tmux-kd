@@ -16,6 +16,7 @@ use App\Services\Categorization\CategorizationService;
 use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
+use App\Services\Releases\ExecutableReleaseDiscardService;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use App\Services\Releases\ReleaseManagementService;
@@ -77,6 +78,8 @@ final class ReleaseProcessingService
 
     private readonly BinariesConfig $binariesConfig;
 
+    private readonly ExecutableReleaseDiscardService $executableDiscard;
+
     public function __construct(
         ?NzbService $nzb = null,
         ?ReleaseCleaningService $releaseCleaning = null,
@@ -86,6 +89,7 @@ final class ReleaseProcessingService
         ?CollectionCleanupService $collectionCleanupService = null,
         ?PostProcessService $postProcessService = null,
         ?BinariesConfig $binariesConfig = null,
+        ?ExecutableReleaseDiscardService $executableDiscard = null,
     ) {
         $this->echoCLI = (bool) config('nntmux.echocli');
 
@@ -93,6 +97,8 @@ final class ReleaseProcessingService
         $this->releaseCleaning = $releaseCleaning ?? new ReleaseCleaningService;
         $this->releaseManagement = $releaseManagement ?? app(ReleaseManagementService::class);
         $this->releaseImage = $releaseImage ?? new ReleaseImageService;
+        $this->executableDiscard = $executableDiscard
+            ?? new ExecutableReleaseDiscardService($this->releaseManagement);
         $this->collectionCleanupService = $collectionCleanupService
             ?? new CollectionCleanupService;
 
@@ -910,6 +916,7 @@ final class ReleaseProcessingService
         $stats = $this->deleteIncompleteReleases($stats);
         $stats = $this->deleteDisabledCategoryReleases($stats);
         $stats = $this->deleteCategoryMinSizeReleases($stats);
+        $stats = $this->deleteExecutableReleases($stats);
         $stats = $this->deleteDisabledGenreReleases($stats);
         $stats = $this->deleteMiscReleases($stats);
 
@@ -1318,6 +1325,20 @@ final class ReleaseProcessingService
         return $stats;
     }
 
+    /**
+     * Discard releases with a recorded executable file in root categories that
+     * have `discard_executables` enabled. Sweeps the pre-existing backlog plus
+     * anything that slipped past inline detection during post-processing.
+     */
+    private function deleteExecutableReleases(ReleaseDeleteStats $stats): ReleaseDeleteStats
+    {
+        $this->executableDiscard->sweep(function () use (&$stats): void {
+            $stats = $stats->increment('executableDiscard');
+        });
+
+        return $stats;
+    }
+
     private function deleteDisabledGenreReleases(ReleaseDeleteStats $stats): ReleaseDeleteStats
     {
         $genres = new GenreService;
@@ -1600,6 +1621,9 @@ final class ReleaseProcessingService
             }
             if ($stats->categoryMinSize > 0) {
                 $this->outputStat('Under category min size', $stats->categoryMinSize);
+            }
+            if ($stats->executableDiscard > 0) {
+                $this->outputStat('Executable discards', $stats->executableDiscard);
             }
             if ($stats->disabledGenre > 0) {
                 $this->outputStat('Disabled genres', $stats->disabledGenre);

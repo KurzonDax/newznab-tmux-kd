@@ -191,6 +191,13 @@ final class ExpireAllWebLoginsTest extends TestCase
             $table->text('value')->nullable();
         });
 
+        // The site-edit submit path syncs per-root discard toggles.
+        Schema::create('root_categories', function (Blueprint $table): void {
+            $table->unsignedInteger('id')->primary();
+            $table->string('title');
+            $table->boolean('discard_executables')->default(false);
+        });
+
         Schema::create('roles', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('name');

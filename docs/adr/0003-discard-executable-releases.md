@@ -1,0 +1,14 @@
+# Releases containing executables are discarded, not hidden
+
+Malware spammers post fake software (e.g. a "CapCut Pre-Activated" bundle carrying `Fixer.exe`) into non-software groups. Categorization only sees the release name, poster, and group — never the NFO or file list — so an obfuscated post in `alt.binaries.erotica.divx` lands in XXX > Other and stays there. The existing `innerfileblacklist` mechanism can only *hide* such releases by marking them passworded; they keep occupying database rows, NZB files on disk, and search-index documents.
+
+We decided to **discard** instead: when a release is found to contain an executable file (extension in the `discard_executable_extensions` setting, default `dll|exe|msi|scr|com|bat|cmd|pif`), it is permanently and completely purged — database row with cascaded file rows, NZB on disk, preview/cover images, search-index documents. `App\Services\Releases\ExecutableReleaseDiscardService` owns the decision, the discard action, and the backlog sweep; deletion delegates to `ReleaseManagementService::deleteSingle()`, the existing complete-delete path, because raw SQL deletes are known to leak disk artifacts.
+
+Four deliberate choices a future reader may be tempted to "fix":
+
+- **Delete, not hide.** Hiding keeps paying storage and index costs for spam that will never be wanted. The hide-as-passworded path (`innerfileblacklist`) remains untouched and separate — the two features answer different questions.
+- **Discard is immediate.** Detection fires wherever file names are learned (archive inner-file listing, PAR2 file lists, the maintenance sweep) and the release is purged on the spot, before name-fixing completes. The rare legitimate app posted to a wrong-signal group is an accepted loss (sole-deployment context; settled in a grilling session on 2026-08-14). Do not defer the discard until after renaming.
+- **Per-root toggles; Other is exempt by default.** Executables are never legitimate in Movies, Audio, TV, XXX, and Books, so those roots ship with `root_categories.discard_executables` on. PC and Console ship off because executables are expected there. Other ships off because obfuscated releases awaiting name-fixing live there — discarding them would destroy releases before they can be identified. `.dll` is deliberately in the default list: in the roots where discarding is on, a DLL is as conclusive a payload signal as an EXE.
+- **No block-list wiring, no tombstones.** A discard writes a log line (release name, category, poster, matching file) and nothing else. No rows are auto-inserted into the binary blacklist (header-time regex rules carry false-positive risk with shared poster names), and there is no tombstone table — the feature must reduce database footprint, not add to it. A release re-formed by backfill is simply discarded again on its next post-processing cycle.
+
+See `CONTEXT.md` for the **Discard** / **Hide** vocabulary.
