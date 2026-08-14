@@ -8,7 +8,6 @@ use App\Facades\Search;
 use App\Models\Release;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseImageService;
-use App\Support\ReleaseSearchIndexSync;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -142,31 +141,6 @@ class ReleaseManagementService
 
             return 0;
         }
-    }
-
-    /**
-     * @return bool|int
-     */
-    public function updateMulti(mixed $guids, mixed $category, mixed $grabs, mixed $videoId, mixed $episodeId, mixed $anidbId, mixed $imdbId)
-    {
-        if (! \is_array($guids) || \count($guids) < 1) {
-            return false;
-        }
-
-        $update = [
-            'categories_id' => $category === -1 ? 'categories_id' : $category,
-            'grabs' => $grabs,
-            'videos_id' => $videoId,
-            'tv_episodes_id' => $episodeId,
-            'anidbid' => $anidbId,
-            'imdbid' => $imdbId,
-        ];
-
-        $releaseIds = Release::query()->whereIn('guid', $guids)->pluck('id');
-        $updated = Release::query()->whereIn('guid', $guids)->update($update);
-        ReleaseSearchIndexSync::forIds($releaseIds);
-
-        return $updated;
     }
 
     /**
