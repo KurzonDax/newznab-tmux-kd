@@ -77,26 +77,42 @@ class AdminReleasesController extends BasePageController
 
         switch ($action) {
             case 'submit':
+                $validated = $request->validate([
+                    'id' => 'required|integer|min:1|exists:releases,id',
+                    'guid' => 'required|string',
+                    'name' => 'required|string|max:255',
+                    'searchname' => 'required|string|max:255',
+                    'fromname' => 'nullable|string|max:255',
+                    'category' => 'required|integer|min:1|exists:categories,id',
+                    'totalpart' => 'nullable|integer|min:0',
+                    'grabs' => 'nullable|integer|min:0',
+                    'size' => 'nullable|integer|min:0',
+                    'postdate' => 'nullable|date',
+                    'adddate' => 'nullable|date',
+                    'videos_id' => 'nullable|integer|min:0',
+                    'tv_episodes_id' => 'nullable|integer|min:0',
+                    'imdbid' => 'nullable|string|max:100',
+                    'anidbid' => 'nullable|integer|min:0',
+                ]);
+
                 Release::updateRelease(
-                    $request->input('id'),
-                    $request->input('name'),
-                    $request->input('searchname'),
-                    $request->input('fromname'),
-                    $request->input('category'),
-                    $request->input('totalpart'),
-                    $request->input('grabs'),
-                    $request->input('size'),
-                    $request->input('postdate'),
-                    $request->input('adddate'),
-                    $request->input('videos_id'),
-                    $request->input('tv_episodes_id'),
-                    $request->input('imdbid'),
-                    $request->input('anidbid')
+                    $validated['id'],
+                    $validated['name'],
+                    $validated['searchname'],
+                    $validated['fromname'] ?? null,
+                    $validated['category'],
+                    $validated['totalpart'] ?? null,
+                    $validated['grabs'] ?? null,
+                    $validated['size'] ?? null,
+                    $validated['postdate'] ?? null,
+                    $validated['adddate'] ?? null,
+                    $validated['videos_id'] ?? null,
+                    $validated['tv_episodes_id'] ?? null,
+                    $validated['imdbid'] ?? null,
+                    $validated['anidbid'] ?? null
                 );
 
-                $release = Release::getByGuid($request->input('guid'));
-
-                return redirect('details/'.$release['guid'])->with('success', 'Release updated successfully');
+                return redirect('details/'.$validated['guid'])->with('success', 'Release updated successfully');
 
             case 'view':
             default:

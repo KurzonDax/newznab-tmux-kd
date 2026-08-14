@@ -1,0 +1,298 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Feature;
+
+use App\Facades\Search;
+use App\Http\Controllers\Admin\AdminReleasesController;
+use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
+use PDO;
+use Tests\TestCase;
+
+class AdminReleasesControllerEditTest extends TestCase
+{
+    private string $databasePath;
+
+    /**
+     * @var array<string, string|false>
+     */
+    private array $originalEnvironment = [];
+
+    public function createApplication()
+    {
+        $this->databasePath = $this->makeTempPath('nntmux-admin-release-edit-test', '.sqlite');
+
+        $this->originalEnvironment = [
+            'APP_ENV' => getenv('APP_ENV'),
+            'DB_CONNECTION' => getenv('DB_CONNECTION'),
+            'DB_DATABASE' => getenv('DB_DATABASE'),
+        ];
+
+        if (file_exists($this->databasePath)) {
+            unlink($this->databasePath);
+        }
+
+        $pdo = new PDO('sqlite:'.$this->databasePath);
+        $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
+        $pdo->exec("INSERT INTO settings (name, value) VALUES
+            ('categorizeforeign', '0'),
+            ('catwebdl', '0'),
+            ('title', 'NNTmux Test'),
+            ('home_link', '/')");
+
+        $this->setEnvironmentValue('APP_ENV', 'testing');
+        $this->setEnvironmentValue('DB_CONNECTION', 'sqlite');
+        $this->setEnvironmentValue('DB_DATABASE', $this->databasePath);
+
+        $app = require __DIR__.'/../../bootstrap/app.php';
+
+        $app->make(Kernel::class)->bootstrap();
+
+        return $app;
+    }
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config([
+            'database.default' => 'sqlite',
+            'database.connections.sqlite.database' => $this->databasePath,
+            'app.key' => 'base64:'.base64_encode(random_bytes(32)),
+        ]);
+
+        DB::purge();
+        DB::reconnect();
+        Cache::flush();
+
+        $this->createSchema();
+    }
+
+    protected function tearDown(): void
+    {
+        if ($this->databasePath !== '' && file_exists($this->databasePath)) {
+            unlink($this->databasePath);
+        }
+
+        parent::tearDown();
+
+        foreach ($this->originalEnvironment as $key => $value) {
+            $this->setEnvironmentValue($key, $value === false ? null : $value);
+        }
+    }
+
+    public function test_submit_with_nonexistent_category_is_rejected_and_modifies_nothing(): void
+    {
+        $releaseId = $this->seedRelease();
+
+        $request = Request::create('/admin/release-edit', 'POST', $this->payload($releaseId, [
+            'category' => '999999',
+        ]));
+
+        try {
+            app(AdminReleasesController::class)->edit($request);
+            $this->fail('Expected a ValidationException for a nonexistent category.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('category', $exception->errors());
+        }
+
+        $release = DB::table('releases')->where('id', $releaseId)->first();
+        $this->assertSame('Original.Release.Name', $release->name);
+        $this->assertSame(5000, (int) $release->categories_id);
+    }
+
+    public function test_submit_with_non_numeric_category_is_rejected_and_modifies_nothing(): void
+    {
+        $releaseId = $this->seedRelease();
+
+        $request = Request::create('/admin/release-edit', 'POST', $this->payload($releaseId, [
+            'category' => 'not-a-category',
+        ]));
+
+        try {
+            app(AdminReleasesController::class)->edit($request);
+            $this->fail('Expected a ValidationException for a non-numeric category.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('category', $exception->errors());
+        }
+
+        $this->assertSame(5000, (int) DB::table('releases')->where('id', $releaseId)->value('categories_id'));
+    }
+
+    public function test_submit_with_non_numeric_ids_is_rejected(): void
+    {
+        $releaseId = $this->seedRelease();
+
+        $request = Request::create('/admin/release-edit', 'POST', $this->payload($releaseId, [
+            'videos_id' => 'abc',
+            'tv_episodes_id' => 'def',
+            'anidbid' => 'ghi',
+            'grabs' => 'jkl',
+        ]));
+
+        try {
+            app(AdminReleasesController::class)->edit($request);
+            $this->fail('Expected a ValidationException for non-numeric ids.');
+        } catch (ValidationException $exception) {
+            $errors = $exception->errors();
+            $this->assertArrayHasKey('videos_id', $errors);
+            $this->assertArrayHasKey('tv_episodes_id', $errors);
+            $this->assertArrayHasKey('anidbid', $errors);
+            $this->assertArrayHasKey('grabs', $errors);
+        }
+
+        $this->assertSame('Original.Release.Name', DB::table('releases')->where('id', $releaseId)->value('name'));
+    }
+
+    public function test_submit_with_missing_name_is_rejected(): void
+    {
+        $releaseId = $this->seedRelease();
+
+        $request = Request::create('/admin/release-edit', 'POST', $this->payload($releaseId, [
+            'name' => '',
+        ]));
+
+        try {
+            app(AdminReleasesController::class)->edit($request);
+            $this->fail('Expected a ValidationException for a missing name.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('name', $exception->errors());
+        }
+    }
+
+    public function test_valid_submit_updates_the_release_and_redirects_to_details(): void
+    {
+        Search::shouldReceive('updateRelease')->andReturnNull();
+
+        $releaseId = $this->seedRelease();
+
+        $request = Request::create('/admin/release-edit', 'POST', $this->payload($releaseId, [
+            'name' => 'Updated.Release.Name',
+            'searchname' => 'Updated Release Name',
+            'category' => '5040',
+        ]));
+
+        $response = app(AdminReleasesController::class)->edit($request);
+
+        $this->assertTrue($response->isRedirect());
+        $this->assertStringContainsString('details/test-guid-123', $response->headers->get('Location'));
+
+        $release = DB::table('releases')->where('id', $releaseId)->first();
+        $this->assertSame('Updated.Release.Name', $release->name);
+        $this->assertSame('Updated Release Name', $release->searchname);
+        $this->assertSame(5040, (int) $release->categories_id);
+        $this->assertSame(7, (int) $release->grabs);
+    }
+
+    /**
+     * @param  array<string, string>  $overrides
+     * @return array<string, string>
+     */
+    private function payload(int $releaseId, array $overrides = []): array
+    {
+        return array_merge([
+            'action' => 'submit',
+            'id' => (string) $releaseId,
+            'guid' => 'test-guid-123',
+            'name' => 'Original.Release.Name',
+            'searchname' => 'Original Release Name',
+            'fromname' => 'poster@example.com',
+            'category' => '5000',
+            'totalpart' => '10',
+            'grabs' => '7',
+            'size' => '1073741824',
+            'postdate' => '2026-08-01T10:00',
+            'adddate' => '2026-08-02T11:30',
+            'videos_id' => '0',
+            'tv_episodes_id' => '0',
+            'imdbid' => '',
+            'anidbid' => '0',
+        ], $overrides);
+    }
+
+    private function seedRelease(): int
+    {
+        return (int) DB::table('releases')->insertGetId([
+            'guid' => 'test-guid-123',
+            'name' => 'Original.Release.Name',
+            'searchname' => 'Original Release Name',
+            'fromname' => 'poster@example.com',
+            'categories_id' => 5000,
+            'totalpart' => 10,
+            'grabs' => 7,
+            'size' => 1073741824,
+            'postdate' => '2026-08-01 10:00:00',
+            'adddate' => '2026-08-02 11:30:00',
+            'videos_id' => 0,
+            'tv_episodes_id' => 0,
+            'imdbid' => null,
+            'anidbid' => null,
+            'movieinfo_id' => null,
+        ]);
+    }
+
+    private function createSchema(): void
+    {
+        if (! Schema::hasTable('settings')) {
+            Schema::create('settings', function (Blueprint $table): void {
+                $table->string('name')->primary();
+                $table->text('value')->nullable();
+            });
+        }
+
+        if (! Schema::hasTable('releases')) {
+            Schema::create('releases', function (Blueprint $table): void {
+                $table->increments('id');
+                $table->string('guid');
+                $table->string('name')->default('');
+                $table->string('searchname')->default('');
+                $table->string('fromname')->nullable();
+                $table->integer('categories_id')->default(10);
+                $table->integer('totalpart')->nullable();
+                $table->unsignedInteger('grabs')->default(0);
+                $table->unsignedBigInteger('size')->default(0);
+                $table->dateTime('postdate')->nullable();
+                $table->dateTime('adddate')->nullable();
+                $table->unsignedInteger('videos_id')->default(0);
+                $table->integer('tv_episodes_id')->default(0);
+                $table->string('imdbid', 100)->nullable();
+                $table->integer('anidbid')->nullable();
+                $table->integer('movieinfo_id')->nullable();
+            });
+        }
+
+        if (! Schema::hasTable('categories')) {
+            Schema::create('categories', function (Blueprint $table): void {
+                $table->increments('id');
+                $table->string('title')->default('');
+                $table->integer('root_categories_id')->default(0);
+            });
+        }
+
+        DB::table('categories')->insertOrIgnore([
+            ['id' => 5000, 'title' => 'TV', 'root_categories_id' => 5000],
+            ['id' => 5040, 'title' => 'TV HD', 'root_categories_id' => 5000],
+        ]);
+    }
+
+    private function setEnvironmentValue(string $key, ?string $value): void
+    {
+        if ($value === null) {
+            putenv($key);
+            unset($_ENV[$key], $_SERVER[$key]);
+
+            return;
+        }
+
+        putenv($key.'='.$value);
+        $_ENV[$key] = $value;
+        $_SERVER[$key] = $value;
+    }
+}
