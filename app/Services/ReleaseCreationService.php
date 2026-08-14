@@ -15,6 +15,7 @@ use App\Services\Categorization\CategorizationService;
 use App\Services\Nzb\NzbService;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use App\Support\Utf8;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -99,6 +100,8 @@ class ReleaseCreationService
             $searchName = ! empty($cleanedName) ? Utf8::clean($cleanedName) : $cleanRelName;
             $predbIdInt = $preID === false ? 0 : (int) $preID;
 
+            $collectionHash = ($collection->collectionhash ?? '') === '' ? null : (string) $collection->collectionhash;
+
             [$dupeCheck, $dupeReason] = $this->releaseDuplicateFinder->findDuplicate(
                 $cleanRelName,
                 $searchName,
@@ -106,23 +109,29 @@ class ReleaseCreationService
                 (int) $collection->filesize
             );
 
+            $releaseID = null;
             if ($dupeCheck === null) {
                 $determinedCategory = $categorize->determineCategory($collection->groups_id, $cleanedName, $fromName);
 
-                $releaseID = Release::insertRelease([
-                    'name' => $cleanRelName,
-                    'searchname' => $searchName,
-                    'totalpart' => $collection->totalfiles,
-                    'groups_id' => $collection->groups_id,
-                    'guid' => Str::uuid()->toString(),
-                    'postdate' => $collection->date,
-                    'fromname' => $fromName,
-                    'size' => $collection->filesize,
-                    'categories_id' => $determinedCategory['categories_id'] ?? Category::OTHER_MISC,
-                    'isrenamed' => $properName === true ? 1 : 0,
-                    'predb_id' => $predbIdInt,
-                    'nzbstatus' => NzbService::NZB_NONE,
-                ]);
+                try {
+                    $releaseID = Release::insertRelease([
+                        'name' => $cleanRelName,
+                        'searchname' => $searchName,
+                        'totalpart' => $collection->totalfiles,
+                        'groups_id' => $collection->groups_id,
+                        'guid' => Str::uuid()->toString(),
+                        'postdate' => $collection->date,
+                        'fromname' => $fromName,
+                        'size' => $collection->filesize,
+                        'categories_id' => $determinedCategory['categories_id'] ?? Category::OTHER_MISC,
+                        'isrenamed' => $properName === true ? 1 : 0,
+                        'predb_id' => $predbIdInt,
+                        'nzbstatus' => NzbService::NZB_NONE,
+                        'collectionhash' => $collectionHash,
+                    ]);
+                } catch (UniqueConstraintViolationException $exception) {
+                    [$dupeCheck, $dupeReason] = $this->recoverCollectionHashConflict($collectionHash, $exception);
+                }
 
                 if ($releaseID !== null) {
                     DB::transaction(static function () use ($collection, $releaseID) {
@@ -151,7 +160,9 @@ class ReleaseCreationService
                         echo "Added $returnCount releases.\r";
                     }
                 }
-            } else {
+            }
+
+            if ($dupeCheck !== null) {
                 Log::info('Release import skipped as duplicate', [
                     'reason' => $dupeReason,
                     'matched_release_id' => $dupeCheck->id,
@@ -189,6 +200,32 @@ class ReleaseCreationService
         }
 
         return ['added' => $returnCount, 'dupes' => $duplicate];
+    }
+
+    /**
+     * The unique index on releases.collectionhash is the deterministic dedupe
+     * guarantee: a violation means this collection's release already exists
+     * (created by a previous scan and since renamed/resized past what the
+     * heuristic finder matches, or by a concurrent creator). Resolve the
+     * existing release so the collection takes the normal duplicate path.
+     *
+     * @return array{0: Release, 1: string}
+     */
+    private function recoverCollectionHashConflict(
+        ?string $collectionHash,
+        UniqueConstraintViolationException $exception
+    ): array {
+        $existing = $collectionHash === null
+            ? null
+            : Release::query()
+                ->where('collectionhash', $collectionHash)
+                ->first(['id', 'predb_id', 'searchname', 'fromname', 'size', 'name']);
+
+        if ($existing === null) {
+            throw $exception;
+        }
+
+        return [$existing, 'collectionhash_match'];
     }
 
     /**
