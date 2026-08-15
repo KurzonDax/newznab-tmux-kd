@@ -1,14 +1,14 @@
 <div @if (!$post->trashed()) id="post-{{ $post->sequence }}" @endif
     class="bg-white dark:bg-gray-800 border dark:border-gray-700 mb-2 rounded-md transition-colors {{ $post->trashed() || $thread->trashed() ? 'opacity-50' : '' }}"
-    :class="{ 'border-blue-500 dark:border-blue-400': state.selectedPosts.includes({{ $post->id }}) }">
+    :class="{ 'border-primary-500 dark:border-primary-400': state.selectedPosts.includes({{ $post->id }}) }">
     <div class="bg-gray-100 dark:bg-gray-700 border-b dark:border-gray-600 px-6 py-4 flex justify-between flex-row-reverse rounded-t-md transition-colors">
         @if (!isset($single) || !$single)
             <span class="float-end">
-                <a href="{{ Forum::route('thread.show', $post) }}" class="text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors">#{{ $post->sequence }}</a>
+                <a href="{{ Forum::route('thread.show', $post) }}" class="text-primary-500 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors">#{{ $post->sequence }}</a>
                 @if ($post->sequence != 1)
                     @can ('deletePosts', $post->thread)
                         @can ('delete', $post)
-                            <input type="checkbox" name="posts[]" :value="{{ $post->id }}" v-model="state.selectedPosts" class="ml-2 rounded border-gray-300 dark:border-gray-600 text-blue-500 dark:text-blue-400 focus:ring-blue-500 dark:focus:ring-blue-400 dark:bg-gray-700" />
+                            <input type="checkbox" name="posts[]" :value="{{ $post->id }}" v-model="state.selectedPosts" class="ml-2 rounded border-gray-300 dark:border-gray-600 text-primary-500 dark:text-primary-400 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-gray-700" />
                         @endcan
                     @endcan
                 @endif
@@ -33,7 +33,7 @@
                             'Admin' => 'bg-red-500 dark:bg-red-600 text-white',
                             'Moderator' => 'bg-green-500 dark:bg-green-600 text-white',
                             'Friend' => 'bg-purple-500 dark:bg-purple-600 text-white',
-                            'User' => 'bg-blue-500 dark:bg-blue-600 text-white',
+                            'User' => 'bg-primary-500 dark:bg-primary-600 text-white',
                             'Disabled' => 'bg-gray-500 dark:bg-gray-600 text-white',
                         ];
                         $roleClass = $roleColors[$roleName] ?? 'bg-gray-400 dark:bg-gray-500 text-white';
@@ -72,10 +72,10 @@
                         @endcan
                     @endif
                     @can ('edit', $post)
-                        <a href="{{ Forum::route('post.edit', $post) }}" class="text-blue-500">{{ trans('forum::general.edit') }}</a>
+                        <a href="{{ Forum::route('post.edit', $post) }}" class="text-primary-500 dark:text-primary-400">{{ trans('forum::general.edit') }}</a>
                     @endcan
                     @can ('reply', $post->thread)
-                        <a href="{{ Forum::route('post.create', $post) }}" class="text-blue-500">{{ trans('forum::general.reply') }}</a>
+                        <a href="{{ Forum::route('post.create', $post) }}" class="text-primary-500 dark:text-primary-400">{{ trans('forum::general.reply') }}</a>
                     @endcan
                 @else
                     @can ('restorePosts', $post->thread)

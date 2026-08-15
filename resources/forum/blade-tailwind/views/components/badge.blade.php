@@ -5,7 +5,7 @@
 @php
 switch($type) {
     case('info'):
-        $color = 'bg-blue-500 dark:bg-blue-600';
+        $color = 'bg-primary-500 dark:bg-primary-600';
         break;
 
     case('danger'):

@@ -24,7 +24,7 @@
             </div>
 
             <div class="flex justify-end items-center gap-4">
-                <a href="{{ URL::previous() }}" class="text-blue-500 dark:text-blue-400 underline hover:text-blue-700 dark:hover:text-blue-300 transition-colors">{{ trans('forum::general.cancel') }}</a>
+                <a href="{{ URL::previous() }}" class="text-primary-500 dark:text-primary-400 underline hover:text-primary-700 dark:hover:text-primary-300 transition-colors">{{ trans('forum::general.cancel') }}</a>
                 <x-forum::button type="submit" class="">{{ trans('forum::general.reply') }}</x-forum::button>
             </div>
         </form>

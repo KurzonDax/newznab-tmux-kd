@@ -21,13 +21,13 @@
                 @if ($category->accepts_threads)
                     @if ($category->newestThread)
                         <div>
-                            <a href="{{ Forum::route('thread.show', $category->newestThread) }}" class="mr-1 text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors">{{ $category->newestThread->title }}</a>
+                            <a href="{{ Forum::route('thread.show', $category->newestThread) }}" class="mr-1 text-primary-500 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors">{{ $category->newestThread->title }}</a>
                             @include ('forum::partials.timestamp', ['carbon' => $category->newestThread->created_at])
                         </div>
                     @endif
                     @if ($category->latestActiveThread && $category->latestActiveThread->post_count > 1)
                         <div>
-                            <a href="{{ Forum::route('thread.show', $category->latestActiveThread->lastPost) }}" class="mr-1 text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors">Re: {{ $category->latestActiveThread->title }}</a>
+                            <a href="{{ Forum::route('thread.show', $category->latestActiveThread->lastPost) }}" class="mr-1 text-primary-500 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors">Re: {{ $category->latestActiveThread->title }}</a>
                             @include ('forum::partials.timestamp', ['carbon' => $category->latestActiveThread->lastPost->created_at])
                         </div>
                     @endif
@@ -56,7 +56,7 @@
                         <div class="md:w-2/6 text-center text-sm text-gray-500 dark:text-gray-400 md:items-end md:text-right">
                             @if ($subcategory->newestThread)
                                 <div>
-                                    <a href="{{ Forum::route('thread.show', $subcategory->newestThread) }}" class="mr-1 text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors">{{ $subcategory->newestThread->title }}</a>
+                                    <a href="{{ Forum::route('thread.show', $subcategory->newestThread) }}" class="mr-1 text-primary-500 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors">{{ $subcategory->newestThread->title }}</a>
                                     @include ('forum::partials.timestamp', ['carbon' => $subcategory->newestThread->created_at])
                                 </div>
                             @endif

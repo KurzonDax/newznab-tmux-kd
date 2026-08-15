@@ -19,7 +19,7 @@
             </div>
 
             <div class="flex justify-end items-center gap-2">
-                <x-forum::button-link href="{{ URL::previous() }}" class="text-blue-500 dark:text-blue-400">{{ trans('forum::general.cancel') }}</x-forum::button-link>
+                <x-forum::button-link href="{{ URL::previous() }}" class="text-primary-500 dark:text-primary-400">{{ trans('forum::general.cancel') }}</x-forum::button-link>
                 <x-forum::button type="submit" class="px-5">
                     {{ trans('forum::general.restore') }}
                 </x-forum::button>

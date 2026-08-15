@@ -10,7 +10,7 @@
 
     @if(!$category->isEmpty())
         <div class="form-check mt-3">
-            <input class="form-check-input rounded border-gray-300 dark:border-gray-600 text-blue-500 dark:text-blue-400 focus:ring-blue-500 dark:focus:ring-blue-400 dark:bg-gray-700" type="checkbox" value="1" name="force" id="forceDelete">
+            <input class="form-check-input rounded border-gray-300 dark:border-gray-600 text-primary-500 dark:text-primary-400 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-gray-700" type="checkbox" value="1" name="force" id="forceDelete">
             <label class="form-check-label text-gray-700 dark:text-gray-300" for="forceDelete">
                 {{ trans('forum::categories.confirm_nonempty_delete') }}
             </label>
