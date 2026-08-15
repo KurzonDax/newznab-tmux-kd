@@ -19,6 +19,20 @@ fatal() {
 }
 
 [[ "$action" == normalize || "$action" == normalize-build || "$action" == check || "$action" == check-source ]] || fatal 'usage: runtime-permissions.sh normalize|normalize-build|check|check-source [repository-root]'
+
+# This script models a Linux deployment host: it depends on getent, GNU
+# stat/find/realpath, bash >= 4.2, and the www-data group. On other
+# platforms (macOS development machines) the pre-commit `check-source`
+# action has nothing meaningful to verify, so it is skipped rather than
+# failing every commit; the deployment actions still refuse to run.
+if [[ "$(uname -s)" != Linux ]]; then
+    if [[ "$action" == check-source ]]; then
+        echo "Tracked runtime source permission check skipped: Linux-only ($(uname -s))."
+        exit 0
+    fi
+    fatal "runtime-permissions.sh $action is only supported on Linux (detected $(uname -s))"
+fi
+
 [[ -n "$requested_root" ]] || fatal 'repository root must not be empty'
 [[ -e "$requested_root" ]] || fatal "repository root does not exist: $requested_root"
 
