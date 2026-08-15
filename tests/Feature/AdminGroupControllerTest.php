@@ -232,6 +232,15 @@ class AdminGroupControllerTest extends TestCase
                 $table->integer('role')->default(Content::ROLE_EVERYONE);
             });
         }
+
+        if (! Schema::hasTable('root_categories')) {
+            Schema::create('root_categories', function (Blueprint $table): void {
+                $table->increments('id');
+                $table->string('title')->default('');
+                $table->integer('status')->default(1);
+                $table->timestamps();
+            });
+        }
     }
 
     private function createUsenetGroupsTable(): void
@@ -252,6 +261,8 @@ class AdminGroupControllerTest extends TestCase
             $table->unsignedBigInteger('minsizetoformrelease')->nullable();
             $table->unsignedBigInteger('minfilestoformrelease')->nullable();
             $table->integer('backfill_target')->default(1);
+            $table->boolean('route_obfuscated_names')->default(false);
+            $table->unsignedInteger('obfuscated_default_root_categories_id')->nullable();
         });
     }
 

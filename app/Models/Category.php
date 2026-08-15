@@ -125,6 +125,8 @@ class Category extends Model
 
     public const int PC_GAMES = 4050;
 
+    public const int PC_OTHER = 4999;
+
     public const int PC_PHONE_IOS = 4060;
 
     public const int PC_PHONE_ANDROID = 4070;
@@ -218,6 +220,7 @@ class Category extends Model
             self::MOVIE_OTHER,
             self::MUSIC_OTHER,
             self::PC_PHONE_OTHER,
+            self::PC_OTHER,
             self::TV_OTHER,
             self::OTHER_HASHED,
             self::XXX_OTHER,
@@ -253,6 +256,21 @@ class Category extends Model
             self::TV_WEBDL,
             self::TV_X265,
         ];
+
+    public static function otherForRootCategory(int $rootCategoryId): ?int
+    {
+        return match ($rootCategoryId) {
+            self::OTHER_ROOT => self::OTHER_MISC,
+            self::GAME_ROOT => self::GAME_OTHER,
+            self::MOVIE_ROOT => self::MOVIE_OTHER,
+            self::MUSIC_ROOT => self::MUSIC_OTHER,
+            self::PC_ROOT => self::PC_OTHER,
+            self::TV_ROOT => self::TV_OTHER,
+            self::XXX_ROOT => self::XXX_OTHER,
+            self::BOOKS_ROOT => self::BOOKS_UNKNOWN,
+            default => null,
+        };
+    }
 
     /**
      * @var bool

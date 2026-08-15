@@ -87,6 +87,11 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
             'teen titans 720p' => ['Teen.Titans.S02E03.Terra.720p.BluRay-EPSiLON', 'alt.binaries.multimedia', Category::TV_HD],
             'studio name still xxx' => ['Brazzers.24.01.01.Name.XXX.1080p.MP4-XXX', 'alt.binaries.multimedia', Category::XXX_CLIPHD],
 
+            // #68 — hard adult markers must survive an episodic token
+            'adult studio episodic release' => ['Brazzers.S01E01.Name.XXX.1080p.MP4-XXX', 'alt.binaries.multimedia', Category::XXX_CLIPHD],
+            'studio-less episodic control' => ['Show.Name.S01E01.1080p.WEB-DL-GROUP', 'alt.binaries.multimedia', Category::TV_WEBDL],
+            'ambiguous adult studio word remains tv' => ['Private.Eyes.S01E01.1080p.WEB-DL-GROUP', 'alt.binaries.multimedia', Category::TV_WEBDL],
+
             // #62 — chained episode numbers
             'multi episode S11E46E47' => ['SpongeBob.SquarePants.S11E46E47.The.Grill.is.Gone.The.Night.Patty.1080p.AMZN.WEB-DL.DDP2.0.H.264-TVSmash', 'alt.binaries.multimedia', Category::TV_WEBDL],
             'multi episode S01E01-E02' => ['Show.Name.S01E01-E02.Pilot.1080p.WEB-DL.H.264-GROUP', 'alt.binaries.multimedia', Category::TV_WEBDL],

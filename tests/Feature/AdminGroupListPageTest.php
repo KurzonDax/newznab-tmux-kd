@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Facades\Categorization;
 use App\Http\Middleware\Google2FAMiddleware;
+use App\Models\Category;
 use App\Models\User;
 use App\View\Composers\GlobalDataComposer;
 use Illuminate\Contracts\Auth\Authenticatable;
@@ -257,8 +259,27 @@ class AdminGroupListPageTest extends TestCase
         $response->assertSee('data-min-size=""', false);
         $response->assertSee('data-active="1"', false);
         $response->assertSee('data-backfill="0"', false);
+        $response->assertSee('data-route-obfuscated-names="0"', false);
+        $response->assertSee('data-obfuscated-default-root-category-id=""', false);
         $response->assertSee('Edit Selected Groups');
         $response->assertSee('Minimum File Size');
+        $response->assertSee('Route Obfuscated Names');
+        $response->assertSee('Default Root Category');
+        $response->assertSee('<option value="6000">XXX</option>', false);
+    }
+
+    public function test_group_list_shows_a_preselected_root_while_routing_is_disabled(): void
+    {
+        $this->createGroups(1);
+        DB::table('usenet_groups')->update([
+            'route_obfuscated_names' => false,
+            'obfuscated_default_root_categories_id' => Category::MOVIE_ROOT,
+        ]);
+
+        $response = $this->actingAs($this->admin())->get(route('admin.group-list'));
+
+        $response->assertOk();
+        $response->assertSee('Off · Movies');
     }
 
     public function test_edit_selected_updates_only_submitted_settings_and_returns_rows(): void
@@ -296,6 +317,28 @@ class AdminGroupListPageTest extends TestCase
         $this->assertSame($lastUpdated, DB::table('usenet_groups')->where('id', $ids[0])->value('last_updated'));
     }
 
+    public function test_edit_selected_saves_and_surfaces_obfuscated_name_routing(): void
+    {
+        $this->createGroups(1);
+        $id = DB::table('usenet_groups')->value('id');
+
+        $response = $this->actingAs($this->admin())->post(route('admin.ajax'), [
+            'action' => 'edit_selected_groups',
+            'group_ids' => json_encode([$id]),
+            'changes' => json_encode([
+                'route_obfuscated_names' => 1,
+                'obfuscated_default_root_categories_id' => Category::XXX_ROOT,
+            ]),
+        ]);
+
+        $response->assertOk()->assertJson(['success' => true, 'updated' => 1]);
+        $response->assertJsonPath('rows.'.$id, fn (string $row): bool => str_contains($row, 'XXX'));
+
+        $group = DB::table('usenet_groups')->where('id', $id)->first();
+        $this->assertSame(1, $group->route_obfuscated_names);
+        $this->assertSame(Category::XXX_ROOT, $group->obfuscated_default_root_categories_id);
+    }
+
     public function test_edit_selected_normalizes_zero_release_floors_to_null(): void
     {
         $this->createGroups(1);
@@ -324,6 +367,12 @@ class AdminGroupListPageTest extends TestCase
         $this->createGroups(1);
         $id = DB::table('usenet_groups')->value('id');
         $admin = $this->admin();
+        DB::table('categories')->insert([
+            'id' => 1234,
+            'title' => 'Not a root',
+            'root_categories_id' => 1,
+            'status' => 1,
+        ]);
 
         foreach ([
             ['group_ids' => [$id], 'changes' => []],
@@ -333,6 +382,8 @@ class AdminGroupListPageTest extends TestCase
             ['group_ids' => [$id], 'changes' => ['minsizetoformrelease' => '10K']],
             ['group_ids' => [999999], 'changes' => ['active' => 1]],
             ['group_ids' => [$id], 'changes' => ['description' => 'tampered']],
+            ['group_ids' => [$id], 'changes' => ['obfuscated_default_root_categories_id' => 1234]],
+            ['group_ids' => [$id], 'changes' => ['route_obfuscated_names' => 1, 'obfuscated_default_root_categories_id' => null]],
         ] as $payload) {
             $response = $this->actingAs($admin)
                 ->withHeaders([
@@ -386,6 +437,96 @@ class AdminGroupListPageTest extends TestCase
         $this->assertNull(DB::table('usenet_groups')->where('id', $group->id)->value('minfilestoformrelease'));
     }
 
+    public function test_single_group_edit_saves_obfuscated_name_routing(): void
+    {
+        $this->createGroups(1);
+        $group = DB::table('usenet_groups')->first();
+
+        $response = $this->actingAs($this->admin())->post('/admin/group-edit?action=submit', [
+            'id' => $group->id,
+            'name' => $group->name,
+            'description' => $group->description,
+            'backfill_target' => 1,
+            'first_record' => 0,
+            'last_record' => 0,
+            'active' => 1,
+            'backfill' => 0,
+            'minfilestoformrelease' => 0,
+            'minsizetoformrelease' => 0,
+            'route_obfuscated_names' => 1,
+            'obfuscated_default_root_categories_id' => Category::MOVIE_ROOT,
+        ]);
+
+        $response->assertRedirect('admin/group-list');
+
+        $savedGroup = DB::table('usenet_groups')->where('id', $group->id)->first();
+        $this->assertSame(1, $savedGroup->route_obfuscated_names);
+        $this->assertSame(Category::MOVIE_ROOT, $savedGroup->obfuscated_default_root_categories_id);
+    }
+
+    public function test_single_group_edit_exposes_only_root_categories_for_obfuscated_routing(): void
+    {
+        $this->createGroups(1);
+        $group = DB::table('usenet_groups')->first();
+        DB::table('categories')->insert([
+            'id' => 1234,
+            'title' => 'Not a root',
+            'root_categories_id' => 1,
+            'status' => 1,
+        ]);
+
+        $response = $this->actingAs($this->admin())->get(route('admin.group-edit', ['id' => $group->id]));
+
+        $response->assertOk();
+        $response->assertSee('Route Obfuscated Names');
+        $response->assertSee('Default Root Category');
+        $response->assertSee('<option value="2000"', false);
+        $response->assertSee('<option value="6000"', false);
+        $response->assertDontSee('<option value="1234"', false);
+    }
+
+    public function test_single_group_edit_rejects_enabled_obfuscated_routing_without_a_root(): void
+    {
+        $this->createGroups(1);
+        $group = DB::table('usenet_groups')->first();
+
+        $response = $this->actingAs($this->admin())->from(route('admin.group-edit', ['id' => $group->id]))
+            ->post('/admin/group-edit?action=submit', [
+                'id' => $group->id,
+                'name' => $group->name,
+                'description' => $group->description,
+                'backfill_target' => 1,
+                'first_record' => 0,
+                'last_record' => 0,
+                'active' => 1,
+                'backfill' => 0,
+                'minfilestoformrelease' => 0,
+                'minsizetoformrelease' => 0,
+                'route_obfuscated_names' => 1,
+                'obfuscated_default_root_categories_id' => null,
+            ]);
+
+        $response->assertRedirect(route('admin.group-edit', ['id' => $group->id]));
+        $response->assertSessionHasErrors('obfuscated_default_root_categories_id');
+        $this->assertSame(0, DB::table('usenet_groups')->where('id', $group->id)->value('route_obfuscated_names'));
+    }
+
+    public function test_categorization_uses_the_persisted_group_obfuscated_routing_settings(): void
+    {
+        $this->createGroups(1);
+        $groupId = DB::table('usenet_groups')->value('id');
+        DB::table('usenet_groups')->where('id', $groupId)->update([
+            'route_obfuscated_names' => true,
+            'obfuscated_default_root_categories_id' => Category::XXX_ROOT,
+        ]);
+
+        $result = Categorization::categorize($groupId, 'ABCDEFGH1234567890XY', debug: true);
+
+        $this->assertSame(Category::XXX_OTHER, $result['categories_id']);
+        $this->assertSame('group_obfuscated_default_root', $result['debug']['matched_by']);
+        $this->assertFalse($result['debug']['locked_to_misc']);
+    }
+
     private function admin(): Authenticatable
     {
         /** @var Authenticatable $admin */
@@ -410,6 +551,8 @@ class AdminGroupListPageTest extends TestCase
                 'minfilestoformrelease' => null,
                 'minsizetoformrelease' => null,
                 'backfill_target' => 1,
+                'route_obfuscated_names' => false,
+                'obfuscated_default_root_categories_id' => null,
             ];
         }
 
@@ -540,6 +683,8 @@ class AdminGroupListPageTest extends TestCase
             $table->unsignedInteger('minfilestoformrelease')->nullable();
             $table->unsignedBigInteger('minsizetoformrelease')->nullable();
             $table->unsignedInteger('backfill_target')->default(1);
+            $table->boolean('route_obfuscated_names')->default(false);
+            $table->unsignedInteger('obfuscated_default_root_categories_id')->nullable();
         });
     }
 
@@ -556,11 +701,27 @@ class AdminGroupListPageTest extends TestCase
     private function seedCategories(): void
     {
         DB::table('root_categories')->insert([
-            'id' => 1,
-            'title' => 'General',
-            'status' => 1,
-            'created_at' => now(),
-            'updated_at' => now(),
+            [
+                'id' => 1,
+                'title' => 'General',
+                'status' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => Category::MOVIE_ROOT,
+                'title' => 'Movies',
+                'status' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => Category::XXX_ROOT,
+                'title' => 'XXX',
+                'status' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
 
         DB::table('categories')->insert([

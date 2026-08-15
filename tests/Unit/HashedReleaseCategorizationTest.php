@@ -11,6 +11,7 @@ use App\Services\Categorization\Pipes\BookPipe;
 use App\Services\Categorization\Pipes\CategorizationPassable;
 use App\Services\Categorization\Pipes\ConsolePipe;
 use App\Services\Categorization\Pipes\GroupNamePipe;
+use App\Services\Categorization\Pipes\GroupObfuscatedRoutingPipe;
 use App\Services\Categorization\Pipes\MiscPipe;
 use App\Services\Categorization\Pipes\MiscSafetyNetPipe;
 use App\Services\Categorization\Pipes\MoviePipe;
@@ -26,8 +27,9 @@ class HashedReleaseCategorizationTest extends TestCase
 {
     /**
      * The ordered list of pipes that matches CategorizationPipeline::createDefault().
-     * Sorted by priority: MiscPipe(1), GroupNamePipe(5), XxxPipe(10), TvPipe(20),
-     * MoviePipe(25), BookPipe, MusicPipe, PcPipe, ConsolePipe, MiscSafetyNetPipe.
+     * Sorted by priority: MiscPipe(1), GroupObfuscatedRoutingPipe(2),
+     * GroupNamePipe(5), XxxPipe(10), TvPipe(20), MoviePipe(25), BookPipe,
+     * MusicPipe, PcPipe, ConsolePipe, MiscSafetyNetPipe.
      *
      * @return list<object>
      */
@@ -35,6 +37,7 @@ class HashedReleaseCategorizationTest extends TestCase
     {
         return [
             new MiscPipe,
+            new GroupObfuscatedRoutingPipe,
             new GroupNamePipe,
             new XxxPipe,
             new TvPipe,
@@ -50,13 +53,19 @@ class HashedReleaseCategorizationTest extends TestCase
     /**
      * Run a release name through the full pipe chain and return the passable.
      */
-    private function runPipeline(string $releaseName, string $groupName = ''): CategorizationPassable
-    {
+    private function runPipeline(
+        string $releaseName,
+        string $groupName = '',
+        bool $routeObfuscatedNames = false,
+        ?int $obfuscatedDefaultRootCategoryId = null,
+    ): CategorizationPassable {
         $context = new ReleaseContext(
             releaseName: $releaseName,
             groupId: 0,
             groupName: $groupName,
             poster: '',
+            routeObfuscatedNames: $routeObfuscatedNames,
+            obfuscatedDefaultRootCategoryId: $obfuscatedDefaultRootCategoryId,
         );
 
         $passable = new CategorizationPassable($context, debug: true);
@@ -117,6 +126,23 @@ class HashedReleaseCategorizationTest extends TestCase
             'Digit-heavy pattern' => ['xz.123456789012', 'gibberish_random_digits'],
             'Zero vowel core' => ['xkcdqwrtypsdfghjklmnbvcxz', 'gibberish_zero_vowels'],
             'No signal long token' => ['A1b2.C3d4.E5f6.G7h8.I9j0', 'gibberish_no_signal'],
+        ];
+    }
+
+    /**
+     * @return array<string, array{0: int, 1: int}>
+     */
+    public static function rootCategoryOthersProvider(): array
+    {
+        return [
+            'General' => [Category::OTHER_ROOT, Category::OTHER_MISC],
+            'Games' => [Category::GAME_ROOT, Category::GAME_OTHER],
+            'Movies' => [Category::MOVIE_ROOT, Category::MOVIE_OTHER],
+            'Music' => [Category::MUSIC_ROOT, Category::MUSIC_OTHER],
+            'PC' => [Category::PC_ROOT, Category::PC_OTHER],
+            'TV' => [Category::TV_ROOT, Category::TV_OTHER],
+            'XXX' => [Category::XXX_ROOT, Category::XXX_OTHER],
+            'Books' => [Category::BOOKS_ROOT, Category::BOOKS_UNKNOWN],
         ];
     }
 
@@ -277,6 +303,89 @@ class HashedReleaseCategorizationTest extends TestCase
             $passable->bestResult->categoryId,
             "Expected OTHER_HASHED for locked release: $name"
         );
+    }
+
+    public function test_obfuscated_name_routes_to_the_groups_xxx_root(): void
+    {
+        $passable = $this->runPipeline(
+            'ABCDEFGH1234567890XY',
+            'alt.binaries.multimedia.erotica',
+            routeObfuscatedNames: true,
+            obfuscatedDefaultRootCategoryId: Category::XXX_ROOT,
+        );
+
+        $this->assertFalse($passable->lockedToMisc);
+        $this->assertSame(Category::XXX_OTHER, $passable->bestResult->categoryId);
+        $this->assertSame('group_obfuscated_default_root', $passable->bestResult->matchedBy);
+    }
+
+    #[DataProvider('rootCategoryOthersProvider')]
+    public function test_obfuscated_name_routes_to_each_roots_other_category(int $rootCategoryId, int $expectedCategoryId): void
+    {
+        $passable = $this->runPipeline(
+            'ABCDEFGH1234567890XY',
+            routeObfuscatedNames: true,
+            obfuscatedDefaultRootCategoryId: $rootCategoryId,
+        );
+
+        $this->assertFalse($passable->lockedToMisc);
+        $this->assertSame($expectedCategoryId, $passable->bestResult->categoryId);
+        $this->assertSame('group_obfuscated_default_root', $passable->bestResult->matchedBy);
+    }
+
+    public function test_obfuscated_name_stays_hashed_when_group_routing_is_off(): void
+    {
+        $passable = $this->runPipeline(
+            'ABCDEFGH1234567890XY',
+            'alt.binaries.multimedia.erotica',
+            obfuscatedDefaultRootCategoryId: Category::XXX_ROOT,
+        );
+
+        $this->assertTrue($passable->lockedToMisc);
+        $this->assertSame(Category::OTHER_HASHED, $passable->bestResult->categoryId);
+        $this->assertSame('obfuscated_uppercase', $passable->bestResult->matchedBy);
+    }
+
+    public function test_true_hash_stays_hashed_when_group_routing_is_on(): void
+    {
+        $passable = $this->runPipeline(
+            'd41d8cd98f00b204e9800998ecf8427e',
+            'alt.binaries.multimedia.erotica',
+            routeObfuscatedNames: true,
+            obfuscatedDefaultRootCategoryId: Category::XXX_ROOT,
+        );
+
+        $this->assertTrue($passable->lockedToMisc);
+        $this->assertSame(Category::OTHER_HASHED, $passable->bestResult->categoryId);
+        $this->assertSame('hash_md5', $passable->bestResult->matchedBy);
+    }
+
+    public function test_gibberish_name_routes_to_movies_without_safety_net_downgrade(): void
+    {
+        $passable = $this->runPipeline(
+            'aB3c.D4eF.5gH6i.J7kL8m',
+            'alt.binaries.movies',
+            routeObfuscatedNames: true,
+            obfuscatedDefaultRootCategoryId: Category::MOVIE_ROOT,
+        );
+
+        $this->assertFalse($passable->lockedToMisc);
+        $this->assertSame(Category::MOVIE_OTHER, $passable->bestResult->categoryId);
+        $this->assertSame('group_obfuscated_default_root', $passable->bestResult->matchedBy);
+    }
+
+    public function test_content_match_refines_the_groups_obfuscated_routing_floor(): void
+    {
+        $passable = $this->runPipeline(
+            '[01/10] - "xK9mR2pL4qW7nT3vB.part01.rar" Brazzers.Name.XXX.1080p.MP4-XXX',
+            'alt.binaries.multimedia.erotica',
+            routeObfuscatedNames: true,
+            obfuscatedDefaultRootCategoryId: Category::XXX_ROOT,
+        );
+
+        $this->assertFalse($passable->lockedToMisc);
+        $this->assertSame(Category::XXX_CLIPHD, $passable->bestResult->categoryId);
+        $this->assertSame('clip_hd_xxx', $passable->bestResult->matchedBy);
     }
 
     // ------------------------------------------------------------------

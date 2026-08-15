@@ -11,6 +11,7 @@ use App\Services\Releases\ReleaseManagementService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\DB;
 
@@ -29,7 +30,10 @@ use Illuminate\Support\Facades\DB;
  * @property int|null $minsizetoformrelease
  * @property bool $active
  * @property bool $backfill
+ * @property bool $route_obfuscated_names
+ * @property int|null $obfuscated_default_root_categories_id
  * @property string|null $description
+ * @property-read RootCategory|null $obfuscatedDefaultRoot
  * @property-read Collection|Release[] $release
  *
  * @method static \Illuminate\Database\Eloquent\Builder|\App\Models\UsenetGroup whereActive($value)
@@ -82,13 +86,14 @@ class UsenetGroup extends Model
     protected $allasmgr;
 
     /**
-     * Group constructor.
-     *
-     * @throws \Exception
+     * @return array<string, string>
      */
-    public function __construct()
+    protected function casts(): array
     {
-        parent::__construct();
+        return [
+            'route_obfuscated_names' => 'boolean',
+            'obfuscated_default_root_categories_id' => 'integer',
+        ];
     }
 
     /**
@@ -97,6 +102,14 @@ class UsenetGroup extends Model
     public function release(): HasMany
     {
         return $this->hasMany(Release::class, 'groups_id');
+    }
+
+    /**
+     * @return BelongsTo<RootCategory, $this>
+     */
+    public function obfuscatedDefaultRoot(): BelongsTo
+    {
+        return $this->belongsTo(RootCategory::class, 'obfuscated_default_root_categories_id');
     }
 
     /**
@@ -216,6 +229,7 @@ class UsenetGroup extends Model
     public static function getGroupsRange(string $groupname = '', mixed $active = null): LengthAwarePaginator // @phpstan-ignore missingType.generics
     {
         $groups = self::query()
+            ->with('obfuscatedDefaultRoot:id,title')
             ->select([
                 'id',
                 'name',
@@ -228,6 +242,8 @@ class UsenetGroup extends Model
                 'minfilestoformrelease',
                 'minsizetoformrelease',
                 'backfill_target',
+                'route_obfuscated_names',
+                'obfuscated_default_root_categories_id',
             ])
             ->orderBy('name');
 
@@ -261,6 +277,10 @@ class UsenetGroup extends Model
                 'backfill' => $group['backfill'],
                 'minsizetoformrelease' => empty($group['minsizetoformrelease']) ? null : $group['minsizetoformrelease'],
                 'minfilestoformrelease' => empty($group['minfilestoformrelease']) ? null : $group['minfilestoformrelease'],
+                'route_obfuscated_names' => (bool) ($group['route_obfuscated_names'] ?? false),
+                'obfuscated_default_root_categories_id' => empty($group['obfuscated_default_root_categories_id'])
+                    ? null
+                    : (int) $group['obfuscated_default_root_categories_id'],
             ]
         );
     }
@@ -309,6 +329,8 @@ class UsenetGroup extends Model
                 'backfill' => $group['backfill'] ?? 0,
                 'minsizetoformrelease' => $group['minsizetoformrelease'] ?? null,
                 'minfilestoformrelease' => $group['minfilestoformrelease'] ?? null,
+                'route_obfuscated_names' => (bool) ($group['route_obfuscated_names'] ?? false),
+                'obfuscated_default_root_categories_id' => $group['obfuscated_default_root_categories_id'] ?? null,
             ]);
         }
 

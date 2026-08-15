@@ -26,6 +26,8 @@ class ReleaseContext
         public readonly string $poster = '',
         public readonly bool $categorizeForeign = true,
         public readonly bool $catWebDL = true,
+        public readonly bool $routeObfuscatedNames = false,
+        public readonly ?int $obfuscatedDefaultRootCategoryId = null,
     ) {}
 
     /**

@@ -136,6 +136,51 @@
                 </p>
             </div>
 
+            <!-- Obfuscated-name routing -->
+            <div class="mb-6">
+                <x-label>Route Obfuscated Names:</x-label>
+                @php($routeObfuscatedNames = (bool) old('route_obfuscated_names', $group['route_obfuscated_names'] ?? false))
+                <div class="flex items-center gap-6">
+                    <label class="flex items-center text-sm text-gray-700 dark:text-gray-300">
+                        <input type="radio"
+                               name="route_obfuscated_names"
+                               value="1"
+                               class="h-4 w-4 border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700"
+                               {{ $routeObfuscatedNames ? 'checked' : '' }}>
+                        <span class="ml-2">Enabled</span>
+                    </label>
+                    <label class="flex items-center text-sm text-gray-700 dark:text-gray-300">
+                        <input type="radio"
+                               name="route_obfuscated_names"
+                               value="0"
+                               class="h-4 w-4 border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700"
+                               {{ ! $routeObfuscatedNames ? 'checked' : '' }}>
+                        <span class="ml-2">Disabled</span>
+                    </label>
+                </div>
+                <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                    Route names identified as obfuscated or gibberish to this group's default root before content-specific categorization continues.
+                </p>
+            </div>
+
+            <div class="mb-6">
+                <x-label for="obfuscated_default_root_categories_id">Default Root Category:</x-label>
+                <x-select id="obfuscated_default_root_categories_id" name="obfuscated_default_root_categories_id">
+                    <option value="">No default root</option>
+                    @foreach($rootCategories as $rootCategory)
+                        <option value="{{ $rootCategory->id }}" {{ (string) old('obfuscated_default_root_categories_id', $group['obfuscated_default_root_categories_id'] ?? '') === (string) $rootCategory->id ? 'selected' : '' }}>
+                            {{ $rootCategory->title }}
+                        </option>
+                    @endforeach
+                </x-select>
+                @error('obfuscated_default_root_categories_id')
+                    <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                @enderror
+                <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                    May be selected while routing is disabled; it remains inert until routing is enabled.
+                </p>
+            </div>
+
             <!-- First Record -->
             <div class="mb-6">
                 <label for="first_record" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">

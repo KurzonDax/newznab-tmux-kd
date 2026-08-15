@@ -39,6 +39,11 @@ class XxxCategorizer extends AbstractCategorizer
     {
         $name = $context->releaseName;
 
+        if (($context->hasSeasonEpisodeToken() || $context->hasStandaloneSeasonToken()) &&
+            ! $context->hasAdultMarkers()) {
+            return $this->noMatch();
+        }
+
         // Check if it looks like adult content
         if (! $this->looksLikeXxx($name)) {
             return $this->noMatch();
@@ -283,11 +288,6 @@ class XxxCategorizer extends AbstractCategorizer
     {
         // Exclude packs and collections
         if (preg_match('/^(Complete|Pack|Collection|Anthology|Siterip|SiteRip)\b/i', $name)) {
-            return null;
-        }
-
-        // Exclude TV shows
-        if (preg_match('/\b(S\d{1,2}E\d{1,2}|S\d{1,2}|Season\s\d{1,2})\b/i', $name)) {
             return null;
         }
 

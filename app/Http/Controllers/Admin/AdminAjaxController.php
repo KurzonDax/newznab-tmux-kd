@@ -156,7 +156,10 @@ class AdminAjaxController extends BasePageController
         $groupIds = $validatedRequest->groupIds();
         UsenetGroup::updateSelected($groupIds, $validatedRequest->changes());
         $updated = count($groupIds);
-        $groups = UsenetGroup::query()->whereIn('id', $groupIds)->get();
+        $groups = UsenetGroup::query()
+            ->with('obfuscatedDefaultRoot:id,title')
+            ->whereIn('id', $groupIds)
+            ->get();
         $rows = [];
 
         foreach ($groups as $group) {
@@ -173,7 +176,9 @@ class AdminAjaxController extends BasePageController
 
     private function renderGroupRow(int $groupId): string
     {
-        $group = UsenetGroup::query()->findOrFail($groupId);
+        $group = UsenetGroup::query()
+            ->with('obfuscatedDefaultRoot:id,title')
+            ->findOrFail($groupId);
 
         return view('admin.groups._row', compact('group'))->render();
     }
