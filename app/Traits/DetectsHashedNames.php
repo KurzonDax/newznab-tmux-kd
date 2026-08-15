@@ -211,7 +211,9 @@ trait DetectsHashedNames
             ? $this->getCoreNameWithoutSeparators($this->foldCapitalizedWords($this->stripExtensionsForAnalysis($originalName)))
             : $coreName;
 
-        if (strlen($transitionSource) !== $coreLen) {
+        // Callers may pass a $coreName derived differently from $originalName;
+        // only trust the folded form when it is the same string modulo case.
+        if (strcasecmp($transitionSource, $coreName) !== 0) {
             $transitionSource = $coreName;
         }
 
