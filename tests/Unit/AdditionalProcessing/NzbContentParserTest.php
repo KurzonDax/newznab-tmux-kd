@@ -77,6 +77,59 @@ class NzbContentParserTest extends TestCase
         $this->assertSame(['main-1', 'main-2'], $result['mediaInfoMessageIDs']);
     }
 
+    public function test_it_keeps_archive_volumes_out_of_direct_media_candidates(): void
+    {
+        $parser = $this->makeParser();
+        $config = $this->makeConfig([
+            'processThumbnails' => true,
+            'processJPGSample' => true,
+            'processMediaInfo' => true,
+            'processAudioInfo' => true,
+        ]);
+
+        $result = $parser->extractMessageIDs([
+            ['title' => 'example.sample.mkv.part001.rar" yEnc', 'segments' => ['<archive-video>']],
+            ['title' => 'cover.jpg.part001.rar" yEnc', 'segments' => ['<archive-image>']],
+            ['title' => 'track.flac.part001.rar" yEnc', 'segments' => ['<archive-audio>']],
+            ['title' => 'book.epub.part001.rar" yEnc', 'segments' => ['<archive-book>']],
+            ['title' => 'example.sample.mkv" yEnc', 'segments' => ['<sample>']],
+            ['title' => 'example.mp4" yEnc', 'segments' => ['<video>']],
+            ['title' => 'cover.jpg" yEnc', 'segments' => ['<image>']],
+            ['title' => 'track.flac" yEnc', 'segments' => ['<audio>']],
+        ], 'alt.binaries.test', $config);
+
+        $this->assertTrue($result['hasCompressedFile']);
+        $this->assertSame(['<sample>'], $result['sampleMessageIDs']);
+        $this->assertSame(['<image>'], $result['jpgMessageIDs']);
+        $this->assertSame(['<video>'], $result['mediaInfoMessageIDs']);
+        $this->assertSame('<audio>', $result['audioInfoMessageID']);
+        $this->assertSame('flac', $result['audioInfoExtension']);
+        $this->assertSame(1, $result['bookFileCount']);
+    }
+
+    public function test_it_selects_terminal_media_when_earlier_subject_tokens_look_archived(): void
+    {
+        $parser = $this->makeParser();
+        $config = $this->makeConfig([
+            'processThumbnails' => true,
+            'processJPGSample' => true,
+            'processMediaInfo' => true,
+            'processAudioInfo' => true,
+        ]);
+
+        $result = $parser->extractMessageIDs([
+            ['title' => '"release.rar" - "clip.sample.mkv" yEnc', 'segments' => ['<sample>']],
+            ['title' => '"release.rar" - "clip.mp4" yEnc', 'segments' => ['<video>']],
+            ['title' => '"release.rar" - "cover.jpg" yEnc', 'segments' => ['<image>']],
+            ['title' => '"release.rar" - "track.flac" yEnc', 'segments' => ['<audio>']],
+        ], 'alt.binaries.test', $config);
+
+        $this->assertSame(['<sample>'], $result['sampleMessageIDs']);
+        $this->assertSame(['<image>'], $result['jpgMessageIDs']);
+        $this->assertSame(['<video>'], $result['mediaInfoMessageIDs']);
+        $this->assertSame('<audio>', $result['audioInfoMessageID']);
+    }
+
     private function makeParser(): NzbContentParser
     {
         return new NzbContentParser(

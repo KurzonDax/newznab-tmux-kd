@@ -11,8 +11,6 @@ use Illuminate\Support\Facades\Log;
 
 final readonly class AdditionalWorkPlanner
 {
-    private const string ARCHIVE_PATTERN = '/(\.(part\d+|[rz]\d+|rar|0+|0*10?|zipr\d{2,3}|zipx?)("|\s*\.rar)*($|[ ")]|-])|"[a-f0-9]{32}\.[1-9]\d{1,2}".*\(\d+\/\d{2,}\)$)/i';
-
     public function __construct(private ProcessingConfiguration $config) {}
 
     /**
@@ -43,7 +41,7 @@ final readonly class AdditionalWorkPlanner
                     $bookFileCount++;
                 }
 
-                if (preg_match(self::ARCHIVE_PATTERN, $title) === 1) {
+                if (PostedFileClassifier::containsArchiveCandidate($title)) {
                     $archiveMessageIds = $this->extractSegments(
                         $segments,
                         $this->config->maximumRarSegments,
@@ -65,7 +63,7 @@ final readonly class AdditionalWorkPlanner
                 }
 
                 if ($this->config->processThumbnails && $sampleMessageIds === [] && $segments !== []
-                    && $this->isExplicitVideoSample($title)
+                    && PostedFileClassifier::isExplicitVideoSample($title, $this->config->videoFileRegex)
                 ) {
                     $sampleMessageIds = $this->extractSegments(
                         $segments,
@@ -77,7 +75,7 @@ final readonly class AdditionalWorkPlanner
 
                 if ($this->config->processJPGSample && $jpgMessageIds === [] && $segments !== []
                     && preg_match('/flac|lossless|mp3|music|inner-sanctum|sound/i', $groupName) !== 1
-                    && preg_match('/\.(?:jpe?g|png|webp)[. ")\]]/i', $title) === 1
+                    && PostedFileClassifier::matchesTerminalExtension($title, '\.(?:jpe?g|png|webp)')
                 ) {
                     $jpgMessageIds = $this->extractSegments(
                         $segments,
@@ -88,8 +86,8 @@ final readonly class AdditionalWorkPlanner
                 }
 
                 if ($this->config->processMediaInfo && $mediaInfoMessageIds === [] && $segments !== []
-                    && ! $this->isExplicitVideoSample($title)
-                    && preg_match('/'.$this->config->videoFileRegex.'[. ")\]]/i', $title) === 1
+                    && ! PostedFileClassifier::isExplicitVideoSample($title, $this->config->videoFileRegex)
+                    && PostedFileClassifier::matchesTerminalExtension($title, $this->config->videoFileRegex)
                 ) {
                     $mediaInfoMessageIds = $this->extractSegments(
                         $segments,
@@ -100,7 +98,7 @@ final readonly class AdditionalWorkPlanner
                 }
 
                 if ($this->config->processAudioInfo && $audioInfoMessageId === '' && isset($segments[0])
-                    && preg_match('/'.$this->config->audioFileRegex.'[. ")\]]/i', $title, $type) === 1
+                    && PostedFileClassifier::matchesTerminalExtension($title, $this->config->audioFileRegex, $type)
                 ) {
                     $audioInfoExtension = (string) ($type[1] ?? '');
                     $audioInfoMessageId = (string) $segments[0];
@@ -143,14 +141,6 @@ final readonly class AdditionalWorkPlanner
     {
         return preg_match(
             '/(?:'.$this->config->supportFileRegex.'|nfo\b|inf\b|ofn\b)($|[ ")]|-])(?!.{20,})/i',
-            $title,
-        ) === 1;
-    }
-
-    private function isExplicitVideoSample(string $title): bool
-    {
-        return preg_match(
-            '/(?:^|[._\-\s])sample'.$this->config->videoFileRegex.'[. ")\]]/i',
             $title,
         ) === 1;
     }

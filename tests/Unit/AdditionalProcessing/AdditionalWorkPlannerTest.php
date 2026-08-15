@@ -88,6 +88,67 @@ class AdditionalWorkPlannerTest extends TestCase
     }
 
     #[Test]
+    public function it_keeps_archive_volumes_out_of_direct_media_candidates(): void
+    {
+        $planner = new AdditionalWorkPlanner($this->makeConfig([
+            'processThumbnails' => true,
+            'processJPGSample' => true,
+            'processMediaInfo' => true,
+            'processAudioInfo' => true,
+        ]));
+
+        $plan = $planner->plan([
+            ['title' => 'example.sample.mkv.part001.rar" yEnc', 'segments' => ['<archive-video>']],
+            ['title' => 'cover.jpg.part001.rar" yEnc', 'segments' => ['<archive-image>']],
+            ['title' => 'track.flac.part001.rar" yEnc', 'segments' => ['<archive-audio>']],
+            ['title' => 'book.epub.part001.rar" yEnc', 'segments' => ['<archive-book>']],
+            ['title' => 'example.sample.mkv" yEnc', 'segments' => ['<sample>']],
+            ['title' => 'example.mp4" yEnc', 'segments' => ['<video>']],
+            ['title' => 'cover.jpg" yEnc', 'segments' => ['<image>']],
+            ['title' => 'track.flac" yEnc', 'segments' => ['<audio>']],
+        ], 'alt.binaries.test');
+
+        $this->assertSame(['<sample>'], $plan->sampleMessageIds);
+        $this->assertSame(['<image>'], $plan->jpgMessageIds);
+        $this->assertSame(['<video>'], $plan->mediaInfoMessageIds);
+        $this->assertSame('<audio>', $plan->audioInfoMessageId);
+        $this->assertSame('flac', $plan->audioInfoExtension);
+        $this->assertSame(
+            [
+                'example.sample.mkv.part001.rar" yEnc',
+                'cover.jpg.part001.rar" yEnc',
+                'track.flac.part001.rar" yEnc',
+                'book.epub.part001.rar" yEnc',
+            ],
+            array_map(static fn (ArchiveCandidate $candidate): string => $candidate->title, $plan->archiveCandidates),
+        );
+        $this->assertSame(1, $plan->bookFileCount);
+    }
+
+    #[Test]
+    public function it_selects_terminal_media_when_earlier_subject_tokens_look_archived(): void
+    {
+        $planner = new AdditionalWorkPlanner($this->makeConfig([
+            'processThumbnails' => true,
+            'processJPGSample' => true,
+            'processMediaInfo' => true,
+            'processAudioInfo' => true,
+        ]));
+
+        $plan = $planner->plan([
+            ['title' => '"release.rar" - "clip.sample.mkv" yEnc', 'segments' => ['<sample>']],
+            ['title' => '"release.rar" - "clip.mp4" yEnc', 'segments' => ['<video>']],
+            ['title' => '"release.rar" - "cover.jpg" yEnc', 'segments' => ['<image>']],
+            ['title' => '"release.rar" - "track.flac" yEnc', 'segments' => ['<audio>']],
+        ], 'alt.binaries.test');
+
+        $this->assertSame(['<sample>'], $plan->sampleMessageIds);
+        $this->assertSame(['<image>'], $plan->jpgMessageIds);
+        $this->assertSame(['<video>'], $plan->mediaInfoMessageIds);
+        $this->assertSame('<audio>', $plan->audioInfoMessageId);
+    }
+
+    #[Test]
     public function it_keeps_a_usable_last_volume_when_the_first_volume_is_missing(): void
     {
         $planner = new AdditionalWorkPlanner($this->makeConfig());

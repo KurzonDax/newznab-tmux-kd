@@ -184,16 +184,14 @@ class NzbContentParser
                 }
 
                 // Compressed file detection
-                if (! $result['hasCompressedFile'] && preg_match(
-                    '/(\\.(part\\d+|[rz]\\d+|rar|0+|0*10?|zipr\\d{2,3}|zipx?)("|\\s*\\.rar)*($|[ ")]|-])|"[a-f0-9]{32}\\.[1-9]\\d{1,2}".*\\(\\d+\\/\\d{2,}\\)$)/i',
-                    $title
-                )) {
+                $isArchive = PostedFileClassifier::containsArchiveCandidate($title);
+                if (! $result['hasCompressedFile'] && $isArchive) {
                     $result['hasCompressedFile'] = true;
                 }
 
                 // Look for a video sample (not an image)
                 if ($config->processThumbnails && empty($result['sampleMessageIDs']) && ! empty($segments)
-                    && $this->isExplicitVideoSample($title, $config)
+                    && PostedFileClassifier::isExplicitVideoSample($title, $config->videoFileRegex)
                 ) {
                     $result['sampleMessageIDs'] = $this->extractSegments($segments, $config->segmentsToDownload);
                 }
@@ -201,22 +199,22 @@ class NzbContentParser
                 // Look for a JPG picture (not a CD cover)
                 if ($config->processJPGSample && empty($result['jpgMessageIDs']) && ! empty($segments)
                     && ! preg_match('/flac|lossless|mp3|music|inner-sanctum|sound/i', $groupName)
-                    && preg_match('/\.(?:jpe?g|png|webp)[. ")\]]/i', $title)
+                    && PostedFileClassifier::matchesTerminalExtension($title, '\.(?:jpe?g|png|webp)')
                 ) {
                     $result['jpgMessageIDs'] = $this->extractSegments($segments, $config->segmentsToDownload);
                 }
 
                 // Look for the main video file for MediaInfo and preview extraction.
                 if ($config->processMediaInfo && empty($result['mediaInfoMessageIDs']) && ! empty($segments)
-                    && ! $this->isExplicitVideoSample($title, $config)
-                    && preg_match('/'.$config->videoFileRegex.'[. ")\]]/i', $title)
+                    && ! PostedFileClassifier::isExplicitVideoSample($title, $config->videoFileRegex)
+                    && PostedFileClassifier::matchesTerminalExtension($title, $config->videoFileRegex)
                 ) {
                     $result['mediaInfoMessageIDs'] = $this->extractSegments($segments, $config->segmentsToDownload);
                 }
 
                 // Look for an audio file
                 if ($config->processAudioInfo && empty($result['audioInfoMessageID']) && ! empty($segments)
-                    && preg_match('/'.$config->audioFileRegex.'[. ")\]]/i', $title, $type)
+                    && PostedFileClassifier::matchesTerminalExtension($title, $config->audioFileRegex, $type)
                 ) {
                     $result['audioInfoExtension'] = $type[1];
                     $result['audioInfoMessageID'] = (string) $segments[0];
@@ -232,14 +230,6 @@ class NzbContentParser
         }
 
         return $result;
-    }
-
-    private function isExplicitVideoSample(string $title, ProcessingConfiguration $config): bool
-    {
-        return preg_match(
-            '/(?:^|[._\-\s])sample'.$config->videoFileRegex.'[. ")\]]/i',
-            $title,
-        ) === 1;
     }
 
     /**
