@@ -70,5 +70,8 @@ _Avoid_: plain "sample" when the generated/extracted distinction matters.
 An opt-in per-group setting (a toggle plus a default *root* category) that sends releases whose names look obfuscated or gibberish — but are **not** true MD5/SHA hashes — to the default root's *Other* subcategory (e.g. XXX/Other) instead of Other/Hashed. Off and unset for every group by default; never pre-populated. The routed root is a floor, not a lock: content pipes may still refine the subcategory. Editable per group and via Edit Selected.
 _Avoid_: "strong group" — the concept lives in the setting, not in a hardcoded group-name list.
 
+**Year-only movie fallback**:
+A low-confidence Movies/Other guess (`0.5`) for multi-token `Title.Year[.N]` names with no media markers. Movie post-processing may confirm the title and year; otherwise the release remains in Movies/Other.
+
 **Preview Generation**:
 The umbrella for creating Generated Previews and Generated Sample Videos. Toggleable per root category (covering the root's entire subtree, no child overrides) and AND-ed with the site-wide switches — the per-root toggle can only disable, never enable. Disabling never deletes existing artifacts. A release skipped by the toggle is owed generation if later recategorized into a root where generation is enabled; re-enabling a root's toggle owes nothing (explicit requeue is the backfill tool).

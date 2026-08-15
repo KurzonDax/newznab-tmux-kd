@@ -64,6 +64,96 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
     }
 
     /**
+     * @return array<string, array{0: string}>
+     */
+    public static function yearOnlyMovieReleaseProvider(): array
+    {
+        return [
+            'production subject' => ['[1/3] - "Demon.Slayer.Kimetsu.no.Yaiba.Infinity.Castle.2025.1.mkv" yEnc'],
+            'normalized release name' => ['Demon.Slayer.Kimetsu.no.Yaiba.Infinity.Castle.2025.1'],
+        ];
+    }
+
+    #[DataProvider('yearOnlyMovieReleaseProvider')]
+    public function test_year_only_movie_release_uses_low_confidence_fallback(string $name): void
+    {
+        $result = $this->runPipeline($name, 'alt.binaries.multimedia')->bestResult;
+
+        $this->assertSame(
+            [Category::MOVIE_OTHER, 'year_only_movie', 0.5],
+            [$result->categoryId, $result->matchedBy, $result->confidence],
+        );
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function yearOnlyMovieTitleProvider(): array
+    {
+        return [
+            'dot-separated title and year' => ['Some.Film.Title.2024'],
+            'space-separated title with parenthesized year' => ['Some Film Title (2024)'],
+            'dot-separated title with part number' => ['Some.Film.Title.2025.12'],
+        ];
+    }
+
+    #[DataProvider('yearOnlyMovieTitleProvider')]
+    public function test_year_only_movie_fallback_accepts_supported_title_shapes(string $name): void
+    {
+        $result = $this->runPipeline($name, 'alt.binaries.multimedia')->bestResult;
+
+        $this->assertSame(
+            [Category::MOVIE_OTHER, 'year_only_movie', 0.5],
+            [$result->categoryId, $result->matchedBy, $result->confidence],
+        );
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function yearOnlyMovieExclusionProvider(): array
+    {
+        return [
+            'season and episode after year' => ['Some.Show.2024.S01E03'],
+            'episode after year' => ['Some.Show.2024.E12'],
+            'season before year' => ['Some.Show.S02.2024'],
+            'single title token' => ['Video.2024'],
+            'year only' => ['2024'],
+            'adult marker' => ['Brazzers.Some.Title.2024'],
+        ];
+    }
+
+    #[DataProvider('yearOnlyMovieExclusionProvider')]
+    public function test_year_only_movie_fallback_rejects_excluded_names(string $name): void
+    {
+        $result = $this->runPipeline($name, 'alt.binaries.multimedia')->bestResult;
+
+        $this->assertNotSame('year_only_movie', $result->matchedBy);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string, 2: string}>
+     */
+    public static function yearOnlyMovieGroupPrecedenceProvider(): array
+    {
+        return [
+            'music group' => ['Some.Album.Title.2024', 'alt.binaries.mp3', 'group_name_music'],
+            'movie group' => ['Some.Film.Title.2024', 'alt.binaries.movies', 'group_name_movie'],
+        ];
+    }
+
+    #[DataProvider('yearOnlyMovieGroupPrecedenceProvider')]
+    public function test_group_name_match_outranks_year_only_movie_fallback(
+        string $name,
+        string $groupName,
+        string $expectedMatchedBy,
+    ): void {
+        $result = $this->runPipeline($name, $groupName)->bestResult;
+
+        $this->assertSame([0.6, $expectedMatchedBy], [$result->confidence, $result->matchedBy]);
+    }
+
+    /**
      * @return array<string, array{0: string, 1: string, 2: int}>
      */
     public static function expectedCategoryProvider(): array
