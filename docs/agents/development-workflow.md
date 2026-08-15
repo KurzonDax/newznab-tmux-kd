@@ -4,13 +4,20 @@ Master only moves by pull request. A ruleset enforces this server-side — direc
 
 ## The loop
 
-1. **Branch, in its own worktree.** Pick a short kebab-case branch name with a type prefix (`feat/`, `fix/`, `chore/`, `docs/`):
+1. **Branch, in its own worktree — always.** Every change, however small (docs, `.gitignore`, one-line fixes), gets its own worktree; never commit on a branch in the main checkout. Pick a short kebab-case branch name with a type prefix (`feat/`, `fix/`, `chore/`, `docs/`), then install dependencies inside the new worktree:
 
    ```bash
    git worktree add ~/worktrees/nntmux/<branch> -b <branch>
+   cd ~/worktrees/nntmux/<branch>
+   composer install --no-interaction
+   npm ci        # only if you will touch resources/ or run npm run build
    ```
 
-   Work and commit inside the worktree. (A plain `git switch -c <branch>` in the main checkout is acceptable when a worktree is impractical, e.g. the change depends on the running dev containers.)
+   `composer install` is not optional. `vendor/` is git-ignored, so a fresh worktree has none, and the CaptainHook git hooks (shared from the main checkout's `.git/hooks`) invoke `vendor/bin/captainhook`, `vendor/bin/pint`, and PHP lint **relative to the worktree** — without it every commit fails with `vendor/bin/captainhook: No such file or directory`. Tests and Pint need it for the same reason. Composer's trailing `php artisan package:discover` step boots the app and touches the database; if the dev database is not running it errors after `vendor/` is already complete, and that error can be ignored (Laravel rebuilds the package manifest lazily). Run PHPUnit as `vendor/bin/phpunit --filter=...` when `php artisan test` cannot boot for the same reason.
+
+   Work and commit inside the worktree.
+
+   > **macOS hosts:** the pre-commit action `scripts/runtime-permissions.sh check-source` models a Linux deployment host (`getent`, GNU `stat`/`find`/`realpath`, the `www-data` group) and skips itself on non-Linux platforms; the other hook actions (PHP lint, Composer lock check, Pint, design-system check) run normally. `make fix-permissions` and the other `runtime-permissions.sh` actions are Linux-only by design.
 
 2. **Open the PR and arm auto-merge** in the same breath:
 
