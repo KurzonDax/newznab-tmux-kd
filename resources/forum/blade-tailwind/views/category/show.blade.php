@@ -53,7 +53,7 @@
                                     <label for="selectAllThreads" class="text-gray-700 dark:text-gray-300">
                                         {{ trans('forum::threads.select_all') }}
                                     </label>
-                                    <input type="checkbox" value="" id="selectAllThreads" class="align-middle rounded border-gray-300 dark:border-gray-600 text-blue-500 dark:text-blue-400 focus:ring-blue-500 dark:focus:ring-blue-400 dark:bg-gray-700" @click="toggleAll" :checked="state.selectedThreads.length == selectableThreadIds.length">
+                                    <input type="checkbox" value="" id="selectAllThreads" class="align-middle rounded border-gray-300 dark:border-gray-600 text-primary-500 dark:text-primary-400 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-gray-700" @click="toggleAll" :checked="state.selectedThreads.length == selectableThreadIds.length">
                                 </div>
                             </div>
                     @endcan
@@ -67,7 +67,7 @@
 
                 @if (count($selectableThreadIds) > 0)
                     @can ('manageThreads', $category)
-                            <div class="fixed bottom-0 right-0 m-2" style="z-index: 1000; display: none;" :style="{ display: state.selectedThreads.length ? 'block' : 'none' }">
+                            <div v-cloak v-show="state.selectedThreads.length" class="fixed bottom-0 right-0 z-[1000] m-2">
                                 <div class="bg-white shadow-sm rounded-md min-w-96 max-w-full">
                                     <div class="border-b text-center py-4 px-6">
                                         {{ trans('forum::general.with_selection') }}
@@ -121,7 +121,7 @@
                                         @endif
 
                                         <div class="text-end">
-                                            <button type="submit" class="bg-blue-500 text-white rounded-md px-3 py-1" @click="submit" :disabled="state.selectedAction == null">{{ trans('forum::general.proceed') }}</button>
+                                            <button type="submit" class="bg-primary-500 text-white rounded-md px-3 py-1 dark:bg-primary-600" @click="submit" :disabled="state.selectedAction == null">{{ trans('forum::general.proceed') }}</button>
                                         </div>
                                     </div>
                                 </div>
@@ -160,7 +160,7 @@
         @can ('markThreadsAsRead')
             <div class="text-center mt-3">
                 <x-forum::button class="inline-flex px-6 items-center gap-2" data-open-modal="mark-threads-as-read">
-                    <i data-feather="book"></i> {{ trans('forum::general.mark_read') }}
+                    <i class="fas fa-book" aria-hidden="true"></i> {{ trans('forum::general.mark_read') }}
                 </x-forum::button>
             </div>
 

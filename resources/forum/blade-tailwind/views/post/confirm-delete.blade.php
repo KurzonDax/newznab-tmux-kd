@@ -17,7 +17,7 @@
 
                     @if (config('forum.general.soft_deletes'))
                         <div class="form-check" v-if="state.selectedPostAction == 'delete'">
-                            <input class="form-check-input rounded border-gray-300 dark:border-gray-600 text-blue-500 dark:text-blue-400 focus:ring-blue-500 dark:focus:ring-blue-400 dark:bg-gray-700" type="checkbox" name="permadelete" value="1" id="permadelete">
+                            <input class="form-check-input rounded border-gray-300 dark:border-gray-600 text-primary-500 dark:text-primary-400 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-gray-700" type="checkbox" name="permadelete" value="1" id="permadelete">
                             <label class="form-check-label text-gray-700 dark:text-gray-300" for="permadelete">
                                 {{ trans('forum::general.perma_delete') }}
                             </label>

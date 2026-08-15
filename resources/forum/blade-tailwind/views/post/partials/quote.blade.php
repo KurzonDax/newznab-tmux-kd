@@ -17,7 +17,7 @@
                                 'Admin' => 'bg-red-500 dark:bg-red-600 text-white',
                                 'Moderator' => 'bg-green-500 dark:bg-green-600 text-white',
                                 'Friend' => 'bg-purple-500 dark:bg-purple-600 text-white',
-                                'User' => 'bg-blue-500 dark:bg-blue-600 text-white',
+                                'User' => 'bg-primary-500 dark:bg-primary-600 text-white',
                                 'Disabled' => 'bg-gray-500 dark:bg-gray-600 text-white',
                             ];
                             $roleClass = $roleColors[$roleName] ?? 'bg-gray-400 dark:bg-gray-500 text-white';

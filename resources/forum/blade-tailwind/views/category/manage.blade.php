@@ -26,7 +26,7 @@
             </transition>
 
             <div class="flex justify-end py-3">
-                <button type="button" class="bg-blue-500 dark:bg-blue-600 text-white rounded py-2 px-8 hover:cursor-pointer hover:bg-blue-400 dark:hover:bg-blue-500 disabled:opacity-50 transition-colors" :disabled="state.isSavingDisabled" @click="onSave">
+                <button type="button" class="bg-primary-500 dark:bg-primary-600 text-white rounded py-2 px-8 hover:cursor-pointer hover:bg-primary-400 dark:hover:bg-primary-500 disabled:opacity-50 transition-colors" :disabled="state.isSavingDisabled" @click="onSave">
                     {{ trans('forum::general.save') }}
                 </button>
             </div>
@@ -51,7 +51,7 @@
                             <div class="text-muted text-gray-500 dark:text-gray-400">@{{ element.description }}</div>
                         </span>
                         <span>
-                            <a class="text-blue-500 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 px-3 py-2 text-sm ml-2 transition-colors" :href="element.route + '#modal=edit-category'">{{ trans('forum::general.edit') }}</a>
+                            <a class="text-primary-500 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 px-3 py-2 text-sm ml-2 transition-colors" :href="element.route + '#modal=edit-category'">{{ trans('forum::general.edit') }}</a>
                             <a class="bg-red-500 dark:bg-red-600 hover:bg-red-400 dark:hover:bg-red-500 text-white hover:text-white px-3 py-2 text-sm rounded ml-2 transition-colors" :href="element.route + '#modal=delete-category'">{{ trans('forum::general.delete') }}</a>
                         </span>
                     </span>

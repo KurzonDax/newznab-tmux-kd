@@ -203,16 +203,16 @@ This structure ensures Content Security Policy (CSP) compliance by using Alpine.
 
 **Components** (in `resources/views/components/`)
 
-- Buttons: `<x-button>` / `<x-button-link>` — variants `primary|secondary|muted|success|danger|warning|ghost`, sizes `sm|md|lg|icon`, `icon` prop for a leading Font Awesome icon. Extra classes/attributes pass through; escape Alpine/Vue bindings on component tags as `::disabled` etc. so Blade doesn't eval them. Forum app-level views use `<x-forum.button>`/`<x-forum.button-link>`/`<x-forum.button-secondary>`. Compact release-row actions may use the semantic `release-action*` classes.
+- Buttons: `<x-button>` / `<x-button-link>` — variants `primary|secondary|muted|success|danger|warning|ghost`, sizes `sm|md|lg|icon`, `icon` prop for a leading Font Awesome icon. Extra classes/attributes pass through; escape Alpine/Vue bindings on component tags as `::disabled` etc. so Blade doesn't eval them. The live forum preset uses its namespaced `<x-forum::button>`/`<x-forum::button-link>`/`<x-forum::button-secondary>` components. Compact release-row actions may use the semantic `release-action*` classes.
 - Forms: `<x-input>`, `<x-select>`, `<x-textarea>`, `<x-label>`; other primitives: `<x-badge>`, `<x-panel>`, `<x-page-header>`, `<x-breadcrumb>`, `<x-empty-state>`, `<x-sort-dropdown>`, `<x-view-toggle>`.
 - Legitimately bespoke (don't force into components): nav/dropdown togglers, modal close-X icons, state-conditional toggle chips/tabs, pagination, input-group-attached addons.
-- Icons: Font Awesome only (`fas`/`far`/`fab`); no feather-icons in app views (the out-of-scope forum package theme still bundles it — leave that alone).
+- Icons: Font Awesome only (`fas`/`far`/`fab`); no feather-icons in app or forum views.
 
 **Hard rules**
 
 - No inline `style=` attributes in views: use Tailwind utilities or a class in `csp-safe.css`; dynamic widths use the `progress-bar` class + `data-width` attribute (animated globally by `resources/js/progress-bar.js`). Documented exception: DB-driven forum category colors.
 - No new `!important` in `app.css` — its custom rules are unlayered, so under Tailwind v4 cascade layers they already beat `@layer utilities`. Budget is 1 (the `[x-cloak]` rule).
-- **Trap:** the live forum frontend renders the package preset in `resources/forum/blade-tailwind/` (view namespace `forum::`); `resources/views/forum/` is an orphaned copy nothing renders. Keep the forum bundle in the Vite entry points and `feather-icons` in `package.json` — the preset's `forum.js` imports it.
+- **Trap:** the live forum frontend is the app-owned preset in `resources/forum/blade-tailwind/` (view namespace `forum::`). Update that tree directly and keep its CSS/JS in the Vite entry points; do not recreate `resources/views/forum/` or duplicate its namespaced components under `resources/views/components/forum/`.
 - Email views (`resources/views/emails`, `components/mail`, `vendor/mail`) cannot use the app stylesheet — inline styles there are expected.
 
 ===

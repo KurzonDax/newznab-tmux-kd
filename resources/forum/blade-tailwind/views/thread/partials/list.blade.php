@@ -1,4 +1,4 @@
-<div class="rounded-xl border border-gray-200 bg-white shadow-sm transition hover:shadow-md dark:border-gray-700 dark:bg-gray-800" :class="{ 'ring-1 ring-blue-500 dark:ring-blue-400': state.selectedThreads.includes({{ $thread->id }}) }">
+<div class="rounded-xl border border-gray-200 bg-white shadow-sm transition hover:shadow-md dark:border-gray-700 dark:bg-gray-800" :class="{ 'ring-1 ring-primary-500 dark:ring-primary-400': state.selectedThreads.includes({{ $thread->id }}) }">
     <div class="flex flex-col gap-4 p-5 md:flex-row md:items-start md:justify-between md:gap-6 sm:p-6">
         <div class="md:w-3/6 text-center md:text-left">
             <span class="lead">
@@ -40,7 +40,7 @@
 
         @if ($thread->lastPost)
             <div class="md:w-1/6 flex justify-center md:flex-col md:items-end text-sm">
-                <a href="{{ Forum::route('thread.show', $thread->lastPost) }}" class="text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors">{{ trans('forum::posts.view') }} &raquo;</a>
+                <a href="{{ Forum::route('thread.show', $thread->lastPost) }}" class="text-primary-500 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors">{{ trans('forum::posts.view') }} &raquo;</a>
                 <div class="inline-flex items-center gap-2">
                     <span class="text-gray-900 dark:text-gray-100">{{ $thread->lastPost->authorName }}</span>
                     <span class="text-gray-500 dark:text-gray-400">@include ('forum::partials.timestamp', ['carbon' => $thread->lastPost->created_at])</span>
@@ -49,8 +49,8 @@
         @endif
 
         @if (isset($category) && isset($selectableThreadIds) && in_array($thread->id, $selectableThreadIds))
-            <div class="" style="flex: 0;">
-                <input type="checkbox" name="threads[]" :value="{{ $thread->id }}" v-model="state.selectedThreads" class="rounded border-gray-300 dark:border-gray-600 text-blue-500 dark:text-blue-400 focus:ring-blue-500 dark:focus:ring-blue-400 dark:bg-gray-700">
+            <div class="flex-none">
+                <input type="checkbox" name="threads[]" :value="{{ $thread->id }}" v-model="state.selectedThreads" class="rounded border-gray-300 dark:border-gray-600 text-primary-500 dark:text-primary-400 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-gray-700">
             </div>
         @endif
     </div>

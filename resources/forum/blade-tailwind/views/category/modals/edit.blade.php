@@ -15,14 +15,14 @@
     <div class="mb-3">
         <div class="form-check">
             <input type="hidden" name="accepts_threads" value="0" />
-            <input class="form-check-input rounded border-gray-300 dark:border-gray-600 text-blue-500 dark:text-blue-400 focus:ring-blue-500 dark:focus:ring-blue-400 dark:bg-gray-700" type="checkbox" name="accepts_threads" id="accepts-threads" value="1" {{ $category->accepts_threads ? 'checked' : '' }}>
+            <input class="form-check-input rounded border-gray-300 dark:border-gray-600 text-primary-500 dark:text-primary-400 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-gray-700" type="checkbox" name="accepts_threads" id="accepts-threads" value="1" {{ $category->accepts_threads ? 'checked' : '' }}>
             <label class="form-check-label text-gray-700 dark:text-gray-300" for="accepts-threads">{{ trans('forum::categories.enable_threads') }}</label>
         </div>
     </div>
     <div class="mb-3">
         <div class="form-check">
             <input type="hidden" name="is_private" value="0" />
-            <input class="form-check-input rounded border-gray-300 dark:border-gray-600 text-blue-500 dark:text-blue-400 focus:ring-blue-500 dark:focus:ring-blue-400 dark:bg-gray-700" type="checkbox" name="is_private" id="is-private" value="1" {{ $category->is_private ? 'checked' : '' }} {{ $privateAncestor != null ? 'disabled' : '' }}>
+            <input class="form-check-input rounded border-gray-300 dark:border-gray-600 text-primary-500 dark:text-primary-400 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-gray-700" type="checkbox" name="is_private" id="is-private" value="1" {{ $category->is_private ? 'checked' : '' }} {{ $privateAncestor != null ? 'disabled' : '' }}>
             <label class="form-check-label text-gray-700 dark:text-gray-300" for="is-private">{{ trans('forum::categories.make_private') }}</label>
         </div>
     </div>
@@ -31,7 +31,7 @@
         <div class="mb-3">
             <div>
                 <input type="hidden" name="thread_approval_enabled" value="0" />
-                <input class="rounded border-gray-300 dark:border-gray-600 text-blue-500 dark:text-blue-400 focus:ring-blue-500 dark:focus:ring-blue-400 dark:bg-gray-700" type="checkbox" name="thread_approval_enabled" id="thread-approval-enabled" value="1" {{ $category->thread_approval_enabled ? 'checked' : '' }}>
+                <input class="rounded border-gray-300 dark:border-gray-600 text-primary-500 dark:text-primary-400 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-gray-700" type="checkbox" name="thread_approval_enabled" id="thread-approval-enabled" value="1" {{ $category->thread_approval_enabled ? 'checked' : '' }}>
                 <label class="text-gray-700 dark:text-gray-300" for="thread-approval-enabled">{{ trans('forum::categories.enable_thread_approval') }}</label>
             </div>
         </div>
@@ -41,7 +41,7 @@
         <div class="mb-3">
             <div>
                 <input type="hidden" name="post_approval_enabled" value="0" />
-                <input class="rounded border-gray-300 dark:border-gray-600 text-blue-500 dark:text-blue-400 focus:ring-blue-500 dark:focus:ring-blue-400 dark:bg-gray-700" type="checkbox" name="post_approval_enabled" id="post-approval-enabled" value="1" {{ $category->post_approval_enabled ? 'checked' : '' }}>
+                <input class="rounded border-gray-300 dark:border-gray-600 text-primary-500 dark:text-primary-400 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-gray-700" type="checkbox" name="post_approval_enabled" id="post-approval-enabled" value="1" {{ $category->post_approval_enabled ? 'checked' : '' }}>
                 <label class="text-gray-700 dark:text-gray-300" for="post-approval-enabled">{{ trans('forum::categories.enable_post_approval') }}</label>
             </div>
         </div>

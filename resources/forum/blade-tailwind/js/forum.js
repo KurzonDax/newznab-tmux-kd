@@ -1,4 +1,3 @@
-import feather from 'feather-icons';
 import { createApp, ref, reactive, watch, computed } from 'vue/dist/vue.esm-bundler.js';
 import axios from 'axios';
 import Pickr from '@simonwep/pickr';
@@ -142,8 +141,6 @@ document.addEventListener('DOMContentLoaded', function () {
     if (hash.startsWith('modal=')) {
         openModal(findModal(hash.replace('modal=', '')));
     }
-
-    feather.replace();
 
     // Get default category color from meta tag if available
     const defaultColorMeta = document.querySelector('meta[name="default-category-color"]');
