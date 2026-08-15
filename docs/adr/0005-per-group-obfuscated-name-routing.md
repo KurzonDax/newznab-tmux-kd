@@ -1,0 +1,15 @@
+# Obfuscated release names are routed to a per-group default root, opt-in, never for true hashes
+
+The categorization pipeline detects hashed/obfuscated/gibberish names first and locks them to Other/Hashed (or Other/Misc) so no downstream rule can mis-file junk. That is the right default for general groups, but in dedicated single-purpose groups (`alt.binaries.multimedia.erotica`, anime groups, …) it is wrong almost every time: an obfuscated `MAX2016-03-26…part56.rar` posted to an erotica group is XXX content, and the group name is a stronger signal than the name's shape. Legacy nZEDb ignored the group here; the current `MiscSafetyNetPipe` goes the other way and distrusts group-only matches. Issue #63.
+
+We decided on **Obfuscated-name routing**: an opt-in setting on each usenet group — a toggle plus a default *root* category — that, when on, sends obfuscated/gibberish names in that group to the default root's *Other* subcategory (e.g. `XXX_OTHER`) instead of Other/Hashed. Off for every group by default; nothing is pre-populated for erotica/xxx/anime groups. Editable on the single-group form and in **Edit Selected** on the group list. Refining the subcategory from mediainfo after post-processing is a separate follow-up (#66).
+
+Deliberate choices a future reader may be tempted to "fix":
+
+- **A per-group setting, not a hardcoded "strong group" list.** A regex list (`erotica|xxx|anime`) was the first proposal. It was rejected because which groups are single-purpose is an operator judgment that changes over time and differs between installs, and because the target root is not always guessable from the name. The setting makes the policy explicit and reviewable in the admin UI.
+- **True hashes are excluded, always.** Only `obfuscated_*` / `gibberish_*` matches are routed; `hash_md5`/`hash_sha*` results still lock to Other/Hashed even in an opted-in group. A 32-hex name carries no content signal; an obfuscated-but-structured name plus a dedicated group does. Widening routing to real hashes would refill XXX/Other with junk and defeat the point of the hash lock.
+- **Root only, and always the root's *Other* subcategory at creation time.** Categorization runs at release creation and sees only group, name and poster — mediainfo does not exist yet. So the setting can only be trusted to pick a root; the subcategory is `<root>/Other` until something with real evidence (a content pipe match, or the mediainfo follow-up) refines it. Letting admins pick a specific subcategory would encode a guess as fact.
+- **The group default is a floor, not a lock.** Downstream content pipes may still produce a more specific category inside the pipeline run. `MiscSafetyNetPipe` must not downgrade the routed result, but nothing else is suppressed.
+- **No seeding.** Pre-populating erotica/xxx → XXX and anime → Anime was considered and declined: an operator turning the feature on should do it knowingly, per group.
+
+Settled in a triage session on 2026-08-15. See `CONTEXT.md` for **Obfuscated-name routing** and **Edit Selected** vocabulary.
