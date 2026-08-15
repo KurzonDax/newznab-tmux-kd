@@ -55,7 +55,7 @@ class MovieCategorizer extends AbstractCategorizer
 
         // Check if it looks like movie content
         if (! $this->looksLikeMovie($name)) {
-            return $this->noMatch();
+            return $this->checkYearOnlyMovie($name) ?? $this->noMatch();
         }
 
         // Try specific movie subcategories in order of specificity
@@ -99,7 +99,7 @@ class MovieCategorizer extends AbstractCategorizer
             return $result;
         }
 
-        return $this->noMatch();
+        return $this->checkYearOnlyMovie($name) ?? $this->noMatch();
     }
 
     /**
@@ -108,6 +108,21 @@ class MovieCategorizer extends AbstractCategorizer
     protected function looksLikeMovie(string $name): bool
     {
         return (bool) preg_match('/[._ -]AVC|[BH][DR]RIP|(Bluray|Blu-Ray)|BD[._ -]?(25|50)?|\bBR\b|Camrip|(?:[._ -]|\()\d{4}(?:[._ -]|\)).*(720p|1080p|Cam|HDTS|2160p)|DIVX|[._ -]DVD[._ -]|DVD-?(5|9|R|Rip)|Untouched|VHSRip|XVID|\b(x265|HEVC)\b|[._ -](DTS|TVrip|WEB[._ -]?Rip|WEBDL|WEB-DL)[._ -]|\b(2160)p\b.*\b(Netflix|Amazon|NF|AMZN|Disney)\b/i', $name);
+    }
+
+    protected function checkYearOnlyMovie(string $name): ?CategorizationResult
+    {
+        if (! preg_match('/^(?<title>.+?)(?:[._ -](?:19|20)\d{2}|\((?:19|20)\d{2}\))(?:[._ -]\d{1,2})?(?:[._ -](?:mkv|mp4|avi))?$/iu', $name, $matches)) {
+            return null;
+        }
+
+        $wordCount = preg_match_all('/[\p{L}\p{N}]+/u', trim($matches['title'], ' ._-'));
+
+        if ($wordCount === false || $wordCount < 2) {
+            return null;
+        }
+
+        return $this->matched(Category::MOVIE_OTHER, 0.5, 'year_only_movie');
     }
 
     protected function checkForeign(string $name): ?CategorizationResult
