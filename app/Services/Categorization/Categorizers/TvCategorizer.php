@@ -93,7 +93,7 @@ class TvCategorizer extends AbstractCategorizer
         }
 
         // Season + Episode pattern: S01E01, S01.E01, S1D1, etc.
-        if (preg_match('/[._ -]s\d{1,3}[._ -]?(e|d(isc)?)\d{1,3}([._ -]|$)/i', $name)) {
+        if ($context->hasSeasonEpisodeToken()) {
             return true;
         }
         // Episode-only pattern: .E01., .E02., E01.1080p (common in anime)
@@ -295,7 +295,7 @@ class TvCategorizer extends AbstractCategorizer
         $name = $context->releaseName;
 
         // Season + episode pattern
-        if (preg_match('/[._ -]s\d{1,3}[._ -]?(e|d(isc)?)\d{1,3}([._ -]|$)/i', $name)) {
+        if ($context->hasSeasonEpisodeToken()) {
             return $this->matched(Category::TV_OTHER, 0.6, 'tv_other');
         }
         if ($context->hasStandaloneSeasonToken()) {

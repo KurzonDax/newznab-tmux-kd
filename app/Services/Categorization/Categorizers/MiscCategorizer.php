@@ -79,7 +79,7 @@ class MiscCategorizer extends AbstractCategorizer
         $coreName = $this->getCoreNameWithoutSeparators($cleaned);
 
         $patterns = [
-            'season_episode' => '/\bS\d{1,3}[._ -]?E\d{1,4}\b/i',
+            'season_episode' => '/\bS\d{1,3}[._ -]?E\d{1,4}(?:[._ -]?E\d{1,4})*\b/i',
             'season_pack' => '/\bS\d{1,3}\b/i',
             'resolution' => '/\b(480p|576p|720p|1080[pi]?|2160p|4k|uhd)\b/i',
             'codec' => '/\b(x264|x265|h\.?264|h\.?265|hevc|xvid|av1)\b/i',

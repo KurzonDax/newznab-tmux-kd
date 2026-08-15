@@ -88,6 +88,10 @@ trait DetectsHashedNames
 
     /**
      * Detect base64/base64url-like tokens that commonly appear in obfuscated subjects.
+     *
+     * A hyphen/underscore-chained run of short release tags (e.g.
+     * "x264--Hindi-Tamil-ZINKMOVIES") is not a hash: the candidate must contain
+     * a single ≥24-character run without internal "-" or "_" separators.
      */
     protected function isBase64LikeToken(string $name): bool
     {
@@ -95,7 +99,9 @@ trait DetectsHashedNames
             return false;
         }
 
-        $token = rtrim($matches[1], '=');
+        $segments = preg_split('/[-_]+/', rtrim($matches[1], '=')) ?: [];
+        usort($segments, static fn (string $a, string $b): int => strlen($b) <=> strlen($a));
+        $token = $segments[0] ?? '';
 
         if (strlen($token) < 24 || preg_match('/\b(19|20)\d{2}\b/', $token)) {
             return false;
@@ -184,6 +190,12 @@ trait DetectsHashedNames
      * A high transition rate (upper↔lower, letter↔digit) with no
      * media keywords in the original name suggests randomness.
      *
+     * When the original name is available, transitions are counted on a form
+     * where ordinary Capitalized words ("My", "Wife", "Csi") are lower-cased
+     * first, so Title Case word boundaries collapsed by separator stripping
+     * do not read as randomness. Transitions inside a single mixed token
+     * ("aB3kD9zQ") still count.
+     *
      * @param  string  $coreName  Name with extensions and separators stripped.
      * @param  string  $originalName  The unmodified release name (for keyword check).
      */
@@ -195,7 +207,17 @@ trait DetectsHashedNames
             return false;
         }
 
-        $transitions = $this->countCharacterTransitions($coreName);
+        $transitionSource = $originalName !== ''
+            ? $this->getCoreNameWithoutSeparators($this->foldCapitalizedWords($this->stripExtensionsForAnalysis($originalName)))
+            : $coreName;
+
+        // Callers may pass a $coreName derived differently from $originalName;
+        // only trust the folded form when it is the same string modulo case.
+        if (strcasecmp($transitionSource, $coreName) !== 0) {
+            $transitionSource = $coreName;
+        }
+
+        $transitions = $this->countCharacterTransitions($transitionSource);
         $transitionRate = $transitions / ($coreLen - 1);
 
         if ($transitionRate > 0.35) {
@@ -336,6 +358,20 @@ trait DetectsHashedNames
             '',
             trim($name)
         );
+    }
+
+    /**
+     * Lower-case letter runs that look like ordinary Capitalized words
+     * (one uppercase letter followed by lowercase letters), leaving mixed
+     * or ALLCAPS runs untouched.
+     */
+    protected function foldCapitalizedWords(string $name): string
+    {
+        return preg_replace_callback(
+            '/\b[A-Z][a-z]+\b/',
+            static fn (array $m): string => strtolower($m[0]),
+            $name
+        ) ?? $name;
     }
 
     /**

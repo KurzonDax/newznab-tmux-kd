@@ -134,6 +134,26 @@ class HashedReleaseCategorizationTest extends TestCase
             'Game release' => ['Starfield-RUNE', 'alt.binaries.games'],
             'Readable software package' => ['Microsoft Office Suite Installer', 'alt.binaries.warez'],
             'Adobe msix bundle' => ['Adobe Express Photos.Msixbundle', 'alt.binaries.erotica.divx'],
+            // #59: hyphen-chained tag suffix must not read as a base64 hash
+            // (raw and pipeline-normalised forms — dots become spaces before the pipes run)
+            'Hyphen-chained tags 2160p' => ['Predator.Badlands.2025.2160p.AMZN.HDR.WEB-DL.DDP.5.1.H.265-poke--ZINKMOVIES-English-ZINKMOVIES', 'alt.binaries.multimedia'],
+            'Hyphen-chained tags 2160p normalised' => ['Predator Badlands 2025 2160p AMZN HDR WEB-DL DDP 5 1 H 265-poke--ZINKMOVIES-English-ZINKMOVIES', 'alt.binaries.multimedia'],
+            'Hyphen-chained tags 1080p' => ['Trending.2025.UNCUT.1080p.WEB-DL..2.0-.5.1.ESub.x264--Hindi-Tamil-ZINKMOVIES', 'alt.binaries.multimedia'],
+            'Hyphen-chained tags 1080p normalised' => ['Trending 2025 UNCUT 1080p WEB-DL. 2 0- 5 1 ESub x264--Hindi-Tamil-ZINKMOVIES', 'alt.binaries.multimedia'],
+            'Hyphen-chained tags spaces' => ['Tavvai 2026 1080p JIOHS WEB-DL DDP5 1 ESub x264---ZINKMOVIES-Hindi-ZINKMOVIES', 'alt.binaries.multimedia'],
+            // #60: Title Case names must not trip the transition heuristic
+            'Title case tv subject' => ['[1/3] - "Csi Cyber - S02E15 - .mkv"', 'alt.binaries.multimedia'],
+            'Title case tv subject normalised' => ['Csi Cyber - S02E15 - mkv', 'alt.binaries.multimedia'],
+            'Title case erotica filename' => ['My Wife Is In Heat.avi', 'alt.binaries.multimedia.erotica.amateur'],
+            'Title case erotica filename normalised' => ['My Wife Is In Heat avi', 'alt.binaries.multimedia.erotica.amateur'],
+            'Title case erotica subject 1' => ['ABMEA JHO A TTP Watching My Wife Getting Fucked 29 [00/71] - "Watching My Wife Getting Fucked 29.nzb"', 'alt.binaries.multimedia.erotica.amateur'],
+            'Title case erotica subject 1 normalised' => ['Watching My Wife Getting Fucked 29 nzb', 'alt.binaries.multimedia.erotica.amateur'],
+            'Title case erotica subject 2' => ['ABMEA JHO A TTP Giving My Wife Cock [00/47] - "Giving My Wife Cock.nzb"', 'alt.binaries.multimedia.erotica.amateur'],
+            'Title case erotica subject 2 normalised' => ['Giving My Wife Cock nzb', 'alt.binaries.multimedia.erotica.amateur'],
+            'Title case plain words' => ['Some Random Title Here', 'alt.binaries.multimedia.erotica'],
+            // #62: multi-episode tokens
+            'Multi-episode S11E46E47' => ['SpongeBob.SquarePants.S11E46E47.The.Grill.is.Gone.The.Night.Patty.1080p.AMZN.WEB-DL.DDP2.0.H.264-TVSmash', 'alt.binaries.multimedia'],
+            'Multi-episode S01E01-E02' => ['Show.Name.S01E01-E02.Pilot.1080p.WEB-DL.H.264-GROUP', 'alt.binaries.multimedia'],
         ];
     }
 

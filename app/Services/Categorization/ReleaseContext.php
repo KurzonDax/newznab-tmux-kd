@@ -11,6 +11,14 @@ class ReleaseContext
 {
     private const string STANDALONE_SEASON_TOKEN_REGEX = '/(?:^|[._ -])S\d{1,3}(?=$|[._ -])/i';
 
+    private const string SEASON_EPISODE_TOKEN_REGEX = '/(?:^|[._ -])S\d{1,3}[._ -]?(?:E|D(?:isc)?)\d{1,4}(?:[._ -]?E\d{1,4})*(?=$|[._ -])/i';
+
+    /** Explicit XXX tags and studio names: always adult. */
+    private const string HARD_ADULT_MARKER_REGEX = '/\b(XXX|Porn|Brazzers|BangBros|Bangbros|NaughtyAmerica|RealityKings|Tushy|Vixen|Blacked|OnlyFans|MetArt|JoyMii|Creampie|MP4-XXX|PureTaboo|Lady[._ -]?Lyne|TeamSkeet|GirlsWay|EvilAngel|Kink|FakeHub|FakeTaxi|SexArt|Nubiles|Defloration|Deeper|Bellesa|Twistys|Mofos|MissaX|LegalPorno|AnalVids|JAV|Hentai|RoccoSiffredi|DivineBitches|Device[._ -]?Bondage|Hogtied|Wired[._ -]?Pussy|Fucking[._ -]?Machines|Ultimate[._ -]?Surrender|Public[._ -]?Disgrace|Sex[._ -]?And[._ -]?Submission|Bound[._ -]?Gang[._ -]?Bangs|Electro[._ -]?Sluts|Whipped[._ -]?Ass|TS[._ -]?Seduction|Infernal[._ -]?Restraints|Sexually[._ -]?Broken)\b/i';
+
+    /** Ambiguous keywords: adult only when combined with a resolution (likely adult clip). */
+    private const string WEAK_ADULT_KEYWORD_REGEX = '/\b(Fuck|Fucked|Fucking|Cock|Dick|Pussy|Cum|Cumshot|Blowjob|Handjob|MILF|Teen|Lesbian|Threesome|Gangbang|Hardcore|Interracial)\b/i';
+
     public function __construct(
         public readonly string $releaseName,
         public readonly int|string $groupId,
@@ -61,24 +69,36 @@ class ReleaseContext
     }
 
     /**
-     * Check if this release has adult/XXX markers.
+     * Check whether the release name contains a season+episode token
+     * (S01E01, S01.E01, S1D1, S11E46E47, S01E01-E02 …).
      */
+    public function hasSeasonEpisodeToken(): bool
+    {
+        return preg_match(self::SEASON_EPISODE_TOKEN_REGEX, $this->releaseName) === 1;
+    }
+
     /**
      * Check if this release has adult/XXX markers.
+     *
+     * Explicit markers (XXX tags, studio names) always win. Weak keywords
+     * ("Anal", or "Teen"/"Hardcore"/… next to a resolution) are ambiguous in
+     * ordinary titles, so they do not count when the name carries a clear
+     * TV structure (season+episode or standalone season token).
      */
     public function hasAdultMarkers(): bool
     {
-        // Check for explicit XXX markers and common adult keywords/studios
-        if (preg_match('/\b(XXX|Porn|Anal|Brazzers|BangBros|Bangbros|NaughtyAmerica|RealityKings|Tushy|Vixen|Blacked|OnlyFans|MetArt|JoyMii|Creampie|MP4-XXX|PureTaboo|Lady[._ -]?Lyne|TeamSkeet|GirlsWay|EvilAngel|Kink|FakeHub|FakeTaxi|SexArt|Nubiles|Defloration|Deeper|Bellesa|Twistys|Mofos|MissaX|LegalPorno|AnalVids|JAV|Hentai|RoccoSiffredi|DivineBitches|Device[._ -]?Bondage|Hogtied|Wired[._ -]?Pussy|Fucking[._ -]?Machines|Ultimate[._ -]?Surrender|Public[._ -]?Disgrace|Sex[._ -]?And[._ -]?Submission|Bound[._ -]?Gang[._ -]?Bangs|Electro[._ -]?Sluts|Whipped[._ -]?Ass|TS[._ -]?Seduction|Infernal[._ -]?Restraints|Sexually[._ -]?Broken)\b/i', $this->releaseName)) {
+        if (preg_match(self::HARD_ADULT_MARKER_REGEX, $this->releaseName)) {
             return true;
         }
 
-        // Check for adult keywords combined with resolution (likely adult clip)
-        if (preg_match('/\b(Fuck|Fucked|Fucking|Cock|Dick|Pussy|Cum|Cumshot|Blowjob|Handjob|MILF|Teen|Lesbian|Threesome|Gangbang|Hardcore|Interracial)\b/i', $this->releaseName) &&
-            preg_match('/\b(720p|1080p|2160p|4k|mp4)\b/i', $this->releaseName)) {
-            return true;
+        $hasWeakMarker = preg_match('/\bAnal\b/i', $this->releaseName)
+            || (preg_match(self::WEAK_ADULT_KEYWORD_REGEX, $this->releaseName)
+                && preg_match('/\b(720p|1080p|2160p|4k|mp4)\b/i', $this->releaseName));
+
+        if (! $hasWeakMarker) {
+            return false;
         }
 
-        return false;
+        return ! ($this->hasSeasonEpisodeToken() || $this->hasStandaloneSeasonToken());
     }
 }
