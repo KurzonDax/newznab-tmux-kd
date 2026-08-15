@@ -28,10 +28,14 @@ export function adminGroups() {
         editMinSize: '',
         editActive: '',
         editBackfill: '',
+        editRouteObfuscatedNames: '',
+        editObfuscatedDefaultRootCategoryId: '',
+        editSelectedHasMissingObfuscatedRoot: false,
         editBackfillTargetError: '',
         editMinFilesError: '',
         editMinSizeError: '',
         editMinSizeReadout: '',
+        editObfuscatedRoutingError: '',
         editSaveDisabled: true,
         editConfirmationChanges: [],
         editConfirmationGroupNames: [],
@@ -195,6 +199,8 @@ export function adminGroups() {
                 minSize: cb.dataset.minSize,
                 active: cb.dataset.active,
                 backfill: cb.dataset.backfill,
+                routeObfuscatedNames: cb.dataset.routeObfuscatedNames,
+                obfuscatedDefaultRootCategoryId: cb.dataset.obfuscatedDefaultRootCategoryId,
             }));
         },
 
@@ -255,6 +261,9 @@ export function adminGroups() {
             this.editMinSize = uniformSize === '' ? '' : formatGroupFileSize(uniformSize);
             this.editActive = this._uniformValue(selectedRows, 'active');
             this.editBackfill = this._uniformValue(selectedRows, 'backfill');
+            this.editRouteObfuscatedNames = this._uniformValue(selectedRows, 'routeObfuscatedNames');
+            this.editObfuscatedDefaultRootCategoryId = this._uniformValue(selectedRows, 'obfuscatedDefaultRootCategoryId');
+            this.editSelectedHasMissingObfuscatedRoot = selectedRows.some(row => ! row.obfuscatedDefaultRootCategoryId);
             this._editSelectedOriginal = this._editSelectedValues();
             this._editSelectedOriginalNormalized = this._normalizedEditSelectedValues(this._editSelectedOriginal);
             this.editSelectedEditing = true;
@@ -285,6 +294,13 @@ export function adminGroups() {
                 this.editMinSizeReadout = parsed.error ? '' : `${parsed.bytes.toLocaleString()} bytes`;
             }
 
+            const obfuscatedRootIsMissing = this.editObfuscatedDefaultRootCategoryId === 'null'
+                || (this.editObfuscatedDefaultRootCategoryId === '' && this.editSelectedHasMissingObfuscatedRoot);
+            this.editObfuscatedRoutingError = this.editRouteObfuscatedNames === '1'
+                && obfuscatedRootIsMissing
+                ? 'Choose a default root category before enabling obfuscated-name routing.'
+                : '';
+
             this.editSaveDisabled = ! this.canSaveEditSelected();
         },
 
@@ -292,6 +308,7 @@ export function adminGroups() {
             return ! this.editBackfillTargetError
                 && ! this.editMinFilesError
                 && ! this.editMinSizeError
+                && ! this.editObfuscatedRoutingError
                 && Object.keys(this.editSelectedChanges()).length > 0;
         },
 
@@ -317,6 +334,14 @@ export function adminGroups() {
             if (currentNormalized.backfill !== originalNormalized.backfill && current.backfill !== '') {
                 changes.backfill = Number(current.backfill);
             }
+            if (currentNormalized.routeObfuscatedNames !== originalNormalized.routeObfuscatedNames && current.routeObfuscatedNames !== '') {
+                changes.route_obfuscated_names = Number(current.routeObfuscatedNames);
+            }
+            if (currentNormalized.obfuscatedDefaultRootCategoryId !== originalNormalized.obfuscatedDefaultRootCategoryId && current.obfuscatedDefaultRootCategoryId !== '') {
+                changes.obfuscated_default_root_categories_id = current.obfuscatedDefaultRootCategoryId === 'null'
+                    ? null
+                    : Number(current.obfuscatedDefaultRootCategoryId);
+            }
 
             return changes;
         },
@@ -332,11 +357,15 @@ export function adminGroups() {
                 minsizetoformrelease: 'Minimum File Size',
                 active: 'Active',
                 backfill: 'Backfill',
+                route_obfuscated_names: 'Route Obfuscated Names',
+                obfuscated_default_root_categories_id: 'Default Root Category',
             };
 
             this.editConfirmationChanges = Object.entries(changes).map(([key, value]) => {
                 let display = value;
                 if (key === 'active' || key === 'backfill') { display = value === 1 ? 'Enabled' : 'Disabled'; }
+                if (key === 'route_obfuscated_names') { display = value === 1 ? 'Enabled' : 'Disabled'; }
+                if (key === 'obfuscated_default_root_categories_id') { display = value === null ? 'Cleared' : this._obfuscatedRootLabel(value); }
                 if (key === 'minsizetoformrelease') {
                     const parsed = parseGroupFileSize(value);
                     display = `${value} (${parsed.bytes.toLocaleString()} bytes)`;
@@ -382,6 +411,8 @@ export function adminGroups() {
                 minSize: String(this.editMinSize).trim(),
                 active: String(this.editActive),
                 backfill: String(this.editBackfill),
+                routeObfuscatedNames: String(this.editRouteObfuscatedNames),
+                obfuscatedDefaultRootCategoryId: String(this.editObfuscatedDefaultRootCategoryId),
             };
         },
 
@@ -394,7 +425,15 @@ export function adminGroups() {
                 minSize: values.minSize === '' || parsedSize.error ? values.minSize : String(parsedSize.bytes),
                 active: values.active,
                 backfill: values.backfill,
+                routeObfuscatedNames: values.routeObfuscatedNames,
+                obfuscatedDefaultRootCategoryId: values.obfuscatedDefaultRootCategoryId,
             };
+        },
+
+        _obfuscatedRootLabel(value) {
+            const option = this._root.querySelector('#edit-selected-obfuscated-root option[value="' + value + '"]');
+
+            return option?.textContent?.trim() || String(value);
         },
 
         _integerError(value, minimum, maximum, message) {

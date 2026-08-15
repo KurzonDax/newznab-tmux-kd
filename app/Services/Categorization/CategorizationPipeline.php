@@ -83,7 +83,13 @@ class CategorizationPipeline
         $releaseName = $this->nzbSplitUnwrapper->unwrap($releaseName) ?? $releaseName;
         $releaseName = $this->obfuscatedSubjectExtractor->extract($releaseName) ?? $releaseName;
 
-        $groupName = UsenetGroup::whereId($groupId)->value('name') ?? '';
+        $group = UsenetGroup::query()->findOrNew($groupId, [
+            'name',
+            'route_obfuscated_names',
+            'obfuscated_default_root_categories_id',
+        ]);
+        $groupName = (string) ($group->name ?? '');
+        $obfuscatedDefaultRootCategoryId = $group->obfuscated_default_root_categories_id;
 
         $context = new ReleaseContext(
             releaseName: $releaseName,
@@ -92,6 +98,10 @@ class CategorizationPipeline
             poster: $poster ?? '',
             categorizeForeign: $this->categorizeForeign,
             catWebDL: $this->catWebDL,
+            routeObfuscatedNames: (bool) ($group->route_obfuscated_names ?? false),
+            obfuscatedDefaultRootCategoryId: $obfuscatedDefaultRootCategoryId === null
+                ? null
+                : (int) $obfuscatedDefaultRootCategoryId,
         );
 
         $passable = new CategorizationPassable($context, $debug);
@@ -147,6 +157,7 @@ class CategorizationPipeline
     {
         return new self([
             new Pipes\MiscPipe,
+            new Pipes\GroupObfuscatedRoutingPipe,
             new Pipes\GroupNamePipe,
             new Pipes\XxxPipe,
             new Pipes\TvPipe,

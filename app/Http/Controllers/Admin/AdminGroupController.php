@@ -6,10 +6,13 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\BasePageController;
 use App\Http\Requests\Admin\AdminGroupListRequest;
+use App\Models\RootCategory;
 use App\Models\UsenetGroup;
 use App\Support\SizeUnit;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
@@ -22,9 +25,10 @@ class AdminGroupController extends BasePageController
     {
         $groupname = $request->groupName();
         $grouplist = UsenetGroup::getGroupsRange($groupname);
+        $rootCategories = $this->rootCategories();
         $title = 'Group List';
 
-        return view('admin.groups.index', compact('title', 'groupname', 'grouplist'));
+        return view('admin.groups.index', compact('title', 'groupname', 'grouplist', 'rootCategories'));
     }
 
     /**
@@ -53,11 +57,9 @@ class AdminGroupController extends BasePageController
     }
 
     /**
-     * @return RedirectResponse|View
-     *
      * @throws \Exception
      */
-    public function edit(Request $request)
+    public function edit(Request $request): RedirectResponse|View
     {
         // Set the current action.
         $action = $request->input('action') ?? 'view';
@@ -73,10 +75,28 @@ class AdminGroupController extends BasePageController
             'first_record' => 0,
             'last_record' => 0,
             'backfill_target' => 0,
+            'route_obfuscated_names' => false,
+            'obfuscated_default_root_categories_id' => null,
         ];
 
         switch ($action) {
             case 'submit':
+                $request->merge([
+                    'route_obfuscated_names' => $request->boolean('route_obfuscated_names'),
+                    'obfuscated_default_root_categories_id' => $request->filled('obfuscated_default_root_categories_id')
+                        ? $request->integer('obfuscated_default_root_categories_id')
+                        : null,
+                ]);
+                $request->validate([
+                    'route_obfuscated_names' => ['required', 'boolean'],
+                    'obfuscated_default_root_categories_id' => [
+                        'nullable',
+                        Rule::requiredIf($request->boolean('route_obfuscated_names')),
+                        'integer',
+                        'exists:root_categories,id',
+                    ],
+                ]);
+
                 $minSizeInput = $request->input('minsizetoformrelease');
                 if ($minSizeInput !== null && $minSizeInput !== '') {
                     try {
@@ -121,8 +141,9 @@ class AdminGroupController extends BasePageController
         }
 
         $groupMinSize = SizeUnit::fromBytes($group['minsizetoformrelease'] ?? 0);
+        $rootCategories = $this->rootCategories();
 
-        return view('admin.groups.edit', compact('title', 'group', 'groupMinSize') + ['sizeUnits' => SizeUnit::UNITS]);
+        return view('admin.groups.edit', compact('title', 'group', 'groupMinSize', 'rootCategories') + ['sizeUnits' => SizeUnit::UNITS]);
     }
 
     /**
@@ -132,9 +153,10 @@ class AdminGroupController extends BasePageController
     {
         $groupname = $request->groupName();
         $grouplist = UsenetGroup::getGroupsRange($groupname, true);
+        $rootCategories = $this->rootCategories();
         $title = 'Active Groups';
 
-        return view('admin.groups.index', compact('title', 'groupname', 'grouplist'));
+        return view('admin.groups.index', compact('title', 'groupname', 'grouplist', 'rootCategories'));
     }
 
     /**
@@ -144,8 +166,17 @@ class AdminGroupController extends BasePageController
     {
         $groupname = $request->groupName();
         $grouplist = UsenetGroup::getGroupsRange($groupname, false);
+        $rootCategories = $this->rootCategories();
         $title = 'Inactive Groups';
 
-        return view('admin.groups.index', compact('title', 'groupname', 'grouplist'));
+        return view('admin.groups.index', compact('title', 'groupname', 'grouplist', 'rootCategories'));
+    }
+
+    /**
+     * @return Collection<int, RootCategory>
+     */
+    private function rootCategories(): Collection
+    {
+        return RootCategory::query()->orderBy('title')->get(['id', 'title']);
     }
 }

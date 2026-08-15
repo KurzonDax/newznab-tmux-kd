@@ -152,6 +152,7 @@
                             <x-admin.th align="center" class="w-24">Min Files</x-admin.th>
                             <x-admin.th align="center" class="w-24">Min Size</x-admin.th>
                             <x-admin.th align="center" class="w-32">Backfill Days</x-admin.th>
+                            <x-admin.th align="center" class="w-36">Obfuscated Routing</x-admin.th>
                             <x-admin.th align="center" class="w-40">Actions</x-admin.th>
                 </x-slot:head>
                         @foreach($grouplist as $group)
@@ -251,6 +252,28 @@
                         </x-select>
                     </div>
                 </div>
+
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <div>
+                        <x-label for="edit-selected-route-obfuscated-names">Route Obfuscated Names</x-label>
+                        <x-select id="edit-selected-route-obfuscated-names" x-model="editRouteObfuscatedNames" @change="validateEditSelected()">
+                            <option value="">No change</option>
+                            <option value="1">Enabled</option>
+                            <option value="0">Disabled</option>
+                        </x-select>
+                    </div>
+                    <div>
+                        <x-label for="edit-selected-obfuscated-root">Default Root Category</x-label>
+                        <x-select id="edit-selected-obfuscated-root" x-model="editObfuscatedDefaultRootCategoryId" @change="validateEditSelected()">
+                            <option value="">No change</option>
+                            <option value="null">Clear default root</option>
+                            @foreach($rootCategories as $rootCategory)
+                                <option value="{{ $rootCategory->id }}">{{ $rootCategory->title }}</option>
+                            @endforeach
+                        </x-select>
+                    </div>
+                </div>
+                <p x-show="editObfuscatedRoutingError" x-text="editObfuscatedRoutingError" class="text-sm text-red-600 dark:text-red-400"></p>
 
                 <div class="flex justify-end gap-3 pt-3">
                     <x-button type="button" variant="muted" @click="handleAction('hide-edit-selected-modal')">Cancel</x-button>

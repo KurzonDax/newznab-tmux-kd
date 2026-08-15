@@ -72,6 +72,8 @@ function mountPage(rowCount = 3) {
             minSize: index === 2 ? '1073741824' : '104857600',
             active: index === 2 ? '0' : '1',
             backfill: '0',
+            routeObfuscatedNames: index === 2 ? '1' : '0',
+            obfuscatedDefaultRootCategoryId: index === 2 ? '6000' : '2000',
         },
     }));
     const maintenanceToggle = new FakeElement({ id: 'group-maintenance-toggle' });
@@ -242,6 +244,8 @@ test('edit selected prefills uniform values and leaves mixed values empty', () =
     assert.equal(page.component.editMinSize, '');
     assert.equal(page.component.editActive, '');
     assert.equal(page.component.editBackfill, '0');
+    assert.equal(page.component.editRouteObfuscatedNames, '');
+    assert.equal(page.component.editObfuscatedDefaultRootCategoryId, '');
 });
 
 test('edit selected sends only values changed since the dialog opened', () => {
@@ -255,14 +259,76 @@ test('edit selected sends only values changed since the dialog opened', () => {
     page.component.editBackfillTarget = '30';
     page.component.editMinSize = '2.5G';
     page.component.editActive = '0';
+    page.component.editRouteObfuscatedNames = '1';
+    page.component.editObfuscatedDefaultRootCategoryId = '6000';
     page.component.validateEditSelected();
 
     assert.deepEqual(page.component.editSelectedChanges(), {
         backfill_target: 30,
         minsizetoformrelease: '2.5G',
         active: 0,
+        route_obfuscated_names: 1,
+        obfuscated_default_root_categories_id: 6000,
     });
     assert.equal(page.component.canSaveEditSelected(), true);
+});
+
+test('enabling obfuscated routing requires a default root category', () => {
+    const page = mountPage(2);
+    page.rows.forEach(row => {
+        row.checked = true;
+        row.dataset.obfuscatedDefaultRootCategoryId = '';
+    });
+    page.component._syncSelection();
+    page.component.openEditSelected();
+
+    page.component.editRouteObfuscatedNames = '1';
+    page.component.validateEditSelected();
+
+    assert.match(page.component.editObfuscatedRoutingError, /root category/);
+    assert.equal(page.component.canSaveEditSelected(), false);
+
+    page.component.editObfuscatedDefaultRootCategoryId = '6000';
+    page.component.validateEditSelected();
+
+    assert.equal(page.component.editObfuscatedRoutingError, '');
+    assert.deepEqual(page.component.editSelectedChanges(), {
+        route_obfuscated_names: 1,
+        obfuscated_default_root_categories_id: 6000,
+    });
+});
+
+test('the default root can be set while obfuscated routing remains disabled', () => {
+    const page = mountPage(2);
+    page.rows.forEach(row => { row.checked = true; });
+    page.component._syncSelection();
+    page.component.openEditSelected();
+
+    page.component.editObfuscatedDefaultRootCategoryId = '6000';
+    page.component.validateEditSelected();
+
+    assert.equal(page.component.canSaveEditSelected(), true);
+    assert.deepEqual(page.component.editSelectedChanges(), {
+        obfuscated_default_root_categories_id: 6000,
+    });
+});
+
+test('groups with different existing roots can be enabled without overwriting those roots', () => {
+    const page = mountPage(2);
+    page.rows[0].dataset.obfuscatedDefaultRootCategoryId = '2000';
+    page.rows[1].dataset.obfuscatedDefaultRootCategoryId = '6000';
+    page.rows.forEach(row => { row.checked = true; });
+    page.component._syncSelection();
+    page.component.openEditSelected();
+
+    page.component.editRouteObfuscatedNames = '1';
+    page.component.validateEditSelected();
+
+    assert.equal(page.component.editObfuscatedRoutingError, '');
+    assert.equal(page.component.canSaveEditSelected(), true);
+    assert.deepEqual(page.component.editSelectedChanges(), {
+        route_obfuscated_names: 1,
+    });
 });
 
 test('edit selected save stays disabled for invalid values or no changes', () => {

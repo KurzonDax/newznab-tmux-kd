@@ -57,7 +57,7 @@ class MiscPipe extends AbstractCategorizationPipe
         $passable->updateBestResult($result, $this->getName());
 
         // Lock to misc if this is a hashed/obfuscated/gibberish detection
-        if ($result->isSuccessful() && $this->shouldLock($result)) {
+        if ($result->isSuccessful() && $this->shouldLock($result, $passable->context)) {
             $passable->bestResult = $result;
             $passable->lockToMisc();
         }
@@ -73,8 +73,14 @@ class MiscPipe extends AbstractCategorizationPipe
     /**
      * Determine if a result should trigger the misc lock.
      */
-    private function shouldLock(CategorizationResult $result): bool
+    private function shouldLock(CategorizationResult $result, ReleaseContext $context): bool
     {
+        if ($context->routeObfuscatedNames &&
+            $context->obfuscatedDefaultRootCategoryId !== null &&
+            $this->isRoutableObfuscatedResult($result)) {
+            return false;
+        }
+
         // Always lock OTHER_HASHED results
         if ($result->categoryId === Category::OTHER_HASHED) {
             return true;
@@ -88,5 +94,11 @@ class MiscPipe extends AbstractCategorizationPipe
         }
 
         return false;
+    }
+
+    private function isRoutableObfuscatedResult(CategorizationResult $result): bool
+    {
+        return str_starts_with($result->matchedBy, 'obfuscated_')
+            || str_starts_with($result->matchedBy, 'gibberish_');
     }
 }
