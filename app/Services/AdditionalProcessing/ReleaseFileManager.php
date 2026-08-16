@@ -533,9 +533,11 @@ class ReleaseFileManager
                 continue;
             }
 
-            if ($foundName && $filesAdded > 10) {
-                break;
-            }
+            $this->queueParHash(
+                $context,
+                $context->release->id,
+                (string) ($file['hash_16K'] ?? '')
+            );
 
             // Add to release files
             if ($this->config->addPAR2Files) {
@@ -552,8 +554,6 @@ class ReleaseFileManager
                         $filesAdded++;
                     }
                 }
-            } else {
-                $filesAdded++;
             }
 
             // Try to get a new name
@@ -859,14 +859,24 @@ class ReleaseFileManager
         $context->existingReleaseFileNames[$name] = true;
         $context->addedFileInfo++;
 
-        if (\strlen($hash) === 32) {
-            $context->pendingParHashes[$hash] = [
-                'releases_id' => (int) $releaseId,
-                'hash' => $hash,
-            ];
-        }
+        $this->queueParHash($context, $releaseId, $hash);
 
         return true;
+    }
+
+    private function queueParHash(
+        ReleaseProcessingContext $context,
+        int|string $releaseId,
+        string $hash,
+    ): void {
+        if (\strlen($hash) !== 32) {
+            return;
+        }
+
+        $context->pendingParHashes[$hash] = [
+            'releases_id' => (int) $releaseId,
+            'hash' => $hash,
+        ];
     }
 
     private function loadExistingReleaseFileNames(ReleaseProcessingContext $context): void
