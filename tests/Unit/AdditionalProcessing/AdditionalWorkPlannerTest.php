@@ -6,6 +6,7 @@ namespace Tests\Unit\AdditionalProcessing;
 
 use App\Services\AdditionalProcessing\AdditionalWorkPlanner;
 use App\Services\AdditionalProcessing\DTO\ArchiveCandidate;
+use App\Services\AdditionalProcessing\DTO\UnknownPayloadCandidate;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -158,5 +159,99 @@ class AdditionalWorkPlannerTest extends TestCase
 
         $this->assertFalse($plan->archiveCandidates[0]->likelyFirstVolume);
         $this->assertSame(['<last-volume>'], $plan->orderedArchiveCandidates(true)[0]->messageIds);
+    }
+
+    #[Test]
+    public function it_selects_the_largest_unknown_payload_then_small_low_segment_candidates(): void
+    {
+        $planner = new AdditionalWorkPlanner($this->makeConfig([
+            'payloadSniffMaxCandidates' => 3,
+            'payloadSniffByteBudget' => 900,
+            'payloadSniffSmallSegmentLimit' => 4,
+        ]));
+
+        $plan = $planner->plan([
+            ['title' => 'small.bin', 'segments' => ['<small>'], 'size' => 100, 'partsactual' => 1],
+            ['title' => 'many.bin', 'segments' => ['<many-1>', '<many-2>', '<many-3>', '<many-4>', '<many-5>'], 'size' => 500, 'partsactual' => 5],
+            ['title' => 'largest', 'segments' => ['<large-1>', '<large-2>'], 'size' => 1200, 'partsactual' => 2],
+            ['title' => 'medium.file', 'segments' => ['<medium-1>', '<medium-2>'], 'size' => 400, 'partsactual' => 2],
+        ], 'alt.binaries.test');
+
+        $this->assertSame(
+            ['largest', 'small.bin', 'medium.file'],
+            array_map(static fn (UnknownPayloadCandidate $candidate): string => $candidate->title, $plan->unknownPayloadCandidates),
+        );
+        $this->assertSame(['<large-1>', '<small>', '<medium-1>'], array_map(
+            static fn (UnknownPayloadCandidate $candidate): string => $candidate->firstMessageId,
+            $plan->unknownPayloadCandidates,
+        ));
+        $this->assertSame([], $plan->unsupportedReasons);
+    }
+
+    #[Test]
+    public function it_caps_unknown_payloads_by_first_segment_byte_budget(): void
+    {
+        $planner = new AdditionalWorkPlanner($this->makeConfig([
+            'payloadSniffMaxCandidates' => 3,
+            'payloadSniffByteBudget' => 250,
+        ]));
+
+        $plan = $planner->plan([
+            ['title' => 'largest.bin', 'segments' => ['<largest-1>', '<largest-2>'], 'size' => 400, 'partsactual' => 2],
+            ['title' => 'small.bin', 'segments' => ['<small>'], 'size' => 100, 'partsactual' => 1],
+        ], 'alt.binaries.test');
+
+        $this->assertSame(['largest.bin'], array_map(
+            static fn (UnknownPayloadCandidate $candidate): string => $candidate->title,
+            $plan->unknownPayloadCandidates,
+        ));
+    }
+
+    #[Test]
+    public function it_only_sniffs_unknown_payloads_when_no_normal_candidate_exists(): void
+    {
+        $planner = new AdditionalWorkPlanner($this->makeConfig());
+
+        $plan = $planner->plan([
+            ['title' => 'opaque.bin', 'segments' => ['<opaque>'], 'size' => 100, 'partsactual' => 1],
+            ['title' => 'release.part01.rar', 'segments' => ['<archive>'], 'size' => 200, 'partsactual' => 1],
+        ], 'alt.binaries.test');
+
+        $this->assertSame([], $plan->unknownPayloadCandidates);
+        $this->assertSame(['release.part01.rar'], array_map(
+            static fn (ArchiveCandidate $candidate): string => $candidate->title,
+            $plan->archiveCandidates,
+        ));
+    }
+
+    #[Test]
+    public function it_keeps_normal_rar_and_par2_subject_handling_unchanged(): void
+    {
+        $planner = new AdditionalWorkPlanner($this->makeConfig());
+
+        $plan = $planner->plan([
+            ['title' => 'release.part01.rar', 'segments' => ['<archive>'], 'size' => 200, 'partsactual' => 1],
+            ['title' => 'release.par2', 'segments' => ['<par2>'], 'size' => 100, 'partsactual' => 1],
+        ], 'alt.binaries.test');
+
+        $this->assertSame([], $plan->unknownPayloadCandidates);
+        $this->assertSame(['release.part01.rar'], array_map(
+            static fn (ArchiveCandidate $candidate): string => $candidate->title,
+            $plan->archiveCandidates,
+        ));
+        $this->assertSame([], $plan->unsupportedReasons);
+    }
+
+    #[Test]
+    public function it_does_not_treat_meaningful_unsupported_extensions_as_unknown_payloads(): void
+    {
+        $planner = new AdditionalWorkPlanner($this->makeConfig());
+
+        $plan = $planner->plan([
+            ['title' => 'book.epub', 'segments' => ['<book>'], 'size' => 100, 'partsactual' => 1],
+        ], 'alt.binaries.books');
+
+        $this->assertSame([], $plan->unknownPayloadCandidates);
+        $this->assertSame(['no-supported-candidates'], $plan->unsupportedReasons);
     }
 }

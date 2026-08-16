@@ -6,6 +6,7 @@ namespace Tests\Unit\AdditionalProcessing;
 
 use App\Services\AdditionalProcessing\DTO\AdditionalBatchResult;
 use App\Services\AdditionalProcessing\DTO\DownloadMetrics;
+use App\Services\AdditionalProcessing\DTO\PayloadSniffMetrics;
 use App\Services\AdditionalProcessing\DTO\PersistenceMetrics;
 use App\Services\AdditionalProcessing\DTO\ReleaseProcessingResult;
 use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
@@ -31,6 +32,7 @@ class ProcessingResultTest extends TestCase
                     downloadMetrics: new DownloadMetrics(2, 1, 1, 100, 100),
                     persistenceMetrics: new PersistenceMetrics(8, 12.5, 2, 1),
                     duplicateMessageIdCount: 1,
+                    payloadSniffMetrics: new PayloadSniffMetrics(2, ['rar' => 1, 'unknown' => 1]),
                 ),
                 new ReleaseProcessingResult(
                     11,
@@ -41,6 +43,7 @@ class ProcessingResultTest extends TestCase
                     downloadMetrics: new DownloadMetrics(1, 1, 0, 50, 0),
                     persistenceMetrics: new PersistenceMetrics(5, 7.5, 1, 1),
                     unsupportedReasons: ['book-flood'],
+                    payloadSniffMetrics: new PayloadSniffMetrics(1, ['text' => 1]),
                 ),
                 new ReleaseProcessingResult(
                     12,
@@ -74,6 +77,7 @@ class ProcessingResultTest extends TestCase
         $this->assertEquals(new PersistenceMetrics(13, 20.0, 3, 2), $batch->persistenceMetrics());
         $this->assertSame(1, $batch->duplicateMessageIdCount());
         $this->assertSame(['book-flood' => 1], $batch->unsupportedReasonCounts());
+        $this->assertEquals(new PayloadSniffMetrics(3, ['rar' => 1, 'unknown' => 1, 'text' => 1]), $batch->payloadSniffMetrics());
         $this->assertSame([
             'nzb-parsing' => 1.0,
             'finalization' => 0.1,

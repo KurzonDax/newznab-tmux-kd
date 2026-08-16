@@ -6,8 +6,10 @@ namespace App\Services\AdditionalProcessing;
 
 use App\Models\UsenetGroup;
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
+use App\Services\AdditionalProcessing\DTO\ArchiveCandidate;
 use App\Services\AdditionalProcessing\DTO\ReleaseProcessingResult;
 use App\Services\AdditionalProcessing\Enums\DownloadKind;
+use App\Services\AdditionalProcessing\Enums\PayloadClassification;
 use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
 use App\Services\AdditionalProcessing\Enums\ProcessingStage;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
@@ -42,6 +44,7 @@ class ReleaseProcessor
         private readonly ?ReleaseSearchSyncCoordinator $searchSyncCoordinator = null,
         private readonly ?PersistenceMetricsCollector $persistenceMetricsCollector = null,
         private readonly PreviewGenerationPolicy $previewPolicy = new PreviewGenerationPolicy,
+        private readonly PayloadSniffer $payloadSniffer = new PayloadSniffer,
     ) {}
 
     public function process(ReleaseProcessingContext $context, string $mainTmpPath): ReleaseProcessingResult
@@ -140,13 +143,23 @@ class ReleaseProcessor
                 fn (): bool => $this->prepareMessageIds($context),
             );
 
-            if ($this->shouldProcessDownloads()) {
+            if ($this->shouldProcessDownloads($context)) {
                 $metrics->measure(
                     ProcessingStage::DirectDownloads,
                     fn () => $this->processMessageIdDownloads($context),
                 );
                 if (($timeoutResult = $this->processingTimeoutResult($context, $metrics)) !== null) {
                     return $timeoutResult;
+                }
+
+                if (! $bookFlood && $context->workPlan?->unknownPayloadCandidates !== []) {
+                    $metrics->measure(
+                        ProcessingStage::PayloadSniffing,
+                        fn () => $this->processUnknownPayloadCandidates($context),
+                    );
+                    if (($timeoutResult = $this->processingTimeoutResult($context, $metrics)) !== null) {
+                        return $timeoutResult;
+                    }
                 }
 
                 if (! $bookFlood && $context->nzbHasCompressedFile) {
@@ -246,14 +259,15 @@ class ReleaseProcessor
         }
     }
 
-    private function shouldProcessDownloads(): bool
+    private function shouldProcessDownloads(ReleaseProcessingContext $context): bool
     {
         return $this->config->processPasswords
             || $this->config->processThumbnails
             || $this->config->processMediaInfo
             || $this->config->processAudioInfo
             || $this->config->processVideo
-            || $this->config->processJPGSample;
+            || $this->config->processJPGSample
+            || $context->workPlan->unknownPayloadCandidates !== [];
     }
 
     private function prepareMessageIds(ReleaseProcessingContext $context): bool
@@ -380,7 +394,135 @@ class ReleaseProcessor
             reason: $reason,
             duplicateMessageIdCount: $context->duplicateMessageIdCount(),
             unsupportedReasons: $context->unsupportedReasons(),
+            payloadSniffMetrics: $context->payloadSniffMetrics,
         );
+    }
+
+    private function processUnknownPayloadCandidates(ReleaseProcessingContext $context): void
+    {
+        /** @var list<array{payload: string, candidate: ArchiveCandidate}> $deferredArchives */
+        $deferredArchives = [];
+
+        foreach ($context->workPlan->unknownPayloadCandidates as $candidate) {
+            if ($context->isTimedOut($this->config->releaseProcessingTimeout)) {
+                return;
+            }
+
+            $result = $this->downloadService->download(
+                DownloadKind::PayloadSniff,
+                [$candidate->firstMessageId],
+                $context->releaseGroupName,
+                $context->release->id,
+                $candidate->title,
+            );
+
+            if ($result['groupUnavailable']) {
+                $context->groupUnavailable = true;
+                $this->output->echoGroupUnavailable();
+
+                return;
+            }
+
+            if (! $result['success'] || ! is_string($result['data'])) {
+                continue;
+            }
+
+            $payload = $result['data'];
+            $sniffResult = $this->payloadSniffer->classify($payload);
+            $classification = $sniffResult->classification;
+            $context->recordPayloadClassification($classification);
+
+            if (in_array($classification, [PayloadClassification::Rar, PayloadClassification::Zip], true)) {
+                $archiveCandidate = new ArchiveCandidate(
+                    title: $candidate->title,
+                    messageIds: [$candidate->firstMessageId],
+                    likelyFirstVolume: $sniffResult->likelyFirstVolume,
+                    sourceIndex: $candidate->sourceIndex,
+                );
+                if ($archiveCandidate->likelyFirstVolume) {
+                    $this->processCompressedData($payload, $context, false, $archiveCandidate->title);
+                } else {
+                    $deferredArchives[] = ['payload' => $payload, 'candidate' => $archiveCandidate];
+                }
+
+                continue;
+            }
+
+            match ($classification) {
+                PayloadClassification::Par2 => $this->processSniffedPar2($payload, $context),
+                PayloadClassification::Matroska, PayloadClassification::Mp4, PayloadClassification::Avi => $this->processSniffedVideo(
+                    $payload,
+                    $classification,
+                    $context,
+                ),
+                PayloadClassification::Text => $this->processSniffedNfo($payload, $context),
+                PayloadClassification::Unknown => null,
+            };
+        }
+
+        usort(
+            $deferredArchives,
+            static fn (array $left, array $right): int => $left['candidate']->sourceIndex <=> $right['candidate']->sourceIndex,
+        );
+        foreach ($deferredArchives as $archive) {
+            if ($context->isTimedOut($this->config->releaseProcessingTimeout)) {
+                return;
+            }
+
+            $this->processCompressedData(
+                $archive['payload'],
+                $context,
+                false,
+                $archive['candidate']->title,
+            );
+        }
+    }
+
+    private function processSniffedPar2(string $payload, ReleaseProcessingContext $context): void
+    {
+        if ($context->foundPAR2Info) {
+            return;
+        }
+
+        $path = $context->tmpPath.'sniffed_'.uniqid('', true).'.par2';
+        File::put($path, $payload);
+        try {
+            $this->releaseManager->processPar2File($path, $context, $this->archiveService->getPar2Info());
+        } finally {
+            File::delete($path);
+        }
+    }
+
+    private function processSniffedVideo(
+        string $payload,
+        PayloadClassification $classification,
+        ReleaseProcessingContext $context,
+    ): void {
+        $extension = $classification->mediaExtension() ?? 'bin';
+        $path = $context->tmpPath.'sniffed_'.uniqid('', true).'.'.$extension;
+        File::put($path, $payload);
+        try {
+            $this->mediaService->processVideoFile($path, $context, $context->tmpPath);
+        } finally {
+            File::delete($path);
+        }
+    }
+
+    private function processSniffedNfo(string $payload, ReleaseProcessingContext $context): void
+    {
+        if (! $context->releaseHasNoNFO) {
+            return;
+        }
+
+        $path = $context->tmpPath.'sniffed_'.uniqid('', true).'.nfo';
+        File::put($path, $payload);
+        try {
+            if ($this->releaseManager->processNfoFile($path, $context, $this->downloadService->getNNTP())) {
+                $this->output->echoNfoFound();
+            }
+        } finally {
+            File::delete($path);
+        }
     }
 
     private function discardedResult(ReleaseProcessingContext $context): ?ReleaseProcessingResult

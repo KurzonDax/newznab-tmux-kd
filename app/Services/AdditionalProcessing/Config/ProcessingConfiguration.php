@@ -63,6 +63,14 @@ final readonly class ProcessingConfiguration
 
     public bool $processPasswords;
 
+    public bool $payloadSniffing;
+
+    public int $payloadSniffMaxCandidates;
+
+    public int $payloadSniffByteBudget;
+
+    public int $payloadSniffSmallSegmentLimit;
+
     public string $audioSavePath;
 
     public string $tmpUnrarPath;
@@ -137,6 +145,10 @@ final readonly class ProcessingConfiguration
         $this->processMediaInfo = (bool) $this->mediaInfoPath;
         $this->processAudioInfo = $this->processMediaInfo;
         $this->processPasswords = PasswordInspectionMode::isActive();
+        $this->payloadSniffing = (bool) config('nntmux_settings.payload_sniffing');
+        $this->payloadSniffMaxCandidates = max((int) config('nntmux_settings.payload_sniff_max_candidates'), 0);
+        $this->payloadSniffByteBudget = max((int) config('nntmux_settings.payload_sniff_byte_budget'), 0);
+        $this->payloadSniffSmallSegmentLimit = max((int) config('nntmux_settings.payload_sniff_small_segment_limit'), 1);
         $this->audioSavePath = config('nntmux_settings.covers_path').'/audiosample/';
         $this->tmpUnrarPath = config('nntmux.tmp_unrar_path');
         $this->debugMode = (bool) config('app.debug');

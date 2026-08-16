@@ -18,6 +18,7 @@ below are relative to the repository root.
 | **Collection** | One multi-file post: all binaries that belong together (the rars, par2s, nfo of one upload). Grouped by a normalized subject. Stored in `collections`. |
 | **Release** | A finished, searchable item created from a complete collection. Stored in `releases`. |
 | **NZB** | Gzipped XML file listing every group/segment (message-id) needed to download the release. Written to disk; after that the collection/binary/part rows are deleted. |
+| **Unknown payload candidate** | An NZB file entry whose subject is extensionless or ends in a non-informative extension (`.bin`, `.dat`, or `.file`). Additional processing may inspect one segment when no normal archive/media candidate exists; the term does not include known-but-unsupported formats such as ebooks. |
 
 The database hierarchy during ingestion is:
 
@@ -282,6 +283,33 @@ PAR2 file-description hashes are always retained in `par_hashes` when read.
 `ADD_PAR2` controls only whether those described files are also exposed in
 `release_files`; disabling that display preference no longer disables PAR2
 hash donors.
+
+### Extensionless payload sniffing
+
+Additional processing normally selects work from subject extensions. When a
+release has no recognized archive, media, image, or audio candidate, the
+planner can instead select a bounded set of unknown payload candidates: the
+largest entry followed by small, low-segment entries, capped by both candidate
+count and estimated first-segment bytes. It downloads only the first segment
+of each selection and classifies magic bytes as RAR/ZIP, PAR2, Matroska, MP4,
+AVI, text/NFO, or unknown. The already-downloaded bytes are passed directly to
+the existing archive, PAR2, media, or NFO handler; they are never downloaded a
+second time. Unknown bytes record the `unknown-payload` unsupported reason.
+
+The fallback is enabled by `ADDITIONAL_PAYLOAD_SNIFFING`; candidate count,
+byte budget, and the small-file segment threshold have matching
+`ADDITIONAL_PAYLOAD_SNIFF_*` settings. Completion telemetry includes total
+sniffed candidates and counts by classification.
+
+For historical releases, `php artisan releases:requeue-unknown-payloads` is a
+targeted repair command. It defaults to a read-only dry run, streams processed
+releases with no `release_files`, reads their stored NZBs without rewriting
+them, and only requeues matching releases when `--apply` is supplied. Optional
+`--limit`, `--category`, `--min-size`, and `--max-size` filters bound the scan;
+the normal additional-processing minimum size remains in force. Runtime is
+proportional to the database candidates scanned because each candidate's
+compressed NZB must be read and parsed once; use category/size bounds and a
+small `--limit` for the first applied run on large installations.
 
 ## The three regex tables
 

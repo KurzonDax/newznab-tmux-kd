@@ -11,6 +11,7 @@ final readonly class AdditionalWorkPlan
      * @param  list<string>  $jpgMessageIds
      * @param  list<string>  $mediaInfoMessageIds
      * @param  list<ArchiveCandidate>  $archiveCandidates
+     * @param  list<UnknownPayloadCandidate>  $unknownPayloadCandidates
      * @param  list<string>  $unsupportedReasons
      */
     public function __construct(
@@ -20,6 +21,7 @@ final readonly class AdditionalWorkPlan
         public string $audioInfoMessageId = '',
         public string $audioInfoExtension = '',
         public array $archiveCandidates = [],
+        public array $unknownPayloadCandidates = [],
         public int $bookFileCount = 0,
         public bool $bookFlood = false,
         public int $duplicateMessageIdCount = 0,

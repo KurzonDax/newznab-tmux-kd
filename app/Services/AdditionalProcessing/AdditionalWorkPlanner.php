@@ -11,7 +11,10 @@ use Illuminate\Support\Facades\Log;
 
 final readonly class AdditionalWorkPlanner
 {
-    public function __construct(private ProcessingConfiguration $config) {}
+    public function __construct(
+        private ProcessingConfiguration $config,
+        private UnknownPayloadCandidateSelector $unknownPayloadSelector = new UnknownPayloadCandidateSelector,
+    ) {}
 
     /**
      * @param  array<int|string, mixed>  $nzbContents
@@ -114,11 +117,23 @@ final readonly class AdditionalWorkPlanner
         if ($bookFlood) {
             $unsupportedReasons[] = 'book-flood';
         }
-        if ($archiveCandidates === []
-            && $sampleMessageIds === []
-            && $jpgMessageIds === []
-            && $mediaInfoMessageIds === []
-            && $audioInfoMessageId === ''
+        $hasKnownCandidate = $archiveCandidates !== []
+            || $sampleMessageIds !== []
+            || $jpgMessageIds !== []
+            || $mediaInfoMessageIds !== []
+            || $audioInfoMessageId !== '';
+        $unknownPayloadCandidates = [];
+        if (! $hasKnownCandidate && $this->config->payloadSniffing) {
+            $unknownPayloadCandidates = $this->unknownPayloadSelector->select(
+                $nzbContents,
+                $this->config->payloadSniffMaxCandidates,
+                $this->config->payloadSniffByteBudget,
+                $this->config->payloadSniffSmallSegmentLimit,
+            );
+        }
+
+        if (! $hasKnownCandidate
+            && $unknownPayloadCandidates === []
         ) {
             $unsupportedReasons[] = 'no-supported-candidates';
         }
@@ -130,6 +145,7 @@ final readonly class AdditionalWorkPlanner
             audioInfoMessageId: $audioInfoMessageId,
             audioInfoExtension: $audioInfoExtension,
             archiveCandidates: $archiveCandidates,
+            unknownPayloadCandidates: $unknownPayloadCandidates,
             bookFileCount: $bookFileCount,
             bookFlood: $bookFlood,
             duplicateMessageIdCount: $duplicateMessageIdCount,

@@ -7,10 +7,20 @@ namespace Tests\Feature;
 use App\Facades\Search;
 use App\Models\Category;
 use App\Models\Release;
+use App\Services\AdditionalProcessing\AdditionalWorkPlanner;
+use App\Services\AdditionalProcessing\ArchiveExtractionService;
+use App\Services\AdditionalProcessing\ConsoleOutputService;
+use App\Services\AdditionalProcessing\DTO\DownloadMetrics;
+use App\Services\AdditionalProcessing\Enums\DownloadKind;
+use App\Services\AdditionalProcessing\MediaExtractionService;
+use App\Services\AdditionalProcessing\NzbContentParser;
 use App\Services\AdditionalProcessing\ReleaseFileManager;
+use App\Services\AdditionalProcessing\ReleaseFilesArchiveFallback;
+use App\Services\AdditionalProcessing\ReleaseProcessor;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
+use App\Services\AdditionalProcessing\UsenetDownloadService;
 use App\Services\CollectionCleanupService;
 use App\Services\NameFixing\NameFixingService;
 use App\Services\NameFixing\ReleaseUpdateService;
@@ -19,6 +29,8 @@ use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbService;
 use App\Services\Par2Processor;
 use App\Services\ReleaseImageService;
+use App\Services\Releases\PreviewGenerationPolicy;
+use App\Services\TempWorkspaceService;
 use dariusiii\rarinfo\Par2Info;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\QueryException;
@@ -383,6 +395,128 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
 
         $this->assertSame(1, DB::table('release_files')->count());
         $this->assertSame(1, DB::table('par_hashes')->count());
+    }
+
+    public function test_sniffed_rar_and_par2_payloads_flow_through_real_finalization(): void
+    {
+        DB::table('releases')->insert(array_merge($this->releaseRow(), [
+            'postdate' => '2026-08-16 12:00:00',
+            'proc_pp' => 0,
+            'nfostatus' => 1,
+        ]));
+
+        Search::shouldReceive('updateRelease')->once()->with(1);
+        $config = $this->makeConfig([
+            'addPAR2Files' => true,
+            'renamePar2' => true,
+            'payloadSniffing' => true,
+            'payloadSniffMaxCandidates' => 2,
+            'payloadSniffByteBudget' => 1024,
+        ]);
+        $persistenceMetrics = new PersistenceMetricsCollector;
+        $searchSync = new ReleaseSearchSyncCoordinator($persistenceMetrics);
+        $manager = new ReleaseFileManager(
+            $config,
+            new ReleaseImageService,
+            new NfoService,
+            new TestNzbService,
+            new PersistingPar2NameFixingService,
+            searchSyncCoordinator: $searchSync,
+        );
+
+        $nzbParser = Mockery::mock(NzbContentParser::class);
+        $nzbParser->shouldReceive('parseNzb')->once()->andReturn([
+            'error' => null,
+            'contents' => [
+                ['title' => 'archive.bin', 'segments' => ['<rar-first>', '<rar-second>'], 'size' => 400, 'partsactual' => 2],
+                ['title' => 'metadata.bin', 'segments' => ['<par2-first>', '<par2-second>'], 'size' => 200, 'partsactual' => 2],
+            ],
+        ]);
+
+        $rarPayload = "Rar!\x1A\x07\x00\x00\x00\x73".pack('v', 0x0101).'archive';
+        $downloadService = Mockery::mock(UsenetDownloadService::class);
+        $downloadService->shouldReceive('beginReleaseScope')->once()->andReturnNull();
+        $downloadService->shouldReceive('finishReleaseScope')->once()->andReturn(new DownloadMetrics);
+        $downloadService->shouldReceive('download')->once()->with(
+            DownloadKind::PayloadSniff,
+            ['<rar-first>'],
+            'alt.binaries.test',
+            1,
+            'archive.bin',
+        )->andReturn(['success' => true, 'data' => $rarPayload, 'groupUnavailable' => false, 'error' => null]);
+        $downloadService->shouldReceive('download')->once()->with(
+            DownloadKind::PayloadSniff,
+            ['<par2-first>'],
+            'alt.binaries.test',
+            1,
+            'metadata.bin',
+        )->andReturn(['success' => true, 'data' => "PAR2\x00PKTdata", 'groupUnavailable' => false, 'error' => null]);
+
+        $par2Info = Mockery::mock(Par2Info::class);
+        $par2Info->error = '';
+        $par2Info->shouldReceive('open')->once()->andReturnTrue();
+        $par2Info->shouldReceive('getFileList')->once()->andReturn([[
+            'name' => 'Canonical.Release.2026.mkv',
+            'size' => 1024,
+            'hash_16K' => '1234567890abcdef1234567890abcdef',
+        ]]);
+        $archiveService = Mockery::mock(ArchiveExtractionService::class);
+        $archiveService->shouldReceive('processCompressedData')->once()->with(
+            $rarPayload,
+            Mockery::type(ReleaseProcessingContext::class),
+            Mockery::type('string'),
+        )->andReturn([
+            'success' => true,
+            'files' => [[
+                'name' => 'Inside.Release.mkv',
+                'size' => 2048,
+                'date' => 1_788_600_000,
+                'pass' => false,
+                'crc32' => 'ABC123',
+            ]],
+            'hasPassword' => false,
+            'passwordStatus' => 0,
+        ]);
+        $archiveService->shouldReceive('getPar2Info')->once()->andReturn($par2Info);
+
+        $tmpPath = $this->makeTempDirectory('nntmux-sniff-persistence').'/';
+        $tempWorkspace = Mockery::mock(TempWorkspaceService::class);
+        $tempWorkspace->shouldReceive('createReleaseTempFolder')->once()->andReturn($tmpPath);
+        $tempWorkspace->shouldReceive('clearDirectory')->once()->with($tmpPath, false)->andReturnNull();
+        $output = Mockery::mock(ConsoleOutputService::class);
+        $output->shouldReceive('echoReleaseStart')->once()->andReturnNull();
+        $output->shouldReceive('setProcessTitle')->once()->andReturnNull();
+        $output->shouldReceive('echoFileInfoAdded')->once()->andReturnNull();
+
+        $processor = new ReleaseProcessor(
+            $config,
+            $nzbParser,
+            new AdditionalWorkPlanner($config),
+            $archiveService,
+            Mockery::mock(MediaExtractionService::class),
+            $downloadService,
+            $manager,
+            Mockery::mock(ReleaseFilesArchiveFallback::class),
+            $tempWorkspace,
+            $output,
+            $searchSync,
+            $persistenceMetrics,
+            previewPolicy: new AlwaysEnabledPreviewPolicy,
+        );
+
+        $result = $processor->process(new ReleaseProcessingContext(Release::query()->findOrFail(1)), $tmpPath);
+
+        $this->assertTrue($result->artifactsCreated);
+        $this->assertDatabaseHas('release_files', [
+            'releases_id' => 1,
+            'name' => 'Inside.Release.mkv',
+            'crc32' => 'ABC123',
+        ]);
+        $this->assertDatabaseHas('par_hashes', [
+            'releases_id' => 1,
+            'hash' => '1234567890abcdef1234567890abcdef',
+        ]);
+        $this->assertSame('Canonical.Release.2026', DB::table('releases')->where('id', 1)->value('searchname'));
     }
 
     public function test_legacy_par2_processor_persists_hashes_when_release_file_listing_is_disabled(): void
@@ -773,6 +907,29 @@ class CountingNameFixingService extends NameFixingService
         $this->matchPreDbFilesCalls++;
 
         return 0;
+    }
+}
+
+class PersistingPar2NameFixingService extends CountingNameFixingService
+{
+    public function checkName(object $release, bool $echo, string $type, bool $nameStatus, bool $show, bool $preId = false): bool
+    {
+        if ($type !== 'PAR2, ') {
+            return false;
+        }
+
+        $release->searchname = 'Canonical.Release.2026';
+        Release::query()->whereKey((int) $release->id)->update(['searchname' => $release->searchname]);
+
+        return true;
+    }
+}
+
+class AlwaysEnabledPreviewPolicy extends PreviewGenerationPolicy
+{
+    public function generationEnabledForCategory(int $categoriesId): bool
+    {
+        return true;
     }
 }
 
