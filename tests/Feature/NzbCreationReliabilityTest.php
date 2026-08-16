@@ -148,7 +148,8 @@ class NzbCreationReliabilityTest extends TestCase
         $this->assertSame('Temporary filesystem failure.', DB::table('release_nzb_creation_failures')->where('releases_id', 1)->value('last_error'));
         $this->assertNotNull(DB::table('release_nzb_creation_failures')->where('releases_id', 1)->value('created_at'));
         $this->assertNotNull(DB::table('release_nzb_creation_failures')->where('releases_id', 1)->value('updated_at'));
-        $this->assertNull(DB::table('releases')->where('id', 1)->value('nzb_creation_claimed_at'));
+        $this->assertNotNull(DB::table('releases')->where('id', 1)->value('nzb_creation_claimed_at'));
+        $this->assertNotNull(DB::table('releases')->where('id', 1)->value('nzb_creation_claim_token'));
         $this->assertSame(1, DB::table('collections')->count());
         $this->assertSame('NZB creation failed; release will be retried', $nzbCreationLogger->warnings[0]['message']);
         $this->assertSame(1, $nzbCreationLogger->warnings[0]['context']['release_id']);

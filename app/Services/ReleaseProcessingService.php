@@ -686,6 +686,8 @@ final class ReleaseProcessingService
             $processed = 0;
             $releases = NzbCreationCandidateQuery::claimBatch($groupID, $limit, $claimToken, $columns);
             foreach ($releases as $release) {
+                $keepClaimUntilLeaseExpires = false;
+
                 try {
                     $result = $this->nzb->createNzbForRelease($release);
                     if ($result->success) {
@@ -702,6 +704,7 @@ final class ReleaseProcessingService
                     }
 
                     $this->recordNzbCreationRetry($release, $result);
+                    $keepClaimUntilLeaseExpires = true;
                     $retryCount++;
                 } catch (Throwable $e) {
                     $result = NzbCreationResult::transient('Unexpected NZB creation failure: '.$e->getMessage());
@@ -710,10 +713,13 @@ final class ReleaseProcessingService
                         $deletedCount++;
                     } else {
                         $this->recordNzbCreationRetry($release, $result);
+                        $keepClaimUntilLeaseExpires = true;
                         $retryCount++;
                     }
                 } finally {
-                    NzbCreationCandidateQuery::clearClaim((int) $release->id, $claimToken);
+                    if (! $keepClaimUntilLeaseExpires) {
+                        NzbCreationCandidateQuery::clearClaim((int) $release->id, $claimToken);
+                    }
                     $processed++;
                     $this->outputProgress($processed, $total, 'Creating NZBs');
                 }
@@ -756,14 +762,26 @@ final class ReleaseProcessingService
 
     private function recordNzbCreationRetry(Release $release, NzbCreationResult $result): void
     {
-        $nextAttempt = $this->nextNzbCreationAttempt($release);
-        $failure = ReleaseNzbCreationFailure::query()->updateOrCreate(
-            ['releases_id' => (int) $release->id],
-            [
-                'attempts' => $nextAttempt,
-                'last_error' => mb_substr($result->reason, 0, 1000),
-            ],
-        );
+        $failure = DB::transaction(function () use ($release, $result): ReleaseNzbCreationFailure {
+            $failure = ReleaseNzbCreationFailure::query()
+                ->where('releases_id', (int) $release->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $failure instanceof ReleaseNzbCreationFailure) {
+                return ReleaseNzbCreationFailure::query()->create([
+                    'releases_id' => (int) $release->id,
+                    'attempts' => 1,
+                    'last_error' => mb_substr($result->reason, 0, 1000),
+                ]);
+            }
+
+            $failure->attempts++;
+            $failure->last_error = mb_substr($result->reason, 0, 1000);
+            $failure->save();
+
+            return $failure;
+        }, 3);
         $release->setRelation('nzbCreationFailure', $failure);
 
         Log::channel('nzb_creation')->warning('NZB creation failed; release will be retried', [
@@ -771,7 +789,7 @@ final class ReleaseProcessingService
             'guid' => $release->guid,
             'failure_type' => $result->failureType,
             'reason' => $result->reason,
-            'next_attempt' => $nextAttempt,
+            'next_attempt' => $failure->attempts,
             'max_attempts' => self::NZB_CREATION_MAX_ATTEMPTS,
         ]);
     }

@@ -16,6 +16,7 @@ class ReleasesOptimizePreflight extends Command
 {
     /** @var list<string> */
     private const array REMOVED_INDEXES = [
+        'ix_releases_guid',
         'ix_releases_adddate_only',
         'ix_releases_videos_id',
         'ix_releases_movieinfo_id',

@@ -26,6 +26,7 @@ final class AdditionalProcessingDiagnostics
         'postdate',
         'id',
         'additional_pp_claimed_at',
+        'size',
     ];
 
     /**

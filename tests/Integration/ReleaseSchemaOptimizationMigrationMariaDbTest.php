@@ -136,6 +136,25 @@ final class ReleaseSchemaOptimizationMigrationMariaDbTest extends TestCase
     }
 
     #[Test]
+    public function migration_up_resumes_after_the_rebuild_if_a_sparse_foreign_key_is_missing(): void
+    {
+        $this->seedLegacyData();
+        $migration = $this->migration();
+        $migration->up();
+
+        DB::statement(
+            'ALTER TABLE `'.$this->table('release_nzb_creation_failures').'` '
+            .'DROP FOREIGN KEY `FK_rncf_releases`'
+        );
+
+        $migration->up();
+
+        $this->assertTrue(Schema::hasForeignKey('release_nzb_passwords', 'FK_rnp_releases'));
+        $this->assertTrue(Schema::hasForeignKey('release_nzb_creation_failures', 'FK_rncf_releases'));
+        $this->assertSame(['guid'], $this->indexColumns('ux_releases_guid'));
+    }
+
+    #[Test]
     public function rebuild_keeps_legacy_sha1_guids_intact(): void
     {
         $sha1 = '0c5c002220e26542a4c9dae845a58a38b3e7e63a';

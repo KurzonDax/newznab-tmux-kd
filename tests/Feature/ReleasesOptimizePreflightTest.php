@@ -90,6 +90,7 @@ final class ReleasesOptimizePreflightTest extends TestCase
         $this->assertSame(1, $report['migration_data']['release_comment_counter_mismatches']);
         $this->assertSame(1, $report['discarded_data']['releases.source']);
         $this->assertSame(1, $report['discarded_data']['release_comments.gid']);
+        $this->assertContains('ix_releases_guid', $report['indexes']['scheduled_for_removal']);
         $this->assertNull($report['storage']['total_bytes']);
     }
 
@@ -168,6 +169,7 @@ final class ReleasesOptimizePreflightTest extends TestCase
             nzb_creation_last_error TEXT, updatetime DATETIME, gid VARCHAR(32),
             source INTEGER, proc_sorter INTEGER DEFAULT 0, audiostatus INTEGER DEFAULT 0
         )');
+        DB::statement('CREATE INDEX ix_releases_guid ON releases (guid)');
         DB::statement('CREATE TABLE release_comments (
             id INTEGER PRIMARY KEY, releases_id INTEGER NOT NULL, isvisible INTEGER DEFAULT 1,
             gid VARCHAR(32), cid VARCHAR(32), issynced INTEGER DEFAULT 0, shared INTEGER DEFAULT 0,

@@ -20,8 +20,20 @@ final class ReleasesNormalizeGuidsMariaDbTest extends TestCase
 {
     private string $tablePrefix;
 
+    /**
+     * @var array<string, string|false>
+     */
+    private array $originalEnvironment = [];
+
     public function createApplication()
     {
+        $this->originalEnvironment = [
+            'APP_ENV' => getenv('APP_ENV'),
+            'DB_URL' => getenv('DB_URL'),
+            'DB_CONNECTION' => getenv('DB_CONNECTION'),
+            'DB_DATABASE' => getenv('DB_DATABASE'),
+        ];
+
         Dotenv::createMutable(dirname(__DIR__, 2))->safeLoad();
         $this->tablePrefix = 'guid_norm_'.getmypid().'_'.bin2hex(random_bytes(4)).'_';
         $this->setEnvironmentValue('APP_ENV', 'testing');
@@ -57,11 +69,18 @@ final class ReleasesNormalizeGuidsMariaDbTest extends TestCase
 
     protected function tearDown(): void
     {
-        if (isset($this->tablePrefix) && preg_match('/^guid_norm_\d+_[a-f0-9]{8}_$/', $this->tablePrefix) === 1) {
-            DB::statement('DROP TABLE IF EXISTS `'.$this->table('releases').'`');
+        try {
+            if (isset($this->tablePrefix) && preg_match('/^guid_norm_\d+_[a-f0-9]{8}_$/', $this->tablePrefix) === 1) {
+                DB::statement('DROP TABLE IF EXISTS `'.$this->table('releases').'`');
+            }
+        } finally {
+            DB::disconnect();
+            parent::tearDown();
+
+            foreach ($this->originalEnvironment as $key => $value) {
+                $this->setEnvironmentValue($key, $value === false ? null : $value);
+            }
         }
-        DB::disconnect();
-        parent::tearDown();
     }
 
     #[Test]

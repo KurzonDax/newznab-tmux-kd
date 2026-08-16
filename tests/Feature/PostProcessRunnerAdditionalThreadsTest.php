@@ -365,6 +365,7 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
                 'postdate',
                 'id',
                 'additional_pp_claimed_at',
+                'size',
             ], 'ix_releases_add_pp_claim_queue');
         });
 

@@ -170,16 +170,22 @@ return new class extends Migration
             return;
         }
 
-        DB::statement(
-            'ALTER TABLE '.$this->table('release_nzb_passwords')
-            .' ADD CONSTRAINT `FK_rnp_releases` FOREIGN KEY (`releases_id`) REFERENCES '
-            .$this->table('releases').' (`id`) ON DELETE CASCADE ON UPDATE CASCADE'
-        );
-        DB::statement(
-            'ALTER TABLE '.$this->table('release_nzb_creation_failures')
-            .' ADD CONSTRAINT `FK_rncf_releases` FOREIGN KEY (`releases_id`) REFERENCES '
-            .$this->table('releases').' (`id`) ON DELETE CASCADE ON UPDATE CASCADE'
-        );
+        if (Schema::hasTable('release_nzb_passwords')
+            && ! Schema::hasForeignKey('release_nzb_passwords', 'FK_rnp_releases')) {
+            DB::statement(
+                'ALTER TABLE '.$this->table('release_nzb_passwords')
+                .' ADD CONSTRAINT `FK_rnp_releases` FOREIGN KEY (`releases_id`) REFERENCES '
+                .$this->table('releases').' (`id`) ON DELETE CASCADE ON UPDATE CASCADE'
+            );
+        }
+        if (Schema::hasTable('release_nzb_creation_failures')
+            && ! Schema::hasForeignKey('release_nzb_creation_failures', 'FK_rncf_releases')) {
+            DB::statement(
+                'ALTER TABLE '.$this->table('release_nzb_creation_failures')
+                .' ADD CONSTRAINT `FK_rncf_releases` FOREIGN KEY (`releases_id`) REFERENCES '
+                .$this->table('releases').' (`id`) ON DELETE CASCADE ON UPDATE CASCADE'
+            );
+        }
     }
 
     private function dropSparseForeignKeys(): void
@@ -188,10 +194,12 @@ return new class extends Migration
             return;
         }
 
-        if (Schema::hasTable('release_nzb_passwords')) {
+        if (Schema::hasTable('release_nzb_passwords')
+            && Schema::hasForeignKey('release_nzb_passwords', 'FK_rnp_releases')) {
             DB::statement('ALTER TABLE '.$this->table('release_nzb_passwords').' DROP FOREIGN KEY `FK_rnp_releases`');
         }
-        if (Schema::hasTable('release_nzb_creation_failures')) {
+        if (Schema::hasTable('release_nzb_creation_failures')
+            && Schema::hasForeignKey('release_nzb_creation_failures', 'FK_rncf_releases')) {
             DB::statement('ALTER TABLE '.$this->table('release_nzb_creation_failures').' DROP FOREIGN KEY `FK_rncf_releases`');
         }
     }
@@ -309,15 +317,19 @@ return new class extends Migration
             }
         }
 
-        $specifications = [
-            ...$specifications,
-            'ADD UNIQUE INDEX `ux_releases_guid` (`guid`)',
-            'ADD INDEX `ix_releases_predb_id` (`predb_id`)',
-            'ADD INDEX `ix_releases_size` (`size`)',
-            'ADD INDEX `ix_releases_add_pp_claim_queue` (`passwordstatus`, `haspreview`, `nzbstatus`, `leftguid`, `postdate` DESC, `id`, `additional_pp_claimed_at`, `size`)',
-            'ADD INDEX `ix_releases_nzb_creation_group_queue` (`nzbstatus`, `groups_id`, `postdate` DESC, `id`, `nzb_creation_claimed_at`)',
-            'ADD INDEX `ix_releases_nzb_creation_global_queue` (`nzbstatus`, `postdate` DESC, `id`, `nzb_creation_claimed_at`)',
+        $newIndexes = [
+            'ux_releases_guid' => 'ADD UNIQUE INDEX `ux_releases_guid` (`guid`)',
+            'ix_releases_predb_id' => 'ADD INDEX `ix_releases_predb_id` (`predb_id`)',
+            'ix_releases_size' => 'ADD INDEX `ix_releases_size` (`size`)',
+            'ix_releases_add_pp_claim_queue' => 'ADD INDEX `ix_releases_add_pp_claim_queue` (`passwordstatus`, `haspreview`, `nzbstatus`, `leftguid`, `postdate` DESC, `id`, `additional_pp_claimed_at`, `size`)',
+            'ix_releases_nzb_creation_group_queue' => 'ADD INDEX `ix_releases_nzb_creation_group_queue` (`nzbstatus`, `groups_id`, `postdate` DESC, `id`, `nzb_creation_claimed_at`)',
+            'ix_releases_nzb_creation_global_queue' => 'ADD INDEX `ix_releases_nzb_creation_global_queue` (`nzbstatus`, `postdate` DESC, `id`, `nzb_creation_claimed_at`)',
         ];
+        foreach ($newIndexes as $name => $specification) {
+            if (! $this->indexExists($name)) {
+                $specifications[] = $specification;
+            }
+        }
 
         DB::statement('ALTER TABLE '.$this->table('releases').' '.implode(', ', $specifications));
     }
@@ -481,7 +493,7 @@ return new class extends Migration
      * @param  Collection<int, object>  $rows
      * @param  array<string, string>  $columnMap  Target `releases` column => source column
      */
-    private function batchUpdateReleases($rows, array $columnMap): void
+    private function batchUpdateReleases(Collection $rows, array $columnMap): void
     {
         if ($rows->isEmpty()) {
             return;

@@ -15,8 +15,20 @@ final class NzbCreationClaimPlanMariaDbTest extends TestCase
 {
     private string $tablePrefix;
 
+    /**
+     * @var array<string, string|false>
+     */
+    private array $originalEnvironment = [];
+
     public function createApplication()
     {
+        $this->originalEnvironment = [
+            'APP_ENV' => getenv('APP_ENV'),
+            'DB_URL' => getenv('DB_URL'),
+            'DB_CONNECTION' => getenv('DB_CONNECTION'),
+            'DB_DATABASE' => getenv('DB_DATABASE'),
+        ];
+
         Dotenv::createMutable(dirname(__DIR__, 2))->safeLoad();
         $this->tablePrefix = 'nzb_claim_'.getmypid().'_'.bin2hex(random_bytes(4)).'_';
         $this->setEnvironmentValue('APP_ENV', 'testing');
@@ -41,15 +53,22 @@ final class NzbCreationClaimPlanMariaDbTest extends TestCase
 
     protected function tearDown(): void
     {
-        if (isset($this->tablePrefix) && preg_match('/^nzb_claim_\d+_[a-f0-9]{8}_$/', $this->tablePrefix) === 1) {
-            DB::statement('SET FOREIGN_KEY_CHECKS=0');
-            foreach (['release_nzb_creation_failures', 'releases', 'categories', 'root_categories', 'settings'] as $table) {
-                DB::statement('DROP TABLE IF EXISTS `'.$this->table($table).'`');
+        try {
+            if (isset($this->tablePrefix) && preg_match('/^nzb_claim_\d+_[a-f0-9]{8}_$/', $this->tablePrefix) === 1) {
+                DB::statement('SET FOREIGN_KEY_CHECKS=0');
+                foreach (['release_nzb_creation_failures', 'releases', 'categories', 'root_categories', 'settings'] as $table) {
+                    DB::statement('DROP TABLE IF EXISTS `'.$this->table($table).'`');
+                }
+                DB::statement('SET FOREIGN_KEY_CHECKS=1');
             }
-            DB::statement('SET FOREIGN_KEY_CHECKS=1');
+        } finally {
+            DB::disconnect();
+            parent::tearDown();
+
+            foreach ($this->originalEnvironment as $key => $value) {
+                $this->setEnvironmentValue($key, $value === false ? null : $value);
+            }
         }
-        DB::disconnect();
-        parent::tearDown();
     }
 
     #[Test]
