@@ -258,6 +258,7 @@ class AdditionalProcessingOrchestrator
         );
         $downloadMetrics = $batchResult->downloadMetrics();
         $persistenceMetrics = $batchResult->persistenceMetrics();
+        $payloadSniffMetrics = $batchResult->payloadSniffMetrics();
 
         Log::info('Additional postprocessing run finished', [
             'pipeline' => 'v2',
@@ -280,6 +281,8 @@ class AdditionalProcessingOrchestrator
             'search_sync_executions' => $persistenceMetrics->searchSyncExecutions,
             'duplicate_message_ids' => $batchResult->duplicateMessageIdCount(),
             'unsupported_reasons' => $batchResult->unsupportedReasonCounts(),
+            'sniffed_candidates' => $payloadSniffMetrics->candidateCount,
+            'payload_classifications' => $payloadSniffMetrics->classificationCounts,
             'elapsed_seconds' => round($batchResult->elapsedSeconds, 6),
             'releases_per_second' => round($batchResult->releasesPerSecond(), 4),
             'average_release_seconds' => round($batchResult->averageReleaseSeconds(), 6),

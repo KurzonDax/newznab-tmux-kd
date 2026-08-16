@@ -11,6 +11,7 @@ enum ProcessingStage: string
     case ReleaseInitialization = 'release-initialization';
     case MessageIdSelection = 'message-id-selection';
     case DirectDownloads = 'direct-downloads';
+    case PayloadSniffing = 'payload-sniffing';
     case ArchiveDownloads = 'archive-downloads';
     case ExtractedFiles = 'extracted-files';
     case ArchiveFallbacks = 'archive-fallbacks';

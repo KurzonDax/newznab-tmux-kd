@@ -225,6 +225,17 @@ final readonly class AdditionalBatchResult
         return $counts;
     }
 
+    public function payloadSniffMetrics(): PayloadSniffMetrics
+    {
+        $metrics = new PayloadSniffMetrics;
+
+        foreach ($this->results as $result) {
+            $metrics = $metrics->merge($result->payloadSniffMetrics);
+        }
+
+        return $metrics;
+    }
+
     /**
      * @return array<string, float>
      */

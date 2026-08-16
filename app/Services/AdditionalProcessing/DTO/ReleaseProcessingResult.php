@@ -25,6 +25,7 @@ final readonly class ReleaseProcessingResult
         public ?PersistenceMetrics $persistenceMetrics = null,
         public int $duplicateMessageIdCount = 0,
         public array $unsupportedReasons = [],
+        public PayloadSniffMetrics $payloadSniffMetrics = new PayloadSniffMetrics,
     ) {}
 
     public function isSuccessful(): bool
@@ -54,6 +55,7 @@ final readonly class ReleaseProcessingResult
             persistenceMetrics: $persistenceMetrics ?? $this->persistenceMetrics,
             duplicateMessageIdCount: $this->duplicateMessageIdCount,
             unsupportedReasons: $this->unsupportedReasons,
+            payloadSniffMetrics: $this->payloadSniffMetrics,
         );
     }
 }

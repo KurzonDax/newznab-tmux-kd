@@ -11,6 +11,7 @@ use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\ConsoleOutputService;
 use App\Services\AdditionalProcessing\MediaExtractionService;
 use App\Services\AdditionalProcessing\NzbContentParser;
+use App\Services\AdditionalProcessing\PayloadSniffer;
 use App\Services\AdditionalProcessing\ReleaseFileManager;
 use App\Services\AdditionalProcessing\ReleaseFilesArchiveFallback;
 use App\Services\AdditionalProcessing\ReleaseProcessor;
@@ -163,6 +164,7 @@ class AdditionalProcessingServiceProvider extends ServiceProvider
                 $app->make(ConsoleOutputService::class),
                 $app->make(ReleaseSearchSyncCoordinator::class),
                 $app->make(PersistenceMetricsCollector::class),
+                payloadSniffer: $app->make(PayloadSniffer::class),
             );
         });
 
