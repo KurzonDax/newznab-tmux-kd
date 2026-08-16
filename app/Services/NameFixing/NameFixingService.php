@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Services\NameFixing;
 
 use App\Facades\Search;
+use App\Models\Predb;
 use App\Models\Settings;
 use App\Services\NameFixing\Extractors\FileNameExtractor;
 use App\Services\NameFixing\Extractors\NfoNameExtractor;
+use App\Services\NameFixing\Srrdb\SrrdbLookupResult;
+use App\Services\NameFixing\Srrdb\SrrdbLookupService;
 use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbContentsService;
 use RuntimeException;
@@ -49,6 +52,12 @@ class NameFixingService
 
     public const PROC_CRC_DONE = 1;
 
+    public const PROC_SRRDB_NONE = 0;
+
+    public const PROC_SRRDB_DONE = 1;
+
+    public const PROC_SRRDB_AMBIGUOUS = 2;
+
     // Constants for overall rename status
     public const IS_RENAMED_NONE = 0;
 
@@ -72,6 +81,8 @@ class NameFixingService
 
     protected DonorMatchSelector $donorMatchSelector;
 
+    protected SrrdbLookupService $srrdbLookupService;
+
     /**
      * @var array<string, array<string, mixed>|null>
      */
@@ -94,6 +105,7 @@ class NameFixingService
         ?NameFixingQueryService $queries = null,
         ?DonorMatchSelector $donorMatchSelector = null,
         ?bool $descriptiveTitleRenameEnabled = null,
+        ?SrrdbLookupService $srrdbLookupService = null,
     ) {
         $this->updateService = $updateService ?? new ReleaseUpdateService;
         $this->checkerService = $checkerService ?? new NameCheckerService;
@@ -104,6 +116,7 @@ class NameFixingService
         $this->predbMatchSelector = $predbMatchSelector ?? new PredbMatchSelector($this->fileNameCleaner);
         $this->queries = $queries ?? new NameFixingQueryService;
         $this->donorMatchSelector = $donorMatchSelector ?? new DonorMatchSelector;
+        $this->srrdbLookupService = $srrdbLookupService ?? new SrrdbLookupService;
         $this->echoOutput = config('nntmux.echocli');
         $this->descriptiveTitleRenameEnabled = $descriptiveTitleRenameEnabled
             ?? (! app()->bound('config') || (int) (Settings::settingValue('descriptive_title_rename') ?? 1) === 1);
@@ -288,6 +301,177 @@ class NameFixingService
         }
 
         $this->echoFoundCount($echo, ' crc32\'s');
+    }
+
+    /**
+     * Fix names using SRRDB archive CRC lookups.
+     */
+    public function fixNamesWithSrrdb(int $time, bool $echo, int $cats, bool $nameStatus, bool $show): void
+    {
+        if (! config('nntmux_srrdb.enabled', false)) {
+            return;
+        }
+
+        $this->echoStartMessage($time, 'SRRDB archive CRC');
+        if (! $this->startBatch(NameFixingQueryService::SOURCE_SRRDB, $time, $cats, ' archive CRCs to process.')) {
+            cli()->info('Nothing to fix.');
+
+            return;
+        }
+
+        foreach ($this->candidateBatches(NameFixingQueryService::SOURCE_SRRDB, $time, $cats) as $releases) {
+            $files = $this->queries->groupByReleaseId(
+                $this->queries->fileRows($this->releaseIds($releases), NameFixingQueryService::SOURCE_SRRDB)
+            );
+
+            foreach ($releases as $release) {
+                $this->processSrrdbCandidate(
+                    $release,
+                    $files[(int) $release->releases_id] ?? [],
+                    $echo,
+                    $nameStatus,
+                    $show,
+                );
+                $this->echoRenamed($show);
+            }
+        }
+
+        $this->echoFoundCount($echo, ' archive CRCs');
+    }
+
+    /** @param list<object> $files */
+    private function processSrrdbCandidate(
+        object $release,
+        array $files,
+        bool $echo,
+        bool $nameStatus,
+        bool $show,
+    ): void {
+        $this->updateService->reset();
+        $this->updateService->incrementChecked();
+        $files = $this->prioritizeSrrdbFiles($files);
+        $completed = true;
+        $ambiguous = false;
+
+        foreach ($files as $file) {
+            $result = $this->srrdbLookupService->lookup(
+                (string) $file->crc32,
+                (int) $file->size,
+                (int) $release->relsize,
+                (float) ($release->completion ?? 0) >= 100,
+            );
+
+            if ($result->status === SrrdbLookupResult::STATUS_UNAVAILABLE) {
+                $completed = false;
+
+                break;
+            }
+
+            if ($result->status === SrrdbLookupResult::STATUS_AMBIGUOUS) {
+                $ambiguous = true;
+
+                continue;
+            }
+
+            if (! $result->isMatch()) {
+                continue;
+            }
+
+            $this->applySrrdbMatch($release, $result, $echo, $nameStatus, $show);
+
+            break;
+        }
+
+        if ($completed && ! $this->updateService->matched) {
+            if ($ambiguous && $echo && $nameStatus) {
+                $this->updateService->updateSingleColumn(
+                    'proc_srrdb',
+                    self::PROC_SRRDB_AMBIGUOUS,
+                    (int) $release->releases_id,
+                );
+            } else {
+                $this->markProcessed($echo, $nameStatus, 'proc_srrdb', (int) $release->releases_id);
+            }
+        }
+    }
+
+    /**
+     * @param  list<object>  $files
+     * @return list<object>
+     */
+    private function prioritizeSrrdbFiles(array $files): array
+    {
+        usort($files, function (object $left, object $right): int {
+            return [
+                $this->filePrioritizer->getCrcPriority((string) $left->filename),
+                -(int) $left->size,
+                (string) $left->filename,
+            ] <=> [
+                $this->filePrioritizer->getCrcPriority((string) $right->filename),
+                -(int) $right->size,
+                (string) $right->filename,
+            ];
+        });
+
+        $distinct = [];
+        foreach ($files as $file) {
+            $crc = strtoupper((string) $file->crc32);
+            $distinct[$crc] ??= $file;
+        }
+
+        return array_values($distinct);
+    }
+
+    private function applySrrdbMatch(
+        object $release,
+        SrrdbLookupResult $result,
+        bool $echo,
+        bool $nameStatus,
+        bool $show,
+    ): void {
+        $predbId = $echo ? (int) $this->srrdbPredb($result)->id : 0;
+        $imdbId = isset($result->metadata['imdb_id'])
+            ? (string) $result->metadata['imdb_id']
+            : null;
+        $release->srrdb_imdbid = $imdbId;
+        $this->updateService->updateRelease(
+            $release,
+            (string) $result->metadata['release'],
+            'srrdb: archive-crc',
+            $echo,
+            'SRRDB, ',
+            $nameStatus,
+            $show,
+            $predbId,
+        );
+
+        if ($echo && ! $this->updateService->matched) {
+            $this->updateService->attachSrrdbMatch(
+                (int) $release->releases_id,
+                $predbId,
+                $imdbId,
+            );
+        }
+    }
+
+    private function srrdbPredb(SrrdbLookupResult $result): Predb
+    {
+        $metadata = $result->metadata;
+
+        return Predb::query()->firstOrCreate(
+            ['title' => (string) $metadata['release']],
+            [
+                'nfo' => (bool) ($metadata['has_nfo'] ?? false) ? '1' : '0',
+                'size' => (string) ($metadata['size'] ?? 0),
+                'category' => $metadata['category'] ?? null,
+                'predate' => $metadata['predate'] ?? null,
+                'source' => 'srrdb',
+                'requestid' => 0,
+                'groups_id' => 0,
+                'filename' => '',
+                'searched' => 0,
+            ],
+        );
     }
 
     /**

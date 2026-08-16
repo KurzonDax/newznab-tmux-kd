@@ -30,6 +30,8 @@ final class NameFixingQueryService
 
     public const SOURCE_MEDIA_MOVIE = 'media_movie';
 
+    public const SOURCE_SRRDB = 'srrdb';
+
     public const BATCH_SIZE = 1000;
 
     private const TRUSTED_DONOR_PREDICATE = "(r.predb_id > 0 OR COALESCE(NULLIF(r.anidbid, ''), 0) > 0 OR r.is_trusted_name = 1)";
@@ -49,6 +51,7 @@ final class NameFixingQueryService
         self::SOURCE_PAR2 => 'proc_par2',
         self::SOURCE_XXX => 'proc_files',
         self::SOURCE_MEDIA_MOVIE => 'proc_uid',
+        self::SOURCE_SRRDB => 'proc_srrdb',
     ];
 
     /**
@@ -64,6 +67,7 @@ final class NameFixingQueryService
         self::SOURCE_PAR2 => '1 = 1',
         self::SOURCE_XXX => "EXISTS (SELECT 1 FROM release_files source_xxx WHERE source_xxx.releases_id = r.id AND source_xxx.name LIKE '%SDPORN%')",
         self::SOURCE_MEDIA_MOVIE => "EXISTS (SELECT 1 FROM media_infos source_movie WHERE source_movie.releases_id = r.id AND source_movie.movie_name IS NOT NULL AND source_movie.movie_name != '')",
+        self::SOURCE_SRRDB => 'EXISTS (SELECT 1 FROM release_files source_srrdb WHERE source_srrdb.releases_id = r.id AND LENGTH(source_srrdb.crc32) = 8)',
     ];
 
     public function __construct(?ConnectionInterface $database = null)
@@ -82,6 +86,7 @@ final class NameFixingQueryService
         int $limit = self::BATCH_SIZE
     ): array {
         [$where, $bindings] = $this->candidateWhere($source, $time, $categories);
+        $sourceColumns = $source === self::SOURCE_SRRDB ? ', r.completion' : '';
         $bindings[] = $afterId;
         $bindings[] = max(1, $limit);
 
@@ -89,7 +94,7 @@ final class NameFixingQueryService
             "SELECT r.id AS releases_id, r.id, r.name, r.searchname, r.fromname, r.groups_id,
                     r.categories_id, r.size AS relsize, r.guid, r.predb_id, r.nfostatus,
                     r.proc_nfo, r.proc_files, r.proc_par2, r.proc_uid, r.proc_srr,
-                    r.proc_hash16k, r.proc_crc32
+                    r.proc_hash16k, r.proc_crc32{$sourceColumns}
              FROM releases r
              WHERE {$where}
              AND r.id > ?
@@ -163,16 +168,18 @@ final class NameFixingQueryService
      */
     public function fileRows(array $releaseIds, string $source = self::SOURCE_FILES): array
     {
+        $sourceColumns = $source === self::SOURCE_SRRDB ? ', rf.size' : '';
         $filter = match ($source) {
             self::SOURCE_FILES => '',
             self::SOURCE_SRR => " AND (rf.name LIKE '%.srr' OR rf.name LIKE '%.srs')",
             self::SOURCE_CRC => " AND rf.crc32 IS NOT NULL AND rf.crc32 != ''",
+            self::SOURCE_SRRDB => ' AND LENGTH(rf.crc32) = 8',
             self::SOURCE_XXX => " AND rf.name LIKE '%SDPORN%'",
             default => throw new InvalidArgumentException("Unsupported release-file source [{$source}]."),
         };
 
         return $this->selectForReleaseIds(
-            'SELECT rf.releases_id, rf.name AS textstring, rf.name AS filename, rf.crc32
+            'SELECT rf.releases_id, rf.name AS textstring, rf.name AS filename, rf.crc32'.$sourceColumns.'
              FROM release_files rf
              WHERE rf.releases_id IN (%s)'.$filter.'
              ORDER BY rf.releases_id, rf.name',
@@ -393,6 +400,10 @@ final class NameFixingQueryService
             $bindings[] = Category::OTHER_MISC;
             $bindings[] = Category::OTHER_HASHED;
             $where[] = "r.{$statusColumn} = 0";
+        }
+
+        if ($source === self::SOURCE_SRRDB) {
+            $where[] = 'r.is_trusted_name = 0';
         }
 
         if ($time === 1) {

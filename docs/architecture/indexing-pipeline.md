@@ -81,7 +81,7 @@ are checked first):
 | Binaries | `php artisan multiprocessing:safe binaries` | Download new headers for all active groups. |
 | Backfill | `php artisan multiprocessing:backfill` | Fetch *older* headers, walking backwards from each group's `first_record`. |
 | Releases | `php artisan multiprocessing:releases` | Turn complete collections into releases + NZBs. |
-| Fix names | `php artisan releases:fix-names <level> --update …` (levels 3–19) | Rename badly-named releases using NFOs, file lists, par2, predb, etc. |
+| Fix names | `php artisan releases:fix-names <level> --update …` (levels 3–22) | Rename badly-named releases using NFOs, file lists, par2, predb, archive CRCs, etc. |
 | Remove crap | `php artisan releases:remove-crap …` | Delete spam/junk releases. |
 | Post additional / TV / movies / metadata | `php artisan multiprocessing:postprocess add\|nfo\|tv\|mov\|ama` | Download samples/NFOs, match to TMDB/TVDB/IGDB/etc. |
 | IRC scraper | `php artisan irc:scrape` | Populate the `predb` table from scene pre channels. |
@@ -283,6 +283,28 @@ PAR2 file-description hashes are always retained in `par_hashes` when read.
 `ADD_PAR2` controls only whether those described files are also exposed in
 `release_files`; disabling that display preference no longer disables PAR2
 hash donors.
+
+### SRRDB archive-CRC name fixing
+
+SRRDB name fixing is an opt-in scene-release source. Levels 21 (recent) and
+22 (all) take distinct Archive CRCs from `release_files`, prioritize primary
+archives and large files, and query SRRDB's `archive-crc` search. A search hit
+is not sufficient: the details response must repeat the queried CRC with the
+exact inner-file size, only one candidate may survive, and a complete
+release's total size must be within the configured donor-size tolerance.
+
+Confirmed matches create or reuse a `predb` row with source `srrdb`, attach it
+to the release, preserve SRRDB's IMDb id when present, and mark the name
+trusted. Zero-result and confirmed-result lookups are cached persistently by
+CRC with separate TTLs. Ambiguous lookups are marked separately from ordinary
+processed misses. Transient failures remain pending.
+
+`SRRDB_ENABLED=false` is the default. When enabled, the tmux fix-names pane
+adds level 21. Request volume is bounded per cycle and to at most one request
+per second by default; 429/5xx responses use exponential backoff and open a
+cycle-local circuit breaker after repeated failures. This integration only
+performs exact lookups for local candidates; it does not crawl or scrape
+SRRDB.
 
 ### Extensionless payload sniffing
 

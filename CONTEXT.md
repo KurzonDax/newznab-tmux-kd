@@ -85,5 +85,9 @@ _Avoid_: "plausible title" — that is the existing scene-shape check a candidat
 A release whose current name is backed by strong evidence and may therefore name another release that shares the same content fingerprint. A merely plausible or descriptive name is not a Trusted Donor.
 _Avoid_: "renamed release" — renaming alone does not establish trust.
 
+**Archive CRC**:
+The CRC32 recorded for a file inside a RAR archive, as distinct from a CRC of the Usenet article or the complete release. An SRRDB lookup may use it to identify a scene release only after SRRDB details confirm the same CRC and exact inner-file size.
+_Avoid_: plain "CRC" where article, PAR2, and archive checks could be confused.
+
 **Preview Generation**:
 The umbrella for creating Generated Previews and Generated Sample Videos. Toggleable per root category (covering the root's entire subtree, no child overrides) and AND-ed with the site-wide switches — the per-root toggle can only disable, never enable. Disabling never deletes existing artifacts. A release skipped by the toggle is owed generation if later recategorized into a root where generation is enabled; re-enabling a root's toggle owes nothing (explicit requeue is the backfill tool).

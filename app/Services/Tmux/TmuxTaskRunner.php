@@ -416,7 +416,12 @@ class TmuxTaskRunner
 
         // Run multiple fix-names passes
         $commands = [];
-        foreach ([3, 5, 7, 9, 11, 13, 15, 17, 19] as $level) {
+        $levels = [3, 5, 7, 9, 11, 13, 15, 17, 19];
+        if (config('nntmux_srrdb.enabled', false)) {
+            $levels[] = 21;
+        }
+
+        foreach ($levels as $level) {
             $commands[] = "php {$artisan} releases:fix-names {$level} --update --category=other --set-status --show 2>&1 | tee -a {$log}";
         }
 
