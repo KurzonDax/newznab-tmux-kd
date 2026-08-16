@@ -47,28 +47,16 @@ class BookService
 
     private ObfuscatedSubjectExtractor $obfuscatedSubjectExtractor;
 
-    private IsbnDbService $isbnDb;
-
-    private GoogleBooksService $googleBooks;
-
-    private OpenLibraryService $openLibrary;
-
-    private ItunesService $itunes;
-
-    private BookMatchScorer $scorer;
-
-    private ReleaseImageService $releaseImageService;
-
     /**
      * @throws \Exception
      */
     public function __construct(
-        ?IsbnDbService $isbnDb = null,
-        ?GoogleBooksService $googleBooks = null,
-        ?OpenLibraryService $openLibrary = null,
-        ?ItunesService $itunes = null,
-        ?BookMatchScorer $scorer = null,
-        ?ReleaseImageService $releaseImageService = null,
+        private IsbnDbService $isbnDb = new IsbnDbService,
+        private GoogleBooksService $googleBooks = new GoogleBooksService,
+        private OpenLibraryService $openLibrary = new OpenLibraryService,
+        private ItunesService $itunes = new ItunesService,
+        private BookMatchScorer $scorer = new BookMatchScorer,
+        private ReleaseImageService $releaseImageService = new ReleaseImageService,
     ) {
         $this->echooutput = config('nntmux.echocli');
 
@@ -81,12 +69,6 @@ class BookService
         $this->parsedIsbn = null;
         $this->parsedBookResult = null;
         $this->obfuscatedSubjectExtractor = new ObfuscatedSubjectExtractor;
-        $this->isbnDb = $isbnDb ?? new IsbnDbService;
-        $this->googleBooks = $googleBooks ?? new GoogleBooksService;
-        $this->openLibrary = $openLibrary ?? new OpenLibraryService;
-        $this->itunes = $itunes ?? new ItunesService;
-        $this->scorer = $scorer ?? new BookMatchScorer;
-        $this->releaseImageService = $releaseImageService ?? new ReleaseImageService;
     }
 
     /**

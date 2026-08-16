@@ -171,10 +171,6 @@ class IsbnDbService
             $statusCode = $response->getStatusCode();
             $this->logRateLimitHeaders($response);
 
-            if ($statusCode === 404) {
-                return null;
-            }
-
             if ($statusCode !== 200) {
                 $retryAfter = $this->retryAfterSeconds($response);
                 if ($statusCode === 429 || $statusCode >= 500) {

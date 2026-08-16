@@ -162,6 +162,46 @@ class PostProcessRunnerBooksGateTest extends TestCase
         $this->assertSame([], $runner->captured);
     }
 
+    public function test_renamed_only_mode_skips_unrenamed_obfuscated_books(): void
+    {
+        DB::table('settings')->where('name', 'lookupbooks')->update(['value' => '2']);
+        DB::table('releases')->insert([
+            'id' => 2,
+            'name' => 'N_NZB_Unrenamed_Book',
+            'searchname' => 'N:/NZB Unrenamed Book',
+            'groups_id' => 1,
+            'size' => 1,
+            'postdate' => now(),
+            'adddate' => now(),
+            'guid' => str_repeat('b', 40),
+            'leftguid' => 'b',
+            'fromname' => 'poster@example.com',
+            'categories_id' => Category::BOOKS_EBOOK,
+            'bookinfo_id' => null,
+            'isrenamed' => 0,
+        ]);
+
+        $runner = new class extends PostProcessRunner
+        {
+            public array $captured = [];
+
+            public function headerNone(): void {}
+
+            protected function headerStart(string $workType, int $count, int $maxProcesses): void {}
+
+            protected function executeCommand(string $command): string
+            {
+                $this->captured[] = $command;
+
+                return '';
+            }
+        };
+
+        $runner->processBooks();
+
+        $this->assertSame([], $runner->captured);
+    }
+
     private function setEnvironmentValue(string $key, ?string $value): void
     {
         if ($value === null) {

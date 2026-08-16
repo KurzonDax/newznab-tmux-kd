@@ -193,6 +193,27 @@ class IsbnDbServiceTest extends TestCase
         $this->assertFalse(Cache::has(IsbnDbService::COOLDOWN_CACHE_KEY));
     }
 
+    public function test_not_found_response_throws_without_transient_cooldown(): void
+    {
+        $mock = new MockHandler([
+            new Response(404),
+        ]);
+        $service = new IsbnDbService(
+            new Client(['handler' => HandlerStack::create($mock), 'base_uri' => 'https://api2.isbndb.com']),
+            'test-key'
+        );
+
+        try {
+            $service->findByIsbn('9780132350884');
+            $this->fail('Expected a not-found provider exception.');
+        } catch (BookProviderException $exception) {
+            $this->assertSame(404, $exception->statusCode);
+            $this->assertNull($exception->retryAfterSeconds);
+        }
+
+        $this->assertFalse(Cache::has(IsbnDbService::COOLDOWN_CACHE_KEY));
+    }
+
     public function test_server_failure_applies_default_cooldown(): void
     {
         $mock = new MockHandler([

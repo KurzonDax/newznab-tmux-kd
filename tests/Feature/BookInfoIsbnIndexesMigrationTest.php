@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Schema;
 use PDO;
 use Tests\TestCase;
@@ -19,9 +20,9 @@ class BookInfoIsbnIndexesMigrationTest extends TestCase
      */
     private array $originalEnvironment = [];
 
-    public function createApplication()
+    public function createApplication(): Application
     {
-        $this->databasePath = sys_get_temp_dir().'/nntmux-bookinfo-isbn-indexes.sqlite';
+        $this->databasePath = $this->makeTempPath('nntmux-bookinfo-isbn-indexes', '.sqlite');
         $this->originalEnvironment = [
             'APP_ENV' => getenv('APP_ENV'),
             'DB_CONNECTION' => getenv('DB_CONNECTION'),

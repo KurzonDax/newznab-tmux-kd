@@ -17,6 +17,7 @@ use App\Support\Data\BookParseResult;
 use App\Support\Data\ImageProcessingResult;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
@@ -32,7 +33,7 @@ class BookServiceMatchingTest extends TestCase
      */
     private array $originalEnvironment = [];
 
-    public function createApplication()
+    public function createApplication(): Application
     {
         $this->databasePath = $this->makeTempPath('nntmux-book-service-matching', '.sqlite');
         $this->originalEnvironment = [
