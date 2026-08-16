@@ -794,7 +794,7 @@ class ReleaseProcessorTest extends TestCase
         $head = $this->mp4Atom('ftyp', 'isom0000').pack('N', 4096).'mdat'.str_repeat('v', 48);
         $tail = 'tail-prefix'.$this->validMoovAtom();
 
-        [$context, $downloadService, $mediaService] = $this->processDirectVideoCandidate(
+        [$context, $downloadService, $mediaCalls] = $this->processDirectVideoCandidate(
             'feature.mp4" yEnc',
             $head,
             $this->successfulDownload($tail),
@@ -806,11 +806,11 @@ class ReleaseProcessorTest extends TestCase
         );
         $this->assertTrue($context->foundMediaInfo);
         $this->assertTrue($context->foundSample);
-        $this->assertCount(1, $mediaService->mediaInfoFiles);
-        $this->assertCount(1, $mediaService->sampleFiles);
-        $this->assertStringEndsWith('media.mp4', $mediaService->mediaInfoFiles[0]['path']);
-        $this->assertSame($mediaService->mediaInfoFiles[0], $mediaService->sampleFiles[0]);
-        $this->assertStringEndsWith($this->validMoovAtom(), $mediaService->mediaInfoFiles[0]['data']);
+        $this->assertCount(1, $mediaCalls->mediaInfoFiles);
+        $this->assertCount(1, $mediaCalls->sampleFiles);
+        $this->assertStringEndsWith('media.mp4', $mediaCalls->mediaInfoFiles[0]['path']);
+        $this->assertSame($mediaCalls->mediaInfoFiles[0], $mediaCalls->sampleFiles[0]);
+        $this->assertStringEndsWith($this->validMoovAtom(), $mediaCalls->mediaInfoFiles[0]['data']);
     }
 
     #[Test]
@@ -818,14 +818,14 @@ class ReleaseProcessorTest extends TestCase
     {
         $head = "\x1A\x45\xDF\xA3".str_repeat('m', 48);
 
-        [, $downloadService, $mediaService] = $this->processDirectVideoCandidate(
+        [, $downloadService, $mediaCalls] = $this->processDirectVideoCandidate(
             'feature.mkv" yEnc',
             $head,
         );
 
         $this->assertSame([DownloadKind::MediaInfo], array_column($downloadService->calls, 'kind'));
-        $this->assertStringEndsWith('media.avi', $mediaService->mediaInfoFiles[0]['path']);
-        $this->assertSame($head, $mediaService->mediaInfoFiles[0]['data']);
+        $this->assertStringEndsWith('media.avi', $mediaCalls->mediaInfoFiles[0]['path']);
+        $this->assertSame($head, $mediaCalls->mediaInfoFiles[0]['data']);
     }
 
     #[Test]
@@ -833,7 +833,7 @@ class ReleaseProcessorTest extends TestCase
     {
         $head = $this->mp4Atom('ftyp', 'isom0000').pack('N', 4096).'mdat'.str_repeat('v', 48);
 
-        [, $downloadService, $mediaService] = $this->processDirectVideoCandidate(
+        [, $downloadService, $mediaCalls] = $this->processDirectVideoCandidate(
             'feature.mp4" yEnc',
             $head,
             $this->failedDownload(),
@@ -843,8 +843,8 @@ class ReleaseProcessorTest extends TestCase
             [DownloadKind::MediaInfo, DownloadKind::MediaInfoTail],
             array_column($downloadService->calls, 'kind'),
         );
-        $this->assertStringEndsWith('media.avi', $mediaService->mediaInfoFiles[0]['path']);
-        $this->assertSame($head, $mediaService->mediaInfoFiles[0]['data']);
+        $this->assertStringEndsWith('media.avi', $mediaCalls->mediaInfoFiles[0]['path']);
+        $this->assertSame($head, $mediaCalls->mediaInfoFiles[0]['data']);
     }
 
     #[Test]
@@ -933,7 +933,7 @@ class ReleaseProcessorTest extends TestCase
 
     /**
      * @param  array{success: bool, data: string|null, groupUnavailable: bool, error: string|null}|null  $tailResponse
-     * @return array{ReleaseProcessingContext, RecordingMp4DownloadService, RecordingMediaExtractionService}
+     * @return array{ReleaseProcessingContext, RecordingMp4DownloadService, RecordingMediaExtractionCalls}
      */
     private function processDirectVideoCandidate(
         string $title,
@@ -962,8 +962,14 @@ class ReleaseProcessorTest extends TestCase
             $responses[] = $tailResponse;
         }
         $downloadService = new RecordingMp4DownloadService($responses);
-        /** @var RecordingMediaExtractionService $mediaService */
-        $mediaService = (new \ReflectionClass(RecordingMediaExtractionService::class))->newInstanceWithoutConstructor();
+        $mediaCalls = new RecordingMediaExtractionCalls;
+        $mediaService = Mockery::mock(MediaExtractionService::class);
+        $mediaService->shouldReceive('getMediaInfo')
+            ->once()
+            ->andReturnUsing($mediaCalls->recordMediaInfo(...));
+        $mediaService->shouldReceive('getSample')
+            ->once()
+            ->andReturnUsing($mediaCalls->recordSample(...));
         $releaseManager = Mockery::mock(ReleaseFileManager::class);
         $releaseManager->shouldReceive('processReleaseNameFromNzbContents')->once()->andReturnFalse();
         $releaseManager->shouldReceive('finalizeRelease')->once()->andReturnNull();
@@ -986,7 +992,7 @@ class ReleaseProcessorTest extends TestCase
         $context->release->nfostatus = 1;
         $processor->process($context, $this->mainTempPath);
 
-        return [$context, $downloadService, $mediaService];
+        return [$context, $downloadService, $mediaCalls];
     }
 
     /**
@@ -1146,7 +1152,7 @@ final class RecordingMp4DownloadService extends UsenetDownloadService
     }
 }
 
-final class RecordingMediaExtractionService extends MediaExtractionService
+final class RecordingMediaExtractionCalls
 {
     /** @var list<array{path: string, data: string}> */
     public array $mediaInfoFiles = [];
@@ -1154,14 +1160,14 @@ final class RecordingMediaExtractionService extends MediaExtractionService
     /** @var list<array{path: string, data: string}> */
     public array $sampleFiles = [];
 
-    public function getMediaInfo(string $fileLocation, int $releaseId): bool
+    public function recordMediaInfo(string $fileLocation, int $releaseId): bool
     {
         $this->mediaInfoFiles[] = ['path' => $fileLocation, 'data' => (string) file_get_contents($fileLocation)];
 
         return true;
     }
 
-    public function getSample(string $fileLocation, string $tmpPath, string $guid): bool
+    public function recordSample(string $fileLocation, string $tmpPath, string $guid): bool
     {
         $this->sampleFiles[] = ['path' => $fileLocation, 'data' => (string) file_get_contents($fileLocation)];
 
