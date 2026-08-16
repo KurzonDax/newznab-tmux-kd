@@ -26,6 +26,7 @@ final readonly class ReleaseProcessingResult
         public int $duplicateMessageIdCount = 0,
         public array $unsupportedReasons = [],
         public PayloadSniffMetrics $payloadSniffMetrics = new PayloadSniffMetrics,
+        public Mp4TailMetrics $mp4TailMetrics = new Mp4TailMetrics,
     ) {}
 
     public function isSuccessful(): bool
@@ -56,6 +57,7 @@ final readonly class ReleaseProcessingResult
             duplicateMessageIdCount: $this->duplicateMessageIdCount,
             unsupportedReasons: $this->unsupportedReasons,
             payloadSniffMetrics: $this->payloadSniffMetrics,
+            mp4TailMetrics: $this->mp4TailMetrics,
         );
     }
 }

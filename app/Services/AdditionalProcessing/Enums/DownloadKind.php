@@ -8,6 +8,7 @@ enum DownloadKind: string
 {
     case Sample = 'sample';
     case MediaInfo = 'media-info';
+    case MediaInfoTail = 'media-info-tail';
     case Audio = 'audio';
     case Jpg = 'jpg';
     case Compressed = 'compressed';

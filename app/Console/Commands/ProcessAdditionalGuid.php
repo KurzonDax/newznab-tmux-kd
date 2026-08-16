@@ -172,5 +172,16 @@ class ProcessAdditionalGuid extends Command
                 ['Search sync executions', (string) $result->persistenceMetrics->searchSyncExecutions],
             ]);
         }
+
+        if ($result->mp4TailMetrics->tailsFetched > 0 || $result->mp4TailMetrics->moovMissingCount > 0) {
+            $this->newLine();
+            $this->line('MP4 tail profile');
+            $this->table(['Metric', 'Value'], [
+                ['Tails fetched', (string) $result->mp4TailMetrics->tailsFetched],
+                ['moov found', (string) $result->mp4TailMetrics->moovFoundCount],
+                ['moov missing', (string) $result->mp4TailMetrics->moovMissingCount],
+                ['Tail bytes', (string) $result->mp4TailMetrics->tailBytes],
+            ]);
+        }
     }
 }

@@ -7,6 +7,7 @@ namespace App\Services\AdditionalProcessing\State;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\DTO\AdditionalWorkPlan;
 use App\Services\AdditionalProcessing\DTO\DownloadedArchive;
+use App\Services\AdditionalProcessing\DTO\Mp4TailMetrics;
 use App\Services\AdditionalProcessing\DTO\PayloadSniffMetrics;
 use App\Services\AdditionalProcessing\Enums\PayloadClassification;
 
@@ -136,6 +137,8 @@ class ReleaseProcessingContext
 
     public PayloadSniffMetrics $payloadSniffMetrics;
 
+    public Mp4TailMetrics $mp4TailMetrics;
+
     /**
      * @var list<string>
      */
@@ -152,6 +155,7 @@ class ReleaseProcessingContext
         $this->release = $release;
         $this->startTime = hrtime(true);
         $this->payloadSniffMetrics = new PayloadSniffMetrics;
+        $this->mp4TailMetrics = new Mp4TailMetrics;
     }
 
     /**
@@ -201,6 +205,7 @@ class ReleaseProcessingContext
         $this->existingReleaseFileNames = null;
         $this->releaseFilesChanged = false;
         $this->payloadSniffMetrics = new PayloadSniffMetrics;
+        $this->mp4TailMetrics = new Mp4TailMetrics;
         $this->runtimeUnsupportedReasons = [];
     }
 
@@ -274,6 +279,21 @@ class ReleaseProcessingContext
         if ($classification === PayloadClassification::Unknown) {
             $this->runtimeUnsupportedReasons[] = 'unknown-payload';
         }
+    }
+
+    public function recordMp4TailFetch(int $bytes): void
+    {
+        $this->mp4TailMetrics = $this->mp4TailMetrics->recordFetch($bytes);
+    }
+
+    public function recordMp4MoovFound(): void
+    {
+        $this->mp4TailMetrics = $this->mp4TailMetrics->recordFound();
+    }
+
+    public function recordMp4MoovMissing(): void
+    {
+        $this->mp4TailMetrics = $this->mp4TailMetrics->recordMissing();
     }
 
     /**

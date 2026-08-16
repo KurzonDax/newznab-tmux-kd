@@ -98,6 +98,21 @@ class ConsoleOutputService
         $this->echo('fM', 'warningOver');
     }
 
+    public function echoMp4TailFetched(int $bytes): void
+    {
+        $this->echo('(mp4T '.human_filesize($bytes, 1).')', 'primaryOver');
+    }
+
+    public function echoMp4MoovFound(): void
+    {
+        $this->echo('(moov+)', 'primaryOver');
+    }
+
+    public function echoMp4MoovMissing(): void
+    {
+        $this->echo('(moov-)', 'warningOver');
+    }
+
     public function echoAudioDownload(): void
     {
         $this->echo('(aB)', 'primaryOver');

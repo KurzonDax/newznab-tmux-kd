@@ -10,6 +10,8 @@ final readonly class AdditionalWorkPlan
      * @param  list<string>  $sampleMessageIds
      * @param  list<string>  $jpgMessageIds
      * @param  list<string>  $mediaInfoMessageIds
+     * @param  list<string>  $mediaInfoTailMessageIds
+     * @param  list<string>  $mediaInfoTailExpansionMessageIds
      * @param  list<ArchiveCandidate>  $archiveCandidates
      * @param  list<UnknownPayloadCandidate>  $unknownPayloadCandidates
      * @param  list<string>  $unsupportedReasons
@@ -18,6 +20,8 @@ final readonly class AdditionalWorkPlan
         public array $sampleMessageIds = [],
         public array $jpgMessageIds = [],
         public array $mediaInfoMessageIds = [],
+        public array $mediaInfoTailMessageIds = [],
+        public array $mediaInfoTailExpansionMessageIds = [],
         public string $audioInfoMessageId = '',
         public string $audioInfoExtension = '',
         public array $archiveCandidates = [],
@@ -27,6 +31,21 @@ final readonly class AdditionalWorkPlan
         public int $duplicateMessageIdCount = 0,
         public array $unsupportedReasons = [],
     ) {}
+
+    /**
+     * @return list<string>
+     */
+    public function expandedMediaInfoTailMessageIds(int $limit): array
+    {
+        if ($limit <= 0) {
+            return [];
+        }
+
+        return array_slice(
+            [...$this->mediaInfoTailExpansionMessageIds, ...$this->mediaInfoTailMessageIds],
+            -$limit,
+        );
+    }
 
     public function hasCompressedFile(): bool
     {

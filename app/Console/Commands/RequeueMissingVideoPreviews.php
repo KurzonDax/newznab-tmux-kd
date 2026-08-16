@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Models\Category;
 use App\Models\Release;
+use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use App\Services\Releases\PreviewGenerationPolicy;
 use Illuminate\Console\Attributes\Description;
@@ -15,8 +16,11 @@ use Illuminate\Database\Eloquent\Builder;
 
 #[Signature('releases:requeue-missing-video-previews
     {--dry-run : Report the matching releases without changing them (default)}
-    {--apply : Return matching releases to the pending state}')]
-#[Description('Re-queue non-RAR movie and TV releases affected by missing media previews')]
+    {--apply : Return matching releases to the pending state}
+    {--mp4-tail : Restrict to the bare MP4/M4V/MOV tail-recovery backlog}
+    {--limit= : Maximum number of releases to re-queue}
+    {--category= : Restrict to one leaf category ID}')]
+#[Description('Re-queue releases affected by missing media previews')]
 class RequeueMissingVideoPreviews extends Command
 {
     public function handle(): int
@@ -25,6 +29,10 @@ class RequeueMissingVideoPreviews extends Command
             $this->error('Choose either --dry-run or --apply, not both.');
 
             return self::FAILURE;
+        }
+
+        if ($this->option('mp4-tail')) {
+            return $this->handleMp4TailBacklog();
         }
 
         $pendingPasswordStatus = PasswordInspectionMode::pendingReleaseStatus();
@@ -52,6 +60,73 @@ class RequeueMissingVideoPreviews extends Command
         $this->info("Repaired {$repaired} stranded releases.");
 
         return self::SUCCESS;
+    }
+
+    private function handleMp4TailBacklog(): int
+    {
+        $candidateIds = $this->mp4TailCandidateIds();
+        $count = count($candidateIds);
+        $noun = $count === 1 ? 'release' : 'releases';
+
+        if (! $this->option('apply')) {
+            $this->info("Dry run: {$count} MP4 tail {$noun} would be re-queued.");
+
+            return self::SUCCESS;
+        }
+
+        $updated = $candidateIds === []
+            ? 0
+            : Release::query()->whereIn('id', $candidateIds)->update([
+                'haspreview' => -1,
+                'passwordstatus' => PasswordInspectionMode::pendingReleaseStatus(),
+            ]);
+        $noun = $updated === 1 ? 'release' : 'releases';
+        $this->info("Re-queued {$updated} MP4 tail {$noun}.");
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function mp4TailCandidateIds(): array
+    {
+        $minimumBytes = AdditionalCandidateQuery::minSizeBytes();
+        $maximumBytes = AdditionalCandidateQuery::maxSizeBytes();
+        $enabledCategoryIds = Category::query()
+            ->whereHas('parent', static fn (Builder $query): Builder => $query->where('generate_previews', true))
+            ->pluck('id');
+        $query = Release::query()
+            ->where('haspreview', 0)
+            ->where('passwordstatus', 0)
+            ->where('rarinnerfilecount', 0)
+            ->where('nzbstatus', 1)
+            ->whereIn('categories_id', $enabledCategoryIds)
+            ->where(static function (Builder $query): void {
+                $query->where('name', 'like', '%.mp4"%')
+                    ->orWhere('name', 'like', '%.m4v"%')
+                    ->orWhere('name', 'like', '%.mov"%');
+            })
+            ->orderBy('id');
+
+        if ($minimumBytes > 0) {
+            $query->where('size', '>', $minimumBytes);
+        }
+        if ($maximumBytes > 0) {
+            $query->where('size', '<', $maximumBytes);
+        }
+
+        $categoryId = (int) $this->option('category');
+        if ($categoryId > 0) {
+            $query->where('categories_id', $categoryId);
+        }
+
+        $limit = (int) $this->option('limit');
+        if ($limit > 0) {
+            $query->limit($limit);
+        }
+
+        return $query->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all();
     }
 
     /**

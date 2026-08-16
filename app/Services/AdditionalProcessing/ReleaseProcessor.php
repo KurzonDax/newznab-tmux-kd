@@ -9,6 +9,7 @@ use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\DTO\ArchiveCandidate;
 use App\Services\AdditionalProcessing\DTO\ReleaseProcessingResult;
 use App\Services\AdditionalProcessing\Enums\DownloadKind;
+use App\Services\AdditionalProcessing\Enums\Mp4MoovSpliceStatus;
 use App\Services\AdditionalProcessing\Enums\PayloadClassification;
 use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
 use App\Services\AdditionalProcessing\Enums\ProcessingStage;
@@ -45,6 +46,7 @@ class ReleaseProcessor
         private readonly ?PersistenceMetricsCollector $persistenceMetricsCollector = null,
         private readonly PreviewGenerationPolicy $previewPolicy = new PreviewGenerationPolicy,
         private readonly PayloadSniffer $payloadSniffer = new PayloadSniffer,
+        private readonly Mp4MoovSplicer $mp4MoovSplicer = new Mp4MoovSplicer,
     ) {}
 
     public function process(ReleaseProcessingContext $context, string $mainTmpPath): ReleaseProcessingResult
@@ -395,6 +397,7 @@ class ReleaseProcessor
             duplicateMessageIdCount: $context->duplicateMessageIdCount(),
             unsupportedReasons: $context->unsupportedReasons(),
             payloadSniffMetrics: $context->payloadSniffMetrics,
+            mp4TailMetrics: $context->mp4TailMetrics,
         );
     }
 
@@ -580,6 +583,11 @@ class ReleaseProcessor
                 $this->output->echoMediaInfoDownload();
                 $fileLocation = $context->tmpPath.'media.avi';
                 File::put($fileLocation, $result['data']);
+                $splicedData = $this->spliceMp4Tail($result['data'], $context);
+                if ($splicedData !== null) {
+                    $fileLocation = $context->tmpPath.'media.mp4';
+                    File::put($fileLocation, $splicedData);
+                }
 
                 if (! $context->foundMediaInfo && $this->mediaService->getMediaInfo($fileLocation, $context->release->id)) {
                     $context->markFound('mediaInfo');
@@ -656,6 +664,80 @@ class ReleaseProcessor
                 $this->output->echoJpgFailure();
             }
         }
+    }
+
+    private function spliceMp4Tail(string $head, ReleaseProcessingContext $context): ?string
+    {
+        if (! $this->config->mp4TailFetch
+            || $this->payloadSniffer->classify($head)->classification !== PayloadClassification::Mp4
+            || ! $this->mp4MoovSplicer->needsTail($head)
+        ) {
+            return null;
+        }
+
+        $plan = $context->workPlan;
+        if ($plan === null || $plan->mediaInfoTailMessageIds === []) {
+            $context->recordMp4MoovMissing();
+            $this->output->echoMp4MoovMissing();
+
+            return null;
+        }
+
+        $maximumSegments = min(
+            $this->config->mp4TailMaxSegments,
+            count($plan->expandedMediaInfoTailMessageIds($this->config->mp4TailMaxSegments)),
+        );
+        $requestedIds = $plan->mediaInfoTailMessageIds;
+        $tail = '';
+        $downloadedSegmentCount = 0;
+
+        while ($requestedIds !== []) {
+            $download = $this->downloadService->download(
+                DownloadKind::MediaInfoTail,
+                $requestedIds,
+                $context->releaseGroupName,
+                $context->release->id,
+            );
+            if (! $download['success'] || ! is_string($download['data'])) {
+                $context->recordMp4MoovMissing();
+                $this->output->echoMp4MoovMissing();
+
+                return null;
+            }
+
+            $tail = $download['data'].$tail;
+            $downloadedSegmentCount += count($requestedIds);
+            $context->recordMp4TailFetch(strlen($download['data']));
+            $this->output->echoMp4TailFetched(strlen($download['data']));
+            $atSegmentCap = $downloadedSegmentCount >= $maximumSegments;
+            $splice = $this->mp4MoovSplicer->splice($head, $tail, $atSegmentCap);
+
+            if ($splice->status === Mp4MoovSpliceStatus::Spliced) {
+                $context->recordMp4MoovFound();
+                $this->output->echoMp4MoovFound();
+
+                return $splice->data;
+            }
+            if ($splice->status === Mp4MoovSpliceStatus::Missing) {
+                $context->recordMp4MoovMissing();
+                $this->output->echoMp4MoovMissing();
+
+                return null;
+            }
+
+            $nextSegmentCount = min(
+                $downloadedSegmentCount + max($this->config->segmentsToDownload, 1),
+                $maximumSegments,
+            );
+            $expandedIds = $plan->expandedMediaInfoTailMessageIds($nextSegmentCount);
+            $additionalCount = $nextSegmentCount - $downloadedSegmentCount;
+            $requestedIds = array_slice($expandedIds, 0, $additionalCount);
+        }
+
+        $context->recordMp4MoovMissing();
+        $this->output->echoMp4MoovMissing();
+
+        return null;
     }
 
     /**
