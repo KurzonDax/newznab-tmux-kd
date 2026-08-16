@@ -33,4 +33,41 @@ class FileNameExtractorTest extends TestCase
 
         $this->assertNull($result);
     }
+
+    public function test_folder_name_fallback_keeps_parenthesized_title(): void
+    {
+        $extractor = new FileNameExtractor;
+
+        $result = $extractor->extractFromFile(
+            '2016-04-17 - Anita Bellini - Playful And Petite (4k).mp4'
+        );
+
+        $this->assertNotNull($result);
+        $this->assertSame('2016-04-17 - Anita Bellini - Playful And Petite (4k)', $result->newName);
+        $this->assertSame('Folder name', $result->method);
+    }
+
+    public function test_folder_name_fallback_preserves_existing_plain_title_behavior(): void
+    {
+        $extractor = new FileNameExtractor;
+
+        $result = $extractor->extractFromFile(
+            '2016-04-16 - Solana A - Before The Party 2.mp4'
+        );
+
+        $this->assertNotNull($result);
+        $this->assertSame('2016-04-16 - Solana A - Before The Party 2.mp4', $result->newName);
+        $this->assertSame('Folder name', $result->method);
+    }
+
+    public function test_folder_name_fallback_uses_final_path_segment_with_parentheses(): void
+    {
+        $extractor = new FileNameExtractor;
+
+        $result = $extractor->extractFromFile('Some Folder/Title Here (2016).mp4');
+
+        $this->assertNotNull($result);
+        $this->assertSame('Title Here (2016)', $result->newName);
+        $this->assertSame('Folder name', $result->method);
+    }
 }

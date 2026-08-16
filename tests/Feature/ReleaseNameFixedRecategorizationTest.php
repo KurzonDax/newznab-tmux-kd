@@ -4,16 +4,24 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Events\ReleaseNameFixed;
 use App\Facades\Search;
+use App\Listeners\RecategorizeReleaseAfterNameFix;
 use App\Models\Category;
 use App\Models\Release;
 use App\Models\UsenetGroup;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
+use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
+use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
+use App\Services\Categorization\CategorizationService;
+use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\NameFixing\ReleaseUpdateService;
+use App\Services\Releases\PreviewGenerationPolicy;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Mockery;
 use PDO;
 use Tests\TestCase;
 
@@ -318,6 +326,137 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
         $this->assertSame(1, (int) $release->isrenamed);
     }
 
+    public function test_descriptive_title_renames_an_obfuscated_release_from_a_video_filename(): void
+    {
+        Search::shouldReceive('updateRelease')->twice();
+
+        $group = UsenetGroup::query()->create([
+            'name' => 'alt.binaries.multimedia.erotica',
+            'active' => 1,
+            'backfill' => 0,
+        ]);
+        $release = Release::factory()->create([
+            'name' => '(Els1212) [02/23] - "CQPVTOVKUDJVGELG.part01.rar"',
+            'searchname' => '(Els1212) [02/23] - "CQPVTOVKUDJVGELG.part01.rar"',
+            'fromname' => 'poster@example.com',
+            'groups_id' => $group->id,
+            'categories_id' => Category::OTHER_HASHED,
+            'iscategorized' => 1,
+            'isrenamed' => 0,
+            'guid' => str_repeat('f', 40),
+            'leftguid' => 'f',
+            'size' => 1,
+            'postdate' => now(),
+            'adddate' => now(),
+        ]);
+
+        app(ReleaseUpdateService::class)->updateRelease(
+            $release->fresh(),
+            'SupergirlPerv.avi',
+            'fileCheck: Descriptive title',
+            true,
+            'Filenames, ',
+            true,
+            false,
+            descriptiveTitleCandidate: true,
+        );
+
+        $release->refresh();
+
+        $this->assertSame('SupergirlPerv', $release->searchname);
+        $this->assertSame(1, (int) $release->proc_files);
+        $this->assertSame(1, (int) $release->isrenamed);
+    }
+
+    public function test_descriptive_title_does_not_replace_a_real_current_release_name(): void
+    {
+        Search::shouldReceive('updateRelease')->once();
+
+        $group = UsenetGroup::query()->create([
+            'name' => 'alt.binaries.movies',
+            'active' => 1,
+            'backfill' => 0,
+        ]);
+        $currentName = 'Some.Movie.2019.1080p.x264-GRP';
+        $release = Release::factory()->create([
+            'name' => $currentName,
+            'searchname' => $currentName,
+            'fromname' => 'poster@example.com',
+            'groups_id' => $group->id,
+            'categories_id' => Category::MOVIE_HD,
+            'iscategorized' => 1,
+            'isrenamed' => 0,
+            'guid' => str_repeat('g', 40),
+            'leftguid' => 'g',
+            'size' => 1,
+            'postdate' => now(),
+            'adddate' => now(),
+        ]);
+
+        app(ReleaseUpdateService::class)->updateRelease(
+            $release->fresh(),
+            'Behind The Scenes Featurette.mp4',
+            'fileCheck: Descriptive title',
+            true,
+            'Filenames, ',
+            true,
+            false,
+            descriptiveTitleCandidate: true,
+        );
+
+        $release->refresh();
+
+        $this->assertSame($currentName, $release->searchname);
+        $this->assertSame(0, (int) $release->proc_files);
+        $this->assertSame(0, (int) $release->isrenamed);
+    }
+
+    public function test_name_fix_listener_refines_an_other_category_from_existing_media_info(): void
+    {
+        $release = Release::factory()->create([
+            'categories_id' => Category::OTHER_HASHED,
+            'iscategorized' => 1,
+            'guid' => str_repeat('h', 40),
+            'leftguid' => 'h',
+        ]);
+        DB::table('video_data')->insert([
+            'releases_id' => $release->id,
+            'videowidth' => 1920,
+            'videoheight' => 1080,
+            'videoformat' => 'AVC',
+        ]);
+
+        $categorization = Mockery::mock(CategorizationService::class);
+        $categorization->shouldReceive('determineCategory')->once()->andReturn([
+            'categories_id' => Category::MOVIE_OTHER,
+        ]);
+        $synchronized = [];
+        $coordinator = new ReleaseSearchSyncCoordinator(
+            new PersistenceMetricsCollector,
+            function (int $releaseId) use (&$synchronized): void {
+                $synchronized[] = $releaseId;
+            },
+        );
+        $previewPolicy = new PreviewGenerationPolicy;
+        $listener = new RecategorizeReleaseAfterNameFix(
+            $categorization,
+            $previewPolicy,
+            new MediaInfoRefinementService($previewPolicy, $coordinator),
+        );
+
+        $listener->handle(new ReleaseNameFixed(
+            (int) $release->id,
+            'old-name',
+            'new-name',
+            Category::OTHER_HASHED,
+            1,
+        ));
+
+        $this->assertSame(Category::MOVIE_HD, (int) $release->fresh()->categories_id);
+        $this->assertSame(1, (int) $release->fresh()->iscategorized);
+        $this->assertSame([(int) $release->id], $synchronized);
+    }
+
     public function test_internal_processing_status_updates_do_not_refresh_the_search_index(): void
     {
         Search::shouldReceive('updateRelease')->once();
@@ -423,6 +562,26 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
                 $table->tinyInteger('passwordstatus')->default(0);
                 $table->tinyInteger('haspreview')->default(0);
                 $table->tinyInteger('nzbstatus')->default(0);
+            });
+        }
+
+        if (! Schema::hasTable('video_data')) {
+            Schema::create('video_data', function (Blueprint $table): void {
+                $table->unsignedInteger('releases_id')->primary();
+                $table->string('containerformat')->nullable();
+                $table->string('videoformat')->nullable();
+                $table->string('videocodec')->nullable();
+                $table->integer('videowidth')->nullable();
+                $table->integer('videoheight')->nullable();
+            });
+        }
+
+        if (! Schema::hasTable('audio_data')) {
+            Schema::create('audio_data', function (Blueprint $table): void {
+                $table->increments('id');
+                $table->unsignedInteger('releases_id');
+                $table->unsignedInteger('audioid');
+                $table->string('audioformat')->nullable();
             });
         }
     }

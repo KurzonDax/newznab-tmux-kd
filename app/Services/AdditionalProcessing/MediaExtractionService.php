@@ -11,6 +11,7 @@ use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
 use App\Services\Categorization\CategorizationService;
+use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\ReleaseExtraService;
 use App\Services\ReleaseImageService;
@@ -41,6 +42,8 @@ class MediaExtractionService
 
     private readonly ReleaseSearchSyncCoordinator $searchSyncCoordinator;
 
+    private readonly MediaInfoRefinementService $mediaInfoRefinement;
+
     public function __construct(
         private readonly ProcessingConfiguration $config,
         private readonly ReleaseImageService $releaseImage,
@@ -48,11 +51,14 @@ class MediaExtractionService
         private readonly CategorizationService $categorize,
         private readonly VideoFrameExtractor $videoFrameExtractor,
         ?ReleaseSearchSyncCoordinator $searchSyncCoordinator = null,
+        ?MediaInfoRefinementService $mediaInfoRefinement = null,
     ) {
         $this->searchSyncCoordinator = $searchSyncCoordinator
             ?? new ReleaseSearchSyncCoordinator(
                 new PersistenceMetricsCollector,
             );
+        $this->mediaInfoRefinement = $mediaInfoRefinement
+            ?? new MediaInfoRefinementService(searchSyncCoordinator: $this->searchSyncCoordinator);
     }
 
     /**
@@ -219,6 +225,7 @@ class MediaExtractionService
             $xmlArray = $this->mediaInfo()->getInfo($fileLocation, true);
             \App\Models\MediaInfo::addData($releaseId, $xmlArray);
             $this->releaseExtra->addFromXml($releaseId, $xmlArray);
+            $this->mediaInfoRefinement->refine($releaseId);
 
             return true;
         } catch (\Throwable $e) {
@@ -342,6 +349,7 @@ class MediaExtractionService
                         }
 
                         $this->releaseExtra->addFromXml($context->release->id, $xmlArray);
+                        $this->mediaInfoRefinement->refine((int) $context->release->id);
                         $result['audioInfo'] = true;
                         $context->foundAudioInfo = true;
                         break;

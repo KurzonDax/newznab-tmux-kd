@@ -487,18 +487,6 @@ parameters:
 			path: app/Services/AdditionalProcessing/ArchiveExtractionService.php
 
 		-
-			message: '#^Using nullsafe property access "\?\-\>id" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
-			identifier: nullsafe.neverNull
-			count: 2
-			path: app/Services/AdditionalProcessing/ReleaseFileManager.php
-
-		-
-			message: '#^Using nullsafe property access "\?\-\>title" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
-			identifier: nullsafe.neverNull
-			count: 2
-			path: app/Services/AdditionalProcessing/ReleaseFileManager.php
-
-		-
 			message: '#^Strict comparison using \=\=\= between non\-empty\-string and null will always evaluate to false\.$#'
 			identifier: identical.alwaysFalse
 			count: 1

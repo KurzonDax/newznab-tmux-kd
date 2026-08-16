@@ -19,6 +19,7 @@ use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\UsenetDownloadService;
 use App\Services\AdditionalProcessing\VideoFrameExtractor;
 use App\Services\Categorization\CategorizationService;
+use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\NameFixing\NameFixingService;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\NfoService;
@@ -26,6 +27,7 @@ use App\Services\Nzb\NzbParserService;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseExtraService;
 use App\Services\ReleaseImageService;
+use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\TempWorkspaceService;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
@@ -59,9 +61,18 @@ class AdditionalProcessingServiceProvider extends ServiceProvider
             );
         });
 
+        $this->app->singleton(MediaInfoRefinementService::class, function ($app) {
+            return new MediaInfoRefinementService(
+                $app->make(PreviewGenerationPolicy::class),
+                $app->make(ReleaseSearchSyncCoordinator::class),
+            );
+        });
+
         // Release extra service for video/audio/subtitle data
-        $this->app->singleton(ReleaseExtraService::class, function () {
-            return new ReleaseExtraService;
+        $this->app->singleton(ReleaseExtraService::class, function ($app) {
+            return new ReleaseExtraService(
+                $app->make(ReleaseSearchSyncCoordinator::class),
+            );
         });
 
         // Console output service
@@ -111,6 +122,7 @@ class AdditionalProcessingServiceProvider extends ServiceProvider
                 new NameFixingService($app->make(ReleaseUpdateService::class)),
                 $app->make(ReleaseUpdateService::class),
                 searchSyncCoordinator: $app->make(ReleaseSearchSyncCoordinator::class),
+                mediaInfoRefinement: $app->make(MediaInfoRefinementService::class),
             );
         });
 
@@ -123,6 +135,7 @@ class AdditionalProcessingServiceProvider extends ServiceProvider
                 new CategorizationService,
                 new VideoFrameExtractor($app->make(ProcessingConfiguration::class)),
                 $app->make(ReleaseSearchSyncCoordinator::class),
+                $app->make(MediaInfoRefinementService::class),
             );
         });
 

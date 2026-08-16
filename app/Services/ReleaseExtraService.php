@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Models\AudioData;
 use App\Models\ReleaseSubtitle;
 use App\Models\VideoData;
+use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Support\ReleaseSearchIndexSync;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -18,6 +19,10 @@ use Mhor\MediaInfo\Container\MediaInfoContainer;
  */
 class ReleaseExtraService
 {
+    public function __construct(
+        private readonly ?ReleaseSearchSyncCoordinator $searchSyncCoordinator = null,
+    ) {}
+
     /**
      * Get video data for a release.
      *
@@ -252,7 +257,11 @@ class ReleaseExtraService
             }
         }
 
-        ReleaseSearchIndexSync::forIds([$releaseID]);
+        if ($this->searchSyncCoordinator !== null) {
+            $this->searchSyncCoordinator->request($releaseID);
+        } else {
+            ReleaseSearchIndexSync::forIds([$releaseID]);
+        }
     }
 
     /**

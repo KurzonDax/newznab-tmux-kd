@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\NameFixing;
 
+use App\Models\Category;
 use App\Traits\DetectsHashedNames;
 
 /**
@@ -274,6 +275,50 @@ class FileNameCleaner
     public function looksLikeHashedName(string $title): bool
     {
         return $this->isHashedOrGibberish($title);
+    }
+
+    /**
+     * Determine whether a video filename carries a usable Descriptive Title.
+     */
+    public function isDescriptiveTitle(string $filename): bool
+    {
+        $basename = $this->extractFilenameFromPath($filename);
+        if (! preg_match(self::VIDEO_EXTENSIONS, $basename)) {
+            return false;
+        }
+
+        $title = trim((string) pathinfo($basename, PATHINFO_FILENAME), " \t\n\r\0\x0B.-_");
+        if (strlen($title) < 4 || preg_match('/^\d+$/', $title)) {
+            return false;
+        }
+
+        if (preg_match('/^(?:video|movie|film|clip|sample|preview|trailer|output|untitled|new)(?:[\s._-]*\d+)?$/i', $title)) {
+            return false;
+        }
+
+        if ($this->looksLikeStructuralJunk($title)
+            || preg_match('/(?:^|[\s._-])(?:sample|proof|thumbs?)(?:$|[\s._-])/i', $title)
+            || preg_match('/(?:^|[\s._-])(?:part|cd|vol|disc)[\s._-]*\d+$/i', $title)) {
+            return false;
+        }
+
+        return ! $this->looksLikeHashedName($title);
+    }
+
+    /**
+     * Determine whether the current release name permits a Descriptive Title rename.
+     */
+    public function currentNameLooksObfuscated(string $searchName, int $categoryId, ?string $matchedBy = null): bool
+    {
+        if (in_array($categoryId, [Category::OTHER_HASHED, Category::OTHER_MISC], true)) {
+            return true;
+        }
+
+        if ($matchedBy !== null && preg_match('/^(?:hash|obfuscated|gibberish)_/', $matchedBy)) {
+            return true;
+        }
+
+        return $this->looksLikeHashedName($searchName);
     }
 
     /**

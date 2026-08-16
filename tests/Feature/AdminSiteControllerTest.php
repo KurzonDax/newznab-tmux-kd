@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Http\Controllers\Admin\AdminSiteController;
 use App\View\Composers\GlobalDataComposer;
+use Database\Seeders\SettingsTableSeeder;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Application;
@@ -280,6 +281,44 @@ class AdminSiteControllerTest extends TestCase
         );
     }
 
+    public function test_postprocessing_settings_render_and_save_descriptive_title_toggle(): void
+    {
+        DB::table('settings')->where('name', 'descriptive_title_rename')->update(['value' => '0']);
+        $response = app(AdminSiteController::class)->edit(Request::create('/admin/site-edit', 'GET'));
+
+        $this->assertInstanceOf(View::class, $response);
+        $this->assertStringContainsString(
+            'Rename obfuscated releases from descriptive file names',
+            $response->render()
+        );
+
+        $submitResponse = app(AdminSiteController::class)->edit(Request::create('/admin/site-edit', 'POST', [
+            'action' => 'submit',
+            'descriptive_title_rename' => '1',
+        ]));
+
+        $this->assertTrue($submitResponse->isRedirect());
+        $this->assertSame('1', $this->settingValue('descriptive_title_rename'));
+    }
+
+    public function test_descriptive_title_setting_defaults_on_for_fresh_and_existing_installs(): void
+    {
+        (new SettingsTableSeeder)->run();
+        $this->assertSame('1', $this->settingValue('descriptive_title_rename'));
+
+        DB::table('settings')->where('name', 'descriptive_title_rename')->delete();
+        $migration = require database_path('migrations/2026_08_16_024113_add_descriptive_title_rename_setting.php');
+        $migration->up();
+        $this->assertSame('1', $this->settingValue('descriptive_title_rename'));
+
+        DB::table('settings')->where('name', 'descriptive_title_rename')->update(['value' => '0']);
+        $migration->up();
+        $this->assertSame('0', $this->settingValue('descriptive_title_rename'));
+
+        $migration->down();
+        $this->assertNull($this->settingValue('descriptive_title_rename'));
+    }
+
     private function settingValue(string $name): ?string
     {
         $value = DB::table('settings')->where('name', $name)->value('value');
@@ -344,6 +383,7 @@ class AdminSiteControllerTest extends TestCase
             ['name' => 'minsizetoprocessnfo', 'value' => '1048576'],
             ['name' => 'maxsizetoprocessnfo', 'value' => '107374182400'],
             ['name' => 'discard_executable_extensions', 'value' => 'dll|exe|msi|scr|com|bat|cmd|pif'],
+            ['name' => 'descriptive_title_rename', 'value' => '1'],
         ], ['name'], ['value']);
     }
 

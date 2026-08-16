@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\NameFixing;
 
 use App\Facades\Search;
+use App\Models\Settings;
 use App\Services\NameFixing\Extractors\FileNameExtractor;
 use App\Services\NameFixing\Extractors\NfoNameExtractor;
 use App\Services\NNTP\NNTPService;
@@ -78,6 +79,8 @@ class NameFixingService
 
     protected bool $echoOutput;
 
+    protected bool $descriptiveTitleRenameEnabled;
+
     protected int $_totalReleases = 0;
 
     public function __construct(
@@ -89,7 +92,8 @@ class NameFixingService
         ?FilePrioritizer $filePrioritizer = null,
         ?PredbMatchSelector $predbMatchSelector = null,
         ?NameFixingQueryService $queries = null,
-        ?DonorMatchSelector $donorMatchSelector = null
+        ?DonorMatchSelector $donorMatchSelector = null,
+        ?bool $descriptiveTitleRenameEnabled = null,
     ) {
         $this->updateService = $updateService ?? new ReleaseUpdateService;
         $this->checkerService = $checkerService ?? new NameCheckerService;
@@ -101,6 +105,8 @@ class NameFixingService
         $this->queries = $queries ?? new NameFixingQueryService;
         $this->donorMatchSelector = $donorMatchSelector ?? new DonorMatchSelector;
         $this->echoOutput = config('nntmux.echocli');
+        $this->descriptiveTitleRenameEnabled = $descriptiveTitleRenameEnabled
+            ?? (! app()->bound('config') || (int) (Settings::settingValue('descriptive_title_rename') ?? 1) === 1);
     }
 
     /**
@@ -631,8 +637,10 @@ class NameFixingService
             $candidate = clone $release;
             $candidate->textstring = $filename;
             $fileResult = $this->fileExtractor->extractFromFile($filename);
+            $isGuardedFolderFallback = $fileResult?->method === 'Folder name'
+                && $this->fileNameCleaner->isDescriptiveTitle($filename);
 
-            if ($fileResult !== null) {
+            if ($fileResult !== null && ! $isGuardedFolderFallback) {
                 $this->updateService->updateRelease(
                     $candidate,
                     $fileResult->newName,
@@ -646,6 +654,21 @@ class NameFixingService
 
             if (! $this->updateService->matched) {
                 $this->preDbFileCheck($candidate, $echo, 'Filenames, ', $nameStatus, $show);
+            }
+
+            if (! $this->updateService->matched
+                && $this->descriptiveTitleRenameEnabled
+                && $this->fileNameCleaner->isDescriptiveTitle($filename)) {
+                $this->updateService->updateRelease(
+                    $candidate,
+                    $this->fileNameCleaner->extractFilenameFromPath($filename),
+                    'fileCheck: Descriptive title',
+                    $echo,
+                    'Filenames, ',
+                    $nameStatus,
+                    $show,
+                    descriptiveTitleCandidate: true,
+                );
             }
 
             if ($this->updateService->matched) {

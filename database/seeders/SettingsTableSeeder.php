@@ -665,6 +665,10 @@ class SettingsTableSeeder extends Seeder
                 'name' => 'discard_executable_extensions',
                 'value' => 'dll|exe|msi|scr|com|bat|cmd|pif',
             ],
+            243 => [
+                'name' => 'descriptive_title_rename',
+                'value' => '1',
+            ],
         ]);
     }
 }

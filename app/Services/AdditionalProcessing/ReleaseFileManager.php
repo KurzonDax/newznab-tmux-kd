@@ -11,11 +11,14 @@ use App\Models\ParHash;
 use App\Models\Predb;
 use App\Models\Release;
 use App\Models\ReleaseFile;
+use App\Models\Settings;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
+use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\NameFixing\FileNameCleaner;
+use App\Services\NameFixing\FilePrioritizer;
 use App\Services\NameFixing\NameFixingService;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\NfoService;
@@ -42,11 +45,17 @@ class ReleaseFileManager
 
     private readonly FileNameCleaner $fileNameCleaner;
 
+    private readonly FilePrioritizer $filePrioritizer;
+
     private readonly ReleaseSearchSyncCoordinator $searchSyncCoordinator;
 
     private readonly ExecutableReleaseDiscardService $discardService;
 
     private readonly PreviewGenerationPolicy $previewPolicy;
+
+    private readonly bool $descriptiveTitleRenameEnabled;
+
+    private readonly MediaInfoRefinementService $mediaInfoRefinement;
 
     public function __construct(
         private readonly ProcessingConfiguration $config,
@@ -59,6 +68,9 @@ class ReleaseFileManager
         ?ReleaseSearchSyncCoordinator $searchSyncCoordinator = null,
         ?ExecutableReleaseDiscardService $discardService = null,
         ?PreviewGenerationPolicy $previewPolicy = null,
+        ?FilePrioritizer $filePrioritizer = null,
+        ?bool $descriptiveTitleRenameEnabled = null,
+        ?MediaInfoRefinementService $mediaInfoRefinement = null,
     ) {
         $this->searchSyncCoordinator = $searchSyncCoordinator
             ?? new ReleaseSearchSyncCoordinator(
@@ -67,8 +79,13 @@ class ReleaseFileManager
         $this->releaseUpdateService = $releaseUpdateService
             ?? new ReleaseUpdateService(searchSyncCoordinator: $this->searchSyncCoordinator);
         $this->fileNameCleaner = $fileNameCleaner ?? new FileNameCleaner;
+        $this->filePrioritizer = $filePrioritizer ?? new FilePrioritizer;
         $this->discardService = $discardService ?? new ExecutableReleaseDiscardService;
         $this->previewPolicy = $previewPolicy ?? new PreviewGenerationPolicy;
+        $this->mediaInfoRefinement = $mediaInfoRefinement
+            ?? new MediaInfoRefinementService($this->previewPolicy, $this->searchSyncCoordinator);
+        $this->descriptiveTitleRenameEnabled = $descriptiveTitleRenameEnabled
+            ?? (! app()->bound('config') || (int) (Settings::settingValue('descriptive_title_rename') ?? 1) === 1);
     }
 
     /**
@@ -254,6 +271,11 @@ class ReleaseFileManager
             $context->pendingParHashes = [];
 
             return;
+        }
+
+        $refinement = $this->mediaInfoRefinement->refine((int) $context->release->id);
+        if ($refinement !== null) {
+            $context->release->categories_id = $refinement->categoryId;
         }
 
         $thumbExists = $this->releaseImage->imageExists($this->releaseImage->imgSavePath, $context->release->guid.'_thumb');
@@ -679,13 +701,29 @@ class ReleaseFileManager
             return;
         }
 
-        $extractedName = $this->extractReleaseNameFromFile($rarFileName[0]);
+        $renamedFromOuterArchive = $this->tryRenameFromRarFileNames($rarFileName, $context);
+        if ($renamedFromOuterArchive !== null) {
+            return;
+        }
 
+        if (! empty($dataSummary['archives'][$rarFileName[0]]['file_list'])) {
+            // Try nested archive
+            $archiveData = $dataSummary['archives'][$rarFileName[0]]['file_list'];
+            $archiveFileName = array_column($archiveData, 'name');
+            $this->tryRenameFromRarFileNames($archiveFileName, $context);
+        }
+    }
+
+    /**
+     * @param  list<string>  $fileNames
+     */
+    private function tryRenameFromRarFileNames(array $fileNames, ReleaseProcessingContext $context): ?bool
+    {
+        $extractedName = $this->extractReleaseNameFromFile($fileNames[0] ?? '');
         if ($extractedName !== null) {
-            $preCheck = Predb::whereTitle($extractedName)->first();
-            $context->release->preid = $preCheck?->id ?? 0;
-            $candidate = $preCheck?->title ?? $extractedName;
-            $candidate = $this->normalizeCandidateTitle($candidate);
+            $preDbId = Predb::query()->where('title', $extractedName)->value('id');
+            $context->release->preid = $preDbId === null ? 0 : (int) $preDbId;
+            $candidate = $this->normalizeCandidateTitle($extractedName);
 
             if ($this->isPlausibleReleaseTitle($candidate)) {
                 $this->releaseUpdateService->updateRelease(
@@ -698,35 +736,59 @@ class ReleaseFileManager
                     true,
                     $context->release->preid
                 );
-            } elseif ($this->config->debugMode) {
+
+                return true;
+            }
+
+            if ($this->config->debugMode) {
                 Log::debug('RarInfo: Ignored low-quality candidate "'.$candidate.'" from inner file name.');
             }
-        } elseif (! empty($dataSummary['archives'][$rarFileName[0]]['file_list'])) {
-            // Try nested archive
-            $archiveData = $dataSummary['archives'][$rarFileName[0]]['file_list'];
-            $archiveFileName = array_column($archiveData, 'name');
-            $extractedName = $this->extractReleaseNameFromFile($archiveFileName[0] ?? '');
-
-            if ($extractedName !== null) {
-                $preCheck = Predb::whereTitle($extractedName)->first();
-                $context->release->preid = $preCheck?->id ?? 0;
-                $candidate = $preCheck?->title ?? $extractedName;
-                $candidate = $this->normalizeCandidateTitle($candidate);
-
-                if ($this->isPlausibleReleaseTitle($candidate)) {
-                    $this->releaseUpdateService->updateRelease(
-                        $context->release,
-                        $candidate,
-                        'RarInfo FileName Match',
-                        true,
-                        'Filenames, ',
-                        true,
-                        true,
-                        $context->release->preid
-                    );
-                }
-            }
         }
+
+        if (! $this->descriptiveTitleRenameEnabled) {
+            return $extractedName === null ? null : false;
+        }
+
+        foreach ($this->filePrioritizer->prioritizeForMatching($fileNames) as $fileName) {
+            if (! $this->fileNameCleaner->isDescriptiveTitle($fileName)) {
+                continue;
+            }
+
+            $basename = $this->fileNameCleaner->extractFilenameFromPath($fileName);
+            $title = $this->normalizeCandidateTitle($basename);
+            $preCheck = Predb::whereTitle($title)->first();
+            if ($preCheck !== null) {
+                $context->release->preid = $preCheck->id;
+                $this->releaseUpdateService->updateRelease(
+                    $context->release,
+                    $preCheck->title,
+                    'RarInfo PreDB Match',
+                    true,
+                    'Filenames, ',
+                    true,
+                    true,
+                    $preCheck->id,
+                );
+
+                return true;
+            }
+
+            $this->releaseUpdateService->updateRelease(
+                $context->release,
+                $basename,
+                'RarInfo: Descriptive title',
+                true,
+                'Filenames, ',
+                true,
+                true,
+                0,
+                true,
+            );
+
+            return true;
+        }
+
+        return $extractedName === null ? null : false;
     }
 
     /**
