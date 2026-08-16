@@ -133,6 +133,7 @@ class ReleaseUpdateService
      * @param  bool  $nameStatus  Whether to update status columns
      * @param  bool  $show  Whether to show output
      * @param  int|null  $preId  PreDB ID if matched
+     * @param  bool  $descriptiveTitleCandidate  Whether this came from the guarded video-file fallback
      *
      * @throws \Exception
      */
@@ -144,7 +145,8 @@ class ReleaseUpdateService
         string $type,
         bool $nameStatus,
         bool $show,
-        ?int $preId = 0
+        ?int $preId = 0,
+        bool $descriptiveTitleCandidate = false,
     ): void {
         $preId = $preId ?? 0;
         if (is_array($release)) {
@@ -164,8 +166,19 @@ class ReleaseUpdateService
 
             // Determine if the source is trusted enough to bypass plausibility checks
             $trustedSource = $this->isTrustedSource($type, $method, $preId);
+            $acceptedDescriptiveTitle = $descriptiveTitleCandidate
+                && $this->fileNameCleaner->isDescriptiveTitle($name)
+                && $this->fileNameCleaner->currentNameLooksObfuscated(
+                    (string) $release->searchname,
+                    (int) ($release->categories_id ?? $release->categoryid ?? 0),
+                    isset($release->matchedBy)
+                        ? (string) $release->matchedBy
+                        : (isset($release->matched_by) ? (string) $release->matched_by : null),
+                );
 
-            if (! $trustedSource && ! $this->fileNameCleaner->isPlausibleReleaseTitle($normalizedName)) {
+            if (! $trustedSource
+                && ! $acceptedDescriptiveTitle
+                && ! $this->fileNameCleaner->isPlausibleReleaseTitle($normalizedName)) {
                 // Skip low-quality rename candidates for untrusted sources
                 $this->done = true;
 

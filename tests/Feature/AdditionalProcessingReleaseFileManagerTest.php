@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Facades\Search;
+use App\Models\Category;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\ReleaseFileManager;
+use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
 use App\Services\CollectionCleanupService;
 use App\Services\NameFixing\NameFixingService;
+use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\NfoService;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseImageService;
@@ -150,6 +153,124 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         $this->assertSame(1, DB::table('release_files')->count());
         $this->assertSame(1, DB::table('releases')->where('id', 1)->value('rarinnerfilecount'));
         $this->assertSame([], $context->pendingReleaseFiles);
+    }
+
+    public function test_finalization_refines_from_media_info_restores_preview_and_syncs_once(): void
+    {
+        DB::table('releases')->insert(array_merge($this->releaseRow(Category::MOVIE_OTHER), [
+            'haspreview' => -2,
+            'iscategorized' => 0,
+        ]));
+        DB::table('video_data')->insert([
+            'releases_id' => 1,
+            'videowidth' => 1920,
+            'videoheight' => 1080,
+            'videoformat' => 'AVC',
+        ]);
+
+        Search::shouldReceive('updateRelease')->once()->with(1);
+        $coordinator = new ReleaseSearchSyncCoordinator(new PersistenceMetricsCollector);
+        $coordinator->beginReleaseScope(1);
+
+        $manager = $this->makeManagerWithImageService(
+            new ReleaseImageService,
+            searchSyncCoordinator: $coordinator,
+        );
+        $context = new ReleaseProcessingContext(Release::query()->findOrFail(1));
+        $context->previewGenerationSkippedByPolicy = true;
+
+        $manager->finalizeRelease($context, false);
+        $coordinator->finishReleaseScope();
+
+        $this->assertSame(Category::MOVIE_HD, (int) DB::table('releases')->where('id', 1)->value('categories_id'));
+        $this->assertSame(1, (int) DB::table('releases')->where('id', 1)->value('iscategorized'));
+        $this->assertSame(-1, (int) DB::table('releases')->where('id', 1)->value('haspreview'));
+    }
+
+    public function test_rar_inner_video_uses_the_longest_descriptive_title(): void
+    {
+        DB::table('releases')->insert(array_merge($this->releaseRow(Category::OTHER_HASHED), [
+            'name' => '(Els1212) [02/23] - "CQPVTOVKUDJVGELG.part01.rar"',
+            'searchname' => '(Els1212) [02/23] - "CQPVTOVKUDJVGELG.part01.rar"',
+        ]));
+
+        $updater = Mockery::mock(ReleaseUpdateService::class);
+        $updater->shouldReceive('updateRelease')
+            ->once()
+            ->withArgs(function (
+                object $release,
+                string $name,
+                string $method,
+                bool $echo,
+                string $type,
+                bool $nameStatus,
+                bool $show,
+                ?int $preId,
+                bool $descriptiveTitleCandidate,
+            ): bool {
+                return $release->id === 1
+                    && $name === '2016-04-17 - Anita Bellini - Playful And Petite (4k).mp4'
+                    && str_contains($method, 'Descriptive title')
+                    && $echo
+                    && $type === 'Filenames, '
+                    && $nameStatus
+                    && $show
+                    && $preId === 0
+                    && $descriptiveTitleCandidate;
+            });
+
+        $manager = new ReleaseFileManager(
+            $this->makeConfig(),
+            new ReleaseImageService,
+            new NfoService,
+            new TestNzbService,
+            new CountingNameFixingService,
+            releaseUpdateService: $updater,
+            descriptiveTitleRenameEnabled: true,
+        );
+        $context = new ReleaseProcessingContext(Release::query()->findOrFail(1));
+
+        $manager->processReleaseNameFromRar([
+            'file_list' => [
+                ['name' => '2016-04-16 - Solana A - Before The Party 2.mp4'],
+                ['name' => '2016-04-17 - Anita Bellini - Playful And Petite (4k).mp4'],
+            ],
+        ], $context);
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_disabled_fallback_does_not_inspect_nested_archive_after_extractable_outer_name(): void
+    {
+        DB::table('releases')->insert($this->releaseRow(Category::OTHER_HASHED));
+
+        $updater = Mockery::mock(ReleaseUpdateService::class);
+        $updater->shouldNotReceive('updateRelease');
+        $manager = new ReleaseFileManager(
+            $this->makeConfig(),
+            new ReleaseImageService,
+            new NfoService,
+            new TestNzbService,
+            new CountingNameFixingService,
+            releaseUpdateService: $updater,
+            descriptiveTitleRenameEnabled: false,
+        );
+        $context = new ReleaseProcessingContext(Release::query()->findOrFail(1));
+
+        $manager->processReleaseNameFromRar([
+            'file_list' => [
+                ['name' => 'Short-AB.mkv'],
+            ],
+            'archives' => [
+                'Short-AB.mkv' => [
+                    'file_list' => [
+                        ['name' => 'Movie.2020.1080p-GRP.mkv'],
+                    ],
+                ],
+            ],
+        ], $context);
+
+        $this->addToAssertionCount(1);
     }
 
     public function test_database_statements_are_measured_inside_an_active_release_scope(): void
@@ -367,13 +488,15 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         ReleaseImageService $imageService,
         ?NameFixingService $nameFixing = null,
         array $configOverrides = [],
+        ?ReleaseSearchSyncCoordinator $searchSyncCoordinator = null,
     ): ReleaseFileManager {
         return new ReleaseFileManager(
             $this->makeConfig($configOverrides),
             $imageService,
             new NfoService,
             new TestNzbService,
-            $nameFixing ?? new CountingNameFixingService
+            $nameFixing ?? new CountingNameFixingService,
+            searchSyncCoordinator: $searchSyncCoordinator,
         );
     }
 
@@ -391,6 +514,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
             'groups_id' => 1,
             'nfostatus' => -1,
             'categories_id' => $categoriesId,
+            'iscategorized' => 1,
             'passwordstatus' => -1,
             'haspreview' => -1,
             'nzbstatus' => 1,
@@ -430,6 +554,9 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         ], ['name'], ['value']);
 
         Schema::dropIfExists('par_hashes');
+        Schema::dropIfExists('audio_data');
+        Schema::dropIfExists('video_data');
+        Schema::dropIfExists('predb');
         Schema::dropIfExists('release_files');
         Schema::dropIfExists('releases');
         Schema::dropIfExists('categories');
@@ -439,6 +566,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
             $table->unsignedInteger('id')->primary();
             $table->string('title');
             $table->boolean('discard_executables')->default(false);
+            $table->boolean('generate_previews')->default(true);
         });
 
         Schema::create('categories', function (Blueprint $table): void {
@@ -455,6 +583,8 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
 
         DB::table('categories')->insert([
             ['id' => 10, 'title' => 'Other > Misc', 'root_categories_id' => 1],
+            ['id' => Category::MOVIE_OTHER, 'title' => 'Movies > Other', 'root_categories_id' => 2000],
+            ['id' => Category::MOVIE_HD, 'title' => 'Movies > HD', 'root_categories_id' => 2000],
             ['id' => 2045, 'title' => 'Movies > SD', 'root_categories_id' => 2000],
             ['id' => 4050, 'title' => 'PC > Games', 'root_categories_id' => 4000],
         ]);
@@ -468,6 +598,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
             $table->unsignedInteger('groups_id')->default(0);
             $table->integer('nfostatus')->default(0);
             $table->integer('categories_id')->default(10);
+            $table->boolean('iscategorized')->default(true);
             $table->integer('passwordstatus')->default(-1);
             $table->integer('haspreview')->default(-1);
             $table->integer('jpgstatus')->default(0);
@@ -490,10 +621,31 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
             $table->primary(['releases_id', 'name']);
         });
 
+        Schema::create('predb', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->string('title')->unique();
+        });
+
         Schema::create('par_hashes', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
             $table->string('hash', 32);
             $table->primary(['releases_id', 'hash']);
+        });
+
+        Schema::create('video_data', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id')->primary();
+            $table->string('containerformat')->nullable();
+            $table->string('videoformat')->nullable();
+            $table->string('videocodec')->nullable();
+            $table->integer('videowidth')->nullable();
+            $table->integer('videoheight')->nullable();
+        });
+
+        Schema::create('audio_data', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->unsignedInteger('releases_id');
+            $table->unsignedInteger('audioid');
+            $table->string('audioformat')->nullable();
         });
     }
 }

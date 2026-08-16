@@ -93,7 +93,7 @@ class PreviewGenerationPolicy
      * @param  iterable<int|string>  $releaseIds
      * @return int Number of releases flipped back to pending.
      */
-    public function restoreOwedPreviews(iterable $releaseIds): int
+    public function restoreOwedPreviews(iterable $releaseIds, bool $synchronize = true): int
     {
         $ids = [];
         foreach ($releaseIds as $id) {
@@ -126,7 +126,9 @@ class PreviewGenerationPolicy
                 'passwordstatus' => PasswordInspectionMode::pendingReleaseStatus(),
             ]);
 
-        ReleaseSearchIndexSync::forIds($owedIds);
+        if ($synchronize) {
+            ReleaseSearchIndexSync::forIds($owedIds);
+        }
 
         return count($owedIds);
     }

@@ -225,6 +225,12 @@ class FileNameExtractor
         }
 
         // Folder name fallback
+        $basename = basename(str_replace('\\', '/', $filename));
+        $title = pathinfo($basename, PATHINFO_FILENAME);
+        if ($title !== $basename && preg_match('/[()\[\]]/', $title) && preg_match(self::PREDB_REGEX, $basename)) {
+            return NameFixResult::fromMatch($title, 'Folder name', 'File');
+        }
+
         if (preg_match('/\w+[\-\w.\',;& ]+$/i', $filename, $result) && preg_match(self::PREDB_REGEX, $filename)) {
             return NameFixResult::fromMatch($result[0], 'Folder name', 'File');
         }

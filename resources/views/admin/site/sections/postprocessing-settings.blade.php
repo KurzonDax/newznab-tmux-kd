@@ -127,6 +127,17 @@
                         </div>
 
                         <div>
+                            <x-label for="descriptive_title_rename">
+                                <i class="fas fa-signature mr-1"></i>Rename obfuscated releases from descriptive file names
+                            </x-label>
+                            <x-select id="descriptive_title_rename" name="descriptive_title_rename">
+                                <option value="1" @selected((int) ($site['descriptive_title_rename'] ?? 1) === 1)>On</option>
+                                <option value="0" @selected((int) ($site['descriptive_title_rename'] ?? 1) === 0)>Off</option>
+                            </x-select>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Uses a human-written inner video file name only when the current release name looks obfuscated or hashed.</p>
+                        </div>
+
+                        <div>
                             <label for="amazonsleep" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                                 <i class="fas fa-hourglass mr-1"></i>Metadata Lookup Sleep Time
                             </label>
