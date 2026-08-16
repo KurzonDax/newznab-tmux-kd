@@ -152,6 +152,20 @@ final class ReleaseSchemaOptimizationMigrationMariaDbTest extends TestCase
         $this->assertTrue(Schema::hasForeignKey('release_nzb_passwords', 'FK_rnp_releases'));
         $this->assertTrue(Schema::hasForeignKey('release_nzb_creation_failures', 'FK_rncf_releases'));
         $this->assertSame(['guid'], $this->indexColumns('ux_releases_guid'));
+        $this->assertSame(['predb_id'], $this->indexColumns('ix_releases_predb_id'));
+        $this->assertSame(['size'], $this->indexColumns('ix_releases_size'));
+        $this->assertSame(
+            ['passwordstatus', 'haspreview', 'nzbstatus', 'leftguid', 'postdate', 'id', 'additional_pp_claimed_at', 'size'],
+            $this->indexColumns('ix_releases_add_pp_claim_queue'),
+        );
+        $this->assertSame(
+            ['nzbstatus', 'groups_id', 'postdate', 'id', 'nzb_creation_claimed_at'],
+            $this->indexColumns('ix_releases_nzb_creation_group_queue'),
+        );
+        $this->assertSame(
+            ['nzbstatus', 'postdate', 'id', 'nzb_creation_claimed_at'],
+            $this->indexColumns('ix_releases_nzb_creation_global_queue'),
+        );
     }
 
     #[Test]

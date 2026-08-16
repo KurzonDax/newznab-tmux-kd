@@ -298,9 +298,11 @@ return new class extends Migration
     private function rebuildReleasesForMariaDb(): void
     {
         $specifications = ['DROP PRIMARY KEY', 'ADD PRIMARY KEY (`id`)'];
+        $droppedIndexes = [];
         foreach (self::REMOVED_RELEASE_INDEXES as $index) {
             if ($this->indexExists($index)) {
                 $specifications[] = 'DROP INDEX `'.$index.'`';
+                $droppedIndexes[] = $index;
             }
         }
 
@@ -326,7 +328,7 @@ return new class extends Migration
             'ix_releases_nzb_creation_global_queue' => 'ADD INDEX `ix_releases_nzb_creation_global_queue` (`nzbstatus`, `postdate` DESC, `id`, `nzb_creation_claimed_at`)',
         ];
         foreach ($newIndexes as $name => $specification) {
-            if (! $this->indexExists($name)) {
+            if (! $this->indexExists($name) || in_array($name, $droppedIndexes, true)) {
                 $specifications[] = $specification;
             }
         }
