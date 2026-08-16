@@ -75,6 +75,7 @@ class NzbCreationReliabilityTest extends TestCase
         DB::purge();
         DB::reconnect();
         $this->registerSqliteFunction('UNIX_TIMESTAMP', static fn (?string $value): int => strtotime((string) $value));
+        DB::statement('PRAGMA foreign_keys = ON');
 
         $this->createSchema();
         $this->seedSettings();

@@ -17,8 +17,20 @@ final class ReleaseSchemaOptimizationMigrationMariaDbTest extends TestCase
 {
     private string $tablePrefix;
 
+    /**
+     * @var array<string, string|false>
+     */
+    private array $originalEnvironment = [];
+
     public function createApplication()
     {
+        $this->originalEnvironment = [
+            'APP_ENV' => getenv('APP_ENV'),
+            'DB_URL' => getenv('DB_URL'),
+            'DB_CONNECTION' => getenv('DB_CONNECTION'),
+            'DB_DATABASE' => getenv('DB_DATABASE'),
+        ];
+
         Dotenv::createMutable(dirname(__DIR__, 2))->safeLoad();
         $this->tablePrefix = 'release_opt_'.getmypid().'_'.bin2hex(random_bytes(4)).'_';
         $this->setEnvironmentValue('APP_ENV', 'testing');
@@ -43,15 +55,22 @@ final class ReleaseSchemaOptimizationMigrationMariaDbTest extends TestCase
 
     protected function tearDown(): void
     {
-        if (isset($this->tablePrefix) && preg_match('/^release_opt_\d+_[a-f0-9]{8}_$/', $this->tablePrefix) === 1) {
-            DB::statement('SET FOREIGN_KEY_CHECKS=0');
-            foreach (['release_files', 'release_comments', 'release_nzb_creation_failures', 'release_nzb_passwords', 'releases'] as $table) {
-                DB::statement('DROP TABLE IF EXISTS `'.$this->table($table).'`');
+        try {
+            if (isset($this->tablePrefix) && preg_match('/^release_opt_\d+_[a-f0-9]{8}_$/', $this->tablePrefix) === 1) {
+                DB::statement('SET FOREIGN_KEY_CHECKS=0');
+                foreach (['release_files', 'release_comments', 'release_nzb_creation_failures', 'release_nzb_passwords', 'releases'] as $table) {
+                    DB::statement('DROP TABLE IF EXISTS `'.$this->table($table).'`');
+                }
+                DB::statement('SET FOREIGN_KEY_CHECKS=1');
             }
-            DB::statement('SET FOREIGN_KEY_CHECKS=1');
+        } finally {
+            DB::disconnect();
+            parent::tearDown();
+
+            foreach ($this->originalEnvironment as $key => $value) {
+                $this->setEnvironmentValue($key, $value === false ? null : $value);
+            }
         }
-        DB::disconnect();
-        parent::tearDown();
     }
 
     #[Test]
@@ -71,6 +90,9 @@ final class ReleaseSchemaOptimizationMigrationMariaDbTest extends TestCase
         $this->assertSame('ascii_general_ci', $this->columnCollation('guid'));
         $this->assertSame('char(40)', strtolower($this->columnType('guid')));
         $this->assertSame('ascii_general_ci', $this->columnCollation('leftguid'));
+        $this->assertTrue(Schema::hasColumn('releases', 'collectionhash'));
+        $this->assertSame(['collectionhash'], $this->indexColumns('ux_releases_collectionhash'));
+        $this->assertSame(hash('sha1', 'collection-1', true), DB::table('releases')->where('id', 1)->value('collectionhash'));
         $this->assertSame(1, (int) DB::table('releases')->where('id', 1)->value('comments'));
         $this->assertFalse(Schema::hasColumn('releases', 'nzb_password'));
         $this->assertFalse(Schema::hasColumn('releases', 'proc_sorter'));
@@ -213,6 +235,7 @@ final class ReleaseSchemaOptimizationMigrationMariaDbTest extends TestCase
                 groups_id INT UNSIGNED NOT NULL DEFAULT 0, size BIGINT UNSIGNED NOT NULL DEFAULT 0,
                 postdate DATETIME NULL, adddate DATETIME NULL, updatetime TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 gid VARCHAR(32) NULL, guid VARCHAR(40) NOT NULL, leftguid CHAR(1) NOT NULL,
+                collectionhash BINARY(20) NULL,
                 videos_id INT UNSIGNED NOT NULL DEFAULT 0, tv_episodes_id INT NOT NULL DEFAULT 0,
                 imdbid VARCHAR(100) NULL, movieinfo_id INT NULL, predb_id INT UNSIGNED NOT NULL DEFAULT 0,
                 comments INT NOT NULL DEFAULT 0, passwordstatus SMALLINT NOT NULL DEFAULT -1,
@@ -223,7 +246,7 @@ final class ReleaseSchemaOptimizationMigrationMariaDbTest extends TestCase
                 additional_pp_claimed_at TIMESTAMP NULL, additional_pp_claim_token VARCHAR(64) NULL,
                 nzb_creation_claimed_at TIMESTAMP NULL, nzb_creation_claim_token VARCHAR(64) NULL,
                 nzb_creation_attempts SMALLINT UNSIGNED NOT NULL DEFAULT 0, nzb_creation_last_error TEXT NULL,
-                PRIMARY KEY (id, categories_id),
+                PRIMARY KEY (id, categories_id), UNIQUE KEY ux_releases_collectionhash (collectionhash),
                 KEY ix_releases_guid (guid), KEY ix_releases_adddate_only (adddate),
                 KEY ix_releases_videos_id (videos_id), KEY ix_releases_movieinfo_id (movieinfo_id),
                 KEY ix_releases_imdbid (imdbid),
@@ -288,6 +311,7 @@ final class ReleaseSchemaOptimizationMigrationMariaDbTest extends TestCase
             'adddate' => '2026-08-13 00:00:00',
             'guid' => $guid,
             'leftguid' => strtolower($guid[0]),
+            'collectionhash' => hash('sha1', 'collection-'.$id, true),
             'comments' => 0,
             'nzb_password' => null,
             'nzb_creation_attempts' => 0,

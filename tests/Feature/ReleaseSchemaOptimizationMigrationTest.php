@@ -23,9 +23,20 @@ final class ReleaseSchemaOptimizationMigrationTest extends TestCase
 {
     private string $databasePath = '';
 
+    /**
+     * @var array<string, string|false>
+     */
+    private array $originalEnvironment = [];
+
     public function createApplication()
     {
-        $this->databasePath = sys_get_temp_dir().'/nntmux-releases-migration.sqlite';
+        $this->databasePath = $this->makeTempPath('nntmux-releases-migration', '.sqlite');
+        $this->originalEnvironment = [
+            'APP_ENV' => getenv('APP_ENV'),
+            'DB_CONNECTION' => getenv('DB_CONNECTION'),
+            'DB_DATABASE' => getenv('DB_DATABASE'),
+        ];
+
         if (file_exists($this->databasePath)) {
             unlink($this->databasePath);
         }
@@ -63,6 +74,10 @@ final class ReleaseSchemaOptimizationMigrationTest extends TestCase
             unlink($this->databasePath);
         }
         parent::tearDown();
+
+        foreach ($this->originalEnvironment as $key => $value) {
+            $this->setEnvironmentValue($key, $value === false ? null : $value);
+        }
     }
 
     public function test_comment_recount_spans_multiple_chunks_and_skips_correct_rows(): void
