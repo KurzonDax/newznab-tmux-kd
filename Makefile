@@ -220,6 +220,23 @@ composer-install: ## Run composer install inside the container
 .PHONY: composer-update
 composer-update: ## Run composer update inside the container
 	@$(SAIL) exec -u sail $(APP_SERVICE) bash -c 'umask 0022; exec composer update'
+.PHONY: deps-audit
+deps-audit: ## Report known vulnerabilities in Composer + npm deps (exit 1 if any; CI treats as informational)
+	@echo "$(CYAN)▶ composer audit$(RESET)"
+	@$(SAIL) exec -u sail $(APP_SERVICE) composer audit --no-interaction; composer_rc=$$?; \
+	echo "$(CYAN)▶ npm audit --omit=dev$(RESET)"; \
+	$(SAIL) exec -u sail $(APP_SERVICE) bash -c 'umask 0022; [ -f package-lock.json ] || npm install --package-lock-only --ignore-scripts --no-audit --no-fund; npm audit --omit=dev'; npm_rc=$$?; \
+	if [ $$composer_rc -ne 0 ] || [ $$npm_rc -ne 0 ]; then \
+		echo "$(YELLOW)⚠ Advisories found (composer=$$composer_rc npm=$$npm_rc). Known-unfixable ones can be ignored via composer.json config.audit.ignore.$(RESET)"; \
+		exit 1; \
+	fi; \
+	echo "$(GREEN)✔ No known vulnerabilities.$(RESET)"
+.PHONY: deps-outdated
+deps-outdated: ## List direct Composer + npm deps with newer releases (never fails)
+	@echo "$(CYAN)▶ composer outdated --direct$(RESET)"
+	@$(SAIL) exec -u sail $(APP_SERVICE) composer outdated --direct --no-interaction || true
+	@echo "$(CYAN)▶ npm outdated$(RESET)"
+	@$(SAIL) exec -u sail $(APP_SERVICE) npm outdated || true
 # ── Database / Services ──────────────────────────────────────
 .PHONY: db
 db: ## Open a MariaDB CLI session
