@@ -259,6 +259,7 @@ class AdditionalProcessingOrchestrator
         $downloadMetrics = $batchResult->downloadMetrics();
         $persistenceMetrics = $batchResult->persistenceMetrics();
         $payloadSniffMetrics = $batchResult->payloadSniffMetrics();
+        $mp4TailMetrics = $batchResult->mp4TailMetrics();
 
         Log::info('Additional postprocessing run finished', [
             'pipeline' => 'v2',
@@ -283,6 +284,10 @@ class AdditionalProcessingOrchestrator
             'unsupported_reasons' => $batchResult->unsupportedReasonCounts(),
             'sniffed_candidates' => $payloadSniffMetrics->candidateCount,
             'payload_classifications' => $payloadSniffMetrics->classificationCounts,
+            'mp4-tail-fetched' => $mp4TailMetrics->tailFetched,
+            'mp4-moov-found' => $mp4TailMetrics->moovFound,
+            'mp4-moov-missing' => $mp4TailMetrics->moovMissing,
+            'mp4-tail-bytes' => $mp4TailMetrics->tailBytes,
             'elapsed_seconds' => round($batchResult->elapsedSeconds, 6),
             'releases_per_second' => round($batchResult->releasesPerSecond(), 4),
             'average_release_seconds' => round($batchResult->averageReleaseSeconds(), 6),

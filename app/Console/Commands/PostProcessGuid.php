@@ -116,6 +116,7 @@ class PostProcessGuid extends Command
     {
         $downloadMetrics = $result->downloadMetrics();
         $persistenceMetrics = $result->persistenceMetrics();
+        $mp4TailMetrics = $result->mp4TailMetrics();
 
         $this->line(json_encode([
             'event' => 'additional-postprocessing-profile',
@@ -137,6 +138,10 @@ class PostProcessGuid extends Command
             'search_sync_requests' => $persistenceMetrics->searchSyncRequests,
             'search_sync_executions' => $persistenceMetrics->searchSyncExecutions,
             'duplicate_message_ids' => $result->duplicateMessageIdCount(),
+            'mp4-tail-fetched' => $mp4TailMetrics->tailFetched,
+            'mp4-moov-found' => $mp4TailMetrics->moovFound,
+            'mp4-moov-missing' => $mp4TailMetrics->moovMissing,
+            'mp4-tail-bytes' => $mp4TailMetrics->tailBytes,
             'elapsed_seconds' => round($result->elapsedSeconds, 6),
             'releases_per_hour' => round($result->releasesPerSecond() * 3600, 2),
             'average_release_seconds' => round($result->averageReleaseSeconds(), 6),

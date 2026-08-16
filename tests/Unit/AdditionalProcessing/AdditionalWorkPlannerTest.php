@@ -127,6 +127,34 @@ class AdditionalWorkPlannerTest extends TestCase
     }
 
     #[Test]
+    public function it_plans_the_ordered_tail_of_the_media_info_candidate_for_bounded_expansion(): void
+    {
+        $planner = new AdditionalWorkPlanner($this->makeConfig([
+            'processMediaInfo' => true,
+            'segmentsToDownload' => 2,
+            'mp4TailMaxSegments' => 5,
+        ]));
+
+        $plan = $planner->plan([
+            [
+                'title' => 'feature.mp4" yEnc',
+                'segments' => ['<one>', '<two>', '<three>', '<four>', '<five>', '<six>'],
+            ],
+        ], 'alt.binaries.test');
+
+        $this->assertSame(['<one>', '<two>'], $plan->mediaInfoMessageIds);
+        $this->assertSame(['<five>', '<six>'], $plan->mediaInfoTailMessageIds);
+        $this->assertSame(
+            ['<three>', '<four>', '<five>', '<six>'],
+            $plan->expandedMediaInfoTailMessageIds(4),
+        );
+        $this->assertSame(
+            ['<two>', '<three>', '<four>', '<five>', '<six>'],
+            $plan->expandedMediaInfoTailMessageIds(60),
+        );
+    }
+
+    #[Test]
     public function it_selects_terminal_media_when_earlier_subject_tokens_look_archived(): void
     {
         $planner = new AdditionalWorkPlanner($this->makeConfig([

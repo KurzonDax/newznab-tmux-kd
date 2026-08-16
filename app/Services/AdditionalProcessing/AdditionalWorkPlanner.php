@@ -24,6 +24,8 @@ final readonly class AdditionalWorkPlanner
         $sampleMessageIds = [];
         $jpgMessageIds = [];
         $mediaInfoMessageIds = [];
+        $mediaInfoTailMessageIds = [];
+        $mediaInfoTailExpansionMessageIds = [];
         $audioInfoMessageId = '';
         $audioInfoExtension = '';
         $archiveCandidates = [];
@@ -98,6 +100,19 @@ final readonly class AdditionalWorkPlanner
                         $seenMessageIds,
                         $duplicateMessageIdCount,
                     );
+                    $tailCandidates = $this->extractTailSegments(
+                        $segments,
+                        $this->config->mp4TailMaxSegments,
+                    );
+                    $initialTailCount = min($this->config->segmentsToDownload, count($tailCandidates));
+                    $mediaInfoTailMessageIds = $initialTailCount > 0
+                        ? array_slice($tailCandidates, -$initialTailCount)
+                        : [];
+                    $mediaInfoTailExpansionMessageIds = array_slice(
+                        $tailCandidates,
+                        0,
+                        count($tailCandidates) - $initialTailCount,
+                    );
                 }
 
                 if ($this->config->processAudioInfo && $audioInfoMessageId === '' && isset($segments[0])
@@ -142,6 +157,8 @@ final readonly class AdditionalWorkPlanner
             sampleMessageIds: $sampleMessageIds,
             jpgMessageIds: $jpgMessageIds,
             mediaInfoMessageIds: $mediaInfoMessageIds,
+            mediaInfoTailMessageIds: $mediaInfoTailMessageIds,
+            mediaInfoTailExpansionMessageIds: $mediaInfoTailExpansionMessageIds,
             audioInfoMessageId: $audioInfoMessageId,
             audioInfoExtension: $audioInfoExtension,
             archiveCandidates: $archiveCandidates,
@@ -201,6 +218,32 @@ final readonly class AdditionalWorkPlanner
             $requestMessageIds[$messageId] = true;
             $messageIds[] = $messageId;
             $this->recordMessageId($messageId, $seenMessageIds, $duplicateMessageIdCount);
+        }
+
+        return $messageIds;
+    }
+
+    /**
+     * @param  array<int|string, mixed>  $segments
+     * @return list<string>
+     */
+    private function extractTailSegments(array $segments, int $limit): array
+    {
+        if ($limit <= 0) {
+            return [];
+        }
+
+        $messageIds = [];
+        $seen = [];
+
+        foreach (array_slice($segments, -$limit) as $segment) {
+            $messageId = (string) $segment;
+            if ($messageId === '' || isset($seen[$messageId])) {
+                continue;
+            }
+
+            $seen[$messageId] = true;
+            $messageIds[] = $messageId;
         }
 
         return $messageIds;

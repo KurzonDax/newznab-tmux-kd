@@ -223,6 +223,9 @@ class MediaExtractionService
 
         try {
             $xmlArray = $this->mediaInfo()->getInfo($fileLocation, true);
+            if ($xmlArray->getVideos() === [] && $xmlArray->getAudios() === []) {
+                return false;
+            }
             \App\Models\MediaInfo::addData($releaseId, $xmlArray);
             $this->releaseExtra->addFromXml($releaseId, $xmlArray);
             $this->mediaInfoRefinement->refine($releaseId);

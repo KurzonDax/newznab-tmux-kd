@@ -47,6 +47,8 @@ trait CreatesProcessingConfiguration
             'payloadSniffMaxCandidates' => 3,
             'payloadSniffByteBudget' => 1048576,
             'payloadSniffSmallSegmentLimit' => 4,
+            'mp4TailFetch' => true,
+            'mp4TailMaxSegments' => 60,
             'audioSavePath' => sys_get_temp_dir().'/',
             'tmpUnrarPath' => sys_get_temp_dir().'/',
             'debugMode' => false,

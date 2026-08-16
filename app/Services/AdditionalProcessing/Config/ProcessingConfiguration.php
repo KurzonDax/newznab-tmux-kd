@@ -71,6 +71,10 @@ final readonly class ProcessingConfiguration
 
     public int $payloadSniffSmallSegmentLimit;
 
+    public bool $mp4TailFetch;
+
+    public int $mp4TailMaxSegments;
+
     public string $audioSavePath;
 
     public string $tmpUnrarPath;
@@ -149,6 +153,11 @@ final readonly class ProcessingConfiguration
         $this->payloadSniffMaxCandidates = max((int) config('nntmux_settings.payload_sniff_max_candidates'), 0);
         $this->payloadSniffByteBudget = max((int) config('nntmux_settings.payload_sniff_byte_budget'), 0);
         $this->payloadSniffSmallSegmentLimit = max((int) config('nntmux_settings.payload_sniff_small_segment_limit'), 1);
+        $this->mp4TailFetch = (bool) config('nntmux_settings.mp4_tail_fetch');
+        $this->mp4TailMaxSegments = max(
+            $this->segmentsToDownload,
+            (int) config('nntmux_settings.mp4_tail_max_segments'),
+        );
         $this->audioSavePath = config('nntmux_settings.covers_path').'/audiosample/';
         $this->tmpUnrarPath = config('nntmux.tmp_unrar_path');
         $this->debugMode = (bool) config('app.debug');

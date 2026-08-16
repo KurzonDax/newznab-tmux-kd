@@ -236,6 +236,17 @@ final readonly class AdditionalBatchResult
         return $metrics;
     }
 
+    public function mp4TailMetrics(): Mp4TailMetrics
+    {
+        $metrics = new Mp4TailMetrics;
+
+        foreach ($this->results as $result) {
+            $metrics = $metrics->merge($result->mp4TailMetrics);
+        }
+
+        return $metrics;
+    }
+
     /**
      * @return array<string, float>
      */

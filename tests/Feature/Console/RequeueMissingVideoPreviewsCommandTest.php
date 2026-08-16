@@ -40,6 +40,7 @@ class RequeueMissingVideoPreviewsCommandTest extends TestCase
             $table->integer('passwordstatus');
             $table->integer('rarinnerfilecount');
             $table->integer('isrenamed');
+            $table->unsignedBigInteger('size')->default(500);
         });
 
         Schema::create('root_categories', function (Blueprint $table): void {
@@ -53,6 +54,16 @@ class RequeueMissingVideoPreviewsCommandTest extends TestCase
             $table->string('title')->default('');
             $table->unsignedInteger('root_categories_id')->nullable();
         });
+
+        Schema::create('settings', function (Blueprint $table): void {
+            $table->string('name')->primary();
+            $table->string('value')->nullable();
+        });
+
+        DB::table('settings')->insert([
+            ['name' => 'minsizetopostprocess', 'value' => '100'],
+            ['name' => 'maxsizetopostprocess', 'value' => '1000'],
+        ]);
 
         DB::table('root_categories')->insert([
             ['id' => 2000, 'title' => 'Movies'],
@@ -249,6 +260,44 @@ class RequeueMissingVideoPreviewsCommandTest extends TestCase
         ])
             ->expectsOutputToContain('Choose either --dry-run or --apply, not both.')
             ->assertFailed();
+    }
+
+    public function test_mp4_tail_mode_dry_runs_then_applies_only_the_bounded_matching_backlog(): void
+    {
+        $this->setPasswordInspection(true);
+
+        Release::withoutEvents(function (): void {
+            Release::factory()->create([...$this->release(1, Category::TV_WEBDL), 'name' => 'first.mp4" yEnc']);
+            Release::factory()->create([...$this->release(2, Category::TV_WEBDL), 'name' => 'second.m4v" yEnc']);
+            Release::factory()->create([...$this->release(3, Category::TV_WEBDL), 'name' => 'matroska.mkv" yEnc']);
+            Release::factory()->create([...$this->release(4, Category::TV_WEBDL, rarInnerFileCount: 1), 'name' => 'archived.mp4" yEnc']);
+            Release::factory()->create([...$this->release(5, Category::TV_WEBDL, passwordStatus: 1), 'name' => 'passworded.mov" yEnc']);
+            Release::factory()->create([...$this->release(6, Category::TV_WEBDL), 'name' => 'missing-nzb.mp4" yEnc', 'nzbstatus' => 0]);
+            Release::factory()->create([...$this->release(7, Category::TV_WEBDL), 'name' => 'too-small.mp4" yEnc', 'size' => 100]);
+            Release::factory()->create([...$this->release(8, Category::MOVIE_HD), 'name' => 'other-category.mp4" yEnc']);
+        });
+
+        $options = [
+            '--mp4-tail' => true,
+            '--category' => (string) Category::TV_WEBDL,
+            '--limit' => '1',
+        ];
+
+        $this->artisan('releases:requeue-missing-video-previews', $options)
+            ->expectsOutputToContain('Dry run: 1 MP4 tail release would be re-queued.')
+            ->assertSuccessful();
+
+        $this->assertSame(0, DB::table('releases')->where('id', 1)->value('haspreview'));
+
+        $this->artisan('releases:requeue-missing-video-previews', [...$options, '--apply' => true])
+            ->expectsOutputToContain('Re-queued 1 MP4 tail release.')
+            ->assertSuccessful();
+
+        $this->assertSame(-1, DB::table('releases')->where('id', 1)->value('haspreview'));
+        $this->assertSame(PasswordInspectionMode::pendingReleaseStatus(), DB::table('releases')->where('id', 1)->value('passwordstatus'));
+        foreach ([2, 3, 4, 5, 6, 7, 8] as $id) {
+            $this->assertSame(0, DB::table('releases')->where('id', $id)->value('haspreview'), "Release {$id} must not be requeued.");
+        }
     }
 
     private function setPasswordInspection(bool $enabled): void

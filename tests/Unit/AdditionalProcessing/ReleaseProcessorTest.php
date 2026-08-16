@@ -789,6 +789,65 @@ class ReleaseProcessorTest extends TestCase
     }
 
     #[Test]
+    public function an_mdat_first_mp4_fetches_one_tail_and_processes_the_spliced_file(): void
+    {
+        $head = $this->mp4Atom('ftyp', 'isom0000').pack('N', 4096).'mdat'.str_repeat('v', 48);
+        $tail = 'tail-prefix'.$this->validMoovAtom();
+
+        [$context, $downloadService, $mediaService] = $this->processDirectVideoCandidate(
+            'feature.mp4" yEnc',
+            $head,
+            $this->successfulDownload($tail),
+        );
+
+        $this->assertSame(
+            [DownloadKind::MediaInfo, DownloadKind::MediaInfoTail],
+            array_column($downloadService->calls, 'kind'),
+        );
+        $this->assertTrue($context->foundMediaInfo);
+        $this->assertTrue($context->foundSample);
+        $this->assertCount(1, $mediaService->mediaInfoFiles);
+        $this->assertCount(1, $mediaService->sampleFiles);
+        $this->assertStringEndsWith('media.mp4', $mediaService->mediaInfoFiles[0]['path']);
+        $this->assertSame($mediaService->mediaInfoFiles[0], $mediaService->sampleFiles[0]);
+        $this->assertStringEndsWith($this->validMoovAtom(), $mediaService->mediaInfoFiles[0]['data']);
+    }
+
+    #[Test]
+    public function an_mkv_media_candidate_never_fetches_an_mp4_tail(): void
+    {
+        $head = "\x1A\x45\xDF\xA3".str_repeat('m', 48);
+
+        [, $downloadService, $mediaService] = $this->processDirectVideoCandidate(
+            'feature.mkv" yEnc',
+            $head,
+        );
+
+        $this->assertSame([DownloadKind::MediaInfo], array_column($downloadService->calls, 'kind'));
+        $this->assertStringEndsWith('media.avi', $mediaService->mediaInfoFiles[0]['path']);
+        $this->assertSame($head, $mediaService->mediaInfoFiles[0]['data']);
+    }
+
+    #[Test]
+    public function an_mp4_tail_download_failure_keeps_the_head_only_behavior(): void
+    {
+        $head = $this->mp4Atom('ftyp', 'isom0000').pack('N', 4096).'mdat'.str_repeat('v', 48);
+
+        [, $downloadService, $mediaService] = $this->processDirectVideoCandidate(
+            'feature.mp4" yEnc',
+            $head,
+            $this->failedDownload(),
+        );
+
+        $this->assertSame(
+            [DownloadKind::MediaInfo, DownloadKind::MediaInfoTail],
+            array_column($downloadService->calls, 'kind'),
+        );
+        $this->assertStringEndsWith('media.avi', $mediaService->mediaInfoFiles[0]['path']);
+        $this->assertSame($head, $mediaService->mediaInfoFiles[0]['data']);
+    }
+
+    #[Test]
     public function it_skips_sample_downloads_and_ffmpeg_when_the_root_category_disables_preview_generation(): void
     {
         $config = $this->makeConfig([
@@ -872,6 +931,99 @@ class ReleaseProcessorTest extends TestCase
         );
     }
 
+    /**
+     * @param  array{success: bool, data: string|null, groupUnavailable: bool, error: string|null}|null  $tailResponse
+     * @return array{ReleaseProcessingContext, RecordingMp4DownloadService, RecordingMediaExtractionService}
+     */
+    private function processDirectVideoCandidate(
+        string $title,
+        string $head,
+        ?array $tailResponse = null,
+    ): array {
+        File::ensureDirectoryExists($this->releaseTempPath);
+        $config = $this->makeConfig([
+            'processMediaInfo' => true,
+            'processThumbnails' => true,
+            'mp4TailFetch' => true,
+            'segmentsToDownload' => 2,
+            'mp4TailMaxSegments' => 4,
+        ]);
+        $nzbParser = Mockery::mock(NzbContentParser::class);
+        $nzbParser->shouldReceive('parseNzb')->once()->andReturn([
+            'error' => null,
+            'contents' => [[
+                'title' => $title,
+                'segments' => ['<head-1>', '<head-2>', '<tail-1>', '<tail-2>'],
+            ]],
+        ]);
+
+        $responses = [$this->successfulDownload($head)];
+        if ($tailResponse !== null) {
+            $responses[] = $tailResponse;
+        }
+        $downloadService = new RecordingMp4DownloadService($responses);
+        $mediaService = new RecordingMediaExtractionService;
+        $releaseManager = Mockery::mock(ReleaseFileManager::class);
+        $releaseManager->shouldReceive('processReleaseNameFromNzbContents')->once()->andReturnFalse();
+        $releaseManager->shouldReceive('finalizeRelease')->once()->andReturnNull();
+
+        $processor = new ReleaseProcessor(
+            $config,
+            $nzbParser,
+            new AdditionalWorkPlanner($config),
+            Mockery::mock(ArchiveExtractionService::class),
+            $mediaService,
+            $downloadService,
+            $releaseManager,
+            Mockery::mock(ReleaseFilesArchiveFallback::class),
+            $this->successfulTempWorkspace(),
+            new ConsoleOutputService,
+            previewPolicy: $this->stubPreviewPolicy(),
+        );
+
+        $context = $this->makeContext();
+        $context->release->nfostatus = 1;
+        $processor->process($context, $this->mainTempPath);
+
+        return [$context, $downloadService, $mediaService];
+    }
+
+    /**
+     * @return array{success: true, data: string, groupUnavailable: false, error: null}
+     */
+    private function successfulDownload(string $data): array
+    {
+        return [
+            'success' => true,
+            'data' => $data,
+            'groupUnavailable' => false,
+            'error' => null,
+        ];
+    }
+
+    /**
+     * @return array{success: false, data: null, groupUnavailable: false, error: string}
+     */
+    private function failedDownload(): array
+    {
+        return [
+            'success' => false,
+            'data' => null,
+            'groupUnavailable' => false,
+            'error' => 'tail unavailable',
+        ];
+    }
+
+    private function mp4Atom(string $type, string $payload): string
+    {
+        return pack('N', strlen($payload) + 8).$type.$payload;
+    }
+
+    private function validMoovAtom(): string
+    {
+        return $this->mp4Atom('moov', $this->mp4Atom('mvhd', 'movie-header'));
+    }
+
     private function makeContext(): ReleaseProcessingContext
     {
         return new ReleaseProcessingContext(new Release([
@@ -941,5 +1093,79 @@ class ReleaseProcessorTest extends TestCase
             ->shouldReceive('setProcessTitle')->once()->andReturnNull()
             ->shouldReceive('echoCompressedDownload')->once()->andReturnNull()
             ->getMock();
+    }
+}
+
+final class RecordingMp4DownloadService extends UsenetDownloadService
+{
+    /**
+     * @var list<array{kind: DownloadKind, messageIds: list<string>}>
+     */
+    public array $calls = [];
+
+    /**
+     * @param  list<array{success: bool, data: string|null, groupUnavailable: bool, error: string|null}>  $responses
+     */
+    public function __construct(private array $responses) {}
+
+    public function beginReleaseScope(): void {}
+
+    public function finishReleaseScope(): DownloadMetrics
+    {
+        return new DownloadMetrics;
+    }
+
+    /**
+     * @param  array<int|string, mixed>|string  $messageIDs
+     * @return array{success: bool, data: string|null, groupUnavailable: bool, error: string|null}
+     */
+    public function download(
+        DownloadKind $kind,
+        array|string $messageIDs,
+        string $groupName = '',
+        ?int $releaseId = null,
+        ?string $fileTitle = null,
+    ): array {
+        $this->calls[] = [
+            'kind' => $kind,
+            'messageIds' => array_map('strval', is_array($messageIDs) ? array_values($messageIDs) : [$messageIDs]),
+        ];
+
+        return array_shift($this->responses) ?? [
+            'success' => false,
+            'data' => null,
+            'groupUnavailable' => false,
+            'error' => 'Unexpected download',
+        ];
+    }
+
+    public function meetsMinimumSize(string $data, int $minimumBytes = 40): bool
+    {
+        return strlen($data) > $minimumBytes;
+    }
+}
+
+final class RecordingMediaExtractionService extends MediaExtractionService
+{
+    /** @var list<array{path: string, data: string}> */
+    public array $mediaInfoFiles = [];
+
+    /** @var list<array{path: string, data: string}> */
+    public array $sampleFiles = [];
+
+    public function __construct() {}
+
+    public function getMediaInfo(string $fileLocation, int $releaseId): bool
+    {
+        $this->mediaInfoFiles[] = ['path' => $fileLocation, 'data' => (string) file_get_contents($fileLocation)];
+
+        return true;
+    }
+
+    public function getSample(string $fileLocation, string $tmpPath, string $guid): bool
+    {
+        $this->sampleFiles[] = ['path' => $fileLocation, 'data' => (string) file_get_contents($fileLocation)];
+
+        return true;
     }
 }

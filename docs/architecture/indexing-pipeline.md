@@ -333,6 +333,41 @@ proportional to the database candidates scanned because each candidate's
 compressed NZB must be read and parsed once; use category/size bounds and a
 small `--limit` for the first applied run on large installations.
 
+### MP4 moov tail recovery
+
+Additional processing normally downloads only the beginning of its main video
+candidate. Bare MP4/MOV posts written without faststart place the top-level
+`moov` atom after `mdat`, so that beginning has media bytes but no track tables,
+codec configuration, or duration. After the normal head download, the processor
+walks top-level atoms and activates tail recovery only for an MP4/MOV whose
+`mdat` appears before `moov`. MKV, AVI, faststart MP4, and archived media keep
+their existing paths.
+
+The planner retains the last configured segment set from the same NZB file. A
+triggered release downloads that tail as the distinct `media-info-tail` request,
+validates a complete `moov` whose first child is `mvhd`, rewrites the truncated
+head's 32- or 64-bit `mdat` size, and appends the metadata as a temporary
+`media.mp4` moov splice. If the first tail begins inside a larger `moov`, the
+processor fetches preceding segments in NZB order until it succeeds or reaches
+`ADDITIONAL_MP4_TAIL_MAX_SEGMENTS`; failure falls back to the unchanged
+head-only behavior. `ADDITIONAL_MP4_TAIL_FETCH` is the single feature toggle.
+
+Batch logs and profiles expose `mp4-tail-fetched`, `mp4-moov-found`,
+`mp4-moov-missing`, and `mp4-tail-bytes`; CLI streams show `(mp4T …)`, `(moov+)`,
+or `(moov-)` markers. Mediainfo results containing neither video nor audio tracks
+are not counted as artifacts.
+
+The already-finalized backlog can be inspected without writes using:
+
+```bash
+php artisan releases:requeue-missing-video-previews --mp4-tail --limit=100 --category=5040
+```
+
+Add `--apply` to reset only matching bare `.mp4`/`.m4v`/`.mov` releases to the
+normal pending preview/password state. The command also requires an available
+NZB, the normal additional-processing size bounds, and a root category whose
+Preview Generation toggle is enabled.
+
 ## The three regex tables
 
 Three database tables hold admin-editable regexes (managed under

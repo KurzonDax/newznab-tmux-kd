@@ -6,6 +6,7 @@ namespace Tests\Unit\AdditionalProcessing;
 
 use App\Services\AdditionalProcessing\DTO\AdditionalBatchResult;
 use App\Services\AdditionalProcessing\DTO\DownloadMetrics;
+use App\Services\AdditionalProcessing\DTO\Mp4TailMetrics;
 use App\Services\AdditionalProcessing\DTO\PayloadSniffMetrics;
 use App\Services\AdditionalProcessing\DTO\PersistenceMetrics;
 use App\Services\AdditionalProcessing\DTO\ReleaseProcessingResult;
@@ -33,6 +34,7 @@ class ProcessingResultTest extends TestCase
                     persistenceMetrics: new PersistenceMetrics(8, 12.5, 2, 1),
                     duplicateMessageIdCount: 1,
                     payloadSniffMetrics: new PayloadSniffMetrics(2, ['rar' => 1, 'unknown' => 1]),
+                    mp4TailMetrics: new Mp4TailMetrics(1, 1, 0, 100),
                 ),
                 new ReleaseProcessingResult(
                     11,
@@ -44,6 +46,7 @@ class ProcessingResultTest extends TestCase
                     persistenceMetrics: new PersistenceMetrics(5, 7.5, 1, 1),
                     unsupportedReasons: ['book-flood'],
                     payloadSniffMetrics: new PayloadSniffMetrics(1, ['text' => 1]),
+                    mp4TailMetrics: new Mp4TailMetrics(1, 0, 1, 150),
                 ),
                 new ReleaseProcessingResult(
                     12,
@@ -78,6 +81,7 @@ class ProcessingResultTest extends TestCase
         $this->assertSame(1, $batch->duplicateMessageIdCount());
         $this->assertSame(['book-flood' => 1], $batch->unsupportedReasonCounts());
         $this->assertEquals(new PayloadSniffMetrics(3, ['rar' => 1, 'unknown' => 1, 'text' => 1]), $batch->payloadSniffMetrics());
+        $this->assertEquals(new Mp4TailMetrics(2, 1, 1, 250), $batch->mp4TailMetrics());
         $this->assertSame([
             'nzb-parsing' => 1.0,
             'finalization' => 0.1,
