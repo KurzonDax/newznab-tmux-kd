@@ -794,7 +794,7 @@ class ReleaseProcessorTest extends TestCase
         $head = $this->mp4Atom('ftyp', 'isom0000').pack('N', 4096).'mdat'.str_repeat('v', 48);
         $tail = 'tail-prefix'.$this->validMoovAtom();
 
-        [$context, $downloadService, $mediaCalls] = $this->processDirectVideoCandidate(
+        [$context, $downloadCalls, $mediaCalls] = $this->processDirectVideoCandidate(
             'feature.mp4" yEnc',
             $head,
             $this->successfulDownload($tail),
@@ -802,7 +802,7 @@ class ReleaseProcessorTest extends TestCase
 
         $this->assertSame(
             [DownloadKind::MediaInfo, DownloadKind::MediaInfoTail],
-            array_column($downloadService->calls, 'kind'),
+            array_column($downloadCalls->calls, 'kind'),
         );
         $this->assertTrue($context->foundMediaInfo);
         $this->assertTrue($context->foundSample);
@@ -818,12 +818,12 @@ class ReleaseProcessorTest extends TestCase
     {
         $head = "\x1A\x45\xDF\xA3".str_repeat('m', 48);
 
-        [, $downloadService, $mediaCalls] = $this->processDirectVideoCandidate(
+        [, $downloadCalls, $mediaCalls] = $this->processDirectVideoCandidate(
             'feature.mkv" yEnc',
             $head,
         );
 
-        $this->assertSame([DownloadKind::MediaInfo], array_column($downloadService->calls, 'kind'));
+        $this->assertSame([DownloadKind::MediaInfo], array_column($downloadCalls->calls, 'kind'));
         $this->assertStringEndsWith('media.avi', $mediaCalls->mediaInfoFiles[0]['path']);
         $this->assertSame($head, $mediaCalls->mediaInfoFiles[0]['data']);
     }
@@ -833,7 +833,7 @@ class ReleaseProcessorTest extends TestCase
     {
         $head = $this->mp4Atom('ftyp', 'isom0000').pack('N', 4096).'mdat'.str_repeat('v', 48);
 
-        [, $downloadService, $mediaCalls] = $this->processDirectVideoCandidate(
+        [, $downloadCalls, $mediaCalls] = $this->processDirectVideoCandidate(
             'feature.mp4" yEnc',
             $head,
             $this->failedDownload(),
@@ -841,7 +841,7 @@ class ReleaseProcessorTest extends TestCase
 
         $this->assertSame(
             [DownloadKind::MediaInfo, DownloadKind::MediaInfoTail],
-            array_column($downloadService->calls, 'kind'),
+            array_column($downloadCalls->calls, 'kind'),
         );
         $this->assertStringEndsWith('media.avi', $mediaCalls->mediaInfoFiles[0]['path']);
         $this->assertSame($head, $mediaCalls->mediaInfoFiles[0]['data']);
@@ -933,7 +933,7 @@ class ReleaseProcessorTest extends TestCase
 
     /**
      * @param  array{success: bool, data: string|null, groupUnavailable: bool, error: string|null}|null  $tailResponse
-     * @return array{ReleaseProcessingContext, RecordingMp4DownloadService, RecordingMediaExtractionCalls}
+     * @return array{ReleaseProcessingContext, RecordingMp4DownloadCalls, RecordingMediaExtractionCalls}
      */
     private function processDirectVideoCandidate(
         string $title,
@@ -961,7 +961,16 @@ class ReleaseProcessorTest extends TestCase
         if ($tailResponse !== null) {
             $responses[] = $tailResponse;
         }
-        $downloadService = new RecordingMp4DownloadService($responses);
+        $downloadCalls = new RecordingMp4DownloadCalls($responses);
+        $downloadService = Mockery::mock(UsenetDownloadService::class);
+        $downloadService->shouldReceive('beginReleaseScope')->once()->andReturnNull();
+        $downloadService->shouldReceive('finishReleaseScope')->once()->andReturn(new DownloadMetrics);
+        $downloadService->shouldReceive('download')
+            ->times(count($responses))
+            ->andReturnUsing($downloadCalls->download(...));
+        $downloadService->shouldReceive('meetsMinimumSize')
+            ->zeroOrMoreTimes()
+            ->andReturnUsing($downloadCalls->meetsMinimumSize(...));
         $mediaCalls = new RecordingMediaExtractionCalls;
         $mediaService = Mockery::mock(MediaExtractionService::class);
         $mediaService->shouldReceive('getMediaInfo')
@@ -992,7 +1001,7 @@ class ReleaseProcessorTest extends TestCase
         $context->release->nfostatus = 1;
         $processor->process($context, $this->mainTempPath);
 
-        return [$context, $downloadService, $mediaCalls];
+        return [$context, $downloadCalls, $mediaCalls];
     }
 
     /**
@@ -1103,7 +1112,7 @@ class ReleaseProcessorTest extends TestCase
     }
 }
 
-final class RecordingMp4DownloadService extends UsenetDownloadService
+final class RecordingMp4DownloadCalls
 {
     /**
      * @var list<array{kind: DownloadKind, messageIds: list<string>}>
@@ -1114,13 +1123,6 @@ final class RecordingMp4DownloadService extends UsenetDownloadService
      * @param  list<array{success: bool, data: string|null, groupUnavailable: bool, error: string|null}>  $responses
      */
     public function __construct(private array $responses) {}
-
-    public function beginReleaseScope(): void {}
-
-    public function finishReleaseScope(): DownloadMetrics
-    {
-        return new DownloadMetrics;
-    }
 
     /**
      * @param  array<int|string, mixed>|string  $messageIDs
