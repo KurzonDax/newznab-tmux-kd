@@ -34,6 +34,10 @@ jobs:
         run: |
           ./sail artisan key:generate --force
 
+      - name: Audit dependencies (informational, never blocks merge)
+        continue-on-error: true
+        run: make deps-audit
+
       - name: Run tests
         run: ./sail test --compact
 
