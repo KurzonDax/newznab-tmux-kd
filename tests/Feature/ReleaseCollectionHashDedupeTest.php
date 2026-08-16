@@ -258,6 +258,7 @@ class ReleaseCollectionHashDedupeTest extends TestCase
             nfostatus INTEGER,
             nzbstatus INTEGER,
             isrenamed INTEGER,
+            is_trusted_name INTEGER DEFAULT 0,
             iscategorized INTEGER,
             predb_id INTEGER,
             source VARCHAR(255) NULL,

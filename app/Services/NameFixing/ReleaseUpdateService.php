@@ -27,6 +27,31 @@ class ReleaseUpdateService
     /**
      * @var list<string>
      */
+    private const PLAUSIBILITY_TRUSTED_TYPES = [
+        'UID, ',
+        'PAR2 hash, ',
+        'CRC32, ',
+        'SRR, ',
+    ];
+
+    /**
+     * @var list<string>
+     */
+    private const DONOR_TRUSTED_TYPES = [
+        'NFO, ',
+        'PAR2, ',
+        'UID, ',
+        'Mediainfo, ',
+        'PAR2 hash, ',
+        'SRR, ',
+        'CRC32, ',
+        'PreDB FT Exact, ',
+        'PreDB file match, ',
+    ];
+
+    /**
+     * @var list<string>
+     */
     private const SINGLE_UPDATE_COLUMNS = [
         'predb_id',
         'proc_nfo',
@@ -165,7 +190,9 @@ class ReleaseUpdateService
             $newName = $this->fileNameCleaner->formatSearchName($cleanedName, $normalizedName);
 
             // Determine if the source is trusted enough to bypass plausibility checks
-            $trustedSource = $this->isTrustedSource($type, $method, $preId);
+            $sourceTrust = $this->sourceTrustPolicy($type, $method, $preId);
+            $trustedSource = $sourceTrust['bypass_plausibility'];
+            $trustedDonorName = $sourceTrust['trusted_donor'];
             $acceptedDescriptiveTitle = $descriptiveTitleCandidate
                 && $this->fileNameCleaner->isDescriptiveTitle($name)
                 && $this->fileNameCleaner->currentNameLooksObfuscated(
@@ -216,7 +243,7 @@ class ReleaseUpdateService
                 }
 
                 if ($echo === true) {
-                    $this->performDatabaseUpdate($release, $newTitle, $type, $nameStatus, $preId);
+                    $this->performDatabaseUpdate($release, $newTitle, $type, $nameStatus, $preId, $trustedDonorName);
                 }
             }
         }
@@ -224,22 +251,30 @@ class ReleaseUpdateService
     }
 
     /**
-     * Check if the source is trusted enough to bypass plausibility checks.
+     * Classify the evidence once for plausibility and donor-trust decisions.
+     *
+     * @return array{bypass_plausibility: bool, trusted_donor: bool}
      */
-    protected function isTrustedSource(string $type, string $method, int $preId): bool
+    protected function sourceTrustPolicy(string $type, string $method, int $preId): array
     {
-        return
-            (! empty($preId) && $preId > 0) ||
-            str_starts_with($type, 'PreDB') ||
-            str_starts_with($type, 'PreDb') ||
-            $type === 'UID, ' ||
-            $type === 'PAR2 hash, ' ||
-            $type === 'CRC32, ' ||
-            $type === 'SRR, ' ||
-            stripos($method, 'Title Match') !== false ||
-            stripos($method, 'file matched source') !== false ||
-            stripos($method, 'PreDb') !== false ||
-            stripos($method, 'preDB') !== false;
+        $normalizedMethod = strtolower($method);
+        $sharedTrustedMethod = str_contains($normalizedMethod, 'title match')
+            || str_contains($normalizedMethod, 'file matched source')
+            || str_contains($normalizedMethod, 'predb');
+        $preDbType = str_starts_with($type, 'PreDB') || str_starts_with($type, 'PreDb');
+
+        return [
+            'bypass_plausibility' => $preId > 0
+                || $preDbType
+                || in_array($type, self::PLAUSIBILITY_TRUSTED_TYPES, true)
+                || $sharedTrustedMethod,
+            'trusted_donor' => $preId > 0
+                || in_array($type, self::DONOR_TRUSTED_TYPES, true)
+                || $sharedTrustedMethod
+                || str_contains($normalizedMethod, 'nzbsplit wrapper')
+                || str_contains($normalizedMethod, 'rarinfo filename match')
+                || str_contains($normalizedMethod, 'rarinfo predb match'),
+        ];
     }
 
     /**
@@ -296,9 +331,10 @@ class ReleaseUpdateService
         string $newTitle,
         string $type,
         bool $nameStatus,
-        int $preId
+        int $preId,
+        bool $trustedDonorName,
     ): void {
-        DB::transaction(function () use ($release, $newTitle, $type, $nameStatus, $preId): void {
+        DB::transaction(function () use ($release, $newTitle, $type, $nameStatus, $preId, $trustedDonorName): void {
             if ($nameStatus === true) {
                 $status = $this->getStatusColumnsForType($type);
 
@@ -312,6 +348,7 @@ class ReleaseUpdateService
                     'anidbid' => '',
                     'predb_id' => $preId,
                     'searchname' => $newTitle,
+                    'is_trusted_name' => $trustedDonorName,
                 ];
 
                 if (! empty($status)) {
@@ -336,6 +373,7 @@ class ReleaseUpdateService
                         'anidbid' => null,
                         'predb_id' => $preId,
                         'searchname' => $newTitle,
+                        'is_trusted_name' => $trustedDonorName,
                         'iscategorized' => 1,
                     ]);
             }

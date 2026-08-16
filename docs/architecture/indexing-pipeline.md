@@ -261,6 +261,28 @@ the API serves the stored `.nzb.gz` when a user grabs it. Post-processing
 panes continue to enrich it (proper names, movie/TV/game/music metadata,
 NFOs, previews) asynchronously.
 
+### Name-fixing donor trust
+
+Cross-copy name fixing can propagate a name between similarly sized releases
+that share a mediainfo UID, PAR2 16K hash, or inner-file CRC32. A donor is
+eligible when it has a PreDB/AniDB identity or its current name is explicitly
+marked trusted in `releases.is_trusted_name`. The flag is written for names
+that were proper at release creation or came from strong content evidence
+(PreDB, NFO, PAR2, RAR inner names, NZBSPLIT, mediainfo, SRR, or an earlier
+donor match). Plausibility-gated and Descriptive Title renames deliberately do
+not set it, so a readable-looking guess cannot spread to other copies. The
+legacy `nonscene@Ef.net (EF)` UID exception remains eligible.
+
+The migration deliberately leaves existing rows untrusted: historical
+`proc_*` flags prove only that a source was processed, not that it supplied the
+current name. PreDB/AniDB identities remain directly eligible, while future
+strong renames record exact provenance in the trust flag.
+
+PAR2 file-description hashes are always retained in `par_hashes` when read.
+`ADD_PAR2` controls only whether those described files are also exposed in
+`release_files`; disabling that display preference no longer disables PAR2
+hash donors.
+
 ## The three regex tables
 
 Three database tables hold admin-editable regexes (managed under

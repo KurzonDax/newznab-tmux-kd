@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\Category;
+use App\Models\ParHash;
 use App\Models\Release;
 use App\Models\ReleaseFile;
 use App\Models\UsenetGroup;
@@ -107,9 +108,17 @@ class Par2Processor
                     continue;
                 }
 
-                // If we found a name and added 20 files, stop.
+                $hash = (string) ($file['hash_16K'] ?? '');
+                if (strlen($hash) === 32) {
+                    ParHash::query()->insertOrIgnore([
+                        'releases_id' => $relID,
+                        'hash' => $hash,
+                    ]);
+                }
+
+                // Keep scanning hashes after the release-file display cap.
                 if ($foundName === true && $filesAdded > 20) {
-                    break;
+                    continue;
                 }
 
                 if ($this->addPar2) {
@@ -122,7 +131,7 @@ class Par2Processor
                             $file['size'] ?? 0,
                             $query['postdate'] !== null ? Carbon::createFromFormat('Y-m-d H:i:s', $query['postdate']) : now(),
                             0,
-                            $file['hash_16K'] ?? ''
+                            $hash
                         )) {
                             $filesAdded++;
                         }

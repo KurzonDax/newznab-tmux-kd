@@ -223,6 +223,7 @@ class Release extends Model
                     'nfostatus' => -1,
                     'nzbstatus' => $parameters['nzbstatus'],
                     'isrenamed' => $parameters['isrenamed'],
+                    'is_trusted_name' => (bool) ($parameters['is_trusted_name'] ?? ((int) $parameters['predb_id'] > 0)),
                     'iscategorized' => 1,
                     'predb_id' => $parameters['predb_id'],
                     'collectionhash' => $parameters['collectionhash'] ?? null,
