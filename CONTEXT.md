@@ -77,5 +77,9 @@ _Avoid_: "recategorize from mediainfo" — the mediainfo never re-runs name cate
 **Year-only movie fallback**:
 A low-confidence Movies/Other guess (`0.5`) for multi-token `Title.Year[.N]` names with no media markers. Movie post-processing may confirm the title and year; otherwise the release remains in Movies/Other.
 
+**Descriptive Title**:
+A human-written, non-scene inner *video* file name (e.g. `My Wife Is In Heat`, `SupergirlPerv`) accepted as a release name only when the release's current name looks obfuscated or hashed and no scene pattern or predb match was found. Anything but known junk (`video1`, `movie`, DVD structure names, hashes) qualifies; a current name that already reads as a real title is never overwritten. Site-wide on/off setting, on by default.
+_Avoid_: "plausible title" — that is the existing scene-shape check a candidate must pass, which Descriptive Titles deliberately do not.
+
 **Preview Generation**:
 The umbrella for creating Generated Previews and Generated Sample Videos. Toggleable per root category (covering the root's entire subtree, no child overrides) and AND-ed with the site-wide switches — the per-root toggle can only disable, never enable. Disabling never deletes existing artifacts. A release skipped by the toggle is owed generation if later recategorized into a root where generation is enabled; re-enabling a root's toggle owes nothing (explicit requeue is the backfill tool).
