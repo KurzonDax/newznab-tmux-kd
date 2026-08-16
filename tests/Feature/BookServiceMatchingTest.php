@@ -34,7 +34,7 @@ class BookServiceMatchingTest extends TestCase
 
     public function createApplication()
     {
-        $this->databasePath = sys_get_temp_dir().'/nntmux-book-service-matching.sqlite';
+        $this->databasePath = $this->makeTempPath('nntmux-book-service-matching', '.sqlite');
         $this->originalEnvironment = [
             'APP_ENV' => getenv('APP_ENV'),
             'DB_CONNECTION' => getenv('DB_CONNECTION'),

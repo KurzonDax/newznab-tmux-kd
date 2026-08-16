@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Facades\Search;
+use App\Models\Category;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
+use App\Services\BookService;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseManagementService;
 use Illuminate\Contracts\Console\Kernel;
@@ -42,7 +44,7 @@ class PreviewGenerationPolicyTest extends TestCase
 
         $pdo = new PDO('sqlite:'.$this->databasePath);
         $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
-        $pdo->exec("INSERT INTO settings (name, value) VALUES ('categorizeforeign', '0'), ('catwebdl', '0')");
+        $pdo->exec("INSERT INTO settings (name, value) VALUES ('categorizeforeign', '0'), ('catwebdl', '0'), ('maxbooksprocessed', '50'), ('amazonsleep', '0'), ('lookupbooks', '1')");
 
         $this->setEnvironmentValue('APP_ENV', 'testing');
         $this->setEnvironmentValue('DB_CONNECTION', 'sqlite');
@@ -61,6 +63,7 @@ class PreviewGenerationPolicyTest extends TestCase
         config([
             'database.default' => 'sqlite',
             'database.connections.sqlite.database' => $this->databasePath,
+            'nntmux.echocli' => false,
         ]);
 
         DB::purge();
@@ -188,6 +191,36 @@ class PreviewGenerationPolicyTest extends TestCase
         $this->assertSame(-1, (int) $row->passwordstatus);
     }
 
+    public function test_book_junk_recategorization_restores_an_owed_preview(): void
+    {
+        Search::shouldReceive('updateRelease')->zeroOrMoreTimes()->andReturnNull();
+
+        DB::table('releases')->insert([
+            $this->releaseRow(1, 6010, hasPreview: -2, passwordStatus: 0),
+        ]);
+
+        $this->assertFalse((new BookService)->parseTitle('ArtofUsenet', 1, 'ebook'));
+
+        $row = DB::table('releases')->where('id', 1)->first();
+        $this->assertSame(Category::BOOKS_UNKNOWN, (int) $row->categories_id);
+        $this->assertSame(-1, (int) $row->haspreview);
+    }
+
+    public function test_book_magazine_recategorization_restores_an_owed_preview(): void
+    {
+        Search::shouldReceive('updateRelease')->zeroOrMoreTimes()->andReturnNull();
+
+        DB::table('releases')->insert([
+            $this->releaseRow(1, 6010, hasPreview: -2, passwordStatus: 0),
+        ]);
+
+        $this->assertFalse((new BookService)->parseTitle('MCN April 22, 2026', 1, 'ebook'));
+
+        $row = DB::table('releases')->where('id', 1)->first();
+        $this->assertSame(Category::BOOKS_MAGAZINES, (int) $row->categories_id);
+        $this->assertSame(-1, (int) $row->haspreview);
+    }
+
     private function setPasswordInspection(bool $enabled): void
     {
         config([
@@ -252,12 +285,15 @@ class PreviewGenerationPolicyTest extends TestCase
             $table->integer('haspreview')->default(0);
             $table->integer('passwordstatus')->default(0);
             $table->integer('iscategorized')->default(0);
+            $table->string('searchname')->default('');
+            $table->integer('isrenamed')->default(0);
         });
 
         DB::table('root_categories')->insert([
             ['id' => 2000, 'title' => 'Movies', 'generate_previews' => 1],
             ['id' => 5000, 'title' => 'TV', 'generate_previews' => 1],
             ['id' => 6000, 'title' => 'XXX', 'generate_previews' => 0],
+            ['id' => Category::BOOKS_ROOT, 'title' => 'Books', 'generate_previews' => 1],
         ]);
 
         DB::table('categories')->insert([
@@ -265,6 +301,8 @@ class PreviewGenerationPolicyTest extends TestCase
             ['id' => 2080, 'title' => 'Movies WEB-DL', 'root_categories_id' => 2000],
             ['id' => 5040, 'title' => 'TV HD', 'root_categories_id' => 5000],
             ['id' => 6010, 'title' => 'XXX DVD', 'root_categories_id' => 6000],
+            ['id' => Category::BOOKS_MAGAZINES, 'title' => 'Books Magazines', 'root_categories_id' => Category::BOOKS_ROOT],
+            ['id' => Category::BOOKS_UNKNOWN, 'title' => 'Books Other', 'root_categories_id' => Category::BOOKS_ROOT],
         ]);
     }
 }
