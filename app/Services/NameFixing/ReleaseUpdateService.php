@@ -31,6 +31,7 @@ class ReleaseUpdateService
         'UID, ',
         'PAR2 hash, ',
         'CRC32, ',
+        'SRRDB, ',
         'SRR, ',
     ];
 
@@ -45,6 +46,7 @@ class ReleaseUpdateService
         'PAR2 hash, ',
         'SRR, ',
         'CRC32, ',
+        'SRRDB, ',
         'PreDB FT Exact, ',
         'PreDB file match, ',
     ];
@@ -61,6 +63,7 @@ class ReleaseUpdateService
         'proc_hash16k',
         'proc_srr',
         'proc_crc32',
+        'proc_srrdb',
     ];
 
     /**
@@ -177,6 +180,9 @@ class ReleaseUpdateService
         if (is_array($release)) {
             $release = (object) $release;
         }
+        $imdbId = $type === 'SRRDB, ' && isset($release->srrdb_imdbid)
+            ? (string) $release->srrdb_imdbid
+            : null;
 
         // If $release does not have a releases_id, we should add it.
         if (! isset($release->releases_id)) {
@@ -243,7 +249,15 @@ class ReleaseUpdateService
                 }
 
                 if ($echo === true) {
-                    $this->performDatabaseUpdate($release, $newTitle, $type, $nameStatus, $preId, $trustedDonorName);
+                    $this->performDatabaseUpdate(
+                        $release,
+                        $newTitle,
+                        $type,
+                        $nameStatus,
+                        $preId,
+                        $trustedDonorName,
+                        $imdbId,
+                    );
                 }
             }
         }
@@ -333,15 +347,16 @@ class ReleaseUpdateService
         bool $nameStatus,
         int $preId,
         bool $trustedDonorName,
+        ?string $imdbId,
     ): void {
-        DB::transaction(function () use ($release, $newTitle, $type, $nameStatus, $preId, $trustedDonorName): void {
+        DB::transaction(function () use ($release, $newTitle, $type, $nameStatus, $preId, $trustedDonorName, $imdbId): void {
             if ($nameStatus === true) {
                 $status = $this->getStatusColumnsForType($type);
 
                 $updateColumns = [
                     'videos_id' => 0,
                     'tv_episodes_id' => 0,
-                    'imdbid' => null,
+                    'imdbid' => $imdbId,
                     'musicinfo_id' => '',
                     'consoleinfo_id' => '',
                     'bookinfo_id' => '',
@@ -366,7 +381,7 @@ class ReleaseUpdateService
                     ->update([
                         'videos_id' => 0,
                         'tv_episodes_id' => 0,
-                        'imdbid' => null,
+                        'imdbid' => $imdbId,
                         'musicinfo_id' => null,
                         'consoleinfo_id' => null,
                         'bookinfo_id' => null,
@@ -408,6 +423,7 @@ class ReleaseUpdateService
             'PAR2 hash, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_hash16k' => 1],
             'SRR, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_srr' => 1],
             'CRC32, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_crc32' => 1],
+            'SRRDB, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_srrdb' => 1],
             default => [],
         };
     }
@@ -433,6 +449,25 @@ class ReleaseUpdateService
         }
 
         $this->updateSingleColumn('predb_id', $predbId, $releaseId);
+        $this->relid = $releaseId;
+        $this->matched = true;
+        $this->done = true;
+    }
+
+    public function attachSrrdbMatch(int $releaseId, int $predbId, ?string $imdbId): void
+    {
+        if ($releaseId === 0 || $predbId === 0) {
+            return;
+        }
+
+        Release::query()->where('id', $releaseId)->update([
+            'predb_id' => $predbId,
+            'imdbid' => $imdbId,
+            'proc_srrdb' => 1,
+            'isrenamed' => 1,
+            'is_trusted_name' => 1,
+        ]);
+        $this->searchSyncCoordinator->request($releaseId);
         $this->relid = $releaseId;
         $this->matched = true;
         $this->done = true;

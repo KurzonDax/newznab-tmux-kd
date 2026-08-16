@@ -294,4 +294,43 @@ SH;
             ];
         });
     }
+
+    #[DataProvider('srrdbFixNameLevelProvider')]
+    public function test_fix_names_task_only_includes_srrdb_level_when_enabled(bool $enabled): void
+    {
+        config(['nntmux_srrdb.enabled' => $enabled]);
+        Process::fake(function (PendingProcess $process) {
+            if (is_array($process->command) && in_array('list-panes', $process->command, true)) {
+                return Process::result("%9\tfix_names\n");
+            }
+
+            return Process::result();
+        });
+
+        $runner = new TmuxTaskRunner('test-session');
+        $this->assertTrue($runner->runPaneTask('fixnames', [], [
+            'settings' => ['fix_names' => 1, 'fix_timer' => 300],
+            'counts' => ['now' => ['processrenames' => 1]],
+        ]));
+
+        Process::assertRan(function (PendingProcess $process) use ($enabled): bool {
+            if (! is_array($process->command) || ! in_array('respawn-pane', $process->command, true)) {
+                return false;
+            }
+
+            $command = end($process->command);
+
+            return is_string($command)
+                && str_contains($command, 'releases:fix-names 19')
+                && str_contains($command, 'releases:fix-names 21') === $enabled;
+        });
+    }
+
+    public static function srrdbFixNameLevelProvider(): array
+    {
+        return [
+            'disabled' => [false],
+            'enabled' => [true],
+        ];
+    }
 }

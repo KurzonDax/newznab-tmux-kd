@@ -16,7 +16,7 @@ class FixReleaseNames extends Command
      * @var string
      */
     protected $signature = 'releases:fix-names
-                                 {method : The method number (3-20) to use for fixing names}
+                                 {method : The method number (3-22) to use for fixing names}
                                  {--update : Actually update the names, otherwise just display results}
                                  {--category=other : Category to process: "other", "all", or "predb_id"}
                                  {--set-status : Set releases as checked after processing}
@@ -121,6 +121,12 @@ class FixReleaseNames extends Command
             case '20':
                 $nameFixingService->fixNamesWithCrc(2, $update, $other, $setStatus, $show);
                 break;
+            case '21':
+                $nameFixingService->fixNamesWithSrrdb(1, $update, $other, $setStatus, $show);
+                break;
+            case '22':
+                $nameFixingService->fixNamesWithSrrdb(2, $update, $other, $setStatus, $show);
+                break;
             default:
                 $this->showHelp();
 
@@ -156,6 +162,8 @@ class FixReleaseNames extends Command
         $this->info('php artisan releases:fix-names 18 : Fix release names using Mediainfo.');
         $this->info('php artisan releases:fix-names 19 : Fix release names using CRC32 in the past 6 hours.');
         $this->info('php artisan releases:fix-names 20 : Fix release names using CRC32.');
+        $this->info('php artisan releases:fix-names 21 : Fix release names using SRRDB archive CRC in the past 6 hours.');
+        $this->info('php artisan releases:fix-names 22 : Fix release names using SRRDB archive CRC.');
         $this->info('');
         $this->info('Options:');
         $this->info('  --update           Actually update the names (default: only display potential changes)');

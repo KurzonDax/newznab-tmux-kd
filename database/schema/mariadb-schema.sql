@@ -940,6 +940,7 @@ CREATE TABLE `releases` (
   `proc_srr` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Has the release been srr\nprocessed',
   `proc_hash16k` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Has the release been hash16k\nprocessed',
   `proc_crc32` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Has the release been crc32 processed',
+  `proc_srrdb` tinyint(3) unsigned NOT NULL DEFAULT 0 COMMENT 'SRRDB archive-CRC lookup state: 0 pending, 1 processed, 2 ambiguous',
   `nzb_guid` blob NOT NULL,
   `source` smallint(5) unsigned DEFAULT NULL,
   PRIMARY KEY (`id`,`categories_id`),
@@ -1033,6 +1034,19 @@ CREATE TABLE `short_groups` (
   `updated` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `ix_shortgroups_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_unicode_ci;
+
+DROP TABLE IF EXISTS `srrdb_lookups`;
+
+CREATE TABLE `srrdb_lookups` (
+  `crc32` varchar(8) NOT NULL,
+  `status` varchar(20) NOT NULL,
+  `payload` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`payload`)),
+  `checked_at` timestamp NOT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`crc32`),
+  KEY `srrdb_lookups_checked_at_index` (`checked_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_unicode_ci;
 DROP TABLE IF EXISTS `steam_apps`;
 CREATE TABLE `steam_apps` (
