@@ -173,13 +173,13 @@ class ProcessAdditionalGuid extends Command
             ]);
         }
 
-        if ($result->mp4TailMetrics->tailFetched > 0 || $result->mp4TailMetrics->moovMissing > 0) {
+        if ($result->mp4TailMetrics->tailsFetched > 0 || $result->mp4TailMetrics->moovMissingCount > 0) {
             $this->newLine();
             $this->line('MP4 tail profile');
             $this->table(['Metric', 'Value'], [
-                ['Tails fetched', (string) $result->mp4TailMetrics->tailFetched],
-                ['moov found', (string) $result->mp4TailMetrics->moovFound],
-                ['moov missing', (string) $result->mp4TailMetrics->moovMissing],
+                ['Tails fetched', (string) $result->mp4TailMetrics->tailsFetched],
+                ['moov found', (string) $result->mp4TailMetrics->moovFoundCount],
+                ['moov missing', (string) $result->mp4TailMetrics->moovMissingCount],
                 ['Tail bytes', (string) $result->mp4TailMetrics->tailBytes],
             ]);
         }

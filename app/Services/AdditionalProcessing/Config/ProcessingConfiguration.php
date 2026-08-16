@@ -154,10 +154,7 @@ final readonly class ProcessingConfiguration
         $this->payloadSniffByteBudget = max((int) config('nntmux_settings.payload_sniff_byte_budget'), 0);
         $this->payloadSniffSmallSegmentLimit = max((int) config('nntmux_settings.payload_sniff_small_segment_limit'), 1);
         $this->mp4TailFetch = (bool) config('nntmux_settings.mp4_tail_fetch');
-        $this->mp4TailMaxSegments = max(
-            $this->segmentsToDownload,
-            (int) config('nntmux_settings.mp4_tail_max_segments'),
-        );
+        $this->mp4TailMaxSegments = max((int) config('nntmux_settings.mp4_tail_max_segments'), 1);
         $this->audioSavePath = config('nntmux_settings.covers_path').'/audiosample/';
         $this->tmpUnrarPath = config('nntmux.tmp_unrar_path');
         $this->debugMode = (bool) config('app.debug');

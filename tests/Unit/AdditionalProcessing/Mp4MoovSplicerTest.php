@@ -43,6 +43,18 @@ final class Mp4MoovSplicerTest extends TestCase
     }
 
     #[Test]
+    public function it_rejects_a_zero_sized_tail_moov_candidate(): void
+    {
+        $head = $this->atom('ftyp', 'isom0000').pack('N', 2048).'mdat'.'video';
+        $spurious = pack('N', 0).'moov'.$this->atom('mvhd', 'plausible-header');
+
+        $result = (new Mp4MoovSplicer)->splice($head, 'media-noise'.$spurious, true);
+
+        $this->assertSame(Mp4MoovSpliceStatus::Missing, $result->status);
+        $this->assertNull($result->data);
+    }
+
+    #[Test]
     public function faststart_mp4_does_not_need_a_tail(): void
     {
         $head = $this->atom('ftyp', 'isom0000')

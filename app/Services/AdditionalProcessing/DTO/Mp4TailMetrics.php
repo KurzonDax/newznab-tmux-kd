@@ -7,18 +7,18 @@ namespace App\Services\AdditionalProcessing\DTO;
 final readonly class Mp4TailMetrics
 {
     public function __construct(
-        public int $tailFetched = 0,
-        public int $moovFound = 0,
-        public int $moovMissing = 0,
+        public int $tailsFetched = 0,
+        public int $moovFoundCount = 0,
+        public int $moovMissingCount = 0,
         public int $tailBytes = 0,
     ) {}
 
     public function recordFetch(int $bytes): self
     {
         return new self(
-            $this->tailFetched + 1,
-            $this->moovFound,
-            $this->moovMissing,
+            $this->tailsFetched + 1,
+            $this->moovFoundCount,
+            $this->moovMissingCount,
             $this->tailBytes + max($bytes, 0),
         );
     }
@@ -26,9 +26,9 @@ final readonly class Mp4TailMetrics
     public function recordFound(): self
     {
         return new self(
-            $this->tailFetched,
-            $this->moovFound + 1,
-            $this->moovMissing,
+            $this->tailsFetched,
+            $this->moovFoundCount + 1,
+            $this->moovMissingCount,
             $this->tailBytes,
         );
     }
@@ -36,9 +36,9 @@ final readonly class Mp4TailMetrics
     public function recordMissing(): self
     {
         return new self(
-            $this->tailFetched,
-            $this->moovFound,
-            $this->moovMissing + 1,
+            $this->tailsFetched,
+            $this->moovFoundCount,
+            $this->moovMissingCount + 1,
             $this->tailBytes,
         );
     }
@@ -46,9 +46,9 @@ final readonly class Mp4TailMetrics
     public function merge(self $other): self
     {
         return new self(
-            $this->tailFetched + $other->tailFetched,
-            $this->moovFound + $other->moovFound,
-            $this->moovMissing + $other->moovMissing,
+            $this->tailsFetched + $other->tailsFetched,
+            $this->moovFoundCount + $other->moovFoundCount,
+            $this->moovMissingCount + $other->moovMissingCount,
             $this->tailBytes + $other->tailBytes,
         );
     }

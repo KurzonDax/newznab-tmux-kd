@@ -95,7 +95,7 @@ final readonly class Mp4MoovSplicer
                 $size = $this->readUInt64($tail, $start + 8);
                 $headerSize = 16;
             } elseif ($size === 0) {
-                $size = $length - $start;
+                continue;
             }
 
             if ($size < $headerSize + 8 || $size > $length - $start) {

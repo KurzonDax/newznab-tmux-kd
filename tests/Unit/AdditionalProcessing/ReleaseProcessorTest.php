@@ -962,7 +962,8 @@ class ReleaseProcessorTest extends TestCase
             $responses[] = $tailResponse;
         }
         $downloadService = new RecordingMp4DownloadService($responses);
-        $mediaService = new RecordingMediaExtractionService;
+        /** @var RecordingMediaExtractionService $mediaService */
+        $mediaService = (new \ReflectionClass(RecordingMediaExtractionService::class))->newInstanceWithoutConstructor();
         $releaseManager = Mockery::mock(ReleaseFileManager::class);
         $releaseManager->shouldReceive('processReleaseNameFromNzbContents')->once()->andReturnFalse();
         $releaseManager->shouldReceive('finalizeRelease')->once()->andReturnNull();
@@ -1152,8 +1153,6 @@ final class RecordingMediaExtractionService extends MediaExtractionService
 
     /** @var list<array{path: string, data: string}> */
     public array $sampleFiles = [];
-
-    public function __construct() {}
 
     public function getMediaInfo(string $fileLocation, int $releaseId): bool
     {
