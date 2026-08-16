@@ -32,6 +32,8 @@ final class NameFixingQueryService
 
     public const BATCH_SIZE = 1000;
 
+    private const TRUSTED_DONOR_PREDICATE = "(r.predb_id > 0 OR COALESCE(NULLIF(r.anidbid, ''), 0) > 0 OR r.is_trusted_name = 1)";
+
     private ConnectionInterface $database;
 
     /**
@@ -226,7 +228,7 @@ final class NameFixingQueryService
              FROM media_infos mi
              INNER JOIN releases r ON r.id = mi.releases_id
              WHERE mi.unique_id IN ({$placeholders})
-             AND (r.predb_id > 0 OR r.anidbid > 0 OR r.fromname = ?)",
+             AND (".self::TRUSTED_DONOR_PREDICATE.' OR r.fromname = ?)',
             $bindings
         );
 
@@ -245,7 +247,7 @@ final class NameFixingQueryService
              FROM par_hashes ph
              INNER JOIN releases r ON r.id = ph.releases_id
              WHERE ph.hash IN (%s)
-             AND (r.predb_id > 0 OR r.anidbid > 0)',
+             AND '.self::TRUSTED_DONOR_PREDICATE,
             $hashes
         );
     }
@@ -262,7 +264,7 @@ final class NameFixingQueryService
              FROM release_files rf
              INNER JOIN releases r ON r.id = rf.releases_id
              WHERE rf.crc32 IN (%s)
-             AND r.predb_id > 0',
+             AND '.self::TRUSTED_DONOR_PREDICATE,
             $crcs
         );
     }

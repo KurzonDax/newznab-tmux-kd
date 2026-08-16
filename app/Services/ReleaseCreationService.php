@@ -125,6 +125,7 @@ class ReleaseCreationService
                         'size' => $collection->filesize,
                         'categories_id' => $determinedCategory['categories_id'] ?? Category::OTHER_MISC,
                         'isrenamed' => $properName === true ? 1 : 0,
+                        'is_trusted_name' => $properName === true || $predbIdInt > 0,
                         'predb_id' => $predbIdInt,
                         'nzbstatus' => NzbService::NZB_NONE,
                         'collectionhash' => $collectionHash,

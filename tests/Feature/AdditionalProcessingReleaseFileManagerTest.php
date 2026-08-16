@@ -15,8 +15,11 @@ use App\Services\CollectionCleanupService;
 use App\Services\NameFixing\NameFixingService;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\NfoService;
+use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbService;
+use App\Services\Par2Processor;
 use App\Services\ReleaseImageService;
+use dariusiii\rarinfo\Par2Info;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
@@ -313,6 +316,107 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         $this->assertSame(1, DB::table('par_hashes')->count());
     }
 
+    public function test_par2_hashes_are_persisted_when_par2_release_files_are_disabled(): void
+    {
+        DB::table('releases')->insert(array_merge($this->releaseRow(), [
+            'postdate' => '2026-08-16 12:00:00',
+            'proc_pp' => 0,
+        ]));
+
+        Search::shouldReceive('updateRelease')->once()->with(1);
+
+        $par2Info = Mockery::mock(Par2Info::class);
+        $par2Info->error = '';
+        $par2Info->shouldReceive('open')->once()->andReturnTrue();
+        $par2Info->shouldReceive('getFileList')->once()->andReturn([
+            [
+                'name' => 'Canonical.Release.2026.mkv',
+                'size' => 1_024,
+                'hash_16K' => '1234567890abcdef1234567890abcdef',
+            ],
+        ]);
+
+        $manager = $this->makeManagerWithImageService(new ReleaseImageService, configOverrides: [
+            'addPAR2Files' => false,
+            'renamePar2' => false,
+        ]);
+        $context = new ReleaseProcessingContext(Release::query()->findOrFail(1));
+
+        $this->assertTrue($manager->processPar2File($this->makeTempPath('example', '.par2'), $context, $par2Info));
+        $manager->finalizeRelease($context, false);
+
+        $this->assertSame(0, DB::table('release_files')->count());
+        $this->assertDatabaseHas('par_hashes', [
+            'releases_id' => 1,
+            'hash' => '1234567890abcdef1234567890abcdef',
+        ]);
+    }
+
+    public function test_par2_hashes_and_release_files_are_persisted_when_listing_is_enabled(): void
+    {
+        DB::table('releases')->insert(array_merge($this->releaseRow(), [
+            'postdate' => '2026-08-16 12:00:00',
+            'proc_pp' => 0,
+        ]));
+
+        Search::shouldReceive('updateRelease')->once()->with(1);
+
+        $par2Info = Mockery::mock(Par2Info::class);
+        $par2Info->error = '';
+        $par2Info->shouldReceive('open')->once()->andReturnTrue();
+        $par2Info->shouldReceive('getFileList')->once()->andReturn([
+            [
+                'name' => 'Canonical.Release.2026.mkv',
+                'size' => 1_024,
+                'hash_16K' => 'abcdef1234567890abcdef1234567890',
+            ],
+        ]);
+
+        $manager = $this->makeManagerWithImageService(new ReleaseImageService, configOverrides: [
+            'addPAR2Files' => true,
+            'renamePar2' => false,
+        ]);
+        $context = new ReleaseProcessingContext(Release::query()->findOrFail(1));
+
+        $this->assertTrue($manager->processPar2File($this->makeTempPath('example', '.par2'), $context, $par2Info));
+        $manager->finalizeRelease($context, false);
+
+        $this->assertSame(1, DB::table('release_files')->count());
+        $this->assertSame(1, DB::table('par_hashes')->count());
+    }
+
+    public function test_legacy_par2_processor_persists_hashes_when_release_file_listing_is_disabled(): void
+    {
+        DB::table('releases')->insert(array_merge($this->releaseRow(), [
+            'isrenamed' => 0,
+            'postdate' => '2026-08-16 12:00:00',
+        ]));
+
+        $par2Info = Mockery::mock(Par2Info::class);
+        $par2Info->error = '';
+        $par2Info->shouldReceive('setData')->once()->with('par2-payload');
+        $files = array_map(
+            static fn (int $fileNumber): array => [
+                'name' => "Canonical.Release.2026.part{$fileNumber}.mkv",
+                'size' => 1_024,
+                'hash_16K' => md5("part-{$fileNumber}"),
+            ],
+            range(1, 25),
+        );
+        $par2Info->shouldReceive('getFileList')->once()->andReturn($files);
+
+        $nameFixing = Mockery::mock(NameFixingService::class);
+        $nameFixing->shouldReceive('checkName')->once()->andReturnTrue();
+        $nntp = Mockery::mock(NNTPService::class)->makePartial();
+        $nntp->shouldReceive('getMessages')->once()->with('alt.binaries.test', '<message-id>', false)->andReturn('par2-payload');
+
+        $processor = new Par2Processor($nameFixing, $par2Info, false, false);
+
+        $this->assertTrue($processor->parseFromMessage('<message-id>', 1, 1, $nntp, 0));
+        $this->assertSame(0, DB::table('release_files')->count());
+        $this->assertSame(25, DB::table('par_hashes')->where('releases_id', 1)->count());
+    }
+
     public function test_failed_finalization_rolls_back_buffered_rows_and_keeps_them_for_retry(): void
     {
         DB::table('releases')->insert($this->releaseRow());
@@ -561,6 +665,13 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         Schema::dropIfExists('releases');
         Schema::dropIfExists('categories');
         Schema::dropIfExists('root_categories');
+        Schema::dropIfExists('usenet_groups');
+
+        Schema::create('usenet_groups', function (Blueprint $table): void {
+            $table->unsignedInteger('id')->primary();
+            $table->string('name');
+        });
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.test']);
 
         Schema::create('root_categories', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
@@ -606,6 +717,9 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
             $table->integer('nzbstatus')->default(1);
             $table->integer('rarinnerfilecount')->default(0);
             $table->integer('pp_timeout_count')->default(0);
+            $table->dateTime('postdate')->nullable();
+            $table->integer('proc_pp')->default(0);
+            $table->boolean('isrenamed')->default(false);
             $table->timestamp('additional_pp_claimed_at')->nullable();
             $table->string('additional_pp_claim_token', 64)->nullable();
         });

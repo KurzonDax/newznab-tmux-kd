@@ -930,6 +930,7 @@ CREATE TABLE `releases` (
   `nzbstatus` tinyint(1) NOT NULL DEFAULT 0,
   `iscategorized` tinyint(1) NOT NULL DEFAULT 0,
   `isrenamed` tinyint(1) NOT NULL DEFAULT 0,
+  `is_trusted_name` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Current search name came from evidence safe for donor propagation',
   `proc_pp` tinyint(1) NOT NULL DEFAULT 0,
   `proc_sorter` tinyint(1) NOT NULL DEFAULT 0,
   `proc_par2` tinyint(1) NOT NULL DEFAULT 0,

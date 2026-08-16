@@ -550,6 +550,7 @@ class NzbImportService
         $subject = mb_convert_encoding(trim(preg_replace('/yEnc.*$/i', 'yEnc', $partLess)), 'UTF-8', mb_list_encodings());
 
         $renamed = 0;
+        $properlyNamed = false;
         $cleanedMeta = null;
         if ($nzbDetails['useFName'] !== '') {
             $cleanName = $nzbDetails['useFName'];
@@ -558,7 +559,8 @@ class NzbImportService
             $cleanedMeta = $this->releaseCleaner->releaseCleaner($subject, $nzbDetails['from'], $nzbDetails['groupName']);
             if (\is_array($cleanedMeta)) {
                 $cleanName = $cleanedMeta['cleansubject'] ?? $subject;
-                $renamed = (isset($cleanedMeta['properlynamed']) && $cleanedMeta['properlynamed'] === true) ? 1 : 0;
+                $properlyNamed = isset($cleanedMeta['properlynamed']) && $cleanedMeta['properlynamed'] === true;
+                $renamed = $properlyNamed ? 1 : 0;
             } else {
                 $cleanName = \is_string($cleanedMeta) ? $cleanedMeta : $subject;
             }
@@ -580,6 +582,7 @@ class NzbImportService
                 $cleanName = $preMatch['title'];
                 $predbIdInt = (int) $preMatch['predb_id'];
                 $renamed = 1;
+                $properlyNamed = true;
             }
         }
 
@@ -636,6 +639,7 @@ class NzbImportService
                     'size' => $nzbDetails['totalSize'],
                     'categories_id' => $categoryId,
                     'isrenamed' => $renamed,
+                    'is_trusted_name' => $properlyNamed || $predbIdInt > 0,
                     'predb_id' => $predbIdInt,
                     'nzbstatus' => NzbService::NZB_ADDED,
                     'collectionhash' => $importHash,
