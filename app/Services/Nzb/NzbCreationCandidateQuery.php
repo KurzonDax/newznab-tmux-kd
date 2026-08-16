@@ -17,9 +17,9 @@ final class NzbCreationCandidateQuery
 
     public const string CLAIM_TOKEN_COLUMN = 'nzb_creation_claim_token';
 
-    public const string ATTEMPTS_COLUMN = 'nzb_creation_attempts';
+    private static ?bool $supportsClaims = null;
 
-    public const string LAST_ERROR_COLUMN = 'nzb_creation_last_error';
+    private static ?bool $supportsFailureState = null;
 
     /**
      * @return Builder<Release>
@@ -83,12 +83,17 @@ final class NzbCreationCandidateQuery
                     ]);
             }
 
-            return Release::query()
+            $releaseQuery = Release::query()
                 ->whereIn('id', $ids)
                 ->with('category.parent')
                 ->select(self::selectableColumns($columns, $supportsClaims))
-                ->orderByRaw(self::idOrderExpression($ids))
-                ->get();
+                ->orderByRaw(self::idOrderExpression($ids));
+
+            if (self::supportsFailureState()) {
+                $releaseQuery->with('nzbCreationFailure');
+            }
+
+            return $releaseQuery->get();
         }, 3);
     }
 
@@ -111,36 +116,31 @@ final class NzbCreationCandidateQuery
 
     public static function supportsClaims(): bool
     {
-        if (! Schema::hasTable('releases')) {
-            return false;
+        if (self::$supportsClaims !== null) {
+            return self::$supportsClaims;
         }
 
-        return Schema::hasColumn('releases', self::CLAIMED_AT_COLUMN)
-            && Schema::hasColumn('releases', self::CLAIM_TOKEN_COLUMN)
-            && Schema::hasColumn('releases', self::ATTEMPTS_COLUMN)
-            && Schema::hasColumn('releases', self::LAST_ERROR_COLUMN);
+        if (! Schema::hasTable('releases')) {
+            return self::$supportsClaims = false;
+        }
+
+        return self::$supportsClaims = Schema::hasColumn('releases', self::CLAIMED_AT_COLUMN)
+            && Schema::hasColumn('releases', self::CLAIM_TOKEN_COLUMN);
+    }
+
+    public static function supportsFailureState(): bool
+    {
+        return self::$supportsFailureState ??= Schema::hasTable('release_nzb_creation_failures');
     }
 
     /**
-     * @return array<string, mixed>
+     * Discard the memoized schema capability flags. Only needed when the schema
+     * changes inside a single process, such as between tests.
      */
-    public static function failureUpdateValues(string $reason, bool $incrementAttempts): array
+    public static function flushCapabilityCache(): void
     {
-        if (! self::supportsClaims()) {
-            return [];
-        }
-
-        $values = [
-            self::CLAIMED_AT_COLUMN => null,
-            self::CLAIM_TOKEN_COLUMN => null,
-            self::LAST_ERROR_COLUMN => mb_substr($reason, 0, 1000),
-        ];
-
-        if ($incrementAttempts) {
-            $values[self::ATTEMPTS_COLUMN] = DB::raw(self::ATTEMPTS_COLUMN.' + 1');
-        }
-
-        return $values;
+        self::$supportsClaims = null;
+        self::$supportsFailureState = null;
     }
 
     /**
@@ -183,8 +183,6 @@ final class NzbCreationCandidateQuery
             static fn (string $column): bool => ! in_array($column, [
                 self::CLAIMED_AT_COLUMN,
                 self::CLAIM_TOKEN_COLUMN,
-                self::ATTEMPTS_COLUMN,
-                self::LAST_ERROR_COLUMN,
             ], true),
         ));
     }

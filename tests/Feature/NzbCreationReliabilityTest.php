@@ -75,13 +75,16 @@ class NzbCreationReliabilityTest extends TestCase
         DB::purge();
         DB::reconnect();
         $this->registerSqliteFunction('UNIX_TIMESTAMP', static fn (?string $value): int => strtotime((string) $value));
+        DB::statement('PRAGMA foreign_keys = ON');
 
         $this->createSchema();
         $this->seedSettings();
+        NzbCreationCandidateQuery::flushCapabilityCache();
     }
 
     protected function tearDown(): void
     {
+        NzbCreationCandidateQuery::flushCapabilityCache();
         $this->deleteDirectory($this->tempNzbPath);
         if ($this->databasePath !== '' && file_exists($this->databasePath)) {
             unlink($this->databasePath);
@@ -141,9 +144,12 @@ class NzbCreationReliabilityTest extends TestCase
 
         $this->assertSame(0, $service->createNZBs(null));
         $this->assertSame(1, DB::table('releases')->count());
-        $this->assertSame(1, (int) DB::table('releases')->where('id', 1)->value('nzb_creation_attempts'));
-        $this->assertSame('Temporary filesystem failure.', DB::table('releases')->where('id', 1)->value('nzb_creation_last_error'));
-        $this->assertNull(DB::table('releases')->where('id', 1)->value('nzb_creation_claimed_at'));
+        $this->assertSame(1, (int) DB::table('release_nzb_creation_failures')->where('releases_id', 1)->value('attempts'));
+        $this->assertSame('Temporary filesystem failure.', DB::table('release_nzb_creation_failures')->where('releases_id', 1)->value('last_error'));
+        $this->assertNotNull(DB::table('release_nzb_creation_failures')->where('releases_id', 1)->value('created_at'));
+        $this->assertNotNull(DB::table('release_nzb_creation_failures')->where('releases_id', 1)->value('updated_at'));
+        $this->assertNotNull(DB::table('releases')->where('id', 1)->value('nzb_creation_claimed_at'));
+        $this->assertNotNull(DB::table('releases')->where('id', 1)->value('nzb_creation_claim_token'));
         $this->assertSame(1, DB::table('collections')->count());
         $this->assertSame('NZB creation failed; release will be retried', $nzbCreationLogger->warnings[0]['message']);
         $this->assertSame(1, $nzbCreationLogger->warnings[0]['context']['release_id']);
@@ -175,6 +181,7 @@ class NzbCreationReliabilityTest extends TestCase
         $this->assertSame(0, DB::table('collections')->count());
         $this->assertSame(0, DB::table('binaries')->count());
         $this->assertSame(0, DB::table('parts')->count());
+        $this->assertSame(0, DB::table('release_nzb_creation_failures')->count());
         $this->assertSame('Deleting release after NZB creation failure', $nzbCreationLogger->warnings[0]['message']);
         $this->assertSame(1, $nzbCreationLogger->warnings[0]['context']['release_id']);
         $this->assertSame(str_repeat('a', 36), $nzbCreationLogger->warnings[0]['context']['guid']);
@@ -182,6 +189,56 @@ class NzbCreationReliabilityTest extends TestCase
         $this->assertSame('Repeated filesystem failure.', $nzbCreationLogger->warnings[0]['context']['reason']);
         $this->assertSame(3, $nzbCreationLogger->warnings[0]['context']['attempt']);
         $this->assertSame(3, $nzbCreationLogger->warnings[0]['context']['max_attempts']);
+    }
+
+    public function test_repeated_transient_failure_increments_attempts_and_touches_updated_at(): void
+    {
+        Log::partialMock();
+        Log::shouldReceive('channel')->once()->with('nzb_creation')->andReturn(new RecordingNzbCreationLogger);
+
+        $this->insertRelease(1, 'a');
+        $this->insertCbp(200, 2000, 1);
+        DB::table('release_nzb_creation_failures')->insert([
+            'releases_id' => 1,
+            'attempts' => 1,
+            'last_error' => 'Earlier failure.',
+            'created_at' => '2026-01-01 00:00:00',
+            'updated_at' => '2026-01-01 00:00:00',
+        ]);
+
+        $service = $this->releaseProcessingService(
+            NzbCreationResult::transient('Another filesystem failure.', [200])
+        );
+
+        $this->assertSame(0, $service->createNZBs(null));
+
+        $failure = DB::table('release_nzb_creation_failures')->where('releases_id', 1)->first();
+
+        $this->assertSame(2, (int) $failure->attempts);
+        $this->assertSame('Another filesystem failure.', $failure->last_error);
+        $this->assertSame('2026-01-01 00:00:00', $failure->created_at);
+        $this->assertNotSame('2026-01-01 00:00:00', $failure->updated_at);
+    }
+
+    public function test_attempt_cap_holds_when_the_failure_relation_was_dropped(): void
+    {
+        Log::partialMock();
+        $nzbCreationLogger = new RecordingNzbCreationLogger;
+        Log::shouldReceive('channel')->once()->with('nzb_creation')->andReturn($nzbCreationLogger);
+
+        $this->insertRelease(1, 'a', attempts: 2);
+        $this->insertCbp(200, 2000, 1);
+
+        $service = (new ReleaseProcessingService(
+            nzb: new RelationDroppingNzbService(NzbCreationResult::transient('Repeated filesystem failure.', [200])),
+            releaseManagement: new DatabaseOnlyReleaseManagementService,
+            collectionCleanupService: app(CollectionCleanupService::class),
+        ))->setEchoCLI(false);
+
+        $this->assertSame(0, $service->createNZBs(null));
+        $this->assertSame(0, DB::table('releases')->count());
+        $this->assertSame('Deleting release after NZB creation failure', $nzbCreationLogger->warnings[0]['message']);
+        $this->assertSame(3, $nzbCreationLogger->warnings[0]['context']['attempt']);
     }
 
     public function test_writer_classifies_final_rename_failure_as_transient_without_final_file(): void
@@ -204,6 +261,13 @@ class NzbCreationReliabilityTest extends TestCase
     public function test_writer_streams_multiple_keyset_pages_in_segment_order(): void
     {
         $this->insertRelease(1, 'h');
+        DB::table('release_nzb_creation_failures')->insert([
+            'releases_id' => 1,
+            'attempts' => 1,
+            'last_error' => 'Earlier failure.',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
         $this->insertWritableCbp(200, 2000, 1);
         DB::table('parts')->where('binaries_id', 2000)->delete();
         DB::table('parts')->insert([
@@ -223,6 +287,7 @@ class NzbCreationReliabilityTest extends TestCase
         $this->assertLessThan(strpos($xml, 'part02@example.test'), strpos($xml, 'part01@example.test'));
         $this->assertLessThan(strpos($xml, 'part03@example.test'), strpos($xml, 'part02@example.test'));
         $this->assertStringContainsString('<group>alt.test</group>', $xml);
+        $this->assertSame(0, DB::table('release_nzb_creation_failures')->count());
     }
 
     public function test_stale_temporary_nzb_cleanup_deletes_only_old_temp_files(): void
@@ -278,9 +343,17 @@ class NzbCreationReliabilityTest extends TestCase
             'nzbstatus' => NzbService::NZB_NONE,
             'nzb_creation_claimed_at' => $claimedAt?->format('Y-m-d H:i:s'),
             'nzb_creation_claim_token' => $claimedAt === null ? null : 'claimed',
-            'nzb_creation_attempts' => $attempts,
-            'nzb_creation_last_error' => null,
         ]);
+
+        if ($attempts > 0) {
+            DB::table('release_nzb_creation_failures')->insert([
+                'releases_id' => $id,
+                'attempts' => $attempts,
+                'last_error' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
     }
 
     private function insertCbp(int $collectionId, int $binaryId, int $releaseId): void
@@ -338,7 +411,7 @@ class NzbCreationReliabilityTest extends TestCase
 
     private function createSchema(): void
     {
-        foreach (['parts', 'binaries', 'collections', 'releases', 'categories', 'root_categories', 'usenet_groups', 'settings'] as $table) {
+        foreach (['parts', 'binaries', 'collections', 'release_nzb_creation_failures', 'releases', 'categories', 'root_categories', 'usenet_groups', 'settings'] as $table) {
             DB::statement("DROP TABLE IF EXISTS {$table}");
         }
 
@@ -356,9 +429,15 @@ class NzbCreationReliabilityTest extends TestCase
             postdate DATETIME NULL,
             nzbstatus INTEGER,
             nzb_creation_claimed_at DATETIME NULL,
-            nzb_creation_claim_token VARCHAR(64) NULL,
-            nzb_creation_attempts INTEGER DEFAULT 0,
-            nzb_creation_last_error TEXT NULL
+            nzb_creation_claim_token VARCHAR(64) NULL
+        )');
+        DB::statement('CREATE TABLE release_nzb_creation_failures (
+            releases_id INTEGER PRIMARY KEY,
+            attempts INTEGER DEFAULT 0,
+            last_error TEXT NULL,
+            created_at DATETIME NULL,
+            updated_at DATETIME NULL,
+            FOREIGN KEY (releases_id) REFERENCES releases(id) ON DELETE CASCADE
         )');
         DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name VARCHAR(255))');
         DB::statement('CREATE TABLE collections (
@@ -432,6 +511,16 @@ class FakeNzbCreationService extends NzbService
     public function createNzbForRelease(Release $release): NzbCreationResult
     {
         return $this->result;
+    }
+}
+
+class RelationDroppingNzbService extends FakeNzbCreationService
+{
+    public function createNzbForRelease(Release $release): NzbCreationResult
+    {
+        $release->unsetRelation('nzbCreationFailure');
+
+        return parent::createNzbForRelease($release);
     }
 }
 

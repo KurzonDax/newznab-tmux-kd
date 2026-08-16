@@ -354,7 +354,7 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
         $this->assertContains('oversized-capacity', $warningCodes);
     }
 
-    public function test_additional_diagnostics_recognizes_the_covering_claim_index(): void
+    public function test_additional_diagnostics_recognizes_the_claim_queue_index(): void
     {
         Schema::table('releases', function (Blueprint $table): void {
             $table->index([
@@ -362,8 +362,10 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
                 'haspreview',
                 'nzbstatus',
                 'leftguid',
-                'additional_pp_claimed_at',
                 'postdate',
+                'id',
+                'additional_pp_claimed_at',
+                'size',
             ], 'ix_releases_add_pp_claim_queue');
         });
 
@@ -372,7 +374,7 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
 
         $this->assertSame(0, $status);
         $this->assertFalse($report['indexes']['missing']);
-        $this->assertSame('ix_releases_add_pp_claim_queue', $report['indexes']['covering_index']);
+        $this->assertSame('ix_releases_add_pp_claim_queue', $report['indexes']['claim_queue_index']);
         $this->assertNotContains('missing-index', array_column($report['warnings'], 'code'));
     }
 
