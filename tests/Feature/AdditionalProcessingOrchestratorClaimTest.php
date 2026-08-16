@@ -167,6 +167,8 @@ class AdditionalProcessingOrchestratorClaimTest extends TestCase
                     && array_key_exists('search_sync_executions', $context)
                     && array_key_exists('duplicate_message_ids', $context)
                     && array_key_exists('unsupported_reasons', $context)
+                    && array_key_exists('sniffed_candidates', $context)
+                    && array_key_exists('payload_classifications', $context)
                     && array_key_exists('releases_per_second', $context)
                     && array_key_exists('average_release_seconds', $context)
                     && array_key_exists('stage_seconds', $context)

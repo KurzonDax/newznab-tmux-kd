@@ -7,6 +7,8 @@ namespace App\Services\AdditionalProcessing\State;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\DTO\AdditionalWorkPlan;
 use App\Services\AdditionalProcessing\DTO\DownloadedArchive;
+use App\Services\AdditionalProcessing\DTO\PayloadSniffMetrics;
+use App\Services\AdditionalProcessing\Enums\PayloadClassification;
 
 /**
  * Mutable context object that holds the processing state for a single release.
@@ -132,6 +134,13 @@ class ReleaseProcessingContext
 
     public bool $releaseFilesChanged = false;
 
+    public PayloadSniffMetrics $payloadSniffMetrics;
+
+    /**
+     * @var list<string>
+     */
+    private array $runtimeUnsupportedReasons = [];
+
     // Temp path for this release
     public string $tmpPath = '';
 
@@ -142,6 +151,7 @@ class ReleaseProcessingContext
     {
         $this->release = $release;
         $this->startTime = hrtime(true);
+        $this->payloadSniffMetrics = new PayloadSniffMetrics;
     }
 
     /**
@@ -190,6 +200,8 @@ class ReleaseProcessingContext
         $this->pendingParHashes = [];
         $this->existingReleaseFileNames = null;
         $this->releaseFilesChanged = false;
+        $this->payloadSniffMetrics = new PayloadSniffMetrics;
+        $this->runtimeUnsupportedReasons = [];
     }
 
     /**
@@ -247,7 +259,21 @@ class ReleaseProcessingContext
      */
     public function unsupportedReasons(): array
     {
-        return $this->workPlan === null ? [] : $this->workPlan->unsupportedReasons;
+        $plannedReasons = $this->workPlan === null ? [] : $this->workPlan->unsupportedReasons;
+
+        return array_values(array_unique([
+            ...$plannedReasons,
+            ...$this->runtimeUnsupportedReasons,
+        ]));
+    }
+
+    public function recordPayloadClassification(PayloadClassification $classification): void
+    {
+        $this->payloadSniffMetrics = $this->payloadSniffMetrics->record($classification);
+
+        if ($classification === PayloadClassification::Unknown) {
+            $this->runtimeUnsupportedReasons[] = 'unknown-payload';
+        }
     }
 
     /**
