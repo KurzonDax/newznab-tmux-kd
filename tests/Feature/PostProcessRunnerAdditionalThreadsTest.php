@@ -112,7 +112,7 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
              */
             public array $capturedCommands = [];
 
-            protected function runStreamingCommands(array $commands, int $maxProcesses, string $desc): void
+            protected function runStreamingCommands(array $commands, int $maxProcesses, string $desc, ?callable $onComplete = null): void
             {
                 $this->capturedCommands = $commands;
                 $this->capturedMaxProcesses = $maxProcesses;
@@ -143,7 +143,7 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
              */
             public array $capturedCommands = [];
 
-            protected function runStreamingCommands(array $commands, int $maxProcesses, string $desc): void
+            protected function runStreamingCommands(array $commands, int $maxProcesses, string $desc, ?callable $onComplete = null): void
             {
                 $this->capturedCommands = $commands;
                 $this->capturedMaxProcesses = $maxProcesses;
@@ -174,7 +174,7 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
              */
             public array $capturedCommands = [];
 
-            protected function runStreamingCommands(array $commands, int $maxProcesses, string $desc): void
+            protected function runStreamingCommands(array $commands, int $maxProcesses, string $desc, ?callable $onComplete = null): void
             {
                 $this->capturedCommands = $commands;
             }

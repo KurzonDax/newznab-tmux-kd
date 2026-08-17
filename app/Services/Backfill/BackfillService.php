@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Services\Backfill;
 
+use App\Models\Settings;
 use App\Models\UsenetGroup;
 use App\Services\Binaries\BinariesService;
 use App\Services\NNTP\NNTPService;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 /**
  * Service for backfilling Usenet groups with historical articles.
@@ -16,7 +19,6 @@ use Illuminate\Support\Facades\DB;
  * This service handles downloading older articles from Usenet groups
  * to fill in historical data. It supports:
  * - Backfilling by article count or target date
- * - Safe backfill with date-based targeting
  * - Automatic group disable when backfill limit is reached
  */
 final class BackfillService
@@ -37,6 +39,118 @@ final class BackfillService
         $this->config = $config ?? BackfillConfig::fromSettings();
         $this->binaries = $binaries ?? new BinariesService;
         $this->nntp = $nntp ?? new NNTPService;
+    }
+
+    /**
+     * Snapshot the groups that have not reached their configured backfill target.
+     *
+     * Quantity mode intentionally does not clamp work to the day target. A group
+     * may overshoot that target by one pass, then it is excluded from the next pass.
+     *
+     * @return list<BackfillGroupWork>
+     */
+    public function eligibleGroups(): array
+    {
+        $backfillDays = (int) Settings::settingValue('backfill_days');
+        $backfillOrder = (int) Settings::settingValue('backfill_order');
+        $safeBackfillDate = (string) (Settings::settingValue('safebackfilldate') ?: $this->config->safeBackFillDate);
+
+        $rows = $this->groupWorkQuery()
+            ->where('g.backfill', 1)
+            ->whereNotNull('g.first_record')
+            ->whereNotNull('g.first_record_postdate')
+            ->whereColumn('g.first_record', '>', 'server_group.first_record')
+            ->get();
+
+        $groups = [];
+        foreach ($rows as $row) {
+            $target = $this->targetForGroup($backfillDays, (int) $row->backfill_target, $safeBackfillDate);
+            $firstRecordPostdate = Carbon::parse((string) $row->first_record_postdate);
+
+            if ($firstRecordPostdate->lessThanOrEqualTo($target)) {
+                continue;
+            }
+
+            $groups[] = $this->workFromRow((array) $row, $target);
+        }
+
+        usort($groups, static function (BackfillGroupWork $left, BackfillGroupWork $right) use ($backfillOrder): int {
+            $comparison = match ($backfillOrder) {
+                1 => strcmp($right->firstRecordPostdate, $left->firstRecordPostdate),
+                2 => strcmp($left->firstRecordPostdate, $right->firstRecordPostdate),
+                3 => strcmp($left->name, $right->name),
+                4 => strcmp($right->name, $left->name),
+                5 => $right->serverLastRecord <=> $left->serverLastRecord,
+                default => $left->serverLastRecord <=> $right->serverLastRecord,
+            };
+
+            return $comparison !== 0 ? $comparison : strcmp($left->name, $right->name);
+        });
+
+        return $groups;
+    }
+
+    /**
+     * Resolve display status for a scheduled group without re-evaluating pass eligibility.
+     */
+    public function groupWork(string $groupName): ?BackfillGroupWork
+    {
+        $row = $this->groupWorkQuery()
+            ->where('g.name', $groupName)
+            ->whereNotNull('g.first_record')
+            ->whereNotNull('g.first_record_postdate')
+            ->first();
+
+        if ($row === null) {
+            return null;
+        }
+
+        $backfillDays = (int) Settings::settingValue('backfill_days');
+        $safeBackfillDate = (string) (Settings::settingValue('safebackfilldate') ?: $this->config->safeBackFillDate);
+        $target = $this->targetForGroup($backfillDays, (int) $row->backfill_target, $safeBackfillDate);
+
+        return $this->workFromRow((array) $row, $target);
+    }
+
+    private function groupWorkQuery(): Builder
+    {
+        $serverGroups = DB::table('short_groups')
+            ->selectRaw('name, MAX(first_record) AS first_record, MAX(last_record) AS last_record')
+            ->groupBy('name');
+
+        return DB::table('usenet_groups as g')
+            ->joinSub($serverGroups, 'server_group', function ($join): void {
+                $join->on('g.name', '=', 'server_group.name');
+            })
+            ->select([
+                'g.name',
+                'g.first_record',
+                'g.first_record_postdate',
+                'g.backfill_target',
+                'server_group.first_record as server_first_record',
+                'server_group.last_record as server_last_record',
+            ]);
+    }
+
+    private function targetForGroup(int $backfillDays, int $backfillTarget, string $safeBackfillDate): Carbon
+    {
+        return $backfillDays === 2
+            ? Carbon::createFromFormat('Y-m-d', $safeBackfillDate)
+            : now()->subDays($backfillTarget);
+    }
+
+    /**
+     * @param  array{name: mixed, first_record: mixed, first_record_postdate: mixed, server_first_record: mixed, server_last_record: mixed}  $row
+     */
+    private function workFromRow(array $row, Carbon $target): BackfillGroupWork
+    {
+        return new BackfillGroupWork(
+            name: (string) $row['name'],
+            remaining: (int) $row['first_record'] - (int) $row['server_first_record'],
+            targetDate: $target->toDateString(),
+            firstRecordPostdate: Carbon::parse((string) $row['first_record_postdate'])->toDateTimeString(),
+            serverLastRecord: (int) $row['server_last_record'],
+        );
     }
 
     /**
@@ -88,14 +202,9 @@ final class BackfillService
 
         $shortGroupName = $this->getShortGroupName($groupArr['name']);
 
-        if (! $this->validateGroupState($groupArr, $shortGroupName)) {
-            return;
-        }
+        $this->validateGroupState($groupArr, $shortGroupName);
 
         $serverData = $this->selectNntpGroup($groupArr['name']);
-        if ($serverData === null) {
-            return;
-        }
 
         $this->log("Processing {$shortGroupName}", 'primary');
 
@@ -110,33 +219,6 @@ final class BackfillService
         $this->processBackfillChunks($groupArr, $targetPost, $remainingGroups, $shortGroupName);
 
         $this->logGroupComplete($shortGroupName, $startTime);
-    }
-
-    /**
-     * Safe backfill - backfill groups that haven't reached the safe backfill date.
-     *
-     * @param  int|string  $articles  Number of articles to backfill
-     *
-     * @throws \Throwable
-     */
-    public function safeBackfill(int|string $articles = ''): void
-    {
-        $group = UsenetGroup::query()
-            ->whereBetween('first_record_postdate', [Carbon::createFromDate((int) $this->config->safeBackFillDate), now()])
-            ->where('backfill', '=', 1)
-            ->select(['name'])
-            ->orderBy('name')
-            ->first();
-
-        if ($group === null) {
-            $message = sprintf(
-                'No groups to backfill, they are all at the target date %s, or you have not enabled them to be backfilled in the groups page.',
-                $this->config->safeBackFillDate
-            );
-            exit($message.PHP_EOL);
-        }
-
-        $this->backfillAllGroups($group->name, $articles);
     }
 
     /**
@@ -180,18 +262,13 @@ final class BackfillService
      *
      * @param  array<string, mixed>  $groupArr
      */
-    private function validateGroupState(array $groupArr, string $shortGroupName): bool
+    private function validateGroupState(array $groupArr, string $shortGroupName): void
     {
         if ($groupArr['first_record'] <= 0) {
-            $this->log(
-                "You need to run update_binaries on {$shortGroupName}. Otherwise the group is dead, you must disable it.",
-                'error'
+            throw new RuntimeException(
+                "You need to run update_binaries on {$shortGroupName}. Otherwise the group is dead, you must disable it."
             );
-
-            return false;
         }
-
-        return true;
     }
 
     /**
@@ -199,14 +276,14 @@ final class BackfillService
      *
      * @return array<string, mixed>
      */
-    private function selectNntpGroup(string $groupName): ?array
+    private function selectNntpGroup(string $groupName): array
     {
         $data = $this->nntp->selectGroup($groupName);
 
         if ($this->nntp->isError($data)) {
             $data = $this->nntp->dataError($this->nntp, $groupName);
             if ($this->nntp->isError($data)) {
-                return null;
+                throw new RuntimeException("Unable to select Usenet group {$groupName}.");
             }
         }
 

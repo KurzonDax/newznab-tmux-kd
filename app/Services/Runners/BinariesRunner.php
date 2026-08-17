@@ -33,7 +33,7 @@ class BinariesRunner extends BaseRunner
             foreach ($work as $group) {
                 $commands[] = PHP_BINARY.' artisan update:binaries '.$group->name.' '.$group->max;
             }
-            $this->runStreamingCommands($commands, $maxProcesses, 'binaries'); // @phpstan-ignore argument.type
+            $this->runStreamingCommands($commands, $maxProcesses, 'binaries');
 
             return;
         }
@@ -123,7 +123,7 @@ class BinariesRunner extends BaseRunner
             foreach ($queues as $queue) {
                 $commands[] = $this->buildDnrCommand($queue);
             }
-            $this->runStreamingCommands($commands, $maxProcesses, 'safe_binaries'); // @phpstan-ignore argument.type
+            $this->runStreamingCommands($commands, $maxProcesses, 'safe_binaries');
 
             return;
         }

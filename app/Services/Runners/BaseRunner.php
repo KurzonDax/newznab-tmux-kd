@@ -11,8 +11,6 @@ use Symfony\Component\Process\Process;
 
 abstract class BaseRunner
 {
-    public function __construct() {}
-
     /**
      * Resolve the configured timeout (seconds) for Laravel's Concurrency::run() calls.
      */
@@ -161,6 +159,11 @@ abstract class BaseRunner
         return $process->getOutput();
     }
 
+    protected function createProcess(string $command): Process
+    {
+        return Process::fromShellCommandline($command);
+    }
+
     protected function headerStart(string $workType, int $count, int $maxProcesses): void
     {
         if (config('nntmux.echocli')) {
@@ -264,10 +267,15 @@ abstract class BaseRunner
      * @param  array<string|int, string>  $commands  Array of shell commands keyed by identifier
      * @param  int  $maxProcesses  Maximum concurrent processes
      * @param  int|null  $timeout  Timeout in seconds (null = use config default)
+     * @param  callable(string|int, string, int): void|null  $onComplete
      * @return array<string|int, string> Command outputs keyed by the same identifiers
      */
-    protected function runParallelCommands(array $commands, int $maxProcesses, ?int $timeout = null): array
-    {
+    protected function runParallelCommands(
+        array $commands,
+        int $maxProcesses,
+        ?int $timeout = null,
+        ?callable $onComplete = null,
+    ): array {
         $maxProcesses = max(1, $maxProcesses);
         $timeout = $timeout ?? (int) config('nntmux.multiprocessing_max_child_time', 1800);
         $results = [];
@@ -282,9 +290,13 @@ abstract class BaseRunner
             $cmd = $queue[$key];
             unset($queue[$key]);
 
-            $proc = Process::fromShellCommandline($cmd);
+            $proc = $this->createProcess($cmd);
             $proc->setTimeout($timeout);
-            $proc->start();
+            $proc->start(function ($type, $buffer): void {
+                if ($type === Process::ERR) {
+                    echo $buffer;
+                }
+            });
             $running[$key] = $proc;
         };
 
@@ -296,17 +308,25 @@ abstract class BaseRunner
         // Event loop
         while (! empty($running)) {
             foreach ($running as $key => $proc) {
-                if (! $proc->isRunning()) {
+                $timedOut = false;
+                try {
+                    $proc->checkTimeout();
+                    $isRunning = $proc->isRunning();
+                } catch (ProcessTimedOutException $e) {
+                    echo $e->getMessage().PHP_EOL;
+                    $isRunning = false;
+                    $timedOut = true;
+                }
+
+                if (! $isRunning) {
                     $results[$key] = $proc->getOutput();
-                    // Output errors if any
-                    $err = $proc->getErrorOutput();
-                    if ($err !== '') {
-                        echo $err;
-                    }
+                    $exitCode = $timedOut ? 124 : ($proc->getExitCode() ?? 1);
                     unset($running[$key]);
-                    // Start next from queue if available
                     if (! empty($queue)) {
                         $startNext();
+                    }
+                    if ($onComplete !== null) {
+                        $onComplete($key, $results[$key], $exitCode);
                     }
                 }
             }
@@ -320,10 +340,15 @@ abstract class BaseRunner
      * Run multiple shell commands concurrently and stream their output in real-time.
      * Uses Symfony Process start() with a small event loop to enforce max concurrency.
      *
-     * @param  array<string, mixed>  $commands
+     * @param  array<string|int, string>  $commands
+     * @param  callable(string|int, string, int): void|null  $onComplete
      */
-    protected function runStreamingCommands(array $commands, int $maxProcesses, string $desc): void
-    {
+    protected function runStreamingCommands(
+        array $commands,
+        int $maxProcesses,
+        string $desc,
+        ?callable $onComplete = null,
+    ): void {
         $maxProcesses = max(1, (int) $maxProcesses);
         $running = [];
         $queue = $commands;
@@ -337,14 +362,16 @@ abstract class BaseRunner
             if (empty($queue)) {
                 return;
             }
-            $cmd = array_shift($queue);
-            $proc = Process::fromShellCommandline($cmd);
+            $key = array_key_first($queue);
+            $cmd = $queue[$key];
+            unset($queue[$key]);
+            $proc = $this->createProcess($cmd);
             $proc->setTimeout((int) config('nntmux.multiprocessing_max_child_time', 1800));
             $proc->start(function ($type, $buffer) {
                 // Stream both STDOUT and STDERR
                 echo $buffer;
             });
-            $running[spl_object_id($proc)] = $proc;
+            $running[$key] = $proc;
             $started++;
         };
 
@@ -356,24 +383,29 @@ abstract class BaseRunner
         // Event loop
         while (! empty($running)) {
             foreach ($running as $key => $proc) {
-                if (! $proc->isRunning()) {
-                    // Print any remaining buffered output
-                    $out = $proc->getIncrementalOutput();
-                    $err = $proc->getIncrementalErrorOutput();
-                    if ($out !== '') {
-                        echo $out;
-                    }
-                    if ($err !== '') {
-                        echo $err;
-                    }
+                $timedOut = false;
+                try {
+                    $proc->checkTimeout();
+                    $isRunning = $proc->isRunning();
+                } catch (ProcessTimedOutException $e) {
+                    echo $e->getMessage().PHP_EOL;
+                    $isRunning = false;
+                    $timedOut = true;
+                }
+
+                if (! $isRunning) {
+                    $exitCode = $timedOut ? 124 : ($proc->getExitCode() ?? 1);
+                    $output = $proc->getOutput();
                     unset($running[$key]);
                     $finished++;
-                    if (config('nntmux.echocli')) {
-                        cli()->primary('Finished task #'.($total - $finished + 1).' for '.$desc);
-                    }
-                    // Start next from queue if available
                     if (! empty($queue)) {
                         $startNext();
+                    }
+                    if ($onComplete !== null) {
+                        $onComplete($key, $output, $exitCode);
+                    }
+                    if (config('nntmux.echocli')) {
+                        cli()->primary('Finished task #'.($total - $finished + 1).' for '.$desc);
                     }
                 }
             }

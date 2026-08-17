@@ -47,20 +47,10 @@ class ForkingService
 
     /**
      * Process backfill for all groups with backfill enabled.
-     *
-     * @param  array<string, mixed>  $options
      */
-    public function backfill(array $options = []): void
+    public function backfill(): void
     {
-        $this->runWithTiming('backfill', fn () => $this->backfillRunner->backfill($options));
-    }
-
-    /**
-     * Process safe backfill (ordered by oldest first).
-     */
-    public function safeBackfill(): void
-    {
-        $this->runWithTiming('safe_backfill', fn () => $this->backfillRunner->safeBackfill());
+        $this->runWithTiming('backfill', fn () => $this->backfillRunner->backfill());
     }
 
     /**
@@ -211,7 +201,7 @@ class ForkingService
     public function processWorkType(string $type, array $options = []): void
     {
         match ($type) {
-            'backfill' => $this->backfill($options),
+            'backfill' => $this->backfill(),
             'binaries' => $this->binaries((int) ($options[0] ?? 0)),
             'fixRelNames_standard' => $this->fixRelNames('standard'),
             'fixRelNames_predbft' => $this->fixRelNames('predbft'),
@@ -226,7 +216,6 @@ class ForkingService
             'postProcess_mus' => $this->processMusic(),
             'postProcess_nfo' => $this->processNfo(),
             'postProcess_tv' => $this->processTv($options[0] ?? false),
-            'safe_backfill' => $this->safeBackfill(),
             'safe_binaries' => $this->safeBinaries(),
             'update_per_group' => $this->updatePerGroup(),
             default => Log::warning("Unknown work type: {$type}"),
