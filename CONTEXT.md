@@ -95,3 +95,37 @@ _Avoid_: plain "CRC" where article, PAR2, and archive checks could be confused.
 
 **Preview Generation**:
 The umbrella for creating Generated Previews and Generated Sample Videos. Toggleable per root category (covering the root's entire subtree, no child overrides) and AND-ed with the site-wide switches — the per-root toggle can only disable, never enable. Disabling never deletes existing artifacts. A release skipped by the toggle is owed generation if later recategorized into a root where generation is enabled; re-enabling a root's toggle owes nothing (explicit requeue is the backfill tool).
+
+**Full backup**:
+The weekly logical dump of the database, always including Important tables and by default also Working tables. Anchors a Backup set.
+_Avoid_: "weekly backup" in code and settings (the cadence is configurable, the kind is what matters).
+
+**Daily backup**:
+A complete dump of Important tables only, taken on non-Full days. Not an incremental — it stands alone and restores in one step.
+_Avoid_: incremental, differential (nothing in this feature captures "changes since").
+
+**Backup set**:
+One successful Full backup plus every Daily backup taken until the next successful Full backup. The unit of retention: a set is kept or purged whole.
+
+**Important tables**:
+Tables whose contents cannot be rebuilt from Usenet or external APIs (releases, predb, users, settings, categories, groups, metadata, forum, …). Always backed up.
+_Avoid_: durable, core.
+
+**Working tables**:
+The collections/binaries/parts/missed_parts family (including per-group and multigroup variants) — in-progress header state that backfill can regenerate. Backed up only in a Full backup, and only if the admin keeps that toggle on.
+_Avoid_: CBP (in UI copy), transient.
+
+**Throwaway tables**:
+Telemetry, logs, sessions, cache and queue tables (`pulse_*`, `telescope_*`, metrics, request logs, `sessions`, `cache*`, `jobs`, `failed_jobs`, …). Never backed up.
+_Avoid_: junk, ephemeral.
+
+**Backup location**:
+The admin-configured absolute directory that holds Backup sets, one subdirectory per set. The files on disk are the source of truth for what backups exist; any catalog in the database is a rebuildable cache.
+
+**Backup pause**:
+The soft tmux pause taken around a backup when the admin toggle is on: `running` is cleared so panes drain and are not respawned, then the previous `running` value is restored afterwards. Never kills panes and never starts tmux that was already stopped.
+_Avoid_: stopping tmux, maintenance mode.
+
+**Off-site copy**:
+A verified copy of Backup sets from the Backup location to an admin-configured **Off-site destination** on separate (external or network) storage, made by `backup:offsite` from cron or right after a backup once the Backup pause has been lifted. Repeatable and resumable; a set counts as copied only when its checksum matches at the destination. The destination keeps its own retention count, independent of the local one.
+_Avoid_: sync, mirror, remote backup, "linking" the Backup location to network storage.
