@@ -26,6 +26,7 @@ use App\Support\Data\NzbCreationResult;
 use App\Support\Data\ProcessReleasesSettings;
 use App\Support\Data\ReleaseCreationResult;
 use App\Support\Data\ReleaseDeleteStats;
+use App\Support\DatabaseClock;
 use App\Support\ReleaseSearchIndexSync;
 use DateTimeInterface;
 use Illuminate\Database\Query\Builder;
@@ -413,6 +414,7 @@ final class ReleaseProcessingService
     private function reconcileIncompleteCollections(?int $groupId): void
     {
         $lastId = 0;
+        $cutoff = DatabaseClock::cutoff(now()->subHours($this->settings->collectionDelayTime));
         $statuses = [
             CollectionFileCheckStatus::Default->value,
             CollectionFileCheckStatus::CompleteCollection->value,
@@ -425,16 +427,16 @@ final class ReleaseProcessingService
         do {
             $query = Collection::query()
                 ->where('id', '>', $lastId)
-                ->where(function ($query) use ($statuses): void {
+                ->where(function ($query) use ($cutoff, $statuses): void {
                     $query->where('filecheck', CollectionFileCheckStatus::CompleteParts->value);
                     if (Schema::hasColumn('collections', 'last_seen_at')) {
-                        $query->orWhere(function ($stale) use ($statuses): void {
+                        $query->orWhere(function ($stale) use ($cutoff, $statuses): void {
                             $stale->whereIn('filecheck', array_values(array_diff(
                                 $statuses,
                                 [CollectionFileCheckStatus::CompleteParts->value]
                             )))->whereRaw(
-                                'COALESCE(last_seen_at, dateadded, added) < ?',
-                                [now()->subHours($this->settings->collectionDelayTime)]
+                                'COALESCE(last_seen_at, dateadded, added) < '.$cutoff['sql'],
+                                $cutoff['bindings']
                             );
                         });
                     } else {
@@ -551,7 +553,11 @@ final class ReleaseProcessingService
                      FROM binaries WHERE collections_id = ?',
                     [$collectionId]
                 );
-                $stale = strtotime((string) $collection->dateadded) < now()->subHours($this->settings->collectionDelayTime)->timestamp
+                $cutoff = DatabaseClock::cutoff(now()->subHours($this->settings->collectionDelayTime));
+                $stale = DB::table('collections')
+                    ->where('id', $collectionId)
+                    ->whereRaw('dateadded < '.$cutoff['sql'], $cutoff['bindings'])
+                    ->exists()
                     && \in_array((int) $collection->filecheck, [0, 1, 10], true);
                 $totalFiles = $stale ? (int) $aggregate->currentfiles : (int) $collection->totalfiles;
                 $ready = $totalFiles > 0
@@ -1054,7 +1060,7 @@ final class ReleaseProcessingService
      */
     private function processStuckCollections(int $groupID): void
     {
-        $cutoff = $this->calculateStuckCollectionsCutoff();
+        $cutoff = DatabaseClock::cutoff($this->calculateStuckCollectionsCutoff());
         $totalDeleted = 0;
 
         do {
@@ -1089,7 +1095,8 @@ final class ReleaseProcessingService
         return ($threshold ?? now())->copy()->subHours($this->settings->collectionTimeout);
     }
 
-    private function deleteStuckCollectionBatch(int $groupID, Carbon $cutoff): int
+    /** @param array{sql: string, bindings: list<int|string>} $cutoff */
+    private function deleteStuckCollectionBatch(int $groupID, array $cutoff): int
     {
         $attempt = 0;
         $affected = 0;
@@ -1107,9 +1114,12 @@ final class ReleaseProcessingService
                     ->orderBy('id')
                     ->limit(self::BATCH_SIZE);
                 if (Schema::hasColumn('collections', 'last_seen_at')) {
-                    $query->whereRaw('COALESCE(last_seen_at, dateadded, added) < ?', [$cutoff]);
+                    $query->whereRaw(
+                        'COALESCE(last_seen_at, dateadded, added) < '.$cutoff['sql'],
+                        $cutoff['bindings']
+                    );
                 } else {
-                    $query->where('added', '<', $cutoff);
+                    $query->whereRaw('added < '.$cutoff['sql'], $cutoff['bindings']);
                 }
                 if ($groupID !== 0) {
                     $query->where('groups_id', '=', $groupID);

@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Models\Settings;
 use App\Services\Binaries\BinariesConfig;
+use App\Support\DatabaseClock;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -61,11 +62,13 @@ class CollectionCleanupService
         // Batch-delete old collections using select-then-delete so we can
         // explicitly remove parts/binaries/collections even when FK cascades
         // are not present in the runtime schema.
-        $cutoff = now()->subHours(Settings::settingValue('partretentionhours'));
+        $cutoff = DatabaseClock::cutoff(
+            now()->subHours(Settings::settingValue('partretentionhours'))
+        );
         $batchDeleted = 0;
         do {
             $ids = DB::table('collections')
-                ->where('dateadded', '<', $cutoff)
+                ->whereRaw('dateadded < '.$cutoff['sql'], $cutoff['bindings'])
                 ->orderBy('id')
                 ->limit($this->sqlChunkSize())
                 ->pluck('id')

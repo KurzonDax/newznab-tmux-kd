@@ -8,14 +8,20 @@ use App\Services\CollectionCleanupService;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseCleaningService;
 use App\Services\ReleaseCreationService;
+use App\Services\ReleaseProcessingService;
 use App\Services\Releases\ReleaseDuplicateFinder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class CbpCleanupServiceTest extends TestCase
 {
+    private string $originalTimezone;
+
     protected function setUp(): void
     {
+        $this->originalTimezone = date_default_timezone_get();
+
         parent::setUp();
 
         config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => ':memory:']);
@@ -39,6 +45,14 @@ class CbpCleanupServiceTest extends TestCase
 
         $this->createTables();
         $this->seedSettings();
+    }
+
+    protected function tearDown(): void
+    {
+        $this->travelBack();
+        date_default_timezone_set($this->originalTimezone);
+
+        parent::tearDown();
     }
 
     public function test_retention_cleanup_deletes_parts_binaries_and_collections_without_fk_cascades(): void
@@ -79,6 +93,66 @@ class CbpCleanupServiceTest extends TestCase
         $this->assertSame(0, DB::table('parts')->count());
         $this->assertSame(0, DB::table('binaries')->count());
         $this->assertSame(0, DB::table('collections')->count());
+    }
+
+    public function test_non_utc_database_clock_promotes_collection_after_delay(): void
+    {
+        $this->useChicagoApplicationClock();
+        $this->insertCollectionTree(
+            110,
+            $this->databaseTimestamp('-3 hours'),
+            CollectionFileCheckStatus::Default->value,
+            0
+        );
+
+        app(ReleaseProcessingService::class)->setEchoCLI(false)->processIncompleteCollections(1);
+
+        $this->assertSame(
+            CollectionFileCheckStatus::CompleteParts->value,
+            (int) DB::table('collections')->where('id', 110)->value('filecheck')
+        );
+    }
+
+    public function test_non_utc_database_clock_deletes_collection_after_retention(): void
+    {
+        $this->useChicagoApplicationClock();
+        $this->insertCollectionTree(
+            120,
+            $this->databaseTimestamp('-2 hours'),
+            CollectionFileCheckStatus::Sized->value,
+            1
+        );
+
+        app(CollectionCleanupService::class)->deleteFinishedAndOrphans(false);
+
+        $this->assertFalse(DB::table('collections')->where('id', 120)->exists());
+    }
+
+    public function test_non_utc_stuck_cutoff_honors_last_run_time(): void
+    {
+        $this->useChicagoApplicationClock();
+        DB::table('settings')->where('name', 'collection_timeout')->update(['value' => '2']);
+        DB::table('settings')->where('name', 'last_run_time')->update([
+            'value' => now()->subHour()->format('Y-m-d H:i:s'),
+        ]);
+
+        $this->insertCollectionTree(
+            130,
+            $this->databaseTimestamp('-4 hours'),
+            CollectionFileCheckStatus::Default->value,
+            0
+        );
+        $this->insertCollectionTree(
+            131,
+            $this->databaseTimestamp('-150 minutes'),
+            CollectionFileCheckStatus::Default->value,
+            0
+        );
+
+        app(ReleaseProcessingService::class)->setEchoCLI(false)->processIncompleteCollections(1);
+
+        $this->assertFalse(DB::table('collections')->where('id', 130)->exists());
+        $this->assertTrue(DB::table('collections')->where('id', 131)->exists());
     }
 
     public function test_nzb_creation_cleans_up_collection_binary_and_parts_explicitly(): void
@@ -360,6 +434,9 @@ class CbpCleanupServiceTest extends TestCase
     private function seedSettings(): void
     {
         $settings = [
+            'delaytime' => '2',
+            'collection_timeout' => '48',
+            'last_run_time' => '',
             'partretentionhours' => '1',
             'nzbsplitlevel' => '1',
             'check_passworded_rars' => '0',
@@ -406,6 +483,7 @@ class CbpCleanupServiceTest extends TestCase
             date DATETIME NULL,
             dateadded DATETIME NULL,
             added DATETIME NULL,
+            last_seen_at DATETIME NULL,
             xref TEXT,
             groups_id INTEGER,
             totalfiles INTEGER,
@@ -420,7 +498,10 @@ class CbpCleanupServiceTest extends TestCase
             id INTEGER PRIMARY KEY,
             name VARCHAR(255),
             collections_id INTEGER,
-            totalparts INTEGER
+            totalparts INTEGER,
+            currentparts INTEGER DEFAULT 0,
+            partsize INTEGER DEFAULT 0,
+            partcheck INTEGER DEFAULT 0
         )');
         DB::statement('CREATE TABLE parts (
             binaries_id INTEGER,
@@ -450,5 +531,61 @@ class CbpCleanupServiceTest extends TestCase
         )');
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.test']);
         DB::table('categories')->insert(['id' => 1, 'title' => 'Misc', 'parent_categories_id' => null]);
+    }
+
+    private function useChicagoApplicationClock(): void
+    {
+        config(['app.timezone' => 'America/Chicago']);
+        date_default_timezone_set('America/Chicago');
+
+        $databaseNow = Carbon::createFromFormat(
+            'Y-m-d H:i:s',
+            $this->databaseTimestamp(),
+            'UTC'
+        );
+
+        $this->travelTo($databaseNow->setTimezone('America/Chicago'));
+    }
+
+    private function databaseTimestamp(string $modifier = '+0 seconds'): string
+    {
+        $row = DB::selectOne('SELECT datetime(CURRENT_TIMESTAMP, ?) AS timestamp', [$modifier]);
+
+        return (string) $row->timestamp;
+    }
+
+    private function insertCollectionTree(int $id, string $timestamp, int $fileCheck, int $totalFiles): void
+    {
+        DB::table('collections')->insert([
+            'id' => $id,
+            'subject' => "Database.Clock.{$id}",
+            'fromname' => 'poster@example.com',
+            'date' => $timestamp,
+            'dateadded' => $timestamp,
+            'added' => $timestamp,
+            'last_seen_at' => $timestamp,
+            'xref' => "alt.test:{$id}",
+            'groups_id' => 1,
+            'totalfiles' => $totalFiles,
+            'filesize' => 0,
+            'filecheck' => $fileCheck,
+            'collectionhash' => "database-clock-{$id}",
+            'collection_regexes_id' => 0,
+            'releases_id' => null,
+            'noise' => '',
+        ]);
+        DB::table('binaries')->insert([
+            'id' => $id * 10,
+            'name' => "Database.Clock.{$id}.par2",
+            'collections_id' => $id,
+            'totalparts' => 1,
+        ]);
+        DB::table('parts')->insert([
+            'binaries_id' => $id * 10,
+            'number' => 1,
+            'messageid' => "<database-clock-{$id}@example.com>",
+            'partnumber' => 1,
+            'size' => 10,
+        ]);
     }
 }
