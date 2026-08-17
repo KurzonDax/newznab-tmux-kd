@@ -69,7 +69,6 @@ _ide_helper.php
 # Lock files (generated locally, should not be committed)
 *-lock
 composer.lock
-package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
