@@ -10,6 +10,7 @@ use App\Mail\AccountChange;
 use App\Mail\AccountDeleted;
 use App\Mail\AccountExpired;
 use App\Mail\AccountWillExpire;
+use App\Mail\BackupFailed;
 use App\Mail\ContactUs;
 use App\Mail\ForgottenPassword;
 use App\Mail\IncidentDetected;
@@ -64,6 +65,11 @@ class MailPreview extends Command
                 'admin@example.test',
                 'visitor@example.test',
                 "Hello!\nQuestion inside.",
+            ),
+            'backup_failed' => fn (): Mailable => new BackupFailed(
+                'full',
+                'The database dump process exited with status 2.',
+                '20260817-020000',
             ),
             'invitation' => fn (): Mailable => new InvitationMail($invitation),
             'incident_detected' => fn (): Mailable => new IncidentDetected($activeIncident, false),

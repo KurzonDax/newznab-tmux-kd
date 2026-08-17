@@ -6,6 +6,8 @@ namespace Tests\Feature\Console;
 
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Process\PendingProcess;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
 use PDO;
 use Tests\TestCase;
@@ -43,7 +45,8 @@ class TmuxHealthCheckCommandTest extends TestCase
             ('sequential', '0'),
             ('delaytime', '2'),
             ('monitor_delay', '0'),
-            ('tmux_session', 'test-session')");
+            ('tmux_session', 'test-session'),
+            ('backup_pause_marker', '')");
 
         $this->setEnvironmentValue('APP_ENV', 'testing');
         $this->setEnvironmentValue('DB_CONNECTION', 'sqlite');
@@ -119,6 +122,92 @@ class TmuxHealthCheckCommandTest extends TestCase
         Process::assertRanTimes(fn (PendingProcess $process): bool => $this->isTmuxCommand($process, 'has-session'), 4);
         Process::assertRan('which tmux 2>/dev/null');
         Process::assertRan(fn (PendingProcess $process): bool => $this->isTmuxCommand($process, 'new-session'));
+    }
+
+    public function test_stale_backup_pause_is_recovered_before_health_check(): void
+    {
+        $this->setSetting('running', '0');
+        $this->setSetting('backup_pause_marker', json_encode([
+            'paused_at' => Carbon::now()->subHours(3)->toIso8601String(),
+            'prior_running' => true,
+        ], JSON_THROW_ON_ERROR));
+        $this->fakeMissingSession();
+
+        $this->artisan('tmux:health-check --session=test-session')
+            ->expectsOutputToContain('Recovered stale database Backup pause')
+            ->assertFailed();
+
+        $this->assertSame('1', $this->app['db']->table('settings')->where('name', 'running')->value('value'));
+        $this->assertSame('', $this->app['db']->table('settings')->where('name', 'backup_pause_marker')->value('value'));
+    }
+
+    public function test_stale_marker_is_not_recovered_while_recorded_process_is_alive(): void
+    {
+        $marker = json_encode([
+            'paused_at' => Carbon::now()->subHours(3)->toIso8601String(),
+            'prior_running' => true,
+            'pid' => getmypid(),
+        ], JSON_THROW_ON_ERROR);
+        $this->setSetting('running', '0');
+        $this->setSetting('backup_pause_marker', $marker);
+        $this->fakeMissingSession();
+
+        $this->artisan('tmux:health-check --session=test-session')->assertSuccessful();
+
+        $this->assertSame('0', $this->app['db']->table('settings')->where('name', 'running')->value('value'));
+        $this->assertSame($marker, $this->app['db']->table('settings')->where('name', 'backup_pause_marker')->value('value'));
+    }
+
+    public function test_stale_dead_process_clears_orphaned_backup_lock_and_recovers_pause(): void
+    {
+        $orphanedLock = Cache::lock('database-backup-run', 90000);
+        $this->assertTrue($orphanedLock->get());
+        $this->setSetting('running', '0');
+        $this->setSetting('backup_pause_marker', json_encode([
+            'paused_at' => Carbon::now()->subHours(3)->toIso8601String(),
+            'prior_running' => true,
+            'pid' => 999999999,
+            'process_start_ticks' => 'dead-process',
+            'lock_owner' => $orphanedLock->owner(),
+        ], JSON_THROW_ON_ERROR));
+        $this->fakeMissingSession();
+
+        $this->artisan('tmux:health-check --session=test-session')
+            ->expectsOutputToContain('Recovered stale database Backup pause')
+            ->assertFailed();
+
+        $this->assertSame('1', $this->app['db']->table('settings')->where('name', 'running')->value('value'));
+        $this->assertSame('', $this->app['db']->table('settings')->where('name', 'backup_pause_marker')->value('value'));
+        $replacementLock = Cache::lock('database-backup-run', 1);
+        $this->assertTrue($replacementLock->get());
+        $replacementLock->release();
+    }
+
+    public function test_stale_marker_cannot_release_a_new_backup_owners_lock(): void
+    {
+        $newLock = Cache::lock('database-backup-run', 90000);
+        $this->assertTrue($newLock->get());
+        $marker = json_encode([
+            'paused_at' => Carbon::now()->subHours(3)->toIso8601String(),
+            'prior_running' => true,
+            'pid' => 999999999,
+            'process_start_ticks' => 'dead-process',
+            'lock_owner' => 'old-backup-owner',
+        ], JSON_THROW_ON_ERROR);
+        $this->setSetting('running', '0');
+        $this->setSetting('backup_pause_marker', $marker);
+        $this->fakeMissingSession();
+
+        try {
+            $this->artisan('tmux:health-check --session=test-session')->assertSuccessful();
+
+            $this->assertSame('0', $this->app['db']->table('settings')->where('name', 'running')->value('value'));
+            $this->assertSame($marker, $this->app['db']->table('settings')->where('name', 'backup_pause_marker')->value('value'));
+            $probeLock = Cache::lock('database-backup-run', 1);
+            $this->assertFalse($probeLock->get());
+        } finally {
+            $newLock->release();
+        }
     }
 
     private function fakeMissingSession(): void

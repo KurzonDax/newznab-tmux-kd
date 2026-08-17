@@ -13,6 +13,7 @@
 
 use App\Http\Controllers\Admin\AdminAjaxController;
 use App\Http\Controllers\Admin\AdminAnidbController;
+use App\Http\Controllers\Admin\AdminBackupsController;
 use App\Http\Controllers\Admin\AdminBlacklistController;
 use App\Http\Controllers\Admin\AdminBookController;
 use App\Http\Controllers\Admin\AdminCategoryController;
@@ -314,6 +315,11 @@ Route::middleware(['role:Admin', '2fa'])->prefix('admin')->group(function () {
     Route::post('ajax', [AdminAjaxController::class, 'ajaxAction'])->name('admin.ajax');
     Route::get('tmux-edit', [AdminTmuxController::class, 'edit'])->name('admin.tmux-edit');
     Route::post('tmux-edit', [AdminTmuxController::class, 'update'])->name('admin.tmux-update');
+    Route::get('backups', [AdminBackupsController::class, 'index'])->name('admin.backups.index');
+    Route::post('backups', [AdminBackupsController::class, 'update'])->name('admin.backups.update');
+    Route::post('backups/run/{kind}', [AdminBackupsController::class, 'run'])
+        ->whereIn('kind', ['full', 'daily'])
+        ->name('admin.backups.run');
     Route::get('release-list', [AdminReleasesController::class, 'index'])->name('admin.release-list');
     Route::post('release-bulk-category', [AdminReleasesController::class, 'bulkCategory'])->name('admin.release-bulk-category');
     Route::post('release-delete/{id}', [AdminReleasesController::class, 'destroy'])->name('admin.release-delete');
