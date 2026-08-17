@@ -79,7 +79,7 @@ are checked first):
 | Pane role | Command | Purpose |
 | --- | --- | --- |
 | Binaries | `php artisan multiprocessing:safe binaries` | Download new headers for all active groups. |
-| Backfill | `php artisan multiprocessing:backfill` | Fetch *older* headers, walking backwards from each group's `first_record`. |
+| Backfill | `php artisan multiprocessing:backfill` | Refresh `short_groups`, then give each eligible group one `backfill_qty`-capped child through the `backfillthreads` pool. |
 | Releases | `php artisan multiprocessing:releases` | Turn complete collections into releases + NZBs. |
 | Fix names | `php artisan releases:fix-names <level> --update …` (levels 3–22) | Rename badly-named releases using NFOs, file lists, par2, predb, archive CRCs, etc. |
 | Remove crap | `php artisan releases:remove-crap …` | Delete spam/junk releases. |

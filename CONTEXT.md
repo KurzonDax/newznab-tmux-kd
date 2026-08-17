@@ -11,9 +11,9 @@ _Avoid_: workers, processes (in UI copy and setting names)
 **Pane**:
 A tmux pane owned by the monitor, running exactly one background task (binaries, backfill, releases, postprocessing, fix-names).
 
-**Safe backfill**:
-The incremental backfill mode: one group per cycle, a bounded number of headers (`backfill_qty` × `backfillthreads`), stopping at the Safe Backfill Date.
-_Avoid_: calling the "All" mode "full backfill" in code — the setting values are Disabled/Safe/All.
+**Backfill pass**:
+One bounded sweep across every eligible group, with at most `backfillthreads` groups active at once and at most `backfill_qty` headers requested from each group. Eligibility ends at either the group's Backfill Days target or the site-wide Safe Backfill Date, according to the configured target type.
+_Avoid_: Safe mode, All mode — backfill is either Disabled or Enabled.
 
 **Amazon postprocessing**:
 The metadata-lookup family for books, music, console and PC games (pane 2.2, `postthreadsamazon`). Named for the nZEDb-era Amazon Product API source, retained as the umbrella term for these categories.

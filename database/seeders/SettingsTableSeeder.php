@@ -416,10 +416,6 @@ class SettingsTableSeeder extends Seeder
                 'name' => 'backfill_days',
                 'value' => '1',
             ],
-            161 => [
-                'name' => 'backfill_groups',
-                'value' => '4',
-            ],
             162 => [
                 'name' => 'backfill_order',
                 'value' => '2',

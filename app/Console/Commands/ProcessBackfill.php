@@ -15,8 +15,7 @@ class ProcessBackfill extends Command
      *
      * @var string
      */
-    protected $signature = 'multiprocessing:backfill
-                            {limit? : Limit article count (optional)}';
+    protected $signature = 'multiprocessing:backfill';
 
     /**
      * The console command description.
@@ -30,17 +29,8 @@ class ProcessBackfill extends Command
      */
     public function handle(): int
     {
-        $limit = $this->argument('limit');
-
-        $options = [];
-        if (isset($limit) && is_numeric($limit) && $limit > 0) {
-            $options = [0 => (int) $limit];
-        } else {
-            $options = [0 => false];
-        }
-
         try {
-            (new ForkingService)->backfill($options); // @phpstan-ignore argument.type
+            (new ForkingService)->backfill();
 
             return self::SUCCESS;
         } catch (\Exception $e) {

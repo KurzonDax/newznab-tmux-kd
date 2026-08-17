@@ -295,6 +295,69 @@ SH;
         });
     }
 
+    public function test_backfill_mode_one_runs_the_single_multiprocessing_command(): void
+    {
+        Process::fake(function (PendingProcess $process) {
+            if (is_array($process->command) && in_array('list-panes', $process->command, true)) {
+                return Process::result("%9\tbackfill\n");
+            }
+
+            return Process::result();
+        });
+
+        $runner = new TmuxTaskRunner('test-session');
+
+        $this->assertTrue($runner->runBackfill([
+            'settings' => ['backfill' => 1, 'back_timer' => 30, 'progressive' => 0],
+            'killswitch' => ['coll' => false, 'pp' => false],
+            'counts' => ['now' => ['collections_table' => 0]],
+        ]));
+
+        Process::assertRan(function (PendingProcess $process): bool {
+            if (! is_array($process->command) || ! in_array('respawn-pane', $process->command, true)) {
+                return false;
+            }
+
+            $command = end($process->command);
+
+            return is_string($command)
+                && str_contains($command, 'multiprocessing:backfill')
+                && ! str_contains($command, 'multiprocessing:safe backfill');
+        });
+    }
+
+    public function test_backfill_mode_zero_disables_the_pane_and_legacy_mode_four_is_not_runnable(): void
+    {
+        Process::fake(function (PendingProcess $process) {
+            if (is_array($process->command) && in_array('list-panes', $process->command, true)) {
+                return Process::result("%9\tbackfill\n");
+            }
+
+            return Process::result();
+        });
+
+        $runner = new TmuxTaskRunner('test-session');
+        $baseConfig = [
+            'killswitch' => ['coll' => false, 'pp' => false],
+            'counts' => ['now' => ['collections_table' => 0]],
+        ];
+
+        $this->assertTrue($runner->runBackfill($baseConfig + ['settings' => ['backfill' => 0]]));
+        $this->assertFalse($runner->runBackfill($baseConfig + ['settings' => ['backfill' => 4]]));
+
+        Process::assertRan(function (PendingProcess $process): bool {
+            return is_array($process->command)
+                && in_array('respawn-pane', $process->command, true)
+                && in_array('-k', $process->command, true)
+                && str_contains((string) end($process->command), 'Backfill has been disabled');
+        });
+        Process::assertDidntRun(function (PendingProcess $process): bool {
+            return is_array($process->command)
+                && in_array('respawn-pane', $process->command, true)
+                && str_contains((string) end($process->command), 'multiprocessing:safe backfill');
+        });
+    }
+
     #[DataProvider('srrdbFixNameLevelProvider')]
     public function test_fix_names_task_only_includes_srrdb_level_when_enabled(bool $enabled): void
     {

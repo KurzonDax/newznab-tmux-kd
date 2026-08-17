@@ -51,7 +51,7 @@ class PostProcessRunner extends BaseRunner
                 }
                 $commands[] = $command;
             }
-            $this->runStreamingCommands($commands, $maxProcesses, $desc); // @phpstan-ignore argument.type
+            $this->runStreamingCommands($commands, $maxProcesses, $desc);
 
             return;
         }
@@ -106,7 +106,7 @@ class PostProcessRunner extends BaseRunner
                 $char = substr((string) $task->id, 0, 1);
                 $commands[] = PHP_BINARY.' artisan postprocess:guid '.$task->type.' '.$char;
             }
-            $this->runStreamingCommands($commands, $maxProcesses, $desc); // @phpstan-ignore argument.type
+            $this->runStreamingCommands($commands, $maxProcesses, $desc);
 
             return;
         }
@@ -493,7 +493,7 @@ class PostProcessRunner extends BaseRunner
                 // Use the pipelined TV command
                 $commands[] = PHP_BINARY.' artisan postprocess:tv-pipeline '.$char.($renamed ? ' '.$renamed : '').' --mode=pipeline';
             }
-            $this->runStreamingCommands($commands, $maxProcesses, $desc); // @phpstan-ignore argument.type
+            $this->runStreamingCommands($commands, $maxProcesses, $desc);
 
             return;
         }

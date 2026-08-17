@@ -171,19 +171,15 @@
                             </x-form.group>
                         </div>
 
-                        <x-form.group label="Backfill Threads" for="backfillthreads" help="The number of threads for backfill.">
+                        <x-form.group label="Backfill Threads" for="backfillthreads" help="Max concurrent groups (NNTP connections) per pass">
                             <x-input id="backfillthreads" name="backfillthreads" type="number" min="1" max="99" value="{{ old('backfillthreads', $site['backfillthreads'] ?? 1) }}" class="w-full" required />
                             @error('backfillthreads')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                             @enderror
                         </x-form.group>
 
-                        <x-form.group label="Backfill Quantity" for="backfill_qty" help="Number of headers per group per thread to download.">
+                        <x-form.group label="Backfill Quantity" for="backfill_qty" help="Headers per group per pass">
                             <x-input id="backfill_qty" name="backfill_qty" type="number" value="{{ $site['backfill_qty'] ?? 20000 }}" class="w-full" />
-                        </x-form.group>
-
-                        <x-form.group label="Backfill Groups" for="backfill_groups" help="Number of groups to backfill per loop.">
-                            <x-input id="backfill_groups" name="backfill_groups" type="number" value="{{ $site['backfill_groups'] ?? 1 }}" class="w-full" />
                         </x-form.group>
 
                         <x-form.group label="Backfill Sleep Timer" for="back_timer">

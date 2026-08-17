@@ -15,14 +15,14 @@ class ProcessSafe extends Command
      * @var string
      */
     protected $signature = 'multiprocessing:safe
-                            {type : Type: binaries or backfill}';
+                            {type : Type: binaries}';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Safe binaries or backfill update using multiprocessing';
+    protected $description = 'Safe binaries update using multiprocessing';
 
     /**
      * Execute the console command.
@@ -31,11 +31,10 @@ class ProcessSafe extends Command
     {
         $type = $this->argument('type');
 
-        if (! \in_array($type, ['backfill', 'binaries'], true)) {
-            $this->error('Type must be either: binaries or backfill');
+        if ($type !== 'binaries') {
+            $this->error('Type must be: binaries');
             $this->line('');
             $this->line('binaries => Do Safe Binaries update');
-            $this->line('backfill => Do Safe Backfill update');
 
             return self::FAILURE;
         }
@@ -43,10 +42,7 @@ class ProcessSafe extends Command
         try {
             $service = new ForkingService;
 
-            match ($type) {
-                'binaries' => $service->safeBinaries(),
-                'backfill' => $service->safeBackfill(),
-            };
+            $service->safeBinaries();
 
             return self::SUCCESS;
         } catch (\Exception $e) {

@@ -45,6 +45,18 @@ class BackfillGroup extends Command
         }
 
         try {
+            $backfill = new BackfillService;
+            $status = $backfill->groupWork($group);
+            if ($status === null) {
+                throw new \RuntimeException("Unable to resolve backfill status for {$group}.");
+            }
+            $this->info(sprintf(
+                'Backfilling %s (%d remaining, target %s)',
+                $group,
+                $status->remaining,
+                $status->targetDate,
+            ));
+
             $nntp = $this->getNntp();
 
             if ($quantity === null) {
@@ -52,7 +64,6 @@ class BackfillGroup extends Command
                 $quantity = ($type === 1 ? '' : $value);
             }
 
-            $this->info("Backfilling group: {$group}");
             (new BackfillService(nntp: $nntp))->backfillAllGroups($group, $quantity);
 
             return self::SUCCESS;

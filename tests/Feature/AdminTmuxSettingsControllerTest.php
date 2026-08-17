@@ -177,6 +177,22 @@ class AdminTmuxSettingsControllerTest extends TestCase
         $siteResponse->assertDontSee('Advanced - Threaded Settings');
     }
 
+    public function test_tmux_page_only_offers_disabled_or_enabled_backfill_and_removes_the_group_limit(): void
+    {
+        $response = $this->actingAs($this->admin())->get(route('admin.tmux-edit'));
+
+        $response->assertOk();
+        $content = (string) $response->getContent();
+        $this->assertSame(1, preg_match('/<select[^>]*id="backfill"[^>]*>.*?<\/select>/s', $content, $matches));
+        $backfillSelect = $matches[0];
+        $this->assertMatchesRegularExpression('/<option value="0"[^>]*>\s*Disabled\s*<\/option>.*?<option value="1"[^>]*>\s*Enabled\s*<\/option>/s', $backfillSelect);
+        $this->assertStringNotContainsString('value="4"', $backfillSelect);
+        $this->assertSame(2, substr_count($backfillSelect, '<option'));
+        $response->assertDontSee('name="backfill_groups"', false);
+        $response->assertSee('Headers per group per pass');
+        $response->assertSee('Max concurrent groups (NNTP connections) per pass');
+    }
+
     public function test_validation_failure_shows_summary_inline_error_and_submitted_value(): void
     {
         $payload = array_fill_keys(array_keys($this->threadSettings()), '2');

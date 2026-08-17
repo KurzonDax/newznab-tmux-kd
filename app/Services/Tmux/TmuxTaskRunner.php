@@ -259,7 +259,6 @@ class TmuxTaskRunner
 
         $artisanCommand = match ((int) $enabled) {
             1 => 'multiprocessing:backfill',
-            4 => 'multiprocessing:safe backfill',
             default => null,
         };
 
