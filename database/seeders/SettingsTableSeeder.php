@@ -669,6 +669,62 @@ class SettingsTableSeeder extends Seeder
                 'name' => 'descriptive_title_rename',
                 'value' => '1',
             ],
+            244 => [
+                'name' => 'backup_enabled',
+                'value' => '0',
+            ],
+            245 => [
+                'name' => 'backup_full_dow',
+                'value' => '0',
+            ],
+            246 => [
+                'name' => 'backup_full_time',
+                'value' => '02:00',
+            ],
+            247 => [
+                'name' => 'backup_daily_time',
+                'value' => '02:00',
+            ],
+            248 => [
+                'name' => 'backup_location',
+                'value' => storage_path('app/backups'),
+            ],
+            249 => [
+                'name' => 'backup_keep_fulls',
+                'value' => '4',
+            ],
+            250 => [
+                'name' => 'backup_pause_tmux',
+                'value' => '1',
+            ],
+            251 => [
+                'name' => 'backup_incl_working',
+                'value' => '1',
+            ],
+            252 => [
+                'name' => 'backup_dump_binary',
+                'value' => '',
+            ],
+            253 => [
+                'name' => 'backup_offsite_path',
+                'value' => '',
+            ],
+            254 => [
+                'name' => 'backup_offsite_after',
+                'value' => '0',
+            ],
+            255 => [
+                'name' => 'backup_offsite_keep',
+                'value' => '0',
+            ],
+            256 => [
+                'name' => 'backup_run_request',
+                'value' => '',
+            ],
+            257 => [
+                'name' => 'backup_pause_marker',
+                'value' => '',
+            ],
         ]);
     }
 }

@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Enums\TmuxPaneRole;
 use App\Models\Settings;
+use App\Services\Backup\BackupPauseManager;
 use App\Services\Tmux\TmuxPaneManager;
 use App\Services\Tmux\TmuxSessionManager;
 use Illuminate\Console\Command;
@@ -37,15 +38,19 @@ class TmuxHealthCheck extends Command
     /**
      * Execute the console command.
      */
-    public function handle(): int
+    public function handle(BackupPauseManager $backupPauseManager): int
     {
         try {
+            $quiet = $this->output->isQuiet();
+            if ($backupPauseManager->recoverStalePause() && ! $quiet) {
+                $this->warn('Recovered stale database Backup pause and restored the prior tmux state.');
+            }
+
             $this->sessionName = $this->option('session')
                 ?? Settings::settingValue('tmux_session')
                 ?? config('tmux.session.default_name', 'nntmux');
 
             $this->sessionManager = new TmuxSessionManager($this->sessionName);
-            $quiet = $this->output->isQuiet();
             $shouldBeRunning = $this->shouldBeRunning();
             $autoRestart = (bool) $this->option('auto-restart');
 

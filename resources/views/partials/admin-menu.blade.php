@@ -314,6 +314,9 @@
             <a href="{{ url('/admin/tmux-edit') }}" class="block py-2 px-3 text-gray-400 dark:text-gray-500 hover:text-white dark:hover:text-white hover:bg-white/10 dark:hover:bg-white/5 rounded transition">
                 <i class="fas fa-terminal mr-2 text-green-400"></i>Tmux
             </a>
+            <a href="{{ route('admin.backups.index') }}" class="block py-2 px-3 text-gray-400 dark:text-gray-500 hover:text-white dark:hover:text-white hover:bg-white/10 dark:hover:bg-white/5 rounded transition">
+                <i class="fas fa-database mr-2 text-primary-400"></i>Backups
+            </a>
             <a href="{{ url('/admin/site-stats') }}" class="block py-2 px-3 text-gray-400 dark:text-gray-500 hover:text-white dark:hover:text-white hover:bg-white/10 dark:hover:bg-white/5 rounded transition">
                 <i class="fas fa-chart-bar mr-2 text-purple-400"></i>Statistics
             </a>
@@ -330,4 +333,3 @@
     </div>
 
 </div>
-

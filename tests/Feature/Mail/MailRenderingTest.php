@@ -10,6 +10,7 @@ use App\Mail\AccountChange;
 use App\Mail\AccountDeleted;
 use App\Mail\AccountExpired;
 use App\Mail\AccountWillExpire;
+use App\Mail\BackupFailed;
 use App\Mail\ContactUs;
 use App\Mail\ForgottenPassword;
 use App\Mail\IncidentDetected;
@@ -74,6 +75,7 @@ class MailRenderingTest extends TestCase
         yield 'AccountExpired' => [static fn () => new AccountExpired($userFactory())];
         yield 'AccountDeleted' => [static fn () => new AccountDeleted($userFactory())];
         yield 'ContactUs' => [static fn () => new ContactUs('admin@example.test', 'visitor@example.test', "Hello!\nQuestion inside.")];
+        yield 'BackupFailed' => [static fn () => new BackupFailed('full', 'Dump process failed.', '20260817-020000')];
     }
 
     #[DataProvider('mailableFactoryProvider')]

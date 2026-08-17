@@ -65,3 +65,4 @@ Schedule::command('nntmux:search-repair --limit=100')->everyMinute()->withoutOve
 // Keep the admin dashboard snapshot (Cache::flexible) hot so admins never pay
 // the cold-cache cost when opening /admin/index.
 Schedule::command('admin:warm-dashboard')->everyMinute()->withoutOverlapping();
+Schedule::command('backup:tick')->everyMinute()->withoutOverlapping()->runInBackground();
