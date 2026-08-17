@@ -19,6 +19,8 @@ use Illuminate\Support\Facades\DB;
  */
 class RegexService
 {
+    private const int LOCAL_CACHE_TTL_SECONDS = 15 * 60;
+
     /**
      * The ID of the Regex input string matched or the generic name
      */
@@ -32,7 +34,7 @@ class RegexService
     /**
      * Cache of regex and their TTL.
      *
-     * @var array<string, mixed>
+     * @var array<string, array{regex: array<int, object>, fetched_at: int}>
      */
     protected array $_regexCache = [];
 
@@ -307,6 +309,12 @@ class RegexService
      */
     protected function _fetchRegex(string $groupName): void
     {
+        $localEntry = $this->_regexCache[$groupName] ?? null;
+        if ($localEntry !== null
+            && now()->timestamp < $localEntry['fetched_at'] + self::LOCAL_CACHE_TTL_SECONDS) {
+            return;
+        }
+
         // Get all regex from DB which match the current group name. Cache them for 15 minutes. #CACHEDQUERY#
         $sql = sprintf(
             'SELECT r.id, r.regex %s FROM %s r WHERE \'%s\' REGEXP r.group_regex AND r.status = 1 ORDER BY r.ordinal ASC, r.group_regex ASC',
@@ -315,13 +323,18 @@ class RegexService
             $groupName
         );
 
-        $this->_regexCache[$groupName]['regex'] = Cache::get(md5($sql));
-        if ($this->_regexCache[$groupName]['regex'] !== null) {
-            return;
+        /** @var array<int, object>|null $regexes */
+        $regexes = Cache::get(md5($sql));
+        if ($regexes === null) {
+            $regexes = DB::select($sql);
+            $expiresAt = now()->addMinutes(config('nntmux.cache_expiry_long'));
+            Cache::put(md5($sql), $regexes, $expiresAt);
         }
-        $this->_regexCache[$groupName]['regex'] = DB::select($sql);
-        $expiresAt = now()->addMinutes(config('nntmux.cache_expiry_long'));
-        Cache::put(md5($sql), $this->_regexCache[$groupName]['regex'], $expiresAt);
+
+        $this->_regexCache[$groupName] = [
+            'regex' => $regexes,
+            'fetched_at' => now()->timestamp,
+        ];
     }
 
     /**
