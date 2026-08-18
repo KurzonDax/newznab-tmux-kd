@@ -8,6 +8,7 @@ use App\Models\TvEpisode;
 use App\Models\UserSerie;
 use App\Models\Video;
 use App\Services\SeriesReleaseService;
+use App\Support\YearRange;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -28,6 +29,17 @@ class SeriesController extends BasePageController
      */
     public function index(Request $request, string $id = ''): mixed
     {
+        $maxYear = now()->addYear()->year;
+        $yearInput = $this->scalarInput($request, 'year');
+        $yearFromInput = $this->scalarInput($request, 'year_from');
+        $yearToInput = $this->scalarInput($request, 'year_to');
+        $yearRange = YearRange::fromInput($yearInput, $yearFromInput, $yearToInput, $maxYear);
+        $yearViewData = [
+            'years' => array_reverse(range(1900, $maxYear)),
+            'year' => $yearRange !== null ? $yearInput : '',
+            'year_from' => $yearInput === 'custom' ? $yearRange?->from : '',
+            'year_to' => $yearInput === 'custom' ? $yearRange?->to : '',
+        ];
 
         if ($id && ctype_digit($id)) {
             $category = -1;
@@ -60,22 +72,24 @@ class SeriesController extends BasePageController
             } else {
                 $myshows = UserSerie::getShow($this->userdata->id, $show['id']);
                 $categoryIds = $this->seriesReleaseService->categoryIds($catarray);
-                $seasonCounts = $this->seriesReleaseService->seasonCounts((int) $show['id'], $categoryIds);
+                $seasonCounts = $this->seriesReleaseService->seasonCounts((int) $show['id'], $categoryIds, $yearRange);
+                $requestedSeason = $this->resolveSeason($request);
 
                 if ($seasonCounts === []) {
-                    $nodata = 'No releases for this series.';
+                    $selectedSeason = $requestedSeason;
+                    if ($yearRange === null) {
+                        $nodata = 'No releases for this series.';
+                    }
                 } else {
-                    $requestedSeason = $this->resolveSeason($request);
-                    $selectedSeason = $requestedSeason !== null && array_key_exists($requestedSeason, $seasonCounts)
-                        ? $requestedSeason
-                        : array_key_first($seasonCounts);
+                    $selectedSeason = $requestedSeason ?? array_key_first($seasonCounts);
 
                     $seasonReleaseResult = $this->seriesReleaseService->releasesForSeason(
                         (int) $show['id'],
                         (int) $selectedSeason,
                         $offset,
                         $seriesLimit,
-                        $categoryIds
+                        $categoryIds,
+                        $yearRange,
                     );
 
                     $series = [];
@@ -146,7 +160,7 @@ class SeriesController extends BasePageController
             $catid = $category !== -1 ? $category : '';
             $totalPages = $seriesLimit > 0 ? (int) ceil(max($totalRows, 1) / $seriesLimit) : 1;
 
-            $this->viewData = array_merge($this->viewData, [
+            $this->viewData = array_merge($this->viewData, $yearViewData, [
                 'seasons' => $seasons,
                 'seasonTabs' => $seasonTabs,
                 'selectedSeason' => $selectedSeason,
@@ -188,34 +202,37 @@ class SeriesController extends BasePageController
 
             return view('series.viewseries', $this->viewData);
         } else {
-            $letter = ($id && preg_match('/^(0-9|[A-Z])$/i', $id)) ? $id : '0-9';
+            $hasLetterPath = $id !== '' && preg_match('/^(0-9|[A-Z])$/i', $id) === 1;
+            $letter = $hasLetterPath ? $id : '0-9';
 
             $showname = $this->scalarInput($request, 'title');
 
-            if ($showname !== '' && ! $id) {
+            if (($showname !== '' || $yearRange !== null) && ! $id) {
                 $letter = '';
             }
 
-            $masterserieslist = Video::getSeriesList($this->userdata->id, $letter, $showname);
+            $masterserieslist = Video::getSeriesList($this->userdata->id, $letter, $showname, $yearRange);
 
             $serieslist = [];
-            foreach ($masterserieslist as $s) {
-                if (preg_match('/^[0-9]/', $s['title'])) {
+            foreach ($masterserieslist as $series) {
+                $series['artwork_url'] = $this->seriesArtworkUrl($series);
+                if (preg_match('/^[0-9]/', $series['title'])) {
                     $thisrange = '0-9';
-                } elseif (preg_match('/([A-Z]).*/i', $s['title'], $hits)) {
+                } elseif (preg_match('/([A-Z]).*/i', $series['title'], $hits)) {
                     $thisrange = strtoupper($hits[1]);
                 } else {
                     // Handle titles that don't start with a letter or number
                     $thisrange = '#';
                 }
-                $serieslist[$thisrange][] = $s;
+                $serieslist[$thisrange][] = $series;
             }
             ksort($serieslist);
 
-            $this->viewData = array_merge($this->viewData, [
+            $this->viewData = array_merge($this->viewData, $yearViewData, [
                 'serieslist' => $serieslist,
                 'seriesrange' => range('A', 'Z'),
                 'seriesletter' => $letter,
+                'seriesfilterletter' => $hasLetterPath ? $letter : '',
                 'showname' => $showname,
                 'meta_title' => 'View Series List',
                 'meta_keywords' => 'view,series,tv,show,description,details',
@@ -224,6 +241,28 @@ class SeriesController extends BasePageController
 
             return view('series.viewserieslist', $this->viewData);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $series
+     */
+    private function seriesArtworkUrl(array $series): string
+    {
+        if (! empty($series['banner'])) {
+            $bannerUrl = getImageAssetUrl('tvshows', $series['id'].'-banner');
+            if ($bannerUrl !== null) {
+                return $bannerUrl;
+            }
+        }
+
+        if (! empty($series['image'])) {
+            $posterUrl = getImageAssetUrl('tvshows', (string) $series['id']);
+            if ($posterUrl !== null) {
+                return $posterUrl;
+            }
+        }
+
+        return asset('/assets/images/no-cover.png');
     }
 
     private function resolveSeason(Request $request): ?int

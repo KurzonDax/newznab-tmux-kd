@@ -390,7 +390,7 @@ abstract class AbstractTvProvider extends BaseVideoProvider
 
     public function setCoverFound(int $videoId): void
     {
-        TvInfo::query()->where('videos_id', $videoId)->update(['image' => 1]);
+        TvInfo::markImageAvailable($videoId);
     }
 
     /**

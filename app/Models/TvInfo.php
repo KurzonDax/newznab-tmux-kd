@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $publisher The channel/network of production/release (ABC, BBC, Showtime, etc.).
  * @property string $localzone The linux tz style identifier
  * @property bool $image Does the video have a cover image?
+ * @property bool $banner Does the video have a series banner?
  *
  * @method static \Illuminate\Database\Eloquent\Builder|\App\Models\TvInfo whereImage($value)
  * @method static \Illuminate\Database\Eloquent\Builder|\App\Models\TvInfo whereLocalzone($value)
@@ -55,4 +56,39 @@ class TvInfo extends Model
      * @var string
      */
     protected $primaryKey = 'videos_id';
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'image' => 'boolean',
+            'banner' => 'boolean',
+        ];
+    }
+
+    public static function markImageAvailable(int $videoId): bool
+    {
+        return self::markArtworkAvailable($videoId, 'image');
+    }
+
+    public static function markBannerAvailable(int $videoId): bool
+    {
+        return self::markArtworkAvailable($videoId, 'banner');
+    }
+
+    private static function markArtworkAvailable(int $videoId, string $column): bool
+    {
+        $updated = self::query()
+            ->where('videos_id', $videoId)
+            ->where($column, false)
+            ->update([$column => true]);
+
+        if ($updated > 0) {
+            Video::invalidateSeriesListCache();
+        }
+
+        return $updated > 0;
+    }
 }

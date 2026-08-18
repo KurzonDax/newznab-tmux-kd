@@ -9,6 +9,7 @@ use App\Services\FanartTvService;
 use App\Services\ReleaseImageService;
 use App\Services\TmdbClient;
 use App\Services\TraktService;
+use App\Services\TvBannerService;
 use CanIHaveSomeCoffee\TheTVDbAPI\Exception\ParseException;
 use CanIHaveSomeCoffee\TheTVDbAPI\Exception\ResourceNotFoundException;
 use CanIHaveSomeCoffee\TheTVDbAPI\Exception\UnauthorizedException;
@@ -42,6 +43,8 @@ class TvdbProvider extends AbstractTvProvider
     private FanartTvService $fanart;
 
     private mixed $fanartapikey;
+
+    private ?TvBannerService $tvBannerService = null;
 
     /**
      * TvdbProvider constructor.
@@ -147,6 +150,7 @@ class TvdbProvider extends AbstractTvProvider
                             $this->getPoster($videoId);
                         }
                     }
+                    $this->getBanner((int) $videoId, (int) $siteId);
 
                     $seriesNo = (! empty($release['season']) ? preg_replace('/^S0*/i', '', (string) $release['season']) : '');
                     $episodeNo = (! empty($release['episode']) ? preg_replace('/^E0*/i', '', (string) $release['episode']) : '');
@@ -248,9 +252,11 @@ class TvdbProvider extends AbstractTvProvider
         }
     }
 
-    public function getBanner(mixed $videoID, mixed $siteId): bool
+    public function getBanner(int $videoID, int $siteId): bool
     {
-        return false;
+        $this->tvBannerService ??= app(TvBannerService::class);
+
+        return $this->tvBannerService->fetch($videoID, $siteId);
     }
 
     /**

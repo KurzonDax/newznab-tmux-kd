@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Facades\Search;
+use App\Support\YearRange;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -55,6 +56,8 @@ use Illuminate\Support\Facades\DB;
  */
 class Video extends Model
 {
+    private const SERIES_LIST_CACHE_VERSION_KEY = 'video_series_list:version';
+
     protected $dateFormat = false;
 
     /**
@@ -108,7 +111,7 @@ class Video extends Model
     public static function getByVideoID(mixed $id)
     {
         return self::query()
-            ->select(['videos.*', 'tv_info.summary', 'tv_info.publisher', 'tv_info.image'])
+            ->select(['videos.*', 'tv_info.summary', 'tv_info.publisher', 'tv_info.image', 'tv_info.banner'])
             ->where('videos.id', $id)
             ->join('tv_info', 'videos.id', '=', 'tv_info.videos_id')
             ->first();
@@ -149,19 +152,25 @@ class Video extends Model
      *
      * @return array<string, mixed>
      */
-    public static function getSeriesList(mixed $uid, string $letter = '', string $showname = ''): array
+    public static function getSeriesList(mixed $uid, string $letter = '', string $showname = '', ?YearRange $yearRange = null): array
     {
-        $cacheKey = 'video_series_list:'.md5(serialize([(string) $uid, $letter, $showname]));
+        $cacheVersion = (string) Cache::get(self::SERIES_LIST_CACHE_VERSION_KEY, '0');
+        $cacheKey = 'video_series_list:'.md5(serialize([$cacheVersion, (string) $uid, $letter, $showname, $yearRange?->from, $yearRange?->to]));
 
-        return Cache::remember($cacheKey, now()->addMinutes((int) config('nntmux.cache_expiry_medium', 60)), function () use ($uid, $letter, $showname): array {
-            return self::getSeriesListUncached($uid, $letter, $showname);
+        return Cache::remember($cacheKey, now()->addMinutes((int) config('nntmux.cache_expiry_medium', 60)), function () use ($uid, $letter, $showname, $yearRange): array {
+            return self::getSeriesListUncached($uid, $letter, $showname, $yearRange);
         });
+    }
+
+    public static function invalidateSeriesListCache(): void
+    {
+        Cache::forever(self::SERIES_LIST_CACHE_VERSION_KEY, bin2hex(random_bytes(16)));
     }
 
     /**
      * @internal Used by {@see getSeriesList} with cache wrapper.
      */
-    private static function getSeriesListUncached(mixed $uid, string $letter = '', string $showname = ''): array
+    private static function getSeriesListUncached(mixed $uid, string $letter = '', string $showname = '', ?YearRange $yearRange = null): array
     {
         $params = [
             'uid' => $uid,
@@ -195,12 +204,24 @@ class Video extends Model
             }
         }
 
+        $yearCondition = '';
+        if (($startDate = $yearRange?->startDate()) !== null) {
+            $yearCondition .= ' AND videos.started >= :started_from';
+            $params['started_from'] = $startDate;
+        }
+        if (($endDate = $yearRange?->endDate()) !== null) {
+            $yearCondition .= ' AND videos.started <= :started_to';
+            $params['started_to'] = $endDate;
+        }
+
         $sql = "
             SELECT
                 videos.*,
                 tve.firstaired AS prevdate,
                 tve.title AS previnfo,
                 tvi.publisher,
+                tvi.image,
+                tvi.banner,
                 us.id AS userseriesid
             FROM videos
             INNER JOIN tv_info AS tvi ON videos.id = tvi.videos_id
@@ -224,6 +245,7 @@ class Video extends Model
             )
             {$letterCondition}
             {$shownameCondition}
+            {$yearCondition}
             GROUP BY videos.id
             ORDER BY videos.title ASC
         ";
