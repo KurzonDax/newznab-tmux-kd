@@ -62,8 +62,16 @@ class BinariesService
 
     private int $headersBlackListed = 0;
 
+    private int $headersRejected = 0;
+
     /** @var array<int, true> */
     private array $headersReceived = [];
+
+    /**
+     * True when the last scan received headers but none of them carried a usable
+     * article number, meaning the whole batch has to be thrown away.
+     */
+    private bool $lastScanRejected = false;
 
     public function __construct(
         ?BinariesConfig $config = null,
@@ -118,6 +126,15 @@ class BinariesService
     public function getMessageBuffer(): int
     {
         return $this->config->messageBuffer;
+    }
+
+    /**
+     * Whether the last scan() call threw its batch away because the server returned
+     * headers with no usable article number.
+     */
+    public function lastScanWasRejected(): bool
+    {
+        return $this->lastScanRejected;
     }
 
     /**
@@ -267,8 +284,9 @@ class BinariesService
         $this->groupMySQL = $groupMySQL;
         $this->last = $last;
         $this->first = $first;
-        $this->notYEnc = $this->headersBlackListed = 0;
+        $this->notYEnc = $this->headersBlackListed = $this->headersRejected = 0;
         $this->headersReceived = [];
+        $this->lastScanRejected = false;
 
         $returnArray = [];
         $partRepair = ($type === 'partrepair');
@@ -295,6 +313,32 @@ class BinariesService
         // Extract article range info
         $returnArray = $this->headerParser->getArticleRange($headers, $groupMySQL['name'], $first, $last);
 
+        // The server answered, but not one header carried an article number we can use --
+        // the signature of a desynchronised overview format (see NNTPService::getXOVER()),
+        // where every field is shifted by one. Storing this batch would write a subject
+        // string to usenet_groups.last_record and queue the entire requested range for part
+        // repair, so drop it and let the next pass fetch the range again.
+        if ($returnArray === []) {
+            $this->lastScanRejected = true;
+
+            Log::warning('Discarded a header batch with no usable article numbers.', [
+                'group' => $groupMySQL['name'],
+                'requested_first' => $first,
+                'requested_last' => $last,
+                'headers' => $msgCount,
+                'sample_header' => $this->sampleHeaderForLog($headers),
+            ]);
+
+            $this->log(
+                'Discarded '.number_format($msgCount).' headers from '.$groupMySQL['name'].
+                ' ('.number_format($first).' to '.number_format($last).'): no usable article numbers.',
+                __FUNCTION__,
+                'warning'
+            );
+
+            return $returnArray;
+        }
+
         // Parse and store one bounded chunk at a time. The previous flow built
         // a second full-size parsed header array before storage, doubling peak
         // memory for large XOVER responses.
@@ -320,6 +364,7 @@ class BinariesService
             }
             $this->notYEnc += (int) $parseResult['notYEnc'];
             $this->headersBlackListed += (int) $parseResult['blacklisted'];
+            $this->headersRejected += (int) ($parseResult['rejected'] ?? 0);
             $this->headerParser->flushBlacklistUpdates();
 
             if ($parseResult['headers'] !== []) {
@@ -672,12 +717,25 @@ class BinariesService
     }
 
     /**
+     * Move the group pointer on from the summary of the scan that just ran.
+     *
+     * Must be called with the summary of the immediately preceding scan(): an empty
+     * summary means either "the server returned nothing" or "the batch was thrown
+     * away", and only the scan itself knows which.
+     *
      * @param  array<string, mixed>  $groupMySQL
      * @param  array<string, mixed>  $groupNNTP
      * @param  array<string, mixed>  $scanSummary
      */
     protected function updateGroupAfterScan(array &$groupMySQL, array $groupNNTP, array $scanSummary, int $last): void
     {
+        // A batch the scan threw away tells us nothing about where the group really is.
+        // Leaving the pointer alone means the same range is retried next pass; advancing
+        // it here would skip the articles for good.
+        if ($scanSummary === [] && $this->lastScanRejected) {
+            return;
+        }
+
         if (! empty($scanSummary)) {
             // New group - update first record
             if ($groupMySQL['first_record_postdate'] === null && (int) $groupMySQL['first_record'] === 0) {
@@ -722,6 +780,25 @@ class BinariesService
                 $groupMySQL['last_record'] = $last;
             }
         }
+    }
+
+    /**
+     * Take one header from a discarded batch so the log shows what the server sent.
+     *
+     * @param  array<int, array<string, mixed>>  $headers
+     * @return array<string, mixed>
+     */
+    private function sampleHeaderForLog(array $headers): array
+    {
+        $sample = reset($headers);
+        if (! \is_array($sample)) {
+            return [];
+        }
+
+        return array_map(
+            static fn (mixed $value): mixed => \is_string($value) ? Str::limit($value, 120) : $value,
+            \array_slice($sample, 0, 4, true)
+        );
     }
 
     /**
@@ -973,7 +1050,8 @@ class BinariesService
         cli()->primary(
             'Received '.\count($this->headersReceived).
             ' articles of '.number_format($this->last - $this->first + 1).' requested, '.
-            $this->headersBlackListed.' blacklisted, '.$this->notYEnc.' not yEnc.'
+            $this->headersBlackListed.' blacklisted, '.$this->notYEnc.' not yEnc'.
+            ($this->headersRejected > 0 ? ', '.$this->headersRejected.' without a usable article number' : '').'.'
         );
     }
 

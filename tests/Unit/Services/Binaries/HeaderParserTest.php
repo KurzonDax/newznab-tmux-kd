@@ -6,6 +6,7 @@ namespace Tests\Unit\Services\Binaries;
 
 use App\Services\Binaries\HeaderParser;
 use Illuminate\Support\Facades\Log;
+use Tests\Support\NeverBlacklistedService;
 use Tests\TestCase;
 
 final class HeaderParserTest extends TestCase
@@ -48,6 +49,38 @@ final class HeaderParserTest extends TestCase
                     'offending_value' => '9',
                     'reason' => 'out_of_range',
                 ]);
+    }
+
+    public function test_parse_rejects_headers_whose_article_number_is_not_numeric(): void
+    {
+        $parser = new HeaderParser(new NeverBlacklistedService);
+
+        $result = $parser->parse([
+            ['Number' => '500', 'Subject' => 'Some.Release (1/10) yEnc', 'Bytes' => 100],
+            // A shifted overview format puts the subject in 'Number' and the
+            // poster in 'Subject'.
+            ['Number' => '2O8W9UZ0WrU37hNpMTuHrRZojgZjo [3/10] yEnc (131/165)', 'Subject' => 'poster@example.com'],
+            ['Number' => '', 'Subject' => 'Some.Release (2/10) yEnc'],
+            ['Number' => 'abc', 'Subject' => 'Some.Release (3/10) yEnc'],
+        ], 'alt.test');
+
+        $this->assertSame(['500'], $result['received'], 'Only numeric article numbers count as received.');
+        $this->assertSame(3, $result['rejected']);
+        $this->assertSame(3, $parser->getRejectedCount());
+        $this->assertCount(1, $result['headers']);
+        $this->assertSame(0, $result['notYEnc'], 'A shifted header is rejected outright, not counted as non-yEnc.');
+    }
+
+    public function test_parse_counters_reset_between_batches(): void
+    {
+        $parser = new HeaderParser(new NeverBlacklistedService);
+
+        $parser->parse([['Number' => 'garbage', 'Subject' => 'poster@example.com']], 'alt.test');
+        $parser->reset();
+        $result = $parser->parse([['Number' => '900', 'Subject' => 'Some.Release (1/2) yEnc']], 'alt.test');
+
+        $this->assertSame(0, $result['rejected']);
+        $this->assertSame(0, $parser->getRejectedCount());
     }
 
     public function test_it_returns_an_empty_summary_when_no_article_number_is_valid(): void
