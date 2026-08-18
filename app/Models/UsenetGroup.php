@@ -9,6 +9,7 @@ use App\Services\Nzb\NzbService;
 use App\Services\ReleaseImageService;
 use App\Services\Releases\ReleaseManagementService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -139,6 +140,21 @@ class UsenetGroup extends Model
         return self::query()
             ->whereKey($id)
             ->where('first_record', '>', $firstRecord)
+            ->update([
+                'first_record_postdate' => self::dateTimeFromTimestamp($firstRecordTimestamp),
+                'first_record' => $firstRecord,
+                'last_updated' => now(),
+            ]);
+    }
+
+    public static function initializeOrRewindFirstRecord(int $id, int $firstRecord, int $firstRecordTimestamp): int
+    {
+        return self::query()
+            ->whereKey($id)
+            ->where(function (Builder $query) use ($firstRecord): void {
+                $query->where('first_record', 0)
+                    ->orWhere('first_record', '>', $firstRecord);
+            })
             ->update([
                 'first_record_postdate' => self::dateTimeFromTimestamp($firstRecordTimestamp),
                 'first_record' => $firstRecord,

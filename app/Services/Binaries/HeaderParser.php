@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Binaries;
 
 use App\Services\BlacklistService;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Parses and filters raw NNTP headers.
@@ -142,33 +143,61 @@ final class HeaderParser
      * @param  array<int, array<string, mixed>>  $headers
      * @return array<string, mixed>
      */
-    public function getArticleRange(array $headers): array
+    public function getArticleRange(array $headers, string $groupName, int $first, int $last): array
     {
-        $result = [];
-        $count = \count($headers);
+        $firstValidHeader = null;
+        $lastValidHeader = null;
 
-        if ($count === 0) {
-            return $result;
-        }
-
-        // Find first valid article
-        for ($i = 0; $i < $count; $i++) {
-            if (isset($headers[$i]['Number'])) {
-                $result['firstArticleNumber'] = $headers[$i]['Number'];
-                $result['firstArticleDate'] = $headers[$i]['Date'] ?? null;
-                break;
+        foreach ($headers as $header) {
+            if (! array_key_exists('Number', $header)) {
+                continue;
             }
-        }
 
-        // Find last valid article
-        for ($i = $count - 1; $i >= 0; $i--) {
-            if (isset($headers[$i]['Number'])) {
-                $result['lastArticleNumber'] = $headers[$i]['Number'];
-                $result['lastArticleDate'] = $headers[$i]['Date'] ?? null;
-                break;
+            $rawNumber = $header['Number'];
+            $reason = null;
+            if (! \is_string($rawNumber) || preg_match('/^[+-]?\d+$/D', $rawNumber) !== 1) {
+                $reason = 'not_an_integer_string';
+            } else {
+                $articleNumber = filter_var($rawNumber, FILTER_VALIDATE_INT, [
+                    'options' => [
+                        'min_range' => $first,
+                        'max_range' => $last,
+                    ],
+                ]);
+                if ($articleNumber === false) {
+                    $reason = 'out_of_range';
+                }
             }
+
+            if ($reason !== null) {
+                Log::warning('Rejected XOVER article number while determining scan range.', [
+                    'group' => $groupName,
+                    'requested_first' => $first,
+                    'requested_last' => $last,
+                    'offending_value' => $rawNumber,
+                    'reason' => $reason,
+                ]);
+
+                continue;
+            }
+
+            $validHeader = [
+                'number' => $articleNumber,
+                'date' => $header['Date'] ?? null,
+            ];
+            $firstValidHeader ??= $validHeader;
+            $lastValidHeader = $validHeader;
         }
 
-        return $result;
+        if ($firstValidHeader === null || $lastValidHeader === null) {
+            return [];
+        }
+
+        return [
+            'firstArticleNumber' => $firstValidHeader['number'],
+            'firstArticleDate' => $firstValidHeader['date'],
+            'lastArticleNumber' => $lastValidHeader['number'],
+            'lastArticleDate' => $lastValidHeader['date'],
+        ];
     }
 }
