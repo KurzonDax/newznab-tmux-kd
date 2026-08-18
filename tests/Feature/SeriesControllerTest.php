@@ -8,12 +8,14 @@ use App\Http\Middleware\ClearanceMiddleware;
 use App\Http\Middleware\Google2FAMiddleware;
 use App\Http\Middleware\TrustedDevice2FAMiddleware;
 use App\Models\Category;
+use App\Models\TvInfo;
 use App\Models\User;
 use App\View\Composers\GlobalDataComposer;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
 use PDO;
 use ReflectionClass;
@@ -133,6 +135,7 @@ class SeriesControllerTest extends TestCase
             'season' => 1,
             'page' => 3,
             't' => Category::TV_SD,
+            'year' => now()->year,
         ]));
 
         $response->assertOk();
@@ -141,6 +144,7 @@ class SeriesControllerTest extends TestCase
         $this->assertStringContainsString('season=2', $html);
         $this->assertStringContainsString('page=1', $html);
         $this->assertStringContainsString('t=5030', $html);
+        $this->assertStringContainsString('year='.now()->year, $html);
         $this->assertStringContainsString('#series-episodes', $html);
         $this->assertStringContainsString('x-data="seriesSeasonLoader"', $html);
         $this->assertStringContainsString('data-series-season-link', $html);
@@ -188,6 +192,207 @@ class SeriesControllerTest extends TestCase
         $response->assertSee('Paged.Show.S01E01.720p-GROUP');
         $response->assertDontSee('Paged.Show.S02E01.720p-GROUP');
         $this->assertSame(20, substr_count($response->getContent(), 'series-episode-card'));
+    }
+
+    public function test_series_list_filters_premiere_year_by_decade_and_letter(): void
+    {
+        $user = $this->createUser();
+        $mashId = $this->createShow('MASH', '1972-09-17');
+        $muppetShowId = $this->createShow('Muppet Show', '1976-09-05');
+        $matlockId = $this->createShow('Matlock', '1986-09-23');
+        $this->createMatchedRelease($mashId, 1, 1, 'MASH.S01E01.720p-GROUP');
+        $this->createMatchedRelease($muppetShowId, 1, 1, 'Muppet.Show.S01E01.720p-GROUP');
+        $this->createMatchedRelease($matlockId, 1, 1, 'Matlock.S01E01.720p-GROUP');
+
+        $response = $this->actingAs($user)->get(route('series', [
+            'id' => 'M',
+            'year' => '1970s',
+        ]));
+
+        $response->assertOk();
+        $response->assertSee('MASH');
+        $response->assertSee('Muppet Show');
+        $response->assertDontSee('Matlock');
+        $response->assertSee('data-year-picker', false);
+        $response->assertSee('value="1970s" selected', false);
+    }
+
+    public function test_series_list_supports_single_custom_open_and_reversed_year_ranges(): void
+    {
+        $user = $this->createUser();
+        foreach ([1989, 1990, 1992, 1993] as $year) {
+            $videoId = $this->createShow('Range Show '.$year, $year.'-06-15');
+            $this->createMatchedRelease($videoId, 1, 1, 'Range.Show.'.$year.'.S01E01-GROUP');
+        }
+
+        $custom = $this->actingAs($user)->get(route('series', [
+            'year' => 'custom',
+            'year_from' => 1990,
+            'year_to' => 1992,
+        ]));
+        $custom->assertSee('Range Show 1990');
+        $custom->assertSee('Range Show 1992');
+        $custom->assertDontSee('Range Show 1989');
+        $custom->assertDontSee('Range Show 1993');
+
+        $single = $this->actingAs($user)->get(route('series', ['year' => '1992']));
+        $single->assertSee('Range Show 1992');
+        $single->assertDontSee('Range Show 1990');
+
+        $reversed = $this->actingAs($user)->get(route('series', [
+            'year' => 'custom',
+            'year_from' => 1992,
+            'year_to' => 1990,
+        ]));
+        $reversed->assertSee('Range Show 1990');
+        $reversed->assertSee('Range Show 1992');
+        $reversed->assertDontSee('Range Show 1989');
+        $reversed->assertDontSee('Range Show 1993');
+
+        $openEnded = $this->actingAs($user)->get(route('series', [
+            'year' => 'custom',
+            'year_from' => 1992,
+            'year_to' => '',
+        ]));
+        $openEnded->assertSee('Range Show 1992');
+        $openEnded->assertSee('Range Show 1993');
+        $openEnded->assertDontSee('Range Show 1990');
+
+        $blank = $this->actingAs($user)->get(route('series', [
+            'title' => 'Range Show',
+            'year' => 'custom',
+            'year_from' => '',
+            'year_to' => '',
+        ]));
+        $blank->assertSee('Range Show 1989');
+        $blank->assertSee('Range Show 1993');
+    }
+
+    public function test_show_page_filters_episode_releases_by_air_year_within_the_selected_season(): void
+    {
+        $user = $this->createUser();
+        $videoId = $this->createShow();
+        $this->createMatchedRelease($videoId, 1, 1, 'Air.Year.2005.S01E01-GROUP', '2005-02-03');
+        $this->createMatchedRelease($videoId, 1, 2, 'Air.Year.2006.S01E02-GROUP', '2006-02-03');
+        $this->createMatchedRelease($videoId, 2, 1, 'Other.Season.2005.S02E01-GROUP', '2005-03-04');
+
+        $response = $this->actingAs($user)->get(route('series', [
+            'id' => $videoId,
+            'season' => 1,
+            'year' => '2005',
+        ]));
+
+        $response->assertOk();
+        $response->assertSee('Air.Year.2005.S01E01-GROUP');
+        $response->assertDontSee('Air.Year.2006.S01E02-GROUP');
+        $response->assertDontSee('Other.Season.2005.S02E01-GROUP');
+        $response->assertSee('data-year-picker', false);
+        $response->assertSee('value="2005" selected', false);
+        $this->assertStringContainsString('year=2005', $response->getContent());
+        $this->assertStringContainsString('page=1', $response->getContent());
+    }
+
+    public function test_show_page_keeps_a_selected_season_that_has_no_releases_in_the_selected_year(): void
+    {
+        $user = $this->createUser();
+        $videoId = $this->createShow();
+        $this->createMatchedRelease($videoId, 1, 1, 'Selected.Season.2006.S01E01-GROUP', '2006-02-03');
+        $this->createMatchedRelease($videoId, 2, 1, 'Other.Season.2005.S02E01-GROUP', '2005-03-04');
+
+        $response = $this->actingAs($user)->get(route('series', [
+            'id' => $videoId,
+            'season' => 1,
+            'year' => '2005',
+        ]));
+
+        $response->assertOk();
+        $response->assertSee('No releases found on this page for the selected season.');
+        $response->assertDontSee('Selected.Season.2006.S01E01-GROUP');
+        $response->assertDontSee('Other.Season.2005.S02E01-GROUP');
+        $response->assertViewHas('selectedSeason', 1);
+    }
+
+    public function test_show_page_keeps_the_year_picker_available_when_no_air_year_matches(): void
+    {
+        $user = $this->createUser();
+        $videoId = $this->createShow();
+        $this->createMatchedRelease($videoId, 1, 1, 'No.Match.S01E01-GROUP', '2005-02-03');
+
+        $response = $this->actingAs($user)->get(route('series', [
+            'id' => $videoId,
+            'year' => '1999',
+        ]));
+
+        $response->assertOk();
+        $response->assertSee('data-year-picker', false);
+        $response->assertSee('No episodes/releases found for this series.');
+        $response->assertDontSee('No.Match.S01E01-GROUP');
+    }
+
+    public function test_series_list_prefers_banner_then_poster_then_neutral_placeholder(): void
+    {
+        $user = $this->createUser();
+        $bannerId = $this->createShow('Banner Show', '2020-01-01', image: true, banner: true);
+        $posterId = $this->createShow('Poster Show', '2021-01-01', image: true);
+        $placeholderId = $this->createShow('Placeholder Show', '2022-01-01');
+        $this->createMatchedRelease($bannerId, 1, 1, 'Banner.Show.S01E01-GROUP');
+        $this->createMatchedRelease($posterId, 1, 1, 'Poster.Show.S01E01-GROUP');
+        $this->createMatchedRelease($placeholderId, 1, 1, 'Placeholder.Show.S01E01-GROUP');
+
+        $coversRoot = $this->makeTempDirectory('series-list-artwork');
+        config(['nntmux_settings.covers_path' => $coversRoot]);
+        File::ensureDirectoryExists($coversRoot.'/tvshows');
+        File::put($coversRoot.'/tvshows/'.$bannerId.'-banner.webp', 'banner');
+        File::put($coversRoot.'/tvshows/'.$bannerId.'.webp', 'poster');
+        File::put($coversRoot.'/tvshows/'.$posterId.'.jpg', 'poster');
+
+        $response = $this->actingAs($user)->get(route('series', ['title' => 'Show']));
+
+        $response->assertOk();
+        $response->assertSee('/covers/tvshows/'.$bannerId.'-banner.webp', false);
+        $response->assertDontSee('/covers/tvshows/'.$bannerId.'.webp', false);
+        $response->assertSee('/covers/tvshows/'.$posterId.'.jpg', false);
+        $response->assertSee('/assets/images/no-cover.png', false);
+    }
+
+    public function test_show_page_renders_available_artwork_when_the_summary_is_empty(): void
+    {
+        $user = $this->createUser();
+        $videoId = $this->createShow('Summaryless Show', '2023-01-01', banner: true, summary: '');
+        $this->createMatchedRelease($videoId, 1, 1, 'Summaryless.Show.S01E01-GROUP');
+
+        $coversRoot = $this->makeTempDirectory('series-detail-artwork');
+        config(['nntmux_settings.covers_path' => $coversRoot]);
+        File::ensureDirectoryExists($coversRoot.'/tvshows');
+        File::put($coversRoot.'/tvshows/'.$videoId.'-banner.webp', 'banner');
+
+        $response = $this->actingAs($user)->get(route('series', ['id' => $videoId]));
+
+        $response->assertOk();
+        $response->assertSee('/covers/tvshows/'.$videoId.'-banner.webp', false);
+    }
+
+    public function test_marking_a_banner_available_refreshes_cached_series_list_artwork_flags(): void
+    {
+        $user = $this->createUser();
+        $videoId = $this->createShow('Cached Artwork Show', '2023-01-01', image: true);
+        $this->createMatchedRelease($videoId, 1, 1, 'Cached.Artwork.Show.S01E01-GROUP');
+
+        $coversRoot = $this->makeTempDirectory('series-cache-artwork');
+        config(['nntmux_settings.covers_path' => $coversRoot]);
+        File::ensureDirectoryExists($coversRoot.'/tvshows');
+        File::put($coversRoot.'/tvshows/'.$videoId.'.webp', 'poster');
+        File::put($coversRoot.'/tvshows/'.$videoId.'-banner.webp', 'banner');
+
+        $before = $this->actingAs($user)->get(route('series', ['title' => 'Cached Artwork Show']));
+        $before->assertSee('/covers/tvshows/'.$videoId.'.webp', false);
+        $before->assertDontSee('/covers/tvshows/'.$videoId.'-banner.webp', false);
+
+        TvInfo::markBannerAvailable($videoId);
+
+        $after = $this->actingAs($user)->get(route('series', ['title' => 'Cached Artwork Show']));
+        $after->assertSee('/covers/tvshows/'.$videoId.'-banner.webp', false);
+        $after->assertDontSee('/covers/tvshows/'.$videoId.'.webp', false);
     }
 
     private function createSchema(): void
@@ -306,6 +511,7 @@ class SeriesControllerTest extends TestCase
             $table->text('summary')->nullable();
             $table->string('publisher')->nullable();
             $table->boolean('image')->default(false);
+            $table->boolean('banner')->default(false);
         });
 
         Schema::create('tv_episodes', function (Blueprint $table): void {
@@ -422,34 +628,45 @@ class SeriesControllerTest extends TestCase
         return User::query()->findOrFail($userId);
     }
 
-    private function createShow(): int
-    {
+    private function createShow(
+        string $title = 'Paged Test Show',
+        string $started = '2024-01-01',
+        bool $image = false,
+        bool $banner = false,
+        string $summary = 'A test show.',
+    ): int {
         $videoId = DB::table('videos')->insertGetId([
             'type' => 0,
-            'title' => 'Paged Test Show',
-            'started' => '2024-01-01',
+            'title' => $title,
+            'started' => $started,
             'countries_id' => 'US',
         ]);
 
         DB::table('tv_info')->insert([
             'videos_id' => $videoId,
-            'summary' => 'A test show.',
+            'summary' => $summary,
             'publisher' => 'Test Network',
-            'image' => 0,
+            'image' => $image,
+            'banner' => $banner,
         ]);
 
         return (int) $videoId;
     }
 
-    private function createMatchedRelease(int $videoId, int $season, int $episode, string $searchName): void
-    {
+    private function createMatchedRelease(
+        int $videoId,
+        int $season,
+        int $episode,
+        string $searchName,
+        ?string $firstAired = null,
+    ): void {
         $episodeId = DB::table('tv_episodes')->insertGetId([
             'videos_id' => $videoId,
             'series' => $season,
             'episode' => $episode,
             'se_complete' => sprintf('S%02dE%02d', $season, $episode),
             'title' => 'Episode '.$episode,
-            'firstaired' => now()->subDays($episode)->toDateString(),
+            'firstaired' => $firstAired ?? now()->subDays($episode)->toDateString(),
             'summary' => 'Episode summary.',
         ]);
 

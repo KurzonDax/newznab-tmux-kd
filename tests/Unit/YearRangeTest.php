@@ -43,10 +43,19 @@ final class YearRangeTest extends TestCase
     }
 
     #[Test]
-    public function it_rejects_invalid_or_reversed_ranges(): void
+    public function it_swaps_reversed_custom_ranges(): void
+    {
+        $range = YearRange::fromInput('custom', '1980', '1970');
+
+        $this->assertNotNull($range);
+        $this->assertSame(1970, $range->from);
+        $this->assertSame(1980, $range->to);
+    }
+
+    #[Test]
+    public function it_rejects_invalid_ranges(): void
     {
         $this->assertNull(YearRange::fromInput('custom', '', ''));
-        $this->assertNull(YearRange::fromInput('custom', '1980', '1970'));
         $this->assertNull(YearRange::fromInput('not-a-year'));
         $this->assertNull(YearRange::fromInput(['1975']));
     }

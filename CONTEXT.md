@@ -85,6 +85,13 @@ A low-confidence Movies/Other guess (`0.5`) for multi-token `Title.Year[.N]` nam
 A browse filter that selects one year, a named decade, or an optional-start/optional-end custom range. An open custom endpoint means no lower or upper year limit.
 _Avoid_: separate "from year" and "to year" filters presented as unrelated choices.
 
+**Series banner**:
+The wide fanart.tv banner image stored per show alongside its poster; the series list prefers it and falls back to the poster.
+_Avoid_: "cover" for TV artwork when the banner/poster distinction matters.
+
+**Premiere year**:
+The year of `videos.started`, when a series first aired; the Year picker filters this on the series list. Distinct from an episode's **air year** (`tv_episodes.firstaired`), which the picker filters on a show page.
+
 **Movie search prefixes**:
 Field qualifiers in a Movies search—`title:`, `actor:`/`actors:`, `director:`, and `plot:`—that restrict the following word or quoted phrase to that movie detail. Words without a prefix may match any of those details, but every search word must match somewhere.
 _Avoid_: "advanced syntax" for the separate Advanced form fields; both inputs produce the same movie search constraints.

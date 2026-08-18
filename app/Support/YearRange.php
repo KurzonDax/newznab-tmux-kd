@@ -10,6 +10,16 @@ final readonly class YearRange
 
     public function __construct(public ?int $from, public ?int $to) {}
 
+    public function startDate(): ?string
+    {
+        return $this->from !== null ? $this->from.'-01-01' : null;
+    }
+
+    public function endDate(): ?string
+    {
+        return $this->to !== null ? $this->to.'-12-31' : null;
+    }
+
     public static function fromInput(mixed $year, mixed $yearFrom = null, mixed $yearTo = null, ?int $maxYear = null): ?self
     {
         if (! is_scalar($year)) {
@@ -28,7 +38,7 @@ final readonly class YearRange
             }
 
             if ($from !== null && $to !== null && $from > $to) {
-                return null;
+                [$from, $to] = [$to, $from];
             }
 
             return new self($from, $to);

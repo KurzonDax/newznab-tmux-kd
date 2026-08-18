@@ -132,6 +132,7 @@ class TvdbPipe extends AbstractTvProviderPipe
         } else {
             $this->fetchFanartPoster($videoId, $siteId);
         }
+        $tvdb->getBanner($videoId, $siteId);
 
         // Process episode
         $seriesNo = ! empty($parsedInfo['season']) ? preg_replace('/^S0*/i', '', (string) $parsedInfo['season']) : '';

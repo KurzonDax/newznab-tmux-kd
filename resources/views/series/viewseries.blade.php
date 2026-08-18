@@ -82,25 +82,29 @@
                         @endif
                     </div>
 
-                    <!-- Summary with inline poster -->
-                    @if(!empty($seriessummary))
+                    @php
+                        $detailPosterUrl = getImageAssetUrl('tvshows', (string) $show['id']);
+                        $detailBannerUrl = getImageAssetUrl('tvshows', $show['id'].'-banner');
+                        $detailArtworkUrl = $detailPosterUrl ?? $detailBannerUrl;
+                    @endphp
+
+                    <!-- Overview and available artwork -->
+                    @if(!empty($seriessummary) || $detailArtworkUrl !== null)
                         <div class="mb-6">
                             <h6 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center">
                                 <i class="fa fa-align-left mr-2 text-gray-600"></i>Overview
                             </h6>
                             <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
-                                @if(!empty($show['image']) && $show['image'] != 0)
-                                    <div class="lg:col-span-1">
+                                @if($detailArtworkUrl !== null)
+                                    <div class="{{ !empty($seriessummary) ? 'lg:col-span-1' : 'lg:col-span-4' }}">
                                         <img class="series-detail-poster w-full h-auto rounded-lg"
-                                             alt="{{ $seriestitles ?? '' }} Poster"
+                                             alt="{{ $seriestitles ?? '' }} artwork"
                                              loading="lazy"
-                                             src="{{ getImageAssetUrl('tvshows', (string) $show['id'], url('/covers/tvshows/no-cover.jpg')) }}"/>
+                                             src="{{ $detailArtworkUrl }}"/>
                                     </div>
-                                    <div class="lg:col-span-3">
-                                        <p class="text-gray-700 dark:text-gray-300 leading-relaxed">{{ $seriessummary }}</p>
-                                    </div>
-                                @else
-                                    <div class="lg:col-span-4">
+                                @endif
+                                @if(!empty($seriessummary))
+                                    <div class="{{ $detailArtworkUrl !== null ? 'lg:col-span-3' : 'lg:col-span-4' }}">
                                         <p class="text-gray-700 dark:text-gray-300 leading-relaxed">{{ $seriessummary }}</p>
                                     </div>
                                 @endif
@@ -197,6 +201,23 @@
                     </div>
                 </div>
             </div>
+
+            <form method="get"
+                  action="{{ route('series', ['id' => $show['id']]) }}"
+                  class="surface-panel-alt mb-4 grid grid-cols-1 items-end gap-4 rounded-xl border p-4 md:grid-cols-[minmax(15rem,1fr)_auto]">
+                @if($category !== '')
+                    <input type="hidden" name="t" value="{{ $category }}">
+                @endif
+                @if($selectedSeason !== null)
+                    <input type="hidden" name="season" value="{{ $selectedSeason }}">
+                @endif
+                <x-year-picker :years="$years"
+                               :selected="$year ?? ''"
+                               :from="$year_from ?? ''"
+                               :to="$year_to ?? ''"
+                               id="episode-year" />
+                <x-button type="submit" icon="fa fa-filter">Filter Episodes</x-button>
+            </form>
 
             <!-- Episodes by Season - Tabbed Interface -->
             @if(!empty($seasonTabs))
