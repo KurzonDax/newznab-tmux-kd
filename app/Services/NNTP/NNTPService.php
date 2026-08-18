@@ -498,18 +498,26 @@ class NNTPService extends NntpClient
         }
 
         // Fetch the header overview format (for setting the array keys on the return array).
-        if ($this->_overviewFormatCache !== null && isset($this->_overviewFormatCache['Xref'])) {
-            $overview = $this->_overviewFormatCache;
-        } else {
+        // The cache is shared with the vendor client, whose getOverview() stores the format
+        // with 'Number' prepended (the article number is implicit in LIST OVERVIEW.FMT).
+        // Normalise to that same shape, otherwise part repair and the range scan running on
+        // one connection key each other's headers one field out of step.
+        $overview = $this->_overviewFormatCache;
+        if ($overview === null) {
             $overview = $this->getOverviewFormat(false, true);
-            if (self::isError($overview)) {
+            if (self::isError($overview) || ! \is_array($overview)) {
                 return $overview;
             }
-            $this->_overviewFormatCache = $overview;
         }
 
+        if (! \array_key_exists('Number', $overview)) {
+            $overview = array_merge(['Number' => false], $overview);
+        }
+
+        $this->_overviewFormatCache = $overview;
+
         // Pre-compute keys array and Xref position for faster processing
-        $keys = array_merge(['Number'], array_keys($overview));
+        $keys = array_keys($overview);
         $keyCount = \count($keys);
         $xrefIndex = array_search('Xref', $keys, true);
 

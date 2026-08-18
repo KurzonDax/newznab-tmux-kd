@@ -18,6 +18,8 @@ final class HeaderParser
 
     private int $blacklisted = 0;
 
+    private int $rejected = 0;
+
     public function __construct(?BlacklistService $blacklistService = null)
     {
         $this->blacklistService = $blacklistService ?? new BlacklistService;
@@ -30,6 +32,7 @@ final class HeaderParser
     {
         $this->notYEnc = 0;
         $this->blacklisted = 0;
+        $this->rejected = 0;
     }
 
     /**
@@ -57,8 +60,15 @@ final class HeaderParser
                 : $missingParts);
 
         foreach ($headers as $header) {
-            // Check if we got the article
-            if (! isset($header['Number'])) {
+            // Check we got the article, and that its number is usable. A desynchronised
+            // overview format (see NNTPService::getXOVER()) shifts every field by one, so
+            // 'Number' holds the subject line. Treating those as received would advance the
+            // group pointer to a garbage value and queue every requested article for part
+            // repair, so drop them before anything else looks at them.
+            $number = $header['Number'] ?? null;
+            if (! \is_scalar($number) || ! ctype_digit((string) $number)) {
+                $this->rejected++;
+
                 continue;
             }
 
@@ -107,6 +117,7 @@ final class HeaderParser
             'received' => $receivedNumbers,
             'notYEnc' => $this->notYEnc,
             'blacklisted' => $this->blacklisted,
+            'rejected' => $this->rejected,
         ];
     }
 
@@ -135,6 +146,14 @@ final class HeaderParser
     public function getBlacklistedCount(): int
     {
         return $this->blacklisted;
+    }
+
+    /**
+     * Get count of headers dropped because they carried no usable article number.
+     */
+    public function getRejectedCount(): int
+    {
+        return $this->rejected;
     }
 
     /**
