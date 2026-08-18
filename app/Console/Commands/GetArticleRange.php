@@ -9,7 +9,6 @@ use App\Models\UsenetGroup;
 use App\Services\Binaries\BinariesService;
 use App\Services\NNTP\NNTPService;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class GetArticleRange extends Command
@@ -95,8 +94,6 @@ class GetArticleRange extends Command
      */
     private function updateGroupRecords(string $mode, array $groupMySQL, array $return): void
     {
-        $columns = [];
-
         switch ($mode) {
             case 'binaries':
                 if ($return['lastArticleNumber'] <= $groupMySQL['last_record']) {
@@ -105,16 +102,13 @@ class GetArticleRange extends Command
                 $unixTime = is_numeric($return['lastArticleDate'])
                     ? $return['lastArticleDate']
                     : strtotime($return['lastArticleDate']);
-                $columns[1] = sprintf('last_record_postdate = FROM_UNIXTIME(%s)', $unixTime);
-                $columns[2] = sprintf('last_record = %s', $return['lastArticleNumber']);
-                $query = sprintf(
-                    'UPDATE usenet_groups SET %s, %s, last_updated = NOW() WHERE id = %d AND last_record < %s',
-                    $columns[1],
-                    $columns[2],
-                    $groupMySQL['id'],
-                    $return['lastArticleNumber']
+                UsenetGroup::advanceLastRecord(
+                    (int) $groupMySQL['id'],
+                    (int) $return['lastArticleNumber'],
+                    (int) $unixTime
                 );
-                break;
+
+                return;
 
             case 'backfill':
                 if ($return['firstArticleNumber'] >= $groupMySQL['first_record']) {
@@ -123,22 +117,18 @@ class GetArticleRange extends Command
                 $unixTime = is_numeric($return['firstArticleDate'])
                     ? $return['firstArticleDate']
                     : strtotime($return['firstArticleDate']);
-                $columns[1] = sprintf('first_record_postdate = FROM_UNIXTIME(%s)', $unixTime);
-                $columns[2] = sprintf('first_record = %s', $return['firstArticleNumber']);
-                $query = sprintf(
-                    'UPDATE usenet_groups SET %s, %s, last_updated = NOW() WHERE id = %d AND first_record > %s',
-                    $columns[1],
-                    $columns[2],
-                    $groupMySQL['id'],
-                    $return['firstArticleNumber']
+                UsenetGroup::rewindFirstRecord(
+                    (int) $groupMySQL['id'],
+                    (int) $return['firstArticleNumber'],
+                    (int) $unixTime
                 );
-                break;
+
+                return;
 
             default:
                 return;
         }
 
-        DB::update($query);
     }
 
     /**

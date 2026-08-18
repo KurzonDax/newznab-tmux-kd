@@ -1,3 +1,8 @@
+@php
+    $returnTo = $returnTo ?? 'all';
+    $returnQuery = $returnQuery ?? [];
+@endphp
+
 <tr id="grouprow-{{ $group->id }}" class="group-row hover:bg-gray-50 dark:hover:bg-gray-700">
     <td class="px-4 py-4 text-center">
         <input type="checkbox"
@@ -14,7 +19,7 @@
                @change="onGroupCheckboxChange()">
     </td>
     <td class="px-6 py-4">
-        <a href="{{ route('admin.group-edit', ['id' => $group->id]) }}" class="font-semibold text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300">
+        <a href="{{ route('admin.group-edit', ['id' => $group->id, 'return_to' => $returnTo] + $returnQuery) }}" class="font-semibold text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300">
             {{ str_replace('alt.binaries', 'a.b', $group->name) }}
         </a>
         @if($group->description)
@@ -23,13 +28,17 @@
     </td>
     <td class="px-6 py-4 text-sm">
         <div class="flex flex-col">
-            <span class="text-gray-900 dark:text-gray-100">{{ $group->first_record_postdate }}</span>
-            <small class="text-gray-500 dark:text-gray-400">{{ \Carbon\Carbon::parse($group->first_record_postdate)->diffForHumans() }}</small>
+            <span class="text-gray-900 dark:text-gray-100" title="{{ userDate($group->first_record_postdate) }}">
+                {{ $group->first_record_postdate ? userDate($group->first_record_postdate) : 'Never' }}
+            </span>
+            <small class="text-gray-500 dark:text-gray-400">
+                {{ $group->first_record_postdate ? userDateDiffForHumans($group->first_record_postdate) : 'Never' }}
+            </small>
         </div>
     </td>
     <td class="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">{{ $group->last_record_postdate }}</td>
-    <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400" title="{{ $group->last_updated }}">
-        {{ \Carbon\Carbon::parse($group->last_updated)->diffForHumans() }}
+    <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400" title="{{ userDate($group->last_updated) }}">
+        {{ $group->last_updated ? userDateDiffForHumans($group->last_updated) : 'Never' }}
     </td>
     <td class="px-6 py-4 text-center" id="group-{{ $group->id }}">
         @if($group->active == 1)
@@ -102,7 +111,7 @@
     </td>
     <td class="px-6 py-4 text-center" id="groupdel-{{ $group->id }}">
         <div class="flex justify-center gap-1">
-            <x-button-link :href="route('admin.group-edit', ['id' => $group->id])"
+            <x-button-link :href="route('admin.group-edit', ['id' => $group->id, 'return_to' => $returnTo] + $returnQuery)"
                            variant="ghost"
                            size="icon"
                            icon="fas fa-pencil"

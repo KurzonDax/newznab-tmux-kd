@@ -809,8 +809,7 @@ if (! function_exists('userDate')) {
         }
 
         try {
-            // Parse the date in the app's timezone (which should be UTC)
-            // If dates in DB are stored in server timezone, they'll be parsed correctly
+            // Database datetimes are naive values stored in the app timezone.
             $appTimezone = config('app.timezone', 'UTC');
             $carbon = Carbon::parse($date, $appTimezone);
 
@@ -840,8 +839,7 @@ if (! function_exists('userDateDiffForHumans')) {
         }
 
         try {
-            // Parse the date in the app's timezone (which should be UTC)
-            // If dates in DB are stored in server timezone, they'll be parsed correctly
+            // Database datetimes are naive values stored in the app timezone.
             $appTimezone = config('app.timezone', 'UTC');
             $carbon = Carbon::parse($date, $appTimezone);
 

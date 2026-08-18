@@ -9,7 +9,7 @@
                 <h1 class="text-2xl font-semibold text-gray-800 dark:text-gray-100">
                     <i class="fas fa-plus-square mr-2"></i>{{ $title ?? 'Bulk Add Newsgroups' }}
                 </h1>
-                <x-button-link href="{{ url('/admin/group-list') }}" variant="muted" icon="fas fa-list">
+                <x-button-link href="{{ $returnUrl }}" variant="muted" icon="fas fa-list">
                     View All Groups
                 </x-button-link>
             </div>
@@ -79,6 +79,9 @@
                 <!-- Form -->
                 <form action="{{ url('/admin/group-bulk?action=submit') }}" method="POST" id="groupBulkForm">
                     @csrf
+                    <input type="hidden" name="return_to" value="{{ old('return_to', $returnTo) }}"/>
+                    <input type="hidden" name="groupname" value="{{ old('groupname', $returnQuery['groupname'] ?? '') }}"/>
+                    <input type="hidden" name="page" value="{{ old('page', $returnQuery['page'] ?? '') }}"/>
 
                     <!-- Group Pattern -->
                     <div class="mb-6">
@@ -161,7 +164,7 @@
         <!-- Footer -->
         <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
             <div class="flex justify-between">
-                <x-button-link href="{{ url('/admin/group-list') }}" variant="muted" icon="fas fa-arrow-left">
+                <x-button-link href="{{ $returnUrl }}" variant="muted" icon="fas fa-arrow-left">
                     Back to Groups
                 </x-button-link>
                 @if(empty($groupmsglist))
@@ -169,7 +172,7 @@
                         Add Groups
                     </x-button>
                 @else
-                    <x-button-link href="{{ url('/admin/group-bulk') }}" icon="fas fa-plus-circle">
+                    <x-button-link href="{{ route('admin.group-bulk', ['return_to' => $returnTo] + $returnQuery) }}" icon="fas fa-plus-circle">
                         Add More Groups
                     </x-button-link>
                 @endif
@@ -179,4 +182,3 @@
 </div>
 
 @endsection
-

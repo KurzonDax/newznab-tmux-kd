@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\AdminGroupListOrigin;
 use App\Http\Controllers\BasePageController;
 use App\Http\Requests\Admin\AdminGroupListRequest;
 use App\Models\RootCategory;
 use App\Models\UsenetGroup;
+use App\Support\AdminGroupReturnContext;
 use App\Support\SizeUnit;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
@@ -28,7 +30,11 @@ class AdminGroupController extends BasePageController
         $rootCategories = $this->rootCategories();
         $title = 'Group List';
 
-        return view('admin.groups.index', compact('title', 'groupname', 'grouplist', 'rootCategories'));
+        return view(
+            'admin.groups.index',
+            compact('title', 'groupname', 'grouplist', 'rootCategories')
+                + AdminGroupReturnContext::forList($request, AdminGroupListOrigin::ALL)->listViewData()
+        );
     }
 
     /**
@@ -39,6 +45,7 @@ class AdminGroupController extends BasePageController
         // set the current action
         $action = $request->input('action') ?? 'view';
         $groupmsglist = '';
+        $returnContext = AdminGroupReturnContext::fromRequest($request);
 
         if ($action === 'submit') {
             $groupFilter = $request->input('groupfilter');
@@ -53,7 +60,7 @@ class AdminGroupController extends BasePageController
 
         $title = 'Bulk Add Newsgroups';
 
-        return view('admin.groups.bulk', compact('title', 'groupmsglist'));
+        return view('admin.groups.bulk', compact('title', 'groupmsglist') + $returnContext->formViewData());
     }
 
     /**
@@ -63,6 +70,7 @@ class AdminGroupController extends BasePageController
     {
         // Set the current action.
         $action = $request->input('action') ?? 'view';
+        $returnContext = AdminGroupReturnContext::fromRequest($request);
 
         $group = [
             'id' => '',
@@ -125,7 +133,7 @@ class AdminGroupController extends BasePageController
                     UsenetGroup::updateGroup($request->all());
                 }
 
-                return redirect()->to('admin/group-list');
+                return redirect()->route($returnContext->origin->routeName(), $returnContext->query);
 
             case 'view':
             default:
@@ -143,7 +151,9 @@ class AdminGroupController extends BasePageController
         $groupMinSize = SizeUnit::fromBytes($group['minsizetoformrelease'] ?? 0);
         $rootCategories = $this->rootCategories();
 
-        return view('admin.groups.edit', compact('title', 'group', 'groupMinSize', 'rootCategories') + ['sizeUnits' => SizeUnit::UNITS]);
+        return view('admin.groups.edit', compact('title', 'group', 'groupMinSize', 'rootCategories') + [
+            'sizeUnits' => SizeUnit::UNITS,
+        ] + $returnContext->formViewData());
     }
 
     /**
@@ -156,7 +166,11 @@ class AdminGroupController extends BasePageController
         $rootCategories = $this->rootCategories();
         $title = 'Active Groups';
 
-        return view('admin.groups.index', compact('title', 'groupname', 'grouplist', 'rootCategories'));
+        return view(
+            'admin.groups.index',
+            compact('title', 'groupname', 'grouplist', 'rootCategories')
+                + AdminGroupReturnContext::forList($request, AdminGroupListOrigin::ACTIVE)->listViewData()
+        );
     }
 
     /**
@@ -169,7 +183,11 @@ class AdminGroupController extends BasePageController
         $rootCategories = $this->rootCategories();
         $title = 'Inactive Groups';
 
-        return view('admin.groups.index', compact('title', 'groupname', 'grouplist', 'rootCategories'));
+        return view(
+            'admin.groups.index',
+            compact('title', 'groupname', 'grouplist', 'rootCategories')
+                + AdminGroupReturnContext::forList($request, AdminGroupListOrigin::INACTIVE)->listViewData()
+        );
     }
 
     /**

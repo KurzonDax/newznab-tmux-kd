@@ -9,7 +9,7 @@
                 <h1 class="text-2xl font-semibold text-gray-800 dark:text-gray-100">
                     <i class="fas fa-edit mr-2"></i>{{ $title ?? 'Group Edit' }}
                 </h1>
-                <x-button-link href="{{ url('/admin/group-list') }}" variant="muted" icon="fas fa-arrow-left">Back to Groups</x-button-link>
+                <x-button-link href="{{ $returnUrl }}" variant="muted" icon="fas fa-arrow-left">Back to Groups</x-button-link>
             </div>
         </div>
 
@@ -27,6 +27,9 @@
         <form action="{{ url('/admin/group-edit?action=submit') }}" method="POST" id="groupForm" class="px-6 py-6">
             @csrf
             <input type="hidden" name="id" value="{{ $group['id'] ?? '' }}"/>
+            <input type="hidden" name="return_to" value="{{ old('return_to', $returnTo) }}"/>
+            <input type="hidden" name="groupname" value="{{ old('groupname', $returnQuery['groupname'] ?? '') }}"/>
+            <input type="hidden" name="page" value="{{ old('page', $returnQuery['page'] ?? '') }}"/>
 
             <!-- Group Name -->
             <div class="mb-6">
@@ -282,7 +285,7 @@
         <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900" data-ajax-url="{{ url('/admin/ajax') }}" data-csrf-token="{{ csrf_token() }}">
             <div class="flex justify-between">
                 <div class="flex gap-2">
-                    <x-button-link href="{{ url('/admin/group-list') }}"
+                    <x-button-link href="{{ $returnUrl }}"
                             variant="muted"
                             icon="fas fa-times">
                         Cancel
