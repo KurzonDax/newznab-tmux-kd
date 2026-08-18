@@ -48,6 +48,9 @@ export function adminGroups() {
             const container = this._root.querySelector('[data-ajax-url]') || this._root;
             this._ajaxUrl = container.dataset.ajaxUrl || '/admin/ajax';
             this._csrf = container.dataset.csrfToken || document.querySelector('meta[name="csrf-token"]')?.content;
+            this._returnContext = { return_to: container.dataset.returnTo || 'all' };
+            if (container.dataset.returnGroupname) { this._returnContext.groupname = container.dataset.returnGroupname; }
+            if (container.dataset.returnPage) { this._returnContext.page = container.dataset.returnPage; }
 
             // Selection is per page: never inherit checkboxes a browser restored
             // across a reload or a back navigation.
@@ -132,7 +135,7 @@ export function adminGroups() {
             return fetch(this._ajaxUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-TOKEN': this._csrf, 'X-Requested-With': 'XMLHttpRequest' },
-                body: new URLSearchParams(body)
+                body: new URLSearchParams({ ...body, ...this._returnContext })
             }).then(r => r.json());
         },
 

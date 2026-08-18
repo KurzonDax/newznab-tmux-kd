@@ -1,14 +1,20 @@
 @extends('layouts.admin')
 
 @section('content')
-<div x-data="adminGroups" class="space-y-6" data-ajax-url="{{ url('/admin/ajax') }}" data-csrf-token="{{ csrf_token() }}">
+<div x-data="adminGroups"
+     class="space-y-6"
+     data-ajax-url="{{ url('/admin/ajax') }}"
+     data-csrf-token="{{ csrf_token() }}"
+     data-return-to="{{ $returnTo }}"
+     data-return-groupname="{{ $returnQuery['groupname'] ?? '' }}"
+     data-return-page="{{ $returnQuery['page'] ?? '' }}">
     <x-admin.card>
         <x-admin.page-header :title="$title ?? 'Group List'" icon="fas fa-users" subtitle="Activate, backfill, reset, and purge indexed Usenet groups.">
             <x-slot:actions>
                 <x-admin.button :href="url('/admin/group-list-active')" icon="fas fa-check-circle">Active</x-admin.button>
                 <x-admin.button :href="url('/admin/group-list-inactive')" tone="gray" icon="fas fa-times-circle">Inactive</x-admin.button>
                 <x-admin.button :href="url('/admin/group-list')" tone="gray" icon="fas fa-list">All</x-admin.button>
-                <x-admin.button :href="url('/admin/group-bulk')" tone="success" icon="fas fa-plus-circle">Bulk Add</x-admin.button>
+                <x-admin.button :href="route('admin.group-bulk', ['return_to' => $returnTo] + $returnQuery)" tone="success" icon="fas fa-plus-circle">Bulk Add</x-admin.button>
             </x-slot:actions>
         </x-admin.page-header>
 
@@ -170,7 +176,7 @@
             </x-admin.empty-state>
         @else
             <x-admin.empty-state icon="fas fa-exclamation-triangle" title="No groups available" message="No groups have been added yet.">
-                <x-admin.button :href="url('/admin/group-bulk')" tone="success" icon="fas fa-plus-circle">Add Groups</x-admin.button>
+                <x-admin.button :href="route('admin.group-bulk', ['return_to' => $returnTo] + $returnQuery)" tone="success" icon="fas fa-plus-circle">Add Groups</x-admin.button>
             </x-admin.empty-state>
         @endif
     </x-admin.card>

@@ -4,6 +4,10 @@ use Illuminate\Support\Str;
 use PDO\MYSQL;
 
 $redisClient = env('REDIS_CLIENT', 'phpredis');
+$configuredDatabaseTimezone = env('DB_TIMEZONE');
+$databaseTimezone = is_string($configuredDatabaseTimezone) && $configuredDatabaseTimezone !== ''
+    ? $configuredDatabaseTimezone
+    : (new DateTimeImmutable('now', new DateTimeZone(config('app.timezone', 'UTC'))))->format('P');
 
 if ($redisClient === 'predis' && ! class_exists('Predis\\Client')) {
     $redisClient = 'phpredis';
@@ -40,6 +44,7 @@ return [
             'unix_socket' => env('DB_SOCKET', ''),
             'charset' => 'utf8mb4',
             'collation' => 'utf8mb4_unicode_ci',
+            'timezone' => $databaseTimezone,
             'strict' => false,
             'engine' => 'InnoDB ROW_FORMAT=DYNAMIC',
             'options' => extension_loaded('pdo_mysql') ? array_filter([
@@ -72,6 +77,7 @@ return [
             'unix_socket' => env('DB_SOCKET', ''),
             'charset' => 'utf8mb4',
             'collation' => 'utf8mb4_unicode_ci',
+            'timezone' => $databaseTimezone,
             'strict' => false,
             'engine' => 'InnoDB ROW_FORMAT=DYNAMIC',
             'options' => extension_loaded('pdo_mysql') ? array_filter([

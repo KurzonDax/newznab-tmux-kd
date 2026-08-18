@@ -9,6 +9,7 @@ use App\Http\Middleware\Google2FAMiddleware;
 use App\Models\Category;
 use App\Models\User;
 use App\View\Composers\GlobalDataComposer;
+use Carbon\Carbon;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Schema\Blueprint;
@@ -195,6 +196,101 @@ class AdminGroupListPageTest extends TestCase
         $response->assertSee('3</span> groups', false);
     }
 
+    public function test_group_list_edit_and_bulk_links_preserve_the_origin_and_filters(): void
+    {
+        $this->createGroups(8);
+        $admin = $this->admin();
+
+        foreach ([
+            'admin.group-list' => 'all',
+            'admin.group-list-active' => 'active',
+            'admin.group-list-inactive' => 'inactive',
+        ] as $routeName => $returnTo) {
+            $response = $this->actingAs($admin)->get(route($routeName, [
+                'groupname' => 'alt.binaries.group',
+                'page' => 2,
+            ]));
+
+            $response->assertOk();
+            $response->assertSee(
+                'return_to='.$returnTo.'&amp;groupname=alt.binaries.group&amp;page=2',
+                false
+            );
+            $response->assertSee(route('admin.group-bulk', [
+                'return_to' => $returnTo,
+                'groupname' => 'alt.binaries.group',
+                'page' => 2,
+            ]));
+        }
+    }
+
+    public function test_bulk_group_navigation_preserves_the_origin_and_filters(): void
+    {
+        $returnUrl = route('admin.group-list-inactive', [
+            'groupname' => 'alt.binaries',
+            'page' => 2,
+        ]);
+
+        $response = $this->actingAs($this->admin())->get(route('admin.group-bulk', [
+            'return_to' => 'inactive',
+            'groupname' => 'alt.binaries',
+            'page' => 2,
+        ]));
+
+        $response->assertOk();
+        $response->assertSee($returnUrl);
+        $response->assertSee('name="return_to" value="inactive"', false);
+        $response->assertSee('name="groupname" value="alt.binaries"', false);
+        $response->assertSee('name="page" value="2"', false);
+    }
+
+    public function test_group_lists_render_app_timezone_timestamps_for_the_users_timezone(): void
+    {
+        $originalTimezone = date_default_timezone_get();
+        config([
+            'app.timezone' => 'America/Chicago',
+            'nntmux.items_per_page' => 10,
+        ]);
+        date_default_timezone_set('America/Chicago');
+        Carbon::setTestNow(Carbon::parse('2026-08-17 12:00:00', 'America/Chicago'));
+
+        try {
+            $this->createGroups(4);
+            $groupIds = DB::table('usenet_groups')->orderBy('id')->pluck('id');
+
+            DB::table('usenet_groups')->whereIn('id', [$groupIds[0], $groupIds[1]])->update([
+                'last_updated' => now(),
+            ]);
+            DB::table('usenet_groups')->whereIn('id', [$groupIds[2], $groupIds[3]])->update([
+                'last_updated' => null,
+            ]);
+
+            $admin = $this->admin();
+            $admin->forceFill(['timezone' => 'Asia/Tokyo'])->save();
+
+            foreach (['admin.group-list', 'admin.group-list-active', 'admin.group-list-inactive'] as $routeName) {
+                $response = $this->actingAs($admin)->get(route($routeName));
+
+                $response->assertOk();
+                $response->assertSee('0 seconds ago');
+                $response->assertSee('Aug 18, 2026 02:00');
+                $response->assertSee('Never');
+                $response->assertDontSee('from now');
+            }
+
+            $browseResponse = $this->actingAs($admin)->get(route('browsegroup'));
+
+            $browseResponse->assertOk();
+            $browseResponse->assertSee('0 seconds ago');
+            $browseResponse->assertSee('Aug 18, 2026 02:00');
+            $browseResponse->assertSee('Never');
+            $browseResponse->assertDontSee('from now');
+        } finally {
+            Carbon::setTestNow();
+            date_default_timezone_set($originalTimezone);
+        }
+    }
+
     public function test_zero_result_search_keeps_the_search_controls_editable(): void
     {
         $this->createGroups(2);
@@ -317,6 +413,27 @@ class AdminGroupListPageTest extends TestCase
         $this->assertSame($lastUpdated, DB::table('usenet_groups')->where('id', $ids[0])->value('last_updated'));
     }
 
+    public function test_ajax_replacement_rows_preserve_the_inactive_list_context(): void
+    {
+        $this->createGroups(2);
+        $groupId = DB::table('usenet_groups')->where('active', false)->value('id');
+
+        $response = $this->actingAs($this->admin())->post(route('admin.ajax'), [
+            'action' => 'toggle_group_backfill_status',
+            'group_id' => $groupId,
+            'backfill_status' => 1,
+            'return_to' => 'inactive',
+            'groupname' => 'alt.binaries.group',
+            'page' => 2,
+        ]);
+
+        $response->assertOk()->assertJson(['success' => true]);
+        $response->assertJsonPath('row', fn (string $row): bool => str_contains(
+            $row,
+            'return_to=inactive&amp;groupname=alt.binaries.group&amp;page=2'
+        ));
+    }
+
     public function test_edit_selected_saves_and_surfaces_obfuscated_name_routing(): void
     {
         $this->createGroups(1);
@@ -432,9 +549,55 @@ class AdminGroupListPageTest extends TestCase
             'minsizetoformrelease' => '2.5G',
         ]);
 
-        $response->assertRedirect('admin/group-list');
+        $response->assertRedirect(route('admin.group-list'));
         $this->assertSame(2684354560, DB::table('usenet_groups')->where('id', $group->id)->value('minsizetoformrelease'));
         $this->assertNull(DB::table('usenet_groups')->where('id', $group->id)->value('minfilestoformrelease'));
+    }
+
+    public function test_group_edit_navigation_and_save_return_to_the_origin_list(): void
+    {
+        $this->createGroups(1);
+        $group = DB::table('usenet_groups')->first();
+        $admin = $this->admin();
+
+        foreach ([
+            'all' => 'admin.group-list',
+            'active' => 'admin.group-list-active',
+            'inactive' => 'admin.group-list-inactive',
+        ] as $returnTo => $routeName) {
+            $context = [
+                'return_to' => $returnTo,
+                'groupname' => 'alt.binaries',
+                'page' => 3,
+            ];
+            $returnUrl = route($routeName, [
+                'groupname' => 'alt.binaries',
+                'page' => 3,
+            ]);
+
+            $editResponse = $this->actingAs($admin)->get(route('admin.group-edit', ['id' => $group->id] + $context));
+
+            $editResponse->assertOk();
+            $editResponse->assertSee($returnUrl);
+            $editResponse->assertSee('name="return_to" value="'.$returnTo.'"', false);
+            $editResponse->assertSee('name="groupname" value="alt.binaries"', false);
+            $editResponse->assertSee('name="page" value="3"', false);
+
+            $saveResponse = $this->actingAs($admin)->post(route('admin.group-edit', ['action' => 'submit']), [
+                'id' => $group->id,
+                'name' => $group->name,
+                'description' => $group->description,
+                'backfill_target' => 1,
+                'first_record' => 0,
+                'last_record' => 0,
+                'active' => 1,
+                'backfill' => 0,
+                'minfilestoformrelease' => 0,
+                'minsizetoformrelease' => 0,
+            ] + $context);
+
+            $saveResponse->assertRedirect($returnUrl);
+        }
     }
 
     public function test_single_group_edit_saves_obfuscated_name_routing(): void
@@ -457,7 +620,7 @@ class AdminGroupListPageTest extends TestCase
             'obfuscated_default_root_categories_id' => Category::MOVIE_ROOT,
         ]);
 
-        $response->assertRedirect('admin/group-list');
+        $response->assertRedirect(route('admin.group-list'));
 
         $savedGroup = DB::table('usenet_groups')->where('id', $group->id)->first();
         $this->assertSame(1, $savedGroup->route_obfuscated_names);
@@ -489,8 +652,14 @@ class AdminGroupListPageTest extends TestCase
     {
         $this->createGroups(1);
         $group = DB::table('usenet_groups')->first();
+        $editUrl = route('admin.group-edit', [
+            'id' => $group->id,
+            'return_to' => 'inactive',
+            'groupname' => 'alt.binaries',
+            'page' => 2,
+        ]);
 
-        $response = $this->actingAs($this->admin())->from(route('admin.group-edit', ['id' => $group->id]))
+        $response = $this->actingAs($this->admin())->from($editUrl)
             ->post('/admin/group-edit?action=submit', [
                 'id' => $group->id,
                 'name' => $group->name,
@@ -504,11 +673,48 @@ class AdminGroupListPageTest extends TestCase
                 'minsizetoformrelease' => 0,
                 'route_obfuscated_names' => 1,
                 'obfuscated_default_root_categories_id' => null,
+                'return_to' => 'inactive',
+                'groupname' => 'alt.binaries',
+                'page' => 2,
             ]);
 
-        $response->assertRedirect(route('admin.group-edit', ['id' => $group->id]));
+        $response->assertRedirect($editUrl);
         $response->assertSessionHasErrors('obfuscated_default_root_categories_id');
+
+        $editResponse = $this->get($editUrl);
+
+        $editResponse->assertOk();
+        $editResponse->assertSee('name="return_to" value="inactive"', false);
+        $editResponse->assertSee('name="groupname" value="alt.binaries"', false);
+        $editResponse->assertSee('name="page" value="2"', false);
         $this->assertSame(0, DB::table('usenet_groups')->where('id', $group->id)->value('route_obfuscated_names'));
+    }
+
+    public function test_group_edit_rejects_an_unrecognized_return_origin(): void
+    {
+        $this->createGroups(1);
+        $group = DB::table('usenet_groups')->first();
+
+        $response = $this->actingAs($this->admin())->post(route('admin.group-edit', ['action' => 'submit']), [
+            'id' => $group->id,
+            'name' => $group->name,
+            'description' => $group->description,
+            'backfill_target' => 1,
+            'first_record' => 0,
+            'last_record' => 0,
+            'active' => 1,
+            'backfill' => 0,
+            'minfilestoformrelease' => 0,
+            'minsizetoformrelease' => 0,
+            'return_to' => 'evil',
+            'groupname' => 'alt.binaries',
+            'page' => 2,
+        ]);
+
+        $response->assertRedirect(route('admin.group-list', [
+            'groupname' => 'alt.binaries',
+            'page' => 2,
+        ]));
     }
 
     public function test_categorization_uses_the_persisted_group_obfuscated_routing_settings(): void
@@ -582,6 +788,19 @@ class AdminGroupListPageTest extends TestCase
             });
         }
 
+        Schema::create('content', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->string('title')->default('');
+            $table->string('url', 2000)->nullable();
+            $table->text('body')->nullable();
+            $table->string('metadescription', 1000)->default('');
+            $table->string('metakeywords', 1000)->default('');
+            $table->integer('contenttype')->default(2);
+            $table->integer('status')->default(1);
+            $table->integer('ordinal')->nullable();
+            $table->integer('role')->default(0);
+        });
+
         Schema::create('roles', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('name');
@@ -610,6 +829,7 @@ class AdminGroupListPageTest extends TestCase
             $table->boolean('verified')->default(true);
             $table->boolean('can_post')->default(true);
             $table->string('theme_preference', 10)->default('light');
+            $table->string('timezone', 50)->default('UTC');
             $table->timestamp('email_verified_at')->nullable();
             $table->timestamp('lastlogin')->nullable();
             $table->rememberToken();

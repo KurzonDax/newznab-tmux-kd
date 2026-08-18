@@ -9,6 +9,7 @@ use App\Http\Requests\Admin\EditSelectedGroupsRequest;
 use App\Models\UsenetGroup;
 use App\Services\BlacklistService;
 use App\Services\RegexService;
+use App\Support\AdminGroupReturnContext;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
@@ -112,7 +113,7 @@ class AdminAjaxController extends BasePageController
                         'success' => true,
                         'message' => $message,
                         'newStatus' => $status,
-                        'row' => $this->renderGroupRow($groupId),
+                        'row' => $this->renderGroupRow($request, $groupId),
                     ]);
 
                 case 'toggle_group_backfill_status':
@@ -127,7 +128,7 @@ class AdminAjaxController extends BasePageController
                         'success' => true,
                         'message' => $message,
                         'newStatus' => $status,
-                        'row' => $this->renderGroupRow($groupId),
+                        'row' => $this->renderGroupRow($request, $groupId),
                     ]);
 
                 default:
@@ -161,9 +162,10 @@ class AdminAjaxController extends BasePageController
             ->whereIn('id', $groupIds)
             ->get();
         $rows = [];
+        $returnContext = AdminGroupReturnContext::fromRequest($request)->listViewData();
 
         foreach ($groups as $group) {
-            $rows[(string) $group->id] = view('admin.groups._row', compact('group'))->render();
+            $rows[(string) $group->id] = view('admin.groups._row', compact('group') + $returnContext)->render();
         }
 
         return response()->json([
@@ -174,12 +176,15 @@ class AdminAjaxController extends BasePageController
         ]);
     }
 
-    private function renderGroupRow(int $groupId): string
+    private function renderGroupRow(Request $request, int $groupId): string
     {
         $group = UsenetGroup::query()
             ->with('obfuscatedDefaultRoot:id,title')
             ->findOrFail($groupId);
 
-        return view('admin.groups._row', compact('group'))->render();
+        return view(
+            'admin.groups._row',
+            compact('group') + AdminGroupReturnContext::fromRequest($request)->listViewData()
+        )->render();
     }
 }

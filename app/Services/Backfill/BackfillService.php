@@ -375,10 +375,7 @@ final class BackfillService
             ? strtotime($scanResult['firstArticleDate'])
             : $this->binaries->postdate($first, $this->nntp->selectGroup($groupArr['name']));
 
-        DB::update(
-            'UPDATE usenet_groups SET first_record_postdate = FROM_UNIXTIME(?), first_record = ?, last_updated = NOW() WHERE id = ?',
-            [$newDate, $first, $groupArr['id']]
-        );
+        UsenetGroup::recordBackfillProgress((int) $groupArr['id'], $first, (int) $newDate);
     }
 
     /**

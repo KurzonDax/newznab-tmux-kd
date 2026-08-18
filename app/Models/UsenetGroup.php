@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -110,6 +111,44 @@ class UsenetGroup extends Model
     public function obfuscatedDefaultRoot(): BelongsTo
     {
         return $this->belongsTo(RootCategory::class, 'obfuscated_default_root_categories_id');
+    }
+
+    public static function recordBackfillProgress(int $id, int $firstRecord, int $firstRecordTimestamp): int
+    {
+        return self::query()->whereKey($id)->update([
+            'first_record_postdate' => self::dateTimeFromTimestamp($firstRecordTimestamp),
+            'first_record' => $firstRecord,
+            'last_updated' => now(),
+        ]);
+    }
+
+    public static function advanceLastRecord(int $id, int $lastRecord, int $lastRecordTimestamp): int
+    {
+        return self::query()
+            ->whereKey($id)
+            ->where('last_record', '<', $lastRecord)
+            ->update([
+                'last_record_postdate' => self::dateTimeFromTimestamp($lastRecordTimestamp),
+                'last_record' => $lastRecord,
+                'last_updated' => now(),
+            ]);
+    }
+
+    public static function rewindFirstRecord(int $id, int $firstRecord, int $firstRecordTimestamp): int
+    {
+        return self::query()
+            ->whereKey($id)
+            ->where('first_record', '>', $firstRecord)
+            ->update([
+                'first_record_postdate' => self::dateTimeFromTimestamp($firstRecordTimestamp),
+                'first_record' => $firstRecord,
+                'last_updated' => now(),
+            ]);
+    }
+
+    private static function dateTimeFromTimestamp(int $timestamp): Carbon
+    {
+        return Carbon::createFromTimestamp($timestamp, config('app.timezone'));
     }
 
     /**

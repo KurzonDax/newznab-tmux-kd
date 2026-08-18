@@ -98,8 +98,8 @@
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-gray-600 dark:text-gray-400">
                                 <i class="fa fa-clock-o text-gray-400 mr-2"></i>
-                                <span title="{{ $result->last_updated ?? '' }}">
-                                    {{ isset($result->last_updated) ? \Carbon\Carbon::parse($result->last_updated)->diffForHumans() : 'N/A' }}
+                                <span title="{{ userDate($result->last_updated) }}">
+                                    {{ $result->last_updated ? userDateDiffForHumans($result->last_updated) : 'Never' }}
                                 </span>
                             </td>
                         </tr>
@@ -138,4 +138,3 @@
         </div>
     </div>
 @endif
-

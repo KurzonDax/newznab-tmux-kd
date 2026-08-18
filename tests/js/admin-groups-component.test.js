@@ -38,9 +38,9 @@ class FakeElement {
 }
 
 class FakeRoot {
-    constructor(descendants) {
+    constructor(descendants, dataset = {}) {
         this.descendants = descendants;
-        this.dataset = { ajaxUrl: '/admin/ajax', csrfToken: 'test-token' };
+        this.dataset = { ajaxUrl: '/admin/ajax', csrfToken: 'test-token', ...dataset };
     }
 
     querySelectorAll(selector) {
@@ -60,7 +60,7 @@ class FakeRoot {
  * Build a page and a component wired the way Alpine wires it: `$el` resolves
  * to whichever element the current expression sits on, NOT the component root.
  */
-function mountPage(rowCount = 3) {
+function mountPage(rowCount = 3, dataset = {}) {
     const header = new FakeElement({ id: 'select-all-groups' });
     const rows = Array.from({ length: rowCount }, (unused, index) => new FakeElement({
         classes: ['group-checkbox'],
@@ -77,7 +77,7 @@ function mountPage(rowCount = 3) {
         },
     }));
     const maintenanceToggle = new FakeElement({ id: 'group-maintenance-toggle' });
-    const root = new FakeRoot([header, ...rows, maintenanceToggle]);
+    const root = new FakeRoot([header, ...rows, maintenanceToggle], dataset);
 
     const component = adminGroups();
     let currentElement = root;
@@ -105,6 +105,26 @@ function mountPage(rowCount = 3) {
         },
     };
 }
+
+test('AJAX posts include the current list return context', async () => {
+    const page = mountPage(1, {
+        returnTo: 'inactive',
+        returnGroupname: 'alt.binaries.group',
+        returnPage: '2',
+    });
+    let submittedBody;
+    globalThis.fetch = async (url, options) => {
+        submittedBody = new URLSearchParams(options.body);
+
+        return { json: async () => ({ success: true }) };
+    };
+
+    await page.component._post({ action: 'toggle_group_backfill', group_id: '1' });
+
+    assert.equal(submittedBody.get('return_to'), 'inactive');
+    assert.equal(submittedBody.get('groupname'), 'alt.binaries.group');
+    assert.equal(submittedBody.get('page'), '2');
+});
 
 test('a header click checks every row on the page', () => {
     const page = mountPage();
