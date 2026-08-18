@@ -31,6 +31,15 @@ class RepairGroupArticlePointersCommandTest extends TestCase
             $table->dateTime('last_updated')->nullable();
         });
 
+        Schema::dropIfExists('short_groups');
+        Schema::create('short_groups', function (Blueprint $table): void {
+            $table->id();
+            $table->string('name');
+            $table->unsignedBigInteger('first_record')->default(0);
+            $table->unsignedBigInteger('last_record')->default(0);
+            $table->dateTime('updated')->nullable();
+        });
+
         Schema::dropIfExists('collections');
         Schema::create('collections', function (Blueprint $table): void {
             $table->id();
@@ -62,7 +71,7 @@ class RepairGroupArticlePointersCommandTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach (['missed_parts', 'parts', 'binaries', 'collections', 'usenet_groups'] as $table) {
+        foreach (['missed_parts', 'parts', 'binaries', 'collections', 'short_groups', 'usenet_groups'] as $table) {
             Schema::dropIfExists($table);
         }
 
@@ -72,6 +81,7 @@ class RepairGroupArticlePointersCommandTest extends TestCase
     public function test_a_dry_run_reports_broken_groups_without_changing_anything(): void
     {
         $this->createGroup(1, 'alt.binaries.boneless', firstRecord: 1_000, lastRecord: 2);
+        $this->createServerRange('alt.binaries.boneless', 900, 151_801_130_400);
         $this->createStoredArticle(1, 151_801_130_293, '2026-08-11 13:00:00');
 
         $this->artisan('groups:repair-article-pointers')
@@ -86,6 +96,7 @@ class RepairGroupArticlePointersCommandTest extends TestCase
     public function test_it_resumes_a_broken_group_from_the_newest_stored_article(): void
     {
         $this->createGroup(1, 'alt.binaries.boneless', firstRecord: 1_000, lastRecord: 2);
+        $this->createServerRange('alt.binaries.boneless', 900, 151_801_130_400);
         $this->createStoredArticle(1, 151_801_130_000, '2026-08-10 09:00:00');
         $this->createStoredArticle(1, 151_801_130_293, '2026-08-11 13:00:00');
 
@@ -100,6 +111,7 @@ class RepairGroupArticlePointersCommandTest extends TestCase
     public function test_it_detects_a_pointer_coerced_to_the_unsigned_bigint_ceiling(): void
     {
         $this->createGroup(1, 'alt.binaries.moovee', firstRecord: 1_000, lastRecord: '18446744073709551615');
+        $this->createServerRange('alt.binaries.moovee', 900, 3_700_000_000);
         $this->createStoredArticle(1, 3_694_000_000, '2026-08-11 20:00:00');
 
         $this->artisan('groups:repair-article-pointers --execute')->assertSuccessful();
@@ -120,6 +132,8 @@ class RepairGroupArticlePointersCommandTest extends TestCase
 
     public function test_a_group_with_no_stored_articles_is_re_anchored_as_new(): void
     {
+        // No short_groups row either: with nothing stored there is no resume point to
+        // validate, and the scanner re-anchors this group from the server itself.
         $this->createGroup(1, 'alt.binaries.town.xxx', firstRecord: 5_000, lastRecord: 9);
 
         $this->artisan('groups:repair-article-pointers --execute')->assertSuccessful();
@@ -189,6 +203,102 @@ class RepairGroupArticlePointersCommandTest extends TestCase
         $this->assertSame(1, DB::table('missed_parts')->count());
     }
 
+    public function test_a_stored_article_above_the_servers_newest_is_rejected(): void
+    {
+        // Cross-posted binaries carry the article number of whichever group's XOVER
+        // delivered them, so MAX(parts.number) for a group can sit far past the
+        // server's newest article and strand the group at "No new articles".
+        $this->createGroup(1, 'alt.binaries.erotica.divx', firstRecord: 416_038_612, lastRecord: 2);
+        $this->createServerRange('alt.binaries.erotica.divx', 416_038_612, 463_909_731);
+        $this->createStoredArticle(1, 17_816_531_787, '2026-08-11 13:00:00');
+
+        $this->artisan('groups:repair-article-pointers --execute')
+            ->expectsOutputToContain('463,909,731')
+            ->assertSuccessful();
+
+        $group = DB::table('usenet_groups')->find(1);
+        $this->assertSame(0, (int) $group->last_record);
+        $this->assertSame(0, (int) $group->first_record);
+        $this->assertNull($group->last_record_postdate);
+        $this->assertNull($group->first_record_postdate);
+    }
+
+    public function test_a_stored_article_below_the_servers_oldest_is_rejected(): void
+    {
+        $this->createGroup(1, 'alt.binaries.uzenet', firstRecord: 400, lastRecord: 2);
+        $this->createServerRange('alt.binaries.uzenet', 485_363_318, 563_472_795);
+        $this->createStoredArticle(1, 12_000, '2026-08-11 13:00:00');
+
+        $this->artisan('groups:repair-article-pointers --execute')->assertSuccessful();
+
+        $this->assertSame(0, (int) DB::table('usenet_groups')->find(1)->last_record);
+    }
+
+    public function test_a_stored_article_on_the_edge_of_the_server_range_is_accepted(): void
+    {
+        $this->createGroup(1, 'alt.binaries.boneless', firstRecord: 1_000, lastRecord: 2);
+        $this->createServerRange('alt.binaries.boneless', 900, 463_909_731);
+        $this->createStoredArticle(1, 463_909_731, '2026-08-11 13:00:00');
+
+        $this->artisan('groups:repair-article-pointers --execute')->assertSuccessful();
+
+        $this->assertSame(463_909_731, (int) DB::table('usenet_groups')->find(1)->last_record);
+    }
+
+    public function test_a_group_whose_server_range_is_unknown_is_left_untouched(): void
+    {
+        // Without a short_groups row there is nothing to validate the resume point
+        // against, and re-anchoring would throw away a possibly good one.
+        $this->createGroup(1, 'alt.binaries.boneless', firstRecord: 1_000, lastRecord: 2);
+        $this->createStoredArticle(1, 151_801_130_293, '2026-08-11 13:00:00');
+
+        $this->artisan('groups:repair-article-pointers --execute')
+            ->expectsOutputToContain('groups:update')
+            ->assertSuccessful();
+
+        $group = DB::table('usenet_groups')->find(1);
+        $this->assertSame(2, (int) $group->last_record);
+        $this->assertSame(1_000, (int) $group->first_record);
+    }
+
+    public function test_an_unverifiable_group_can_be_re_anchored_on_request(): void
+    {
+        // A group the provider has dropped never gets a short_groups row back, so the
+        // operator needs a way to clear it instead of skipping it forever.
+        $this->createGroup(1, 'alt.binaries.boneless', firstRecord: 1_000, lastRecord: 2);
+        $this->createStoredArticle(1, 151_801_130_293, '2026-08-11 13:00:00');
+
+        $this->artisan('groups:repair-article-pointers --execute --rescan-unverified')->assertSuccessful();
+
+        $group = DB::table('usenet_groups')->find(1);
+        $this->assertSame(0, (int) $group->last_record);
+        $this->assertSame(0, (int) $group->first_record);
+    }
+
+    public function test_a_skipped_group_keeps_its_missed_parts_even_when_a_purge_was_asked_for(): void
+    {
+        $this->createGroup(1, 'alt.binaries.boneless', firstRecord: 1_000, lastRecord: 2);
+        $this->createStoredArticle(1, 151_801_130_293, '2026-08-11 13:00:00');
+        DB::table('missed_parts')->insert([['numberid' => 11, 'groups_id' => 1, 'attempts' => 1]]);
+
+        $this->artisan('groups:repair-article-pointers --execute --purge-missed-parts')->assertSuccessful();
+
+        $this->assertSame(1, DB::table('missed_parts')->count(), 'Nothing was repaired for this group.');
+    }
+
+    public function test_the_report_shows_the_server_range(): void
+    {
+        $this->createGroup(1, 'alt.binaries.boneless', firstRecord: 1_000, lastRecord: 2);
+        $this->createServerRange('alt.binaries.boneless', 416_038_612, 463_909_731);
+        $this->createStoredArticle(1, 420_000_000, '2026-08-11 13:00:00');
+
+        // Asserted as one string: Mockery lets a single written line satisfy only the
+        // first substring expectation that matches it.
+        $this->artisan('groups:repair-article-pointers')
+            ->expectsOutputToContain('416,038,612 - 463,909,731')
+            ->assertSuccessful();
+    }
+
     private function createGroup(int $id, string $name, int $firstRecord, int|string $lastRecord, bool $active = true): void
     {
         DB::table('usenet_groups')->insert([
@@ -200,6 +310,16 @@ class RepairGroupArticlePointersCommandTest extends TestCase
             'last_record' => $lastRecord,
             'last_record_postdate' => '2026-08-11 13:00:00',
             'last_updated' => '2026-08-18 00:00:00',
+        ]);
+    }
+
+    private function createServerRange(string $name, int $firstRecord, int $lastRecord): void
+    {
+        DB::table('short_groups')->insert([
+            'name' => $name,
+            'first_record' => $firstRecord,
+            'last_record' => $lastRecord,
+            'updated' => '2026-08-18 00:00:00',
         ]);
     }
 
