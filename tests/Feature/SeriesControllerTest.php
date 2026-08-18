@@ -353,6 +353,20 @@ class SeriesControllerTest extends TestCase
         $response->assertDontSee('/covers/tvshows/'.$bannerId.'.webp', false);
         $response->assertSee('/covers/tvshows/'.$posterId.'.jpg', false);
         $response->assertSee('/assets/images/no-cover.png', false);
+        $artworkByTitle = collect($response->viewData('serieslist'))
+            ->flatten(1)
+            ->keyBy('title');
+
+        $this->assertSame('banner', $artworkByTitle['Banner Show']['artwork_kind']);
+        $this->assertSame('poster', $artworkByTitle['Poster Show']['artwork_kind']);
+        $this->assertSame('placeholder', $artworkByTitle['Placeholder Show']['artwork_kind']);
+        $response->assertSee('h-12 w-auto aspect-[1000/185] rounded-md object-contain', false);
+        $response->assertSee('h-16 w-auto rounded-md object-contain', false);
+        $response->assertSee('flex w-full aspect-[1000/185] items-center justify-center', false);
+        $response->assertSee('w-full aspect-[1000/185] rounded-md object-contain', false);
+        $response->assertSee('h-full w-auto rounded-md object-contain', false);
+        $response->assertDontSee('min-h-24', false);
+        $response->assertDontSee('object-cover', false);
     }
 
     public function test_show_page_renders_available_artwork_when_the_summary_is_empty(): void

@@ -215,7 +215,7 @@ class SeriesController extends BasePageController
 
             $serieslist = [];
             foreach ($masterserieslist as $series) {
-                $series['artwork_url'] = $this->seriesArtworkUrl($series);
+                $series = array_merge($series, $this->seriesArtwork($series));
                 if (preg_match('/^[0-9]/', $series['title'])) {
                     $thisrange = '0-9';
                 } elseif (preg_match('/([A-Z]).*/i', $series['title'], $hits)) {
@@ -245,24 +245,34 @@ class SeriesController extends BasePageController
 
     /**
      * @param  array<string, mixed>  $series
+     * @return array{artwork_url: string, artwork_kind: 'banner'|'poster'|'placeholder'}
      */
-    private function seriesArtworkUrl(array $series): string
+    private function seriesArtwork(array $series): array
     {
         if (! empty($series['banner'])) {
             $bannerUrl = getImageAssetUrl('tvshows', $series['id'].'-banner');
             if ($bannerUrl !== null) {
-                return $bannerUrl;
+                return [
+                    'artwork_url' => $bannerUrl,
+                    'artwork_kind' => 'banner',
+                ];
             }
         }
 
         if (! empty($series['image'])) {
             $posterUrl = getImageAssetUrl('tvshows', (string) $series['id']);
             if ($posterUrl !== null) {
-                return $posterUrl;
+                return [
+                    'artwork_url' => $posterUrl,
+                    'artwork_kind' => 'poster',
+                ];
             }
         }
 
-        return asset('/assets/images/no-cover.png');
+        return [
+            'artwork_url' => asset('/assets/images/no-cover.png'),
+            'artwork_kind' => 'placeholder',
+        ];
     }
 
     private function resolveSeason(Request $request): ?int
