@@ -94,11 +94,14 @@
                                 @foreach($series as $s)
                                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
                                         <td class="px-4 py-3">
-                                            <a href="{{ route('series', ['id' => $s['id']]) }}">
+                                            <a href="{{ route('series', ['id' => $s['id']]) }}" class="flex h-16 items-center">
                                                 <img src="{{ $s['artwork_url'] }}"
                                                      alt="{{ $s['title'] ?? '' }} artwork"
                                                      loading="lazy"
-                                                     class="h-16 w-36 rounded-md object-cover">
+                                                     @class([
+                                                         'h-12 w-auto aspect-[1000/185] rounded-md object-contain' => $s['artwork_kind'] === 'banner',
+                                                         'h-16 w-auto rounded-md object-contain' => $s['artwork_kind'] !== 'banner',
+                                                     ])>
                                             </a>
                                         </td>
                                         <td class="px-4 py-3">
@@ -170,11 +173,14 @@
                     <div class="md:hidden border border-gray-200 dark:border-gray-700 rounded-b-lg divide-y divide-gray-200 dark:divide-gray-700">
                         @foreach($series as $s)
                             <div class="p-4 space-y-2">
-                                <a href="{{ route('series', ['id' => $s['id']]) }}" class="block">
+                                <a href="{{ route('series', ['id' => $s['id']]) }}" class="flex w-full aspect-[1000/185] items-center justify-center">
                                     <img src="{{ $s['artwork_url'] }}"
                                          alt="{{ $s['title'] ?? '' }} artwork"
                                          loading="lazy"
-                                         class="h-24 w-full rounded-md object-cover">
+                                         @class([
+                                             'w-full aspect-[1000/185] rounded-md object-contain' => $s['artwork_kind'] === 'banner',
+                                             'h-full w-auto rounded-md object-contain' => $s['artwork_kind'] !== 'banner',
+                                         ])>
                                 </a>
                                 <div class="flex items-start justify-between gap-2">
                                     <div class="min-w-0 flex-1">
