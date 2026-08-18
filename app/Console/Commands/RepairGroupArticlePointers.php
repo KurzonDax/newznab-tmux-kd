@@ -6,8 +6,9 @@ namespace App\Console\Commands;
 
 use App\Models\UsenetGroup;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
-use stdClass;
 
 /**
  * Repairs usenet_groups rows whose last_record was overwritten with a non-numeric
@@ -52,26 +53,24 @@ class RepairGroupArticlePointers extends Command
         $execute = (bool) $this->option('execute');
         $groups = $this->brokenGroups();
 
-        if ($groups === []) {
+        if ($groups->isEmpty()) {
             $this->info('No groups with a corrupted article pointer.');
 
             return self::SUCCESS;
         }
 
         $rows = [];
-        $repairedGroupIds = [];
 
         foreach ($groups as $group) {
-            $newestStored = $this->newestStoredArticle((int) $group->id);
-            $resume = $newestStored !== null && (int) $newestStored->number > (int) $group->first_record;
+            $newestStored = $this->newestStoredArticle($group);
+            $resume = $newestStored !== null && $newestStored['number'] > (int) $group->first_record;
 
             $rows[] = [
                 $group->name,
                 $this->formatArticleNumber($group->first_record),
                 $this->formatArticleNumber($group->last_record),
-                $resume ? $this->formatArticleNumber($newestStored->number) : '0 (rescan as new group)',
+                $resume ? $this->formatArticleNumber($newestStored['number']) : '0 (rescan as new group)',
             ];
-            $repairedGroupIds[] = (int) $group->id;
 
             if (! $execute) {
                 continue;
@@ -87,15 +86,15 @@ class RepairGroupArticlePointers extends Command
         $this->table(['Group', 'first_record', 'last_record', 'new last_record'], $rows);
 
         if (! $execute) {
-            $this->warn(\count($rows).' group(s) would be repaired. Re-run with --execute to apply.');
+            $this->warn($groups->count().' group(s) would be repaired. Re-run with --execute to apply.');
 
             return self::SUCCESS;
         }
 
-        $this->info(\count($rows).' group(s) repaired.');
+        $this->info($groups->count().' group(s) repaired.');
 
         if ($this->option('purge-missed-parts')) {
-            $purged = DB::table('missed_parts')->whereIn('groups_id', $repairedGroupIds)->delete();
+            $purged = DB::table('missed_parts')->whereIn('groups_id', $groups->modelKeys())->delete();
             $this->info(number_format($purged).' missed_parts row(s) deleted for the repaired groups.');
         }
 
@@ -111,13 +110,13 @@ class RepairGroupArticlePointers extends Command
      * Groups whose pointer cannot be a real position on the server: either behind
      * their own oldest record, or coerced past any plausible article number.
      *
-     * @return list<stdClass>
+     * @return Collection<int, UsenetGroup>
      */
-    private function brokenGroups(): array
+    private function brokenGroups(): Collection
     {
         $query = UsenetGroup::query()
             ->select(['id', 'name', 'first_record', 'last_record'])
-            ->where(function ($builder): void {
+            ->where(function (Builder $builder): void {
                 $builder->whereColumn('last_record', '<', 'first_record')
                     ->orWhere('last_record', '>=', self::IMPLAUSIBLE_ARTICLE_NUMBER);
             })
@@ -131,48 +130,56 @@ class RepairGroupArticlePointers extends Command
             $query->where('name', '=', $this->option('group'));
         }
 
-        return $query->get()->map(static fn ($group): stdClass => (object) $group->getAttributes())->all();
+        return $query->get();
     }
 
     /**
      * The newest article actually stored for a group, so the scanner resumes from
      * real data instead of re-downloading everything.
+     *
+     * @return array{number: int, date: string|null}|null
      */
-    private function newestStoredArticle(int $groupId): ?stdClass
+    private function newestStoredArticle(UsenetGroup $group): ?array
     {
-        /** @var stdClass|null $row */
         $row = DB::table('parts')
             ->join('binaries', 'binaries.id', '=', 'parts.binaries_id')
             ->join('collections', 'collections.id', '=', 'binaries.collections_id')
-            ->where('collections.groups_id', '=', $groupId)
+            ->where('collections.groups_id', '=', $group->id)
             ->orderByDesc('parts.number')
             ->limit(1)
             ->first(['parts.number as number', 'collections.date as date']);
 
-        return $row;
-    }
-
-    private function resumeFromStoredArticles(stdClass $group, stdClass $newestStored): void
-    {
-        $update = [
-            'last_record' => (int) $newestStored->number,
-            'last_updated' => now(),
-        ];
-
-        if ($newestStored->date !== null) {
-            $update['last_record_postdate'] = $newestStored->date;
+        if ($row === null) {
+            return null;
         }
 
-        UsenetGroup::query()->whereKey($group->id)->update($update);
+        return [
+            'number' => (int) $row->number,
+            'date' => $row->date === null ? null : (string) $row->date,
+        ];
+    }
+
+    /**
+     * @param  array{number: int, date: string|null}  $newestStored
+     */
+    private function resumeFromStoredArticles(UsenetGroup $group, array $newestStored): void
+    {
+        $update = ['last_record' => $newestStored['number'], 'last_updated' => now()];
+
+        if ($newestStored['date'] !== null) {
+            $update['last_record_postdate'] = $newestStored['date'];
+        }
+
+        $group->update($update);
     }
 
     /**
      * Nothing is stored for this group, so let the scanner treat it as new and
      * re-anchor near the server's newest article.
      */
-    private function reAnchorAsNewGroup(stdClass $group): void
+    private function reAnchorAsNewGroup(UsenetGroup $group): void
     {
-        UsenetGroup::query()->whereKey($group->id)->update([
+        $group->update([
             'first_record' => 0,
             'first_record_postdate' => null,
             'last_record' => 0,
@@ -181,8 +188,18 @@ class RepairGroupArticlePointers extends Command
         ]);
     }
 
+    /**
+     * Group digits by hand: the corrupted values this command reports overflow a
+     * float, so number_format() would print a rounded number back at the operator.
+     */
     private function formatArticleNumber(mixed $number): string
     {
-        return number_format((float) $number, 0, '.', ',');
+        $digits = (string) $number;
+
+        if (! ctype_digit($digits)) {
+            return $digits;
+        }
+
+        return strrev(implode(',', str_split(strrev($digits), 3)));
     }
 }

@@ -107,6 +107,17 @@ class RepairGroupArticlePointersCommandTest extends TestCase
         $this->assertSame(3_694_000_000, (int) DB::table('usenet_groups')->find(1)->last_record);
     }
 
+    public function test_it_reports_a_corrupted_pointer_digit_for_digit(): void
+    {
+        // Past 2^53 a float cannot hold the value, so formatting the report through
+        // one would print a rounded pointer back at the operator.
+        $this->createGroup(1, 'alt.binaries.moovee', firstRecord: 1_000, lastRecord: 9_007_199_254_740_993);
+
+        $this->artisan('groups:repair-article-pointers')
+            ->expectsOutputToContain('9,007,199,254,740,993')
+            ->assertSuccessful();
+    }
+
     public function test_a_group_with_no_stored_articles_is_re_anchored_as_new(): void
     {
         $this->createGroup(1, 'alt.binaries.town.xxx', firstRecord: 5_000, lastRecord: 9);

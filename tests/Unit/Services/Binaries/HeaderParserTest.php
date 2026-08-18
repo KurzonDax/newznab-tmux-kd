@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Tests\Unit\Services\Binaries;
 
 use App\Services\Binaries\HeaderParser;
-use App\Services\BlacklistService;
 use Illuminate\Support\Facades\Log;
+use Tests\Support\NeverBlacklistedService;
 use Tests\TestCase;
 
 final class HeaderParserTest extends TestCase
@@ -53,7 +53,7 @@ final class HeaderParserTest extends TestCase
 
     public function test_parse_rejects_headers_whose_article_number_is_not_numeric(): void
     {
-        $parser = new HeaderParser(new NeverBlacklistedStub);
+        $parser = new HeaderParser(new NeverBlacklistedService);
 
         $result = $parser->parse([
             ['Number' => '500', 'Subject' => 'Some.Release (1/10) yEnc', 'Bytes' => 100],
@@ -73,7 +73,7 @@ final class HeaderParserTest extends TestCase
 
     public function test_parse_counters_reset_between_batches(): void
     {
-        $parser = new HeaderParser(new NeverBlacklistedStub);
+        $parser = new HeaderParser(new NeverBlacklistedService);
 
         $parser->parse([['Number' => 'garbage', 'Subject' => 'poster@example.com']], 'alt.test');
         $parser->reset();
@@ -93,16 +93,5 @@ final class HeaderParserTest extends TestCase
         ], 'alt.test', 300, 301);
 
         $this->assertSame([], $result);
-    }
-}
-
-/**
- * Keeps HeaderParser away from the binaryblacklist table.
- */
-final class NeverBlacklistedStub extends BlacklistService
-{
-    public function isBlackListed(array $msg, string $groupName): bool
-    {
-        return false;
     }
 }

@@ -717,6 +717,12 @@ class BinariesService
     }
 
     /**
+     * Move the group pointer on from the summary of the scan that just ran.
+     *
+     * Must be called with the summary of the immediately preceding scan(): an empty
+     * summary means either "the server returned nothing" or "the batch was thrown
+     * away", and only the scan itself knows which.
+     *
      * @param  array<string, mixed>  $groupMySQL
      * @param  array<string, mixed>  $groupNNTP
      * @param  array<string, mixed>  $scanSummary

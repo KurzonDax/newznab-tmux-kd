@@ -7,11 +7,11 @@ namespace Tests\Feature;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\Binaries\BinariesService;
 use App\Services\Binaries\HeaderParser;
-use App\Services\BlacklistService;
 use App\Services\NNTP\NNTPService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\NeverBlacklistedService;
 use Tests\TestCase;
 
 /**
@@ -172,7 +172,7 @@ class BinariesRejectedScanBatchTest extends TestCase
 
         $service = new RejectedScanBinariesProbe(
             config: $config,
-            headerParser: new HeaderParser(new NeverBlacklistedBlacklist),
+            headerParser: new HeaderParser(new NeverBlacklistedService),
         );
         $service->setNntp($nntp);
 
@@ -221,15 +221,4 @@ final class StubbedXoverNntp extends NNTPService
     }
 
     public function __destruct() {}
-}
-
-/**
- * Keeps the scan away from the binaryblacklist table.
- */
-final class NeverBlacklistedBlacklist extends BlacklistService
-{
-    public function isBlackListed(array $msg, string $groupName): bool
-    {
-        return false;
-    }
 }
