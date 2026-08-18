@@ -293,7 +293,7 @@ class BinariesService
         }
 
         // Extract article range info
-        $returnArray = $this->headerParser->getArticleRange($headers);
+        $returnArray = $this->headerParser->getArticleRange($headers, $groupMySQL['name'], $first, $last);
 
         // Parse and store one bounded chunk at a time. The previous flow built
         // a second full-size parsed header array before storage, doubling peak
@@ -676,21 +676,24 @@ class BinariesService
      * @param  array<string, mixed>  $groupNNTP
      * @param  array<string, mixed>  $scanSummary
      */
-    private function updateGroupAfterScan(array &$groupMySQL, array $groupNNTP, array $scanSummary, int $last): void
+    protected function updateGroupAfterScan(array &$groupMySQL, array $groupNNTP, array $scanSummary, int $last): void
     {
         if (! empty($scanSummary)) {
             // New group - update first record
             if ($groupMySQL['first_record_postdate'] === null && (int) $groupMySQL['first_record'] === 0) {
-                $groupMySQL['first_record'] = $scanSummary['firstArticleNumber'];
                 $firstArticleTimestamp = isset($scanSummary['firstArticleDate'])
                     ? strtotime($scanSummary['firstArticleDate'])
-                    : $this->postdate($groupMySQL['first_record'], $groupNNTP);
-                $groupMySQL['first_record_postdate'] = $firstArticleTimestamp !== false ? $firstArticleTimestamp : time();
+                    : $this->postdate($scanSummary['firstArticleNumber'], $groupNNTP);
+                $firstArticleDate = $firstArticleTimestamp !== false ? $firstArticleTimestamp : time();
 
-                UsenetGroup::query()->where('id', $groupMySQL['id'])->update([
-                    'first_record' => $scanSummary['firstArticleNumber'],
-                    'first_record_postdate' => Carbon::createFromTimestamp($groupMySQL['first_record_postdate'], date_default_timezone_get()),
-                ]);
+                if (UsenetGroup::initializeOrRewindFirstRecord(
+                    (int) $groupMySQL['id'],
+                    (int) $scanSummary['firstArticleNumber'],
+                    $firstArticleDate
+                ) > 0) {
+                    $groupMySQL['first_record'] = (int) $scanSummary['firstArticleNumber'];
+                    $groupMySQL['first_record_postdate'] = $firstArticleDate;
+                }
             }
 
             $lastArticleTimestamp = isset($scanSummary['lastArticleDate'])
@@ -698,16 +701,26 @@ class BinariesService
                 : $this->postdate($scanSummary['lastArticleNumber'], $groupNNTP);
             $lastArticleDate = $lastArticleTimestamp !== false ? $lastArticleTimestamp : time();
 
-            UsenetGroup::query()->where('id', $groupMySQL['id'])->update([
-                'last_record' => $scanSummary['lastArticleNumber'],
-                'last_record_postdate' => Carbon::createFromTimestamp($lastArticleDate, date_default_timezone_get()),
-                'last_updated' => now(),
-            ]);
+            if (UsenetGroup::advanceLastRecord(
+                (int) $groupMySQL['id'],
+                (int) $scanSummary['lastArticleNumber'],
+                $lastArticleDate
+            ) > 0) {
+                $groupMySQL['last_record'] = (int) $scanSummary['lastArticleNumber'];
+                $groupMySQL['last_record_postdate'] = $lastArticleDate;
+            }
         } else {
-            UsenetGroup::query()->where('id', $groupMySQL['id'])->update([
-                'last_record' => $last,
-                'last_updated' => now(),
-            ]);
+            $updated = UsenetGroup::query()
+                ->where('id', $groupMySQL['id'])
+                ->where('last_record', '<', $last)
+                ->update([
+                    'last_record' => $last,
+                    'last_updated' => now(),
+                ]);
+
+            if ($updated > 0) {
+                $groupMySQL['last_record'] = $last;
+            }
         }
     }
 
