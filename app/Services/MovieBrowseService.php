@@ -8,6 +8,8 @@ use App\Facades\Search;
 use App\Models\Category;
 use App\Models\MovieInfo;
 use App\Services\Releases\ReleaseBrowseService;
+use App\Support\MovieSearchQuery;
+use App\Support\YearRange;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
@@ -29,7 +31,7 @@ class MovieBrowseService
      * Uses three separate queries instead of GROUP_CONCAT:
      * 1. COUNT query for total results (replaces SQL_CALC_FOUND_ROWS)
      * 2. Paginated movie list with only needed columns
-     * 3. Top 2 releases per movie using UNION ALL with LIMIT 2 per imdbid
+     * 3. Top 2 releases per movie using a partitioned release rank
      *
      * @param  array<string, mixed>  $cat
      * @param  array<string, mixed>  $excludedCats
@@ -63,38 +65,30 @@ class MovieBrowseService
 
         $whereAge = $maxAge > 0 ? 'AND r.postdate > NOW() - INTERVAL '.$maxAge.' DAY ' : '';
 
-        $skipBrowseLikeFields = [];
+        $movieSearchQuery = MovieSearchQuery::fromInput(request()->all());
         $indexImdbClause = '';
-        if (Search::isAvailable()) {
-            $fieldTerms = [];
-            foreach (['title', 'director', 'actors', 'genre'] as $field) {
-                if (request()->has($field)) {
-                    $value = request()->input($field);
-                    if (is_array($value)) {
-                        continue;
-                    }
-                    $value = stripslashes((string) $value);
-                    if ($value !== '') {
-                        $fieldTerms[$field] = $value;
-                    }
-                }
+        $textSearchWhere = '';
+        if (! $movieSearchQuery->isEmpty()) {
+            $foundImdbIds = [];
+            if (Search::isAvailable()) {
+                $found = Search::searchMoviesByFields($movieSearchQuery->indexTerms(), 8000);
+                $foundImdbIds = $found['imdbids'] ?? [];
             }
-            if ($fieldTerms !== []) {
-                $found = Search::searchMoviesByFields($fieldTerms, 8000);
-                if ($found['imdbids'] === []) {
-                    return collect();
-                }
-                $quoted = array_map(static fn (string $id): string => escapeString($id), $found['imdbids']);
+
+            if ($foundImdbIds !== []) {
+                $quoted = array_map(static fn (string $id): string => escapeString($id), $foundImdbIds);
                 $indexImdbClause = ' AND m.imdbid IN ('.implode(',', $quoted).') ';
-                $skipBrowseLikeFields = ['title', 'director', 'actors', 'genre'];
+            } else {
+                $textSearchWhere = $this->getTextSearchWhere($movieSearchQuery);
             }
         }
 
-        $browseBy = $this->getBrowseBy($skipBrowseLikeFields);
+        $browseBy = $this->getBrowseBy();
 
         $baseWhere = "m.title != '' AND m.imdbid IS NOT NULL AND m.imdbid != '' "
             ."AND r.passwordstatus {$this->showPasswords} "
             .$browseBy.' '
+            .$textSearchWhere
             .$indexImdbClause
             .$catFilter
             .$whereAge
@@ -171,23 +165,27 @@ class MovieBrowseService
         // Build list of movie IMDB IDs for release query
         $movieImdbIds = $movies->pluck('imdbid')->toArray();
 
-        // Step 3: Get top 2 releases per movie using UNION ALL with LIMIT 2 per imdbid.
-        $unionParts = [];
-        foreach ($movieImdbIds as $id) {
-            $quotedId = escapeString((string) $id);
-            $unionParts[] = '(SELECT r.id, r.imdbid, r.guid, r.searchname, '
-                .'r.size, r.postdate, r.adddate, r.haspreview '
-                .'FROM releases r '
-                .'WHERE r.imdbid = '.$quotedId.' '
-                ."AND r.passwordstatus {$this->showPasswords} "
-                .$catFilter
-                .$whereExcluded
-                .$whereAge
-                .'ORDER BY r.postdate DESC LIMIT 2)';
+        // Step 3: Get the top 2 releases per movie without issuing one query per movie.
+        $rankedReleases = DB::table('releases as r')
+            ->select(['r.id', 'r.imdbid', 'r.guid', 'r.searchname', 'r.size', 'r.postdate', 'r.adddate', 'r.haspreview'])
+            ->selectRaw('ROW_NUMBER() OVER (PARTITION BY r.imdbid ORDER BY r.postdate DESC) AS release_rank')
+            ->whereIn('r.imdbid', $movieImdbIds)
+            ->whereRaw("r.passwordstatus {$this->showPasswords}");
+
+        if ($catArray !== []) {
+            $rankedReleases->whereIn('r.categories_id', $catArray);
+        } elseif ($excludedCats !== []) {
+            $rankedReleases->whereNotIn('r.categories_id', $excludedCats);
         }
 
-        $releasesSql = implode(' UNION ALL ', $unionParts);
-        $releases = DB::select($releasesSql);
+        if ($maxAge > 0) {
+            $rankedReleases->where('r.postdate', '>', now()->subDays($maxAge));
+        }
+
+        $releases = DB::query()
+            ->fromSub($rankedReleases, 'ranked_releases')
+            ->where('release_rank', '<=', 2)
+            ->get();
 
         // Group by imdbid
         $releasesByMovie = [];
@@ -259,32 +257,23 @@ class MovieBrowseService
         return ['title_asc', 'title_desc', 'year_asc', 'year_desc', 'rating_asc', 'rating_desc'];
     }
 
-    /**
-     * @param  array<int, string>  $skipFields  Request keys to ignore (e.g. already applied via search index).
-     */
-    protected function getBrowseBy(array $skipFields = []): string
+    protected function getBrowseBy(): string
     {
         $browseBy = ' ';
-        $browseByArr = ['title', 'director', 'actors', 'genre', 'rating', 'year', 'imdb'];
+        $browseByArr = ['genre', 'rating', 'imdb'];
         foreach ($browseByArr as $bb) {
-            if ($skipFields !== [] && in_array($bb, $skipFields, true)) {
-                continue;
-            }
             if (request()->has($bb) && ! empty(request()->input($bb))) {
                 $bbv = request()->input($bb);
                 if (is_array($bbv)) {
                     continue;
                 }
                 $bbv = stripslashes((string) $bbv);
-                if ($bb === 'year') {
-                    if (preg_match('/^(19|20)\d{2}$/', $bbv)) {
-                        $browseBy .= ' AND m.year = '.escapeString($bbv);
+                if ($bb === 'rating') {
+                    if (preg_match('/^[1-9]$/', $bbv) === 1) {
+                        $browseBy .= ' AND CAST(NULLIF(m.rating, \'\') AS DECIMAL(4, 1)) >= '.(int) $bbv;
                     }
 
                     continue;
-                }
-                if ($bb === 'rating') {
-                    $bbv .= '.';
                 }
                 if ($bb === 'imdb') {
                     $browseBy .= ' AND m.imdbid = '.escapeString($bbv);
@@ -294,7 +283,51 @@ class MovieBrowseService
             }
         }
 
+        $yearRange = YearRange::fromInput(
+            request()->input('year'),
+            request()->input('year_from'),
+            request()->input('year_to'),
+        );
+        if ($yearRange !== null) {
+            if ($yearRange->from !== null && $yearRange->to !== null && $yearRange->from === $yearRange->to) {
+                $browseBy .= ' AND m.year = '.escapeString((string) $yearRange->from);
+            } elseif ($yearRange->from !== null && $yearRange->to !== null) {
+                $browseBy .= ' AND m.year BETWEEN '.escapeString((string) $yearRange->from).' AND '.escapeString((string) $yearRange->to);
+            } elseif ($yearRange->from !== null) {
+                $browseBy .= ' AND m.year >= '.escapeString((string) $yearRange->from);
+            } elseif ($yearRange->to !== null) {
+                $browseBy .= ' AND m.year <= '.escapeString((string) $yearRange->to);
+            }
+        }
+
         return $browseBy;
+    }
+
+    private function getTextSearchWhere(MovieSearchQuery $searchQuery): string
+    {
+        $where = '';
+        $searchableFields = ['title', 'actors', 'director', 'plot'];
+
+        foreach ($searchQuery->termsByField() as $field => $terms) {
+            foreach ($terms as $term) {
+                $like = escapeString('%'.$term.'%');
+                if ($field === 'all') {
+                    $clauses = array_map(
+                        static fn (string $searchableField): string => "m.{$searchableField} LIKE {$like}",
+                        $searchableFields,
+                    );
+                    $where .= ' AND ('.implode(' OR ', $clauses).')';
+
+                    continue;
+                }
+
+                if (in_array($field, $searchableFields, true)) {
+                    $where .= " AND m.{$field} LIKE {$like}";
+                }
+            }
+        }
+
+        return $where;
     }
 
     /**

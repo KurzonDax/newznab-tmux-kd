@@ -53,7 +53,7 @@ final class ManticoreIndexRegistry
                 'filename' => ['type' => 'text', 'attribute' => true],
                 'source' => ['type' => 'string', 'attribute' => true],
             ]],
-            'movies' => ['settings' => $settings, 'columns' => [
+            'movies' => ['settings' => array_merge($settings, ['min_prefix_len' => 2]), 'columns' => [
                 'imdbid' => ['type' => 'string'], 'tmdbid' => ['type' => 'integer'],
                 'traktid' => ['type' => 'integer'], 'title' => ['type' => 'text'],
                 'year' => ['type' => 'text'], 'genre' => ['type' => 'text'],
@@ -103,11 +103,17 @@ final class ManticoreIndexRegistry
     }
 
     /** @return array<string, int|string> */
-    public static function inspectableSettings(): array
+    public static function inspectableSettings(?string $logical = null): array
     {
         // Manticore 28 omits defaults/no-op settings such as min_prefix_len=0
         // and exact_words from SHOW TABLE ... SETTINGS / SHOW CREATE TABLE.
-        return ['min_infix_len' => 2, 'index_field_lengths' => 1];
+        $settings = ['min_infix_len' => 2, 'index_field_lengths' => 1];
+
+        if ($logical === 'movies') {
+            $settings['min_prefix_len'] = 2;
+        }
+
+        return $settings;
     }
 
     /** @param array<string, string> $configuredIndexes */

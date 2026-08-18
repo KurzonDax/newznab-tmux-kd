@@ -2062,7 +2062,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
      */
     public function searchMoviesByFields(array $fieldTerms, int $limit = 5000): array
     {
-        $allowed = ['title' => true, 'director' => true, 'actors' => true, 'genre' => true];
+        $allowed = ['all' => true, 'title' => true, 'director' => true, 'actors' => true, 'plot' => true];
         $filtered = [];
         foreach ($fieldTerms as $key => $value) {
             $k = (string) $key;
@@ -2075,7 +2075,13 @@ class ManticoreSearchDriver implements SearchDriverInterface
             return ['imdbids' => [], 'movieinfo_ids' => [], 'data' => []];
         }
 
-        $raw = $this->searchIndexes($this->getMoviesIndex(), null, [], $filtered, $limit);
+        $searchTerms = [];
+        foreach ($filtered as $field => $value) {
+            $selector = $field === 'all' ? '(title,actors,director,plot)' : $field;
+            $searchTerms[$selector] = $this->expandMoviePartialTerms($value);
+        }
+
+        $raw = $this->searchIndexes($this->getMoviesIndex(), null, [], $searchTerms, $limit);
         $imdbids = [];
         $movieinfoIds = [];
         $data = $raw['data'] ?? [];
@@ -2094,6 +2100,14 @@ class ManticoreSearchDriver implements SearchDriverInterface
             'movieinfo_ids' => $movieinfoIds,
             'data' => $data,
         ];
+    }
+
+    private function expandMoviePartialTerms(string $value): string
+    {
+        preg_match_all('/[\p{L}\p{N}]+/u', $value, $matches);
+        $words = $matches[0];
+
+        return implode(' ', array_map(static fn (string $word): string => '*'.$word.'*', $words));
     }
 
     /**

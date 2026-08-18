@@ -12,6 +12,7 @@ use App\Models\MovieInfo;
 use App\Models\Release;
 use App\Models\Settings;
 use App\Services\Releases\ReleaseBrowseService;
+use App\Services\Search\MovieSearchIndexSync;
 use App\Services\TvProcessing\Providers\TraktProvider;
 use App\Support\ReleaseSearchIndexSync;
 use GuzzleHttp\Client;
@@ -316,6 +317,11 @@ class MovieService
                     MovieInfo::query()->where('imdbid', $imdbIdForCover)->update(['cover' => 1]);
                 }
             }
+
+            $movie = MovieInfo::query()->where('imdbid', $imdbIdForCover)->first();
+            if ($movie !== null) {
+                MovieSearchIndexSync::sync($movie);
+            }
         }
 
         return true;
@@ -496,7 +502,7 @@ class MovieService
             'imdbid' => $mov['imdbid'],
             'language' => html_entity_decode($mov['language'], ENT_QUOTES, 'UTF-8'),
             'plot' => html_entity_decode(preg_replace('/\s+See full summary »/u', ' ', $mov['plot']), ENT_QUOTES, 'UTF-8'),
-            'rating' => round((int) $mov['rating'], 1),
+            'rating' => round((float) $mov['rating'], 1),
             'rtrating' => $mov['rtrating'] ?? 'N/A',
             'tagline' => html_entity_decode($mov['tagline'], ENT_QUOTES, 'UTF-8'),
             'title' => $mov['title'],
