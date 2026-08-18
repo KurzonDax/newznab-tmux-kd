@@ -53,59 +53,70 @@
 
         {{-- Search Form --}}
         <form method="get" action="{{ route('Movies') }}" class="space-y-4">
+            <input type="hidden" name="t" value="{{ $category }}">
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div>
-                    <label for="title" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title</label>
-                    <input type="text"
-                           id="title"
-                           name="title"
-                           value="{{ $title ?? '' }}"
-                           placeholder="Search by title..."
-                           class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 transition">
+                <div class="md:col-span-2">
+                    <x-label for="q">Movie Search</x-label>
+                    <x-input id="q"
+                             name="q"
+                             :value="$q ?? ''"
+                             placeholder="Title, actor, director, or plot..." />
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Prefixes: title:, actor:, director:, plot:
+                    </p>
                 </div>
 
                 <div>
-                    <label for="genre" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Genre</label>
-                    <select id="genre"
-                            name="genre"
-                            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 transition">
+                    <x-label for="genre">Genre</x-label>
+                    <x-select id="genre" name="genre">
                         <option value="">All Genres</option>
                         @if(isset($genres))
                             @foreach($genres as $gen)
                                 <option value="{{ $gen }}" {{ (isset($genre) && $genre == $gen) ? 'selected' : '' }}>{{ $gen }}</option>
                             @endforeach
                         @endif
-                    </select>
+                    </x-select>
                 </div>
 
                 <div>
-                    <label for="year" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Year</label>
-                    <select id="year"
-                            name="year"
-                            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 transition">
-                        <option value="">All Years</option>
-                        @if(isset($years))
-                            @foreach($years as $yr)
-                                <option value="{{ $yr }}" {{ (isset($year) && $year == $yr) ? 'selected' : '' }}>{{ $yr }}</option>
-                            @endforeach
-                        @endif
-                    </select>
-                </div>
-
-                <div>
-                    <label for="rating" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Rating</label>
-                    <select id="rating"
-                            name="rating"
-                            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 transition">
+                    <x-label for="rating">Rating</x-label>
+                    <x-select id="rating" name="rating">
                         <option value="">All Ratings</option>
                         @if(isset($ratings))
                             @foreach($ratings as $rate)
                                 <option value="{{ $rate }}" {{ (isset($rating) && $rating == $rate) ? 'selected' : '' }}>{{ $rate }}+</option>
                             @endforeach
                         @endif
-                    </select>
+                    </x-select>
                 </div>
+
+                <x-year-picker :years="$years"
+                               :selected="$year ?? ''"
+                               :from="$year_from ?? ''"
+                               :to="$year_to ?? ''" />
             </div>
+
+            <details class="rounded-lg border border-gray-200 p-4 dark:border-gray-700" @if(($title ?? '') !== '' || ($actor ?? '') !== '' || ($director ?? '') !== '' || ($plot ?? '') !== '') open @endif>
+                <summary class="cursor-pointer text-sm font-semibold text-gray-800 dark:text-gray-200">Advanced</summary>
+                <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+                    <div>
+                        <x-label for="title">Title</x-label>
+                        <x-input id="title" name="title" :value="$title ?? ''" />
+                    </div>
+                    <div>
+                        <x-label for="actor">Actor</x-label>
+                        <x-input id="actor" name="actor" :value="$actor ?? ''" />
+                    </div>
+                    <div>
+                        <x-label for="director">Director</x-label>
+                        <x-input id="director" name="director" :value="$director ?? ''" />
+                    </div>
+                    <div>
+                        <x-label for="plot">Plot</x-label>
+                        <x-input id="plot" name="plot" :value="$plot ?? ''" />
+                    </div>
+                </div>
+            </details>
 
             <div class="flex justify-end">
                 <x-button type="submit"
@@ -126,8 +137,7 @@
                         (showing {{ $results->firstItem() }}-{{ $results->lastItem() }})
                     </span>
                 </div>
-                <div class="flex items-center gap-4">
-                    <x-inline-search placeholder="Search in Movies..." :category="$category ?? null" />
+                <div>
                     {{ $results->links() }}
                 </div>
             </div>
@@ -157,4 +167,3 @@
 
 {{-- NFO, preview, and other modals are included globally via layouts.main --}}
 @endsection
-

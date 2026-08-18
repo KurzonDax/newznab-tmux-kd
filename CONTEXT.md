@@ -81,6 +81,14 @@ _Avoid_: "repaired MP4", "full download" — the stored release is unchanged and
 **Year-only movie fallback**:
 A low-confidence Movies/Other guess (`0.5`) for multi-token `Title.Year[.N]` names with no media markers. Movie post-processing may confirm the title and year; otherwise the release remains in Movies/Other.
 
+**Year picker**:
+A browse filter that selects one year, a named decade, or an optional-start/optional-end custom range. An open custom endpoint means no lower or upper year limit.
+_Avoid_: separate "from year" and "to year" filters presented as unrelated choices.
+
+**Movie search prefixes**:
+Field qualifiers in a Movies search—`title:`, `actor:`/`actors:`, `director:`, and `plot:`—that restrict the following word or quoted phrase to that movie detail. Words without a prefix may match any of those details, but every search word must match somewhere.
+_Avoid_: "advanced syntax" for the separate Advanced form fields; both inputs produce the same movie search constraints.
+
 **Descriptive Title**:
 A human-written, non-scene inner *video* file name (e.g. `My Wife Is In Heat`, `SupergirlPerv`) accepted as a release name only when the release's current name looks obfuscated or hashed and no scene pattern or predb match was found. Anything but known junk (`video1`, `movie`, DVD structure names, hashes) qualifies; a current name that already reads as a real title is never overwritten. Site-wide on/off setting, on by default.
 _Avoid_: "plausible title" — that is the existing scene-shape check a candidate must pass, which Descriptive Titles deliberately do not.

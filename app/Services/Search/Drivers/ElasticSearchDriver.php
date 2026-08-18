@@ -2107,7 +2107,7 @@ class ElasticSearchDriver implements SearchDriverInterface
      */
     public function searchMoviesByFields(array $fieldTerms, int $limit = 5000): array
     {
-        $allowed = ['title' => true, 'director' => true, 'actors' => true, 'genre' => true];
+        $allowed = ['all' => true, 'title' => true, 'director' => true, 'actors' => true, 'plot' => true];
         $filtered = [];
         foreach ($fieldTerms as $key => $value) {
             $k = (string) $key;
@@ -2122,14 +2122,22 @@ class ElasticSearchDriver implements SearchDriverInterface
 
         $must = [];
         foreach ($filtered as $field => $value) {
-            $must[] = [
-                'match' => [
-                    $field => [
-                        'query' => $value,
-                        'operator' => 'and',
+            $fields = $field === 'all' ? ['title', 'actors', 'director', 'plot'] : [$field];
+            foreach ($this->movieSearchWords($value) as $word) {
+                $wildcard = '*'.str_replace(['\\', '*', '?'], ['\\\\', '\\*', '\\?'], mb_strtolower($word)).'*';
+                $should = array_map(static fn (string $searchField): array => [
+                    'wildcard' => [
+                        $searchField => [
+                            'value' => $wildcard,
+                            'case_insensitive' => true,
+                        ],
                     ],
-                ],
-            ];
+                ], $fields);
+
+                $must[] = count($should) === 1
+                    ? $should[0]
+                    : ['bool' => ['should' => $should, 'minimum_should_match' => 1]];
+            }
         }
 
         try {
@@ -2166,6 +2174,14 @@ class ElasticSearchDriver implements SearchDriverInterface
 
             return ['imdbids' => [], 'movieinfo_ids' => [], 'data' => []];
         }
+    }
+
+    /** @return list<string> */
+    private function movieSearchWords(string $value): array
+    {
+        preg_match_all('/[\p{L}\p{N}]+/u', $value, $matches);
+
+        return $matches[0];
     }
 
     /**

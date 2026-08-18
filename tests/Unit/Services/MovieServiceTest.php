@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services;
 
+use App\Facades\Search;
 use App\Models\Release;
 use App\Services\MovieService;
 use App\Services\TraktService;
@@ -118,6 +119,41 @@ class MovieServiceTest extends ImdbScraperTestCase
         $this->assertNotNull($movie);
         $this->assertSame('0137523', $movie->imdbid);
         $this->assertSame('Example Movie', $movie->title);
+    }
+
+    #[Test]
+    public function it_synchronizes_the_movie_index_after_the_upsert_path(): void
+    {
+        Search::shouldReceive('insertMovie')
+            ->once()
+            ->with([
+                'id' => 1,
+                'imdbid' => '0137523',
+                'tmdbid' => 0,
+                'traktid' => 0,
+                'title' => 'Fight Club',
+                'year' => '1999',
+                'genre' => 'Drama',
+                'actors' => 'Edward Norton, Brad Pitt',
+                'director' => 'David Fincher',
+                'rating' => '8.8',
+                'plot' => 'An insomniac meets a soap maker.',
+            ]);
+
+        $service = new MovieService;
+        $service->echooutput = false;
+
+        $this->assertTrue($service->update([
+            'imdbid' => '0137523',
+            'title' => 'Fight Club',
+            'year' => '1999',
+            'genre' => 'Drama',
+            'actors' => 'Edward Norton, Brad Pitt',
+            'director' => 'David Fincher',
+            'rating' => '8.8',
+            'plot' => 'An insomniac meets a soap maker.',
+            'cover' => 1,
+        ]));
     }
 
     #[Test]

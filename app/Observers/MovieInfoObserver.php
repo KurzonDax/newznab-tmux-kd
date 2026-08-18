@@ -6,6 +6,7 @@ namespace App\Observers;
 
 use App\Facades\Search;
 use App\Models\MovieInfo;
+use App\Services\Search\MovieSearchIndexSync;
 use App\Support\ReleaseSearchIndexSync;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -50,26 +51,7 @@ class MovieInfoObserver
      */
     private function syncToSearchIndex(MovieInfo $movie): void
     {
-        try {
-            Search::insertMovie([
-                'id' => $movie->id,
-                'imdbid' => $movie->imdbid ?? '',
-                'tmdbid' => $movie->tmdbid ?? 0,
-                'traktid' => $movie->traktid ?? 0,
-                'title' => $movie->title ?? '',
-                'year' => $movie->year ?? '',
-                'genre' => $movie->genre ?? '',
-                'actors' => $movie->actors ?? '',
-                'director' => $movie->director ?? '',
-                'rating' => $movie->rating ?? '',
-                'plot' => $movie->plot ?? '',
-            ]);
-        } catch (\Throwable $e) {
-            Log::error('MovieInfoObserver: Failed to sync movie to search index', [
-                'movie_id' => $movie->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        MovieSearchIndexSync::sync($movie);
     }
 
     private function syncReleases(MovieInfo $movie): bool

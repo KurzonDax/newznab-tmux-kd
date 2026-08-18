@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Models\Category;
 use App\Services\MovieBrowseService;
 use App\Services\MovieService;
+use App\Support\YearRange;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -65,13 +66,21 @@ class MovieController extends BasePageController
             return $result;
         });
 
-        $years = range(1903, now()->addYear()->year);
+        $maxYear = now()->addYear()->year;
+        $years = range(1900, $maxYear);
         rsort($years);
 
         $genres = $this->movieBrowseService->getGenres();
         $ratingInput = $this->integerInput($request, 'rating', 0);
         $genreInput = $this->scalarInput($request, 'genre');
-        $yearInput = $this->integerInput($request, 'year', 0);
+        $yearInput = $this->scalarInput($request, 'year');
+        $yearFromInput = $this->scalarInput($request, 'year_from');
+        $yearToInput = $this->scalarInput($request, 'year_to');
+        $yearRange = YearRange::fromInput($yearInput, $yearFromInput, $yearToInput, $maxYear);
+        $actorInput = $this->scalarInput($request, 'actor');
+        if ($actorInput === '') {
+            $actorInput = $this->scalarInput($request, 'actors');
+        }
 
         $catname = $category === -1 ? 'All' : Category::find($category) ?? 'All';
 
@@ -81,15 +90,19 @@ class MovieController extends BasePageController
             'catlist' => $moviecats,
             'category' => $category,
             'categorytitle' => $id,
+            'q' => stripslashes($this->scalarInput($request, 'q')),
             'title' => stripslashes($this->scalarInput($request, 'title')),
-            'actors' => stripslashes($this->scalarInput($request, 'actors')),
+            'actor' => stripslashes($actorInput),
             'director' => stripslashes($this->scalarInput($request, 'director')),
+            'plot' => stripslashes($this->scalarInput($request, 'plot')),
             'ratings' => range(1, 9),
             'rating' => \in_array($ratingInput, range(1, 9), true) ? $ratingInput : '',
             'genres' => $genres,
             'genre' => \in_array($genreInput, $genres, true) ? $genreInput : '',
             'years' => $years,
-            'year' => \in_array($yearInput, $years, true) ? $yearInput : '',
+            'year' => $yearRange !== null ? $yearInput : '',
+            'year_from' => $yearRange !== null ? $yearFromInput : '',
+            'year_to' => $yearRange !== null ? $yearToInput : '',
             'catname' => $catname,
             'resultsadd' => $movies,
             'results' => $results,

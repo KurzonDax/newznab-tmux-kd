@@ -27,6 +27,8 @@ final class ManticoreIndexRegistryTest extends TestCase
             self::assertSame(1, $definition['settings']['index_field_lengths']);
         }
 
+        self::assertSame(2, $definitions['movies']['settings']['min_prefix_len']);
+
         self::assertSame('bigint', $definitions['releases']['columns']['passwordstatus']['type']);
         self::assertSame('bigint', $definitions['releases']['columns']['haspreview']['type']);
         self::assertSame('text', $definitions['releases']['columns']['media_movie_name']['type']);
@@ -112,6 +114,7 @@ final class ManticoreIndexRegistryTest extends TestCase
             $actual,
             ManticoreIndexRegistry::inspectableSettings()
         ));
+        self::assertSame(2, ManticoreIndexRegistry::inspectableSettings('movies')['min_prefix_len']);
     }
 
     #[Test]
