@@ -253,6 +253,7 @@ Route::middleware(['role:Admin', '2fa'])->prefix('admin')->group(function () {
     Route::post('binaryblacklist-sweep', [AdminBlacklistController::class, 'startSweep'])->name('admin.binaryblacklist-sweep.start');
     Route::get('binaryblacklist-sweep/status', [AdminBlacklistController::class, 'sweepStatus'])->name('admin.binaryblacklist-sweep.status');
     Route::match(['GET', 'POST'], 'binaryblacklist-edit', [AdminBlacklistController::class, 'edit'])->name('admin.binaryblacklist-edit');
+    Route::post('poster-identity/blacklist', [PosterIdentityController::class, 'storeBlacklist'])->name('admin.poster-identity.blacklist');
     Route::get('book-list', [AdminBookController::class, 'index'])->name('admin.book-list');
     Route::match(['GET', 'POST'], 'book-edit', [AdminBookController::class, 'edit'])->name('admin.book-edit');
     Route::get('category-list', [AdminCategoryController::class, 'index'])->name('admin.category-list');

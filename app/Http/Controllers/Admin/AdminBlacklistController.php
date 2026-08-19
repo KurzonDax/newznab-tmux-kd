@@ -37,7 +37,7 @@ class AdminBlacklistController extends BasePageController
 
         $this->viewData = array_merge($this->viewData, [
             'binlist' => $binlist,
-            'sweepStatus' => $this->visibleSweepStatus(),
+            'sweepStatus' => $this->blacklistSweeps->publicStatus(),
             'title' => $title,
             'meta_title' => $meta_title,
         ]);
@@ -68,22 +68,7 @@ class AdminBlacklistController extends BasePageController
 
     public function sweepStatus(): JsonResponse
     {
-        return response()->json($this->visibleSweepStatus());
-    }
-
-    /**
-     * @return array{running:bool, current:array<string, mixed>|null, last:array<string, mixed>|null}
-     */
-    private function visibleSweepStatus(): array
-    {
-        $status = $this->blacklistSweeps->status();
-        foreach (['current', 'last'] as $key) {
-            if (is_array($status[$key])) {
-                unset($status[$key]['log_path']);
-            }
-        }
-
-        return $status;
+        return response()->json($this->blacklistSweeps->publicStatus());
     }
 
     /**
