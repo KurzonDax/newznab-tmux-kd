@@ -15,6 +15,7 @@ use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Search\MovieSearchIndexSync;
 use App\Services\TvProcessing\Providers\TraktProvider;
 use App\Support\ReleaseSearchIndexSync;
+use App\Traits\DetectsHashedNames;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Support\Carbon;
@@ -28,6 +29,8 @@ use Illuminate\Support\Str;
  */
 class MovieService
 {
+    use DetectsHashedNames;
+
     protected const MATCH_PERCENT = 75;
 
     /** Lower threshold when year matches exactly; allows matching by alternate title (e.g. "Girl Cops" vs primary). */
@@ -1422,6 +1425,12 @@ class MovieService
 
     protected function parseMovieSearchName(string $releaseName): bool
     {
+        if (preg_match('/^\d+$/', $releaseName)
+            || preg_match('/^[A-Za-z0-9]{13,}$/', $releaseName)
+            || $this->isHashedOrGibberish($releaseName)) {
+            return false;
+        }
+
         $releaseName = $this->cleanReleaseNameForMovieLookup($releaseName);
 
         if (empty(trim($releaseName))) {
