@@ -6,13 +6,18 @@ namespace Tests\Unit\Services;
 
 use App\Facades\Search;
 use App\Models\Release;
+use App\Services\ImdbScraper;
 use App\Services\MovieService;
+use App\Services\TmdbClient;
 use App\Services\TraktService;
 use App\Services\TvProcessing\Providers\TraktProvider;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
+use Symfony\Component\Console\Output\BufferedOutput;
+use Termwind\Termwind;
 use Tests\Unit\ImdbScraperTestCase;
 
 class MovieServiceTest extends ImdbScraperTestCase
@@ -215,6 +220,108 @@ class MovieServiceTest extends ImdbScraperTestCase
     }
 
     /**
+     * @return array<string, array{string}>
+     */
+    public static function obfuscatedMovieSearchNames(): array
+    {
+        return [
+            'observed mixed token 1' => ['uY8rY7zixideWnkhsIvN'],
+            'observed mixed token 2' => ['nWbGhyUu6gUsnuAt'],
+            'observed mixed token 3' => ['9D4G35n09zFf8pL'],
+            'observed mixed token 4' => ['y1hTnTr9QfWzCvMUaSY'],
+            'observed mixed token 5' => ['iXNRlJYZbQQqDWvIT'],
+            'observed mixed token 6' => ['L3uhJ3HZ6jHJZbZMl4a'],
+            'observed mixed token 7' => ['YVkm8BdNoj8UoxNkfMQALR'],
+            'observed mixed token 8' => ['gosPtlYo6TWso9S'],
+            'observed mixed token 9' => ['2TZwb1rnUCaaDOsI'],
+            'observed mixed token 10' => ['CvnbK0VfTKELgG8WL5YS'],
+            'observed mixed token 11' => ['uNnDRUqctxThlgw'],
+            'observed mixed token 12' => ['TQzI8sqMBXFeGnElgH'],
+            'numeric timestamp' => ['1547200918'],
+            'numeric token' => ['350786012'],
+            'another numeric token' => ['863712707'],
+            'zero' => ['0'],
+            'thirteen character token' => ['aB3kD9zQxY7wP'],
+            'hash with media extension' => ['7f3a9c2b4e1d8a6f5b2c9e0d1a3f4b5c.mkv'],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('obfuscatedMovieSearchNames')]
+    public function it_rejects_obfuscated_movie_search_names(string $releaseName): void
+    {
+        Cache::flush();
+
+        $service = new TestableMovieService;
+
+        $this->assertFalse($service->parseSearchName($releaseName));
+    }
+
+    /**
+     * @return array<string, array{string, string, string}>
+     */
+    public static function legitimateMovieSearchNames(): array
+    {
+        return [
+            'dot separators' => ['The.Perfect.Storm.1991', 'The Perfect Storm', '1991'],
+            'underscore separators' => ['Movie_Title_2024', 'Movie Title', '2024'],
+            'scene release' => ['Inception 2010 1080p BluRay x264-SPARKS', 'Inception', '2010'],
+            'short single-token title' => ['Transformers', 'Transformers', ''],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('legitimateMovieSearchNames')]
+    public function it_parses_legitimate_movie_search_names(
+        string $releaseName,
+        string $expectedTitle,
+        string $expectedYear,
+    ): void {
+        Cache::flush();
+
+        $service = new TestableMovieService;
+
+        $this->assertSame(
+            ['title' => $expectedTitle, 'year' => $expectedYear],
+            $service->parseSearchName($releaseName),
+        );
+    }
+
+    #[Test]
+    public function it_marks_obfuscated_releases_failed_without_searching_external_services(): void
+    {
+        $this->mock(ImdbScraper::class)->shouldNotReceive('search');
+        $this->mock(TmdbClient::class)->shouldNotReceive('isConfigured');
+
+        Release::query()->insert([
+            'id' => 3,
+            'searchname' => 'uY8rY7zixideWnkhsIvN',
+            'categories_id' => 2999,
+            'imdbid' => null,
+            'movieinfo_id' => null,
+        ]);
+
+        $service = new MovieService;
+        $service->echooutput = true;
+        $service->movieqty = 100;
+
+        $consoleOutput = new BufferedOutput;
+        Termwind::renderUsing($consoleOutput);
+
+        try {
+            $service->processMovieReleases();
+        } finally {
+            Termwind::renderUsing(null);
+        }
+
+        $output = $consoleOutput->fetch();
+
+        $this->assertStringNotContainsString('Looking up:', $output);
+        $this->assertStringContainsString('Failed to find IMDB IDs for 1 releases:', $output);
+        $this->assertSame('', Release::query()->whereKey(3)->value('imdbid'));
+    }
+
+    /**
      * @param  array<string, mixed>  $response
      */
     private function makeMovieServiceForTraktResponse(array $response): MovieService
@@ -254,5 +361,23 @@ class MovieServiceTest extends ImdbScraperTestCase
     {
         $reflectionProperty = new \ReflectionProperty($service, $property);
         $reflectionProperty->setValue($service, $value);
+    }
+}
+
+class TestableMovieService extends MovieService
+{
+    /**
+     * @return array{title: string, year: string}|false
+     */
+    public function parseSearchName(string $releaseName): array|false
+    {
+        if (! $this->parseMovieSearchName($releaseName)) {
+            return false;
+        }
+
+        return [
+            'title' => $this->currentTitle,
+            'year' => $this->currentYear,
+        ];
     }
 }
