@@ -123,7 +123,7 @@ class MusicCategorizer extends AbstractCategorizer
     protected function checkMusicVideo(string $name, bool $categorizeForeign): ?CategorizationResult
     {
         // Music video indicators
-        if (preg_match('/(?:^|[^a-zA-Z0-9])(?:Music\s*Video|Concert|Live\s*Show|Tour|Festival|MV|MTV)|\b(?:MVID|MVid)\b/i', $name)) {
+        if (preg_match('/(?:^|[^a-zA-Z0-9])(?:Music\s*Video|Concert|Live\s*Show|Tour|Festival)(?=$|[^a-zA-Z0-9])|(?:^|[. ])(?:MV|MTV)(?=$|[. ])|\b(?:MVID|MVid)\b/i', $name)) {
             if (preg_match('/\b(?:720p|1080[pi]|2160p|BDRip|BluRay|DVDRip|HDTV|WebRip|WEB-DL|x264|x265)\b/i', $name) ||
                 preg_match('/\b(?:Live|Unplugged|Acoustic|World\s*Tour|in\s*Concert|Official\s*Video|Bootleg|Remastered)\b/i', $name) ||
                 preg_match('/\.(mkv|mp4|avi|ts|m2ts|mpg|mpeg|mov|wmv|vob|m4v)$/i', $name)) {
@@ -189,7 +189,7 @@ class MusicCategorizer extends AbstractCategorizer
     protected function checkMP3(string $name, bool $categorizeForeign): ?CategorizationResult
     {
         // MP3 indicators
-        if (preg_match('/(?<![a-zA-Z0-9])(?:MP3|320kbps|256kbps|192kbps|128kbps|CBR|VBR)(?![a-zA-Z0-9])|\b(?:MP3)\b|[\._-](?:MP3)[\._-]|\.mp3$/i', $name)) {
+        if (! $this->hasStrongVideoMarkers($name) && preg_match('/(?<![a-zA-Z0-9])(?:MP3|320kbps|256kbps|192kbps|128kbps|CBR|VBR)(?![a-zA-Z0-9])|\b(?:MP3)\b|[\._-](?:MP3)[\._-]|\.mp3$/i', $name)) {
             if (preg_match('/\b(?:320|256|192|128)[._-]?kbps|\b(?:320|256|192|128)[._-]?K|\((?:320|256|192|128)\)|\[(?:320|256|192|128)\]|V0|V2|VBR/i', $name) ||
                 preg_match('/\b(?:CD[._-]?Rip|Web[._-]?Rip|WEB|iTunes|AmazonRip|Spotify[._-]?Rip|MP3\s*\-\s*\d{3}kbps)\b/i', $name) ||
                 preg_match('/\.(m3u|mp3)"|rip(?:192|256|320)|[._-]FM[._-].+MP3/i', $name)) {
@@ -212,7 +212,7 @@ class MusicCategorizer extends AbstractCategorizer
         }
 
         // Bitrate patterns
-        if (preg_match('/[\.\-\(\[_ ]\d{2,3}k[\.\-\)\]_ ]|\((192|256|320)\)|(320|cd|eac|vbr)[._-]+mp3|(cd|eac|mp3|vbr)[._-]+320/i', $name)) {
+        if (! $this->hasStrongVideoMarkers($name) && preg_match('/[\.\-\(\[_ ]\d{2,3}k[\.\-\)\]_ ]|\((192|256|320)\)|(320|cd|eac|vbr)[._-]+mp3|(cd|eac|mp3|vbr)[._-]+320/i', $name)) {
             if ($categorizeForeign && $this->checkForeign($name)) {
                 return $this->matched(Category::MUSIC_FOREIGN, 0.8, 'mp3_bitrate_foreign');
             }
@@ -221,6 +221,11 @@ class MusicCategorizer extends AbstractCategorizer
         }
 
         return null;
+    }
+
+    private function hasStrongVideoMarkers(string $name): bool
+    {
+        return (bool) preg_match('/\b(?:WEB[._ -]?DL|WEB-?Rip|BluRay|BDRip|HDTV|H\.?264|x26[45]|HEVC|AVC|\d{3,4}[pi]|AAC2\.0|DDP?5\.1|DD51|Atmos)\b|\.(?:mkv|mp4|avi)$/i', $name);
     }
 
     protected function checkOther(string $name, bool $categorizeForeign): ?CategorizationResult

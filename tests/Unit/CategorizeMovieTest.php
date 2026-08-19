@@ -90,6 +90,10 @@ class CategorizeMovieTest extends TestCase
             'standalone ape video token' => ['The Ape (2024) 1080p WEB-Rip.mkv'],
             'vbr prefix' => ['The VBridge Sessions (2024) WEB'],
             'soundtrack prefix' => ['The Soundtracks Archive (2024)'],
+            'mv underscore handle' => ['[1/3] - "@MV_WRLD ~ Batman Begins (2005) 1080p 10bit BluRay 60FPS x265 HEVC [Tamil + Telugu + Hindi DD2.0 - 224Kbps) + English(DD5.1 384 Kbps)] 3.7GB.mkv"'],
+            'mv release group suffix' => ['Tanner.Hall.Forever.1080p.WEB-DL.H.264-MV'],
+            'movie audio bitrate' => ['Chess.2006.AsianetMoviesHD.WEB.DL.H264.AAC2.0.192k-DDH'],
+            'yearless movie audio bitrate' => ['Snehaveedu.1080p.AsianetMoviesHD.WEB.DL.H264.AAC2.0.192k-DDH'],
         ];
     }
 
@@ -103,5 +107,52 @@ class CategorizeMovieTest extends TestCase
         );
 
         $this->assertFalse($passable->bestResult->isSuccessful());
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function genuineMusicVideoProvider(): array
+    {
+        return [
+            'tour concert film' => ['Taylor.Swift.The.Eras.Tour.2023.EXTENDED.1080p.WEBRip.x264.AAC5.1-YTS'],
+            'mtv unplugged dvd' => ['Pearl.Jam.MTV.Unplugged.1992.NTSC.DVD.REMUX.DD5.1.mkv'],
+            'mtv unplugged dvdrip' => ['Alice.In.Chains.MTV.Unplugged.1996.DVDRip.x264-HANDJOB'],
+        ];
+    }
+
+    #[DataProvider('genuineMusicVideoProvider')]
+    public function test_genuine_music_video_tokens_categorize_as_music_video_in_music_pipe(string $releaseName): void
+    {
+        $context = new ReleaseContext(releaseName: $releaseName, groupId: 0);
+        $passable = (new MusicPipe)->handle(
+            new CategorizationPassable($context),
+            fn (CategorizationPassable $result): CategorizationPassable => $result,
+        );
+
+        $this->assertSame(Category::MUSIC_VIDEO, $passable->bestResult->categoryId);
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function genuineBitrateTaggedMp3Provider(): array
+    {
+        return [
+            'scene 320k' => ['VA-Ministry_Of_Sound_Anthems-2CD-2019-320k-GRP'],
+            'web source 320k' => ['Artist-Album-(2020)-[320k]-WEB-GRP'],
+        ];
+    }
+
+    #[DataProvider('genuineBitrateTaggedMp3Provider')]
+    public function test_genuine_bitrate_tagged_music_stays_in_mp3_category(string $releaseName): void
+    {
+        $context = new ReleaseContext(releaseName: $releaseName, groupId: 0);
+        $passable = (new MusicPipe)->handle(
+            new CategorizationPassable($context),
+            fn (CategorizationPassable $result): CategorizationPassable => $result,
+        );
+
+        $this->assertSame(Category::MUSIC_MP3, $passable->bestResult->categoryId);
     }
 }
