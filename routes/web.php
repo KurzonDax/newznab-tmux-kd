@@ -78,7 +78,7 @@ use App\Http\Controllers\MyMoviesController;
 use App\Http\Controllers\MyShowsController;
 use App\Http\Controllers\NfoController;
 use App\Http\Controllers\PasswordSecurityController;
-use App\Http\Controllers\PosterController;
+use App\Http\Controllers\PosterIdentityController;
 use App\Http\Controllers\PrivacyCenterController;
 use App\Http\Controllers\PrivacyPolicyController;
 use App\Http\Controllers\ProfileController;
@@ -208,7 +208,7 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
     Route::post('privacy-center/erasure', [PrivacyCenterController::class, 'requestErasure'])->middleware('throttle:3,1')->name('privacy-center.erasure');
     Route::get('privacy-center/export/{gdprRequest}/download', [PrivacyCenterController::class, 'downloadExport'])->middleware('throttle:10,1')->name('privacy-center.export.download');
     Route::match(['GET', 'POST'], 'search', [SearchController::class, 'search'])->name('search');
-    Route::get('poster', PosterController::class)->name('poster');
+    Route::get('poster', PosterIdentityController::class)->name('poster-identity');
 
     // Release Report routes
     Route::post('release-report', [ReleaseReportController::class, 'store'])->name('release-report.store');

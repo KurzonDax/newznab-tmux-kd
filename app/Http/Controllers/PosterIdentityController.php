@@ -9,7 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\View\View;
 
-final class PosterController extends BasePageController
+final class PosterIdentityController extends BasePageController
 {
     public function __construct(
         private readonly ReleaseBrowseService $releaseBrowseService,
@@ -31,14 +31,14 @@ final class PosterController extends BasePageController
                 'path' => $request->url(),
                 'query' => $request->query(),
             ])
-            : $this->releaseBrowseService->getPosterReleases(
+            : $this->releaseBrowseService->getPosterIdentityReleases(
                 $posterIdentity,
                 $perPage,
                 $orderBy,
                 (array) $this->userdata->categoryexclusions,
             );
 
-        return view('poster.index', array_merge($this->viewData, [
+        return view('poster-identity.index', array_merge($this->viewData, [
             'posterIdentity' => $posterIdentity,
             'results' => $results,
             'meta_title' => $posterIdentity === '' ? 'Posted By' : 'Posted By '.$posterIdentity,

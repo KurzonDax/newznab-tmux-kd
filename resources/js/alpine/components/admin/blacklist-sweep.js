@@ -69,9 +69,10 @@ Alpine.data('blacklistSweep', () => ({
         const counts = run.mode === 'delete'
             ? run.removed_count + ' removed'
             : run.matched_count + ' matched';
+        const duration = this.running ? '' : ' in ' + this.formatDuration(run.started_at, run.finished_at);
         this.summary = this.running
             ? 'Running ' + run.mode + ' sweep for ' + scope + ' since ' + run.started_at + ' — ' + counts
-            : 'Last sweep: ' + run.mode + ' for ' + scope + ', finished ' + run.finished_at + ' — ' + counts + ' (exit ' + run.exit_code + ')';
+            : 'Last sweep: ' + run.mode + ' for ' + scope + ', finished ' + run.finished_at + duration + ' — ' + counts + ' (exit ' + run.exit_code + ')';
 
         if (!this.running && this.pollTimer) {
             clearInterval(this.pollTimer);
@@ -82,5 +83,13 @@ Alpine.data('blacklistSweep', () => ({
     beginPolling() {
         if (this.pollTimer) return;
         this.pollTimer = setInterval(() => this.refresh(), 3000);
+    },
+
+    formatDuration(startedAt, finishedAt) {
+        const seconds = Math.max(0, Math.round((Date.parse(finishedAt) - Date.parse(startedAt)) / 1000));
+        if (seconds < 60) return seconds + 's';
+
+        const minutes = Math.floor(seconds / 60);
+        return minutes + 'm ' + (seconds % 60) + 's';
     },
 }));

@@ -9,13 +9,13 @@
     <x-admin.card>
         <x-admin.page-header :title="$title ?? 'Binary Black/White List'" icon="fas fa-ban">
             <x-slot:actions>
-                <select x-model="mode"
-                        :disabled="running"
-                        class="rounded-lg border-gray-300 dark:border-gray-600 surface-panel text-sm focus:border-primary-500 focus:ring-primary-500"
+                <x-select x-model="mode"
+                        ::disabled="running"
+                        class="w-36 py-2 text-sm"
                         title="Sweep mode">
                     <option value="dry-run">Dry-run</option>
                     <option value="delete">Delete</option>
-                </select>
+                </x-select>
                 <x-button type="button" icon="fas fa-broom" @click="confirmSweep()" ::disabled="running">
                     Sweep releases
                 </x-button>
@@ -109,13 +109,14 @@
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
                             <div class="flex gap-2 justify-center">
-                                <button type="button"
-                                        class="text-primary-600 dark:text-primary-400 hover:text-primary-900 dark:hover:text-primary-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                                <x-button type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        icon="fas fa-broom"
                                         @click="confirmSweep({{ $bin->id }})"
-                                        :disabled="running"
-                                        title="Sweep releases matching this rule">
-                                    <i class="fas fa-broom"></i>
-                                </button>
+                                        ::disabled="running"
+                                        title="Sweep releases matching this rule"
+                                        aria-label="Sweep releases matching this rule" />
                                 <a href="{{ url('/admin/binaryblacklist-edit?id=' . $bin->id) }}"
                                    class="text-primary-600 dark:text-primary-400 hover:text-primary-900 dark:hover:text-primary-300"
                                    title="Edit this blacklist">

@@ -24,7 +24,7 @@ use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
-final class PosterControllerTest extends TestCase
+final class PosterIdentityControllerTest extends TestCase
 {
     private string $databasePath;
 
@@ -98,7 +98,7 @@ final class PosterControllerTest extends TestCase
         }
     }
 
-    public function test_poster_page_matches_exact_identity_and_paginates_newest_first(): void
+    public function test_poster_identity_page_matches_exact_identity_and_paginates_newest_first(): void
     {
         $user = $this->verifiedUser();
         $identity = 'user <user@x.localdomain>';
@@ -109,7 +109,7 @@ final class PosterControllerTest extends TestCase
         $this->release('Look alike', 'user <user@2.localdomain>', '2026-08-04 12:00:00');
         $this->release('Case variant', 'user <USER@x.localdomain>', '2026-08-05 12:00:00');
 
-        $firstPage = $this->actingAs($user)->get(route('poster', ['name' => $identity]));
+        $firstPage = $this->actingAs($user)->get(route('poster-identity', ['name' => $identity]));
 
         $firstPage->assertOk();
         $firstPage->assertSeeInOrder(['Newest exact', 'Middle exact']);
@@ -121,14 +121,14 @@ final class PosterControllerTest extends TestCase
         $firstPage->assertSee('bg-primary-100', false);
         $firstPage->assertDontSee('bg-indigo-100', false);
 
-        $secondPage = $this->actingAs($user)->get(route('poster', ['name' => $identity, 'page' => 2]));
+        $secondPage = $this->actingAs($user)->get(route('poster-identity', ['name' => $identity, 'page' => 2]));
         $secondPage->assertOk();
         $secondPage->assertSee('Oldest exact');
         $secondPage->assertDontSee('Look alike');
         $secondPage->assertDontSee('Case variant');
     }
 
-    public function test_poster_page_respects_category_exclusions_and_renders_empty_state(): void
+    public function test_poster_identity_page_respects_category_exclusions_and_renders_empty_state(): void
     {
         $user = $this->verifiedUser();
         DB::table('user_excluded_categories')->insert([
@@ -138,18 +138,18 @@ final class PosterControllerTest extends TestCase
         $this->release('Excluded release', 'excluded@example.test', '2026-08-03 12:00:00');
 
         $this->actingAs($user)
-            ->get(route('poster', ['name' => 'excluded@example.test']))
+            ->get(route('poster-identity', ['name' => 'excluded@example.test']))
             ->assertOk()
             ->assertDontSee('Excluded release')
             ->assertSee('No releases found');
 
         $this->actingAs($user)
-            ->get(route('poster'))
+            ->get(route('poster-identity'))
             ->assertOk()
             ->assertSee('No releases found');
     }
 
-    public function test_poster_page_requires_authentication_and_verification(): void
+    public function test_poster_identity_page_requires_authentication_and_verification(): void
     {
         $this->get('/poster?name=poster%40example.test')->assertRedirect(route('login'));
 

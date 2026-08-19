@@ -13,7 +13,7 @@
 
     <x-page-header
         title="Posted By"
-        :description="$posterIdentity !== '' ? $posterIdentity : 'No poster identity supplied'"
+        :description="$posterIdentity !== '' ? $posterIdentity : 'No Posted By identity supplied'"
         icon="fas fa-user"
     />
 

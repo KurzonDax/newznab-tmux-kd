@@ -29,7 +29,8 @@ final class BlacklistSweepService
         }
 
         return $this->withLock(function () use ($mode, $ruleId): array {
-            $hasRunningSweep = collect($this->readStatuses())->contains(
+            $statuses = $this->recoverOrphanedRuns($this->readStatuses());
+            $hasRunningSweep = collect($statuses)->contains(
                 static fn (array $status): bool => ($status['running'] ?? false) === true,
             );
             if ($hasRunningSweep) {
@@ -79,7 +80,10 @@ final class BlacklistSweepService
     public function status(): array
     {
         return $this->withLock(function (): array {
-            $statuses = array_map(fn (array $status): array => $this->withCounts($status), $this->readStatuses());
+            $statuses = array_map(
+                fn (array $status): array => $this->withCounts($status),
+                $this->recoverOrphanedRuns($this->readStatuses()),
+            );
             $current = collect($statuses)->firstWhere('running', true);
             $last = collect($statuses)->firstWhere('running', false);
 
@@ -109,7 +113,7 @@ final class BlacklistSweepService
      */
     private function detachedCommand(array $status): string
     {
-        $php = escapeshellarg(PHP_BINARY);
+        $php = escapeshellarg(PHP_BINDIR.DIRECTORY_SEPARATOR.'php');
         $artisan = escapeshellarg(base_path('artisan'));
         $remove = $php.' '.$artisan.' releases:remove-crap --type=blacklist --time=full';
         if ($status['rule_id'] !== null) {
@@ -149,6 +153,47 @@ final class BlacklistSweepService
         $status['removed_count'] = $removed;
 
         return $status;
+    }
+
+    /**
+     * Mark runs whose detached worker no longer exists as failed so they cannot block every future sweep.
+     *
+     * @param  list<array<string, mixed>>  $statuses
+     * @return list<array<string, mixed>>
+     */
+    private function recoverOrphanedRuns(array $statuses): array
+    {
+        foreach ($statuses as &$status) {
+            if (($status['running'] ?? false) !== true || $this->processIsRunning((int) ($status['pid'] ?? 0))) {
+                continue;
+            }
+
+            $status = $this->withCounts($status);
+            $status['running'] = false;
+            $status['finished_at'] = now()->toIso8601String();
+            $status['exit_code'] = 255;
+            $this->writeStatus($status);
+        }
+        unset($status);
+
+        return $statuses;
+    }
+
+    private function processIsRunning(int $pid): bool
+    {
+        if ($pid < 1) {
+            return false;
+        }
+
+        if (! function_exists('posix_kill')) {
+            return true;
+        }
+
+        if (posix_kill($pid, 0)) {
+            return true;
+        }
+
+        return function_exists('posix_get_last_error') && posix_get_last_error() === 1;
     }
 
     /**

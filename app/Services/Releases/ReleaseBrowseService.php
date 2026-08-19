@@ -62,7 +62,7 @@ class ReleaseBrowseService
      * @param  array<int, int>  $excludedCategories
      * @return LengthAwarePaginator<int, Release>
      */
-    public function getPosterReleases(
+    public function getPosterIdentityReleases(
         string $posterIdentity,
         int $perPage,
         string $orderBy = '',

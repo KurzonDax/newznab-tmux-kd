@@ -126,7 +126,7 @@
                                         </span>
                                     @endif
                                     @if(!empty($result->fromname))
-                                        <a href="{{ route('poster', ['name' => $result->fromname]) }}"
+                                        <a href="{{ route('poster-identity', ['name' => $result->fromname]) }}"
                                            class="inline-flex items-center px-2 py-0.5 rounded bg-primary-100 dark:bg-primary-900/50 text-primary-800 dark:text-primary-200 hover:bg-primary-200 dark:hover:bg-primary-800 font-mono transition"
                                            title="All releases from this poster">
                                             <i class="fas fa-user mr-1"></i> {{ $result->fromname }}
@@ -249,7 +249,7 @@
                         <span title="Grabs"><i class="fas fa-download text-green-600 dark:text-green-400 mr-1"></i>{{ $result->grabs ?? 0 }}</span>
                         <span title="Comments"><i class="fas fa-comment text-primary-600 dark:text-primary-400 mr-1"></i>{{ $result->comments ?? 0 }}</span>
                         @if(!empty($result->fromname))
-                            <a href="{{ route('poster', ['name' => $result->fromname]) }}"
+                            <a href="{{ route('poster-identity', ['name' => $result->fromname]) }}"
                                class="inline-flex items-center px-2 py-0.5 rounded bg-primary-100 dark:bg-primary-900/50 text-primary-800 dark:text-primary-200 hover:bg-primary-200 dark:hover:bg-primary-800 text-xs font-mono transition"
                                title="All releases from this poster">
                                 <i class="fas fa-user mr-1"></i>{{ $result->fromname }}

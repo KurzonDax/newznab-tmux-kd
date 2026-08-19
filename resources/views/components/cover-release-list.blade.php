@@ -68,8 +68,8 @@
                                     </button>
                                 @endif
                                 @if($shouldShowGroup && isset($release->group_name) && !empty($release->group_name))
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200" title="Poster/Uploader">
-                                        <i class="fas fa-user mr-1"></i> {{ $release->group_name }}
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 dark:bg-primary-900/50 text-primary-800 dark:text-primary-200" title="Usenet group">
+                                        <i class="fas fa-users mr-1"></i> {{ $release->group_name }}
                                     </span>
                                 @endif
                             </div>

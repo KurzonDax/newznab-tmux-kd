@@ -28,6 +28,7 @@ final class BlacklistSweepServiceTest extends TestCase
         $this->assertNull($dryRun['rule_id']);
         $this->assertSame(4321, $dryRun['pid']);
         $this->assertStringContainsString('releases:remove-crap --type=blacklist --time=full', $commands[0]);
+        $this->assertStringContainsString(escapeshellarg(PHP_BINDIR.DIRECTORY_SEPARATOR.'php'), $commands[0]);
         $this->assertStringNotContainsString('--delete', $commands[0]);
         $this->assertStringContainsString('nohup', $commands[0]);
 
@@ -42,7 +43,7 @@ final class BlacklistSweepServiceTest extends TestCase
 
     public function test_refuses_a_second_admin_sweep_while_one_is_running(): void
     {
-        Process::fake(fn () => Process::result(output: "99\n"));
+        Process::fake(fn () => Process::result(output: getmypid()."\n"));
         $service = new BlacklistSweepService($this->makeTempDirectory('blacklist-sweeps'));
         $service->start('dry-run');
 
@@ -54,7 +55,7 @@ final class BlacklistSweepServiceTest extends TestCase
 
     public function test_status_reads_live_counts_and_completed_summary(): void
     {
-        Process::fake(fn () => Process::result(output: "99\n"));
+        Process::fake(fn () => Process::result(output: getmypid()."\n"));
         $directory = $this->makeTempDirectory('blacklist-sweeps');
         $service = new BlacklistSweepService($directory);
         $run = $service->start('dry-run', 5);
@@ -91,5 +92,25 @@ final class BlacklistSweepServiceTest extends TestCase
 
         $this->assertCount(20, glob($directory.'/*.json') ?: []);
         $this->assertCount(20, glob($directory.'/*.log') ?: []);
+    }
+
+    public function test_recovers_an_orphaned_run_before_starting_a_replacement(): void
+    {
+        $launches = 0;
+        Process::fake(function () use (&$launches) {
+            $launches++;
+
+            return Process::result(output: ($launches === 1 ? 999999999 : getmypid())."\n");
+        });
+        $service = new BlacklistSweepService($this->makeTempDirectory('blacklist-sweeps'));
+
+        $orphaned = $service->start('dry-run');
+        $replacement = $service->start('delete');
+        $status = $service->status();
+
+        $this->assertSame($replacement['id'], $status['current']['id']);
+        $this->assertSame($orphaned['id'], $status['last']['id']);
+        $this->assertSame(255, $status['last']['exit_code']);
+        $this->assertFalse($status['last']['running']);
     }
 }
