@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Enums\BlacklistConstants;
 use App\Http\Middleware\Google2FAMiddleware;
 use App\Http\Middleware\TrustedDevice2FAMiddleware;
 use App\Models\Category;
@@ -11,11 +12,16 @@ use App\Models\Release;
 use App\Models\RootCategory;
 use App\Models\Settings;
 use App\Models\User;
+use App\Services\BlacklistSweepService;
 use App\View\Composers\GlobalDataComposer;
+use DOMDocument;
+use DOMElement;
+use DOMXPath;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schema;
 use PDO;
 use ReflectionClass;
@@ -72,6 +78,11 @@ final class PosterIdentityControllerTest extends TestCase
 
         DB::purge();
         DB::reconnect();
+        $this->registerSqliteFunction(
+            'REGEXP',
+            static fn (?string $pattern, ?string $value): int => @preg_match('/'.($pattern ?? '').'/i', $value ?? '') === 1 ? 1 : 0,
+            2,
+        );
         Cache::flush();
         $this->createSchema();
         $this->resetGlobalComposerState();
@@ -159,6 +170,298 @@ final class PosterIdentityControllerTest extends TestCase
             ->assertRedirect(route('verification.notice'));
     }
 
+    public function test_only_admins_see_the_poster_identity_blacklist_control(): void
+    {
+        $identity = 'poster@example.test';
+        $this->release('Poster release', $identity, '2026-08-03 12:00:00');
+
+        $user = $this->verifiedUser();
+        $this->actingAs($user)
+            ->get(route('poster-identity', ['name' => $identity]))
+            ->assertOk()
+            ->assertDontSee('Blacklist this poster');
+        $this->actingAs($user)
+            ->post(route('admin.poster-identity.blacklist'), ['name' => $identity])
+            ->assertForbidden();
+
+        $this->flushSession();
+        $this->actingAs($this->verifiedUser('Admin'))
+            ->get(route('poster-identity', ['name' => $identity]))
+            ->assertOk()
+            ->assertSee('Blacklist this poster');
+    }
+
+    public function test_admin_sees_the_matching_enabled_posted_by_rule_instead_of_an_add_control(): void
+    {
+        $identity = 'poster@example.test';
+        $this->release('Poster release', $identity, '2026-08-03 12:00:00', 'alt.binaries.movies');
+        $ruleId = DB::table('binaryblacklist')->insertGetId([
+            'groupname' => '^alt\.binaries\.movies$',
+            'regex' => 'poster@example\.test',
+            'description' => 'Existing broader rule',
+            'status' => BlacklistConstants::BLACKLIST_ENABLED,
+            'optype' => BlacklistConstants::OPTYPE_BLACKLIST,
+            'msgcol' => BlacklistConstants::BLACKLIST_FIELD_FROM,
+        ]);
+
+        $this->actingAs($this->verifiedUser('Admin'))
+            ->get(route('poster-identity', ['name' => $identity]))
+            ->assertOk()
+            ->assertSee('Blacklisted (rule #'.$ruleId.')')
+            ->assertSee(route('admin.binaryblacklist-edit', ['id' => $ruleId]), false)
+            ->assertDontSee('Blacklist this poster');
+    }
+
+    public function test_blacklist_confirmation_shows_the_exact_read_only_rule_and_optional_sweep(): void
+    {
+        $identity = 'poster+tag/user@example.test';
+        $this->release('Movie release', $identity, '2026-08-03 12:00:00', 'alt.binaries.movies');
+        $this->release('TV release', $identity, '2026-08-02 12:00:00', 'alt.binaries.tv');
+        $admin = $this->verifiedUser('Admin');
+
+        $response = $this->actingAs($admin)
+            ->get(route('poster-identity', ['name' => $identity]))
+            ->assertOk()
+            ->assertSee('^poster\+tag\/user@example\.test$')
+            ->assertSee('Posted By · Type: Black · Status: enabled')
+            ->assertSee('^(?:alt\.binaries\.movies|alt\.binaries\.tv)$')
+            ->assertSee('Poster identity blocked from poster page by '.$admin->username)
+            ->assertSee("Also permanently remove this poster's 2 existing releases now", false)
+            ->assertSee('name="delete_releases"', false)
+            ->assertDontSee('name="regex"', false)
+            ->assertDontSee('name="groupname"', false);
+
+        $modal = $this->htmlElement($response->getContent(), '//*[@x-show="confirmationOpen"]');
+        $this->assertNotNull($modal);
+        $this->assertTrue($this->hasAlpineDataAncestor($modal, 'posterIdentityBlacklist'));
+    }
+
+    public function test_admin_can_create_the_exact_enabled_posted_by_rule_without_starting_a_sweep(): void
+    {
+        Process::fake(fn () => Process::result(output: getmypid()."\n"));
+        $sweeps = new BlacklistSweepService($this->makeTempDirectory('poster-identity-no-sweep'));
+        app()->instance(BlacklistSweepService::class, $sweeps);
+        $identity = 'poster+tag/user@example.test';
+        $this->release('Movie release', $identity, '2026-08-03 12:00:00', 'alt.binaries.movies');
+        $this->release('TV release', $identity, '2026-08-02 12:00:00', 'alt.binaries.tv');
+        $admin = $this->verifiedUser('Admin');
+        $previewToken = $this->blacklistPreviewToken($admin, $identity);
+
+        $response = $this->actingAs($admin)->post(route('admin.poster-identity.blacklist'), [
+            'name' => $identity,
+            'preview_token' => $previewToken,
+        ]);
+
+        $ruleId = (int) DB::table('binaryblacklist')->value('id');
+        $response
+            ->assertRedirect(route('poster-identity', ['name' => $identity]))
+            ->assertSessionHas('success', 'Rule #'.$ruleId.' added · sweep not started');
+        $this->assertDatabaseHas('binaryblacklist', [
+            'id' => $ruleId,
+            'groupname' => '^(?:alt\.binaries\.movies|alt\.binaries\.tv)$',
+            'regex' => '^poster\+tag\/user@example\.test$',
+            'description' => 'Poster identity blocked from poster page by '.$admin->username,
+            'status' => BlacklistConstants::BLACKLIST_ENABLED,
+            'optype' => BlacklistConstants::OPTYPE_BLACKLIST,
+            'msgcol' => BlacklistConstants::BLACKLIST_FIELD_FROM,
+        ]);
+        $this->assertFalse($sweeps->status()['running']);
+        $this->assertNull($sweeps->status()['current']);
+    }
+
+    public function test_tampered_regex_and_group_values_are_rejected(): void
+    {
+        $identity = 'poster@example.test';
+        $this->release('Poster release', $identity, '2026-08-03 12:00:00', 'alt.binaries.movies');
+
+        $admin = $this->verifiedUser('Admin');
+        $previewToken = $this->blacklistPreviewToken($admin, $identity);
+
+        $this->actingAs($admin)
+            ->postJson(route('admin.poster-identity.blacklist'), [
+                'name' => $identity,
+                'preview_token' => $previewToken,
+                'regex' => '.*',
+                'groupname' => '.*',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['regex', 'groupname']);
+
+        $this->assertDatabaseCount('binaryblacklist', 0);
+
+        $this->actingAs($admin)
+            ->postJson(route('admin.poster-identity.blacklist'), [
+                'name' => $identity,
+                'preview_token' => $previewToken.'tampered',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['preview_token']);
+
+        $this->assertDatabaseCount('binaryblacklist', 0);
+    }
+
+    public function test_disabled_generated_rule_is_reenabled_instead_of_duplicated(): void
+    {
+        $identity = 'poster@example.test';
+        $this->release('Poster release', $identity, '2026-08-03 12:00:00', 'alt.binaries.movies');
+        $ruleId = DB::table('binaryblacklist')->insertGetId([
+            'groupname' => '^alt\.binaries\.old$',
+            'regex' => '^poster@example\.test$',
+            'description' => 'Poster identity blocked from poster page by previous-admin',
+            'status' => 0,
+            'optype' => BlacklistConstants::OPTYPE_BLACKLIST,
+            'msgcol' => BlacklistConstants::BLACKLIST_FIELD_FROM,
+        ]);
+        $admin = $this->verifiedUser('Admin');
+        $previewToken = $this->blacklistPreviewToken($admin, $identity);
+
+        $this->actingAs($admin)
+            ->post(route('admin.poster-identity.blacklist'), [
+                'name' => $identity,
+                'preview_token' => $previewToken,
+            ])
+            ->assertRedirect(route('poster-identity', ['name' => $identity]));
+
+        $this->assertDatabaseCount('binaryblacklist', 1);
+        $this->assertDatabaseHas('binaryblacklist', [
+            'id' => $ruleId,
+            'status' => BlacklistConstants::BLACKLIST_ENABLED,
+            'groupname' => '^(?:alt\.binaries\.movies)$',
+            'description' => 'Poster identity blocked from poster page by '.$admin->username,
+        ]);
+    }
+
+    public function test_repeated_submission_does_not_duplicate_an_enabled_matching_rule(): void
+    {
+        $identity = 'poster@example.test';
+        $this->release('Poster release', $identity, '2026-08-03 12:00:00', 'alt.binaries.movies');
+        $admin = $this->verifiedUser('Admin');
+        $previewToken = $this->blacklistPreviewToken($admin, $identity);
+
+        $this->actingAs($admin)->post(route('admin.poster-identity.blacklist'), [
+            'name' => $identity,
+            'preview_token' => $previewToken,
+        ]);
+        $ruleId = (int) DB::table('binaryblacklist')->value('id');
+        $this->actingAs($admin)
+            ->post(route('admin.poster-identity.blacklist'), [
+                'name' => $identity,
+                'preview_token' => $previewToken,
+            ])
+            ->assertSessionHas('success', 'Rule #'.$ruleId.' added · sweep not started');
+
+        $this->assertDatabaseCount('binaryblacklist', 1);
+    }
+
+    public function test_disabled_hand_written_exact_rule_is_not_modified(): void
+    {
+        $identity = 'poster@example.test';
+        $this->release('Poster release', $identity, '2026-08-03 12:00:00', 'alt.binaries.movies');
+        $handWrittenRuleId = DB::table('binaryblacklist')->insertGetId([
+            'groupname' => '^alt\.binaries\.movies$',
+            'regex' => '^poster@example\.test$',
+            'description' => 'Hand-written exact rule',
+            'status' => 0,
+            'optype' => BlacklistConstants::OPTYPE_BLACKLIST,
+            'msgcol' => BlacklistConstants::BLACKLIST_FIELD_FROM,
+        ]);
+
+        $admin = $this->verifiedUser('Admin');
+
+        $this->actingAs($admin)
+            ->post(route('admin.poster-identity.blacklist'), [
+                'name' => $identity,
+                'preview_token' => $this->blacklistPreviewToken($admin, $identity),
+            ])
+            ->assertRedirect(route('poster-identity', ['name' => $identity]));
+
+        $this->assertDatabaseCount('binaryblacklist', 2);
+        $this->assertDatabaseHas('binaryblacklist', [
+            'id' => $handWrittenRuleId,
+            'status' => 0,
+            'description' => 'Hand-written exact rule',
+        ]);
+    }
+
+    public function test_checked_confirmation_starts_a_single_rule_delete_sweep_and_shows_its_status(): void
+    {
+        Process::fake(fn () => Process::result(output: getmypid()."\n"));
+        $sweeps = new BlacklistSweepService($this->makeTempDirectory('poster-identity-sweeps'));
+        app()->instance(BlacklistSweepService::class, $sweeps);
+        $identity = 'poster@example.test';
+        $this->release('Poster release', $identity, '2026-08-03 12:00:00', 'alt.binaries.movies');
+        $admin = $this->verifiedUser('Admin');
+        $previewToken = $this->blacklistPreviewToken($admin, $identity);
+
+        $response = $this->actingAs($admin)->post(route('admin.poster-identity.blacklist'), [
+            'name' => $identity,
+            'preview_token' => $previewToken,
+            'delete_releases' => '1',
+        ]);
+
+        $ruleId = (int) DB::table('binaryblacklist')->value('id');
+        $response
+            ->assertRedirect(route('poster-identity', ['name' => $identity]))
+            ->assertSessionHas('success', 'Rule #'.$ruleId.' added · sweep started');
+        $status = $sweeps->status();
+        $this->assertTrue($status['running']);
+        $this->assertSame('delete', $status['current']['mode']);
+        $this->assertSame($ruleId, $status['current']['rule_id']);
+
+        $this->get(route('poster-identity', ['name' => $identity]))
+            ->assertOk()
+            ->assertSee('x-data="blacklistSweep"', false)
+            ->assertSee('Sweep controls are disabled while this run finishes.');
+    }
+
+    public function test_rule_is_saved_when_another_sweep_holds_the_runner(): void
+    {
+        Process::fake(fn () => Process::result(output: getmypid()."\n"));
+        $sweeps = new BlacklistSweepService($this->makeTempDirectory('poster-identity-locked-sweeps'));
+        app()->instance(BlacklistSweepService::class, $sweeps);
+        $sweeps->start('dry-run');
+        $identity = 'poster@example.test';
+        $this->release('Poster release', $identity, '2026-08-03 12:00:00', 'alt.binaries.movies');
+        $admin = $this->verifiedUser('Admin');
+        $previewToken = $this->blacklistPreviewToken($admin, $identity);
+
+        $response = $this->actingAs($admin)->post(route('admin.poster-identity.blacklist'), [
+            'name' => $identity,
+            'preview_token' => $previewToken,
+            'delete_releases' => '1',
+        ]);
+
+        $ruleId = (int) DB::table('binaryblacklist')->value('id');
+        $response
+            ->assertRedirect(route('poster-identity', ['name' => $identity]))
+            ->assertSessionHas('success', 'Rule #'.$ruleId.' added · sweep could not start')
+            ->assertSessionMissing('poster_identity_blacklist_sweep_started');
+        $this->assertDatabaseHas('binaryblacklist', [
+            'id' => $ruleId,
+            'status' => BlacklistConstants::BLACKLIST_ENABLED,
+        ]);
+        $this->assertNull($sweeps->status()['current']['rule_id']);
+    }
+
+    public function test_confirmation_saves_the_group_scope_that_was_displayed(): void
+    {
+        $identity = 'poster@example.test';
+        $this->release('Movie release', $identity, '2026-08-03 12:00:00', 'alt.binaries.movies');
+        $admin = $this->verifiedUser('Admin');
+        $previewToken = $this->blacklistPreviewToken($admin, $identity);
+
+        $this->release('Later TV release', $identity, '2026-08-04 12:00:00', 'alt.binaries.tv');
+
+        $this->actingAs($admin)->post(route('admin.poster-identity.blacklist'), [
+            'name' => $identity,
+            'preview_token' => $previewToken,
+        ])->assertRedirect(route('poster-identity', ['name' => $identity]));
+
+        $this->assertDatabaseHas('binaryblacklist', [
+            'groupname' => '^(?:alt\.binaries\.movies)$',
+        ]);
+    }
+
     public function test_poster_identity_query_uses_the_composite_index(): void
     {
         $plan = DB::select(
@@ -172,21 +475,64 @@ final class PosterIdentityControllerTest extends TestCase
         );
     }
 
-    private function verifiedUser(): User
+    private function verifiedUser(string $roleName = 'User'): User
     {
-        $role = Role::query()->firstOrCreate(['name' => 'User', 'guard_name' => 'web']);
+        $role = Role::query()->firstOrCreate(['name' => $roleName, 'guard_name' => 'web']);
         $permission = Permission::query()->firstOrCreate(['name' => 'view movies', 'guard_name' => 'web']);
         $role->givePermissionTo($permission);
 
         $user = $this->user();
+        if ($roleName === 'Admin') {
+            DB::table('users')->where('id', $user->id)->update(['roles_id' => 2]);
+            $user->roles_id = 2;
+        }
         $user->assignRole($role);
         $user->givePermissionTo($permission);
 
         return $user;
     }
 
-    private function release(string $name, string $identity, string $postdate): Release
+    private function blacklistPreviewToken(User $admin, string $identity): string
     {
+        $response = $this->actingAs($admin)->get(route('poster-identity', ['name' => $identity]));
+        $response->assertOk();
+
+        $input = $this->htmlElement($response->getContent(), '//input[@name="preview_token"]');
+        $this->assertNotNull($input);
+
+        return $input->getAttribute('value');
+    }
+
+    private function htmlElement(string $html, string $query): ?DOMElement
+    {
+        $document = new DOMDocument;
+        $previous = libxml_use_internal_errors(true);
+        $document->loadHTML($html);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+
+        $element = (new DOMXPath($document))->query($query)?->item(0);
+
+        return $element instanceof DOMElement ? $element : null;
+    }
+
+    private function hasAlpineDataAncestor(DOMElement $element, string $component): bool
+    {
+        for ($ancestor = $element->parentElement; $ancestor !== null; $ancestor = $ancestor->parentElement) {
+            if ($ancestor->getAttribute('x-data') === $component) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function release(string $name, string $identity, string $postdate, ?string $groupName = null): Release
+    {
+        $groupId = $groupName === null
+            ? null
+            : DB::table('usenet_groups')->where('name', $groupName)->value('id')
+                ?? DB::table('usenet_groups')->insertGetId(['name' => $groupName]);
         $id = DB::table('releases')->insertGetId([
             'name' => $name,
             'searchname' => $name,
@@ -195,7 +541,7 @@ final class PosterIdentityControllerTest extends TestCase
             'adddate' => $postdate,
             'guid' => sha1($name.$identity.$postdate),
             'categories_id' => 2030,
-            'groups_id' => null,
+            'groups_id' => $groupId,
             'size' => 1024,
             'totalpart' => 1,
         ]);
@@ -334,6 +680,16 @@ final class PosterIdentityControllerTest extends TestCase
             $table->boolean('jpgstatus')->default(false);
             $table->boolean('nfostatus')->default(false);
             $table->index(['fromname', 'postdate'], 'ix_releases_fromname_postdate');
+        });
+        Schema::create('binaryblacklist', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->string('groupname');
+            $table->text('regex');
+            $table->string('description')->nullable();
+            $table->integer('status')->default(1);
+            $table->integer('optype')->default(1);
+            $table->integer('msgcol')->default(1);
+            $table->timestamp('last_activity')->nullable();
         });
     }
 

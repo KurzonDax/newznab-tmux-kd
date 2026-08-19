@@ -91,6 +91,21 @@ final class BlacklistSweepService
         });
     }
 
+    /**
+     * @return array{running:bool, current:array<string, mixed>|null, last:array<string, mixed>|null}
+     */
+    public function publicStatus(): array
+    {
+        $status = $this->status();
+        foreach (['current', 'last'] as $key) {
+            if (is_array($status[$key])) {
+                unset($status[$key]['log_path']);
+            }
+        }
+
+        return $status;
+    }
+
     public function complete(string $id, int $exitCode): void
     {
         $this->withLock(function () use ($id, $exitCode): void {

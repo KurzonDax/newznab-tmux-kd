@@ -30,6 +30,7 @@ const lazyComponentMap = {
     'qualityFilter':   () => import('./components/quality-filter.js'),
     'contentToggle':   () => import('./components/content-toggle.js'),
     'blacklistSweep':  () => import('./components/admin/blacklist-sweep.js'),
+    'posterIdentityBlacklist': () => import('./components/poster-identity-blacklist.js'),
     'contentDelete':   () => import('./components/content-toggle.js'),  // same file
     'releaseReport':   () => import('./components/release-report.js'),
     'adminReleaseReports': () => import('./components/release-report.js'),  // same file
