@@ -126,9 +126,11 @@
                                         </span>
                                     @endif
                                     @if(!empty($result->fromname))
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 font-mono">
+                                        <a href="{{ route('poster', ['name' => $result->fromname]) }}"
+                                           class="inline-flex items-center px-2 py-0.5 rounded bg-primary-100 dark:bg-primary-900/50 text-primary-800 dark:text-primary-200 hover:bg-primary-200 dark:hover:bg-primary-800 font-mono transition"
+                                           title="All releases from this poster">
                                             <i class="fas fa-user mr-1"></i> {{ $result->fromname }}
-                                        </span>
+                                        </a>
                                     @endif
                                 </div>
                             </div>
@@ -246,6 +248,13 @@
                         <span><i class="fas fa-file mr-1"></i>{{ $result->totalpart ?? 0 }} files</span>
                         <span title="Grabs"><i class="fas fa-download text-green-600 dark:text-green-400 mr-1"></i>{{ $result->grabs ?? 0 }}</span>
                         <span title="Comments"><i class="fas fa-comment text-primary-600 dark:text-primary-400 mr-1"></i>{{ $result->comments ?? 0 }}</span>
+                        @if(!empty($result->fromname))
+                            <a href="{{ route('poster', ['name' => $result->fromname]) }}"
+                               class="inline-flex items-center px-2 py-0.5 rounded bg-primary-100 dark:bg-primary-900/50 text-primary-800 dark:text-primary-200 hover:bg-primary-200 dark:hover:bg-primary-800 text-xs font-mono transition"
+                               title="All releases from this poster">
+                                <i class="fas fa-user mr-1"></i>{{ $result->fromname }}
+                            </a>
+                        @endif
                     </div>
                     <div class="mt-3 flex gap-1 flex-wrap">
                         <a href="{{ url('/getnzb/' . $result->guid) }}" class="download-nzb release-action release-action-download px-3 py-1.5" title="Download NZB">

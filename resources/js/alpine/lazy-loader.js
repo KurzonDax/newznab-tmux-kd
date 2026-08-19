@@ -29,6 +29,7 @@ const lazyComponentMap = {
     'moviesPage':      () => import('./components/movies-page.js'),
     'qualityFilter':   () => import('./components/quality-filter.js'),
     'contentToggle':   () => import('./components/content-toggle.js'),
+    'blacklistSweep':  () => import('./components/admin/blacklist-sweep.js'),
     'contentDelete':   () => import('./components/content-toggle.js'),  // same file
     'releaseReport':   () => import('./components/release-report.js'),
     'adminReleaseReports': () => import('./components/release-report.js'),  // same file

@@ -11,6 +11,7 @@ use App\Models\Settings;
 use App\Models\UsenetGroup;
 use App\Support\ReleaseSearchIndexDocument;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -53,6 +54,64 @@ class ReleaseBrowseService
     public function getBrowseRangeForApi(mixed $page, mixed $cat, mixed $start, mixed $num, mixed $orderBy, int $maxAge = -1, array $excludedCats = [], int|string $groupName = -1, int $minSize = 0, ?string $searchTerm = null): mixed
     {
         return $this->executeBrowseQuery('api', $page, $cat, $start, $num, $orderBy, $maxAge, $excludedCats, $groupName, $minSize, $searchTerm);
+    }
+
+    /**
+     * Browse releases posted under one exact, unmodified From identity.
+     *
+     * @param  array<int, int>  $excludedCategories
+     * @return LengthAwarePaginator<int, Release>
+     */
+    public function getPosterReleases(
+        string $posterIdentity,
+        int $perPage,
+        string $orderBy = '',
+        array $excludedCategories = [],
+    ): LengthAwarePaginator {
+        $ordering = $this->getBrowseOrder($orderBy);
+        $orderColumn = 'r.'.$ordering[0]; // @phpstan-ignore offsetAccess.notFound
+        $orderDirection = $ordering[1]; // @phpstan-ignore offsetAccess.notFound
+        $categoryName = DB::getDriverName() === 'sqlite'
+            ? "cp.title || ' > ' || c.title"
+            : "CONCAT(cp.title, ' > ', c.title)";
+
+        return Release::query()
+            ->from('releases as r')
+            ->select([
+                'r.id',
+                'r.searchname',
+                'r.guid',
+                'r.postdate',
+                'r.categories_id',
+                'r.size',
+                'r.totalpart',
+                'r.fromname',
+                'r.grabs',
+                'r.comments',
+                'r.adddate',
+                'r.videos_id',
+                'r.haspreview',
+                'r.jpgstatus',
+                'r.nfostatus',
+                'g.name as group_name',
+                DB::raw($categoryName.' as category_name'),
+            ])
+            ->leftJoin('usenet_groups as g', 'g.id', '=', 'r.groups_id')
+            ->leftJoin('categories as c', 'c.id', '=', 'r.categories_id')
+            ->leftJoin('root_categories as cp', 'cp.id', '=', 'c.root_categories_id')
+            ->where('r.fromname', $posterIdentity)
+            ->when(
+                in_array(DB::getDriverName(), ['mysql', 'mariadb'], true),
+                static fn ($query) => $query->whereRaw('BINARY r.fromname = BINARY ?', [$posterIdentity]),
+            )
+            ->whereRaw('r.passwordstatus '.$this->showPasswords())
+            ->when(
+                $excludedCategories !== [],
+                static fn ($query) => $query->whereNotIn('r.categories_id', $excludedCategories),
+            )
+            ->orderBy($orderColumn, $orderDirection)
+            ->paginate($perPage)
+            ->withQueryString();
     }
 
     /**

@@ -78,6 +78,7 @@ use App\Http\Controllers\MyMoviesController;
 use App\Http\Controllers\MyShowsController;
 use App\Http\Controllers\NfoController;
 use App\Http\Controllers\PasswordSecurityController;
+use App\Http\Controllers\PosterController;
 use App\Http\Controllers\PrivacyCenterController;
 use App\Http\Controllers\PrivacyPolicyController;
 use App\Http\Controllers\ProfileController;
@@ -207,6 +208,7 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
     Route::post('privacy-center/erasure', [PrivacyCenterController::class, 'requestErasure'])->middleware('throttle:3,1')->name('privacy-center.erasure');
     Route::get('privacy-center/export/{gdprRequest}/download', [PrivacyCenterController::class, 'downloadExport'])->middleware('throttle:10,1')->name('privacy-center.export.download');
     Route::match(['GET', 'POST'], 'search', [SearchController::class, 'search'])->name('search');
+    Route::get('poster', PosterController::class)->name('poster');
 
     // Release Report routes
     Route::post('release-report', [ReleaseReportController::class, 'store'])->name('release-report.store');
@@ -248,6 +250,8 @@ Route::middleware(['role:Admin', '2fa'])->prefix('admin')->group(function () {
     Route::match(['GET', 'POST'], 'anidb-edit/{id}', [AdminAnidbController::class, 'edit'])->name('admin.anidb-edit');
     Route::get('anidb-list', [AdminAnidbController::class, 'index'])->name('admin.anidb-list');
     Route::get('binaryblacklist-list', [AdminBlacklistController::class, 'index'])->name('admin.binaryblacklist-list');
+    Route::post('binaryblacklist-sweep', [AdminBlacklistController::class, 'startSweep'])->name('admin.binaryblacklist-sweep.start');
+    Route::get('binaryblacklist-sweep/status', [AdminBlacklistController::class, 'sweepStatus'])->name('admin.binaryblacklist-sweep.status');
     Route::match(['GET', 'POST'], 'binaryblacklist-edit', [AdminBlacklistController::class, 'edit'])->name('admin.binaryblacklist-edit');
     Route::get('book-list', [AdminBookController::class, 'index'])->name('admin.book-list');
     Route::match(['GET', 'POST'], 'book-edit', [AdminBookController::class, 'edit'])->name('admin.book-edit');

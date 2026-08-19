@@ -38,9 +38,11 @@
                                             </span>
                                         @endif
                                         @if(!empty($release->fromname))
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 font-mono">
+                                            <a href="{{ route('poster', ['name' => $release->fromname]) }}"
+                                               class="inline-flex items-center px-2 py-0.5 rounded bg-primary-100 dark:bg-primary-900/50 text-primary-800 dark:text-primary-200 hover:bg-primary-200 dark:hover:bg-primary-800 font-mono transition"
+                                               title="All releases from this poster">
                                                 <i class="fas fa-user mr-1"></i>{{ $release->fromname }}
-                                            </span>
+                                            </a>
                                         @endif
                                     </div>
                                 </div>

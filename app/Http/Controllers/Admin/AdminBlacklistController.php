@@ -8,12 +8,21 @@ use App\Enums\BlacklistConstants;
 use App\Http\Controllers\BasePageController;
 use App\Models\Category;
 use App\Services\BlacklistService;
+use App\Services\BlacklistSweepService;
 use Illuminate\Contracts\View\View;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use RuntimeException;
 
 class AdminBlacklistController extends BasePageController
 {
+    public function __construct(
+        private readonly BlacklistSweepService $blacklistSweeps,
+    ) {
+        parent::__construct();
+    }
+
     /**
      * @throws \Exception
      */
@@ -28,11 +37,53 @@ class AdminBlacklistController extends BasePageController
 
         $this->viewData = array_merge($this->viewData, [
             'binlist' => $binlist,
+            'sweepStatus' => $this->visibleSweepStatus(),
             'title' => $title,
             'meta_title' => $meta_title,
         ]);
 
         return view('admin.blacklist.index', $this->viewData);
+    }
+
+    public function startSweep(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'mode' => ['required', 'in:dry-run,delete'],
+            'rule_id' => ['nullable', 'integer', 'exists:binaryblacklist,id'],
+        ]);
+
+        try {
+            $run = $this->blacklistSweeps->start(
+                (string) $validated['mode'],
+                isset($validated['rule_id']) ? (int) $validated['rule_id'] : null,
+            );
+        } catch (RuntimeException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 409);
+        }
+
+        unset($run['log_path']);
+
+        return response()->json(['message' => 'Blacklist sweep started.', 'run' => $run], 202);
+    }
+
+    public function sweepStatus(): JsonResponse
+    {
+        return response()->json($this->visibleSweepStatus());
+    }
+
+    /**
+     * @return array{running:bool, current:array<string, mixed>|null, last:array<string, mixed>|null}
+     */
+    private function visibleSweepStatus(): array
+    {
+        $status = $this->blacklistSweeps->status();
+        foreach (['current', 'last'] as $key) {
+            if (is_array($status[$key])) {
+                unset($status[$key]['log_path']);
+            }
+        }
+
+        return $status;
     }
 
     /**
@@ -107,7 +158,7 @@ class AdminBlacklistController extends BasePageController
                 BlacklistConstants::BLACKLIST_FIELD_FROM,
                 BlacklistConstants::BLACKLIST_FIELD_MESSAGEID,
             ],
-            'msgcol_names' => ['Subject', 'Poster', 'MessageId'],
+            'msgcol_names' => ['Subject', 'Posted By', 'MessageId'],
             'title' => $title,
             'meta_title' => $meta_title,
         ]);

@@ -1,15 +1,36 @@
 @extends('layouts.admin')
 
 @section('content')
-<div class="space-y-6">
+<div class="space-y-6"
+     x-data="blacklistSweep"
+     data-start-url="{{ route('admin.binaryblacklist-sweep.start') }}"
+     data-status-url="{{ route('admin.binaryblacklist-sweep.status') }}"
+     data-initial-status='@json($sweepStatus)'>
     <x-admin.card>
         <x-admin.page-header :title="$title ?? 'Binary Black/White List'" icon="fas fa-ban">
             <x-slot:actions>
+                <select x-model="mode"
+                        :disabled="running"
+                        class="rounded-lg border-gray-300 dark:border-gray-600 surface-panel text-sm focus:border-primary-500 focus:ring-primary-500"
+                        title="Sweep mode">
+                    <option value="dry-run">Dry-run</option>
+                    <option value="delete">Delete</option>
+                </select>
+                <x-button type="button" icon="fas fa-broom" @click="confirmSweep()" ::disabled="running">
+                    Sweep releases
+                </x-button>
                 <x-button-link href="{{ url('/admin/binaryblacklist-edit') }}" icon="fas fa-plus">
                     Add New Blacklist
                 </x-button-link>
             </x-slot:actions>
         </x-admin.page-header>
+
+        <div class="mx-6 mb-4 rounded-lg border border-primary-200 dark:border-primary-800 bg-primary-50 dark:bg-primary-950/40 px-4 py-3 text-sm text-primary-900 dark:text-primary-100">
+            <i class="fas fa-spinner fa-spin mr-2" x-show="running" x-cloak></i>
+            <i class="fas fa-circle-info mr-2" x-show="!running"></i>
+            <span x-text="summary"></span>
+            <span class="ml-2 text-primary-700 dark:text-primary-300" x-show="running">Sweep controls are disabled while this run finishes.</span>
+        </div>
 
         <x-admin.info-alert>
             Binaries can be prevented from being added to the index if they match a regex in the blacklist.
@@ -58,7 +79,7 @@
                             @if($bin->msgcol == 1)
                                 <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-800 dark:text-primary-300">Subject</span>
                             @elseif($bin->msgcol == 2)
-                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300">Poster</span>
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300">Posted By</span>
                             @else
                                 <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300">MessageID</span>
                             @endif
@@ -88,6 +109,13 @@
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
                             <div class="flex gap-2 justify-center">
+                                <button type="button"
+                                        class="text-primary-600 dark:text-primary-400 hover:text-primary-900 dark:hover:text-primary-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                                        @click="confirmSweep({{ $bin->id }})"
+                                        :disabled="running"
+                                        title="Sweep releases matching this rule">
+                                    <i class="fas fa-broom"></i>
+                                </button>
                                 <a href="{{ url('/admin/binaryblacklist-edit?id=' . $bin->id) }}"
                                    class="text-primary-600 dark:text-primary-400 hover:text-primary-900 dark:hover:text-primary-300"
                                    title="Edit this blacklist">
@@ -127,4 +155,3 @@
     </x-admin.card>
 </div>
 @endsection
-
