@@ -34,9 +34,10 @@ abstract class AbstractCategorizationPipe
 
         // Attempt categorization
         $result = $this->categorize($passable->context);
+        $suppressedBy = $this->suppressionReason($result, $passable->bestResult);
 
         // Update the best result
-        $passable->updateBestResult($result, $this->getName());
+        $passable->updateBestResult($result, $this->getName(), $suppressedBy);
 
         return $next($passable);
     }
@@ -65,6 +66,16 @@ abstract class AbstractCategorizationPipe
     protected function shouldSkip(ReleaseContext $context): bool
     {
         return false;
+    }
+
+    /**
+     * Explain why this pipe's result must not replace the current best result.
+     */
+    protected function suppressionReason(
+        CategorizationResult $result,
+        CategorizationResult $bestResult,
+    ): ?string {
+        return null;
     }
 
     /**

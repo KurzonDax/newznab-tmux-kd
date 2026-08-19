@@ -159,6 +159,28 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
     public static function expectedCategoryProvider(): array
     {
         return [
+            // #129 — music-video keywords must be complete tokens
+            'tourist bluray' => ['The.Tourist.2010.1080p.BluRay.x264-OFT', 'alt.binaries.multimedia', Category::MOVIE_HD],
+            'tourist web-dl' => ['The.Tourist.2010.1080p.AMZN.WEB-DL.Multi.DDP.5.1.H.265-JeRi', 'alt.binaries.multimedia', Category::MOVIE_WEBDL],
+            'mv underscore handle' => ['[1/3] - "@MV_WRLD ~ Shanghai Noon (2000) 1080p 10bit Bluray x265 HEVC [DD 2.0 Tamil + DD 5.1 English] ESubs.mkv"', 'alt.binaries.multimedia', Category::MOVIE_HD],
+            'mv release group suffix' => ['Tanner.Hall.Forever.1080p.WEB-DL.H.264-MV', 'alt.binaries.multimedia', Category::MOVIE_WEBDL],
+
+            // #130 — audio bitrate tags on video releases are not MP3 signals
+            'asianet movie audio bitrate' => ['Chess.2006.AsianetMoviesHD.WEB.DL.H264.AAC2.0.192k-DDH', 'alt.binaries.multimedia', Category::MOVIE_WEBDL],
+            'yearless asianet movie audio bitrate' => ['Snehaveedu.1080p.AsianetMoviesHD.WEB.DL.H264.AAC2.0.192k-DDH', 'alt.binaries.multimedia', Category::MOVIE_WEBDL],
+            'dsnp movie 192k audio' => ['Kaathuvaakula.Rendu.Kaadhal.2022.HQ.1080.DSNP.WEB.DL.H264.DDP5.1.192k-DDH', 'alt.binaries.multimedia', Category::MOVIE_WEBDL],
+            'dsnp movie 768k audio' => ['Sookshmadarshini.2024.1080p.DSNP.WEB.DL.H264.DDP5.1.Atmos.768k-DDH', 'alt.binaries.multimedia', Category::MOVIE_WEBDL],
+
+            // #131 — strong movie formats take precedence over music keywords
+            'grand tour film' => ['Grand.Tour.2024.1080p.MUBI.WEB-DL.DDP5.1.H.264-PMi', 'alt.binaries.multimedia', Category::MOVIE_WEBDL],
+            'end of the tour film' => ['The.End.of.the.Tour.2015.1080p.NF.WEB-DL.DDP5.1.H.264-PrimeFix', 'alt.binaries.multimedia', Category::MOVIE_WEBDL],
+            'foreign tour film' => ['La.Tour.Montparnasse.Infernale.2001.FRENCH.1080p.HDLight.x264.AC3-EXTREME', 'alt.binaries.multimedia', Category::MOVIE_FOREIGN],
+            'festival dvdrip film' => ['Reckless.2014.FESTiVAL.DVDRip.x264-EXViD', 'alt.binaries.multimedia', Category::MOVIE_HD],
+            'film festival web-dl' => ['Dhuin.2022.1080p.Mumbai.Film.Festival.WEB-DL.AAC2.0.x264-SPECT3R', 'alt.binaries.multimedia', Category::MOVIE_WEBDL],
+            'eras tour concert film' => ['Taylor.Swift.The.Eras.Tour.2023.EXTENDED.1080p.WEBRip.x264.AAC5.1-YTS', 'alt.binaries.multimedia', Category::MOVIE_WEBDL],
+            'guts tour concert film' => ['Olivia.Rodrigo.GUTS.World.Tour.2024.720p.NF.WEB-DL.DDP5.1.Atmos.H264-Telly', 'alt.binaries.multimedia', Category::MOVIE_WEBDL],
+            'mtv unplugged dvd film' => ['Pearl.Jam.MTV.Unplugged.1992.NTSC.DVD.REMUX.DD5.1.mkv', 'alt.binaries.multimedia', Category::MOVIE_DVD],
+
             // #59 — hyphen-chained tag suffix is not a base64 hash
             'hyphen chain 2160p movie' => ['Predator.Badlands.2025.2160p.AMZN.HDR.WEB-DL.DDP.5.1.H.265-poke--ZINKMOVIES-English-ZINKMOVIES', 'alt.binaries.multimedia', Category::MOVIE_UHD],
             'hyphen chain 1080p movie' => ['Trending.2025.UNCUT.1080p.WEB-DL..2.0-.5.1.ESub.x264--Hindi-Tamil-ZINKMOVIES', 'alt.binaries.multimedia', Category::MOVIE_WEBDL],
@@ -200,6 +222,45 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
             $expected,
             $passable->bestResult->categoryId,
             "'$name' resolved to {$passable->bestResult->categoryId} via {$passable->bestResult->matchedBy}"
+        );
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: int}>
+     */
+    public static function musicPrecedenceGuardProvider(): array
+    {
+        return [
+            'year-only movie versus compilation' => ['VA-Walk On By-2012', Category::MUSIC_OTHER],
+            'year-only movie versus greatest hits' => ['MAGIC VA-More Greatest Hits Of The 80s -KMA-8CD-2000', Category::MUSIC_OTHER],
+            'unformatted live festival' => ['Madeleine Peyroux - Live at Cully Jazz Festival 2012', Category::MUSIC_VIDEO],
+            'single-track video' => ['Artist - Song Title 1080p', Category::MUSIC_VIDEO],
+        ];
+    }
+
+    #[DataProvider('musicPrecedenceGuardProvider')]
+    public function test_weak_movie_matches_do_not_take_precedence_over_music(string $name, int $expected): void
+    {
+        $passable = $this->runPipeline($name, 'alt.binaries.multimedia');
+
+        $this->assertSame($expected, $passable->bestResult->categoryId);
+    }
+
+    public function test_suppressed_music_result_remains_visible_in_debug_output(): void
+    {
+        $passable = $this->runPipeline(
+            'Grand.Tour.2024.1080p.MUBI.WEB-DL.DDP5.1.H.264-PMi',
+            'alt.binaries.multimedia',
+        );
+
+        $this->assertSame(
+            [Category::MUSIC_VIDEO, 0.9, 'music_video', 'movie_precedence'],
+            [
+                $passable->allResults['Music']['category_id'],
+                $passable->allResults['Music']['confidence'],
+                $passable->allResults['Music']['matched_by'],
+                $passable->allResults['Music']['suppressed_by'],
+            ],
         );
     }
 

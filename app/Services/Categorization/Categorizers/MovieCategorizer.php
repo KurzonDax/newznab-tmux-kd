@@ -107,7 +107,12 @@ class MovieCategorizer extends AbstractCategorizer
      */
     protected function looksLikeMovie(string $name): bool
     {
-        return (bool) preg_match('/[._ -]AVC|[BH][DR]RIP|(Bluray|Blu-Ray)|BD[._ -]?(25|50)?|\bBR\b|Camrip|(?:[._ -]|\()\d{4}(?:[._ -]|\)).*(720p|1080p|Cam|HDTS|2160p)|DIVX|[._ -]DVD[._ -]|DVD-?(5|9|R|Rip)|Untouched|VHSRip|XVID|\b(x265|HEVC)\b|[._ -](DTS|TVrip|WEB[._ -]?Rip|WEBDL|WEB-DL)[._ -]|\b(2160)p\b.*\b(Netflix|Amazon|NF|AMZN|Disney)\b/i', $name);
+        if (preg_match('/^[A-Z0-9][A-Za-z0-9.\s&\'()\-]+\s+-\s+[A-Z0-9][A-Za-z0-9.\s&\'()\-]+.*?\b(?:720p|1080[pi]|2160p)\b/i', $name) &&
+            ! preg_match('/\b(?:19|20)\d{2}\b|\b(?:WEB[._ -]?DL|WEB-?Rip|BluRay|BDRip|HDTV|DVD)\b/i', $name)) {
+            return false;
+        }
+
+        return (bool) preg_match('/[._ -]AVC|[BH][DR]RIP|(Bluray|Blu-Ray)|BD[._ -]?(25|50)?|\bBR\b|Camrip|(?:[._ -]|\()\d{4}(?:[._ -]|\)).*(720p|1080p|Cam|HDTS|2160p)|DIVX|[._ -]DVD[._ -]|DVD-?(5|9|R|Rip)|Untouched|VHSRip|XVID|\b(x26[45]|H\.?264|HEVC)\b|\b(?:720|1080|2160)p\b|[._ -](DTS|TVrip|WEB[._ -]?Rip|WEB[._ -]?DL)[._ -]|\b(2160)p\b.*\b(Netflix|Amazon|NF|AMZN|Disney)\b/i', $name);
     }
 
     protected function checkYearOnlyMovie(string $name): ?CategorizationResult

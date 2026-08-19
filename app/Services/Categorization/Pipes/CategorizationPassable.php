@@ -65,17 +65,24 @@ class CategorizationPassable
     /**
      * Update the best result if the new result is better.
      */
-    public function updateBestResult(CategorizationResult $result, string $categorizerName): void
-    {
+    public function updateBestResult(
+        CategorizationResult $result,
+        string $categorizerName,
+        ?string $suppressedBy = null,
+    ): void {
         if ($this->debug) {
             $this->allResults[$categorizerName] = [
                 'category_id' => $result->categoryId,
                 'confidence' => $result->confidence,
                 'matched_by' => $result->matchedBy,
             ];
+
+            if ($suppressedBy !== null) {
+                $this->allResults[$categorizerName]['suppressed_by'] = $suppressedBy;
+            }
         }
 
-        if ($result->isSuccessful() && $result->shouldOverride($this->bestResult)) {
+        if ($suppressedBy === null && $result->isSuccessful() && $result->shouldOverride($this->bestResult)) {
             $this->bestResult = $result;
         }
     }
