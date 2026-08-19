@@ -144,3 +144,11 @@ _Avoid_: stopping tmux, maintenance mode.
 **Off-site copy**:
 A verified copy of Backup sets from the Backup location to an admin-configured **Off-site destination** on separate (external or network) storage, made by `backup:offsite` from cron or right after a backup once the Backup pause has been lifted. Repeatable and resumable; a set counts as copied only when its checksum matches at the destination. The destination keeps its own retention count, independent of the local one.
 _Avoid_: sync, mirror, remote backup, "linking" the Backup location to network storage.
+
+**Poster identity**:
+The complete, unmodified From header a release was posted under (e.g. `yEncBin@Poster.com`, `user <user@x.localdomain>`). Two releases share a Poster identity only when the strings are byte-for-byte equal; `user@x.localdomain` and `user@2.localdomain` are different Poster identities even if the same tool produced them. Shown to users under the label **Posted By**. Grouping look-alike identities is the job of a blacklist regex, never of the view.
+_Avoid_: plain "poster" in code and docs (collides with Poster art); "uploader"; matching on email or display name alone.
+
+**Poster art**:
+The portrait artwork image for a movie or series (TMDB/TVDB/fanart.tv poster), as opposed to the Series banner. Never refers to the person who posted a release.
+_Avoid_: plain "poster" when a reader could take it to mean the Poster identity.
