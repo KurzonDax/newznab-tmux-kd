@@ -250,7 +250,7 @@ class MusicCategorizer extends AbstractCategorizer
         }
 
         // DJ mixes and labels
-        if (preg_match('/\b(?:Ministry[._ -]of[._ -]Sound|Hed[._ -]Kandi|Cream|Fabric[._ -]Live|Ultra[._ -]Music)\b/i', $name) ||
+        if (preg_match('/\b(?:Ministry[._ -]of[._ -]Sound|Hed[._ -]Kandi|Cream[._ -](?:Ibiza|Classics|Anthems|Live)|Fabric[._ -]Live|Ultra[._ -]Music)\b/i', $name) ||
             preg_match('/\b(?:DJ[._ -]Mix|Mixed[._ -]By|Tiesto[._ -]Club|Radio[._ -]Show|Club[._ -]Hits)\b/i', $name)) {
             if ($categorizeForeign && $this->checkForeign($name)) {
                 return $this->matched(Category::MUSIC_FOREIGN, 0.75, 'music_dj_foreign');

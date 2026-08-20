@@ -304,4 +304,37 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
         $this->assertTrue($passable->lockedToMisc);
         $this->assertSame(Category::OTHER_HASHED, $passable->bestResult->categoryId);
     }
+
+    /**
+     * DJ-label detection must survive the "ice cream" fix (#135).
+     *
+     * @return array<string, array{0: string}>
+     */
+    public static function djLabelProvider(): array
+    {
+        return [
+            'ministry of sound' => ['Ministry Of Sound Presents The Annual'],
+            'hed kandi' => ['Hed Kandi Presents Beach House'],
+            'cream ibiza' => ['Cream Ibiza Presents The Classics'],
+        ];
+    }
+
+    #[DataProvider('djLabelProvider')]
+    public function test_dj_label_releases_still_match_music_dj(string $name): void
+    {
+        $result = $this->runPipeline($name, 'alt.binaries.sounds.mp3')->bestResult;
+
+        $this->assertSame('music_dj', $result->matchedBy);
+    }
+
+    public function test_ice_cream_title_does_not_match_music_dj(): void
+    {
+        $result = $this->runPipeline(
+            'ClubSweethearts.2016.12.17.Kylee.Reese.banged.in.ice.cream.truck-Kylee.Reese.540p',
+            'alt.binaries.sounds.mp3',
+        )->bestResult;
+
+        $this->assertNotSame('music_dj', $result->matchedBy);
+        $this->assertSame(Category::XXX_ROOT, intdiv($result->categoryId, 1000) * 1000);
+    }
 }
