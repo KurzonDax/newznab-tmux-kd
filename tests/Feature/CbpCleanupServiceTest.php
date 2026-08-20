@@ -431,6 +431,117 @@ class CbpCleanupServiceTest extends TestCase
         $this->assertSame('name_match_fallback', $reason);
     }
 
+    public function test_release_duplicate_finder_matches_quoted_part_file_candidate(): void
+    {
+        $this->insertRelease(24, 'HookupHotshot - 2020 Flashback Highlight Compilation', 13_897_458_182);
+
+        $finder = app(ReleaseDuplicateFinder::class);
+        [$dup, $reason] = $finder->findDuplicate(
+            '"HookupHotshot - 2020 Flashback Highlight Compilation.part018.rar" yEnc',
+            '"HookupHotshot - 2020 Flashback Highlight Compilation.part018.rar"',
+            0,
+            13_897_458_182
+        );
+
+        $this->assertNotNull($dup);
+        $this->assertSame(24, (int) $dup->id);
+        $this->assertSame('normalized_searchname_match', $reason);
+    }
+
+    public function test_release_duplicate_finder_matches_stored_quoted_part_file_release(): void
+    {
+        $this->insertRelease(25, '"HookupHotshot - 2020 Flashback Highlight Compilation.part018.rar"', 13_897_458_182);
+
+        $finder = app(ReleaseDuplicateFinder::class);
+        [$dup, $reason] = $finder->findDuplicate(
+            'HookupHotshot - 2020 Flashback Highlight Compilation',
+            'HookupHotshot - 2020 Flashback Highlight Compilation',
+            0,
+            13_897_458_182
+        );
+
+        $this->assertNotNull($dup);
+        $this->assertSame(25, (int) $dup->id);
+        $this->assertSame('normalized_searchname_match', $reason);
+    }
+
+    public function test_release_duplicate_finder_matches_stored_unquoted_part_file_release(): void
+    {
+        $this->insertRelease(26, 'HookupHotshot - 2020 Flashback Highlight Compilation.vol012+10.par2', 13_897_458_182);
+
+        $finder = app(ReleaseDuplicateFinder::class);
+        [$dup, $reason] = $finder->findDuplicate(
+            'HookupHotshot - 2020 Flashback Highlight Compilation',
+            'HookupHotshot - 2020 Flashback Highlight Compilation',
+            0,
+            13_897_458_182
+        );
+
+        $this->assertNotNull($dup);
+        $this->assertSame(26, (int) $dup->id);
+        $this->assertSame('normalized_searchname_match', $reason);
+    }
+
+    public function test_release_duplicate_finder_normalization_still_respects_size_tolerance(): void
+    {
+        config(['nntmux.release_dedupe_size_tolerance' => 0.05]);
+
+        $this->insertRelease(27, 'HookupHotshot - 2020 Flashback Highlight Compilation', 1_000_000);
+
+        $finder = app(ReleaseDuplicateFinder::class);
+        [$dup, $reason] = $finder->findDuplicate(
+            '"HookupHotshot - 2020 Flashback Highlight Compilation.part018.rar" yEnc',
+            '"HookupHotshot - 2020 Flashback Highlight Compilation.part018.rar"',
+            0,
+            1_200_000
+        );
+
+        $this->assertNull($dup);
+        $this->assertNull($reason);
+    }
+
+    public function test_release_duplicate_finder_does_not_match_a_different_release_with_the_same_prefix(): void
+    {
+        $this->insertRelease(28, 'HookupHotshot - 2020 Flashback Highlight Compilation.Extras', 13_897_458_182);
+
+        $finder = app(ReleaseDuplicateFinder::class);
+        [$dup, $reason] = $finder->findDuplicate(
+            '"HookupHotshot - 2020 Flashback Highlight Compilation.part018.rar" yEnc',
+            '"HookupHotshot - 2020 Flashback Highlight Compilation.part018.rar"',
+            0,
+            13_897_458_182
+        );
+
+        $this->assertNull($dup);
+        $this->assertNull($reason);
+    }
+
+    private function insertRelease(int $id, string $searchName, int $size): void
+    {
+        DB::table('releases')->insert([
+            'id' => $id,
+            'name' => 'raw-subject-'.$id,
+            'searchname' => $searchName,
+            'totalpart' => 135,
+            'groups_id' => 1,
+            'adddate' => now()->format('Y-m-d H:i:s'),
+            'guid' => str_pad((string) $id, 36, 'g'),
+            'leftguid' => 'g',
+            'postdate' => now()->format('Y-m-d H:i:s'),
+            'fromname' => 'CCP@gmail.com (AdultPoster)',
+            'size' => $size,
+            'passwordstatus' => 0,
+            'haspreview' => -1,
+            'categories_id' => 1,
+            'nfostatus' => -1,
+            'nzbstatus' => NzbService::NZB_NONE,
+            'isrenamed' => 1,
+            'iscategorized' => 1,
+            'predb_id' => 0,
+            'source' => null,
+        ]);
+    }
+
     private function seedSettings(): void
     {
         $settings = [
