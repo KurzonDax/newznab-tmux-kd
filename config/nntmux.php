@@ -98,4 +98,22 @@ return [
         'skip_free_space_check' => (bool) env('RELEASES_OPTIMIZE_SKIP_FREE_SPACE_CHECK', false),
         'chunk_size' => (int) env('RELEASES_OPTIMIZE_CHUNK_SIZE', 5000),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Log retention
+    |--------------------------------------------------------------------------
+    |
+    | `logs:prune` rotates any storage/logs *.log file that Monolog's daily
+    | driver does not own — cron redirects such as schedule.log, and strays left
+    | by `single`-driver channels — once it grows past this size, then deletes
+    | *.log files older than the daily channels' retention window. That window is
+    | read from `logging.channels.daily.days` (LOG_DAILY_DAYS) rather than a knob
+    | of its own, so the sweep can never outlive or undercut Monolog's own
+    | rotation of the dated files it shares the directory with.
+    |
+    */
+    'log_retention' => [
+        'rotate_size_mb' => (int) env('LOG_ROTATE_SIZE_MB', 256),
+    ],
 ];
