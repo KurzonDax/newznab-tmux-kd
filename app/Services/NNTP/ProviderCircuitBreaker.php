@@ -25,23 +25,21 @@ final class ProviderCircuitBreaker
     /** @var Closure(): float */
     private Closure $clock;
 
+    /** Consecutive failures that trip a provider out of article operations. */
+    public const int FAILURE_THRESHOLD = 5;
+
+    /** How long a tripped provider stays skipped. */
+    public const int COOLDOWN_SECONDS = 60;
+
     /**
      * @param  (Closure(): float)|null  $clock  Monotonic-ish seconds source; injected in tests.
      */
     public function __construct(
-        private readonly int $failureThreshold = 5,
-        private readonly int $cooldownSeconds = 60,
+        private readonly int $failureThreshold = self::FAILURE_THRESHOLD,
+        private readonly int $cooldownSeconds = self::COOLDOWN_SECONDS,
         ?Closure $clock = null,
     ) {
         $this->clock = $clock ?? static fn (): float => microtime(true);
-    }
-
-    public static function fromConfig(): self
-    {
-        return new self(
-            failureThreshold: max(1, (int) config('nntmux_nntp.breaker.failure_threshold', 5)),
-            cooldownSeconds: max(1, (int) config('nntmux_nntp.breaker.cooldown_seconds', 60)),
-        );
     }
 
     /**
@@ -84,11 +82,5 @@ final class ProviderCircuitBreaker
     public function consecutiveFailures(NntpProvider $provider): int
     {
         return $this->consecutiveFailures[$provider->name] ?? 0;
-    }
-
-    public function reset(): void
-    {
-        $this->consecutiveFailures = [];
-        $this->openedAt = [];
     }
 }

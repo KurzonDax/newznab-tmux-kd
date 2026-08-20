@@ -21,6 +21,12 @@ use DariusIII\NetNntp\Protocol\ResponseCode;
  */
 class NNTPService extends NntpClient implements ProviderClient
 {
+    /**
+     * Guard against a concatenated body growing past what PHP can hold: measure one body,
+     * multiply by the loop count, and bail before 1.7GB. Without this it is a fatal error.
+     */
+    private const int MAX_CONCATENATED_BYTES = 1_700_000_000;
+
     protected bool $_debugBool;
 
     protected bool $_echo;
@@ -553,8 +559,9 @@ class NNTPService extends NntpClient implements ProviderClient
     /**
      * Download multiple article bodies and string them together.
      *
-     * Message-ID identifiers that this client's provider cannot serve fail over through the
-     * provider pool. Article numbers cannot: they are per-server and mean nothing elsewhere.
+     * Message-ID identifiers walk the provider pool (this client's own provider first, when it
+     * is the one the pool starts with). Article *numbers* cannot: they are per-server, so they
+     * are fetched from this connection's group only, with no failover.
      *
      * @param  string  $groupName  The name of the group the articles are in.
      * @param  mixed  $identifiers  (string) Message-ID.
@@ -567,62 +574,38 @@ class NNTPService extends NntpClient implements ProviderClient
      */
     public function getMessages(string $groupName, mixed $identifiers): mixed
     {
-        $connected = $this->_checkConnection();
-        if ($connected !== true) {
-            return $connected;
-        }
-
-        // String to hold all the bodies.
-        $body = '';
-
-        // Check if the msgIds are in an array.
-        if (\is_array($identifiers)) {
-            $loops = $messageSize = 0;
-
-            // Loop over the message-ID's or article numbers.
-            foreach ($identifiers as $wanted) {
-                /* This is to attempt to prevent string size overflow.
-                 * We get the size of 1 body in bytes, we increment the loop on every loop,
-                 * then we multiply the # of loops by the first size we got and check if it
-                 * exceeds 1.7 billion bytes (less than 2GB to give us headroom).
-                 * If we exceed, return the data.
-                 * If we don't do this, these errors are fatal.
-                 */
-                if ((++$loops * $messageSize) >= 1700000000) {
-                    return $body;
-                }
-
-                $message = $this->_getMessage($groupName, $wanted);
-
-                if (self::isError($message)) {
-                    $message = $this->failoverArticleBody($wanted, $message);
-                }
-
-                if (self::isError($message)) {
-                    // If we got some data, return it, otherwise surface the error.
-                    return $body !== '' ? $body : $message;
-                }
-
-                $body .= $message;
-
-                if ($messageSize === 0) {
-                    $messageSize = \strlen($message);
-                }
-            }
-
-            // If it's a string check if it's a valid message-ID.
-        } elseif (\is_string($identifiers) || is_numeric($identifiers)) {
-            $body = $this->_getMessage($groupName, $identifiers);
-
-            if (self::isError($body)) {
-                $body = $this->failoverArticleBody($identifiers, $body);
-            }
-
-            // Else return an error.
-        } else {
+        if (! \is_array($identifiers) && ! \is_string($identifiers) && ! is_numeric($identifiers)) {
             $message = 'Wrong Identifier type, array, int or string accepted. This type of var was passed: '.gettype($identifiers);
 
             return $this->throwError(cli()->error($message));
+        }
+
+        $wanted = \is_array($identifiers) ? $identifiers : [$identifiers];
+        $body = '';
+        $messageSize = 0;
+        $loops = 0;
+
+        foreach ($wanted as $identifier) {
+            /* Attempt to prevent string size overflow: measure one body, multiply by the loop
+             * count, and bail before 1.7GB (under 2GB for headroom). These errors are fatal. */
+            if ((++$loops * $messageSize) >= self::MAX_CONCATENATED_BYTES) {
+                return $body;
+            }
+
+            $message = is_numeric($identifier)
+                ? $this->fetchArticleNumberFromGroup($groupName, $identifier)
+                : $this->fetchArticleBodyWithFailover((string) $identifier);
+
+            if (self::isError($message)) {
+                // If we got some data, return it, otherwise surface the error.
+                return $body !== '' ? $body : $message;
+            }
+
+            $body .= $message;
+
+            if ($messageSize === 0) {
+                $messageSize = \strlen($message);
+            }
         }
 
         return $body;
@@ -631,9 +614,9 @@ class NNTPService extends NntpClient implements ProviderClient
     /**
      * Download multiple article bodies by Message-ID only (no group selection), concatenating them.
      *
-     * Each article is tried on this client's provider first and then walks the provider pool;
-     * an article only fails once every enabled provider has failed it. The return shape is
-     * unchanged: concatenated yEnc-decoded bodies, or an Error when nothing could be fetched.
+     * The return shape is unchanged -- concatenated yEnc-decoded bodies, or an Error when nothing
+     * could be fetched. Only the internals changed: each article now walks the provider pool, so
+     * an article fails only once every enabled provider has failed it.
      *
      * @param  mixed  $identifiers  string|array Message-ID(s) (with or without < >)
      * @return mixed string concatenated bodies on success, Error object on total failure.
@@ -642,41 +625,13 @@ class NNTPService extends NntpClient implements ProviderClient
      */
     public function getMessagesByMessageID(mixed $identifiers): mixed
     {
-        $connected = $this->_checkConnection(false); // no need to reselect group
-        if ($connected !== true) {
-            return $connected; // error passthrough
-        }
-
-        $body = '';
-
-        // Normalise to array for loop processing
         $ids = is_array($identifiers) ? $identifiers : [$identifiers];
 
-        $loops = 0;
-        $messageSize = 0;
-        foreach ($ids as $id) {
-            if ((++$loops * $messageSize) >= 1700000000) { // prevent huge string growth
-                return $body;
-            }
-
-            $msg = $this->_getMessageByMessageID($id);
-
-            if (self::isError($msg)) {
-                $msg = $this->failoverArticleBody($id, $msg);
-            }
-
-            if (self::isError($msg)) {
-                return $body !== '' ? $body : $msg; // return what we have or the error
-            }
-
-            $body .= $msg;
-
-            if ($messageSize === 0) {
-                $messageSize = strlen($msg);
-            }
+        if (! $this->_poolFailoverEnabled) {
+            return $this->concatenateFromOwnProvider($ids);
         }
 
-        return $body;
+        return $this->pool()->fetchArticleBodies($ids, $this);
     }
 
     /**
@@ -737,32 +692,73 @@ class NNTPService extends NntpClient implements ProviderClient
     }
 
     /**
-     * Does this client's provider hold the article? Unreachable counts as "no".
+     * Fetch one article body by Message-ID through the provider pool.
      *
      * @throws \Exception
      */
-    public function articleExists(string $messageId): bool
+    protected function fetchArticleBodyWithFailover(string $messageId): mixed
     {
-        return $this->statArticle($messageId) === true;
+        if (! $this->_poolFailoverEnabled) {
+            return $this->fetchArticleBody($messageId);
+        }
+
+        return $this->pool()->fetchArticleBody($messageId, callerClient: $this);
     }
 
     /**
-     * Walk the provider pool for one article this client's provider could not serve.
+     * Fetch one article by its per-server article number, from this connection's group.
      *
-     * Only message-IDs can fail over -- article numbers are per-server. Returns the original
-     * error untouched when failover is unavailable or every other provider also failed.
-     *
-     * @param  mixed  $error  The error this client's provider returned.
+     * Never fails over: an article number means nothing on another backbone.
      *
      * @throws \Exception
      */
-    protected function failoverArticleBody(mixed $identifier, mixed $error): mixed
+    protected function fetchArticleNumberFromGroup(string $groupName, mixed $articleNumber): mixed
     {
-        if (! $this->_poolFailoverEnabled || ! \is_string($identifier) || is_numeric($identifier) || trim($identifier) === '') {
-            return $error;
+        $connected = $this->_checkConnection();
+        if ($connected !== true) {
+            return $connected;
         }
 
-        return app(NntpProviderPool::class)->failoverArticleBody($identifier, $this->provider(), $error);
+        return $this->_getMessage($groupName, $articleNumber);
+    }
+
+    /**
+     * Concatenate bodies from this client's provider alone, for pool-owned clients.
+     *
+     * @param  list<mixed>  $ids
+     *
+     * @throws \Exception
+     */
+    private function concatenateFromOwnProvider(array $ids): mixed
+    {
+        $body = '';
+        $messageSize = 0;
+        $loops = 0;
+
+        foreach ($ids as $id) {
+            if ((++$loops * $messageSize) >= self::MAX_CONCATENATED_BYTES) {
+                return $body;
+            }
+
+            $message = $this->fetchArticleBody((string) $id);
+
+            if (self::isError($message)) {
+                return $body !== '' ? $body : $message;
+            }
+
+            $body .= $message;
+
+            if ($messageSize === 0) {
+                $messageSize = \strlen($message);
+            }
+        }
+
+        return $body;
+    }
+
+    private function pool(): NntpProviderPool
+    {
+        return app(NntpProviderPool::class);
     }
 
     /**

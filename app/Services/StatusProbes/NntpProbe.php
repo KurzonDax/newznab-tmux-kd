@@ -5,10 +5,9 @@ declare(strict_types=1);
 namespace App\Services\StatusProbes;
 
 use App\Enums\IncidentImpactEnum;
-use App\Services\NNTP\NntpProvider;
 use App\Services\NNTP\NntpProviderPool;
-use App\Services\NNTP\NNTPService;
 use App\Services\StatusProbes\Contracts\ServiceProbeInterface;
+use Illuminate\Support\Str;
 
 /**
  * Probes every configured and enabled NNTP provider.
@@ -31,18 +30,17 @@ class NntpProbe implements ServiceProbeInterface
     public function probe(): ProbeResult
     {
         try {
-            $providers = $this->pool->enabledProviders();
             $timings = [];
             $failure = null;
 
-            foreach ($providers as $provider) {
-                $result = $this->probeProvider($provider);
-                $timings[$provider->name] = $result['responseTimeMs'];
+            foreach ($this->pool->enabledProviders() as $provider) {
+                $result = $this->pool->probe($provider);
+                $timings[$provider->name] = $result->responseTimeMs;
 
-                if (! $result['ok'] && $failure === null) {
+                if (! $result->ok && $failure === null) {
                     $failure = [
                         'impact' => $provider->isPrimary() ? IncidentImpactEnum::Critical : IncidentImpactEnum::Major,
-                        'reason' => 'NNTP provider '.$provider->label().' failed: '.$result['reason'],
+                        'reason' => 'NNTP provider '.$provider->label().' failed: '.$result->detail,
                     ];
                 }
             }
@@ -69,33 +67,11 @@ class NntpProbe implements ServiceProbeInterface
                 ok: false,
                 responseTimeMs: 0,
                 impact: IncidentImpactEnum::Critical,
-                reason: 'NNTP probe failed: '.\Str::limit($e->getMessage(), 120),
+                reason: 'NNTP probe failed: '.Str::limit($e->getMessage(), 120),
             );
         } finally {
             $this->pool->quit();
         }
-    }
-
-    /**
-     * @return array{ok: bool, reason: string, responseTimeMs: int}
-     */
-    private function probeProvider(NntpProvider $provider): array
-    {
-        $client = $this->pool->clientFor($provider);
-
-        $start = hrtime(true);
-        $result = $client->doConnect(compression: false);
-        $elapsed = (int) ((hrtime(true) - $start) / 1_000_000);
-
-        if ($result === true) {
-            return ['ok' => true, 'reason' => 'Connected', 'responseTimeMs' => $elapsed];
-        }
-
-        if (NNTPService::isError($result)) {
-            return ['ok' => false, 'reason' => (string) $result->getMessage(), 'responseTimeMs' => $elapsed];
-        }
-
-        return ['ok' => false, 'reason' => 'Unknown connection result', 'responseTimeMs' => $elapsed];
     }
 
     /**

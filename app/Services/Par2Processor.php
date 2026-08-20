@@ -20,23 +20,14 @@ use Illuminate\Support\Carbon;
  */
 class Par2Processor
 {
-    private NameFixingService $nameFixingService;
-
-    private Par2Info $par2Info;
-
-    private bool $addPar2;
-
-    private ExecutableReleaseDiscardService $discardService;
+    private readonly ExecutableReleaseDiscardService $discardService;
 
     public function __construct(
-        NameFixingService $nameFixingService,
-        Par2Info $par2Info,
-        bool $addPar2,
+        private readonly NameFixingService $nameFixingService,
+        private readonly Par2Info $par2Info,
+        private readonly bool $addPar2,
         ?ExecutableReleaseDiscardService $discardService = null
     ) {
-        $this->nameFixingService = $nameFixingService;
-        $this->par2Info = $par2Info;
-        $this->addPar2 = $addPar2;
         $this->discardService = $discardService ?? new ExecutableReleaseDiscardService;
     }
 

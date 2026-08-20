@@ -7,6 +7,8 @@ namespace App\Services\NNTP;
 use App\Services\NNTP\Contracts\ProviderClient;
 use Closure;
 use DariusIII\NetNntp\Error;
+use DariusIII\NetNntp\Error as NntpError;
+use DariusIII\NetNntp\Protocol\ResponseCode;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
@@ -26,9 +28,15 @@ class NntpProviderPool
 {
     private const string MISSING_CONFIG_MESSAGE =
         'No NNTP providers are configured. Set NNTP_PROVIDER_1_NAME, NNTP_PROVIDER_1_HOST, '
-        .'NNTP_PROVIDER_1_PORT, NNTP_PROVIDER_1_USERNAME and NNTP_PROVIDER_1_PASSWORD in .env. '
-        .'These replaced the flat NNTP_SERVER/NNTP_PORT keys and USE_ALTERNATE_NNTP_SERVER; '
-        .'run "php artisan nntp:pool-status" to verify the result.';
+        .'NNTP_PROVIDER_1_PORT, NNTP_PROVIDER_1_USERNAME and NNTP_PROVIDER_1_PASSWORD in .env '
+        .'(these replaced the flat NNTP_SERVER/NNTP_PORT keys), then run '
+        .'"php artisan nntp:pool-status" to verify the result.';
+
+    /**
+     * Guard against a body growing past what PHP can hold: measure one body, multiply by the
+     * loop count, and bail before 1.7GB. Without this the string growth is a fatal error.
+     */
+    private const int MAX_CONCATENATED_BYTES = 1_700_000_000;
 
     /** @var list<NntpProvider>|null */
     private static ?array $configuredProviders = null;
@@ -54,7 +62,7 @@ class NntpProviderPool
         ?Closure $clientFactory = null,
     ) {
         $this->providers = $providers ?? self::configuredProviders();
-        $this->breaker = $breaker ?? ProviderCircuitBreaker::fromConfig();
+        $this->breaker = $breaker ?? new ProviderCircuitBreaker;
         $this->clientFactory = $clientFactory ?? static function (NntpProvider $provider): ProviderClient {
             $client = new NNTPService;
             // Pool-owned clients stay single-provider: a failed fetch must not re-enter the pool.
@@ -86,6 +94,19 @@ class NntpProviderPool
 
         usort($providers, static fn (NntpProvider $a, NntpProvider $b): int => $a->position <=> $b->position);
 
+        // NAME is the pool's identity for a provider: it keys the client map, the breaker state
+        // and the monitor's rows. Two providers sharing one would silently share all three.
+        $names = array_map(static fn (NntpProvider $p): string => $p->name, $providers);
+        $duplicates = array_unique(array_diff_assoc($names, array_unique($names)));
+
+        if ($duplicates !== []) {
+            throw new RuntimeException(
+                'Duplicate NNTP provider NAME(s): '.implode(', ', $duplicates).'. '
+                .'Each provider needs its own label -- it identifies the provider in logs and '
+                .'keys its connections and circuit-breaker state.'
+            );
+        }
+
         return self::$configuredProviders = $providers;
     }
 
@@ -105,7 +126,18 @@ class NntpProviderPool
      */
     public static function primaryProvider(): NntpProvider
     {
-        return self::configuredProviders()[0] ?? throw new RuntimeException(self::MISSING_CONFIG_MESSAGE);
+        return self::tryPrimaryProvider() ?? throw new RuntimeException(self::MISSING_CONFIG_MESSAGE);
+    }
+
+    /**
+     * The primary, or null when nothing is configured.
+     *
+     * For callers that merely want to *describe* the primary (an admin screen, a status line)
+     * and must not blow up on a box that has not been configured yet.
+     */
+    public static function tryPrimaryProvider(): ?NntpProvider
+    {
+        return self::configuredProviders()[0] ?? null;
     }
 
     /**
@@ -122,16 +154,6 @@ class NntpProviderPool
     public function enabledProviders(): array
     {
         return array_values(array_filter($this->providers, static fn (NntpProvider $p): bool => $p->enabled));
-    }
-
-    public function primary(): NntpProvider
-    {
-        return $this->providers[0] ?? throw new RuntimeException(self::MISSING_CONFIG_MESSAGE);
-    }
-
-    public function breaker(): ProviderCircuitBreaker
-    {
-        return $this->breaker;
     }
 
     /**
@@ -157,11 +179,51 @@ class NntpProviderPool
             }
 
             // `false` is the provider answering "I do not carry it" -- an answer, not a fault,
-            // so it neither trips the breaker nor stops the walk. attempt() has already
-            // recorded the failure for the Error case.
+            // so it neither trips the breaker nor stops the walk.
         }
 
         return false;
+    }
+
+    /**
+     * Concatenated bodies for a list of message-IDs, each article walking the pool on its own.
+     *
+     * Partial success is preserved: once anything has been fetched, an article no provider can
+     * serve ends the walk and returns what we have, rather than discarding it for an error.
+     *
+     * @param  list<mixed>  $messageIds
+     * @param  ProviderClient|null  $callerClient  A client the caller already has connected;
+     *                                             reused for its own provider instead of opening
+     *                                             a second connection to the same backbone.
+     * @return mixed string on success, Error when the first article fails everywhere.
+     *
+     * @throws \Exception
+     */
+    public function fetchArticleBodies(array $messageIds, ?ProviderClient $callerClient = null): mixed
+    {
+        $body = '';
+        $messageSize = 0;
+        $loops = 0;
+
+        foreach ($messageIds as $messageId) {
+            if ((++$loops * $messageSize) >= self::MAX_CONCATENATED_BYTES) {
+                return $body;
+            }
+
+            $part = $this->fetchArticleBody((string) $messageId, callerClient: $callerClient);
+
+            if (NNTPService::isError($part)) {
+                return $body !== '' ? $body : $part;
+            }
+
+            $body .= $part;
+
+            if ($messageSize === 0) {
+                $messageSize = \strlen($part);
+            }
+        }
+
+        return $body;
     }
 
     /**
@@ -171,17 +233,14 @@ class NntpProviderPool
      *
      * @throws \Exception
      */
-    public function fetchArticleBody(string $messageId, ?NntpProvider $skip = null): mixed
+    public function fetchArticleBody(string $messageId, ?ProviderClient $callerClient = null): mixed
     {
         $lastError = null;
 
         foreach ($this->availableProviders() as $provider) {
-            if ($skip !== null && $provider->name === $skip->name) {
-                continue;
-            }
-
             $body = $this->attempt($provider, 'BODY', $messageId,
-                static fn (ProviderClient $client): mixed => $client->fetchArticleBody($messageId));
+                static fn (ProviderClient $client): mixed => $client->fetchArticleBody($messageId),
+                $callerClient);
 
             if (\is_string($body) && $body !== '') {
                 return $body;
@@ -196,28 +255,38 @@ class NntpProviderPool
     }
 
     /**
-     * Continue a pool walk after one provider already failed the article.
+     * Connect to one provider and report what happened.
      *
-     * Called by {@see NNTPService::failoverArticleBody()} so the client that already holds a
-     * connection to the failing provider is not asked to try it a second time.
-     *
-     * @param  mixed  $originalError  The error the failing provider returned.
-     *
-     * @throws \Exception
+     * Shared by the `/status` probe and `nntp:pool-status`, which ask the same question and
+     * used to answer it with two copies of the same routine.
      */
-    public function failoverArticleBody(string $messageId, NntpProvider $failedProvider, mixed $originalError): mixed
+    public function probe(NntpProvider $provider): ProviderProbeResult
     {
-        $this->breaker->recordFailure($failedProvider);
-        $this->logFailure(
-            $failedProvider,
-            'BODY',
-            $messageId,
-            NNTPService::isError($originalError) ? (string) $originalError->getMessage() : 'unknown error',
+        $client = $this->clientFor($provider);
+        $start = hrtime(true);
+
+        try {
+            $result = $client->doConnect(compression: false);
+        } catch (\Throwable $e) {
+            return ProviderProbeResult::failed($provider, $e->getMessage(), self::elapsedMs($start));
+        }
+
+        $elapsed = self::elapsedMs($start);
+
+        if ($result === true) {
+            return ProviderProbeResult::connected($provider, $elapsed);
+        }
+
+        return ProviderProbeResult::failed(
+            $provider,
+            NNTPService::isError($result) ? (string) $result->getMessage() : 'unknown connection result',
+            $elapsed,
         );
+    }
 
-        $result = $this->fetchArticleBody($messageId, skip: $failedProvider);
-
-        return NNTPService::isError($result) ? $originalError : $result;
+    private static function elapsedMs(float|int $startedAt): int
+    {
+        return (int) ((hrtime(true) - $startedAt) / 1_000_000);
     }
 
     /**
@@ -263,34 +332,75 @@ class NntpProviderPool
     }
 
     /**
-     * Run one provider operation, recording and logging any failure against that provider.
+     * Run one provider operation, classifying and recording its failure against that provider.
      *
-     * A returned Error and a thrown exception are the same thing here: the provider did not
-     * answer. Both trip the breaker; a clean negative answer (`false`) does not.
+     * The distinction that matters: "I do not carry that article" is an *answer*, not a fault.
+     * Cross-backbone reach exists precisely because articles missing on one provider live on
+     * another, so a run of misses on the fallback must not evict it. Only transport, auth and
+     * protocol breakage -- or a thrown exception, which is the same thing -- trips the breaker.
      *
      * @param  Closure(ProviderClient): mixed  $run
      */
-    private function attempt(NntpProvider $provider, string $operation, string $messageId, Closure $run): mixed
-    {
+    private function attempt(
+        NntpProvider $provider,
+        string $operation,
+        string $messageId,
+        Closure $run,
+        ?ProviderClient $callerClient = null,
+    ): mixed {
         try {
-            $result = $run($this->clientFor($provider));
+            $result = $run($this->resolveClient($provider, $callerClient));
         } catch (\Throwable $e) {
             $this->breaker->recordFailure($provider);
             $this->logFailure($provider, $operation, $messageId, $e->getMessage());
 
-            return null;
+            return new NntpError($e->getMessage());
         }
 
-        if (NNTPService::isError($result)) {
-            $this->breaker->recordFailure($provider);
+        if (! NNTPService::isError($result)) {
+            $this->breaker->recordSuccess($provider);
+
+            return $result;
+        }
+
+        if (self::isArticleAbsence($result)) {
+            // The provider answered. It is healthy; it just does not have this one.
+            $this->breaker->recordSuccess($provider);
             $this->logFailure($provider, $operation, $messageId, (string) $result->getMessage());
 
             return $result;
         }
 
-        $this->breaker->recordSuccess($provider);
+        $this->breaker->recordFailure($provider);
+        $this->logFailure($provider, $operation, $messageId, (string) $result->getMessage());
 
         return $result;
+    }
+
+    /**
+     * Is this error the server saying it does not carry the article, rather than a fault?
+     *
+     * 430 answers a message-ID lookup; 423 answers an article number.
+     */
+    private static function isArticleAbsence(object $error): bool
+    {
+        return \in_array((int) $error->getCode(), [
+            ResponseCode::NoSuchArticleId->value,
+            ResponseCode::NoSuchArticleNumber->value,
+        ], true);
+    }
+
+    /**
+     * The client to talk to this provider with -- the caller's own, when it is already
+     * connected to exactly this backbone, otherwise one of ours.
+     */
+    private function resolveClient(NntpProvider $provider, ?ProviderClient $callerClient): ProviderClient
+    {
+        if ($callerClient !== null && $callerClient->provider()->name === $provider->name) {
+            return $callerClient;
+        }
+
+        return $this->clientFor($provider);
     }
 
     private function logFailure(NntpProvider $provider, string $operation, string $messageId, string $reason): void

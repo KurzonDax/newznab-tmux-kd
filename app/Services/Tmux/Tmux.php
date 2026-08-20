@@ -17,6 +17,13 @@ use Illuminate\Support\Facades\DB;
  */
 class Tmux
 {
+    /** How long a socket listing may be reused before another `ss` is worth the cost. */
+    private const float SOCKET_SNAPSHOT_TTL_SECONDS = 1.0;
+
+    private ?string $socketSnapshot = null;
+
+    private float $socketSnapshotTakenAt = 0.0;
+
     /**
      * @var \PDO
      */
@@ -92,9 +99,23 @@ class Tmux
         return ['active' => 0, 'total' => 0];
     }
 
-    public function getSocketSnapshot(): string
+    /**
+     * One `ss` listing of the host's sockets.
+     *
+     * Memoised for a second: `doConnect()` asks for this on every connect, and shelling out
+     * per connection was a measurable share of the cost of opening one. Callers that need a
+     * genuinely current reading -- the monitor's refresh -- ask for a fresh one.
+     */
+    public function getSocketSnapshot(bool $fresh = false): string
     {
-        return (string) shell_exec('ss -nH 2>/dev/null');
+        $now = microtime(true);
+
+        if ($fresh || $this->socketSnapshot === null || ($now - $this->socketSnapshotTakenAt) > self::SOCKET_SNAPSHOT_TTL_SECONDS) {
+            $this->socketSnapshot = (string) shell_exec('ss -nH 2>/dev/null');
+            $this->socketSnapshotTakenAt = $now;
+        }
+
+        return $this->socketSnapshot;
     }
 
     /**

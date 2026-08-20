@@ -488,8 +488,8 @@ class TmuxMonitorService
      */
     protected function updateConnectionCounts(): void
     {
-        // One `ss` snapshot for the whole provider list, not one per provider.
-        $socketSnapshot = $this->tmux->getSocketSnapshot();
+        // One fresh `ss` snapshot for the whole provider list, not one per provider.
+        $socketSnapshot = $this->tmux->getSocketSnapshot(fresh: true);
         $counts = [];
 
         foreach ($this->runVar['connections'] as $connection) {

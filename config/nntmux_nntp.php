@@ -55,13 +55,4 @@ return [
      * and header traffic is primary-pinned, so there is nothing per-provider to say.
      */
     'compressed_headers' => env('NNTP_COMPRESSED_HEADERS', false),
-
-    /*
-     * Per-process circuit breaker for article operations. After this many consecutive
-     * failures a provider is skipped for article ops until the cooldown expires.
-     */
-    'breaker' => [
-        'failure_threshold' => (int) env('NNTP_BREAKER_FAILURE_THRESHOLD', 5),
-        'cooldown_seconds' => (int) env('NNTP_BREAKER_COOLDOWN_SECONDS', 60),
-    ],
 ];

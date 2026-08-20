@@ -21,6 +21,12 @@ final class NntpProviderPoolTest extends TestCase
 {
     private float $now = 1_000.0;
 
+    protected function tearDown(): void
+    {
+        NntpProviderPool::forgetConfiguredProviders();
+        parent::tearDown();
+    }
+
     #[Test]
     public function it_serves_articles_from_the_first_provider_in_config_order(): void
     {
@@ -148,7 +154,8 @@ final class NntpProviderPoolTest extends TestCase
     {
         $provider = $this->provider(1, 'one');
         $breaker = new ProviderCircuitBreaker(5, 60, fn (): float => $this->now);
-        $pool = $this->pool([$provider], ['one' => $this->client(['<good>' => 'DATA'])], $breaker);
+        $client = $this->client(['<good>' => 'DATA'], failWith: new NntpError('400 service unavailable', 400));
+        $pool = $this->pool([$provider], ['one' => $client], $breaker);
 
         $pool->fetchArticleBody('<bad>');
         $pool->fetchArticleBody('<bad>');
@@ -159,19 +166,91 @@ final class NntpProviderPoolTest extends TestCase
     }
 
     #[Test]
-    public function failover_skips_the_provider_that_already_failed_and_keeps_the_original_error(): void
+    public function a_caller_supplied_client_is_reused_for_its_own_provider(): void
     {
-        $clients = [
-            'one' => $this->client(['<a>' => 'FROM-ONE']),
-            'two' => $this->client([]),
-        ];
-        $pool = $this->pool([$this->provider(1, 'one'), $this->provider(2, 'two')], $clients);
+        // The caller already holds a connection to provider 1. Opening a second one to the same
+        // backbone to run the same walk would burn a connection out of a shared budget.
+        $callerClient = $this->client(['<a>' => 'FROM-CALLER'], provider: $this->provider(1, 'one'));
+        $poolOwnedPrimary = $this->client(['<a>' => 'FROM-POOL']);
 
-        $originalError = new NntpError('430 no such article', 430);
-        $result = $pool->failoverArticleBody('<a>', $this->provider(1, 'one'), $originalError);
+        $pool = $this->pool(
+            [$this->provider(1, 'one'), $this->provider(2, 'two')],
+            ['one' => $poolOwnedPrimary, 'two' => $this->client([])],
+        );
 
-        $this->assertSame($originalError, $result, 'When nobody else can serve it, the caller sees its own error.');
-        $this->assertSame(0, $clients['one']->calls, 'The already-failed provider must not be retried by the pool.');
+        $this->assertSame('FROM-CALLER', $pool->fetchArticleBody('<a>', callerClient: $callerClient));
+        $this->assertSame(0, $poolOwnedPrimary->calls);
+    }
+
+    #[Test]
+    public function an_article_a_provider_does_not_carry_is_not_held_against_it(): void
+    {
+        // Cross-backbone reach exists because articles missing on one provider live on another,
+        // so a run of misses on the fallback must not evict the fallback.
+        $provider = $this->provider(1, 'one');
+        $breaker = new ProviderCircuitBreaker(5, 60, fn (): float => $this->now);
+        $pool = $this->pool([$provider], ['one' => $this->client([])], $breaker);
+
+        for ($i = 0; $i < 10; $i++) {
+            $pool->fetchArticleBody('<missing'.$i.'>');
+        }
+
+        $this->assertSame(0, $breaker->consecutiveFailures($provider));
+        $this->assertFalse($breaker->isOpen($provider));
+    }
+
+    #[Test]
+    public function fetching_a_list_concatenates_the_bodies_in_order(): void
+    {
+        $pool = $this->pool(
+            [$this->provider(1, 'one'), $this->provider(2, 'two')],
+            [
+                'one' => $this->client(['<a>' => 'AAA', '<c>' => 'CCC']),
+                'two' => $this->client(['<b>' => 'BBB']),
+            ],
+        );
+
+        $this->assertSame('AAABBBCCC', $pool->fetchArticleBodies(['<a>', '<b>', '<c>']));
+    }
+
+    #[Test]
+    public function a_list_returns_what_it_collected_when_a_later_article_fails_everywhere(): void
+    {
+        $pool = $this->pool(
+            [$this->provider(1, 'one')],
+            ['one' => $this->client(['<a>' => 'AAA'])],
+        );
+
+        $this->assertSame('AAA', $pool->fetchArticleBodies(['<a>', '<gone>']));
+    }
+
+    #[Test]
+    public function a_list_surfaces_the_error_when_the_very_first_article_fails_everywhere(): void
+    {
+        $pool = $this->pool([$this->provider(1, 'one')], ['one' => $this->client([])]);
+
+        $this->assertTrue(NNTPService::isError($pool->fetchArticleBodies(['<gone>', '<also-gone>'])));
+    }
+
+    #[Test]
+    public function duplicate_provider_names_are_rejected(): void
+    {
+        // NAME keys the client map, the breaker state and the monitor's rows. Sharing one would
+        // silently share all three.
+        config()->set('nntmux_nntp.providers', [
+            ['position' => 1, 'name' => 'backbone', 'host' => 'a.example.org'],
+            ['position' => 2, 'name' => 'backbone', 'host' => 'b.example.org'],
+        ]);
+        NntpProviderPool::forgetConfiguredProviders();
+
+        try {
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('Duplicate NNTP provider NAME');
+
+            NntpProviderPool::configuredProviders();
+        } finally {
+            NntpProviderPool::forgetConfiguredProviders();
+        }
     }
 
     #[Test]
@@ -244,14 +323,23 @@ final class NntpProviderPoolTest extends TestCase
      *
      * @param  array<string, string>  $articles
      */
-    private function client(array $articles, bool $alwaysFail = false): ProviderClient
-    {
-        return new class($articles, $alwaysFail) implements ProviderClient
+    private function client(
+        array $articles,
+        bool $alwaysFail = false,
+        ?NntpError $failWith = null,
+        ?NntpProvider $provider = null,
+    ): ProviderClient {
+        return new class($articles, $alwaysFail, $failWith, $provider ?? $this->provider(1, 'fake')) implements ProviderClient
         {
             public int $calls = 0;
 
             /** @param array<string, string> $articles */
-            public function __construct(private array $articles, private bool $alwaysFail) {}
+            public function __construct(
+                private array $articles,
+                private bool $alwaysFail,
+                private ?NntpError $failWith,
+                private NntpProvider $provider,
+            ) {}
 
             public function fetchArticleBody(string $messageId): mixed
             {
@@ -261,7 +349,10 @@ final class NntpProviderPoolTest extends TestCase
                     return new NntpError('400 service unavailable', 400);
                 }
 
-                return $this->articles[$messageId] ?? new NntpError('430 no such article', 430);
+                // 430 is "I do not carry it" -- the provider is answering, not broken.
+                return $this->articles[$messageId]
+                    ?? $this->failWith
+                    ?? new NntpError('430 no such article', 430);
             }
 
             public function statArticle(string $messageId): mixed
@@ -287,7 +378,7 @@ final class NntpProviderPoolTest extends TestCase
 
             public function provider(): NntpProvider
             {
-                return new NntpProvider(1, 'fake', 'fake.example.org', 119, false, '', '', 1, 120, true);
+                return $this->provider;
             }
         };
     }
