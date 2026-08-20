@@ -159,6 +159,56 @@ class LogsPruneCommandTest extends TestCase
         $this->assertFileDoesNotExist($this->path('laravel-2026-08-20-2026-08-20.log'));
     }
 
+    public function test_rotation_never_claims_a_name_monolog_will_write(): void
+    {
+        // `laravel.log` is the daily channel's configured path, so the daily driver
+        // owns `laravel-<date>.log` even on a day it has not opened it yet. Handing
+        // it a `single`-driver leftover would make Monolog append to it.
+        $this->writeLog('laravel.log', 2 * 1024 * 1024);
+
+        $this->artisan('logs:prune')->assertSuccessful();
+
+        $this->assertFileDoesNotExist($this->path('laravel-2026-08-20.log'));
+        $this->assertFileExists($this->path('laravel-2026-08-20-1.log'));
+    }
+
+    public function test_previously_rotated_stray_is_rotated_again_rather_than_exempt(): void
+    {
+        // Nothing this service creates may become permanently exempt: `schedule` is
+        // not a daily channel, so its dated file is still this service's to bound.
+        $this->writeLog('schedule-2026-08-19.log', 2 * 1024 * 1024);
+
+        $this->artisan('logs:prune')->assertSuccessful();
+
+        $this->assertFileDoesNotExist($this->path('schedule-2026-08-19.log'));
+        $this->assertFileExists($this->path('schedule-2026-08-20.log'));
+    }
+
+    public function test_zero_retention_keeps_every_file_like_monolog(): void
+    {
+        // Monolog reads `days => 0` as keep-forever, so the prune has to agree or
+        // it would delete dated files the daily driver means to keep.
+        config(['logging.channels.daily.days' => 0]);
+        $stray = $this->writeLog('horizon.log', 64, ageInDays: 400);
+
+        $this->artisan('logs:prune')
+            ->expectsOutputToContain('age pruning disabled')
+            ->assertSuccessful();
+
+        $this->assertFileExists($stray);
+    }
+
+    public function test_zero_threshold_disables_rotation(): void
+    {
+        config(['nntmux.log_retention.rotate_size_mb' => 0]);
+        $live = $this->writeLog('schedule.log', 2 * 1024 * 1024);
+
+        $this->artisan('logs:prune')->assertSuccessful();
+
+        $this->assertFileExists($live);
+        $this->assertFileDoesNotExist($this->path('schedule-2026-08-20.log'));
+    }
+
     public function test_subdirectories_and_non_log_files_are_untouched(): void
     {
         $subdirectory = $this->logsDirectory.DIRECTORY_SEPARATOR.'archive';

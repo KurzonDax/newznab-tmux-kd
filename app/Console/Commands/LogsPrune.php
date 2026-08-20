@@ -31,12 +31,14 @@ class LogsPrune extends Command
             $this->line(sprintf('%s %s', $dryRun ? 'Would prune' : 'Pruned', $name));
         }
 
+        $days = $retention->retentionDays();
+
         $this->info(sprintf(
-            '%sRotated %d log file(s) and pruned %d log file(s) older than %d day(s).',
+            '%sRotated %d log file(s) and pruned %d log file(s)%s.',
             $dryRun ? '[dry run] ' : '',
             count($result['rotated']),
             count($result['pruned']),
-            $retention->retentionDays(),
+            $days === 0 ? ' (age pruning disabled)' : sprintf(' older than %d day(s)', $days),
         ));
 
         return self::SUCCESS;

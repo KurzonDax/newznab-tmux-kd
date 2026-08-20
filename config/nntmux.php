@@ -110,7 +110,10 @@ return [
     | *.log files older than the daily channels' retention window. That window is
     | read from `logging.channels.daily.days` (LOG_DAILY_DAYS) rather than a knob
     | of its own, so the sweep can never outlive or undercut Monolog's own
-    | rotation of the dated files it shares the directory with.
+    | rotation of the dated files it shares the directory with — including when
+    | LOG_DAILY_DAYS is 0, which Monolog reads as keep-forever and which
+    | therefore stops the age prune as well. Set the size below to 0 to turn
+    | rotation off and leave only the age prune.
     |
     */
     'log_retention' => [
