@@ -16,6 +16,7 @@
                data-backfill="{{ (int) $group->backfill }}"
                data-route-obfuscated-names="{{ (int) $group->route_obfuscated_names }}"
                data-obfuscated-default-root-category-id="{{ $group->obfuscated_default_root_categories_id ?? '' }}"
+               data-forced-root-category-id="{{ $group->forced_root_categories_id ?? '' }}"
                @change="onGroupCheckboxChange()">
     </td>
     <td class="px-6 py-4">
@@ -105,6 +106,15 @@
             </span>
         @elseif($group->obfuscatedDefaultRoot)
             <span class="text-xs text-gray-500 dark:text-gray-400">Off · {{ $group->obfuscatedDefaultRoot->title }}</span>
+        @else
+            <span class="text-gray-400 dark:text-gray-500">Off</span>
+        @endif
+    </td>
+    <td class="px-6 py-4 text-center">
+        @if($group->forcedRoot)
+            <span class="inline-flex items-center rounded-full bg-primary-100 px-2 py-1 text-xs font-semibold text-primary-800 dark:bg-primary-900/30 dark:text-primary-300">
+                <i class="fas fa-lock mr-1" aria-hidden="true"></i>{{ $group->forcedRoot->title }}
+            </span>
         @else
             <span class="text-gray-400 dark:text-gray-500">Off</span>
         @endif

@@ -378,6 +378,76 @@ class AdminGroupListPageTest extends TestCase
         $response->assertSee('Off · Movies');
     }
 
+    public function test_group_list_surfaces_the_forced_root_category(): void
+    {
+        $this->createGroups(1);
+        DB::table('usenet_groups')->update(['forced_root_categories_id' => Category::XXX_ROOT]);
+
+        $response = $this->actingAs($this->admin())->get(route('admin.group-list'));
+
+        $response->assertOk();
+        $response->assertSee('Forced Root');
+        $response->assertSee('data-forced-root-category-id="6000"', false);
+        $response->assertSee('fas fa-lock mr-1', false);
+    }
+
+    public function test_group_edit_saves_the_forced_root_category(): void
+    {
+        $this->createGroups(1);
+        $group = DB::table('usenet_groups')->first();
+
+        $response = $this->actingAs($this->admin())->post(route('admin.group-edit'), [
+            'action' => 'submit',
+            'id' => $group->id,
+            'name' => $group->name,
+            'description' => $group->description,
+            'backfill_target' => 1,
+            'first_record' => 0,
+            'last_record' => 0,
+            'active' => 1,
+            'backfill' => 0,
+            'minsizetoformrelease' => '',
+            'minsizetoformrelease_unit' => 'MB',
+            'minfilestoformrelease' => '',
+            'route_obfuscated_names' => 0,
+            'obfuscated_default_root_categories_id' => null,
+            'forced_root_categories_id' => Category::XXX_ROOT,
+        ]);
+
+        $response->assertRedirect();
+        $this->assertSame(
+            Category::XXX_ROOT,
+            (int) DB::table('usenet_groups')->where('id', $group->id)->value('forced_root_categories_id')
+        );
+    }
+
+    public function test_group_edit_rejects_a_forced_root_category_that_is_not_a_root(): void
+    {
+        $this->createGroups(1);
+        $group = DB::table('usenet_groups')->first();
+
+        $response = $this->actingAs($this->admin())->post(route('admin.group-edit'), [
+            'action' => 'submit',
+            'id' => $group->id,
+            'name' => $group->name,
+            'description' => $group->description,
+            'backfill_target' => 1,
+            'first_record' => 0,
+            'last_record' => 0,
+            'active' => 1,
+            'backfill' => 0,
+            'minsizetoformrelease' => '',
+            'minsizetoformrelease_unit' => 'MB',
+            'minfilestoformrelease' => '',
+            'route_obfuscated_names' => 0,
+            'obfuscated_default_root_categories_id' => null,
+            'forced_root_categories_id' => 1234,
+        ]);
+
+        $response->assertSessionHasErrors('forced_root_categories_id');
+        $this->assertNull(DB::table('usenet_groups')->where('id', $group->id)->value('forced_root_categories_id'));
+    }
+
     public function test_edit_selected_updates_only_submitted_settings_and_returns_rows(): void
     {
         $this->createGroups(2);
@@ -905,6 +975,7 @@ class AdminGroupListPageTest extends TestCase
             $table->unsignedInteger('backfill_target')->default(1);
             $table->boolean('route_obfuscated_names')->default(false);
             $table->unsignedInteger('obfuscated_default_root_categories_id')->nullable();
+            $table->unsignedInteger('forced_root_categories_id')->nullable();
         });
     }
 

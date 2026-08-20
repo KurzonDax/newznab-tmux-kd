@@ -87,9 +87,11 @@ class CategorizationPipeline
             'name',
             'route_obfuscated_names',
             'obfuscated_default_root_categories_id',
+            'forced_root_categories_id',
         ]);
         $groupName = (string) ($group->name ?? '');
         $obfuscatedDefaultRootCategoryId = $group->obfuscated_default_root_categories_id;
+        $forcedRootCategoryId = $group->forced_root_categories_id;
 
         $context = new ReleaseContext(
             releaseName: $releaseName,
@@ -102,6 +104,9 @@ class CategorizationPipeline
             obfuscatedDefaultRootCategoryId: $obfuscatedDefaultRootCategoryId === null
                 ? null
                 : (int) $obfuscatedDefaultRootCategoryId,
+            forcedRootCategoryId: $forcedRootCategoryId === null
+                ? null
+                : (int) $forcedRootCategoryId,
         );
 
         $passable = new CategorizationPassable($context, $debug);
@@ -166,6 +171,7 @@ class CategorizationPipeline
             new Pipes\MusicPipe,
             new Pipes\PcPipe,
             new Pipes\ConsolePipe,
+            new Pipes\GroupForcedRootPipe,
             new Pipes\MiscSafetyNetPipe,
         ]);
     }

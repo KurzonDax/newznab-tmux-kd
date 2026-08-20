@@ -85,6 +85,7 @@ class AdminGroupController extends BasePageController
             'backfill_target' => 0,
             'route_obfuscated_names' => false,
             'obfuscated_default_root_categories_id' => null,
+            'forced_root_categories_id' => null,
         ];
 
         switch ($action) {
@@ -94,12 +95,20 @@ class AdminGroupController extends BasePageController
                     'obfuscated_default_root_categories_id' => $request->filled('obfuscated_default_root_categories_id')
                         ? $request->integer('obfuscated_default_root_categories_id')
                         : null,
+                    'forced_root_categories_id' => $request->filled('forced_root_categories_id')
+                        ? $request->integer('forced_root_categories_id')
+                        : null,
                 ]);
                 $request->validate([
                     'route_obfuscated_names' => ['required', 'boolean'],
                     'obfuscated_default_root_categories_id' => [
                         'nullable',
                         Rule::requiredIf($request->boolean('route_obfuscated_names')),
+                        'integer',
+                        'exists:root_categories,id',
+                    ],
+                    'forced_root_categories_id' => [
+                        'nullable',
                         'integer',
                         'exists:root_categories,id',
                     ],

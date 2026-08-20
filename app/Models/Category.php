@@ -257,6 +257,28 @@ class Category extends Model
             self::TV_X265,
         ];
 
+    /**
+     * Resolve the root category a category id belongs to.
+     *
+     * Returns null for ids outside the known roots. Root ids resolve to
+     * themselves so callers can compare a result against a configured root
+     * without special-casing.
+     */
+    public static function rootCategoryFor(int $categoryId): ?int
+    {
+        if (self::otherForRootCategory($categoryId) !== null) {
+            return $categoryId;
+        }
+
+        if ($categoryId === self::OTHER_MISC || $categoryId === self::OTHER_HASHED) {
+            return self::OTHER_ROOT;
+        }
+
+        $rootCategoryId = intdiv($categoryId, 1000) * 1000;
+
+        return self::otherForRootCategory($rootCategoryId) === null ? null : $rootCategoryId;
+    }
+
     public static function otherForRootCategory(int $rootCategoryId): ?int
     {
         return match ($rootCategoryId) {

@@ -34,8 +34,10 @@ use Illuminate\Support\Facades\DB;
  * @property bool $backfill
  * @property bool $route_obfuscated_names
  * @property int|null $obfuscated_default_root_categories_id
+ * @property int|null $forced_root_categories_id
  * @property string|null $description
  * @property-read RootCategory|null $obfuscatedDefaultRoot
+ * @property-read RootCategory|null $forcedRoot
  * @property-read Collection|Release[] $release
  *
  * @method static \Illuminate\Database\Eloquent\Builder|\App\Models\UsenetGroup whereActive($value)
@@ -95,6 +97,7 @@ class UsenetGroup extends Model
         return [
             'route_obfuscated_names' => 'boolean',
             'obfuscated_default_root_categories_id' => 'integer',
+            'forced_root_categories_id' => 'integer',
         ];
     }
 
@@ -112,6 +115,14 @@ class UsenetGroup extends Model
     public function obfuscatedDefaultRoot(): BelongsTo
     {
         return $this->belongsTo(RootCategory::class, 'obfuscated_default_root_categories_id');
+    }
+
+    /**
+     * @return BelongsTo<RootCategory, $this>
+     */
+    public function forcedRoot(): BelongsTo
+    {
+        return $this->belongsTo(RootCategory::class, 'forced_root_categories_id');
     }
 
     public static function recordBackfillProgress(int $id, int $firstRecord, int $firstRecordTimestamp): int
@@ -284,7 +295,7 @@ class UsenetGroup extends Model
     public static function getGroupsRange(string $groupname = '', mixed $active = null): LengthAwarePaginator // @phpstan-ignore missingType.generics
     {
         $groups = self::query()
-            ->with('obfuscatedDefaultRoot:id,title')
+            ->with(['obfuscatedDefaultRoot:id,title', 'forcedRoot:id,title'])
             ->select([
                 'id',
                 'name',
@@ -299,6 +310,7 @@ class UsenetGroup extends Model
                 'backfill_target',
                 'route_obfuscated_names',
                 'obfuscated_default_root_categories_id',
+                'forced_root_categories_id',
             ])
             ->orderBy('name');
 
@@ -336,6 +348,9 @@ class UsenetGroup extends Model
                 'obfuscated_default_root_categories_id' => empty($group['obfuscated_default_root_categories_id'])
                     ? null
                     : (int) $group['obfuscated_default_root_categories_id'],
+                'forced_root_categories_id' => empty($group['forced_root_categories_id'])
+                    ? null
+                    : (int) $group['forced_root_categories_id'],
             ]
         );
     }
@@ -386,6 +401,7 @@ class UsenetGroup extends Model
                 'minfilestoformrelease' => $group['minfilestoformrelease'] ?? null,
                 'route_obfuscated_names' => (bool) ($group['route_obfuscated_names'] ?? false),
                 'obfuscated_default_root_categories_id' => $group['obfuscated_default_root_categories_id'] ?? null,
+                'forced_root_categories_id' => $group['forced_root_categories_id'] ?? null,
             ]);
         }
 
