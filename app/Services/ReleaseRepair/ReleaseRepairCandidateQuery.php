@@ -33,7 +33,8 @@ final class ReleaseRepairCandidateQuery
      */
     public static function batch(int $limit, float $targetCompletion, int $retryAfterHours): Collection
     {
-        $retryCutoff = Carbon::now()->subHours(max(1, $retryAfterHours));
+        // 0 means "no wait" -- an operator forcing the final pass, not a value to correct.
+        $retryCutoff = Carbon::now()->subHours(max(0, $retryAfterHours));
 
         $dueRetries = self::measuredBelow($targetCompletion)
             ->where('repair_outcome', ReleaseRepairOutcome::RetryPending->value)

@@ -42,14 +42,24 @@ final readonly class ReleaseRepairOptions
     /** Hard ceiling on STAT probes for one release, however many files it has. */
     public const int MAX_STAT_PROBES = 20;
 
+    public int $statSamplePerFile;
+
+    public int $maxStatProbes;
+
     public function __construct(
         public float $targetCompletion = self::DEFAULT_TARGET_COMPLETION,
         public float $floorCompletion = self::REPAIR_FLOOR_COMPLETION,
         public int $retryAfterHours = self::RETRY_AFTER_HOURS,
-        public int $statSamplePerFile = self::STAT_SAMPLE_PER_FILE,
-        public int $maxStatProbes = self::MAX_STAT_PROBES,
+        int $statSamplePerFile = self::STAT_SAMPLE_PER_FILE,
+        int $maxStatProbes = self::MAX_STAT_PROBES,
         public bool $dryRun = false,
-    ) {}
+    ) {
+        $this->statSamplePerFile = max(1, $statSamplePerFile);
+
+        // A per-release ceiling below the per-file sample would leave every file under-sampled,
+        // and verification only means anything at full sample size.
+        $this->maxStatProbes = max($this->statSamplePerFile, $maxStatProbes);
+    }
 
     /**
      * The configured completion threshold, falling back to the default when the sweep is off.

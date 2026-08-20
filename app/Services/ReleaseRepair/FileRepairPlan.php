@@ -32,6 +32,9 @@ final readonly class FileRepairPlan
      * The ends are the most informative samples: a template that is wrong about padding or about
      * which digit run varies breaks at the extremes first, where the number's width changes.
      *
+     * Deterministic, which is what makes the second pass cheap: it re-probes exactly the IDs the
+     * first pass could not confirm, and a file is accepted on that same sample or not at all.
+     *
      * @return list<int>
      */
     public function verificationSample(int $sampleSize): array

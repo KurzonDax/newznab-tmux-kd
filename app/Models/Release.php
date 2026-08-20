@@ -189,6 +189,22 @@ class Release extends Model
     }
 
     /**
+     * Has additional processing already produced something for this release?
+     *
+     * Media info or a preview means AP has had its say. Used to decide whether re-queuing a
+     * release would be a slot spent on something AP cannot improve.
+     */
+    public function hasProcessingArtifacts(): bool
+    {
+        if ((int) $this->haspreview === 1) {
+            return true;
+        }
+
+        return VideoData::query()->where('releases_id', $this->id)->exists()
+            || AudioData::query()->where('releases_id', $this->id)->exists();
+    }
+
+    /**
      * @return HasOne<VideoData, $this>
      */
     public function videoData(): HasOne

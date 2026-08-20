@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace App\Services\ReleaseRepair;
 
 use App\Enums\ReleaseRepairOutcome;
-use App\Models\AudioData;
 use App\Models\Release;
-use App\Models\VideoData;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use App\Services\NNTP\NntpProviderPool;
 use App\Services\Nzb\NzbParserService;
@@ -26,7 +24,7 @@ use Illuminate\Support\Facades\Log;
  * Every release gets at most two network passes, and only when both have been spent does the
  * completion sweep get to touch it -- see {@see ReleaseRepairOutcome}.
  */
-class ReleaseRepairService
+final class ReleaseRepairService
 {
     public function __construct(
         private readonly NzbService $nzb,
@@ -62,21 +60,14 @@ class ReleaseRepairService
         $contents = $this->nzb->readNzbContents((string) $release->guid);
 
         if ($contents === false) {
-            return $this->finish($release, $options, $this->unrepaired(
-                $completionBefore,
-                $isFinalAttempt,
-                'No NZB on disk to repair.',
-            ));
+            // Says nothing about the release: an unmounted volume looks exactly like this.
+            return $this->skip($release, ReleaseRepairResult::notAttempted($completionBefore, 'No NZB on disk to repair.'));
         }
 
         $document = NzbRepairDocument::load($contents, $this->parser);
 
         if ($document === null) {
-            return $this->finish($release, $options, $this->unrepaired(
-                $completionBefore,
-                $isFinalAttempt,
-                'Stored NZB could not be parsed.',
-            ));
+            return $this->skip($release, ReleaseRepairResult::notAttempted($completionBefore, 'Stored NZB could not be parsed.'));
         }
 
         $plan = $document->plan();
@@ -108,13 +99,11 @@ class ReleaseRepairService
             $rewritten = $this->nzb->replaceNzbContents((string) $release->guid, $document->toXml());
 
             if (! $rewritten) {
-                // The NZB on disk is untouched, so the release is exactly as it was. Do not
-                // record the improved completion we did not manage to persist.
-                return $this->finish($release, $options, $this->unrepaired(
+                // We know what to write and could not write it. That is our problem, not the
+                // release's: leave its state alone so the next invocation tries again.
+                return $this->skip($release, ReleaseRepairResult::notAttempted(
                     $completionBefore,
-                    $isFinalAttempt,
                     'Repaired NZB could not be written back to disk.',
-                    $probes,
                 ));
             }
         }
@@ -157,16 +146,18 @@ class ReleaseRepairService
         $probes = 0;
 
         foreach ($plan->files as $file) {
-            $remaining = $options->maxStatProbes - $probes;
-
-            if ($remaining <= 0) {
-                break;
-            }
-
-            $sample = $file->verificationSample(min($options->statSamplePerFile, $remaining));
+            $sample = $file->verificationSample($options->statSamplePerFile);
 
             if ($sample === []) {
                 continue;
+            }
+
+            if (count($sample) > $options->maxStatProbes - $probes) {
+                // Not enough budget left to sample this file properly. Stop rather than accept
+                // it on a thinner sample than the rest: one confirmation is a much weaker
+                // argument against a wrong template than two, and the leftover files keep their
+                // missing segments for the next pass.
+                break;
             }
 
             $confirmed = true;
@@ -199,7 +190,7 @@ class ReleaseRepairService
      */
     private function requeueForAdditionalProcessing(Release $release): bool
     {
-        if ($this->hasArtifacts($release)) {
+        if ($release->hasProcessingArtifacts()) {
             return false;
         }
 
@@ -211,18 +202,8 @@ class ReleaseRepairService
         return true;
     }
 
-    private function hasArtifacts(Release $release): bool
-    {
-        if ((int) $release->haspreview === 1) {
-            return true;
-        }
-
-        return VideoData::query()->where('releases_id', $release->id)->exists()
-            || AudioData::query()->where('releases_id', $release->id)->exists();
-    }
-
     /**
-     * The outcome for a pass that could not add anything: one more chance, or the end.
+     * The outcome for a pass that ran and could not add anything: one more chance, or the end.
      */
     private function unrepaired(float $completionBefore, bool $isFinalAttempt, string $reason, int $probes = 0): ReleaseRepairResult
     {
@@ -266,7 +247,7 @@ class ReleaseRepairService
         ReleaseRepairResult $result,
         ?float $completion = null,
     ): ReleaseRepairResult {
-        if ($options->dryRun) {
+        if ($options->dryRun || $result->outcome === null) {
             return $result;
         }
 
@@ -288,6 +269,19 @@ class ReleaseRepairService
             'completion_after' => $result->completionAfter,
             'segments_added' => $result->segmentsAdded,
             'articles_probed' => $result->articlesProbed,
+            'reason' => $result->reason,
+        ]);
+
+        return $result;
+    }
+
+    /**
+     * Record that the pass could not run, leaving the release's repair state untouched.
+     */
+    private function skip(Release $release, ReleaseRepairResult $result): ReleaseRepairResult
+    {
+        Log::warning('Release repair pass could not run', [
+            'release_id' => $release->id,
             'reason' => $result->reason,
         ]);
 

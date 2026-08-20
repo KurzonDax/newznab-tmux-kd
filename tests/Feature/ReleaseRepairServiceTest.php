@@ -216,15 +216,52 @@ class ReleaseRepairServiceTest extends TestCase
     }
 
     #[Test]
-    public function a_missing_nzb_never_becomes_final_on_the_first_pass(): void
+    public function a_missing_nzb_leaves_the_repair_state_untouched(): void
     {
-        // A storage blip must not hand a release to the reaper.
+        // A storage blip says nothing about whether the articles are still on the provider, so
+        // it must not advance the state machine at all -- otherwise two unmounted volumes in a
+        // row would be enough to mark the release `failed` and hand it to the reaper.
         $release = $this->releaseWithNzb(1, completion: 40.0, segments: [1 => 1, 3 => 3]);
         unlink((string) app(NzbService::class)->nzbPath((string) $release->guid));
 
         $result = $this->service()->repair($release, new ReleaseRepairOptions);
 
-        $this->assertSame(ReleaseRepairOutcome::RetryPending, $result->outcome);
+        $this->assertNull($result->outcome);
+        $this->assertNull($this->storedOutcome(1));
+        $this->assertNull(DB::table('releases')->where('id', 1)->value('repair_attempted_at'));
+    }
+
+    #[Test]
+    public function a_missing_nzb_never_becomes_final_however_often_it_is_seen(): void
+    {
+        $release = $this->releaseWithNzb(
+            1,
+            completion: 40.0,
+            segments: [1 => 1, 3 => 3],
+            outcome: ReleaseRepairOutcome::RetryPending,
+            attemptedAt: Carbon::now()->subHours(80)->toDateTimeString(),
+        );
+        unlink((string) app(NzbService::class)->nzbPath((string) $release->guid));
+
+        $result = $this->service()->repair($release, new ReleaseRepairOptions);
+
+        $this->assertNull($result->outcome, 'The pass never ran, so it cannot be the final one.');
+        $this->assertSame('retry-pending', $this->storedOutcome(1));
+    }
+
+    #[Test]
+    public function an_unparseable_nzb_leaves_the_repair_state_untouched(): void
+    {
+        $release = $this->releaseWithNzb(1, completion: 40.0, segments: [1 => 1, 3 => 3]);
+        file_put_contents(
+            (string) app(NzbService::class)->nzbPath((string) $release->guid),
+            gzencode('this is not an nzb'),
+        );
+
+        $result = $this->service()->repair($release, new ReleaseRepairOptions);
+
+        $this->assertNull($result->outcome);
+        $this->assertNull($this->storedOutcome(1));
     }
 
     #[Test]
@@ -236,6 +273,24 @@ class ReleaseRepairServiceTest extends TestCase
         $result = $this->service()->repair(Release::query()->find(1), new ReleaseRepairOptions(maxStatProbes: 6));
 
         $this->assertLessThanOrEqual(6, $result->articlesProbed);
+    }
+
+    #[Test]
+    public function a_file_is_never_accepted_on_a_thinner_sample_than_the_rest(): void
+    {
+        // With a budget of 3 and a sample size of 2, the second file cannot be sampled properly.
+        // Accepting it on a single confirmation would be a much weaker argument against a wrong
+        // template, so it keeps its missing segments instead.
+        $this->releaseWithNzb(1, completion: 40.0, files: 3, segments: [1 => 1, 3 => 3]);
+        $this->providerHasEveryArticle();
+
+        $result = $this->service()->repair(
+            Release::query()->find(1),
+            new ReleaseRepairOptions(statSamplePerFile: 2, maxStatProbes: 3),
+        );
+
+        $this->assertSame(2, $result->articlesProbed);
+        $this->assertSame(3, $result->segmentsAdded, 'Exactly one file\'s worth of segments.');
     }
 
     private function service(): ReleaseRepairService

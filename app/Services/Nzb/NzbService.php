@@ -258,7 +258,7 @@ class NzbService
                 return NzbCreationResult::transient("Failed to close temporary NZB file: {$tempPath}", $collectionIds, $path);
             }
 
-            if (! $this->moveTemporaryNzbIntoPlace($tempPath, $path)) {
+            if (! $this->finalizeNzbFile($tempPath, $path)) {
                 return NzbCreationResult::transient("Failed to move temporary NZB into place: {$tempPath} -> {$path}", $collectionIds, $path);
             }
             $tempPath = null;
@@ -510,14 +510,11 @@ class NzbService
             return false;
         }
 
-        if (! $this->moveTemporaryNzbIntoPlace($temporaryPath, $path)) {
+        if (! $this->finalizeNzbFile($temporaryPath, $path)) {
             File::delete($temporaryPath);
 
             return false;
         }
-
-        // Match createNzbForRelease(): some deployments need the permissive mode.
-        @chmod($path, 0777);
 
         return true;
     }
@@ -785,6 +782,24 @@ class NzbService
     protected function moveTemporaryNzbIntoPlace(string $temporaryPath, string $finalPath): bool
     {
         return rename($temporaryPath, $finalPath);
+    }
+
+    /**
+     * Move a finished temporary NZB into place and fix up its mode.
+     *
+     * The chmod is not cosmetic: some deployments run the web server and the indexer as
+     * different users, and a stricter mode leaves the NZB unreadable to whichever one did not
+     * write it. Every path that produces an NZB goes through here so they cannot drift apart.
+     */
+    private function finalizeNzbFile(string $temporaryPath, string $finalPath): bool
+    {
+        if (! $this->moveTemporaryNzbIntoPlace($temporaryPath, $finalPath)) {
+            return false;
+        }
+
+        chmod($finalPath, 0777);
+
+        return true;
     }
 
     /**

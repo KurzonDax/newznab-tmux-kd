@@ -38,6 +38,13 @@ reads the outcome, the retry pass reads both.
 | `failed` | Both passes spent, still short | **yes** |
 | `skipped-floor` | Measured under 10%; no articles were ever probed | **yes** |
 
+A pass that could not *run* — no NZB on disk, an unparseable NZB, an NZB that could not be
+written back — records nothing at all. Those say something about our storage, not about whether
+the release's articles are still on the provider, so they must not advance the state machine:
+two unmounted volumes in a row would otherwise be enough to mark a release `failed`. Such a
+release is simply picked up again next invocation, and the command reports it under
+"Not attempted".
+
 Every release gets at most **two network passes**. The 72-hour retry window exists because fresh
 releases are stale-promoted at 8 hours and repaired within hours, while their articles may still
 be propagating across the provider farm: a first attempt at hour 10 can fail where a recheck at
@@ -75,6 +82,10 @@ For each candidate release:
    two per file, capped at 20 per release. A file is accepted only when every sampled ID exists.
    Nothing unverified goes into an NZB: a wrong template fills the file with IDs that fail at
    download time, which is worse than leaving the release short. Stragglers are what PAR2 is for.
+   When the per-release budget runs out mid-way the remaining files are left alone rather than
+   accepted on a thinner sample — one confirmation is a far weaker argument against a wrong
+   template than two. The sample is deterministic, which is what makes the second pass cheap:
+   it re-probes exactly the IDs the first pass could not confirm.
 4. Rewrite the NZB atomically (temp file, then rename) with the accepted segments in numeric
    order. `bytes` for synthesized segments is estimated from siblings — it is advisory, and the
    true size is unknowable without fetching the article.

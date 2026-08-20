@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Models\Release;
-use App\Services\Nzb\NzbCompletionMeasurer;
 use App\Services\Nzb\NzbService;
+use App\Services\ReleaseRepair\NzbRepairDocument;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -32,7 +32,7 @@ class BackfillReleaseCompletion extends Command
 
     protected $description = 'Measure releases.completion for releases stored before completion was recorded';
 
-    public function handle(NzbService $nzb, NzbCompletionMeasurer $measurer): int
+    public function handle(NzbService $nzb): int
     {
         $dryRun = (bool) $this->option('dry-run');
         $limit = max(0, (int) $this->option('limit'));
@@ -54,7 +54,7 @@ class BackfillReleaseCompletion extends Command
             ->select(['id', 'guid'])
             ->orderBy('id')
             ->chunkById($chunk, function ($releases) use (
-                $nzb, $measurer, $dryRun, $limit, &$bands, &$measured, &$unmeasurable, &$missingNzb, &$seen
+                $nzb, $dryRun, $limit, &$bands, &$measured, &$unmeasurable, &$missingNzb, &$seen
             ): bool {
                 foreach ($releases as $release) {
                     $seen++;
@@ -67,11 +67,12 @@ class BackfillReleaseCompletion extends Command
                         continue;
                     }
 
-                    $measurement = $measurer->measure($contents);
+                    $measurement = NzbRepairDocument::load($contents)?->measure();
 
-                    if (! $measurement->isMeasurable()) {
-                        // No subject declared a part total, so there is no denominator. The
-                        // release keeps the `0` sentinel and stays exempt from the sweep.
+                    if ($measurement === null || ! $measurement->isMeasurable()) {
+                        // Unparseable, or no subject declared a part total so there is no
+                        // denominator. Either way the release keeps the `0` sentinel and stays
+                        // exempt from the sweep rather than being recorded as 0% complete.
                         $unmeasurable++;
 
                         continue;

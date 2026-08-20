@@ -33,6 +33,9 @@ final class NzbRepairDocument
         }
 
         $document = new DOMDocument;
+        // Normalising the whole document on the way out keeps a repaired NZB looking like a
+        // freshly written one (NzbService writes with XMLWriter::setIndent), rather than a
+        // tidy file with a block of unindented segments bolted on.
         $document->preserveWhiteSpace = false;
         $document->formatOutput = true;
 

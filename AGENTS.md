@@ -169,7 +169,16 @@ When completing a task, stage newly created project files with Git. Do not stage
 | `app/Services/NameFixing/` | Release name correction (see README.md there) |
 | `app/Services/Tmux/` | Tmux orchestration |
 | `app/Services/StatusProbes/` | Service health probes feeding `/status` and degrade middleware |
+| `app/Services/ReleaseRepair/` | Rebuilds missing NZB segments (see `docs/architecture/release-repair.md`) |
 | `app/Facades/` | Static service accessors |
+
+## Architecture docs
+
+| Doc | Covers |
+|-----|--------|
+| `docs/architecture/indexing-pipeline.md` | Headers -> parts -> binaries -> collections -> releases -> NZB |
+| `docs/architecture/nntp-providers.md` | Provider pool, why headers are pinned to provider 1, the runbook for changing it |
+| `docs/architecture/release-repair.md` | Repair-before-delete: the completion sweep gate, the repair state machine, rollout |
 
 ## External APIs
 

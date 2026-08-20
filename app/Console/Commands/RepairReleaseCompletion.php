@@ -50,6 +50,7 @@ class RepairReleaseCompletion extends Command
         }
 
         $tally = array_fill_keys(array_column(ReleaseRepairOutcome::cases(), 'value'), 0);
+        $notAttempted = 0;
         $segmentsAdded = 0;
         $probes = 0;
         $requeued = 0;
@@ -66,7 +67,14 @@ class RepairReleaseCompletion extends Command
                 continue;
             }
 
-            $tally[$result->outcome->value]++;
+            if ($result->outcome === null) {
+                // The pass could not run and the release's state was left untouched, so it will
+                // be picked up again rather than advancing toward a deletable outcome.
+                $notAttempted++;
+            } else {
+                $tally[$result->outcome->value]++;
+            }
+
             $segmentsAdded += $result->segmentsAdded;
             $probes += $result->articlesProbed;
             $requeued += $result->requeuedForAdditionalProcessing ? 1 : 0;
@@ -75,7 +83,7 @@ class RepairReleaseCompletion extends Command
                 $this->line(sprintf(
                     'Release %d: %s (%.2f%% -> %.2f%%) %s',
                     $release->id,
-                    $result->outcome->label(),
+                    $result->outcome?->label() ?? 'Not attempted',
                     $result->completionBefore,
                     $result->completionAfter,
                     $result->reason,
@@ -85,13 +93,13 @@ class RepairReleaseCompletion extends Command
 
         $pool->quit();
 
-        $this->table(
-            ['Outcome', 'Releases'],
-            array_map(
-                static fn (ReleaseRepairOutcome $case): array => [$case->label(), $tally[$case->value]],
-                ReleaseRepairOutcome::cases(),
-            ),
+        $rows = array_map(
+            static fn (ReleaseRepairOutcome $case): array => [$case->label(), $tally[$case->value]],
+            ReleaseRepairOutcome::cases(),
         );
+        $rows[] = ['Not attempted (state untouched)', $notAttempted];
+
+        $this->table(['Outcome', 'Releases'], $rows);
 
         $this->line(sprintf(
             'Worked %d release(s): %d segment(s) added, %d article(s) probed, %d re-queued for additional processing.',
