@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\ReleaseRepairOutcome;
 use App\Facades\Search;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -68,6 +69,16 @@ class Release extends Model
      * @var array<string>
      */
     protected $guarded = [];
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'repair_outcome' => ReleaseRepairOutcome::class,
+        ];
+    }
 
     /**
      * @return BelongsTo<UsenetGroup, $this>

@@ -479,6 +479,50 @@ class NzbService
     }
 
     /**
+     * Replace a release's stored NZB with new XML, atomically.
+     *
+     * Same temp-then-rename dance as {@see self::createNzbForRelease()}: a reader that opens the
+     * file mid-write must never see a half-written NZB, and a crash must leave the old one intact.
+     *
+     * @return bool False when there is no NZB to replace, or the write could not be completed.
+     */
+    public function replaceNzbContents(string $releaseGuid, string $nzbXml): bool
+    {
+        $path = $this->nzbPath($releaseGuid);
+
+        if ($path === false) {
+            return false;
+        }
+
+        $temporaryPath = $this->temporaryNzbPath($path);
+        $gz = $this->openGzipFile($temporaryPath);
+
+        if ($gz === false) {
+            return false;
+        }
+
+        $written = gzwrite($gz, $nzbXml);
+        $closed = gzclose($gz);
+
+        if ($written === false || $written !== \strlen($nzbXml) || ! $closed) {
+            File::delete($temporaryPath);
+
+            return false;
+        }
+
+        if (! $this->moveTemporaryNzbIntoPlace($temporaryPath, $path)) {
+            File::delete($temporaryPath);
+
+            return false;
+        }
+
+        // Match createNzbForRelease(): some deployments need the permissive mode.
+        @chmod($path, 0777);
+
+        return true;
+    }
+
+    /**
      * Delete an NZB file.
      *
      * @param  string  $releaseGuid  The release GUID
