@@ -114,11 +114,13 @@ Re-arming is the last step, not the first:
    ```
 4. Only then set `completionpercent` back to `95` in the admin settings.
 
-## Not yet built
+## What this does not cover
 
-**Whole-missing-file recovery.** Files with *no* seen segments have unknowable tokens and would
-need a targeted XOVER header re-scan of the group over the NZB's file-date window. It is blocked
-on something the completion measurement does not yet do: a file that was missed entirely has no
-binary row and therefore no `<file>` entry in the NZB at all, so there is nothing to detect it
-by. Counting those needs the `[n/total]` file-index token at measure time, which #144 noted as a
-possible follow-up. Until that lands there is no signal for this pass to act on.
+Files the header scan missed **entirely**. With no seen segment there is no message-ID pattern to
+derive, and with no `binaries` row the file never appears in the NZB at all — so it is invisible
+to everything above. Recovering those needs a header re-scan rather than synthesis, and detecting
+them first needs the declared file count to survive stale promotion, which today it does not:
+`ReleaseProcessingService` overwrites `collections.totalfiles` with the number of files actually
+seen when it promotes a stale collection.
+
+Tracked separately in #153.
