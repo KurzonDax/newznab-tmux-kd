@@ -30,8 +30,6 @@ class NzbContentsService
 
     protected bool $echoOutput;
 
-    protected bool $alternateNntp;
-
     public function __construct(
         ?NzbService $nzbService = null,
         ?NzbParserService $parserService = null,
@@ -46,7 +44,6 @@ class NzbContentsService
         $this->nfo = $nfo ?? new NfoService;
         $this->postProcessService = $postProcessService ?? app(PostProcessService::class);
         $this->lookupPar2 = (int) Settings::settingValue('lookuppar2') === 1;
-        $this->alternateNntp = (bool) config('nntmux_nntp.use_alternate_nntp_server');
     }
 
     /**
@@ -77,7 +74,7 @@ class NzbContentsService
         }
 
         // Step 2: Attempt to download the potential NFO content
-        $fetchedBinary = $this->nntp->getMessages($groupName, $messageID['id'], $this->alternateNntp);
+        $fetchedBinary = $this->nntp->getMessages($groupName, $messageID['id']);
 
         // Check if download failed
         if ($this->nntp->isError($fetchedBinary)) {

@@ -50,10 +50,7 @@ class FixReleaseNames extends Command
 
         // Connect to NNTP if method requires it
         if ($method === '7' || $method === '8') {
-            $compressedHeaders = config('nntmux_nntp.compressed_headers');
-            $connectResult = config('nntmux_nntp.use_alternate_nntp_server') === true
-                ? $nntp->doConnect($compressedHeaders, true)
-                : $nntp->doConnect();
+            $connectResult = $nntp->doConnect();
 
             if ($connectResult !== true) {
                 $errorMessage = 'Unable to connect to usenet.';

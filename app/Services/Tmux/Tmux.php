@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\Settings;
 use App\Services\NameFixing\NameFixingService;
 use App\Services\NfoService;
+use App\Services\NNTP\NntpProviderPool;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -16,6 +17,13 @@ use Illuminate\Support\Facades\DB;
  */
 class Tmux
 {
+    /** How long a socket listing may be reused before another `ss` is worth the cost. */
+    private const float SOCKET_SNAPSHOT_TTL_SECONDS = 1.0;
+
+    private ?string $socketSnapshot = null;
+
+    private float $socketSnapshotTakenAt = 0.0;
+
     /**
      * @var \PDO
      */
@@ -32,39 +40,41 @@ class Tmux
     }
 
     /**
-     * @return mixed
+     * One row per configured NNTP provider, in position order, for the monitor display.
+     *
+     * @return list<array{name: string, host: string, port: int, ip: string, enabled: bool}>
      */
-    public function getConnectionsInfo(mixed $constants)
+    public function getConnectionsInfo(): array
     {
-        $runVar['connections']['port_a'] = $runVar['connections']['host_a'] = $runVar['connections']['ip_a'] = false;
-        $runVar['connections']['port'] = config('nntmux_nntp.port');
-        $runVar['connections']['host'] = config('nntmux_nntp.server');
-        $runVar['connections']['ip'] = gethostbyname($runVar['connections']['host']);
-        if ($constants['alternate_nntp'] === '1') {
-            $runVar['connections']['port_a'] = config('nntmux_nntp.alternate_server_port');
-            $runVar['connections']['host_a'] = config('nntmux_nntp.alternate_server');
-            $runVar['connections']['ip_a'] = gethostbyname($runVar['connections']['host_a']);
+        $connections = [];
+
+        foreach (NntpProviderPool::configuredProviders() as $provider) {
+            $connections[] = [
+                'name' => $provider->name,
+                'host' => $provider->host,
+                'port' => $provider->port,
+                'ip' => gethostbyname($provider->host),
+                'enabled' => $provider->enabled,
+            ];
         }
 
-        return $runVar['connections'];
+        return $connections;
     }
 
     /**
-     * @param  array<string, mixed>  $connections
-     * @return array<string, array{active: int, total: int}>
+     * Count the sockets currently open to one host:port.
+     *
+     * @return array{active: int, total: int}
      */
-    public function getUSPConnections(string $which, array $connections, ?string $socketSnapshot = null): array
+    public function getProviderSocketCounts(string $ip, string|int $port, ?string $socketSnapshot = null): array
     {
-        [$ipKey, $portKey] = $which === 'alternate'
-            ? ['ip_a', 'port_a']
-            : ['ip', 'port'];
-
-        $ip = (string) ($connections[$ipKey] ?? '');
-        $port = (string) ($connections[$portKey] ?? '');
+        $ip = trim($ip);
+        $port = (string) $port;
+        // Every needle is anchored on the provider's IP. Matching a bare port would count
+        // another provider's sockets as this one's -- backbones commonly share port 119/563.
         $needles = array_values(array_filter([
             $ip !== '' && $port !== '' ? $ip.':'.$port : null,
             $ip !== '' ? $ip.':https' : null,
-            $port !== '' ? $port : null,
             $ip !== '' ? $ip : null,
         ]));
         $lines = preg_split('/\R/', $socketSnapshot ?? $this->getSocketSnapshot()) ?: [];
@@ -77,23 +87,35 @@ class Tmux
 
             if ($matchingLines !== []) {
                 return [
-                    $which => [
-                        'active' => count(array_filter(
-                            $matchingLines,
-                            static fn (string $line): bool => str_contains($line, 'ESTAB'),
-                        )),
-                        'total' => count($matchingLines),
-                    ],
+                    'active' => count(array_filter(
+                        $matchingLines,
+                        static fn (string $line): bool => str_contains($line, 'ESTAB'),
+                    )),
+                    'total' => count($matchingLines),
                 ];
             }
         }
 
-        return [$which => ['active' => 0, 'total' => 0]];
+        return ['active' => 0, 'total' => 0];
     }
 
-    public function getSocketSnapshot(): string
+    /**
+     * One `ss` listing of the host's sockets.
+     *
+     * Memoised for a second: `doConnect()` asks for this on every connect, and shelling out
+     * per connection was a measurable share of the cost of opening one. Callers that need a
+     * genuinely current reading -- the monitor's refresh -- ask for a fresh one.
+     */
+    public function getSocketSnapshot(bool $fresh = false): string
     {
-        return (string) shell_exec('ss -nH 2>/dev/null');
+        $now = microtime(true);
+
+        if ($fresh || $this->socketSnapshot === null || ($now - $this->socketSnapshotTakenAt) > self::SOCKET_SNAPSHOT_TTL_SECONDS) {
+            $this->socketSnapshot = (string) shell_exec('ss -nH 2>/dev/null');
+            $this->socketSnapshotTakenAt = $now;
+        }
+
+        return $this->socketSnapshot;
     }
 
     /**
@@ -142,8 +164,6 @@ class Tmux
                 return [$item->name => Settings::convertValue($item->getRawOriginal('value'))];
             })
             ->toArray();
-
-        $constants['alternate_nntp'] = config('nntmux_nntp.use_alternate_nntp_server') ? '1' : '0';
 
         return $constants;
     }

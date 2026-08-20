@@ -116,12 +116,15 @@ DB_DATABASE=nntmux
 DB_USERNAME=nntmux
 DB_PASSWORD=your_secure_password
 
-# Usenet Server
-NNTP_SERVER=news.your-provider.com
-NNTP_PORT=563
-NNTP_SSLENABLED=true
-NNTP_USERNAME=your_username
-NNTP_PASSWORD=your_password
+# Usenet providers (numbered groups; provider 1 is the primary and serves all headers).
+# Add NNTP_PROVIDER_2_* for a second backbone -- article fetches fail over to it per article.
+NNTP_PROVIDER_1_NAME=primary
+NNTP_PROVIDER_1_HOST=news.your-provider.com
+NNTP_PROVIDER_1_PORT=563
+NNTP_PROVIDER_1_SSL=true
+NNTP_PROVIDER_1_USERNAME=your_username
+NNTP_PROVIDER_1_PASSWORD=your_password
+NNTP_PROVIDER_1_CONNECTIONS=20
 
 # API Keys (obtain from respective services)
 TMDB_API_KEY=your_tmdb_key

@@ -35,6 +35,7 @@ use App\Observers\RootCategoryObserver;
 use App\Observers\SteamAppObserver;
 use App\Observers\UsenetGroupObserver;
 use App\Observers\VideoObserver;
+use App\Services\NNTP\NntpProviderPool;
 use App\View\Composers\AdminDataComposer;
 use App\View\Composers\GlobalDataComposer;
 use Illuminate\Auth\Events\Login;
@@ -97,6 +98,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // One pool per process so its circuit-breaker state (and its per-provider
+        // connections) survive across the services that share a worker.
+        $this->app->singleton(NntpProviderPool::class);
     }
 }

@@ -128,28 +128,19 @@ class TmuxOutput extends Tmux
             $this->relativeTime($this->runVar['timers']['timer1'])
         );
 
-        $buffer .= sprintf(
-            $this->tmpMasks[1],
-            'USP Connections:',
-            sprintf(
-                '%d active (%d total) - %s:%d',
-                $this->runVar['conncounts']['primary']['active'],
-                $this->runVar['conncounts']['primary']['total'],
-                $this->runVar['connections']['host'],
-                $this->runVar['connections']['port']
-            )
-        );
+        foreach ($this->runVar['connections'] as $connection) {
+            $counts = $this->runVar['conncounts'][$connection['name']] ?? ['active' => 0, 'total' => 0];
 
-        if ($this->runVar['constants']['alternate_nntp'] === '1') {
             $buffer .= sprintf(
                 $this->tmpMasks[1],
-                'USP Alternate:',
+                'USP '.$connection['name'].':',
                 sprintf(
-                    '%d active (%d total) - %s:%s',
-                    $this->runVar['conncounts']['alternate']['active'] ?? 0,
-                    $this->runVar['conncounts']['alternate']['total'] ?? 0,
-                    $this->runVar['connections']['host_a'] ?: 'N/A',
-                    $this->runVar['connections']['port_a'] ?: 'N/A'
+                    '%d active (%d total) - %s:%d%s',
+                    $counts['active'],
+                    $counts['total'],
+                    $connection['host'],
+                    $connection['port'],
+                    $connection['enabled'] ? '' : ' [disabled]'
                 )
             );
         }

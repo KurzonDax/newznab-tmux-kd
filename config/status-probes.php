@@ -9,7 +9,6 @@ return [
         'critical_threshold_gb' => (float) env('STATUS_PROBE_DISK_CRITICAL_THRESHOLD_GB', 1),
     ],
     'nntp' => [
-        'check_alternate' => (bool) env('STATUS_PROBE_NNTP_CHECK_ALTERNATE', false),
         'timeout_seconds' => (int) env('STATUS_PROBE_NNTP_TIMEOUT_SECONDS', 10),
     ],
     'redis' => [

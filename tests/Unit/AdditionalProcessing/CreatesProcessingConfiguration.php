@@ -33,7 +33,6 @@ trait CreatesProcessingConfiguration
             'maximumRarPasswordChecks' => 1,
             'maxSizeBytes' => 107374182400,
             'minSizeBytes' => 0,
-            'alternateNNTP' => false,
             'ffmpegDuration' => 5,
             'addPAR2Files' => false,
             'processVideo' => false,

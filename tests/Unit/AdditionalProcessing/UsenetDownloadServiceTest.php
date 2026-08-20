@@ -25,7 +25,7 @@ class UsenetDownloadServiceTest extends TestCase
         $nntp = Mockery::mock(NNTPService::class);
         $nntp->shouldReceive('getMessagesByMessageID')
             ->once()
-            ->with(['<abc>'], false)
+            ->with(['<abc>'])
             ->andReturn('BINARY-DATA');
 
         $service = new UsenetDownloadService($this->makeConfig(), $nntp);
@@ -50,7 +50,7 @@ class UsenetDownloadServiceTest extends TestCase
         $nntp = Mockery::mock(NNTPService::class);
         $nntp->shouldReceive('getMessagesByMessageID')
             ->once()
-            ->with(['<missing>'], false)
+            ->with(['<missing>'])
             ->andReturn($error);
 
         $service = new UsenetDownloadService($this->makeConfig(), $nntp);
@@ -68,7 +68,7 @@ class UsenetDownloadServiceTest extends TestCase
         $nntp = Mockery::mock(NNTPService::class);
         $nntp->shouldReceive('getMessagesByMessageID')
             ->twice()
-            ->with(['<shared>'], false)
+            ->with(['<shared>'])
             ->andReturn('SHARED-DATA');
 
         $service = new UsenetDownloadService($this->makeConfig(), $nntp);
@@ -100,7 +100,7 @@ class UsenetDownloadServiceTest extends TestCase
         $nntp = Mockery::mock(NNTPService::class);
         $nntp->shouldReceive('getMessagesByMessageID')
             ->twice()
-            ->with(['<missing>'], false)
+            ->with(['<missing>'])
             ->andReturn('');
 
         $service = new UsenetDownloadService($this->makeConfig(), $nntp);
@@ -120,7 +120,7 @@ class UsenetDownloadServiceTest extends TestCase
         $nntp = Mockery::mock(NNTPService::class);
         $nntp->shouldReceive('getMessagesByMessageID')
             ->twice()
-            ->with(['<shared>'], false)
+            ->with(['<shared>'])
             ->andReturn('SHARED-DATA');
 
         $service = new UsenetDownloadService($this->makeConfig(), $nntp);
@@ -138,7 +138,7 @@ class UsenetDownloadServiceTest extends TestCase
         $nntp = Mockery::mock(NNTPService::class);
         $nntp->shouldReceive('getMessagesByMessageID')
             ->twice()
-            ->with(['<retry>'], false)
+            ->with(['<retry>'])
             ->andReturn('', 'RECOVERED-DATA');
 
         $service = new UsenetDownloadService($this->makeConfig(), $nntp);

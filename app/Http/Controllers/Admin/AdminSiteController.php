@@ -11,6 +11,7 @@ use App\Models\RoleStat;
 use App\Models\RootCategory;
 use App\Models\Settings;
 use App\Models\SignupStat;
+use App\Services\NNTP\NntpProviderPool;
 use App\Support\SizeUnit;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -76,7 +77,12 @@ class AdminSiteController extends BasePageController
                 break;
         }
 
-        $compress_headers_warning = ! str_contains(config('settings.nntp_server'), 'astra') ? 'compress_headers_warning' : '';
+        // Header compression is a primary-only concern: provider 1 is the only backbone that
+        // ever serves headers, so it is the only host worth warning about.
+        $headerProvider = NntpProviderPool::tryPrimaryProvider();
+        $compress_headers_warning = $headerProvider !== null && str_contains($headerProvider->host, 'astra')
+            ? ''
+            : 'compress_headers_warning';
 
         $sizeFields = [];
         foreach (SizeUnit::SITE_SIZE_SETTINGS as $sizeKey) {

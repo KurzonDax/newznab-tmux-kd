@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\NNTP;
 
 use App\Models\Settings;
+use App\Services\NNTP\Contracts\ProviderClient;
 use App\Services\Tmux\Tmux;
 use App\Services\YencService;
 use DariusIII\NetNntp\Client as NntpClient;
@@ -18,8 +19,14 @@ use DariusIII\NetNntp\Protocol\ResponseCode;
  * This service wraps the DariusIII\NetNntp\Client class with enhanced functionality
  * and Laravel-friendly dependency injection.
  */
-class NNTPService extends NntpClient
+class NNTPService extends NntpClient implements ProviderClient
 {
+    /**
+     * Guard against a concatenated body growing past what PHP can hold: measure one body,
+     * multiply by the loop count, and bail before 1.7GB. Without this it is a fatal error.
+     */
+    private const int MAX_CONCATENATED_BYTES = 1_700_000_000;
+
     protected bool $_debugBool;
 
     protected bool $_echo;
@@ -39,12 +46,12 @@ class NNTPService extends NntpClient
      */
     protected string $_currentGroup = '';
 
-    protected string|int $_currentPort = 'NNTP_PORT';
+    protected string|int $_currentPort = 0;
 
     /**
      * Address of the current NNTP server.
      */
-    protected string $_currentServer = 'NNTP_SERVER';
+    protected string $_currentServer = '';
 
     /**
      * Are we allowed to post to usenet?
@@ -57,26 +64,6 @@ class NNTPService extends NntpClient
     protected int $_nntpRetries;
 
     /**
-     * How many connections should we use on primary NNTP server.
-     */
-    protected int $_primaryNntpConnections;
-
-    /**
-     * How many connections should we use on alternate NNTP server.
-     */
-    protected int $_alternateNntpConnections;
-
-    /**
-     * How many connections do we use on primary NNTP server.
-     */
-    protected int $_primaryCurrentNntpConnections;
-
-    /**
-     * How many connections do we use on alternate NNTP server.
-     */
-    protected int $_alternateCurrentNntpConnections;
-
-    /**
      * Seconds to wait for the blocking socket to timeout.
      */
     protected int $_socketTimeout = 120;
@@ -84,31 +71,21 @@ class NNTPService extends NntpClient
     protected Tmux $_tmux;
 
     /**
-     * Cached config values for performance.
+     * The provider this client talks to. Resolved lazily to the primary on first use; the pool
+     * re-points its own clients at the other backbones via {@see self::useProvider()}.
+     *
+     * Lazy on purpose: constructing this service must not require NNTP config to exist, or a
+     * misconfigured deployment loses every artisan command -- including the one that diagnoses it.
      */
-    protected string $_configServer;
+    protected ?NntpProvider $_provider = null;
 
-    protected string $_configAlternateServer;
-
-    protected int $_configPort;
-
-    protected int $_configAlternatePort;
-
-    protected bool $_configSsl;
-
-    protected bool $_configAlternateSsl;
-
-    protected string $_configUsername;
-
-    protected string $_configPassword;
-
-    protected string $_configAlternateUsername;
-
-    protected string $_configAlternatePassword;
-
-    protected int $_configSocketTimeout;
-
-    protected int $_configAlternateSocketTimeout;
+    /**
+     * May this client fall back to the provider pool when an article fetch fails?
+     *
+     * False for the pool's own per-provider clients, which must stay single-provider so a
+     * failed fetch walks the pool exactly once instead of recursing into it.
+     */
+    protected bool $_poolFailoverEnabled = true;
 
     protected bool $_configCompressedHeaders;
 
@@ -152,26 +129,44 @@ class NNTPService extends NntpClient
      */
     protected function initializeConfig(): void
     {
-        $this->_configServer = config('nntmux_nntp.server');
-        $this->_configAlternateServer = config('nntmux_nntp.alternate_server');
-        $this->_configPort = (int) config('nntmux_nntp.port');
-        $this->_configAlternatePort = (int) config('nntmux_nntp.alternate_server_port');
-        $this->_configSsl = (bool) config('nntmux_nntp.ssl');
-        $this->_configAlternateSsl = (bool) config('nntmux_nntp.alternate_server_ssl');
-        $this->_configUsername = config('nntmux_nntp.username') ?? '';
-        $this->_configPassword = config('nntmux_nntp.password') ?? '';
-        $this->_configAlternateUsername = config('nntmux_nntp.alternate_server_username') ?? '';
-        $this->_configAlternatePassword = config('nntmux_nntp.alternate_server_password') ?? '';
-        $this->_configSocketTimeout = (int) (config('nntmux_nntp.socket_timeout') ?: $this->_socketTimeout);
-        $this->_configAlternateSocketTimeout = (int) (config('nntmux_nntp.alternate_server_socket_timeout') ?: $this->_socketTimeout);
         $this->_configCompressedHeaders = (bool) config('nntmux_nntp.compressed_headers');
-
-        $this->_currentPort = $this->_configPort;
-        $this->_currentServer = $this->_configServer;
-        $this->_primaryNntpConnections = (int) config('nntmux_nntp.main_nntp_connections');
-        $this->_alternateNntpConnections = (int) config('nntmux_nntp.alternate_nntp_connections');
         $this->_selectedGroupSummary = null;
         $this->_overviewFormatCache = null;
+    }
+
+    /**
+     * Point this client at a specific provider.
+     *
+     * Any existing connection is dropped first: the socket belongs to the old backbone and
+     * article numbers do not carry across servers.
+     *
+     * @param  bool  $poolFailover  Whether article fetches on this client may walk the pool.
+     *                              The pool's own clients pass false to stay single-provider.
+     */
+    public function useProvider(NntpProvider $provider, bool $poolFailover = true): void
+    {
+        if ($this->_provider !== null && $this->_provider->name !== $provider->name && parent::_isConnected()) {
+            $this->doQuit();
+        }
+
+        $this->_provider = $provider;
+        $this->_poolFailoverEnabled = $poolFailover;
+        $this->_currentPort = $provider->port;
+        $this->_currentServer = $provider->host;
+    }
+
+    /**
+     * The provider this client is currently pointed at, defaulting to the primary.
+     */
+    public function provider(): NntpProvider
+    {
+        if ($this->_provider === null) {
+            $this->_provider = NntpProviderPool::primaryProvider();
+            $this->_currentPort = $this->_provider->port;
+            $this->_currentServer = $this->_provider->host;
+        }
+
+        return $this->_provider;
     }
 
     /**
@@ -195,51 +190,42 @@ class NNTPService extends NntpClient
     }
 
     /**
-     * Connect to a usenet server.
+     * Connect this client to its provider.
      *
      * @param  bool  $compression  Should we attempt to enable XFeature Gzip compression on this connection?
-     * @param  bool  $alternate  Use the alternate NNTP connection.
      * @return mixed On success = (bool)   Did we successfully connect to the usenet?
      *
      * @throws \Exception
      *                    On failure = (object) DariusIII\NetNntp\Error.
      */
-    public function doConnect(bool $compression = true, bool $alternate = false): mixed
+    public function doConnect(bool $compression = true): mixed
     {
-        $primaryUSP = [
-            'ip' => gethostbyname($this->_configServer),
-            'port' => $this->_configPort,
-        ];
-        $alternateUSP = [
-            'ip_a' => gethostbyname($this->_configAlternateServer),
-            'port_a' => $this->_configAlternatePort,
-        ];
-        $primaryConnections = $this->_tmux->getUSPConnections('primary', $primaryUSP);
-        $alternateConnections = $this->_tmux->getUSPConnections('alternate', $alternateUSP);
-        if ($this->_isConnected() && (($alternate && $this->_currentServer === $this->_configAlternateServer && ($this->_primaryNntpConnections < $alternateConnections['alternate']['active'])) || (! $alternate && $this->_currentServer === $this->_configServer && ($this->_primaryNntpConnections < $primaryConnections['primary']['active'])))) {
-            return true;
+        $provider = $this->provider();
+
+        // Reuse an existing socket rather than opening another one when this provider already
+        // has more sockets open than its advisory budget. Only worth asking when we are already
+        // connected -- resolving the host and shelling out to `ss` is not free.
+        if ($this->_isConnected() && $this->_currentServer === $provider->host) {
+            $active = $this->_tmux->getProviderSocketCounts(
+                gethostbyname($provider->host),
+                $provider->port,
+            )['active'];
+
+            if ($provider->connections < $active) {
+                return true;
+            }
         }
 
         $this->doQuit();
 
         $ret = $connected = $cError = $aError = false;
 
-        // Set variables to connect based on if we are using the alternate provider or not.
-        if (! $alternate) {
-            $sslEnabled = $this->_configSsl;
-            $this->_currentServer = $this->_configServer;
-            $this->_currentPort = $this->_configPort;
-            $userName = $this->_configUsername;
-            $password = $this->_configPassword;
-            $socketTimeout = $this->_configSocketTimeout;
-        } else {
-            $sslEnabled = $this->_configAlternateSsl;
-            $this->_currentServer = $this->_configAlternateServer;
-            $this->_currentPort = $this->_configAlternatePort;
-            $userName = $this->_configAlternateUsername;
-            $password = $this->_configAlternatePassword;
-            $socketTimeout = $this->_configAlternateSocketTimeout;
-        }
+        $sslEnabled = $provider->ssl;
+        $this->_currentServer = $provider->host;
+        $this->_currentPort = $provider->port;
+        $userName = $provider->username;
+        $password = $provider->password;
+        $socketTimeout = $provider->timeout;
 
         $enc = ($sslEnabled ? ' (ssl)' : ' (non-ssl)');
         $sslEnabled = ($sslEnabled ? 'tls' : false);
@@ -275,8 +261,8 @@ class NNTPService extends NntpClient
             // If we have no more retries and could not connect, return an error.
             if ($retries === 0 && ! $connected) {
                 $message =
-                    'Cannot connect to server '.
-                    $this->_currentServer.
+                    'Cannot connect to NNTP provider '.
+                    $provider->label().
                     $enc.
                     ': '.
                     $cError;
@@ -312,8 +298,8 @@ class NNTPService extends NntpClient
                     // If we ran out of retries, return an error.
                     if ($retries === 0 && ! $authenticated) {
                         $message =
-                            'Cannot authenticate to server '.
-                            $this->_currentServer.
+                            'Cannot authenticate to NNTP provider '.
+                            $provider->label().
                             $enc.
                             ' - '.
                             $userName.
@@ -341,7 +327,7 @@ class NNTPService extends NntpClient
             usleep(400000);
         }
         // If we somehow got out of the loop, return an error.
-        $message = 'Unable to connect to '.$this->_currentServer.$enc;
+        $message = 'Unable to connect to NNTP provider '.$provider->label().$enc;
 
         return $this->throwError(cli()->error($message));
     }
@@ -573,110 +559,53 @@ class NNTPService extends NntpClient
     /**
      * Download multiple article bodies and string them together.
      *
+     * Message-ID identifiers walk the provider pool (this client's own provider first, when it
+     * is the one the pool starts with). Article *numbers* cannot: they are per-server, so they
+     * are fetched from this connection's group only, with no failover.
+     *
      * @param  string  $groupName  The name of the group the articles are in.
      * @param  mixed  $identifiers  (string) Message-ID.
      *                              (int)    Article number.
      *                              (array)  Article numbers or Message-ID's (can contain both in the same array)
-     * @param  bool  $alternate  Use the alternate NNTP provider?
      * @return mixed On success : (string) The article bodies.
      *
      * @throws \Exception
      *                    On failure : (object) DariusIII\NetNntp\Error.
      */
-    public function getMessages(string $groupName, mixed $identifiers, bool $alternate = false): mixed
+    public function getMessages(string $groupName, mixed $identifiers): mixed
     {
-        $connected = $this->_checkConnection();
-        if ($connected !== true) {
-            return $connected;
-        }
-
-        // String to hold all the bodies.
-        $body = '';
-
-        $aConnected = false;
-        $nntp = ($alternate ? new self : null);
-
-        // Check if the msgIds are in an array.
-        if (\is_array($identifiers)) {
-            $loops = $messageSize = 0;
-
-            // Loop over the message-ID's or article numbers.
-            foreach ($identifiers as $wanted) {
-                /* This is to attempt to prevent string size overflow.
-                 * We get the size of 1 body in bytes, we increment the loop on every loop,
-                 * then we multiply the # of loops by the first size we got and check if it
-                 * exceeds 1.7 billion bytes (less than 2GB to give us headroom).
-                 * If we exceed, return the data.
-                 * If we don't do this, these errors are fatal.
-                 */
-                if ((++$loops * $messageSize) >= 1700000000) {
-                    return $body;
-                }
-
-                // Download the body.
-                $message = $this->_getMessage($groupName, $wanted);
-
-                // Append the body to $body.
-                if (! self::isError($message)) {
-                    $body .= $message;
-
-                    if ($messageSize === 0) {
-                        $messageSize = \strlen($message);
-                    }
-
-                    // If there is an error try the alternate provider or return the error.
-                } elseif ($alternate) {
-                    if (! $aConnected) {
-                        // Check if the current connected server is the alternate or not.
-                        $aConnected = $this->_currentServer === $this->_configServer
-                            ? $nntp->doConnect($this->_configCompressedHeaders, true)
-                            : $nntp->doConnect();
-                    }
-                    // If we connected successfully to usenet try to download the article body.
-                    if ($aConnected === true) {
-                        $newBody = $nntp->_getMessage($groupName, $wanted);
-                        // Check if we got an error.
-                        if ($nntp->isError($newBody)) {
-                            $nntp->doQuit();
-                            // If we got some data, return it.
-                            if ($body !== '') {
-                                return $body;
-                            }
-
-                            // Return the error.
-                            return $newBody;
-                        }
-                        // Append the alternate body to the main body.
-                        $body .= $newBody;
-                    }
-                } else {
-                    // If we got some data, return it.
-                    if ($body !== '') {
-                        return $body;
-                    }
-
-                    return $message;
-                }
-            }
-
-            // If it's a string check if it's a valid message-ID.
-        } elseif (\is_string($identifiers) || is_numeric($identifiers)) {
-            $body = $this->_getMessage($groupName, $identifiers);
-            if ($alternate && self::isError($body)) {
-                $nntp->doConnect($this->_configCompressedHeaders, true);
-                $body = $nntp->_getMessage($groupName, $identifiers);
-                $aConnected = true;
-            }
-
-            // Else return an error.
-        } else {
+        if (! \is_array($identifiers) && ! \is_string($identifiers) && ! is_numeric($identifiers)) {
             $message = 'Wrong Identifier type, array, int or string accepted. This type of var was passed: '.gettype($identifiers);
 
             return $this->throwError(cli()->error($message));
         }
 
-        if ($aConnected === true) {
-            $nntp->doQuit();
+        $wanted = \is_array($identifiers) ? $identifiers : [$identifiers];
+        $body = '';
+        $messageSize = 0;
+        $loops = 0;
+
+        foreach ($wanted as $identifier) {
+            /* Attempt to prevent string size overflow: measure one body, multiply by the loop
+             * count, and bail before 1.7GB (under 2GB for headroom). These errors are fatal. */
+            if ((++$loops * $messageSize) >= self::MAX_CONCATENATED_BYTES) {
+                return $body;
+            }
+
+            $message = is_numeric($identifier)
+                ? $this->fetchArticleNumberFromGroup($groupName, $identifier)
+                : $this->fetchArticleBodyWithFailover((string) $identifier);
+
+            if (self::isError($message)) {
+                // If we got some data, return it, otherwise surface the error.
+                return $body !== '' ? $body : $message;
+            }
+
+            $body .= $message;
+
+            if ($messageSize === 0) {
+                $messageSize = \strlen($message);
+            }
         }
 
         return $body;
@@ -684,71 +613,152 @@ class NNTPService extends NntpClient
 
     /**
      * Download multiple article bodies by Message-ID only (no group selection), concatenating them.
-     * Falls back to alternate provider if enabled. Message-IDs are yEnc decoded.
+     *
+     * The return shape is unchanged -- concatenated yEnc-decoded bodies, or an Error when nothing
+     * could be fetched. Only the internals changed: each article now walks the provider pool, so
+     * an article fails only once every enabled provider has failed it.
      *
      * @param  mixed  $identifiers  string|array Message-ID(s) (with or without < >)
-     * @param  bool  $alternate  Use alternate NNTP server if primary fails for any ID.
      * @return mixed string concatenated bodies on success, Error object on total failure.
      *
      * @throws \Exception
      */
-    public function getMessagesByMessageID(mixed $identifiers, bool $alternate = false): mixed
+    public function getMessagesByMessageID(mixed $identifiers): mixed
     {
-        $connected = $this->_checkConnection(false); // no need to reselect group
-        if ($connected !== true) {
-            return $connected; // error passthrough
-        }
-
-        $body = '';
-        $aConnected = false;
-        $alt = ($alternate ? new self : null);
-
-        // Normalise to array for loop processing
         $ids = is_array($identifiers) ? $identifiers : [$identifiers];
 
-        $loops = 0;
-        $messageSize = 0;
-        foreach ($ids as $id) {
-            if ((++$loops * $messageSize) >= 1700000000) { // prevent huge string growth
-                return $body;
-            }
-            $msg = $this->_getMessageByMessageID($id);
-            if (! self::isError($msg)) {
-                $body .= $msg;
-                if ($messageSize === 0) {
-                    $messageSize = strlen($msg);
-                }
-
-                continue;
-            }
-            // Primary failed, try alternate if requested
-            if ($alternate) {
-                if (! $aConnected) {
-                    $aConnected = $this->_currentServer === $this->_configServer
-                        ? $alt->doConnect($this->_configCompressedHeaders, true)
-                        : $alt->doConnect();
-                }
-                if ($aConnected === true) {
-                    $altMsg = $alt->_getMessageByMessageID($id);
-                    if ($alt->isError($altMsg)) {
-                        $alt->doQuit();
-
-                        return $body !== '' ? $body : $altMsg; // return what we have or error
-                    }
-                    $body .= $altMsg;
-                } else { // alternate connect failed
-                    return $body !== '' ? $body : $msg; // return collected or original error
-                }
-            } else { // no alternate
-                return $body !== '' ? $body : $msg;
-            }
+        if (! $this->_poolFailoverEnabled) {
+            return $this->concatenateFromOwnProvider($ids);
         }
 
-        if ($aConnected === true) {
-            $alt->doQuit();
+        return $this->pool()->fetchArticleBodies($ids, $this);
+    }
+
+    /**
+     * Fetch one article body from this client's provider only -- no pool failover.
+     *
+     * This is the pool's per-provider entry point; going through it (rather than
+     * {@see self::getMessagesByMessageID()}) is what keeps a pool walk from recursing.
+     *
+     * @return mixed string body on success, Error on failure.
+     *
+     * @throws \Exception
+     */
+    public function fetchArticleBody(string $messageId): mixed
+    {
+        $connected = $this->_checkConnection(false);
+        if ($connected !== true) {
+            return $connected;
+        }
+
+        return $this->_getMessageByMessageID($messageId);
+    }
+
+    /**
+     * Ask this client's provider whether it holds the article (STAT, no body transfer).
+     *
+     * Three-valued on purpose: `true` = exists, `false` = the provider answered and does not
+     * have it, Error = we could not ask (connect/protocol failure). Callers that need to tell
+     * "absent" from "unreachable" -- the pool's breaker, for one -- depend on the difference.
+     *
+     * @return mixed true|false|Error
+     *
+     * @throws \Exception
+     */
+    public function statArticle(string $messageId): mixed
+    {
+        if (trim($messageId) === '') {
+            return false;
+        }
+
+        $connected = $this->_checkConnection(false);
+        if ($connected !== true) {
+            return $connected;
+        }
+
+        $formatted = $this->_formatMessageID($messageId);
+        if ($formatted === false) {
+            return false;
+        }
+
+        $result = $this->selectArticle($formatted, -1);
+
+        if (! self::isError($result)) {
+            return true;
+        }
+
+        // 430 is the server telling us it does not carry the article -- an answer, not a fault.
+        return (int) $result->getCode() === ResponseCode::NoSuchArticleId->value ? false : $result;
+    }
+
+    /**
+     * Fetch one article body by Message-ID through the provider pool.
+     *
+     * @throws \Exception
+     */
+    protected function fetchArticleBodyWithFailover(string $messageId): mixed
+    {
+        if (! $this->_poolFailoverEnabled) {
+            return $this->fetchArticleBody($messageId);
+        }
+
+        return $this->pool()->fetchArticleBody($messageId, callerClient: $this);
+    }
+
+    /**
+     * Fetch one article by its per-server article number, from this connection's group.
+     *
+     * Never fails over: an article number means nothing on another backbone.
+     *
+     * @throws \Exception
+     */
+    protected function fetchArticleNumberFromGroup(string $groupName, mixed $articleNumber): mixed
+    {
+        $connected = $this->_checkConnection();
+        if ($connected !== true) {
+            return $connected;
+        }
+
+        return $this->_getMessage($groupName, $articleNumber);
+    }
+
+    /**
+     * Concatenate bodies from this client's provider alone, for pool-owned clients.
+     *
+     * @param  list<mixed>  $ids
+     *
+     * @throws \Exception
+     */
+    private function concatenateFromOwnProvider(array $ids): mixed
+    {
+        $body = '';
+        $messageSize = 0;
+        $loops = 0;
+
+        foreach ($ids as $id) {
+            if ((++$loops * $messageSize) >= self::MAX_CONCATENATED_BYTES) {
+                return $body;
+            }
+
+            $message = $this->fetchArticleBody((string) $id);
+
+            if (self::isError($message)) {
+                return $body !== '' ? $body : $message;
+            }
+
+            $body .= $message;
+
+            if ($messageSize === 0) {
+                $messageSize = \strlen($message);
+            }
         }
 
         return $body;
+    }
+
+    private function pool(): NntpProviderPool
+    {
+        return app(NntpProviderPool::class);
     }
 
     /**
@@ -1134,22 +1144,10 @@ class NNTPService extends NntpClient
         if (parent::_isConnected()) {
             $retVal = true;
         } else {
-            switch ($this->_currentServer) {
-                case $this->_configServer:
-                    if (\is_resource($this->_socket)) {
-                        $this->doQuit(true);
-                    }
-                    $retVal = $this->doConnect();
-                    break;
-                case $this->_configAlternateServer:
-                    if (\is_resource($this->_socket)) {
-                        $this->doQuit(true);
-                    }
-                    $retVal = $this->doConnect(true, true);
-                    break;
-                default:
-                    $retVal = $this->throwError('Wrong server constant used in NNTP checkConnection()!');
+            if (\is_resource($this->_socket)) {
+                $this->doQuit(true);
             }
+            $retVal = $this->doConnect();
 
             if ($retVal === true && $reSelectGroup) {
                 $group = $this->selectGroup($currentGroup);

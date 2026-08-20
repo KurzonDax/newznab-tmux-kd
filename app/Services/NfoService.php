@@ -600,7 +600,6 @@ class NfoService
             return false;
         }
 
-        $alternateNntp = (bool) config('nntmux_nntp.use_alternate_nntp_server');
         $maxSegments = 40;
         $triedArchive = false;
 
@@ -619,7 +618,7 @@ class NfoService
             }
 
             $messageIDs = array_slice($segments, 0, $maxSegments);
-            $compressedData = $nntp->getMessagesByMessageID($messageIDs, $alternateNntp);
+            $compressedData = $nntp->getMessagesByMessageID($messageIDs);
 
             if (! is_string($compressedData) || $compressedData === '') {
                 continue;
