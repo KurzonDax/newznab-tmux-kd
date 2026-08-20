@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Categorization;
 
+use App\Models\Category;
 use App\Models\Settings;
 use App\Models\UsenetGroup;
 use App\Services\Categorization\Pipes\AbstractCategorizationPipe;
@@ -117,9 +118,70 @@ class CategorizationPipeline
             ->through($this->pipes->values()->all())
             ->thenReturn();
 
+        $this->applyForcedRootCategory($result);
+
         $this->logCategorization($result);
 
         return $result->toArray();
+    }
+
+    /**
+     * Pin the result to the group's forced root category, when one is configured.
+     *
+     * This is a finalization step rather than a pipe on purpose:
+     * {@see AbstractCategorizationPipe::handle()} skips its body once the
+     * running best result reaches 0.95 confidence, so a pipe would silently not
+     * fire in exactly the high-confidence cases the override exists for. Running
+     * after the pipeline also means every caller of {@see self::categorize()} —
+     * release creation, renames, `nntmux:recategorize-releases` — gets the same
+     * behaviour.
+     *
+     * Two results survive: one that already belongs to the forced root (specific
+     * beats generic Other), and a hashed or misc-locked name, which stays on the
+     * existing obfuscated-routing path.
+     */
+    protected function applyForcedRootCategory(CategorizationPassable $result): void
+    {
+        $rootCategoryId = $result->context->forcedRootCategoryId;
+
+        if ($rootCategoryId === null ||
+            $result->lockedToMisc ||
+            $result->bestResult->categoryId === Category::OTHER_HASHED ||
+            Category::rootCategoryFor($result->bestResult->categoryId) === $rootCategoryId) {
+            return;
+        }
+
+        $categoryId = Category::otherForRootCategory($rootCategoryId);
+
+        if ($categoryId === null) {
+            return;
+        }
+
+        $organic = $result->bestResult;
+
+        $result->bestResult = new CategorizationResult(
+            $categoryId,
+            0.95,
+            'group_forced_root',
+            [
+                'root_category_id' => $rootCategoryId,
+                'organic_category_id' => $organic->categoryId,
+                'organic_match' => $organic->matchedBy,
+            ],
+        );
+
+        if ($result->debug) {
+            $result->allResults['GroupForcedRoot'] = [
+                'category_id' => $result->bestResult->categoryId,
+                'confidence' => $result->bestResult->confidence,
+                'matched_by' => $result->bestResult->matchedBy,
+                'suppressed' => [
+                    'category_id' => $organic->categoryId,
+                    'confidence' => $organic->confidence,
+                    'matched_by' => $organic->matchedBy,
+                ],
+            ];
+        }
     }
 
     protected function logCategorization(CategorizationPassable $result): void
@@ -171,7 +233,6 @@ class CategorizationPipeline
             new Pipes\MusicPipe,
             new Pipes\PcPipe,
             new Pipes\ConsolePipe,
-            new Pipes\GroupForcedRootPipe,
             new Pipes\MiscSafetyNetPipe,
         ]);
     }
