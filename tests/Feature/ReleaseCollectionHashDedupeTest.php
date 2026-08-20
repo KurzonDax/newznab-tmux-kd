@@ -139,6 +139,41 @@ class ReleaseCollectionHashDedupeTest extends TestCase
         $this->assertSame(2, DB::table('releases')->count());
     }
 
+    public function test_cross_group_repost_of_a_quoted_part_file_subject_is_deduped(): void
+    {
+        // Same upload, five minutes apart, in two groups. Neither group has a
+        // naming regex, so both subjects take the generic cleaning path and must
+        // reduce to the same searchname (#137).
+        DB::table('usenet_groups')->insert([
+            ['id' => 40, 'name' => 'alt.binaries.erotica'],
+            ['id' => 57, 'name' => 'alt.binaries.ijsklontje'],
+        ]);
+
+        $this->insertCollection(
+            100,
+            'hash-erotica',
+            '"HookupHotshot - 2020 Flashback Highlight Compilation.part009.rar"',
+            filesize: 13_897_458_182,
+            groupsId: 40,
+        );
+        $this->insertCollection(
+            101,
+            'hash-ijsklontje',
+            '"HookupHotshot - 2020 Flashback Highlight Compilation.part018.rar"',
+            filesize: 13_897_458_182,
+            groupsId: 57,
+        );
+
+        $result = $this->service()->createReleases(null, 10, false);
+
+        $this->assertSame(['added' => 1, 'dupes' => 1], $result);
+        $this->assertSame(1, DB::table('releases')->count());
+        $this->assertSame(
+            'HookupHotshot - 2020 Flashback Highlight Compilation',
+            DB::table('releases')->value('searchname')
+        );
+    }
+
     public function test_migration_adds_nullable_unique_collectionhash_on_sqlite(): void
     {
         DB::statement('CREATE TABLE migration_probe_releases (id INTEGER PRIMARY KEY, guid VARCHAR(40))');
@@ -186,7 +221,7 @@ class ReleaseCollectionHashDedupeTest extends TestCase
         );
     }
 
-    private function insertCollection(int $id, string $hash, string $subject, int $filesize = 1000): void
+    private function insertCollection(int $id, string $hash, string $subject, int $filesize = 1000, int $groupsId = 1): void
     {
         DB::table('collections')->insert([
             'id' => $id,
@@ -196,7 +231,7 @@ class ReleaseCollectionHashDedupeTest extends TestCase
             'dateadded' => now()->subHours(1)->format('Y-m-d H:i:s'),
             'added' => now()->subHours(1)->format('Y-m-d H:i:s'),
             'xref' => 'alt.test:'.$id,
-            'groups_id' => 1,
+            'groups_id' => $groupsId,
             'totalfiles' => 1,
             'filesize' => $filesize,
             'filecheck' => CollectionFileCheckStatus::Sized->value,

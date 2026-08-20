@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Models\Predb;
 use App\Services\NameFixing\NzbSplitUnwrapper;
+use App\Support\ReleaseNameNormalizer;
 
 /**
  * Cleans names for releases/imports/namefixer.
@@ -432,11 +433,19 @@ class ReleaseCleaningService
         ];
     }
 
+    /**
+     * Last-resort cleaner for subjects no group regex claimed.
+     *
+     * Drops the yEnc marker and then the raw-subject leftovers (wrapping
+     * quotes, .partNNN.rar / .volNN+NN.par2 suffixes) so that a group without
+     * its own naming regex produces the same searchname as one that has one.
+     */
     public function releaseCleanerHelper(string $subject): string
     {
         $cleanerName = preg_replace('/(\- )?yEnc$/', '', $subject);
+        $cleanerName = trim(preg_replace('/\s\s+/', ' ', $cleanerName));
 
-        return trim(preg_replace('/\s\s+/', ' ', $cleanerName));
+        return ReleaseNameNormalizer::normalize($cleanerName);
     }
 
     /**
