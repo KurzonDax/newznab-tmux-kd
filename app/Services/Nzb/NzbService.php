@@ -183,6 +183,8 @@ class NzbService
 
             $cursor = ['collection_id' => 0, 'name' => '', 'binary_id' => 0, 'partnumber' => 0];
             $openBinaryId = 0;
+            $writtenParts = 0;
+            $declaredParts = 0;
             do {
                 $page = $this->loadNzbRowPage((int) $release->id, $cursor);
                 foreach ($page as $row) {
@@ -214,6 +216,7 @@ class NzbService
                         $XMLWriter->endElement(); // groups
                         $XMLWriter->startElement('segments');
                         $openBinaryId = $binaryId;
+                        $declaredParts += max(0, (int) $row->totalparts);
                     }
 
                     $messageId = $this->normalizeSegmentMessageId($row->messageid);
@@ -226,6 +229,7 @@ class NzbService
                     $XMLWriter->writeAttribute('number', (string) $row->partnumber);
                     $XMLWriter->text($messageId);
                     $XMLWriter->endElement();
+                    $writtenParts++;
 
                     $cursor = [
                         'collection_id' => (int) $row->collection_id,
@@ -263,8 +267,10 @@ class NzbService
                 return NzbCreationResult::transient("Final NZB file is missing or unreadable: {$path}", $collectionIds, $path);
             }
 
-            DB::transaction(function () use ($release): void {
-                $release->update($this->successfulReleaseUpdateValues());
+            $completion = $this->calculateCompletion($writtenParts, $declaredParts);
+
+            DB::transaction(function () use ($release, $completion): void {
+                $release->update($this->successfulReleaseUpdateValues($completion));
 
                 if (NzbCreationCandidateQuery::supportsFailureState()) {
                     ReleaseNzbCreationFailure::query()
@@ -740,9 +746,9 @@ class NzbService
     /**
      * @return array<string, mixed>
      */
-    private function successfulReleaseUpdateValues(): array
+    private function successfulReleaseUpdateValues(float $completion): array
     {
-        $values = ['nzbstatus' => self::NZB_ADDED];
+        $values = ['nzbstatus' => self::NZB_ADDED, 'completion' => $completion];
 
         if (NzbCreationCandidateQuery::supportsClaims()) {
             $values += [
@@ -752,5 +758,24 @@ class NzbService
         }
 
         return $values;
+    }
+
+    /**
+     * Completion percentage for the NZB just written.
+     *
+     * Mirrors NzbContentsService::calculateCompletion(): 0 is the "never measured" sentinel that
+     * ReleaseProcessingService::deleteIncompleteReleases() exempts, so releases whose binaries all
+     * declared no total part count stay exempt rather than being reported as 0% complete.
+     *
+     * @param  int  $writtenParts  Segments actually written into the NZB.
+     * @param  int  $declaredParts  Sum of totalparts declared by the binaries' subjects.
+     */
+    private function calculateCompletion(int $writtenParts, int $declaredParts): float
+    {
+        if ($declaredParts <= 0) {
+            return 0.0;
+        }
+
+        return min(100.0, ($writtenParts / $declaredParts) * 100);
     }
 }
