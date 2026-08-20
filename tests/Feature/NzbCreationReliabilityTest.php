@@ -245,16 +245,14 @@ class NzbCreationReliabilityTest extends TestCase
     {
         $this->insertRelease(1, 'd');
         $this->insertWritableCbp(200, 2000, 1);
-        $release = Release::query()->findOrFail(1);
-        $release->setRelation('category', (object) ['title' => 'Misc', 'parent' => (object) ['title' => 'Other']]);
 
         $nzb = new RenameFailingNzbService(app(CollectionCleanupService::class));
-        $result = $nzb->createNzbForRelease($release);
+        $result = $this->writeNzb(1, $nzb);
 
         $this->assertFalse($result->success);
         $this->assertTrue($result->isTransientFailure());
         $this->assertStringContainsString('move temporary NZB into place', $result->reason);
-        $this->assertFileDoesNotExist($nzb->getNzbPath($release->guid));
+        $this->assertFileDoesNotExist($nzb->getNzbPath((string) DB::table('releases')->where('id', 1)->value('guid')));
         $this->assertSame(0, (int) DB::table('releases')->where('id', 1)->value('nzbstatus'));
     }
 
@@ -275,11 +273,7 @@ class NzbCreationReliabilityTest extends TestCase
             ['binaries_id' => 2000, 'messageid' => '<part01@example.test>', 'partnumber' => 1, 'size' => 100],
             ['binaries_id' => 2000, 'messageid' => '<part03@example.test>', 'partnumber' => 3, 'size' => 300],
         ]);
-        $release = Release::query()->findOrFail(1);
-        $release->setRelation('category', (object) ['title' => 'Misc', 'parent' => (object) ['title' => 'Other']]);
-
-        $nzb = new NzbService(app(CollectionCleanupService::class), new BinariesConfig(nzbStreamRows: 2));
-        $result = $nzb->createNzbForRelease($release);
+        $result = $this->writeNzb(1, new NzbService(app(CollectionCleanupService::class), new BinariesConfig(nzbStreamRows: 2)));
 
         $this->assertTrue($result->success, $result->reason);
         $xml = unzipGzipFile((string) $result->path);
@@ -293,7 +287,7 @@ class NzbCreationReliabilityTest extends TestCase
     public function test_writer_records_full_completion_for_a_complete_release(): void
     {
         $this->insertRelease(1, 'i');
-        $this->insertWritableCbp(200, 2000, 1, totalParts: 3, parts: 3);
+        $this->insertWritableCbp(200, 2000, 1, totalParts: 3, arrivedParts: 3);
 
         $result = $this->writeNzb(1);
 
@@ -304,8 +298,8 @@ class NzbCreationReliabilityTest extends TestCase
     public function test_writer_records_partial_completion_when_segments_are_missing(): void
     {
         $this->insertRelease(1, 'j');
-        $this->insertWritableCbp(200, 2000, 1, totalParts: 211, parts: 7);
-        $this->insertWritableBinary(200, 2001, 'Example.Release.part02.rar yEnc', 100, 100);
+        $this->insertWritableCbp(200, 2000, 1, totalParts: 211, arrivedParts: 7);
+        $this->insertWritableBinary(200, 2001, 'Example.Release.part02.rar yEnc', totalParts: 100, arrivedParts: 100);
 
         $result = $this->writeNzb(1);
 
@@ -317,7 +311,7 @@ class NzbCreationReliabilityTest extends TestCase
     public function test_writer_never_records_completion_above_one_hundred(): void
     {
         $this->insertRelease(1, 'k');
-        $this->insertWritableCbp(200, 2000, 1, totalParts: 1, parts: 3);
+        $this->insertWritableCbp(200, 2000, 1, totalParts: 1, arrivedParts: 3);
 
         $result = $this->writeNzb(1);
 
@@ -328,7 +322,7 @@ class NzbCreationReliabilityTest extends TestCase
     public function test_writer_leaves_completion_unknown_when_no_binary_declares_totalparts(): void
     {
         $this->insertRelease(1, 'l');
-        $this->insertWritableCbp(200, 2000, 1, totalParts: 0, parts: 4);
+        $this->insertWritableCbp(200, 2000, 1, totalParts: 0, arrivedParts: 4);
 
         $result = $this->writeNzb(1);
 
@@ -340,10 +334,10 @@ class NzbCreationReliabilityTest extends TestCase
     public function test_writer_counts_every_streamed_page_when_binaries_span_pages(): void
     {
         $this->insertRelease(1, 'm');
-        $this->insertWritableCbp(200, 2000, 1, totalParts: 10, parts: 5);
-        $this->insertWritableBinary(200, 2001, 'Example.Release.part02.rar yEnc', 10, 5);
+        $this->insertWritableCbp(200, 2000, 1, totalParts: 10, arrivedParts: 5);
+        $this->insertWritableBinary(200, 2001, 'Example.Release.part02.rar yEnc', totalParts: 10, arrivedParts: 5);
 
-        $result = $this->writeNzb(1, new BinariesConfig(nzbStreamRows: 3));
+        $result = $this->writeNzb(1, new NzbService(app(CollectionCleanupService::class), new BinariesConfig(nzbStreamRows: 3)));
 
         $this->assertTrue($result->success, $result->reason);
         $this->assertSame(50.0, $this->completionFor(1));
@@ -352,12 +346,9 @@ class NzbCreationReliabilityTest extends TestCase
     public function test_failed_nzb_creation_leaves_completion_untouched(): void
     {
         $this->insertRelease(1, 'n', completion: 42.5);
-        $this->insertWritableCbp(200, 2000, 1, totalParts: 4, parts: 1);
-        $release = Release::query()->findOrFail(1);
-        $release->setRelation('category', (object) ['title' => 'Misc', 'parent' => (object) ['title' => 'Other']]);
+        $this->insertWritableCbp(200, 2000, 1, totalParts: 4, arrivedParts: 1);
 
-        $nzb = new RenameFailingNzbService(app(CollectionCleanupService::class));
-        $result = $nzb->createNzbForRelease($release);
+        $result = $this->writeNzb(1, new RenameFailingNzbService(app(CollectionCleanupService::class)));
 
         $this->assertFalse($result->success);
         $this->assertSame(42.5, $this->completionFor(1));
@@ -388,14 +379,12 @@ class NzbCreationReliabilityTest extends TestCase
         $this->assertFileExists($finalNzb);
     }
 
-    private function writeNzb(int $releaseId, ?BinariesConfig $binariesConfig = null): NzbCreationResult
+    private function writeNzb(int $releaseId, ?NzbService $nzb = null): NzbCreationResult
     {
         $release = Release::query()->findOrFail($releaseId);
         $release->setRelation('category', (object) ['title' => 'Misc', 'parent' => (object) ['title' => 'Other']]);
 
-        $nzb = new NzbService(app(CollectionCleanupService::class), $binariesConfig);
-
-        return $nzb->createNzbForRelease($release);
+        return ($nzb ?? new NzbService(app(CollectionCleanupService::class)))->createNzbForRelease($release);
     }
 
     private function releaseProcessingService(NzbCreationResult $result): ReleaseProcessingService
@@ -461,7 +450,7 @@ class NzbCreationReliabilityTest extends TestCase
         int $binaryId,
         int $releaseId,
         int $totalParts = 1,
-        int $parts = 1,
+        int $arrivedParts = 1,
     ): void {
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.test']);
         DB::table('collections')->insert([
@@ -472,18 +461,18 @@ class NzbCreationReliabilityTest extends TestCase
             'xref' => 'alt.test:12345',
             'groups_id' => 1,
         ]);
-        $this->insertWritableBinary($collectionId, $binaryId, 'Example.Release.part01.rar yEnc', $totalParts, $parts);
+        $this->insertWritableBinary($collectionId, $binaryId, 'Example.Release.part01.rar yEnc', $totalParts, $arrivedParts);
     }
 
     /**
-     * Insert one binary whose subject declares $totalParts parts but for which only $parts headers arrived.
+     * Insert one binary whose subject declares $totalParts parts but for which only $arrivedParts headers arrived.
      */
     private function insertWritableBinary(
         int $collectionId,
         int $binaryId,
         string $name,
         int $totalParts,
-        int $parts,
+        int $arrivedParts,
     ): void {
         DB::table('binaries')->insert([
             'id' => $binaryId,
@@ -492,7 +481,7 @@ class NzbCreationReliabilityTest extends TestCase
             'totalparts' => $totalParts,
         ]);
 
-        for ($partNumber = 1; $partNumber <= $parts; $partNumber++) {
+        for ($partNumber = 1; $partNumber <= $arrivedParts; $partNumber++) {
             DB::table('parts')->insert([
                 'binaries_id' => $binaryId,
                 'messageid' => sprintf('<binary%d-part%d@example.test>', $binaryId, $partNumber),

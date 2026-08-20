@@ -272,17 +272,7 @@ class NzbContentsService
      */
     protected function calculateCompletion(int $actualParts, int $artificialParts): float
     {
-        // Avoid division by zero and handle cases where parts info might be missing/incorrect
-        if ($artificialParts > 0) {
-            return min(100, ($actualParts / $artificialParts) * 100);
-        } elseif ($actualParts > 0) {
-            // If artificial parts couldn't be determined, but we have actual parts,
-            // we can't calculate completion accurately based on subject.
-            return 0;
-        }
-
-        // If both are zero (e.g., empty NZB or parsing issue), completion is 0.
-        return 0;
+        return ReleaseCompletion::percentage($actualParts, $artificialParts);
     }
 
     /**

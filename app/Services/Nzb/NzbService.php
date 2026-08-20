@@ -267,7 +267,7 @@ class NzbService
                 return NzbCreationResult::transient("Final NZB file is missing or unreadable: {$path}", $collectionIds, $path);
             }
 
-            $completion = $this->calculateCompletion($writtenParts, $declaredParts);
+            $completion = ReleaseCompletion::percentage($writtenParts, $declaredParts);
 
             DB::transaction(function () use ($release, $completion): void {
                 $release->update($this->successfulReleaseUpdateValues($completion));
@@ -758,24 +758,5 @@ class NzbService
         }
 
         return $values;
-    }
-
-    /**
-     * Completion percentage for the NZB just written.
-     *
-     * Mirrors NzbContentsService::calculateCompletion(): 0 is the "never measured" sentinel that
-     * ReleaseProcessingService::deleteIncompleteReleases() exempts, so releases whose binaries all
-     * declared no total part count stay exempt rather than being reported as 0% complete.
-     *
-     * @param  int  $writtenParts  Segments actually written into the NZB.
-     * @param  int  $declaredParts  Sum of totalparts declared by the binaries' subjects.
-     */
-    private function calculateCompletion(int $writtenParts, int $declaredParts): float
-    {
-        if ($declaredParts <= 0) {
-            return 0.0;
-        }
-
-        return min(100.0, ($writtenParts / $declaredParts) * 100);
     }
 }
