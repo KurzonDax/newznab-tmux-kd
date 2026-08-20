@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Http\Controllers\Admin\AdminGroupController;
+use App\Models\Category;
 use App\Models\Content;
 use App\View\Composers\GlobalDataComposer;
 use Illuminate\Contracts\Console\Kernel;
@@ -195,6 +196,54 @@ class AdminGroupControllerTest extends TestCase
         $this->assertSame(['MB', 'GB'], $response->getData()['sizeUnits']);
     }
 
+    public function test_edit_submit_clears_the_forced_root_category_when_left_blank(): void
+    {
+        $this->createUsenetGroupsTable();
+        $groupId = $this->createGroup();
+        DB::table('usenet_groups')->where('id', $groupId)->update([
+            'forced_root_categories_id' => Category::XXX_ROOT,
+        ]);
+
+        app(AdminGroupController::class)->edit(
+            $this->editRequest($groupId, ['forced_root_categories_id' => ''])
+        );
+
+        $this->assertNull(DB::table('usenet_groups')->where('id', $groupId)->value('forced_root_categories_id'));
+    }
+
+    private function createGroup(): int
+    {
+        return (int) DB::table('usenet_groups')->insertGetId([
+            'name' => 'alt.binaries.erotica',
+            'description' => 'Test group',
+            'active' => 1,
+            'backfill' => 1,
+            'minsizetoformrelease' => null,
+            'minfilestoformrelease' => null,
+        ]);
+    }
+
+    /**
+     * @param  array<string, string>  $overrides
+     */
+    private function editRequest(int $groupId, array $overrides): Request
+    {
+        return Request::create('/admin/group-edit', 'POST', $overrides + [
+            'action' => 'submit',
+            'id' => (string) $groupId,
+            'name' => 'alt.binaries.erotica',
+            'description' => 'Test group',
+            'backfill_target' => '1',
+            'first_record' => '0',
+            'last_record' => '0',
+            'active' => '1',
+            'backfill' => '1',
+            'minsizetoformrelease' => '',
+            'minsizetoformrelease_unit' => 'MB',
+            'minfilestoformrelease' => '1',
+        ]);
+    }
+
     private function setEnvironmentValue(string $key, ?string $value): void
     {
         if ($value === null) {
@@ -263,6 +312,7 @@ class AdminGroupControllerTest extends TestCase
             $table->integer('backfill_target')->default(1);
             $table->boolean('route_obfuscated_names')->default(false);
             $table->unsignedInteger('obfuscated_default_root_categories_id')->nullable();
+            $table->unsignedInteger('forced_root_categories_id')->nullable();
         });
     }
 

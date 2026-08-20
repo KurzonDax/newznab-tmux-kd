@@ -184,6 +184,25 @@
                 </p>
             </div>
 
+            <!-- Forced root category -->
+            <div class="mb-6">
+                <x-label for="forced_root_categories_id">Force All Releases To Root Category:</x-label>
+                <x-select id="forced_root_categories_id" name="forced_root_categories_id">
+                    <option value="">(disabled)</option>
+                    @foreach($rootCategories as $rootCategory)
+                        <option value="{{ $rootCategory->id }}" {{ (string) old('forced_root_categories_id', $group['forced_root_categories_id'] ?? '') === (string) $rootCategory->id ? 'selected' : '' }}>
+                            {{ $rootCategory->title }}
+                        </option>
+                    @endforeach
+                </x-select>
+                @error('forced_root_categories_id')
+                    <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                @enderror
+                <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                    Every release from this group is filed under the chosen root, whatever the name says. A category that already belongs to that root is kept as-is, and hashed or obfuscated names keep following the routing above.
+                </p>
+            </div>
+
             <!-- First Record -->
             <div class="mb-6">
                 <label for="first_record" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">

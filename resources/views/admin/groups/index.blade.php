@@ -159,6 +159,7 @@
                             <x-admin.th align="center" class="w-24">Min Size</x-admin.th>
                             <x-admin.th align="center" class="w-32">Backfill Days</x-admin.th>
                             <x-admin.th align="center" class="w-36">Obfuscated Routing</x-admin.th>
+                            <x-admin.th align="center" class="w-36">Forced Root</x-admin.th>
                             <x-admin.th align="center" class="w-40">Actions</x-admin.th>
                 </x-slot:head>
                         @foreach($grouplist as $group)
