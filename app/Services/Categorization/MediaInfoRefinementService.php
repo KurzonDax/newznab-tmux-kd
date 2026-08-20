@@ -7,6 +7,7 @@ namespace App\Services\Categorization;
 use App\Models\AudioData;
 use App\Models\Category;
 use App\Models\Release;
+use App\Models\UsenetGroup;
 use App\Models\VideoData;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\Releases\PreviewGenerationPolicy;
@@ -52,7 +53,7 @@ final class MediaInfoRefinementService
 
     public function refine(int $releaseId, bool $dryRun = false): ?MediaInfoRefinementDecision
     {
-        $release = Release::query()->find($releaseId, ['id', 'categories_id']);
+        $release = Release::query()->find($releaseId, ['id', 'categories_id', 'groups_id']);
         if ($release === null || ! in_array((int) $release->categories_id, self::eligibleCategoryIds(), true)) {
             return null;
         }
@@ -60,6 +61,10 @@ final class MediaInfoRefinementService
         $video = VideoData::query()->where('releases_id', $releaseId)->first()?->toArray();
         $audio = AudioData::query()->where('releases_id', $releaseId)->orderBy('audioid')->first()?->toArray();
         $decision = $this->decisionFor((int) $release->categories_id, $video, $audio);
+
+        if ($decision !== null && ! $this->respectsForcedRootCategory((int) $release->groups_id, $decision->categoryId)) {
+            return null;
+        }
 
         if ($decision === null || $decision->categoryId === (int) $release->categories_id || $dryRun) {
             return $decision;
@@ -90,6 +95,29 @@ final class MediaInfoRefinementService
         }
 
         return $decision;
+    }
+
+    /**
+     * A group pinned to a root category must not be refined out of it.
+     *
+     * The audio branch maps XXX_OTHER to MUSIC_*, which would quietly undo the
+     * per-group forced root; video decisions from XXX_OTHER already stay in-root.
+     */
+    private function respectsForcedRootCategory(int $groupId, int $targetCategoryId): bool
+    {
+        if ($groupId <= 0) {
+            return true;
+        }
+
+        $forcedRootCategoryId = UsenetGroup::query()
+            ->whereKey($groupId)
+            ->value('forced_root_categories_id');
+
+        if ($forcedRootCategoryId === null) {
+            return true;
+        }
+
+        return Category::rootCategoryFor($targetCategoryId) === (int) $forcedRootCategoryId;
     }
 
     /**

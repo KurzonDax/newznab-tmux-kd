@@ -234,6 +234,52 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
         $this->assertSame(1, (int) $release->isrenamed);
     }
 
+    public function test_renaming_a_release_in_a_forced_root_group_keeps_it_in_that_root(): void
+    {
+        Search::shouldReceive('updateRelease')->twice();
+
+        $group = UsenetGroup::query()->create([
+            'name' => 'alt.binaries.ijsklontje',
+            'active' => 1,
+            'backfill' => 0,
+            'forced_root_categories_id' => Category::XXX_ROOT,
+        ]);
+
+        $oldName = 'a3f9c1d4e7b2085f6c1d9e4a7b3f0c28';
+        $newName = 'The.Matrix.1999.1080p.BluRay.x264-GROUP';
+
+        $release = Release::factory()->create([
+            'name' => '[1/8] - "'.$oldName.'.par2" yEnc',
+            'searchname' => $oldName,
+            'fromname' => 'poster@example.com',
+            'groups_id' => $group->id,
+            'categories_id' => Category::OTHER_HASHED,
+            'iscategorized' => 1,
+            'isrenamed' => 0,
+            'guid' => str_repeat('k', 40),
+            'leftguid' => 'k',
+            'size' => 1,
+            'postdate' => now(),
+            'adddate' => now(),
+        ]);
+
+        app(ReleaseUpdateService::class)->updateRelease(
+            $release->fresh(),
+            $newName,
+            'Raw file: Flat scene release',
+            true,
+            'Filenames, ',
+            true,
+            false,
+        );
+
+        $release->refresh();
+
+        $this->assertSame($newName, $release->searchname);
+        $this->assertSame(Category::XXX_OTHER, (int) $release->categories_id);
+        $this->assertSame(Category::XXX_ROOT, Category::rootCategoryFor((int) $release->categories_id));
+    }
+
     public function test_renaming_olympic_webdl_release_recategorizes_it_from_movie_webdl_to_tv_sport(): void
     {
         Search::shouldReceive('updateRelease')->twice();
@@ -526,6 +572,9 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
                 $table->boolean('active')->default(false);
                 $table->boolean('backfill')->default(false);
                 $table->string('description')->nullable();
+                $table->boolean('route_obfuscated_names')->default(false);
+                $table->unsignedInteger('obfuscated_default_root_categories_id')->nullable();
+                $table->unsignedInteger('forced_root_categories_id')->nullable();
             });
         }
 
