@@ -18,6 +18,7 @@ use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
 use App\Services\Releases\ExecutableReleaseDiscardService;
+use App\Services\Releases\IncompleteReleaseSweepQuery;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Releases\ReleaseDuplicateFinder;
@@ -1296,15 +1297,24 @@ final class ReleaseProcessingService
         return $stats;
     }
 
+    /**
+     * Delete sub-threshold releases the repair engine has finished with.
+     *
+     * Being measured incomplete is not grounds for deletion: many such releases are recoverable
+     * because the missing articles are still on the provider and only the headers were missed.
+     * So the sweep waits for a *final* repair outcome and never does timestamp arithmetic of its
+     * own -- the repair state machine owns time, and only ever hands the reaper releases it has
+     * given up on. Operators keep their override in `nntmux:delete-releases --completion-max`.
+     *
+     * `completion = 0` stays exempt as the "never measured" sentinel, as before.
+     */
     private function deleteIncompleteReleases(ReleaseDeleteStats $stats): ReleaseDeleteStats
     {
         if (! $this->settings->hasCompletionCleanup()) {
             return $stats;
         }
 
-        Release::query()
-            ->where('completion', '<', $this->settings->completion)
-            ->where('completion', '>', 0)
+        IncompleteReleaseSweepQuery::builder((float) $this->settings->completion)
             ->select(['id', 'guid'])
             ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats): bool {
                 foreach ($releases as $release) {

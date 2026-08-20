@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Enums\ReleaseRepairOutcome;
 use App\Models\Release;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\CollectionCleanupService;
@@ -11,6 +12,7 @@ use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseImageService;
 use App\Services\ReleaseProcessingService;
+use App\Services\Releases\IncompleteReleaseSweepQuery;
 use App\Services\Releases\ReleaseManagementService;
 use App\Support\Data\NzbCreationResult;
 use Illuminate\Contracts\Console\Kernel;
@@ -305,6 +307,12 @@ class NzbCreationReliabilityTest extends TestCase
 
         $this->assertTrue($result->success, $result->reason);
         $this->assertEqualsWithDelta((107 / 311) * 100, $this->completionFor(1), 0.0001);
+
+        // Measured sub-threshold, but the repair engine has not seen it yet: the sweep waits.
+        // Missing headers usually mean articles that are still on the provider.
+        $this->assertSame([], $this->releasesSelectedByCompletionCleanup(95.0));
+
+        DB::table('releases')->where('id', 1)->update(['repair_outcome' => ReleaseRepairOutcome::Failed->value]);
         $this->assertSame([1], $this->releasesSelectedByCompletionCleanup(95.0));
     }
 
@@ -497,15 +505,13 @@ class NzbCreationReliabilityTest extends TestCase
     }
 
     /**
-     * Mirror of the selection predicate in ReleaseProcessingService::deleteIncompleteReleases().
+     * The real selection the completion sweep runs, not a copy of it.
      *
      * @return list<int>
      */
     private function releasesSelectedByCompletionCleanup(float $completionPercent): array
     {
-        return DB::table('releases')
-            ->where('completion', '<', $completionPercent)
-            ->where('completion', '>', 0)
+        return IncompleteReleaseSweepQuery::builder($completionPercent)
             ->orderBy('id')
             ->pluck('id')
             ->map(static fn (mixed $id): int => (int) $id)
@@ -545,6 +551,8 @@ class NzbCreationReliabilityTest extends TestCase
             postdate DATETIME NULL,
             nzbstatus INTEGER,
             completion DOUBLE NOT NULL DEFAULT 0,
+            repair_attempted_at DATETIME NULL,
+            repair_outcome VARCHAR(16) NULL,
             nzb_creation_claimed_at DATETIME NULL,
             nzb_creation_claim_token VARCHAR(64) NULL
         )');

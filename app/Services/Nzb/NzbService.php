@@ -258,7 +258,7 @@ class NzbService
                 return NzbCreationResult::transient("Failed to close temporary NZB file: {$tempPath}", $collectionIds, $path);
             }
 
-            if (! $this->moveTemporaryNzbIntoPlace($tempPath, $path)) {
+            if (! $this->finalizeNzbFile($tempPath, $path)) {
                 return NzbCreationResult::transient("Failed to move temporary NZB into place: {$tempPath} -> {$path}", $collectionIds, $path);
             }
             $tempPath = null;
@@ -476,6 +476,47 @@ class NzbService
         $contents = unzipGzipFile($nzbPath);
 
         return ! empty($contents) ? $contents : false;
+    }
+
+    /**
+     * Replace a release's stored NZB with new XML, atomically.
+     *
+     * Same temp-then-rename dance as {@see self::createNzbForRelease()}: a reader that opens the
+     * file mid-write must never see a half-written NZB, and a crash must leave the old one intact.
+     *
+     * @return bool False when there is no NZB to replace, or the write could not be completed.
+     */
+    public function replaceNzbContents(string $releaseGuid, string $nzbXml): bool
+    {
+        $path = $this->nzbPath($releaseGuid);
+
+        if ($path === false) {
+            return false;
+        }
+
+        $temporaryPath = $this->temporaryNzbPath($path);
+        $gz = $this->openGzipFile($temporaryPath);
+
+        if ($gz === false) {
+            return false;
+        }
+
+        $written = gzwrite($gz, $nzbXml);
+        $closed = gzclose($gz);
+
+        if ($written === false || $written !== \strlen($nzbXml) || ! $closed) {
+            File::delete($temporaryPath);
+
+            return false;
+        }
+
+        if (! $this->finalizeNzbFile($temporaryPath, $path)) {
+            File::delete($temporaryPath);
+
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -741,6 +782,24 @@ class NzbService
     protected function moveTemporaryNzbIntoPlace(string $temporaryPath, string $finalPath): bool
     {
         return rename($temporaryPath, $finalPath);
+    }
+
+    /**
+     * Move a finished temporary NZB into place and fix up its mode.
+     *
+     * The chmod is not cosmetic: some deployments run the web server and the indexer as
+     * different users, and a stricter mode leaves the NZB unreadable to whichever one did not
+     * write it. Every path that produces an NZB goes through here so they cannot drift apart.
+     */
+    private function finalizeNzbFile(string $temporaryPath, string $finalPath): bool
+    {
+        if (! $this->moveTemporaryNzbIntoPlace($temporaryPath, $finalPath)) {
+            return false;
+        }
+
+        chmod($finalPath, 0777);
+
+        return true;
     }
 
     /**

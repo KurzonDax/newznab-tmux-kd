@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\ReleaseRepairOutcome;
 use App\Facades\Search;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -68,6 +69,16 @@ class Release extends Model
      * @var array<string>
      */
     protected $guarded = [];
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'repair_outcome' => ReleaseRepairOutcome::class,
+        ];
+    }
 
     /**
      * @return BelongsTo<UsenetGroup, $this>
@@ -175,6 +186,22 @@ class Release extends Model
     public function video(): BelongsTo
     {
         return $this->belongsTo(Video::class, 'videos_id');
+    }
+
+    /**
+     * Has additional processing already produced something for this release?
+     *
+     * Media info or a preview means AP has had its say. Used to decide whether re-queuing a
+     * release would be a slot spent on something AP cannot improve.
+     */
+    public function hasProcessingArtifacts(): bool
+    {
+        if ((int) $this->haspreview === 1) {
+            return true;
+        }
+
+        return VideoData::query()->where('releases_id', $this->id)->exists()
+            || AudioData::query()->where('releases_id', $this->id)->exists();
     }
 
     /**
