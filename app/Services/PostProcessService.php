@@ -23,8 +23,6 @@ final class PostProcessService
 {
     private readonly bool $echoOutput;
 
-    private readonly bool $alternateNNTP;
-
     private readonly bool $addPar2;
 
     private readonly NameFixingService $nameFixingService;
@@ -67,7 +65,6 @@ final class PostProcessService
     ) {
         $this->echoOutput = (bool) config('nntmux.echocli');
         $this->addPar2 = (bool) config('nntmux_settings.add_par2');
-        $this->alternateNNTP = (bool) config('nntmux_nntp.use_alternate_nntp_server');
 
         // Core dependencies
         $this->nameFixingService = $nameFixingService ?? new NameFixingService;
@@ -78,8 +75,7 @@ final class PostProcessService
         $this->par2Processor = $par2Processor ?? new Par2Processor(
             $this->nameFixingService,
             $this->par2Info,
-            $this->addPar2,
-            $this->alternateNNTP
+            $this->addPar2
         );
         $this->tvProcessor = $tvProcessor ?? new TvProcessor($this->echoOutput);
         $this->nfoProcessor = $nfoProcessor ?? new NfoProcessor($this->nfo);

@@ -103,20 +103,19 @@ class TmuxMonitorServiceTest extends TestCase
             'CLOSE-WAIT 0 0 10.0.0.2:40001 192.0.2.10:119',
             'ESTAB 0 0 10.0.0.2:40002 192.0.2.20:563',
         ]);
-        $connections = [
-            'ip' => '192.0.2.10',
-            'port' => 119,
-            'ip_a' => '192.0.2.20',
-            'port_a' => 563,
-        ];
 
+        // One snapshot, counted per provider endpoint -- no `ss` call per provider.
         $this->assertSame(
-            ['primary' => ['active' => 1, 'total' => 2]],
-            $tmux->getUSPConnections('primary', $connections, $snapshot),
+            ['active' => 1, 'total' => 2],
+            $tmux->getProviderSocketCounts('192.0.2.10', 119, $snapshot),
         );
         $this->assertSame(
-            ['alternate' => ['active' => 1, 'total' => 1]],
-            $tmux->getUSPConnections('alternate', $connections, $snapshot),
+            ['active' => 1, 'total' => 1],
+            $tmux->getProviderSocketCounts('192.0.2.20', 563, $snapshot),
+        );
+        $this->assertSame(
+            ['active' => 0, 'total' => 0],
+            $tmux->getProviderSocketCounts('198.51.100.7', 119, $snapshot),
         );
     }
 }

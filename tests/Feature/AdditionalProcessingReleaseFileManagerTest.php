@@ -542,9 +542,9 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         $nameFixing = Mockery::mock(NameFixingService::class);
         $nameFixing->shouldReceive('checkName')->once()->andReturnTrue();
         $nntp = Mockery::mock(NNTPService::class)->makePartial();
-        $nntp->shouldReceive('getMessages')->once()->with('alt.binaries.test', '<message-id>', false)->andReturn('par2-payload');
+        $nntp->shouldReceive('getMessages')->once()->with('alt.binaries.test', '<message-id>')->andReturn('par2-payload');
 
-        $processor = new Par2Processor($nameFixing, $par2Info, false, false);
+        $processor = new Par2Processor($nameFixing, $par2Info, false);
 
         $this->assertTrue($processor->parseFromMessage('<message-id>', 1, 1, $nntp, 0));
         $this->assertSame(0, DB::table('release_files')->count());

@@ -48,7 +48,7 @@ class TmuxMonitorService
 
         $this->runVar['constants'] = $this->tmux->getConstantSettings();
         $this->runVar['settings'] = $this->tmux->getMonitorSettings();
-        $this->runVar['connections'] = $this->tmux->getConnectionsInfo($this->runVar['constants']);
+        $this->runVar['connections'] = $this->tmux->getConnectionsInfo();
 
         // Initialize timers
         $this->runVar['timers'] = $this->initializeTimers();
@@ -488,21 +488,19 @@ class TmuxMonitorService
      */
     protected function updateConnectionCounts(): void
     {
+        // One `ss` snapshot for the whole provider list, not one per provider.
         $socketSnapshot = $this->tmux->getSocketSnapshot();
-        $this->runVar['conncounts'] = $this->tmux->getUSPConnections(
-            'primary',
-            $this->runVar['connections'],
-            $socketSnapshot,
-        );
+        $counts = [];
 
-        if ((int) ($this->runVar['constants']['alternate_nntp'] ?? 0) === 1) {
-            $alternateConns = $this->tmux->getUSPConnections(
-                'alternate',
-                $this->runVar['connections'],
+        foreach ($this->runVar['connections'] as $connection) {
+            $counts[$connection['name']] = $this->tmux->getProviderSocketCounts(
+                (string) $connection['ip'],
+                $connection['port'],
                 $socketSnapshot,
             );
-            $this->runVar['conncounts'] = array_merge($this->runVar['conncounts'], $alternateConns);
         }
+
+        $this->runVar['conncounts'] = $counts;
     }
 
     /**

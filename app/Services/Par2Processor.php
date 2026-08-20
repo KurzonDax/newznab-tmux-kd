@@ -26,21 +26,17 @@ class Par2Processor
 
     private bool $addPar2;
 
-    private bool $alternateNNTP;
-
     private ExecutableReleaseDiscardService $discardService;
 
     public function __construct(
         NameFixingService $nameFixingService,
         Par2Info $par2Info,
         bool $addPar2,
-        bool $alternateNNTP,
         ?ExecutableReleaseDiscardService $discardService = null
     ) {
         $this->nameFixingService = $nameFixingService;
         $this->par2Info = $par2Info;
         $this->addPar2 = $addPar2;
-        $this->alternateNNTP = $alternateNNTP;
         $this->discardService = $discardService ?? new ExecutableReleaseDiscardService;
     }
 
@@ -75,7 +71,7 @@ class Par2Processor
         }
 
         // Get the PAR2 file.
-        $par2 = $nntp->getMessages(UsenetGroup::getNameByID($groupID), $messageID, $this->alternateNNTP);
+        $par2 = $nntp->getMessages(UsenetGroup::getNameByID($groupID), $messageID);
         if ($nntp->isError($par2)) {
             return false;
         }

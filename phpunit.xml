@@ -22,6 +22,10 @@
     <env name="API_ASYNC_AUDIT" value="false"/>
     <env name="MAIL_MAILER" value="array"/>
     <env name="LOG_CHANNEL" value="stderr" force="true"/>
+    <!-- A primary NNTP provider must exist for the pool to hand one out; nothing connects. -->
+    <env name="NNTP_PROVIDER_1_NAME" value="test-primary" force="true"/>
+    <env name="NNTP_PROVIDER_1_HOST" value="localhost" force="true"/>
+    <env name="NNTP_PROVIDER_1_PORT" value="119" force="true"/>
   </php>
   <logging/>
   <source>

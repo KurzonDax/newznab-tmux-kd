@@ -114,7 +114,7 @@ class UsenetDownloadService
             ]);
         }
 
-        $binary = $this->nntp->getMessagesByMessageID($messageIDs, $this->config->alternateNNTP);
+        $binary = $this->nntp->getMessagesByMessageID($messageIDs);
 
         // Handle non-string or empty response as failure
         if (! is_string($binary) || $binary === '') {
@@ -229,10 +229,11 @@ class UsenetDownloadService
      */
     private function downloadFingerprint(array $messageIds, string $groupName): string
     {
+        // Provider-agnostic on purpose: an article's identity is its message-ID, so a cached
+        // body is a hit no matter which backbone served it.
         return hash('sha256', serialize([
             'message_ids' => array_map(static fn (mixed $messageId): string => (string) $messageId, $messageIds),
             'group' => $groupName,
-            'alternate' => $this->config->alternateNNTP,
         ]));
     }
 

@@ -82,9 +82,7 @@ class BackfillGroup extends Command
     {
         $nntp = new NNTPService;
 
-        $connectResult = config('nntmux_nntp.use_alternate_nntp_server') === true
-            ? $nntp->doConnect(false, true)
-            : $nntp->doConnect();
+        $connectResult = $nntp->doConnect();
 
         if ($connectResult !== true) {
             $errorMessage = 'Unable to connect to usenet.';
