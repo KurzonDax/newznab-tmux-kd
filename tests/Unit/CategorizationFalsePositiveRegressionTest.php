@@ -335,6 +335,6 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
         )->bestResult;
 
         $this->assertNotSame('music_dj', $result->matchedBy);
-        $this->assertSame(Category::XXX_ROOT, intdiv($result->categoryId, 1000) * 1000);
+        $this->assertSame(Category::XXX_ROOT, Category::rootCategoryFor($result->categoryId));
     }
 }

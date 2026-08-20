@@ -22,17 +22,20 @@ class ReleaseCollectionHashDedupeTest extends TestCase
         DB::purge();
         DB::reconnect();
         $this->registerSqliteFunction('UNIX_TIMESTAMP', static fn (?string $value): int => strtotime((string) $value));
+        // SQLite calls `X REGEXP Y` as regexp(Y, X), and MySQL's REGEXP takes an
+        // undelimited, case-insensitive pattern — which is the shape the
+        // *_regexes tables store in `group_regex`.
         $this->registerSqliteFunction(
             'REGEXP',
-            static function (?string $subject, ?string $pattern): int {
-                if ($subject === null || $pattern === null || $pattern === '') {
+            static function (?string $pattern, ?string $subject): int {
+                if ($pattern === null || $pattern === '' || $subject === null) {
                     return 0;
                 }
                 set_error_handler(static fn (): true => true);
-                $ok = @preg_match($pattern, $subject);
+                $ok = @preg_match('/'.str_replace('/', '\\/', $pattern).'/i', $subject);
                 restore_error_handler();
 
-                return $ok ? 1 : 0;
+                return $ok === 1 ? 1 : 0;
             },
             2
         );
@@ -141,25 +144,32 @@ class ReleaseCollectionHashDedupeTest extends TestCase
 
     public function test_cross_group_repost_of_a_quoted_part_file_subject_is_deduped(): void
     {
-        // Same upload, five minutes apart, in two groups. Neither group has a
-        // naming regex, so both subjects take the generic cleaning path and must
-        // reduce to the same searchname (#137).
+        // Same upload, five minutes apart, in two groups. a.b.erotica has a
+        // naming regex of its own; a.b.ijsklontje has none and falls through to
+        // the generic cleaner. Both paths must produce the same searchname (#137).
         DB::table('usenet_groups')->insert([
             ['id' => 40, 'name' => 'alt.binaries.erotica'],
             ['id' => 57, 'name' => 'alt.binaries.ijsklontje'],
+        ]);
+        DB::table('release_naming_regexes')->insert([
+            'id' => 1,
+            'group_regex' => '^alt\\.binaries\\.erotica$',
+            'regex' => '/^"(?P<match0>.+?)(\\.part\\d*(\\.rar)?|\\.rar|\\.7z)?(\\.vol\\d+\\+\\d+\\.par2"|\\.[A-Za-z0-9]{2,4}"|")[\\-_\\s]{0,3}yEnc$/ui',
+            'status' => 1,
+            'ordinal' => 1,
         ]);
 
         $this->insertCollection(
             100,
             'hash-erotica',
-            '"HookupHotshot - 2020 Flashback Highlight Compilation.part009.rar"',
+            '"HookupHotshot - 2020 Flashback Highlight Compilation.part009.rar" yEnc',
             filesize: 13_897_458_182,
             groupsId: 40,
         );
         $this->insertCollection(
             101,
             'hash-ijsklontje',
-            '"HookupHotshot - 2020 Flashback Highlight Compilation.part018.rar"',
+            '"HookupHotshot - 2020 Flashback Highlight Compilation.part018.rar" yEnc',
             filesize: 13_897_458_182,
             groupsId: 57,
         );
@@ -172,6 +182,37 @@ class ReleaseCollectionHashDedupeTest extends TestCase
             'HookupHotshot - 2020 Flashback Highlight Compilation',
             DB::table('releases')->value('searchname')
         );
+    }
+
+    public function test_the_group_specific_and_generic_cleaners_agree_on_a_quoted_part_file_subject(): void
+    {
+        DB::table('release_naming_regexes')->insert([
+            'id' => 1,
+            'group_regex' => '^alt\\.binaries\\.erotica$',
+            'regex' => '/^"(?P<match0>.+?)(\\.part\\d*(\\.rar)?|\\.rar|\\.7z)?(\\.vol\\d+\\+\\d+\\.par2"|\\.[A-Za-z0-9]{2,4}"|")[\\-_\\s]{0,3}yEnc$/ui',
+            'status' => 1,
+            'ordinal' => 1,
+        ]);
+
+        $cleaner = app(ReleaseCleaningService::class);
+        $expected = 'HookupHotshot - 2020 Flashback Highlight Compilation';
+
+        foreach ([
+            '"HookupHotshot - 2020 Flashback Highlight Compilation.part018.rar" yEnc',
+            '"HookupHotshot - 2020 Flashback Highlight Compilation.vol012+10.par2" yEnc',
+        ] as $subject) {
+            // The group with its own naming regex reports the matching regex id;
+            // the group without one has no 'id' because it took the generic path.
+            $viaRegex = $cleaner->releaseCleaner($subject, 'poster@example.com', 'alt.binaries.erotica');
+            $viaGeneric = $cleaner->releaseCleaner($subject, 'poster@example.com', 'alt.binaries.ijsklontje');
+
+            $this->assertIsArray($viaRegex);
+            $this->assertIsArray($viaGeneric);
+            $this->assertSame(1, $viaRegex['id'] ?? null, "Naming regex did not claim: {$subject}");
+            $this->assertArrayNotHasKey('id', $viaGeneric);
+            $this->assertSame($expected, $viaRegex['cleansubject'], "Group regex path: {$subject}");
+            $this->assertSame($expected, $viaGeneric['cleansubject'], "Generic path: {$subject}");
+        }
     }
 
     public function test_migration_adds_nullable_unique_collectionhash_on_sqlite(): void
