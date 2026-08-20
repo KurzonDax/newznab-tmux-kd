@@ -128,7 +128,7 @@ class XxxCategorizer extends AbstractCategorizer
         }
 
         // Unambiguous trigger words never need a video marker to qualify
-        if (preg_match(ReleaseContext::HARD_ADULT_TRIGGER_REGEX, $name)) {
+        if (ReleaseContext::hasHardAdultTrigger($name)) {
             return true;
         }
 
@@ -308,12 +308,12 @@ class XxxCategorizer extends AbstractCategorizer
         $hasHD = preg_match(self::HD_RESOLUTION_REGEX, $name);
 
         // A clip tagged 540p/480p/… is not an HD clip; let checkClipSD claim it
-        if (! $hasHD && preg_match(self::LOW_RESOLUTION_REGEX, $name)) {
+        if ($this->isSubHdClip($name)) {
             return null;
         }
 
         // Studio + performer + HD resolution
-        if (preg_match('/^('.self::KNOWN_STUDIOS.')\.([A-Z][a-z]+).*?(720p|1080p|2160p|HD|4K)/i', $name)) {
+        if (preg_match('/^('.self::KNOWN_STUDIOS.')\.([A-Z][a-z]+).*?(720p|1080p|2160p|HD|4K)\b/i', $name)) {
             return $this->matched(Category::XXX_CLIPHD, 0.9, 'clip_hd_studio');
         }
 
@@ -384,14 +384,25 @@ class XxxCategorizer extends AbstractCategorizer
             return $this->matched(Category::XXX_CLIPSD, 0.85, 'clip_sd');
         }
 
-        // Site/studio + date + performer clip tagged with a sub-HD resolution
-        if (preg_match(self::LOW_RESOLUTION_REGEX, $name) &&
-            ! preg_match(self::HD_RESOLUTION_REGEX, $name) &&
-            preg_match('/^[A-Za-z][A-Za-z0-9]+[.\-_ ](19|20)?\d{2}[.\-_ ]\d{2}[.\-_ ]\d{2}[.\-_ ]/', $name)) {
+        // Site/studio + date clip tagged with a sub-HD resolution. Covers the
+        // dotted date every site uses and the compact YYMMDD JAV studios use.
+        if ($this->isSubHdClip($name) && (
+            preg_match('/^[A-Za-z][A-Za-z0-9]+[.\-_ ](19|20)?\d{2}[.\-_ ]\d{2}[.\-_ ]\d{2}[.\-_ ]/i', $name) ||
+            preg_match('/^('.self::KNOWN_STUDIOS.')[.\-_ ](\d{6}|(19|20)?\d{2}[.\-_ ]\d{2}[.\-_ ]\d{2})/i', $name)
+        )) {
             return $this->matched(Category::XXX_CLIPSD, 0.85, 'clip_sd_low_res');
         }
 
         return null;
+    }
+
+    /**
+     * Whether the name carries a sub-HD resolution tag and no HD one.
+     */
+    protected function isSubHdClip(string $name): bool
+    {
+        return preg_match(self::LOW_RESOLUTION_REGEX, $name) === 1
+            && preg_match(self::HD_RESOLUTION_REGEX, $name) !== 1;
     }
 
     protected function checkSD(string $name): ?CategorizationResult

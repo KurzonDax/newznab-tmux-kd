@@ -185,7 +185,7 @@ class XxxCategorizationTest extends TestCase
 
         $this->assertSame(
             Category::XXX_ROOT,
-            intdiv($categoryId, 1000) * 1000,
+            Category::rootCategoryFor($categoryId),
             "'{$releaseName}' resolved to {$categoryId} via {$passable->bestResult->matchedBy}"
         );
     }
@@ -199,6 +199,12 @@ class XxxCategorizationTest extends TestCase
     {
         return [
             'classic movie' => ['The.Shawshank.Redemption.1994.1080p.BluRay.x264'],
+            // Ambiguous studio words: the fallback must not drag these into XXX
+            'score as a title word' => ['The.Score.2001.1080p.BluRay.x264-AMIABLE'],
+            'wicked the musical' => ['Wicked.2024.1080p.WEB-DL.DDP5.1.H.264-GROUP'],
+            'private eyes episode' => ['Private.Eyes.S01E01.1080p.WEB-DL-GROUP'],
+            'bang bang film' => ['Bang.Bang.2014.1080p.BluRay.x264-GROUP'],
+            'babes in toyland' => ['Babes.In.Toyland.1986.720p.WEB-DL'],
             'cumulative windows update' => ['Cumulative.Update.Windows.11.KB5043080'],
             'circumstance movie' => ['Circumstance.2011.1080p.WEB-DL'],
             'document substring' => ['Document.Everything.2023.720p'],
@@ -213,22 +219,45 @@ class XxxCategorizationTest extends TestCase
 
         $this->assertNotSame(
             Category::XXX_ROOT,
-            intdiv($categoryId, 1000) * 1000,
+            Category::rootCategoryFor($categoryId),
             "'{$releaseName}' resolved to {$categoryId} via {$passable->bestResult->matchedBy}"
         );
     }
 
-    public function test_low_resolution_studio_clip_is_categorized_as_clip_sd(): void
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function lowResolutionClipProvider(): array
+    {
+        return [
+            'site dotted date' => ['ClubSweethearts.2016.11.24.Alexis.fucked.in.the.back.of.an.ice.cream.van-Alexis.Love.540p'],
+            'studio short date' => ['Brazzers.24.01.15.Performer.Title.480p'],
+            'jav compact date' => ['10musume.121025.480p'],
+        ];
+    }
+
+    #[DataProvider('lowResolutionClipProvider')]
+    public function test_low_resolution_studio_clip_is_categorized_as_clip_sd(string $releaseName): void
     {
         $categorizer = new XxxCategorizer;
-        $context = new ReleaseContext(
-            releaseName: 'ClubSweethearts.2016.11.24.Alexis.fucked.in.the.back.of.an.ice.cream.van-Alexis.Love.540p',
-            groupId: 0,
-        );
-        $result = $categorizer->categorize($context);
+        $result = $categorizer->categorize(new ReleaseContext(releaseName: $releaseName, groupId: 0));
 
         $this->assertSame(
             [Category::XXX_CLIPSD, 'clip_sd_low_res'],
+            [$result->categoryId, $result->matchedBy],
+            "Wrong low-res subcategory for: {$releaseName}"
+        );
+    }
+
+    public function test_hd_studio_clips_are_unaffected_by_the_low_resolution_branch(): void
+    {
+        $categorizer = new XxxCategorizer;
+        $result = $categorizer->categorize(
+            new ReleaseContext(releaseName: 'Brazzers.24.01.15.Performer.Title.1080p', groupId: 0)
+        );
+
+        $this->assertSame(
+            [Category::XXX_CLIPHD, 'clip_hd_studio_date'],
             [$result->categoryId, $result->matchedBy],
         );
     }

@@ -23,7 +23,7 @@ class ReleaseContext
      * Deepthroating); "cum" only matches as a standalone token so that
      * "document", "circumstance" and "cumulative" stay clean.
      */
-    public const string HARD_ADULT_TRIGGER_REGEX = '/cuckold|deepthroat|(?:^|[^a-z0-9])cum(?:$|[^a-z0-9])/i';
+    private const string HARD_ADULT_TRIGGER_REGEX = '/cuckold|deepthroat|(?:^|[^a-z0-9])cum(?:$|[^a-z0-9])/i';
 
     /** Ambiguous keywords: adult only when combined with a resolution (likely adult clip). */
     private const string WEAK_ADULT_KEYWORD_REGEX = '/\b(Fuck|Fucked|Fucking|Cock|Dick|Pussy|Cum|Cumshot|Blowjob|Handjob|MILF|Teen|Lesbian|Threesome|Gangbang|Hardcore|Interracial)\b/i';
@@ -93,6 +93,17 @@ class ReleaseContext
     }
 
     /**
+     * Check a name for an unambiguous adult trigger word.
+     *
+     * Exposed so the XXX categorizer can share the one definition without the
+     * pattern itself leaking out of this class.
+     */
+    public static function hasHardAdultTrigger(string $name): bool
+    {
+        return preg_match(self::HARD_ADULT_TRIGGER_REGEX, $name) === 1;
+    }
+
+    /**
      * Check if this release has adult/XXX markers.
      *
      * Explicit markers (XXX tags, studio names) always win. Weak keywords
@@ -103,7 +114,7 @@ class ReleaseContext
     public function hasAdultMarkers(): bool
     {
         if (preg_match(self::HARD_ADULT_MARKER_REGEX, $this->releaseName)
-            || preg_match(self::HARD_ADULT_TRIGGER_REGEX, $this->releaseName)) {
+            || self::hasHardAdultTrigger($this->releaseName)) {
             return true;
         }
 
