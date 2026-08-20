@@ -25,6 +25,8 @@ Artisan::command('inspire', function () {
 
 Schedule::command('disposable:update')->weekly();
 Schedule::command('clean:directories')->hourly()->withoutOverlapping();
+// Rotate log files Monolog cannot manage and prune everything past the retention window
+Schedule::command('logs:prune')->dailyAt('02:15')->withoutOverlapping();
 Schedule::command('nntmux:delete-unverified-users')->twiceDaily(1, 13);
 Schedule::command('nntmux:update-expired-roles')->daily();
 // Automatically disable promotions that have passed their end_date
