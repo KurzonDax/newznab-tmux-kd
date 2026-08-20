@@ -13,6 +13,7 @@ use App\Models\ReleaseRegex;
 use App\Models\UsenetGroup;
 use App\Services\Categorization\CategorizationService;
 use App\Services\Nzb\NzbService;
+use App\Services\Releases\CollectionCompletionMeasurer;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use App\Support\Utf8;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -27,6 +28,7 @@ class ReleaseCreationService
         private readonly ReleaseCleaningService $releaseCleaning,
         private readonly CollectionCleanupService $collectionCleanupService,
         private readonly ReleaseDuplicateFinder $releaseDuplicateFinder,
+        private readonly CollectionCompletionMeasurer $completionMeasurer = new CollectionCompletionMeasurer,
     ) {}
 
     /**
@@ -58,6 +60,13 @@ class ReleaseCreationService
             ->limit($limit);
         $collections = $collectionsQuery->get();
         $releaseGroupIds = $this->loadReleaseGroupIds($collections);
+        // Measured now, while the collections/binaries/parts rows are still there: NZB creation
+        // deletes them, and it may not run for a while -- or at all, if it keeps failing.
+        $completionSignals = $this->completionMeasurer->measure(
+            $collections->mapWithKeys(static fn ($collection): array => [
+                (int) $collection->id => (int) $collection->totalfiles,
+            ])->all()
+        );
 
         if ($echoCLI && $collections->count() > 0) {
             cli()->primary(\count($collections).' Collections ready to be converted to releases.', true);
@@ -128,6 +137,7 @@ class ReleaseCreationService
                         'is_trusted_name' => $properName === true || $predbIdInt > 0,
                         'predb_id' => $predbIdInt,
                         'nzbstatus' => NzbService::NZB_NONE,
+                        'completion' => ($completionSignals[(int) $collection->id] ?? null)?->percentage() ?? 0.0,
                         'collectionhash' => $collectionHash,
                     ]);
                 } catch (UniqueConstraintViolationException $exception) {

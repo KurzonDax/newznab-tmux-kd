@@ -333,6 +333,7 @@ class ReleaseCollectionHashDedupeTest extends TestCase
             categories_id INTEGER,
             nfostatus INTEGER,
             nzbstatus INTEGER,
+            completion DOUBLE NOT NULL DEFAULT 0,
             isrenamed INTEGER,
             is_trusted_name INTEGER DEFAULT 0,
             iscategorized INTEGER,

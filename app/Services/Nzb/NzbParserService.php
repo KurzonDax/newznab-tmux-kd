@@ -285,6 +285,24 @@ class NzbParserService
     }
 
     /**
+     * Extract the file-index total from a subject: the `N` of a leading `[n/N]`.
+     *
+     * This counts files in the post, not segments in this file -- the two are different numbers,
+     * and telling them apart is what keeps the obfuscated single-segment style from being
+     * measured against a denominator hundreds of times too large. See {@see CompletionSignals}.
+     *
+     * @return int The declared file count, or 0 when the subject carries no file index.
+     */
+    public function extractFilesTotal(string $subject): int
+    {
+        if (preg_match('/\[\d+\/(\d+)\]/', $subject, $files)) {
+            return (int) $files[1];
+        }
+
+        return 0;
+    }
+
+    /**
      * Calculate artificial parts from a subject line.
      *
      * @param  string  $subject  The file subject

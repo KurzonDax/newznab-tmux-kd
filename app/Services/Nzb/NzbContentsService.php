@@ -126,7 +126,7 @@ class NzbContentsService
         }
 
         $messageID = $hiddenID = '';
-        $actualParts = $artificialParts = 0;
+        $completion = new CompletionTally;
         // Initialize foundPAR2 based on settings; if lookupPar2 is false, we don't need to find one.
         $foundPAR2 = $this->lookupPar2 === false;
         // Initialize NFO flags based on whether we are checking for NFOs.
@@ -137,7 +137,6 @@ class NzbContentsService
             $segmentCountInFile = 0;
             $firstSegmentId = null; // Initialize here for each file
             foreach ($nzbContents->segments->segment as $segment) {
-                $actualParts++;
                 $segmentCountInFile++;
                 // Store the first segment ID of the current file, potentially useful for NFO/PAR2
                 if ($segmentCountInFile === 1) {
@@ -147,8 +146,11 @@ class NzbContentsService
 
             $subject = (string) $nzbContents->attributes()->subject;
 
-            // Calculate artificial parts from subject
-            $artificialParts += $this->parserService->extractPartsTotal($subject);
+            $completion->addFile(
+                $segmentCountInFile,
+                $this->parserService->extractPartsTotal($subject),
+                $this->parserService->extractFilesTotal($subject),
+            );
 
             // --- NFO Detection ---
             // Check for explicit NFO files first (with enhanced patterns)
@@ -181,10 +183,7 @@ class NzbContentsService
             }
         } // End foreach $nzbFile->file
 
-        // Calculate completion
-        $completion = $this->calculateCompletion($actualParts, $artificialParts);
-
-        Release::query()->where('id', $relID)->update(['completion' => $completion]);
+        $this->recordFallbackCompletion($relID, $completion->signals());
 
         // If NFO check was requested, return the found message ID (prioritizing explicit)
         if ($nfoCheck && $nfoMessageId !== null && \strlen($nfoMessageId['id']) > 1) {
@@ -261,15 +260,23 @@ class NzbContentsService
     }
 
     /**
-     * Calculate the completion percentage from actual and expected parts.
+     * Record completion for a release that has never had it measured.
      *
-     * @param  int  $actualParts  The actual number of parts found
-     * @param  int  $artificialParts  The expected number of parts from subject
-     * @return float The completion percentage (0-100)
+     * Releases formed from headers get `completion` at creation time, from the CBP rows
+     * themselves. This path exists for the ones that never had CBP rows -- imported NZBs -- and
+     * so must never overwrite a creation-time value: it writes only while the release still
+     * carries the `0` sentinel, the same way {@see NfoService::addAlternateNfo()} gates itself.
      */
-    protected function calculateCompletion(int $actualParts, int $artificialParts): float
+    protected function recordFallbackCompletion(int $relID, CompletionSignals $signals): void
     {
-        return ReleaseCompletion::percentage($actualParts, $artificialParts);
+        if (! $signals->isMeasurable()) {
+            return;
+        }
+
+        Release::query()
+            ->where('id', $relID)
+            ->where('completion', '=', 0)
+            ->update(['completion' => $signals->percentage()]);
     }
 
     /**

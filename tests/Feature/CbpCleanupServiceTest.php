@@ -174,6 +174,7 @@ class CbpCleanupServiceTest extends TestCase
             'categories_id' => 1,
             'nfostatus' => -1,
             'nzbstatus' => NzbService::NZB_NONE,
+            'completion' => 91.67,
             'isrenamed' => 1,
             'iscategorized' => 1,
             'predb_id' => 0,
@@ -221,7 +222,9 @@ class CbpCleanupServiceTest extends TestCase
         $this->assertSame(0, DB::table('binaries')->count());
         $this->assertSame(0, DB::table('collections')->count());
         $this->assertSame(1, (int) DB::table('releases')->where('id', 1)->value('nzbstatus'));
-        $this->assertSame(100.0, (float) DB::table('releases')->where('id', 1)->value('completion'));
+        // completion belongs to release creation, which measured it from these same CBP rows
+        // before the writer got to them; writing the NZB must not restate it.
+        $this->assertSame(91.67, (float) DB::table('releases')->where('id', 1)->value('completion'));
     }
 
     public function test_duplicate_release_path_cleans_up_collection_binary_and_parts(): void

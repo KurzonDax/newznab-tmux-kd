@@ -133,7 +133,87 @@ class BackfillReleaseCompletionTest extends TestCase
         $this->assertSame(0.0, $this->completionOf(2));
     }
 
+    #[Test]
+    public function it_restates_understated_single_segment_releases(): void
+    {
+        // 220 of 240 files, each a lone segment whose parens repeat the collection-wide total.
+        // Summing that total once per file stored 0.42% for a release that is ~92% there.
+        $this->obfuscatedReleaseWithNzb(1, files: 220, declaredTotal: 240, completion: 0.42);
+
+        $this->artisan('releases:backfill-completion', ['--understated' => true])->assertSuccessful();
+
+        $this->assertEqualsWithDelta(91.67, $this->completionOf(1), 0.01);
+    }
+
+    #[Test]
+    public function restating_the_same_release_twice_lands_on_the_same_value(): void
+    {
+        $this->obfuscatedReleaseWithNzb(1, files: 220, declaredTotal: 240, completion: 0.42);
+
+        $this->artisan('releases:backfill-completion', ['--understated' => true])->assertSuccessful();
+        $first = $this->completionOf(1);
+        $this->artisan('releases:backfill-completion', ['--understated' => true])->assertSuccessful();
+
+        $this->assertSame($first, $this->completionOf(1));
+    }
+
+    #[Test]
+    public function the_understated_pass_leaves_rows_above_the_ceiling_alone(): void
+    {
+        $this->releaseWithNzb(1, present: 5, declared: 10);
+        DB::table('releases')->where('id', 1)->update(['completion' => 60.0]);
+
+        $this->artisan('releases:backfill-completion', ['--understated' => true])->assertSuccessful();
+
+        $this->assertSame(60.0, $this->completionOf(1));
+    }
+
+    #[Test]
+    public function the_understated_pass_leaves_the_never_measured_sentinel_alone(): void
+    {
+        // True zeros are the default pass's population, and a `0` there means "unknown", not 0%.
+        $this->releaseWithNzb(1, present: 5, declared: 10);
+
+        $this->artisan('releases:backfill-completion', ['--understated' => true])->assertSuccessful();
+
+        $this->assertSame(0.0, $this->completionOf(1));
+    }
+
+    #[Test]
+    public function an_understated_row_whose_nzb_declares_no_totals_keeps_its_stored_value(): void
+    {
+        $this->releaseWithNzb(1, present: 4, declared: 0);
+        DB::table('releases')->where('id', 1)->update(['completion' => 12.5]);
+
+        $this->artisan('releases:backfill-completion', ['--understated' => true])->assertSuccessful();
+
+        $this->assertSame(12.5, $this->completionOf(1));
+    }
+
+    private function obfuscatedReleaseWithNzb(int $id, int $files, int $declaredTotal, float $completion): void
+    {
+        $subjects = [];
+
+        for ($file = 1; $file <= $files; $file++) {
+            $subjects[] = sprintf('[%d/%d] - "9f2c1b%03d" yEnc (1/%d)', $file, $declaredTotal, $file, $declaredTotal);
+        }
+
+        $this->releaseWithNzbFiles($id, $subjects, segmentsPerFile: 1, completion: $completion);
+    }
+
     private function releaseWithNzb(int $id, int $present, int $declared): void
+    {
+        $subject = $declared > 0
+            ? 'Example.part01.rar yEnc (1/'.$declared.')'
+            : 'Example.part01.rar yEnc';
+
+        $this->releaseWithNzbFiles($id, [$subject], segmentsPerFile: $present, completion: 0.0);
+    }
+
+    /**
+     * @param  list<string>  $subjects  One subject per `<file>` element.
+     */
+    private function releaseWithNzbFiles(int $id, array $subjects, int $segmentsPerFile, float $completion): void
     {
         $guid = sprintf('%032x', $id);
 
@@ -141,22 +221,23 @@ class BackfillReleaseCompletionTest extends TestCase
             'id' => $id,
             'guid' => $guid,
             'nzbstatus' => 1,
-            'completion' => 0,
+            'completion' => $completion,
         ]);
 
-        $subject = $declared > 0
-            ? 'Example.part01.rar yEnc (1/'.$declared.')'
-            : 'Example.part01.rar yEnc';
+        $xml = '<?xml version="1.0" encoding="UTF-8"?>'."\n".'<nzb xmlns="http://www.newzbin.com/DTD/2003/nzb">'."\n";
 
-        $xml = '<?xml version="1.0" encoding="UTF-8"?>'."\n".'<nzb xmlns="http://www.newzbin.com/DTD/2003/nzb">'."\n"
-            .'  <file poster="p@example.org" date="1700000000" subject="'.$subject.'">'."\n"
-            .'    <groups><group>alt.binaries.test</group></groups>'."\n    <segments>\n";
+        foreach ($subjects as $index => $subject) {
+            $xml .= '  <file poster="p@example.org" date="1700000000" subject="'.htmlspecialchars($subject, ENT_QUOTES | ENT_XML1).'">'."\n"
+                .'    <groups><group>alt.binaries.test</group></groups>'."\n    <segments>\n";
 
-        for ($number = 1; $number <= $present; $number++) {
-            $xml .= '      <segment bytes="900" number="'.$number.'">part'.$number.'@host</segment>'."\n";
+            for ($number = 1; $number <= $segmentsPerFile; $number++) {
+                $xml .= '      <segment bytes="900" number="'.$number.'">file'.$index.'part'.$number.'@host</segment>'."\n";
+            }
+
+            $xml .= "    </segments>\n  </file>\n";
         }
 
-        $xml .= "    </segments>\n  </file>\n".'</nzb>'."\n";
+        $xml .= '</nzb>'."\n";
 
         file_put_contents(app(NzbService::class)->getNzbPath($guid, 0, true), gzencode($xml));
     }

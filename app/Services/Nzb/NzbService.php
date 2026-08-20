@@ -183,8 +183,6 @@ class NzbService
 
             $cursor = ['collection_id' => 0, 'name' => '', 'binary_id' => 0, 'partnumber' => 0];
             $openBinaryId = 0;
-            $writtenParts = 0;
-            $declaredParts = 0;
             do {
                 $page = $this->loadNzbRowPage((int) $release->id, $cursor);
                 foreach ($page as $row) {
@@ -216,7 +214,6 @@ class NzbService
                         $XMLWriter->endElement(); // groups
                         $XMLWriter->startElement('segments');
                         $openBinaryId = $binaryId;
-                        $declaredParts += max(0, (int) $row->totalparts);
                     }
 
                     $messageId = $this->normalizeSegmentMessageId($row->messageid);
@@ -229,7 +226,6 @@ class NzbService
                     $XMLWriter->writeAttribute('number', (string) $row->partnumber);
                     $XMLWriter->text($messageId);
                     $XMLWriter->endElement();
-                    $writtenParts++;
 
                     $cursor = [
                         'collection_id' => (int) $row->collection_id,
@@ -267,10 +263,8 @@ class NzbService
                 return NzbCreationResult::transient("Final NZB file is missing or unreadable: {$path}", $collectionIds, $path);
             }
 
-            $completion = ReleaseCompletion::percentage($writtenParts, $declaredParts);
-
-            DB::transaction(function () use ($release, $completion): void {
-                $release->update($this->successfulReleaseUpdateValues($completion));
+            DB::transaction(function () use ($release): void {
+                $release->update($this->successfulReleaseUpdateValues());
 
                 if (NzbCreationCandidateQuery::supportsFailureState()) {
                     ReleaseNzbCreationFailure::query()
@@ -805,9 +799,12 @@ class NzbService
     /**
      * @return array<string, mixed>
      */
-    private function successfulReleaseUpdateValues(float $completion): array
+    private function successfulReleaseUpdateValues(): array
     {
-        $values = ['nzbstatus' => self::NZB_ADDED, 'completion' => $completion];
+        // `completion` is deliberately absent: it was measured from the CBP rows at release
+        // creation time (see CollectionCompletionMeasurer), and re-deriving it from what this
+        // writer happens to stream would overwrite that with a lossier number.
+        $values = ['nzbstatus' => self::NZB_ADDED];
 
         if (NzbCreationCandidateQuery::supportsClaims()) {
             $values += [

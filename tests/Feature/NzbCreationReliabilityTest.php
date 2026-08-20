@@ -286,20 +286,22 @@ class NzbCreationReliabilityTest extends TestCase
         $this->assertSame(0, DB::table('release_nzb_creation_failures')->count());
     }
 
-    public function test_writer_records_full_completion_for_a_complete_release(): void
+    public function test_writer_leaves_the_creation_time_completion_untouched(): void
     {
-        $this->insertRelease(1, 'i');
+        // completion is measured from the CBP rows at release creation, not re-derived from what
+        // the writer happens to stream -- the writer would only ever produce a lossier number.
+        $this->insertRelease(1, 'i', completion: 91.67);
         $this->insertWritableCbp(200, 2000, 1, totalParts: 3, arrivedParts: 3);
 
         $result = $this->writeNzb(1);
 
         $this->assertTrue($result->success, $result->reason);
-        $this->assertSame(100.0, $this->completionFor(1));
+        $this->assertSame(91.67, $this->completionFor(1));
     }
 
-    public function test_writer_records_partial_completion_when_segments_are_missing(): void
+    public function test_a_release_measured_sub_threshold_waits_for_the_repair_engine(): void
     {
-        $this->insertRelease(1, 'j');
+        $this->insertRelease(1, 'j', completion: (107 / 311) * 100);
         $this->insertWritableCbp(200, 2000, 1, totalParts: 211, arrivedParts: 7);
         $this->insertWritableBinary(200, 2001, 'Example.Release.part02.rar yEnc', totalParts: 100, arrivedParts: 100);
 
@@ -316,18 +318,7 @@ class NzbCreationReliabilityTest extends TestCase
         $this->assertSame([1], $this->releasesSelectedByCompletionCleanup(95.0));
     }
 
-    public function test_writer_never_records_completion_above_one_hundred(): void
-    {
-        $this->insertRelease(1, 'k');
-        $this->insertWritableCbp(200, 2000, 1, totalParts: 1, arrivedParts: 3);
-
-        $result = $this->writeNzb(1);
-
-        $this->assertTrue($result->success, $result->reason);
-        $this->assertSame(100.0, $this->completionFor(1));
-    }
-
-    public function test_writer_leaves_completion_unknown_when_no_binary_declares_totalparts(): void
+    public function test_writer_leaves_the_never_measured_sentinel_alone(): void
     {
         $this->insertRelease(1, 'l');
         $this->insertWritableCbp(200, 2000, 1, totalParts: 0, arrivedParts: 4);
@@ -339,7 +330,7 @@ class NzbCreationReliabilityTest extends TestCase
         $this->assertSame([], $this->releasesSelectedByCompletionCleanup(95.0));
     }
 
-    public function test_writer_counts_every_streamed_page_when_binaries_span_pages(): void
+    public function test_writer_streams_every_page_when_binaries_span_pages(): void
     {
         $this->insertRelease(1, 'm');
         $this->insertWritableCbp(200, 2000, 1, totalParts: 10, arrivedParts: 5);
@@ -348,7 +339,10 @@ class NzbCreationReliabilityTest extends TestCase
         $result = $this->writeNzb(1, new NzbService(app(CollectionCleanupService::class), new BinariesConfig(nzbStreamRows: 3)));
 
         $this->assertTrue($result->success, $result->reason);
-        $this->assertSame(50.0, $this->completionFor(1));
+        $xml = unzipGzipFile((string) $result->path);
+        $this->assertIsString($xml);
+        $this->assertSame(10, substr_count($xml, '<segment '));
+        $this->assertSame(2, substr_count($xml, '<file '));
     }
 
     public function test_failed_nzb_creation_leaves_completion_untouched(): void
