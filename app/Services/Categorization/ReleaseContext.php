@@ -14,10 +14,22 @@ class ReleaseContext
     private const string SEASON_EPISODE_TOKEN_REGEX = '/(?:^|[._ -])S\d{1,3}[._ -]?(?:E|D(?:isc)?)\d{1,4}(?:[._ -]?E\d{1,4})*(?=$|[._ -])/i';
 
     /** Explicit XXX tags and studio names: always adult. */
-    private const string HARD_ADULT_MARKER_REGEX = '/\b(XXX|Porn|Brazzers|BangBros|Bangbros|NaughtyAmerica|RealityKings|Tushy|Vixen|Blacked|OnlyFans|MetArt|JoyMii|Creampie|MP4-XXX|PureTaboo|Lady[._ -]?Lyne|TeamSkeet|GirlsWay|EvilAngel|Kink|FakeHub|FakeTaxi|SexArt|Nubiles|Defloration|Deeper|Bellesa|Twistys|Mofos|MissaX|LegalPorno|AnalVids|JAV|Hentai|RoccoSiffredi|DivineBitches|Device[._ -]?Bondage|Hogtied|Wired[._ -]?Pussy|Fucking[._ -]?Machines|Ultimate[._ -]?Surrender|Public[._ -]?Disgrace|Sex[._ -]?And[._ -]?Submission|Bound[._ -]?Gang[._ -]?Bangs|Electro[._ -]?Sluts|Whipped[._ -]?Ass|TS[._ -]?Seduction|Infernal[._ -]?Restraints|Sexually[._ -]?Broken)\b/i';
+    private const string HARD_ADULT_MARKER_REGEX = '/\b(XXX|Porn|Brazzers|BangBros|Bangbros|NaughtyAmerica|RealityKings|Tushy|Vixen|Blacked|OnlyFans|MetArt|JoyMii|Creampie|MP4-XXX|PureTaboo|Lady[._ -]?Lyne|TeamSkeet|GirlsWay|EvilAngel|Kink|FakeHub|FakeTaxi|SexArt|Nubiles|Defloration|Deeper|Bellesa|Twistys|Mofos|MissaX|LegalPorno|AnalVids|JAV|Hentai|RoccoSiffredi|DivineBitches|Device[._ -]?Bondage|Hogtied|Wired[._ -]?Pussy|Fucking[._ -]?Machines|Ultimate[._ -]?Surrender|Public[._ -]?Disgrace|Sex[._ -]?And[._ -]?Submission|Bound[._ -]?Gang[._ -]?Bangs|Electro[._ -]?Sluts|Whipped[._ -]?Ass|TS[._ -]?Seduction|Infernal[._ -]?Restraints|Sexually[._ -]?Broken|ClubSweethearts|HookupHotshot)\b/i';
+
+    /**
+     * Unambiguous adult trigger words: always adult, no video marker required.
+     *
+     * "cuckold" and "deepthroat" match as substrings (SubmissiveCuckolds,
+     * Deepthroating); "cum" only matches as a standalone token so that
+     * "document", "circumstance" and "cumulative" stay clean.
+     */
+    public const string HARD_ADULT_TRIGGER_REGEX = '/cuckold|deepthroat|(?:^|[^a-z0-9])cum(?:$|[^a-z0-9])/i';
 
     /** Ambiguous keywords: adult only when combined with a resolution (likely adult clip). */
     private const string WEAK_ADULT_KEYWORD_REGEX = '/\b(Fuck|Fucked|Fucking|Cock|Dick|Pussy|Cum|Cumshot|Blowjob|Handjob|MILF|Teen|Lesbian|Threesome|Gangbang|Hardcore|Interracial)\b/i';
+
+    /** Video markers that make an ambiguous adult keyword count, including sub-HD clips. */
+    private const string VIDEO_RESOLUTION_REGEX = '/\b(360p|480p|540p|576p|720p|1080p|2160p|4k|mp4)\b/i';
 
     public function __construct(
         public readonly string $releaseName,
@@ -89,13 +101,14 @@ class ReleaseContext
      */
     public function hasAdultMarkers(): bool
     {
-        if (preg_match(self::HARD_ADULT_MARKER_REGEX, $this->releaseName)) {
+        if (preg_match(self::HARD_ADULT_MARKER_REGEX, $this->releaseName)
+            || preg_match(self::HARD_ADULT_TRIGGER_REGEX, $this->releaseName)) {
             return true;
         }
 
         $hasWeakMarker = preg_match('/\bAnal\b/i', $this->releaseName)
             || (preg_match(self::WEAK_ADULT_KEYWORD_REGEX, $this->releaseName)
-                && preg_match('/\b(720p|1080p|2160p|4k|mp4)\b/i', $this->releaseName));
+                && preg_match(self::VIDEO_RESOLUTION_REGEX, $this->releaseName));
 
         if (! $hasWeakMarker) {
             return false;

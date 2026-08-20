@@ -157,4 +157,105 @@ class XxxCategorizationTest extends TestCase
 
         $this->assertFalse($result->isSuccessful());
     }
+
+    /**
+     * Adult releases that must never fall through to a non-XXX category (#135).
+     *
+     * @return array<string, array{0: string}>
+     */
+    public static function adultReleaseProvider(): array
+    {
+        return [
+            'club sweethearts 540p ice cream van' => ['ClubSweethearts.2016.11.24.Alexis.fucked.in.the.back.of.an.ice.cream.van-Alexis.Love.540p'],
+            'club sweethearts 540p ice cream truck' => ['ClubSweethearts.2016.12.17.Kylee.Reese.banged.in.ice.cream.truck-Kylee.Reese.540p'],
+            'cuckold sessions' => ['Cuckold.Sessions.Sadie.Summers.2026.07.11.2160p.mp4'],
+            'cuckold inside a larger word' => ['SubmissiveCuckolds - Lexi Noir - Update 01.08.2023 2160p'],
+            'deepthroat' => ['WB.21063.Candee.Licious.Her.First.Deepthroat.Apr.12.2026.720p.mp4'],
+            'standalone cum without a video marker' => ['(Porn Video) Rough Sex Cum In Pussy Compilation Erotic Porn'],
+            'deepthroating substring' => ['SomeSite.24.03.02.Performer.Deepthroating.Practice.480p'],
+            'hookup hotshot studio' => ['HookupHotshot - 2020 Flashback Highlight Compilation'],
+        ];
+    }
+
+    #[DataProvider('adultReleaseProvider')]
+    public function test_adult_releases_resolve_to_an_xxx_category(string $releaseName): void
+    {
+        $passable = $this->runPipeline($releaseName, 'alt.binaries.multimedia');
+        $categoryId = $passable->bestResult->categoryId;
+
+        $this->assertSame(
+            Category::XXX_ROOT,
+            intdiv($categoryId, 1000) * 1000,
+            "'{$releaseName}' resolved to {$categoryId} via {$passable->bestResult->matchedBy}"
+        );
+    }
+
+    /**
+     * Names that must never be dragged into XXX by the hard trigger words (#135).
+     *
+     * @return array<string, array{0: string}>
+     */
+    public static function nonAdultReleaseProvider(): array
+    {
+        return [
+            'classic movie' => ['The.Shawshank.Redemption.1994.1080p.BluRay.x264'],
+            'cumulative windows update' => ['Cumulative.Update.Windows.11.KB5043080'],
+            'circumstance movie' => ['Circumstance.2011.1080p.WEB-DL'],
+            'document substring' => ['Document.Everything.2023.720p'],
+        ];
+    }
+
+    #[DataProvider('nonAdultReleaseProvider')]
+    public function test_non_adult_releases_never_resolve_to_xxx(string $releaseName): void
+    {
+        $passable = $this->runPipeline($releaseName, 'alt.binaries.multimedia');
+        $categoryId = $passable->bestResult->categoryId;
+
+        $this->assertNotSame(
+            Category::XXX_ROOT,
+            intdiv($categoryId, 1000) * 1000,
+            "'{$releaseName}' resolved to {$categoryId} via {$passable->bestResult->matchedBy}"
+        );
+    }
+
+    public function test_low_resolution_studio_clip_is_categorized_as_clip_sd(): void
+    {
+        $categorizer = new XxxCategorizer;
+        $context = new ReleaseContext(
+            releaseName: 'ClubSweethearts.2016.11.24.Alexis.fucked.in.the.back.of.an.ice.cream.van-Alexis.Love.540p',
+            groupId: 0,
+        );
+        $result = $categorizer->categorize($context);
+
+        $this->assertSame(
+            [Category::XXX_CLIPSD, 'clip_sd_low_res'],
+            [$result->categoryId, $result->matchedBy],
+        );
+    }
+
+    public function test_adult_positive_name_without_a_subcategory_falls_back_to_xxx_other(): void
+    {
+        $categorizer = new XxxCategorizer;
+        $context = new ReleaseContext(
+            releaseName: 'SubmissiveCuckolds - Lexi Noir - Update 01.08.2023 2160p',
+            groupId: 0,
+        );
+        $result = $categorizer->categorize($context);
+
+        $this->assertSame(
+            [Category::XXX_OTHER, 0.75, 'xxx_fallback'],
+            [$result->categoryId, $result->confidence, $result->matchedBy],
+        );
+    }
+
+    public function test_names_without_adult_signals_still_produce_no_match(): void
+    {
+        $categorizer = new XxxCategorizer;
+        $context = new ReleaseContext(
+            releaseName: 'The.Shawshank.Redemption.1994.1080p.BluRay.x264',
+            groupId: 0,
+        );
+
+        $this->assertFalse($categorizer->categorize($context)->isSuccessful());
+    }
 }
