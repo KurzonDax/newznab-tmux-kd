@@ -59,6 +59,12 @@ changed, and one uniform rule beats branching on age.
 php artisan releases:backfill-completion --dry-run
 php artisan releases:backfill-completion
 
+# Re-derive rows already measured below 50%: the old arithmetic summed each file's declared
+# total, which understates the obfuscated single-segment style by two orders of magnitude.
+# Rerunnable, and disjoint from the pass above -- `0` is "never measured", not a low percentage.
+php artisan releases:backfill-completion --understated --dry-run
+php artisan releases:backfill-completion --understated
+
 # One repair pass over a bounded batch. Runs hourly from the scheduler.
 php artisan releases:repair-completion --dry-run -v
 php artisan releases:repair-completion --limit=250
@@ -106,7 +112,9 @@ Re-arming is the last step, not the first:
 1. Deploy. The migration adds `repair_attempted_at` / `repair_outcome`, both null, so nothing is
    deletable until the repair engine says so.
 2. `php artisan releases:backfill-completion --dry-run` — check the band histogram looks like the
-   sample (roughly two thirds at or above 95%), then run it for real.
+   sample (roughly two thirds at or above 95%), then run it for real. Follow it with
+   `--understated` to restate the single-segment posts the old arithmetic measured at a fraction
+   of a percent; without that they read as the most incomplete releases in the index.
 3. Let `releases:repair-completion` drip for a few cycles. Watch that `repair_outcome` fills in
    at the expected rate and that `retry-pending` rows are not being deleted:
    ```sql

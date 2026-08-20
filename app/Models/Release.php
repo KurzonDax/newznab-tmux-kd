@@ -249,6 +249,7 @@ class Release extends Model
                     'categories_id' => $parameters['categories_id'],
                     'nfostatus' => -1,
                     'nzbstatus' => $parameters['nzbstatus'],
+                    'completion' => $parameters['completion'] ?? 0,
                     'isrenamed' => $parameters['isrenamed'],
                     'is_trusted_name' => (bool) ($parameters['is_trusted_name'] ?? ((int) $parameters['predb_id'] > 0)),
                     'iscategorized' => 1,

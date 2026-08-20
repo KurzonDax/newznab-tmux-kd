@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\ReleaseRepair;
 
-use App\Services\Nzb\NzbCompletionMeasurement;
+use App\Services\Nzb\CompletionSignals;
+use App\Services\Nzb\CompletionTally;
 use App\Services\Nzb\NzbParserService;
 use DOMDocument;
 use DOMElement;
@@ -160,17 +161,21 @@ final class NzbRepairDocument
         return $added;
     }
 
-    public function measure(): NzbCompletionMeasurement
+    public function measure(): CompletionSignals
     {
-        $actual = 0;
-        $declared = 0;
+        $tally = new CompletionTally;
 
         foreach ($this->files as $file) {
-            $actual += count($this->segmentsOf($file));
-            $declared += max(0, $this->parser->extractPartsTotal($file->getAttribute('subject')));
+            $subject = $file->getAttribute('subject');
+
+            $tally->addFile(
+                count($this->segmentsOf($file)),
+                $this->parser->extractPartsTotal($subject),
+                $this->parser->extractFilesTotal($subject),
+            );
         }
 
-        return new NzbCompletionMeasurement($actual, $declared);
+        return $tally->signals();
     }
 
     public function toXml(): string

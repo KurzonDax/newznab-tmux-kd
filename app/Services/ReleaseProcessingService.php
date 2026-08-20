@@ -17,6 +17,7 @@ use App\Services\Categorization\CategorizationService;
 use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
+use App\Services\Releases\CollectionCompletionMeasurer;
 use App\Services\Releases\ExecutableReleaseDiscardService;
 use App\Services\Releases\IncompleteReleaseSweepQuery;
 use App\Services\Releases\PreviewGenerationPolicy;
@@ -110,7 +111,8 @@ final class ReleaseProcessingService
             ?? new ReleaseCreationService(
                 $this->releaseCleaning,
                 $this->collectionCleanupService,
-                app(ReleaseDuplicateFinder::class)
+                app(ReleaseDuplicateFinder::class),
+                app(CollectionCompletionMeasurer::class)
             );
         $this->postProcessService = $postProcessService;
         $this->binariesConfig = $binariesConfig ?? BinariesConfig::fromSettings();

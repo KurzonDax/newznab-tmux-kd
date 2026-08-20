@@ -221,9 +221,16 @@ The per-group sequence:
      are deleted instead of inserted.
    - **Categorize** (`CategorizationService::determineCategory`) from the
      name/group/poster.
-   - Insert the `releases` row (new GUID, `nzbstatus = 0`), link the
-     collection (`filecheck = 4`, `releases_id`), and record cross-post
-     groups in `releases_groups`.
+   - **Measure `completion`** (`CollectionCompletionMeasurer`) — one SQL
+     aggregate over the collection's binaries and parts. It happens here
+     because stage three deletes those rows, and because a release whose NZB
+     write keeps failing must still know how complete it is. `0` is kept as
+     the "never measured" sentinel when the subjects declare no usable
+     totals, or when the declared file count and the per-file totals
+     contradict each other.
+   - Insert the `releases` row (new GUID, `nzbstatus = 0`, the measured
+     `completion`), link the collection (`filecheck = 4`, `releases_id`), and
+     record cross-post groups in `releases_groups`.
 5. **`createNZBs()`** — see next section. Steps 4–5 loop while a full batch
    (`maxnzbsprocessed`) keeps coming back.
 6. **`deleteCollections()`** — final cleanup of stale/orphaned CBP rows.

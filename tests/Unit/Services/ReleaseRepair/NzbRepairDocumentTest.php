@@ -30,8 +30,8 @@ final class NzbRepairDocumentTest extends TestCase
         $this->assertSame(3, $plan->synthesizedCount());
         $this->assertSame([2, 4, 5], array_keys($plan->files[0]->synthesized));
         $this->assertSame('part4of5.Tok@host', $plan->files[0]->synthesized[4]);
-        $this->assertSame(2, $document->measure()->actualParts);
-        $this->assertSame(5, $document->measure()->declaredParts);
+        $this->assertSame(2, $document->measure()->segmentsPresent);
+        $this->assertSame(5, $document->measure()->segmentsDeclared);
     }
 
     #[Test]
