@@ -20,7 +20,7 @@ final class CompletionTally
 
     private int $maxSegmentsPerFile = 0;
 
-    private int $declaredPerFile = 0;
+    private int $maxDeclaredPerFile = 0;
 
     private bool $declaredTotalsDiffer = false;
 
@@ -34,7 +34,7 @@ final class CompletionTally
         $segments = max(0, $segments);
         $declaredSegments = max(0, $declaredSegments);
 
-        if ($this->filesPresent > 0 && $declaredSegments !== $this->declaredPerFile) {
+        if ($this->filesPresent > 0 && $declaredSegments !== $this->maxDeclaredPerFile) {
             $this->declaredTotalsDiffer = true;
         }
 
@@ -42,7 +42,7 @@ final class CompletionTally
         $this->segmentsPresent += $segments;
         $this->segmentsDeclared += $declaredSegments;
         $this->maxSegmentsPerFile = max($this->maxSegmentsPerFile, $segments);
-        $this->declaredPerFile = max($this->declaredPerFile, $declaredSegments);
+        $this->maxDeclaredPerFile = max($this->maxDeclaredPerFile, $declaredSegments);
         $this->filesDeclared = max($this->filesDeclared, max(0, $declaredFiles));
     }
 
@@ -55,7 +55,7 @@ final class CompletionTally
             filesDeclared: $this->filesDeclared,
             maxSegmentsPerFile: $this->maxSegmentsPerFile,
             distinctDeclaredTotals: $this->distinctDeclaredTotals(),
-            declaredPerFile: $this->declaredPerFile,
+            maxDeclaredPerFile: $this->maxDeclaredPerFile,
         );
     }
 

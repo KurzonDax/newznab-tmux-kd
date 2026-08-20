@@ -9,6 +9,7 @@ use App\Facades\Search;
 use App\Services\CollectionCleanupService;
 use App\Services\ReleaseCleaningService;
 use App\Services\ReleaseCreationService;
+use App\Services\Releases\CollectionCompletionMeasurer;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\Test;
@@ -97,16 +98,17 @@ class ReleaseCreationCompletionTest extends TestCase
     }
 
     #[Test]
-    public function the_file_index_total_wins_when_it_disagrees_with_the_repeated_parens(): void
+    public function the_files_present_are_the_numerator_not_the_repeated_total(): void
     {
-        $this->insertCollection(100, 'hash-disagree', '[1/1083] - "9f2c1b" yEnc', totalfiles: 1083);
+        // Observed in prod: `[10/1083]` with the parens repeating 1083 and 220 files present.
+        $this->insertCollection(100, 'hash-1083', '[1/1083] - "9f2c1b" yEnc', totalfiles: 1083);
 
         for ($file = 1; $file <= 220; $file++) {
             $this->insertBinary(
                 100,
                 1000 + $file,
                 sprintf('[%d/1083] - "9f2c1b%03d" yEnc', $file, $file),
-                declaredParts: 30,
+                declaredParts: 1083,
                 presentParts: 1,
             );
         }
@@ -114,6 +116,52 @@ class ReleaseCreationCompletionTest extends TestCase
         $this->service()->createReleases(null, 10, false);
 
         $this->assertEqualsWithDelta(20.31, $this->completionOfFirstRelease(), 0.01);
+    }
+
+    #[Test]
+    public function a_normal_post_held_one_segment_per_file_is_never_measured_in_files(): void
+    {
+        // Equal-sized rar volumes declare identical totals, so a badly incomplete normal post has
+        // the obfuscated style's exact shape. Measuring it in files would store 10% for a release
+        // holding 5 segments of the 25,000 its 50 declared files would carry.
+        $this->insertCollection(100, 'hash-normal-thin', '[1/50] - "Thin.Release" yEnc', totalfiles: 50);
+
+        for ($file = 1; $file <= 5; $file++) {
+            $this->insertBinary(
+                100,
+                1000 + $file,
+                sprintf('[%d/50] - "Thin.Release.part%02d.rar" yEnc', $file, $file),
+                declaredParts: 500,
+                presentParts: 1,
+            );
+        }
+
+        $this->service()->createReleases(null, 10, false);
+
+        $this->assertSame(0.0, $this->completionOfFirstRelease());
+    }
+
+    #[Test]
+    public function a_file_index_rewritten_to_the_files_present_cannot_report_one_hundred(): void
+    {
+        // ReleaseProcessingService rewrites `totalfiles` to the files actually present once a
+        // collection goes stale, so the file index comes back equal to the numerator. A release
+        // that timed out half-arrived must not be recorded as complete.
+        $this->insertCollection(100, 'hash-stale', '[1/240] - "9f2c1b" yEnc', totalfiles: 220);
+
+        for ($file = 1; $file <= 220; $file++) {
+            $this->insertBinary(
+                100,
+                1000 + $file,
+                sprintf('[%d/240] - "9f2c1b%03d" yEnc', $file, $file),
+                declaredParts: 240,
+                presentParts: 1,
+            );
+        }
+
+        $this->service()->createReleases(null, 10, false);
+
+        $this->assertSame(0.0, $this->completionOfFirstRelease());
     }
 
     #[Test]
@@ -132,7 +180,8 @@ class ReleaseCreationCompletionTest extends TestCase
         return new ReleaseCreationService(
             app(ReleaseCleaningService::class),
             app(CollectionCleanupService::class),
-            app(ReleaseDuplicateFinder::class)
+            app(ReleaseDuplicateFinder::class),
+            app(CollectionCompletionMeasurer::class)
         );
     }
 

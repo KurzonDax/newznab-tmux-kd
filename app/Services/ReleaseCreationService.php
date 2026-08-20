@@ -28,7 +28,7 @@ class ReleaseCreationService
         private readonly ReleaseCleaningService $releaseCleaning,
         private readonly CollectionCleanupService $collectionCleanupService,
         private readonly ReleaseDuplicateFinder $releaseDuplicateFinder,
-        private readonly CollectionCompletionMeasurer $completionMeasurer = new CollectionCompletionMeasurer,
+        private readonly CollectionCompletionMeasurer $completionMeasurer,
     ) {}
 
     /**

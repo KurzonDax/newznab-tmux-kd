@@ -7,6 +7,7 @@ use App\Facades\Search;
 use App\Services\CollectionCleanupService;
 use App\Services\ReleaseCleaningService;
 use App\Services\ReleaseCreationService;
+use App\Services\Releases\CollectionCompletionMeasurer;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -258,7 +259,8 @@ class ReleaseCollectionHashDedupeTest extends TestCase
         return new ReleaseCreationService(
             app(ReleaseCleaningService::class),
             app(CollectionCleanupService::class),
-            app(ReleaseDuplicateFinder::class)
+            app(ReleaseDuplicateFinder::class),
+            app(CollectionCompletionMeasurer::class)
         );
     }
 

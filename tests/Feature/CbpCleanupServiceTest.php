@@ -9,6 +9,7 @@ use App\Services\Nzb\NzbService;
 use App\Services\ReleaseCleaningService;
 use App\Services\ReleaseCreationService;
 use App\Services\ReleaseProcessingService;
+use App\Services\Releases\CollectionCompletionMeasurer;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -286,7 +287,8 @@ class CbpCleanupServiceTest extends TestCase
         $service = new ReleaseCreationService(
             app(ReleaseCleaningService::class),
             app(CollectionCleanupService::class),
-            app(ReleaseDuplicateFinder::class)
+            app(ReleaseDuplicateFinder::class),
+            app(CollectionCompletionMeasurer::class)
         );
         $result = $service->createReleases(null, 10, false);
 

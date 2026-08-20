@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Releases;
 
 use App\Services\Nzb\CompletionSignals;
+use App\Services\Nzb\CompletionTally;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -17,6 +18,11 @@ use Illuminate\Support\Facades\DB;
  *
  * Measuring here rather than inside the NZB writer also means completion exists even when the NZB
  * write is deferred: creation can fail transiently and retry through the claim-token machinery.
+ *
+ * The aggregate below is {@see CompletionTally} expressed in SQL, for the one
+ * caller that has rows rather than files. The two must stay in lockstep -- the same fixtures are
+ * pinned to the same percentages in CompletionSignalsTest and ReleaseCreationCompletionTest, so a
+ * divergence in either fails there rather than silently mismeasuring a release.
  */
 final class CollectionCompletionMeasurer
 {
@@ -68,7 +74,7 @@ final class CollectionCompletionMeasurer
                     filesDeclared: max(0, $declaredFilesByCollection[$collectionId] ?? 0),
                     maxSegmentsPerFile: (int) $row->max_segments_per_file,
                     distinctDeclaredTotals: (int) $row->distinct_declared_totals,
-                    declaredPerFile: (int) $row->declared_per_file,
+                    maxDeclaredPerFile: (int) $row->declared_per_file,
                 );
             }
         }
