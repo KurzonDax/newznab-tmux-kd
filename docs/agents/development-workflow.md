@@ -7,11 +7,13 @@ Master only moves by pull request. A ruleset enforces this server-side — direc
 1. **Branch, in its own worktree — always.** Every change, however small (docs, `.gitignore`, one-line fixes), gets its own worktree; never commit on a branch in the main checkout. Pick a short kebab-case branch name with a type prefix (`feat/`, `fix/`, `chore/`, `docs/`), then install dependencies inside the new worktree:
 
    ```bash
-   git worktree add ~/worktrees/nntmux/<branch> -b <branch>
-   cd ~/worktrees/nntmux/<branch>
+   git worktree add <worktree-path> -b <branch>
+   cd <worktree-path>
    composer install --no-interaction
    npm ci        # only if you will touch resources/ or run npm run build
    ```
+
+   `<worktree-path>` is any path outside the checkout — a sibling directory (`../worktrees/<branch>`), or wherever you keep worktrees on this machine. Reuse the same value in step 4.
 
    `composer install` is not optional. `vendor/` is git-ignored, so a fresh worktree has none, and the CaptainHook git hooks (shared from the main checkout's `.git/hooks`) invoke `vendor/bin/captainhook`, `vendor/bin/pint`, and PHP lint **relative to the worktree** — without it every commit fails with `vendor/bin/captainhook: No such file or directory`. Tests and Pint need it for the same reason. Composer's trailing `php artisan package:discover` step boots the app and touches the database; if the dev database is not running it errors after `vendor/` is already complete, and that error can be ignored (Laravel rebuilds the package manifest lazily). Run PHPUnit as `vendor/bin/phpunit --filter=...` when `php artisan test` cannot boot for the same reason.
 
@@ -37,14 +39,18 @@ Master only moves by pull request. A ruleset enforces this server-side — direc
    - **Merged** → go to step 4.
    - **CI failed** → fix on the branch, push, and watch again. The PR stays open; auto-merge fires once checks go green.
 
-4. **Clean up and sync.** GitHub deletes the remote branch on merge; mirror that locally:
+4. **Clean up and sync.** GitHub deletes the remote branch on merge; mirror that locally.
+
+   Run these from the **main checkout**, not the worktree: `git branch -d` refuses to delete a branch that is still checked out in a worktree, so the worktree has to go first — and removing the worktree you are standing in *succeeds*, leaving your shell in a directory that no longer exists. The first row of `git worktree list` is the main checkout.
 
    ```bash
-   git -C /mnt/data/nntmux-dev switch master
-   git -C /mnt/data/nntmux-dev pull --ff-only
-   git -C /mnt/data/nntmux-dev worktree remove ~/worktrees/nntmux/<branch>
-   git -C /mnt/data/nntmux-dev branch -d <branch>
+   git switch master
+   git pull --ff-only
+   git worktree remove <worktree-path>
+   git branch -d <branch>
    ```
+
+   > **If the main checkout is a live deployment** rather than a scratch clone, `git pull` there is a deploy, not a cleanup step — it can move running code and leave migrations pending. Drop the first two commands and leave syncing to whoever owns the deployment. Removing the worktree and deleting the branch is safe either way, and can be run from any other checkout of the repository with `git -C <some-checkout> ...`.
 
 The loop is done when master contains the squashed commit and `git worktree list` + `git branch` show no leftovers from the branch.
 
