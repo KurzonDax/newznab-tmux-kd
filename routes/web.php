@@ -51,6 +51,7 @@ use App\Http\Controllers\AdultController;
 use App\Http\Controllers\AjaxController;
 use App\Http\Controllers\Api\FileListApiController;
 use App\Http\Controllers\ApiHelpController;
+use App\Http\Controllers\AudioPreviewController;
 use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\LoginController;
@@ -90,6 +91,7 @@ use App\Http\Controllers\SearchSuggestController;
 use App\Http\Controllers\SeriesController;
 use App\Http\Controllers\StatusPageController;
 use App\Http\Controllers\TermsController;
+use App\Http\Middleware\NoCacheForAuthenticatedUsers;
 use Spatie\LaravelPasskeys\Http\Controllers\GeneratePasskeyAuthenticationOptionsController;
 
 // Serve cover images from storage - Must be public (no auth required)
@@ -97,6 +99,16 @@ Route::get('/covers/{type}/{filename}', [CoverController::class, 'show'])
     ->where('type', 'anime|audio|audiosample|book|console|games|movies|music|preview|sample|tvrage|video|tvshows')
     ->where('filename', '.*')
     ->name('covers.show');
+
+// Audio preview clips sit next to the covers they belong with, but they are
+// release content: same gate as the details page that links to them. The clip is
+// identical for every user and already marked private, so the blanket no-store
+// applied to authenticated pages would only defeat the browser cache an <audio>
+// element leans on while seeking.
+Route::get('/preview/audio/{guid}', [AudioPreviewController::class, 'show'])
+    ->middleware(['auth', 'isVerified'])
+    ->withoutMiddleware(NoCacheForAuthenticatedUsers::class)
+    ->name('preview.audio');
 
 // Auth::routes();
 

@@ -548,8 +548,9 @@ if (! function_exists('resolveImageAssetFilename')) {
      * Resolve the real on-disk extension before publishing an image URL.
      *
      * @param  list<string>  $alternateBasenames
+     * @param  list<string>  $extensions  Candidate extensions, most preferred first.
      */
-    function resolveImageAssetFilename(string $type, string $basename, array $alternateBasenames = []): ?string
+    function resolveImageAssetFilename(string $type, string $basename, array $alternateBasenames = [], array $extensions = ['webp', 'jpg', 'jpeg']): ?string
     {
         if (preg_match('/\A[A-Za-z0-9][A-Za-z0-9_-]*\z/D', $type) !== 1
             || preg_match('/\A[A-Za-z0-9][A-Za-z0-9_-]*\z/D', $basename) !== 1) {
@@ -564,7 +565,7 @@ if (! function_exists('resolveImageAssetFilename')) {
         ], static fn (mixed $root): bool => is_string($root) && $root !== '')));
         $basenames = array_values(array_unique([$basename, ...$alternateBasenames]));
 
-        foreach (['webp', 'jpg', 'jpeg'] as $extension) {
+        foreach ($extensions as $extension) {
             foreach ($basenames as $candidateBasename) {
                 if (preg_match('/\A[A-Za-z0-9][A-Za-z0-9_-]*\z/D', $candidateBasename) !== 1) {
                     continue;
@@ -588,10 +589,11 @@ if (! function_exists('getImageAssetUrl')) {
      * Return a URL containing the extension of the image that actually exists.
      *
      * @param  list<string>  $alternateBasenames
+     * @param  list<string>  $extensions  Candidate extensions, most preferred first.
      */
-    function getImageAssetUrl(string $type, string $basename, ?string $fallbackUrl = null, array $alternateBasenames = []): ?string
+    function getImageAssetUrl(string $type, string $basename, ?string $fallbackUrl = null, array $alternateBasenames = [], array $extensions = ['webp', 'jpg', 'jpeg']): ?string
     {
-        $filename = resolveImageAssetFilename($type, $basename, $alternateBasenames);
+        $filename = resolveImageAssetFilename($type, $basename, $alternateBasenames, $extensions);
 
         return $filename === null ? $fallbackUrl : url("/covers/{$type}/{$filename}");
     }
