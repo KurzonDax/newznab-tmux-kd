@@ -13,6 +13,15 @@ use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
  */
 final readonly class ProcessingConfiguration
 {
+    /**
+     * Extensions that identify a standalone music file worth post-processing.
+     *
+     * Deliberately excludes AC3/DTS/MKA/MKS: those are posted as side-files of
+     * video releases (external audio tracks, Matroska audio/subtitle
+     * companions), not as music, and selecting them produced empty previews.
+     */
+    public const string AUDIO_FILE_REGEX = '\\.(AAC|AIFF|APE|ASF|FLAC|MP2|MP3|RA|OGG|OGM|W64|WAV|WMA)';
+
     public bool $echoCLI;
 
     public bool|string $innerFileBlacklist;
@@ -162,7 +171,7 @@ final readonly class ProcessingConfiguration
         $this->releaseProcessingTimeout = (int) (Settings::settingValue('releaseprocessingtimeout') ?: 120);
         $this->maxPpTimeoutCount = (int) (Settings::settingValue('maxpptimeoutcount') ?: 3);
         // Regex patterns
-        $this->audioFileRegex = '\\.(AAC|AIFF|APE|AC3|ASF|DTS|FLAC|MKA|MKS|MP2|MP3|RA|OGG|OGM|W64|WAV|WMA)';
+        $this->audioFileRegex = self::AUDIO_FILE_REGEX;
         $this->ignoreBookRegex = '/\\b(epub|lit|mobi|pdf|sipdf|html)\\b.*\\.rar(?!.{20,})/i';
         $this->supportFileRegex = '\\.(?:vol\\d{1,3}\\+\\d{1,3}|par2|srs|sfv|nzb)';
         $this->videoFileRegex = '\\.(AVI|F4V|IFO|M1V|M2V|M4V|MKV|MOV|MP4|MPEG|MPG|MPGV|MPV|OGV|QT|RM|RMVB|TS|VOB|WMV)';

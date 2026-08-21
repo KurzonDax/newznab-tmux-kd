@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Unit\AdditionalProcessing;
 
+use App\Models\Category;
+use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\MediaExtractionService;
 use App\Services\AdditionalProcessing\VideoFrameExtractor;
 use App\Services\Categorization\CategorizationService;
@@ -92,5 +94,38 @@ class MediaExtractionServiceTest extends TestCase
         $property->setValue($service, $mediaInfo);
 
         $this->assertFalse($service->getMediaInfo($file, 42));
+    }
+
+    #[Test]
+    public function audio_processing_only_accepts_music_and_unidentified_categories(): void
+    {
+        $service = $this->makeService($this->makeConfig());
+
+        foreach ([Category::MUSIC_ROOT, Category::MUSIC_MP3, Category::MUSIC_LOSSLESS, Category::MUSIC_OTHER,
+            Category::OTHER_MISC, Category::MOVIE_OTHER, Category::TV_OTHER] as $categoryId) {
+            $this->assertTrue(
+                $service->isAudioProcessingCategory($categoryId),
+                $categoryId.' should be eligible for audio post-processing'
+            );
+        }
+
+        foreach ([Category::GAME_NDS, Category::GAME_PS3, Category::MOVIE_FOREIGN, Category::TV_HD,
+            Category::BOOKS_MAGAZINES, 0] as $categoryId) {
+            $this->assertFalse(
+                $service->isAudioProcessingCategory($categoryId),
+                $categoryId.' should not be eligible for audio post-processing'
+            );
+        }
+    }
+
+    private function makeService(ProcessingConfiguration $config): MediaExtractionService
+    {
+        return new MediaExtractionService(
+            $config,
+            Mockery::mock(ReleaseImageService::class),
+            Mockery::mock(ReleaseExtraService::class),
+            Mockery::mock(CategorizationService::class),
+            new VideoFrameExtractor($config),
+        );
     }
 }
