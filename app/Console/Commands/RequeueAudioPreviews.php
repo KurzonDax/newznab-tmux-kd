@@ -73,24 +73,21 @@ class RequeueAudioPreviews extends Command
         ];
         /** @var array<int, array<string, int>> $perGroup */
         $perGroup = [];
-        $ids = [];
+        /** @var array<int, string> $batch release id => guid */
+        $batch = [];
 
         foreach ($this->candidates($pendingPasswordStatus)->cursor() as $release) {
             $state = $this->stateOf($release);
             $counts[$state]++;
             $perGroup[(int) $release->groups_id][$state] = ($perGroup[(int) $release->groups_id][$state] ?? 0) + 1;
-            $ids[] = (int) $release->id;
+            $batch[(int) $release->id] = (string) $release->guid;
 
-            if ($apply) {
-                $this->releaseImageService->delete((string) $release->guid);
-            }
-
-            if (count($ids) >= 500) {
-                $this->requeue($ids, $pendingPasswordStatus, $apply);
-                $ids = [];
+            if (count($batch) >= 500) {
+                $this->requeue($batch, $pendingPasswordStatus, $apply);
+                $batch = [];
             }
         }
-        $this->requeue($ids, $pendingPasswordStatus, $apply);
+        $this->requeue($batch, $pendingPasswordStatus, $apply);
 
         $pruned = $this->option('prune-empty') ? $this->pruneEmptyPreviews($apply) : 0;
 
@@ -110,36 +107,44 @@ class RequeueAudioPreviews extends Command
     /**
      * Audio-routed releases with a usable NZB that either finished without a
      * preview (0), were skipped by the per-root policy (-2), or are pending
-     * with the wrong password sentinel (-1, stranded). Declined releases join
-     * only with --include-declined.
+     * with the wrong password sentinel (-1, stranded).
+     *
+     * Without --include-declined the selection is exactly what the audio worker
+     * would claim ({@see AudioRouting::applyAudioPath()}). With it, the routing
+     * rule alone applies, and a declined release joins whatever its preview
+     * state -- including one still pending on the video path -- because
+     * clearing its marker is the only way to hand it back to the audio worker.
      *
      * @return Builder<Release>
      */
     private function candidates(int $pendingPasswordStatus): Builder
     {
-        $strandedSentinel = $pendingPasswordStatus === -1 ? 0 : -1;
+        $includeDeclined = (bool) $this->option('include-declined');
+        $mismatchedSentinel = $pendingPasswordStatus === -1 ? 0 : -1;
         $tokenColumn = 'r.'.ReleaseClaimant::CLAIM_TOKEN_COLUMN;
 
-        $query = AudioRouting::applyRoutingPredicate(Release::query()->from('releases as r'))
+        $query = Release::query()->from('releases as r')
             ->select([
                 'r.id', 'r.guid', 'r.groups_id', 'r.haspreview', 'r.passwordstatus',
                 $tokenColumn.' as claim_token',
             ])
             ->where('r.nzbstatus', 1)
-            ->where(static function (Builder $stateQuery) use ($strandedSentinel): void {
+            ->where(static function (Builder $stateQuery) use ($mismatchedSentinel, $tokenColumn, $includeDeclined): void {
                 $stateQuery
                     ->whereIn('r.haspreview', [0, PreviewGenerationPolicy::HASPREVIEW_SKIPPED_BY_POLICY])
-                    ->orWhere(static function (Builder $stranded) use ($strandedSentinel): void {
-                        $stranded->where('r.haspreview', -1)->where('r.passwordstatus', $strandedSentinel);
+                    ->orWhere(static function (Builder $stranded) use ($mismatchedSentinel): void {
+                        $stranded->where('r.haspreview', -1)->where('r.passwordstatus', $mismatchedSentinel);
                     });
+
+                if ($includeDeclined) {
+                    $stateQuery->orWhere($tokenColumn, AudioRouting::DECLINED_TOKEN);
+                }
             })
             ->orderBy('r.id');
 
-        if (! $this->option('include-declined')) {
-            $query->where(static function (Builder $tokenQuery) use ($tokenColumn): void {
-                $tokenQuery->whereNull($tokenColumn)->orWhere($tokenColumn, '!=', AudioRouting::DECLINED_TOKEN);
-            });
-        }
+        $includeDeclined
+            ? AudioRouting::applyRoutingPredicate($query)
+            : AudioRouting::applyAudioPath($query);
 
         $groupIds = array_values(array_filter(array_map('intval', (array) $this->option('group'))));
         if ($groupIds !== []) {
@@ -173,22 +178,21 @@ class RequeueAudioPreviews extends Command
     }
 
     /**
-     * @param  list<int>  $ids
+     * Return one batch to the pending state, then remove its old artifacts.
+     *
+     * The rows are updated first so a failure leaves a release with a stale
+     * preview rather than with no preview and no way of getting one.
+     *
+     * @param  array<int, string>  $batch  release id => guid
      */
-    private function requeue(array $ids, int $pendingPasswordStatus, bool $apply): void
+    private function requeue(array $batch, int $pendingPasswordStatus, bool $apply): void
     {
-        if (! $apply || $ids === []) {
+        if (! $apply || $batch === []) {
             return;
         }
 
-        ReleaseAudioTag::query()->whereIn('releases_id', $ids)->update([
-            'has_preview' => 0,
-            'preview_extension' => null,
-            'preview_mime' => null,
-            'preview_seconds' => null,
-            'preview_bytes' => null,
-            'has_spectrogram' => 0,
-        ]);
+        $ids = array_keys($batch);
+        ReleaseAudioTag::clearPreviews($ids);
 
         $pending = [
             'haspreview' => -1,
@@ -200,6 +204,10 @@ class RequeueAudioPreviews extends Command
         }
 
         Release::query()->whereIn('id', $ids)->update($pending);
+
+        foreach ($batch as $guid) {
+            $this->releaseImageService->delete($guid);
+        }
     }
 
     /**

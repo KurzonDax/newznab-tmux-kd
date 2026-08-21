@@ -30,6 +30,7 @@ use Tests\TestCase;
  *  6  MOVIE_SD in a forced-Music group, haspreview 0 -> selected via the group rule
  *  7  MUSIC_MP3, haspreview 1 -> has a preview, never selected
  *  8  MUSIC_MP3, haspreview -1 with the right sentinel -> already pending, left alone
+ *  9  MUSIC_MP3, haspreview -1, declined token -> pending on the video path; only --include-declined
  */
 class RequeueAudioPreviewsTest extends TestCase
 {
@@ -108,6 +109,7 @@ class RequeueAudioPreviewsTest extends TestCase
         $this->seedRelease(6, Category::MOVIE_SD, haspreview: 0, groupId: self::FORCED_MUSIC_GROUP);
         $this->seedRelease(7, Category::MUSIC_MP3, haspreview: 1);
         $this->seedRelease(8, Category::MUSIC_MP3, haspreview: -1, passwordstatus: 0);
+        $this->seedRelease(9, Category::MUSIC_MP3, haspreview: -1, claimToken: AudioRouting::DECLINED_TOKEN);
 
         $this->resetClaimSupportCache();
     }
@@ -158,17 +160,19 @@ class RequeueAudioPreviewsTest extends TestCase
         $this->assertSame(1, $this->release(7)->haspreview);
         $this->assertSame(-1, $this->release(8)->haspreview);
         $this->assertSame(0, $this->release(8)->passwordstatus);
+        $this->assertSame(AudioRouting::DECLINED_TOKEN, $this->release(9)->additional_pp_claim_token);
     }
 
     #[Test]
     public function include_declined_clears_the_decline_marker(): void
     {
         $this->artisan('releases:requeue-audio-previews --apply --include-declined')
-            ->expectsOutputToContain('declined re-queued: 1')
+            ->expectsOutputToContain('declined re-queued: 2')
             ->expectsOutputToContain('re-queued from 0: 2')
             ->assertSuccessful();
 
         $this->assertPending(4);
+        $this->assertPending(9);
     }
 
     #[Test]

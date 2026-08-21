@@ -48,11 +48,12 @@ class ReleaseImageService
      */
     public function __construct(?Closure $hostResolver = null)
     {
-        $this->audSavePath = rtrim((string) config('nntmux_settings.covers_path', storage_path('covers')), '/').'/audiosample/';
-        $this->imgSavePath = storage_path('covers/preview/');
-        $this->jpgSavePath = storage_path('covers/sample/');
-        $this->movieImgSavePath = storage_path('covers/movies/');
-        $this->vidSavePath = storage_path('covers/video/');
+        $coversRoot = rtrim((string) config('nntmux_settings.covers_path', storage_path('covers')), '/');
+        $this->audSavePath = $coversRoot.'/audiosample/';
+        $this->imgSavePath = $coversRoot.'/preview/';
+        $this->jpgSavePath = $coversRoot.'/sample/';
+        $this->movieImgSavePath = $coversRoot.'/movies/';
+        $this->vidSavePath = $coversRoot.'/video/';
         $this->hostResolver = $hostResolver ?? $this->defaultHostResolver(...);
     }
 
