@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Admin;
 
+use App\Services\Tmux\TmuxTaskRunner;
 use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateTmuxSettingsRequest extends FormRequest
@@ -22,6 +23,7 @@ class UpdateTmuxSettingsRequest extends FormRequest
             'postthreadsnon' => ['required', 'integer', 'min:1', 'max:99'],
             'postthreadsamazon' => ['required', 'integer', 'min:1', 'max:99'],
             'fixnamethreads' => ['required', 'integer', 'min:1', 'max:16'],
+            'fix_names_timeout' => ['required', 'integer', 'min:'.TmuxTaskRunner::MIN_FIX_NAMES_TIMEOUT],
         ];
     }
 
@@ -39,6 +41,7 @@ class UpdateTmuxSettingsRequest extends FormRequest
             'postthreadsnon' => 'Postprocessing Video Metadata Threads',
             'postthreadsamazon' => 'Amazon Postprocessing Threads',
             'fixnamethreads' => 'Fix Release Names Threads',
+            'fix_names_timeout' => 'Fix Release Names Step Timeout',
         ];
     }
 }

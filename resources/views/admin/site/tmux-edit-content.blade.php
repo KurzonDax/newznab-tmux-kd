@@ -350,6 +350,16 @@
                                 <span class="px-3 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-sm">seconds</span>
                             </div>
                         </x-form.group>
+
+                        <x-form.group label="Fix Release Names Step Timeout" for="fix_names_timeout" help="Wall-clock limit for each fix-names method and the catch-up sweep in the Fix Names pane. A step that hits it is killed and the chain moves on to the next one. Minimum 60 seconds.">
+                            <div class="flex gap-2">
+                                <x-input id="fix_names_timeout" name="fix_names_timeout" type="number" min="{{ \App\Services\Tmux\TmuxTaskRunner::MIN_FIX_NAMES_TIMEOUT }}" value="{{ old('fix_names_timeout', $site['fix_names_timeout'] ?? \App\Services\Tmux\TmuxTaskRunner::DEFAULT_FIX_NAMES_TIMEOUT) }}" class="flex-1" required />
+                                <span class="px-3 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-sm">seconds</span>
+                            </div>
+                            @error('fix_names_timeout')
+                                <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                            @enderror
+                        </x-form.group>
                     </div>
                 </div>
 

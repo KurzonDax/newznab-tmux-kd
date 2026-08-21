@@ -75,6 +75,7 @@ class AdminTmuxSettingsControllerTest extends TestCase
             'postthreadsnon' => '7',
             'postthreadsamazon' => '8',
             'fixnamethreads' => '9',
+            'fix_names_timeout' => '600',
         ];
 
         $response = $this->actingAs($this->admin())->post(route('admin.tmux-update'), $payload);
@@ -91,7 +92,7 @@ class AdminTmuxSettingsControllerTest extends TestCase
     public function test_invalid_thread_setting_is_rejected_without_persisting_any_thread_settings(string $field, string $value): void
     {
         $before = $this->threadSettings();
-        $payload = array_fill_keys(array_keys($before), '2');
+        $payload = $this->validPayload();
         $payload[$field] = $value;
 
         $response = $this->from(route('admin.tmux-edit'))
@@ -116,6 +117,20 @@ class AdminTmuxSettingsControllerTest extends TestCase
         yield 'video threads above 99' => ['postthreadsnon', '100'];
         yield 'Amazon threads above 99' => ['postthreadsamazon', '100'];
         yield 'fix-names threads above 16' => ['fixnamethreads', '17'];
+        yield 'fix-names timeout below 60' => ['fix_names_timeout', '59'];
+        yield 'fix-names timeout non-integer' => ['fix_names_timeout', 'soon'];
+        yield 'fix-names timeout missing' => ['fix_names_timeout', ''];
+    }
+
+    public function test_tmux_page_renders_the_fix_names_timeout_field(): void
+    {
+        $response = $this->actingAs($this->admin())->get(route('admin.tmux-edit'));
+
+        $response->assertOk();
+        $this->assertMatchesRegularExpression(
+            '/<input[^>]*type="number"[^>]*id="fix_names_timeout"[^>]*name="fix_names_timeout"[^>]*min="60"[^>]*value="1200"[^>]*required[^>]*>/',
+            (string) $response->getContent(),
+        );
     }
 
     public function test_tmux_page_renders_thread_fields_and_site_page_does_not(): void
@@ -159,7 +174,7 @@ class AdminTmuxSettingsControllerTest extends TestCase
 
     public function test_validation_failure_shows_summary_inline_error_and_submitted_value(): void
     {
-        $payload = array_fill_keys(array_keys($this->threadSettings()), '2');
+        $payload = $this->validPayload();
         $payload['binarythreads'] = 'abc';
 
         $response = $this->from(route('admin.tmux-edit'))
@@ -174,12 +189,22 @@ class AdminTmuxSettingsControllerTest extends TestCase
     }
 
     /**
+     * Every validated field with an accepted value.
+     *
+     * @return array<string, string>
+     */
+    private function validPayload(): array
+    {
+        return [...array_fill_keys(array_keys(self::threadDefaults()), '2'), 'fix_names_timeout' => '600'];
+    }
+
+    /**
      * @return array<string, string>
      */
     private function threadSettings(): array
     {
         return DB::table('settings')
-            ->whereIn('name', array_keys(self::threadDefaults()))
+            ->whereIn('name', [...array_keys(self::threadDefaults()), 'fix_names_timeout'])
             ->orderBy('name')
             ->pluck('value', 'name')
             ->all();
@@ -341,6 +366,7 @@ class AdminTmuxSettingsControllerTest extends TestCase
             'categorizeforeign' => '0',
             'catwebdl' => '0',
             ...self::threadDefaults(),
+            'fix_names_timeout' => '1200',
         ];
 
         DB::table('settings')->upsert(

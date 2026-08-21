@@ -480,6 +480,10 @@ class SettingsTableSeeder extends Seeder
                 'name' => 'fix_timer',
                 'value' => '30',
             ],
+            273 => [
+                'name' => 'fix_names_timeout',
+                'value' => '1200',
+            ],
             182 => [
                 'name' => 'htop',
                 'value' => '0',
