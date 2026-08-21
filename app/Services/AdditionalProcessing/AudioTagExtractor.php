@@ -1,0 +1,283 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services\AdditionalProcessing;
+
+use Mhor\MediaInfo\Attribute\Mode;
+use Mhor\MediaInfo\Container\MediaInfoContainer;
+
+/**
+ * Turns the tag bag MediaInfo reports for an audio file into the attribute set
+ * stored on `release_audio_tags`.
+ *
+ * MediaInfo puts tags on the **General** track, never on the Audio tracks, and
+ * with the OLDXML output format php-mediainfo uses, the `<extra>` fields a
+ * tagger embedded (MusicBrainz identifiers among them) arrive flattened into
+ * the same bag. Everything that has no column of its own is kept verbatim in
+ * `raw_tags` so a later lookup can still use it.
+ */
+final class AudioTagExtractor
+{
+    /**
+     * Column widths enforced here so an over-long tag cannot fail the insert.
+     */
+    private const array COLUMN_WIDTHS = [
+        'album' => 255,
+        'album_performer' => 255,
+        'performer' => 255,
+        'track_name' => 255,
+        'genre' => 100,
+        'recorded_date' => 32,
+        'source_file' => 255,
+        'audio_format' => 50,
+    ];
+
+    /**
+     * Attributes describing where the sampled file happened to live on disk.
+     * They are temp paths, so they are dropped rather than stored.
+     */
+    private const array PATH_ATTRIBUTES = [
+        'complete_name',
+        'complete_name_last',
+        'folder_name',
+        'file_name',
+        'file_name_extension',
+        'file_last_modification_date',
+        'file_last_modification_date_local',
+        'cover_data',
+    ];
+
+    /**
+     * Column => tagger-specific keys that fill it, normalised to lowercase
+     * alphanumerics. First match wins, so the most specific alias leads.
+     *
+     * @var array<string, list<string>>
+     */
+    private const array MUSICBRAINZ_ALIASES = [
+        'musicbrainz_album_id' => ['musicbrainzalbumid', 'musicbrainzreleaseid'],
+        'musicbrainz_artist_id' => ['musicbrainzartistid', 'musicbrainzalbumartistid'],
+        'musicbrainz_track_id' => ['musicbrainztrackid', 'musicbrainzreleasetrackid'],
+        'musicbrainz_release_group_id' => ['musicbrainzreleasegroupid'],
+    ];
+
+    private const string UUID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
+
+    /**
+     * @param  string  $sourceFile  Name of the file the tags were read from.
+     * @return array<string, mixed>|null Null when the file carries no album or
+     *                                   performer tag, which is the signal that
+     *                                   there is nothing worth recording.
+     */
+    public function extract(MediaInfoContainer $container, string $sourceFile): ?array
+    {
+        $general = $container->getGeneral();
+        if ($general === null) {
+            return null;
+        }
+
+        /** @var array<string, mixed> $attributes */
+        $attributes = $general->get();
+
+        $album = $this->text($attributes['album'] ?? null);
+        $performer = $this->text($attributes['performer'] ?? null);
+
+        if ($album === null && $performer === null) {
+            return null;
+        }
+
+        $recordedDate = $this->text($attributes['recorded_date'] ?? null);
+
+        $tags = [
+            'album' => $album,
+            'album_performer' => $this->text($attributes['album_performer'] ?? null),
+            'performer' => $performer,
+            'track_name' => $this->text($attributes['track_name'] ?? null),
+            'track_position' => $this->position($attributes, ['track_name_position', 'track_position', 'track']),
+            'track_position_total' => $this->position($attributes, ['track_name_total', 'track_position_total']),
+            'genre' => $this->text($attributes['genre'] ?? null),
+            'recorded_date' => $recordedDate,
+            'recorded_year' => $this->year($recordedDate),
+            'source_file' => $this->text($sourceFile),
+            'audio_format' => $this->text($attributes['format'] ?? null),
+            'raw_tags' => $this->rawTags($attributes),
+        ];
+
+        return array_merge($tags, $this->musicBrainzIds($attributes), $this->truncate($tags));
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @return array<string, string|null>
+     */
+    private function musicBrainzIds(array $attributes): array
+    {
+        $candidates = [];
+        foreach ($attributes as $key => $value) {
+            if (is_array($value) && $this->normalizeKey((string) $key) === 'extra') {
+                foreach ($value as $extraKey => $extraValue) {
+                    $candidates[$this->normalizeKey((string) $extraKey)] ??= $this->text($extraValue);
+                }
+
+                continue;
+            }
+
+            $candidates[$this->normalizeKey((string) $key)] ??= $this->text($value);
+        }
+
+        $identifiers = [];
+        foreach (self::MUSICBRAINZ_ALIASES as $column => $aliases) {
+            $identifiers[$column] = null;
+            foreach ($aliases as $alias) {
+                $value = $candidates[$alias] ?? null;
+                if ($value !== null && preg_match(self::UUID_PATTERN, $value) === 1) {
+                    $identifiers[$column] = strtolower($value);
+                    break;
+                }
+            }
+        }
+
+        return $identifiers;
+    }
+
+    /**
+     * Everything MediaInfo reported, scalarised, minus the on-disk location of
+     * the sampled file.
+     *
+     * @param  array<string, mixed>  $attributes
+     * @return array<string, mixed>
+     */
+    private function rawTags(array $attributes): array
+    {
+        $raw = [];
+        foreach ($attributes as $key => $value) {
+            if (in_array($key, self::PATH_ATTRIBUTES, true)) {
+                continue;
+            }
+
+            $scalar = $this->scalarize($value);
+            if ($scalar !== null) {
+                $raw[$key] = $scalar;
+            }
+        }
+
+        return $raw;
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @param  list<string>  $keys
+     */
+    private function position(array $attributes, array $keys): ?int
+    {
+        foreach ($keys as $key) {
+            $value = $this->text($attributes[$key] ?? null);
+            // Taggers write "3" as often as "3/12"; only the leading number is
+            // this column's business.
+            if ($value !== null && preg_match('/\d+/', $value, $digits) === 1) {
+                return min((int) $digits[0], 65535);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * MediaInfo emits "2019", "2019-04-01" and "2019-04-01 00:00:00 UTC" for
+     * the same tag, so the queryable year is pulled out of whichever shape
+     * arrived.
+     */
+    private function year(?string $recordedDate): ?int
+    {
+        if ($recordedDate === null || preg_match('/(?:19|20)\d\d/', $recordedDate, $match) !== 1) {
+            return null;
+        }
+
+        return (int) $match[0];
+    }
+
+    /**
+     * @param  array<string, mixed>  $tags
+     * @return array<string, string|null>
+     */
+    private function truncate(array $tags): array
+    {
+        $truncated = [];
+        foreach (self::COLUMN_WIDTHS as $column => $width) {
+            $value = $tags[$column] ?? null;
+            $truncated[$column] = is_string($value) ? mb_substr($value, 0, $width) : null;
+        }
+
+        return $truncated;
+    }
+
+    private function normalizeKey(string $key): string
+    {
+        return strtolower((string) preg_replace('/[^a-z0-9]/i', '', $key));
+    }
+
+    /**
+     * Reduce one MediaInfo attribute to a trimmed, non-empty string. A repeated
+     * tag arrives as an array; the first value is the one worth a column.
+     */
+    private function text(mixed $value): ?string
+    {
+        $scalar = $this->scalarize($value);
+
+        while (is_array($scalar)) {
+            $scalar = $scalar === [] ? null : reset($scalar);
+        }
+
+        return is_string($scalar) ? $scalar : null;
+    }
+
+    /**
+     * php-mediainfo hands back plain strings for tags, attribute objects for
+     * technical properties, and arrays whenever a tag was repeated.
+     *
+     * @return string|array<array-key, mixed>|null
+     */
+    private function scalarize(mixed $value): string|array|null
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if ($value instanceof Mode) {
+            return $this->emptyToNull($value->getFullName());
+        }
+
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format(DATE_ATOM);
+        }
+
+        if (is_object($value)) {
+            return method_exists($value, '__toString') ? $this->emptyToNull((string) $value) : null;
+        }
+
+        if (is_array($value)) {
+            $nested = [];
+            foreach ($value as $key => $item) {
+                $scalar = $this->scalarize($item);
+                if ($scalar !== null) {
+                    $nested[$key] = $scalar;
+                }
+            }
+
+            return $nested === [] ? null : $nested;
+        }
+
+        if (is_bool($value)) {
+            return $value ? '1' : '0';
+        }
+
+        return is_scalar($value) ? $this->emptyToNull((string) $value) : null;
+    }
+
+    private function emptyToNull(string $value): ?string
+    {
+        $trimmed = trim($value);
+
+        return $trimmed === '' ? null : $trimmed;
+    }
+}

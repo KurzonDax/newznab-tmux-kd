@@ -7,6 +7,7 @@ namespace App\Services\AdditionalProcessing;
 use App\Enums\ImageAssetProfile;
 use App\Models\Category;
 use App\Models\Release;
+use App\Models\ReleaseAudioTag;
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
@@ -44,6 +45,8 @@ class MediaExtractionService
 
     private readonly MediaInfoRefinementService $mediaInfoRefinement;
 
+    private readonly AudioTagExtractor $audioTagExtractor;
+
     public function __construct(
         private readonly ProcessingConfiguration $config,
         private readonly ReleaseImageService $releaseImage,
@@ -52,6 +55,7 @@ class MediaExtractionService
         private readonly VideoFrameExtractor $videoFrameExtractor,
         ?ReleaseSearchSyncCoordinator $searchSyncCoordinator = null,
         ?MediaInfoRefinementService $mediaInfoRefinement = null,
+        ?AudioTagExtractor $audioTagExtractor = null,
     ) {
         $this->searchSyncCoordinator = $searchSyncCoordinator
             ?? new ReleaseSearchSyncCoordinator(
@@ -59,6 +63,7 @@ class MediaExtractionService
             );
         $this->mediaInfoRefinement = $mediaInfoRefinement
             ?? new MediaInfoRefinementService(searchSyncCoordinator: $this->searchSyncCoordinator);
+        $this->audioTagExtractor = $audioTagExtractor ?? new AudioTagExtractor;
     }
 
     /**
@@ -308,56 +313,28 @@ class MediaExtractionService
         if (! $result['audioInfo']) {
             try {
                 $xmlArray = $this->mediaInfo()->getInfo($fileLocation, false);
-                foreach ($xmlArray->getAudios() as $track) {
-                    if ($track->get('album') !== null && $track->get('performer') !== null) {
-                        if ((int) $context->release->predb_id === 0 && $this->config->renameMusicMediaInfo) {
-                            $ext = strtoupper($fileExtension);
+                $tags = $this->audioTagExtractor->extract($xmlArray, basename($fileLocation));
 
-                            $newName = $track->get('performer')->getFullName().' - '.$track->get('album')->getFullName();
-                            if (! empty($track->get('recorded_date'))
-                                && preg_match('/(?:19|20)\d\d/', $track->get('recorded_date')->getFullname, $Year)
-                            ) {
-                                $newName .= ' ('.$Year[0].') '.$ext;
-                            } else {
-                                $newName .= ' '.$ext;
-                            }
+                if ($tags !== null) {
+                    // Persisted before the rename branch so the row exists even
+                    // for a predb-matched release, or with renaming switched off.
+                    ReleaseAudioTag::query()->updateOrCreate(
+                        ['releases_id' => (int) $context->release->id],
+                        $tags
+                    );
 
-                            $newCat = match ($ext) {
-                                'MP3' => Category::MUSIC_MP3,
-                                'FLAC' => Category::MUSIC_LOSSLESS,
-                                default => $this->categorize->determineCategory($rQuery->groups_id, $newName, $rQuery->fromname),
-                            };
-
-                            $newTitle = escapeString(substr($newName, 0, 255));
-                            Release::whereId($context->release->id)->update([
-                                'searchname' => $newTitle,
-                                'categories_id' => is_array($newCat) ? $newCat['categories_id'] : $newCat,
-                                'iscategorized' => 1,
-                                'isrenamed' => 1,
-                                'proc_pp' => 1,
-                            ]);
-
-                            (new PreviewGenerationPolicy)->restoreOwedPreviews([(int) $context->release->id]);
-                            $this->searchSyncCoordinator->request((int) $context->release->id);
-
-                            if ($this->config->echoCLI) {
-                                $releaseInfo = (object) [
-                                    'groups_id' => $rQuery->groups_id, 'categories_id' => $rQuery->categories_id,
-                                    'searchname' => $rQuery->searchname, 'name' => $rQuery->searchname,
-                                    'releases_id' => $context->release->id, 'filename' => '',
-                                ];
-                                (new ReleaseUpdateService)->echoReleaseInfo($releaseInfo, $newTitle,
-                                    is_array($newCat) ? $newCat : ['categories_id' => $newCat], '',
-                                    'MediaExtractionService->getAudioInfo');
-                            }
-                        }
-
-                        $this->releaseExtra->addFromXml($context->release->id, $xmlArray);
-                        $this->mediaInfoRefinement->refine((int) $context->release->id);
-                        $result['audioInfo'] = true;
-                        $context->foundAudioInfo = true;
-                        break;
+                    if ($tags['album'] !== null
+                        && $tags['performer'] !== null
+                        && (int) $context->release->predb_id === 0
+                        && $this->config->renameMusicMediaInfo
+                    ) {
+                        $this->renameFromAudioTags($context, $rQuery, $tags, $fileExtension);
                     }
+
+                    $this->releaseExtra->addFromXml($context->release->id, $xmlArray);
+                    $this->mediaInfoRefinement->refine((int) $context->release->id);
+                    $result['audioInfo'] = true;
+                    $context->foundAudioInfo = true;
                 }
             } catch (\Throwable $e) {
                 Log::debug($e->getMessage());
@@ -388,6 +365,55 @@ class MediaExtractionService
         }
 
         return $result;
+    }
+
+    /**
+     * Rebuild an unidentified music release's name from its own tags.
+     *
+     * Only reached for a release with no predb match, carrying both an album
+     * and a performer tag, when `rename_music_mediainfo` is on.
+     *
+     * @param  array<string, mixed>  $tags  Attributes from {@see AudioTagExtractor}.
+     */
+    private function renameFromAudioTags(
+        ReleaseProcessingContext $context,
+        Release $rQuery,
+        array $tags,
+        string $fileExtension
+    ): void {
+        $ext = strtoupper($fileExtension);
+
+        $newName = $tags['performer'].' - '.$tags['album'];
+        $newName .= $tags['recorded_year'] !== null ? ' ('.$tags['recorded_year'].') '.$ext : ' '.$ext;
+
+        $newCat = match ($ext) {
+            'MP3' => Category::MUSIC_MP3,
+            'FLAC' => Category::MUSIC_LOSSLESS,
+            default => $this->categorize->determineCategory($rQuery->groups_id, $newName, $rQuery->fromname),
+        };
+
+        $newTitle = substr($newName, 0, 255);
+        Release::whereId($context->release->id)->update([
+            'searchname' => $newTitle,
+            'categories_id' => is_array($newCat) ? $newCat['categories_id'] : $newCat,
+            'iscategorized' => 1,
+            'isrenamed' => 1,
+            'proc_pp' => 1,
+        ]);
+
+        (new PreviewGenerationPolicy)->restoreOwedPreviews([(int) $context->release->id]);
+        $this->searchSyncCoordinator->request((int) $context->release->id);
+
+        if ($this->config->echoCLI) {
+            $releaseInfo = (object) [
+                'groups_id' => $rQuery->groups_id, 'categories_id' => $rQuery->categories_id,
+                'searchname' => $rQuery->searchname, 'name' => $rQuery->searchname,
+                'releases_id' => $context->release->id, 'filename' => '',
+            ];
+            (new ReleaseUpdateService)->echoReleaseInfo($releaseInfo, $newTitle,
+                is_array($newCat) ? $newCat : ['categories_id' => $newCat], '',
+                'MediaExtractionService->getAudioInfo');
+        }
     }
 
     /**
