@@ -110,7 +110,7 @@ class NzbContentsCheckPar2Test extends TestCase
         $service = $this->service();
         $this->assertFalse($service->checkPar2($this->guid(1), 1, 7, 1, 0));
         $this->assertSame(1, $this->procPar2Of(1));
-        $this->assertSame(NzbContentsService::MAX_PAR2_FETCH_ATTEMPTS, $service->lastPar2Stats()['attempts']);
+        $this->assertSame(['files' => 10, 'attempts' => NzbContentsService::MAX_PAR2_FETCH_ATTEMPTS], $service->lastPar2Stats());
     }
 
     #[Test]

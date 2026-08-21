@@ -41,8 +41,9 @@ class NzbContentsService
     public const int MAX_PAR2_FETCH_ATTEMPTS = 3;
 
     /**
-     * Subjects that look like a PAR2 file posted as a single part: the index
-     * (`.par2"`) or a volume whose name ends in a two- or three-digit suffix.
+     * Subjects that look like a PAR2 file posted as a single part: `.par2`
+     * (quoted, spaced, or bare) or a quoted name ending in a two- or
+     * three-digit suffix, followed by a `(1/1)` part count.
      */
     private const string PAR2_SUBJECT_PATTERN = '/\.(par[2" ]|\d{2,3}").+\(1\/1\)/i';
 
@@ -273,8 +274,10 @@ class NzbContentsService
                 if (preg_match(self::PAR2_SUBJECT_PATTERN, (string) $nzbContents->attributes()->subject) !== 1) {
                     continue;
                 }
+                // Keep counting files past the cap so the --show line reports
+                // the NZB's real size; only the fetches stop.
                 if ($this->lastPar2Stats['attempts'] >= self::MAX_PAR2_FETCH_ATTEMPTS) {
-                    break;
+                    continue;
                 }
 
                 $this->lastPar2Stats['attempts']++;
