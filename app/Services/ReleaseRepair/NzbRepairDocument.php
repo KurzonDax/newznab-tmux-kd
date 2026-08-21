@@ -23,7 +23,7 @@ final class NzbRepairDocument
      */
     private function __construct(
         private readonly DOMDocument $document,
-        private readonly array $files,
+        private array $files,
         private readonly NzbParserService $parser,
     ) {}
 
@@ -51,15 +51,56 @@ final class NzbRepairDocument
             return null;
         }
 
-        $files = [];
+        return new self($document, self::fileElementsOf($document), $parser);
+    }
 
-        foreach ($document->getElementsByTagNameNS('*', 'file') as $index => $file) {
-            if ($file instanceof DOMElement) {
-                $files[$index] = $file;
+    /**
+     * How many `<file>` elements the document holds.
+     */
+    public function fileCount(): int
+    {
+        return \count($this->files);
+    }
+
+    /**
+     * File index => `subject` attribute, document order.
+     *
+     * @return array<int, string>
+     */
+    public function subjects(): array
+    {
+        return array_map(static fn (DOMElement $file): string => $file->getAttribute('subject'), $this->files);
+    }
+
+    /**
+     * What a file added by the header re-scan has to look like to belong to this release.
+     *
+     * Poster, date and groups are collection-wide in a stored NZB -- the writer stamps every
+     * `<file>` from the same collection row -- so the first file speaks for all of them.
+     */
+    public function envelope(): ?NzbFileEnvelope
+    {
+        $first = $this->files[array_key_first($this->files) ?? -1] ?? null;
+
+        if ($first === null) {
+            return null;
+        }
+
+        $groups = [];
+
+        foreach ($first->getElementsByTagNameNS('*', 'group') as $group) {
+            $name = trim($group->textContent);
+
+            if ($name !== '') {
+                $groups[] = $name;
             }
         }
 
-        return new self($document, $files, $parser);
+        return new NzbFileEnvelope(
+            poster: $first->getAttribute('poster'),
+            date: $first->getAttribute('date'),
+            groups: array_values(array_unique($groups)),
+        );
     }
 
     /**
@@ -161,7 +202,12 @@ final class NzbRepairDocument
         return $added;
     }
 
-    public function measure(): CompletionSignals
+    /**
+     * @param  int|null  $declaredFiles  The resolved declared file count, where the caller has one.
+     *                                   Without it the count is read from the subjects themselves,
+     *                                   which only sees the files the NZB still holds.
+     */
+    public function measure(?int $declaredFiles = null): CompletionSignals
     {
         $tally = new CompletionTally;
 
@@ -171,11 +217,93 @@ final class NzbRepairDocument
             $tally->addFile(
                 count($this->segmentsOf($file)),
                 $this->parser->extractPartsTotal($subject),
-                $this->parser->extractFilesTotal($subject),
+                $declaredFiles ?? $this->parser->extractFilesTotal($subject),
             );
         }
 
         return $tally->signals();
+    }
+
+    /**
+     * Append whole files the header re-scan found, in file-index order.
+     *
+     * These are files with no seen segment at all, so there was no `<file>` element to repair --
+     * they are built from the overview lines themselves and from the collection-wide envelope the
+     * NZB already carries.
+     *
+     * @param  array<int, RecoveredFile>  $files  Keyed by file index; ignored where the index is
+     *                                            already present.
+     * @return int Segments actually added.
+     */
+    public function addFiles(array $files, NzbFileEnvelope $envelope): int
+    {
+        $root = $this->document->documentElement;
+
+        if ($root === null || $files === []) {
+            return 0;
+        }
+
+        ksort($files);
+        $added = 0;
+
+        foreach ($files as $recovered) {
+            if ($recovered->segments === []) {
+                continue;
+            }
+
+            $file = $this->document->createElementNS($root->namespaceURI, 'file');
+            $file->setAttribute('poster', $envelope->poster);
+            $file->setAttribute('date', $envelope->date);
+            $file->setAttribute('subject', $recovered->subject);
+
+            $groups = $this->document->createElementNS($root->namespaceURI, 'groups');
+
+            foreach ($envelope->groups as $groupName) {
+                $group = $this->document->createElementNS($root->namespaceURI, 'group');
+                $group->appendChild($this->document->createTextNode($groupName));
+                $groups->appendChild($group);
+            }
+
+            $file->appendChild($groups);
+
+            $segments = $this->document->createElementNS($root->namespaceURI, 'segments');
+            $numbers = $recovered->segments;
+            ksort($numbers);
+
+            foreach ($numbers as $number => $segment) {
+                $element = $this->document->createElementNS($root->namespaceURI, 'segment');
+                // createElement()'s value argument does not escape; a text node does.
+                $element->appendChild($this->document->createTextNode($segment->messageId));
+                $element->setAttribute('bytes', (string) $segment->bytes);
+                $element->setAttribute('number', (string) $number);
+                $segments->appendChild($element);
+                $added++;
+            }
+
+            $file->appendChild($segments);
+            $root->appendChild($file);
+        }
+
+        // Re-read the document: plan() and measure() must see what was just appended.
+        $this->files = self::fileElementsOf($this->document);
+
+        return $added;
+    }
+
+    /**
+     * @return array<int, DOMElement>
+     */
+    private static function fileElementsOf(DOMDocument $document): array
+    {
+        $files = [];
+
+        foreach ($document->getElementsByTagNameNS('*', 'file') as $index => $file) {
+            if ($file instanceof DOMElement) {
+                $files[$index] = $file;
+            }
+        }
+
+        return $files;
     }
 
     public function toXml(): string

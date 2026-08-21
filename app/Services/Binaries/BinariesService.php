@@ -537,22 +537,37 @@ class BinariesService
      */
     public function daytopost(int $days, array $data): string
     {
-        $goalTime = now()->subDays($days)->timestamp;
-
-        $firstDate = $this->postdate($data['first'], $data);
-        if ($goalTime < $firstDate) {
-            return $data['first'];
-        }
-
-        $lastDate = $this->postdate($data['last'], $data);
-        if ($goalTime > $lastDate) {
-            return $data['last'];
-        }
-
         if ($this->config->echoCli) {
             cli()->primary(
                 'Searching for an approximate article number for group '.$data['group'].' '.$days.' days back.'
             );
+        }
+
+        return $this->articleForTimestamp(now()->subDays($days)->timestamp, $data);
+    }
+
+    /**
+     * Returns the article number closest to an absolute point in time.
+     *
+     * The same bisection {@see self::daytopost()} runs, but aimed at a timestamp rather than a
+     * number of days back -- what the header re-scan needs, since it is looking for the articles
+     * around one release's posting date rather than around "now minus N".
+     *
+     * @param  int  $goalTime  Unix timestamp to find the article number for.
+     * @param  array<string, mixed>  $data  Group data from usenet.
+     *
+     * @throws \Exception
+     */
+    public function articleForTimestamp(int $goalTime, array $data): string
+    {
+        $firstDate = $this->postdate($data['first'], $data);
+        if ($goalTime < $firstDate) {
+            return (string) $data['first'];
+        }
+
+        $lastDate = $this->postdate($data['last'], $data);
+        if ($goalTime > $lastDate) {
+            return (string) $data['last'];
         }
 
         return $this->binarySearchArticleByDate($goalTime, $data);
