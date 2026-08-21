@@ -13,6 +13,7 @@ use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
+use Symfony\Component\Process\ExecutableFinder;
 use Tests\TestCase;
 
 class TmuxPaneManagementTest extends TestCase
@@ -395,5 +396,165 @@ SH;
             'disabled' => [false],
             'enabled' => [true],
         ];
+    }
+
+    public function test_fix_names_chain_bounds_every_step_and_ends_with_the_standard_sweep(): void
+    {
+        config(['nntmux_srrdb.enabled' => false]);
+        $this->fakeFixNamesPane();
+
+        $runner = $this->runnerWithTimeoutBinary('/usr/bin/timeout');
+        $this->assertTrue($runner->runPaneTask('fixnames', [], [
+            'settings' => ['fix_names' => 1, 'fix_timer' => 300, 'fix_names_timeout' => 900],
+            'counts' => ['now' => ['processrenames' => 1]],
+        ]));
+
+        $command = $this->respawnedCommand();
+
+        $expectedOrder = [];
+        foreach ([3, 5, 7, 9, 11, 13, 15, 17, 19] as $level) {
+            $expectedOrder[] = '/usr/bin/timeout -k 10 900 php ';
+            $expectedOrder[] = "releases:fix-names {$level} --update --category=other --set-status --show";
+            $expectedOrder[] = "fix-names {$level} timed out after 900s";
+        }
+        $expectedOrder[] = '/usr/bin/timeout -k 10 900 php ';
+        $expectedOrder[] = 'multiprocessing:fixrelnames standard';
+        $expectedOrder[] = 'fix-names standard sweep timed out after 900s';
+        $expectedOrder[] = "date +'%Y-%m-%d %T'";
+
+        $this->assertAppearInOrder($expectedOrder, $command);
+        $this->assertSame(10, substr_count($command, '| tee -a '), 'every step logs to the pane log');
+        $this->assertSame(10, substr_count($command, '/usr/bin/timeout -k 10 900 '), 'every step is bounded');
+    }
+
+    #[DataProvider('fixNamesTimeoutProvider')]
+    public function test_fix_names_timeout_defaults_and_is_floored_at_sixty_seconds(?int $configured, int $expected): void
+    {
+        $this->fakeFixNamesPane();
+
+        $settings = ['fix_names' => 1, 'fix_timer' => 300];
+        if ($configured !== null) {
+            $settings['fix_names_timeout'] = $configured;
+        }
+
+        $this->runnerWithTimeoutBinary('timeout')->runPaneTask('fixnames', [], [
+            'settings' => $settings,
+            'counts' => ['now' => ['processrenames' => 1]],
+        ]);
+
+        $this->assertStringContainsString("timeout -k 10 {$expected} php", $this->respawnedCommand());
+    }
+
+    /**
+     * @return array<string, array{?int, int}>
+     */
+    public static function fixNamesTimeoutProvider(): array
+    {
+        return [
+            'missing setting uses the default' => [null, TmuxTaskRunner::DEFAULT_FIX_NAMES_TIMEOUT],
+            'below the floor is raised to it' => [5, TmuxTaskRunner::MIN_FIX_NAMES_TIMEOUT],
+            'configured value is used' => [900, 900],
+        ];
+    }
+
+    public function test_fix_names_chain_runs_unbounded_when_the_host_has_no_timeout_binary(): void
+    {
+        $this->fakeFixNamesPane();
+
+        $this->runnerWithTimeoutBinary(null)->runPaneTask('fixnames', [], [
+            'settings' => ['fix_names' => 1, 'fix_timer' => 300],
+            'counts' => ['now' => ['processrenames' => 1]],
+        ]);
+
+        $command = $this->respawnedCommand();
+        $this->assertStringNotContainsString('timeout -k', $command);
+        $this->assertStringNotContainsString('timed out', $command);
+        $this->assertStringStartsWith("echo 'fix_names_timeout is not enforced", $command);
+        $this->assertStringContainsString('multiprocessing:fixrelnames standard 2>&1 | tee -a', $command);
+    }
+
+    /**
+     * The generated step really does kill a hung command, write one notice, and
+     * let the chain continue. Needs coreutils `timeout`; skipped where absent.
+     */
+    public function test_a_bounded_step_kills_a_hung_command_and_moves_on(): void
+    {
+        $timeout = (new ExecutableFinder)->find('timeout');
+        if ($timeout === null) {
+            $this->markTestSkipped('coreutils timeout is not installed on this host.');
+        }
+
+        $log = $this->makeTempPath('nntmux-fixnames', '.log');
+        $runner = new TmuxTaskRunner('test-session');
+        $chain = $runner->boundedStep('fix-names 7', 'sleep 30', 1, $log).'; echo next-step';
+
+        $started = microtime(true);
+        $process = \Symfony\Component\Process\Process::fromShellCommandline($chain);
+        $process->setTimeout(20);
+        $process->run();
+        $elapsed = microtime(true) - $started;
+
+        $this->assertLessThan(15, $elapsed, 'the hung step must be cut off at the limit');
+        $this->assertMatchesRegularExpression('/fix-names 7 timed out after 1s, moving on\n.*next-step/s', $process->getOutput());
+        $this->assertSame(1, substr_count((string) file_get_contents($log), 'timed out after 1s'));
+        $this->assertStringNotContainsString('next-step', (string) file_get_contents($log), 'only the step itself is logged');
+    }
+
+    private function fakeFixNamesPane(): void
+    {
+        Process::fake(function (PendingProcess $process) {
+            if (is_array($process->command) && in_array('list-panes', $process->command, true)) {
+                return Process::result("%9\tfix_names\n");
+            }
+
+            return Process::result();
+        });
+    }
+
+    private function runnerWithTimeoutBinary(?string $binary): TmuxTaskRunner
+    {
+        return new class('test-session', $binary) extends TmuxTaskRunner
+        {
+            public function __construct(string $sessionName, private readonly ?string $binary)
+            {
+                parent::__construct($sessionName);
+            }
+
+            protected function timeoutBinary(): ?string
+            {
+                return $this->binary;
+            }
+        };
+    }
+
+    private function respawnedCommand(): string
+    {
+        $command = null;
+        Process::assertRan(function (PendingProcess $process) use (&$command): bool {
+            if (! is_array($process->command) || ! in_array('respawn-pane', $process->command, true)) {
+                return false;
+            }
+
+            $command = (string) end($process->command);
+
+            return true;
+        });
+
+        $this->assertIsString($command);
+
+        return $command;
+    }
+
+    /**
+     * @param  list<string>  $needles
+     */
+    private function assertAppearInOrder(array $needles, string $haystack): void
+    {
+        $offset = 0;
+        foreach ($needles as $needle) {
+            $position = strpos($haystack, $needle, $offset);
+            $this->assertNotFalse($position, "Expected to find [{$needle}] after offset {$offset} in:\n{$haystack}");
+            $offset = $position + strlen($needle);
+        }
     }
 }

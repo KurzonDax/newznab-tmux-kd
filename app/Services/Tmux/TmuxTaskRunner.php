@@ -6,12 +6,25 @@ namespace App\Services\Tmux;
 
 use App\Enums\TmuxPaneRole;
 use App\Models\Settings;
+use Symfony\Component\Process\ExecutableFinder;
 
 /**
  * Service for running tasks in tmux panes
  */
 class TmuxTaskRunner
 {
+    /** Default for the `fix_names_timeout` setting when the row is missing. */
+    public const int DEFAULT_FIX_NAMES_TIMEOUT = 1200;
+
+    /** Floor for `fix_names_timeout`; matches the form request's `min:60`. */
+    public const int MIN_FIX_NAMES_TIMEOUT = 60;
+
+    /**
+     * Grace period between `timeout` sending TERM and following up with KILL,
+     * so a stuck PHP process is actually gone before the next step starts.
+     */
+    private const int TIMEOUT_KILL_AFTER = 10;
+
     protected TmuxPaneManager $paneManager;
 
     protected string $sessionName;
@@ -412,24 +425,89 @@ class TmuxTaskRunner
 
         $artisan = base_path('artisan');
         $log = $this->getLogFile('fixnames');
+        $timeout = $this->fixNamesTimeout($runVar);
 
-        // Run multiple fix-names passes
-        $commands = [];
+        // The odd methods look at the last 6 hours only; the standard sweep
+        // that follows has no window, so anything a stalled method let age out
+        // is still picked up on a later cycle.
+        $steps = [];
+        if ($this->timeoutBinary() === null) {
+            $steps[] = "echo 'fix_names_timeout is not enforced: coreutils timeout (or gtimeout) was not found on PATH' | tee -a {$log}";
+        }
+
         $levels = [3, 5, 7, 9, 11, 13, 15, 17, 19];
         if (config('nntmux_srrdb.enabled', false)) {
             $levels[] = 21;
         }
 
         foreach ($levels as $level) {
-            $commands[] = "php {$artisan} releases:fix-names {$level} --update --category=other --set-status --show 2>&1 | tee -a {$log}";
+            $steps[] = $this->boundedStep(
+                "fix-names {$level}",
+                "php {$artisan} releases:fix-names {$level} --update --category=other --set-status --show",
+                $timeout,
+                $log
+            );
         }
 
+        $steps[] = $this->boundedStep(
+            'fix-names standard sweep',
+            "php {$artisan} multiprocessing:fixrelnames standard",
+            $timeout,
+            $log
+        );
+
         $sleep = (int) ($runVar['settings']['fix_timer'] ?? 300);
-        $allCommands = implode('; ', $commands);
         $sleepCommand = $this->buildSleepCommand($sleep);
-        $fullCommand = "{$allCommands}; date +'%Y-%m-%d %T'; {$sleepCommand}";
+        $fullCommand = implode('; ', $steps)."; date +'%Y-%m-%d %T'; {$sleepCommand}";
 
         return $this->paneManager->respawnPane($pane, $fullCommand);
+    }
+
+    /**
+     * One step of a sequential pane chain, bounded by a wall-clock limit.
+     *
+     * The command runs under coreutils `timeout`, which TERMs it at the limit
+     * and KILLs it shortly after, and a single line naming the step is written
+     * when that happens. The signal goes to the command's whole process group,
+     * so the sweep's forked `groupfixrelnames.php` workers die with it. The
+     * pipe to `tee` would otherwise swallow the exit status, so the check
+     * happens inside the braces, before the pipe. When no `timeout` binary is
+     * available the command runs unbounded; {@see self::runFixNamesTask()}
+     * says so in the pane once per cycle.
+     */
+    public function boundedStep(string $label, string $command, int $timeoutSeconds, string $log): string
+    {
+        $timeoutBinary = $this->timeoutBinary();
+        if ($timeoutBinary === null) {
+            return "{$command} 2>&1 | tee -a {$log}";
+        }
+
+        $killAfter = self::TIMEOUT_KILL_AFTER;
+        $notice = "\$(date +'%Y-%m-%d %T') {$label} timed out after {$timeoutSeconds}s, moving on";
+
+        return "{ {$timeoutBinary} -k {$killAfter} {$timeoutSeconds} {$command}; "
+            ."case \$? in 124|137) echo \"{$notice}\";; esac; } 2>&1 | tee -a {$log}";
+    }
+
+    /**
+     * @param  array<string, mixed>  $runVar
+     */
+    protected function fixNamesTimeout(array $runVar): int
+    {
+        $configured = (int) ($runVar['settings']['fix_names_timeout'] ?? self::DEFAULT_FIX_NAMES_TIMEOUT);
+
+        return max(self::MIN_FIX_NAMES_TIMEOUT, $configured);
+    }
+
+    /**
+     * Path of the coreutils `timeout` binary (`gtimeout` where Homebrew
+     * installs it unprefixed), or null when the host has neither.
+     */
+    protected function timeoutBinary(): ?string
+    {
+        $finder = new ExecutableFinder;
+
+        return $finder->find('timeout') ?? $finder->find('gtimeout');
     }
 
     /**

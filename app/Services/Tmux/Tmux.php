@@ -187,6 +187,7 @@ class Tmux
             'back_timer' => 'back_timer',
             'rel_timer' => 'rel_timer',
             'fix_timer' => 'fix_timer',
+            'fix_names_timeout' => 'fix_names_timeout',
             'post_timer' => 'post_timer',
             'collections_kill' => 'collections_kill',
             'postprocess_kill' => 'postprocess_kill',
