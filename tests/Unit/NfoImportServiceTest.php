@@ -8,67 +8,42 @@ use App\Enums\NzbImportStatus;
 use App\Services\NfoService;
 use App\Services\Nzb\NfoImportService;
 use App\Services\Nzb\NzbUploadManifestService;
-use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
-use PDO;
 use Psr\Log\LoggerInterface;
+use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
 final class NfoImportServiceTest extends TestCase
 {
-    private string $databasePath;
+    use IsolatedSqliteDatabase;
 
     private string $uploadFolder;
 
-    /** @var array<string, string|false> */
-    private array $originalEnvironment = [];
-
-    public function createApplication()
+    /**
+     * @return array<string, string>
+     */
+    protected function bootstrapSettings(): array
     {
-        $this->databasePath = $this->makeTempPath('nntmux-nfo-import-test', '.sqlite');
-        $this->originalEnvironment = [
-            'APP_ENV' => getenv('APP_ENV'),
-            'DB_CONNECTION' => getenv('DB_CONNECTION'),
-            'DB_DATABASE' => getenv('DB_DATABASE'),
+        return [
+            'categorizeforeign' => '0',
+            'catwebdl' => '0',
+            'innerfileblacklist' => '',
+            'timeoutseconds' => '60',
         ];
-
-        if (file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
-        $pdo = new PDO('sqlite:'.$this->databasePath);
-        $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
-        $pdo->exec("INSERT INTO settings (name, value) VALUES
-            ('categorizeforeign', '0'),
-            ('catwebdl', '0'),
-            ('innerfileblacklist', ''),
-            ('timeoutseconds', '60')");
-
-        $this->setEnvironmentValue('APP_ENV', 'testing');
-        $this->setEnvironmentValue('DB_CONNECTION', 'sqlite');
-        $this->setEnvironmentValue('DB_DATABASE', $this->databasePath);
-
-        $app = require __DIR__.'/../../bootstrap/app.php';
-        $app->make(Kernel::class)->bootstrap();
-
-        return $app;
     }
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->bootIsolatedDatabase();
 
         config([
-            'database.default' => 'sqlite',
-            'database.connections.sqlite.database' => $this->databasePath,
             'nntmux.tmp_unrar_path' => sys_get_temp_dir().'/nntmux-nfo-import-tmp',
         ]);
-        DB::purge();
-        DB::reconnect();
 
         Schema::dropAllTables();
         Schema::create('settings', function (Blueprint $table): void {
@@ -97,15 +72,8 @@ final class NfoImportServiceTest extends TestCase
         (new Filesystem)->deleteDirectory($this->uploadFolder);
         (new Filesystem)->deleteDirectory(sys_get_temp_dir().'/nntmux-nfo-import-tmp');
 
-        if (file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
+        $this->tearDownIsolatedDatabase();
         parent::tearDown();
-
-        foreach ($this->originalEnvironment as $key => $value) {
-            $this->setEnvironmentValue($key, $value === false ? null : $value);
-        }
     }
 
     public function test_it_replaces_an_existing_nfo_for_the_manifest_release(): void
@@ -219,19 +187,5 @@ final class NfoImportServiceTest extends TestCase
         $manifests->recordNzbOutcome($nzbPath, NzbImportStatus::Inserted, 1, $guid);
 
         return [$manifestPath, $nfoPath, $manifests];
-    }
-
-    private function setEnvironmentValue(string $key, ?string $value): void
-    {
-        if ($value === null) {
-            putenv($key);
-            unset($_ENV[$key], $_SERVER[$key]);
-
-            return;
-        }
-
-        putenv($key.'='.$value);
-        $_ENV[$key] = $value;
-        $_SERVER[$key] = $value;
     }
 }

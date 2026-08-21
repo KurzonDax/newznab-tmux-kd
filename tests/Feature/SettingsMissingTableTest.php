@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Models\Settings;
-use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use PDO;
+use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
 /**
@@ -18,62 +18,25 @@ use Tests\TestCase;
  */
 final class SettingsMissingTableTest extends TestCase
 {
-    private string $databasePath = '';
+    use IsolatedSqliteDatabase;
 
-    /**
-     * @var array<string, string|false>
-     */
-    private array $originalEnvironment = [];
-
-    public function createApplication()
+    protected function createsSettingsTable(): bool
     {
-        $this->databasePath = $this->makeTempPath('nntmux-settings-missing-table-test', '.sqlite');
-
-        $this->originalEnvironment = [
-            'APP_ENV' => getenv('APP_ENV'),
-            'DB_CONNECTION' => getenv('DB_CONNECTION'),
-            'DB_DATABASE' => getenv('DB_DATABASE'),
-        ];
-
-        if (file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
-        // Deliberately create an empty database file: no settings table.
-        new PDO('sqlite:'.$this->databasePath);
-
-        $this->setEnvironmentValue('APP_ENV', 'testing');
-        $this->setEnvironmentValue('DB_CONNECTION', 'sqlite');
-        $this->setEnvironmentValue('DB_DATABASE', $this->databasePath);
-
-        $app = require __DIR__.'/../../bootstrap/app.php';
-
-        $app->make(Kernel::class)->bootstrap();
-
-        return $app;
+        return false;
     }
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        config([
-            'database.default' => 'sqlite',
-            'database.connections.sqlite.database' => $this->databasePath,
-        ]);
+        $this->bootIsolatedDatabase();
     }
 
     protected function tearDown(): void
     {
-        if ($this->databasePath !== '' && file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
+        $this->tearDownIsolatedDatabase();
 
         parent::tearDown();
-
-        foreach ($this->originalEnvironment as $key => $value) {
-            $this->setEnvironmentValue($key, $value === false ? null : $value);
-        }
     }
 
     public function test_setting_value_returns_null_when_settings_table_is_missing(): void
@@ -83,7 +46,7 @@ final class SettingsMissingTableTest extends TestCase
 
     public function test_setting_value_returns_converted_value_when_table_exists(): void
     {
-        $pdo = new PDO('sqlite:'.$this->databasePath);
+        $pdo = new PDO('sqlite:'.$this->isolatedDatabasePath);
         $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
         $pdo->exec("INSERT INTO settings (name, value) VALUES ('delaytime', '42')");
 
@@ -92,7 +55,7 @@ final class SettingsMissingTableTest extends TestCase
 
     public function test_setting_value_rethrows_unrelated_query_errors(): void
     {
-        $pdo = new PDO('sqlite:'.$this->databasePath);
+        $pdo = new PDO('sqlite:'.$this->isolatedDatabasePath);
         $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
         $pdo->exec("INSERT INTO settings (name, value) VALUES ('delaytime', '5')");
 
@@ -100,7 +63,7 @@ final class SettingsMissingTableTest extends TestCase
         // Keep the default 60s sqlite busy timeout from slowing the suite down.
         DB::connection()->getPdo()->setAttribute(PDO::ATTR_TIMEOUT, 1);
 
-        $locker = new PDO('sqlite:'.$this->databasePath);
+        $locker = new PDO('sqlite:'.$this->isolatedDatabasePath);
         $locker->exec('BEGIN EXCLUSIVE TRANSACTION');
         $locker->exec("INSERT INTO settings (name, value) VALUES ('lockholder', '1')");
 
@@ -111,19 +74,5 @@ final class SettingsMissingTableTest extends TestCase
         } finally {
             $locker->exec('ROLLBACK');
         }
-    }
-
-    private function setEnvironmentValue(string $key, ?string $value): void
-    {
-        if ($value === null) {
-            putenv($key);
-            unset($_ENV[$key], $_SERVER[$key]);
-
-            return;
-        }
-
-        putenv($key.'='.$value);
-        $_ENV[$key] = $value;
-        $_SERVER[$key] = $value;
     }
 }

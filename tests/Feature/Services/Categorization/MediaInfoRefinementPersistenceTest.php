@@ -12,72 +12,30 @@ use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\Releases\PreviewGenerationPolicy;
-use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
-use PDO;
+use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
 class MediaInfoRefinementPersistenceTest extends TestCase
 {
-    private string $databasePath;
-
-    /**
-     * @var array<string, string|false>
-     */
-    private array $originalEnvironment = [];
-
-    public function createApplication(): Application
-    {
-        $this->databasePath = $this->makeTempPath('nntmux-mediainfo-refinement-test', '.sqlite');
-        $this->originalEnvironment = [
-            'APP_ENV' => getenv('APP_ENV'),
-            'DB_CONNECTION' => getenv('DB_CONNECTION'),
-            'DB_DATABASE' => getenv('DB_DATABASE'),
-        ];
-
-        $pdo = new PDO('sqlite:'.$this->databasePath);
-        $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
-        $pdo->exec("INSERT INTO settings (name, value) VALUES ('categorizeforeign', '0'), ('catwebdl', '0')");
-
-        $this->setEnvironmentValue('APP_ENV', 'testing');
-        $this->setEnvironmentValue('DB_CONNECTION', 'sqlite');
-        $this->setEnvironmentValue('DB_DATABASE', $this->databasePath);
-
-        $app = require __DIR__.'/../../../../bootstrap/app.php';
-        $app->make(Kernel::class)->bootstrap();
-
-        return $app;
-    }
+    use IsolatedSqliteDatabase;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        config([
-            'database.default' => 'sqlite',
-            'database.connections.sqlite.database' => $this->databasePath,
-        ]);
-        DB::purge();
-        DB::reconnect();
+        $this->bootIsolatedDatabase();
         $this->createSchema();
     }
 
     protected function tearDown(): void
     {
-        if ($this->databasePath !== '' && file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
+        $this->tearDownIsolatedDatabase();
         parent::tearDown();
-
-        foreach ($this->originalEnvironment as $key => $value) {
-            $this->setEnvironmentValue($key, $value === false ? null : $value);
-        }
     }
 
     public function test_it_persists_category_policy_and_search_sync_for_an_eligible_release(): void
@@ -206,20 +164,6 @@ class MediaInfoRefinementPersistenceTest extends TestCase
         ]);
 
         return $releaseId;
-    }
-
-    private function setEnvironmentValue(string $key, ?string $value): void
-    {
-        if ($value === null) {
-            putenv($key);
-            unset($_ENV[$key], $_SERVER[$key]);
-
-            return;
-        }
-
-        putenv($key.'='.$value);
-        $_ENV[$key] = $value;
-        $_SERVER[$key] = $value;
     }
 
     private function createSchema(): void

@@ -4,22 +4,16 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Carbon\Carbon;
-use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use PDO;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
 final class RoleUpgradeTest extends TestCase
 {
-    private string $databasePath = '';
-
-    /**
-     * @var array<string, string|false>
-     */
-    private array $originalEnvironment = [];
+    use IsolatedSqliteDatabase;
 
     private User $user;
 
@@ -27,24 +21,12 @@ final class RoleUpgradeTest extends TestCase
 
     private Role $supporterRole;
 
-    public function createApplication()
+    /**
+     * @return array<string, string>
+     */
+    protected function bootstrapSettings(): array
     {
-        $this->databasePath = $this->makeTempPath('nntmux-role-upgrade-test', '.sqlite');
-
-        $this->originalEnvironment = [
-            'APP_ENV' => getenv('APP_ENV'),
-            'DB_CONNECTION' => getenv('DB_CONNECTION'),
-            'DB_DATABASE' => getenv('DB_DATABASE'),
-        ];
-
-        if (file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
-        $pdo = new PDO('sqlite:'.$this->databasePath);
-        $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
-
-        $settings = [
+        return [
             'categorizeforeign' => '0',
             'catwebdl' => '0',
             'delaytime' => '2',
@@ -62,30 +44,13 @@ final class RoleUpgradeTest extends TestCase
             'partretentionhours' => '0',
             'last_run_time' => '',
         ];
-
-        $statement = $pdo->prepare('INSERT INTO settings (name, value) VALUES (:name, :value)');
-        foreach ($settings as $name => $value) {
-            $statement->execute(['name' => $name, 'value' => $value]);
-        }
-
-        $this->setEnvironmentValue('APP_ENV', 'testing');
-        $this->setEnvironmentValue('DB_CONNECTION', 'sqlite');
-        $this->setEnvironmentValue('DB_DATABASE', $this->databasePath);
-
-        $app = require __DIR__.'/../../bootstrap/app.php';
-
-        $app->make(Kernel::class)->bootstrap();
-
-        return $app;
     }
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => $this->databasePath]);
-        DB::purge();
-        DB::reconnect();
+        $this->bootIsolatedDatabase();
 
         // Create minimal tables needed for testing
         $this->createTestTables();
@@ -133,15 +98,8 @@ final class RoleUpgradeTest extends TestCase
     protected function tearDown(): void
     {
         DB::disconnect();
+        $this->tearDownIsolatedDatabase();
         parent::tearDown();
-
-        if ($this->databasePath !== '' && file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
-        foreach ($this->originalEnvironment as $key => $value) {
-            $this->setEnvironmentValue($key, $value === false ? null : $value);
-        }
     }
 
     /**
@@ -291,20 +249,6 @@ final class RoleUpgradeTest extends TestCase
             created_at DATETIME NULL,
             updated_at DATETIME NULL
         )');
-    }
-
-    private function setEnvironmentValue(string $key, ?string $value): void
-    {
-        if ($value === null) {
-            putenv($key);
-            unset($_ENV[$key], $_SERVER[$key]);
-
-            return;
-        }
-
-        putenv($key.'='.$value);
-        $_ENV[$key] = $value;
-        $_SERVER[$key] = $value;
     }
 
     /**

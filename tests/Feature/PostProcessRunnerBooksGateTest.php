@@ -6,81 +6,41 @@ namespace Tests\Feature;
 
 use App\Models\Category;
 use App\Services\Runners\PostProcessRunner;
-use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use PDO;
+use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
 class PostProcessRunnerBooksGateTest extends TestCase
 {
-    private string $databasePath;
+    use IsolatedSqliteDatabase;
 
     /**
-     * @var array<string, string|false>
+     * @return array<string, string>
      */
-    private array $originalEnvironment = [];
-
-    public function createApplication()
+    protected function bootstrapSettings(): array
     {
-        $this->databasePath = $this->makeTempPath('nntmux-postprocess-books-gate', '.sqlite');
-
-        $this->originalEnvironment = [
-            'APP_ENV' => getenv('APP_ENV'),
-            'DB_CONNECTION' => getenv('DB_CONNECTION'),
-            'DB_DATABASE' => getenv('DB_DATABASE'),
-        ];
-
-        if (file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
-        $pdo = new PDO('sqlite:'.$this->databasePath);
-        $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
-        $pdo->exec("INSERT INTO settings (name, value) VALUES ('lookupbooks', '1'), ('postthreadsnon', '1')");
-
-        $this->setEnvironmentValue('APP_ENV', 'testing');
-        $this->setEnvironmentValue('DB_CONNECTION', 'sqlite');
-        $this->setEnvironmentValue('DB_DATABASE', $this->databasePath);
-
-        $app = require __DIR__.'/../../bootstrap/app.php';
-        $app->make(Kernel::class)->bootstrap();
-
-        return $app;
+        return ['lookupbooks' => '1', 'postthreadsnon' => '1'];
     }
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->bootIsolatedDatabase();
 
         DB::table('settings')->upsert([
             ['name' => 'lookupbooks', 'value' => '1'],
             ['name' => 'postthreadsnon', 'value' => '1'],
         ], ['name'], ['value']);
 
-        config([
-            'database.default' => 'sqlite',
-            'database.connections.sqlite.database' => $this->databasePath,
-        ]);
-
-        DB::purge();
-        DB::reconnect();
-
         $this->createSchema();
     }
 
     protected function tearDown(): void
     {
-        if ($this->databasePath !== '' && file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
+        $this->tearDownIsolatedDatabase();
         parent::tearDown();
-
-        foreach ($this->originalEnvironment as $key => $value) {
-            $this->setEnvironmentValue($key, $value === false ? null : $value);
-        }
     }
 
     public function test_process_books_treats_obfuscated_book_rows_as_pending_work(): void
@@ -200,20 +160,6 @@ class PostProcessRunnerBooksGateTest extends TestCase
         $runner->processBooks();
 
         $this->assertSame([], $runner->captured);
-    }
-
-    private function setEnvironmentValue(string $key, ?string $value): void
-    {
-        if ($value === null) {
-            putenv($key);
-            unset($_ENV[$key], $_SERVER[$key]);
-
-            return;
-        }
-
-        putenv($key.'='.$value);
-        $_ENV[$key] = $value;
-        $_SERVER[$key] = $value;
     }
 
     private function createSchema(): void

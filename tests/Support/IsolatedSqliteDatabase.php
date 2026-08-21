@@ -41,11 +41,14 @@ trait IsolatedSqliteDatabase
         }
 
         $pdo = new PDO('sqlite:'.$this->isolatedDatabasePath);
-        $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
 
-        foreach ($this->bootstrapSettings() as $name => $value) {
-            $statement = $pdo->prepare('INSERT INTO settings (name, value) VALUES (?, ?)');
-            $statement->execute([$name, $value]);
+        if ($this->createsSettingsTable()) {
+            $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
+
+            foreach ($this->bootstrapSettings() as $name => $value) {
+                $statement = $pdo->prepare('INSERT INTO settings (name, value) VALUES (?, ?)');
+                $statement->execute([$name, $value]);
+            }
         }
 
         $this->setIsolatedEnvironmentValue('APP_ENV', 'testing');
@@ -66,6 +69,16 @@ trait IsolatedSqliteDatabase
     protected function bootstrapSettings(): array
     {
         return ['categorizeforeign' => '0', 'catwebdl' => '0'];
+    }
+
+    /**
+     * Whether a `settings` table is created before the application boots. Override to
+     * return false to boot against a completely empty database file, exercising the
+     * fresh-install path where even the settings table does not exist yet.
+     */
+    protected function createsSettingsTable(): bool
+    {
+        return true;
     }
 
     protected function bootIsolatedDatabase(): void

@@ -11,89 +11,54 @@ use App\Services\AdditionalProcessing\DTO\PersistenceMetrics;
 use App\Services\AdditionalProcessing\DTO\ReleaseProcessingResult;
 use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
 use App\Services\Runners\PostProcessRunner;
-use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
 use Mockery\MockInterface;
-use PDO;
+use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
 class PostProcessRunnerAdditionalThreadsTest extends TestCase
 {
-    private string $databasePath;
+    use IsolatedSqliteDatabase;
 
     private string $tmpUnrarPath;
 
     /**
-     * @var array<string, string|false>
+     * @return array<string, string>
      */
-    private array $originalEnvironment = [];
-
-    public function createApplication()
+    protected function bootstrapSettings(): array
     {
-        $this->databasePath = $this->makeTempPath('nntmux-postprocess-additional-threads', '.sqlite');
-        $this->tmpUnrarPath = sys_get_temp_dir().'/nntmux-additional-threads-'.uniqid('', true);
-
-        $this->originalEnvironment = [
-            'APP_ENV' => getenv('APP_ENV'),
-            'DB_CONNECTION' => getenv('DB_CONNECTION'),
-            'DB_DATABASE' => getenv('DB_DATABASE'),
-        ];
-
-        if (file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
-        $pdo = new PDO('sqlite:'.$this->databasePath);
-        $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
-        $pdo->exec("INSERT INTO settings (name, value) VALUES ('categorizeforeign', '0'), ('catwebdl', '0'), ('postthreads', '5'), ('releaseprocessingtimeout', '120')");
-
-        $this->setEnvironmentValue('APP_ENV', 'testing');
-        $this->setEnvironmentValue('DB_CONNECTION', 'sqlite');
-        $this->setEnvironmentValue('DB_DATABASE', $this->databasePath);
-
-        $app = require __DIR__.'/../../bootstrap/app.php';
-        $app->make(Kernel::class)->bootstrap();
-
-        return $app;
+        return ['categorizeforeign' => '0', 'catwebdl' => '0', 'postthreads' => '5', 'releaseprocessingtimeout' => '120'];
     }
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->bootIsolatedDatabase();
+
+        $this->tmpUnrarPath = sys_get_temp_dir().'/nntmux-additional-threads-'.uniqid('', true);
 
         config([
-            'database.default' => 'sqlite',
-            'database.connections.sqlite.database' => $this->databasePath,
             'nntmux.echocli' => false,
             'nntmux.tmp_unrar_path' => $this->tmpUnrarPath,
             'nntmux_settings.check_passworded_rars' => true,
             'nntmux_settings.unrar_path' => '/usr/bin/unrar',
         ]);
 
-        DB::purge();
-        DB::reconnect();
-
         $this->createSchema();
     }
 
     protected function tearDown(): void
     {
-        if ($this->databasePath !== '' && file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
         if ($this->tmpUnrarPath !== '' && is_dir($this->tmpUnrarPath)) {
             app('files')->deleteDirectory($this->tmpUnrarPath);
         }
 
+        $this->tearDownIsolatedDatabase();
         parent::tearDown();
-
-        foreach ($this->originalEnvironment as $key => $value) {
-            $this->setEnvironmentValue($key, $value === false ? null : $value);
-        }
     }
 
     public function test_process_additional_uses_configured_postthreads_for_streaming_process_pool(): void
@@ -404,20 +369,6 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
             'additional_pp_claimed_at' => null,
             'additional_pp_claim_token' => null,
         ];
-    }
-
-    private function setEnvironmentValue(string $key, ?string $value): void
-    {
-        if ($value === null) {
-            putenv($key);
-            unset($_ENV[$key], $_SERVER[$key]);
-
-            return;
-        }
-
-        putenv($key.'='.$value);
-        $_ENV[$key] = $value;
-        $_SERVER[$key] = $value;
     }
 
     private function createSchema(): void

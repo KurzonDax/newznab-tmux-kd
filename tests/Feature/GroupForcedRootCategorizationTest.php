@@ -6,13 +6,11 @@ namespace Tests\Feature;
 
 use App\Models\Category;
 use App\Services\Categorization\CategorizationPipeline;
-use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use PDO;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
 /**
@@ -23,51 +21,24 @@ use Tests\TestCase;
  */
 class GroupForcedRootCategorizationTest extends TestCase
 {
+    use IsolatedSqliteDatabase;
+
     private const int FORCED_GROUP_ID = 57;
 
     private const int PLAIN_GROUP_ID = 58;
 
-    private string $databasePath;
-
     /**
-     * @var array<string, string|false>
+     * @return array<string, string>
      */
-    private array $originalEnvironment = [];
-
-    public function createApplication(): Application
+    protected function bootstrapSettings(): array
     {
-        $this->databasePath = $this->makeTempPath('nntmux-forced-root-test', '.sqlite');
-
-        $this->originalEnvironment = [
-            'APP_ENV' => getenv('APP_ENV'),
-            'DB_CONNECTION' => getenv('DB_CONNECTION'),
-            'DB_DATABASE' => getenv('DB_DATABASE'),
-        ];
-
-        $pdo = new PDO('sqlite:'.$this->databasePath);
-        $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
-        $pdo->exec("INSERT INTO settings (name, value) VALUES ('categorizeforeign', '0'), ('catwebdl', '1')");
-
-        $this->setEnvironmentValue('APP_ENV', 'testing');
-        $this->setEnvironmentValue('DB_CONNECTION', 'sqlite');
-        $this->setEnvironmentValue('DB_DATABASE', $this->databasePath);
-
-        $app = require __DIR__.'/../../bootstrap/app.php';
-        $app->make(Kernel::class)->bootstrap();
-
-        return $app;
+        return ['categorizeforeign' => '0', 'catwebdl' => '1'];
     }
 
     protected function setUp(): void
     {
         parent::setUp();
-
-        config([
-            'database.default' => 'sqlite',
-            'database.connections.sqlite.database' => $this->databasePath,
-        ]);
-        DB::purge();
-        DB::reconnect();
+        $this->bootIsolatedDatabase();
 
         $this->createSchema();
         $this->seedGroups();
@@ -75,15 +46,8 @@ class GroupForcedRootCategorizationTest extends TestCase
 
     protected function tearDown(): void
     {
-        if ($this->databasePath !== '' && file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
+        $this->tearDownIsolatedDatabase();
         parent::tearDown();
-
-        foreach ($this->originalEnvironment as $key => $value) {
-            $this->setEnvironmentValue($key, $value === false ? null : $value);
-        }
     }
 
     /**
@@ -206,20 +170,6 @@ class GroupForcedRootCategorizationTest extends TestCase
     private function categorizeWithDebug(int $groupId, string $releaseName): array
     {
         return CategorizationPipeline::createDefault()->categorize($groupId, $releaseName, '', true);
-    }
-
-    private function setEnvironmentValue(string $key, ?string $value): void
-    {
-        if ($value === null) {
-            putenv($key);
-            unset($_ENV[$key], $_SERVER[$key]);
-
-            return;
-        }
-
-        putenv($key.'='.$value);
-        $_ENV[$key] = $value;
-        $_SERVER[$key] = $value;
     }
 
     private function createSchema(): void
