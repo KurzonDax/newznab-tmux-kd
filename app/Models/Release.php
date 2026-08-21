@@ -214,6 +214,16 @@ class Release extends Model
     }
 
     /**
+     * Tag metadata read off the audio file sampled during post-processing.
+     *
+     * @return HasOne<ReleaseAudioTag, $this>
+     */
+    public function audioTags(): HasOne
+    {
+        return $this->hasOne(ReleaseAudioTag::class, 'releases_id');
+    }
+
+    /**
      * @return BelongsTo<TvEpisode, $this>
      */
     public function episode(): BelongsTo
@@ -572,6 +582,7 @@ class Release extends Model
             'episode:id,title,firstaired,se_complete',
             'releaseGroup:releases_id,groups_id',
             'releaseGroup.group:id,name',
+            'audioTags',
         ]);
 
         if (is_array($guid)) {
