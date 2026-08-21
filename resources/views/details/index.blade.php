@@ -22,6 +22,8 @@
 
             @include('details.partials.preview-images')
 
+            @include('details.partials.audio-preview')
+
             @include('details.partials.movie-info')
 
             @include('details.partials.tv-info')
