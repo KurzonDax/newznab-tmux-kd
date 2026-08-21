@@ -4,13 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Unit\AudioProcessing;
 
-use App\Services\AudioProcessing\AudioProcessingConfiguration;
 use App\Services\AudioProcessing\AudioSourceSelector;
 use App\Services\AudioProcessing\Enums\AudioSourceKind;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
-use ReflectionClass;
-use ReflectionProperty;
 
 class AudioSourceSelectorTest extends TestCase
 {
@@ -69,8 +66,10 @@ class AudioSourceSelectorTest extends TestCase
     }
 
     #[Test]
-    public function archive_volumes_are_kept_in_posted_order_and_capped(): void
+    public function archive_volumes_are_kept_whole_and_in_posted_order(): void
     {
+        // How many volumes are worth fetching is AudioFetcher's call; the
+        // selector hands over everything it found.
         $files = [];
         foreach (range(1, 9) as $volume) {
             $files[] = [
@@ -79,12 +78,13 @@ class AudioSourceSelectorTest extends TestCase
             ];
         }
 
-        $source = $this->selector(maxRarParts: 3)->select($files);
+        $source = $this->selector()->select($files);
 
         $this->assertNotNull($source);
         $this->assertSame(AudioSourceKind::Archive, $source->kind);
         $this->assertSame('', $source->extension);
-        $this->assertSame([['<vol-1>'], ['<vol-2>'], ['<vol-3>']], $source->parts);
+        $this->assertCount(9, $source->parts);
+        $this->assertSame([['<vol-1>'], ['<vol-2>']], array_slice($source->parts, 0, 2));
     }
 
     #[Test]
@@ -99,13 +99,8 @@ class AudioSourceSelectorTest extends TestCase
         $this->assertSame([['<flac-2>']], $source->parts);
     }
 
-    private function selector(int $maxRarParts = 6): AudioSourceSelector
+    private function selector(): AudioSourceSelector
     {
-        $reflection = new ReflectionClass(AudioProcessingConfiguration::class);
-        /** @var AudioProcessingConfiguration $config */
-        $config = $reflection->newInstanceWithoutConstructor();
-        (new ReflectionProperty(AudioProcessingConfiguration::class, 'maxRarParts'))->setValue($config, $maxRarParts);
-
-        return new AudioSourceSelector($config);
+        return new AudioSourceSelector;
     }
 }

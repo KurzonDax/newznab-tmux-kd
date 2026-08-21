@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Models\Settings;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -84,6 +85,32 @@ class AudioProcessingSettingsTest extends TestCase
             $this->assertStringContainsString("'name' => '".$name."'", $seeder);
         }
         $this->assertStringNotContainsString('saveaudiopreview', $seeder);
+    }
+
+    public function test_the_admin_save_path_persists_every_audio_setting(): void
+    {
+        $this->migration()->up();
+
+        // What AdminSiteController::edit() does with the submitted form.
+        Settings::settingsUpdate([
+            'postthreadsaudio' => '4',
+            'audio_segments_to_download' => '20',
+            'audio_max_rar_parts' => '3',
+            'audio_preview_seconds' => '45',
+            'audio_preview_start_seconds' => '0',
+            'audio_spectrogram' => '0',
+        ]);
+
+        foreach ([
+            'postthreadsaudio' => '4',
+            'audio_segments_to_download' => '20',
+            'audio_max_rar_parts' => '3',
+            'audio_preview_seconds' => '45',
+            'audio_preview_start_seconds' => '0',
+            'audio_spectrogram' => '0',
+        ] as $name => $expected) {
+            $this->assertSame($expected, DB::table('settings')->where('name', $name)->value('value'), $name);
+        }
     }
 
     public function test_the_admin_form_exposes_the_audio_settings_and_drops_the_retired_one(): void

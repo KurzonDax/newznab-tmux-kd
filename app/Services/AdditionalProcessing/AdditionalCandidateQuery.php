@@ -6,13 +6,11 @@ namespace App\Services\AdditionalProcessing;
 
 use App\Models\Release;
 use App\Models\Settings;
-use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use App\Services\AudioProcessing\AudioRouting;
 use App\Services\Runners\PostProcessRunner;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Schema;
 
 /**
  * Single source of truth for "needs additional postprocessing" release selection.
@@ -37,20 +35,16 @@ final class AdditionalCandidateQuery
     public const int DEFAULT_MAX_SIZE_BYTES = 107374182400;
 
     /**
-     * Hard cap on the bucket fan-out. `leftguid` is the first character of a
-     * hex GUID, so there are at most 16 distinct values (0-9, a-f). There is
-     * no reason to dispatch more buckets than that per scheduler cycle.
-     * Per-cycle concurrency is governed by the existing `postthreads` setting
-     * inside {@see PostProcessRunner::runPostProcess()},
-     * so a separate setting is unnecessary.
+     * Aliases of {@see ReleaseClaimant}'s, kept because callers across the
+     * codebase already reach for them here. Per-cycle concurrency is governed by
+     * the `postthreads` setting inside {@see PostProcessRunner::runPostProcess()},
+     * so no separate fan-out setting is needed.
      */
-    public const int BUCKET_LIMIT = 16;
+    public const int BUCKET_LIMIT = ReleaseClaimant::BUCKET_LIMIT;
 
-    public const string CLAIMED_AT_COLUMN = 'additional_pp_claimed_at';
+    public const string CLAIMED_AT_COLUMN = ReleaseClaimant::CLAIMED_AT_COLUMN;
 
-    public const string CLAIM_TOKEN_COLUMN = 'additional_pp_claim_token';
-
-    private static ?bool $supportsClaims = null;
+    public const string CLAIM_TOKEN_COLUMN = ReleaseClaimant::CLAIM_TOKEN_COLUMN;
 
     /**
      * Resolve the minimum-size filter (bytes). Returns 0 when disabled.
@@ -101,26 +95,16 @@ final class AdditionalCandidateQuery
         ?int $maxSizeBytes = null,
         bool $includeClaimed = false,
     ): Builder {
-        $min = $minSizeBytes ?? self::minSizeBytes();
-        $max = $maxSizeBytes ?? self::maxSizeBytes();
-        $query
-            ->where('r.passwordstatus', PasswordInspectionMode::pendingReleaseStatus())
-            ->where('r.haspreview', -1)
-            ->where('r.nzbstatus', 1);
-        if ($min > 0) {
-            $query->where('r.size', '>', $min);
-        }
-        if ($max > 0) {
-            $query->where('r.size', '<', $max);
-        }
-        if ($groupID !== '' && $groupID !== 0 && $groupID !== '0') {
-            $query->where('r.groups_id', $groupID);
-        }
-        if ($guidChar !== '') {
-            $query->where('r.leftguid', $guidChar);
-        }
+        ReleaseClaimant::applyPendingPredicates(
+            $query,
+            $groupID,
+            $guidChar,
+            $minSizeBytes ?? self::minSizeBytes(),
+            $maxSizeBytes ?? self::maxSizeBytes(),
+        );
+
         if (! $includeClaimed) {
-            self::applyClaimWindow($query);
+            ReleaseClaimant::applyClaimWindow($query);
         }
 
         // The audio worker owns music-routed releases; this query owns the rest,
@@ -178,18 +162,7 @@ final class AdditionalCandidateQuery
      */
     public static function availableBucketCounts(): array
     {
-        $counts = [];
-
-        foreach (self::bucketBacklog() as $backlog) {
-            if ($backlog['available'] > 0) {
-                $counts[] = [
-                    'bucket' => $backlog['bucket'],
-                    'count' => $backlog['available'],
-                ];
-            }
-        }
-
-        return $counts;
+        return ReleaseClaimant::availableBucketCounts(self::bucketBacklog());
     }
 
     /**
@@ -199,36 +172,7 @@ final class AdditionalCandidateQuery
      */
     public static function bucketBacklog(): array
     {
-        $query = self::baseBuilder(includeClaimed: true)
-            ->select('r.leftguid')
-            ->selectRaw('COUNT(*) AS total_count')
-            ->groupBy('r.leftguid')
-            ->orderBy('r.leftguid');
-
-        if (self::supportsClaims()) {
-            $query->selectRaw(
-                'SUM(CASE WHEN r.'.self::CLAIMED_AT_COLUMN.' IS NULL OR r.'.self::CLAIMED_AT_COLUMN.' < ? THEN 1 ELSE 0 END) AS available_count',
-                [self::claimStaleBefore()],
-            );
-        } else {
-            $query->selectRaw('COUNT(*) AS available_count');
-        }
-
-        $backlog = [];
-        foreach ($query->get() as $row) {
-            $bucket = strtolower(substr((string) ($row->leftguid ?? ''), 0, 1));
-            if ($bucket === '') {
-                continue;
-            }
-
-            $backlog[] = [
-                'bucket' => $bucket,
-                'total' => (int) ($row->total_count ?? 0),
-                'available' => (int) ($row->available_count ?? 0),
-            ];
-        }
-
-        return $backlog;
+        return ReleaseClaimant::bucketBacklog(static fn () => self::baseBuilder(includeClaimed: true));
     }
 
     /**
@@ -236,25 +180,7 @@ final class AdditionalCandidateQuery
      */
     public static function backlogCounts(): array
     {
-        $query = self::baseBuilder(includeClaimed: true)
-            ->selectRaw('COUNT(*) AS total_count');
-
-        if (self::supportsClaims()) {
-            $query->selectRaw(
-                'SUM(CASE WHEN r.'.self::CLAIMED_AT_COLUMN.' IS NULL OR r.'.self::CLAIMED_AT_COLUMN.' < ? THEN 1 ELSE 0 END) AS available_count',
-                [self::claimStaleBefore()],
-            );
-        } else {
-            $query->selectRaw('COUNT(*) AS available_count');
-        }
-
-        /** @var object{total_count: int|string|null, available_count: int|string|null}|null $counts */
-        $counts = $query->toBase()->first();
-
-        return [
-            'total' => (int) ($counts->total_count ?? 0),
-            'available' => (int) ($counts->available_count ?? 0),
-        ];
+        return ReleaseClaimant::backlogCounts(static fn () => self::baseBuilder(includeClaimed: true));
     }
 
     /**
@@ -294,19 +220,7 @@ final class AdditionalCandidateQuery
 
     public static function clearClaim(int $releaseId, ?string $token = null): void
     {
-        if (! self::supportsClaims()) {
-            return;
-        }
-
-        $query = Release::query()->where('id', $releaseId);
-        if ($token !== null && $token !== '') {
-            $query->where(self::CLAIM_TOKEN_COLUMN, $token);
-        }
-
-        $query->update([
-            self::CLAIMED_AT_COLUMN => null,
-            self::CLAIM_TOKEN_COLUMN => null,
-        ]);
+        ReleaseClaimant::clearClaim($releaseId, $token);
     }
 
     /**
@@ -314,57 +228,21 @@ final class AdditionalCandidateQuery
      */
     public static function claimResetValues(): array
     {
-        if (! self::supportsClaims()) {
-            return [];
-        }
-
-        return [
-            self::CLAIMED_AT_COLUMN => null,
-            self::CLAIM_TOKEN_COLUMN => null,
-        ];
+        return ReleaseClaimant::claimResetValues();
     }
 
     public static function supportsClaims(): bool
     {
-        if (self::$supportsClaims !== null) {
-            return self::$supportsClaims;
-        }
-
-        if (! Schema::hasTable('releases')) {
-            return self::$supportsClaims = false;
-        }
-
-        return self::$supportsClaims = Schema::hasColumn('releases', self::CLAIMED_AT_COLUMN)
-            && Schema::hasColumn('releases', self::CLAIM_TOKEN_COLUMN);
-    }
-
-    /**
-     * @param  Builder<Release>  $query
-     */
-    private static function applyClaimWindow(Builder $query): void
-    {
-        if (! self::supportsClaims()) {
-            return;
-        }
-
-        $staleBefore = self::claimStaleBefore();
-
-        $query->where(function (Builder $claimQuery) use ($staleBefore): void {
-            $claimQuery
-                ->whereNull('r.'.self::CLAIMED_AT_COLUMN)
-                ->orWhere('r.'.self::CLAIMED_AT_COLUMN, '<', $staleBefore);
-        });
+        return ReleaseClaimant::supportsClaims();
     }
 
     public static function claimTtlSeconds(): int
     {
-        $timeout = (int) (Settings::settingValue('releaseprocessingtimeout') ?: 120);
-
-        return max(300, $timeout * 2);
+        return ReleaseClaimant::claimTtlSeconds();
     }
 
     public static function claimStaleBefore(): Carbon
     {
-        return now()->subSeconds(self::claimTtlSeconds());
+        return ReleaseClaimant::claimStaleBefore();
     }
 }

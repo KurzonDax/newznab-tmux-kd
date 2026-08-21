@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Tests\Integration;
+namespace Tests\Feature;
 
 use App\Services\AdditionalProcessing\MediaTools;
 use App\Services\AudioProcessing\AudioPreviewEncoder;
@@ -19,8 +19,9 @@ use ReflectionProperty;
 
 /**
  * Stream-copy correctness is the point of the audio path, and only ffmpeg can
- * prove it, so this exercises the real binaries. It lives in tests/Integration,
- * which is not part of the CI suites, and skips itself where ffmpeg is absent.
+ * prove it, so this exercises the real binaries and skips itself where they are
+ * absent. It sits in the Feature suite rather than tests/Integration so that it
+ * runs wherever ffmpeg happens to be installed, instead of nowhere.
  *
  * Fixtures are generated on the fly rather than committed -- a few seconds of a
  * sine wave is all the encoder needs to have an opinion about.
@@ -79,6 +80,8 @@ class AudioPreviewEncoderFfmpegTest extends TestCase
         $clip = $this->savePath.'abc123.mp3';
         $this->assertSame('mp3', $this->probe($clip, 'stream=codec_name'));
         $this->assertSame('', $this->probe($clip, 'format_tags=album'));
+        // A copy carries the source's bitrate; a re-encode would not.
+        $this->assertEqualsWithDelta(128000, (int) $this->probe($clip, 'stream=bit_rate'), 4000);
     }
 
     #[Test]

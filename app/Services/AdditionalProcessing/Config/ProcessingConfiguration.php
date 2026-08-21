@@ -77,8 +77,6 @@ final readonly class ProcessingConfiguration
 
     public string $searchDriver;
 
-    public bool $renameMusicMediaInfo;
-
     public bool $renamePar2;
 
     public string|false $ffmpegPath;
@@ -145,7 +143,6 @@ final readonly class ProcessingConfiguration
         $this->debugMode = (bool) config('app.debug');
         $this->searchDriver = config('search.default', 'manticore');
         $this->searchEnabled = in_array($this->searchDriver, ['manticore', 'elasticsearch']);
-        $this->renameMusicMediaInfo = (bool) config('nntmux.rename_music_mediainfo');
         $this->renamePar2 = (bool) config('nntmux.rename_par2');
         $this->releaseProcessingTimeout = (int) (Settings::settingValue('releaseprocessingtimeout') ?: 120);
         $this->maxPpTimeoutCount = (int) (Settings::settingValue('maxpptimeoutcount') ?: 3);

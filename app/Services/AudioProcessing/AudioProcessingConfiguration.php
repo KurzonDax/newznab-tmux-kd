@@ -55,12 +55,6 @@ final readonly class AudioProcessingConfiguration
 
     public string $tmpUnrarPath;
 
-    public int $releaseProcessingTimeout;
-
-    public int $maxPpTimeoutCount;
-
-    public string|false $ffmpegPath;
-
     public string|false $mediaInfoPath;
 
     public bool $renameMusicMediaInfo;
@@ -80,9 +74,6 @@ final readonly class AudioProcessingConfiguration
         $this->maxSizeBytes = AdditionalCandidateQuery::maxSizeBytes();
         $this->savePath = config('nntmux_settings.covers_path').'/audiosample/';
         $this->tmpUnrarPath = (string) config('nntmux.tmp_unrar_path');
-        $this->releaseProcessingTimeout = (int) (Settings::settingValue('releaseprocessingtimeout') ?: 120);
-        $this->maxPpTimeoutCount = (int) (Settings::settingValue('maxpptimeoutcount') ?: 3);
-        $this->ffmpegPath = config('nntmux_settings.ffmpeg_path') ?: false;
         $this->mediaInfoPath = config('nntmux_settings.mediainfo_path') ?: false;
         $this->renameMusicMediaInfo = (bool) config('nntmux.rename_music_mediainfo');
     }

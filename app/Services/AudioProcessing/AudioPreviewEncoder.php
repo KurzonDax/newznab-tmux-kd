@@ -73,16 +73,15 @@ final class AudioPreviewEncoder
         $streamCopied = array_key_exists($codec, self::COPYABLE_CODEC_CONTAINERS);
 
         $workingPath = $tmpPath.$guid.'.'.$container;
-        $encoded = $this->cut($sourcePath, $workingPath, $container, $streamCopied);
+        $seconds = $this->cut($sourcePath, $workingPath, $container, $streamCopied);
 
-        if (! $encoded) {
+        if ($seconds === null) {
             File::delete($workingPath);
 
             return null;
         }
 
         $bytes = (int) File::size($workingPath);
-        $seconds = $this->clipSeconds($workingPath);
 
         if (! $this->store($workingPath, $this->config->savePath.$guid.'.'.$container)) {
             return null;
@@ -130,8 +129,16 @@ final class AudioPreviewEncoder
      * Cut the clip, falling back to the very start when the offset is past the
      * end of what was fetched. A short source yields a short clip; it is never a
      * failure on its own.
+     *
+     * Each attempt is judged on the clip's duration rather than its size:
+     * seeking past the end of a FLAC, WAV or Ogg still writes a valid container
+     * header, so a non-empty file is no evidence that any audio came with it,
+     * and the fallback below would never fire.
+     *
+     * @return int|null The clip's length in whole seconds, or null if no attempt
+     *                  produced audio.
      */
-    private function cut(string $sourcePath, string $outputPath, string $container, bool $streamCopy): bool
+    private function cut(string $sourcePath, string $outputPath, string $container, bool $streamCopy): ?int
     {
         $offsets = $this->config->previewStartSeconds > 0
             ? [$this->config->previewStartSeconds, 0]
@@ -157,12 +164,17 @@ final class AudioPreviewEncoder
 
             $command[] = $outputPath;
 
-            if ($this->run($command) && $this->isNonEmpty($outputPath)) {
-                return true;
+            if (! $this->run($command) || ! $this->isNonEmpty($outputPath)) {
+                continue;
+            }
+
+            $seconds = $this->clipSeconds($outputPath);
+            if ($seconds > 0) {
+                return $seconds;
             }
         }
 
-        return false;
+        return null;
     }
 
     /**

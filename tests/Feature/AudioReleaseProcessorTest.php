@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Facades\Search;
 use App\Models\Category;
 use App\Models\Release;
 use App\Models\ReleaseAudioTag;
@@ -21,6 +22,8 @@ use App\Services\AudioProcessing\AudioProcessingConfiguration;
 use App\Services\AudioProcessing\AudioReleaseProcessor;
 use App\Services\AudioProcessing\AudioRouting;
 use App\Services\AudioProcessing\AudioSourceSelector;
+use App\Services\AudioProcessing\AudioTagRenamer;
+use App\Services\Categorization\CategorizationService;
 use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\ReleaseExtraService;
 use App\Services\Releases\PreviewGenerationPolicy;
@@ -59,6 +62,8 @@ class AudioReleaseProcessorTest extends TestCase
     /** @var list<list<string>> */
     private array $encoderCommands = [];
 
+    private bool $renamesFromTags = false;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -78,6 +83,10 @@ class AudioReleaseProcessorTest extends TestCase
             $table->unsignedInteger('categories_id')->default(0);
             $table->unsignedInteger('groups_id')->default(0);
             $table->unsignedInteger('predb_id')->default(0);
+            $table->string('fromname')->default('');
+            $table->integer('proc_pp')->default(0);
+            $table->boolean('iscategorized')->default(false);
+            $table->boolean('isrenamed')->default(false);
             $table->integer('haspreview')->default(-1);
             $table->integer('passwordstatus')->default(-1);
             $table->timestamp('additional_pp_claimed_at')->nullable();
@@ -96,6 +105,22 @@ class AudioReleaseProcessorTest extends TestCase
             $table->string('audioformat')->nullable();
         });
 
+        Schema::create('root_categories', function (Blueprint $table): void {
+            $table->unsignedInteger('id')->primary();
+            $table->boolean('generate_previews')->default(true);
+        });
+
+        Schema::create('categories', function (Blueprint $table): void {
+            $table->unsignedInteger('id')->primary();
+            $table->unsignedInteger('root_categories_id')->nullable();
+        });
+
+        DB::table('root_categories')->insert([['id' => Category::MUSIC_ROOT, 'generate_previews' => 1]]);
+        DB::table('categories')->insert([
+            ['id' => Category::MUSIC_MP3, 'root_categories_id' => Category::MUSIC_ROOT],
+            ['id' => Category::MUSIC_OTHER, 'root_categories_id' => Category::MUSIC_ROOT],
+        ]);
+
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
             $table->string('name')->default('');
@@ -108,6 +133,10 @@ class AudioReleaseProcessorTest extends TestCase
 
         $migration = require database_path('migrations/2026_08_21_090000_create_release_audio_tags_table.php');
         $migration->up();
+
+        // The search driver is unreachable in tests and the refinement/rename
+        // paths sync through it; swap it out rather than log a page of failures.
+        Search::swap(Mockery::mock()->shouldIgnoreMissing());
 
         $this->tmpPath = $this->makeTempDirectory('nntmux-audio-processor').'/';
         $this->savePath = $this->makeTempDirectory('nntmux-audio-store').'/';
@@ -211,6 +240,47 @@ class AudioReleaseProcessorTest extends TestCase
         $this->assertSame([], $this->encoderCommands, 'No ffmpeg work may be started for a disabled root.');
     }
 
+    public function test_an_unidentified_release_is_renamed_from_its_own_tags(): void
+    {
+        $this->renamesFromTags = true;
+        $release = $this->makeRelease(['categories_id' => Category::MUSIC_OTHER]);
+
+        $this->makeProcessor($this->taggedContainer())->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $renamed = DB::table('releases')->where('id', $release->id)->first();
+        $this->assertSame('Test Artist - Test Album (2019) MP3', $renamed->searchname);
+        $this->assertSame(Category::MUSIC_MP3, (int) $renamed->categories_id);
+        $this->assertSame(1, (int) $renamed->isrenamed);
+        $this->assertSame(1, (int) $renamed->iscategorized);
+    }
+
+    public function test_a_predb_matched_release_keeps_its_scene_name(): void
+    {
+        $this->renamesFromTags = true;
+        $release = $this->makeRelease(['categories_id' => Category::MUSIC_OTHER, 'predb_id' => 7]);
+
+        $this->makeProcessor($this->taggedContainer())->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(
+            'Some.Album-GROUP',
+            DB::table('releases')->where('id', $release->id)->value('searchname'),
+        );
+        // The tags are still recorded; only the name is left alone.
+        $this->assertDatabaseHas('release_audio_tags', ['releases_id' => $release->id, 'album' => 'Test Album']);
+    }
+
+    public function test_renaming_is_off_by_default(): void
+    {
+        $release = $this->makeRelease(['categories_id' => Category::MUSIC_OTHER]);
+
+        $this->makeProcessor($this->taggedContainer())->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(
+            'Some.Album-GROUP',
+            DB::table('releases')->where('id', $release->id)->value('searchname'),
+        );
+    }
+
     public function test_an_nzb_with_nothing_playable_is_settled_rather_than_left_pending(): void
     {
         $release = $this->makeRelease();
@@ -228,14 +298,17 @@ class AudioReleaseProcessorTest extends TestCase
         $this->assertSame(0, (int) DB::table('releases')->where('id', $release->id)->value('haspreview'));
     }
 
-    private function makeRelease(): Release
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    private function makeRelease(array $attributes = []): Release
     {
-        $id = DB::table('releases')->insertGetId([
+        $id = DB::table('releases')->insertGetId(array_merge([
             'guid' => 'audio-guid',
             'searchname' => 'Some.Album-GROUP',
             'categories_id' => Category::MUSIC_MP3,
             'groups_id' => 1,
-        ]);
+        ], $attributes));
 
         return Release::query()->findOrFail($id);
     }
@@ -287,10 +360,11 @@ class AudioReleaseProcessorTest extends TestCase
 
         return new AudioReleaseProcessor(
             $nzbParser,
-            new AudioSourceSelector($config),
+            new AudioSourceSelector,
             new AudioFetcher($config, $downloadService, Mockery::mock(ArchiveExtractionService::class), $tools),
             $encoder,
             new AudioTagExtractor,
+            $this->renamer(),
             $releaseExtra,
             new MediaInfoRefinementService,
             new ReleaseSearchSyncCoordinator(
@@ -333,6 +407,23 @@ class AudioReleaseProcessorTest extends TestCase
         (new ReflectionProperty(MediaTools::class, 'ffprobe'))->setValue($tools, $ffprobe);
 
         return $tools;
+    }
+
+    private function renamer(): AudioTagRenamer
+    {
+        $reflection = new ReflectionClass(AudioProcessingConfiguration::class);
+        /** @var AudioProcessingConfiguration $config */
+        $config = $reflection->newInstanceWithoutConstructor();
+        (new ReflectionProperty(AudioProcessingConfiguration::class, 'renameMusicMediaInfo'))
+            ->setValue($config, $this->renamesFromTags);
+        (new ReflectionProperty(AudioProcessingConfiguration::class, 'echoCLI'))->setValue($config, false);
+
+        return new AudioTagRenamer(
+            $config,
+            new CategorizationService,
+            new ReleaseSearchSyncCoordinator(new PersistenceMetricsCollector),
+            new PreviewGenerationPolicy,
+        );
     }
 
     private function config(): AudioProcessingConfiguration

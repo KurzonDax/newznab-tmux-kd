@@ -6,10 +6,10 @@ namespace App\Services\AudioProcessing;
 
 use App\Models\Release;
 use App\Models\ReleaseAudioTag;
-use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
 use App\Services\AdditionalProcessing\AudioTagExtractor;
 use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
 use App\Services\AdditionalProcessing\NzbContentParser;
+use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AudioProcessing\DTO\AudioProcessingResult;
 use App\Services\Categorization\MediaInfoRefinementService;
@@ -36,6 +36,7 @@ final class AudioReleaseProcessor
         private readonly AudioFetcher $fetcher,
         private readonly AudioPreviewEncoder $encoder,
         private readonly AudioTagExtractor $tagExtractor,
+        private readonly AudioTagRenamer $renamer,
         private readonly ReleaseExtraService $releaseExtra,
         private readonly MediaInfoRefinementService $mediaInfoRefinement,
         private readonly ReleaseSearchSyncCoordinator $searchSyncCoordinator,
@@ -65,13 +66,18 @@ final class AudioReleaseProcessor
             $source,
             $tmpPath,
             $groupName,
-            function (MediaInfoContainer $container, string $sourceFilename) use ($releaseId, &$tagsRecorded): void {
-                $tagsRecorded = $this->recordTags($releaseId, $container, $sourceFilename);
+            function (MediaInfoContainer $container, string $sourceFilename, string $extension) use ($release, &$tagsRecorded): void {
+                $tagsRecorded = $this->recordTags($release, $container, $sourceFilename, $extension);
             },
         );
 
         if ($fetched->declined) {
-            AudioCandidateQuery::declineToVideoPath($releaseId);
+            if (! AudioCandidateQuery::declineToVideoPath($releaseId)) {
+                // Nowhere to record the hand-off, so settle the release instead:
+                // leaving it pending would have it re-probed every cycle forever.
+                return $this->finish($release, false, $tagsRecorded, ProcessingOutcome::NoUsefulArtifacts, $fetched->reason);
+            }
+
             $this->searchSyncCoordinator->request($releaseId);
 
             return new AudioProcessingResult(
@@ -119,15 +125,24 @@ final class AudioReleaseProcessor
      * Runs before anything past the first article is fetched, so the row exists
      * even for a release the rest of this method gives up on.
      */
-    private function recordTags(int $releaseId, MediaInfoContainer $container, string $sourceFilename): bool
-    {
+    private function recordTags(
+        Release $release,
+        MediaInfoContainer $container,
+        string $sourceFilename,
+        string $extension,
+    ): bool {
+        $releaseId = (int) $release->id;
+
         try {
             $tags = $this->tagExtractor->extract($container, $sourceFilename);
             if ($tags === null) {
                 return false;
             }
 
+            // Written before the rename, so the row survives even where renaming
+            // is switched off or the release already has a predb name.
             ReleaseAudioTag::query()->updateOrCreate(['releases_id' => $releaseId], $tags);
+            $this->renamer->rename($release, $tags, $extension);
             $this->releaseExtra->addFromXml($releaseId, $container);
             $this->mediaInfoRefinement->refine($releaseId);
 
@@ -196,7 +211,7 @@ final class AudioReleaseProcessor
         Release::query()->where('id', $releaseId)->update(array_merge([
             'haspreview' => $hasPreview,
             'passwordstatus' => ReleaseBrowseService::PASSWD_NONE,
-        ], AdditionalCandidateQuery::claimResetValues()));
+        ], ReleaseClaimant::claimResetValues()));
 
         $this->searchSyncCoordinator->request($releaseId);
 

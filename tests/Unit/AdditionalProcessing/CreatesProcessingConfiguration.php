@@ -50,7 +50,6 @@ trait CreatesProcessingConfiguration
             'debugMode' => false,
             'searchEnabled' => false,
             'searchDriver' => 'manticore',
-            'renameMusicMediaInfo' => false,
             'renamePar2' => false,
             'ffmpegPath' => false,
             'mediaInfoPath' => false,

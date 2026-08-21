@@ -17,6 +17,8 @@ use App\Services\AudioProcessing\AudioProcessingConfiguration;
 use App\Services\AudioProcessing\AudioProcessingOrchestrator;
 use App\Services\AudioProcessing\AudioReleaseProcessor;
 use App\Services\AudioProcessing\AudioSourceSelector;
+use App\Services\AudioProcessing\AudioTagRenamer;
+use App\Services\Categorization\CategorizationService;
 use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\ReleaseExtraService;
 use App\Services\Releases\PreviewGenerationPolicy;
@@ -42,9 +44,7 @@ class AudioProcessingServiceProvider extends ServiceProvider
             return new MediaTools($config->timeoutSeconds, $config->mediaInfoPath);
         });
 
-        $this->app->singleton(AudioSourceSelector::class, fn ($app): AudioSourceSelector => new AudioSourceSelector(
-            $app->make(AudioProcessingConfiguration::class),
-        ));
+        $this->app->singleton(AudioSourceSelector::class, fn (): AudioSourceSelector => new AudioSourceSelector);
 
         $this->app->singleton(AudioFetcher::class, fn ($app): AudioFetcher => new AudioFetcher(
             $app->make(AudioProcessingConfiguration::class),
@@ -58,12 +58,20 @@ class AudioProcessingServiceProvider extends ServiceProvider
             $app->make(MediaTools::class),
         ));
 
+        $this->app->singleton(AudioTagRenamer::class, fn ($app): AudioTagRenamer => new AudioTagRenamer(
+            $app->make(AudioProcessingConfiguration::class),
+            new CategorizationService,
+            $app->make(ReleaseSearchSyncCoordinator::class),
+            $app->make(PreviewGenerationPolicy::class),
+        ));
+
         $this->app->singleton(AudioReleaseProcessor::class, fn ($app): AudioReleaseProcessor => new AudioReleaseProcessor(
             $app->make(NzbContentParser::class),
             $app->make(AudioSourceSelector::class),
             $app->make(AudioFetcher::class),
             $app->make(AudioPreviewEncoder::class),
             new AudioTagExtractor,
+            $app->make(AudioTagRenamer::class),
             $app->make(ReleaseExtraService::class),
             $app->make(MediaInfoRefinementService::class),
             $app->make(ReleaseSearchSyncCoordinator::class),

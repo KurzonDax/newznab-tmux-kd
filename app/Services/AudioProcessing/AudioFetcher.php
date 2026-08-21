@@ -43,10 +43,11 @@ final class AudioFetcher
     ) {}
 
     /**
-     * @param  Closure(MediaInfoContainer, string): void  $onProbe  Called with the
-     *                                                              MediaInfo read off the probed
-     *                                                              bytes and the source filename,
-     *                                                              before the rest is fetched.
+     * @param  Closure(MediaInfoContainer, string, string): void  $onProbe  Called with the
+     *                                                                      MediaInfo read off the probed
+     *                                                                      bytes, the source filename and
+     *                                                                      its extension, before the rest
+     *                                                                      is fetched.
      */
     public function fetch(
         Release $release,
@@ -62,7 +63,7 @@ final class AudioFetcher
     }
 
     /**
-     * @param  Closure(MediaInfoContainer, string): void  $onProbe
+     * @param  Closure(MediaInfoContainer, string, string): void  $onProbe
      */
     private function fetchBareFile(
         Release $release,
@@ -86,7 +87,7 @@ final class AudioFetcher
 
         File::put($path, $head);
 
-        $probe = $this->probe($path, basename($source->title), $onProbe);
+        $probe = $this->probe($path, basename($source->title), $extension, $onProbe);
         if ($probe instanceof AudioFetchResult) {
             File::delete($path);
 
@@ -114,7 +115,7 @@ final class AudioFetcher
      * RAR, so the first track is usually intact after one or two volumes, and
      * counting parts would either stop short or fetch far more than needed.
      *
-     * @param  Closure(MediaInfoContainer, string): void  $onProbe
+     * @param  Closure(MediaInfoContainer, string, string): void  $onProbe
      */
     private function fetchFromArchive(
         Release $release,
@@ -156,7 +157,7 @@ final class AudioFetcher
             $path = $tmpPath.'audio.'.$extension;
             File::put($path, $extracted);
 
-            $probe = $this->probe($path, basename($name), $onProbe);
+            $probe = $this->probe($path, basename($name), $extension, $onProbe);
             if ($probe instanceof AudioFetchResult) {
                 File::delete($path);
 
@@ -175,10 +176,14 @@ final class AudioFetcher
      * Returns the MediaInfo container to continue with, or the terminal
      * {@see AudioFetchResult} to return instead.
      *
-     * @param  Closure(MediaInfoContainer, string): void  $onProbe
+     * @param  Closure(MediaInfoContainer, string, string): void  $onProbe
      */
-    private function probe(string $path, string $sourceFilename, Closure $onProbe): MediaInfoContainer|AudioFetchResult
-    {
+    private function probe(
+        string $path,
+        string $sourceFilename,
+        string $extension,
+        Closure $onProbe,
+    ): MediaInfoContainer|AudioFetchResult {
         try {
             $container = $this->mediaTools->mediaInfo()->getInfo($path, false);
         } catch (\Throwable $e) {
@@ -197,7 +202,7 @@ final class AudioFetcher
             return AudioFetchResult::declined('The probed file carries no audio stream.');
         }
 
-        $onProbe($container, $sourceFilename);
+        $onProbe($container, $sourceFilename, $extension);
 
         return $container;
     }

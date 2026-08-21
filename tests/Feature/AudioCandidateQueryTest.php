@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Models\Category;
 use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
+use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\AudioProcessing\AudioCandidateQuery;
 use App\Services\AudioProcessing\AudioRouting;
 use Illuminate\Database\Schema\Blueprint;
@@ -203,7 +204,7 @@ class AudioCandidateQueryTest extends TestCase
 
     private function resetCandidateQueryCaches(): void
     {
-        $supportsClaims = new ReflectionProperty(AdditionalCandidateQuery::class, 'supportsClaims');
+        $supportsClaims = new ReflectionProperty(ReleaseClaimant::class, 'supportsClaims');
         $supportsClaims->setValue(null, null);
     }
 }

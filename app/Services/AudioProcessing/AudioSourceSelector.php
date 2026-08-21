@@ -19,8 +19,6 @@ use App\Services\AudioProcessing\Enums\AudioSourceKind;
  */
 final class AudioSourceSelector
 {
-    public function __construct(private readonly AudioProcessingConfiguration $config) {}
-
     /**
      * @param  list<array<string, mixed>>  $nzbContents  Files as parsed by NzbContentParser.
      */
@@ -62,11 +60,13 @@ final class AudioSourceSelector
             return null;
         }
 
+        // Every volume, in posted order: how many of them are worth fetching is
+        // AudioFetcher's call, and belongs in one place.
         return new AudioSource(
             kind: AudioSourceKind::Archive,
             title: $archiveTitle,
             extension: '',
-            parts: array_slice($archiveParts, 0, $this->config->maxRarParts),
+            parts: $archiveParts,
         );
     }
 

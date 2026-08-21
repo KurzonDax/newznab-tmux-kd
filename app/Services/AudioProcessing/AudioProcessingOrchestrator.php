@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Services\AudioProcessing;
 
 use App\Models\UsenetGroup;
-use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
 use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
+use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\AudioProcessing\DTO\AudioProcessingResult;
 use App\Services\TempWorkspaceService;
 use Illuminate\Support\Facades\Log;
@@ -57,12 +57,14 @@ final class AudioProcessingOrchestrator
                 'guid',
                 'name',
                 'searchname',
+                'fromname',
+                'proc_pp',
                 'size',
                 'groups_id',
                 'categories_id',
                 'predb_id',
                 'pp_timeout_count',
-                AdditionalCandidateQuery::CLAIM_TOKEN_COLUMN,
+                ReleaseClaimant::CLAIM_TOKEN_COLUMN,
             ],
         );
 

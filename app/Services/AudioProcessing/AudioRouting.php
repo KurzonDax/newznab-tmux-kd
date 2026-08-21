@@ -7,6 +7,7 @@ namespace App\Services\AudioProcessing;
 use App\Models\Category;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
+use App\Services\AdditionalProcessing\ReleaseClaimant;
 use Illuminate\Contracts\Database\Query\Builder as QueryBuilder;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -53,8 +54,8 @@ final class AudioRouting
             ->where(self::routedToAudio(...))
             ->where(function (Builder $tokenQuery): void {
                 $tokenQuery
-                    ->whereNull('r.'.AdditionalCandidateQuery::CLAIM_TOKEN_COLUMN)
-                    ->orWhere('r.'.AdditionalCandidateQuery::CLAIM_TOKEN_COLUMN, '!=', self::DECLINED_TOKEN);
+                    ->whereNull('r.'.ReleaseClaimant::CLAIM_TOKEN_COLUMN)
+                    ->orWhere('r.'.ReleaseClaimant::CLAIM_TOKEN_COLUMN, '!=', self::DECLINED_TOKEN);
             });
     }
 
@@ -70,7 +71,7 @@ final class AudioRouting
         return $query->where(function (Builder $pathQuery): void {
             $pathQuery
                 ->whereNot(self::routedToAudio(...))
-                ->orWhere('r.'.AdditionalCandidateQuery::CLAIM_TOKEN_COLUMN, self::DECLINED_TOKEN);
+                ->orWhere('r.'.ReleaseClaimant::CLAIM_TOKEN_COLUMN, self::DECLINED_TOKEN);
         });
     }
 

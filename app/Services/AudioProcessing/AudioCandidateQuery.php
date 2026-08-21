@@ -6,7 +6,6 @@ namespace App\Services\AudioProcessing;
 
 use App\Models\Release;
 use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
-use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -31,12 +30,6 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 final class AudioCandidateQuery
 {
     /**
-     * Hard cap on the bucket fan-out: `leftguid` is a single hex digit, so there
-     * are at most 16 distinct buckets to dispatch per cycle.
-     */
-    public const int BUCKET_LIMIT = 16;
-
-    /**
      * Apply the candidate-selection predicates to an Eloquent builder.
      *
      * The builder MUST already be aliased as `r` for releases.
@@ -51,24 +44,17 @@ final class AudioCandidateQuery
         ?int $maxSizeBytes = null,
         bool $includeClaimed = false,
     ): Builder {
-        $max = $maxSizeBytes ?? AdditionalCandidateQuery::maxSizeBytes();
+        ReleaseClaimant::applyPendingPredicates(
+            $query,
+            $groupID,
+            $guidChar,
+            // No minimum: see the class docblock. The global maximum still applies.
+            minSizeBytes: 0,
+            maxSizeBytes: $maxSizeBytes ?? AdditionalCandidateQuery::maxSizeBytes(),
+        );
 
-        $query
-            ->where('r.passwordstatus', PasswordInspectionMode::pendingReleaseStatus())
-            ->where('r.haspreview', -1)
-            ->where('r.nzbstatus', 1);
-
-        if ($max > 0) {
-            $query->where('r.size', '<', $max);
-        }
-        if ($groupID !== '' && $groupID !== 0 && $groupID !== '0') {
-            $query->where('r.groups_id', $groupID);
-        }
-        if ($guidChar !== '') {
-            $query->where('r.leftguid', $guidChar);
-        }
         if (! $includeClaimed) {
-            self::applyClaimWindow($query);
+            ReleaseClaimant::applyClaimWindow($query);
         }
 
         AudioRouting::applyAudioPath($query);
@@ -101,15 +87,7 @@ final class AudioCandidateQuery
      */
     public static function availableBucketCounts(): array
     {
-        $counts = [];
-
-        foreach (self::bucketBacklog() as $backlog) {
-            if ($backlog['available'] > 0) {
-                $counts[] = ['bucket' => $backlog['bucket'], 'count' => $backlog['available']];
-            }
-        }
-
-        return array_slice($counts, 0, self::BUCKET_LIMIT);
+        return ReleaseClaimant::availableBucketCounts(self::bucketBacklog());
     }
 
     /**
@@ -119,29 +97,7 @@ final class AudioCandidateQuery
      */
     public static function bucketBacklog(): array
     {
-        $query = self::baseBuilder(includeClaimed: true)
-            ->select('r.leftguid')
-            ->selectRaw('COUNT(*) AS total_count')
-            ->groupBy('r.leftguid')
-            ->orderBy('r.leftguid');
-
-        self::selectAvailableCount($query);
-
-        $backlog = [];
-        foreach ($query->get() as $row) {
-            $bucket = strtolower(substr((string) ($row->leftguid ?? ''), 0, 1));
-            if ($bucket === '') {
-                continue;
-            }
-
-            $backlog[] = [
-                'bucket' => $bucket,
-                'total' => (int) ($row->total_count ?? 0),
-                'available' => (int) ($row->available_count ?? 0),
-            ];
-        }
-
-        return $backlog;
+        return ReleaseClaimant::bucketBacklog(static fn () => self::baseBuilder(includeClaimed: true));
     }
 
     /**
@@ -149,16 +105,7 @@ final class AudioCandidateQuery
      */
     public static function backlogCounts(): array
     {
-        $query = self::baseBuilder(includeClaimed: true)->selectRaw('COUNT(*) AS total_count');
-        self::selectAvailableCount($query);
-
-        /** @var object{total_count: int|string|null, available_count: int|string|null}|null $counts */
-        $counts = $query->toBase()->first();
-
-        return [
-            'total' => (int) ($counts->total_count ?? 0),
-            'available' => (int) ($counts->available_count ?? 0),
-        ];
+        return ReleaseClaimant::backlogCounts(static fn () => self::baseBuilder(includeClaimed: true));
     }
 
     /**
@@ -192,17 +139,24 @@ final class AudioCandidateQuery
      * Called when the article-1 probe finds video, or finds no audio stream at
      * all. See {@see AudioRouting::DECLINED_TOKEN} for why this is a token rather
      * than a column.
+     *
+     * @return bool False on an install predating the claim columns, where there
+     *              is nowhere to record the decision. The caller must then settle
+     *              the release itself rather than leave it to be probed again on
+     *              every cycle forever.
      */
-    public static function declineToVideoPath(int $releaseId): void
+    public static function declineToVideoPath(int $releaseId): bool
     {
-        if (! AdditionalCandidateQuery::supportsClaims()) {
-            return;
+        if (! ReleaseClaimant::supportsClaims()) {
+            return false;
         }
 
         Release::query()->where('id', $releaseId)->update([
-            AdditionalCandidateQuery::CLAIMED_AT_COLUMN => null,
-            AdditionalCandidateQuery::CLAIM_TOKEN_COLUMN => AudioRouting::DECLINED_TOKEN,
+            ReleaseClaimant::CLAIMED_AT_COLUMN => null,
+            ReleaseClaimant::CLAIM_TOKEN_COLUMN => AudioRouting::DECLINED_TOKEN,
         ]);
+
+        return true;
     }
 
     /**
@@ -210,42 +164,6 @@ final class AudioCandidateQuery
      */
     public static function clearClaim(int $releaseId, ?string $token = null): void
     {
-        AdditionalCandidateQuery::clearClaim($releaseId, $token);
-    }
-
-    /**
-     * @param  Builder<Release>  $query
-     */
-    private static function selectAvailableCount(Builder $query): void
-    {
-        if (! AdditionalCandidateQuery::supportsClaims()) {
-            $query->selectRaw('COUNT(*) AS available_count');
-
-            return;
-        }
-
-        $claimedAt = 'r.'.AdditionalCandidateQuery::CLAIMED_AT_COLUMN;
-        $query->selectRaw(
-            'SUM(CASE WHEN '.$claimedAt.' IS NULL OR '.$claimedAt.' < ? THEN 1 ELSE 0 END) AS available_count',
-            [AdditionalCandidateQuery::claimStaleBefore()],
-        );
-    }
-
-    /**
-     * @param  Builder<Release>  $query
-     */
-    private static function applyClaimWindow(Builder $query): void
-    {
-        if (! AdditionalCandidateQuery::supportsClaims()) {
-            return;
-        }
-
-        $staleBefore = AdditionalCandidateQuery::claimStaleBefore();
-
-        $query->where(function (Builder $claimQuery) use ($staleBefore): void {
-            $claimQuery
-                ->whereNull('r.'.AdditionalCandidateQuery::CLAIMED_AT_COLUMN)
-                ->orWhere('r.'.AdditionalCandidateQuery::CLAIMED_AT_COLUMN, '<', $staleBefore);
-        });
+        ReleaseClaimant::clearClaim($releaseId, $token);
     }
 }
