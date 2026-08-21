@@ -192,21 +192,10 @@ class MediaExtractionService
             }
         }
 
-        if (! File::isFile($fileName)) {
+        if (! $this->storeGeneratedMedia($fileName, $this->releaseImage->vidSavePath.$guid.'.ogv')) {
             return false;
         }
 
-        $newFile = $this->releaseImage->vidSavePath.$guid.'.ogv';
-
-        if (! @File::move($fileName, $newFile)) {
-            $copied = @File::copy($fileName, $newFile);
-            File::delete($fileName);
-            if (! $copied) {
-                return false;
-            }
-        }
-
-        @chmod($newFile, 0764);
         Release::query()->where('guid', $guid)->update(['videostatus' => 1]);
 
         return true;
@@ -260,6 +249,28 @@ class MediaExtractionService
     }
 
     /**
+     * Whether a release's category makes it a candidate for audio post-processing.
+     *
+     * Music (3xxx) plus the three buckets an unidentified release is parked in
+     * before it is categorised. Membership is an explicit allow-list: the
+     * previous regex was unanchored, so every category id merely *containing*
+     * the Other/Misc id (1010, 2010, 5010, 1080, 7010, ...) slipped through and
+     * sent TV and movie releases down the audio path.
+     */
+    public function isAudioProcessingCategory(int $categoriesId): bool
+    {
+        if (intdiv($categoriesId, 1000) * 1000 === Category::MUSIC_ROOT) {
+            return true;
+        }
+
+        return in_array(
+            $categoriesId,
+            [Category::OTHER_MISC, Category::MOVIE_OTHER, Category::TV_OTHER],
+            true
+        );
+    }
+
+    /**
      * Process audio file for media info and sample.
      *
      * @return array{audioInfo: bool, audioSample: bool}
@@ -285,17 +296,7 @@ class MediaExtractionService
             ->select(['searchname', 'fromname', 'categories_id', 'groups_id'])
             ->first();
 
-        $musicParent = (string) Category::MUSIC_ROOT;
-        if ($rQuery === null || ! preg_match(
-            sprintf(
-                '/%d\d{3}|%d|%d|%d/',
-                $musicParent[0],
-                Category::OTHER_MISC,
-                Category::MOVIE_OTHER,
-                Category::TV_OTHER
-            ),
-            (string) $rQuery->categories_id
-        )) {
+        if ($rQuery === null || ! $this->isAudioProcessingCategory((int) $rQuery->categories_id)) {
             return $result;
         }
 
@@ -380,17 +381,7 @@ class MediaExtractionService
                 }
             }
 
-            if (File::isFile($tmpPath.$audioFileName)) {
-                $renamed = File::move($tmpPath.$audioFileName, $this->config->audioSavePath.$audioFileName);
-                if (! $renamed) {
-                    $copied = File::copy($tmpPath.$audioFileName, $this->config->audioSavePath.$audioFileName);
-                    File::delete($tmpPath.$audioFileName);
-                    if (! $copied) {
-                        return $result;
-                    }
-                }
-
-                @chmod($this->config->audioSavePath.$audioFileName, 0764);
+            if ($this->storeGeneratedMedia($tmpPath.$audioFileName, $this->config->audioSavePath.$audioFileName)) {
                 $result['audioSample'] = true;
                 $context->foundAudioSample = true;
             }
@@ -464,6 +455,39 @@ class MediaExtractionService
         $type = @exif_imagetype($filePath);
 
         return in_array($type, [IMAGETYPE_JPEG, IMAGETYPE_PNG, IMAGETYPE_WEBP], true);
+    }
+
+    /**
+     * Move freshly generated ffmpeg output into its permanent home.
+     *
+     * ffmpeg creates the output path before it writes anything, so a clip that
+     * starts past the end of the input leaves a 0-byte file behind. Treating
+     * that as success filled the cover store with unplayable previews, so an
+     * empty result is discarded instead of stored.
+     */
+    private function storeGeneratedMedia(string $sourcePath, string $destinationPath): bool
+    {
+        if (! File::isFile($sourcePath)) {
+            return false;
+        }
+
+        if (File::size($sourcePath) <= 0) {
+            File::delete($sourcePath);
+
+            return false;
+        }
+
+        if (! @File::move($sourcePath, $destinationPath)) {
+            $copied = @File::copy($sourcePath, $destinationPath);
+            File::delete($sourcePath);
+            if (! $copied) {
+                return false;
+            }
+        }
+
+        @chmod($destinationPath, 0764);
+
+        return true;
     }
 
     private function ffmpeg(): FFMpeg
