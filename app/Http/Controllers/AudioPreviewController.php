@@ -18,21 +18,6 @@ use Symfony\Component\HttpFoundation\ResponseHeaderBag;
  */
 class AudioPreviewController extends Controller
 {
-    /**
-     * Extensions the audio pipeline is allowed to write, and the MIME type used
-     * when the stored one is unusable.
-     *
-     * @var array<string, string>
-     */
-    private const array PREVIEW_MIME_TYPES = [
-        'mp3' => 'audio/mpeg',
-        'm4a' => 'audio/mp4',
-        'ogg' => 'audio/ogg',
-        'opus' => 'audio/opus',
-        'flac' => 'audio/flac',
-        'wav' => 'audio/wav',
-    ];
-
     public function show(Request $request, string $guid): BinaryFileResponse
     {
         if (! $this->isValidGuid($guid)) {
@@ -50,20 +35,21 @@ class AudioPreviewController extends Controller
             abort(404);
         }
 
-        $extension = strtolower((string) $tag->preview_extension);
-        if (! array_key_exists($extension, self::PREVIEW_MIME_TYPES)) {
+        $extension = $tag->previewExtension();
+        $mimeType = $tag->previewMimeType();
+        if ($extension === null || $mimeType === null) {
             abort(404);
         }
 
-        $path = $this->coversRoot().DIRECTORY_SEPARATOR.'audiosample'.DIRECTORY_SEPARATOR.$guid.'.'.$extension;
-        if (! is_file($path) || ! is_readable($path)) {
+        $path = $this->resolveClipPath($guid, $extension);
+        if ($path === null) {
             abort(404);
         }
 
         // public: false, or the constructor overwrites the private cache directive
         // below -- the clip is gated behind auth and must not enter a shared cache.
         $response = new BinaryFileResponse($path, 200, [
-            'Content-Type' => $this->mimeTypeFor($tag, $extension),
+            'Content-Type' => $mimeType,
             'Cache-Control' => 'private, max-age=86400',
         ], public: false);
         $response->setContentDisposition(ResponseHeaderBag::DISPOSITION_INLINE, $guid.'.'.$extension);
@@ -84,26 +70,26 @@ class AudioPreviewController extends Controller
     }
 
     /**
-     * Honour the MIME recorded when the clip was encoded, but never emit a value
-     * that is not a well-formed media type.
+     * Search the same covers roots {@see CoverController} does, so a clip and the
+     * spectrogram beside it can never resolve from different trees on an install
+     * where COVERS_PATH points away from storage/covers.
      */
-    private function mimeTypeFor(ReleaseAudioTag $tag, string $extension): string
-    {
-        $stored = (string) $tag->preview_mime;
-
-        if (preg_match('#\A[a-z0-9][a-z0-9!\#$&^_.+-]*/[a-z0-9][a-z0-9!\#$&^_.+-]*\z#iD', $stored) === 1) {
-            return $stored;
-        }
-
-        return self::PREVIEW_MIME_TYPES[$extension];
-    }
-
-    private function coversRoot(): string
+    private function resolveClipPath(string $guid, string $extension): ?string
     {
         $configured = config('nntmux_settings.covers_path');
+        $roots = array_unique(array_filter([
+            is_string($configured) && $configured !== '' ? rtrim($configured, '/\\') : null,
+            storage_path('covers'),
+            public_path('covers'),
+        ]));
 
-        return is_string($configured) && $configured !== ''
-            ? rtrim($configured, '/\\')
-            : storage_path('covers');
+        foreach ($roots as $root) {
+            $candidate = $root.DIRECTORY_SEPARATOR.'audiosample'.DIRECTORY_SEPARATOR.$guid.'.'.$extension;
+            if (is_file($candidate) && is_readable($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 }

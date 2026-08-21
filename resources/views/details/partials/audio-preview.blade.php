@@ -1,19 +1,18 @@
             <!-- Audio Preview -->
             @php
                 $audioTags = $release->audioTags ?? null;
-                $hasAudioPreview = $audioTags !== null && (bool) $audioTags->has_preview;
+                // previewExtension() is null for a container the controller will not
+                // serve, so the player is never offered where the route would 404.
+                $audioPreviewMime = $audioTags?->has_preview ? $audioTags->previewMimeType() : null;
             @endphp
 
-            @if($hasAudioPreview)
+            @if($audioPreviewMime !== null)
                 @php
                     $audioPreviewUrl = route('preview.audio', $release->guid);
-                    $audioPreviewMime = (string) ($audioTags->preview_mime ?: 'audio/mpeg');
-                    $audioPreviewExtension = strtoupper((string) $audioTags->preview_extension);
-                    $audioPreviewEncoding = $audioTags->previewEncodingLabel();
                     $audioPreviewMeta = array_values(array_filter([
-                        $audioTags->preview_seconds ? $audioTags->preview_seconds . 's' : null,
-                        $audioPreviewExtension !== '' ? $audioPreviewExtension : null,
-                        $audioPreviewEncoding,
+                        $audioTags->preview_seconds !== null ? $audioTags->preview_seconds . 's' : null,
+                        strtoupper((string) $audioTags->previewExtension()),
+                        $audioTags->previewEncoding()?->label(),
                     ]));
                     $spectrogramUrl = $audioTags->has_spectrogram
                         ? getImageAssetUrl('audiosample', $release->guid . '_spectrum', null, [], ['png'])

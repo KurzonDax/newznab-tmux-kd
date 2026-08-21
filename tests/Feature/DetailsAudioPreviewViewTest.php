@@ -38,6 +38,14 @@ class DetailsAudioPreviewViewTest extends TestCase
         );
     }
 
+    public function test_the_details_controller_loads_the_relation_the_partial_reads(): void
+    {
+        $controller = file_get_contents(app_path('Http/Controllers/DetailsController.php'));
+
+        $this->assertIsString($controller);
+        $this->assertStringContainsString("loadMissing('audioTags')", $controller);
+    }
+
     public function test_it_renders_a_player_when_the_row_has_a_preview(): void
     {
         $html = $this->renderPartial($this->tag([
@@ -105,6 +113,17 @@ class DetailsAudioPreviewViewTest extends TestCase
         $html = $this->renderPartial($this->tag(['has_preview' => 0]));
 
         $this->assertSame('', trim(strip_tags($html)));
+        $this->assertStringNotContainsString('<audio', $html);
+    }
+
+    public function test_it_renders_nothing_for_a_container_the_controller_will_not_serve(): void
+    {
+        $html = $this->renderPartial($this->tag([
+            'has_preview' => 1,
+            'preview_extension' => 'ape',
+            'preview_mime' => 'audio/x-ape',
+        ]));
+
         $this->assertStringNotContainsString('<audio', $html);
     }
 
