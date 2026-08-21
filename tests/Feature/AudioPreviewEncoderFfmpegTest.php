@@ -109,12 +109,17 @@ class AudioPreviewEncoderFfmpegTest extends TestCase
     #[Test]
     public function a_source_shorter_than_the_window_is_clipped_to_what_exists(): void
     {
-        $result = $this->encoder()->encode($this->sine('flac', 20), 'abc123', $this->tmpPath);
+        $source = $this->sine('flac', 20);
+
+        $result = $this->encoder()->encode($source, 'abc123', $this->tmpPath);
 
         $this->assertNotNull($result);
+        // start=10, length=30, only 20s of audio: the last ten seconds of it.
+        $this->assertSame(10, $result->seconds);
+        // A stream copy carries the source's STREAMINFO, so the clip's declared
+        // duration cannot be trusted -- but half the bytes is half the audio.
         $this->assertGreaterThan(0, $result->bytes);
-        // start=10, length=30, only 20s of audio: roughly the last ten seconds.
-        $this->assertEqualsWithDelta(10, $result->seconds, 1.5);
+        $this->assertLessThan((int) filesize($source) * 0.75, $result->bytes);
     }
 
     #[Test]
@@ -124,7 +129,7 @@ class AudioPreviewEncoderFfmpegTest extends TestCase
 
         $this->assertNotNull($result);
         $this->assertGreaterThan(0, $result->bytes);
-        $this->assertEqualsWithDelta(5, $result->seconds, 1.5);
+        $this->assertSame(5, $result->seconds);
     }
 
     #[Test]

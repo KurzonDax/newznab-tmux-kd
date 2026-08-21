@@ -83,6 +83,7 @@ class AudioPreviewEncoderTest extends TestCase
         $this->assertContainsSubsequence(['-c:a', 'copy'], $command);
         $this->assertContainsSubsequence(['-ss', '10'], $command);
         $this->assertContainsSubsequence(['-t', '30'], $command);
+        $this->assertSame(30, $result->seconds);
         $this->assertContainsSubsequence(['-map_metadata', '-1'], $command);
         $this->assertContains('-vn', $command);
     }
@@ -111,24 +112,33 @@ class AudioPreviewEncoderTest extends TestCase
     }
 
     #[Test]
-    public function an_offset_past_the_end_of_the_fetched_audio_falls_back_to_the_start(): void
+    public function a_source_shorter_than_the_window_is_clipped_to_what_is_there(): void
     {
-        // First invocation writes nothing, as ffmpeg does when -ss lands past the
-        // end of the input; the encoder must retry from zero rather than give up.
-        $encoder = $this->encoder('mp3', writeOutputOnAttempt: 2);
-
-        $result = $encoder->encode($this->sourceFile(), 'abc123', $this->tmpPath);
+        $result = $this->encoder('mp3', sourceSeconds: 20.0)->encode($this->sourceFile(), 'abc123', $this->tmpPath);
 
         $this->assertNotNull($result);
-        $this->assertCount(2, $this->commands);
+        $this->assertSame(10, $result->seconds, 'Ten seconds of audio sit past the offset.');
+        $this->assertCount(1, $this->commands);
         $this->assertContainsSubsequence(['-ss', '10'], $this->commands[0]);
-        $this->assertContainsSubsequence(['-ss', '0'], $this->commands[1]);
+        $this->assertContainsSubsequence(['-t', '10'], $this->commands[0]);
     }
 
     #[Test]
-    public function a_source_too_short_for_any_offset_produces_no_preview(): void
+    public function a_source_shorter_than_the_offset_is_clipped_from_the_start(): void
     {
-        $encoder = $this->encoder('mp3', writeOutputOnAttempt: 99);
+        $result = $this->encoder('mp3', sourceSeconds: 5.0)->encode($this->sourceFile(), 'abc123', $this->tmpPath);
+
+        $this->assertNotNull($result);
+        $this->assertSame(5, $result->seconds);
+        $this->assertCount(1, $this->commands);
+        $this->assertContainsSubsequence(['-ss', '0'], $this->commands[0]);
+        $this->assertContainsSubsequence(['-t', '5'], $this->commands[0]);
+    }
+
+    #[Test]
+    public function ffmpeg_producing_nothing_is_not_a_preview(): void
+    {
+        $encoder = $this->encoder('mp3', writesOutput: false);
 
         $this->assertNull($encoder->encode($this->sourceFile(), 'abc123', $this->tmpPath));
         $this->assertFileDoesNotExist($this->savePath.'abc123.mp3');
@@ -168,12 +178,13 @@ class AudioPreviewEncoderTest extends TestCase
 
     private function encoder(
         string $codec,
-        int $writeOutputOnAttempt = 1,
+        bool $writesOutput = true,
         bool $spectrogram = true,
+        float $sourceSeconds = 300.0,
     ): AudioPreviewEncoder {
         return new AudioPreviewEncoder(
             $this->config($spectrogram),
-            $this->mediaTools($codec, $writeOutputOnAttempt),
+            $this->mediaTools($codec, $writesOutput, $sourceSeconds),
         );
     }
 
@@ -196,15 +207,13 @@ class AudioPreviewEncoderTest extends TestCase
         return $config;
     }
 
-    private function mediaTools(string $codec, int $writeOutputOnAttempt): MediaTools
+    private function mediaTools(string $codec, bool $writesOutput, float $sourceSeconds): MediaTools
     {
-        $attempt = 0;
         $driver = Mockery::mock(FFMpegDriver::class);
-        $driver->shouldReceive('command')->andReturnUsing(function (array $command) use (&$attempt, $writeOutputOnAttempt): string {
-            $attempt++;
+        $driver->shouldReceive('command')->andReturnUsing(function (array $command) use ($writesOutput): string {
             $this->commands[] = array_values(array_map('strval', $command));
 
-            if ($attempt >= $writeOutputOnAttempt) {
+            if ($writesOutput) {
                 file_put_contents((string) end($command), 'encoded-bytes');
             }
 
@@ -218,7 +227,7 @@ class AudioPreviewEncoderTest extends TestCase
         $ffprobe->shouldReceive('streams')->andReturn(
             new StreamCollection([new Stream(['codec_type' => 'audio', 'codec_name' => $codec])])
         );
-        $ffprobe->shouldReceive('format')->andReturn(new Format(['duration' => '30.0']));
+        $ffprobe->shouldReceive('format')->andReturn(new Format(['duration' => (string) $sourceSeconds]));
 
         $tools = new MediaTools;
         (new ReflectionProperty(MediaTools::class, 'ffmpeg'))->setValue($tools, $ffmpeg);

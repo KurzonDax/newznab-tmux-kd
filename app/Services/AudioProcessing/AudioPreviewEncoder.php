@@ -126,55 +126,58 @@ final class AudioPreviewEncoder
     }
 
     /**
-     * Cut the clip, falling back to the very start when the offset is past the
-     * end of what was fetched. A short source yields a short clip; it is never a
-     * failure on its own.
+     * Cut the clip, and say how long it came out.
      *
-     * Each attempt is judged on the clip's duration rather than its size:
-     * seeking past the end of a FLAC, WAV or Ogg still writes a valid container
-     * header, so a non-empty file is no evidence that any audio came with it,
-     * and the fallback below would never fire.
+     * The window is decided from the source's own duration before ffmpeg runs,
+     * rather than by trying an offset and inspecting the result: a stream copy
+     * carries the source's STREAMINFO into the output, so a FLAC clip taken from
+     * ten seconds into a twenty second track still reports twenty. Deciding up
+     * front also means one ffmpeg invocation instead of two.
      *
-     * @return int|null The clip's length in whole seconds, or null if no attempt
-     *                  produced audio.
+     * A source shorter than the offset is clipped from the very start; a source
+     * shorter than the window yields a shorter clip. Neither is a failure.
+     *
+     * @return int|null The clip's length in whole seconds, or null if ffmpeg
+     *                  produced nothing.
      */
     private function cut(string $sourcePath, string $outputPath, string $container, bool $streamCopy): ?int
     {
-        $offsets = $this->config->previewStartSeconds > 0
-            ? [$this->config->previewStartSeconds, 0]
-            : [0];
+        $sourceSeconds = $this->probeDuration($sourcePath);
+        $offset = $this->config->previewStartSeconds;
+        $length = $this->config->previewSeconds;
 
-        foreach ($offsets as $offset) {
-            File::delete($outputPath);
-
-            $command = [
-                '-y',
-                '-ss', (string) $offset,
-                '-t', (string) $this->config->previewSeconds,
-                '-i', $sourcePath,
-                // Strip tags and embedded cover art: the row carries the metadata,
-                // and an attached picture would be dead weight on every request.
-                '-map_metadata', '-1',
-                '-vn',
-            ];
-
-            $command = $streamCopy
-                ? [...$command, '-c:a', 'copy']
-                : [...$command, '-c:a', $container, '-compression_level', '5'];
-
-            $command[] = $outputPath;
-
-            if (! $this->run($command) || ! $this->isNonEmpty($outputPath)) {
-                continue;
+        if ($sourceSeconds > 0.0) {
+            if ((float) $offset >= $sourceSeconds) {
+                $offset = 0;
             }
 
-            $seconds = $this->clipSeconds($outputPath);
-            if ($seconds > 0) {
-                return $seconds;
-            }
+            $length = max(1, (int) min($length, (int) round($sourceSeconds - $offset)));
         }
 
-        return null;
+        File::delete($outputPath);
+
+        $command = [
+            '-y',
+            '-ss', (string) $offset,
+            '-t', (string) $length,
+            '-i', $sourcePath,
+            // Strip tags and embedded cover art: the row carries the metadata,
+            // and an attached picture would be dead weight on every request.
+            '-map_metadata', '-1',
+            '-vn',
+        ];
+
+        $command = $streamCopy
+            ? [...$command, '-c:a', 'copy']
+            : [...$command, '-c:a', $container, '-compression_level', '5'];
+
+        $command[] = $outputPath;
+
+        if (! $this->run($command) || ! $this->isNonEmpty($outputPath)) {
+            return null;
+        }
+
+        return $length;
     }
 
     /**
@@ -211,21 +214,23 @@ final class AudioPreviewEncoder
     }
 
     /**
-     * The clip's real length. Probed off the finished clip rather than computed
-     * from the requested length, because a short source is normal here.
+     * How much audio the source declares, or 0.0 when ffprobe cannot say.
+     *
+     * For a head-fetched file this is the whole posted track's length, not the
+     * bytes on disk, so the clip can come out shorter than the window this
+     * yields. That is the closest reading available without decoding, and a
+     * preview that is short is still a preview.
      */
-    private function clipSeconds(string $path): int
+    private function probeDuration(string $path): float
     {
         try {
-            $duration = $this->mediaTools->ffprobe()->format($path)->get('duration');
-
-            return max(0, (int) round((float) $duration));
+            return max(0.0, (float) $this->mediaTools->ffprobe()->format($path)->get('duration'));
         } catch (\Throwable $e) {
             if ($this->config->debugMode) {
-                Log::debug('ffprobe could not read the clip duration: '.$e->getMessage());
+                Log::debug('ffprobe could not read the source duration: '.$e->getMessage());
             }
 
-            return 0;
+            return 0.0;
         }
     }
 

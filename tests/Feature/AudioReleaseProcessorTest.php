@@ -217,7 +217,7 @@ class AudioReleaseProcessorTest extends TestCase
         $this->assertTrue($tags->has_preview);
         $this->assertSame('mp3', $tags->preview_extension);
         $this->assertSame('audio/mpeg', $tags->preview_mime);
-        $this->assertSame(28, $tags->preview_seconds);
+        $this->assertSame(30, $tags->preview_seconds);
         $this->assertSame(4096, $tags->preview_bytes);
         $this->assertFileExists($this->savePath.'audio-guid.mp3');
         $this->assertFileExists($this->savePath.'audio-guid_spectrum.png');
@@ -400,7 +400,8 @@ class AudioReleaseProcessorTest extends TestCase
         $ffprobe->shouldReceive('streams')->andReturn(
             new StreamCollection([new Stream(['codec_type' => 'audio', 'codec_name' => 'mp3'])])
         );
-        $ffprobe->shouldReceive('format')->andReturn(new Format(['duration' => '28.0']));
+        // A full-length source, so the clip is the configured 30 seconds.
+        $ffprobe->shouldReceive('format')->andReturn(new Format(['duration' => '300.0']));
 
         $tools = new MediaTools;
         (new ReflectionProperty(MediaTools::class, 'ffmpeg'))->setValue($tools, $ffmpeg);
