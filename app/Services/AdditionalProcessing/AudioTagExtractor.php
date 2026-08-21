@@ -34,18 +34,20 @@ final class AudioTagExtractor
     ];
 
     /**
-     * Attributes describing where the sampled file happened to live on disk.
-     * They are temp paths, so they are dropped rather than stored.
+     * Attribute name prefixes describing where the sampled file happened to
+     * live on disk. Matched as prefixes against the normalised key, because
+     * MediaInfo emits a `_Last` sibling for each of them whenever the input was
+     * a concatenated set, and spells them inconsistently between versions
+     * (`Complete_name`, `CompleteName_Last`). They are temp paths, so they are
+     * dropped rather than stored.
      */
-    private const array PATH_ATTRIBUTES = [
-        'complete_name',
-        'complete_name_last',
-        'folder_name',
-        'file_name',
-        'file_name_extension',
-        'file_last_modification_date',
-        'file_last_modification_date_local',
-        'cover_data',
+    private const array PATH_ATTRIBUTE_PREFIXES = [
+        'completename',
+        'foldername',
+        'filename',
+        'fileextension',
+        'filelastmodificationdate',
+        'coverdata',
     ];
 
     /**
@@ -103,7 +105,7 @@ final class AudioTagExtractor
             'raw_tags' => $this->rawTags($attributes),
         ];
 
-        return array_merge($tags, $this->musicBrainzIds($attributes), $this->truncate($tags));
+        return $this->truncate(array_merge($tags, $this->musicBrainzIds($attributes)));
     }
 
     /**
@@ -151,7 +153,7 @@ final class AudioTagExtractor
     {
         $raw = [];
         foreach ($attributes as $key => $value) {
-            if (in_array($key, self::PATH_ATTRIBUTES, true)) {
+            if ($this->describesFileLocation((string) $key)) {
                 continue;
             }
 
@@ -197,18 +199,33 @@ final class AudioTagExtractor
     }
 
     /**
+     * Clip the width-limited columns in place, leaving every other value alone.
+     *
      * @param  array<string, mixed>  $tags
-     * @return array<string, string|null>
+     * @return array<string, mixed>
      */
     private function truncate(array $tags): array
     {
-        $truncated = [];
         foreach (self::COLUMN_WIDTHS as $column => $width) {
-            $value = $tags[$column] ?? null;
-            $truncated[$column] = is_string($value) ? mb_substr($value, 0, $width) : null;
+            if (is_string($tags[$column] ?? null)) {
+                $tags[$column] = mb_substr($tags[$column], 0, $width);
+            }
         }
 
-        return $truncated;
+        return $tags;
+    }
+
+    private function describesFileLocation(string $key): bool
+    {
+        $normalized = $this->normalizeKey($key);
+
+        foreach (self::PATH_ATTRIBUTE_PREFIXES as $prefix) {
+            if (str_starts_with($normalized, $prefix)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function normalizeKey(string $key): string
