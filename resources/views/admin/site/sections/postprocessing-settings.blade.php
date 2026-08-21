@@ -55,6 +55,66 @@
                         </div>
 
                         <div>
+                            <label for="postthreadsaudio" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                <i class="fas fa-headphones mr-1"></i>Audio Preview Threads
+                            </label>
+                            <x-input id="postthreadsaudio" name="postthreadsaudio" value="{{ $site['postthreadsaudio'] ?? '1' }}" />
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">How many audio preview workers run in parallel. Each holds one NNTP connection. Default: 1.</p>
+                        </div>
+
+                        <div>
+                            <label for="audio_segments_to_download" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                <i class="fas fa-download mr-1"></i>Audio Head Articles Downloaded
+                            </label>
+                            <x-input id="audio_segments_to_download" name="audio_segments_to_download" value="{{ $site['audio_segments_to_download'] ?? '12' }}" />
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Articles fetched from the head of a posted audio file, the probe article included. Too few and the clip runs out of audio before the preview length. Default: 12.</p>
+                        </div>
+
+                        <div>
+                            <label for="audio_max_rar_parts" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                <i class="fas fa-file-archive mr-1"></i>Audio Archive Parts Downloaded
+                            </label>
+                            <x-input id="audio_max_rar_parts" name="audio_max_rar_parts" value="{{ $site['audio_max_rar_parts'] ?? '6' }}" />
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Archive volumes fetched before giving up on finding one complete track. Fetching stops as soon as a track is whole, so this is a ceiling, not a target. Default: 6.</p>
+                        </div>
+
+                        <div>
+                            <label for="audio_preview_seconds" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                <i class="fas fa-stopwatch mr-1"></i>Audio Preview Length
+                            </label>
+                            <div class="flex gap-2">
+                                <x-input class="flex-1" id="audio_preview_seconds" name="audio_preview_seconds" value="{{ $site['audio_preview_seconds'] ?? '30' }}" />
+                                <span class="px-3 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md">seconds</span>
+                            </div>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">How long the preview clip is. A shorter source yields a shorter clip rather than no clip. Default: 30.</p>
+                        </div>
+
+                        <div>
+                            <label for="audio_preview_start_seconds" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                <i class="fas fa-forward mr-1"></i>Audio Preview Start Offset
+                            </label>
+                            <div class="flex gap-2">
+                                <x-input class="flex-1" id="audio_preview_start_seconds" name="audio_preview_start_seconds" value="{{ $site['audio_preview_start_seconds'] ?? '10' }}" />
+                                <span class="px-3 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md">seconds</span>
+                            </div>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">How far into the track the clip starts, skipping any lead-in silence. Falls back to the very start when there is not that much audio. Default: 10.</p>
+                        </div>
+
+                        <div>
+                            <label for="audio_spectrogram" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                <i class="fas fa-wave-square mr-1"></i>Render Audio Spectrogram
+                            </label>
+                            <x-select id="audio_spectrogram" name="audio_spectrogram">
+                                @foreach($yesno['ids'] as $index => $yesnoId)
+                                    <option value="{{ $yesnoId }}" {{ ($site['audio_spectrogram'] ?? '1') == $yesnoId ? 'selected' : '' }}>
+                                        {{ $yesno['names'][$index] }}
+                                    </option>
+                                @endforeach
+                            </x-select>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Render a spectrogram image next to each audio preview, showing where the source encoder's low-pass sits.</p>
+                        </div>
+
+                        <div>
                             <label for="passchkattempts" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                                 <i class="fas fa-check-double mr-1"></i>Maximum Add PP Parts Checked
                             </label>

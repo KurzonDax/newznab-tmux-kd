@@ -736,13 +736,18 @@ class TmuxTaskRunner
             return $this->disablePane($pane, 'Post-process Metadata', 'disabled in settings');
         }
 
-        $hasWork = (int) ($runVar['counts']['now']['processmusic'] ?? 0) > 0
+        $hasMetadataWork = (int) ($runVar['counts']['now']['processmusic'] ?? 0) > 0
             || (int) ($runVar['counts']['now']['processbooks'] ?? 0) > 0
             || (int) ($runVar['counts']['now']['processconsole'] ?? 0) > 0
             || (int) ($runVar['counts']['now']['processgames'] ?? 0) > 0;
 
-        if (! $hasWork) {
-            return $this->disablePane($pane, 'Post-process Metadata', 'no music/books/games to process');
+        // Audio previews share this pane rather than 2.0: metadata lookups here
+        // use no NNTP connection, so there is headroom, and 2.0 already carries
+        // the whole video backlog.
+        $hasAudioWork = (int) ($runVar['counts']['now']['audio_work_available'] ?? 0) > 0;
+
+        if (! $hasMetadataWork && ! $hasAudioWork) {
+            return $this->disablePane($pane, 'Post-process Metadata', 'no music/books/games or audio previews to process');
         }
 
         $niceness = Settings::settingValue('niceness') ?? 2;
@@ -750,9 +755,16 @@ class TmuxTaskRunner
         $artisan = PHP_BINARY.' artisan';
         $sleep = (int) ($runVar['settings']['post_timer_amazon'] ?? 300);
 
-        $command = "nice -n{$niceness} {$artisan} multiprocessing:postprocess ama 2>&1 | tee -a {$log}";
+        $commands = [];
+        if ($hasMetadataWork) {
+            $commands[] = "nice -n{$niceness} {$artisan} multiprocessing:postprocess ama 2>&1 | tee -a {$log}";
+        }
+        if ($hasAudioWork) {
+            $commands[] = "nice -n{$niceness} {$artisan} multiprocessing:postprocess aud 2>&1 | tee -a {$log}";
+        }
+
         $sleepCommand = $this->buildSleepCommand($sleep);
-        $fullCommand = "{$command}; date +'%Y-%m-%d %T'; {$sleepCommand}";
+        $fullCommand = implode('; ', $commands)."; date +'%Y-%m-%d %T'; {$sleepCommand}";
 
         return $this->paneManager->respawnPane($pane, $fullCommand);
     }

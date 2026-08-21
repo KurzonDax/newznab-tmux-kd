@@ -130,6 +130,50 @@ class ArchiveExtractionService
     }
 
     /**
+     * List what an archive holds without extracting any of it.
+     *
+     * The audio path fetches archive volumes one at a time and has to ask, after
+     * each one, whether the track it wants is complete yet. That is a question
+     * about the listing -- the declared size of an entry against the bytes that
+     * actually came out of it -- so it needs the listing on its own, without
+     * {@see self::processCompressedData()}'s side effects on disk and on the
+     * processing context.
+     *
+     * @return array{files: list<array<string, mixed>>, hasPassword: bool}
+     */
+    public function listArchiveContents(string $compressedData): array
+    {
+        $empty = ['files' => [], 'hasPassword' => false];
+
+        if (! $this->archiveInfo->setData($compressedData, true) || $this->archiveInfo->error !== '') {
+            return $empty;
+        }
+
+        try {
+            $summary = $this->archiveInfo->getSummary(true);
+        } catch (\Throwable $e) {
+            if ($this->config->debugMode) {
+                Log::debug('ArchiveInfo summary failed: '.$e->getMessage());
+            }
+
+            return $empty;
+        }
+
+        if (! empty($this->archiveInfo->isEncrypted)
+            || (isset($summary['is_encrypted']) && (int) $summary['is_encrypted'] !== 0)
+        ) {
+            return ['files' => [], 'hasPassword' => true];
+        }
+
+        $files = $this->archiveInfo->getArchiveFileList();
+
+        return [
+            'files' => is_array($files) ? array_values($files) : [],
+            'hasPassword' => false,
+        ];
+    }
+
+    /**
      * Check if a file is an NFO or info file.
      *
      * @param  string  $filename  The filename to check.

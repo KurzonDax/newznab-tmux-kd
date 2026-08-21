@@ -34,10 +34,6 @@ class ReleaseProcessingContext
 
     public bool $foundMediaInfo = false;
 
-    public bool $foundAudioInfo = false;
-
-    public bool $foundAudioSample = false;
-
     public bool $foundJPGSample = false;
 
     public bool $foundSample = false;
@@ -100,16 +96,9 @@ class ReleaseProcessingContext
     public array $mediaInfoMessageIDs = [];
 
     /**
-     * @var list<string>|string
-     */
-    public string|array $audioInfoMessageIDs = [];
-
-    /**
      * @var list<string>
      */
     public array $rarFileMessageIDs = [];
-
-    public string $audioInfoExtension = '';
 
     // File info counters
     public int $addedFileInfo = 0;
@@ -165,15 +154,11 @@ class ReleaseProcessingContext
     public function initializeFromConfig(
         bool $processVideo,
         bool $processMediaInfo,
-        bool $processAudioInfo,
-        bool $processAudioSample,
         bool $processJPGSample,
         bool $processThumbnails
     ): void {
         $this->foundVideo = ! $processVideo;
         $this->foundMediaInfo = ! $processMediaInfo;
-        $this->foundAudioInfo = ! $processAudioInfo;
-        $this->foundAudioSample = ! $processAudioSample;
         $this->foundJPGSample = ! $processJPGSample;
         $this->foundSample = ! $processThumbnails;
         $this->foundPAR2Info = false;
@@ -187,9 +172,7 @@ class ReleaseProcessingContext
         $this->sampleMessageIDs = [];
         $this->jpgMessageIDs = [];
         $this->mediaInfoMessageIDs = [];
-        $this->audioInfoMessageIDs = [];
         $this->rarFileMessageIDs = [];
-        $this->audioInfoExtension = '';
     }
 
     /**
@@ -304,8 +287,6 @@ class ReleaseProcessingContext
         match ($type) {
             'video' => $this->foundVideo = true,
             'mediaInfo' => $this->foundMediaInfo = true,
-            'audioInfo' => $this->foundAudioInfo = true,
-            'audioSample' => $this->foundAudioSample = true,
             'jpgSample' => $this->foundJPGSample = true,
             'sample' => $this->foundSample = true,
             'par2Info' => $this->foundPAR2Info = true,
@@ -319,9 +300,7 @@ class ReleaseProcessingContext
     public function needsMediaProcessing(): bool
     {
         return ! $this->foundVideo
-            || ! $this->foundMediaInfo
-            || ! $this->foundAudioInfo
-            || ! $this->foundAudioSample;
+            || ! $this->foundMediaInfo;
     }
 
     /**

@@ -280,7 +280,7 @@ class ReleaseFileManager
 
         $thumbExists = $this->releaseImage->imageExists($this->releaseImage->imgSavePath, $context->release->guid.'_thumb');
 
-        // The category can change mid-run (e.g. the audio-mediainfo rename);
+        // The category can change mid-run (MediaInfo refinement, for one);
         // when a policy-skipped release now sits under a root with generation
         // enabled, it is owed a full re-run: leave it pending instead of
         // recording the skip sentinel (ADR 0004 owed regeneration).

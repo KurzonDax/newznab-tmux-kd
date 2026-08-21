@@ -394,6 +394,14 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
             $table->unsignedInteger('id')->primary();
         });
 
+        // The candidate queries partition the pending set by audio routing, which
+        // reaches into usenet_groups for the forced-root override.
+        Schema::create('usenet_groups', function (Blueprint $table): void {
+            $table->unsignedInteger('id')->primary();
+            $table->string('name')->default('');
+            $table->unsignedInteger('forced_root_categories_id')->nullable();
+        });
+
         Schema::create('releases', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
             $table->string('guid');
@@ -402,6 +410,7 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
             $table->integer('haspreview');
             $table->integer('nzbstatus');
             $table->unsignedInteger('categories_id');
+            $table->unsignedInteger('groups_id')->default(0);
             $table->unsignedBigInteger('size');
             $table->dateTime('postdate')->nullable();
             $table->timestamp('additional_pp_claimed_at')->nullable();

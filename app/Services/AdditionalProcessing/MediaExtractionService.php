@@ -5,24 +5,19 @@ declare(strict_types=1);
 namespace App\Services\AdditionalProcessing;
 
 use App\Enums\ImageAssetProfile;
-use App\Models\Category;
 use App\Models\Release;
-use App\Models\ReleaseAudioTag;
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
-use App\Services\Categorization\CategorizationService;
+use App\Services\AudioProcessing\AudioReleaseProcessor;
 use App\Services\Categorization\MediaInfoRefinementService;
-use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\ReleaseExtraService;
 use App\Services\ReleaseImageService;
-use App\Services\Releases\PreviewGenerationPolicy;
 use FFMpeg\Coordinate\Dimension;
 use FFMpeg\Coordinate\TimeCode;
 use FFMpeg\FFMpeg;
 use FFMpeg\FFProbe;
 use FFMpeg\Filters\Video\ResizeFilter;
-use FFMpeg\Format\Audio\Vorbis;
 use FFMpeg\Format\Video\Ogg;
 use FFMpeg\Media\Video;
 use Illuminate\Support\Facades\File;
@@ -30,32 +25,26 @@ use Illuminate\Support\Facades\Log;
 use Mhor\MediaInfo\MediaInfo;
 
 /**
- * Service for processing media files (video, audio, images).
- * Handles sample generation, thumbnails, media info extraction, and audio processing.
+ * Service for processing media files (video and images).
+ *
+ * Handles sample generation, thumbnails and media info extraction. Audio has
+ * its own path -- see {@see AudioReleaseProcessor}.
  */
 class MediaExtractionService
 {
-    private ?FFMpeg $ffmpeg = null;
-
-    private ?FFProbe $ffprobe = null;
-
-    private ?MediaInfo $mediaInfo = null;
+    private ?MediaTools $mediaTools = null;
 
     private readonly ReleaseSearchSyncCoordinator $searchSyncCoordinator;
 
     private readonly MediaInfoRefinementService $mediaInfoRefinement;
 
-    private readonly AudioTagExtractor $audioTagExtractor;
-
     public function __construct(
         private readonly ProcessingConfiguration $config,
         private readonly ReleaseImageService $releaseImage,
         private readonly ReleaseExtraService $releaseExtra,
-        private readonly CategorizationService $categorize,
         private readonly VideoFrameExtractor $videoFrameExtractor,
         ?ReleaseSearchSyncCoordinator $searchSyncCoordinator = null,
         ?MediaInfoRefinementService $mediaInfoRefinement = null,
-        ?AudioTagExtractor $audioTagExtractor = null,
     ) {
         $this->searchSyncCoordinator = $searchSyncCoordinator
             ?? new ReleaseSearchSyncCoordinator(
@@ -63,7 +52,6 @@ class MediaExtractionService
             );
         $this->mediaInfoRefinement = $mediaInfoRefinement
             ?? new MediaInfoRefinementService(searchSyncCoordinator: $this->searchSyncCoordinator);
-        $this->audioTagExtractor = $audioTagExtractor ?? new AudioTagExtractor;
     }
 
     /**
@@ -254,169 +242,6 @@ class MediaExtractionService
     }
 
     /**
-     * Whether a release's category makes it a candidate for audio post-processing.
-     *
-     * Music (3xxx) plus the three buckets an unidentified release is parked in
-     * before it is categorised. Membership is an explicit allow-list: the
-     * previous regex was unanchored, so every category id merely *containing*
-     * the Other/Misc id (1010, 2010, 5010, 1080, 7010, ...) slipped through and
-     * sent TV and movie releases down the audio path.
-     */
-    public function isAudioProcessingCategory(int $categoriesId): bool
-    {
-        if (Category::rootCategoryFor($categoriesId) === Category::MUSIC_ROOT) {
-            return true;
-        }
-
-        return in_array(
-            $categoriesId,
-            [Category::OTHER_MISC, Category::MOVIE_OTHER, Category::TV_OTHER],
-            true
-        );
-    }
-
-    /**
-     * Process audio file for media info and sample.
-     *
-     * @return array{audioInfo: bool, audioSample: bool}
-     */
-    public function getAudioInfo(
-        string $fileLocation,
-        string $fileExtension,
-        ReleaseProcessingContext $context,
-        string $tmpPath
-    ): array {
-        $result = ['audioInfo' => false, 'audioSample' => false];
-
-        if (! $this->config->processAudioSample) {
-            $result['audioSample'] = true;
-        }
-        if (! $this->config->processAudioInfo) {
-            $result['audioInfo'] = true;
-        }
-
-        $rQuery = Release::query()
-            ->where('proc_pp', '=', 0)
-            ->where('id', $context->release->id)
-            ->select(['searchname', 'fromname', 'categories_id', 'groups_id'])
-            ->first();
-
-        if ($rQuery === null || ! $this->isAudioProcessingCategory((int) $rQuery->categories_id)) {
-            return $result;
-        }
-
-        if (! File::isFile($fileLocation)) {
-            return $result;
-        }
-
-        // Get media info
-        if (! $result['audioInfo']) {
-            try {
-                $xmlArray = $this->mediaInfo()->getInfo($fileLocation, false);
-                $tags = $this->audioTagExtractor->extract($xmlArray, basename($fileLocation));
-
-                if ($tags !== null) {
-                    // Persisted before the rename branch so the row exists even
-                    // for a predb-matched release, or with renaming switched off.
-                    ReleaseAudioTag::query()->updateOrCreate(
-                        ['releases_id' => (int) $context->release->id],
-                        $tags
-                    );
-
-                    if ($tags['album'] !== null
-                        && $tags['performer'] !== null
-                        && (int) $context->release->predb_id === 0
-                        && $this->config->renameMusicMediaInfo
-                    ) {
-                        $this->renameFromAudioTags($context, $rQuery, $tags, $fileExtension);
-                    }
-
-                    $this->releaseExtra->addFromXml($context->release->id, $xmlArray);
-                    $this->mediaInfoRefinement->refine((int) $context->release->id);
-                    $result['audioInfo'] = true;
-                    $context->foundAudioInfo = true;
-                }
-            } catch (\Throwable $e) {
-                Log::debug($e->getMessage());
-            }
-        }
-
-        // Create audio sample
-        if (! $result['audioSample']) {
-            $audioFileName = $context->release->guid.'.ogg';
-
-            try {
-                if ($this->ffprobe()->isValid($fileLocation)) {
-                    $audioSample = $this->ffmpeg()->open($fileLocation);
-                    $format = new Vorbis;
-                    $audioSample->clip(TimeCode::fromSeconds(30), TimeCode::fromSeconds(30)); // @phpstan-ignore method.notFound
-                    $audioSample->save($format, $tmpPath.$audioFileName);
-                }
-            } catch (\Throwable $e) {
-                if ($this->config->debugMode) {
-                    Log::error($e->getTraceAsString());
-                }
-            }
-
-            if ($this->storeGeneratedMedia($tmpPath.$audioFileName, $this->config->audioSavePath.$audioFileName)) {
-                $result['audioSample'] = true;
-                $context->foundAudioSample = true;
-            }
-        }
-
-        return $result;
-    }
-
-    /**
-     * Rebuild an unidentified music release's name from its own tags.
-     *
-     * Only reached for a release with no predb match, carrying both an album
-     * and a performer tag, when `rename_music_mediainfo` is on.
-     *
-     * @param  array<string, mixed>  $tags  Attributes from {@see AudioTagExtractor}.
-     */
-    private function renameFromAudioTags(
-        ReleaseProcessingContext $context,
-        Release $releaseRow,
-        array $tags,
-        string $fileExtension
-    ): void {
-        $ext = strtoupper($fileExtension);
-
-        $newName = $tags['performer'].' - '.$tags['album'];
-        $newName .= $tags['recorded_year'] !== null ? ' ('.$tags['recorded_year'].') '.$ext : ' '.$ext;
-
-        $newCat = match ($ext) {
-            'MP3' => Category::MUSIC_MP3,
-            'FLAC' => Category::MUSIC_LOSSLESS,
-            default => $this->categorize->determineCategory($releaseRow->groups_id, $newName, $releaseRow->fromname),
-        };
-
-        $newTitle = substr($newName, 0, 255);
-        Release::whereId($context->release->id)->update([
-            'searchname' => $newTitle,
-            'categories_id' => is_array($newCat) ? $newCat['categories_id'] : $newCat,
-            'iscategorized' => 1,
-            'isrenamed' => 1,
-            'proc_pp' => 1,
-        ]);
-
-        (new PreviewGenerationPolicy)->restoreOwedPreviews([(int) $context->release->id]);
-        $this->searchSyncCoordinator->request((int) $context->release->id);
-
-        if ($this->config->echoCLI) {
-            $releaseInfo = (object) [
-                'groups_id' => $releaseRow->groups_id, 'categories_id' => $releaseRow->categories_id,
-                'searchname' => $releaseRow->searchname, 'name' => $releaseRow->searchname,
-                'releases_id' => $context->release->id, 'filename' => '',
-            ];
-            (new ReleaseUpdateService)->echoReleaseInfo($releaseInfo, $newTitle,
-                is_array($newCat) ? $newCat : ['categories_id' => $newCat], '',
-                'MediaExtractionService->getAudioInfo');
-        }
-    }
-
-    /**
      * Process a video file for sample, video clip, and media info.
      *
      * @return array<string, mixed>
@@ -518,33 +343,24 @@ class MediaExtractionService
 
     private function ffmpeg(): FFMpeg
     {
-        if ($this->ffmpeg === null) {
-            $timeout = $this->config->timeoutSeconds > 0 ? $this->config->timeoutSeconds : 60;
-            $this->ffmpeg = FFMpeg::create(['timeout' => $timeout]);
-        }
-
-        return $this->ffmpeg;
+        return $this->mediaTools()->ffmpeg();
     }
 
     private function ffprobe(): FFProbe
     {
-        if ($this->ffprobe === null) {
-            $this->ffprobe = FFProbe::create();
-        }
-
-        return $this->ffprobe;
+        return $this->mediaTools()->ffprobe();
     }
 
     private function mediaInfo(): MediaInfo
     {
-        if ($this->mediaInfo === null) {
-            $this->mediaInfo = new MediaInfo;
-            $this->mediaInfo->setConfig('use_oldxml_mediainfo_output_format', true);
-            if ($this->config->mediaInfoPath) {
-                $this->mediaInfo->setConfig('command', $this->config->mediaInfoPath);
-            }
-        }
+        return $this->mediaTools()->mediaInfo();
+    }
 
-        return $this->mediaInfo;
+    private function mediaTools(): MediaTools
+    {
+        return $this->mediaTools ??= new MediaTools(
+            $this->config->timeoutSeconds,
+            $this->config->mediaInfoPath,
+        );
     }
 }

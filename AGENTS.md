@@ -66,10 +66,13 @@ Multi-pane terminal orchestrator at `app/Services/Tmux/`. Components: `TmuxSessi
 
 **Config**: `config/tmux.php` + database `settings` table
 
-**Post-process panes** (window 2: panes 2.0–2.3) run `php artisan multiprocessing:postprocess <type>`, which fans out work as multiple `postprocess:guid <type> <char>` child processes via `App\Services\Runners\PostProcessRunner`. Types: `add`/`nfo` (pane 2.0), `tv`/`ani` (2.1), `ama` (2.2 — books+music+console+games), `mov` (2.3). Per-type aliases: `boo`, `mus`, `con`, `gam`.
+**Post-process panes** (window 2: panes 2.0–2.3) run `php artisan multiprocessing:postprocess <type>`, which fans out work as multiple `postprocess:guid <type> <char>` child processes via `App\Services\Runners\PostProcessRunner`. Types: `add`/`nfo` (pane 2.0), `tv`/`ani` (2.1), `ama` + `aud` (2.2 — books+music+console+games metadata, plus audio previews), `mov` (2.3). Per-type aliases: `boo`, `mus`, `con`, `gam`.
+
+**Audio (`aud`) is a separate path, not a mode of `add`.** `App\Services\AudioProcessing\` owns it: `AudioCandidateQuery` selects music-routed releases with **no minimum size** (`minsizetopostprocess` strands them otherwise), fetches article 1, probes it, and only then pulls the rest of the head. `AudioRouting` is the single predicate deciding which path a release belongs to; `AdditionalCandidateQuery` applies it inverted, so the two partition the pending set exactly. A release the probe finds to be video is handed back by writing `AudioRouting::DECLINED_TOKEN` into `additional_pp_claim_token` — see `.ai/rules/additional-processing.md`.
 
 - **Live tmux output**: set `STREAM_FORK_OUTPUT=true` in `.env` (`config('nntmux.stream_fork_output')`). When false (default), child output is buffered per batch and the pane may look idle until a batch completes.
-- **Parallelism settings** (all default to `1` in `database/seeders/SettingsTableSeeder.php`; raise via Admin UI or DB): `postthreads` (additional), `nfothreads` (NFO when `post=3`), `postthreadsnon` (TV/anime/movies), `postthreadsamazon` (books/music/console/games and `ama` fan-out). Raising `nfothreads` opens that many parallel NNTP sessions for NFO children.
+- **Parallelism settings** (all default to `1` in `database/seeders/SettingsTableSeeder.php`; raise via Admin UI or DB): `postthreads` (additional), `nfothreads` (NFO when `post=3`), `postthreadsnon` (TV/anime/movies), `postthreadsamazon` (books/music/console/games and `ama` fan-out), `postthreadsaudio` (`aud` fan-out). Raising `nfothreads` or `postthreadsaudio` opens that many parallel NNTP sessions.
+- **Audio tunables** (site settings, Advanced → Post-processing): `audio_segments_to_download` (12), `audio_max_rar_parts` (6), `audio_preview_seconds` (30), `audio_preview_start_seconds` (10), `audio_spectrogram` (1). `saveaudiopreview` is retired.
 - **Batch sizing**: up to 16 distinct first-character GUID buckets per type per cycle (`LIMIT 16` in `PostProcessRunner`); each bucket processes its slice sequentially inside `postprocess:guid`. Additional processing also respects `maxaddprocessed` (default 25) per bucket.
 - **Direct CLI**: `update:postprocess <type>` remains available for single-process runs outside tmux; tmux panes use the multiprocessing command only.
 
@@ -167,6 +170,7 @@ When completing a task, stage newly created project files with Git. Do not stage
 | `app/Services/TvProcessing/` | TV metadata pipeline |
 | `app/Services/Search/` | Manticore/ES abstraction |
 | `app/Services/NameFixing/` | Release name correction (see README.md there) |
+| `app/Services/AudioProcessing/` | Dedicated audio preview path (`aud` postprocess type) |
 | `app/Services/Tmux/` | Tmux orchestration |
 | `app/Services/StatusProbes/` | Service health probes feeding `/status` and degrade middleware |
 | `app/Services/ReleaseRepair/` | Rebuilds missing NZB segments (see `docs/architecture/release-repair.md`) |

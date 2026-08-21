@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Models\Settings;
 use App\Services\AdditionalProcessing\AdditionalProcessingOrchestrator;
 use App\Services\AdditionalProcessing\DTO\AdditionalBatchResult;
+use App\Services\AudioProcessing\AudioProcessingOrchestrator;
 use App\Services\NfoService;
 use App\Services\NNTP\NNTPService;
 use App\Services\PostProcessService;
@@ -21,7 +22,7 @@ class PostProcessGuid extends Command
      * @var string
      */
     protected $signature = 'postprocess:guid
-                            {type : Type: additional, nfo, movie, tv, anime, books, music, console, or games}
+                            {type : Type: additional, audio, nfo, movie, tv, anime, books, music, console, or games}
                             {guid : First character of release guid (a-f, 0-9)}
                             {renamed? : For movie/tv: process renamed only (optional)}
                             {--worker : Drain multiple additional-processing batches}
@@ -37,7 +38,8 @@ class PostProcessGuid extends Command
 
     public function __construct(
         private readonly PostProcessService $postProcessService,
-        private readonly AdditionalProcessingOrchestrator $additionalProcessor
+        private readonly AdditionalProcessingOrchestrator $additionalProcessor,
+        private readonly AudioProcessingOrchestrator $audioProcessor
     ) {
         parent::__construct();
     }
@@ -60,6 +62,7 @@ class PostProcessGuid extends Command
         try {
             match ($type) {
                 'additional' => $this->processAdditional($guid, (bool) $this->option('worker')),
+                'aud', 'audio' => $this->processAudio($guid),
                 'nfo' => $this->processNfo($guid),
                 'movie' => $this->postProcessService->processMovies('', $guid, $renamed),
                 'tv' => $this->postProcessService->processTv('', $guid, $renamed),
@@ -69,7 +72,7 @@ class PostProcessGuid extends Command
                 'console' => $this->postProcessService->processConsoles('', $guid),
                 'games' => $this->postProcessService->processGames('', $guid),
                 default => throw new \InvalidArgumentException(
-                    'Invalid type. Must be: additional, nfo, movie, tv, anime, books, music, console, or games.'
+                    'Invalid type. Must be: additional, audio, nfo, movie, tv, anime, books, music, console, or games.'
                 ),
             };
 
@@ -109,6 +112,18 @@ class PostProcessGuid extends Command
             }
         } finally {
             $this->additionalProcessor->finish();
+        }
+    }
+
+    /**
+     * Process one GUID bucket of pending music releases.
+     */
+    private function processAudio(string $guid): void
+    {
+        try {
+            $this->audioProcessor->start($guid, bin2hex(random_bytes(16)));
+        } finally {
+            $this->audioProcessor->finish();
         }
     }
 
