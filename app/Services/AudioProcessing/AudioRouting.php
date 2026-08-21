@@ -76,6 +76,22 @@ final class AudioRouting
     }
 
     /**
+     * Restrict a releases query (aliased `r`) to releases the category/group
+     * rule routes to audio, ignoring the decline marker.
+     *
+     * This is the selection an operator tool wants -- "every audio release",
+     * including the ones the worker has handed to the video path -- as opposed
+     * to {@see self::applyAudioPath()}, which is what the worker itself claims.
+     *
+     * @param  Builder<Release>  $query
+     * @return Builder<Release>
+     */
+    public static function applyRoutingPredicate(Builder $query): Builder
+    {
+        return $query->where(self::routedToAudio(...));
+    }
+
+    /**
      * Whether the audio worker has already probed this release and handed it to
      * the video path.
      */

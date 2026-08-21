@@ -81,6 +81,30 @@ class ReleaseAudioTag extends Model
     }
 
     /**
+     * Forget the preview recorded on these releases' rows, keeping the tags.
+     *
+     * The inverse of what the audio processor writes when a clip is encoded;
+     * used when a release is sent back through the audio path.
+     *
+     * @param  list<int>  $releaseIds
+     */
+    public static function clearPreviews(array $releaseIds): int
+    {
+        if ($releaseIds === []) {
+            return 0;
+        }
+
+        return self::query()->whereIn('releases_id', $releaseIds)->update([
+            'has_preview' => 0,
+            'preview_extension' => null,
+            'preview_mime' => null,
+            'preview_seconds' => null,
+            'preview_bytes' => null,
+            'has_spectrogram' => 0,
+        ]);
+    }
+
+    /**
      * Preview containers the audio pipeline is allowed to write, mapped to the
      * MIME type used when the one recorded on the row is unusable.
      *
