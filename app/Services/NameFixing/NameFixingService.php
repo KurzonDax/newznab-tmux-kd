@@ -1228,13 +1228,27 @@ class NameFixingService
         $nzbContentsService = app(NzbContentsService::class);
         foreach ($this->candidateBatches(NameFixingQueryService::SOURCE_PAR2, $time, $cats) as $releases) {
             foreach ($releases as $release) {
-                if ($nzbContentsService->checkPar2(
+                $renamed = $nzbContentsService->checkPar2(
                     $release->guid,
                     $release->releases_id,
                     $release->groups_id,
                     (int) ($echo && $nameStatus),
                     (int) $show
-                )) {
+                );
+
+                if ($show) {
+                    $par2Stats = $nzbContentsService->lastPar2Stats();
+                    cli()->info(sprintf(
+                        'Release %d: %d files considered, %d PAR2 fetch attempt%s%s',
+                        (int) $release->releases_id,
+                        $par2Stats['files'],
+                        $par2Stats['attempts'],
+                        $par2Stats['attempts'] === 1 ? '' : 's',
+                        $renamed ? ', renamed' : ''
+                    ));
+                }
+
+                if ($renamed) {
                     $this->updateService->fixed++;
                 } else {
                     $this->markProcessed($echo, $nameStatus, 'proc_par2', (int) $release->releases_id);
