@@ -30,6 +30,26 @@ class NzbContentsService
 
     protected bool $echoOutput;
 
+    /**
+     * Upper bound on PAR2 candidate files fetched from the news server for one
+     * release in {@see self::checkPar2()}.
+     *
+     * A provider that lacks the PAR2 index is very unlikely to have the other
+     * volumes either, and each missing article can cost a tarpitted 430, so the
+     * loop stops after this many attempts instead of walking every candidate.
+     */
+    public const int MAX_PAR2_FETCH_ATTEMPTS = 3;
+
+    /**
+     * Subjects that look like a PAR2 file posted as a single part: `.par2`
+     * (quoted, spaced, or bare) or a quoted name ending in a two- or
+     * three-digit suffix, followed by a `(1/1)` part count.
+     */
+    private const string PAR2_SUBJECT_PATTERN = '/\.(par[2" ]|\d{2,3}").+\(1\/1\)/i';
+
+    /** @var array{files: int, attempts: int} */
+    private array $lastPar2Stats = ['files' => 0, 'attempts' => 0];
+
     public function __construct(
         ?NzbService $nzbService = null,
         ?NzbParserService $parserService = null,
@@ -234,17 +254,34 @@ class NzbContentsService
     /**
      * Attempts to get the release name from a par2 file.
      *
+     * Only files whose subject matches {@see self::PAR2_SUBJECT_PATTERN} are
+     * fetched, at most {@see self::MAX_PAR2_FETCH_ATTEMPTS} of them, and the
+     * first successful parse wins. `parsePAR2()` returns a plain bool, so a
+     * missing article and a PAR2 that parsed but yielded no name both count
+     * as one attempt.
+     *
      * @throws \Exception
      */
     public function checkPar2(string $guid, int $relID, int $groupID, int $nameStatus, int $show): bool
     {
-        $nzbFile = $this->loadNzb($guid);
+        $this->lastPar2Stats = ['files' => 0, 'attempts' => 0];
+
+        $nzbFile = $nameStatus === 1 ? $this->loadNzb($guid) : false;
         if ($nzbFile !== false) {
             foreach ($nzbFile->file as $nzbContents) {
-                if ($nameStatus === 1
-                    && $this->postProcessService->parsePAR2((string) $nzbContents->segments->segment, $relID, $groupID, $this->nntp, $show)
-                    && preg_match('/\.(par[2" ]|\d{2,3}").+\(1\/1\)/i', (string) $nzbContents->attributes()->subject)
-                ) {
+                $this->lastPar2Stats['files']++;
+
+                if (preg_match(self::PAR2_SUBJECT_PATTERN, (string) $nzbContents->attributes()->subject) !== 1) {
+                    continue;
+                }
+                // Keep counting files past the cap so the --show line reports
+                // the NZB's real size; only the fetches stop.
+                if ($this->lastPar2Stats['attempts'] >= self::MAX_PAR2_FETCH_ATTEMPTS) {
+                    continue;
+                }
+
+                $this->lastPar2Stats['attempts']++;
+                if ($this->postProcessService->parsePAR2((string) $nzbContents->segments->segment, $relID, $groupID, $this->nntp, $show)) {
                     Release::query()->where('id', $relID)->update(['proc_par2' => 1]);
 
                     return true;
@@ -257,6 +294,17 @@ class NzbContentsService
         }
 
         return false;
+    }
+
+    /**
+     * How much work the last {@see self::checkPar2()} call did: NZB files
+     * considered and PAR2 candidates actually fetched.
+     *
+     * @return array{files: int, attempts: int}
+     */
+    public function lastPar2Stats(): array
+    {
+        return $this->lastPar2Stats;
     }
 
     /**
