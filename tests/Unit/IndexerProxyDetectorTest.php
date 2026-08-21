@@ -8,56 +8,31 @@ use App\Services\Security\IndexerProxyDetector;
 use App\Services\Security\ProxyRequestContext;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository;
-use Illuminate\Contracts\Console\Kernel;
-use PDO;
+use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
 class IndexerProxyDetectorTest extends TestCase
 {
-    private string $databasePath;
-
-    /**
-     * @var array<string, string|false>
-     */
-    private array $originalEnvironment = [];
+    use IsolatedSqliteDatabase;
 
     private IndexerProxyDetector $detector;
 
-    public function createApplication()
+    /**
+     * @return array<string, string>
+     */
+    protected function bootstrapSettings(): array
     {
-        $this->databasePath = $this->makeTempPath('nntmux-indexer-proxy-detector-test', '.sqlite');
-
-        $this->originalEnvironment = [
-            'APP_ENV' => getenv('APP_ENV'),
-            'DB_CONNECTION' => getenv('DB_CONNECTION'),
-            'DB_DATABASE' => getenv('DB_DATABASE'),
+        return [
+            'categorizeforeign' => '0',
+            'catwebdl' => '0',
+            'innerfileblacklist' => '',
         ];
-
-        if (file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
-        $pdo = new PDO('sqlite:'.$this->databasePath);
-        $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
-        $pdo->exec("INSERT INTO settings (name, value) VALUES
-            ('categorizeforeign', '0'),
-            ('catwebdl', '0'),
-            ('innerfileblacklist', '')");
-
-        $this->setEnvironmentValue('APP_ENV', 'testing');
-        $this->setEnvironmentValue('DB_CONNECTION', 'sqlite');
-        $this->setEnvironmentValue('DB_DATABASE', $this->databasePath);
-
-        $app = require __DIR__.'/../../bootstrap/app.php';
-
-        $app->make(Kernel::class)->bootstrap();
-
-        return $app;
     }
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->bootIsolatedDatabase();
 
         // Each test gets an isolated in-memory cache so sliding-window state
         // never leaks between cases.
@@ -68,15 +43,8 @@ class IndexerProxyDetectorTest extends TestCase
 
     protected function tearDown(): void
     {
-        if ($this->databasePath !== '' && file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
+        $this->tearDownIsolatedDatabase();
         parent::tearDown();
-
-        foreach ($this->originalEnvironment as $key => $value) {
-            $this->setEnvironmentValue($key, $value === false ? null : $value);
-        }
     }
 
     public function test_disabled_detector_never_blocks_even_with_strong_signals(): void
@@ -329,19 +297,5 @@ class IndexerProxyDetectorTest extends TestCase
             isDownload: true,
             isSearch: false,
         );
-    }
-
-    private function setEnvironmentValue(string $key, ?string $value): void
-    {
-        if ($value === null) {
-            putenv($key);
-            unset($_ENV[$key], $_SERVER[$key]);
-
-            return;
-        }
-
-        putenv($key.'='.$value);
-        $_ENV[$key] = $value;
-        $_SERVER[$key] = $value;
     }
 }

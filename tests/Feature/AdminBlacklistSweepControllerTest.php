@@ -8,7 +8,6 @@ use App\Http\Middleware\Google2FAMiddleware;
 use App\Http\Middleware\TrustedDevice2FAMiddleware;
 use App\Models\User;
 use App\Services\BlacklistSweepService;
-use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Cache;
@@ -16,59 +15,28 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
-use PDO;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
 final class AdminBlacklistSweepControllerTest extends TestCase
 {
-    private string $databasePath;
+    use IsolatedSqliteDatabase;
 
     private string $sweepDirectory;
 
     private BlacklistSweepService $sweeps;
 
-    /**
-     * @var array<string, string|false>
-     */
-    private array $originalEnvironment = [];
-
-    public function createApplication()
-    {
-        $this->databasePath = $this->makeTempPath('nntmux-admin-blacklist-sweep-test', '.sqlite');
-        $this->originalEnvironment = [
-            'APP_ENV' => getenv('APP_ENV'),
-            'DB_CONNECTION' => getenv('DB_CONNECTION'),
-            'DB_DATABASE' => getenv('DB_DATABASE'),
-        ];
-
-        $pdo = new PDO('sqlite:'.$this->databasePath);
-        $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
-        $pdo->exec("INSERT INTO settings (name, value) VALUES ('categorizeforeign', '0'), ('catwebdl', '0')");
-
-        $this->setEnvironmentValue('APP_ENV', 'testing');
-        $this->setEnvironmentValue('DB_CONNECTION', 'sqlite');
-        $this->setEnvironmentValue('DB_DATABASE', $this->databasePath);
-
-        $app = require __DIR__.'/../../bootstrap/app.php';
-        $app->make(Kernel::class)->bootstrap();
-
-        return $app;
-    }
-
     protected function setUp(): void
     {
         parent::setUp();
+        $this->bootIsolatedDatabase();
 
         config([
-            'database.default' => 'sqlite',
-            'database.connections.sqlite.database' => $this->databasePath,
             'app.key' => 'base64:'.base64_encode(random_bytes(32)),
         ]);
 
-        DB::purge();
-        DB::reconnect();
         Cache::flush();
         $this->createSchema();
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -84,11 +52,8 @@ final class AdminBlacklistSweepControllerTest extends TestCase
 
     protected function tearDown(): void
     {
+        $this->tearDownIsolatedDatabase();
         parent::tearDown();
-
-        foreach ($this->originalEnvironment as $key => $value) {
-            $this->setEnvironmentValue($key, $value === false ? null : $value);
-        }
     }
 
     public function test_sweep_routes_are_admin_and_two_factor_protected(): void
@@ -259,19 +224,5 @@ final class AdminBlacklistSweepControllerTest extends TestCase
             $table->integer('msgcol')->default(1);
             $table->timestamp('last_activity')->nullable();
         });
-    }
-
-    private function setEnvironmentValue(string $key, ?string $value): void
-    {
-        if ($value === null) {
-            putenv($key);
-            unset($_ENV[$key], $_SERVER[$key]);
-
-            return;
-        }
-
-        putenv($key.'='.$value);
-        $_ENV[$key] = $value;
-        $_SERVER[$key] = $value;
     }
 }

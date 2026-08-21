@@ -4,84 +4,52 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Console;
 
-use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
-use PDO;
+use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
 class TmuxHealthCheckCommandTest extends TestCase
 {
-    private string $databasePath;
+    use IsolatedSqliteDatabase;
 
     /**
-     * @var array<string, string|false>
+     * @return array<string, string>
      */
-    private array $originalEnvironment = [];
-
-    public function createApplication()
+    protected function bootstrapSettings(): array
     {
-        $this->databasePath = $this->makeTempPath('nntmux-tmux-health-check-test', '.sqlite');
-
-        $this->originalEnvironment = [
-            'APP_ENV' => getenv('APP_ENV'),
-            'DB_CONNECTION' => getenv('DB_CONNECTION'),
-            'DB_DATABASE' => getenv('DB_DATABASE'),
+        return [
+            'categorizeforeign' => '0',
+            'catwebdl' => '0',
+            'running' => '0',
+            'sequential' => '0',
+            'delaytime' => '2',
+            'monitor_delay' => '0',
+            'tmux_session' => 'test-session',
+            'backup_pause_marker' => '',
         ];
-
-        if (file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
-        $pdo = new PDO('sqlite:'.$this->databasePath);
-        $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
-        $pdo->exec('CREATE TABLE collections (id INTEGER PRIMARY KEY AUTOINCREMENT, dateadded TEXT NULL)');
-        $pdo->exec("INSERT INTO settings (name, value) VALUES
-            ('categorizeforeign', '0'),
-            ('catwebdl', '0'),
-            ('running', '0'),
-            ('sequential', '0'),
-            ('delaytime', '2'),
-            ('monitor_delay', '0'),
-            ('tmux_session', 'test-session'),
-            ('backup_pause_marker', '')");
-
-        $this->setEnvironmentValue('APP_ENV', 'testing');
-        $this->setEnvironmentValue('DB_CONNECTION', 'sqlite');
-        $this->setEnvironmentValue('DB_DATABASE', $this->databasePath);
-
-        $app = require __DIR__.'/../../../bootstrap/app.php';
-
-        $app->make(Kernel::class)->bootstrap();
-
-        return $app;
     }
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        config([
-            'database.default' => 'sqlite',
-            'database.connections.sqlite.database' => $this->databasePath,
-        ]);
+        $this->bootIsolatedDatabase();
+
+        // The health check queries collections while running; nothing reads it during boot.
+        DB::statement('CREATE TABLE collections (id INTEGER PRIMARY KEY AUTOINCREMENT, dateadded TEXT NULL)');
 
         Process::preventStrayProcesses();
     }
 
     protected function tearDown(): void
     {
-        if ($this->databasePath !== '' && file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
+        $this->tearDownIsolatedDatabase();
 
         parent::tearDown();
-
-        foreach ($this->originalEnvironment as $key => $value) {
-            $this->setEnvironmentValue($key, $value === false ? null : $value);
-        }
     }
 
     public function test_missing_session_succeeds_when_engine_is_stopped(): void
@@ -254,19 +222,5 @@ class TmuxHealthCheckCommandTest extends TestCase
     private function setSetting(string $name, string $value): void
     {
         $this->app['db']->table('settings')->where('name', $name)->update(['value' => $value]);
-    }
-
-    private function setEnvironmentValue(string $key, ?string $value): void
-    {
-        if ($value === null) {
-            putenv($key);
-            unset($_ENV[$key], $_SERVER[$key]);
-
-            return;
-        }
-
-        putenv($key.'='.$value);
-        $_ENV[$key] = $value;
-        $_SERVER[$key] = $value;
     }
 }

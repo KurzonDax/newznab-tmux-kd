@@ -32,7 +32,6 @@ use App\Services\ReleaseImageService;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\TempWorkspaceService;
 use dariusiii\rarinfo\Par2Info;
-use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -40,61 +39,20 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
-use PDO;
 use ReflectionMethod;
+use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 use Tests\Unit\AdditionalProcessing\CreatesProcessingConfiguration;
 
 class AdditionalProcessingReleaseFileManagerTest extends TestCase
 {
     use CreatesProcessingConfiguration;
-
-    private string $databasePath;
-
-    /**
-     * @var array<string, string|false>
-     */
-    private array $originalEnvironment = [];
-
-    public function createApplication()
-    {
-        $this->databasePath = $this->makeTempPath('nntmux-release-file-manager-test', '.sqlite');
-
-        $this->originalEnvironment = [
-            'APP_ENV' => getenv('APP_ENV'),
-            'DB_CONNECTION' => getenv('DB_CONNECTION'),
-            'DB_DATABASE' => getenv('DB_DATABASE'),
-        ];
-
-        if (file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
-        $pdo = new PDO('sqlite:'.$this->databasePath);
-        $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
-        $pdo->exec("INSERT INTO settings (name, value) VALUES ('categorizeforeign', '0'), ('catwebdl', '0')");
-
-        $this->setEnvironmentValue('APP_ENV', 'testing');
-        $this->setEnvironmentValue('DB_CONNECTION', 'sqlite');
-        $this->setEnvironmentValue('DB_DATABASE', $this->databasePath);
-
-        $app = require __DIR__.'/../../bootstrap/app.php';
-        $app->make(Kernel::class)->bootstrap();
-
-        return $app;
-    }
+    use IsolatedSqliteDatabase;
 
     protected function setUp(): void
     {
         parent::setUp();
-
-        config([
-            'database.default' => 'sqlite',
-            'database.connections.sqlite.database' => $this->databasePath,
-        ]);
-
-        DB::purge();
-        DB::reconnect();
+        $this->bootIsolatedDatabase();
 
         $this->createSchema();
     }
@@ -102,16 +60,8 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
     protected function tearDown(): void
     {
         Mockery::close();
-
-        if ($this->databasePath !== '' && file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
+        $this->tearDownIsolatedDatabase();
         parent::tearDown();
-
-        foreach ($this->originalEnvironment as $key => $value) {
-            $this->setEnvironmentValue($key, $value === false ? null : $value);
-        }
     }
 
     public function test_release_file_rows_are_deduped_and_flushed_once_at_finalize(): void
@@ -761,20 +711,6 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
             'additional_pp_claimed_at' => now(),
             'additional_pp_claim_token' => 'token',
         ];
-    }
-
-    private function setEnvironmentValue(string $key, ?string $value): void
-    {
-        if ($value === null) {
-            putenv($key);
-            unset($_ENV[$key], $_SERVER[$key]);
-
-            return;
-        }
-
-        putenv($key.'='.$value);
-        $_ENV[$key] = $value;
-        $_SERVER[$key] = $value;
     }
 
     private function createSchema(): void

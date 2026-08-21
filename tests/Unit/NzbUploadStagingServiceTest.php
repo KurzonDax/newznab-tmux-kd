@@ -7,54 +7,33 @@ namespace Tests\Unit;
 use App\Exceptions\NzbUploadException;
 use App\Services\Nzb\NzbUploadManifestService;
 use App\Services\Nzb\NzbUploadStagingService;
-use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Http\UploadedFile;
-use PDO;
+use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
 final class NzbUploadStagingServiceTest extends TestCase
 {
+    use IsolatedSqliteDatabase;
+
     private string $uploadFolder;
 
-    private string $databasePath;
-
-    /** @var array<string, string|false> */
-    private array $originalEnvironment = [];
-
-    public function createApplication()
+    /**
+     * @return array<string, string>
+     */
+    protected function bootstrapSettings(): array
     {
-        $this->databasePath = $this->makeTempPath('nntmux-nzb-upload-service-test', '.sqlite');
-        $this->originalEnvironment = [
-            'APP_ENV' => getenv('APP_ENV'),
-            'DB_CONNECTION' => getenv('DB_CONNECTION'),
-            'DB_DATABASE' => getenv('DB_DATABASE'),
+        return [
+            'categorizeforeign' => '0',
+            'catwebdl' => '0',
+            'innerfileblacklist' => '',
         ];
-
-        if (file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
-        $pdo = new PDO('sqlite:'.$this->databasePath);
-        $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
-        $pdo->exec("INSERT INTO settings (name, value) VALUES
-            ('categorizeforeign', '0'),
-            ('catwebdl', '0'),
-            ('innerfileblacklist', '')");
-
-        $this->setEnvironmentValue('APP_ENV', 'testing');
-        $this->setEnvironmentValue('DB_CONNECTION', 'sqlite');
-        $this->setEnvironmentValue('DB_DATABASE', $this->databasePath);
-
-        $app = require __DIR__.'/../../bootstrap/app.php';
-        $app->make(Kernel::class)->bootstrap();
-
-        return $app;
     }
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->bootIsolatedDatabase();
 
         $this->uploadFolder = sys_get_temp_dir().'/nntmux-nzb-upload-'.bin2hex(random_bytes(6));
         config(['nntmux.nzb_upload_folder' => $this->uploadFolder]);
@@ -64,15 +43,8 @@ final class NzbUploadStagingServiceTest extends TestCase
     {
         (new Filesystem)->deleteDirectory($this->uploadFolder);
 
-        if (file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
+        $this->tearDownIsolatedDatabase();
         parent::tearDown();
-
-        foreach ($this->originalEnvironment as $key => $value) {
-            $this->setEnvironmentValue($key, $value === false ? null : $value);
-        }
     }
 
     public function test_it_stages_an_nzb_and_arbitrarily_named_nfo_with_a_manifest(): void
@@ -211,19 +183,5 @@ final class NzbUploadStagingServiceTest extends TestCase
         $this->assertCount(1, $directories);
 
         return $directories[0];
-    }
-
-    private function setEnvironmentValue(string $key, ?string $value): void
-    {
-        if ($value === null) {
-            putenv($key);
-            unset($_ENV[$key], $_SERVER[$key]);
-
-            return;
-        }
-
-        putenv($key.'='.$value);
-        $_ENV[$key] = $value;
-        $_SERVER[$key] = $value;
     }
 }

@@ -11,58 +11,41 @@ use App\Http\Middleware\TrustedDevice2FAMiddleware;
 use App\Models\Category;
 use App\Models\User;
 use App\View\Composers\GlobalDataComposer;
-use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
-use PDO;
 use ReflectionClass;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
 class MovieControllerTest extends TestCase
 {
+    use IsolatedSqliteDatabase;
     use MockeryPHPUnitIntegration;
 
-    private string $databasePath;
-
-    /** @var array<string, string|false> */
-    private array $originalEnvironment = [];
-
-    public function createApplication()
+    /**
+     * @return array<string, string>
+     */
+    protected function bootstrapSettings(): array
     {
-        $this->databasePath = $this->makeTempPath('nntmux-movie-controller-test', '.sqlite');
-        $this->originalEnvironment = [
-            'APP_ENV' => getenv('APP_ENV'),
-            'DB_CONNECTION' => getenv('DB_CONNECTION'),
-            'DB_DATABASE' => getenv('DB_DATABASE'),
+        return [
+            'showpasswordedrelease' => '0',
+            'categorizeforeign' => '0',
+            'catwebdl' => '0',
+            'title' => 'NNTmux Test',
+            'home_link' => '/',
         ];
-
-        $pdo = new PDO('sqlite:'.$this->databasePath);
-        $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
-        $pdo->exec("INSERT INTO settings (name, value) VALUES
-            ('showpasswordedrelease', '0'), ('categorizeforeign', '0'), ('catwebdl', '0'),
-            ('title', 'NNTmux Test'), ('home_link', '/')");
-
-        $this->setEnvironmentValue('APP_ENV', 'testing');
-        $this->setEnvironmentValue('DB_CONNECTION', 'sqlite');
-        $this->setEnvironmentValue('DB_DATABASE', $this->databasePath);
-
-        $app = require __DIR__.'/../../bootstrap/app.php';
-        $app->make(Kernel::class)->bootstrap();
-
-        return $app;
     }
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->bootIsolatedDatabase();
 
         config([
-            'database.default' => 'sqlite',
-            'database.connections.sqlite.database' => $this->databasePath,
             'app.key' => 'base64:'.base64_encode(random_bytes(32)),
             'mail.from.address' => 'noreply@example.test',
             'mail.from.name' => 'NNTmux Tests',
@@ -71,8 +54,6 @@ class MovieControllerTest extends TestCase
             'nntmux.cache_expiry_long' => 5,
         ]);
 
-        DB::purge();
-        DB::reconnect();
         Cache::flush();
         $this->createSchema();
         $this->seedBaseData();
@@ -93,15 +74,8 @@ class MovieControllerTest extends TestCase
 
     protected function tearDown(): void
     {
-        if ($this->databasePath !== '' && file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
+        $this->tearDownIsolatedDatabase();
         parent::tearDown();
-
-        foreach ($this->originalEnvironment as $key => $value) {
-            $this->setEnvironmentValue($key, $value === false ? null : $value);
-        }
     }
 
     /**
@@ -392,19 +366,5 @@ class MovieControllerTest extends TestCase
         $property = $reflection->getProperty('resolvedData');
         $property->setAccessible(true);
         $property->setValue(null, null);
-    }
-
-    private function setEnvironmentValue(string $key, ?string $value): void
-    {
-        if ($value === null) {
-            putenv($key);
-            unset($_ENV[$key], $_SERVER[$key]);
-
-            return;
-        }
-
-        putenv($key.'='.$value);
-        $_ENV[$key] = $value;
-        $_SERVER[$key] = $value;
     }
 }

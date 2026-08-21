@@ -12,83 +12,45 @@ use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
 use App\Services\AdditionalProcessing\ReleaseProcessor;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
 use App\Services\TempWorkspaceService;
-use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
-use PDO;
+use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 use Tests\Unit\AdditionalProcessing\CreatesProcessingConfiguration;
 
 class AdditionalProcessingOrchestratorClaimTest extends TestCase
 {
     use CreatesProcessingConfiguration;
-
-    private string $databasePath;
+    use IsolatedSqliteDatabase;
 
     /**
-     * @var array<string, string|false>
+     * @return array<string, string>
      */
-    private array $originalEnvironment = [];
-
-    public function createApplication()
+    protected function bootstrapSettings(): array
     {
-        $this->databasePath = $this->makeTempPath('nntmux-orchestrator-claim-test', '.sqlite');
-
-        $this->originalEnvironment = [
-            'APP_ENV' => getenv('APP_ENV'),
-            'DB_CONNECTION' => getenv('DB_CONNECTION'),
-            'DB_DATABASE' => getenv('DB_DATABASE'),
-        ];
-
-        if (file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
-        $pdo = new PDO('sqlite:'.$this->databasePath);
-        $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
-        $pdo->exec("INSERT INTO settings (name, value) VALUES ('categorizeforeign', '0'), ('catwebdl', '0'), ('releaseprocessingtimeout', '120')");
-
-        $this->setEnvironmentValue('APP_ENV', 'testing');
-        $this->setEnvironmentValue('DB_CONNECTION', 'sqlite');
-        $this->setEnvironmentValue('DB_DATABASE', $this->databasePath);
-
-        $app = require __DIR__.'/../../bootstrap/app.php';
-        $app->make(Kernel::class)->bootstrap();
-
-        return $app;
+        return ['categorizeforeign' => '0', 'catwebdl' => '0', 'releaseprocessingtimeout' => '120'];
     }
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->bootIsolatedDatabase();
 
         config([
-            'database.default' => 'sqlite',
-            'database.connections.sqlite.database' => $this->databasePath,
             'nntmux_settings.check_passworded_rars' => true,
             'nntmux_settings.unrar_path' => '/usr/bin/unrar',
         ]);
-
-        DB::purge();
-        DB::reconnect();
 
         $this->createSchema();
     }
 
     protected function tearDown(): void
     {
-        if ($this->databasePath !== '' && file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
+        $this->tearDownIsolatedDatabase();
         parent::tearDown();
-
-        foreach ($this->originalEnvironment as $key => $value) {
-            $this->setEnvironmentValue($key, $value === false ? null : $value);
-        }
     }
 
     public function test_handled_release_exception_clears_claim(): void
@@ -227,20 +189,6 @@ class AdditionalProcessingOrchestratorClaimTest extends TestCase
         $this->assertStringContainsString('Additional post-processing skipped', $output->warnings[0] ?? '');
         $this->assertNull(Release::query()->where('id', 1)->value('additional_pp_claimed_at'));
         $this->assertNull(Release::query()->where('id', 1)->value('additional_pp_claim_token'));
-    }
-
-    private function setEnvironmentValue(string $key, ?string $value): void
-    {
-        if ($value === null) {
-            putenv($key);
-            unset($_ENV[$key], $_SERVER[$key]);
-
-            return;
-        }
-
-        putenv($key.'='.$value);
-        $_ENV[$key] = $value;
-        $_SERVER[$key] = $value;
     }
 
     private function createSchema(): void

@@ -4,67 +4,29 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Console;
 
-use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
-use PDO;
+use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
 class CloudflareReloadCommandTest extends TestCase
 {
-    private string $databasePath;
+    use IsolatedSqliteDatabase;
 
     private string $manifestPath;
 
     private string $resolvedManifestPath;
 
-    /**
-     * @var array<string, string|false>
-     */
-    private array $originalEnvironment = [];
-
-    public function createApplication()
-    {
-        $this->databasePath = $this->makeTempPath('nntmux-cloudflare-command-test', '.sqlite');
-
-        $this->originalEnvironment = [
-            'APP_ENV' => getenv('APP_ENV'),
-            'DB_CONNECTION' => getenv('DB_CONNECTION'),
-            'DB_DATABASE' => getenv('DB_DATABASE'),
-        ];
-
-        if (file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
-        $pdo = new PDO('sqlite:'.$this->databasePath);
-        $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
-        $pdo->exec("INSERT INTO settings (name, value) VALUES
-            ('categorizeforeign', '0'),
-            ('catwebdl', '0')");
-
-        $this->setEnvironmentValue('APP_ENV', 'testing');
-        $this->setEnvironmentValue('DB_CONNECTION', 'sqlite');
-        $this->setEnvironmentValue('DB_DATABASE', $this->databasePath);
-
-        $app = require __DIR__.'/../../../bootstrap/app.php';
-
-        $app->make(Kernel::class)->bootstrap();
-
-        return $app;
-    }
-
     protected function setUp(): void
     {
         parent::setUp();
+        $this->bootIsolatedDatabase();
 
         $this->manifestPath = 'storage/framework/testing/cloudflare-'.Str::uuid()->toString().'.json';
         $this->resolvedManifestPath = base_path($this->manifestPath);
 
         config([
             'trustedproxy.proxies' => null,
-            'database.default' => 'sqlite',
-            'database.connections.sqlite.database' => $this->databasePath,
             'trustedproxy.cloudflare.storage_path' => $this->manifestPath,
             'trustedproxy.cloudflare.ipv4_url' => 'https://www.cloudflare.com/ips-v4',
             'trustedproxy.cloudflare.ipv6_url' => 'https://www.cloudflare.com/ips-v6',
@@ -78,21 +40,14 @@ class CloudflareReloadCommandTest extends TestCase
             unlink($this->resolvedManifestPath);
         }
 
-        if ($this->databasePath !== '' && file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
         $directory = dirname($this->resolvedManifestPath);
 
         if (is_dir($directory)) {
             @rmdir($directory);
         }
 
+        $this->tearDownIsolatedDatabase();
         parent::tearDown();
-
-        foreach ($this->originalEnvironment as $key => $value) {
-            $this->setEnvironmentValue($key, $value === false ? null : $value);
-        }
     }
 
     public function test_it_refreshes_and_persists_cloudflare_ip_ranges(): void
@@ -150,19 +105,5 @@ class CloudflareReloadCommandTest extends TestCase
         $manifest = json_decode((string) file_get_contents($this->resolvedManifestPath), true, 512, JSON_THROW_ON_ERROR);
 
         $this->assertSame($existingManifest, $manifest);
-    }
-
-    private function setEnvironmentValue(string $key, ?string $value): void
-    {
-        if ($value === null) {
-            putenv($key);
-            unset($_ENV[$key], $_SERVER[$key]);
-
-            return;
-        }
-
-        putenv($key.'='.$value);
-        $_ENV[$key] = $value;
-        $_SERVER[$key] = $value;
     }
 }

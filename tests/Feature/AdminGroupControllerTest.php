@@ -8,71 +8,42 @@ use App\Http\Controllers\Admin\AdminGroupController;
 use App\Models\Category;
 use App\Models\Content;
 use App\View\Composers\GlobalDataComposer;
-use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
-use PDO;
 use ReflectionClass;
+use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
 class AdminGroupControllerTest extends TestCase
 {
-    private string $databasePath;
+    use IsolatedSqliteDatabase;
 
     /**
-     * @var array<string, string|false>
+     * @return array<string, string>
      */
-    private array $originalEnvironment = [];
-
-    public function createApplication()
+    protected function bootstrapSettings(): array
     {
-        $this->databasePath = $this->makeTempPath('nntmux-admin-group-test', '.sqlite');
-
-        $this->originalEnvironment = [
-            'APP_ENV' => getenv('APP_ENV'),
-            'DB_CONNECTION' => getenv('DB_CONNECTION'),
-            'DB_DATABASE' => getenv('DB_DATABASE'),
+        return [
+            'categorizeforeign' => '0',
+            'catwebdl' => '0',
+            'title' => 'NNTmux Test',
+            'home_link' => '/',
         ];
-
-        if (file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
-        $pdo = new PDO('sqlite:'.$this->databasePath);
-        $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
-        $pdo->exec("INSERT INTO settings (name, value) VALUES
-            ('categorizeforeign', '0'),
-            ('catwebdl', '0'),
-            ('title', 'NNTmux Test'),
-            ('home_link', '/')");
-
-        $this->setEnvironmentValue('APP_ENV', 'testing');
-        $this->setEnvironmentValue('DB_CONNECTION', 'sqlite');
-        $this->setEnvironmentValue('DB_DATABASE', $this->databasePath);
-
-        $app = require __DIR__.'/../../bootstrap/app.php';
-
-        $app->make(Kernel::class)->bootstrap();
-
-        return $app;
     }
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->bootIsolatedDatabase();
 
         config([
-            'database.default' => 'sqlite',
-            'database.connections.sqlite.database' => $this->databasePath,
             'app.key' => 'base64:'.base64_encode(random_bytes(32)),
         ]);
 
-        DB::purge();
-        DB::reconnect();
         Cache::flush();
 
         $this->createSchema();
@@ -82,15 +53,8 @@ class AdminGroupControllerTest extends TestCase
 
     protected function tearDown(): void
     {
-        if ($this->databasePath !== '' && file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
+        $this->tearDownIsolatedDatabase();
         parent::tearDown();
-
-        foreach ($this->originalEnvironment as $key => $value) {
-            $this->setEnvironmentValue($key, $value === false ? null : $value);
-        }
     }
 
     public function test_create_bulk_casts_string_flags_before_calling_add_bulk(): void
@@ -242,20 +206,6 @@ class AdminGroupControllerTest extends TestCase
             'minsizetoformrelease_unit' => 'MB',
             'minfilestoformrelease' => '1',
         ]);
-    }
-
-    private function setEnvironmentValue(string $key, ?string $value): void
-    {
-        if ($value === null) {
-            putenv($key);
-            unset($_ENV[$key], $_SERVER[$key]);
-
-            return;
-        }
-
-        putenv($key.'='.$value);
-        $_ENV[$key] = $value;
-        $_SERVER[$key] = $value;
     }
 
     private function createSchema(): void

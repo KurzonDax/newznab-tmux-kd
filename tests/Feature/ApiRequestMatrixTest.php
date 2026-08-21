@@ -9,7 +9,6 @@ use App\Http\Controllers\Api\ApiV2Controller;
 use App\Models\Category;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Releases\ReleaseSearchService;
-use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Http\Request;
@@ -20,62 +19,38 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Mockery;
-use PDO;
 use ReflectionClass;
+use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
 class ApiRequestMatrixTest extends TestCase
 {
+    use IsolatedSqliteDatabase;
+
     private string $nzbUploadFolder;
 
-    private string $databasePath;
-
-    /** @var array<string, string|false> */
-    private array $originalEnvironment = [];
-
-    public function createApplication()
+    /**
+     * @return array<string, string>
+     */
+    protected function bootstrapSettings(): array
     {
-        $this->databasePath = $this->makeTempPath('nntmux-api-matrix-test', '.sqlite');
-        $this->originalEnvironment = [
-            'APP_ENV' => getenv('APP_ENV'),
-            'DB_CONNECTION' => getenv('DB_CONNECTION'),
-            'DB_DATABASE' => getenv('DB_DATABASE'),
+        return [
+            'categorizeforeign' => '0',
+            'catwebdl' => '0',
+            'innerfileblacklist' => '',
         ];
-
-        if (file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
-        $pdo = new PDO('sqlite:'.$this->databasePath);
-        $pdo->exec('CREATE TABLE settings (name VARCHAR PRIMARY KEY, value TEXT NULL)');
-        $pdo->exec("INSERT INTO settings (name, value) VALUES
-            ('categorizeforeign', '0'),
-            ('catwebdl', '0'),
-            ('innerfileblacklist', '')");
-
-        $this->setEnvironmentValue('APP_ENV', 'testing');
-        $this->setEnvironmentValue('DB_CONNECTION', 'sqlite');
-        $this->setEnvironmentValue('DB_DATABASE', $this->databasePath);
-
-        $app = require __DIR__.'/../../bootstrap/app.php';
-        $app->make(Kernel::class)->bootstrap();
-
-        return $app;
     }
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->bootIsolatedDatabase();
 
         config([
-            'database.default' => 'sqlite',
-            'database.connections.sqlite.database' => $this->databasePath,
             'mail.from.address' => 'api-matrix@example.test',
             'app.key' => 'base64:'.base64_encode(random_bytes(32)),
         ]);
 
-        DB::purge();
-        DB::reconnect();
         Cache::flush();
         Schema::dropAllTables();
 
@@ -90,15 +65,8 @@ class ApiRequestMatrixTest extends TestCase
     {
         (new Filesystem)->deleteDirectory($this->nzbUploadFolder);
 
-        if (file_exists($this->databasePath)) {
-            unlink($this->databasePath);
-        }
-
+        $this->tearDownIsolatedDatabase();
         parent::tearDown();
-
-        foreach ($this->originalEnvironment as $key => $value) {
-            $this->setEnvironmentValue($key, $value === false ? null : $value);
-        }
     }
 
     public function test_v1_invalid_sort_returns_xml_201_error(): void
@@ -1028,20 +996,6 @@ class ApiRequestMatrixTest extends TestCase
         }
 
         return null;
-    }
-
-    private function setEnvironmentValue(string $key, ?string $value): void
-    {
-        if ($value === null) {
-            putenv($key);
-            unset($_ENV[$key], $_SERVER[$key]);
-
-            return;
-        }
-
-        putenv($key.'='.$value);
-        $_ENV[$key] = $value;
-        $_SERVER[$key] = $value;
     }
 
     private function seedData(): void
