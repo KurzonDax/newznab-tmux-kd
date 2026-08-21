@@ -180,6 +180,10 @@ class AudioTagExtractorTest extends TestCase
             'file_name' => 'audiofile',
             'file_name_extension' => 'audiofile.MP3',
             'file_last_modification_date' => new \DateTime('2019-04-01 12:00:00'),
+            'CompleteName_Last' => '/tmp/nntmux/1234/audiofile.MP3',
+            'FolderName_Last' => '/tmp/nntmux/1234',
+            'FileName_Last' => 'audiofile',
+            'FileExtension_Last' => 'MP3',
             'album' => 'Test Album',
             'comment' => 'ripped by someone',
             'format' => new Mode('MPEG Audio', 'MPEG Audio'),
@@ -188,8 +192,13 @@ class AudioTagExtractorTest extends TestCase
         $this->assertNotNull($tags);
         $this->assertSame('ripped by someone', $tags['raw_tags']['comment']);
         $this->assertSame('MPEG Audio', $tags['raw_tags']['format']);
-        foreach (['complete_name', 'folder_name', 'file_name', 'file_name_extension', 'file_last_modification_date'] as $key) {
+        foreach (['complete_name', 'folder_name', 'file_name', 'file_name_extension', 'file_last_modification_date',
+            'completename_last', 'foldername_last', 'filename_last', 'fileextension_last'] as $key) {
             $this->assertArrayNotHasKey($key, $tags['raw_tags']);
+        }
+
+        foreach ($tags['raw_tags'] as $key => $value) {
+            $this->assertStringNotContainsString('/tmp/', (string) $value, $key.' leaked a temp path');
         }
     }
 

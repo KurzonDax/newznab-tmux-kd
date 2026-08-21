@@ -582,7 +582,6 @@ class Release extends Model
             'episode:id,title,firstaired,se_complete',
             'releaseGroup:releases_id,groups_id',
             'releaseGroup.group:id,name',
-            'audioTags',
         ]);
 
         if (is_array($guid)) {

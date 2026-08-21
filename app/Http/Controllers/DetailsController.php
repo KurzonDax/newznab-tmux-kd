@@ -46,6 +46,9 @@ class DetailsController extends BasePageController
     public function show(Request $request, string $guid): mixed
     {
         $data = Release::getByGuid($guid);
+        // Audio tag/preview metadata is only rendered here, so it is loaded on
+        // this path rather than for every getByGuid() caller.
+        $data?->loadMissing('audioTags');
         $releaseRegex = '';
         if (! empty($data)) {
             $releaseRegex = ReleaseRegex::query()->where('releases_id', '=', $data['id'])->first();

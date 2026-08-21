@@ -264,7 +264,7 @@ class MediaExtractionService
      */
     public function isAudioProcessingCategory(int $categoriesId): bool
     {
-        if (intdiv($categoriesId, 1000) * 1000 === Category::MUSIC_ROOT) {
+        if (Category::rootCategoryFor($categoriesId) === Category::MUSIC_ROOT) {
             return true;
         }
 
@@ -377,7 +377,7 @@ class MediaExtractionService
      */
     private function renameFromAudioTags(
         ReleaseProcessingContext $context,
-        Release $rQuery,
+        Release $releaseRow,
         array $tags,
         string $fileExtension
     ): void {
@@ -389,7 +389,7 @@ class MediaExtractionService
         $newCat = match ($ext) {
             'MP3' => Category::MUSIC_MP3,
             'FLAC' => Category::MUSIC_LOSSLESS,
-            default => $this->categorize->determineCategory($rQuery->groups_id, $newName, $rQuery->fromname),
+            default => $this->categorize->determineCategory($releaseRow->groups_id, $newName, $releaseRow->fromname),
         };
 
         $newTitle = substr($newName, 0, 255);
@@ -406,8 +406,8 @@ class MediaExtractionService
 
         if ($this->config->echoCLI) {
             $releaseInfo = (object) [
-                'groups_id' => $rQuery->groups_id, 'categories_id' => $rQuery->categories_id,
-                'searchname' => $rQuery->searchname, 'name' => $rQuery->searchname,
+                'groups_id' => $releaseRow->groups_id, 'categories_id' => $releaseRow->categories_id,
+                'searchname' => $releaseRow->searchname, 'name' => $releaseRow->searchname,
                 'releases_id' => $context->release->id, 'filename' => '',
             ];
             (new ReleaseUpdateService)->echoReleaseInfo($releaseInfo, $newTitle,
