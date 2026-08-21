@@ -97,6 +97,7 @@ final class RoleUpgradeTest extends TestCase
 
     protected function tearDown(): void
     {
+        DB::disconnect();
         $this->tearDownIsolatedDatabase();
         parent::tearDown();
     }
