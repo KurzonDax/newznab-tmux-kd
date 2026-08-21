@@ -153,8 +153,6 @@ class NzbContentParser
      *     sampleMessageIDs: list<string>,
      *     jpgMessageIDs: list<string>,
      *     mediaInfoMessageIDs: list<string>,
-     *     audioInfoMessageID: string,
-     *     audioInfoExtension: string,
      *     bookFileCount: int
      * }
      */
@@ -168,8 +166,6 @@ class NzbContentParser
             'sampleMessageIDs' => [],
             'jpgMessageIDs' => [],
             'mediaInfoMessageIDs' => [],
-            'audioInfoMessageID' => '',
-            'audioInfoExtension' => '',
             'bookFileCount' => 0,
         ];
 
@@ -210,14 +206,6 @@ class NzbContentParser
                     && PostedFileClassifier::matchesTerminalExtension($title, $config->videoFileRegex)
                 ) {
                     $result['mediaInfoMessageIDs'] = $this->extractSegments($segments, $config->segmentsToDownload);
-                }
-
-                // Look for an audio file
-                if ($config->processAudioInfo && empty($result['audioInfoMessageID']) && ! empty($segments)
-                    && PostedFileClassifier::matchesTerminalExtension($title, $config->audioFileRegex, $type)
-                ) {
-                    $result['audioInfoExtension'] = $type[1];
-                    $result['audioInfoMessageID'] = (string) $segments[0];
                 }
 
                 // Count book files

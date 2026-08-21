@@ -9,6 +9,7 @@ use App\Models\Collection;
 use App\Models\Release;
 use App\Models\Settings;
 use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
+use App\Services\AudioProcessing\AudioCandidateQuery;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -268,6 +269,13 @@ class TmuxMonitorService
             $this->runVar['counts']['now']['work'] = $additionalBacklog['total'];
             $this->runVar['counts']['now']['work_available'] = $additionalBacklog['available'];
 
+            // The audio path owns a disjoint slice of the same pending set, so it
+            // needs its own gate: the `add` pane must not be kept alive by music
+            // it will never claim, nor the `aud` pane by video.
+            $audioBacklog = AudioCandidateQuery::backlogCounts();
+            $this->runVar['counts']['now']['audio_work'] = $audioBacklog['total'];
+            $this->runVar['counts']['now']['audio_work_available'] = $audioBacklog['available'];
+
             $this->runVar['timers']['query']['proc2_time'] = microtime(true) - $timer2;
 
         } catch (\Exception $e) {
@@ -451,6 +459,8 @@ class TmuxMonitorService
             'tv' => 0,
             'work' => 0,
             'work_available' => 0,
+            'audio_work' => 0,
+            'audio_work_available' => 0,
             'xxx' => 0,
         ];
     }

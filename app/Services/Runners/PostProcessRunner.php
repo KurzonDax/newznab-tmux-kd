@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\Settings;
 use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
 use App\Services\AdditionalProcessing\AdditionalProcessingOrchestrator;
+use App\Services\AudioProcessing\AudioCandidateQuery;
 use App\Services\NfoService;
 use App\Services\TempWorkspaceService;
 use Illuminate\Support\Facades\Concurrency;
@@ -271,6 +272,34 @@ class PostProcessRunner extends BaseRunner
         }
 
         $this->runPostProcess($queue, $maxProcesses, 'additional', 'additional postprocessing');
+    }
+
+    /**
+     * Fan the pending music backlog out per GUID bucket.
+     *
+     * Deliberately plainer than {@see self::processAdditional()}: an audio
+     * worker fetches the head of one file and stops, so there is no worker mode
+     * draining batch after batch, and no reason to stack several workers onto
+     * one hot bucket.
+     */
+    public function processAudio(): void
+    {
+        $chars = array_column(AudioCandidateQuery::availableBucketCounts(), 'bucket');
+
+        if ($chars === []) {
+            $this->headerNone();
+
+            return;
+        }
+
+        if (! $this->prepareAdditionalTempBuckets($chars)) {
+            return;
+        }
+
+        $queue = array_map(static fn (string $char): object => (object) ['id' => $char], $chars);
+        $maxProcesses = max(1, (int) Settings::settingValue('postthreadsaudio'));
+
+        $this->runPostProcess($queue, $maxProcesses, 'aud', 'audio postprocessing');
     }
 
     /**

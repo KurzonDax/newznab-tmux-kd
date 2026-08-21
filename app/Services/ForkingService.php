@@ -114,6 +114,14 @@ class ForkingService
     }
 
     /**
+     * Process audio previews for music releases.
+     */
+    public function processAudio(): void
+    {
+        $this->runWithTiming('postProcess_aud', fn () => $this->postProcessRunner->processAudio());
+    }
+
+    /**
      * Process NFO files.
      */
     public function processNfo(): void
@@ -207,6 +215,7 @@ class ForkingService
             'fixRelNames_predbft' => $this->fixRelNames('predbft'),
             'releases' => $this->releases(),
             'postProcess_add' => $this->processAdditional(),
+            'postProcess_aud' => $this->processAudio(),
             'postProcess_ani' => $this->processAnime(),
             'postProcess_ama' => $this->processAmazon(),
             'postProcess_boo' => $this->processBooks(),

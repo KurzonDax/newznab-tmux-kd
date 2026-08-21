@@ -22,8 +22,6 @@ final readonly class AdditionalWorkPlan
         public array $mediaInfoMessageIds = [],
         public array $mediaInfoTailMessageIds = [],
         public array $mediaInfoTailExpansionMessageIds = [],
-        public string $audioInfoMessageId = '',
-        public string $audioInfoExtension = '',
         public array $archiveCandidates = [],
         public array $unknownPayloadCandidates = [],
         public int $bookFileCount = 0,

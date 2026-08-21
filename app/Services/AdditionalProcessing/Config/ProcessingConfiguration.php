@@ -13,15 +13,6 @@ use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
  */
 final readonly class ProcessingConfiguration
 {
-    /**
-     * Extensions that identify a standalone music file worth post-processing.
-     *
-     * Deliberately excludes AC3/DTS/MKA/MKS: those are posted as side-files of
-     * video releases (external audio tracks, Matroska audio/subtitle
-     * companions), not as music, and selecting them produced empty previews.
-     */
-    public const string AUDIO_FILE_REGEX = '\\.(AAC|AIFF|APE|ASF|FLAC|MP2|MP3|RA|OGG|OGM|W64|WAV|WMA)';
-
     public bool $echoCLI;
 
     public bool|string $innerFileBlacklist;
@@ -60,13 +51,9 @@ final readonly class ProcessingConfiguration
 
     public bool $processThumbnails;
 
-    public bool $processAudioSample;
-
     public bool $processJPGSample;
 
     public bool $processMediaInfo;
-
-    public bool $processAudioInfo;
 
     public bool $processPasswords;
 
@@ -81,8 +68,6 @@ final readonly class ProcessingConfiguration
     public bool $mp4TailFetch;
 
     public int $mp4TailMaxSegments;
-
-    public string $audioSavePath;
 
     public string $tmpUnrarPath;
 
@@ -106,8 +91,6 @@ final readonly class ProcessingConfiguration
     public int $maxPpTimeoutCount;
 
     // Regex patterns
-    public string $audioFileRegex;
-
     public string $ignoreBookRegex;
 
     public string $supportFileRegex;
@@ -143,17 +126,14 @@ final readonly class ProcessingConfiguration
         $this->ffmpegPath = config('nntmux_settings.ffmpeg_path') ?: false;
         $this->mediaInfoPath = config('nntmux_settings.mediainfo_path') ?: false;
         if (! $this->ffmpegPath) {
-            $this->processAudioSample = false;
             $this->processThumbnails = false;
             $this->processVideo = false;
         } else {
-            $this->processAudioSample = (int) Settings::settingValue('saveaudiopreview') !== 0;
             $this->processThumbnails = (int) Settings::settingValue('processthumbnails') !== 0;
             $this->processVideo = (int) Settings::settingValue('processvideos') !== 0;
         }
         $this->processJPGSample = (int) Settings::settingValue('processjpg') !== 0;
         $this->processMediaInfo = (bool) $this->mediaInfoPath;
-        $this->processAudioInfo = $this->processMediaInfo;
         $this->processPasswords = PasswordInspectionMode::isActive();
         $this->payloadSniffing = (bool) config('nntmux_settings.payload_sniffing');
         $this->payloadSniffMaxCandidates = max((int) config('nntmux_settings.payload_sniff_max_candidates'), 0);
@@ -161,7 +141,6 @@ final readonly class ProcessingConfiguration
         $this->payloadSniffSmallSegmentLimit = max((int) config('nntmux_settings.payload_sniff_small_segment_limit'), 1);
         $this->mp4TailFetch = (bool) config('nntmux_settings.mp4_tail_fetch');
         $this->mp4TailMaxSegments = max((int) config('nntmux_settings.mp4_tail_max_segments'), 1);
-        $this->audioSavePath = config('nntmux_settings.covers_path').'/audiosample/';
         $this->tmpUnrarPath = config('nntmux.tmp_unrar_path');
         $this->debugMode = (bool) config('app.debug');
         $this->searchDriver = config('search.default', 'manticore');
@@ -171,7 +150,6 @@ final readonly class ProcessingConfiguration
         $this->releaseProcessingTimeout = (int) (Settings::settingValue('releaseprocessingtimeout') ?: 120);
         $this->maxPpTimeoutCount = (int) (Settings::settingValue('maxpptimeoutcount') ?: 3);
         // Regex patterns
-        $this->audioFileRegex = self::AUDIO_FILE_REGEX;
         $this->ignoreBookRegex = '/\\b(epub|lit|mobi|pdf|sipdf|html)\\b.*\\.rar(?!.{20,})/i';
         $this->supportFileRegex = '\\.(?:vol\\d{1,3}\\+\\d{1,3}|par2|srs|sfv|nzb)';
         $this->videoFileRegex = '\\.(AVI|F4V|IFO|M1V|M2V|M4V|MKV|MOV|MP4|MPEG|MPG|MPGV|MPV|OGV|QT|RM|RMVB|TS|VOB|WMV)';

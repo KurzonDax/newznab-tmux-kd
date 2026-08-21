@@ -19,7 +19,6 @@ use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\UsenetDownloadService;
 use App\Services\AdditionalProcessing\VideoFrameExtractor;
-use App\Services\Categorization\CategorizationService;
 use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\NameFixing\NameFixingService;
 use App\Services\NameFixing\ReleaseUpdateService;
@@ -133,7 +132,6 @@ class AdditionalProcessingServiceProvider extends ServiceProvider
                 $app->make(ProcessingConfiguration::class),
                 $app->make(ReleaseImageService::class),
                 $app->make(ReleaseExtraService::class),
-                new CategorizationService,
                 new VideoFrameExtractor($app->make(ProcessingConfiguration::class)),
                 $app->make(ReleaseSearchSyncCoordinator::class),
                 $app->make(MediaInfoRefinementService::class),

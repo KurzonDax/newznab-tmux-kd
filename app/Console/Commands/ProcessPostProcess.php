@@ -15,7 +15,7 @@ class ProcessPostProcess extends Command
      * @var string
      */
     protected $signature = 'multiprocessing:postprocess
-                            {type : Type: ama, add, ani, mov, nfo, tv, boo, mus, con, gam}
+                            {type : Type: ama, add, aud, ani, mov, nfo, tv, boo, mus, con, gam}
                             {renamed=false : For mov/tv: only post-process renamed releases (true/false)}';
 
     /**
@@ -33,8 +33,8 @@ class ProcessPostProcess extends Command
         $type = $this->argument('type');
         $renamed = $this->argument('renamed');
 
-        if (! \in_array($type, ['ama', 'add', 'ani', 'mov', 'nfo', 'tv', 'boo', 'mus', 'con', 'gam'], true)) {
-            $this->error('Type must be one of: ama, add, ani, mov, nfo, tv, boo, mus, con, gam');
+        if (! \in_array($type, ['ama', 'add', 'aud', 'ani', 'mov', 'nfo', 'tv', 'boo', 'mus', 'con', 'gam'], true)) {
+            $this->error('Type must be one of: ama, add, aud, ani, mov, nfo, tv, boo, mus, con, gam');
             $this->line('');
             $this->line('ama => Do amazon (books+music+console+games) processing in parallel');
             $this->line('boo => Do books processing');
@@ -42,6 +42,7 @@ class ProcessPostProcess extends Command
             $this->line('con => Do console processing');
             $this->line('gam => Do games processing');
             $this->line('add => Do additional (rar|zip) processing');
+            $this->line('aud => Do audio preview processing (music releases)');
             $this->line('ani => Do anime processing');
             $this->line('mov => Do movie processing');
             $this->line('nfo => Do NFO processing');
@@ -58,6 +59,7 @@ class ProcessPostProcess extends Command
                 'ama' => $service->processAmazon(),
                 'boo' => $service->processBooks(),
                 'add' => $service->processAdditional(),
+                'aud' => $service->processAudio(),
                 'ani' => $service->processAnime(),
                 'mov' => $service->processMovies($renamedOnly),
                 'nfo' => $service->processNfo(),

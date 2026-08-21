@@ -38,11 +38,11 @@ class ConsoleOutputService
                 PHP_EOL.
                 'Downloaded: (xB)=yEnc article, (cB)=compressed part'.
                 PHP_EOL.
-                'Failures: fC#=Compressed(part #), fS=Sample, fM=Media(video), fA=Audio, fJ=JPEG, G=Missing group, T=Timeout skip'.
+                'Failures: fC#=Compressed(part #), fS=Sample, fM=Media(video), fJ=JPEG, G=Missing group, T=Timeout skip'.
                 PHP_EOL.
                 'Processing: r=RAR, z=ZIP, (vRAW)=Inline video detected'.
                 PHP_EOL.
-                'Added: s=Sample image, j=JPEG image, A=Audio sample, a=Audio MediaInfo, v=Video sample'.
+                'Added: s=Sample image, j=JPEG image, v=Video sample'.
                 PHP_EOL.
                 'Added: m=Video MediaInfo, n=NFO, ^=Inner file details (RAR/ZIP)'.
                 '',
@@ -113,16 +113,6 @@ class ConsoleOutputService
         $this->echo('(moov-)', 'warningOver');
     }
 
-    public function echoAudioDownload(): void
-    {
-        $this->echo('(aB)', 'primaryOver');
-    }
-
-    public function echoAudioFailure(): void
-    {
-        $this->echo('fA', 'warningOver');
-    }
-
     public function echoJpgDownload(): void
     {
         $this->echo('(jB)', 'primaryOver');
@@ -151,16 +141,6 @@ class ConsoleOutputService
     public function echoJpgSaved(): void
     {
         $this->echo('j', 'primaryOver');
-    }
-
-    public function echoAudioSampleCreated(): void
-    {
-        $this->echo('A', 'primaryOver');
-    }
-
-    public function echoAudioInfoAdded(): void
-    {
-        $this->echo('a', 'primaryOver');
     }
 
     public function echoVideoCreated(): void

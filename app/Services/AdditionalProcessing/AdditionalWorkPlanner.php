@@ -26,8 +26,6 @@ final readonly class AdditionalWorkPlanner
         $mediaInfoMessageIds = [];
         $mediaInfoTailMessageIds = [];
         $mediaInfoTailExpansionMessageIds = [];
-        $audioInfoMessageId = '';
-        $audioInfoExtension = '';
         $archiveCandidates = [];
         $bookFileCount = 0;
         $duplicateMessageIdCount = 0;
@@ -114,14 +112,6 @@ final readonly class AdditionalWorkPlanner
                         count($tailCandidates) - $initialTailCount,
                     );
                 }
-
-                if ($this->config->processAudioInfo && $audioInfoMessageId === '' && isset($segments[0])
-                    && PostedFileClassifier::matchesTerminalExtension($title, $this->config->audioFileRegex, $type)
-                ) {
-                    $audioInfoExtension = (string) ($type[1] ?? '');
-                    $audioInfoMessageId = (string) $segments[0];
-                    $this->recordMessageId($audioInfoMessageId, $seenMessageIds, $duplicateMessageIdCount);
-                }
             } catch (\ErrorException $e) {
                 Log::debug($e->getTraceAsString());
             }
@@ -135,8 +125,7 @@ final readonly class AdditionalWorkPlanner
         $hasKnownCandidate = $archiveCandidates !== []
             || $sampleMessageIds !== []
             || $jpgMessageIds !== []
-            || $mediaInfoMessageIds !== []
-            || $audioInfoMessageId !== '';
+            || $mediaInfoMessageIds !== [];
         $unknownPayloadCandidates = [];
         if (! $hasKnownCandidate && $this->config->payloadSniffing) {
             $unknownPayloadCandidates = $this->unknownPayloadSelector->select(
@@ -159,8 +148,6 @@ final readonly class AdditionalWorkPlanner
             mediaInfoMessageIds: $mediaInfoMessageIds,
             mediaInfoTailMessageIds: $mediaInfoTailMessageIds,
             mediaInfoTailExpansionMessageIds: $mediaInfoTailExpansionMessageIds,
-            audioInfoMessageId: $audioInfoMessageId,
-            audioInfoExtension: $audioInfoExtension,
             archiveCandidates: $archiveCandidates,
             unknownPayloadCandidates: $unknownPayloadCandidates,
             bookFileCount: $bookFileCount,

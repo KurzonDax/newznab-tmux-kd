@@ -303,10 +303,6 @@ class SettingsTableSeeder extends Seeder
                 'name' => 'safepartrepair',
                 'value' => '0',
             ],
-            87 => [
-                'name' => 'saveaudiopreview',
-                'value' => '0',
-            ],
             88 => [
                 'name' => 'segmentstodownload',
                 'value' => '2',
@@ -756,6 +752,30 @@ class SettingsTableSeeder extends Seeder
             266 => [
                 'name' => 'rescan_limit',
                 'value' => '100',
+            ],
+            267 => [
+                'name' => 'postthreadsaudio',
+                'value' => '1',
+            ],
+            268 => [
+                'name' => 'audio_segments_to_download',
+                'value' => '12',
+            ],
+            269 => [
+                'name' => 'audio_max_rar_parts',
+                'value' => '6',
+            ],
+            270 => [
+                'name' => 'audio_preview_seconds',
+                'value' => '30',
+            ],
+            271 => [
+                'name' => 'audio_preview_start_seconds',
+                'value' => '10',
+            ],
+            272 => [
+                'name' => 'audio_spectrogram',
+                'value' => '1',
             ],
         ]);
     }

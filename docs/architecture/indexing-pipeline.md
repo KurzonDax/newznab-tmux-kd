@@ -84,6 +84,7 @@ are checked first):
 | Fix names | `php artisan releases:fix-names <level> --update …` (levels 3–22) | Rename badly-named releases using NFOs, file lists, par2, predb, archive CRCs, etc. |
 | Remove crap | `php artisan releases:remove-crap …` | Delete spam/junk releases. |
 | Post additional / TV / movies / metadata | `php artisan multiprocessing:postprocess add\|nfo\|tv\|mov\|ama` | Download samples/NFOs, match to TMDB/TVDB/IGDB/etc. |
+| Post audio previews | `php artisan multiprocessing:postprocess aud` | Fetch the head of a music release, clip a preview, render a spectrogram, persist tags. |
 | IRC scraper | `php artisan irc:scrape` | Populate the `predb` table from scene pre channels. |
 
 The `multiprocessing:*` commands all delegate to `ForkingService`

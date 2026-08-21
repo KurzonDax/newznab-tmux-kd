@@ -198,10 +198,13 @@ class ReleaseImageService
     /** Delete all generated assets for a release, including legacy images. */
     public function delete(string $guid): void
     {
-        $files = [
-            $this->audSavePath.$guid.'.ogg',
-            $this->vidSavePath.$guid.'.ogv',
-        ];
+        $files = [$this->vidSavePath.$guid.'.ogv'];
+
+        // Audio artifacts are matched by glob rather than named: the preview
+        // clip's container follows the source codec, the spectrogram is a
+        // separate PNG, and installs predating the audio path still hold the
+        // old fixed-name Vorbis clip.
+        $files = [...$files, ...$this->audioArtifactsFor($guid)];
 
         foreach (['webp', 'jpg', 'jpeg'] as $extension) {
             $files[] = $this->imgSavePath.$guid.'_thumb.'.$extension;
@@ -209,6 +212,32 @@ class ReleaseImageService
         }
 
         File::delete($files);
+    }
+
+    /**
+     * Every audio artifact belonging to one release.
+     *
+     * A guid outside the character set guids are generated from is refused
+     * rather than escaped: it would have to be corrupt to get here, and a glob
+     * metacharacter in a delete path is not worth being clever about.
+     *
+     * @return list<string>
+     */
+    private function audioArtifactsFor(string $guid): array
+    {
+        if (preg_match('/\A[A-Za-z0-9][A-Za-z0-9_-]*\z/D', $guid) !== 1) {
+            return [];
+        }
+
+        $artifacts = [];
+        foreach (['.*', '_spectrum.*'] as $suffix) {
+            $matches = File::glob($this->audSavePath.$guid.$suffix);
+            if (is_array($matches)) {
+                $artifacts = [...$artifacts, ...$matches];
+            }
+        }
+
+        return array_values(array_unique($artifacts));
     }
 
     /** @return array{success: bool, contents: string, reason: string} */

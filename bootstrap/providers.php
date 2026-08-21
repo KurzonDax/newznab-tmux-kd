@@ -2,6 +2,7 @@
 
 use App\Providers\AdditionalProcessingServiceProvider;
 use App\Providers\AppServiceProvider;
+use App\Providers\AudioProcessingServiceProvider;
 use App\Providers\CategorizationServiceProvider;
 use App\Providers\ForumServiceProvider;
 use App\Providers\HorizonServiceProvider;
@@ -12,6 +13,7 @@ use App\Providers\UserServiceProvider;
 
 return [
     AdditionalProcessingServiceProvider::class,
+    AudioProcessingServiceProvider::class,
     AppServiceProvider::class,
     CategorizationServiceProvider::class,
     ForumServiceProvider::class,

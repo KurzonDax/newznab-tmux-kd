@@ -266,7 +266,6 @@ class ReleaseProcessor
         return $this->config->processPasswords
             || $this->config->processThumbnails
             || $this->config->processMediaInfo
-            || $this->config->processAudioInfo
             || $this->config->processVideo
             || $this->config->processJPGSample
             || $context->workPlan->unknownPayloadCandidates !== [];
@@ -283,8 +282,6 @@ class ReleaseProcessor
         $context->sampleMessageIDs = $workPlan->sampleMessageIds;
         $context->jpgMessageIDs = $workPlan->jpgMessageIds;
         $context->mediaInfoMessageIDs = $workPlan->mediaInfoMessageIds;
-        $context->audioInfoMessageIDs = $workPlan->audioInfoMessageId;
-        $context->audioInfoExtension = $workPlan->audioInfoExtension;
 
         return $workPlan->bookFlood;
     }
@@ -295,8 +292,8 @@ class ReleaseProcessor
         // site-wide switches, it can only disable the two ffmpeg artifacts
         // (Generated Preview + Generated Sample Video) and the sample-article
         // downloads dedicated to them. Pre-marking the found flags makes every
-        // downstream sample/video step skip naturally; mediainfo, passwords,
-        // audio and Extracted Sample Images are untouched.
+        // downstream sample/video step skip naturally; mediainfo, passwords and
+        // Extracted Sample Images are untouched.
         $previewGenerationAllowed = $this->previewPolicy
             ->generationEnabledForCategory((int) $context->release->categories_id);
         $context->previewGenerationSkippedByPolicy = ! $previewGenerationAllowed;
@@ -304,8 +301,6 @@ class ReleaseProcessor
         $context->initializeFromConfig(
             $this->config->processVideo && $previewGenerationAllowed,
             $this->config->processMediaInfo,
-            $this->config->processAudioInfo,
-            $this->config->processAudioSample,
             $this->config->processJPGSample,
             $this->config->processThumbnails && $previewGenerationAllowed
         );
@@ -376,9 +371,7 @@ class ReleaseProcessor
             || ($this->config->processVideo && $previewGenerationAllowed && $context->foundVideo)
             || ($this->config->processThumbnails && $previewGenerationAllowed && $context->foundSample)
             || ($this->config->processJPGSample && $context->foundJPGSample)
-            || ($this->config->processMediaInfo && $context->foundMediaInfo)
-            || ($this->config->processAudioInfo && $context->foundAudioInfo)
-            || ($this->config->processAudioSample && $context->foundAudioSample);
+            || ($this->config->processMediaInfo && $context->foundMediaInfo);
     }
 
     private function result(
@@ -603,39 +596,6 @@ class ReleaseProcessor
                 }
             } elseif (! $result['success']) {
                 $this->output->echoMediaInfoFailure();
-            }
-        }
-
-        if ((! $context->foundAudioInfo || ! $context->foundAudioSample)
-            && ! empty($context->audioInfoMessageIDs)
-        ) {
-            $result = $this->downloadService->download(
-                DownloadKind::Audio,
-                $context->audioInfoMessageIDs,
-                $context->releaseGroupName,
-                $context->release->id
-            );
-
-            if ($result['success'] && is_string($result['data'])) {
-                $this->output->echoAudioDownload();
-                $fileLocation = $context->tmpPath.'audio.'.$context->audioInfoExtension;
-                File::put($fileLocation, $result['data']);
-
-                $audioResult = $this->mediaService->getAudioInfo(
-                    $fileLocation,
-                    $context->audioInfoExtension,
-                    $context,
-                    $context->tmpPath
-                );
-
-                if ($audioResult['audioInfo']) {
-                    $this->output->echoAudioInfoAdded();
-                }
-                if ($audioResult['audioSample']) {
-                    $this->output->echoAudioSampleCreated();
-                }
-            } elseif (! $result['success']) {
-                $this->output->echoAudioFailure();
             }
         }
 
@@ -992,28 +952,6 @@ class ReleaseProcessor
                 }
             }
 
-            if ((! $context->foundAudioInfo || ! $context->foundAudioSample)
-                && preg_match('/(.*)'.$this->config->audioFileRegex.'$/i', $filePath, $fileType) === 1
-            ) {
-                $audioPath = $context->tmpPath.'audiofile.'.$fileType[2];
-                File::move($filePath, $audioPath);
-                $audioResult = $this->mediaService->getAudioInfo(
-                    $audioPath,
-                    $fileType[2],
-                    $context,
-                    $context->tmpPath
-                );
-                if ($audioResult['audioInfo']) {
-                    $this->output->echoAudioInfoAdded();
-                }
-                if ($audioResult['audioSample']) {
-                    $this->output->echoAudioSampleCreated();
-                }
-                File::delete($audioPath);
-
-                continue;
-            }
-
             if (! $context->foundJPGSample && preg_match('/\.(jpe?g|png|webp)$/i', $filePath) === 1) {
                 if ($this->mediaService->getJPGSample($filePath, $context->release->guid)) {
                     $context->markFound('jpgSample');
@@ -1047,25 +985,6 @@ class ReleaseProcessor
                 && preg_match('/Matroska data|MPEG v4|MPEG sequence, v2|\WAVI\W/i', $output) === 1
             ) {
                 $this->mediaService->processVideoFile($filePath, $context, $context->tmpPath);
-            } elseif ((! $context->foundAudioSample || ! $context->foundAudioInfo)
-                && preg_match('/^FLAC|layer III|Vorbis audio/i', $output, $audioType) === 1
-            ) {
-                $extension = match ($audioType[0]) {
-                    'FLAC' => 'FLAC',
-                    'layer III' => 'MP3',
-                    'Vorbis audio' => 'OGG',
-                    default => 'audio',
-                };
-                $audioPath = $context->tmpPath.'audiofile.'.$extension;
-                File::move($filePath, $audioPath);
-                $audioResult = $this->mediaService->getAudioInfo($audioPath, $extension, $context, $context->tmpPath);
-                if ($audioResult['audioInfo']) {
-                    $this->output->echoAudioInfoAdded();
-                }
-                if ($audioResult['audioSample']) {
-                    $this->output->echoAudioSampleCreated();
-                }
-                File::delete($audioPath);
             } elseif (! $context->foundPAR2Info && stripos($output, 'Parity') === 0) {
                 $this->releaseManager->processPar2File(
                     $filePath,

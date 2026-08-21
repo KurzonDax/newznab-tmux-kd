@@ -84,7 +84,6 @@ class NzbContentParserTest extends TestCase
             'processThumbnails' => true,
             'processJPGSample' => true,
             'processMediaInfo' => true,
-            'processAudioInfo' => true,
         ]);
 
         $result = $parser->extractMessageIDs([
@@ -102,8 +101,6 @@ class NzbContentParserTest extends TestCase
         $this->assertSame(['<sample>'], $result['sampleMessageIDs']);
         $this->assertSame(['<image>'], $result['jpgMessageIDs']);
         $this->assertSame(['<video>'], $result['mediaInfoMessageIDs']);
-        $this->assertSame('<audio>', $result['audioInfoMessageID']);
-        $this->assertSame('flac', $result['audioInfoExtension']);
         $this->assertSame(1, $result['bookFileCount']);
     }
 
@@ -114,7 +111,6 @@ class NzbContentParserTest extends TestCase
             'processThumbnails' => true,
             'processJPGSample' => true,
             'processMediaInfo' => true,
-            'processAudioInfo' => true,
         ]);
 
         $result = $parser->extractMessageIDs([
@@ -127,7 +123,6 @@ class NzbContentParserTest extends TestCase
         $this->assertSame(['<sample>'], $result['sampleMessageIDs']);
         $this->assertSame(['<image>'], $result['jpgMessageIDs']);
         $this->assertSame(['<video>'], $result['mediaInfoMessageIDs']);
-        $this->assertSame('<audio>', $result['audioInfoMessageID']);
     }
 
     private function makeParser(): NzbContentParser

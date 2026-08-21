@@ -21,7 +21,6 @@ class AdditionalWorkPlannerTest extends TestCase
             'processThumbnails' => true,
             'processJPGSample' => true,
             'processMediaInfo' => true,
-            'processAudioInfo' => true,
         ]));
 
         $plan = $planner->plan([
@@ -36,8 +35,6 @@ class AdditionalWorkPlannerTest extends TestCase
         $this->assertSame(['<sample>', '<sample-2>'], $plan->sampleMessageIds);
         $this->assertSame(['<cover>'], $plan->jpgMessageIds);
         $this->assertSame(['<main-video>', '<main-video-2>'], $plan->mediaInfoMessageIds);
-        $this->assertSame('<audio>', $plan->audioInfoMessageId);
-        $this->assertSame('FLAC', $plan->audioInfoExtension);
         $this->assertTrue($plan->hasCompressedFile());
         $this->assertSame(
             ['release.part02.rar', 'release.part01.rar'],
@@ -95,7 +92,6 @@ class AdditionalWorkPlannerTest extends TestCase
             'processThumbnails' => true,
             'processJPGSample' => true,
             'processMediaInfo' => true,
-            'processAudioInfo' => true,
         ]));
 
         $plan = $planner->plan([
@@ -112,8 +108,6 @@ class AdditionalWorkPlannerTest extends TestCase
         $this->assertSame(['<sample>'], $plan->sampleMessageIds);
         $this->assertSame(['<image>'], $plan->jpgMessageIds);
         $this->assertSame(['<video>'], $plan->mediaInfoMessageIds);
-        $this->assertSame('<audio>', $plan->audioInfoMessageId);
-        $this->assertSame('flac', $plan->audioInfoExtension);
         $this->assertSame(
             [
                 'example.sample.mkv.part001.rar" yEnc',
@@ -181,7 +175,6 @@ class AdditionalWorkPlannerTest extends TestCase
             'processThumbnails' => true,
             'processJPGSample' => true,
             'processMediaInfo' => true,
-            'processAudioInfo' => true,
         ]));
 
         $plan = $planner->plan([
@@ -194,7 +187,6 @@ class AdditionalWorkPlannerTest extends TestCase
         $this->assertSame(['<sample>'], $plan->sampleMessageIds);
         $this->assertSame(['<image>'], $plan->jpgMessageIds);
         $this->assertSame(['<video>'], $plan->mediaInfoMessageIds);
-        $this->assertSame('<audio>', $plan->audioInfoMessageId);
     }
 
     #[Test]

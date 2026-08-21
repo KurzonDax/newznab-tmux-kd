@@ -7,11 +7,11 @@ namespace App\Services\AdditionalProcessing;
 use App\Models\Release;
 use App\Models\Settings;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
+use App\Services\AudioProcessing\AudioRouting;
 use App\Services\Runners\PostProcessRunner;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -122,6 +122,10 @@ final class AdditionalCandidateQuery
         if (! $includeClaimed) {
             self::applyClaimWindow($query);
         }
+
+        // The audio worker owns music-routed releases; this query owns the rest,
+        // plus anything the audio worker probed and handed back.
+        AudioRouting::applyVideoPath($query);
 
         return $query;
     }
@@ -279,48 +283,13 @@ final class AdditionalCandidateQuery
         array $columns = ['*'],
         array $excludedReleaseIds = [],
     ): EloquentCollection {
-        $effectiveLimit = max(1, $limit);
-
-        return DB::transaction(function () use ($guidChar, $effectiveLimit, $token, $groupID, $minSizeBytes, $maxSizeBytes, $columns, $excludedReleaseIds): EloquentCollection {
-            $supportsClaims = self::supportsClaims();
-            $query = self::baseBuilder($groupID, $guidChar, $minSizeBytes, $maxSizeBytes)
-                ->select('r.id')
-                ->orderByDesc('r.postdate')
-                ->orderBy('r.id')
-                ->limit($effectiveLimit);
-
-            if ($excludedReleaseIds !== []) {
-                $query->whereNotIn('r.id', $excludedReleaseIds);
-            }
-
-            if (DB::getDriverName() !== 'sqlite') {
-                $query->lockForUpdate();
-            }
-
-            $ids = $query
-                ->pluck('r.id')
-                ->map(static fn (mixed $id): int => (int) $id)
-                ->all();
-
-            if ($ids === []) {
-                return (new Release)->newCollection();
-            }
-
-            if ($supportsClaims) {
-                Release::query()
-                    ->whereIn('id', $ids)
-                    ->update([
-                        self::CLAIMED_AT_COLUMN => now(),
-                        self::CLAIM_TOKEN_COLUMN => $token,
-                    ]);
-            }
-
-            return Release::query()
-                ->whereIn('id', $ids)
-                ->select(self::selectableColumns($columns, $supportsClaims))
-                ->orderByRaw(self::idOrderExpression($ids))
-                ->get();
-        }, 3);
+        return ReleaseClaimant::claim(
+            self::baseBuilder($groupID, $guidChar, $minSizeBytes, $maxSizeBytes),
+            $token,
+            $limit,
+            $columns,
+            $excludedReleaseIds,
+        );
     }
 
     public static function clearClaim(int $releaseId, ?string $token = null): void
@@ -397,38 +366,5 @@ final class AdditionalCandidateQuery
     public static function claimStaleBefore(): Carbon
     {
         return now()->subSeconds(self::claimTtlSeconds());
-    }
-
-    /**
-     * @param  list<string>  $columns
-     * @return list<string>
-     */
-    private static function selectableColumns(array $columns, bool $supportsClaims): array
-    {
-        if ($supportsClaims || $columns === ['*']) {
-            return $columns;
-        }
-
-        return array_values(array_filter(
-            $columns,
-            static fn (string $column): bool => ! in_array($column, [self::CLAIMED_AT_COLUMN, self::CLAIM_TOKEN_COLUMN], true),
-        ));
-    }
-
-    /**
-     * @param  list<int>  $ids
-     */
-    private static function idOrderExpression(array $ids): string
-    {
-        if (DB::getDriverName() !== 'sqlite') {
-            return 'FIELD(id, '.implode(',', $ids).')';
-        }
-
-        $cases = [];
-        foreach ($ids as $position => $id) {
-            $cases[] = 'WHEN '.(int) $id.' THEN '.(int) $position;
-        }
-
-        return 'CASE id '.implode(' ', $cases).' ELSE '.count($ids).' END';
     }
 }
