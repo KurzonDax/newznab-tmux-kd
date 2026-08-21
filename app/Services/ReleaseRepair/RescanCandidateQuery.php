@@ -25,8 +25,9 @@ use Illuminate\Support\Collection;
  *
  * And the batch admits releases whose `declaredfiles` is still null. Those are legacy rows whose
  * declared count has not been derived yet; the derivation reads the stored NZB, which is far too
- * expensive to do in SQL, so it happens on first visit and persists. A row that turns out to have
- * nothing to re-scan is stamped final on that visit and never selected again.
+ * expensive to do in SQL, so it happens on first visit and persists. Having no known shortfall,
+ * they queue behind the rows that do have one. A row that turns out to have nothing to re-scan is
+ * stamped final on that visit and never selected again.
  */
 final class RescanCandidateQuery
 {
@@ -55,7 +56,13 @@ final class RescanCandidateQuery
                 $query->whereNull('declaredfiles')
                     ->orWhereColumn('declaredfiles', '>', 'totalpart');
             })
-            ->orderByRaw('COALESCE(declaredfiles, 0) - totalpart')
+            // Unresolved rows sort *after* the ones whose shortfall is known: `NULL - totalpart`
+            // is not a shortfall, and letting it stand in for one would put the whole legacy
+            // backlog at the front of every batch, largest release first -- the exact opposite of
+            // cheapest-first. Among themselves they take the same newest-first order the repair
+            // engine uses, so fresh releases keep priority and the backlog drains from the tail.
+            ->orderByRaw('CASE WHEN declaredfiles IS NULL THEN 1 ELSE 0 END')
+            ->orderByRaw('CASE WHEN declaredfiles IS NULL THEN 0 ELSE declaredfiles - totalpart END')
             ->orderByDesc('postdate')
             ->limit($limit - $dueRetries->count())
             ->get();

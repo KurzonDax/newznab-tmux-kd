@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -37,6 +38,15 @@ return new class extends Migration
                 ->after('firstarticle')
                 ->comment('Highest parts.number seen for this collection');
         });
+
+        // Seed the collections already in flight from `totalfiles`. For one that has not gone
+        // stale yet that *is* the header-declared total; for one that has, it is the overwritten
+        // count, which is no worse than the 0 the column would otherwise hold. Left at 0, a
+        // delaytime window's worth of collections would reach ReleaseCreationService with no
+        // declared count -- and since that is what feeds the completion measurer, the obfuscated
+        // single-segment branch (which needs a file count) would silently go missing and measure
+        // those releases at a fraction of a percent.
+        DB::table('collections')->update(['declaredfiles' => DB::raw('totalfiles')]);
 
         Schema::table('releases', function (Blueprint $table): void {
             $table->unsignedInteger('declaredfiles')

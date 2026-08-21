@@ -14,6 +14,7 @@ use App\Services\ReleaseRepair\MissingFileRescanService;
 use App\Services\ReleaseRepair\RescanCandidateQuery;
 use App\Services\ReleaseRepair\RescanRunBudget;
 use App\Services\ReleaseRepair\RescanWindowResolver;
+use App\Traits\ResolvesOptionalCommandOptions;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -27,6 +28,8 @@ use Illuminate\Support\Facades\Log;
  */
 class RescanMissingReleaseFiles extends Command
 {
+    use ResolvesOptionalCommandOptions;
+
     protected $signature = 'releases:rescan-missing-files
         {--limit= : Releases to work on this invocation (default: the rescan_limit setting)}
         {--target= : Completion below which a release is a candidate (default: the completionpercent setting)}
@@ -166,19 +169,5 @@ class RescanMissingReleaseFiles extends Command
             maxArticlesPerRun: $this->intOption('max-articles-per-run'),
             dryRun: (bool) $this->option('dry-run'),
         );
-    }
-
-    private function floatOption(string $name): ?float
-    {
-        $value = $this->option($name);
-
-        return $value === null || $value === '' ? null : (float) $value;
-    }
-
-    private function intOption(string $name): ?int
-    {
-        $value = $this->option($name);
-
-        return $value === null || $value === '' ? null : (int) $value;
     }
 }

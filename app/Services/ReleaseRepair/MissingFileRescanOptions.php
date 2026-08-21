@@ -10,8 +10,9 @@ use App\Support\SettingNumber;
  * The knobs one header re-scan invocation works to.
  *
  * All four budgets are seeded `settings` rows edited on the admin Usenet Settings section, for
- * the same reason the repair engine's are: this runs from the scheduler, and an operator retunes
- * it from the admin UI. CLI flags override them for one run only.
+ * the same reason the repair engine's are: this is a recurring batch job, and an operator retunes
+ * one from the admin UI rather than by editing however it is invoked. CLI flags override them for
+ * one run only.
  *
  * The retry window and the completion target are deliberately *not* separate knobs. A release
  * either has been given up on or has not, and having two different definitions of "give up" for

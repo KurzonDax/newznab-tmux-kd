@@ -249,6 +249,24 @@ class ReleaseRepairGateTest extends TestCase
     }
 
     #[Test]
+    public function unresolved_legacy_releases_queue_behind_the_ones_with_a_known_shortfall(): void
+    {
+        // `NULL - totalpart` is not a shortfall. Reading it as one would sort the whole legacy
+        // backlog to the front of every batch, largest release first -- the opposite of
+        // cheapest-first, and it would starve the rows we can already cost.
+        $this->insertRelease(1, completion: 40.0, outcome: null, declaredFiles: null, totalPart: 900, postdate: '2019-01-01 00:00:00');
+        $this->insertRelease(2, completion: 40.0, outcome: null, declaredFiles: null, totalPart: 12, postdate: '2026-01-01 00:00:00');
+        $this->insertRelease(3, completion: 40.0, outcome: null, declaredFiles: 740, totalPart: 40);
+        $this->insertRelease(4, completion: 40.0, outcome: null, declaredFiles: 40, totalPart: 38);
+
+        $this->assertSame(
+            [4, 3, 2, 1],
+            RescanCandidateQuery::batch(10, 95.0, 72)->pluck('id')->map(intval(...))->all(),
+            'Known shortfalls cheapest-first, then the unresolved backlog newest-first.'
+        );
+    }
+
+    #[Test]
     public function the_re_scan_prefers_retries_whose_window_has_passed(): void
     {
         $this->insertRelease(1, completion: 40.0, outcome: null, declaredFiles: 40, totalPart: 38);

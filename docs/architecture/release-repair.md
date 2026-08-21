@@ -152,6 +152,10 @@ token and is excluded from that rewrite; `ReleaseCreationService` carries it ont
 `releases.declaredfiles`. `totalfiles` and `totalpart` keep their old meaning — "files we hold" —
 and no existing consumer changed.
 
+On deploy the migration seeds `declaredfiles` from `totalfiles` for the collections already in
+flight, so the delaytime window's worth of collections mid-promotion still reach the measurer with
+a file count rather than a zero.
+
 For releases created before the column existed, the count is derived on first visit from the
 stored NZB's own subjects and persisted. Only the bracket `[n/N]` form counts files: the writer
 appends a synthesized ` (1/<totalparts>)` segment counter to every subject, and reading *that* as
@@ -212,7 +216,18 @@ lines have been read). The repair engine's own tunables live there too:
 `skipped-budget`. Two passes maximum, same as repair. Never-attempted releases are taken
 **smallest shortfall first**: a release missing two files of forty is both likeliest to be
 recovered and cheapest to try, while one missing seven hundred is a posting session that never
-arrived.
+arrived. Releases whose declared count has not been derived yet have no known shortfall, so they
+queue behind the ones that do, newest first.
+
+Because the sweep now waits on this column, "record nothing" is narrower here than it is for
+repair — anything left unstamped is a release the reaper can never touch. Storage faults (no NZB,
+an unparseable one, one that could not be written back) still record nothing, and so does a
+release the per-run budget never reached. But a release that can *never* be re-scanned — it points
+at a group row that is gone, has no window to aim at, declares no more files than it holds, or
+holds files with no file index to place a recovered one against — is stamped final on sight, since
+none of those read differently on a later pass. A provider that refuses the group is ambiguous
+between a dropped group and a sulking connection, so it takes the normal two passes and settles at
+`failed`.
 
 The sweep waits for **both** state machines. `IncompleteReleaseSweepQuery` requires a final
 `repair_outcome` *and* either a final `rescan_outcome` or a release with nothing to re-scan —

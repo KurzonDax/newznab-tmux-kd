@@ -48,7 +48,9 @@ final readonly class OverviewLine
             $baseName .= ' yEnc';
         }
 
-        if (! preg_match('/\[(\d+)\/(\d+)\]/', $baseName, $fileToken)) {
+        $fileToken = FileIndexToken::parse($baseName);
+
+        if ($fileToken === null) {
             return null;
         }
 
@@ -56,8 +58,8 @@ final readonly class OverviewLine
             baseName: $baseName,
             segmentNumber: (int) $matches[2],
             segmentTotal: (int) $matches[3],
-            fileIndex: (int) $fileToken[1],
-            fileTotal: (int) $fileToken[2],
+            fileIndex: $fileToken->index,
+            fileTotal: $fileToken->total,
             poster: \is_scalar($header['From'] ?? null) ? (string) $header['From'] : '',
             messageId: $messageId,
             bytes: (int) ($header['Bytes'] ?? $header[':bytes'] ?? 0),

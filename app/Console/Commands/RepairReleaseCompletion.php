@@ -9,6 +9,7 @@ use App\Services\NNTP\NntpProviderPool;
 use App\Services\ReleaseRepair\ReleaseRepairCandidateQuery;
 use App\Services\ReleaseRepair\ReleaseRepairOptions;
 use App\Services\ReleaseRepair\ReleaseRepairService;
+use App\Traits\ResolvesOptionalCommandOptions;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -21,6 +22,8 @@ use Illuminate\Support\Facades\Log;
  */
 class RepairReleaseCompletion extends Command
 {
+    use ResolvesOptionalCommandOptions;
+
     protected $signature = 'releases:repair-completion
         {--limit= : Releases to work on this invocation (default: the repair_limit setting)}
         {--target= : Completion a release must reach to count as repaired (default: the completionpercent setting)}
@@ -125,19 +128,5 @@ class RepairReleaseCompletion extends Command
             maxStatProbes: $this->intOption('max-probes'),
             dryRun: (bool) $this->option('dry-run'),
         );
-    }
-
-    private function floatOption(string $name): ?float
-    {
-        $value = $this->option($name);
-
-        return $value === null || $value === '' ? null : (float) $value;
-    }
-
-    private function intOption(string $name): ?int
-    {
-        $value = $this->option($name);
-
-        return $value === null || $value === '' ? null : (int) $value;
     }
 }

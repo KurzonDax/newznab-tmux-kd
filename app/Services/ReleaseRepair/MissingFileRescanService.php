@@ -32,6 +32,24 @@ use Illuminate\Support\Facades\Log;
  * Header traffic is primary-pinned by construction -- article numbers are per-server, so this
  * takes an {@see NNTPService} directly and {@see NntpProviderPool} deliberately
  * exposes no header API to reach instead.
+ *
+ * ## When a pass records nothing
+ *
+ * The completion sweep waits for a final outcome here, so anything left unstamped is a release
+ * the reaper can never touch. That makes "record nothing" a narrower category than it looks, and
+ * the line runs between *our* side and the *release's*:
+ *
+ * - **Our storage failed** -- no NZB on disk, an unparseable one, one we could not write back.
+ *   Records nothing. Two unmounted volumes in a row must not add up to a verdict, and the release
+ *   is simply seen again next run. Same rule {@see ReleaseRepairService} follows.
+ * - **The run ran out of budget** before reaching the release. Records nothing: it never had its
+ *   turn, so it cannot have failed.
+ * - **The release can never be re-scanned** -- it points at a group row that is gone, declares no
+ *   more files than it holds, has no window to aim at, or holds files with no file index to place
+ *   a recovered one against. Stamped final on sight: none of those read differently on a later
+ *   pass, and leaving them null would quietly make the release undeletable for good.
+ * - **The provider gave a verdict** -- it would not select the group. Runs the normal two passes,
+ *   so a dropped group settles at `failed` while a sulking connection gets its retry window first.
  */
 final class MissingFileRescanService
 {
@@ -90,16 +108,30 @@ final class MissingFileRescanService
         $group = UsenetGroup::query()->find($release->groups_id);
 
         if ($group === null) {
-            return $this->skip($release, MissingFileRescanResult::notAttempted($completionBefore, 'The release has no group to re-scan.'));
+            // The release points at a group row that is gone. Nothing will put it back, so this
+            // is a verdict rather than a blip -- see the note on finality above.
+            return $this->finish($release, $options, $this->plain(
+                ReleaseRepairOutcome::SkippedFloor,
+                $completionBefore,
+                $declared,
+                $held,
+                'The release points at a group that no longer exists.',
+            ));
         }
 
         $groupNntp = $this->nntp->selectGroup((string) $group->name);
 
         if (NNTPService::isError($groupNntp) || ! \is_array($groupNntp)) {
-            // The group is no longer carried, or the connection is unhappy. Either way this says
-            // nothing about the release, so it keeps its state and is seen again next run.
-            return $this->skip($release, MissingFileRescanResult::notAttempted(
+            // The provider will not give us the group. That may be a dropped group or a sulking
+            // connection, and we cannot tell them apart from here -- so it runs through the same
+            // two passes everything else does. A genuinely dropped group settles at `failed` on
+            // the second; a blip gets its retry window first. It is a statement about the
+            // provider, unlike the storage faults above, which is what makes it stampable.
+            return $this->finish($release, $options, $this->unrecovered(
                 $completionBefore,
+                $isFinalAttempt,
+                $declared,
+                $held,
                 sprintf('Group %s could not be selected on the primary provider.', $group->name),
             ));
         }
@@ -107,8 +139,13 @@ final class MissingFileRescanService
         $window = $this->windowResolver->resolve($release, $group, $groupNntp, $options->windowMinutes);
 
         if ($window === null) {
-            return $this->skip($release, MissingFileRescanResult::notAttempted(
+            // No anchors and no usable postdate. Neither will ever arrive, so there is nothing to
+            // aim a window at on this pass or any later one.
+            return $this->finish($release, $options, $this->plain(
+                ReleaseRepairOutcome::SkippedFloor,
                 $completionBefore,
+                $declared,
+                $held,
                 'No article anchors and no usable postdate to derive a window from.',
             ));
         }
@@ -169,18 +206,14 @@ final class MissingFileRescanService
                 ));
             }
 
-            return $this->finish($release, $options, new MissingFileRescanResult(
-                outcome: $isFinalAttempt ? ReleaseRepairOutcome::Failed : ReleaseRepairOutcome::RetryPending,
-                completionBefore: $completionBefore,
-                completionAfter: $completionBefore,
-                declaredFiles: $declared,
-                filesHeld: $held,
-                filesRecovered: 0,
-                segmentsAdded: 0,
-                articlesRequested: $window->width(),
-                overviewLinesFetched: $linesFetched,
-                nzbRewritten: false,
-                reason: 'No header in the window belongs to this release.',
+            return $this->finish($release, $options, $this->unrecovered(
+                $completionBefore,
+                $isFinalAttempt,
+                $declared,
+                $held,
+                'No header in the window belongs to this release.',
+                $window->width(),
+                $linesFetched,
             ));
         }
 
@@ -313,6 +346,33 @@ final class MissingFileRescanService
         }
 
         return null;
+    }
+
+    /**
+     * The outcome for a pass that ran and recovered nothing: one more chance, or the end.
+     */
+    private function unrecovered(
+        float $completion,
+        bool $isFinalAttempt,
+        int $declared,
+        int $held,
+        string $reason,
+        int $articlesRequested = 0,
+        int $overviewLinesFetched = 0,
+    ): MissingFileRescanResult {
+        return new MissingFileRescanResult(
+            outcome: $isFinalAttempt ? ReleaseRepairOutcome::Failed : ReleaseRepairOutcome::RetryPending,
+            completionBefore: $completion,
+            completionAfter: $completion,
+            declaredFiles: $declared,
+            filesHeld: $held,
+            filesRecovered: 0,
+            segmentsAdded: 0,
+            articlesRequested: $articlesRequested,
+            overviewLinesFetched: $overviewLinesFetched,
+            nzbRewritten: false,
+            reason: $reason,
+        );
     }
 
     private function plain(

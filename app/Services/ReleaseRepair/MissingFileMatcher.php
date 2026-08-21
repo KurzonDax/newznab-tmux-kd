@@ -68,7 +68,7 @@ final class MissingFileMatcher
      */
     public static function fileIndexOf(string $subject): ?int
     {
-        return preg_match('/\[(\d+)\/(\d+)\]/', $subject, $token) ? (int) $token[1] : null;
+        return FileIndexToken::parse($subject)?->index;
     }
 
     /**
@@ -77,7 +77,7 @@ final class MissingFileMatcher
     public static function mask(string $subject): string
     {
         $masked = (string) preg_replace('/\s*\(\d+\/\d+\)\s*$/', '', $subject);
-        $masked = (string) preg_replace('/\[\d+\/\d+\]/', '[#]', $masked);
+        $masked = (string) preg_replace(FileIndexToken::PATTERN, '[#]', $masked);
         $masked = (string) preg_replace('/\.vol\d+\+\d+/i', '.vol#', $masked);
         $masked = (string) preg_replace('/\.part\d+/i', '.part#', $masked);
         $masked = (string) preg_replace('/\.[rstz]\d{2,3}\b/i', '.x#', $masked);

@@ -334,15 +334,78 @@ class MissingFileRescanServiceTest extends TestCase
     }
 
     #[Test]
-    public function a_group_the_provider_will_not_select_leaves_the_state_untouched(): void
+    public function a_group_the_provider_will_not_select_runs_the_normal_two_passes(): void
     {
+        // A dropped group and a sulking connection look identical from here, so this takes the
+        // same two passes as everything else rather than being guessed at. Leaving it unstamped
+        // would make the release undeletable for good, since the sweep waits on this column.
         $release = $this->releaseHolding([1, 2], declaredFiles: 3, firstArticle: 1000, lastArticle: 1200);
         $this->nntp->selectFails = true;
 
         $result = $this->service()->rescan($release, $this->rescanOptions(), $this->budget());
 
-        $this->assertNull($result->outcome, 'A group we no longer carry says nothing about the release.');
-        $this->assertNull($this->storedOutcome(1));
+        $this->assertSame(ReleaseRepairOutcome::RetryPending, $result->outcome);
+        $this->assertSame('retry-pending', $this->storedOutcome(1));
+    }
+
+    #[Test]
+    public function a_group_that_stays_unselectable_settles_at_failed(): void
+    {
+        $release = $this->releaseHolding(
+            [1, 2],
+            declaredFiles: 3,
+            firstArticle: 1000,
+            lastArticle: 1200,
+            rescanOutcome: ReleaseRepairOutcome::RetryPending,
+            rescanAttemptedAt: Carbon::now()->subHours(80)->toDateTimeString(),
+        );
+        $this->nntp->selectFails = true;
+
+        $result = $this->service()->rescan($release, $this->rescanOptions(), $this->budget());
+
+        $this->assertSame(ReleaseRepairOutcome::Failed, $result->outcome);
+        $this->assertTrue($result->outcome->isFinal(), 'The reaper must not be blocked forever.');
+    }
+
+    #[Test]
+    public function a_release_pointing_at_a_group_that_no_longer_exists_is_stamped_final(): void
+    {
+        $release = $this->releaseHolding([1, 2], declaredFiles: 3, firstArticle: 1000, lastArticle: 1200);
+        DB::table('releases')->where('id', 1)->update(['groups_id' => 999]);
+
+        $result = $this->service()->rescan($release->fresh(), $this->rescanOptions(), $this->budget());
+
+        $this->assertSame(ReleaseRepairOutcome::SkippedFloor, $result->outcome);
+        $this->assertTrue($result->outcome->isFinal(), 'Nothing will put the group row back.');
+        $this->assertSame(0, $this->nntp->xoverCalls);
+    }
+
+    #[Test]
+    public function a_release_with_no_anchors_and_no_usable_postdate_is_stamped_final(): void
+    {
+        // Neither will ever arrive, so there is nothing to aim a window at on any later pass.
+        $release = $this->releaseHolding([1, 2], declaredFiles: 3, firstArticle: null, lastArticle: null);
+        DB::table('releases')->where('id', 1)->update(['postdate' => null]);
+
+        $result = $this->service()->rescan($release->fresh(), $this->rescanOptions(), $this->budget());
+
+        $this->assertSame(ReleaseRepairOutcome::SkippedFloor, $result->outcome);
+        $this->assertTrue($result->outcome->isFinal());
+    }
+
+    #[Test]
+    public function held_files_with_no_file_index_stop_the_release_being_re_scanned(): void
+    {
+        // Without an index on every held file there is no way to know which indices are already
+        // ours, and appending a duplicate is worse than doing nothing. Final, not silent: the
+        // sweep is waiting on this column.
+        $release = $this->releaseHolding([1, 2], declaredFiles: 3, firstArticle: 1000, lastArticle: 1200, withFileIndex: false);
+
+        $result = $this->service()->rescan($release, $this->rescanOptions(), $this->budget());
+
+        $this->assertSame(ReleaseRepairOutcome::SkippedFloor, $result->outcome);
+        $this->assertTrue($result->outcome->isFinal());
+        $this->assertSame(0, $this->nntp->xoverCalls);
     }
 
     private function service(): MissingFileRescanService
@@ -430,6 +493,7 @@ class MissingFileRescanServiceTest extends TestCase
         ?int $lastArticle,
         ?ReleaseRepairOutcome $rescanOutcome = null,
         ?string $rescanAttemptedAt = null,
+        bool $withFileIndex = true,
     ): Release {
         $guid = sprintf('%032x', 1);
 
@@ -453,7 +517,9 @@ class MissingFileRescanServiceTest extends TestCase
         $xml = '<?xml version="1.0" encoding="UTF-8"?>'."\n".'<nzb xmlns="http://www.newzbin.com/DTD/2003/nzb">'."\n";
 
         foreach ($fileIndices as $index) {
-            $subject = sprintf('[%d/3] - "Example.part%02d.rar" yEnc (1/2)', $index, $index);
+            $subject = $withFileIndex
+                ? sprintf('[%d/3] - "Example.part%02d.rar" yEnc (1/2)', $index, $index)
+                : sprintf('"Example.part%02d.rar" yEnc (1/2)', $index);
             $xml .= '  <file poster="poster@example.org" date="1704153600" subject="'.htmlspecialchars($subject, ENT_XML1 | ENT_COMPAT).'">'."\n"
                 .'    <groups><group>alt.binaries.test</group></groups>'."\n    <segments>\n"
                 .'      <segment bytes="768000" number="1">held-'.$index.'-1@example.local</segment>'."\n"

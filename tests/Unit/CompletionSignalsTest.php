@@ -226,6 +226,21 @@ class CompletionSignalsTest extends TestCase
         $this->assertEqualsWithDelta(81.0, $signals->percentage(), 0.01);
     }
 
+    public function test_a_file_total_that_coincides_with_the_declared_file_count_still_scales(): void
+    {
+        // Ten declared files whose largest declares ten segments: the two numbers collide by
+        // coincidence, not because one is the other repeated. Multi-segment files are what tell
+        // them apart -- and suppressing the scale-up here would hide the missing tenth file.
+        $signals = $this->tally(array_fill(0, 9, [
+            'segments' => 10,
+            'declaredSegments' => 10,
+            'declaredFiles' => 10,
+        ]));
+
+        $this->assertFalse($signals->isSingleSegmentStyle());
+        $this->assertEqualsWithDelta(90.0, $signals->percentage(), 0.01);
+    }
+
     public function test_a_repeated_collection_wide_total_is_not_multiplied_by_itself(): void
     {
         // `[1/240]` against `(1/240)` on a lone file: the two totals are one number seen twice,

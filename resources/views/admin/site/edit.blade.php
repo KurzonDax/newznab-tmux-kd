@@ -11,27 +11,26 @@
             </h1>
         </div>
 
-        <!-- Validation Errors -->
-        {{-- isset(): this view is also rendered directly in tests, outside the session-error middleware. --}}
-        @if(isset($errors) && $errors->any())
-            <div class="mx-6 mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                <p class="text-red-800 dark:text-red-200 font-medium">
-                    <i class="fas fa-exclamation-circle mr-2"></i>Nothing was saved &mdash; please correct the following:
-                </p>
-                <ul class="mt-2 list-disc list-inside text-sm text-red-800 dark:text-red-200">
-                    @foreach($errors->all() as $message)
-                        <li>{{ $message }}</li>
-                    @endforeach
-                </ul>
-            </div>
-        @endif
-
         <!-- Error Messages -->
-        @if(!empty($error))
+        {{-- isset(): this view is also rendered directly in tests, outside the session-error middleware. --}}
+        @php($validationErrors = isset($errors) ? $errors->all() : [])
+        @if(!empty($error) || $validationErrors !== [])
             <div class="mx-6 mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                <p class="text-red-800 dark:text-red-200">
-                    <i class="fas fa-exclamation-circle mr-2"></i>{{ $error }}
-                </p>
+                @if(!empty($error))
+                    <p class="text-red-800 dark:text-red-200">
+                        <i class="fas fa-exclamation-circle mr-2"></i>{{ $error }}
+                    </p>
+                @endif
+                @if($validationErrors !== [])
+                    <p class="text-red-800 dark:text-red-200 font-medium">
+                        <i class="fas fa-exclamation-circle mr-2"></i>Nothing was saved &mdash; please correct the following:
+                    </p>
+                    <ul class="mt-2 list-disc list-inside text-sm text-red-800 dark:text-red-200">
+                        @foreach($validationErrors as $message)
+                            <li>{{ $message }}</li>
+                        @endforeach
+                    </ul>
+                @endif
             </div>
         @endif
 

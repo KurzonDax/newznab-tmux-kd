@@ -78,12 +78,17 @@ final readonly class CompletionSignals
      * The estimate only ever moves completion *down*, and only where the declared count is a
      * number the headers actually gave us -- `filesDeclared` is `0` when nothing declared one.
      *
-     * It is also withheld where the largest per-file total equals the declared file count. That
-     * is the obfuscated style's signature -- one collection-wide number repeated in every
-     * subject's parens -- so the two totals are not independent measurements and multiplying one
-     * by the other would square the same figure. Those posts that also have the single-segment
-     * *shape* never reach here; the ones that do not (a lone file, or totals that disagree) are
-     * left measured against the raw denominator rather than a doubly-counted one.
+     * It is withheld in one case: where every file holds a lone segment *and* the largest per-file
+     * total equals the declared file count. That pairing is the obfuscated style's signature --
+     * one collection-wide number repeated in every subject's parens -- so the two totals are not
+     * independent measurements, and multiplying one by the other would square the same figure.
+     * Those posts that also have the full single-segment *shape* never reach here; the ones that
+     * fall just outside it (a lone file, or totals that disagree) are left measured against the
+     * raw denominator rather than a doubly-counted one.
+     *
+     * Both halves of that test matter. Equal numbers alone are a coincidence a normal post can
+     * hit -- ten files whose largest declares ten segments -- and suppressing the scale-up there
+     * would hide exactly the missing file this is meant to expose.
      */
     private function scaledSegmentsDeclared(): int
     {
@@ -91,7 +96,7 @@ final readonly class CompletionSignals
             return $this->segmentsDeclared;
         }
 
-        if ($this->filesDeclared === $this->maxDeclaredPerFile) {
+        if ($this->filesDeclared === $this->maxDeclaredPerFile && $this->maxSegmentsPerFile <= 1) {
             return $this->segmentsDeclared;
         }
 

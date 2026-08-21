@@ -7,7 +7,7 @@ namespace App\Support;
 /**
  * Validation for the repair and re-scan tunables on the admin site-edit form.
  *
- * These are the only site settings a scheduled job reads as a *budget*: a negative retry window
+ * These are the only site settings a recovery pass reads as a *budget*: a negative retry window
  * or probe ceiling does not merely misconfigure a screen, it makes the repair engine and the
  * header re-scan behave in ways their callers do not defend against. The rest of the form is
  * free-text by long-standing design, so this validates the fields it owns and nothing else.
