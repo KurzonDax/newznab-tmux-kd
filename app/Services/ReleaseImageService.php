@@ -48,7 +48,7 @@ class ReleaseImageService
      */
     public function __construct(?Closure $hostResolver = null)
     {
-        $this->audSavePath = storage_path('covers/audiosample/');
+        $this->audSavePath = rtrim((string) config('nntmux_settings.covers_path', storage_path('covers')), '/').'/audiosample/';
         $this->imgSavePath = storage_path('covers/preview/');
         $this->jpgSavePath = storage_path('covers/sample/');
         $this->movieImgSavePath = storage_path('covers/movies/');
