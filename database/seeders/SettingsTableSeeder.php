@@ -721,6 +721,42 @@ class SettingsTableSeeder extends Seeder
                 'name' => 'backup_pause_marker',
                 'value' => '',
             ],
+            258 => [
+                'name' => 'repair_retry_after_hours',
+                'value' => '72',
+            ],
+            259 => [
+                'name' => 'repair_floor_completion',
+                'value' => '10',
+            ],
+            260 => [
+                'name' => 'repair_stat_sample_per_file',
+                'value' => '2',
+            ],
+            261 => [
+                'name' => 'repair_max_stat_probes',
+                'value' => '20',
+            ],
+            262 => [
+                'name' => 'repair_limit',
+                'value' => '250',
+            ],
+            263 => [
+                'name' => 'rescan_max_articles_per_release',
+                'value' => '500000',
+            ],
+            264 => [
+                'name' => 'rescan_max_articles_per_run',
+                'value' => '5000000',
+            ],
+            265 => [
+                'name' => 'rescan_window_minutes',
+                'value' => '30',
+            ],
+            266 => [
+                'name' => 'rescan_limit',
+                'value' => '100',
+            ],
         ]);
     }
 }

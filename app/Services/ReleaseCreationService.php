@@ -13,6 +13,7 @@ use App\Models\ReleaseRegex;
 use App\Models\UsenetGroup;
 use App\Services\Categorization\CategorizationService;
 use App\Services\Nzb\NzbService;
+use App\Services\Releases\CollectionArticleRangeMeasurer;
 use App\Services\Releases\CollectionCompletionMeasurer;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use App\Support\Utf8;
@@ -29,6 +30,7 @@ class ReleaseCreationService
         private readonly CollectionCleanupService $collectionCleanupService,
         private readonly ReleaseDuplicateFinder $releaseDuplicateFinder,
         private readonly CollectionCompletionMeasurer $completionMeasurer,
+        private readonly CollectionArticleRangeMeasurer $articleRangeMeasurer = new CollectionArticleRangeMeasurer,
     ) {}
 
     /**
@@ -62,10 +64,17 @@ class ReleaseCreationService
         $releaseGroupIds = $this->loadReleaseGroupIds($collections);
         // Measured now, while the collections/binaries/parts rows are still there: NZB creation
         // deletes them, and it may not run for a while -- or at all, if it keeps failing.
+        // `declaredfiles`, not `totalfiles`: stale promotion rewrites the latter to the files
+        // actually seen, which would make an incomplete release measure as a complete one.
         $completionSignals = $this->completionMeasurer->measure(
             $collections->mapWithKeys(static fn ($collection): array => [
-                (int) $collection->id => (int) $collection->totalfiles,
+                (int) $collection->id => (int) $collection->declaredfiles,
             ])->all()
+        );
+
+        // The last moment the article numbers exist: NZB creation deletes the parts rows.
+        $articleRanges = $this->articleRangeMeasurer->measure(
+            $collections->pluck('id')->map(static fn ($id): int => (int) $id)->all()
         );
 
         if ($echoCLI && $collections->count() > 0) {
@@ -118,6 +127,8 @@ class ReleaseCreationService
                 (int) $collection->filesize
             );
 
+            $articleRange = $articleRanges[(int) $collection->id] ?? null;
+
             $releaseID = null;
             if ($dupeCheck === null) {
                 $determinedCategory = $categorize->determineCategory($collection->groups_id, $cleanedName, $fromName);
@@ -127,6 +138,9 @@ class ReleaseCreationService
                         'name' => $cleanRelName,
                         'searchname' => $searchName,
                         'totalpart' => $collection->totalfiles,
+                        'declaredfiles' => (int) $collection->declaredfiles,
+                        'firstarticle' => $articleRange['first'] ?? null,
+                        'lastarticle' => $articleRange['last'] ?? null,
                         'groups_id' => $collection->groups_id,
                         'guid' => Str::uuid()->toString(),
                         'postdate' => $collection->date,
@@ -145,10 +159,12 @@ class ReleaseCreationService
                 }
 
                 if ($releaseID !== null) {
-                    DB::transaction(static function () use ($collection, $releaseID) {
+                    DB::transaction(static function () use ($collection, $releaseID, $articleRange) {
                         Collection::query()->where('id', $collection->id)->update([
                             'filecheck' => CollectionFileCheckStatus::Inserted->value,
                             'releases_id' => $releaseID,
+                            'firstarticle' => $articleRange['first'] ?? null,
+                            'lastarticle' => $articleRange['last'] ?? null,
                         ]);
                     }, 10);
 

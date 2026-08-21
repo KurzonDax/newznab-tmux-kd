@@ -30,8 +30,10 @@ final class CollectionCompletionMeasurer
     private const int CHUNK_SIZE = 500;
 
     /**
-     * @param  array<int, int>  $declaredFilesByCollection  Collection id => `collections.totalfiles`,
+     * @param  array<int, int>  $declaredFilesByCollection  Collection id => `collections.declaredfiles`,
      *                                                      the `[n/N]` file index the headers declared.
+     *                                                      Not `totalfiles`: stale promotion rewrites
+     *                                                      that one to the files actually seen.
      * @return array<int, CompletionSignals> Signals keyed by collection id; collections with no
      *                                       binaries are absent.
      */

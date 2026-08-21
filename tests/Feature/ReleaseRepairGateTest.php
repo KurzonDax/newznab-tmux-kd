@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Enums\ReleaseRepairOutcome;
 use App\Services\ReleaseRepair\ReleaseRepairCandidateQuery;
+use App\Services\ReleaseRepair\RescanCandidateQuery;
 use App\Services\Releases\IncompleteReleaseSweepQuery;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -14,8 +15,8 @@ use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
 /**
- * The invariant the whole issue exists for: the completion sweep never deletes a release the
- * repair engine has not finished with.
+ * The invariant the whole issue exists for: the completion sweep never deletes a release either
+ * recovery pass -- segment repair, or the header re-scan -- has not finished with.
  */
 class ReleaseRepairGateTest extends TestCase
 {
@@ -142,11 +143,163 @@ class ReleaseRepairGateTest extends TestCase
     public function only_a_given_up_on_release_is_deletable(): void
     {
         // `repaired` is an ending too, but a happy one -- the release lives.
-        $this->assertSame(['failed', 'skipped-floor'], ReleaseRepairOutcome::deletableValues());
+        $this->assertSame(
+            ['failed', 'skipped-floor', 'skipped-budget'],
+            ReleaseRepairOutcome::deletableValues()
+        );
         $this->assertFalse(ReleaseRepairOutcome::Repaired->isFinal());
         $this->assertFalse(ReleaseRepairOutcome::RetryPending->isFinal());
         $this->assertTrue(ReleaseRepairOutcome::Failed->isFinal());
         $this->assertTrue(ReleaseRepairOutcome::SkippedFloor->isFinal());
+        $this->assertTrue(ReleaseRepairOutcome::SkippedBudget->isFinal());
+    }
+
+    #[Test]
+    public function a_release_the_re_scan_still_owes_a_pass_to_is_not_swept(): void
+    {
+        // Repair has given up on it, but it declares more files than it holds and the header
+        // re-scan has never looked. The two passes recover different things.
+        $this->insertRelease(
+            1,
+            completion: 40.0,
+            outcome: ReleaseRepairOutcome::Failed,
+            declaredFiles: 40,
+            totalPart: 38,
+        );
+
+        $this->assertSame([], $this->sweptIds(95.0));
+    }
+
+    #[Test]
+    public function a_release_the_re_scan_has_given_up_on_is_swept(): void
+    {
+        $this->insertRelease(
+            1,
+            completion: 40.0,
+            outcome: ReleaseRepairOutcome::Failed,
+            declaredFiles: 40,
+            totalPart: 38,
+            rescanOutcome: ReleaseRepairOutcome::Failed,
+        );
+        $this->insertRelease(
+            2,
+            completion: 40.0,
+            outcome: ReleaseRepairOutcome::Failed,
+            declaredFiles: 40,
+            totalPart: 38,
+            rescanOutcome: ReleaseRepairOutcome::SkippedBudget,
+        );
+        $this->insertRelease(
+            3,
+            completion: 40.0,
+            outcome: ReleaseRepairOutcome::Failed,
+            declaredFiles: 40,
+            totalPart: 38,
+            rescanOutcome: ReleaseRepairOutcome::RetryPending,
+        );
+
+        $this->assertSame([1, 2], $this->sweptIds(95.0));
+    }
+
+    #[Test]
+    public function a_release_with_nothing_to_re_scan_is_swept_without_waiting_for_a_stamp(): void
+    {
+        // Null: never derived, and deriving it needs the stored NZB rather than SQL.
+        $this->insertRelease(1, completion: 40.0, outcome: ReleaseRepairOutcome::Failed, declaredFiles: null);
+        // Zero: derived, and the NZB declares no usable file count.
+        $this->insertRelease(2, completion: 40.0, outcome: ReleaseRepairOutcome::Failed, declaredFiles: 0);
+        // Holds everything it declared -- the shortfall is segments, which is repair's job.
+        $this->insertRelease(3, completion: 40.0, outcome: ReleaseRepairOutcome::Failed, declaredFiles: 12, totalPart: 12);
+
+        $this->assertSame([1, 2, 3], $this->sweptIds(95.0));
+    }
+
+    #[Test]
+    public function the_re_scan_takes_the_smallest_shortfall_first(): void
+    {
+        // A release missing two files of forty is both likeliest to be recovered and cheapest to
+        // try; one missing seven hundred is a posting session that never arrived.
+        $this->insertRelease(1, completion: 40.0, outcome: null, declaredFiles: 740, totalPart: 40);
+        $this->insertRelease(2, completion: 40.0, outcome: null, declaredFiles: 40, totalPart: 38);
+        $this->insertRelease(3, completion: 40.0, outcome: null, declaredFiles: 60, totalPart: 50);
+
+        $this->assertSame(
+            [2, 3, 1],
+            RescanCandidateQuery::batch(10, 95.0, 72)->pluck('id')->map(intval(...))->all()
+        );
+    }
+
+    #[Test]
+    public function the_re_scan_skips_releases_that_declare_no_more_than_they_hold(): void
+    {
+        $this->insertRelease(1, completion: 40.0, outcome: null, declaredFiles: 0, totalPart: 12);
+        $this->insertRelease(2, completion: 40.0, outcome: null, declaredFiles: 12, totalPart: 12);
+
+        $this->assertTrue(RescanCandidateQuery::batch(10, 95.0, 72)->isEmpty());
+    }
+
+    #[Test]
+    public function the_re_scan_still_visits_legacy_releases_whose_declared_count_is_unresolved(): void
+    {
+        // Deriving it means reading the stored NZB, so the query cannot do it -- the pass does,
+        // on first visit, and persists the answer.
+        $this->insertRelease(1, completion: 40.0, outcome: null, declaredFiles: null, totalPart: 12);
+
+        $this->assertSame([1], RescanCandidateQuery::batch(10, 95.0, 72)->pluck('id')->map(intval(...))->all());
+    }
+
+    #[Test]
+    public function unresolved_legacy_releases_queue_behind_the_ones_with_a_known_shortfall(): void
+    {
+        // `NULL - totalpart` is not a shortfall. Reading it as one would sort the whole legacy
+        // backlog to the front of every batch, largest release first -- the opposite of
+        // cheapest-first, and it would starve the rows we can already cost.
+        $this->insertRelease(1, completion: 40.0, outcome: null, declaredFiles: null, totalPart: 900, postdate: '2019-01-01 00:00:00');
+        $this->insertRelease(2, completion: 40.0, outcome: null, declaredFiles: null, totalPart: 12, postdate: '2026-01-01 00:00:00');
+        $this->insertRelease(3, completion: 40.0, outcome: null, declaredFiles: 740, totalPart: 40);
+        $this->insertRelease(4, completion: 40.0, outcome: null, declaredFiles: 40, totalPart: 38);
+
+        $this->assertSame(
+            [4, 3, 2, 1],
+            RescanCandidateQuery::batch(10, 95.0, 72)->pluck('id')->map(intval(...))->all(),
+            'Known shortfalls cheapest-first, then the unresolved backlog newest-first.'
+        );
+    }
+
+    #[Test]
+    public function the_re_scan_prefers_retries_whose_window_has_passed(): void
+    {
+        $this->insertRelease(1, completion: 40.0, outcome: null, declaredFiles: 40, totalPart: 38);
+        $this->insertRelease(
+            2,
+            completion: 40.0,
+            outcome: null,
+            declaredFiles: 740,
+            totalPart: 40,
+            rescanOutcome: ReleaseRepairOutcome::RetryPending,
+            rescanAttemptedAt: Carbon::now()->subHours(100)->toDateTimeString(),
+        );
+
+        $this->assertSame(
+            [2, 1],
+            RescanCandidateQuery::batch(10, 95.0, 72)->pluck('id')->map(intval(...))->all()
+        );
+    }
+
+    #[Test]
+    public function a_re_scan_retry_inside_its_window_is_not_selected(): void
+    {
+        $this->insertRelease(
+            1,
+            completion: 40.0,
+            outcome: null,
+            declaredFiles: 40,
+            totalPart: 38,
+            rescanOutcome: ReleaseRepairOutcome::RetryPending,
+            rescanAttemptedAt: Carbon::now()->subHours(71)->toDateTimeString(),
+        );
+
+        $this->assertTrue(RescanCandidateQuery::batch(10, 95.0, 72)->isEmpty());
     }
 
     /**
@@ -167,6 +320,10 @@ class ReleaseRepairGateTest extends TestCase
         ?ReleaseRepairOutcome $outcome,
         ?string $attemptedAt = null,
         string $postdate = '2024-01-01 00:00:00',
+        ?int $declaredFiles = null,
+        int $totalPart = 0,
+        ?ReleaseRepairOutcome $rescanOutcome = null,
+        ?string $rescanAttemptedAt = null,
     ): void {
         DB::table('releases')->insert([
             'id' => $id,
@@ -175,6 +332,10 @@ class ReleaseRepairGateTest extends TestCase
             'completion' => $completion,
             'repair_outcome' => $outcome?->value,
             'repair_attempted_at' => $attemptedAt,
+            'rescan_outcome' => $rescanOutcome?->value,
+            'rescan_attempted_at' => $rescanAttemptedAt,
+            'declaredfiles' => $declaredFiles,
+            'totalpart' => $totalPart,
             'postdate' => $postdate,
             'haspreview' => -1,
         ]);
@@ -190,6 +351,13 @@ class ReleaseRepairGateTest extends TestCase
             completion DOUBLE NOT NULL DEFAULT 0,
             repair_attempted_at DATETIME NULL,
             repair_outcome VARCHAR(16) NULL,
+            rescan_attempted_at DATETIME NULL,
+            rescan_outcome VARCHAR(16) NULL,
+            declaredfiles INTEGER NULL,
+            totalpart INTEGER NOT NULL DEFAULT 0,
+            groups_id INTEGER NULL,
+            firstarticle INTEGER NULL,
+            lastarticle INTEGER NULL,
             postdate DATETIME NULL,
             haspreview INTEGER NOT NULL DEFAULT -1,
             passwordstatus INTEGER NOT NULL DEFAULT -1

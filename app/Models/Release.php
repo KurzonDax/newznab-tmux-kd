@@ -77,6 +77,7 @@ class Release extends Model
     {
         return [
             'repair_outcome' => ReleaseRepairOutcome::class,
+            'rescan_outcome' => ReleaseRepairOutcome::class,
         ];
     }
 
@@ -237,6 +238,10 @@ class Release extends Model
                     'name' => $parameters['name'],
                     'searchname' => $parameters['searchname'],
                     'totalpart' => $parameters['totalpart'],
+                    // Explicit list: a column not named here is silently dropped.
+                    'declaredfiles' => $parameters['declaredfiles'] ?? null,
+                    'firstarticle' => $parameters['firstarticle'] ?? null,
+                    'lastarticle' => $parameters['lastarticle'] ?? null,
                     'groups_id' => $parameters['groups_id'],
                     'adddate' => now(),
                     'guid' => $parameters['guid'],

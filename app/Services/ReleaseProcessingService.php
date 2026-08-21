@@ -500,6 +500,9 @@ final class ReleaseProcessingService
                     FROM binaries b WHERE b.collections_id IN ({$idPlaceholders}) GROUP BY b.collections_id
                  ) a ON a.collections_id = c.id
                  SET c.filesize = COALESCE(a.filesize, 0),
+                     -- `declaredfiles` is deliberately absent: it is the header-declared total,
+                     -- written once at insert, and it is the only thing left that can tell a
+                     -- stale-promoted release it is short of files.
                      c.totalfiles = CASE
                         WHEN c.dateadded < DATE_SUB(NOW(), INTERVAL ? HOUR)
                          AND c.filecheck IN (0, 1, 10)
@@ -566,6 +569,7 @@ final class ReleaseProcessingService
                 $ready = $totalFiles > 0
                     && \in_array((int) $aggregate->currentfiles, [$totalFiles, $totalFiles + 1], true)
                     && (int) $aggregate->completefiles >= $totalFiles;
+                // `declaredfiles` is deliberately not updated here -- see the MySQL path above.
                 DB::table('collections')->where('id', $collectionId)->update([
                     'filesize' => (int) $aggregate->filesize,
                     'totalfiles' => $totalFiles,

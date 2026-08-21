@@ -11,15 +11,22 @@ and NNTP `STAT` returned EXISTS for every probed "missing" article, on two diffe
 
 ## The invariant
 
-**The sweep never deletes a release without a completed repair process.** Its predicate lives in
-one place, `App\Services\Releases\IncompleteReleaseSweepQuery`:
+**The sweep never deletes a release without a completed recovery process.** Two passes recover
+different things — derivable segments, and files with no segment at all — and both must be
+finished with it. The predicate lives in one place,
+`App\Services\Releases\IncompleteReleaseSweepQuery`:
 
 ```
-completion > 0 AND completion < completionpercent AND repair_outcome IN ('failed', 'skipped-floor')
+completion > 0 AND completion < completionpercent
+  AND repair_outcome IN ('failed', 'skipped-floor', 'skipped-budget')
+  AND (rescan_outcome IN ('failed', 'skipped-floor', 'skipped-budget')
+       OR declaredfiles IS NULL OR declaredfiles <= 0 OR declaredfiles <= totalpart)
 ```
 
-Only *final* outcomes are deletable. The sweep does no timestamp arithmetic — the repair state
-machine owns time and hands the reaper only what it has given up on. Manual commands
+Only *final* outcomes are deletable. The re-scan half also passes a release with nothing to look
+for, since it would be stamped final on sight and waiting for the stamp would only delay the
+reaper by a batch. The sweep does no timestamp arithmetic — the state machines own time and hand
+the reaper only what they have given up on. Manual commands
 (`nntmux:delete-releases --completion-max`) remain operator overrides and bypass the gate.
 
 `completion = 0` stays exempt: it is the "never measured" sentinel, meaning nothing declared a
@@ -28,15 +35,17 @@ part total, not that the release is empty.
 ## The state machine
 
 `releases.repair_attempted_at` and `releases.repair_outcome` are both load-bearing: the sweep
-reads the outcome, the retry pass reads both.
+reads the outcome, the retry pass reads both. `rescan_attempted_at` / `rescan_outcome` mirror them
+for the header re-scan and share the same values.
 
 | Outcome | Meaning | Deletable |
 | --- | --- | --- |
 | *(null)* | Never offered to the repair engine | no |
-| `retry-pending` | First pass fell short; one more pass is owed after 72h | no |
+| `retry-pending` | First pass fell short; one more pass is owed after the retry window | no |
 | `repaired` | Reached the completion target | no |
 | `failed` | Both passes spent, still short | **yes** |
-| `skipped-floor` | Measured under 10%; no articles were ever probed | **yes** |
+| `skipped-floor` | Nothing worth spending network on; no articles were ever probed | **yes** |
+| `skipped-budget` | The re-scan window was wider than the ceiling allows | **yes** |
 
 A pass that could not *run* — no NZB on disk, an unparseable NZB, an NZB that could not be
 written back — records nothing at all. Those say something about our storage, not about whether
@@ -45,9 +54,10 @@ two unmounted volumes in a row would otherwise be enough to mark a release `fail
 release is simply picked up again next invocation, and the command reports it under
 "Not attempted".
 
-Every release gets at most **two network passes**. The 72-hour retry window exists because fresh
-releases are stale-promoted at 8 hours and repaired within hours, while their articles may still
-be propagating across the provider farm: a first attempt at hour 10 can fail where a recheck at
+Every release gets at most **two network passes** per engine. The retry window
+(`repair_retry_after_hours`, 72 hours by default) exists because fresh releases are
+stale-promoted at 8 hours and repaired within hours, while their articles may still be
+propagating across the provider farm: a first attempt at hour 10 can fail where a recheck at
 hour 82 succeeds. For legacy releases the second pass costs a few STATs to confirm nothing has
 changed, and one uniform rule beats branching on age.
 
@@ -61,7 +71,7 @@ php artisan releases:backfill-completion
 
 # Re-derive rows already measured below 50%: the old arithmetic summed each file's declared
 # total, which understates the obfuscated single-segment style by two orders of magnitude.
-# Rerunnable, and disjoint from the pass above -- `0` is "never measured", not a low percentage.
+# Rerunnable, and disjoint from the pass above — `0` is "never measured", not a low percentage.
 php artisan releases:backfill-completion --understated --dry-run
 php artisan releases:backfill-completion --understated
 
@@ -122,13 +132,110 @@ Re-arming is the last step, not the first:
    ```
 4. Only then set `completionpercent` back to `95` in the admin settings.
 
-## What this does not cover
+## The header re-scan: files with no segment at all
 
-Files the header scan missed **entirely**. With no seen segment there is no message-ID pattern to
-derive, and with no `binaries` row the file never appears in the NZB at all — so it is invisible
-to everything above. Recovering those needs a header re-scan rather than synthesis, and detecting
-them first needs the declared file count to survive stale promotion, which today it does not:
-`ReleaseProcessingService` overwrites `collections.totalfiles` with the number of files actually
-seen when it promotes a stale collection.
+Everything above works from what an NZB already holds. A file the header scan missed **entirely**
+has no `binaries` row, so it never became a `<file>` element — there is nothing to notice its
+absence by and no segment to derive a message-ID pattern from. `releases:rescan-missing-files` is
+the second pass, and it goes back to the group's headers.
 
-Tracked separately in #153.
+### Seeing the gap at all
+
+Detecting a whole-missing file needs the declared file count, and stale promotion used to destroy
+it: `ReleaseProcessingService` rewrites `collections.totalfiles` to the number of files actually
+seen when it promotes a collection past `delaytime`, which is exactly what lets an incomplete
+collection become a release at all. For the releases worth repairing, declared and held therefore
+always agreed.
+
+`collections.declaredfiles` is written once at collection insert from the same `[n/N]` header
+token and is excluded from that rewrite; `ReleaseCreationService` carries it onto
+`releases.declaredfiles`. `totalfiles` and `totalpart` keep their old meaning — "files we hold" —
+and no existing consumer changed.
+
+On deploy the migration seeds `declaredfiles` from `totalfiles` for the collections already in
+flight, so the delaytime window's worth of collections mid-promotion still reach the measurer with
+a file count rather than a zero.
+
+For releases created before the column existed, the count is derived on first visit from the
+stored NZB's own subjects and persisted. Only the bracket `[n/N]` form counts files: the writer
+appends a synthesized ` (1/<totalparts>)` segment counter to every subject, and reading *that* as
+a file count mistook 10 of 30 sampled releases for whole-missing ones, one of them "declaring"
+8,380 files. The answer is the mode of the totals, ties to the larger, and `0` — persisted — when
+nothing usable is declared.
+
+`completion` sees the gap too. The segment ratio only sums the files we hold, so 9 of 10 files
+fully held read as 100%; where more files were declared than are held, the denominator is scaled
+by `declared / held` and that release now measures 90%.
+
+### The window
+
+Article numbers are per-server, so this is provider-1 work by construction — `NntpProviderPool`
+exposes no header API to reach instead. See [nntp-providers.md](nntp-providers.md).
+
+- **Anchored.** `releases.firstarticle` / `lastarticle` are the min and max `parts.number` the
+  collection held, captured at release creation because NZB creation deletes the CBP rows. The
+  window is that span plus a pad.
+- **Bisected.** Legacy releases have only a postdate, so the group is bisected for the articles
+  either side of it — `BinariesService::articleForTimestamp()`, the same date-to-article search
+  backfill uses, aimed at an absolute time rather than a number of days back.
+
+The pad is `rescan_window_minutes` of posting time converted through the group's own article rate
+(`(last_record − first_record) / (last_record_postdate − first_record_postdate)`), so half an hour
+is a few thousand articles on a quiet group and millions on a busy one. Where the rate cannot be
+estimated the pad collapses to nothing and the window is exactly the known span: cheap and
+conservative beats guessed.
+
+### Matching
+
+Three things must agree before a line is attached, and none alone is enough: the **poster**, the
+**declared file total** in its `[n/N]`, and the **masked subject** — the `[n/N]` index, `.partNN`,
+`.rNN`, `.volNNN+NNN` and the trailing segment counter replaced by markers, which is what turns a
+post's files into one shared string. Its file index must also be one the NZB does not already
+hold. A release whose held files do not all carry a file index is left alone entirely: without
+them there is no way to know which indices are already ours, and appending a duplicate is worse
+than doing nothing.
+
+Matched lines are grouped by file index and written as new `<file>` elements carrying the NZB's
+own poster, date and groups. Both the message-ID and the byte count come off the server's overview
+line, so unlike a synthesized segment neither is an estimate. A file found only partly is written
+with what was found — the repair engine's next pass synthesizes the rest from those IDs, which is
+the point of writing it at all.
+
+### Budgets and state
+
+XOVER over a window is far more expensive than a STAT, and it competes with live header scanning
+for provider 1's connections. Four seeded settings bound it, all editable on the admin Usenet
+Settings section: `rescan_limit` (releases per run), `rescan_window_minutes`,
+`rescan_max_articles_per_release` (a wider window is stamped `skipped-budget` without fetching
+anything) and `rescan_max_articles_per_run` (the invocation stops fetching once that many overview
+lines have been read). The repair engine's own tunables live there too:
+`repair_retry_after_hours`, `repair_floor_completion`, `repair_stat_sample_per_file`,
+`repair_max_stat_probes`, `repair_limit`. CLI flags override any of them for one run.
+
+`rescan_outcome` / `rescan_attempted_at` mirror the repair columns and use the same enum, plus
+`skipped-budget`. Two passes maximum, same as repair. Never-attempted releases are taken
+**smallest shortfall first**: a release missing two files of forty is both likeliest to be
+recovered and cheapest to try, while one missing seven hundred is a posting session that never
+arrived. Releases whose declared count has not been derived yet have no known shortfall, so they
+queue behind the ones that do, newest first.
+
+Because the sweep now waits on this column, "record nothing" is narrower here than it is for
+repair — anything left unstamped is a release the reaper can never touch. Storage faults (no NZB,
+an unparseable one, one that could not be written back) still record nothing, and so does a
+release the per-run budget never reached. But a release that can *never* be re-scanned — it points
+at a group row that is gone, has no window to aim at, declares no more files than it holds, or
+holds files with no file index to place a recovered one against — is stamped final on sight, since
+none of those read differently on a later pass. A provider that refuses the group is ambiguous
+between a dropped group and a sulking connection, so it takes the normal two passes and settles at
+`failed`.
+
+The sweep waits for **both** state machines. `IncompleteReleaseSweepQuery` requires a final
+`repair_outcome` *and* either a final `rescan_outcome` or a release with nothing to re-scan —
+`declaredfiles` null, zero, or no greater than the files held.
+
+```bash
+# One re-scan pass over a bounded batch. --dry-run resolves declared counts and estimates
+# windows without fetching or writing anything.
+php artisan releases:rescan-missing-files --dry-run -v
+php artisan releases:rescan-missing-files --limit=50
+```

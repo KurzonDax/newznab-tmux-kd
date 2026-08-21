@@ -17,7 +17,12 @@ namespace App\Services\Nzb;
  *   per file invents a denominator hundreds of times too large: 220 of 240 files -- 92% of the
  *   post -- reads as 0.42%. There, completion is files held over files declared.
  *
- * Telling them apart takes corroboration, not shape alone. A normal post we hold one segment of
+ * Either way the count of *files* declared is load-bearing too: a file the header scan missed
+ * entirely has no binaries row and no `<file>` element, so it appears in neither side of the
+ * segment ratio and 9 of 10 files fully held would otherwise read as 100%. Where more files were
+ * declared than are held, the segment denominator is scaled up in that proportion.
+ *
+ * Telling the two styles apart takes corroboration, not shape alone. A normal post we hold one segment of
  * per file has the same shape as the obfuscated style -- equal-sized rar volumes declare
  * identical totals -- and measuring it in files would report a near-empty release as nearly
  * complete. So the parens total must agree with the `[n/N]` file index before it is read as a
@@ -31,7 +36,7 @@ final readonly class CompletionSignals
      * @param  int  $filesPresent  Files we hold (binaries, or `<file>` elements).
      * @param  int  $segmentsPresent  Segments we hold across all files.
      * @param  int  $segmentsDeclared  Sum of the per-file totals the subjects' parens declare.
-     * @param  int  $filesDeclared  Files the `[n/N]` file index declares; `0` when none survived.
+     * @param  int  $filesDeclared  Files the headers declared; `0` when nothing declared a total.
      * @param  int  $maxSegmentsPerFile  Most segments held by any one file.
      * @param  int  $distinctDeclaredTotals  How many different per-file totals the subjects declare.
      * @param  int  $maxDeclaredPerFile  The largest per-file total declared.
@@ -59,7 +64,43 @@ final readonly class CompletionSignals
             return ReleaseCompletion::percentage($this->filesPresent, $this->filesDeclared);
         }
 
-        return ReleaseCompletion::percentage($this->segmentsPresent, $this->segmentsDeclared);
+        return ReleaseCompletion::percentage($this->segmentsPresent, $this->scaledSegmentsDeclared());
+    }
+
+    /**
+     * Segments declared, grossed up for the files that are missing entirely.
+     *
+     * `segmentsDeclared` only sums the files we hold -- a file with no binaries row is in neither
+     * the numerator nor the denominator, so it is invisible to the raw ratio. Assuming each
+     * missing file declared about as many segments as its siblings, scaling the denominator by
+     * `declared / held` puts them back: 9 of 10 files, every held segment present, measures 90%.
+     *
+     * The estimate only ever moves completion *down*, and only where the declared count is a
+     * number the headers actually gave us -- `filesDeclared` is `0` when nothing declared one.
+     *
+     * It is withheld in one case: where every file holds a lone segment *and* the largest per-file
+     * total equals the declared file count. That pairing is the obfuscated style's signature --
+     * one collection-wide number repeated in every subject's parens -- so the two totals are not
+     * independent measurements, and multiplying one by the other would square the same figure.
+     * Those posts that also have the full single-segment *shape* never reach here; the ones that
+     * fall just outside it (a lone file, or totals that disagree) are left measured against the
+     * raw denominator rather than a doubly-counted one.
+     *
+     * Both halves of that test matter. Equal numbers alone are a coincidence a normal post can
+     * hit -- ten files whose largest declares ten segments -- and suppressing the scale-up there
+     * would hide exactly the missing file this is meant to expose.
+     */
+    private function scaledSegmentsDeclared(): int
+    {
+        if ($this->filesPresent <= 0 || $this->filesDeclared <= $this->filesPresent) {
+            return $this->segmentsDeclared;
+        }
+
+        if ($this->filesDeclared === $this->maxDeclaredPerFile && $this->maxSegmentsPerFile <= 1) {
+            return $this->segmentsDeclared;
+        }
+
+        return (int) round($this->segmentsDeclared * ($this->filesDeclared / $this->filesPresent));
     }
 
     /**
@@ -93,9 +134,13 @@ final readonly class CompletionSignals
     /**
      * Do the two totals contradict each other?
      *
-     * Chiefly a collection that timed out: `ReleaseProcessingService` rewrites `totalfiles` to the
-     * files actually present once a collection goes stale, so the file index comes back equal to
-     * the numerator and would measure a release that never finished arriving as 100% complete.
+     * In the obfuscated style the parens repeat the collection-wide file count, so the two totals
+     * are the same number seen twice. Where they differ, one of them is not counting files, and
+     * measuring a badly incomplete normal post in files would report it as nearly complete.
+     *
+     * The declared count fed in here is `collections.declaredfiles` -- written once at collection
+     * insert -- rather than `totalfiles`, which stale promotion rewrites to the files actually
+     * present and which therefore used to make every timed-out collection look contradictory.
      */
     public function hasIrreconcilableSignals(): bool
     {

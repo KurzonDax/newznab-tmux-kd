@@ -5,9 +5,16 @@ declare(strict_types=1);
 namespace App\Services\ReleaseRepair;
 
 use App\Models\Settings;
+use App\Support\SettingNumber;
 
 /**
  * The knobs one repair run works to.
+ *
+ * Every value has a seeded `settings` row behind it, edited on the admin Usenet Settings section
+ * next to `completionpercent`, `delaytime` and the part-repair knobs it works alongside. An
+ * operator tuning a scheduled job edits site settings; they do not edit the scheduler entry.
+ * The constants below stay as the fallback for a row that is missing or non-numeric, and CLI
+ * flags stay as explicit per-run overrides that beat both.
  */
 final readonly class ReleaseRepairOptions
 {
@@ -61,6 +68,9 @@ final readonly class ReleaseRepairOptions
         $this->maxStatProbes = max($this->statSamplePerFile, $maxStatProbes);
     }
 
+    /** Releases one invocation works on. */
+    public const int DEFAULT_LIMIT = 250;
+
     /**
      * The configured completion threshold, falling back to the default when the sweep is off.
      */
@@ -69,5 +79,39 @@ final readonly class ReleaseRepairOptions
         $configured = (float) Settings::settingValue('completionpercent');
 
         return $configured > 0 ? $configured : self::DEFAULT_TARGET_COMPLETION;
+    }
+
+    /**
+     * Build a run's options from site settings, with per-run overrides winning where given.
+     *
+     * The overrides are the CLI flags: `null` means "the flag was not passed", not "zero".
+     */
+    public static function fromSettings(
+        ?float $targetCompletion = null,
+        ?float $floorCompletion = null,
+        ?int $retryAfterHours = null,
+        ?int $statSamplePerFile = null,
+        ?int $maxStatProbes = null,
+        bool $dryRun = false,
+    ): self {
+        return new self(
+            targetCompletion: $targetCompletion ?? self::targetFromSettings(),
+            floorCompletion: $floorCompletion ?? SettingNumber::float('repair_floor_completion', self::REPAIR_FLOOR_COMPLETION),
+            retryAfterHours: $retryAfterHours ?? SettingNumber::int('repair_retry_after_hours', self::RETRY_AFTER_HOURS),
+            statSamplePerFile: $statSamplePerFile ?? SettingNumber::int('repair_stat_sample_per_file', self::STAT_SAMPLE_PER_FILE),
+            maxStatProbes: $maxStatProbes ?? SettingNumber::int('repair_max_stat_probes', self::MAX_STAT_PROBES),
+            dryRun: $dryRun,
+        );
+    }
+
+    /**
+     * Releases one invocation works on, from settings unless the CLI overrode it.
+     *
+     * Not part of the options object: the batch size belongs to the candidate query, not to what
+     * a single release's repair pass works to.
+     */
+    public static function limitFromSettings(?int $override = null): int
+    {
+        return max(1, $override ?? SettingNumber::int('repair_limit', self::DEFAULT_LIMIT));
     }
 }

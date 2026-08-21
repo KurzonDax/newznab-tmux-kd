@@ -341,6 +341,9 @@ final class CollectionHandler
                 'xref' => $row['xref'],
                 'groups_id' => $row['groups_id'],
                 'totalfiles' => $row['totalfiles'],
+                // The same header-declared total, kept out of reach of the stale-promotion
+                // overwrite that rewrites `totalfiles` to the files actually seen.
+                'declaredfiles' => $row['totalfiles'],
                 'collectionhash' => $row['collectionhash'],
                 'collection_regexes_id' => $row['collection_regexes_id'],
                 'dateadded' => now(),
@@ -362,7 +365,7 @@ final class CollectionHandler
             $placeholders = [];
             $bindings = [];
             foreach ($chunk as $row) {
-                $placeholders[] = '(?, ?, FROM_UNIXTIME(?), ?, ?, ?, ?, ?, NOW(), ?)';
+                $placeholders[] = '(?, ?, FROM_UNIXTIME(?), ?, ?, ?, ?, ?, ?, NOW(), ?)';
                 array_push(
                     $bindings,
                     $row['subject'],
@@ -370,6 +373,7 @@ final class CollectionHandler
                     $row['unixtime'],
                     $row['xref'],
                     $row['groups_id'],
+                    $row['totalfiles'],
                     $row['totalfiles'],
                     $row['collectionhash'],
                     $row['collection_regexes_id'],
@@ -382,7 +386,7 @@ final class CollectionHandler
             // rows (and the redo/binlog churn that comes with it) while still
             // letting LAST_INSERT_ID() return the existing row's id.
             DB::statement(
-                'INSERT INTO collections (subject, fromname, date, xref, groups_id, totalfiles, collectionhash, collection_regexes_id, dateadded, noise) VALUES '
+                'INSERT INTO collections (subject, fromname, date, xref, groups_id, totalfiles, declaredfiles, collectionhash, collection_regexes_id, dateadded, noise) VALUES '
                 .implode(',', $placeholders)
                 .' ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)',
                 $bindings
@@ -517,6 +521,7 @@ final class CollectionHandler
             'xref' => implode(' ', $headerTokens),
             'groups_id' => $groupId,
             'totalfiles' => $totalFiles,
+            'declaredfiles' => $totalFiles,
             'collectionhash' => $collectionHash,
             'collection_regexes_id' => $regexId,
             'dateadded' => now(),
@@ -550,8 +555,8 @@ final class CollectionHandler
         // return the existing row's id without rewriting the row (avoids the
         // redo/binlog churn of `dateadded = NOW()`).
         $insertSql = 'INSERT INTO collections '
-            .'(subject, fromname, date, xref, groups_id, totalfiles, collectionhash, collection_regexes_id, dateadded, noise) '
-            .'VALUES (?, ?, FROM_UNIXTIME(?), ?, ?, ?, ?, ?, NOW(), ?) '
+            .'(subject, fromname, date, xref, groups_id, totalfiles, declaredfiles, collectionhash, collection_regexes_id, dateadded, noise) '
+            .'VALUES (?, ?, FROM_UNIXTIME(?), ?, ?, ?, ?, ?, ?, NOW(), ?) '
             .'ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)';
 
         $bindings = [
@@ -560,6 +565,7 @@ final class CollectionHandler
             $unixtime,
             implode(' ', $headerTokens),
             $groupId,
+            $totalFiles,
             $totalFiles,
             $collectionHash,
             $regexId,
