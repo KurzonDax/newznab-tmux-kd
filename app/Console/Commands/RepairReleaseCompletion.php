@@ -22,12 +22,12 @@ use Illuminate\Support\Facades\Log;
 class RepairReleaseCompletion extends Command
 {
     protected $signature = 'releases:repair-completion
-        {--limit=250 : Releases to work on this invocation}
-        {--target= : Completion a release must reach to count as repaired (default: the completionpercent setting, or 95)}
-        {--floor= : Skip network repair below this completion (default: 10)}
-        {--retry-after-hours= : How long after a failed first pass the final pass may run (default: 72)}
-        {--stat-sample= : Synthesized message-IDs to spot-check per file (default: 2)}
-        {--max-probes= : Hard ceiling on STAT probes per release (default: 20)}
+        {--limit= : Releases to work on this invocation (default: the repair_limit setting)}
+        {--target= : Completion a release must reach to count as repaired (default: the completionpercent setting)}
+        {--floor= : Skip network repair below this completion (default: the repair_floor_completion setting)}
+        {--retry-after-hours= : How long after a failed first pass the final pass may run (default: the repair_retry_after_hours setting)}
+        {--stat-sample= : Synthesized message-IDs to spot-check per file (default: the repair_stat_sample_per_file setting)}
+        {--max-probes= : Hard ceiling on STAT probes per release (default: the repair_max_stat_probes setting)}
         {--dry-run : Probe and report, but write no NZB and no repair state}';
 
     protected $description = 'Rebuild missing NZB segments for incomplete releases so the completion sweep never deletes a recoverable one';
@@ -35,7 +35,7 @@ class RepairReleaseCompletion extends Command
     public function handle(ReleaseRepairService $repairService, NntpProviderPool $pool): int
     {
         $options = $this->resolveOptions();
-        $limit = max(1, (int) $this->option('limit'));
+        $limit = ReleaseRepairOptions::limitFromSettings($this->intOption('limit'));
 
         if ($options->dryRun) {
             $this->comment('Dry run: articles are probed, but no NZB and no repair state will be written.');
@@ -112,14 +112,17 @@ class RepairReleaseCompletion extends Command
         return self::SUCCESS;
     }
 
+    /**
+     * Settings first, CLI flags on top: a flag that was not passed must not be read as a zero.
+     */
     private function resolveOptions(): ReleaseRepairOptions
     {
-        return new ReleaseRepairOptions(
-            targetCompletion: $this->floatOption('target') ?? ReleaseRepairOptions::targetFromSettings(),
-            floorCompletion: $this->floatOption('floor') ?? ReleaseRepairOptions::REPAIR_FLOOR_COMPLETION,
-            retryAfterHours: $this->intOption('retry-after-hours') ?? ReleaseRepairOptions::RETRY_AFTER_HOURS,
-            statSamplePerFile: $this->intOption('stat-sample') ?? ReleaseRepairOptions::STAT_SAMPLE_PER_FILE,
-            maxStatProbes: $this->intOption('max-probes') ?? ReleaseRepairOptions::MAX_STAT_PROBES,
+        return ReleaseRepairOptions::fromSettings(
+            targetCompletion: $this->floatOption('target'),
+            floorCompletion: $this->floatOption('floor'),
+            retryAfterHours: $this->intOption('retry-after-hours'),
+            statSamplePerFile: $this->intOption('stat-sample'),
+            maxStatProbes: $this->intOption('max-probes'),
             dryRun: (bool) $this->option('dry-run'),
         );
     }

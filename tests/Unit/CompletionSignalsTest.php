@@ -176,6 +176,68 @@ class CompletionSignalsTest extends TestCase
         $this->assertEqualsWithDelta(0.42, $signals->percentage(), 0.01);
     }
 
+    public function test_files_missing_entirely_scale_the_segment_denominator(): void
+    {
+        // 9 of 10 declared files, every segment of those 9 held. The tenth has no `<file>`
+        // element at all, so the raw segment ratio cannot see it.
+        $signals = $this->tally(array_fill(0, 9, [
+            'segments' => 20,
+            'declaredSegments' => 20,
+            'declaredFiles' => 10,
+        ]));
+
+        $this->assertFalse($signals->isSingleSegmentStyle());
+        $this->assertEqualsWithDelta(90.0, $signals->percentage(), 0.01);
+    }
+
+    public function test_a_release_holding_every_declared_file_is_not_scaled(): void
+    {
+        $signals = $this->tally(array_fill(0, 10, [
+            'segments' => 20,
+            'declaredSegments' => 20,
+            'declaredFiles' => 10,
+        ]));
+
+        $this->assertSame(100.0, $signals->percentage());
+    }
+
+    public function test_a_declared_count_below_the_files_held_never_flatters_completion(): void
+    {
+        // The par2 volume a collection is allowed to carry past its declared total, and the
+        // stale-promoted rows whose declared count was rewritten downward.
+        $signals = $this->tally(array_fill(0, 11, [
+            'segments' => 18,
+            'declaredSegments' => 20,
+            'declaredFiles' => 10,
+        ]));
+
+        $this->assertEqualsWithDelta(90.0, $signals->percentage(), 0.01);
+    }
+
+    public function test_whole_missing_files_and_short_files_compound(): void
+    {
+        // 9 of 10 files, and each held file is missing a tenth of its segments.
+        $signals = $this->tally(array_fill(0, 9, [
+            'segments' => 18,
+            'declaredSegments' => 20,
+            'declaredFiles' => 10,
+        ]));
+
+        $this->assertEqualsWithDelta(81.0, $signals->percentage(), 0.01);
+    }
+
+    public function test_a_repeated_collection_wide_total_is_not_multiplied_by_itself(): void
+    {
+        // `[1/240]` against `(1/240)` on a lone file: the two totals are one number seen twice,
+        // not a per-file segment count and a file count. Scaling would square it and report
+        // 0.0017% for a release holding one of 240 files.
+        $signals = $this->tally([
+            ['segments' => 1, 'declaredSegments' => 240, 'declaredFiles' => 240],
+        ]);
+
+        $this->assertEqualsWithDelta(0.42, $signals->percentage(), 0.01);
+    }
+
     public function test_an_empty_release_keeps_the_unknown_sentinel(): void
     {
         $signals = (new CompletionTally)->signals();

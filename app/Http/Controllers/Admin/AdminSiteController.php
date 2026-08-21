@@ -12,9 +12,11 @@ use App\Models\RootCategory;
 use App\Models\Settings;
 use App\Models\SignupStat;
 use App\Services\NNTP\NntpProviderPool;
+use App\Support\RepairSettingRules;
 use App\Support\SizeUnit;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\View\View;
 
 class AdminSiteController extends BasePageController
@@ -36,6 +38,15 @@ class AdminSiteController extends BasePageController
         switch ($action) {
             case 'submit':
                 $data = $request->all();
+
+                // The repair and re-scan budgets are the only settings here a scheduled job
+                // reads as a bound; a negative one misbehaves rather than merely looking wrong.
+                $validator = Validator::make($data, RepairSettingRules::rules());
+                $validator->setAttributeNames(RepairSettingRules::attributes());
+
+                if ($validator->fails()) {
+                    return redirect()->to('admin/site-edit')->withErrors($validator)->withInput();
+                }
 
                 foreach (SizeUnit::SITE_SIZE_SETTINGS as $sizeKey) {
                     $data[$sizeKey] = SizeUnit::toBytes($data[$sizeKey] ?? null, $data[$sizeKey.'_unit'] ?? 'MB');

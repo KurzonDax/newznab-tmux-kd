@@ -9,6 +9,7 @@ use App\Facades\Search;
 use App\Services\CollectionCleanupService;
 use App\Services\ReleaseCleaningService;
 use App\Services\ReleaseCreationService;
+use App\Services\Releases\CollectionArticleRangeMeasurer;
 use App\Services\Releases\CollectionCompletionMeasurer;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use Illuminate\Support\Facades\DB;
@@ -142,12 +143,13 @@ class ReleaseCreationCompletionTest extends TestCase
     }
 
     #[Test]
-    public function a_file_index_rewritten_to_the_files_present_cannot_report_one_hundred(): void
+    public function a_stale_promoted_collection_is_measured_against_what_the_headers_declared(): void
     {
         // ReleaseProcessingService rewrites `totalfiles` to the files actually present once a
-        // collection goes stale, so the file index comes back equal to the numerator. A release
-        // that timed out half-arrived must not be recorded as complete.
-        $this->insertCollection(100, 'hash-stale', '[1/240] - "9f2c1b" yEnc', totalfiles: 220);
+        // collection goes stale, which used to make the two totals contradict each other and
+        // leave the release unmeasured. `declaredfiles` survives that rewrite, so 220 of 240
+        // files is now simply 220 of 240.
+        $this->insertCollection(100, 'hash-stale', '[1/240] - "9f2c1b" yEnc', totalfiles: 220, declaredfiles: 240);
 
         for ($file = 1; $file <= 220; $file++) {
             $this->insertBinary(
@@ -161,7 +163,100 @@ class ReleaseCreationCompletionTest extends TestCase
 
         $this->service()->createReleases(null, 10, false);
 
-        $this->assertSame(0.0, $this->completionOfFirstRelease());
+        $this->assertEqualsWithDelta(91.67, $this->completionOfFirstRelease(), 0.01);
+    }
+
+    #[Test]
+    public function a_whole_missing_file_drags_completion_down_even_when_every_held_segment_is_present(): void
+    {
+        // 9 of 10 declared files, every segment of those 9 held. The missing file has no binaries
+        // row, so it is in neither side of the raw segment ratio and this used to read as 100%.
+        $this->insertCollection(100, 'hash-missing-file', 'Short.Release.S01E01', totalfiles: 9, declaredfiles: 10);
+
+        for ($file = 1; $file <= 9; $file++) {
+            $this->insertBinary(
+                100,
+                1000 + $file,
+                sprintf('Short.Release.S01E01.part%02d.rar', $file),
+                declaredParts: 20,
+                presentParts: 20,
+            );
+        }
+
+        $this->service()->createReleases(null, 10, false);
+
+        $this->assertEqualsWithDelta(90.0, $this->completionOfFirstRelease(), 0.01);
+    }
+
+    #[Test]
+    public function a_release_holding_every_declared_file_is_unchanged(): void
+    {
+        $this->insertCollection(100, 'hash-all-files', 'Whole.Release.S01E01', totalfiles: 10, declaredfiles: 10);
+
+        for ($file = 1; $file <= 10; $file++) {
+            $this->insertBinary(
+                100,
+                1000 + $file,
+                sprintf('Whole.Release.S01E01.part%02d.rar', $file),
+                declaredParts: 20,
+                presentParts: 20,
+            );
+        }
+
+        $this->service()->createReleases(null, 10, false);
+
+        $this->assertSame(100.0, $this->completionOfFirstRelease());
+    }
+
+    #[Test]
+    public function a_stale_promoted_release_keeps_the_declared_count_and_the_seen_count_apart(): void
+    {
+        $this->insertCollection(100, 'hash-declared', 'Stale.Release.S01E01', totalfiles: 3, declaredfiles: 8);
+        $this->insertBinary(100, 1000, 'Stale.Release.S01E01.part01.rar', declaredParts: 10, presentParts: 10);
+        $this->insertBinary(100, 1001, 'Stale.Release.S01E01.part02.rar', declaredParts: 10, presentParts: 10);
+        $this->insertBinary(100, 1002, 'Stale.Release.S01E01.part03.rar', declaredParts: 10, presentParts: 10);
+
+        $this->service()->createReleases(null, 10, false);
+
+        $release = DB::table('releases')->orderBy('id')->first();
+        $this->assertSame(8, (int) $release->declaredfiles);
+        $this->assertSame(3, (int) $release->totalpart, 'totalpart keeps its "files we hold" meaning.');
+    }
+
+    #[Test]
+    public function a_normally_completed_release_declares_exactly_what_it_holds(): void
+    {
+        $this->insertCollection(100, 'hash-normal', 'Normal.Release.S01E01', totalfiles: 2);
+        $this->insertBinary(100, 1000, 'Normal.Release.S01E01.part01.rar', declaredParts: 10, presentParts: 10);
+        $this->insertBinary(100, 1001, 'Normal.Release.S01E01.part02.rar', declaredParts: 10, presentParts: 10);
+
+        $this->service()->createReleases(null, 10, false);
+
+        $release = DB::table('releases')->orderBy('id')->first();
+        $this->assertSame(2, (int) $release->declaredfiles);
+        $this->assertSame(2, (int) $release->totalpart);
+    }
+
+    #[Test]
+    public function the_article_anchors_span_the_part_numbers_the_binaries_held(): void
+    {
+        // The NZB keeps no article numbers -- the parts rows are deleted at NZB creation -- so a
+        // later header re-scan has nothing to aim at unless they are captured here.
+        $this->insertCollection(100, 'hash-anchors', 'Anchored.Release.S01E01', totalfiles: 2);
+        $this->insertBinary(100, 1000, 'Anchored.Release.S01E01.part01.rar', declaredParts: 3, presentParts: 3);
+        $this->insertBinary(100, 1001, 'Anchored.Release.S01E01.part02.rar', declaredParts: 3, presentParts: 3);
+
+        $this->service()->createReleases(null, 10, false);
+
+        $expected = DB::selectOne(
+            'SELECT MIN(p.number) AS first_article, MAX(p.number) AS last_article
+             FROM parts p INNER JOIN binaries b ON b.id = p.binaries_id
+             WHERE b.collections_id = 100'
+        );
+
+        $release = DB::table('releases')->orderBy('id')->first();
+        $this->assertSame((int) $expected->first_article, (int) $release->firstarticle);
+        $this->assertSame((int) $expected->last_article, (int) $release->lastarticle);
     }
 
     #[Test]
@@ -181,7 +276,8 @@ class ReleaseCreationCompletionTest extends TestCase
             app(ReleaseCleaningService::class),
             app(CollectionCleanupService::class),
             app(ReleaseDuplicateFinder::class),
-            app(CollectionCompletionMeasurer::class)
+            app(CollectionCompletionMeasurer::class),
+            app(CollectionArticleRangeMeasurer::class),
         );
     }
 
@@ -190,8 +286,18 @@ class ReleaseCreationCompletionTest extends TestCase
         return (float) DB::table('releases')->orderBy('id')->value('completion');
     }
 
-    private function insertCollection(int $id, string $hash, string $subject, int $totalfiles = 1): void
-    {
+    /**
+     * @param  int|null  $declaredfiles  What the headers declared, before stale promotion rewrote
+     *                                   `totalfiles` to the files actually seen. Defaults to
+     *                                   agreeing with `totalfiles`, as a normal collection does.
+     */
+    private function insertCollection(
+        int $id,
+        string $hash,
+        string $subject,
+        int $totalfiles = 1,
+        ?int $declaredfiles = null,
+    ): void {
         DB::table('collections')->insert([
             'id' => $id,
             'subject' => $subject,
@@ -202,6 +308,7 @@ class ReleaseCreationCompletionTest extends TestCase
             'xref' => 'alt.test:'.$id,
             'groups_id' => 1,
             'totalfiles' => $totalfiles,
+            'declaredfiles' => $declaredfiles ?? $totalfiles,
             'filesize' => 1000,
             'filecheck' => CollectionFileCheckStatus::Sized->value,
             'collectionhash' => $hash,
@@ -259,6 +366,9 @@ class ReleaseCreationCompletionTest extends TestCase
             name VARCHAR(255),
             searchname VARCHAR(255),
             totalpart INTEGER,
+            declaredfiles INTEGER NULL,
+            firstarticle INTEGER NULL,
+            lastarticle INTEGER NULL,
             groups_id INTEGER,
             adddate DATETIME NULL,
             guid VARCHAR(64),
@@ -290,6 +400,9 @@ class ReleaseCreationCompletionTest extends TestCase
             xref TEXT,
             groups_id INTEGER,
             totalfiles INTEGER,
+            declaredfiles INTEGER NOT NULL DEFAULT 0,
+            firstarticle INTEGER NULL,
+            lastarticle INTEGER NULL,
             filesize INTEGER,
             filecheck INTEGER,
             collectionhash VARCHAR(255),

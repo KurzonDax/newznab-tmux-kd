@@ -282,6 +282,78 @@ class AdminSiteControllerTest extends TestCase
         $this->assertNull($this->settingValue('descriptive_title_rename'));
     }
 
+    public function test_repair_and_rescan_tunables_round_trip_through_the_form(): void
+    {
+        $response = app(AdminSiteController::class)->edit(Request::create('/admin/site-edit', 'GET'));
+        $this->assertInstanceOf(View::class, $response);
+        $rendered = $response->render();
+        $this->assertStringContainsString('Release Repair &amp; Re-scan', $rendered);
+        $this->assertStringContainsString('name="repair_retry_after_hours"', $rendered);
+        $this->assertStringContainsString('name="rescan_max_articles_per_run"', $rendered);
+
+        $submitted = app(AdminSiteController::class)->edit(Request::create('/admin/site-edit', 'POST', [
+            'action' => 'submit',
+            'repair_retry_after_hours' => '48',
+            'repair_floor_completion' => '15',
+            'repair_stat_sample_per_file' => '3',
+            'repair_max_stat_probes' => '30',
+            'repair_limit' => '100',
+            'rescan_limit' => '25',
+            'rescan_window_minutes' => '45',
+            'rescan_max_articles_per_release' => '250000',
+            'rescan_max_articles_per_run' => '1000000',
+        ]));
+
+        $this->assertTrue($submitted->isRedirect());
+        $this->assertSame('48', $this->settingValue('repair_retry_after_hours'));
+        $this->assertSame('15', $this->settingValue('repair_floor_completion'));
+        $this->assertSame('3', $this->settingValue('repair_stat_sample_per_file'));
+        $this->assertSame('30', $this->settingValue('repair_max_stat_probes'));
+        $this->assertSame('100', $this->settingValue('repair_limit'));
+        $this->assertSame('25', $this->settingValue('rescan_limit'));
+        $this->assertSame('45', $this->settingValue('rescan_window_minutes'));
+        $this->assertSame('250000', $this->settingValue('rescan_max_articles_per_release'));
+        $this->assertSame('1000000', $this->settingValue('rescan_max_articles_per_run'));
+    }
+
+    public function test_a_negative_repair_tunable_is_rejected_and_leaves_every_setting_alone(): void
+    {
+        $response = app(AdminSiteController::class)->edit(Request::create('/admin/site-edit', 'POST', [
+            'action' => 'submit',
+            'repair_max_stat_probes' => '-5',
+            'descriptive_title_rename' => '0',
+        ]));
+
+        $this->assertTrue($response->isRedirect());
+        $this->assertSame('20', $this->settingValue('repair_max_stat_probes'));
+        $this->assertSame(
+            '1',
+            $this->settingValue('descriptive_title_rename'),
+            'A rejected form must not half-save the fields that were valid.'
+        );
+    }
+
+    public function test_repair_and_rescan_settings_are_seeded_and_backfilled_for_existing_installs(): void
+    {
+        (new SettingsTableSeeder)->run();
+        $this->assertSame('72', $this->settingValue('repair_retry_after_hours'));
+        $this->assertSame('500000', $this->settingValue('rescan_max_articles_per_release'));
+
+        DB::table('settings')->whereIn('name', ['repair_limit', 'rescan_limit'])->delete();
+        $migration = require database_path('migrations/2026_08_21_120200_add_repair_and_rescan_settings.php');
+        $migration->up();
+        $this->assertSame('250', $this->settingValue('repair_limit'));
+        $this->assertSame('100', $this->settingValue('rescan_limit'));
+
+        // Re-running must not stamp an operator's value back to the default.
+        DB::table('settings')->where('name', 'repair_limit')->update(['value' => '10']);
+        $migration->up();
+        $this->assertSame('10', $this->settingValue('repair_limit'));
+
+        $migration->down();
+        $this->assertNull($this->settingValue('repair_limit'));
+    }
+
     private function settingValue(string $name): ?string
     {
         $value = DB::table('settings')->where('name', $name)->value('value');
@@ -333,6 +405,15 @@ class AdminSiteControllerTest extends TestCase
             ['name' => 'maxsizetoprocessnfo', 'value' => '107374182400'],
             ['name' => 'discard_executable_extensions', 'value' => 'dll|exe|msi|scr|com|bat|cmd|pif'],
             ['name' => 'descriptive_title_rename', 'value' => '1'],
+            ['name' => 'repair_retry_after_hours', 'value' => '72'],
+            ['name' => 'repair_floor_completion', 'value' => '10'],
+            ['name' => 'repair_stat_sample_per_file', 'value' => '2'],
+            ['name' => 'repair_max_stat_probes', 'value' => '20'],
+            ['name' => 'repair_limit', 'value' => '250'],
+            ['name' => 'rescan_max_articles_per_release', 'value' => '500000'],
+            ['name' => 'rescan_max_articles_per_run', 'value' => '5000000'],
+            ['name' => 'rescan_window_minutes', 'value' => '30'],
+            ['name' => 'rescan_limit', 'value' => '100'],
         ], ['name'], ['value']);
     }
 
