@@ -57,6 +57,9 @@ class AudioReleaseProcessorTest extends TestCase
     private array $downloads = [];
 
     /** @var list<int> */
+    private array $timeoutCountsAtDownload = [];
+
+    /** @var list<int> */
     private array $synchronized = [];
 
     /** @var list<list<string>> */
@@ -89,6 +92,7 @@ class AudioReleaseProcessorTest extends TestCase
             $table->boolean('isrenamed')->default(false);
             $table->integer('haspreview')->default(-1);
             $table->integer('passwordstatus')->default(-1);
+            $table->unsignedInteger('pp_timeout_count')->default(0);
             $table->timestamp('additional_pp_claimed_at')->nullable();
             $table->string('additional_pp_claim_token', 64)->nullable();
         });
@@ -141,6 +145,7 @@ class AudioReleaseProcessorTest extends TestCase
         $this->tmpPath = $this->makeTempDirectory('nntmux-audio-processor').'/';
         $this->savePath = $this->makeTempDirectory('nntmux-audio-store').'/';
         $this->downloads = [];
+        $this->timeoutCountsAtDownload = [];
         $this->synchronized = [];
         $this->encoderCommands = [];
     }
@@ -298,6 +303,47 @@ class AudioReleaseProcessorTest extends TestCase
         $this->assertSame(0, (int) DB::table('releases')->where('id', $release->id)->value('haspreview'));
     }
 
+    public function test_an_archive_source_bumps_pp_timeout_count_before_fetching(): void
+    {
+        $release = $this->makeRelease();
+        $processor = $this->makeProcessor(
+            $this->taggedContainer(),
+            expectsPreview: false,
+            expectsExtraXml: false,
+            nzbContents: [['title' => 'Album.part01.rar', 'segments' => ['<rar-1>']]],
+            maxArchiveBytes: 1,
+        );
+
+        $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame([1], $this->timeoutCountsAtDownload);
+        $this->assertSame(1, (int) DB::table('releases')->where('id', $release->id)->value('pp_timeout_count'));
+    }
+
+    public function test_an_archive_fetch_that_hits_the_ceiling_settles_the_release(): void
+    {
+        $release = $this->makeRelease([
+            'additional_pp_claimed_at' => now(),
+            'additional_pp_claim_token' => 'audio-worker',
+        ]);
+        $processor = $this->makeProcessor(
+            $this->taggedContainer(),
+            expectsPreview: false,
+            expectsExtraXml: false,
+            nzbContents: [['title' => 'Album.part01.rar', 'segments' => ['<rar-1>']]],
+            maxArchiveBytes: 1,
+        );
+
+        $result = $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(ProcessingOutcome::NoUsefulArtifacts, $result->outcome);
+        $this->assertStringContainsString('fetch ceiling', $result->reason);
+        $row = DB::table('releases')->where('id', $release->id)->first();
+        $this->assertSame(0, (int) $row->haspreview);
+        $this->assertNull($row->additional_pp_claimed_at);
+        $this->assertNull($row->additional_pp_claim_token);
+    }
+
     /**
      * @param  array<string, mixed>  $attributes
      */
@@ -322,8 +368,9 @@ class AudioReleaseProcessorTest extends TestCase
         bool $expectsExtraXml = true,
         bool $previewsEnabled = true,
         ?array $nzbContents = null,
+        ?int $maxArchiveBytes = null,
     ): AudioReleaseProcessor {
-        $config = $this->config();
+        $config = $this->config($maxArchiveBytes);
 
         $nzbParser = Mockery::mock(NzbContentParser::class);
         $nzbParser->shouldReceive('parseNzb')->andReturn([
@@ -338,6 +385,9 @@ class AudioReleaseProcessorTest extends TestCase
         $downloadService->shouldReceive('download')->andReturnUsing(
             function (mixed $kind, array $messageIds): array {
                 $this->downloads[] = array_values($messageIds);
+                $this->timeoutCountsAtDownload[] = (int) DB::table('releases')
+                    ->where('id', 1)
+                    ->value('pp_timeout_count');
 
                 return ['success' => true, 'data' => str_repeat('x', 2048), 'groupUnavailable' => false, 'error' => null];
             }
@@ -427,7 +477,7 @@ class AudioReleaseProcessorTest extends TestCase
         );
     }
 
-    private function config(): AudioProcessingConfiguration
+    private function config(?int $maxArchiveBytes = null): AudioProcessingConfiguration
     {
         $reflection = new ReflectionClass(AudioProcessingConfiguration::class);
         /** @var AudioProcessingConfiguration $config */
@@ -436,6 +486,7 @@ class AudioReleaseProcessorTest extends TestCase
         foreach ([
             'segmentsToDownload' => 12,
             'maxRarParts' => 6,
+            'maxArchiveBytes' => $maxArchiveBytes,
             'previewSeconds' => 30,
             'previewStartSeconds' => 10,
             'spectrogram' => true,

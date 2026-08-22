@@ -79,6 +79,17 @@
                         </div>
 
                         <div>
+                            <label for="audio_max_archive_mb" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                <i class="fas fa-hard-drive mr-1"></i>Audio Archive Fetch Ceiling
+                            </label>
+                            <div class="flex gap-2">
+                                <x-input class="flex-1" id="audio_max_archive_mb" name="audio_max_archive_mb" value="{{ $site['audio_max_archive_mb'] ?? '1024' }}" />
+                                <span class="px-3 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md">MB</span>
+                            </div>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Downloaded archive bytes allowed while looking for one complete track. Set to 0 for unlimited. Default: 1024 MB.</p>
+                        </div>
+
+                        <div>
                             <label for="audio_preview_seconds" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                                 <i class="fas fa-stopwatch mr-1"></i>Audio Preview Length
                             </label>

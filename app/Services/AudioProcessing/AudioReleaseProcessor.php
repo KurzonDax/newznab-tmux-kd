@@ -12,6 +12,7 @@ use App\Services\AdditionalProcessing\NzbContentParser;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AudioProcessing\DTO\AudioProcessingResult;
+use App\Services\AudioProcessing\Enums\AudioSourceKind;
 use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\ReleaseExtraService;
 use App\Services\Releases\PreviewGenerationPolicy;
@@ -59,6 +60,10 @@ final class AudioReleaseProcessor
         $source = $this->sourceSelector->select($contents);
         if ($source === null) {
             return $this->finish($release, false, $tagsRecorded, ProcessingOutcome::NoUsefulArtifacts, 'The NZB holds no audio file or archive.');
+        }
+
+        if ($source->kind === AudioSourceKind::Archive) {
+            $this->bumpArchiveTimeoutGuard($release);
         }
 
         $fetched = $this->fetcher->fetch(
@@ -116,6 +121,21 @@ final class AudioReleaseProcessor
             return $this->finish($release, true, $tagsRecorded, ProcessingOutcome::Completed);
         } finally {
             File::delete($fetched->path);
+        }
+    }
+
+    private function bumpArchiveTimeoutGuard(Release $release): void
+    {
+        $newCount = (int) ($release->pp_timeout_count ?? 0) + 1;
+        Release::query()->where('id', $release->id)->increment('pp_timeout_count');
+        $release->pp_timeout_count = $newCount;
+
+        $maximum = ReleaseClaimant::maxPpTimeoutCount();
+        if ($newCount >= $maximum) {
+            Log::warning(
+                'Release '.$release->id.' reached the audio archive crash guard '
+                .'('.$newCount.'/'.$maximum.'); it will be excluded if this worker exits before settling.'
+            );
         }
     }
 

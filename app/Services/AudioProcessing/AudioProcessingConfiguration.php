@@ -40,6 +40,9 @@ final readonly class AudioProcessingConfiguration
     /** Archive parts fetched before giving up on a complete audio file. */
     public int $maxRarParts;
 
+    /** Bytes fetched into one archive before giving up; null means unlimited. */
+    public ?int $maxArchiveBytes;
+
     public int $previewSeconds;
 
     public int $previewStartSeconds;
@@ -65,6 +68,9 @@ final readonly class AudioProcessingConfiguration
         $this->debugMode = (bool) config('app.debug');
         $this->segmentsToDownload = max(1, (int) (Settings::settingValue('audio_segments_to_download') ?: 12));
         $this->maxRarParts = max(1, (int) (Settings::settingValue('audio_max_rar_parts') ?: 6));
+        $maxArchiveMb = Settings::settingValue('audio_max_archive_mb');
+        $maxArchiveMb = ($maxArchiveMb === '' || $maxArchiveMb === null) ? 1024 : max(0, (int) $maxArchiveMb);
+        $this->maxArchiveBytes = $maxArchiveMb === 0 ? null : $maxArchiveMb * 1024 * 1024;
         $this->previewSeconds = max(1, (int) (Settings::settingValue('audio_preview_seconds') ?: 30));
         // An explicit '0' is a legitimate "clip from the very start".
         $this->previewStartSeconds = max(0, (int) Settings::settingValue('audio_preview_start_seconds'));

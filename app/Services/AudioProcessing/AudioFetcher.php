@@ -35,6 +35,8 @@ use Mhor\MediaInfo\Container\MediaInfoContainer;
  */
 final class AudioFetcher
 {
+    private const int ARCHIVE_FETCH_CHUNK_SEGMENTS = 64;
+
     public function __construct(
         private readonly AudioProcessingConfiguration $config,
         private readonly UsenetDownloadService $downloadService,
@@ -124,50 +126,76 @@ final class AudioFetcher
         string $groupName,
         Closure $onProbe,
     ): AudioFetchResult {
-        $accumulated = '';
+        $archivePath = $tmpPath.'audio-archive.rar';
+        $archiveBytes = 0;
         $volumes = array_slice($source->parts, 0, $this->config->maxRarParts);
 
-        foreach ($volumes as $volume) {
-            $data = $this->download($volume, $groupName, $release, $source->title);
-            if ($data === null) {
-                continue;
+        File::put($archivePath, '');
+
+        try {
+            foreach ($volumes as $volume) {
+                foreach (array_chunk($volume, self::ARCHIVE_FETCH_CHUNK_SEGMENTS) as $chunk) {
+                    $data = $this->download($chunk, $groupName, $release, $source->title);
+                    if ($data === null) {
+                        continue;
+                    }
+
+                    $chunkBytes = strlen($data);
+                    if ($this->config->maxArchiveBytes !== null
+                        && $archiveBytes + $chunkBytes > $this->config->maxArchiveBytes
+                    ) {
+                        $ceilingMb = max(1, (int) ceil($this->config->maxArchiveBytes / 1024 / 1024));
+
+                        return AudioFetchResult::failed(
+                            'The archive exceeded the '.$ceilingMb.' MB fetch ceiling before a whole audio file was found.'
+                        );
+                    }
+
+                    File::append($archivePath, $data);
+                    $archiveBytes += $chunkBytes;
+                    $listing = $this->archiveService->listArchiveContentsAtPath($archivePath);
+
+                    if ($listing['hasPassword']) {
+                        return AudioFetchResult::failed('The archive is password protected.');
+                    }
+
+                    $entry = $this->firstAudioEntry($listing['files']);
+                    if ($entry === null) {
+                        continue;
+                    }
+
+                    $name = (string) $entry['name'];
+                    $declaredSize = (int) ($entry['size'] ?? 0);
+                    $path = $this->archiveService->extractSpecificFileToPath($archivePath, $name, $tmpPath);
+
+                    if ($path === null
+                        || ! File::isFile($path)
+                        || $declaredSize <= 0
+                        || File::size($path) < $declaredSize
+                    ) {
+                        if ($path !== null) {
+                            File::delete($path);
+                        }
+
+                        continue;
+                    }
+
+                    $extension = strtolower(pathinfo($name, PATHINFO_EXTENSION)) ?: 'audio';
+                    $probe = $this->probe($path, basename($name), $extension, $onProbe);
+                    if ($probe instanceof AudioFetchResult) {
+                        File::delete($path);
+
+                        return $probe;
+                    }
+
+                    return AudioFetchResult::fetched($path, $extension, $probe);
+                }
             }
 
-            $accumulated .= $data;
-            $listing = $this->archiveService->listArchiveContents($accumulated);
-
-            if ($listing['hasPassword']) {
-                return AudioFetchResult::failed('The archive is password protected.');
-            }
-
-            $entry = $this->firstAudioEntry($listing['files']);
-            if ($entry === null) {
-                continue;
-            }
-
-            $name = (string) $entry['name'];
-            $declaredSize = (int) ($entry['size'] ?? 0);
-            $extracted = $this->archiveService->extractSpecificFile($accumulated, $name, $tmpPath);
-
-            if ($extracted === null || $declaredSize <= 0 || strlen($extracted) < $declaredSize) {
-                continue;
-            }
-
-            $extension = strtolower(pathinfo($name, PATHINFO_EXTENSION)) ?: 'audio';
-            $path = $tmpPath.'audio.'.$extension;
-            File::put($path, $extracted);
-
-            $probe = $this->probe($path, basename($name), $extension, $onProbe);
-            if ($probe instanceof AudioFetchResult) {
-                File::delete($path);
-
-                return $probe;
-            }
-
-            return AudioFetchResult::fetched($path, $extension, $probe);
+            return AudioFetchResult::failed('No complete audio file was found within '.count($volumes).' archive volume(s).');
+        } finally {
+            File::delete($archivePath);
         }
-
-        return AudioFetchResult::failed('No complete audio file was found within '.count($volumes).' archive volume(s).');
     }
 
     /**
