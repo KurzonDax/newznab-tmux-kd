@@ -13,6 +13,7 @@ use App\Models\RootCategory;
 use App\Models\Settings;
 use App\Models\User;
 use App\Services\BlacklistSweepService;
+use App\Services\Releases\ReleaseBrowseService;
 use App\View\Composers\GlobalDataComposer;
 use DOMDocument;
 use DOMElement;
@@ -440,6 +441,34 @@ final class PosterIdentityControllerTest extends TestCase
         );
     }
 
+    public function test_poster_identity_rows_include_spectrogram_availability_without_per_release_queries(): void
+    {
+        $identity = 'audio-poster@example.test';
+        $withSpectrogram = $this->release('Audio with spectrogram', $identity, '2026-08-03 12:00:00');
+        $withoutSpectrogram = $this->release('Audio without spectrogram', $identity, '2026-08-02 12:00:00');
+        DB::table('release_audio_tags')->insert([
+            ['releases_id' => $withSpectrogram->id, 'has_spectrogram' => 1],
+            ['releases_id' => $withoutSpectrogram->id, 'has_spectrogram' => 0],
+        ]);
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $rows = app(ReleaseBrowseService::class)->getPosterIdentityReleases($identity, 20);
+        $queries = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        $this->assertSame([true, false], $rows->map(
+            static fn (Release $release): bool => (bool) $release->has_spectrogram,
+        )->all());
+
+        $audioTagQueries = array_filter(
+            $queries,
+            static fn (array $query): bool => str_contains(strtolower($query['query']), 'release_audio_tags'),
+        );
+        $this->assertCount(1, $audioTagQueries);
+    }
+
     private function verifiedUser(string $roleName = 'User'): User
     {
         $role = Role::query()->firstOrCreate(['name' => $roleName, 'guard_name' => 'web']);
@@ -645,6 +674,10 @@ final class PosterIdentityControllerTest extends TestCase
             $table->boolean('jpgstatus')->default(false);
             $table->boolean('nfostatus')->default(false);
             $table->index(['fromname', 'postdate'], 'ix_releases_fromname_postdate');
+        });
+        Schema::create('release_audio_tags', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id')->primary();
+            $table->unsignedTinyInteger('has_spectrogram')->default(0);
         });
         Schema::create('binaryblacklist', function (Blueprint $table): void {
             $table->increments('id');

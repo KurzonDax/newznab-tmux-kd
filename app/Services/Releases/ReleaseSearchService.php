@@ -38,7 +38,9 @@ class ReleaseSearchService
 
     public const PASSWD_RAR = 1;
 
-    public function __construct() {}
+    public function __construct(
+        private readonly ReleasePreviewDataLoader $previewDataLoader = new ReleasePreviewDataLoader,
+    ) {}
 
     /**
      * Function for searching on the site (by subject, searchname or advanced).
@@ -130,7 +132,7 @@ class ReleaseSearchService
                 $cacheKey = md5($this->getCacheVersion().$sql);
                 $cachedReleases = Cache::get($cacheKey);
                 if ($cachedReleases !== null) {
-                    return $cachedReleases;
+                    return $this->withPreviewData($cachedReleases);
                 }
 
                 $releases = Release::fromQuery($sql);
@@ -141,7 +143,7 @@ class ReleaseSearchService
                 $expiresAt = now()->addMinutes(config('nntmux.cache_expiry_medium'));
                 Cache::put($cacheKey, $releases, $expiresAt);
 
-                return $releases;
+                return $this->withPreviewData($releases);
             }
 
             if (config('nntmux.mysql_search_fallback', false) !== true) {
@@ -193,7 +195,7 @@ class ReleaseSearchService
         $cacheKey = md5($this->getCacheVersion().$sql);
         $releases = Cache::get($cacheKey);
         if ($releases !== null) {
-            return $releases;
+            return $this->withPreviewData($releases);
         }
 
         // Execute query
@@ -208,7 +210,7 @@ class ReleaseSearchService
         $expiresAt = now()->addMinutes(config('nntmux.cache_expiry_medium'));
         Cache::put($cacheKey, $releases, $expiresAt);
 
-        return $releases;
+        return $this->withPreviewData($releases);
     }
 
     /**
@@ -1918,6 +1920,15 @@ class ReleaseSearchService
 
         // Don't return '1=1' as it's not needed
         return ($catSearch === '1=1') ? '' : $catSearch;
+    }
+
+    private function withPreviewData(mixed $releases): mixed
+    {
+        if (is_iterable($releases)) {
+            $this->previewDataLoader->load($releases);
+        }
+
+        return $releases;
     }
 
     /**

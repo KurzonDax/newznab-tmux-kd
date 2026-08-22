@@ -1,6 +1,9 @@
             <!-- Sample/Preview Images -->
             @php
-                $hasPreviewImage = isset($release->haspreview) && $release->haspreview == 1;
+                $hasSpectrogram = (bool) ($release->audioTags?->has_spectrogram ?? false);
+                $isAudioRelease = \App\Models\Category::rootCategoryFor((int) ($release->categories_id ?? 0)) === \App\Models\Category::MUSIC_ROOT
+                    || $hasSpectrogram;
+                $hasPreviewImage = isset($release->haspreview) && $release->haspreview == 1 && ! $isAudioRelease;
                 $hasSampleImage = isset($release->jpgstatus) && $release->jpgstatus == 1;
                 $previewImageUrl = $hasPreviewImage
                     ? getImageAssetUrl('preview', $release->guid . '_thumb', asset('assets/images/no-cover.png'))

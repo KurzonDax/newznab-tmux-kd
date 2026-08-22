@@ -28,7 +28,9 @@ class ReleaseBrowseService
 
     public const PASSWD_RAR = 1; // Definitely passworded.
 
-    public function __construct() {}
+    public function __construct(
+        private readonly ReleasePreviewDataLoader $previewDataLoader = new ReleasePreviewDataLoader,
+    ) {}
 
     /**
      * Used for Browse results on the web frontend with optional search term filtering via search index.
@@ -40,7 +42,12 @@ class ReleaseBrowseService
      */
     public function getBrowseRange(mixed $page, mixed $cat, mixed $start, mixed $num, mixed $orderBy, int $maxAge = -1, array $excludedCats = [], int|string $groupName = -1, int $minSize = 0, ?string $searchTerm = null): mixed
     {
-        return $this->executeBrowseQuery('browse', $page, $cat, $start, $num, $orderBy, $maxAge, $excludedCats, $groupName, $minSize, $searchTerm);
+        $releases = $this->executeBrowseQuery('browse', $page, $cat, $start, $num, $orderBy, $maxAge, $excludedCats, $groupName, $minSize, $searchTerm);
+        if (is_iterable($releases)) {
+            $this->previewDataLoader->load($releases);
+        }
+
+        return $releases;
     }
 
     /**
@@ -75,7 +82,7 @@ class ReleaseBrowseService
             ? "cp.title || ' > ' || c.title"
             : "CONCAT(cp.title, ' > ', c.title)";
 
-        return Release::query()
+        $releases = Release::query()
             ->from('releases as r')
             ->select([
                 'r.id',
@@ -112,6 +119,10 @@ class ReleaseBrowseService
             ->orderBy($orderColumn, $orderDirection)
             ->paginate($perPage)
             ->withQueryString();
+
+        $this->previewDataLoader->load($releases);
+
+        return $releases;
     }
 
     /**
@@ -223,8 +234,8 @@ class ReleaseBrowseService
         } else {
             // Browse only needs columns used in browse/index.blade.php and search/index.blade.php
             $outerSelect = "SELECT r.id, r.searchname, r.guid, r.postdate, r.categories_id, r.size, r.totalpart, r.fromname, r.grabs, r.comments, r.adddate, r.videos_id, r.haspreview, r.jpgstatus, r.nfostatus, r.group_name,
-				CONCAT(cp.title, ' > ', c.title) AS category_name,
-				MAX(df.failed) AS failed_count,
+					CONCAT(cp.title, ' > ', c.title) AS category_name,
+					MAX(df.failed) AS failed_count,
         COUNT(DISTINCT rr.id) AS total_report_count,
 				COUNT(DISTINCT CASE WHEN rr.status IN ('pending', 'reviewed', 'resolved') THEN rr.id ELSE NULL END) AS report_count,
 				GROUP_CONCAT(DISTINCT CASE WHEN rr.status IN ('pending', 'reviewed', 'resolved') THEN rr.reason ELSE NULL END SEPARATOR ', ') AS report_reasons,
@@ -237,8 +248,8 @@ class ReleaseBrowseService
 				re.releases_id AS reid,
 				m.imdbid";
             $outerJoins = 'LEFT JOIN categories c ON c.id = r.categories_id
-			LEFT JOIN root_categories cp ON cp.id = c.root_categories_id
-			LEFT OUTER JOIN movieinfo m ON m.id = r.movieinfo_id
+				LEFT JOIN root_categories cp ON cp.id = c.root_categories_id
+				LEFT OUTER JOIN movieinfo m ON m.id = r.movieinfo_id
 			LEFT OUTER JOIN video_data re ON re.releases_id = r.id
 			LEFT OUTER JOIN release_nfos rn ON rn.releases_id = r.id
       LEFT OUTER JOIN dnzb_failures df ON df.release_id = r.id
