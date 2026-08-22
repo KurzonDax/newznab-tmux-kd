@@ -30,6 +30,7 @@ export function adminGroups() {
         editBackfill: '',
         editRouteObfuscatedNames: '',
         editObfuscatedDefaultRootCategoryId: '',
+        editForcedRootCategoryId: '',
         editSelectedHasMissingObfuscatedRoot: false,
         editBackfillTargetError: '',
         editMinFilesError: '',
@@ -204,6 +205,7 @@ export function adminGroups() {
                 backfill: cb.dataset.backfill,
                 routeObfuscatedNames: cb.dataset.routeObfuscatedNames,
                 obfuscatedDefaultRootCategoryId: cb.dataset.obfuscatedDefaultRootCategoryId,
+                forcedRootCategoryId: cb.dataset.forcedRootCategoryId,
             }));
         },
 
@@ -266,6 +268,7 @@ export function adminGroups() {
             this.editBackfill = this._uniformValue(selectedRows, 'backfill');
             this.editRouteObfuscatedNames = this._uniformValue(selectedRows, 'routeObfuscatedNames');
             this.editObfuscatedDefaultRootCategoryId = this._uniformValue(selectedRows, 'obfuscatedDefaultRootCategoryId');
+            this.editForcedRootCategoryId = this._uniformValue(selectedRows, 'forcedRootCategoryId');
             this.editSelectedHasMissingObfuscatedRoot = selectedRows.some(row => ! row.obfuscatedDefaultRootCategoryId);
             this._editSelectedOriginal = this._editSelectedValues();
             this._editSelectedOriginalNormalized = this._normalizedEditSelectedValues(this._editSelectedOriginal);
@@ -345,6 +348,11 @@ export function adminGroups() {
                     ? null
                     : Number(current.obfuscatedDefaultRootCategoryId);
             }
+            if (currentNormalized.forcedRootCategoryId !== originalNormalized.forcedRootCategoryId && current.forcedRootCategoryId !== '') {
+                changes.forced_root_categories_id = current.forcedRootCategoryId === 'null'
+                    ? null
+                    : Number(current.forcedRootCategoryId);
+            }
 
             return changes;
         },
@@ -362,13 +370,15 @@ export function adminGroups() {
                 backfill: 'Backfill',
                 route_obfuscated_names: 'Route Obfuscated Names',
                 obfuscated_default_root_categories_id: 'Default Root Category',
+                forced_root_categories_id: 'Forced Root Category',
             };
 
             this.editConfirmationChanges = Object.entries(changes).map(([key, value]) => {
                 let display = value;
                 if (key === 'active' || key === 'backfill') { display = value === 1 ? 'Enabled' : 'Disabled'; }
                 if (key === 'route_obfuscated_names') { display = value === 1 ? 'Enabled' : 'Disabled'; }
-                if (key === 'obfuscated_default_root_categories_id') { display = value === null ? 'Cleared' : this._obfuscatedRootLabel(value); }
+                if (key === 'obfuscated_default_root_categories_id') { display = value === null ? 'Cleared' : this._rootCategoryLabel('edit-selected-obfuscated-root', value); }
+                if (key === 'forced_root_categories_id') { display = value === null ? 'Cleared' : this._rootCategoryLabel('edit-selected-forced-root', value); }
                 if (key === 'minsizetoformrelease') {
                     const parsed = parseGroupFileSize(value);
                     display = `${value} (${parsed.bytes.toLocaleString()} bytes)`;
@@ -416,6 +426,7 @@ export function adminGroups() {
                 backfill: String(this.editBackfill),
                 routeObfuscatedNames: String(this.editRouteObfuscatedNames),
                 obfuscatedDefaultRootCategoryId: String(this.editObfuscatedDefaultRootCategoryId),
+                forcedRootCategoryId: String(this.editForcedRootCategoryId),
             };
         },
 
@@ -430,11 +441,12 @@ export function adminGroups() {
                 backfill: values.backfill,
                 routeObfuscatedNames: values.routeObfuscatedNames,
                 obfuscatedDefaultRootCategoryId: values.obfuscatedDefaultRootCategoryId,
+                forcedRootCategoryId: values.forcedRootCategoryId,
             };
         },
 
-        _obfuscatedRootLabel(value) {
-            const option = this._root.querySelector('#edit-selected-obfuscated-root option[value="' + value + '"]');
+        _rootCategoryLabel(selectId, value) {
+            const option = this._root.querySelector('#' + selectId + ' option[value="' + value + '"]');
 
             return option?.textContent?.trim() || String(value);
         },
