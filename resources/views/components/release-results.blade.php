@@ -33,6 +33,20 @@
                     $responseCount = (int) ($result->report_response_count ?? 0);
                     $sizeLabel = $result->size_formatted ?? number_format(($result->size ?? 0) / 1073741824, 2) . ' GB';
                     $dateValue = $result->{$activeDateField} ?? $result->adddate ?? $result->postdate ?? null;
+                    $loadedAudioTags = $result instanceof \Illuminate\Database\Eloquent\Model && $result->relationLoaded('audioTags')
+                        ? $result->getRelation('audioTags')
+                        : null;
+                    $hasSpectrogram = (bool) ($result->has_spectrogram ?? $loadedAudioTags?->has_spectrogram ?? false);
+                    $isAudioRelease = \App\Models\Category::rootCategoryFor((int) ($result->categories_id ?? 0)) === \App\Models\Category::MUSIC_ROOT
+                        || $hasSpectrogram;
+                    $hasGeneratedPreview = isset($result->haspreview) && $result->haspreview == 1;
+                    $previewImageUrl = $hasGeneratedPreview
+                        ? ($isAudioRelease
+                            ? getImageAssetUrl('audiosample', $result->guid . '_spectrum', null, [], ['png'])
+                            : getImageAssetUrl('preview', $result->guid . '_thumb'))
+                        : null;
+                    $previewImageTitle = $isAudioRelease ? 'Spectrogram' : 'Preview Image';
+                    $showPreviewBadge = $hasGeneratedPreview && (! $isAudioRelease || ($hasSpectrogram && $previewImageUrl !== null));
                 @endphp
                 <tr class="hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700 transition">
                     <td class="px-3 py-4 whitespace-nowrap">
@@ -72,11 +86,12 @@
                                             <i class="fas fa-exclamation-triangle mr-1"></i> Failed ({{ $result->failed_count }})
                                         </span>
                                     @endif
-                                    @if(isset($result->haspreview) && $result->haspreview == 1)
+                                    @if($showPreviewBadge)
                                         <button type="button"
                                                 class="preview-badge inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 hover:bg-purple-200 dark:hover:bg-purple-800 transition cursor-pointer"
                                                 data-guid="{{ $result->guid }}"
-                                                data-image-url="{{ getImageAssetUrl('preview', $result->guid . '_thumb') }}"
+                                                data-image-url="{{ $previewImageUrl }}"
+                                                data-image-title="{{ $previewImageTitle }}"
                                                 title="View preview image">
                                             <i class="fas fa-image mr-1"></i> Preview
                                         </button>
