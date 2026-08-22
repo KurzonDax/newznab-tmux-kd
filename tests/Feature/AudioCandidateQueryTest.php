@@ -11,6 +11,7 @@ use App\Services\AudioProcessing\AudioCandidateQuery;
 use App\Services\AudioProcessing\AudioRouting;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use ReflectionProperty;
 use Tests\TestCase;
@@ -52,6 +53,7 @@ class AudioCandidateQueryTest extends TestCase
             $table->unsignedInteger('categories_id');
             $table->unsignedInteger('groups_id')->default(0);
             $table->unsignedBigInteger('size');
+            $table->unsignedInteger('pp_timeout_count')->default(0);
             $table->dateTime('postdate')->nullable();
             $table->timestamp('additional_pp_claimed_at')->nullable();
             $table->string('additional_pp_claim_token', 64)->nullable();
@@ -66,6 +68,7 @@ class AudioCandidateQueryTest extends TestCase
             ['name' => 'minsizetopostprocess', 'value' => '314572800'],
             ['name' => 'maxsizetopostprocess', 'value' => '107374182400'],
             ['name' => 'releaseprocessingtimeout', 'value' => '120'],
+            ['name' => 'maxpptimeoutcount', 'value' => '3'],
         ]);
 
         DB::table('usenet_groups')->insert([
@@ -137,6 +140,27 @@ class AudioCandidateQueryTest extends TestCase
         $this->assertSame([], $this->audioIds());
     }
 
+    public function test_a_release_past_the_timeout_threshold_is_not_selected(): void
+    {
+        Log::spy();
+        $this->seedRelease(1, Category::MUSIC_MP3, groupId: 1, ppTimeoutCount: 3);
+
+        $this->assertSame([], $this->audioIds());
+        Log::shouldHaveReceived('warning')
+            ->once()
+            ->with('Release 1 excluded from audio post-processing after 3 archive fetch attempt(s) (limit 3).');
+    }
+
+    public function test_a_threshold_release_declined_to_video_is_still_selected_by_the_video_path(): void
+    {
+        $this->seedRelease(1, Category::MUSIC_MP3, groupId: 1, ppTimeoutCount: 3);
+
+        AudioCandidateQuery::declineToVideoPath(1);
+
+        $this->assertSame([], $this->audioIds());
+        $this->assertSame([1], $this->videoIds());
+    }
+
     public function test_a_declined_release_moves_to_the_video_path_and_never_returns(): void
     {
         $this->seedRelease(1, Category::MUSIC_MP3, groupId: 1);
@@ -162,8 +186,13 @@ class AudioCandidateQueryTest extends TestCase
         $this->assertSame([], $this->videoIds(), 'A claimed music release never leaks onto the video path.');
     }
 
-    private function seedRelease(int $id, int $categoryId, int $groupId, int $size = 1073741824): void
-    {
+    private function seedRelease(
+        int $id,
+        int $categoryId,
+        int $groupId,
+        int $size = 1073741824,
+        int $ppTimeoutCount = 0,
+    ): void {
         DB::table('releases')->insert([
             'id' => $id,
             'guid' => 'guid-'.$id,
@@ -174,6 +203,7 @@ class AudioCandidateQueryTest extends TestCase
             'categories_id' => $categoryId,
             'groups_id' => $groupId,
             'size' => $size,
+            'pp_timeout_count' => $ppTimeoutCount,
             'postdate' => '2026-01-01 00:00:00',
         ]);
     }

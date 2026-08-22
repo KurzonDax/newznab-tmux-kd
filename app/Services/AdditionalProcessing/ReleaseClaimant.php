@@ -81,6 +81,11 @@ final class ReleaseClaimant
         return $query;
     }
 
+    public static function maxPpTimeoutCount(): int
+    {
+        return max(1, (int) (Settings::settingValue('maxpptimeoutcount') ?: 3));
+    }
+
     /**
      * Exclude releases another worker is currently holding.
      *

@@ -7,6 +7,7 @@ namespace App\Services\AdditionalProcessing;
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
 use App\Services\Releases\ReleaseBrowseService;
+use Closure;
 use dariusiii\rarinfo\ArchiveInfo;
 use dariusiii\rarinfo\Par2Info;
 use Illuminate\Support\Facades\File;
@@ -22,13 +23,18 @@ class ArchiveExtractionService
 
     private Par2Info $par2Info;
 
+    /** @var Closure(string): string */
+    private readonly Closure $commandRunner;
+
     public function __construct(
         private readonly ProcessingConfiguration $config,
         ?ArchiveInfo $archiveInfo = null,
-        ?Par2Info $par2Info = null
+        ?Par2Info $par2Info = null,
+        ?Closure $commandRunner = null,
     ) {
         $this->archiveInfo = $archiveInfo ?? new ArchiveInfo;
         $this->par2Info = $par2Info ?? new Par2Info;
+        $this->commandRunner = $commandRunner ?? static fn (string $command): string => runCmd($command);
 
         // Configure external clients for ArchiveInfo
         if ($this->config->unrarPath) {
@@ -143,11 +149,33 @@ class ArchiveExtractionService
      */
     public function listArchiveContents(string $compressedData): array
     {
-        $empty = ['files' => [], 'hasPassword' => false];
-
         if (! $this->archiveInfo->setData($compressedData, true) || $this->archiveInfo->error !== '') {
-            return $empty;
+            return ['files' => [], 'hasPassword' => false];
         }
+
+        return $this->loadedArchiveContents();
+    }
+
+    /**
+     * Inspect an archive directly from disk without copying it into a PHP string.
+     *
+     * @return array{files: list<array<string, mixed>>, hasPassword: bool}
+     */
+    public function listArchiveContentsAtPath(string $archivePath): array
+    {
+        if (! $this->archiveInfo->open($archivePath, true) || $this->archiveInfo->error !== '') {
+            return ['files' => [], 'hasPassword' => false];
+        }
+
+        return $this->loadedArchiveContents();
+    }
+
+    /**
+     * @return array{files: list<array<string, mixed>>, hasPassword: bool}
+     */
+    private function loadedArchiveContents(): array
+    {
+        $empty = ['files' => [], 'hasPassword' => false];
 
         try {
             $summary = $this->archiveInfo->getSummary(true);
@@ -370,6 +398,102 @@ class ArchiveExtractionService
     public function extractSpecificFile(string $compressedData, string $filename, string $tmpPath): ?string
     {
         return $this->extractSpecificFiles($compressedData, [$filename], $tmpPath)[$filename] ?? null;
+    }
+
+    /**
+     * Extract one exact archive entry directly from an on-disk archive.
+     *
+     * The ArchiveInfo fallback still materializes one extracted file in memory;
+     * operators should configure unrar/unzip for very large compressed entries.
+     *
+     * @return string|null Path of the extracted file, or null on failure.
+     */
+    public function extractSpecificFileToPath(
+        string $archivePath,
+        string $filename,
+        string $destinationDir,
+    ): ?string {
+        if ($this->config->unrarPath) {
+            $extractedPath = $this->extractFileAtPathViaExternalTool(
+                $filename,
+                $destinationDir,
+                fn (string $extractDir): string => $this->config->getKillString()
+                    .$this->config->unrarPath.'" e -y -c- -inul -p- "'.$archivePath.'" "'.$filename.'" "'.$extractDir.'"',
+            );
+            if ($extractedPath !== null) {
+                return $extractedPath;
+            }
+        }
+
+        if ($this->config->unzipPath) {
+            $extractedPath = $this->extractFileAtPathViaExternalTool(
+                $filename,
+                $destinationDir,
+                fn (string $extractDir): string => $this->config->unzipPath
+                    .' -j "'.$archivePath.'" "'.$filename.'" -d "'.$extractDir.'"',
+            );
+            if ($extractedPath !== null) {
+                return $extractedPath;
+            }
+        }
+
+        if (! $this->archiveInfo->open($archivePath, true)) {
+            return null;
+        }
+
+        try {
+            $extracted = $this->archiveInfo->getFileData($filename);
+        } catch (\Throwable $e) {
+            if ($this->config->debugMode) {
+                Log::debug('ArchiveInfo getFileData failed: '.$e->getMessage());
+            }
+
+            return null;
+        }
+
+        if (! is_string($extracted) || $extracted === '') {
+            return null;
+        }
+
+        File::ensureDirectoryExists($destinationDir);
+        $destinationPath = rtrim($destinationDir, DIRECTORY_SEPARATOR)
+            .DIRECTORY_SEPARATOR.basename($filename);
+
+        return file_put_contents($destinationPath, $extracted) === false
+            ? null
+            : $destinationPath;
+    }
+
+    /**
+     * @param  Closure(string): string  $commandBuilder
+     */
+    private function extractFileAtPathViaExternalTool(
+        string $filename,
+        string $destinationDir,
+        Closure $commandBuilder,
+    ): ?string {
+        try {
+            File::ensureDirectoryExists($destinationDir);
+            ($this->commandRunner)($commandBuilder($destinationDir));
+
+            $expectedPath = rtrim($destinationDir, DIRECTORY_SEPARATOR)
+                .DIRECTORY_SEPARATOR.basename($filename);
+            if (File::isFile($expectedPath)) {
+                return $expectedPath;
+            }
+
+            foreach (File::allFiles($destinationDir) as $file) {
+                if (strtolower($file->getFilename()) === strtolower(basename($filename))) {
+                    return $file->getPathname();
+                }
+            }
+        } catch (\Throwable $e) {
+            if ($this->config->debugMode) {
+                Log::debug('External extraction failed: '.$e->getMessage());
+            }
+        }
+
+        return null;
     }
 
     /**

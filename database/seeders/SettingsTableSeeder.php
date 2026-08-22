@@ -781,6 +781,10 @@ class SettingsTableSeeder extends Seeder
                 'name' => 'audio_spectrogram',
                 'value' => '1',
             ],
+            273 => [
+                'name' => 'audio_max_archive_mb',
+                'value' => '1024',
+            ],
         ]);
     }
 }

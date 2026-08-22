@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Models\Settings;
+use App\Services\AudioProcessing\AudioProcessingConfiguration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -22,6 +23,7 @@ class AudioProcessingSettingsTest extends TestCase
         'postthreadsaudio',
         'audio_segments_to_download',
         'audio_max_rar_parts',
+        'audio_max_archive_mb',
         'audio_preview_seconds',
         'audio_preview_start_seconds',
         'audio_spectrogram',
@@ -49,6 +51,7 @@ class AudioProcessingSettingsTest extends TestCase
         DB::table('settings')->insert([['name' => 'saveaudiopreview', 'value' => '1']]);
 
         $this->migration()->up();
+        $this->ceilingMigration()->up();
 
         foreach (self::AUDIO_SETTINGS as $name) {
             $this->assertDatabaseHas('settings', ['name' => $name]);
@@ -68,6 +71,8 @@ class AudioProcessingSettingsTest extends TestCase
     public function test_the_migration_rolls_back(): void
     {
         $this->migration()->up();
+        $this->ceilingMigration()->up();
+        $this->ceilingMigration()->down();
         $this->migration()->down();
 
         foreach (self::AUDIO_SETTINGS as $name) {
@@ -90,12 +95,14 @@ class AudioProcessingSettingsTest extends TestCase
     public function test_the_admin_save_path_persists_every_audio_setting(): void
     {
         $this->migration()->up();
+        $this->ceilingMigration()->up();
 
         // What AdminSiteController::edit() does with the submitted form.
         Settings::settingsUpdate([
             'postthreadsaudio' => '4',
             'audio_segments_to_download' => '20',
             'audio_max_rar_parts' => '3',
+            'audio_max_archive_mb' => '512',
             'audio_preview_seconds' => '45',
             'audio_preview_start_seconds' => '0',
             'audio_spectrogram' => '0',
@@ -105,6 +112,7 @@ class AudioProcessingSettingsTest extends TestCase
             'postthreadsaudio' => '4',
             'audio_segments_to_download' => '20',
             'audio_max_rar_parts' => '3',
+            'audio_max_archive_mb' => '512',
             'audio_preview_seconds' => '45',
             'audio_preview_start_seconds' => '0',
             'audio_spectrogram' => '0',
@@ -129,8 +137,33 @@ class AudioProcessingSettingsTest extends TestCase
         $this->assertStringNotContainsString('saveaudiopreview', $lookup);
     }
 
+    public function test_audio_archive_megabytes_are_converted_to_bytes_and_zero_is_unlimited(): void
+    {
+        $this->ceilingMigration()->up();
+
+        DB::table('settings')->where('name', 'audio_max_archive_mb')->update(['value' => '512']);
+        $this->assertSame(512 * 1024 * 1024, (new AudioProcessingConfiguration)->maxArchiveBytes);
+
+        DB::table('settings')->where('name', 'audio_max_archive_mb')->update(['value' => '0']);
+        $this->assertNull((new AudioProcessingConfiguration)->maxArchiveBytes);
+    }
+
+    public function test_the_ceiling_migration_preserves_an_operator_tuned_value(): void
+    {
+        DB::table('settings')->insert(['name' => 'audio_max_archive_mb', 'value' => '2048']);
+
+        $this->ceilingMigration()->up();
+
+        $this->assertSame('2048', DB::table('settings')->where('name', 'audio_max_archive_mb')->value('value'));
+    }
+
     private function migration(): object
     {
         return require database_path('migrations/2026_08_21_140000_add_audio_postprocessing_settings.php');
+    }
+
+    private function ceilingMigration(): object
+    {
+        return require database_path('migrations/2026_08_22_080000_add_audio_archive_fetch_ceiling_setting.php');
     }
 }

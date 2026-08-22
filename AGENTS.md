@@ -72,7 +72,7 @@ Multi-pane terminal orchestrator at `app/Services/Tmux/`. Components: `TmuxSessi
 
 - **Live tmux output**: set `STREAM_FORK_OUTPUT=true` in `.env` (`config('nntmux.stream_fork_output')`). When false (default), child output is buffered per batch and the pane may look idle until a batch completes.
 - **Parallelism settings** (all default to `1` in `database/seeders/SettingsTableSeeder.php`; raise via Admin UI or DB): `postthreads` (additional), `nfothreads` (NFO when `post=3`), `postthreadsnon` (TV/anime/movies), `postthreadsamazon` (books/music/console/games and `ama` fan-out), `postthreadsaudio` (`aud` fan-out). Raising `nfothreads` or `postthreadsaudio` opens that many parallel NNTP sessions.
-- **Audio tunables** (site settings, Advanced → Post-processing): `audio_segments_to_download` (12), `audio_max_rar_parts` (6), `audio_preview_seconds` (30), `audio_preview_start_seconds` (10), `audio_spectrogram` (1). `saveaudiopreview` is retired.
+- **Audio tunables** (site settings, Advanced → Post-processing): `audio_segments_to_download` (12), `audio_max_rar_parts` (6), `audio_max_archive_mb` (1024; `0` = unlimited), `audio_preview_seconds` (30), `audio_preview_start_seconds` (10), `audio_spectrogram` (1). `saveaudiopreview` is retired.
 - **Batch sizing**: up to 16 distinct first-character GUID buckets per type per cycle (`LIMIT 16` in `PostProcessRunner`); each bucket processes its slice sequentially inside `postprocess:guid`. Additional processing also respects `maxaddprocessed` (default 25) per bucket.
 - **Direct CLI**: `update:postprocess <type>` remains available for single-process runs outside tmux; tmux panes use the multiprocessing command only.
 
