@@ -24,7 +24,7 @@ class ReleasePreviewImageViewTest extends TestCase
         config(['nntmux_settings.covers_path' => $this->coversRoot]);
     }
 
-    public function test_audio_release_with_a_spectrogram_links_the_preview_chip_to_it(): void
+    public function test_playable_audio_release_with_a_spectrogram_opens_the_audio_preview(): void
     {
         file_put_contents($this->coversRoot.'/audiosample/audio-guid_spectrum.png', 'png');
 
@@ -33,12 +33,38 @@ class ReleasePreviewImageViewTest extends TestCase
             'categories_id' => Category::MUSIC_MP3,
             'haspreview' => 1,
             'has_spectrogram' => 1,
+            'has_audio_preview' => 1,
+            'audio_preview_mime' => 'audio/mpeg',
+            'audio_preview_meta' => '30s · MP3 · stream copy',
         ]));
 
         $this->assertStringContainsString('class="preview-badge', $html);
+        $this->assertStringContainsString('data-audio-url="'.route('preview.audio', 'audio-guid').'"', $html);
+        $this->assertStringContainsString('data-audio-type="audio/mpeg"', $html);
+        $this->assertStringContainsString('data-audio-meta="30s · MP3 · stream copy"', $html);
         $this->assertStringContainsString('/covers/audiosample/audio-guid_spectrum.png', $html);
-        $this->assertStringContainsString('data-image-title="Spectrogram"', $html);
+        $this->assertStringContainsString('data-image-title="Audio Preview"', $html);
+        $this->assertStringContainsString('fas fa-headphones', $html);
         $this->assertStringNotContainsString('/covers/preview/audio-guid_thumb', $html);
+    }
+
+    public function test_playable_audio_release_without_a_spectrogram_still_has_a_preview_chip(): void
+    {
+        $html = $this->renderResults($this->release([
+            'guid' => 'audio-only-guid',
+            'categories_id' => Category::MUSIC_MP3,
+            'haspreview' => 0,
+            'has_spectrogram' => 0,
+            'has_audio_preview' => 1,
+            'audio_preview_mime' => 'audio/flac',
+            'audio_preview_meta' => '30s · FLAC · FLAC transcode',
+        ]));
+
+        $this->assertStringContainsString('class="preview-badge', $html);
+        $this->assertStringContainsString('data-audio-url="'.route('preview.audio', 'audio-only-guid').'"', $html);
+        $this->assertStringContainsString('data-audio-type="audio/flac"', $html);
+        $this->assertStringContainsString('data-image-url=""', $html);
+        $this->assertStringNotContainsString('_spectrum', $html);
     }
 
     public function test_video_release_links_the_preview_chip_to_its_generated_preview(): void
@@ -54,19 +80,47 @@ class ReleasePreviewImageViewTest extends TestCase
         $this->assertStringContainsString('class="preview-badge', $html);
         $this->assertStringContainsString('/covers/preview/video-guid_thumb.jpg', $html);
         $this->assertStringContainsString('data-image-title="Preview Image"', $html);
+        $this->assertStringNotContainsString('data-audio-url=', $html);
+        $this->assertStringNotContainsString('data-audio-type=', $html);
+        $this->assertStringNotContainsString('data-audio-meta=', $html);
     }
 
-    public function test_audio_release_without_a_spectrogram_has_no_preview_chip(): void
+    public function test_audio_release_with_an_unservable_preview_has_no_preview_chip(): void
     {
-        $html = $this->renderResults($this->release([
-            'guid' => 'audio-without-spectrogram',
+        $release = new Release((array) $this->release([
+            'guid' => 'unservable-audio-guid',
             'categories_id' => Category::MUSIC_MP3,
             'haspreview' => 1,
+        ]));
+        $release->setRelation('audioTags', new ReleaseAudioTag([
+            'has_preview' => 1,
+            'preview_extension' => 'ape',
+            'preview_mime' => 'audio/x-ape',
             'has_spectrogram' => 0,
         ]));
 
+        $html = $this->renderResults($release);
+
         $this->assertStringNotContainsString('class="preview-badge', $html);
-        $this->assertStringNotContainsString('/covers/preview/audio-without-spectrogram_thumb', $html);
+        $this->assertStringNotContainsString('data-audio-url=', $html);
+    }
+
+    public function test_audio_spectrogram_without_a_playable_clip_falls_back_to_image_only(): void
+    {
+        file_put_contents($this->coversRoot.'/audiosample/spectrogram-only-guid_spectrum.png', 'png');
+
+        $html = $this->renderResults($this->release([
+            'guid' => 'spectrogram-only-guid',
+            'categories_id' => Category::MUSIC_MP3,
+            'haspreview' => 1,
+            'has_spectrogram' => 1,
+            'has_audio_preview' => 0,
+        ]));
+
+        $this->assertStringContainsString('class="preview-badge', $html);
+        $this->assertStringContainsString('/covers/audiosample/spectrogram-only-guid_spectrum.png', $html);
+        $this->assertStringContainsString('data-image-title="Spectrogram"', $html);
+        $this->assertStringNotContainsString('data-audio-url=', $html);
     }
 
     public function test_audio_release_does_not_render_a_duplicate_preview_image_on_details(): void
@@ -84,7 +138,7 @@ class ReleasePreviewImageViewTest extends TestCase
         $this->assertStringNotContainsString('/covers/preview/audio-guid_thumb', $html);
     }
 
-    private function renderResults(stdClass $release): string
+    private function renderResults(object $release): string
     {
         return view('components.release-results', ['results' => [$release]])->render();
     }

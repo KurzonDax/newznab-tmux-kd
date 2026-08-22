@@ -38,20 +38,22 @@
                     </button>
                 </div>
 
+                <x-audio-preview-player dynamic class="mb-4" />
+
                 <!-- Loading state -->
-                <div x-show="!imageLoaded && !imageError" class="flex items-center justify-center py-8">
+                <div x-show="imageUrl && !imageLoaded && !imageError" class="flex items-center justify-center py-8">
                     <i class="fas fa-spinner fa-spin text-2xl mr-2 text-purple-600 dark:text-purple-400"></i>
                     <span class="text-gray-600 dark:text-gray-400">Loading image...</span>
                 </div>
 
                 <!-- Error state -->
-                <div x-show="imageError" class="text-center py-8">
+                <div x-show="imageUrl && imageError" class="text-center py-8">
                     <i class="fas fa-image text-3xl text-gray-400 dark:text-gray-500"></i>
                     <p class="text-gray-500 dark:text-gray-400 mt-2" x-text="errorMessage()">Image not available</p>
                 </div>
 
                 <!-- Image -->
-                <div x-show="imageLoaded && !imageError" class="flex justify-center">
+                <div x-show="imageUrl && imageLoaded && !imageError" class="flex justify-center">
                     <img :src="imageUrl"
                          :alt="title"
                          x-on:error="onImageError()"
@@ -72,4 +74,3 @@
         </div>
     </div>
 </div>
-

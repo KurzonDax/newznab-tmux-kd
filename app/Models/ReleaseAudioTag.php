@@ -196,6 +196,14 @@ class ReleaseAudioTag extends Model
     }
 
     /**
+     * The MIME type only when this row records a preview the application can serve.
+     */
+    public function playablePreviewMimeType(): ?string
+    {
+        return $this->has_preview ? $this->previewMimeType() : null;
+    }
+
+    /**
      * How the preview clip was produced, or null when the source format was not
      * recorded or is not one this pipeline knows, where the answer would be a
      * guess.
@@ -221,6 +229,25 @@ class ReleaseAudioTag extends Model
         return $sourceExtension === $extension
             ? AudioPreviewEncoding::StreamCopy
             : AudioPreviewEncoding::FlacTranscode;
+    }
+
+    /**
+     * The compact description shown alongside a playable preview.
+     */
+    public function previewSummary(): ?string
+    {
+        $extension = $this->previewExtension();
+        if ($extension === null) {
+            return null;
+        }
+
+        $parts = array_values(array_filter([
+            $this->preview_seconds !== null ? $this->preview_seconds.'s' : null,
+            strtoupper($extension),
+            $this->previewEncoding()?->label(),
+        ]));
+
+        return $parts === [] ? null : implode(' · ', $parts);
     }
 
     /**

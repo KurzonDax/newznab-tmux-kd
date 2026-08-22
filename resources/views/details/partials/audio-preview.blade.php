@@ -3,17 +3,13 @@
                 $audioTags = $release->audioTags ?? null;
                 // previewExtension() is null for a container the controller will not
                 // serve, so the player is never offered where the route would 404.
-                $audioPreviewMime = $audioTags?->has_preview ? $audioTags->previewMimeType() : null;
+                $audioPreviewMime = $audioTags?->playablePreviewMimeType();
             @endphp
 
             @if($audioPreviewMime !== null)
                 @php
                     $audioPreviewUrl = route('preview.audio', $release->guid);
-                    $audioPreviewMeta = array_values(array_filter([
-                        $audioTags->preview_seconds !== null ? $audioTags->preview_seconds . 's' : null,
-                        strtoupper((string) $audioTags->previewExtension()),
-                        $audioTags->previewEncoding()?->label(),
-                    ]));
+                    $audioPreviewMeta = $audioTags->previewSummary();
                     $spectrogramUrl = $audioTags->has_spectrogram
                         ? getImageAssetUrl('audiosample', $release->guid . '_spectrum', null, [], ['png'])
                         : null;
@@ -23,16 +19,11 @@
                         <i class="fas fa-headphones mr-2 text-primary-600 dark:text-primary-400"></i> Audio Preview
                     </h3>
 
-                    <audio controls preload="none" class="w-full" src="{{ $audioPreviewUrl }}">
-                        <source src="{{ $audioPreviewUrl }}" type="{{ $audioPreviewMime }}">
-                        Your browser does not support playing this audio preview.
-                    </audio>
-
-                    @if(!empty($audioPreviewMeta))
-                        <p class="mt-2 text-xs text-gray-600 dark:text-gray-400">
-                            {{ implode(' · ', $audioPreviewMeta) }}
-                        </p>
-                    @endif
+                    <x-audio-preview-player
+                        :audio-url="$audioPreviewUrl"
+                        :audio-type="$audioPreviewMime"
+                        :audio-meta="$audioPreviewMeta"
+                    />
 
                     @if($spectrogramUrl)
                         <div class="mt-4">

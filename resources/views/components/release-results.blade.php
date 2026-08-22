@@ -36,17 +36,22 @@
                     $loadedAudioTags = $result instanceof \Illuminate\Database\Eloquent\Model && $result->relationLoaded('audioTags')
                         ? $result->getRelation('audioTags')
                         : null;
+                    $loadedAudioPreviewMime = $loadedAudioTags?->playablePreviewMimeType();
+                    $audioPreviewMime = $result->audio_preview_mime ?? $loadedAudioPreviewMime;
+                    $hasAudioPreview = (bool) ($result->has_audio_preview ?? ($audioPreviewMime !== null));
+                    $audioPreviewMeta = $result->audio_preview_meta ?? ($hasAudioPreview ? $loadedAudioTags?->previewSummary() : null);
                     $hasSpectrogram = (bool) ($result->has_spectrogram ?? $loadedAudioTags?->has_spectrogram ?? false);
                     $isAudioRelease = \App\Models\Category::rootCategoryFor((int) ($result->categories_id ?? 0)) === \App\Models\Category::MUSIC_ROOT
-                        || $hasSpectrogram;
+                        || $hasSpectrogram
+                        || $hasAudioPreview;
                     $hasGeneratedPreview = isset($result->haspreview) && $result->haspreview == 1;
-                    $previewImageUrl = $hasGeneratedPreview
-                        ? ($isAudioRelease
-                            ? getImageAssetUrl('audiosample', $result->guid . '_spectrum', null, [], ['png'])
-                            : getImageAssetUrl('preview', $result->guid . '_thumb'))
-                        : null;
-                    $previewImageTitle = $isAudioRelease ? 'Spectrogram' : 'Preview Image';
-                    $showPreviewBadge = $hasGeneratedPreview && (! $isAudioRelease || ($hasSpectrogram && $previewImageUrl !== null));
+                    $previewImageUrl = $isAudioRelease
+                        ? ($hasSpectrogram ? getImageAssetUrl('audiosample', $result->guid . '_spectrum', null, [], ['png']) : null)
+                        : ($hasGeneratedPreview ? getImageAssetUrl('preview', $result->guid . '_thumb') : null);
+                    $previewImageTitle = $hasAudioPreview ? 'Audio Preview' : ($isAudioRelease ? 'Spectrogram' : 'Preview Image');
+                    $showPreviewBadge = $isAudioRelease
+                        ? ($hasAudioPreview || ($hasGeneratedPreview && $hasSpectrogram && $previewImageUrl !== null))
+                        : $hasGeneratedPreview;
                 @endphp
                 <tr class="hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700 transition">
                     <td class="px-3 py-4 whitespace-nowrap">
@@ -88,12 +93,17 @@
                                     @endif
                                     @if($showPreviewBadge)
                                         <button type="button"
-                                                class="preview-badge inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 hover:bg-purple-200 dark:hover:bg-purple-800 transition cursor-pointer"
+                                                class="preview-badge {{ $hasAudioPreview ? 'audio-preview-badge' : '' }} inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 hover:bg-primary-200 dark:hover:bg-primary-800 transition cursor-pointer"
                                                 data-guid="{{ $result->guid }}"
                                                 data-image-url="{{ $previewImageUrl }}"
                                                 data-image-title="{{ $previewImageTitle }}"
-                                                title="View preview image">
-                                            <i class="fas fa-image mr-1"></i> Preview
+                                                @if($hasAudioPreview)
+                                                    data-audio-url="{{ route('preview.audio', $result->guid) }}"
+                                                    data-audio-type="{{ $audioPreviewMime }}"
+                                                    data-audio-meta="{{ $audioPreviewMeta }}"
+                                                @endif
+                                                title="{{ $hasAudioPreview ? 'Listen to audio preview' : 'View preview image' }}">
+                                            <i class="fas {{ $hasAudioPreview ? 'fa-headphones' : 'fa-image' }} mr-1"></i> Preview
                                         </button>
                                     @endif
                                     @if(isset($result->jpgstatus) && $result->jpgstatus == 1)
