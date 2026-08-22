@@ -111,4 +111,23 @@ final class ReleaseSearchIndexDocumentTest extends TestCase
         self::assertGreaterThan(0, $second['postdate_ts']);
         self::assertGreaterThan(0, $second['adddate_ts']);
     }
+
+    #[Test]
+    public function normalize_for_bulk_scrubs_invalid_utf8_from_every_string_field(): void
+    {
+        $document = ReleaseSearchIndexDocument::normalizeForBulk([
+            'id' => 42,
+            'guid' => "guid\xED\xBD\xBF-42",
+            'name' => "Release\x00.Name",
+            'searchname' => 'Release.Name',
+            'fromname' => "poster\x1F",
+            'filename' => "Example\xED\xBD\xBF.mkv\x7F",
+        ]);
+
+        self::assertSame('guid-42', $document['guid']);
+        self::assertSame('Release.Name', $document['name']);
+        self::assertSame('poster', $document['fromname']);
+        self::assertSame('Example.mkv', $document['filename']);
+        self::assertNotFalse(json_encode($document));
+    }
 }
