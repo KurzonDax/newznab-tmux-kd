@@ -11,6 +11,7 @@ use App\Services\Binaries\HeaderStorageTransaction;
 use App\Services\Binaries\PartHandler;
 use App\Services\BlacklistService;
 use App\Services\CollectionsCleaningService;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -288,6 +289,47 @@ class BinariesStorageInternalsTest extends TestCase
         );
     }
 
+    public function test_collection_bulk_inserts_are_sorted_by_hash_across_sql_chunks(): void
+    {
+        $this->createHeaderStorageTables();
+        $subjects = ['Alpha.Release', 'Bravo.Release', 'Charlie.Release', 'Delta.Release', 'Echo.Release'];
+        usort(
+            $subjects,
+            static fn (string $left, string $right): int => strcmp(sha1($right.'1', true), sha1($left.'1', true)),
+        );
+        $headers = [];
+        $totalFilesByIndex = [];
+        foreach ($subjects as $index => $subject) {
+            $headers[$index] = $this->parsedHeaderWithTotal(940 + $index, 1, 1, $subject);
+            $totalFilesByIndex[$index] = 1;
+        }
+
+        $insertedHashes = [];
+        DB::listen(static function (QueryExecuted $query) use (&$insertedHashes): void {
+            if (! str_starts_with($query->sql, 'insert or ignore into "collections"')) {
+                return;
+            }
+
+            for ($offset = 1; $offset < count($query->bindings); $offset += 11) {
+                $insertedHashes[] = $query->bindings[$offset];
+            }
+        });
+
+        $resolved = $this->deterministicCollectionHandler(sqlChunkSize: 2)->getOrCreateCollections(
+            $headers,
+            1,
+            'alt.test',
+            $totalFilesByIndex,
+            'batch-noise',
+        );
+
+        $expectedHashes = array_map(static fn (string $subject): string => sha1($subject.'1', true), $subjects);
+        usort($expectedHashes, strcmp(...));
+
+        $this->assertCount(5, $resolved);
+        $this->assertSame(array_map(bin2hex(...), $expectedHashes), array_map(bin2hex(...), $insertedHashes));
+    }
+
     public function test_header_storage_does_not_merge_same_subject_across_different_collections(): void
     {
         $this->createHeaderStorageTables();
@@ -413,7 +455,7 @@ class BinariesStorageInternalsTest extends TestCase
         $this->assertFalse($method->invoke($service, null));
     }
 
-    private function deterministicCollectionHandler(): CollectionHandler
+    private function deterministicCollectionHandler(int $sqlChunkSize = 500): CollectionHandler
     {
         return new CollectionHandler(new class extends CollectionsCleaningService
         {
@@ -426,7 +468,7 @@ class BinariesStorageInternalsTest extends TestCase
             {
                 return ['id' => 0, 'name' => $subject];
             }
-        });
+        }, sqlChunkSize: $sqlChunkSize);
     }
 
     private function setPrivateProperty(object $object, string $property, mixed $value): void

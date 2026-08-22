@@ -87,35 +87,7 @@ class BinariesRunner extends BaseRunner
             return;
         }
 
-        $i = 1;
-        $queues = [];
-        foreach ($groups as $group) {
-            if ((int) $group->our_last === 0) {
-                $queues[$i] = sprintf('update_group_headers  %s', $group->groupname);
-                $i++;
-            } else {
-                $count = $group->their_last - $group->our_last - 20000; // skip first 20k
-                if ($count <= $maxMessages * 2) {
-                    $queues[$i] = sprintf('update_group_headers  %s', $group->groupname);
-                    $i++;
-                } else {
-                    $queues[$i] = sprintf('part_repair  %s', $group->groupname);
-                    $i++;
-                    $getEach = (int) floor(min($count, $maxHeaders) / $maxMessages);
-                    $remaining = (int) (min($count, $maxHeaders) - $getEach * $maxMessages);
-                    for ($j = 0; $j < $getEach; $j++) {
-                        $queues[$i] = sprintf('get_range  binaries  %s  %s  %s  %s', $group->groupname, $group->our_last + $j * $maxMessages + 1, $group->our_last + $j * $maxMessages + $maxMessages, $i);
-                        $i++;
-                    }
-                    if ($remaining > 0) {
-                        $start = $group->our_last + $getEach * $maxMessages + 1;
-                        $end = $start + $remaining;
-                        $queues[$i] = sprintf('get_range  binaries  %s  %s  %s  %s', $group->groupname, $start, $end, $i);
-                        $i++;
-                    }
-                }
-            }
-        }
+        $queues = $this->buildSafeBinariesQueue($groups, $maxHeaders, $maxMessages);
 
         // Streaming mode
         if ((bool) config('nntmux.stream_fork_output', false) === true) {
@@ -149,5 +121,83 @@ class BinariesRunner extends BaseRunner
                 cli()->primary('Updated group '.$group);
             }
         }
+    }
+
+    /**
+     * @param  list<object{groupname: string, our_last: int|string, their_last: int|string}>  $groups
+     * @return array<int, string>
+     */
+    public function buildSafeBinariesQueue(array $groups, int $maxHeaders, int $maxMessages): array
+    {
+        $queueIndex = 1;
+        $queues = [];
+        $rangesByGroup = [];
+
+        foreach ($groups as $group) {
+            $ourLast = (int) $group->our_last;
+            $theirLast = (int) $group->their_last;
+
+            if ($ourLast === 0) {
+                $queues[$queueIndex] = sprintf('update_group_headers  %s', $group->groupname);
+                $queueIndex++;
+
+                continue;
+            }
+
+            $count = $theirLast - $ourLast - 20000; // skip first 20k
+            if ($count <= $maxMessages * 2) {
+                $queues[$queueIndex] = sprintf('update_group_headers  %s', $group->groupname);
+                $queueIndex++;
+
+                continue;
+            }
+
+            $queues[$queueIndex] = sprintf('part_repair  %s', $group->groupname);
+            $queueIndex++;
+            $rangeLimit = min($count, $maxHeaders);
+            $fullRangeCount = (int) floor($rangeLimit / $maxMessages);
+            $remaining = (int) ($rangeLimit - $fullRangeCount * $maxMessages);
+            $ranges = [];
+
+            for ($rangeIndex = 0; $rangeIndex < $fullRangeCount; $rangeIndex++) {
+                $ranges[] = [
+                    $ourLast + $rangeIndex * $maxMessages + 1,
+                    $ourLast + $rangeIndex * $maxMessages + $maxMessages,
+                ];
+            }
+
+            if ($remaining > 0) {
+                $start = $ourLast + $fullRangeCount * $maxMessages + 1;
+                $ranges[] = [$start, $start + $remaining];
+            }
+
+            $rangesByGroup[] = [$group->groupname, $ranges];
+        }
+
+        for ($rangeIndex = 0; ; $rangeIndex++) {
+            $rangeAdded = false;
+            foreach ($rangesByGroup as [$groupName, $ranges]) {
+                if (! isset($ranges[$rangeIndex])) {
+                    continue;
+                }
+
+                [$start, $end] = $ranges[$rangeIndex];
+                $queues[$queueIndex] = sprintf(
+                    'get_range  binaries  %s  %s  %s  %s',
+                    $groupName,
+                    $start,
+                    $end,
+                    $queueIndex,
+                );
+                $queueIndex++;
+                $rangeAdded = true;
+            }
+
+            if (! $rangeAdded) {
+                break;
+            }
+        }
+
+        return $queues;
     }
 }

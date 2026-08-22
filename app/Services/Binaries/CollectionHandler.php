@@ -287,6 +287,10 @@ final class CollectionHandler
      */
     private function bulkInsertAndResolve(array $rowsByCollectionKey): array
     {
+        uasort(
+            $rowsByCollectionKey,
+            static fn (array $left, array $right): int => strcmp($left['collectionhash'], $right['collectionhash']),
+        );
         $hashes = array_values(array_column($rowsByCollectionKey, 'collectionhash'));
 
         // The prefetch step has already populated $existingIdsByHash, so we
