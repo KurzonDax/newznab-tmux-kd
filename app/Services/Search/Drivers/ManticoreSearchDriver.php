@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services\Search\Drivers;
 
 use App\Enums\SecondarySearchIndex;
-use App\Jobs\ReindexReleaseJob;
 use App\Models\BookInfo;
 use App\Models\ConsoleInfo;
 use App\Models\GamesInfo;
@@ -320,14 +319,6 @@ class ManticoreSearchDriver implements SearchDriverInterface
         $releaseId = (int) $parameters['id'];
         if (! $this->replaceReleaseDocumentWithRetry($parameters)) {
             $this->recordReleaseIndexFailure($releaseId, 'insertRelease', 'upsert');
-            try {
-                ReindexReleaseJob::dispatch($releaseId)->delay(now()->addSeconds(2));
-            } catch (\Throwable $e) {
-                Log::error('ManticoreSearch: failed to queue ReindexReleaseJob', [
-                    'release_id' => $releaseId,
-                    'error' => $e->getMessage(),
-                ]);
-            }
         }
     }
 
@@ -336,14 +327,22 @@ class ManticoreSearchDriver implements SearchDriverInterface
      */
     private function replaceReleaseDocumentWithRetry(array $parameters): bool
     {
+        $releaseId = (int) $parameters['id'];
+        if (! $this->isReleaseDocumentJsonEncodable($parameters, $releaseId)) {
+            return false;
+        }
+
         // updateRelease() supplies the already-normalized canonical projection.
         // Preserve its *_ts fields instead of normalizing a second time and
         // replacing post/add timestamps with zero.
         $document = ReleaseSearchIndexDocument::normalizeForBulk($parameters);
         unset($document['id']);
 
+        if (! $this->isReleaseDocumentJsonEncodable($document, $releaseId)) {
+            return false;
+        }
+
         $indexName = $this->config['indexes']['releases'];
-        $releaseId = (int) $parameters['id'];
 
         $attempts = max(1, (int) ($this->config['retry_attempts'] ?? config('search.drivers.manticore.retry_attempts', 3)));
         $delayMs = max(0, (int) ($this->config['retry_delay_ms'] ?? config('search.drivers.manticore.retry_delay_ms', 100)));
@@ -395,6 +394,42 @@ class ManticoreSearchDriver implements SearchDriverInterface
         }
 
         return false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $document
+     */
+    private function isReleaseDocumentJsonEncodable(array $document, int $releaseId): bool
+    {
+        if (json_encode($document) !== false) {
+            return true;
+        }
+
+        $jsonError = json_last_error_msg();
+        Log::error('ManticoreSearch insertRelease: document is not valid JSON/UTF-8', [
+            'release_id' => $releaseId,
+            'fields' => $this->invalidJsonFields($document),
+            'error' => $jsonError,
+        ]);
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $document
+     * @return list<string>
+     */
+    private function invalidJsonFields(array $document): array
+    {
+        $invalidFields = [];
+
+        foreach ($document as $field => $value) {
+            if (json_encode($value) === false) {
+                $invalidFields[] = $field;
+            }
+        }
+
+        return $invalidFields;
     }
 
     private function recordReleaseIndexFailure(int $releaseId, string $phase, string $operation = 'upsert'): void

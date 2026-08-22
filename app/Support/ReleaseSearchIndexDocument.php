@@ -51,7 +51,15 @@ final class ReleaseSearchIndexDocument
             ]);
         }
 
-        return self::normalize($row);
+        $document = self::normalize($row);
+
+        foreach ($document as $field => $value) {
+            if (is_string($value)) {
+                $document[$field] = Utf8::scrubFilename($value);
+            }
+        }
+
+        return $document;
     }
 
     /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Facades\Search;
+use App\Support\Utf8;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -113,6 +114,11 @@ class ReleaseFile extends Model
      */
     public static function addReleaseFiles(mixed $id, mixed $name, mixed $size, mixed $createdTime, mixed $hasPassword, string $hash = '', string $crc = ''): int
     {
+        $name = Utf8::scrubFilename((string) $name);
+        if ($name === '') {
+            return 0;
+        }
+
         // Check if we already have this data in table
         $duplicateCheck = self::query()->where('releases_id', $id)->where('name', $name)->first();
 

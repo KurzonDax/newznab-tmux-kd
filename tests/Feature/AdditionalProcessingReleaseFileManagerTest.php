@@ -99,6 +99,48 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         $this->assertNull(DB::table('releases')->where('id', 1)->value('additional_pp_claim_token'));
     }
 
+    public function test_release_file_names_are_scrubbed_before_archive_rows_are_written(): void
+    {
+        DB::table('releases')->insert($this->releaseRow());
+
+        Search::shouldReceive('updateRelease')->once()->with(1);
+
+        $manager = $this->makeManager();
+        $context = new ReleaseProcessingContext(Release::query()->findOrFail(1));
+
+        $this->assertTrue($manager->addFileInfo([
+            'name' => "Example\x00.Movie\xED\xBD\xBF.mkv\x7F",
+            'size' => 1024,
+            'date' => 1_788_600_000,
+        ], $context, '\\.(?:par2|sfv|nzb)'));
+
+        $manager->finalizeRelease($context, false);
+
+        $storedName = DB::table('release_files')->value('name');
+        $this->assertSame('Example.Movie.mkv', $storedName);
+        $this->assertTrue(mb_check_encoding($storedName, 'UTF-8'));
+    }
+
+    public function test_release_file_name_with_no_printable_characters_is_not_written(): void
+    {
+        DB::table('releases')->insert($this->releaseRow());
+
+        Search::shouldReceive('updateRelease')->once()->with(1);
+
+        $manager = $this->makeManager();
+        $context = new ReleaseProcessingContext(Release::query()->findOrFail(1));
+
+        $this->assertFalse($manager->addFileInfo([
+            'name' => "\x00\x1F\x7F\xED\xBD\xBF",
+            'size' => 1024,
+            'date' => 1_788_600_000,
+        ], $context, '\\.(?:par2|sfv|nzb)'));
+
+        $manager->finalizeRelease($context, false);
+
+        $this->assertSame(0, DB::table('release_files')->count());
+    }
+
     public function test_finalization_flushes_rows_and_synchronizes_search_immediately(): void
     {
         DB::table('releases')->insert($this->releaseRow());

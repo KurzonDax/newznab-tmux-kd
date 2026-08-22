@@ -6,6 +6,11 @@ namespace Tests\Unit\Services\Search;
 
 use App\Services\Search\Drivers\ManticoreSearchDriver;
 use App\Support\ReleaseSearchIndexDocument;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Manticoresearch\Client;
 use Manticoresearch\Exceptions\ResponseException;
 use Manticoresearch\Request;
@@ -16,6 +21,23 @@ use Tests\TestCase;
 
 final class ManticoreInsertRetryTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Schema::dropIfExists('search_index_failures');
+        Schema::create('search_index_failures', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('release_id')->unique();
+            $table->string('operation', 32)->default('upsert');
+            $table->unsignedInteger('attempts')->default(0);
+            $table->text('last_error')->nullable();
+            $table->timestamp('next_attempt_at')->nullable();
+            $table->timestamp('resolved_at')->nullable();
+            $table->timestamps();
+        });
+    }
+
     private function makeResponseException(string $message = 'err'): ResponseException
     {
         $request = $this->createMock(Request::class);
@@ -165,5 +187,72 @@ final class ManticoreInsertRetryTest extends TestCase
         $method = new ReflectionMethod(ManticoreSearchDriver::class, 'replaceReleaseDocumentWithRetry');
 
         $this->assertTrue($method->invoke($driver, $document));
+    }
+
+    public function test_insert_release_records_one_failure_without_dispatching_an_inline_retry(): void
+    {
+        config(['queue.default' => 'sync']);
+        Bus::fake();
+
+        $exception = $this->makeResponseException('permanent failure');
+        $table = $this->createMock(Table::class);
+        $table->expects($this->exactly(3))
+            ->method('replaceDocument')
+            ->willThrowException($exception);
+
+        $client = $this->createMock(Client::class);
+        $client->expects($this->exactly(3))
+            ->method('table')
+            ->with('releases_rt')
+            ->willReturn($table);
+
+        $driver = new ManticoreSearchDriver([
+            'host' => '127.0.0.1',
+            'port' => 9308,
+            'retry_attempts' => 3,
+            'retry_delay_ms' => 0,
+            'indexes' => ['releases' => 'releases_rt', 'predb' => 'predb_rt'],
+        ]);
+        $driver->manticoreSearch = $client;
+
+        $driver->insertRelease($this->releaseRow(42));
+
+        $failure = DB::table('search_index_failures')->where('release_id', 42)->first();
+        $this->assertNotNull($failure);
+        $this->assertSame(1, (int) $failure->attempts);
+        Bus::assertNothingDispatched();
+    }
+
+    public function test_insert_release_rejects_non_encodable_input_before_calling_manticore(): void
+    {
+        Bus::fake();
+        Log::spy();
+
+        $client = $this->createMock(Client::class);
+        $client->expects($this->never())->method('table');
+
+        $driver = new ManticoreSearchDriver([
+            'host' => '127.0.0.1',
+            'port' => 9308,
+            'retry_attempts' => 3,
+            'retry_delay_ms' => 0,
+            'indexes' => ['releases' => 'releases_rt', 'predb' => 'predb_rt'],
+        ]);
+        $driver->manticoreSearch = $client;
+        $row = $this->releaseRow(99);
+        $row['filename'] = "Example\xED\xBD\xBF.mkv";
+
+        $driver->insertRelease($row);
+
+        $failure = DB::table('search_index_failures')->where('release_id', 99)->first();
+        $this->assertNotNull($failure);
+        $this->assertSame(1, (int) $failure->attempts);
+        Log::shouldHaveReceived('error')->once()->with(
+            'ManticoreSearch insertRelease: document is not valid JSON/UTF-8',
+            \Mockery::on(static fn (array $context): bool => $context['release_id'] === 99
+                && $context['fields'] === ['filename']
+                && $context['error'] === 'Malformed UTF-8 characters, possibly incorrectly encoded')
+        );
+        Bus::assertNothingDispatched();
     }
 }

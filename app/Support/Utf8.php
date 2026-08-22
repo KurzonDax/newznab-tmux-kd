@@ -21,6 +21,20 @@ final class Utf8
         return mb_convert_encoding($value, 'UTF-8', self::encodings());
     }
 
+    public static function scrubFilename(string $value): string
+    {
+        $substituteCharacter = mb_substitute_character();
+        mb_substitute_character('none');
+
+        try {
+            $value = mb_scrub($value, 'UTF-8');
+        } finally {
+            mb_substitute_character($substituteCharacter);
+        }
+
+        return trim(preg_replace('/[\x00-\x1F\x7F]/', '', $value) ?? '');
+    }
+
     /**
      * @return list<string>
      */

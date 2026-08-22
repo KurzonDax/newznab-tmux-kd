@@ -28,6 +28,7 @@ use App\Services\ReleaseImageService;
 use App\Services\Releases\ExecutableReleaseDiscardService;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
+use App\Support\Utf8;
 use dariusiii\rarinfo\Par2Info;
 use Illuminate\Contracts\Filesystem\FileNotFoundException;
 use Illuminate\Support\Carbon;
@@ -838,6 +839,7 @@ class ReleaseFileManager
         string $hash = '',
         string $crc = ''
     ): bool {
+        $name = Utf8::scrubFilename($name);
         if ($name === '') {
             return false;
         }
