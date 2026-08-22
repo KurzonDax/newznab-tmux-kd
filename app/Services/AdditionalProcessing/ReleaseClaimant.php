@@ -65,10 +65,6 @@ final class ReleaseClaimant
             ->where('r.haspreview', -1)
             ->where('r.nzbstatus', 1);
 
-        if (Schema::hasColumn('releases', 'pp_timeout_count')) {
-            $query->where('r.pp_timeout_count', '<', self::maxPpTimeoutCount());
-        }
-
         if ($minSizeBytes > 0) {
             $query->where('r.size', '>', $minSizeBytes);
         }

@@ -149,34 +149,11 @@ class ArchiveExtractionService
      */
     public function listArchiveContents(string $compressedData): array
     {
-        $empty = ['files' => [], 'hasPassword' => false];
-
         if (! $this->archiveInfo->setData($compressedData, true) || $this->archiveInfo->error !== '') {
-            return $empty;
+            return ['files' => [], 'hasPassword' => false];
         }
 
-        try {
-            $summary = $this->archiveInfo->getSummary(true);
-        } catch (\Throwable $e) {
-            if ($this->config->debugMode) {
-                Log::debug('ArchiveInfo summary failed: '.$e->getMessage());
-            }
-
-            return $empty;
-        }
-
-        if (! empty($this->archiveInfo->isEncrypted)
-            || (isset($summary['is_encrypted']) && (int) $summary['is_encrypted'] !== 0)
-        ) {
-            return ['files' => [], 'hasPassword' => true];
-        }
-
-        $files = $this->archiveInfo->getArchiveFileList();
-
-        return [
-            'files' => is_array($files) ? array_values($files) : [],
-            'hasPassword' => false,
-        ];
+        return $this->loadedArchiveContents();
     }
 
     /**
@@ -186,11 +163,19 @@ class ArchiveExtractionService
      */
     public function listArchiveContentsAtPath(string $archivePath): array
     {
-        $empty = ['files' => [], 'hasPassword' => false];
-
         if (! $this->archiveInfo->open($archivePath, true) || $this->archiveInfo->error !== '') {
-            return $empty;
+            return ['files' => [], 'hasPassword' => false];
         }
+
+        return $this->loadedArchiveContents();
+    }
+
+    /**
+     * @return array{files: list<array<string, mixed>>, hasPassword: bool}
+     */
+    private function loadedArchiveContents(): array
+    {
+        $empty = ['files' => [], 'hasPassword' => false];
 
         try {
             $summary = $this->archiveInfo->getSummary(true);

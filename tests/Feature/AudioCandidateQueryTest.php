@@ -11,6 +11,7 @@ use App\Services\AudioProcessing\AudioCandidateQuery;
 use App\Services\AudioProcessing\AudioRouting;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use ReflectionProperty;
 use Tests\TestCase;
@@ -141,9 +142,23 @@ class AudioCandidateQueryTest extends TestCase
 
     public function test_a_release_past_the_timeout_threshold_is_not_selected(): void
     {
+        Log::spy();
         $this->seedRelease(1, Category::MUSIC_MP3, groupId: 1, ppTimeoutCount: 3);
 
         $this->assertSame([], $this->audioIds());
+        Log::shouldHaveReceived('warning')
+            ->once()
+            ->with('Release 1 excluded from audio post-processing after 3 archive fetch attempt(s) (limit 3).');
+    }
+
+    public function test_a_threshold_release_declined_to_video_is_still_selected_by_the_video_path(): void
+    {
+        $this->seedRelease(1, Category::MUSIC_MP3, groupId: 1, ppTimeoutCount: 3);
+
+        AudioCandidateQuery::declineToVideoPath(1);
+
+        $this->assertSame([], $this->audioIds());
+        $this->assertSame([1], $this->videoIds());
     }
 
     public function test_a_declined_release_moves_to_the_video_path_and_never_returns(): void
