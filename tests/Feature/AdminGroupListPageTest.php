@@ -321,10 +321,12 @@ class AdminGroupListPageTest extends TestCase
         $response->assertSee('data-backfill="0"', false);
         $response->assertSee('data-route-obfuscated-names="0"', false);
         $response->assertSee('data-obfuscated-default-root-category-id=""', false);
+        $response->assertSee('data-forced-root-category-id=""', false);
         $response->assertSee('Edit Selected Groups');
         $response->assertSee('Minimum File Size');
         $response->assertSee('Route Obfuscated Names');
         $response->assertSee('Default Root Category');
+        $response->assertSee('Forced Root Category');
         $response->assertSee('<option value="6000">XXX</option>', false);
     }
 
@@ -447,6 +449,62 @@ class AdminGroupListPageTest extends TestCase
         $this->assertSame($lastUpdated, DB::table('usenet_groups')->where('id', $ids[0])->value('last_updated'));
     }
 
+    public function test_edit_selected_saves_and_clears_the_forced_root_category(): void
+    {
+        $this->createGroups(2);
+        $ids = DB::table('usenet_groups')->orderBy('id')->pluck('id')->all();
+        $lastUpdatedById = DB::table('usenet_groups')->whereIn('id', $ids)->pluck('last_updated', 'id')->all();
+        $admin = $this->admin();
+
+        $setResponse = $this->actingAs($admin)->post(route('admin.ajax'), [
+            'action' => 'edit_selected_groups',
+            'group_ids' => json_encode($ids),
+            'changes' => json_encode([
+                'forced_root_categories_id' => Category::XXX_ROOT,
+            ]),
+        ]);
+
+        $setResponse->assertOk()->assertJson(['success' => true, 'updated' => 2]);
+        foreach ($ids as $id) {
+            $setResponse->assertJsonPath('rows.'.$id, fn (string $row): bool => str_contains($row, 'fas fa-lock'));
+            $group = DB::table('usenet_groups')->where('id', $id)->first();
+            $this->assertSame(Category::XXX_ROOT, $group->forced_root_categories_id);
+            $this->assertSame($lastUpdatedById[$id], $group->last_updated);
+        }
+
+        $omittedResponse = $this->actingAs($admin)->post(route('admin.ajax'), [
+            'action' => 'edit_selected_groups',
+            'group_ids' => json_encode($ids),
+            'changes' => json_encode(['backfill_target' => 30]),
+        ]);
+
+        $omittedResponse->assertOk();
+        foreach ($ids as $id) {
+            $this->assertSame(
+                Category::XXX_ROOT,
+                DB::table('usenet_groups')->where('id', $id)->value('forced_root_categories_id'),
+                'An omitted forced root category must remain untouched.',
+            );
+        }
+
+        $clearResponse = $this->actingAs($admin)->post(route('admin.ajax'), [
+            'action' => 'edit_selected_groups',
+            'group_ids' => json_encode($ids),
+            'changes' => json_encode(['forced_root_categories_id' => null]),
+        ]);
+
+        $clearResponse->assertOk()->assertJson(['success' => true, 'updated' => 2]);
+        foreach ($ids as $id) {
+            $clearResponse->assertJsonPath('rows.'.$id, fn (string $row): bool => str_contains(
+                $row,
+                'data-forced-root-category-id=""',
+            ) && ! str_contains($row, 'fas fa-lock'));
+            $group = DB::table('usenet_groups')->where('id', $id)->first();
+            $this->assertNull($group->forced_root_categories_id);
+            $this->assertSame($lastUpdatedById[$id], $group->last_updated);
+        }
+    }
+
     public function test_ajax_replacement_rows_preserve_the_inactive_list_context(): void
     {
         $this->createGroups(2);
@@ -534,6 +592,7 @@ class AdminGroupListPageTest extends TestCase
             ['group_ids' => [999999], 'changes' => ['active' => 1]],
             ['group_ids' => [$id], 'changes' => ['description' => 'tampered']],
             ['group_ids' => [$id], 'changes' => ['obfuscated_default_root_categories_id' => 1234]],
+            ['group_ids' => [$id], 'changes' => ['forced_root_categories_id' => 1234]],
             ['group_ids' => [$id], 'changes' => ['route_obfuscated_names' => 1, 'obfuscated_default_root_categories_id' => null]],
         ] as $payload) {
             $response = $this->actingAs($admin)

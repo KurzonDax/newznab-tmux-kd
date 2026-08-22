@@ -74,6 +74,7 @@ function mountPage(rowCount = 3, dataset = {}) {
             backfill: '0',
             routeObfuscatedNames: index === 2 ? '1' : '0',
             obfuscatedDefaultRootCategoryId: index === 2 ? '6000' : '2000',
+            forcedRootCategoryId: index === 2 ? '6000' : '2000',
         },
     }));
     const maintenanceToggle = new FakeElement({ id: 'group-maintenance-toggle' });
@@ -266,6 +267,43 @@ test('edit selected prefills uniform values and leaves mixed values empty', () =
     assert.equal(page.component.editBackfill, '0');
     assert.equal(page.component.editRouteObfuscatedNames, '');
     assert.equal(page.component.editObfuscatedDefaultRootCategoryId, '');
+    assert.equal(page.component.editForcedRootCategoryId, '');
+});
+
+test('forced root category is prefilled, changed, cleared, and confirmed by title', () => {
+    const page = mountPage(2);
+    page.rows.forEach(row => { row.checked = true; });
+    page.component._syncSelection();
+    page.component.openEditSelected();
+
+    assert.equal(page.component.editForcedRootCategoryId, '2000');
+    assert.deepEqual(page.component.editSelectedChanges(), {});
+
+    page.component.editForcedRootCategoryId = '6000';
+    page.component.validateEditSelected();
+    assert.deepEqual(page.component.editSelectedChanges(), {
+        forced_root_categories_id: 6000,
+    });
+
+    const querySelector = page.root.querySelector.bind(page.root);
+    page.root.querySelector = selector => selector === '#edit-selected-forced-root option[value="6000"]'
+        ? { textContent: 'XXX' }
+        : querySelector(selector);
+    page.component.confirmEditSelected();
+    assert.deepEqual(page.component.editConfirmationChanges, [{
+        key: 'forced_root_categories_id',
+        label: 'Forced Root Category',
+        value: 'XXX',
+    }]);
+
+    page.component.backToEditSelected();
+    page.component.editForcedRootCategoryId = 'null';
+    page.component.validateEditSelected();
+    assert.deepEqual(page.component.editSelectedChanges(), {
+        forced_root_categories_id: null,
+    });
+    page.component.confirmEditSelected();
+    assert.equal(page.component.editConfirmationChanges[0].value, 'Cleared');
 });
 
 test('edit selected sends only values changed since the dialog opened', () => {

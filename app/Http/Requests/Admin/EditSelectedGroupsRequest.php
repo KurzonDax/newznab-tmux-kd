@@ -33,7 +33,7 @@ class EditSelectedGroupsRequest extends FormRequest
             'action' => ['required', 'in:edit_selected_groups'],
             'group_ids' => ['required', 'array', 'min:1'],
             'group_ids.*' => ['required', 'integer', 'distinct', 'exists:usenet_groups,id'],
-            'changes' => ['required', 'array:backfill_target,minfilestoformrelease,minsizetoformrelease,active,backfill,route_obfuscated_names,obfuscated_default_root_categories_id', 'min:1'],
+            'changes' => ['required', 'array:backfill_target,minfilestoformrelease,minsizetoformrelease,active,backfill,route_obfuscated_names,obfuscated_default_root_categories_id,forced_root_categories_id', 'min:1'],
             'changes.backfill_target' => ['sometimes', 'integer', 'between:1,7300'],
             'changes.minfilestoformrelease' => ['sometimes', 'integer', 'between:0,2147483647'],
             'changes.minsizetoformrelease' => [
@@ -56,6 +56,7 @@ class EditSelectedGroupsRequest extends FormRequest
             'changes.backfill' => ['sometimes', 'integer', 'in:0,1'],
             'changes.route_obfuscated_names' => ['sometimes', 'integer', 'in:0,1'],
             'changes.obfuscated_default_root_categories_id' => ['sometimes', 'nullable', 'integer', 'exists:root_categories,id'],
+            'changes.forced_root_categories_id' => ['sometimes', 'nullable', 'integer', 'exists:root_categories,id'],
         ];
     }
 
@@ -135,7 +136,7 @@ class EditSelectedGroupsRequest extends FormRequest
             $changes['minfilestoformrelease'] = $minimumFiles === 0 ? null : $minimumFiles;
         }
 
-        foreach (['backfill_target', 'active', 'backfill', 'route_obfuscated_names', 'obfuscated_default_root_categories_id'] as $key) {
+        foreach (['backfill_target', 'active', 'backfill', 'route_obfuscated_names', 'obfuscated_default_root_categories_id', 'forced_root_categories_id'] as $key) {
             if (array_key_exists($key, $changes)) {
                 $changes[$key] = $changes[$key] === null ? null : (int) $changes[$key];
             }

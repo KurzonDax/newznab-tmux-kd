@@ -279,6 +279,16 @@
                             @endforeach
                         </x-select>
                     </div>
+                    <div>
+                        <x-label for="edit-selected-forced-root">Forced Root Category</x-label>
+                        <x-select id="edit-selected-forced-root" x-model="editForcedRootCategoryId" @change="validateEditSelected()">
+                            <option value="">No change</option>
+                            <option value="null">Clear forced root</option>
+                            @foreach($rootCategories as $rootCategory)
+                                <option value="{{ $rootCategory->id }}">{{ $rootCategory->title }}</option>
+                            @endforeach
+                        </x-select>
+                    </div>
                 </div>
                 <p x-show="editObfuscatedRoutingError" x-text="editObfuscatedRoutingError" class="text-sm text-red-600 dark:text-red-400"></p>
 
