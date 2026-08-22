@@ -13,6 +13,19 @@ function prefetchImage(guid, type, resolvedUrl) {
   }
 }
 
+function imagePrefetchPayload(element) {
+  const imageUrl = element.dataset.imageUrl;
+  if (!imageUrl && element.classList.contains("audio-preview-badge")) {
+    return null;
+  }
+
+  return {
+    guid: element.dataset.guid,
+    type: element.classList.contains("sample-badge") ? "sample" : "preview",
+    imageUrl,
+  };
+}
+
 export function previewModal() {
   return {
     open: false,
@@ -20,12 +33,23 @@ export function previewModal() {
     imageUrl: "",
     imageError: false,
     imageLoaded: false,
+    audioUrl: "",
+    audioType: "",
+    audioMeta: "",
 
-    show(guid, type, resolvedUrl, title) {
+    show(guid, type, resolvedUrl, title, audio) {
+      this.releaseAudio();
+
       type = type || "preview";
       this.title =
         title || (type === "sample" ? "Sample Image" : "Preview Image");
-      const newUrl = resolvedUrl || buildImageUrl(guid, type);
+      const hasAudioPreview = Boolean(audio?.url);
+      const newUrl =
+        resolvedUrl || (hasAudioPreview ? "" : buildImageUrl(guid, type));
+
+      this.audioUrl = audio?.url || "";
+      this.audioType = audio?.type || "";
+      this.audioMeta = audio?.meta || "";
 
       if (this.imageUrl === newUrl) {
         this.open = true;
@@ -47,7 +71,22 @@ export function previewModal() {
     },
 
     close() {
+      this.releaseAudio();
       this.open = false;
+    },
+
+    releaseAudio() {
+      const player = this.$refs?.audioPlayer;
+      if (player) {
+        player.pause();
+        player.removeAttribute("src");
+        player.querySelector("source")?.removeAttribute("src");
+        player.load();
+      }
+
+      this.audioUrl = "";
+      this.audioType = "";
+      this.audioMeta = "";
     },
 
     errorMessage() {
@@ -72,6 +111,13 @@ export function previewModal() {
             "preview",
             preview.dataset.imageUrl,
             preview.dataset.imageTitle,
+            preview.dataset.audioUrl
+              ? {
+                  url: preview.dataset.audioUrl,
+                  type: preview.dataset.audioType,
+                  meta: preview.dataset.audioMeta,
+                }
+              : undefined,
           );
           return;
         }
@@ -91,16 +137,18 @@ export function previewModal() {
       document.addEventListener("mouseover", function (e) {
         const preview = e.target.closest(".preview-badge");
         if (preview) {
-          prefetchImage(
-            preview.dataset.guid,
-            "preview",
-            preview.dataset.imageUrl,
-          );
+          const payload = imagePrefetchPayload(preview);
+          if (payload) {
+            prefetchImage(payload.guid, payload.type, payload.imageUrl);
+          }
           return;
         }
         const sample = e.target.closest(".sample-badge");
         if (sample) {
-          prefetchImage(sample.dataset.guid, "sample", sample.dataset.imageUrl);
+          const payload = imagePrefetchPayload(sample);
+          if (payload) {
+            prefetchImage(payload.guid, payload.type, payload.imageUrl);
+          }
         }
       });
 
@@ -115,17 +163,18 @@ export function previewModal() {
             entries.forEach(function (entry) {
               if (entry.isIntersecting) {
                 const el = entry.target;
-                const type = el.classList.contains("sample-badge")
-                  ? "sample"
-                  : "preview";
-                const guid = el.dataset.guid;
+                const payload = imagePrefetchPayload(el);
+                if (!payload) {
+                  observer.unobserve(el);
+                  return;
+                }
                 if (typeof requestIdleCallback === "function") {
                   requestIdleCallback(function () {
-                    prefetchImage(guid, type, el.dataset.imageUrl);
+                    prefetchImage(payload.guid, payload.type, payload.imageUrl);
                   });
                 } else {
                   setTimeout(function () {
-                    prefetchImage(guid, type, el.dataset.imageUrl);
+                    prefetchImage(payload.guid, payload.type, payload.imageUrl);
                   }, 200);
                 }
                 observer.unobserve(el);
