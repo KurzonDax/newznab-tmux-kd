@@ -11,6 +11,7 @@ use App\Services\AdditionalProcessing\MediaTools;
 use App\Services\AdditionalProcessing\NzbContentParser;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\UsenetDownloadService;
+use App\Services\AudioProcessing\AudioDecodableLengthProbe;
 use App\Services\AudioProcessing\AudioFetcher;
 use App\Services\AudioProcessing\AudioPreviewEncoder;
 use App\Services\AudioProcessing\AudioProcessingConfiguration;
@@ -46,11 +47,16 @@ class AudioProcessingServiceProvider extends ServiceProvider
 
         $this->app->singleton(AudioSourceSelector::class, fn (): AudioSourceSelector => new AudioSourceSelector);
 
+        $this->app->singleton(AudioDecodableLengthProbe::class, fn ($app): AudioDecodableLengthProbe => new AudioDecodableLengthProbe(
+            $app->make(MediaTools::class),
+        ));
+
         $this->app->singleton(AudioFetcher::class, fn ($app): AudioFetcher => new AudioFetcher(
             $app->make(AudioProcessingConfiguration::class),
             $app->make(UsenetDownloadService::class),
             $app->make(ArchiveExtractionService::class),
             $app->make(MediaTools::class),
+            $app->make(AudioDecodableLengthProbe::class),
         ));
 
         $this->app->singleton(AudioPreviewEncoder::class, fn ($app): AudioPreviewEncoder => new AudioPreviewEncoder(

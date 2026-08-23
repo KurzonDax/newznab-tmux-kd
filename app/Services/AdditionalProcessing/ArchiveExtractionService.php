@@ -412,13 +412,16 @@ class ArchiveExtractionService
         string $archivePath,
         string $filename,
         string $destinationDir,
+        bool $keepBroken = false,
     ): ?string {
         if ($this->config->unrarPath) {
             $extractedPath = $this->extractFileAtPathViaExternalTool(
                 $filename,
                 $destinationDir,
                 fn (string $extractDir): string => $this->config->getKillString()
-                    .$this->config->unrarPath.'" e -y -c- -inul -p- "'.$archivePath.'" "'.$filename.'" "'.$extractDir.'"',
+                    .$this->config->unrarPath.'" e -y -c- -inul -p-'
+                    .($keepBroken ? ' -kb' : '')
+                    .' "'.$archivePath.'" "'.$filename.'" "'.$extractDir.'"',
             );
             if ($extractedPath !== null) {
                 return $extractedPath;
