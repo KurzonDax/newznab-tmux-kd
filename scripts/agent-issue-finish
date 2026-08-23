@@ -46,17 +46,16 @@ if [[ "$pull_request_state" == OPEN ]]; then
 fi
 
 while true; do
-    pull_request_state="$(gh pr view "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
-        --json state --jq .state)"
+    pull_request_snapshot="$(gh pr view "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
+        --json state,mergeStateStatus,reviewDecision,statusCheckRollup \
+        --jq '[.state, .mergeStateStatus, (if (.reviewDecision // "") == "" then "NONE" else .reviewDecision end), (.statusCheckRollup | length)] | @tsv')"
+    IFS=$'\t' read -r pull_request_state merge_state review_decision check_count \
+        <<<"$pull_request_snapshot"
+
     if [[ "$pull_request_state" == MERGED ]]; then
         break
     fi
     [[ "$pull_request_state" == OPEN ]] || agent_fail "pull request #$pull_request_number closed without merging"
-
-    merge_state="$(gh pr view "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
-        --json mergeStateStatus --jq .mergeStateStatus)"
-    review_decision="$(gh pr view "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
-        --json reviewDecision --jq '.reviewDecision // empty')"
 
     case "$review_decision" in
         CHANGES_REQUESTED|REVIEW_REQUIRED)
@@ -79,8 +78,6 @@ while true; do
             ;;
     esac
 
-    check_count="$(gh pr view "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
-        --json statusCheckRollup --jq '.statusCheckRollup | length')"
     if [[ "$check_count" -eq 0 ]]; then
         sleep 5
         continue
@@ -90,9 +87,6 @@ while true; do
         agent_fail "required checks failed for pull request #$pull_request_number"
     fi
 
-    pull_request_state="$(gh pr view "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
-        --json state --jq .state)"
-    [[ "$pull_request_state" != MERGED ]] || break
     sleep 10
 done
 

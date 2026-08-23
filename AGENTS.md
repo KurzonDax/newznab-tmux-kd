@@ -25,11 +25,11 @@ Domain documentation uses the single-context layout. See `docs/agents/domain.md`
 ## Quick Reference
 
 ```bash
-php artisan test --compact --filter=TestName  # Run single test (PHPUnit only)
-./vendor/bin/pint --dirty                     # Format changed files
-php artisan tmux:start                        # Start processing engine
-npm run build                                 # Required after frontend changes
-php artisan route:cache                       # Refresh cached routes if new routes seem missing
+scripts/agent-sail artisan test --compact --filter=TestName  # Run single test (PHPUnit only)
+scripts/agent-sail bin pint --dirty --format agent           # Format changed files
+scripts/agent-sail artisan tmux:start                         # Start processing engine
+scripts/agent-sail npm run build                              # Required after frontend changes
+scripts/agent-sail artisan route:cache                        # Refresh cached routes if new routes seem missing
 ```
 
 ## Architecture

@@ -43,26 +43,19 @@ worktrees_parent="$(dirname "$worktree_path")"
 current_login="$(gh api user --jq .login)" || agent_fail 'could not resolve the authenticated GitHub user'
 
 # Read all ownership and readiness signals before the first GitHub write.
-gh issue view "$issue_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
-    --json number,title,state,labels,assignees,comments,url >/dev/null ||
+issue_snapshot="$(gh issue view "$issue_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
+    --json number,title,state,labels,assignees,comments,url \
+    --jq "[.state, ([.labels[] | select(.name == \"ready-for-agent\")] | length), (.assignees | length), ([.assignees[] | select(.login == \"$current_login\")] | length)] | @tsv")" ||
     agent_fail "could not read issue #$issue_number"
-gh api "repos/$AGENT_EXPECTED_REPOSITORY/issues/$issue_number/dependencies/blocked_by?per_page=100" \
-    >/dev/null || agent_fail "could not read dependencies for issue #$issue_number"
-gh pr list --repo "$AGENT_EXPECTED_REPOSITORY" --state all --head "$branch" \
-    --json number,state,headRefName,url,mergedAt >/dev/null ||
-    agent_fail 'could not inspect existing pull requests'
+IFS=$'\t' read -r issue_state ready_label_count assignee_count current_user_assignment_count \
+    <<<"$issue_snapshot"
 
-issue_state="$(gh issue view "$issue_number" --repo "$AGENT_EXPECTED_REPOSITORY" --json state --jq .state)"
-ready_label_count="$(gh issue view "$issue_number" --repo "$AGENT_EXPECTED_REPOSITORY" --json labels \
-    --jq '[.labels[] | select(.name == "ready-for-agent")] | length')"
-assignee_count="$(gh issue view "$issue_number" --repo "$AGENT_EXPECTED_REPOSITORY" --json assignees \
-    --jq '.assignees | length')"
-current_user_assignment_count="$(gh issue view "$issue_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
-    --json assignees --jq "[.assignees[] | select(.login == \"$current_login\")] | length")"
 open_blocker_count="$(gh api "repos/$AGENT_EXPECTED_REPOSITORY/issues/$issue_number/dependencies/blocked_by?per_page=100" \
-    --jq '[.[] | select(.state == "open" or .state == "OPEN")] | length')"
+    --jq '[.[] | select(.state == "open" or .state == "OPEN")] | length')" ||
+    agent_fail "could not read dependencies for issue #$issue_number"
 pull_request_count="$(gh pr list --repo "$AGENT_EXPECTED_REPOSITORY" --state all --head "$branch" \
-    --json number --jq 'length')"
+    --json number,state,headRefName,url,mergedAt --jq 'length')" ||
+    agent_fail 'could not inspect existing pull requests'
 
 [[ "$issue_state" == OPEN ]] || agent_fail "issue #$issue_number is not open"
 [[ "$ready_label_count" -eq 1 ]] || agent_fail "issue #$issue_number is not labelled ready-for-agent"
