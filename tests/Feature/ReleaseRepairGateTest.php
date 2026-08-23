@@ -67,6 +67,16 @@ class ReleaseRepairGateTest extends TestCase
     }
 
     #[Test]
+    public function the_never_measured_nzb_import_state_is_selected_by_no_recovery_or_sweep(): void
+    {
+        $this->insertRelease(1, completion: 0.0, outcome: null, declaredFiles: null);
+
+        $this->assertTrue(ReleaseRepairCandidateQuery::batch(10, 95.0, 72)->isEmpty());
+        $this->assertTrue(RescanCandidateQuery::batch(10, 95.0, 72)->isEmpty());
+        $this->assertSame([], $this->sweptIds(95.0));
+    }
+
+    #[Test]
     public function a_release_at_or_above_the_threshold_is_never_swept(): void
     {
         $this->insertRelease(1, completion: 95.0, outcome: ReleaseRepairOutcome::Failed);
@@ -249,6 +259,24 @@ class ReleaseRepairGateTest extends TestCase
     }
 
     #[Test]
+    public function an_unresolved_legacy_release_is_simultaneously_rescan_eligible_and_deletion_eligible(): void
+    {
+        $this->insertRelease(
+            1,
+            completion: 40.0,
+            outcome: ReleaseRepairOutcome::Failed,
+            declaredFiles: null,
+            totalPart: 12,
+        );
+
+        $this->assertSame(
+            [1],
+            RescanCandidateQuery::batch(10, 95.0, 72)->pluck('id')->map(intval(...))->all()
+        );
+        $this->assertSame([1], $this->sweptIds(95.0));
+    }
+
+    #[Test]
     public function unresolved_legacy_releases_queue_behind_the_ones_with_a_known_shortfall(): void
     {
         // `NULL - totalpart` is not a shortfall. Reading it as one would sort the whole legacy
@@ -300,6 +328,39 @@ class ReleaseRepairGateTest extends TestCase
         );
 
         $this->assertTrue(RescanCandidateQuery::batch(10, 95.0, 72)->isEmpty());
+    }
+
+    #[Test]
+    public function a_partial_re_scan_recorded_as_repaired_is_stranded_between_recovery_and_the_sweep(): void
+    {
+        $this->insertRelease(
+            1,
+            completion: 80.0,
+            outcome: ReleaseRepairOutcome::Failed,
+            declaredFiles: 40,
+            totalPart: 39,
+            rescanOutcome: ReleaseRepairOutcome::Repaired,
+        );
+
+        $this->assertTrue(ReleaseRepairCandidateQuery::batch(10, 95.0, 72)->isEmpty());
+        $this->assertTrue(RescanCandidateQuery::batch(10, 95.0, 72)->isEmpty());
+        $this->assertSame([], $this->sweptIds(95.0));
+    }
+
+    #[Test]
+    public function a_release_repaired_to_an_old_target_is_not_reopened_when_the_target_rises(): void
+    {
+        $this->insertRelease(
+            1,
+            completion: 96.0,
+            outcome: ReleaseRepairOutcome::Repaired,
+            declaredFiles: 12,
+            totalPart: 12,
+        );
+
+        $this->assertTrue(ReleaseRepairCandidateQuery::batch(10, 99.0, 72)->isEmpty());
+        $this->assertTrue(RescanCandidateQuery::batch(10, 99.0, 72)->isEmpty());
+        $this->assertSame([], $this->sweptIds(99.0));
     }
 
     /**

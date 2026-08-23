@@ -77,6 +77,24 @@ class MissingFileRescanServiceTest extends TestCase
     }
 
     #[Test]
+    public function a_successful_rescan_does_not_requeue_settled_additional_processing(): void
+    {
+        $release = $this->releaseHolding([1, 2], declaredFiles: 3, firstArticle: 1000, lastArticle: 1200);
+        DB::table('releases')->where('id', $release->id)->update([
+            'haspreview' => 0,
+            'passwordstatus' => 0,
+        ]);
+        $this->groupCarries($this->articlesForFile(3, segments: 2, startingAt: 1150));
+
+        $result = $this->service()->rescan($release, $this->rescanOptions(), $this->budget());
+        $stored = DB::table('releases')->where('id', $release->id)->first();
+
+        $this->assertSame(ReleaseRepairOutcome::Repaired, $result->outcome);
+        $this->assertSame(0, (int) $stored->haspreview);
+        $this->assertSame(0, (int) $stored->passwordstatus);
+    }
+
+    #[Test]
     public function a_partially_found_file_is_written_with_what_was_found(): void
     {
         // The repair engine's next pass synthesizes the rest from these message-IDs, which is why
