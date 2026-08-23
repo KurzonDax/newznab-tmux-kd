@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace Tests\Unit\AudioProcessing;
 
 use App\Services\AudioProcessing\AudioProcessingConfiguration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
 
 /**
  * Moved here from Tests\Unit\AdditionalProcessing\ProcessingConfigurationTest when
@@ -73,6 +76,21 @@ class AudioProcessingConfigurationTest extends TestCase
     public function ignored_file_regex_never_swallows_an_audio_file(string $fileName): void
     {
         $this->assertSame(0, preg_match($this->ignoredPattern(), $fileName));
+    }
+
+    #[Test]
+    public function configured_preview_start_seconds_are_used(): void
+    {
+        Schema::create('settings', function (Blueprint $table): void {
+            $table->string('name')->primary();
+            $table->text('value')->nullable();
+        });
+        DB::table('settings')->insert([
+            'name' => 'audio_preview_start_seconds',
+            'value' => '10',
+        ]);
+
+        $this->assertSame(10, (new AudioProcessingConfiguration)->previewStartSeconds);
     }
 
     private function audioPattern(): string
