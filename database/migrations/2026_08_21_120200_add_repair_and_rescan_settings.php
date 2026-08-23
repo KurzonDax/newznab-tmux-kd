@@ -28,7 +28,7 @@ return new class extends Migration
     /**
      * @return list<array{name: string, value: string}>
      */
-    private function settings(): array
+    public function settings(): array
     {
         return [
             ['name' => 'repair_retry_after_hours', 'value' => '72'],

@@ -27,7 +27,7 @@ return new class extends Migration
     /**
      * @return list<array{name: string, value: string}>
      */
-    private function settings(): array
+    public function settings(): array
     {
         return [
             ['name' => 'postthreadsaudio', 'value' => '1'],

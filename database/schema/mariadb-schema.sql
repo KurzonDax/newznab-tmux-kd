@@ -1021,7 +1021,7 @@ CREATE TABLE `root_categories` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_unicode_ci;
 DROP TABLE IF EXISTS `settings`;
 CREATE TABLE `settings` (
-  `name` varchar(25) NOT NULL DEFAULT '',
+  `name` varchar(255) NOT NULL DEFAULT '',
   `value` varchar(1000) NOT NULL DEFAULT '',
   PRIMARY KEY (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_unicode_ci;
