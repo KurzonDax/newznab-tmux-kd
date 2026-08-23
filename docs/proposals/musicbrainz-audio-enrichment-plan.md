@@ -4,9 +4,15 @@ Research date: 2026-08-23
 
 ## Recommendation
 
-Build a new asynchronous `MusicIdentity` module, with evidence collection embedded in the existing `aud` path and resolution performed by a rewritten `mus` worker. The resolver should treat a MusicBrainz recording, release edition, and release group as different identities; retain complete, versioned evidence; score several candidates locally; and project accepted identity text into the internal search indexes.
+Build a new asynchronous `MusicIdentity` module, with evidence collection embedded in the existing `aud` path and resolution performed by a rewritten `mus` worker. The resolver should treat a MusicBrainz recording, release edition, and release group as different identities; retain complete, versioned evidence; score several candidates locally; rename releases when album-level identity clears the rename gate; and project accepted identity text into the internal search indexes.
 
-The primary product objective is **identification-backed search recall**: an existing audio or generic API query for a canonical artist, album, song, credited track artist, alias, or transliteration should locate the existing release that contains it, even when the posted release name is opaque. Supplemental metadata is out of the primary scope unless it improves candidate discrimination or search. Automatic renaming is optional and must not be required to make an identified release searchable.
+The project has three equal, required product outcomes:
+
+1. **Identify** audio releases accurately from filenames, ordered track lists, tags, exact identifiers, MusicBrainz candidates, and conditional fingerprints.
+2. **Rename** a release to the accepted canonical artist/album name when album-level identity clears the stricter rename gate and the existing PreDB/trusted/manual protections allow it.
+3. **Improve search** equally for the web front end and the immutable external API, so an existing query for a canonical artist, album, song, credited track artist, alias, or transliteration locates the release that contains it.
+
+Supplemental enrichment is in scope when it materially improves identification, disambiguation, renaming, web search, or API search. Data that serves none of those outcomes should be deferred.
 
 The most valuable first feature is **not** AcoustID. It is retaining and matching the ordered audio filenames that NNTmux already sees in NZBs and archive listings. In a production sample, the filenames exposed directly by an NZB were uncommon but almost always multi-track and useful. Archive-only releases were much more common, and `AudioFetcher` already obtains their inner file listing but discards it. Three distinctive track names from two otherwise opaque production releases each identified one MusicBrainz release group uniquely on the private mirror.
 
@@ -30,15 +36,30 @@ mus: exact IDs -> track candidates -> MusicBrainz graph -> AcoustID if needed
                               |
                               v
                   scored, explained decision
-                         |
-                         v
-             internal search-index projection
-                         |
-                         v
-              existing immutable API contracts
+                     /       \
+                    v         v
+          guarded rename   internal search-index projection
+                                     |
+                              +------+------+
+                              |             |
+                              v             v
+                         web search   immutable API search
 ```
 
 This keeps NNTP and preview throughput independent of metadata-service health, preserves the exact complement between the `aud` and `add` paths, and lets new scoring versions replay old evidence without downloading the audio again.
+
+## Equal web and API search outcomes
+
+Web-front-end search and API search are equally important consumers of accepted music identity. An implementation is incomplete if an artist, album, or track can be found through one surface but not the other.
+
+The current consumers use two internal search paths:
+
+- general web search and generic API search use the primary release index, whose release-name text is currently based on `searchname`/`plainsearchname`; and
+- dedicated web music browsing/filtering and dedicated audio API search use the secondary Music index, whose full-text fields are currently album `artist` and `title`.
+
+The search projection must enrich both paths with the same accepted identity vocabulary: canonical and alias/transliterated album names, album artist credits, artist aliases, release-track titles, recording aliases, and credited track artists. Weighting may differ by query context, but confidence eligibility must not. A term rejected as ambiguous must not be searchable on either surface.
+
+Renaming and search indexing reinforce one another but are not substitutes. A canonical rename makes the release name itself useful everywhere. The additional internal track/alias fields allow a song or alternate artist spelling to find an album even when those terms do not belong in the release name.
 
 ## Immutable external API contract
 
@@ -53,9 +74,11 @@ The implementation must preserve all of the following:
 - XML and JSON response schemas, element/attribute names, field names, types, and nullability;
 - status codes, pagination/cursor contracts, limits, sorting options, category/group/age/size filters, and default-category behavior;
 - capability-advertisement output; and
-- the meaning of existing release fields, including the returned release title/name.
+- the meaning of existing release fields, including that the returned title/name is the release's current processed name.
 
-This prohibition includes changes that appear merely additive. Do not add MusicBrainz IDs, canonical artist/album fields, matched-track context, custom Newznab attributes, or other new response members. Do not replace an opaque posted release title in an API response with a canonical MusicBrainz title. A separate future API version would require its own explicit design and authorization; it is not part of this project.
+This prohibition includes changes that appear merely additive. Do not add MusicBrainz IDs, canonical artist/album fields, matched-track context, custom Newznab attributes, or other new response members. A separate future API version would require its own explicit design and authorization; it is not part of this project.
+
+API immutability does not freeze mutable release data. The application already performs internal release renames. When the required MusicBrainz rename projection updates a release through that existing mechanism, web pages and API responses naturally return the new current name through their existing fields. Do not substitute a different canonical title only in an API presenter, and do not introduce a second API-only naming rule.
 
 Search improvement happens entirely behind the contract:
 
@@ -87,7 +110,7 @@ Every implementation PR that touches search or API-adjacent code must prove API 
 - assertions that no response key, XML element/attribute, custom Newznab attribute, type, or existing field meaning changed; and
 - search tests showing that an identified artist, album, or track returns the correct existing release through both dedicated audio and generic search while the response schema remains identical.
 
-The project succeeds by returning more correct releases for existing queries, not by expanding the API.
+The project succeeds by identifying and renaming releases and returning more correct releases for existing web and API queries, not by expanding the API.
 
 ## Evidence from the current application
 
@@ -323,8 +346,8 @@ The numerical score is a deterministic ranking value, not a probability. An init
 
 | Decision band | Initial score | Permitted automatic action |
 |---|---:|---|
-| Verified | 97–100 | Attach metadata; rename only if the rename gate also passes. |
-| Strong | 92–96 | Attach canonical metadata; preserve the current name. |
+| Verified | 97–100 | Index accepted identity and execute the required rename when the rename gate passes. |
+| Strong | 92–96 | Index the accepted identity scope; preserve the current name because the rename gate did not pass. |
 | Suggestive | 75–91 | Review/shadow result only. |
 | Unresolved | below 75 | No identity mutation. |
 
@@ -345,11 +368,11 @@ Provider errors are not decisions:
 - `needs_review`: one or more plausible candidates remain too close;
 - `accepted_recording`, `accepted_release_group`, or `accepted_edition`: explicit identity scope.
 
-### 5. Search, metadata, and rename projections
+### 5. Rename, search, and supplemental projections
 
-Search indexing, metadata attachment, and renaming are separate actions with separate thresholds. Search is the required projection; supplemental display metadata and renaming are optional.
+Renaming and search indexing are required projections with different confidence scope. Supplemental metadata is projected when it improves identification, disambiguation, the canonical rename, or search.
 
-The search projection writes accepted identity text into internal search documents without changing a release's stored or API-presented name:
+The search projection, considered independently, writes accepted identity text into internal search documents. It does not perform a presenter-only substitution or bypass the separate required rename projection; when that rename projection passes its gate, the stored current name changes and both web and API naturally present it:
 
 - an accepted recording contributes its canonical title, artist credit, and safe aliases;
 - an accepted release group contributes canonical album/artist text, aliases/transliterations, and its accepted track titles/credits; and
@@ -357,7 +380,7 @@ The search projection writes accepted identity text into internal search documen
 
 Only evidence at or above the policy threshold for that identity scope is searchable. A recording acceptance does not authorize indexing an unproven album track list. Search-index updates must use the existing release synchronization infrastructure and invalidate existing search-result caches without changing any external request or response contract.
 
-The metadata projection may attach an accepted release group, canonical artist credit, display title, original date, type, track list, and cover while leaving `releases.name` unchanged. The rename projection must additionally require:
+The rename projection must require:
 
 - the verified band and a sufficient runner-up margin;
 - no hard contradiction;
@@ -366,6 +389,10 @@ The metadata projection may attach an accepted release group, canonical artist c
 - an idempotent record of the prior name and fields applied.
 
 For compilations, use MusicBrainz's release artist credit (often Various Artists), not one track's artist. Prefer release-group title and original release date in the generic album name; include edition details only when the edition is accepted. A generated name should become trusted only when the verified rename policy passes. Tag-only renames remain provisional and may be superseded by an accepted MusicBrainz projection.
+
+When the rename gate passes, renaming is not an operator-selectable enhancement to omit from the completed system: it is the required accepted-identity projection. Releases that have only recording-level identity, remain ambiguous, have contradictory evidence, or are protected by PreDB/trusted/manual provenance are intentionally not renamed.
+
+Supplemental projection may attach an accepted release group, canonical artist credit, original date, release type, track list, aliases, and other fields that directly improve matching, the rename decision, or web/API search. Artwork, reviews, and presentation-only data are not required unless separately justified.
 
 Every projection stores a before/after field diff. A reversal may restore a field only if its current value still equals the value the projection wrote, so a later human correction is never overwritten.
 
@@ -459,9 +486,9 @@ The current preview, spectrogram, and fingerprint paths each decode audio differ
 
 Before enabling AcoustID in production, obtain an application key, reconfirm current non-commercial/commercial terms for this deployment, and validate hit rate and false positives on representative complete files. Public self-hosting is not a near-term escape hatch; the official server project describes self-hosting as unsupported and generally not useful without substantial indexing infrastructure.
 
-## Optional enrichment beyond search
+## Supplemental enrichment guided by identification and search
 
-The following possibilities are secondary to identification-backed search. Do not implement them merely because MusicBrainz exposes the data; each must either improve matching/search or be separately justified. None may change the immutable external API contract.
+Supplemental enrichment is welcome when it improves identity evidence, rename quality, or web/API search. Do not implement data merely because MusicBrainz exposes it; each field must support one of those outcomes or be separately justified. None may change the immutable external API contract.
 
 1. **Canonical release display:** correct punctuation, capitalization, aliases/transliterations, artist credit, original release date, exact-edition date, country, label, catalog number, barcode, media format, status, and disambiguation.
 2. **Track listing and sampled-track identity:** display release-specific titles, positions, credits, and durations; name the previewed recording correctly; do not rewrite the files inside the NZB.
@@ -491,7 +518,7 @@ app/Services/MusicIdentity/
   Fingerprinting/              FFmpeg/fpcalc adapter and capability probe
   Gateways/                    MusicBrainz, AcoustID, Cover Art adapters
   Matching/                    normalization, distinctiveness, alignment, scoring
-  Projections/                 internal search, musicinfo, and optional guarded rename
+  Projections/                 required guarded rename, internal search, musicinfo
   MusicIdentityResolver.php    deep public resolution boundary
   ResolveReleaseMusicIdentity.php
 ```
@@ -551,7 +578,7 @@ Build a labeled corpus from:
 
 For each resolver version, retain top candidates and feature explanations. Evaluate candidate-retrieval recall separately from acceptance precision. Report exact-edition accuracy, release-group accuracy, recording accuracy, false automatic rename rate, review rate, and unresolved rate. Threshold changes require replaying the frozen corpus and inspecting every newly automatic cohort.
 
-An operator review view should show the current name, observed files/tags/identifiers, aligned candidate track lists, cover/type/date/artist, score contributions, contradictions, runner-up, and actions for metadata only, metadata plus rename, reject, or choose another candidate. Human decisions should be explicit labeled outcomes, not hidden mutations of scoring weights.
+An operator review view should show the current name, observed files/tags/identifiers, aligned candidate track lists, cover/type/date/artist, score contributions, contradictions, and runner-up. Its actions should distinguish accepting recording-only evidence, accepting an album identity, rejecting the candidates, and choosing another candidate. Accepting an unprotected album identity applies the canonical rename; it is not a separate checkbox. Human decisions should be explicit labeled outcomes, not hidden mutations of scoring weights.
 
 Required automated test cohorts include:
 
@@ -566,12 +593,15 @@ Required automated test cohorts include:
 - trusted/PreDB/manual name protection and safe reversal; and
 - Cover Art fallback/failure independent of identity acceptance.
 
-API-search verification is mandatory and independent of resolver tests:
+Web/API search verification is mandatory and independent of resolver tests:
 
+- general web search finds an identified release by canonical artist, album, and contained track;
+- dedicated web music browse/filtering finds the same accepted identities;
 - the existing dedicated v1/v2 audio requests find an identified release by canonical artist, album, and contained track;
 - the existing generic v1/v2 search requests find the same release through internal music text;
 - recording-only acceptance exposes only the proven recording/artist text to search;
 - ambiguous or rejected candidates add no searchable terms;
+- web and API search use the same confidence-eligible vocabulary for a release;
 - category exclusions, group, age, size, password, sort, limit, offset, and cursor behavior remain unchanged; and
 - v1 XML/JSON and v2 JSON response contracts remain unchanged, including the absence of new match-context or MusicBrainz fields.
 
@@ -599,33 +629,42 @@ Unit tests should use fake gateways and frozen normalized responses. Optional in
 - Calibrate against the labeled corpus.
 - Extend the internal secondary Music index with accepted album, artist, track, credited-artist, alias, and transliteration text.
 - Extend the internal primary release index with release-scoped accepted music search text.
-- Make both existing dedicated audio and generic API searches use the richer internal index data without adding routes, parameters, fields, attributes, or response semantics.
-- Preserve the posted release name and every existing presenter contract.
+- Make general web search, dedicated web music browse/filtering, existing dedicated audio API search, and existing generic API search use the richer internal index data.
+- Preserve the immutable API without adding routes, parameters, fields, attributes, or response semantics.
+- During this pre-rename phase, preserve the current release name; every presenter contract remains unchanged in all phases.
 - Enable recording-only search terms separately from release-group track-list terms according to confidence scope.
-- Add golden API contract and search-recall regression tests before activation.
+- Add equal web/API search-recall tests and golden API contract tests before activation.
 
-### Phase 3: Chromaprint and AcoustID
+### Phase 3: required guarded rename
+
+- Enable canonical MusicBrainz renames whenever accepted album identity clears the stricter rename gate.
+- Use release artist credit/album artist rather than a sampled track performer, including explicit Various Artists handling.
+- Protect PreDB, trusted, and manual names and record reversible before/after provenance.
+- Audit the initial rename cohorts and tune the gate; do not turn renaming into an optional deployment outcome once the gate is validated.
+- Synchronize the renamed release through the existing primary search-index path so web and API see the same current name.
+
+### Phase 4: Chromaprint and AcoustID
 
 - Validate FFmpeg/fpcalc compatibility on complete representative sources.
 - Generate conditional fingerprints before source cleanup.
 - Run AcoustID lookups only for unresolved/ambiguous cases and measure incremental search yield.
 - Consider selectively extracting a second distinctive track only if measured identification gain justifies NNTP/CPU cost.
 
-### Phase 4: backfill and calibration
+### Phase 5: backfill and calibration
 
 - Replay existing NZBs, `release_audio_tags`, `release_files`, NFO/CUE/log evidence, and current legacy links without refetching audio first.
 - Backfill fingerprints only where a complete source is already available or an explicitly budgeted re-fetch is justified.
-- Measure dedicated and generic API recall for artist, album, and track queries while continuously checking contract snapshots.
+- Measure general/dedicated web and generic/dedicated API recall for artist, album, and track queries while continuously checking API contract snapshots.
 - Tune acceptance by identity scope rather than changing API behavior.
 
-### Phase 5: optional projections and enrichment
+### Phase 6: supplemental enrichment
 
-- Consider metadata display, guarded automatic rename, work/credit/live/series enrichment, artwork, and completeness diagnostics only after the search objective is met.
-- If renaming is enabled, protect PreDB, trusted, and manual names, audit the cohort, and keep safe reversal data.
-- Any external API representation change remains out of scope even if an optional projection is implemented internally or in the first-party web UI.
+- Add aliases, credits, work/live/series data, classifications, and other fields when they measurably improve identification, canonical naming, or web/API search.
+- Consider presentation-only metadata, artwork, and completeness diagnostics separately; they are not substitutes for identification, renaming, or search.
+- Any external API representation change remains out of scope even when supplemental data is projected internally or into the first-party web UI.
 - Retire the legacy iTunes matching code and sentinel lifecycle after compatibility consumers have migrated.
 
-Each phase should be independently deployable and reversible. Identification-backed search must provide value without changing a release name or any external API contract.
+Each phase should be independently deployable and reversible. The completed system must deliver identification, guarded canonical renaming, and equal web/API search improvement while preserving the external API contract.
 
 ## Design alternatives considered
 
@@ -642,7 +681,7 @@ The recommended hybrid is intentionally deeper than adding an API call to `Music
 ## Explicit non-goals
 
 - Do not add, remove, rename, reinterpret, or otherwise change any route, method, parameter, default, error, status, XML element/attribute, JSON field/type, capability, pagination behavior, sorting/filtering behavior, custom Newznab attribute, or existing release-field meaning in the external API.
-- Do not expose MusicBrainz IDs, canonical metadata, matched-track context, or internal confidence/evidence fields through the existing API.
+- Do not add MusicBrainz IDs, canonical-metadata fields, matched-track context, or internal confidence/evidence fields to the existing API. This does not prevent the existing title/name field from reflecting the release's current value after the required internal rename.
 - Do not write to the MusicBrainz mirror, AcoustID, or production database as part of identification.
 - Do not call AcoustID's submission API automatically.
 - Do not rewrite or repack files inside an NZB; canonical track titles are display/enrichment data.
@@ -663,7 +702,7 @@ The design is complete, but these thresholds must be empirical rather than guess
 5. Universal versus conditional fingerprint CPU cost and incremental yield.
 6. Normal mirror replication lag, search-index lag, request concurrency, and cache TTLs.
 7. Current AcoustID service terms for this deployment and whether an application key may be used at the expected volume.
-8. Which optional non-search enrichment fields, if any, justify persistence after the identification-backed search objective is met.
+8. Which supplemental fields measurably improve identity decisions, canonical renames, or web/API search enough to justify persistence.
 
 None of these gates requires changing the architecture. They determine policy and rollout settings, which should remain versioned.
 
