@@ -37,11 +37,14 @@ final class AudioFetcher
 {
     private const int ARCHIVE_FETCH_CHUNK_SEGMENTS = 64;
 
+    private const int PARTIAL_MARGIN_SECONDS = 2;
+
     public function __construct(
         private readonly AudioProcessingConfiguration $config,
         private readonly UsenetDownloadService $downloadService,
         private readonly ArchiveExtractionService $archiveService,
         private readonly MediaTools $mediaTools,
+        private readonly AudioDecodableLengthProbe $decodableLengthProbe,
     ) {}
 
     /**
@@ -126,14 +129,18 @@ final class AudioFetcher
         string $groupName,
         Closure $onProbe,
     ): AudioFetchResult {
-        $archivePath = $tmpPath.'audio-archive.rar';
         $archiveBytes = 0;
         $volumes = array_slice($source->parts, 0, $this->config->maxRarParts);
+        $firstArchivePath = $this->archiveVolumePath($tmpPath, 1);
 
-        File::put($archivePath, '');
+        /** @var array<string, array<string, mixed>> $listedFiles */
+        $listedFiles = [];
 
         try {
-            foreach ($volumes as $volume) {
+            foreach ($volumes as $volumeIndex => $volume) {
+                $archivePath = $this->archiveVolumePath($tmpPath, $volumeIndex + 1);
+                File::put($archivePath, '');
+
                 foreach (array_chunk($volume, self::ARCHIVE_FETCH_CHUNK_SEGMENTS) as $chunk) {
                     $data = $this->download($chunk, $groupName, $release, $source->title);
                     if ($data === null) {
@@ -159,23 +166,39 @@ final class AudioFetcher
                         return AudioFetchResult::failed('The archive is password protected.');
                     }
 
-                    $entry = $this->firstAudioEntry($listing['files']);
+                    foreach ($listing['files'] as $file) {
+                        $name = (string) ($file['name'] ?? '');
+                        if ($name !== '' && ! array_key_exists($name, $listedFiles)) {
+                            $listedFiles[$name] = $file;
+                        }
+                    }
+
+                    $entry = $this->firstAudioEntry(array_values($listedFiles));
                     if ($entry === null) {
                         continue;
                     }
 
                     $name = (string) $entry['name'];
                     $declaredSize = (int) ($entry['size'] ?? 0);
-                    $path = $this->archiveService->extractSpecificFileToPath($archivePath, $name, $tmpPath);
+                    $path = $this->archiveService->extractSpecificFileToPath(
+                        $firstArchivePath,
+                        $name,
+                        $tmpPath,
+                        keepBroken: true,
+                    );
 
-                    if ($path === null
-                        || ! File::isFile($path)
-                        || $declaredSize <= 0
-                        || File::size($path) < $declaredSize
-                    ) {
-                        if ($path !== null) {
-                            File::delete($path);
-                        }
+                    if ($path === null || ! File::isFile($path)) {
+                        continue;
+                    }
+
+                    $isComplete = $declaredSize > 0 && File::size($path) >= $declaredSize;
+                    $hasPreviewWindow = $isComplete || $this->decodableLengthProbe->demuxedSeconds($path)
+                        >= $this->config->previewStartSeconds
+                            + $this->config->previewSeconds
+                            + self::PARTIAL_MARGIN_SECONDS;
+
+                    if (! $hasPreviewWindow) {
+                        File::delete($path);
 
                         continue;
                     }
@@ -192,10 +215,19 @@ final class AudioFetcher
                 }
             }
 
-            return AudioFetchResult::failed('No complete audio file was found within '.count($volumes).' archive volume(s).');
+            return AudioFetchResult::failed('No usable audio file was found within '.count($volumes).' archive volume(s).');
         } finally {
-            File::delete($archivePath);
+            foreach (File::glob($tmpPath.'audio-archive.part*.rar') as $archivePartPath) {
+                if (File::isFile($archivePartPath)) {
+                    File::delete($archivePartPath);
+                }
+            }
         }
+    }
+
+    private function archiveVolumePath(string $tmpPath, int $volume): string
+    {
+        return $tmpPath.'audio-archive.part'.sprintf('%03d', $volume).'.rar';
     }
 
     /**

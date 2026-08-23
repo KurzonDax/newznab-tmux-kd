@@ -72,13 +72,13 @@ final class AudioProcessingOrchestrator
 
         foreach ($releases as $release) {
             try {
-                $results[] = $this->processor->process(
+                $result = $this->processor->process(
                     $release,
                     $this->mainTmpPath,
                     $this->groupName((int) $release->groups_id),
                 );
             } catch (\Throwable $e) {
-                $results[] = new AudioProcessingResult(
+                $result = new AudioProcessingResult(
                     releaseId: (int) ($release->id ?? 0),
                     guid: (string) ($release->guid ?? ''),
                     outcome: ProcessingOutcome::Failed,
@@ -100,6 +100,15 @@ final class AudioProcessingOrchestrator
                     AudioCandidateQuery::clearClaim((int) $release->id, $this->claimToken);
                 }
             }
+
+            $results[] = $result;
+            if ($this->config->debugMode) {
+                Log::debug('Audio release settled', [
+                    'release_id' => $result->releaseId,
+                    'outcome' => $result->outcome->value,
+                    'reason' => $result->reason,
+                ]);
+            }
         }
 
         if ($results !== []) {
@@ -114,6 +123,13 @@ final class AudioProcessingOrchestrator
                 'outcomes' => array_count_values(array_map(
                     static fn (AudioProcessingResult $r): string => $r->outcome->value,
                     $results,
+                )),
+                'reasons' => array_count_values(array_map(
+                    static fn (AudioProcessingResult $r): string => $r->reason,
+                    array_filter(
+                        $results,
+                        static fn (AudioProcessingResult $r): bool => $r->outcome !== ProcessingOutcome::Completed,
+                    ),
                 )),
             ]);
         }

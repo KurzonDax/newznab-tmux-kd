@@ -84,6 +84,29 @@ class ArchiveExtractionServicePathTest extends TestCase
         );
     }
 
+    public function test_keep_broken_is_passed_only_to_unrar_when_requested(): void
+    {
+        $fixture = base_path('tests/Fixtures/audio-store.rar');
+        $destination = $this->makeTempDirectory('audio-keep-broken-extraction');
+        $commands = [];
+        $service = new ArchiveExtractionService(
+            $this->config(unrarPath: '/opt/unrar'),
+            commandRunner: function (string $command) use (&$commands, $destination): string {
+                $commands[] = $command;
+                file_put_contents($destination.DIRECTORY_SEPARATOR.'01-track.flac', str_repeat('f', 1024));
+
+                return '';
+            },
+        );
+
+        $service->extractSpecificFileToPath($fixture, '01-track.flac', $destination);
+        $service->extractSpecificFileToPath($fixture, '01-track.flac', $destination, keepBroken: true);
+
+        $this->assertCount(2, $commands);
+        $this->assertStringNotContainsString(' -kb ', $commands[0]);
+        $this->assertStringContainsString(' -kb ', $commands[1]);
+    }
+
     private function config(string|false $unrarPath = false, string|false $unzipPath = false): ProcessingConfiguration
     {
         $reflection = new ReflectionClass(ProcessingConfiguration::class);

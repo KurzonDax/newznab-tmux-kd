@@ -16,6 +16,7 @@ use App\Services\AdditionalProcessing\NzbContentParser;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\UsenetDownloadService;
+use App\Services\AudioProcessing\AudioDecodableLengthProbe;
 use App\Services\AudioProcessing\AudioFetcher;
 use App\Services\AudioProcessing\AudioPreviewEncoder;
 use App\Services\AudioProcessing\AudioProcessingConfiguration;
@@ -411,7 +412,13 @@ class AudioReleaseProcessorTest extends TestCase
         return new AudioReleaseProcessor(
             $nzbParser,
             new AudioSourceSelector,
-            new AudioFetcher($config, $downloadService, Mockery::mock(ArchiveExtractionService::class), $tools),
+            new AudioFetcher(
+                $config,
+                $downloadService,
+                Mockery::mock(ArchiveExtractionService::class),
+                $tools,
+                Mockery::mock(AudioDecodableLengthProbe::class)->shouldIgnoreMissing(0.0),
+            ),
             $encoder,
             new AudioTagExtractor,
             $this->renamer(),
