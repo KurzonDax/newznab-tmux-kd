@@ -49,6 +49,7 @@ class NzbImportSegmentHashDedupeTest extends TestCase
         $this->assertSame(NzbImportStatus::Inserted, $status);
         $expected = sha1("seg-a@example.com\nseg-b@example.com\nseg-c@example.com", true);
         $this->assertSame($expected, DB::table('releases')->value('collectionhash'));
+        $this->assertSame(0.0, (float) DB::table('releases')->value('completion'));
     }
 
     public function test_reimport_with_rewritten_subject_is_duplicate_via_hash(): void

@@ -522,6 +522,41 @@ class CbpCleanupServiceTest extends TestCase
         $this->assertNull($reason);
     }
 
+    public function test_normalized_duplicate_fallback_can_omit_the_true_match_after_twenty_five_prefixes(): void
+    {
+        for ($id = 101; $id <= 125; $id++) {
+            $this->insertRelease($id, 'ReleaseName.Extras.'.$id, 13_897_458_182);
+        }
+        $this->insertRelease(126, '"ReleaseName.part009.rar"', 13_897_458_182);
+
+        $finder = app(ReleaseDuplicateFinder::class);
+        [$dup, $reason] = $finder->findDuplicate(
+            'ReleaseName',
+            'ReleaseName',
+            0,
+            13_897_458_182
+        );
+
+        $this->assertNull($dup);
+        $this->assertNull($reason);
+    }
+
+    public function test_normalized_duplicate_fallback_cannot_see_a_legacy_counter_prefix(): void
+    {
+        $this->insertRelease(127, '[10/88] "ReleaseName.part009.rar" yEnc', 13_897_458_182);
+
+        $finder = app(ReleaseDuplicateFinder::class);
+        [$dup, $reason] = $finder->findDuplicate(
+            'ReleaseName',
+            'ReleaseName',
+            0,
+            13_897_458_182
+        );
+
+        $this->assertNull($dup);
+        $this->assertNull($reason);
+    }
+
     private function insertRelease(int $id, string $searchName, int $size): void
     {
         DB::table('releases')->insert([

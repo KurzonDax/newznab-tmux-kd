@@ -59,6 +59,11 @@ class AudioCandidateQueryTest extends TestCase
             $table->string('additional_pp_claim_token', 64)->nullable();
         });
 
+        Schema::create('releases_groups', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id');
+            $table->unsignedInteger('groups_id');
+        });
+
         Schema::create('settings', function (Blueprint $table): void {
             $table->string('name')->primary();
             $table->text('value')->nullable();
@@ -124,6 +129,16 @@ class AudioCandidateQueryTest extends TestCase
         $this->assertSame([1, 2, 3, 4, 5], $covered, 'Every pending release must be claimable by one path.');
     }
 
+    public function test_changing_password_inspection_mode_strands_rows_created_with_the_old_pending_sentinel(): void
+    {
+        $this->seedRelease(1, Category::MUSIC_MP3, groupId: 1);
+
+        config(['nntmux_settings.check_passworded_rars' => true]);
+
+        $this->assertSame([], $this->audioIds());
+        $this->assertSame([], $this->videoIds());
+    }
+
     public function test_the_audio_query_applies_no_minimum_size(): void
     {
         // minsizetopostprocess is 300 MB above; the whole point of the audio path
@@ -133,6 +148,18 @@ class AudioCandidateQueryTest extends TestCase
         $this->assertSame([1], $this->audioIds());
     }
 
+    public function test_a_small_crosspost_ignores_a_secondary_forced_music_group_and_is_selected_by_neither_path(): void
+    {
+        $this->seedRelease(1, Category::OTHER_MISC, groupId: 1, size: 5 * 1024 * 1024);
+        DB::table('releases_groups')->insert([
+            'releases_id' => 1,
+            'groups_id' => 2,
+        ]);
+
+        $this->assertSame([], $this->audioIds());
+        $this->assertSame([], $this->videoIds());
+    }
+
     public function test_the_audio_query_still_applies_the_global_maximum_size(): void
     {
         $this->seedRelease(1, Category::MUSIC_MP3, groupId: 1, size: 250 * 1024 * 1024 * 1024);
@@ -140,12 +167,17 @@ class AudioCandidateQueryTest extends TestCase
         $this->assertSame([], $this->audioIds());
     }
 
-    public function test_a_release_past_the_timeout_threshold_is_not_selected(): void
+    public function test_an_audio_release_past_the_timeout_threshold_is_stranded_between_both_paths(): void
     {
         Log::spy();
         $this->seedRelease(1, Category::MUSIC_MP3, groupId: 1, ppTimeoutCount: 3);
 
         $this->assertSame([], $this->audioIds());
+        $this->assertSame(
+            [],
+            $this->videoIds(),
+            'The video path only accepts an audio-routed release after the audio worker writes the declined token.'
+        );
         Log::shouldHaveReceived('warning')
             ->once()
             ->with('Release 1 excluded from audio post-processing after 3 archive fetch attempt(s) (limit 3).');
