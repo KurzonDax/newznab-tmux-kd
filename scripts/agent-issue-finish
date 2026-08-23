@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=agent-workflow-lib
+source "$script_directory/agent-workflow-lib"
+
+agent_load_issue_worktree_context .
+
+[[ -z "$(git -C "$AGENT_WORKTREE_ROOT" status --porcelain --untracked-files=normal)" ]] ||
+    agent_fail 'commit or remove every non-ignored worktree change before finishing'
+
+agent_fetch_origin_master "$AGENT_WORKTREE_ROOT" || agent_fail 'could not fetch current origin/master'
+ahead_count="$(git -C "$AGENT_WORKTREE_ROOT" rev-list --count origin/master..HEAD)"
+[[ "$ahead_count" -gt 0 ]] || agent_fail 'the issue branch has no commits to publish'
+
+git -C "$AGENT_WORKTREE_ROOT" push -u "$AGENT_REMOTE" "$AGENT_ISSUE_BRANCH"
+
+pull_request_count="$(gh pr list --repo "$AGENT_EXPECTED_REPOSITORY" --state all \
+    --head "$AGENT_ISSUE_BRANCH" --json number --jq 'length')"
+[[ "$pull_request_count" -le 1 ]] || agent_fail "multiple pull requests exist for $AGENT_ISSUE_BRANCH"
+
+pull_request_number="$(gh pr list --repo "$AGENT_EXPECTED_REPOSITORY" --state all \
+    --head "$AGENT_ISSUE_BRANCH" --json number --jq '.[0].number // empty')"
+if [[ -z "$pull_request_number" ]]; then
+    issue_title="$(gh issue view "$AGENT_ISSUE_NUMBER" --repo "$AGENT_EXPECTED_REPOSITORY" \
+        --json title --jq .title)"
+    pull_request_url="$(gh pr create --repo "$AGENT_EXPECTED_REPOSITORY" --base master \
+        --head "$AGENT_ISSUE_BRANCH" --title "$issue_title" --body "Fixes #$AGENT_ISSUE_NUMBER")"
+    pull_request_number="${pull_request_url##*/}"
+else
+    pull_request_url="$(gh pr view "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
+        --json url --jq .url)"
+fi
+
+pull_request_body="$(gh pr view "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
+    --json body --jq .body)"
+printf '%s\n' "$pull_request_body" | grep -Eq "(^|[[:space:]])Fixes[[:space:]]+#$AGENT_ISSUE_NUMBER([^0-9]|$)" ||
+    agent_fail "pull request #$pull_request_number must contain: Fixes #$AGENT_ISSUE_NUMBER"
+
+pull_request_state="$(gh pr view "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
+    --json state --jq .state)"
+if [[ "$pull_request_state" == OPEN ]]; then
+    gh pr merge "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" --auto --squash
+fi
+
+while true; do
+    pull_request_state="$(gh pr view "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
+        --json state --jq .state)"
+    if [[ "$pull_request_state" == MERGED ]]; then
+        break
+    fi
+    [[ "$pull_request_state" == OPEN ]] || agent_fail "pull request #$pull_request_number closed without merging"
+
+    merge_state="$(gh pr view "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
+        --json mergeStateStatus --jq .mergeStateStatus)"
+    review_decision="$(gh pr view "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
+        --json reviewDecision --jq '.reviewDecision // empty')"
+
+    case "$review_decision" in
+        CHANGES_REQUESTED|REVIEW_REQUIRED)
+            agent_fail "pull request #$pull_request_number requires review intervention"
+            ;;
+    esac
+
+    case "$merge_state" in
+        BEHIND)
+            agent_fetch_origin_master "$AGENT_WORKTREE_ROOT" || agent_fail 'could not refresh origin/master'
+            if ! git -C "$AGENT_WORKTREE_ROOT" merge --no-edit origin/master; then
+                git -C "$AGENT_WORKTREE_ROOT" merge --abort >/dev/null 2>&1 || true
+                agent_fail 'origin/master conflicts with the issue branch; resolve it in the issue worktree'
+            fi
+            git -C "$AGENT_WORKTREE_ROOT" push "$AGENT_REMOTE" "$AGENT_ISSUE_BRANCH"
+            continue
+            ;;
+        DIRTY)
+            agent_fail 'the pull request conflicts with master'
+            ;;
+    esac
+
+    check_count="$(gh pr view "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
+        --json statusCheckRollup --jq '.statusCheckRollup | length')"
+    if [[ "$check_count" -eq 0 ]]; then
+        sleep 5
+        continue
+    fi
+
+    if ! gh pr checks "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" --watch --interval 10; then
+        agent_fail "required checks failed for pull request #$pull_request_number"
+    fi
+
+    pull_request_state="$(gh pr view "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
+        --json state --jq .state)"
+    [[ "$pull_request_state" != MERGED ]] || break
+    sleep 10
+done
+
+# Cleanup is deliberately scoped to this worktree's Compose label, remote branch,
+# registered linked worktree, and local issue branch.
+scripts/agent-sail down --remove-orphans
+if agent_remote_branch_exists "$AGENT_WORKTREE_ROOT" "$AGENT_ISSUE_BRANCH"; then
+    git -C "$AGENT_WORKTREE_ROOT" push "$AGENT_REMOTE" --delete "$AGENT_ISSUE_BRANCH"
+fi
+
+cleanup_parent="$(dirname "$AGENT_WORKTREE_ROOT")"
+cd "$cleanup_parent"
+git --git-dir="$AGENT_COMMON_GIT_DIRECTORY" worktree remove "$AGENT_WORKTREE_ROOT"
+git --git-dir="$AGENT_COMMON_GIT_DIRECTORY" branch -D "$AGENT_ISSUE_BRANCH"
+
+printf 'PR_NUMBER=%s\n' "$pull_request_number"
+printf 'PR_URL=%s\n' "$pull_request_url"
+printf 'MERGE_STATUS=merged\n'
+printf 'REMOVED_WORKTREE=%s\n' "$AGENT_WORKTREE_ROOT"
+printf 'REMOVED_BRANCH=%s\n' "$AGENT_ISSUE_BRANCH"

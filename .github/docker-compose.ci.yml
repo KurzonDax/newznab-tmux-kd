@@ -1,4 +1,4 @@
-name: nntmux-ci
+name: ${COMPOSE_PROJECT_NAME:-nntmux-ci}
 
 services:
   laravel.test:

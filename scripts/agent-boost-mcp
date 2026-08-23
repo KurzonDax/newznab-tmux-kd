@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+
+exec "$script_directory/agent-sail" exec -T -u sail \
+    -e APP_ENV=local -e APP_DEBUG=true \
+    laravel.test php artisan mcp:start laravel-boost
