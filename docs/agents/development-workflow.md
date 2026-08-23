@@ -1,62 +1,85 @@
-# Development workflow: branch → PR → auto-merge
+# Development workflow: issue startup → isolated work → peer completion
 
-Master only moves by pull request. A ruleset enforces this server-side — direct pushes to master are rejected for everyone, including docs-only changes and repo admins. The required check is the **PHP 8.5 via Sail** job in `.github/workflows/laravel.yml`; PRs squash-merge automatically once it passes.
+Master only moves by pull request. The required `PHP 8.5 via Sail` check is strict: a pull request that falls behind the effective master tip must update its issue branch and pass the check again before merge.
 
-## The loop
+## `/implement <issue-number>` contract
 
-1. **Branch, in its own worktree — always.** Every change, however small (docs, `.gitignore`, one-line fixes), gets its own worktree; never commit on a branch in the main checkout. Pick a short kebab-case branch name with a type prefix (`feat/`, `fix/`, `chore/`, `docs/`), then install dependencies inside the new worktree:
+The user starts a normal Codex or Claude Code session in the primary checkout and enters only `/implement <issue-number>`. The agent owns all branch, worktree, runtime, pull request, merge monitoring, and cleanup operations.
 
-   ```bash
-   git worktree add <worktree-path> -b <branch>
-   cd <worktree-path>
-   composer install --no-interaction
-   npm ci        # only if you will touch resources/ or run npm run build
-   ```
+Before changing a source file, run the tracked startup helper from the primary checkout:
 
-   `<worktree-path>` is any path outside the checkout — a sibling directory (`../worktrees/<branch>`), or wherever you keep worktrees on this machine. Reuse the same value in step 4.
+```bash
+scripts/agent-issue-start <issue-number>
+```
 
-   `composer install` is not optional. `vendor/` is git-ignored, so a fresh worktree has none, and the CaptainHook git hooks (shared from the main checkout's `.git/hooks`) invoke `vendor/bin/captainhook`, `vendor/bin/pint`, and PHP lint **relative to the worktree** — without it every commit fails with `vendor/bin/captainhook: No such file or directory`. Tests and Pint need it for the same reason. Composer's trailing `php artisan package:discover` step boots the app and touches the database; if the dev database is not running it errors after `vendor/` is already complete, and that error can be ignored (Laravel rebuilds the package manifest lazily). Run PHPUnit as `vendor/bin/phpunit --filter=...` when `php artisan test` cannot boot for the same reason.
+The helper verifies the issue is open, unassigned, labelled `ready-for-agent`, and has no open blocker. It reads existing ownership and pull request state, fetches current `origin/master` without writing `FETCH_HEAD`, then atomically reserves `issue/<number>` at `../worktrees/issue-<number>`. Only the session that wins that branch lock assigns the issue and starts setup.
 
-   Work and commit inside the worktree.
+The successful command ends with stable output:
 
-   > **macOS hosts:** the pre-commit action `scripts/runtime-permissions.sh check-source` models a Linux deployment host (`getent`, GNU `stat`/`find`/`realpath`, the `www-data` group) and skips itself on non-Linux platforms; the other hook actions (PHP lint, Composer lock check, Pint, design-system check) run normally. `make fix-permissions` and the other `runtime-permissions.sh` actions are Linux-only by design.
+```text
+ISSUE_NUMBER=<number>
+BRANCH=issue/<number>
+WORKTREE_PATH=<absolute-path>
+COMPOSE_PROJECT_NAME=<path-derived-name>
+```
 
-2. **Open the PR and arm auto-merge** in the same breath:
+Use `WORKTREE_PATH` as the working directory for every later repository command in the session. Do not switch or pull the primary checkout. A stale local `master` is harmless because startup always branches from current `origin/master`.
 
-   ```bash
-   git push -u origin <branch>
-   gh pr create --fill        # heredoc body for anything non-trivial
-   gh pr merge --auto --squash
-   ```
+If setup fails after the branch reservation, the helper deliberately preserves the branch, worktree, runtime, and issue assignment. A second ordinary start refuses to take it over. The same assigned GitHub user may inspect that state and explicitly resume it from the primary checkout:
 
-3. **Monitor until the PR resolves.** Watch checks, then confirm the merge actually happened:
+```bash
+scripts/agent-issue-start --recover <issue-number>
+```
 
-   ```bash
-   gh pr checks <number> --watch
-   gh pr view <number> --json state,mergedAt
-   ```
+Never use `--recover` to take over another assignee's issue.
 
-   - **Merged** → go to step 4.
-   - **CI failed** → fix on the branch, push, and watch again. The PR stays open; auto-merge fires once checks go green.
+## Isolated worktree runtime
 
-4. **Clean up and sync.** GitHub deletes the remote branch on merge; mirror that locally.
+Startup copies tracked `.env.testing` to the ignored worktree `.env`; it never copies the primary checkout's `.env` or development credentials. It starts the worktree's path-derived Compose project with `.github/docker-compose.ci.yml`, installs Composer and npm dependencies in that worktree, and verifies the container identity, source mount, testing database, PHP, Composer, and Node.
 
-   Run these from the **main checkout**, not the worktree: `git branch -d` refuses to delete a branch that is still checked out in a worktree, so the worktree has to go first — and removing the worktree you are standing in *succeeds*, leaving your shell in a directory that no longer exists. The first row of `git worktree list` is the main checkout.
+Run Sail, PHP, Artisan, Composer, Node, npm, Pint, PHPStan, and tests through the worktree adapter:
 
-   ```bash
-   git switch master
-   git pull --ff-only
-   git worktree remove <worktree-path>
-   git branch -d <branch>
-   ```
+```bash
+scripts/agent-sail artisan test --compact --filter=TestName
+scripts/agent-sail bin pint --dirty --format agent
+scripts/agent-sail bin phpstan analyse --memory-limit=2G
+scripts/agent-sail npm run build
+```
 
-   > **If the main checkout is a live deployment** rather than a scratch clone, `git pull` there is a deploy, not a cleanup step — it can move running code and leave migrations pending. Drop the first two commands and leave syncing to whoever owns the deployment. Removing the worktree and deleting the branch is safe either way, and can be run from any other checkout of the repository with `git -C <some-checkout> ...`.
+The tracked Claude (`.mcp.json`) and Codex (`.codex/config.toml`) configurations both launch Laravel Boost through `scripts/agent-boost-mcp`, which delegates to this same isolated runtime as the container's `sail` user. MCP availability does not participate in issue locking or worktree creation.
 
-The loop is done when master contains the squashed commit and `git worktree list` + `git branch` show no leftovers from the branch.
+## Finish, merge, and cleanup
 
-## Notes
+After tests and code review, stage the intended project files and commit them on `issue/<number>`. Do not stage temporary verification files. Then run:
 
-- One PR per unit of work; keep unrelated changes on separate branches.
-- Auto-merge is armed at PR creation, not after review — green CI is the merge gate.
-- Squash is the only enabled merge method; intermediate commit messages on the branch can stay rough.
-- CI runs on every PR and on pushes to master (post-merge). A feature-branch push alone does not trigger CI until its PR exists.
+```bash
+scripts/agent-issue-finish
+```
+
+The finish helper:
+
+1. Requires a clean issue worktree with commits ahead of `origin/master`.
+2. Pushes only `issue/<number>`.
+3. Opens or resumes exactly one pull request whose body contains `Fixes #<number>`.
+4. Enables squash auto-merge immediately and monitors the required check and merge state.
+5. When strict checks require a fresh base, fetches current `origin/master`, merges it only into the issue branch, pushes, and waits for the new check run. A conflict is left for explicit intervention.
+6. After merge, stops only the worktree's Compose project, deletes only its remote issue branch if it remains, removes only its linked worktree, and deletes only its local issue branch.
+
+The helper never switches or pulls the primary checkout. Other issue worktrees, containers, networks, dependency directories, and untracked files are outside its cleanup scope.
+
+## Manual acceptance checklist
+
+This infrastructure uses a manual acceptance sequence rather than permanent workflow-specific CI tests. Use disposable, `ready-for-agent` issues and remove their temporary branches, worktrees, Compose projects, pull requests, and issue assignments after the exercise.
+
+Run the complete sequence twice:
+
+1. Record the primary checkout's branch, HEAD, status, and `origin/master`, then start two different disposable issues concurrently from normal Codex and Claude Code sessions.
+2. Confirm the outputs have different issue numbers, branches, absolute worktree paths, Git worktree directories, Compose project names, container IDs, networks, `vendor` directories, `node_modules` directories, and source mounts.
+3. Create a uniquely named untracked file in each worktree and confirm it is absent from the peer worktree and the primary checkout.
+4. Run focused application tests simultaneously through each worktree's `scripts/agent-sail`; confirm their reported temporary cache roots differ.
+5. Initialize Laravel Boost through each client's tracked MCP configuration and confirm a project query reports that client's worktree.
+6. Stop one issue's Compose project and confirm the peer container and network remain running; restart the stopped project for completion.
+7. Start the same third disposable issue from two processes at once and confirm exactly one acquires `issue/<number>` while the loser exits before assignment.
+8. Advance or fetch `origin/master` without updating local `master`, start another disposable issue, and confirm its branch tip equals the current remote tip.
+9. Complete two pull requests that began from the same base; confirm the later effective merge candidate is updated and its required check reruns against the new base before merge.
+10. Run each issue's finish helper, then confirm its runtime, worktree, and branches are gone while the peer session and the primary checkout's recorded branch, HEAD, status, and untracked files are unchanged.

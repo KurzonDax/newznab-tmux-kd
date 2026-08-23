@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=agent-workflow-lib
+source "$script_directory/agent-workflow-lib"
+
+agent_load_issue_worktree_context .
+
+export COMPOSE_PROJECT_NAME="$AGENT_COMPOSE_PROJECT_NAME"
+export APP_SERVICE='laravel.test'
+export AGENT_COMMON_GIT_DIRECTORY
+export AGENT_WORKTREE_ROOT
+
+compose_override="$(mktemp "${TMPDIR:-/tmp}/agent-compose.XXXXXXXX.yml")" ||
+    agent_fail 'could not create the worktree Compose override'
+trap 'rm -f -- "$compose_override"' EXIT
+
+cat >"$compose_override" <<'YAML'
+services:
+  laravel.test:
+    volumes:
+      - type: bind
+        source: ${AGENT_COMMON_GIT_DIRECTORY}
+        target: ${AGENT_COMMON_GIT_DIRECTORY}
+      - type: bind
+        source: ${AGENT_WORKTREE_ROOT}
+        target: ${AGENT_WORKTREE_ROOT}
+YAML
+
+export SAIL_FILES=".github/docker-compose.ci.yml:$compose_override"
+
+"$AGENT_WORKTREE_ROOT/sail" "$@"

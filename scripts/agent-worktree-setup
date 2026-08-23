@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=agent-workflow-lib
+source "$script_directory/agent-workflow-lib"
+
+agent_load_issue_worktree_context .
+
+git -C "$AGENT_WORKTREE_ROOT" ls-files --error-unmatch .env.testing >/dev/null 2>&1 ||
+    agent_fail '.env.testing must be tracked'
+git -C "$AGENT_WORKTREE_ROOT" check-ignore --quiet .env ||
+    agent_fail 'generated .env must remain ignored'
+
+(umask 077 && cp "$AGENT_WORKTREE_ROOT/.env.testing" "$AGENT_WORKTREE_ROOT/.env")
+cmp -s "$AGENT_WORKTREE_ROOT/.env.testing" "$AGENT_WORKTREE_ROOT/.env" ||
+    agent_fail 'generated .env does not match the tracked testing configuration'
+grep -qx 'APP_ENV=testing' "$AGENT_WORKTREE_ROOT/.env" || agent_fail 'testing APP_ENV is missing'
+grep -qx 'DB_CONNECTION=testing' "$AGENT_WORKTREE_ROOT/.env" || agent_fail 'testing database connection is missing'
+grep -qx 'DB_DATABASE=:memory:' "$AGENT_WORKTREE_ROOT/.env" || agent_fail 'in-memory testing database is missing'
+
+scripts/agent-sail up -d --build
+scripts/agent-sail exec -T -u sail -e CAPTAINHOOK_DISABLE=true laravel.test \
+    composer install --no-interaction --prefer-dist
+scripts/agent-sail npm ci
+
+container_id="$(scripts/agent-sail ps -q laravel.test)"
+[[ -n "$container_id" ]] || agent_fail 'isolated application container is not running'
+
+container_project="$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}' "$container_id")"
+[[ "$container_project" == "$AGENT_COMPOSE_PROJECT_NAME" ]] ||
+    agent_fail "unexpected Compose project: $container_project"
+
+source_mount="$(docker inspect --format '{{ range .Mounts }}{{ if eq .Destination "/var/www/html" }}{{ .Source }}{{ end }}{{ end }}' "$container_id")"
+[[ -n "$source_mount" ]] || agent_fail 'application source mount is missing'
+source_mount="$(cd "$source_mount" && pwd -P)" || agent_fail 'could not resolve the application source mount'
+[[ "$source_mount" == "$AGENT_WORKTREE_ROOT" ]] || agent_fail "unexpected source mount: $source_mount"
+
+published_ports="$(docker port "$container_id")"
+[[ -z "$published_ports" ]] || agent_fail 'issue application container must not publish ports'
+
+# Expansion belongs to the container shell, not this host process.
+# shellcheck disable=SC2016
+scripts/agent-sail shell -lc 'test "$(pwd -P)" = /var/www/html && test -f composer.json'
+# shellcheck disable=SC2016
+scripts/agent-sail shell -lc 'test "$APP_ENV" = testing'
+# shellcheck disable=SC2016
+scripts/agent-sail shell -lc 'test "$(git rev-parse --show-toplevel)" = /var/www/html && git status --short >/dev/null'
+scripts/agent-sail artisan config:show database.default | grep -q 'testing'
+[[ -d "$AGENT_WORKTREE_ROOT/vendor" ]] || agent_fail 'Composer dependencies are missing'
+[[ -d "$AGENT_WORKTREE_ROOT/node_modules" ]] || agent_fail 'npm dependencies are missing'
+
+php_version="$(scripts/agent-sail php -r 'echo PHP_VERSION;')"
+composer_version="$(scripts/agent-sail composer --version --no-ansi | sed -n '1p')"
+node_version="$(scripts/agent-sail node --version)"
+
+printf 'SETUP_STATUS=ready\n'
+printf 'PHP_VERSION=%s\n' "$php_version"
+printf 'COMPOSER_VERSION=%s\n' "$composer_version"
+printf 'NODE_VERSION=%s\n' "$node_version"
+printf 'SOURCE_MOUNT=%s\n' "$source_mount"
+printf 'COMPOSE_PROJECT_NAME=%s\n' "$AGENT_COMPOSE_PROJECT_NAME"

@@ -4,7 +4,9 @@
 
 ## Development workflow
 
-Master only moves by pull request (server-enforced — direct pushes are rejected, even for docs-only changes). Every change: branch in a worktree → PR with auto-merge armed → monitor until merged → clean up and sync local master. See `docs/agents/development-workflow.md` before committing anything.
+Master only moves by pull request. For `/implement <issue-number>`, run `scripts/agent-issue-start <issue-number>` from the primary checkout **before changing source files**. Continue the session from the helper's absolute `WORKTREE_PATH`; every later repository command must use that path as its working directory and Laravel/Sail commands must go through `scripts/agent-sail`. Do not create or select a worktree, branch, Compose project, or environment manually. If startup reports reserved state, stop unless you are the issue's assigned owner explicitly recovering interrupted work with `--recover`.
+
+After verification, review, and committing on `issue/<number>`, run `scripts/agent-issue-finish` from the issue worktree. It pushes only that branch, opens one `Fixes #<number>` pull request, enables squash auto-merge, monitors strict required checks through merge, and removes only that issue's runtime, worktree, and local branch. It never switches or pulls the primary checkout. See `docs/agents/development-workflow.md` before committing anything.
 
 ## Agent skills
 
@@ -23,11 +25,11 @@ Domain documentation uses the single-context layout. See `docs/agents/domain.md`
 ## Quick Reference
 
 ```bash
-php artisan test --compact --filter=TestName  # Run single test (PHPUnit only)
-./vendor/bin/pint --dirty                     # Format changed files
-php artisan tmux:start                        # Start processing engine
-npm run build                                 # Required after frontend changes
-php artisan route:cache                       # Refresh cached routes if new routes seem missing
+scripts/agent-sail artisan test --compact --filter=TestName  # Run single test (PHPUnit only)
+scripts/agent-sail bin pint --dirty --format agent           # Format changed files
+scripts/agent-sail artisan tmux:start                         # Start processing engine
+scripts/agent-sail npm run build                              # Required after frontend changes
+scripts/agent-sail artisan route:cache                        # Refresh cached routes if new routes seem missing
 ```
 
 ## Architecture

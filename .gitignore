@@ -77,7 +77,6 @@ pnpm-lock.yaml
 /.claude/skills/
 /.cursor/skills/
 /.codex/skills/
-/.codex/config.toml
 
 # Local operational runbooks — specific to this deployment's machines and
 # workflow, intentionally kept out of the public repo.
