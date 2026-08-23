@@ -100,6 +100,19 @@ class AudioPreviewEncoderTest extends TestCase
     }
 
     #[Test]
+    public function flac_is_losslessly_reencoded_to_a_flac_container(): void
+    {
+        $result = $this->encoder('flac')->encode($this->sourceFile(), 'abc123', $this->tmpPath);
+
+        $this->assertNotNull($result);
+        $this->assertSame('flac', $result->extension);
+        $this->assertSame('audio/flac', $result->mimeType);
+        $this->assertFalse($result->streamCopied);
+        $this->assertContainsSubsequence(['-c:a', 'flac', '-compression_level', '5'], $this->commands[0]);
+        $this->assertNotContains('copy', $this->commands[0]);
+    }
+
+    #[Test]
     public function a_source_no_browser_plays_is_transcoded_to_flac(): void
     {
         $result = $this->encoder('wavpack')->encode($this->sourceFile(), 'abc123', $this->tmpPath);

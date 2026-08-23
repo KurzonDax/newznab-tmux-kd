@@ -12,12 +12,10 @@ use Illuminate\Support\Facades\Log;
 /**
  * Cuts the preview clip, and renders the spectrogram beside it.
  *
- * The clip is a stream copy wherever the browser can play the source codec, so
- * what a listener hears is the posted audio itself -- the point of a music
- * preview is judging the encode, and the old path's Vorbis re-encode destroyed
- * exactly the information needed to do that. Sources no browser plays are
- * re-encoded to FLAC, which is still lossless, so a preview never loses a
- * generation.
+ * Browser-native codecs are stream-copied where their container can describe
+ * the clipped duration accurately, so a listener hears the posted encode.
+ * FLAC and sources no browser plays are re-encoded to FLAC, which stays
+ * lossless while giving the preview its own correct duration metadata.
  */
 final class AudioPreviewEncoder
 {
@@ -32,7 +30,6 @@ final class AudioPreviewEncoder
         'aac' => 'm4a',
         'vorbis' => 'ogg',
         'opus' => 'opus',
-        'flac' => 'flac',
         'pcm_s16le' => 'wav',
         'pcm_s24le' => 'wav',
         'pcm_s32le' => 'wav',
@@ -76,7 +73,9 @@ final class AudioPreviewEncoder
         $seconds = $this->cut($sourcePath, $workingPath, $container, $streamCopied);
 
         if ($seconds === null) {
-            File::delete($workingPath);
+            if (File::isFile($workingPath)) {
+                File::delete($workingPath);
+            }
 
             return null;
         }
@@ -117,7 +116,9 @@ final class AudioPreviewEncoder
         ]) && $this->isNonEmpty($workingPath);
 
         if (! $rendered) {
-            File::delete($workingPath);
+            if (File::isFile($workingPath)) {
+                File::delete($workingPath);
+            }
 
             return false;
         }
@@ -128,11 +129,9 @@ final class AudioPreviewEncoder
     /**
      * Cut the clip, and say how long it came out.
      *
-     * The window is decided from the source's own duration before ffmpeg runs,
-     * rather than by trying an offset and inspecting the result: a stream copy
-     * carries the source's STREAMINFO into the output, so a FLAC clip taken from
-     * ten seconds into a twenty second track still reports twenty. Deciding up
-     * front also means one ffmpeg invocation instead of two.
+     * The window is decided from the source's duration before ffmpeg runs. This
+     * keeps the operation to one invocation and lets the result continue to
+     * report the requested window without a second output probe.
      *
      * A source shorter than the offset is clipped from the very start; a source
      * shorter than the window yields a shorter clip. Neither is a failure.
@@ -154,7 +153,9 @@ final class AudioPreviewEncoder
             $length = max(1, (int) min($length, (int) round($sourceSeconds - $offset)));
         }
 
-        File::delete($outputPath);
+        if (File::isFile($outputPath)) {
+            File::delete($outputPath);
+        }
 
         $command = [
             '-y',

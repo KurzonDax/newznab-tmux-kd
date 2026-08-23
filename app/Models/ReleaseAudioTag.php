@@ -208,9 +208,9 @@ class ReleaseAudioTag extends Model
      * recorded or is not one this pipeline knows, where the answer would be a
      * guess.
      *
-     * The clip is a stream copy whenever its container matches the source
-     * format; anything else was re-encoded, which the pipeline only ever does to
-     * FLAC.
+     * FLAC is losslessly re-encoded so the clipped container declares its own
+     * duration. Other matching containers are stream copies; remaining known
+     * formats were transcoded to FLAC for browser playback.
      */
     public function previewEncoding(): ?AudioPreviewEncoding
     {
@@ -224,6 +224,10 @@ class ReleaseAudioTag extends Model
         $sourceExtension = self::SOURCE_FORMAT_EXTENSIONS[$sourceFormat] ?? null;
         if ($sourceExtension === null) {
             return null;
+        }
+
+        if ($sourceExtension === 'flac') {
+            return AudioPreviewEncoding::FlacReencode;
         }
 
         return $sourceExtension === $extension
