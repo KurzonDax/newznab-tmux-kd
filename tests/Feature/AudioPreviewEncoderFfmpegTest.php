@@ -85,14 +85,17 @@ class AudioPreviewEncoderFfmpegTest extends TestCase
     }
 
     #[Test]
-    public function a_flac_source_yields_a_flac_stream_copy(): void
+    public function a_flac_clip_declares_its_own_length(): void
     {
         $result = $this->encoder()->encode($this->sine('flac', 60), 'abc123', $this->tmpPath);
 
         $this->assertNotNull($result);
         $this->assertSame('flac', $result->extension);
-        $this->assertTrue($result->streamCopied);
-        $this->assertSame('flac', $this->probe($this->savePath.'abc123.flac', 'stream=codec_name'));
+        $this->assertFalse($result->streamCopied);
+
+        $clip = $this->savePath.'abc123.flac';
+        $this->assertSame('flac', $this->probe($clip, 'stream=codec_name'));
+        $this->assertEqualsWithDelta(30.0, (float) $this->probe($clip, 'format=duration'), 0.5);
     }
 
     #[Test]
@@ -114,12 +117,13 @@ class AudioPreviewEncoderFfmpegTest extends TestCase
         $result = $this->encoder()->encode($source, 'abc123', $this->tmpPath);
 
         $this->assertNotNull($result);
-        // start=10, length=30, only 20s of audio: the last ten seconds of it.
         $this->assertSame(10, $result->seconds);
-        // A stream copy carries the source's STREAMINFO, so the clip's declared
-        // duration cannot be trusted -- but half the bytes is half the audio.
         $this->assertGreaterThan(0, $result->bytes);
-        $this->assertLessThan((int) filesize($source) * 0.75, $result->bytes);
+        $this->assertEqualsWithDelta(
+            10.0,
+            (float) $this->probe($this->savePath.'abc123.flac', 'format=duration'),
+            0.5,
+        );
     }
 
     #[Test]
