@@ -1,6 +1,8 @@
-# Release lifecycle and gap audit
+# Release lifecycle
 
-**Snapshot:** `codex/release-lifecycle-audit`, 2026-08-23. This document describes the code as it exists at this snapshot. It is a source audit, not an observation of production data.
+**Snapshot:** master @ `761f43bcc`, 2026-08-23. This document describes the code as it exists at this snapshot. It is a source audit, not an observation of production data.
+
+The gap analysis, proposed issues, and verification index that accompanied this audit live in [release-lifecycle-gaps.md](release-lifecycle-gaps.md). `Gap Gxx` references throughout this document resolve there.
 
 ## Scope and method
 
@@ -90,7 +92,7 @@ NZB creation independently claims `nzbstatus=0` rows. It validates nonempty coll
 
 The initial category is already final with respect to forced group roots. Categorization unwraps NZBSPLIT, extracts an obfuscated subject, runs all prioritized pipes, then applies the group's forced root after the pipeline (`app/Services/Categorization/CategorizationPipeline.php:78-125`). The finalizer preserves misc locks and Other/Hashed; otherwise it maps an organic cross-root result to the forced root's “Other” leaf (`:143-171`). Therefore creation, a central name fix, and the manual recategorizer all see the same forced-root rule.
 
-The current pipe order is Misc, group-obfuscated routing, group name, XXX, TV, Movie, Book, Music, PC, Console, then the misc safety net (`CategorizationPipeline.php:223-237`). #132's precedence is explicit rather than incidental: Movie runs before Music, and Music suppresses album/video/MP3 matches when an existing Movie result has at least 0.8 confidence (`app/Services/Categorization/Pipes/MoviePipe.php:14-38`; `MusicPipe.php:15-57`). #76's year-only fallback requires a two-or-more-word title before the year and assigns only 0.5 confidence (`app/Services/Categorization/Categorizers/MovieCategorizer.php:104-130`). #65/#138's shared adult rules make `cuckold`, `deepthroat`, or delimiter-bounded `cum` unconditional XXX signals, while weak adult words need a video marker and are suppressed by TV season structure (`app/Services/Categorization/ReleaseContext.php:16-32,95-129`; `XxxCategorizer.php:44-55,123-149`). #69/#72's group obfuscation override applies only to a Misc result whose match reason starts `obfuscated_` or `gibberish_`, and routes it to the configured root's Other leaf (`app/Services/Categorization/Pipes/GroupObfuscatedRoutingPipe.php:21-69`).
+Pipes are sorted by ascending numeric priority at construction (`CategorizationPipeline.php:49-50`), so the execution order is Misc (1), group-obfuscated routing (2), group name (5), XXX (10), TV (20), Movie (25), PC (30), Console (35), Music (40), Book (45), then the misc safety net (100); the literal array order in `createDefault()` (`CategorizationPipeline.php:223-237`) is **not** the execution order. Order matters because a pipe short-circuits once the running best result reaches 0.95 confidence. #132's precedence is explicit rather than incidental: Movie runs before Music, and Music suppresses album/video/MP3 matches when an existing Movie result has at least 0.8 confidence (`app/Services/Categorization/Pipes/MoviePipe.php:14-38`; `MusicPipe.php:15-57`). #76's year-only fallback requires a two-or-more-word title before the year and assigns only 0.5 confidence (`app/Services/Categorization/Categorizers/MovieCategorizer.php:104-130`). #65/#138's shared adult rules make `cuckold`, `deepthroat`, or delimiter-bounded `cum` unconditional XXX signals, while weak adult words need a video marker and are suppressed by TV season structure (`app/Services/Categorization/ReleaseContext.php:16-32,95-129`; `XxxCategorizer.php:44-55,123-149`). #69/#72's group obfuscation override applies only to a Misc result whose match reason starts `obfuscated_` or `gibberish_`, and routes it to the configured root's Other leaf (`app/Services/Categorization/Pipes/GroupObfuscatedRoutingPipe.php:21-69`).
 
 After `nzbstatus=1`, enrichment branches are asynchronous. General AP and audio share the pending predicates and claim lease, then `AudioRouting` assigns exactly one routing polarity; their size and crash-guard filters are not identical. General AP can record files/PAR hashes/NFO/media, rename from NZBSPLIT/RAR/PAR2 evidence, discard executables, and settle preview/password fields. Audio probes article 1, hands video/non-audio back with `aud:declined`, otherwise records tags/media and an optional preview. Name fixes performed through `ReleaseUpdateService` dispatch `ReleaseNameFixed`; the listener re-categorizes and then media-refines (`app/Services/NameFixing/ReleaseUpdateService.php:343-406`; `app/Listeners/RecategorizeReleaseAfterNameFix.php:22-70`). Direct book/audio normalization paths do not dispatch that event.
 
@@ -170,7 +172,7 @@ The tables below inventory lifecycle writers and **gating** readers. Display/sea
 
 | Field | Writers and transitions | Readers that gate work; terminal meaning |
 |---|---|---|
-| `passwordstatus` | Creation uses a **mode-dependent** pending value: -1 when deep inspection is active, otherwise 0 (`Release.php:242-263`; `PasswordInspectionMode.php:11-20`). General AP settles to archive result 0/1 or leaves the current mode's pending value when a preview rerun is owed (`ReleaseFileManager.php:320-360`); audio settles to 0 (`AudioReleaseProcessor.php:221-235`); repair/policy requeues use the mode-aware pending value (`ReleaseRepairService.php:191-202`; `PreviewGenerationPolicy.php:120-128`). Three reset paths hard-code -1 (`NntmuxResetPostProcessing.php:75-90,353-369`; `ProcessAdditionalGuid.php:72-80`). | Shared AP requires **equality** with the current `pendingReleaseStatus()` (`ReleaseClaimant.php:56-66`); standard naming merely requires `>=0` (`NameFixingQueryService.php:129-143`); password cleanup/search reads final 0/1. The pending value is not stable across configuration changes (Gap G6). Once settled, 0 means no password and 1 means passworded; cleanup policy may delete 1. |
+| `passwordstatus` | Creation uses a **mode-dependent** pending value: -1 when deep inspection is active, otherwise 0 (`Release.php:242-263`; `PasswordInspectionMode.php:11-20`). General AP settles to archive result 0/1 or leaves the current mode's pending value when a preview rerun is owed (`ReleaseFileManager.php:320-360`); audio settles to 0 (`AudioReleaseProcessor.php:221-235`); repair/policy requeues use the mode-aware pending value (`ReleaseRepairService.php:191-202`; `PreviewGenerationPolicy.php:120-128`). Three reset paths hard-code -1 (`NntmuxResetPostProcessing.php:75-90,353-369`; `ProcessAdditionalGuid.php:72-80`). | Shared AP requires **equality** with the current `pendingReleaseStatus()` (`ReleaseClaimant.php:56-66`); standard naming merely requires `>=0`, so the active-inspection pending value `-1` also silently excludes a row from the standard name sweep (`NameFixingQueryService.php:129-143`; Gap G31); password cleanup/search reads final 0/1. The pending value is not stable across configuration changes (Gap G6). Once settled, 0 means no password and 1 means passworded; cleanup policy may delete 1. |
 | `haspreview` | Creation writes -1 pending (`Release.php:262-267`). General/audio AP settle to 0 no artifact, 1 artifact, or -2 skipped by root policy (`ReleaseFileManager.php:282-360`; `AudioReleaseProcessor.php:210-235`). Preview policy, repair, and requeue commands can move 0/-2 -> -1 (`PreviewGenerationPolicy.php:96-128`; `ReleaseRepairService.php:191-202`; `RequeueMissingVideoPreviews.php:44-172`; `RequeueAudioPreviews.php:180-203`). | Shared AP requires -1. Preview display/removal reads 0/1; policy restoration reads -2. Values 0, 1, and -2 are terminal for AP until an explicit/category-policy requeue; -1 is pending. |
 | `jpgstatus`, `videostatus` | Default/reset 0; media extraction and AP finalization write 1 when an artifact exists (`app/Services/AdditionalProcessing/MediaExtractionService.php:184-240`; `ReleaseFileManager.php:312-318`). Reset paths write 0 (`NntmuxResetPostProcessing.php:75-90,353-369`; `ProcessAdditionalGuid.php:72-80`). | They gate the “no movie/XXX preview” removal predicate together with NFO/PreDB/haspreview (`ReleaseRemoverService.php:871-877`) and are exposed in search. 1 is terminal artifact-present until reset; 0 can be either not tried or none, so `haspreview` owns AP completion. |
 | `rarinnerfilecount` | Archive inspection records the number of inner files; resets return it to 0 (`ReleaseFileManager.php:320-360`; `NntmuxResetPostProcessing.php:75-90,353-369`). | It narrows the explicit missing-video-preview backfill to bare-container cases (`RequeueMissingVideoPreviews.php:92-121,169-173`). It does not own normal AP completion; 0 can mean uninspected or no archive contents. |
@@ -180,9 +182,9 @@ The tables below inventory lifecycle writers and **gating** readers. Display/sea
 | `proc_srrdb` | Default 0. SRRDB success writes 1; ambiguous/paginated results are marked 2 by the SRRDB loop (`ReleaseUpdateService.php:457-469`; `NameFixingService.php:785-899`). | SRRDB requires 0 and untrusted name (`NameFixingQueryService.php:388-418`). Both 1 processed and 2 ambiguous are terminal/no-retry. |
 | `proc_pp` | Direct audio-tag rename writes 1 (`AudioTagRenamer.php:68-74`). Legacy/AP PAR2 naming reads it but central PAR2 name fixing records `proc_par2`, not `proc_pp` (`ReleaseFileManager.php:511-567`). | Audio-tag and PAR2 rename attempts require 0. 1 is terminal for these direct paths. Because few writers advance it, 0 does **not** mean AP as a whole is pending. |
 | `proc_sorter` | No active lifecycle writer or gating reader was found; it survives only in schema/preflight checks (`ReleasesOptimizePreflight.php:155-167`). | Dormant legacy column. Central updater recognizes the string `sorter` as a rename type but writes no `proc_sorter` flag (`ReleaseUpdateService.php:414-427`). |
-| `additional_pp_claimed_at`, `additional_pp_claim_token` | Shared claimant writes a lease timestamp/token and workers normally clear both (`ReleaseClaimant.php:118-166,239-268`). Audio decline writes `claimed_at=NULL, token='aud:declined'` (`AudioCandidateQuery.php:174-197`). General/audio settlement and timeouts clear them (`ReleaseFileManager.php:327-360,383-400`; `AudioReleaseProcessor.php:221-235`). | Both paths exclude live claims and reclaim stale ones (`ReleaseClaimant.php:94-106,285-310`). Audio accepts null/non-declined token; general accepts non-audio **or** declined (`AudioRouting.php:51-75`). `aud:declined` is intentionally durable until general AP claims it, not a completion marker. |
-| `pp_timeout_count` | General AP increments only in its timeout handler and deletes on reaching the maximum (`ReleaseFileManager.php:383-406`). Audio increments **before** archive fetch and normally settles without resetting it (`AudioReleaseProcessor.php:65-67,127-139`). | Audio requires `< maxpptimeoutcount` (`AudioCandidateQuery.php:74-101`); general AP has no such predicate. At/above maximum is terminal only for audio, creating a stranded audio-routed state after a crash (Gap G5). |
-| `musicinfo_id`, `bookinfo_id`, `consoleinfo_id`, `gamesinfo_id`, `movieinfo_id`/`imdbid`, `videos_id`/`tv_episodes_id`, `anidbid` | Their type services write provider IDs and negative/no-match sentinels; central name fixing clears the applicable IDs so a new name can be looked up (`ReleaseUpdateService.php:343-393`). Direct book/audio renames do not perform the same complete reset. Representative writer/query pairs are `MusicService.php:479-542`, `BookService.php:394-588`, `ConsoleService.php:495-560`, `GamesService.php:744-900`, `MovieService.php:1050-1160`, `TvProcessor.php:201-280`, and `AnimeProcessor.php:85-150`. | Exact root/category/null/renamed gates are in the eligibility matrix. Null/0 generally means pending; a positive id is linked/terminal; the type-specific negative values mean attempted/no match and are terminal until a central rename/reset. |
+| `additional_pp_claimed_at`, `additional_pp_claim_token` | Shared claimant writes a lease timestamp/token and workers normally clear both (`ReleaseClaimant.php:118-166,239-268`). Audio decline writes `claimed_at=NULL, token='aud:declined'` (`AudioCandidateQuery.php:174-197`). General/audio settlement and timeouts clear them (`ReleaseFileManager.php:327-360,383-400`; `AudioReleaseProcessor.php:221-235`). | Both paths exclude live claims and reclaim stale ones (`ReleaseClaimant.php:94-106,285-310`). Audio accepts null/non-declined token; general accepts non-audio **or** declined (`AudioRouting.php:51-75`). `aud:declined` is intentionally durable until general AP claims it, not a completion marker — but general AP claims it only when the release also passes general AP's size window, so a declined release below `minsizetopostprocess` belongs to neither path (Gap G23). |
+| `pp_timeout_count` | General AP increments only in its timeout handler and deletes on reaching the maximum (`ReleaseFileManager.php:383-406`). Audio increments **before** archive fetch and normally settles without resetting it (`AudioReleaseProcessor.php:65-67,127-139`). | Audio requires `< maxpptimeoutcount` (`AudioCandidateQuery.php:74-101`); general AP has no such predicate. No writer ever resets the counter, so it is a lifetime one-way ratchet; at/above maximum is terminal only for audio, creating a stranded audio-routed state after a crash or after ordinary repeated requeues (Gaps G5, G24). |
+| `musicinfo_id`, `bookinfo_id`, `consoleinfo_id`, `gamesinfo_id`, `movieinfo_id`/`imdbid`, `videos_id`/`tv_episodes_id`, `anidbid` | Their type services write provider IDs and negative/no-match sentinels; central name fixing intends to clear the applicable IDs so a new name can be looked up (`ReleaseUpdateService.php:343-393`), but the accepted-name branch writes `''` rather than `NULL` into the nullable columns, which MySQL under `strict=false` coerces to `0` — defeating the `IS NULL` re-lookup predicates for music/console/book/anime (Gap G25). Direct book/audio renames do not perform the same complete reset. Representative writer/query pairs are `MusicService.php:479-542`, `BookService.php:394-588`, `ConsoleService.php:495-560`, `GamesService.php:744-900`, `MovieService.php:1050-1160`, `TvProcessor.php:201-280`, and `AnimeProcessor.php:85-150`. | Exact root/category/null/renamed gates are in the eligibility matrix. Null/0 generally means pending; a positive id is linked/terminal; the type-specific negative values mean attempted/no match and are terminal until a central rename/reset. |
 
 ### Completion and recovery state
 
@@ -209,7 +211,7 @@ The tables below inventory lifecycle writers and **gating** readers. Display/sea
 - **General AP and audio are leased retry queues.** A live claim suppresses duplicate work and becomes available after the shared TTL. A normal completion settles `haspreview/passwordstatus`; a decline is a durable route handoff. General timeouts either settle or delete. Audio's pre-fetch crash counter is different: the maximum is an exclusion rather than a settlement/deletion transition.
 - **NFO is retry-counted, then archive-final.** Negative status walks down to -9; -9 gets an archive attempt only if an NFO-like recorded file exists; -10 stops. Standard name fixing waits until NFO has left all negative states even if file/PAR/UID evidence is already available. Thus terminal NFO failure is incorrectly treated as “not ready” by naming.
 - **Ordinary name-source passes are mark-and-never-retry.** A source's `proc_*` becomes 1 whether a usable name is found or the bounded method exhausts that evidence. PAR2 is especially order-sensitive: its query asserts source existence with `1=1`, can run while `nzbstatus=0`, fail to read an NZB, and permanently mark the source processed before the NZB exists. SRRDB ambiguity becomes 2 and is not retried. Standard is a sweep over unprocessed source flags but only inside Other. PreDB full-text marks each `predb.searched` row after one pass (`ReleasesFixNamesGroup.php:154-175`) and has no automatic caller.
-- **Central and direct renames have different side effects.** `ReleaseUpdateService` resets metadata identities, updates trust and method flags, emits `ReleaseNameFixed`, recategorizes, and search-syncs. Book and audio-tag renamers update a smaller column set directly, so they do not receive that complete state transition.
+- **Central and direct renames have different side effects.** `ReleaseUpdateService` resets metadata identities (imperfectly — see Gap G25), updates trust and method flags, emits `ReleaseNameFixed`, recategorizes, and search-syncs. Book and audio-tag renamers update a smaller column set directly — both do sync the search index (`BookService.php:472`; `AudioTagRenamer.php:79`) — but they skip the metadata resets, trust semantics, and the `ReleaseNameFixed` listener (Gap G16).
 - **Metadata retries are field-specific.** Null/0 provider IDs remain candidates; positive IDs and the service's negative no-match sentinels normally stop future passes. Renamed-only modes add an `isrenamed=1` prerequisite. Tmux monitor predicates are independently maintained and can suppress a worker even when its worker query would admit rows.
 - **Segment repair is scheduled; whole-file rescan is not.** Repair retries once after a configured delay and then becomes repaired or deletion-final. Rescan has the same state vocabulary but is operator-triggered today. The frequent completion sweep is allowed to delete only repair-final rows and rows it believes need no rescan.
 - **Completion 0 is deliberately protected.** It means “never measured,” not 0 percent, and repair/rescan/sweep all exclude it. That is safe only if an automatic writer eventually replaces it; NZB imports have no such automatic writer.
@@ -217,280 +219,5 @@ The tables below inventory lifecycle writers and **gating** readers. Display/sea
 
 ## Gap analysis
 
-Severity describes the consequence of the reachable state, not how frequently it occurs. “Stranded” means the automatic engine has no future transition that can complete the named work. Focused proofs added during this audit construct only local factory/in-memory database state; no production measurements were used.
+The full gap analysis — the audited gaps G1a-G20, the additional gaps G21-G39 found by the 2026-08-23 verification review, the boundary cases that are deliberate policy rather than contradictions, the proposed GitHub issues, and the verification index — lives in [release-lifecycle-gaps.md](release-lifecycle-gaps.md).
 
-### G1a — unrenamed releases outside Other are permanently excluded from the standard sweep (high, stranded names)
-
-**Reachable state and path.** `isrenamed=0, predb_id=0, nfostatus>=0, proc_*=0, categories_id` in Music/Movie/TV/etc. A raw multipart subject such as `[10/88] "Artist-Title-FLAC-1971-GRP.part09.rar"` is not accepted as a proper name, but #132 categorization can recognize Music at creation. Forced XXX (#138) or a forced group root (#140/#141, including bulk edits fixed by #183) create the same state even when the raw name itself is opaque.
-
-**Exclusion.** The process that should use the later NFO/files/PAR2/UID/SRR/hash/CRC evidence is `standardCandidateBatch`, but it ends with:
-
-```sql
-AND r.isrenamed = 0
-AND r.predb_id = 0
-...
-AND r.categories_id IN (<Category::OTHERS_GROUP>)
-```
-
-(`NameFixingQueryService.php:129-145`). The ordinary pane calls every source with `--category=other` as well (`TmuxTaskRunner.php:438-449`). Audio-tag and RAR-file renames cover only releases whose AP routing, archive contents, settings, and tag/name evidence cooperate; they are not a general cross-category sweep. PreDB full text is the only category-independent name fixer, is not scheduled, and a PreDB row is attempted once.
-
-This is a long-standing category assumption made substantially more reachable by #132/#138/#140/#141 and left intact when #176 introduced the “standard” safety sweep. `ReleaseLifecycleEligibilityGapTest::the_standard_name_sweep_excludes_an_unrenamed_release_outside_other` proves the query-level strand. It corrupts no row, but permanently strands naming and can also block renamed-only metadata.
-
-### G1b — all negative NFO states block every standard source, including terminal NFO failure (high, stranded names)
-
-**Reachable state and path.** An Other release has file/PAR2/UID/SRR/hash/CRC evidence and the matching `proc_* = 0`, but `nfostatus=-1` because NFO processing is disabled/size-excluded, or `nfostatus=-9/-10` because NFO attempts are exhausted. A -9 row without a nonempty NFO-like `release_files` row is not eligible for archive fallback (`NfoService.php:884-909`), so -9 itself may be terminal.
-
-**Exclusion.** Standard naming unconditionally requires `AND r.nfostatus > -1` before its OR across all seven independent sources (`NameFixingQueryService.php:129-143`). The tmux wake-up count repeats that requirement (`Tmux.php:344-345`). Neither predicate distinguishes “NFO not ready” from “NFO permanently unavailable,” nor does it allow already-ready non-NFO evidence to proceed.
-
-This coupled gate was surfaced by #176's standard sweep; it is a design regression in that new safety net over older independent source methods. `ReleaseLifecycleEligibilityGapTest::the_standard_name_sweep_excludes_every_source_while_nfo_is_pending` and `...after_nfo_retries_are_exhausted` prove both paths. Result: permanent name strand, with secondary metadata starvation.
-
-### G2 — the Fix Names pane can sleep while the standard query has UID/SRR/hash/CRC work (high, stranded queue)
-
-**Reachable state and path.** An otherwise eligible Other release has only one of `proc_uid`, `proc_srr`, `proc_hash16k`, or `proc_crc32` at 0 while `proc_nfo=proc_files=proc_par2=1`.
-
-**Contradiction.** The worker admits:
-
-```sql
-... OR r.proc_uid = 0 OR r.proc_srr = 0
-OR r.proc_hash16k = 0 OR r.proc_crc32 = 0
-```
-
-(`NameFixingQueryService.php:134-142`), but `processrenames` counts only:
-
-```sql
-(nfostatus = 1 AND proc_nfo = 0) OR proc_files = 0 OR proc_par2 = 0
-```
-
-(`Tmux.php:344-345`). `runFixNamesTask()` disables the pane at a zero count (`TmuxTaskRunner.php:414-424`), so the broader worker query is never reached. This is a #176 regression caused by adding a standard worker without deriving the monitor from its predicate. Severity is high: queued work can remain forever, though another row can incidentally wake the pane.
-
-### G3 — PreDB full-text's only cross-category rescue is operator-only and one-shot (high, stranded names)
-
-**Reachable state and path.** Any G1 row may be discoverable by a future PreDB title. `predb.searched=0` makes that title eligible once it is a day old.
-
-**Exclusion/absence.** `multiprocessing:fixrelnames predbft` exists (`ProcessFixRelNames.php:17-38`) and its release confirmation has no category constraint (`NameFixingQueryService.php:310-329`), but neither `TmuxTaskRunner` nor `routes/console.php` invokes it. After an operator runs it, `ReleasesFixNamesGroup` writes each row's searched result after one attempt (`ReleasesFixNamesGroup.php:154-175`), so releases created or renamed later are never considered against that PreDB row.
-
-This is a long-standing automation/retry gap, made consequential by the newer cross-category strands. It does not corrupt state, but eliminates the only general rescue path unless an operator continuously intervenes.
-
-### G4 — PAR2 naming can mark evidence consumed before an NZB exists (high, stranded names)
-
-**Reachable state and path.** Immediately after release creation: `nzbstatus=0, predb_id=0, isrenamed=0, proc_par2=0, categories_id=Other`. Another eligible row wakes the #176 Fix Names pane before the Releases pane finishes NZB creation. PAR2 level 7 sees the new row.
-
-**Contradiction.** `SOURCE_PAR2` declares source existence as `1 = 1`, and `candidateWhere()` has no `nzbstatus` clause (`NameFixingQueryService.php:60-70,388-418`). `checkPar2()` cannot read the not-yet-created NZB; the miss path then calls `markProcessed(..., 'proc_par2', ...)` (`NameFixingService.php:1228-1255`). Once the NZB or a later repair/rescan supplies PAR2 evidence, `proc_par2=1` permanently excludes the row.
-
-This is an ordering regression exposed by #176 automatically running odd source levels. The broader long-standing flaw is that `proc_*` booleans record “attempted at one moment,” not the version of their source evidence. `ReleaseLifecycleEligibilityGapTest::par2_name_fixing_can_mark_a_release_done_before_its_nzb_exists` proves the gate transition. It strands one naming method and can strand the whole name when other methods lack evidence.
-
-### G5 — an audio worker crash at the timeout limit creates a row neither audio nor general AP will claim (critical, stranded AP)
-
-**Reachable state and path.** `passwordstatus=current pending, haspreview=-1, nzbstatus=1`, audio-routed category/group, no `aud:declined` token, and `pp_timeout_count>=maxpptimeoutcount`. The audio worker increments the counter **before** fetching an archive (`AudioReleaseProcessor.php:65-67,127-139`). If the process exits or is killed after that increment and before settlement/decline, the row remains pending at the maximum.
-
-**Contradiction.** Audio appends `WHERE r.pp_timeout_count < max` (`AudioCandidateQuery.php:74-101`). General AP requires `NOT routedToAudio OR token='aud:declined'` (`AudioRouting.php:69-75`), but the crashing worker did not write the decline token. Logging the exclusion does not transition it. `AudioCandidateQueryTest::test_an_audio_release_past_the_timeout_threshold_is_stranded_between_both_paths` proves neither query selects the state.
-
-This is a regression from the #173 dedicated audio path's crash guard, sharpened by #181. It permanently strands password/preview/tag processing and leaves a warning-only dead row.
-
-### G6 — the mutable password pending sentinel (and hard-coded resets) strands both AP paths (high, stranded AP)
-
-**Reachable state and path.** A row is created/requeued with `passwordstatus=0` while inspection is inactive, then the setting/path becomes active so current pending is -1; or the reverse. Independently, `nntmux:reset-postprocessing` and `postprocess:guid --reset` write -1 even while inspection is inactive (`NntmuxResetPostProcessing.php:75-90,353-369`; `ProcessAdditionalGuid.php:72-80`). In either case `haspreview=-1,nzbstatus=1` still says work is pending.
-
-**Exclusion.** Both candidate paths share strict equality:
-
-```php
-->where('r.passwordstatus', PasswordInspectionMode::pendingReleaseStatus())
-->where('r.haspreview', -1)
-->where('r.nzbstatus', 1)
-```
-
-(`ReleaseClaimant.php:63-66`), where the expected value changes with live config (`PasswordInspectionMode.php:11-20`). Unlike repair and preview requeue commands, the reset writers do not call that helper. `AudioCandidateQueryTest::test_changing_password_inspection_mode_strands_rows_created_with_the_old_pending_sentinel` proves both routing polarities reject an old sentinel.
-
-This is a dedicated-AP state-model regression (#173 and follow-ups) plus a long-standing reset mismatch. It permanently strands AP until an operator runs the specialized mismatch requeue.
-
-### G7 — whole-file rescan is required by the deletion design but has no automatic caller (high, stranded recovery)
-
-**Reachable state and path.** `nzbstatus=1, 0<completion<target, repair_outcome` becomes failed/skipped, and `declaredfiles>totalpart` indicates complete files are absent rather than segments missing.
-
-**Absence.** `RescanCandidateQuery` admits that row (`RescanCandidateQuery.php:37-91`), and `releases:rescan-missing-files` owns recovery (`RescanMissingReleaseFiles.php:33-142`), but there is no tmux or scheduler caller. Only segment repair is scheduled hourly (`routes/console.php:36-40`). The sweep correctly waits when the shortfall is known, so the row is not deleted—but it is also never repaired.
-
-This is an incomplete #161 rollout. It strands whole-file recovery indefinitely and accumulates below-target releases.
-
-### G8 — `declaredfiles IS NULL` is simultaneously rescan-eligible and deletion-eligible (critical, destructive race)
-
-**Reachable state and path.** A legacy/imported row has `nzbstatus=1, 0<completion<target, repair_outcome=failed/skipped, rescan_outcome=NULL, declaredfiles=NULL`.
-
-**Contradiction.** Never-attempted rescan explicitly admits:
-
-```php
-->whereNull('rescan_outcome')
-->where(fn ($q) => $q->whereNull('declaredfiles')
-    ->orWhereColumn('declaredfiles', '>', 'totalpart'))
-```
-
-(`RescanCandidateQuery.php:53-58`). At the same time the sweep admits the same row with `->orWhereNull('declaredfiles')` once repair is final (`IncompleteReleaseSweepQuery.php:42-50`). Since the rescan command is not scheduled and the release cleanup runs frequently, the deletion side normally wins.
-
-This is a #161 regression: null was designed as “derive locally on first rescan visit” but also treated as proof no rescan was necessary. `ReleaseRepairGateTest::an_unresolved_legacy_release_is_simultaneously_rescan_eligible_and_deletion_eligible` proves simultaneous membership. Severity is critical because it can delete a recoverable release.
-
-### G9 — a partial whole-file recovery is stamped terminal `repaired` below target (high, stranded recovery)
-
-**Reachable state and path.** A rescan finds at least one missing file, rewrites the NZB, but `completionAfter<target`. `MissingFileRescanService` unconditionally constructs `outcome: Repaired` for any nonempty recovery (`MissingFileRescanService.php:220-245`) and persists it (`:403-422`).
-
-**Exclusion.** Rescan only revisits `retry-pending` or null (`RescanCandidateQuery.php:42-58`); the segment repair query only revisits repair's own retry/null state (`ReleaseRepairCandidateQuery.php:39-53`); the sweep requires deletion-final rescan state when `declaredfiles>totalpart` (`IncompleteReleaseSweepQuery.php:45-50`). Therefore `completion<target,rescan_outcome=repaired` is selected by none of them.
-
-This is a #161 state-machine regression. `ReleaseRepairGateTest::a_partial_re_scan_recorded_as_repaired_is_stranded_between_recovery_and_the_sweep` proves the dead state. It strands remaining recovery and retains policy-incomplete content forever.
-
-### G10 — raising the completion target does not reopen rows repaired to the old target (medium, stranded policy work)
-
-**Reachable state and path.** At target 95 a release reaches `completion=96, repair_outcome=repaired`. The operator later raises `completionpercent` to 99.
-
-**Exclusion.** Although `completion<99` now holds, repair selects only `repair_outcome=retry-pending` or null (`ReleaseRepairCandidateQuery.php:39-53`), rescan selects only its retry/null states, and the sweep deletes only failure/skip outcomes. No transition invalidates a former `repaired` verdict when the target changes.
-
-This is a #151/#161 state-model gap. `ReleaseRepairGateTest::a_release_repaired_to_an_old_target_is_not_reopened_when_the_target_rises` proves all three gates reject it. It does not delete or corrupt; it leaves current-policy work permanently undone.
-
-### G11 — NZB imports can remain in protected `completion=0` without an eligible NFO pass (high, stranded completion)
-
-**Reachable state and path.** Every normal NZB import writes release identity/category/NZB fields but omits `completion` (`NzbImportService.php:630-645`), leaving the database default 0 even though the importer parsed the files/segments. `NzbImportSegmentHashDedupeTest::test_import_persists_sorted_segment_message_id_hash` now asserts the resulting 0. `NzbContentsService::parseNzb()` can later fill that sentinel as a side effect of automatic NFO work (`app/Services/Nzb/NzbContentsService.php:141-206,310-327`), but only when NFO processing is enabled and the release passes its size/status schedule. NFO-disabled, NFO-size-excluded, and NFO-pane-disabled imports remain at 0.
-
-**Exclusion.** Repair (`ReleaseRepairCandidateQuery.php:69-73`), rescan (`RescanCandidateQuery.php:83-91`), and deletion (`IncompleteReleaseSweepQuery.php:42-50`) all require `completion>0`. Outside the conditional NFO side effect, the only general repair is the operator-only `releases:backfill-completion`, whose default candidate predicate is exactly `completion=0` (`BackfillReleaseCompletion.php:38-44,145-153`). `ReleaseRepairGateTest::the_never_measured_nzb_import_state_is_selected_by_no_recovery_or_sweep` proves the row is owned by no automatic recovery process once NFO is not an eligible rescue.
-
-This is an incomplete #156 completion-at-release-creation change: the alternative release producer was not given an unconditional equivalent writer. It protects affected imports from deletion but disables completion policy and recovery until an eligible NFO pass or operator backfill measures them.
-
-### G12 — #139 normalized dedupe can miss mixed-era duplicates before PHP sees them (high, duplicate releases)
-
-**Reachable states and paths.** Two independent failures exist within the configured size band:
-
-1. Twenty-five false prefix candidates (`ReleaseName.Extras.*`) precede the true legacy form (`"ReleaseName.part009.rar"`).
-2. The stored legacy value begins with raw multipart decoration, e.g. `[10/88] "ReleaseName.part009.rar" yEnc`, while the incoming normalized value is `ReleaseName`.
-
-**Exclusion.** The fallback prefilter is only:
-
-```php
-searchname = $normalized
-OR searchname LIKE $normalized.'.%'
-OR searchname LIKE '"'.$normalized.'%'
-LIMIT 25
-```
-
-with no deterministic order (`ReleaseDuplicateFinder.php:102-110`). Case 1 crowds the match out of the limited candidate set. Case 2 matches none of those leading-prefix expressions, so `ReleaseNameNormalizer::normalize()` in PHP (`:112-115`) never sees the row. `CbpCleanupServiceTest::test_normalized_duplicate_fallback_can_omit_the_true_match_after_twenty_five_prefixes` and `...cannot_see_a_legacy_counter_prefix` prove both misses.
-
-This is a #139 regression/incomplete mixed-era compatibility design. It creates duplicate releases; it does not merge or corrupt the existing one.
-
-### G13 — whole-file rescan changes the NZB but does not requeue consumers of file evidence (high, stale derived state)
-
-**Reachable state and path.** A release previously settles AP (`haspreview=0,passwordstatus=0`) and name sources (`proc_files/proc_par2/...=1`). A #161 rescan later adds an entire missing file and rewrites the NZB.
-
-**Exclusion.** Rescan's final writer changes only `rescan_attempted_at`, `rescan_outcome`, and optionally `completion` (`MissingFileRescanService.php:403-422`). It does not update `totalpart` after adding whole files, restore the mode-aware AP pending fields, or reset any `proc_*` evidence-version flags. AP still requires pending password plus `haspreview=-1` (`ReleaseClaimant.php:63-66`), and name methods require their `proc_*=0` (`NameFixingQueryService.php:397-403`). By contrast segment repair deliberately invokes a bounded AP requeue when it adds segments and the row has no artifacts (`ReleaseRepairService.php:115-128,183-203`). `MissingFileRescanServiceTest::a_successful_rescan_does_not_requeue_settled_additional_processing` proves the missing AP transition.
-
-This is an incomplete #161 integration. It leaves preview/password/file-name/metadata derived state stale after the underlying NZB gains qualitatively new evidence.
-
-### G14 — late CBP can make the stored creation-time completion stale, then repair/sweep can delete a complete NZB (critical, destructive stale state)
-
-**Reachable state and path.** Release creation measures (for example) 91.67% and writes `filecheck=4`. Before NZB creation claims/writes the release, later header ingest resolves the existing collection hash and inserts a missing binary/part under the linked collection. The collection fast-path intentionally does not change filecheck 4 (`CollectionHandler.php:541,594,604-682`), while `BinaryHandler.php:102-165` and `PartHandler.php:68-143` have no collection-status gate. NZB creation then streams the now-complete CBP.
-
-**Contradiction.** Successful NZB creation deliberately updates only `nzbstatus=1` and claim fields, leaving the older completion untouched (`NzbService.php:802-816`). `NzbCreationReliabilityTest::test_writer_leaves_the_creation_time_completion_untouched` proves a stored 91.67 remains 91.67 even when the written CBP is 3/3. Repair later loads the complete NZB, sees `! $plan->hasWork()`, and writes retry-pending then failed without remeasuring (`ReleaseRepairService.php:73-80,205-264`). If `declaredfiles<=totalpart`, the completion sweep then admits it (`IncompleteReleaseSweepQuery.php:42-50`) despite the NZB on disk being complete.
-
-This is a #156 regression relative to #147's NZB-time completion writer: moving the authoritative measurement earlier did not freeze CBP or reconcile late data. It can delete an actually complete release and is therefore critical.
-
-### G15 — forced-root finalization overrides ADR 0006's audio-only cross-root correction (medium, categorization conflict)
-
-**Reachable state and path.** A group is forced to XXX; categorization therefore writes `XXX_OTHER`. MediaInfo later proves audio-only FLAC/MP3.
-
-**Contradiction.** ADR 0006 states that audio-only content is the one deliberate cross-root exception (`docs/adr/0006-mediainfo-refinement-out-of-other-only.md:1-13`). The refinement decision still proposes Music (`MediaInfoRefinementService.php:41-51`), but #140/#141 added a forced-root guard that returns null unless the target's root equals the group force (`:65-67,100-121`). A subsequent central rename cannot escape either because the categorization pipeline reapplies forced-root finalization (`CategorizationPipeline.php:143-171`).
-
-Same-root legitimate refinement is **not** blocked, and a forced root correctly cannot be accidentally undone; the unresolved issue is precedence between two explicit policies. This is a #140/#141 behavioral regression against #83/ADR 0006. It miscategorizes proven audio but does not create duplicate work. Because intent must be chosen, this finding needs triage rather than an assumed code fix.
-
-### G16 — direct book/audio renames bypass the central rename state transition (medium, inconsistent/stale state)
-
-**Reachable state and path.** Book matching normalizes a wrapper/ISBN title, or audio tags produce performer/album. Both paths directly write `searchname,isrenamed` (and in audio's case category/proc_pp) (`BookService.php:430-473,553-564`; `AudioTagRenamer.php:68-79`).
-
-**Missing interaction.** The canonical updater additionally resets stale TV/movie/music/book/game identities, sets trust and source status, emits `ReleaseNameFixed`, recategorizes/refines, restores owed previews, and search-syncs (`ReleaseUpdateService.php:343-406`; `RecategorizeReleaseAfterNameFix.php:22-70`). Direct book rename does not recategorize at all; audio reproduces only a subset and never writes `is_trusted_name`. Consequently metadata/provider state from the old name can survive, and future naming/donor gates observe a different state depending on which writer found the same name.
-
-Audio direct behavior was introduced with #173; the book path is older. This is state inconsistency rather than an unconditional strand, but it can permanently retain stale metadata because positive IDs are terminal to their workers.
-
-### G17 — metadata monitor predicates disagree with worker predicates (medium, stranded or wasted metadata work)
-
-Current mismatches are source-proven:
-
-- Book scheduling admits `categories_id=3030` (Music/Audiobook) and, outside renamed-only mode, legacy `N:/NZB`/`N_NZB_` wrapper names even when `bookinfo_id` is non-null (`PostProcessRunner.php:619-670`). Tmux `processbooks` counts only Book-root rows with `bookinfo_id IS NULL` (`Tmux.php:341,362-363`). An audiobook-only backlog, or wrapper-only reprocessing backlog, never wakes the metadata pane.
-- Music scheduling counts every null `musicinfo_id` in its three Music leaves (`PostProcessRunner.php:175-185,673-696`), but the worker adds `isrenamed=1` when `lookupmusic=2` (`MusicService.php:479-504`). Unrenamed rows wake repeated no-op cycles; if they also hit G1, they never become eligible.
-- The same renamed-only drift affects tmux's TV, Console, and PC-game counts: their monitor SQL omits `isrenamed=1`, while the runner/worker adds it for `lookuptv=2` or `lookupgames=2` (`Tmux.php:335-342`; `PostProcessRunner.php:455-499,698-750`). These are repeated no-op wakeups rather than additional strands.
-
-This is long-standing duplicated-predicate drift, exposed by the #166–#201 reorganization of the shared metadata/audio pane. The under-counted Book cases strand metadata until unrelated work wakes the pane; the over-counted renamed-only cases waste cycles.
-
-### G18 — exact PreDB attachment can close naming without marking the name renamed/trusted (medium, gate contradiction)
-
-**Reachable state and path.** An `isrenamed=0,predb_id=0` release's existing `searchname` later exactly equals a PreDB title. `Predb::checkPre()` or `ReleaseUpdateService::attachPredbId()` writes only `predb_id` (`Predb.php:115-131`; `ReleaseUpdateService.php:445-455`).
-
-**Exclusion.** Every automatic/source/standard/full-text name query requires `predb_id=0` (`NameFixingQueryService.php:129-143,323-324,388-418`), while renamed-only metadata modes require `isrenamed=1`. The resulting `predb_id>0,isrenamed=0,is_trusted_name=0` is therefore treated as naming-terminal without receiving the state normally implied by a PreDB match.
-
-This is a long-standing split-writer design gap. It can strand renamed-only metadata and prevents trusted donor propagation.
-
-### G19 — `recategorize --all` leaves unchanged non-Other rows permanently `iscategorized=0` (medium, state corruption)
-
-**Reachable state and path.** An operator runs `nntmux:recategorize-releases --all`. The command first changes every `iscategorized=1` row to 0 (`RecategorizeReleases.php:45-50`). In its loop it restores 1 only inside `if (old category !== new category)` (`:78-96`). Any correctly categorized, unchanged row remains 0.
-
-**Exclusion.** The automatic legacy categorizer admits only `categories_id=OTHER_MISC AND iscategorized=0` (`ReleaseProcessingService.php:315-322`), so unchanged Movie/Music/TV/etc. rows are never repaired. Cleanup rules that require `iscategorized=1` (`ReleaseRemoverService.php:337-383`) can also be bypassed.
-
-This is a long-standing manual-path state-corruption bug, not caused by the recent bulk forced-root edit fix (#183). It produces persistent invalid state and can weaken cleanup.
-
-### G20 — cross-posted releases apply group policy from ingestion-order primary only (high, order-dependent routing and stranded AP)
-
-**Reachable state and path.** The collection identity is `sha1(cleaned name + declared file count)` and excludes group; its unique key keeps the first inserted `collections.groups_id`, while every Xref group is separately accumulated in `collection_groups` and later `releases_groups` (`CollectionHandler.php:80-93,161-208,388-459,521-594`; `database/schema/mysql-schema.sql:187-221`; `ReleaseCreationService.php:64,137-179,265-297`). Consider a small opaque release cross-posted to plain group A and group B whose forced root is Music. If A is scanned first, the release reaches `groups_id=A, categories_id=Other, size<minsizetopostprocess`, while `releases_groups` truthfully contains B.
-
-**Contradiction.** Forced-root categorization loads policy only through the single primary id passed to `categorize()` (`CategorizationPipeline.php:78-110,143-171`). Audio routing likewise checks only `r.groups_id`:
-
-```sql
-r.categories_id BETWEEN 3000 AND 3999
-OR EXISTS (... usenet_groups.id = r.groups_id
-           AND forced_root_categories_id = 3000)
-```
-
-(`AudioRouting.php:112-121`). It never consults `releases_groups`. The state above is too small for general AP (`AdditionalCandidateQuery.php:55-78`) and is not audio-routed, so neither path selects it; if B happened to be primary, the no-minimum audio query would select the same upload. `AudioCandidateQueryTest::test_a_small_crosspost_ignores_a_secondary_forced_music_group_and_is_selected_by_neither_path` proves the query-level strand.
-
-This is a policy-integration regression from combining #140/#141's per-group forced roots with #166's no-minimum audio route and the existing cross-group collection identity; #139 further commits the lifecycle to one release for cross-group reposts. It makes categorization/AP depend on scan order and can permanently strand small audio work. The correct precedence for conflicting group policies needs an explicit decision.
-
-### Configured boundaries that are not predicate contradictions
-
-- `AudioRouting` itself partitions the shared pending set correctly: an audio-routed row goes to audio until it carries `aud:declined`, after which general AP admits it (`AudioRouting.php:51-75`). The decline leaves `proc_*` flags untouched intentionally because general AP still owns the row. The crash guard, not the polarity, breaks total coverage in G5.
-- Audio intentionally has no `minsizetopostprocess`; general AP does. Thus a row recognized as audio below the general minimum is covered, fixing the motivating #166 gap. A **non-audio** row below the configured minimum, or any row above the configured maximum, remains pending-looking but intentionally outside processing. These are operator policy boundaries, not contradictory predicates (`AdditionalCandidateQuery.php:55-78`; `AudioCandidateQuery.php:45-68`). G20 is different: the release has a forced-Music cross-post association, but the routing predicate ignores it because it is not primary.
-- A central name fix cannot recategorize out of a forced group root, but same-root MediaInfo refinement still executes even when the category did not change (`RecategorizeReleaseAfterNameFix.php:43-59`). Only the documented audio cross-root exception is in conflict (G15).
-- Per-root preview and executable toggles are consistently evaluated from the **current** category. Preview skip uses -2 and can be restored after a category change; executable sweep and inline discard share `ExecutableReleaseDiscardService` (`PreviewGenerationPolicy.php:50-127`; `ExecutableReleaseDiscardService.php:65-106,161-203`). No dead state was found in those toggle interactions.
-- Poster blacklist creation launches a full detached sweep and ordinary header ingest uses the enabled rule afterward (`PosterIdentityBlacklistService.php:65-105`; `BlacklistSweepService.php:129-145`). No lifecycle gap was found in #127/#128 independent of an external process failure.
-
-## Proposed GitHub issues
-
-These are drafts only. Labels are the repository's canonical triage labels from `docs/agents/triage-labels.md`. Every acceptance criterion is deterministically testable without production measurements.
-
-| Finding / proposed title | Severity | Label | Body draft, including test-only acceptance criteria |
-|---|---:|---|---|
-| G1a — Let standard name fixing revisit unrenamed releases outside Other | High | `ready-for-agent` | Releases can be created or forced directly into a typed root with `isrenamed=0`, but both the standard sweep and automatic source passes require Other. Expand/replace that gate while preserving trusted-name and per-source safety. **Acceptance:** a PHPUnit feature test constructs unrenamed Music, Movie, forced-root, and Other rows with usable source flags and proves each intended row is selected exactly once; already-renamed and PreDB-matched controls remain excluded. |
-| G1b — Decouple standard non-NFO name sources from negative NFO status | High | `ready-for-agent` | `nfostatus>-1` blocks files/PAR2/UID/SRR/hash/CRC even when NFO is pending or terminally failed. Make each source depend only on its own readiness, while NFO itself still respects NFO status. **Acceptance:** query tests prove -1, -9, and -10 rows with non-NFO evidence are selected, NFO lookup is not attempted without `nfostatus=1`, and a row with no unprocessed evidence remains excluded. |
-| G2 — Derive Fix Names pane wake-up from the standard candidate query | High | `ready-for-agent` | The monitor omits four source flags admitted by the worker. Remove the duplicate predicate or make it exactly equivalent. **Acceptance:** orchestration/query tests cover UID-only, SRR-only, hash-only, and CRC-only backlog and prove `runFixNamesTask` launches; a fully processed control keeps the pane disabled. |
-| G3 — Give PreDB full-text matching an automatic, repeat-safe lifecycle | High | `ready-for-agent` | The only cross-category PreDB matcher is operator-only and consumes each PreDB row once. Add bounded automatic scheduling and a retry/reconciliation model that can match releases arriving after a title's first scan. **Acceptance:** tests prove the orchestrator invokes a bounded full-text batch, a title with no initial release can match a later release, and successful/flood results do not loop indefinitely. |
-| G4 — Do not consume PAR2 name-fix state before NZB availability | High | `ready-for-agent` | PAR2's source predicate is `1=1`, so a pre-NZB release can be attempted and marked done. Require `nzbstatus=1` (and retain/reopen state when evidence changes). **Acceptance:** a pre-NZB row is not selected or marked, becomes selected after NZB success, and a miss is retryable after a repair/rescan adds PAR2 evidence. |
-| G5 — Settle or hand off audio rows that reach the archive crash limit | Critical | `ready-for-agent` | An audio-routed row at `pp_timeout_count>=max` without `aud:declined` is admitted by neither path. Make the maximum an atomic state transition (settle, decline, or deletion according to policy), including crash recovery. **Acceptance:** tests construct limit and over-limit states before/after stale claims and prove every pending row is claimable by exactly one path or explicitly terminal, never neither. |
-| G6 — Make AP pending state stable across password-inspection mode changes | High | `ready-for-agent` | Pending eligibility is encoded as a mutable password verdict, and reset commands hard-code -1. Introduce a stable pending marker or reconcile both sentinels safely; make every reset use one API. **Acceptance:** tests toggle inspection in both directions, exercise all reset/requeue commands, and prove each pending row is selected by exactly one AP path while settled 0/1 rows remain settled. |
-| G7 — Schedule bounded whole-file rescan before incomplete cleanup | High | `ready-for-agent` | #161 supplies a candidate query and command but no automatic caller. Integrate a bounded rescan stage with repair-before-sweep ordering and overlap protection. **Acceptance:** scheduler/tmux tests prove due rescan work invokes the command before the deletion decision, observes limits/without-overlap, and no-work cycles do not launch workers. |
-| G8 — Make unresolved declared-file counts deletion-safe | Critical | `ready-for-agent` | `declaredfiles=NULL` currently means both “derive on rescan” and “safe to delete.” Ensure the sweep cannot admit a row until rescan has produced a final verdict. **Acceptance:** a gate test proves null+rescan-null/retry is never swept, becomes sweepable only after a deletion-final rescan result, and remains recoverable when derivation finds missing files. |
-| G9 — Keep partial whole-file rescans retryable below target | High | `ready-for-agent` | Any nonempty recovery is stamped `repaired` even below target, which no query revisits. Make outcome target-aware like segment repair. **Acceptance:** service tests prove below-target partial recovery writes retry-pending then final failure/retry per policy, at-target recovery writes repaired, and every below-target outcome belongs to recovery or deletion—never neither. |
-| G10 — Reevaluate repaired outcomes when completion target increases | Medium | `ready-for-agent` | `repaired` is treated as timeless even though its meaning depends on a mutable target. Store the achieved target or derive eligibility from current completion/target. **Acceptance:** tests repair at 95, raise to 99, and prove the row re-enters the appropriate recovery path; unchanged/lower targets do not duplicate work. |
-| G11 — Measure completion during NZB import | High | `ready-for-agent` | Imported releases start `nzbstatus=1,completion=0`; only an eligible NFO pass incidentally measures them, while automatic recovery intentionally ignores 0. Compute the same segment-based completion during import or automatically enqueue a local measurement. **Acceptance:** import tests cover full, partial, NFO-disabled/size-excluded, and unmeasurable NZBs; measurable imports persist the correct nonzero percentage and immediately obey recovery/sweep gates, while truly unmeasurable imports retain the protected sentinel. |
-| G12 — Make normalized dedupe complete for mixed-era search names | High | `ready-for-agent` | The unordered 25-row prefix cap can omit a true normalized match, and raw counter prefixes are never candidates. Replace the incomplete prefilter with an indexed normalized identity/backfill or a complete deterministic strategy. **Acceptance:** tests with more than 25 false prefixes and legacy counter/quote/yEnc forms find the true duplicate; distinct reposts and out-of-tolerance sizes remain distinct. |
-| G13 — Requeue derived processing after whole-file NZB recovery | High | `ready-for-agent` | Rescan can add qualitatively new files but only updates completion/outcome, leaving `totalpart` and consumer verdicts stale. Centralize an evidence-changed transition that refreshes counts and selectively resets AP/relevant naming flags. **Acceptance:** tests start from settled AP/name state, add a file through rescan, assert `totalpart`/completion agree with the NZB, and prove the row becomes eligible for intended AP/name stages exactly once; releases with no newly useful evidence are not requeued. |
-| G14 — Reconcile completion with late CBP before destructive cleanup | Critical | `ready-for-agent` | CBP can change after release creation but before NZB write, while #156 freezes the earlier completion. Record/freeze the measured CBP version or remeasure authoritatively at write time without reintroducing #147's lossy arithmetic. **Acceptance:** a feature test creates a partial release, attaches late parts before NZB write, proves stored completion matches the final NZB, and proves repair/sweep cannot delete the now-complete release. |
-| G15 — Decide forced-root precedence for audio-only MediaInfo evidence | Medium | `needs-triage` | #140/#141 makes group force absolute, while ADR 0006 declares audio-only evidence the sole cross-root exception. Choose and document the precedence, then align pipeline, direct audio rename, and refinement. **Acceptance once chosen:** tests cover forced XXX/Movie/TV groups with audio-only evidence plus video controls, and prove every categorization entry point yields the same specified root. |
-| G16 — Route book and audio renames through one canonical transition | Medium | `ready-for-agent` | Direct renamers bypass metadata resets, trust semantics, and the `ReleaseNameFixed` listener. Extract a canonical rename operation whose side effects are explicit and shared. **Acceptance:** tests feed equivalent accepted names through standard, book, and audio paths and assert identical category/trust/reset/event/search-sync state, with path-specific source flags preserved. |
-| G17 — Derive metadata pane monitoring from worker candidate queries | Medium | `ready-for-agent` | Audiobooks and legacy wrapper-name Books can be worker-eligible but monitor-invisible, while renamed-only TV/Music/Console/Games can be monitor-visible but worker-ineligible. Reuse candidate counts rather than handwritten SQL. **Acceptance:** tmux tests prove audiobook/wrapper-only work wakes the pane, unrenamed rows under every renamed-only mode do not, and each metadata type's monitor count equals its candidate-query count. |
-| G18 — Make exact PreDB attachment an atomic naming state transition | Medium | `ready-for-agent` | `Predb::checkPre` and `attachPredbId` write only the id, yielding `predb_id>0,isrenamed=0,is_trusted_name=0`. Define whether exact equality confirms the current name and update all implied fields atomically. **Acceptance:** tests exercise creation-time and late exact matches, assert consistent renamed/trust/category/event state, and prove renamed-only metadata is not stranded. |
-| G19 — Restore `iscategorized` for unchanged rows in `recategorize --all` | Medium | `ready-for-agent` | `--all` clears the flag globally but restores it only when category changes. Always finalize each non-test row, including unchanged results. **Acceptance:** a command test covers changed and unchanged Other/non-Other rows and asserts every processed row ends `iscategorized=1`; `--test` remains read-only and cleanup eligibility is preserved. |
-| G20 — Define group-policy precedence for cross-posted releases | High | `needs-triage` | Collections/releases preserve every cross-post group but forced-root categorization and audio routing consult only the ingestion-order primary group. Choose a deterministic policy (for example an explicit primary rule or precedence across all associated groups) and use it consistently. **Acceptance once chosen:** integration tests create the same upload with opposite group ingestion orders and conflicting/plain-vs-forced roots, assert identical category and AP routing, and prove a below-minimum forced-Music cross-post is owned by exactly one path. |
-
-## Verification index
-
-The focused regression demonstrations are:
-
-- `tests/Feature/ReleaseLifecycleEligibilityGapTest.php`: G1a, G1b, G4.
-- `tests/Feature/AudioCandidateQueryTest.php`: G5, G6, G20.
-- `tests/Feature/ReleaseRepairGateTest.php`: G8, G9, G10, G11 gate ownership.
-- `tests/Feature/NzbImportSegmentHashDedupeTest.php`: G11 producer state.
-- `tests/Feature/CbpCleanupServiceTest.php`: G12's two mixed-era misses.
-- `tests/Feature/MissingFileRescanServiceTest.php`: G13.
-- Existing `tests/Feature/NzbCreationReliabilityTest.php::test_writer_leaves_the_creation_time_completion_untouched`: the writer half of G14.
-
-The remaining findings are proven directly by command wiring or mismatched predicates quoted above. They should receive focused orchestration/service tests as part of their fixes. This audit did not query or depend on the production database.
