@@ -7,13 +7,16 @@ namespace Tests\Feature;
 use App\Facades\Search;
 use App\Models\Category;
 use App\Models\Release;
+use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
 use App\Services\AdditionalProcessing\AdditionalWorkPlanner;
 use App\Services\AdditionalProcessing\ArchiveExtractionService;
+use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use App\Services\AdditionalProcessing\ConsoleOutputService;
 use App\Services\AdditionalProcessing\DTO\DownloadMetrics;
 use App\Services\AdditionalProcessing\Enums\DownloadKind;
 use App\Services\AdditionalProcessing\MediaExtractionService;
 use App\Services\AdditionalProcessing\NzbContentParser;
+use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\AdditionalProcessing\ReleaseFileManager;
 use App\Services\AdditionalProcessing\ReleaseFilesArchiveFallback;
 use App\Services\AdditionalProcessing\ReleaseProcessor;
@@ -706,6 +709,168 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         }
     }
 
+    public function test_release_exception_below_the_cap_is_counted_and_left_pending(): void
+    {
+        DB::table('releases')->insert(array_merge($this->releaseRow(), [
+            'size' => 2 * 1048576,
+            'passwordstatus' => PasswordInspectionMode::pendingReleaseStatus(),
+        ]));
+        Search::shouldReceive('updateRelease')->once()->with(1);
+
+        $settled = $this->makeManager()->handleReleaseException(
+            Release::query()->findOrFail(1),
+            3,
+            'token',
+        );
+
+        $release = Release::query()->findOrFail(1);
+
+        $this->assertFalse($settled);
+        $this->assertSame(1, (int) $release->pp_timeout_count);
+        $this->assertSame(-1, (int) $release->haspreview);
+        $this->assertSame(PasswordInspectionMode::pendingReleaseStatus(), (int) $release->passwordstatus);
+        $this->assertNull($release->additional_pp_claimed_at);
+        $this->assertNull($release->additional_pp_claim_token);
+        $this->assertTrue(AdditionalCandidateQuery::hasAnyCandidate());
+    }
+
+    public function test_release_exception_at_the_cap_is_settled_without_deleting_the_release_or_nzb(): void
+    {
+        $nzbRoot = $this->makeTempDirectory('nntmux-exception-cap-nzb').'/';
+        config(['nntmux_settings.path_to_nzbs' => $nzbRoot]);
+
+        DB::table('releases')->insert(array_merge($this->releaseRow(), ['pp_timeout_count' => 2]));
+        $nzbPath = $nzbRoot.'g/guid-1.nzb.gz';
+        File::ensureDirectoryExists(dirname($nzbPath));
+        File::put($nzbPath, 'kept');
+        Search::shouldReceive('updateRelease')->once()->with(1);
+
+        $settled = $this->makeManager()->handleReleaseException(
+            Release::query()->findOrFail(1),
+            3,
+            'token',
+        );
+
+        $release = Release::query()->findOrFail(1);
+
+        $this->assertTrue($settled);
+        $this->assertSame(3, (int) $release->pp_timeout_count);
+        $this->assertSame(0, (int) $release->haspreview);
+        $this->assertSame(0, (int) $release->passwordstatus);
+        $this->assertNull($release->additional_pp_claimed_at);
+        $this->assertNull($release->additional_pp_claim_token);
+        $this->assertFileExists($nzbPath);
+        $this->assertFalse(AdditionalCandidateQuery::hasAnyCandidate());
+    }
+
+    public function test_release_exception_does_not_clear_a_newer_workers_claim(): void
+    {
+        DB::table('releases')->insert($this->releaseRow());
+        $release = Release::query()->findOrFail(1);
+        Release::query()->whereKey(1)->update([
+            'additional_pp_claim_token' => 'new-worker-token',
+        ]);
+        $coordinator = new ReleaseSearchSyncCoordinator(
+            new PersistenceMetricsCollector,
+            static function (): never {
+                throw new \RuntimeException('stale worker attempted search synchronization');
+            },
+        );
+
+        $settled = $this->makeManagerWithImageService(
+            new ReleaseImageService,
+            searchSyncCoordinator: $coordinator,
+        )->handleReleaseException(
+            $release,
+            3,
+            'token',
+        );
+
+        $freshRelease = Release::query()->findOrFail(1);
+
+        $this->assertFalse($settled);
+        $this->assertSame(0, (int) $freshRelease->pp_timeout_count);
+        $this->assertSame('new-worker-token', $freshRelease->additional_pp_claim_token);
+        $this->assertNotNull($freshRelease->additional_pp_claimed_at);
+    }
+
+    public function test_release_exception_settlement_survives_search_sync_failure(): void
+    {
+        Log::spy();
+        DB::table('releases')->insert($this->releaseRow());
+        $coordinator = new ReleaseSearchSyncCoordinator(
+            new PersistenceMetricsCollector,
+            static function (): never {
+                throw new \RuntimeException('search unavailable');
+            },
+        );
+
+        $settled = $this->makeManagerWithImageService(
+            new ReleaseImageService,
+            searchSyncCoordinator: $coordinator,
+        )->handleReleaseException(
+            Release::query()->findOrFail(1),
+            3,
+            'token',
+        );
+
+        $release = Release::query()->findOrFail(1);
+
+        $this->assertFalse($settled);
+        $this->assertSame(1, (int) $release->pp_timeout_count);
+        $this->assertNull($release->additional_pp_claim_token);
+        Log::shouldHaveReceived('error')->once();
+    }
+
+    public function test_release_exception_is_counted_when_claim_columns_are_unavailable(): void
+    {
+        Schema::table('releases', function (Blueprint $table): void {
+            $table->dropColumn(['additional_pp_claimed_at', 'additional_pp_claim_token']);
+        });
+        (new \ReflectionProperty(ReleaseClaimant::class, 'supportsClaims'))
+            ->setValue(null, null);
+
+        try {
+            $releaseRow = $this->releaseRow();
+            unset($releaseRow['additional_pp_claimed_at'], $releaseRow['additional_pp_claim_token']);
+            DB::table('releases')->insert($releaseRow);
+            Search::shouldReceive('updateRelease')->once()->with(1);
+
+            $settled = $this->makeManager()->handleReleaseException(
+                Release::query()->findOrFail(1),
+                3,
+                'worker-token',
+            );
+
+            $this->assertFalse($settled);
+            $this->assertSame(1, (int) Release::query()->whereKey(1)->value('pp_timeout_count'));
+        } finally {
+            (new \ReflectionProperty(ReleaseClaimant::class, 'supportsClaims'))
+                ->setValue(null, null);
+        }
+    }
+
+    public function test_release_timeout_at_the_cap_still_deletes_the_release_and_nzb(): void
+    {
+        $nzbRoot = $this->makeTempDirectory('nntmux-timeout-cap-nzb').'/';
+        config(['nntmux_settings.path_to_nzbs' => $nzbRoot]);
+
+        DB::table('releases')->insert(array_merge($this->releaseRow(), ['pp_timeout_count' => 2]));
+        $nzbPath = $nzbRoot.'g/guid-1.nzb.gz';
+        File::ensureDirectoryExists(dirname($nzbPath));
+        File::put($nzbPath, 'deleted');
+        Search::shouldReceive('deleteRelease')->once()->with(1);
+
+        $deleted = $this->makeManager()->handleReleaseTimeout(
+            Release::query()->findOrFail(1),
+            3,
+        );
+
+        $this->assertTrue($deleted);
+        $this->assertNull(Release::query()->find(1));
+        $this->assertFileDoesNotExist($nzbPath);
+    }
+
     private function makeManager(?NameFixingService $nameFixing = null): ReleaseFileManager
     {
         return $this->makeManagerWithImageService(new ReleaseImageService, $nameFixing);
@@ -782,6 +947,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
             $table->string('name');
+            $table->unsignedInteger('forced_root_categories_id')->nullable();
         });
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.test']);
 

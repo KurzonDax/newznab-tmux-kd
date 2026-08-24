@@ -10,6 +10,7 @@ enum ProcessingOutcome: string
     case NoUsefulArtifacts = 'no-useful-artifacts';
     case Passworded = 'passworded';
     case GroupUnavailable = 'group-unavailable';
+    case StorageUnavailable = 'storage-unavailable';
     case TemporaryWorkspaceUnavailable = 'temporary-workspace-unavailable';
     case TimedOut = 'timed-out';
     case DeletedAfterTimeout = 'deleted-after-timeout';
@@ -37,6 +38,14 @@ enum ProcessingOutcome: string
     {
         return match ($this) {
             self::DeletedAfterTimeout, self::DeletedBrokenNzb, self::Discarded => true,
+            default => false,
+        };
+    }
+
+    public function isEnvironmentalFailure(): bool
+    {
+        return match ($this) {
+            self::StorageUnavailable, self::TemporaryWorkspaceUnavailable => true,
             default => false,
         };
     }

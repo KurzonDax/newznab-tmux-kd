@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\AdditionalProcessing;
 
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
+use App\Services\AdditionalProcessing\Enums\NzbParseFailure;
 use App\Services\Nzb\NzbParserService;
 use App\Services\Nzb\NzbService;
 use Illuminate\Support\Facades\File;
@@ -27,13 +28,25 @@ class NzbContentParser
      * Parse an NZB file and return its contents as an array of files.
      *
      * @param  string  $guid  The release GUID to find the NZB for
-     * @return array{contents: array<string, mixed>, error: string|null}
+     * @return array{contents: array<string, mixed>, error: string|null, failure: NzbParseFailure|null}
      */
     public function parseNzb(string $guid): array
     {
         $nzbPath = $this->nzb->nzbPath($guid);
         if ($nzbPath === false) {
-            return ['contents' => [], 'error' => 'NZB not found for GUID: '.$guid];
+            if (! $this->nzb->hasReadableNzbStorage()) {
+                return [
+                    'contents' => [],
+                    'error' => 'NZB storage is unavailable while resolving GUID: '.$guid,
+                    'failure' => NzbParseFailure::StorageUnavailable,
+                ];
+            }
+
+            return [
+                'contents' => [],
+                'error' => 'NZB not found for GUID: '.$guid,
+                'failure' => NzbParseFailure::Missing,
+            ];
         }
 
         $nzbContents = unzipGzipFile($nzbPath);
@@ -41,7 +54,11 @@ class NzbContentParser
             // Try repair on raw file contents
             $nzbContents = $this->attemptRawRepair($nzbPath);
             if (! $nzbContents) {
-                return ['contents' => [], 'error' => 'NZB is empty or broken for GUID: '.$guid];
+                return [
+                    'contents' => [],
+                    'error' => 'NZB is empty or broken for GUID: '.$guid,
+                    'failure' => NzbParseFailure::Broken,
+                ];
             }
         }
 
@@ -54,14 +71,18 @@ class NzbContentParser
                 $fileList = $this->nzbParser->parseNzbFileList($repaired, ['no-file-key' => false, 'strip-count' => true]);
             }
             if (count($fileList) === 0) {
-                return ['contents' => [], 'error' => 'NZB is potentially broken for GUID: '.$guid];
+                return [
+                    'contents' => [],
+                    'error' => 'NZB is potentially broken for GUID: '.$guid,
+                    'failure' => NzbParseFailure::Broken,
+                ];
             }
         }
 
         // Sort keys naturally
         ksort($fileList, SORT_NATURAL);
 
-        return ['contents' => $fileList, 'error' => null];
+        return ['contents' => $fileList, 'error' => null, 'failure' => null];
     }
 
     /**

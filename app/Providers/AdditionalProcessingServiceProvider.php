@@ -177,7 +177,8 @@ class AdditionalProcessingServiceProvider extends ServiceProvider
                 $app->make(ProcessingConfiguration::class),
                 $app->make(ReleaseProcessor::class),
                 $app->make(TempWorkspaceService::class),
-                $app->make(ConsoleOutputService::class)
+                $app->make(ConsoleOutputService::class),
+                $app->make(ReleaseFileManager::class),
             );
         });
     }

@@ -9,6 +9,7 @@ use App\Services\AdditionalProcessing\AdditionalProcessingOrchestrator;
 use App\Services\AdditionalProcessing\ConsoleOutputService;
 use App\Services\AdditionalProcessing\DTO\ReleaseProcessingResult;
 use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
+use App\Services\AdditionalProcessing\ReleaseFileManager;
 use App\Services\AdditionalProcessing\ReleaseProcessor;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
 use App\Services\TempWorkspaceService;
@@ -53,42 +54,36 @@ class AdditionalProcessingOrchestratorClaimTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_handled_release_exception_clears_claim(): void
+    public function test_handled_release_exception_is_counted_and_left_pending_below_the_cap(): void
     {
         Log::spy();
 
         DB::table('categories')->insert(['id' => 1]);
-        DB::table('releases')->insert([
-            'id' => 1,
-            'guid' => 'a-guid-1',
-            'leftguid' => 'a',
-            'name' => 'Example',
-            'searchname' => 'Example',
-            'size' => 2 * 1048576,
-            'groups_id' => 1,
-            'nfostatus' => -1,
-            'fromname' => 'poster@example.test',
-            'completion' => 100,
-            'categories_id' => 1,
-            'predb_id' => 0,
-            'pp_timeout_count' => 0,
-            'passwordstatus' => -1,
-            'haspreview' => -1,
-            'nzbstatus' => 1,
-            'postdate' => '2026-07-12 10:00:00',
-            'additional_pp_claimed_at' => null,
-            'additional_pp_claim_token' => null,
-        ]);
+        DB::table('releases')->insert($this->releaseRow());
 
         $processor = new FailingAdditionalReleaseProcessor;
         $tempWorkspace = new RecordingTempWorkspaceService;
         $output = new RecordingConsoleOutputService;
+        $releaseManager = Mockery::mock(ReleaseFileManager::class);
+        $releaseManager->shouldReceive('handleReleaseException')
+            ->once()
+            ->with(Mockery::type(Release::class), 3, Mockery::type('string'))
+            ->andReturnUsing(static function (Release $release): bool {
+                Release::query()->whereKey($release->id)->update([
+                    'pp_timeout_count' => 1,
+                    'additional_pp_claimed_at' => null,
+                    'additional_pp_claim_token' => null,
+                ]);
+
+                return false;
+            });
 
         $orchestrator = new AdditionalProcessingOrchestrator(
             $this->makeConfig(['queryLimit' => 25, 'minSizeBytes' => 0, 'maxSizeBytes' => 107374182400]),
             $processor,
             $tempWorkspace,
-            $output
+            $output,
+            $releaseManager,
         );
 
         $result = $orchestrator->start('', 'a');
@@ -106,6 +101,8 @@ class AdditionalProcessingOrchestratorClaimTest extends TestCase
         $this->assertSame(1, $tempWorkspace->clearDirectoryCalls);
         $this->assertSame(1, $output->echoDescriptionCalls);
         $this->assertSame(1, $output->endOutputCalls);
+        $this->assertSame(1, (int) Release::query()->whereKey(1)->value('pp_timeout_count'));
+        $this->assertSame(-1, (int) Release::query()->whereKey(1)->value('haspreview'));
         $this->assertNull(Release::query()->where('id', 1)->value('additional_pp_claimed_at'));
         $this->assertNull(Release::query()->where('id', 1)->value('additional_pp_claim_token'));
 
@@ -142,15 +139,112 @@ class AdditionalProcessingOrchestratorClaimTest extends TestCase
             );
     }
 
-    public function test_temp_setup_failure_does_not_claim_releases(): void
+    public function test_storage_unavailability_aborts_the_batch_and_releases_remaining_claims(): void
+    {
+        Log::spy();
+
+        DB::table('categories')->insert(['id' => 1]);
+        DB::table('releases')->insert([
+            $this->releaseRow(),
+            $this->releaseRow(2),
+        ]);
+
+        $processor = new StorageUnavailableAdditionalReleaseProcessor;
+        $orchestrator = new AdditionalProcessingOrchestrator(
+            $this->makeConfig(['queryLimit' => 25, 'minSizeBytes' => 0, 'maxSizeBytes' => 107374182400]),
+            $processor,
+            new RecordingTempWorkspaceService,
+            new RecordingConsoleOutputService,
+            Mockery::mock(ReleaseFileManager::class),
+        );
+
+        $result = $orchestrator->start('', 'a');
+
+        $this->assertSame([1, 2], $result->claimedIds);
+        $this->assertSame(1, $result->attemptedCount());
+        $this->assertTrue($result->hasOutcome(ProcessingOutcome::StorageUnavailable));
+        $this->assertSame(1, $processor->processCalls);
+        $this->assertSame([0, 0], DB::table('releases')->orderBy('id')->pluck('pp_timeout_count')->all());
+        $this->assertSame([null, null], DB::table('releases')->orderBy('id')->pluck('additional_pp_claimed_at')->all());
+        $this->assertSame([null, null], DB::table('releases')->orderBy('id')->pluck('additional_pp_claim_token')->all());
+
+        Log::shouldHaveReceived('critical')
+            ->once()
+            ->with('Additional postprocessing aborted because an environmental dependency is unavailable', Mockery::type('array'));
+    }
+
+    public function test_secondary_exception_handling_failure_releases_the_entire_claimed_batch(): void
     {
         DB::table('categories')->insert(['id' => 1]);
         DB::table('releases')->insert([
-            'id' => 1,
-            'guid' => 'a-guid-1',
+            $this->releaseRow(),
+            $this->releaseRow(2),
+        ]);
+
+        $releaseManager = Mockery::mock(ReleaseFileManager::class);
+        $releaseManager->shouldReceive('handleReleaseException')
+            ->once()
+            ->andThrow(new \RuntimeException('exception accounting unavailable'));
+        $orchestrator = new AdditionalProcessingOrchestrator(
+            $this->makeConfig(['queryLimit' => 25, 'minSizeBytes' => 0, 'maxSizeBytes' => 107374182400]),
+            new FailingAdditionalReleaseProcessor,
+            new RecordingTempWorkspaceService,
+            new RecordingConsoleOutputService,
+            $releaseManager,
+        );
+
+        try {
+            $orchestrator->start('', 'a');
+            $this->fail('Expected exception accounting failure to escape.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('exception accounting unavailable', $exception->getMessage());
+        }
+
+        $this->assertSame([null, null], DB::table('releases')->orderBy('id')->pluck('additional_pp_claimed_at')->all());
+        $this->assertSame([null, null], DB::table('releases')->orderBy('id')->pluck('additional_pp_claim_token')->all());
+    }
+
+    public function test_temp_setup_failure_does_not_claim_releases(): void
+    {
+        DB::table('categories')->insert(['id' => 1]);
+        DB::table('releases')->insert($this->releaseRow());
+
+        $processor = new FailingAdditionalReleaseProcessor;
+        $tempWorkspace = new FailingTempWorkspaceService;
+        $output = new RecordingConsoleOutputService;
+
+        $orchestrator = new AdditionalProcessingOrchestrator(
+            $this->makeConfig(['queryLimit' => 25, 'minSizeBytes' => 0, 'maxSizeBytes' => 107374182400]),
+            $processor,
+            $tempWorkspace,
+            $output,
+            Mockery::mock(ReleaseFileManager::class),
+        );
+
+        $result = $orchestrator->start('', 'a');
+
+        $this->assertSame(0, $processor->processCalls);
+        $this->assertSame(0, $result->claimedCount());
+        $this->assertStringContainsString('not writable', $result->setupFailure);
+        $this->assertSame(1, $tempWorkspace->ensureMainTempPathCalls);
+        $this->assertSame(0, $output->echoDescriptionCalls);
+        $this->assertSame(0, $output->endOutputCalls);
+        $this->assertStringContainsString('Additional post-processing skipped', $output->warnings[0] ?? '');
+        $this->assertNull(Release::query()->where('id', 1)->value('additional_pp_claimed_at'));
+        $this->assertNull(Release::query()->where('id', 1)->value('additional_pp_claim_token'));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function releaseRow(int $id = 1): array
+    {
+        return [
+            'id' => $id,
+            'guid' => 'a-guid-'.$id,
             'leftguid' => 'a',
-            'name' => 'Example',
-            'searchname' => 'Example',
+            'name' => 'Example '.$id,
+            'searchname' => 'Example '.$id,
             'size' => 2 * 1048576,
             'groups_id' => 1,
             'nfostatus' => -1,
@@ -165,30 +259,7 @@ class AdditionalProcessingOrchestratorClaimTest extends TestCase
             'postdate' => '2026-07-12 10:00:00',
             'additional_pp_claimed_at' => null,
             'additional_pp_claim_token' => null,
-        ]);
-
-        $processor = new FailingAdditionalReleaseProcessor;
-        $tempWorkspace = new FailingTempWorkspaceService;
-        $output = new RecordingConsoleOutputService;
-
-        $orchestrator = new AdditionalProcessingOrchestrator(
-            $this->makeConfig(['queryLimit' => 25, 'minSizeBytes' => 0, 'maxSizeBytes' => 107374182400]),
-            $processor,
-            $tempWorkspace,
-            $output
-        );
-
-        $result = $orchestrator->start('', 'a');
-
-        $this->assertSame(0, $processor->processCalls);
-        $this->assertSame(0, $result->claimedCount());
-        $this->assertStringContainsString('not writable', $result->setupFailure);
-        $this->assertSame(1, $tempWorkspace->ensureMainTempPathCalls);
-        $this->assertSame(0, $output->echoDescriptionCalls);
-        $this->assertSame(0, $output->endOutputCalls);
-        $this->assertStringContainsString('Additional post-processing skipped', $output->warnings[0] ?? '');
-        $this->assertNull(Release::query()->where('id', 1)->value('additional_pp_claimed_at'));
-        $this->assertNull(Release::query()->where('id', 1)->value('additional_pp_claim_token'));
+        ];
     }
 
     private function createSchema(): void
@@ -256,6 +327,25 @@ class FailingAdditionalReleaseProcessor extends ReleaseProcessor
         $this->processCalls++;
 
         throw new \RuntimeException('boom');
+    }
+}
+
+class StorageUnavailableAdditionalReleaseProcessor extends ReleaseProcessor
+{
+    public int $processCalls = 0;
+
+    public function __construct() {}
+
+    public function process(ReleaseProcessingContext $context, string $mainTmpPath): ReleaseProcessingResult
+    {
+        $this->processCalls++;
+
+        return new ReleaseProcessingResult(
+            releaseId: (int) $context->release->id,
+            guid: (string) $context->release->guid,
+            outcome: ProcessingOutcome::StorageUnavailable,
+            reason: 'NZB storage is unavailable',
+        );
     }
 }
 

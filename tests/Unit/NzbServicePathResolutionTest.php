@@ -59,6 +59,53 @@ final class NzbServicePathResolutionTest extends TestCase
         }
     }
 
+    public function test_storage_is_unavailable_when_no_candidate_root_is_a_readable_directory(): void
+    {
+        $service = $this->makeServiceWithoutConstructor();
+        \Closure::bind(
+            function (string $preferredPath, array $paths): void {
+                $this->siteNzbPath = $preferredPath;
+                $this->siteNzbPaths = $paths;
+            },
+            $service,
+            NzbService::class
+        )('/unmounted/nzb-one/', ['/unmounted/nzb-one/', '/unmounted/nzb-two/']);
+
+        $this->assertFalse($service->hasReadableNzbStorage());
+    }
+
+    public function test_storage_is_available_when_the_preferred_root_is_a_readable_directory(): void
+    {
+        $readableRoot = $this->makeTempDirectory('nzb-readable-root').'/';
+        $service = $this->makeServiceWithoutConstructor();
+        \Closure::bind(
+            function (string $preferredPath, array $paths): void {
+                $this->siteNzbPath = $preferredPath;
+                $this->siteNzbPaths = $paths;
+            },
+            $service,
+            NzbService::class
+        )($readableRoot, ['/unmounted/nzb/', $readableRoot]);
+
+        $this->assertTrue($service->hasReadableNzbStorage());
+    }
+
+    public function test_readable_fallback_does_not_mask_an_unavailable_preferred_root(): void
+    {
+        $readableFallback = $this->makeTempDirectory('nzb-readable-fallback').'/';
+        $service = $this->makeServiceWithoutConstructor();
+        \Closure::bind(
+            function (string $preferredPath, array $paths): void {
+                $this->siteNzbPath = $preferredPath;
+                $this->siteNzbPaths = $paths;
+            },
+            $service,
+            NzbService::class
+        )('/unmounted/external-nzb/', ['/unmounted/external-nzb/', $readableFallback]);
+
+        $this->assertFalse($service->hasReadableNzbStorage());
+    }
+
     public function test_nzb_path_honors_split_level_one_when_searching_candidate_paths(): void
     {
         $tempDir = sys_get_temp_dir().'/nzb-path-split-one-'.uniqid('', true);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\AdditionalProcessing;
 
+use App\Services\AdditionalProcessing\Enums\NzbParseFailure;
 use App\Services\AdditionalProcessing\NzbContentParser;
 use App\Services\Nzb\NzbParserService;
 use App\Services\Nzb\NzbService;
@@ -12,6 +13,34 @@ use PHPUnit\Framework\TestCase;
 class NzbContentParserTest extends TestCase
 {
     use CreatesProcessingConfiguration;
+
+    public function test_it_classifies_a_missing_path_as_storage_unavailable_when_no_nzb_root_is_readable(): void
+    {
+        $nzb = $this->createMock(NzbService::class);
+        $nzb->expects($this->once())->method('nzbPath')->with('guid-1')->willReturn(false);
+        $nzb->expects($this->once())->method('hasReadableNzbStorage')->willReturn(false);
+
+        $result = (new NzbContentParser($nzb, $this->createStub(NzbParserService::class)))
+            ->parseNzb('guid-1');
+
+        $this->assertSame(NzbParseFailure::StorageUnavailable, $result['failure']);
+        $this->assertSame([], $result['contents']);
+        $this->assertStringContainsString('storage', strtolower((string) $result['error']));
+    }
+
+    public function test_it_classifies_an_absent_nzb_as_missing_when_storage_is_readable(): void
+    {
+        $nzb = $this->createMock(NzbService::class);
+        $nzb->expects($this->once())->method('nzbPath')->with('guid-1')->willReturn(false);
+        $nzb->expects($this->once())->method('hasReadableNzbStorage')->willReturn(true);
+
+        $result = (new NzbContentParser($nzb, $this->createStub(NzbParserService::class)))
+            ->parseNzb('guid-1');
+
+        $this->assertSame(NzbParseFailure::Missing, $result['failure']);
+        $this->assertSame([], $result['contents']);
+        $this->assertStringContainsString('not found', strtolower((string) $result['error']));
+    }
 
     public function test_it_selects_configured_segments_from_a_bare_main_video_for_media_info(): void
     {

@@ -371,6 +371,57 @@ class ReleaseFileManager
     }
 
     /**
+     * Count an exception without treating it as evidence that release data is bad.
+     *
+     * @return bool True when the release was settled at the retry cap
+     */
+    public function handleReleaseException(Release $release, int $maxFailureCount, string $claimToken = ''): bool
+    {
+        $newCount = (int) ($release->pp_timeout_count ?? 0) + 1;
+        $settled = $newCount >= max(1, $maxFailureCount);
+        $updateValues = [
+            'pp_timeout_count' => $newCount,
+        ];
+
+        if ($settled) {
+            $updateValues += [
+                'haspreview' => 0,
+                'passwordstatus' => ReleaseBrowseService::PASSWD_NONE,
+            ];
+        }
+
+        $releaseQuery = Release::query()->where('id', $release->id);
+        if ($claimToken !== '' && AdditionalCandidateQuery::supportsClaims()) {
+            $releaseQuery->where(AdditionalCandidateQuery::CLAIM_TOKEN_COLUMN, $claimToken);
+        }
+
+        $updatedRows = $releaseQuery->update(array_merge(
+            $updateValues,
+            AdditionalCandidateQuery::claimResetValues(),
+        ));
+
+        if ($updatedRows === 0) {
+            Log::warning('Release '.$release->id.' exception state was not changed because its claim is no longer owned');
+
+            return false;
+        }
+
+        try {
+            $this->searchSyncCoordinator->request((int) $release->id);
+        } catch (\Throwable $exception) {
+            Log::error('Release '.$release->id.' exception state could not be synchronized to search', [
+                'exception' => $exception,
+            ]);
+        }
+
+        Log::warning(
+            'Release '.$release->id.($settled ? ' settled' : ' retained').' after post-processing exception ('.$newCount.'/'.$maxFailureCount.')',
+        );
+
+        return $settled;
+    }
+
+    /**
      * Handle a release that has timed out during post-processing.
      *
      * Increments the timeout counter on the release. If the counter reaches

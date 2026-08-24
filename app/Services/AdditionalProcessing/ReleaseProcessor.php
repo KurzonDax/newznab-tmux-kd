@@ -10,6 +10,7 @@ use App\Services\AdditionalProcessing\DTO\ArchiveCandidate;
 use App\Services\AdditionalProcessing\DTO\ReleaseProcessingResult;
 use App\Services\AdditionalProcessing\Enums\DownloadKind;
 use App\Services\AdditionalProcessing\Enums\Mp4MoovSpliceStatus;
+use App\Services\AdditionalProcessing\Enums\NzbParseFailure;
 use App\Services\AdditionalProcessing\Enums\PayloadClassification;
 use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
 use App\Services\AdditionalProcessing\Enums\ProcessingStage;
@@ -117,6 +118,15 @@ class ReleaseProcessor
             );
             if ($nzbResult['error'] !== null) {
                 $this->output->warning($nzbResult['error']);
+
+                if (($nzbResult['failure'] ?? null) === NzbParseFailure::StorageUnavailable) {
+                    return $this->result(
+                        $context,
+                        ProcessingOutcome::StorageUnavailable,
+                        reason: $nzbResult['error'],
+                    );
+                }
+
                 $this->releaseManager->deleteRelease($release);
 
                 return $this->result(
