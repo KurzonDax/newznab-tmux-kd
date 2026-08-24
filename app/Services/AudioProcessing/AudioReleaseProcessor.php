@@ -17,6 +17,7 @@ use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\ReleaseExtraService;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Mhor\MediaInfo\Container\MediaInfoContainer;
@@ -62,8 +63,14 @@ final class AudioReleaseProcessor
             return $this->finish($release, false, $tagsRecorded, ProcessingOutcome::NoUsefulArtifacts, 'The NZB holds no audio file or archive.');
         }
 
-        if ($source->kind === AudioSourceKind::Archive) {
-            $this->bumpArchiveTimeoutGuard($release);
+        if ($source->kind === AudioSourceKind::Archive && $this->archiveAttemptReachedCap($release)) {
+            return $this->finish(
+                $release,
+                false,
+                $tagsRecorded,
+                ProcessingOutcome::NoUsefulArtifacts,
+                'The audio archive crash guard reached its attempt cap.',
+            );
         }
 
         $fetched = $this->fetcher->fetch(
@@ -124,19 +131,43 @@ final class AudioReleaseProcessor
         }
     }
 
-    private function bumpArchiveTimeoutGuard(Release $release): void
+    private function archiveAttemptReachedCap(Release $release): bool
     {
-        $newCount = (int) ($release->pp_timeout_count ?? 0) + 1;
-        Release::query()->where('id', $release->id)->increment('pp_timeout_count');
-        $release->pp_timeout_count = $newCount;
-
         $maximum = ReleaseClaimant::maxPpTimeoutCount();
-        if ($newCount >= $maximum) {
+
+        $reachedCap = DB::transaction(function () use ($release, $maximum): bool {
+            $query = Release::query()->whereKey($release->id);
+            if (DB::getDriverName() !== 'sqlite') {
+                $query->lockForUpdate();
+            }
+
+            $currentCount = (int) $query->value('pp_timeout_count');
+            $newCount = $currentCount + 1;
+
+            if ($newCount >= $maximum) {
+                Release::query()->whereKey($release->id)->update(array_merge([
+                    'haspreview' => 0,
+                    'passwordstatus' => ReleaseBrowseService::PASSWD_NONE,
+                ], ReleaseClaimant::settlementValues()));
+                $release->pp_timeout_count = 0;
+
+                return true;
+            }
+
+            Release::query()->whereKey($release->id)->update(['pp_timeout_count' => $newCount]);
+            $release->pp_timeout_count = $newCount;
+
+            return false;
+        }, 3);
+
+        if ($reachedCap) {
             Log::warning(
                 'Release '.$release->id.' reached the audio archive crash guard '
-                .'('.$newCount.'/'.$maximum.'); it will be excluded if this worker exits before settling.'
+                .'('.$maximum.'/'.$maximum.') and was settled before archive fetching.'
             );
         }
+
+        return $reachedCap;
     }
 
     /**
@@ -231,7 +262,7 @@ final class AudioReleaseProcessor
         Release::query()->where('id', $releaseId)->update(array_merge([
             'haspreview' => $hasPreview,
             'passwordstatus' => ReleaseBrowseService::PASSWD_NONE,
-        ], ReleaseClaimant::claimResetValues()));
+        ], ReleaseClaimant::settlementValues()));
 
         $this->searchSyncCoordinator->request($releaseId);
 

@@ -124,6 +124,7 @@ class PreviewGenerationPolicy
             ->update([
                 'haspreview' => -1,
                 'passwordstatus' => PasswordInspectionMode::pendingReleaseStatus(),
+                'pp_timeout_count' => 0,
             ]);
 
         if ($synchronize) {

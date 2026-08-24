@@ -324,7 +324,7 @@ class ReleaseFileManager
             $context->releaseHasPassword = false;
         }
 
-        $updateRows = array_merge($updateRows, AdditionalCandidateQuery::claimResetValues());
+        $updateRows = array_merge($updateRows, ReleaseClaimant::settlementValues());
 
         $pendingReleaseFiles = array_values($context->pendingReleaseFiles);
         $pendingParHashes = array_values($context->pendingParHashes);

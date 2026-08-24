@@ -121,6 +121,7 @@ class RequeueAudioPreviews extends Command
     {
         $includeDeclined = (bool) $this->option('include-declined');
         $mismatchedSentinel = $pendingPasswordStatus === -1 ? 0 : -1;
+        $maximumTimeoutCount = ReleaseClaimant::maxPpTimeoutCount();
         $tokenColumn = 'r.'.ReleaseClaimant::CLAIM_TOKEN_COLUMN;
 
         $query = Release::query()->from('releases as r')
@@ -129,11 +130,17 @@ class RequeueAudioPreviews extends Command
                 $tokenColumn.' as claim_token',
             ])
             ->where('r.nzbstatus', 1)
-            ->where(static function (Builder $stateQuery) use ($mismatchedSentinel, $tokenColumn, $includeDeclined): void {
+            ->where(static function (Builder $stateQuery) use ($pendingPasswordStatus, $mismatchedSentinel, $maximumTimeoutCount, $tokenColumn, $includeDeclined): void {
                 $stateQuery
                     ->whereIn('r.haspreview', [0, PreviewGenerationPolicy::HASPREVIEW_SKIPPED_BY_POLICY])
                     ->orWhere(static function (Builder $stranded) use ($mismatchedSentinel): void {
                         $stranded->where('r.haspreview', -1)->where('r.passwordstatus', $mismatchedSentinel);
+                    })
+                    ->orWhere(static function (Builder $counterStrand) use ($pendingPasswordStatus, $maximumTimeoutCount): void {
+                        $counterStrand
+                            ->where('r.haspreview', -1)
+                            ->where('r.passwordstatus', $pendingPasswordStatus)
+                            ->where('r.pp_timeout_count', '>=', $maximumTimeoutCount);
                     });
 
                 if ($includeDeclined) {
@@ -197,6 +204,7 @@ class RequeueAudioPreviews extends Command
         $pending = [
             'haspreview' => -1,
             'passwordstatus' => $pendingPasswordStatus,
+            'pp_timeout_count' => 0,
         ];
         if (ReleaseClaimant::supportsClaims()) {
             $pending[ReleaseClaimant::CLAIMED_AT_COLUMN] = null;

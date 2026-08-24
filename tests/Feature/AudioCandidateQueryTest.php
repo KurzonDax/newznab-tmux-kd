@@ -11,7 +11,6 @@ use App\Services\AudioProcessing\AudioCandidateQuery;
 use App\Services\AudioProcessing\AudioRouting;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use ReflectionProperty;
 use Tests\TestCase;
@@ -167,20 +166,16 @@ class AudioCandidateQueryTest extends TestCase
         $this->assertSame([], $this->audioIds());
     }
 
-    public function test_an_audio_release_past_the_timeout_threshold_is_stranded_between_both_paths(): void
+    public function test_an_audio_release_at_the_timeout_threshold_stays_owned_by_the_audio_path(): void
     {
-        Log::spy();
         $this->seedRelease(1, Category::MUSIC_MP3, groupId: 1, ppTimeoutCount: 3);
 
-        $this->assertSame([], $this->audioIds());
+        $this->assertSame([1], $this->audioIds());
         $this->assertSame(
             [],
             $this->videoIds(),
             'The video path only accepts an audio-routed release after the audio worker writes the declined token.'
         );
-        Log::shouldHaveReceived('warning')
-            ->once()
-            ->with('Release 1 excluded from audio post-processing after 3 archive fetch attempt(s) (limit 3).');
     }
 
     public function test_a_threshold_release_declined_to_video_is_still_selected_by_the_video_path(): void
@@ -207,6 +202,57 @@ class AudioCandidateQueryTest extends TestCase
         $this->assertSame([1], $this->videoIds());
     }
 
+    public function test_a_declined_release_below_the_general_minimum_is_owned_by_the_video_path(): void
+    {
+        $this->seedRelease(1, Category::MUSIC_MP3, groupId: 1, size: 5 * 1024 * 1024);
+
+        AudioCandidateQuery::declineToVideoPath(1);
+
+        $this->assertSame([], $this->audioIds());
+        $this->assertSame([1], $this->videoIds());
+    }
+
+    public function test_every_audio_routed_state_is_owned_by_exactly_one_path_or_is_terminal(): void
+    {
+        $id = 1;
+
+        foreach ([false, true] as $declined) {
+            foreach ([false, true] as $belowMinimum) {
+                foreach ([false, true] as $atCounterCap) {
+                    foreach ([false, true] as $pending) {
+                        $this->seedRelease(
+                            $id,
+                            Category::MUSIC_MP3,
+                            groupId: 1,
+                            size: $belowMinimum ? 5 * 1024 * 1024 : 1024 * 1024 * 1024,
+                            ppTimeoutCount: $atCounterCap ? 3 : 0,
+                            hasPreview: $pending ? -1 : 0,
+                            claimToken: $declined ? AudioRouting::DECLINED_TOKEN : null,
+                        );
+                        $id++;
+                    }
+                }
+            }
+        }
+
+        $audioIds = $this->audioIds();
+        $videoIds = $this->videoIds();
+
+        foreach (DB::table('releases')->orderBy('id')->get() as $release) {
+            $releaseId = (int) $release->id;
+            $owners = (int) in_array($releaseId, $audioIds, true) + (int) in_array($releaseId, $videoIds, true);
+            $pending = (int) $release->haspreview === -1;
+
+            $this->assertSame($pending ? 1 : 0, $owners, "Release {$releaseId} has an invalid owner count.");
+
+            if ($pending && AudioRouting::isDeclined($release->additional_pp_claim_token)) {
+                $this->assertContains($releaseId, $videoIds);
+            } elseif ($pending) {
+                $this->assertContains($releaseId, $audioIds);
+            }
+        }
+    }
+
     public function test_claiming_stamps_the_worker_token_and_hides_the_release_from_the_other_worker(): void
     {
         $this->seedRelease(1, Category::MUSIC_MP3, groupId: 1);
@@ -224,19 +270,22 @@ class AudioCandidateQueryTest extends TestCase
         int $groupId,
         int $size = 1073741824,
         int $ppTimeoutCount = 0,
+        int $hasPreview = -1,
+        ?string $claimToken = null,
     ): void {
         DB::table('releases')->insert([
             'id' => $id,
             'guid' => 'guid-'.$id,
             'leftguid' => 'a',
             'passwordstatus' => 0,
-            'haspreview' => -1,
+            'haspreview' => $hasPreview,
             'nzbstatus' => 1,
             'categories_id' => $categoryId,
             'groups_id' => $groupId,
             'size' => $size,
             'pp_timeout_count' => $ppTimeoutCount,
             'postdate' => '2026-01-01 00:00:00',
+            'additional_pp_claim_token' => $claimToken,
         ]);
     }
 

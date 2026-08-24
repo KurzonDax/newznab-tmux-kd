@@ -50,10 +50,12 @@ class RequeueMissingVideoPreviews extends Command
         $updated = $this->candidates()->update([
             'haspreview' => -1,
             'passwordstatus' => $pendingPasswordStatus,
+            'pp_timeout_count' => 0,
         ]);
 
         $repaired = $this->stranded($pendingPasswordStatus)->update([
             'passwordstatus' => $pendingPasswordStatus,
+            'pp_timeout_count' => 0,
         ]);
 
         $this->info("Re-queued {$updated} releases.");
@@ -79,6 +81,7 @@ class RequeueMissingVideoPreviews extends Command
             : Release::query()->whereIn('id', $candidateIds)->update([
                 'haspreview' => -1,
                 'passwordstatus' => PasswordInspectionMode::pendingReleaseStatus(),
+                'pp_timeout_count' => 0,
             ]);
         $noun = $updated === 1 ? 'release' : 'releases';
         $this->info("Re-queued {$updated} MP4 tail {$noun}.");

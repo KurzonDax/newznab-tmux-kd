@@ -76,6 +76,7 @@ class ProcessAdditionalGuid extends Command
                 'jpgstatus' => 0,
                 'videostatus' => 0,
                 'nfostatus' => -1,
+                'pp_timeout_count' => 0,
             ]);
             Search::updateRelease((int) $release->id);
             $this->info('Reset postprocessing flags for release ID '.$release->id.' (GUID '.$guid.')');

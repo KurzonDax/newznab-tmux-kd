@@ -685,7 +685,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
 
     public function test_finalize_recognizes_webp_preview_and_sample_without_moving_them(): void
     {
-        DB::table('releases')->insert($this->releaseRow());
+        DB::table('releases')->insert([...$this->releaseRow(), 'pp_timeout_count' => 2]);
         Search::shouldReceive('updateRelease')->once()->with(1);
 
         $imageService = new ReleaseImageService;
@@ -704,6 +704,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
 
             $this->assertSame(1, DB::table('releases')->where('id', 1)->value('haspreview'));
             $this->assertSame(1, DB::table('releases')->where('id', 1)->value('jpgstatus'));
+            $this->assertSame(0, DB::table('releases')->where('id', 1)->value('pp_timeout_count'));
         } finally {
             File::delete([$preview, $sample]);
         }

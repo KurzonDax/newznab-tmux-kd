@@ -45,6 +45,7 @@ class ReleaseFinalizePreviewPolicyTest extends TestCase
             $table->integer('jpgstatus')->default(0);
             $table->integer('passwordstatus')->default(-1);
             $table->integer('rarinnerfilecount')->default(0);
+            $table->unsignedInteger('pp_timeout_count')->default(0);
             $table->timestamp('additional_pp_claimed_at')->nullable();
             $table->string('additional_pp_claim_token', 64)->nullable();
         });

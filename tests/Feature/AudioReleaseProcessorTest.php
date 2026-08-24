@@ -44,6 +44,7 @@ use Mhor\MediaInfo\Type\Audio;
 use Mhor\MediaInfo\Type\General;
 use Mhor\MediaInfo\Type\Video;
 use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionClass;
 use ReflectionProperty;
 use Tests\TestCase;
@@ -205,7 +206,7 @@ class AudioReleaseProcessorTest extends TestCase
 
     public function test_a_successful_run_records_the_preview_and_clears_the_pending_sentinels(): void
     {
-        $release = $this->makeRelease();
+        $release = $this->makeRelease(['pp_timeout_count' => 2]);
         $processor = $this->makeProcessor($this->taggedContainer());
 
         $result = $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
@@ -216,6 +217,7 @@ class AudioReleaseProcessorTest extends TestCase
         $row = DB::table('releases')->where('id', $release->id)->first();
         $this->assertSame(1, (int) $row->haspreview);
         $this->assertSame(0, (int) $row->passwordstatus);
+        $this->assertSame(0, (int) $row->pp_timeout_count);
         $this->assertNull($row->additional_pp_claim_token);
         $this->assertSame([$release->id], $this->synchronized);
 
@@ -304,7 +306,7 @@ class AudioReleaseProcessorTest extends TestCase
         $this->assertSame(0, (int) DB::table('releases')->where('id', $release->id)->value('haspreview'));
     }
 
-    public function test_an_archive_source_bumps_pp_timeout_count_before_fetching(): void
+    public function test_an_archive_source_bumps_pp_timeout_count_before_fetching_and_resets_it_on_settlement(): void
     {
         $release = $this->makeRelease();
         $processor = $this->makeProcessor(
@@ -318,7 +320,46 @@ class AudioReleaseProcessorTest extends TestCase
         $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
 
         $this->assertSame([1], $this->timeoutCountsAtDownload);
-        $this->assertSame(1, (int) DB::table('releases')->where('id', $release->id)->value('pp_timeout_count'));
+        $this->assertSame(0, (int) DB::table('releases')->where('id', $release->id)->value('pp_timeout_count'));
+    }
+
+    #[DataProvider('archiveCrashGuardCounts')]
+    public function test_an_archive_attempt_at_the_crash_guard_cap_settles_before_fetching(int $initialCount): void
+    {
+        $release = $this->makeRelease([
+            'pp_timeout_count' => $initialCount,
+            'additional_pp_claimed_at' => now(),
+            'additional_pp_claim_token' => 'audio-worker',
+        ]);
+        $processor = $this->makeProcessor(
+            $this->taggedContainer(),
+            expectsPreview: false,
+            expectsExtraXml: false,
+            nzbContents: [['title' => 'Album.part01.rar', 'segments' => ['<rar-1>']]],
+        );
+
+        $result = $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(ProcessingOutcome::NoUsefulArtifacts, $result->outcome);
+        $this->assertStringContainsString('crash guard', $result->reason);
+        $this->assertSame([], $this->downloads);
+
+        $row = DB::table('releases')->where('id', $release->id)->first();
+        $this->assertSame(0, (int) $row->haspreview);
+        $this->assertSame(0, (int) $row->pp_timeout_count);
+        $this->assertNull($row->additional_pp_claimed_at);
+        $this->assertNull($row->additional_pp_claim_token);
+    }
+
+    /**
+     * @return array<string, array{int}>
+     */
+    public static function archiveCrashGuardCounts(): array
+    {
+        return [
+            'attempt reaches cap' => [2],
+            'legacy pending row is already at cap' => [3],
+        ];
     }
 
     public function test_an_archive_fetch_that_hits_the_ceiling_settles_the_release(): void
