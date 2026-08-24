@@ -242,7 +242,8 @@ class ReleaseUpdateService
                     $determinedCategory = $this->category->determineCategory(
                         $release->groups_id,
                         $newTitle,
-                        ! empty($release->fromname) ? $release->fromname : ''
+                        ! empty($release->fromname) ? $release->fromname : '',
+                        releaseId: (int) $release->releases_id,
                     );
 
                     $this->echoReleaseInfo($release, $newTitle, $determinedCategory, $type, $method);

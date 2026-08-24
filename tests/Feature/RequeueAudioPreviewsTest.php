@@ -57,6 +57,7 @@ class RequeueAudioPreviewsTest extends TestCase
 
         Schema::dropIfExists('release_audio_tags');
         Schema::dropIfExists('releases');
+        Schema::dropIfExists('releases_groups');
         Schema::dropIfExists('usenet_groups');
         Schema::dropIfExists('settings');
 
@@ -68,6 +69,10 @@ class RequeueAudioPreviewsTest extends TestCase
             $table->unsignedInteger('id')->primary();
             $table->string('name')->default('');
             $table->unsignedInteger('forced_root_categories_id')->nullable();
+        });
+        Schema::create('releases_groups', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id');
+            $table->unsignedInteger('groups_id');
         });
         Schema::create('releases', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();

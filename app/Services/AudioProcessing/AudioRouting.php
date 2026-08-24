@@ -8,7 +8,7 @@ use App\Models\Category;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
-use Illuminate\Contracts\Database\Query\Builder as QueryBuilder;
+use App\Services\Releases\ForcedRootPolicy;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -19,12 +19,12 @@ use Illuminate\Database\Eloquent\Builder;
  * pending set: every release is claimable by exactly one of them, and no release
  * is claimable by both. Change the rule here, never in one of the two queries.
  *
- * The rule itself: a release is audio when its category sits under the Music
- * root, or when its group carries a forced Music root category. Categories 3xxx
- * are not a guarantee -- anime posted to alt.binaries.multimedia lands in
- * MUSIC_VIDEO -- so the audio worker still probes before committing, and hands
- * back anything that turns out to be video by writing the decline sentinel
- * described on {@see self::DECLINED_TOKEN}.
+ * The rule itself: a release is audio when its selected Forced root is Music,
+ * or when no associated group has a Forced root and its category sits under
+ * Music. Categories 3xxx are not a guarantee -- anime posted to
+ * alt.binaries.multimedia lands in MUSIC_VIDEO -- so the audio worker still
+ * probes before committing, and hands back anything that turns out to be video
+ * by writing the decline sentinel described on {@see self::DECLINED_TOKEN}.
  */
 final class AudioRouting
 {
@@ -111,13 +111,18 @@ final class AudioRouting
      */
     private static function routedToAudio(Builder $query): void
     {
-        $query
-            ->whereBetween('r.categories_id', [Category::MUSIC_ROOT, Category::MUSIC_ROOT + 999])
-            ->orWhereExists(static function (QueryBuilder $groupQuery): void {
-                $groupQuery
-                    ->from('usenet_groups')
-                    ->whereColumn('usenet_groups.id', 'r.groups_id')
-                    ->where('usenet_groups.forced_root_categories_id', Category::MUSIC_ROOT);
-            });
+        $query->where(function (Builder $routingQuery): void {
+            $routingQuery
+                ->where(function (Builder $categoryRoute): void {
+                    ForcedRootPolicy::applyNoSelectedRoot($categoryRoute);
+                    $categoryRoute->whereBetween(
+                        'r.categories_id',
+                        [Category::MUSIC_ROOT, Category::MUSIC_ROOT + 999],
+                    );
+                })
+                ->orWhere(function (Builder $forcedMusicRoute): void {
+                    ForcedRootPolicy::applySelectedRoot($forcedMusicRoute, Category::MUSIC_ROOT);
+                });
+        });
     }
 }

@@ -63,14 +63,26 @@ class RecategorizeReleasesCommandTest extends TestCase
             $table->integer('haspreview')->default(0);
             $table->integer('passwordstatus')->default(0);
         });
+        Schema::create('releases_groups', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id');
+            $table->unsignedInteger('groups_id');
+        });
 
         DB::table('settings')->insert([
             ['name' => 'categorizeforeign', 'value' => '0'],
             ['name' => 'catwebdl', 'value' => '0'],
         ]);
         DB::table('usenet_groups')->insert([
-            'id' => 1,
-            'name' => 'alt.binaries.test',
+            [
+                'id' => 1,
+                'name' => 'alt.binaries.test',
+                'forced_root_categories_id' => null,
+            ],
+            [
+                'id' => 2,
+                'name' => 'alt.binaries.movies',
+                'forced_root_categories_id' => Category::MOVIE_ROOT,
+            ],
         ]);
         DB::table('root_categories')->insert([
             ['id' => Category::OTHER_ROOT, 'title' => 'Other'],
@@ -79,6 +91,7 @@ class RecategorizeReleasesCommandTest extends TestCase
         ]);
         DB::table('categories')->insert([
             ['id' => Category::OTHER_MISC, 'title' => 'Misc', 'root_categories_id' => Category::OTHER_ROOT],
+            ['id' => Category::MOVIE_OTHER, 'title' => 'Other', 'root_categories_id' => Category::MOVIE_ROOT],
             ['id' => Category::MOVIE_HD, 'title' => 'HD', 'root_categories_id' => Category::MOVIE_ROOT],
             ['id' => Category::BOOKS_EBOOK, 'title' => 'Ebook', 'root_categories_id' => Category::BOOKS_ROOT],
         ]);
@@ -148,6 +161,31 @@ class RecategorizeReleasesCommandTest extends TestCase
         )->all();
 
         $this->assertSame($before, $after);
+    }
+
+    public function test_all_uses_forced_roots_from_junction_groups(): void
+    {
+        DB::table('releases')->insert(
+            $this->release(1, 'George.Orwell.1984.Novel.PDF', Category::BOOKS_EBOOK, 41),
+        );
+        DB::table('releases_groups')->insert([
+            'releases_id' => 1,
+            'groups_id' => 2,
+        ]);
+
+        Search::shouldReceive('updateRelease')->once()->with(1);
+
+        $this->artisan('nntmux:recategorize-releases', ['--all' => true])
+            ->expectsConfirmation(
+                'This will reset categorization on all releases and re-categorize them all from scratch. Are you sure? (y/n)',
+                'yes',
+            )
+            ->assertSuccessful();
+
+        $release = DB::table('releases')->find(1);
+
+        $this->assertSame(Category::MOVIE_OTHER, (int) $release->categories_id);
+        $this->assertSame(1, (int) $release->iscategorized);
     }
 
     /**

@@ -67,7 +67,8 @@ class FixNzbSplitNames extends Command
                 $category = $categorizationService->determineCategory(
                     $release->groups_id,
                     $newTitle,
-                    (string) ($release->fromname ?? '')
+                    (string) ($release->fromname ?? ''),
+                    releaseId: (int) $release->id,
                 );
 
                 $newCategoryId = (int) ($category['categories_id'] ?? $release->categories_id);

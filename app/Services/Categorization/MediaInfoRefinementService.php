@@ -7,9 +7,9 @@ namespace App\Services\Categorization;
 use App\Models\AudioData;
 use App\Models\Category;
 use App\Models\Release;
-use App\Models\UsenetGroup;
 use App\Models\VideoData;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
+use App\Services\Releases\ForcedRootPolicy;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Support\ReleaseSearchIndexSync;
 use Illuminate\Support\Facades\Log;
@@ -62,7 +62,11 @@ final class MediaInfoRefinementService
         $audio = AudioData::query()->where('releases_id', $releaseId)->orderBy('audioid')->first()?->toArray();
         $decision = $this->decisionFor((int) $release->categories_id, $video, $audio);
 
-        if ($decision !== null && ! $this->respectsForcedRootCategory((int) $release->groups_id, $decision->categoryId)) {
+        if ($decision !== null && ! $this->respectsForcedRootCategory(
+            (int) $release->groups_id,
+            $releaseId,
+            $decision->categoryId,
+        )) {
             return null;
         }
 
@@ -98,20 +102,14 @@ final class MediaInfoRefinementService
     }
 
     /**
-     * A group pinned to a root category must not be refined out of it.
+     * A release pinned to a root by any associated group must stay in that root.
      *
      * The audio branch maps XXX_OTHER to MUSIC_*, which would quietly undo the
-     * per-group forced root; video decisions from XXX_OTHER already stay in-root.
+     * selected forced root; video decisions from XXX_OTHER already stay in-root.
      */
-    private function respectsForcedRootCategory(int $groupId, int $targetCategoryId): bool
+    private function respectsForcedRootCategory(int $groupId, int $releaseId, int $targetCategoryId): bool
     {
-        if ($groupId <= 0) {
-            return true;
-        }
-
-        $forcedRootCategoryId = UsenetGroup::query()
-            ->whereKey($groupId)
-            ->value('forced_root_categories_id');
+        $forcedRootCategoryId = $this->forcedRootPolicy->selectForRelease($groupId, $releaseId);
 
         if ($forcedRootCategoryId === null) {
             return true;
@@ -213,6 +211,7 @@ final class MediaInfoRefinementService
     public function __construct(
         private readonly PreviewGenerationPolicy $previewPolicy = new PreviewGenerationPolicy,
         private readonly ?ReleaseSearchSyncCoordinator $searchSyncCoordinator = null,
+        private readonly ForcedRootPolicy $forcedRootPolicy = new ForcedRootPolicy,
     ) {}
 
     private function synchronize(int $releaseId): void

@@ -562,6 +562,13 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             });
         }
 
+        if (! Schema::hasTable('releases_groups')) {
+            Schema::create('releases_groups', function (Blueprint $table): void {
+                $table->unsignedInteger('releases_id');
+                $table->unsignedInteger('groups_id');
+            });
+        }
+
         if (! Schema::hasTable('video_data')) {
             Schema::create('video_data', function (Blueprint $table): void {
                 $table->unsignedInteger('releases_id')->primary();

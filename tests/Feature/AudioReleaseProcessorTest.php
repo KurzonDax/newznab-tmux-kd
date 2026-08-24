@@ -99,6 +99,11 @@ class AudioReleaseProcessorTest extends TestCase
             $table->string('additional_pp_claim_token', 64)->nullable();
         });
 
+        Schema::create('releases_groups', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id');
+            $table->unsignedInteger('groups_id');
+        });
+
         Schema::create('video_data', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id')->primary();
             $table->string('videoformat')->nullable();
