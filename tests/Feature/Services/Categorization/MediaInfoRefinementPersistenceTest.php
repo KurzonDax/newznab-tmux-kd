@@ -145,6 +145,24 @@ class MediaInfoRefinementPersistenceTest extends TestCase
         self::assertSame(Category::XXX_OTHER, (int) Release::query()->findOrFail($releaseId)->categories_id);
     }
 
+    public function test_audio_refinement_honors_a_forced_associated_group_without_a_primary_group(): void
+    {
+        $forcedGroupId = $this->createGroup('alt.binaries.ijsklontje', Category::XXX_ROOT);
+        $releaseId = $this->createAudioOnlyRelease(0);
+        DB::table('releases_groups')->insert([
+            'releases_id' => $releaseId,
+            'groups_id' => $forcedGroupId,
+        ]);
+
+        $previewPolicy = Mockery::mock(PreviewGenerationPolicy::class);
+        $previewPolicy->shouldNotReceive('restoreOwedPreviews');
+
+        $service = new MediaInfoRefinementService($previewPolicy);
+
+        self::assertNull($service->refine($releaseId));
+        self::assertSame(Category::XXX_OTHER, (int) Release::query()->findOrFail($releaseId)->categories_id);
+    }
+
     public function test_audio_refinement_still_moves_a_release_from_a_group_without_a_forced_root(): void
     {
         $groupId = $this->createGroup('alt.binaries.multimedia', null);

@@ -109,10 +109,6 @@ final class MediaInfoRefinementService
      */
     private function respectsForcedRootCategory(int $groupId, int $releaseId, int $targetCategoryId): bool
     {
-        if ($groupId <= 0) {
-            return true;
-        }
-
         $forcedRootCategoryId = $this->forcedRootPolicy->selectForRelease($groupId, $releaseId);
 
         if ($forcedRootCategoryId === null) {
