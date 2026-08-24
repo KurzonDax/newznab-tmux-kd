@@ -70,8 +70,19 @@ _Avoid_: plain "sample" when the generated/extracted distinction matters.
 An opt-in per-group setting (a toggle plus a default *root* category) that sends releases whose names look obfuscated or gibberish — but are **not** true MD5/SHA hashes — to the default root's *Other* subcategory (e.g. XXX/Other) instead of Other/Hashed. Off and unset for every group by default; never pre-populated. The routed root is a floor, not a lock: content pipes and Mediainfo refinement may still refine the subcategory, and audio-only content is refiled under Audio. Editable per group and via Edit Selected.
 _Avoid_: "strong group" — the concept lives in the setting, not in a hardcoded group-name list.
 
+**Routed floor**:
+The root selected by Obfuscated-name routing. Content evidence may refine within it, and audio-only Mediainfo evidence may cross it into Audio; unlike a Forced root, it is not an operator lock.
+
+**Forced root**:
+An operator-selected root-category lock attached to a Usenet group. Any Forced root among a release's associated groups governs both categorization and audio routing, and derived content evidence never crosses it.
+_Avoid_: floor, default root — a force is an explicit lock.
+
+**Cross-posted release**:
+One release associated with more than one Usenet group. Its primary group is whichever association ingestion encountered first, but group policy considers every association so scan order does not hide a Forced root.
+_Avoid_: duplicate release — the cross-post associations belong to one release identity.
+
 **Mediainfo refinement**:
-Moving a release out of a root's *Other* subcategory once post-processing has recorded what its media actually is. Video evidence (resolution, container, codec) refines within the same root; audio-only evidence (an audio track and no video track) refiles the release under Audio. It only ever acts on a `<root>/Other` release — a specific subcategory chosen from the name is never overridden — and only for the Movies, TV, XXX and Audio roots.
+Moving a release out of a root's *Other* subcategory once post-processing has recorded what its media actually is. Video evidence (resolution, container, codec) refines within the same root; audio-only evidence (an audio track and no video track) refiles a Routed floor under Audio but never crosses a Forced root. It only ever acts on a `<root>/Other` release — a specific subcategory chosen from the name is never overridden — and only for the Movies, TV, XXX and Audio roots.
 _Avoid_: "recategorize from mediainfo" — the mediainfo never re-runs name categorization; it refines or refiles the current result.
 
 **moov splice**:
