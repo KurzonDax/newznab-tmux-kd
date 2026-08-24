@@ -22,6 +22,7 @@ use App\Services\Releases\ExecutableReleaseDiscardService;
 use App\Services\Releases\IncompleteReleaseSweepQuery;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
+use App\Services\Releases\ReleaseDeletionProtection;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use App\Services\Releases\ReleaseManagementService;
 use App\Support\Data\NzbCreationResult;
@@ -31,6 +32,7 @@ use App\Support\Data\ReleaseDeleteStats;
 use App\Support\DatabaseClock;
 use App\Support\ReleaseSearchIndexSync;
 use DateTimeInterface;
+use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -1021,13 +1023,13 @@ final class ReleaseProcessingService
             ->exists();
     }
 
-    /** @param Builder|\Illuminate\Database\Eloquent\Builder<Collection> $query */
+    /** @param Builder|EloquentBuilder<Collection> $query */
     private function deleteCollectionQueryInBatches(
-        Builder|\Illuminate\Database\Eloquent\Builder $query,
+        Builder|EloquentBuilder $query,
         string $label,
     ): int {
         $deleted = 0;
-        $idColumn = $query instanceof \Illuminate\Database\Eloquent\Builder ? 'id' : 'c.id';
+        $idColumn = $query instanceof EloquentBuilder ? 'id' : 'c.id';
         do {
             $ids = (clone $query)->orderBy($idColumn)->limit(self::BATCH_SIZE)->pluck($idColumn)->all();
             if ($ids === []) {
@@ -1169,7 +1171,7 @@ final class ReleaseProcessingService
      */
     private function deleteReleasesUnderMinSize(int|string $groupId, array &$stats): void
     {
-        $releases = Release::query()
+        $releases = $this->releaseSweepQuery()
             ->where('releases.groups_id', $groupId)
             ->join('usenet_groups', 'usenet_groups.id', '=', 'releases.groups_id')
             ->whereRaw(
@@ -1195,7 +1197,7 @@ final class ReleaseProcessingService
             return;
         }
 
-        $releases = Release::query()
+        $releases = $this->releaseSweepQuery()
             ->where('groups_id', $groupId)
             ->where('size', '>', $this->settings->maxSizeToFormRelease)
             ->select(['id', 'guid'])
@@ -1216,7 +1218,7 @@ final class ReleaseProcessingService
             return;
         }
 
-        $releases = Release::query()
+        $releases = $this->releaseSweepQuery()
             ->where('releases.groups_id', $groupId)
             ->join('usenet_groups', 'usenet_groups.id', '=', 'releases.groups_id')
             ->whereRaw(
@@ -1241,7 +1243,7 @@ final class ReleaseProcessingService
 
         $cutoff = now()->subDays($this->settings->releaseRetentionDays);
 
-        Release::query()
+        $this->releaseSweepQuery()
             ->where('postdate', '<', $cutoff)
             ->select(['id', 'guid'])
             ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats): bool {
@@ -1262,14 +1264,16 @@ final class ReleaseProcessingService
             return $stats;
         }
 
-        Release::query()
-            ->select(['id', 'guid'])
-            ->where('passwordstatus', '=', ReleaseBrowseService::PASSWD_RAR)
-            ->orWhereIn('id', function ($query): void {
-                $query->select('releases_id')
-                    ->from('release_files')
-                    ->where('passworded', '=', ReleaseBrowseService::PASSWD_RAR);
+        $this->releaseSweepQuery()
+            ->where(function (EloquentBuilder $query): void {
+                $query->where('passwordstatus', '=', ReleaseBrowseService::PASSWD_RAR)
+                    ->orWhereIn('id', function ($fileQuery): void {
+                        $fileQuery->select('releases_id')
+                            ->from('release_files')
+                            ->where('passworded', '=', ReleaseBrowseService::PASSWD_RAR);
+                    });
             })
+            ->select(['id', 'guid'])
             ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats): bool {
                 foreach ($releases as $release) {
                     $this->deleteSingleRelease($release);
@@ -1288,7 +1292,7 @@ final class ReleaseProcessingService
             return $stats;
         }
 
-        $releases = Release::query()
+        $releases = $this->releaseSweepQuery()
             ->where('adddate', '>', now()->subHours($this->settings->crossPostTime))
             ->groupBy(['name', 'fromname'])
             ->havingRaw('COUNT(name) > 1 AND COUNT(fromname) > 1')
@@ -1344,7 +1348,7 @@ final class ReleaseProcessingService
 
         $categoryIds = $disabledCategories->pluck('id')->toArray();
 
-        Release::query()
+        $this->releaseSweepQuery()
             ->whereIn('categories_id', $categoryIds)
             ->select(['id', 'guid'])
             ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats): bool {
@@ -1367,7 +1371,7 @@ final class ReleaseProcessingService
             ->get();
 
         foreach ($categories as $category) {
-            Release::query()
+            $this->releaseSweepQuery()
                 ->where('categories_id', (int) $category->id)
                 ->where('size', '<', (int) $category->minsize) // @phpstan-ignore property.notFound
                 ->select(['id', 'guid'])
@@ -1413,7 +1417,7 @@ final class ReleaseProcessingService
                 ->where('genre_id', (int) $genre->id) // @phpstan-ignore property.notFound
                 ->select(['id']);
 
-            Release::query()
+            $this->releaseSweepQuery()
                 ->joinSub(
                     $musicInfoQuery,
                     'mi',
@@ -1438,7 +1442,7 @@ final class ReleaseProcessingService
         if ($this->settings->miscOtherRetentionHours > 0) {
             $cutoff = now()->subHours($this->settings->miscOtherRetentionHours);
 
-            Release::query()
+            $this->releaseSweepQuery()
                 ->where('categories_id', Category::OTHER_MISC)
                 ->where('adddate', '<=', $cutoff)
                 ->select(['id', 'guid'])
@@ -1455,7 +1459,7 @@ final class ReleaseProcessingService
         if ($this->settings->miscHashedRetentionHours > 0) {
             $cutoff = now()->subHours($this->settings->miscHashedRetentionHours);
 
-            Release::query()
+            $this->releaseSweepQuery()
                 ->where('categories_id', Category::OTHER_HASHED)
                 ->where('adddate', '<=', $cutoff)
                 ->select(['id', 'guid'])
@@ -1479,6 +1483,14 @@ final class ReleaseProcessingService
             $this->nzb,
             $this->releaseImage
         );
+    }
+
+    /**
+     * @return EloquentBuilder<Release>
+     */
+    private function releaseSweepQuery(): EloquentBuilder
+    {
+        return ReleaseDeletionProtection::apply(Release::query());
     }
 
     // ========================================================================

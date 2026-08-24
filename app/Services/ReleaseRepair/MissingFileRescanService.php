@@ -68,6 +68,30 @@ final class MissingFileRescanService
      */
     public function rescan(Release $release, MissingFileRescanOptions $options, RescanRunBudget $budget): MissingFileRescanResult
     {
+        $lease = RecoveryLease::acquire($release);
+
+        if ($lease === null) {
+            return MissingFileRescanResult::notAttempted(
+                (float) $release->completion,
+                'Another recovery pass is already working this release.',
+            );
+        }
+
+        try {
+            return $this->rescanWithLease($release, $options, $budget);
+        } finally {
+            $lease->release();
+        }
+    }
+
+    /**
+     * @throws \Exception
+     */
+    private function rescanWithLease(
+        Release $release,
+        MissingFileRescanOptions $options,
+        RescanRunBudget $budget,
+    ): MissingFileRescanResult {
         $completionBefore = (float) $release->completion;
         $isFinalAttempt = $release->rescan_outcome === ReleaseRepairOutcome::RetryPending;
 

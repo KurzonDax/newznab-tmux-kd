@@ -32,6 +32,8 @@ class ReleaseRepairServiceTest extends TestCase
     /** Message-IDs the fake provider will confirm. */
     private array $providerArticles = [];
 
+    private bool $leaseObservedDuringProbe = false;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -70,6 +72,43 @@ class ReleaseRepairServiceTest extends TestCase
         $this->assertSame('repaired', $this->storedOutcome(1));
         $this->assertSame(100.0, (float) DB::table('releases')->where('id', 1)->value('completion'));
         $this->assertStringContainsString('part5of5.Tok@host', $this->storedNzb($release));
+    }
+
+    #[Test]
+    public function repair_holds_a_recovery_lease_while_working_and_clears_it_afterward(): void
+    {
+        $release = $this->releaseWithNzb(1, completion: 40.0, segments: [1 => 1, 3 => 3]);
+        $this->providerHasEveryArticle();
+
+        $this->service()->repair($release, new ReleaseRepairOptions);
+
+        $this->assertTrue($this->leaseObservedDuringProbe);
+        $this->assertNull(DB::table('releases')->where('id', 1)->value('recovery_claimed_at'));
+    }
+
+    #[Test]
+    public function repair_clears_its_recovery_lease_when_work_throws(): void
+    {
+        $release = $this->releaseWithNzb(1, completion: 40.0, segments: [1 => 1, 3 => 3]);
+        $nzb = \Mockery::mock(NzbService::class);
+        $nzb->shouldReceive('readNzbContents')->once()->andReturnUsing(function (): never {
+            $this->leaseObservedDuringProbe = DB::table('releases')
+                ->where('id', 1)
+                ->whereNotNull('recovery_claimed_at')
+                ->exists();
+
+            throw new \RuntimeException('read failed');
+        });
+
+        try {
+            (new ReleaseRepairService($nzb, $this->pool()))->repair($release, new ReleaseRepairOptions);
+            $this->fail('The fake NZB service should have interrupted repair.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('read failed', $exception->getMessage());
+        }
+
+        $this->assertTrue($this->leaseObservedDuringProbe);
+        $this->assertNull(DB::table('releases')->where('id', 1)->value('recovery_claimed_at'));
     }
 
     #[Test]
@@ -229,6 +268,7 @@ class ReleaseRepairServiceTest extends TestCase
         $this->assertNull($result->outcome);
         $this->assertNull($this->storedOutcome(1));
         $this->assertNull(DB::table('releases')->where('id', 1)->value('repair_attempted_at'));
+        $this->assertNull(DB::table('releases')->where('id', 1)->value('recovery_claimed_at'));
     }
 
     #[Test]
@@ -301,10 +341,17 @@ class ReleaseRepairServiceTest extends TestCase
     private function pool(): NntpProviderPool
     {
         $articles = &$this->providerArticles;
+        $onProbe = function (): void {
+            $this->leaseObservedDuringProbe = DB::table('releases')
+                ->where('id', 1)
+                ->whereNotNull('recovery_claimed_at')
+                ->exists();
 
-        $client = new class($articles) implements ProviderClient
+        };
+
+        $client = new class($articles, $onProbe) implements ProviderClient
         {
-            public function __construct(private array &$articles) {}
+            public function __construct(private array &$articles, private readonly \Closure $onProbe) {}
 
             public function provider(): NntpProvider
             {
@@ -323,6 +370,8 @@ class ReleaseRepairServiceTest extends TestCase
 
             public function statArticle(string $messageId): mixed
             {
+                ($this->onProbe)();
+
                 return ($this->articles['*'] ?? false) || isset($this->articles[$messageId]);
             }
 
@@ -423,6 +472,7 @@ class ReleaseRepairServiceTest extends TestCase
             completion DOUBLE NOT NULL DEFAULT 0,
             repair_attempted_at DATETIME NULL,
             repair_outcome VARCHAR(16) NULL,
+            recovery_claimed_at DATETIME NULL,
             postdate DATETIME NULL,
             haspreview INTEGER NOT NULL DEFAULT -1,
             passwordstatus INTEGER NOT NULL DEFAULT -1

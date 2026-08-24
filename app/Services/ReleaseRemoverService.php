@@ -8,6 +8,7 @@ use App\Enums\BlacklistConstants;
 use App\Models\Category;
 use App\Models\Settings;
 use App\Services\Nzb\NzbService;
+use App\Services\Releases\ReleaseDeletionProtection;
 use App\Services\Releases\ReleaseManagementService;
 use Carbon\Carbon;
 use Exception;
@@ -771,6 +772,7 @@ class ReleaseRemoverService
             }
 
             $lastId = (int) end($candidates)->id;
+            $candidates = ReleaseDeletionProtection::filterCandidates(collect($candidates))->all();
             $matches = collect();
 
             if ($includeFiles) {
@@ -977,6 +979,7 @@ class ReleaseRemoverService
 
             $batch = collect($batch)->unique('id')->values();
             $lastId = (int) $batch->max('id');
+            $batch = ReleaseDeletionProtection::filterCandidates($batch);
 
             foreach ($batch as $release) {
                 if ($this->echoCLI) {

@@ -77,6 +77,35 @@ class MissingFileRescanServiceTest extends TestCase
     }
 
     #[Test]
+    public function rescan_holds_a_recovery_lease_while_working_and_clears_it_afterward(): void
+    {
+        $release = $this->releaseHolding([1, 2], declaredFiles: 3, firstArticle: 1000, lastArticle: 1200);
+        $this->groupCarries($this->articlesForFile(3, segments: 2, startingAt: 1150));
+
+        $this->service()->rescan($release, $this->rescanOptions(), $this->budget());
+
+        $this->assertTrue($this->nntp->leaseObservedDuringFetch);
+        $this->assertNull(DB::table('releases')->where('id', 1)->value('recovery_claimed_at'));
+    }
+
+    #[Test]
+    public function rescan_clears_its_recovery_lease_when_work_throws(): void
+    {
+        $release = $this->releaseHolding([1, 2], declaredFiles: 3, firstArticle: 1000, lastArticle: 1200);
+        $this->nntp->throwDuringFetch = true;
+
+        try {
+            $this->service()->rescan($release, $this->rescanOptions(), $this->budget());
+            $this->fail('The fake provider should have interrupted rescan.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('overview failed', $exception->getMessage());
+        }
+
+        $this->assertTrue($this->nntp->leaseObservedDuringFetch);
+        $this->assertNull(DB::table('releases')->where('id', 1)->value('recovery_claimed_at'));
+    }
+
+    #[Test]
     public function a_successful_rescan_does_not_requeue_settled_additional_processing(): void
     {
         $release = $this->releaseHolding([1, 2], declaredFiles: 3, firstArticle: 1000, lastArticle: 1200);
@@ -349,6 +378,7 @@ class MissingFileRescanServiceTest extends TestCase
         $this->assertNull($result->outcome);
         $this->assertNull($this->storedOutcome(1));
         $this->assertNull(DB::table('releases')->where('id', 1)->value('rescan_attempted_at'));
+        $this->assertNull(DB::table('releases')->where('id', 1)->value('recovery_claimed_at'));
     }
 
     #[Test]
@@ -583,6 +613,7 @@ class MissingFileRescanServiceTest extends TestCase
             repair_outcome VARCHAR(16) NULL,
             rescan_attempted_at DATETIME NULL,
             rescan_outcome VARCHAR(16) NULL,
+            recovery_claimed_at DATETIME NULL,
             postdate DATETIME NULL,
             haspreview INTEGER NOT NULL DEFAULT -1,
             passwordstatus INTEGER NOT NULL DEFAULT -1
@@ -618,6 +649,10 @@ final class FakeHeaderNntp extends NNTPService
 
     public int $xoverCalls = 0;
 
+    public bool $leaseObservedDuringFetch = false;
+
+    public bool $throwDuringFetch = false;
+
     public bool $selectFails = false;
 
     public int $groupFirst = 1;
@@ -638,6 +673,14 @@ final class FakeHeaderNntp extends NNTPService
     public function getXOVER(string $range): mixed
     {
         $this->xoverCalls++;
+        $this->leaseObservedDuringFetch = DB::table('releases')
+            ->where('id', 1)
+            ->whereNotNull('recovery_claimed_at')
+            ->exists();
+
+        if ($this->throwDuringFetch) {
+            throw new \RuntimeException('overview failed');
+        }
 
         [$first, $last] = array_pad(explode('-', $range, 2), 2, null);
         $first = (int) $first;

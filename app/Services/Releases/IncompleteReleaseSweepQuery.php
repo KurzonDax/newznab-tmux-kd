@@ -23,10 +23,10 @@ use Illuminate\Database\Eloquent\Builder;
  *   to look for. The two passes recover different things -- derivable segments, and files with no
  *   segment at all -- so a release that has exhausted one may still be owed the other.
  *
- * "Nothing to re-scan" is `declaredfiles` saying so: null (never derived, and derivation needs
- * the stored NZB rather than SQL), zero (derived, and the NZB declares no usable count), or no
- * greater than the files the release holds. Those releases would be stamped final on sight, so
- * waiting for the stamp would only delay the reaper by a batch.
+ * "Nothing to re-scan" is a *derived* `declaredfiles` value saying so: zero (the NZB declares no
+ * usable count), or no greater than the files the release holds. Null means the count has never
+ * been derived and the release is still owed a re-scan visit, because derivation requires reading
+ * the stored NZB rather than SQL.
  *
  * The sweep does no timestamp arithmetic of its own: the state machines own time and hand the
  * reaper only releases they have given up on.
@@ -39,15 +39,16 @@ final class IncompleteReleaseSweepQuery
      */
     public static function builder(float $completionThreshold): Builder
     {
-        return Release::query()
+        $query = Release::query()
             ->where('completion', '<', $completionThreshold)
             ->where('completion', '>', 0)
             ->whereIn('repair_outcome', ReleaseRepairOutcome::deletableValues())
             ->where(static function (Builder $query): void {
                 $query->whereIn('rescan_outcome', ReleaseRepairOutcome::deletableValues())
-                    ->orWhereNull('declaredfiles')
                     ->orWhere('declaredfiles', '<=', 0)
                     ->orWhereColumn('declaredfiles', '<=', 'totalpart');
             });
+
+        return ReleaseDeletionProtection::apply($query);
     }
 }

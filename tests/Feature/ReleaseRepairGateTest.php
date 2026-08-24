@@ -212,16 +212,16 @@ class ReleaseRepairGateTest extends TestCase
     }
 
     #[Test]
-    public function a_release_with_nothing_to_re_scan_is_swept_without_waiting_for_a_stamp(): void
+    public function a_release_with_a_derived_nothing_to_re_scan_verdict_is_swept_without_waiting_for_a_stamp(): void
     {
-        // Null: never derived, and deriving it needs the stored NZB rather than SQL.
+        // Null is unresolved and still owed a re-scan visit.
         $this->insertRelease(1, completion: 40.0, outcome: ReleaseRepairOutcome::Failed, declaredFiles: null);
         // Zero: derived, and the NZB declares no usable file count.
         $this->insertRelease(2, completion: 40.0, outcome: ReleaseRepairOutcome::Failed, declaredFiles: 0);
         // Holds everything it declared -- the shortfall is segments, which is repair's job.
         $this->insertRelease(3, completion: 40.0, outcome: ReleaseRepairOutcome::Failed, declaredFiles: 12, totalPart: 12);
 
-        $this->assertSame([1, 2, 3], $this->sweptIds(95.0));
+        $this->assertSame([2, 3], $this->sweptIds(95.0));
     }
 
     #[Test]
@@ -259,7 +259,7 @@ class ReleaseRepairGateTest extends TestCase
     }
 
     #[Test]
-    public function an_unresolved_legacy_release_is_simultaneously_rescan_eligible_and_deletion_eligible(): void
+    public function rescan_and_deletion_admission_are_mutually_exclusive_for_an_unresolved_legacy_release(): void
     {
         $this->insertRelease(
             1,
@@ -273,7 +273,41 @@ class ReleaseRepairGateTest extends TestCase
             [1],
             RescanCandidateQuery::batch(10, 95.0, 72)->pluck('id')->map(intval(...))->all()
         );
-        $this->assertSame([1], $this->sweptIds(95.0));
+        $this->assertSame([], $this->sweptIds(95.0));
+    }
+
+    #[Test]
+    public function the_sweep_excludes_live_processing_claims_but_allows_stale_ones(): void
+    {
+        $live = Carbon::now()->toDateTimeString();
+        $stale = Carbon::now()->subHour()->toDateTimeString();
+
+        $this->insertRelease(1, completion: 40.0, outcome: ReleaseRepairOutcome::Failed, declaredFiles: 0, additionalClaimedAt: $live);
+        $this->insertRelease(2, completion: 40.0, outcome: ReleaseRepairOutcome::Failed, declaredFiles: 0, recoveryClaimedAt: $live);
+        $this->insertRelease(3, completion: 40.0, outcome: ReleaseRepairOutcome::Failed, declaredFiles: 0, additionalClaimedAt: $stale);
+        $this->insertRelease(4, completion: 40.0, outcome: ReleaseRepairOutcome::Failed, declaredFiles: 0, recoveryClaimedAt: $stale);
+        $this->insertRelease(5, completion: 40.0, outcome: ReleaseRepairOutcome::Failed, declaredFiles: 0);
+
+        $this->assertSame([3, 4, 5], $this->sweptIds(95.0));
+    }
+
+    #[Test]
+    public function recovery_candidate_queries_skip_live_leases_but_reclaim_stale_ones(): void
+    {
+        $live = Carbon::now()->toDateTimeString();
+        $stale = Carbon::now()->subHour()->toDateTimeString();
+
+        $this->insertRelease(1, completion: 40.0, outcome: null, declaredFiles: 40, totalPart: 38, recoveryClaimedAt: $live);
+        $this->insertRelease(2, completion: 40.0, outcome: null, declaredFiles: 40, totalPart: 38, recoveryClaimedAt: $stale);
+
+        $this->assertSame(
+            [2],
+            ReleaseRepairCandidateQuery::batch(10, 95.0, 72)->pluck('id')->map(intval(...))->all(),
+        );
+        $this->assertSame(
+            [2],
+            RescanCandidateQuery::batch(10, 95.0, 72)->pluck('id')->map(intval(...))->all(),
+        );
     }
 
     #[Test]
@@ -381,10 +415,12 @@ class ReleaseRepairGateTest extends TestCase
         ?ReleaseRepairOutcome $outcome,
         ?string $attemptedAt = null,
         string $postdate = '2024-01-01 00:00:00',
-        ?int $declaredFiles = null,
+        ?int $declaredFiles = 0,
         int $totalPart = 0,
         ?ReleaseRepairOutcome $rescanOutcome = null,
         ?string $rescanAttemptedAt = null,
+        ?string $additionalClaimedAt = null,
+        ?string $recoveryClaimedAt = null,
     ): void {
         DB::table('releases')->insert([
             'id' => $id,
@@ -395,6 +431,8 @@ class ReleaseRepairGateTest extends TestCase
             'repair_attempted_at' => $attemptedAt,
             'rescan_outcome' => $rescanOutcome?->value,
             'rescan_attempted_at' => $rescanAttemptedAt,
+            'additional_pp_claimed_at' => $additionalClaimedAt,
+            'recovery_claimed_at' => $recoveryClaimedAt,
             'declaredfiles' => $declaredFiles,
             'totalpart' => $totalPart,
             'postdate' => $postdate,
@@ -414,6 +452,8 @@ class ReleaseRepairGateTest extends TestCase
             repair_outcome VARCHAR(16) NULL,
             rescan_attempted_at DATETIME NULL,
             rescan_outcome VARCHAR(16) NULL,
+            additional_pp_claimed_at DATETIME NULL,
+            recovery_claimed_at DATETIME NULL,
             declaredfiles INTEGER NULL,
             totalpart INTEGER NOT NULL DEFAULT 0,
             groups_id INTEGER NULL,

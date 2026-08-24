@@ -4,6 +4,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 
 | Applies to | Rule file |
 | --- | --- |
-| app/Services/AdditionalProcessing/** | .ai/rules/additional-processing.md |
+| app/Services/AdditionalProcessing/**, app/Services/AudioProcessing/** | .ai/rules/additional-processing.md |
 | ** | .ai/rules/general.md |
 | app/Services/NameFixing/** | .ai/rules/name-fixing.md |
+| app/Services/** | .ai/rules/services.md |

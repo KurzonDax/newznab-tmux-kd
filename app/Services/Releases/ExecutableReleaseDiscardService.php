@@ -168,7 +168,7 @@ class ExecutableReleaseDiscardService
 
         $discarded = 0;
 
-        Release::query()
+        ReleaseDeletionProtection::apply(Release::query())
             ->whereIn('categories_id', $categoryIds)
             ->whereExists(function (Builder $query): void {
                 $query->select(DB::raw(1))
