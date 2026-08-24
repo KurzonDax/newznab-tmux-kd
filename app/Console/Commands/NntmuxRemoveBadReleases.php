@@ -10,6 +10,7 @@ use App\Models\ReleaseFile;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseImageService;
 use App\Services\Releases\ReleaseDeletionProtection;
+use App\Services\Releases\ReleaseManagementService;
 use Illuminate\Console\Command;
 
 class NntmuxRemoveBadReleases extends Command
@@ -40,16 +41,17 @@ class NntmuxRemoveBadReleases extends Command
         $badReleases = ReleaseDeletionProtection::apply(Release::query())
             ->where('passwordstatus', '<=', -2)
             ->get();
+        $releaseManagement = app(ReleaseManagementService::class);
+        $nzb = app(NzbService::class);
+        $releaseImage = new ReleaseImageService;
+
         foreach ($badReleases as $badRelease) {
-            app(NzbService::class)->deleteNzb($badRelease->guid);
-            (new ReleaseImageService)->delete($badRelease->guid);
-            // Delete from search index
-            Search::deleteRelease($badRelease->id);
-            $badRelease->delete();
+            $releaseManagement->deleteSingleIfUnclaimed(
+                ['g' => (string) $badRelease->guid, 'i' => (int) $badRelease->id],
+                $nzb,
+                $releaseImage,
+            );
         }
-        ReleaseDeletionProtection::apply(Release::query())
-            ->where('passwordstatus', '=', -2)
-            ->delete();
 
         $passReleases = ReleaseFile::query()->where('passworded', '=', 1)->groupBy('releases_id')->get();
 

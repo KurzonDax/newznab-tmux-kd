@@ -13,6 +13,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -94,14 +95,7 @@ class ReleaseManagementService
      */
     public function deleteBatch(iterable $releases, NzbService $nzb, ReleaseImageService $releaseImage): int
     {
-        $rows = collect($releases)
-            ->map(static fn (object|array $release): array => [
-                'id' => (int) data_get($release, 'id'),
-                'guid' => (string) data_get($release, 'guid'),
-            ])
-            ->filter(static fn (array $release): bool => $release['id'] > 0 && $release['guid'] !== '')
-            ->unique('id')
-            ->values();
+        $rows = $this->normalizeReleaseRows($releases);
 
         if ($rows->isEmpty()) {
             return 0;
@@ -140,6 +134,137 @@ class ReleaseManagementService
             ]);
 
             return 0;
+        }
+    }
+
+    /**
+     * Delete an automated-sweep candidate only if no worker claimed it after selection.
+     *
+     * @param  array{g: string, i: int}  $identifiers
+     */
+    public function deleteSingleIfUnclaimed(
+        array $identifiers,
+        NzbService $nzb,
+        ReleaseImageService $releaseImage,
+    ): bool {
+        return $this->deleteBatchIfUnclaimed([
+            ['id' => $identifiers['i'], 'guid' => $identifiers['g']],
+        ], $nzb, $releaseImage) === 1;
+    }
+
+    /**
+     * Lock and recheck automated-sweep candidates at the destructive boundary.
+     *
+     * Database rows are deleted before artifact cleanup. A concurrent AP or recovery claimant
+     * therefore either commits first and excludes the row, or waits for the lock and finds no row.
+     *
+     * @param  iterable<int, object|array<string, mixed>>  $releases
+     */
+    public function deleteBatchIfUnclaimed(
+        iterable $releases,
+        NzbService $nzb,
+        ReleaseImageService $releaseImage,
+    ): int {
+        $candidates = $this->normalizeReleaseRows($releases);
+
+        if ($candidates->isEmpty()) {
+            return 0;
+        }
+
+        $deleted = $this->deleteUnclaimedRows($candidates);
+        $this->cleanupDeletedRows($deleted, $nzb, $releaseImage);
+
+        return $deleted->count();
+    }
+
+    /**
+     * @param  iterable<int, object|array<string, mixed>>  $releases
+     * @return Collection<int, array{id: int, guid: string}>
+     */
+    private function normalizeReleaseRows(iterable $releases): Collection
+    {
+        /** @var Collection<int, array{id: int, guid: string}> $rows */
+        $rows = collect($releases)
+            ->map(static fn (object|array $release): array => [
+                'id' => (int) data_get($release, 'id'),
+                'guid' => (string) data_get($release, 'guid'),
+            ])
+            ->filter(static fn (array $release): bool => $release['id'] > 0 && $release['guid'] !== '')
+            ->unique('id')
+            ->values();
+
+        return $rows;
+    }
+
+    /**
+     * @param  Collection<int, array{id: int, guid: string}>  $candidates
+     * @return Collection<int, array{id: int, guid: string}>
+     */
+    private function deleteUnclaimedRows(Collection $candidates): Collection
+    {
+        return DB::transaction(function () use ($candidates): Collection {
+            $query = ReleaseDeletionProtection::apply(Release::query())
+                ->whereIn('id', $candidates->pluck('id')->all())
+                ->orderBy('id');
+
+            if (DB::getDriverName() !== 'sqlite') {
+                $query->lockForUpdate();
+            }
+
+            $available = $query
+                ->get(['id', 'guid'])
+                ->map(static fn (Release $release): array => [
+                    'id' => (int) $release->id,
+                    'guid' => (string) $release->guid,
+                ]);
+
+            if ($available->isEmpty()) {
+                return collect();
+            }
+
+            $affected = Release::query()
+                ->whereIn('id', $available->pluck('id')->all())
+                ->delete();
+
+            if ($affected !== $available->count()) {
+                throw new RuntimeException('Protected release deletion affected an unexpected row count.');
+            }
+
+            return $available;
+        }, 3);
+    }
+
+    /**
+     * @param  Collection<int, array{id: int, guid: string}>  $deleted
+     */
+    private function cleanupDeletedRows(
+        Collection $deleted,
+        NzbService $nzb,
+        ReleaseImageService $releaseImage,
+    ): void {
+        foreach ($deleted as $release) {
+            try {
+                $nzb->deleteNzb($release['guid']);
+                $releaseImage->delete($release['guid']);
+            } catch (Throwable $e) {
+                Log::error('Protected release filesystem cleanup failed', [
+                    'release_id' => $release['id'],
+                    'guid' => $release['guid'],
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $ids = $deleted->pluck('id')->all();
+        if ($ids !== []) {
+            try {
+                Search::deleteReleases($ids);
+            } catch (Throwable $e) {
+                Log::error('Protected release search cleanup failed', [
+                    'release_ids' => $ids,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
     }
 

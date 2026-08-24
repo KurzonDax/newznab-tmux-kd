@@ -54,9 +54,9 @@ class NntmuxRemoveBadClaimsTest extends TestCase
         ]);
 
         $nzb = Mockery::mock(NzbService::class);
-        $nzb->shouldReceive('deleteNzb')->times(6)->andReturnTrue();
+        $nzb->shouldReceive('deleteNzb')->times(3)->andReturnTrue();
         app()->instance(NzbService::class, $nzb);
-        Search::shouldReceive('deleteRelease')->times(6);
+        Search::shouldReceive('deleteReleases')->times(3);
 
         $this->artisan('nntmux:remove-bad')->assertSuccessful();
 

@@ -1183,8 +1183,9 @@ final class ReleaseProcessingService
             ->get();
 
         foreach ($releases as $release) {
-            $this->deleteSingleRelease($release);
-            $stats['minSize']++;
+            if ($this->deleteSingleRelease($release)) {
+                $stats['minSize']++;
+            }
         }
     }
 
@@ -1204,8 +1205,9 @@ final class ReleaseProcessingService
             ->get();
 
         foreach ($releases as $release) {
-            $this->deleteSingleRelease($release);
-            $stats['maxSize']++;
+            if ($this->deleteSingleRelease($release)) {
+                $stats['maxSize']++;
+            }
         }
     }
 
@@ -1230,8 +1232,9 @@ final class ReleaseProcessingService
             ->get();
 
         foreach ($releases as $release) {
-            $this->deleteSingleRelease($release);
-            $stats['minFiles']++;
+            if ($this->deleteSingleRelease($release)) {
+                $stats['minFiles']++;
+            }
         }
     }
 
@@ -1248,8 +1251,9 @@ final class ReleaseProcessingService
             ->select(['id', 'guid'])
             ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats): bool {
                 foreach ($releases as $release) {
-                    $this->deleteSingleRelease($release);
-                    $stats = $stats->increment('retention');
+                    if ($this->deleteSingleRelease($release)) {
+                        $stats = $stats->increment('retention');
+                    }
                 }
 
                 return true;
@@ -1276,8 +1280,9 @@ final class ReleaseProcessingService
             ->select(['id', 'guid'])
             ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats): bool {
                 foreach ($releases as $release) {
-                    $this->deleteSingleRelease($release);
-                    $stats = $stats->increment('password');
+                    if ($this->deleteSingleRelease($release)) {
+                        $stats = $stats->increment('password');
+                    }
                 }
 
                 return true;
@@ -1300,8 +1305,9 @@ final class ReleaseProcessingService
             ->get();
 
         foreach ($releases as $release) {
-            $this->deleteSingleRelease($release);
-            $stats = $stats->increment('duplicate');
+            if ($this->deleteSingleRelease($release)) {
+                $stats = $stats->increment('duplicate');
+            }
         }
 
         return $stats;
@@ -1328,8 +1334,9 @@ final class ReleaseProcessingService
             ->select(['id', 'guid'])
             ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats): bool {
                 foreach ($releases as $release) {
-                    $this->deleteSingleRelease($release);
-                    $stats = $stats->increment('completion');
+                    if ($this->deleteSingleRelease($release)) {
+                        $stats = $stats->increment('completion');
+                    }
                 }
 
                 return true;
@@ -1353,8 +1360,9 @@ final class ReleaseProcessingService
             ->select(['id', 'guid'])
             ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats): bool {
                 foreach ($releases as $release) {
-                    $this->deleteSingleRelease($release);
-                    $stats = $stats->increment('disabledCategory');
+                    if ($this->deleteSingleRelease($release)) {
+                        $stats = $stats->increment('disabledCategory');
+                    }
                 }
 
                 return true;
@@ -1378,8 +1386,9 @@ final class ReleaseProcessingService
                 ->limit(1000)
                 ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats): bool {
                     foreach ($releases as $release) {
-                        $this->deleteSingleRelease($release);
-                        $stats = $stats->increment('categoryMinSize');
+                        if ($this->deleteSingleRelease($release)) {
+                            $stats = $stats->increment('categoryMinSize');
+                        }
                     }
 
                     return true;
@@ -1426,8 +1435,9 @@ final class ReleaseProcessingService
                 ->select(['releases.id', 'releases.guid'])
                 ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats): bool {
                     foreach ($releases as $release) {
-                        $this->deleteSingleRelease($release);
-                        $stats = $stats->increment('disabledGenre');
+                        if ($this->deleteSingleRelease($release)) {
+                            $stats = $stats->increment('disabledGenre');
+                        }
                     }
 
                     return true;
@@ -1448,8 +1458,9 @@ final class ReleaseProcessingService
                 ->select(['id', 'guid'])
                 ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats): bool {
                     foreach ($releases as $release) {
-                        $this->deleteSingleRelease($release);
-                        $stats = $stats->increment('miscOther');
+                        if ($this->deleteSingleRelease($release)) {
+                            $stats = $stats->increment('miscOther');
+                        }
                     }
 
                     return true;
@@ -1465,8 +1476,9 @@ final class ReleaseProcessingService
                 ->select(['id', 'guid'])
                 ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats): bool {
                     foreach ($releases as $release) {
-                        $this->deleteSingleRelease($release);
-                        $stats = $stats->increment('miscHashed');
+                        if ($this->deleteSingleRelease($release)) {
+                            $stats = $stats->increment('miscHashed');
+                        }
                     }
 
                     return true;
@@ -1476,9 +1488,9 @@ final class ReleaseProcessingService
         return $stats;
     }
 
-    private function deleteSingleRelease(object $release): void
+    private function deleteSingleRelease(object $release): bool
     {
-        $this->releaseManagement->deleteSingle(
+        return $this->releaseManagement->deleteSingleIfUnclaimed(
             ['g' => $release->guid, 'i' => $release->id],
             $this->nzb,
             $this->releaseImage

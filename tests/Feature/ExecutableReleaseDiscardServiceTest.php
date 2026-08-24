@@ -211,7 +211,7 @@ class ExecutableReleaseDiscardServiceTest extends TestCase
             ['releases_id' => 4, 'name' => 'file.exe.txt', 'size' => 512],
         ]);
 
-        Search::shouldReceive('deleteRelease')->once()->with(1);
+        Search::shouldReceive('deleteReleases')->once()->with([1]);
         Log::shouldReceive('warning')->once();
 
         $swept = [];

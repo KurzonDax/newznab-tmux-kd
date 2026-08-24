@@ -101,7 +101,7 @@ class ReleaseRemoverBatchingTest extends TestCase
         ])->all());
 
         $management = Mockery::mock(ReleaseManagementService::class);
-        $management->shouldReceive('deleteBatch')
+        $management->shouldReceive('deleteBatchIfUnclaimed')
             ->once()
             ->withArgs(static fn ($releases): bool => $releases->count() === 125)
             ->andReturn(125);
@@ -138,7 +138,7 @@ class ReleaseRemoverBatchingTest extends TestCase
         ]);
 
         $management = Mockery::mock(ReleaseManagementService::class);
-        $management->shouldReceive('deleteBatch')
+        $management->shouldReceive('deleteBatchIfUnclaimed')
             ->once()
             ->withArgs(static fn ($releases): bool => $releases->pluck('id')->map(intval(...))->all() === [3, 4, 5])
             ->andReturn(3);
@@ -181,7 +181,7 @@ class ReleaseRemoverBatchingTest extends TestCase
         ]);
 
         $management = Mockery::mock(ReleaseManagementService::class);
-        $management->shouldReceive('deleteBatch')->once()->andReturn(1);
+        $management->shouldReceive('deleteBatchIfUnclaimed')->once()->andReturn(1);
 
         $service = new ReleaseRemoverService(
             $management,
@@ -226,6 +226,32 @@ class ReleaseRemoverBatchingTest extends TestCase
 
         self::assertSame(2, $deleted);
         self::assertSame(0, DB::table('releases')->count());
+    }
+
+    public function test_protected_batch_rechecks_claims_acquired_after_candidate_selection(): void
+    {
+        DB::table('releases')->insert([
+            $this->releaseRow(1),
+            $this->releaseRow(2),
+        ]);
+
+        $selected = DB::table('releases')
+            ->orderBy('id')
+            ->get(['id', 'guid']);
+
+        DB::table('releases')->where('id', 1)->update(['additional_pp_claimed_at' => now()]);
+        DB::table('releases')->where('id', 2)->update(['recovery_claimed_at' => now()]);
+
+        $nzb = Mockery::mock(NzbService::class);
+        $nzb->shouldNotReceive('deleteNzb');
+        $images = Mockery::mock(ReleaseImageService::class);
+        $images->shouldNotReceive('delete');
+        Search::shouldReceive('deleteReleases')->never();
+
+        $deleted = (new ReleaseManagementService)->deleteBatchIfUnclaimed($selected, $nzb, $images);
+
+        self::assertSame(0, $deleted);
+        self::assertSame([1, 2], DB::table('releases')->orderBy('id')->pluck('id')->map(intval(...))->all());
     }
 
     /**

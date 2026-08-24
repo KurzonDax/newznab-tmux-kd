@@ -97,7 +97,9 @@ order: segment repair first, whole-file re-scan second. Each service stamps the 
 `recovery_claimed_at` lease before it touches a release and clears that lease in a `finally` path,
 including storage skips and exceptions. The lease and `additional_pp_claimed_at` use the same
 stale cutoff, so a crashed worker cannot protect a row forever. Automated destructive sweeps skip
-either live claim; explicit operator deletion remains an override.
+either live claim both during candidate selection and at a locked deletion boundary. If a worker
+claims a candidate between those checks, the boundary leaves its database row and artifacts
+untouched. Explicit operator deletion remains an override.
 
 ## How repair works
 
