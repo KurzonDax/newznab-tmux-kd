@@ -28,33 +28,52 @@ class ReleaseLifecycleEligibilityGapTest extends TestCase
         parent::tearDown();
     }
 
+    /**
+     * G1a is closed: the sweep no longer restricts itself to the Other roots.
+     */
     #[Test]
-    public function the_standard_name_sweep_excludes_an_unrenamed_release_outside_other(): void
+    public function the_standard_name_sweep_admits_an_unrenamed_release_outside_other(): void
     {
         $this->insertRelease(1, Category::OTHER_MISC, nfostatus: 0);
         $this->insertRelease(2, Category::MUSIC_LOSSLESS, nfostatus: 0);
 
-        $this->assertSame([1], $this->standardNameCandidateIds());
+        $this->assertSame([2, 1], $this->standardNameCandidateIds());
     }
 
+    /**
+     * G1b is closed: a pending NFO lookup no longer hides the other sources'
+     * ready evidence.
+     */
     #[Test]
-    public function the_standard_name_sweep_excludes_every_source_while_nfo_is_pending(): void
+    public function the_standard_name_sweep_admits_every_other_source_while_nfo_is_pending(): void
     {
         $this->insertRelease(1, Category::OTHER_MISC, nfostatus: -1);
 
-        $this->assertSame([], $this->standardNameCandidateIds());
+        $this->assertSame([1], $this->standardNameCandidateIds());
+    }
 
-        DB::table('releases')->where('id', 1)->update(['nfostatus' => 0]);
+    /**
+     * G1b is closed: terminal NFO failure is an NFO outcome, not a sweep-wide one.
+     */
+    #[Test]
+    public function the_standard_name_sweep_admits_every_other_source_after_nfo_retries_are_exhausted(): void
+    {
+        $this->insertRelease(1, Category::OTHER_MISC, nfostatus: -9);
 
         $this->assertSame([1], $this->standardNameCandidateIds());
     }
 
+    /**
+     * G31 is closed: additional processing never settles some rows' password
+     * status, and that must not strand their naming evidence.
+     */
     #[Test]
-    public function the_standard_name_sweep_excludes_every_source_after_nfo_retries_are_exhausted(): void
+    public function the_standard_name_sweep_admits_a_release_whose_password_inspection_never_settled(): void
     {
-        $this->insertRelease(1, Category::OTHER_MISC, nfostatus: -9);
+        $this->insertRelease(1, Category::OTHER_MISC, nfostatus: 0);
+        DB::table('releases')->where('id', 1)->update(['passwordstatus' => -1]);
 
-        $this->assertSame([], $this->standardNameCandidateIds());
+        $this->assertSame([1], $this->standardNameCandidateIds());
     }
 
     #[Test]
@@ -113,8 +132,11 @@ class ReleaseLifecycleEligibilityGapTest extends TestCase
             'proc_hash16k' => 0,
             'proc_srr' => 0,
             'proc_crc32' => 0,
+            'proc_srrdb' => 0,
             'isrenamed' => 0,
             'passwordstatus' => 0,
+            'is_trusted_name' => 0,
+            'completion' => 100,
         ]);
     }
 
@@ -142,8 +164,11 @@ class ReleaseLifecycleEligibilityGapTest extends TestCase
             proc_hash16k INTEGER NOT NULL DEFAULT 0,
             proc_srr INTEGER NOT NULL DEFAULT 0,
             proc_crc32 INTEGER NOT NULL DEFAULT 0,
+            proc_srrdb INTEGER NOT NULL DEFAULT 0,
             isrenamed INTEGER NOT NULL DEFAULT 0,
-            passwordstatus INTEGER NOT NULL DEFAULT 0
+            passwordstatus INTEGER NOT NULL DEFAULT 0,
+            is_trusted_name INTEGER NOT NULL DEFAULT 0,
+            completion INTEGER NOT NULL DEFAULT 0
         )');
     }
 }

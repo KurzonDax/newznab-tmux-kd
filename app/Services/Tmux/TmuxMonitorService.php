@@ -10,6 +10,7 @@ use App\Models\Release;
 use App\Models\Settings;
 use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
 use App\Services\AudioProcessing\AudioCandidateQuery;
+use App\Services\NameFixing\NameFixingQueryService;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -232,6 +233,20 @@ class TmuxMonitorService
         $timer = microtime(true);
         $this->runVar['counts']['now']['work'] = $this->runVar['counts']['now']['work'] ?? 0;
         $this->runVar['counts']['now']['work_available'] = $this->runVar['counts']['now']['work_available'] ?? 0;
+
+        // The Fix Names pane sleeps at zero, so this has to be the sweep's own
+        // admission predicate rather than a hand-written subset of it, exactly as
+        // `work` is derived from AdditionalCandidateQuery below. It is collected
+        // ahead of the aggregate stats query, and guarded separately, so an
+        // unrelated failure in that query cannot decide the pane's fate. A
+        // failure here still leaves the count at its zero default and sleeps the
+        // pane, which is the safe direction: the next cycle retries.
+        try {
+            $this->runVar['counts']['now']['processrenames'] = app(NameFixingQueryService::class)
+                ->standardCandidateCount();
+        } catch (\Exception $e) {
+            logger()->error('Error collecting the standard name sweep backlog: '.$e->getMessage());
+        }
 
         try {
             $dbName = config('nntmux.db_name');

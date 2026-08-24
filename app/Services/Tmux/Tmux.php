@@ -321,6 +321,11 @@ class Tmux
 
         switch ((int) $qry) {
             case 1:
+                // NOTE: `processrenames` is deliberately absent here. A hand-written
+                // copy of part of the standard sweep's predicate slept the Fix Names
+                // pane on real work; the count now comes from
+                // \App\Services\NameFixing\NameFixingQueryService::standardCandidateCount()
+                // via TmuxMonitorService::getProcessCounts().
                 $movieLookupSql = imdb_id_needs_lookup_sql('imdbid');
                 $lookupMovies = (int) Settings::settingValue('lookupimdb');
 
@@ -341,8 +346,6 @@ class Tmux
 					SUM(IF(categories_id BETWEEN %d AND %d AND bookinfo_id IS NULL,1,0)) AS processbooks,
 					SUM(IF(categories_id = %d AND gamesinfo_id = 0,1,0)) AS processgames,
 					SUM(IF(1=1 %s,1,0)) AS processnfo,
-					SUM(IF(isrenamed = %d AND predb_id = 0 AND passwordstatus >= 0 AND nfostatus > %d
-						AND ((nfostatus = %d AND proc_nfo = %d) OR proc_files = %d OR proc_par2 = %d) AND categories_id IN (%s),1,0)) AS processrenames,
 					SUM(IF(isrenamed = %d,1,0)) AS renamed,
           SUM(IF(nfostatus = %d,1,0)) AS nfo,
 					SUM(IF(predb_id > 0,1,0)) AS predb_matched,
@@ -363,13 +366,6 @@ class Tmux
                     Category::BOOKS_UNKNOWN,
                     Category::PC_GAMES,
                     NfoService::NfoQueryString(),
-                    NameFixingService::IS_RENAMED_NONE,
-                    NfoService::NFO_UNPROC,
-                    NfoService::NFO_FOUND,
-                    NameFixingService::PROC_NFO_NONE,
-                    NameFixingService::PROC_FILES_NONE,
-                    NameFixingService::PROC_PAR2_NONE,
-                    Category::getCategoryOthersGroup(),
                     NameFixingService::IS_RENAMED_DONE,
                     NfoService::NFO_FOUND
                 );

@@ -349,6 +349,25 @@ class NameFixingService
     ): void {
         $this->updateService->reset();
         $this->updateService->incrementChecked();
+        $this->attemptSrrdb($release, $files, $echo, $nameStatus, $show);
+    }
+
+    /**
+     * Look the release's archive CRCs up on SRRDB and settle `proc_srrdb`.
+     *
+     * Shared by the windowed SRRDB method and the standard sweep so both consume
+     * the source the same way: a transient lookup failure leaves the row pending,
+     * an ambiguous result parks it, and anything else settles it.
+     *
+     * @param  list<object>  $files
+     */
+    private function attemptSrrdb(
+        object $release,
+        array $files,
+        bool $echo,
+        bool $nameStatus,
+        bool $show,
+    ): void {
         $files = $this->prioritizeSrrdbFiles($files);
         $completed = true;
         $ambiguous = false;
@@ -972,6 +991,7 @@ class NameFixingService
         $files = $this->queries->groupByReleaseId($this->queries->fileRows($releaseIds));
         $media = $this->queries->groupByReleaseId($this->queries->mediaRows($releaseIds));
         $hashes = $this->queries->groupByReleaseId($this->queries->hashRows($releaseIds));
+        $srrdbFiles = $this->standardBatchSrrdbFiles($releases, $releaseIds);
         $uidDonors = $this->queries->uidDonors($this->distinctValues($media, 'uid'));
         $crcDonors = $this->queries->crcDonors($this->distinctValues($files, 'crc32'));
         $hashDonors = $this->queries->hashDonors($this->distinctValues($hashes, 'hash'));
@@ -1127,14 +1147,25 @@ class NameFixingService
                 continue;
             }
 
+            $par2Matched = false;
             if ((int) $release->proc_par2 === self::PROC_PAR2_NONE) {
                 $this->updateService->reset();
-                $matched = $par2Processor !== null && $par2Processor($release);
-                if ($matched) {
+                $par2Matched = $par2Processor !== null && $par2Processor($release);
+                if ($par2Matched) {
                     $this->updateService->fixed++;
                 } else {
                     $this->updateService->updateSingleColumn('proc_par2', self::PROC_PAR2_DONE, $releaseId);
                 }
+            }
+
+            if ($par2Matched || $this->updateService->matched) {
+                continue;
+            }
+
+            $releaseSrrdbFiles = $srrdbFiles[$releaseId] ?? [];
+            if ($releaseSrrdbFiles !== [] && $this->isSrrdbSweepCandidate($release)) {
+                $this->updateService->reset();
+                $this->attemptSrrdb($release, $releaseSrrdbFiles, true, true, $show);
             }
         }
 
@@ -1142,6 +1173,46 @@ class NameFixingService
             'checked' => count($releases),
             'fixed' => $this->updateService->fixed - $fixedBefore,
         ];
+    }
+
+    /**
+     * Archive-CRC file rows for the SRRDB leg of a standard sweep batch, keyed by
+     * release id and empty when the batch has no SRRDB work to do.
+     *
+     * @param  list<object>  $releases
+     * @param  list<int>  $releaseIds
+     * @return array<int|string, list<object>>
+     */
+    private function standardBatchSrrdbFiles(array $releases, array $releaseIds): array
+    {
+        if (! $this->queries->srrdbEnabled()) {
+            return [];
+        }
+
+        foreach ($releases as $release) {
+            if ($this->isSrrdbSweepCandidate($release)) {
+                return $this->queries->groupByReleaseId(
+                    $this->queries->fileRows($releaseIds, NameFixingQueryService::SOURCE_SRRDB)
+                );
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Whether the standard sweep may run the SRRDB leg for this release.
+     *
+     * Mirrors the SRRDB term in the sweep's admission predicate. A release
+     * admitted on some other source may still be trusted or carry no archive
+     * CRC, and settling `proc_srrdb` for those rows would consume the source
+     * before the evidence it needs exists. The caller pairs this with a
+     * non-empty archive-CRC file list, the third half of the same gate.
+     */
+    private function isSrrdbSweepCandidate(object $release): bool
+    {
+        return (int) ($release->proc_srrdb ?? self::PROC_SRRDB_DONE) === self::PROC_SRRDB_NONE
+            && (int) ($release->is_trusted_name ?? 1) === 0;
     }
 
     /**
