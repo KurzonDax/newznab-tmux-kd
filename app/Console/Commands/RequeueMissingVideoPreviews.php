@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
+use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\Releases\PreviewGenerationPolicy;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -47,16 +48,9 @@ class RequeueMissingVideoPreviews extends Command
             return self::SUCCESS;
         }
 
-        $updated = $this->candidates()->update([
-            'haspreview' => -1,
-            'passwordstatus' => $pendingPasswordStatus,
-            'pp_timeout_count' => 0,
-        ]);
+        $updated = $this->candidates()->update(ReleaseClaimant::rependValues());
 
-        $repaired = $this->stranded($pendingPasswordStatus)->update([
-            'passwordstatus' => $pendingPasswordStatus,
-            'pp_timeout_count' => 0,
-        ]);
+        $repaired = $this->stranded($pendingPasswordStatus)->update(ReleaseClaimant::rependValues());
 
         $this->info("Re-queued {$updated} releases.");
         $this->info("Repaired {$repaired} stranded releases.");
@@ -78,11 +72,7 @@ class RequeueMissingVideoPreviews extends Command
 
         $updated = $candidateIds === []
             ? 0
-            : Release::query()->whereIn('id', $candidateIds)->update([
-                'haspreview' => -1,
-                'passwordstatus' => PasswordInspectionMode::pendingReleaseStatus(),
-                'pp_timeout_count' => 0,
-            ]);
+            : Release::query()->whereIn('id', $candidateIds)->update(ReleaseClaimant::rependValues());
         $noun = $updated === 1 ? 'release' : 'releases';
         $this->info("Re-queued {$updated} MP4 tail {$noun}.");
 
@@ -150,10 +140,9 @@ class RequeueMissingVideoPreviews extends Command
     }
 
     /**
-     * Releases already flagged pending for preview work but carrying the
-     * password sentinel of the opposite inspection mode, which the additional
-     * processing candidate selection never matches. Prior runs of this command
-     * hardcoded -1 and stranded rows this way on inspection-off sites.
+     * Compatibility normalization for rows carrying the opposite inspection
+     * sentinel. Both sentinels are now claimable, so this is no longer required
+     * for eligibility; it only keeps the operator tool's historic repair count.
      *
      * @return Builder<Release>
      */

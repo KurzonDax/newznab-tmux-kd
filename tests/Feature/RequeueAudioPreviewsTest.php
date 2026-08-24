@@ -24,7 +24,7 @@ use Tests\TestCase;
  * Fixture ids:
  *  1  MUSIC_MP3, haspreview 0          -> "re-queued from 0"
  *  2  MUSIC_LOSSLESS, haspreview -2    -> "re-queued from -2"
- *  3  MUSIC_MP3, haspreview -1 with the wrong password sentinel -> "stranded repaired"
+ *  3  MUSIC_MP3, haspreview -1 with the wrong password sentinel -> "pending normalized"
  *  4  MUSIC_MP3, haspreview 0, declined token -> only with --include-declined
  *  5  MOVIE_SD in a plain group, haspreview 0 -> never selected
  *  6  MOVIE_SD in a forced-Music group, haspreview 0 -> selected via the group rule
@@ -130,7 +130,7 @@ class RequeueAudioPreviewsTest extends TestCase
 
         $this->artisan('releases:requeue-audio-previews')
             ->expectsOutputToContain('Dry run')
-            ->expectsOutputToContain('stranded repaired: 2')
+            ->expectsOutputToContain('pending normalized: 2')
             ->expectsOutputToContain('re-queued from 0: 2')
             ->expectsOutputToContain('re-queued from -2: 1')
             ->expectsOutputToContain('declined re-queued: 0')
@@ -146,7 +146,7 @@ class RequeueAudioPreviewsTest extends TestCase
     public function apply_requeues_exactly_the_audio_routed_subset(): void
     {
         $this->artisan('releases:requeue-audio-previews --apply')
-            ->expectsOutputToContain('stranded repaired: 2')
+            ->expectsOutputToContain('pending normalized: 2')
             ->expectsOutputToContain('re-queued from 0: 2')
             ->expectsOutputToContain('re-queued from -2: 1')
             ->expectsOutputToContain('declined re-queued: 0')

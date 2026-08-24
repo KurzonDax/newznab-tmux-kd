@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use PDO;
 
 /**
  * Everything the two candidate queries agree about.
@@ -46,6 +47,10 @@ final class ReleaseClaimant
 
     private static ?bool $supportsClaims = null;
 
+    private static ?PDO $supportsClaimsPdo = null;
+
+    private static ?string $supportsClaimsDatabase = null;
+
     /**
      * The predicates that make a release pending for *either* path: waiting on a
      * password verdict, owed a preview, and holding a usable NZB.
@@ -61,7 +66,7 @@ final class ReleaseClaimant
         int $maxSizeBytes = 0,
     ): Builder {
         $query
-            ->where('r.passwordstatus', PasswordInspectionMode::pendingReleaseStatus())
+            ->whereIn('r.passwordstatus', [-1, 0])
             ->where('r.haspreview', -1)
             ->where('r.nzbstatus', 1);
 
@@ -277,6 +282,19 @@ final class ReleaseClaimant
     }
 
     /**
+     * Values shared by every writer that returns a release to pending.
+     *
+     * @return array<string, int|null>
+     */
+    public static function rependValues(): array
+    {
+        return array_merge([
+            'passwordstatus' => PasswordInspectionMode::pendingReleaseStatus(),
+            'haspreview' => -1,
+        ], self::claimResetValues(), ['pp_timeout_count' => 0]);
+    }
+
+    /**
      * Values shared by both paths when processing reaches a terminal state.
      *
      * @return array<string, int|null>
@@ -288,9 +306,16 @@ final class ReleaseClaimant
 
     public static function supportsClaims(): bool
     {
-        if (self::$supportsClaims !== null) {
+        $connection = DB::connection();
+        $pdo = $connection->getPdo();
+        $database = $connection->getName().':'.$connection->getDatabaseName();
+
+        if (self::$supportsClaims !== null && self::$supportsClaimsPdo === $pdo && self::$supportsClaimsDatabase === $database) {
             return self::$supportsClaims;
         }
+
+        self::$supportsClaimsPdo = $pdo;
+        self::$supportsClaimsDatabase = $database;
 
         if (! Schema::hasTable('releases')) {
             return self::$supportsClaims = false;

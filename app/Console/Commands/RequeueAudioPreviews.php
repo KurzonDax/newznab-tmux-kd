@@ -40,7 +40,7 @@ use Illuminate\Support\Facades\File;
 #[Description('Re-queue existing audio releases through the audio post-processing path')]
 class RequeueAudioPreviews extends Command
 {
-    private const string STATE_STRANDED = 'stranded repaired';
+    private const string STATE_PENDING_NORMALIZED = 'pending normalized';
 
     private const string STATE_FROM_ZERO = 're-queued from 0';
 
@@ -66,7 +66,7 @@ class RequeueAudioPreviews extends Command
 
         /** @var array<string, int> $counts */
         $counts = [
-            self::STATE_STRANDED => 0,
+            self::STATE_PENDING_NORMALIZED => 0,
             self::STATE_FROM_ZERO => 0,
             self::STATE_FROM_SKIPPED => 0,
             self::STATE_DECLINED => 0,
@@ -83,11 +83,11 @@ class RequeueAudioPreviews extends Command
             $batch[(int) $release->id] = (string) $release->guid;
 
             if (count($batch) >= 500) {
-                $this->requeue($batch, $pendingPasswordStatus, $apply);
+                $this->requeue($batch, $apply);
                 $batch = [];
             }
         }
-        $this->requeue($batch, $pendingPasswordStatus, $apply);
+        $this->requeue($batch, $apply);
 
         $pruned = $this->option('prune-empty') ? $this->pruneEmptyPreviews($apply) : 0;
 
@@ -107,7 +107,8 @@ class RequeueAudioPreviews extends Command
     /**
      * Audio-routed releases with a usable NZB that either finished without a
      * preview (0), were skipped by the per-root policy (-2), or are pending
-     * with the wrong password sentinel (-1, stranded).
+     * rows selected for compatibility normalization. Both password sentinels
+     * are claimable; the mismatch arm only preserves this tool's historic set.
      *
      * Without --include-declined the selection is exactly what the audio worker
      * would claim ({@see AudioRouting::applyAudioPath()}). With it, the routing
@@ -133,8 +134,8 @@ class RequeueAudioPreviews extends Command
             ->where(static function (Builder $stateQuery) use ($pendingPasswordStatus, $mismatchedSentinel, $maximumTimeoutCount, $tokenColumn, $includeDeclined): void {
                 $stateQuery
                     ->whereIn('r.haspreview', [0, PreviewGenerationPolicy::HASPREVIEW_SKIPPED_BY_POLICY])
-                    ->orWhere(static function (Builder $stranded) use ($mismatchedSentinel): void {
-                        $stranded->where('r.haspreview', -1)->where('r.passwordstatus', $mismatchedSentinel);
+                    ->orWhere(static function (Builder $compatibilityRows) use ($mismatchedSentinel): void {
+                        $compatibilityRows->where('r.haspreview', -1)->where('r.passwordstatus', $mismatchedSentinel);
                     })
                     ->orWhere(static function (Builder $counterStrand) use ($pendingPasswordStatus, $maximumTimeoutCount): void {
                         $counterStrand
@@ -179,7 +180,7 @@ class RequeueAudioPreviews extends Command
 
         return match ((int) $release->haspreview) {
             PreviewGenerationPolicy::HASPREVIEW_SKIPPED_BY_POLICY => self::STATE_FROM_SKIPPED,
-            -1 => self::STATE_STRANDED,
+            -1 => self::STATE_PENDING_NORMALIZED,
             default => self::STATE_FROM_ZERO,
         };
     }
@@ -192,7 +193,7 @@ class RequeueAudioPreviews extends Command
      *
      * @param  array<int, string>  $batch  release id => guid
      */
-    private function requeue(array $batch, int $pendingPasswordStatus, bool $apply): void
+    private function requeue(array $batch, bool $apply): void
     {
         if (! $apply || $batch === []) {
             return;
@@ -201,17 +202,7 @@ class RequeueAudioPreviews extends Command
         $ids = array_keys($batch);
         ReleaseAudioTag::clearPreviews($ids);
 
-        $pending = [
-            'haspreview' => -1,
-            'passwordstatus' => $pendingPasswordStatus,
-            'pp_timeout_count' => 0,
-        ];
-        if (ReleaseClaimant::supportsClaims()) {
-            $pending[ReleaseClaimant::CLAIMED_AT_COLUMN] = null;
-            $pending[ReleaseClaimant::CLAIM_TOKEN_COLUMN] = null;
-        }
-
-        Release::query()->whereIn('id', $ids)->update($pending);
+        Release::query()->whereIn('id', $ids)->update(ReleaseClaimant::rependValues());
 
         foreach ($batch as $guid) {
             $this->releaseImageService->delete($guid);
@@ -257,7 +248,7 @@ class RequeueAudioPreviews extends Command
             $rows[] = [
                 $groupId,
                 (string) ($names[$groupId] ?? '?'),
-                $states[self::STATE_STRANDED] ?? 0,
+                $states[self::STATE_PENDING_NORMALIZED] ?? 0,
                 $states[self::STATE_FROM_ZERO] ?? 0,
                 $states[self::STATE_FROM_SKIPPED] ?? 0,
                 $states[self::STATE_DECLINED] ?? 0,

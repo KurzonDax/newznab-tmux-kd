@@ -6,7 +6,7 @@ namespace App\Console\Commands;
 
 use App\Models\Release;
 use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
-use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
+use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\AdditionalProcessing\UnknownPayloadCandidateSelector;
 use App\Services\Nzb\NzbParserService;
 use App\Services\Nzb\NzbService;
@@ -55,11 +55,7 @@ class RequeueUnknownPayloads extends Command
 
             $eligible++;
             if ($apply) {
-                $updated += Release::query()->whereKey($release->id)->update([
-                    'haspreview' => -1,
-                    'passwordstatus' => PasswordInspectionMode::pendingReleaseStatus(),
-                    'pp_timeout_count' => 0,
-                ]);
+                $updated += Release::query()->whereKey($release->id)->update(ReleaseClaimant::rependValues());
             }
 
             if ($limit > 0 && $eligible >= $limit) {

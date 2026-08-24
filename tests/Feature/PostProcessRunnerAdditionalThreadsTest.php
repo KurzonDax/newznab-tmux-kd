@@ -262,8 +262,14 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
 
     public function test_targeted_additional_reset_clears_the_attempt_counter(): void
     {
+        config(['nntmux_settings.check_passworded_rars' => false]);
         DB::table('categories')->insert(['id' => 1]);
-        DB::table('releases')->insert([...$this->releaseRow(1, 'a'), 'pp_timeout_count' => 2]);
+        DB::table('releases')->insert([
+            ...$this->releaseRow(1, 'a'),
+            'pp_timeout_count' => 2,
+            'additional_pp_claimed_at' => now(),
+            'additional_pp_claim_token' => 'worker-token',
+        ]);
         Search::shouldReceive('updateRelease')->once()->with(1);
 
         $this->mock(AdditionalProcessingOrchestrator::class, function (MockInterface $mock): void {
@@ -277,7 +283,12 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
         $status = Artisan::call('releases:additional', ['--id' => 1, '--reset' => true]);
 
         $this->assertSame(0, $status);
-        $this->assertSame(0, (int) DB::table('releases')->where('id', 1)->value('pp_timeout_count'));
+        $release = DB::table('releases')->where('id', 1)->first();
+        $this->assertSame(-1, (int) $release->haspreview);
+        $this->assertSame(0, (int) $release->passwordstatus);
+        $this->assertSame(0, (int) $release->pp_timeout_count);
+        $this->assertNull($release->additional_pp_claimed_at);
+        $this->assertNull($release->additional_pp_claim_token);
     }
 
     public function test_targeted_additional_command_fails_for_an_unsuccessful_typed_outcome(): void

@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Facades\Search;
 use App\Models\Category;
 use App\Models\Release;
+use App\Services\AdditionalProcessing\ReleaseClaimant;
 use Illuminate\Console\Command;
 
 class NntmuxResetPostProcessing extends Command
@@ -73,7 +74,7 @@ class NntmuxResetPostProcessing extends Command
                 $this->info('Resetting all postprocessing');
                 foreach ($qry as $releases) {
                     Release::query()->where('id', $releases->id)->update(
-                        [
+                        array_merge([
                             'consoleinfo_id' => null,
                             'gamesinfo_id' => null,
                             'imdbid' => null,
@@ -82,13 +83,10 @@ class NntmuxResetPostProcessing extends Command
                             'bookinfo_id' => null,
                             'videos_id' => 0,
                             'tv_episodes_id' => 0,
-                            'passwordstatus' => -1,
-                            'haspreview' => -1,
                             'jpgstatus' => 0,
                             'videostatus' => 0,
                             'nfostatus' => -1,
-                            'pp_timeout_count' => 0,
-                        ]
+                        ], ReleaseClaimant::rependValues())
                     );
                     Search::updateRelease((int) $releases->id);
                     $bar->advance();
@@ -361,14 +359,11 @@ class NntmuxResetPostProcessing extends Command
             $bar->start();
             foreach ($qry as $releases) {
                 Release::query()->where('id', $releases->id)->update(
-                    [
-                        'passwordstatus' => -1,
-                        'haspreview' => -1,
+                    array_merge([
                         'jpgstatus' => 0,
                         'videostatus' => 0,
                         'nfostatus' => -1,
-                        'pp_timeout_count' => 0,
-                    ]);
+                    ], ReleaseClaimant::rependValues()));
                 Search::updateRelease((int) $releases->id);
                 $bar->advance();
             }

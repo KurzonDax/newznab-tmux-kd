@@ -128,11 +128,64 @@ class AudioCandidateQueryTest extends TestCase
         $this->assertSame([1, 2, 3, 4, 5], $covered, 'Every pending release must be claimable by one path.');
     }
 
-    public function test_changing_password_inspection_mode_strands_rows_created_with_the_old_pending_sentinel(): void
+    public function test_rows_created_with_either_pending_password_sentinel_remain_claimable_after_mode_changes(): void
     {
-        $this->seedRelease(1, Category::MUSIC_MP3, groupId: 1);
+        $this->seedRelease(1, Category::MUSIC_MP3, groupId: 1, passwordStatus: 0);
+        $this->seedRelease(2, Category::MOVIE_HD, groupId: 3, passwordStatus: 0);
 
         config(['nntmux_settings.check_passworded_rars' => true]);
+
+        $this->assertSame([1], $this->audioIds());
+        $this->assertSame([2], $this->videoIds());
+
+        $this->seedRelease(3, Category::MUSIC_MP3, groupId: 1, passwordStatus: -1);
+        $this->seedRelease(4, Category::MOVIE_HD, groupId: 3, passwordStatus: -1);
+
+        config(['nntmux_settings.check_passworded_rars' => false]);
+
+        $this->assertSame([1, 3], $this->audioIds());
+        $this->assertSame([2, 4], $this->videoIds());
+    }
+
+    public function test_repend_values_are_mode_aware_and_reset_the_complete_pending_state(): void
+    {
+        config([
+            'nntmux_settings.check_passworded_rars' => true,
+            'nntmux_settings.unrar_path' => '/usr/bin/unrar',
+        ]);
+
+        $this->assertSame([
+            'passwordstatus' => -1,
+            'haspreview' => -1,
+            'additional_pp_claimed_at' => null,
+            'additional_pp_claim_token' => null,
+            'pp_timeout_count' => 0,
+        ], ReleaseClaimant::rependValues());
+
+        config(['nntmux_settings.check_passworded_rars' => false]);
+
+        $this->assertSame(0, ReleaseClaimant::rependValues()['passwordstatus']);
+    }
+
+    public function test_repend_values_refresh_claim_support_after_the_database_reconnects(): void
+    {
+        $this->assertArrayHasKey('additional_pp_claimed_at', ReleaseClaimant::rependValues());
+
+        DB::purge();
+        DB::reconnect();
+
+        Schema::create('releases', function (Blueprint $table): void {
+            $table->unsignedInteger('id')->primary();
+        });
+
+        $this->assertArrayNotHasKey('additional_pp_claimed_at', ReleaseClaimant::rependValues());
+        $this->assertArrayNotHasKey('additional_pp_claim_token', ReleaseClaimant::rependValues());
+    }
+
+    public function test_passworded_verdicts_are_excluded_from_both_candidate_paths(): void
+    {
+        $this->seedRelease(1, Category::MUSIC_MP3, groupId: 1, passwordStatus: 1);
+        $this->seedRelease(2, Category::MOVIE_HD, groupId: 3, passwordStatus: 2);
 
         $this->assertSame([], $this->audioIds());
         $this->assertSame([], $this->videoIds());
@@ -216,20 +269,23 @@ class AudioCandidateQueryTest extends TestCase
     {
         $id = 1;
 
-        foreach ([false, true] as $declined) {
-            foreach ([false, true] as $belowMinimum) {
-                foreach ([false, true] as $atCounterCap) {
-                    foreach ([false, true] as $pending) {
-                        $this->seedRelease(
-                            $id,
-                            Category::MUSIC_MP3,
-                            groupId: 1,
-                            size: $belowMinimum ? 5 * 1024 * 1024 : 1024 * 1024 * 1024,
-                            ppTimeoutCount: $atCounterCap ? 3 : 0,
-                            hasPreview: $pending ? -1 : 0,
-                            claimToken: $declined ? AudioRouting::DECLINED_TOKEN : null,
-                        );
-                        $id++;
+        foreach ([-1, 0] as $passwordStatus) {
+            foreach ([false, true] as $declined) {
+                foreach ([false, true] as $belowMinimum) {
+                    foreach ([false, true] as $atCounterCap) {
+                        foreach ([false, true] as $pending) {
+                            $this->seedRelease(
+                                $id,
+                                Category::MUSIC_MP3,
+                                groupId: 1,
+                                size: $belowMinimum ? 5 * 1024 * 1024 : 1024 * 1024 * 1024,
+                                ppTimeoutCount: $atCounterCap ? 3 : 0,
+                                hasPreview: $pending ? -1 : 0,
+                                claimToken: $declined ? AudioRouting::DECLINED_TOKEN : null,
+                                passwordStatus: $passwordStatus,
+                            );
+                            $id++;
+                        }
                     }
                 }
             }
@@ -272,12 +328,13 @@ class AudioCandidateQueryTest extends TestCase
         int $ppTimeoutCount = 0,
         int $hasPreview = -1,
         ?string $claimToken = null,
+        int $passwordStatus = 0,
     ): void {
         DB::table('releases')->insert([
             'id' => $id,
             'guid' => 'guid-'.$id,
             'leftguid' => 'a',
-            'passwordstatus' => 0,
+            'passwordstatus' => $passwordStatus,
             'haspreview' => $hasPreview,
             'nzbstatus' => 1,
             'categories_id' => $categoryId,

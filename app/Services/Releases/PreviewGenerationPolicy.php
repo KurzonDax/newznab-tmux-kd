@@ -7,7 +7,7 @@ namespace App\Services\Releases;
 use App\Models\Category;
 use App\Models\Release;
 use App\Models\RootCategory;
-use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
+use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Support\ReleaseSearchIndexSync;
 
 /**
@@ -121,11 +121,7 @@ class PreviewGenerationPolicy
 
         Release::query()
             ->whereIn('id', $owedIds)
-            ->update([
-                'haspreview' => -1,
-                'passwordstatus' => PasswordInspectionMode::pendingReleaseStatus(),
-                'pp_timeout_count' => 0,
-            ]);
+            ->update(ReleaseClaimant::rependValues());
 
         if ($synchronize) {
             ReleaseSearchIndexSync::forIds($owedIds);

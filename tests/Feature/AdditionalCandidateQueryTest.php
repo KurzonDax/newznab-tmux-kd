@@ -136,7 +136,7 @@ class AdditionalCandidateQueryTest extends TestCase
         $this->assertSame([1], $third->pluck('id')->all());
     }
 
-    public function test_password_inspection_enabled_selects_pending_releases(): void
+    public function test_password_inspection_enabled_selects_both_pending_sentinels(): void
     {
         config([
             'nntmux_settings.check_passworded_rars' => true,
@@ -149,10 +149,10 @@ class AdditionalCandidateQueryTest extends TestCase
             $this->releaseRow(2, 'b', passwordStatus: 0),
         ]);
 
-        $this->assertSame([1], AdditionalCandidateQuery::baseBuilder()->pluck('r.id')->all());
+        $this->assertSame([1, 2], AdditionalCandidateQuery::baseBuilder()->pluck('r.id')->all());
     }
 
-    public function test_password_inspection_disabled_selects_unprocessed_no_password_releases(): void
+    public function test_password_inspection_disabled_selects_both_pending_sentinels(): void
     {
         config([
             'nntmux_settings.check_passworded_rars' => false,
@@ -166,9 +166,10 @@ class AdditionalCandidateQueryTest extends TestCase
             $this->releaseRow(3, 'c', passwordStatus: 0, hasPreview: 0),
         ]);
 
-        $this->assertSame([1], AdditionalCandidateQuery::baseBuilder()->pluck('r.id')->all());
+        $this->assertSame([1, 2], AdditionalCandidateQuery::baseBuilder()->pluck('r.id')->all());
         $this->assertSame([
             ['bucket' => 'a', 'total' => 1, 'available' => 1],
+            ['bucket' => 'b', 'total' => 1, 'available' => 1],
         ], AdditionalCandidateQuery::bucketBacklog());
         $this->assertSame([1], AdditionalCandidateQuery::claimBatch('a', 25, 'worker', columns: ['id'])->pluck('id')->all());
     }
