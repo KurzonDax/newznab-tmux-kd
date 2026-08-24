@@ -478,6 +478,17 @@ class NzbService
     }
 
     /**
+     * Determine whether the preferred NZB storage root can be read.
+     *
+     * Existing files may still resolve from alternate candidate paths, but a
+     * readable fallback must not mask an outage of the configured write root.
+     */
+    public function hasReadableNzbStorage(): bool
+    {
+        return is_dir($this->siteNzbPath) && is_readable($this->siteNzbPath);
+    }
+
+    /**
      * Read and decompress an NZB file contents.
      *
      * @param  string  $releaseGuid  The release GUID

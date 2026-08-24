@@ -40,7 +40,8 @@ class AdditionalProcessingOrchestrator
         private readonly ProcessingConfiguration $config,
         private readonly ReleaseProcessor $processor,
         private readonly TempWorkspaceService $tempWorkspace,
-        private readonly ConsoleOutputService $output
+        private readonly ConsoleOutputService $output,
+        private readonly ReleaseFileManager $releaseManager,
     ) {}
 
     /**
@@ -220,32 +221,65 @@ class AdditionalProcessingOrchestrator
             ->values()
             ->all();
         $results = [];
+        $abortBatch = false;
 
-        foreach ($this->releases as $release) {
-            $releaseStartedAt = hrtime(true);
+        try {
+            foreach ($this->releases as $release) {
+                $releaseStartedAt = hrtime(true);
 
-            try {
-                $results[] = $this->processor->process(new ReleaseProcessingContext($release), $this->mainTmpPath);
-            } catch (\Throwable $e) {
-                $results[] = new ReleaseProcessingResult(
-                    releaseId: (int) ($release->id ?? 0),
-                    guid: (string) ($release->guid ?? ''),
-                    outcome: ProcessingOutcome::Failed,
-                    reason: $e->getMessage(),
-                    elapsedSeconds: $this->elapsedSecondsSince($releaseStartedAt),
-                );
-                Log::error('Additional postprocessing failed for release '.($release->id ?? '?').': '.$e->getMessage(), [
-                    'release_id' => $release->id ?? null,
-                    'guid' => $release->guid ?? null,
-                    'guid_char' => $guidChar,
-                    'exception' => $e,
-                ]);
-                // Don't rethrow: keep draining the bucket. The release will be
-                // re-selected on the next cycle, and the pp_timeout_count /
-                // maxpptimeoutcount machinery will eventually drop it.
-            } finally {
-                if ($this->claimToken !== '' && ! empty($release->id)) {
-                    AdditionalCandidateQuery::clearClaim((int) $release->id, $this->claimToken);
+                try {
+                    $result = $this->processor->process(new ReleaseProcessingContext($release), $this->mainTmpPath);
+                    $results[] = $result;
+
+                    if ($result->outcome->isEnvironmentalFailure()) {
+                        $abortBatch = true;
+                        Log::critical('Additional postprocessing aborted because an environmental dependency is unavailable', [
+                            'release_id' => $release->id ?? null,
+                            'guid' => $release->guid ?? null,
+                            'guid_char' => $guidChar,
+                            'outcome' => $result->outcome->value,
+                            'reason' => $result->reason,
+                        ]);
+                    }
+                } catch (\Throwable $e) {
+                    $settledAtCap = $this->releaseManager->handleReleaseException(
+                        $release,
+                        $this->config->maxPpTimeoutCount,
+                        $this->claimToken,
+                    );
+                    $results[] = new ReleaseProcessingResult(
+                        releaseId: (int) ($release->id ?? 0),
+                        guid: (string) ($release->guid ?? ''),
+                        outcome: ProcessingOutcome::Failed,
+                        reason: $e->getMessage(),
+                        elapsedSeconds: $this->elapsedSecondsSince($releaseStartedAt),
+                    );
+                    Log::error('Additional postprocessing failed for release '.($release->id ?? '?').': '.$e->getMessage(), [
+                        'release_id' => $release->id ?? null,
+                        'guid' => $release->guid ?? null,
+                        'guid_char' => $guidChar,
+                        'settled_at_cap' => $settledAtCap,
+                        'exception' => $e,
+                    ]);
+                    // Keep draining the bucket. This exception path has now counted
+                    // the failure, leaving it pending below the cap and settling it
+                    // without deletion once the cap is reached.
+                } finally {
+                    if ($this->claimToken !== '' && ! empty($release->id)) {
+                        AdditionalCandidateQuery::clearClaim((int) $release->id, $this->claimToken);
+                    }
+                }
+
+                if ($abortBatch) {
+                    break;
+                }
+            }
+        } finally {
+            if ($this->claimToken !== '') {
+                foreach ($this->releases as $release) {
+                    if (! empty($release->id)) {
+                        AdditionalCandidateQuery::clearClaim((int) $release->id, $this->claimToken);
+                    }
                 }
             }
         }

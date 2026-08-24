@@ -8,6 +8,7 @@ use App\Services\AdditionalProcessing\ArchiveExtractionService;
 use App\Services\AdditionalProcessing\ConsoleOutputService;
 use App\Services\AdditionalProcessing\DTO\DownloadMetrics;
 use App\Services\AdditionalProcessing\Enums\DownloadKind;
+use App\Services\AdditionalProcessing\Enums\NzbParseFailure;
 use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
 use App\Services\AdditionalProcessing\Enums\ProcessingStage;
 use App\Services\AdditionalProcessing\MediaExtractionService;
@@ -54,11 +55,15 @@ class ReleaseProcessorTest extends TestCase
     }
 
     #[Test]
-    public function it_deletes_release_when_nzb_parsing_fails(): void
+    public function it_deletes_release_when_nzb_is_missing_from_healthy_storage(): void
     {
         $processor = $this->makeProcessor(
             nzbParser: Mockery::mock(NzbContentParser::class)
-                ->shouldReceive('parseNzb')->once()->with('guid-1')->andReturn(['error' => 'broken nzb', 'contents' => []])->getMock(),
+                ->shouldReceive('parseNzb')->once()->with('guid-1')->andReturn([
+                    'error' => 'NZB not found',
+                    'contents' => [],
+                    'failure' => NzbParseFailure::Missing,
+                ])->getMock(),
             releaseManager: Mockery::mock(ReleaseFileManager::class)
                 ->shouldReceive('deleteRelease')->once()->andReturnNull()->getMock(),
             tempWorkspace: Mockery::mock(TempWorkspaceService::class)
@@ -67,7 +72,7 @@ class ReleaseProcessorTest extends TestCase
             output: Mockery::mock(ConsoleOutputService::class)
                 ->shouldReceive('echoReleaseStart')->once()->andReturnNull()
                 ->shouldReceive('setProcessTitle')->once()->andReturnNull()
-                ->shouldReceive('warning')->once()->with('broken nzb')->andReturnNull()->getMock()
+                ->shouldReceive('warning')->once()->with('NZB not found')->andReturnNull()->getMock()
         );
 
         $result = $processor->process($this->makeContext(), $this->mainTempPath);
@@ -75,11 +80,39 @@ class ReleaseProcessorTest extends TestCase
         $this->assertSame(ProcessingOutcome::DeletedBrokenNzb, $result->outcome);
         $this->assertTrue($result->outcome->isDeleted());
         $this->assertFalse($result->isSuccessful());
-        $this->assertSame('broken nzb', $result->reason);
+        $this->assertSame('NZB not found', $result->reason);
         $this->assertGreaterThan(0.0, $result->elapsedSeconds);
         $this->assertArrayHasKey(ProcessingStage::WorkspacePreparation->value, $result->stageDurations);
         $this->assertArrayHasKey(ProcessingStage::NzbParsing->value, $result->stageDurations);
         $this->assertArrayHasKey(ProcessingStage::WorkspaceCleanup->value, $result->stageDurations);
+    }
+
+    #[Test]
+    public function it_preserves_the_release_when_nzb_storage_is_unavailable(): void
+    {
+        $processor = $this->makeProcessor(
+            nzbParser: Mockery::mock(NzbContentParser::class)
+                ->shouldReceive('parseNzb')->once()->with('guid-1')->andReturn([
+                    'error' => 'NZB storage is unavailable',
+                    'contents' => [],
+                    'failure' => NzbParseFailure::StorageUnavailable,
+                ])->getMock(),
+            releaseManager: Mockery::mock(ReleaseFileManager::class)
+                ->shouldNotReceive('deleteRelease')->getMock(),
+            tempWorkspace: Mockery::mock(TempWorkspaceService::class)
+                ->shouldReceive('createReleaseTempFolder')->once()->andReturn($this->releaseTempPath)
+                ->shouldReceive('clearDirectory')->once()->with($this->releaseTempPath, false)->andReturnNull()->getMock(),
+            output: Mockery::mock(ConsoleOutputService::class)
+                ->shouldReceive('echoReleaseStart')->once()->andReturnNull()
+                ->shouldReceive('setProcessTitle')->once()->andReturnNull()
+                ->shouldReceive('warning')->once()->with('NZB storage is unavailable')->andReturnNull()->getMock(),
+        );
+
+        $result = $processor->process($this->makeContext(), $this->mainTempPath);
+
+        $this->assertSame(ProcessingOutcome::StorageUnavailable, $result->outcome);
+        $this->assertFalse($result->outcome->isDeleted());
+        $this->assertFalse($result->isSuccessful());
     }
 
     #[Test]
