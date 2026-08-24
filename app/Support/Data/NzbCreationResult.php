@@ -12,6 +12,8 @@ final readonly class NzbCreationResult
 
     public const string FAILURE_TRANSIENT = 'transient';
 
+    public const string FAILURE_CLAIM_LOST = 'claim-lost';
+
     /**
      * @param  list<int>  $collectionIds
      */
@@ -47,6 +49,14 @@ final readonly class NzbCreationResult
         return new self(false, self::FAILURE_TRANSIENT, $reason, $path, $collectionIds);
     }
 
+    /**
+     * @param  list<int>  $collectionIds
+     */
+    public static function claimLost(array $collectionIds = [], ?string $path = null): self
+    {
+        return new self(false, self::FAILURE_CLAIM_LOST, 'The NZB creation claim is no longer owned by this worker.', $path, $collectionIds);
+    }
+
     public function isDeterministicFailure(): bool
     {
         return $this->failureType === self::FAILURE_DETERMINISTIC;
@@ -55,5 +65,10 @@ final readonly class NzbCreationResult
     public function isTransientFailure(): bool
     {
         return $this->failureType === self::FAILURE_TRANSIENT;
+    }
+
+    public function isClaimLost(): bool
+    {
+        return $this->failureType === self::FAILURE_CLAIM_LOST;
     }
 }

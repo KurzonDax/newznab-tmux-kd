@@ -148,6 +148,23 @@ class ReleaseRepairServiceTest extends TestCase
     }
 
     #[Test]
+    public function a_complete_nzb_reconciles_stale_completion_instead_of_advancing_toward_deletion(): void
+    {
+        $release = $this->releaseWithNzb(
+            1,
+            completion: 91.67,
+            segments: [1 => 1, 2 => 2, 3 => 3, 4 => 4, 5 => 5],
+        );
+
+        $result = $this->service()->repair($release, new ReleaseRepairOptions(targetCompletion: 95.0));
+
+        $this->assertSame(ReleaseRepairOutcome::Repaired, $result->outcome);
+        $this->assertSame(100.0, $result->completionAfter);
+        $this->assertSame('repaired', $this->storedOutcome(1));
+        $this->assertSame(100.0, (float) DB::table('releases')->where('id', 1)->value('completion'));
+    }
+
+    #[Test]
     public function a_release_below_the_floor_is_skipped_without_touching_the_network(): void
     {
         $release = $this->releaseWithNzb(1, completion: 4.0, segments: [1 => 1]);

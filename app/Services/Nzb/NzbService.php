@@ -10,6 +10,7 @@ use App\Models\ReleaseNzbCreationFailure;
 use App\Models\Settings;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\CollectionCleanupService;
+use App\Services\Releases\CollectionCompletionMeasurer;
 use App\Support\Data\NzbCreationResult;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -64,6 +65,7 @@ class NzbService
     public function __construct(
         private readonly CollectionCleanupService $collectionCleanupService,
         ?BinariesConfig $binariesConfig = null,
+        private readonly CollectionCompletionMeasurer $completionMeasurer = new CollectionCompletionMeasurer,
     ) {
         $this->binariesConfig = $binariesConfig ?? BinariesConfig::fromSettings();
         try {
@@ -254,17 +256,30 @@ class NzbService
                 return NzbCreationResult::transient("Failed to close temporary NZB file: {$tempPath}", $collectionIds, $path);
             }
 
-            if (! $this->finalizeNzbFile($tempPath, $path)) {
-                return NzbCreationResult::transient("Failed to move temporary NZB into place: {$tempPath} -> {$path}", $collectionIds, $path);
-            }
-            $tempPath = null;
+            $completionSignals = $this->completionMeasurer->measure(
+                $collections->mapWithKeys(static fn (Collection $collection): array => [
+                    (int) $collection->id => (int) $collection->declaredfiles,
+                ])->all(),
+            );
+            $completion = ($completionSignals[(int) $collections->keys()->first()] ?? null)?->percentage() ?? 0.0;
 
-            if (! File::isFile($path) || ! is_readable($path)) {
-                return NzbCreationResult::transient("Final NZB file is missing or unreadable: {$path}", $collectionIds, $path);
-            }
+            $finalized = DB::transaction(function () use ($release, $completion, $tempPath, $path): bool {
+                $affected = NzbCreationCandidateQuery::ownedPendingBuilder(
+                    (int) $release->id,
+                    $release->getAttribute(NzbCreationCandidateQuery::CLAIM_TOKEN_COLUMN),
+                )->update($this->successfulReleaseUpdateValues($completion));
 
-            DB::transaction(function () use ($release): void {
-                $release->update($this->successfulReleaseUpdateValues());
+                if ($affected !== 1) {
+                    return false;
+                }
+
+                if (! $this->finalizeNzbFile($tempPath, $path)) {
+                    throw new \RuntimeException("Failed to move temporary NZB into place: {$tempPath} -> {$path}");
+                }
+
+                if (! File::isFile($path) || ! is_readable($path)) {
+                    throw new \RuntimeException("Final NZB file is missing or unreadable: {$path}");
+                }
 
                 if (NzbCreationCandidateQuery::supportsFailureState()) {
                     ReleaseNzbCreationFailure::query()
@@ -272,7 +287,15 @@ class NzbService
                         ->delete();
                     $release->unsetRelation('nzbCreationFailure');
                 }
+
+                return true;
             });
+
+            if (! $finalized) {
+                return NzbCreationResult::claimLost($collectionIds, $path);
+            }
+
+            $tempPath = null;
         } catch (Throwable $e) {
             return NzbCreationResult::transient('Failed to write NZB file: '.$e->getMessage(), $collectionIds, $path);
         } finally {
@@ -799,12 +822,15 @@ class NzbService
     /**
      * @return array<string, mixed>
      */
-    private function successfulReleaseUpdateValues(): array
+    private function successfulReleaseUpdateValues(float $completion): array
     {
-        // `completion` is deliberately absent: it was measured from the CBP rows at release
-        // creation time (see CollectionCompletionMeasurer), and re-deriving it from what this
-        // writer happens to stream would overwrite that with a lossier number.
-        $values = ['nzbstatus' => self::NZB_ADDED];
+        // Reconcile creation-time completion against the same authoritative CBP arithmetic after
+        // streaming. Late headers are valuable, and the value stored beside the final NZB must
+        // describe the CBP that produced it rather than the older release-creation snapshot.
+        $values = [
+            'nzbstatus' => self::NZB_ADDED,
+            'completion' => $completion,
+        ];
 
         if (NzbCreationCandidateQuery::supportsClaims()) {
             $values += [
