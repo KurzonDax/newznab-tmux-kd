@@ -15,6 +15,8 @@ use App\Services\ReleaseProcessingService;
 use App\Services\Releases\IncompleteReleaseSweepQuery;
 use App\Services\Releases\ReleaseManagementService;
 use App\Support\Data\NzbCreationResult;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Psr\Log\AbstractLogger;
@@ -53,6 +55,7 @@ class NzbCreationReliabilityTest extends TestCase
 
     protected function tearDown(): void
     {
+        Carbon::setTestNow();
         NzbCreationCandidateQuery::flushCapabilityCache();
         $this->deleteDirectory($this->tempNzbPath);
         $this->tearDownIsolatedDatabase();
@@ -72,6 +75,41 @@ class NzbCreationReliabilityTest extends TestCase
         $this->assertSame('claimed', DB::table('releases')->where('id', 1)->value('nzb_creation_claim_token'));
     }
 
+    public function test_each_release_lease_is_refreshed_immediately_before_processing(): void
+    {
+        Carbon::setTestNow('2026-07-13 12:00:00');
+        $this->insertRelease(1, 'a', postdate: '2026-07-13 10:00:00');
+        $this->insertRelease(2, 'b', postdate: '2026-07-13 09:00:00');
+        $nzb = new LeaseObservingNzbService;
+        $service = (new ReleaseProcessingService(
+            nzb: $nzb,
+            releaseManagement: new DatabaseOnlyReleaseManagementService,
+            collectionCleanupService: app(CollectionCleanupService::class),
+        ))->setEchoCLI(false);
+
+        $this->assertSame(2, $service->createNZBs(null));
+
+        $this->assertSame([
+            '2026-07-13 12:00:00',
+            '2026-07-13 12:02:00',
+        ], $nzb->observedClaimTimes);
+    }
+
+    public function test_lease_refresh_cannot_extend_a_reclaimed_token(): void
+    {
+        Carbon::setTestNow('2026-07-13 12:00:00');
+        $this->insertRelease(1, 'a', claimedAt: now());
+        DB::table('releases')->where('id', 1)->update([
+            'nzb_creation_claimed_at' => '2026-07-13 12:01:00',
+            'nzb_creation_claim_token' => 'worker-two',
+        ]);
+        Carbon::setTestNow('2026-07-13 12:02:00');
+
+        $this->assertFalse(NzbCreationCandidateQuery::refreshClaim(1, 'worker-one'));
+        $this->assertSame('2026-07-13 12:01:00', DB::table('releases')->where('id', 1)->value('nzb_creation_claimed_at'));
+        $this->assertSame('worker-two', DB::table('releases')->where('id', 1)->value('nzb_creation_claim_token'));
+    }
+
     public function test_deterministic_creation_failure_deletes_release_and_cbp_rows(): void
     {
         $this->insertRelease(1, 'a');
@@ -86,6 +124,27 @@ class NzbCreationReliabilityTest extends TestCase
         $this->assertSame(0, DB::table('collections')->count());
         $this->assertSame(0, DB::table('binaries')->count());
         $this->assertSame(0, DB::table('parts')->count());
+    }
+
+    public function test_deterministic_failure_after_another_worker_succeeds_deletes_nothing(): void
+    {
+        $this->insertRelease(1, 'p');
+        $this->insertWritableCbp(200, 2000, 1);
+        $nzb = new WinningDuringFailureNzbService;
+        $service = (new ReleaseProcessingService(
+            nzb: $nzb,
+            releaseManagement: new DatabaseOnlyReleaseManagementService,
+            collectionCleanupService: app(CollectionCleanupService::class),
+        ))->setEchoCLI(false);
+
+        $this->assertSame(0, $service->createNZBs(null));
+
+        $this->assertSame(1, (int) DB::table('releases')->where('id', 1)->value('nzbstatus'));
+        $this->assertSame(1, DB::table('releases')->count());
+        $this->assertSame(1, DB::table('collections')->count());
+        $this->assertSame(1, DB::table('binaries')->count());
+        $this->assertSame(1, DB::table('parts')->count());
+        $this->assertSame('winner-final', unzipGzipFile($nzb->winnerPath));
     }
 
     public function test_transient_creation_failure_records_retry_before_threshold(): void
@@ -120,6 +179,23 @@ class NzbCreationReliabilityTest extends TestCase
         $this->assertSame('Temporary filesystem failure.', $nzbCreationLogger->warnings[0]['context']['reason']);
         $this->assertSame(1, $nzbCreationLogger->warnings[0]['context']['next_attempt']);
         $this->assertSame(3, $nzbCreationLogger->warnings[0]['context']['max_attempts']);
+    }
+
+    public function test_transient_failure_after_reclaim_does_not_write_failure_state(): void
+    {
+        $this->insertRelease(1, 'q');
+        $this->insertCbp(200, 2000, 1);
+        $service = (new ReleaseProcessingService(
+            nzb: new ReclaimedDuringTransientFailureNzbService,
+            releaseManagement: new DatabaseOnlyReleaseManagementService,
+            collectionCleanupService: app(CollectionCleanupService::class),
+        ))->setEchoCLI(false);
+
+        $this->assertSame(0, $service->createNZBs(null));
+
+        $this->assertSame(0, DB::table('release_nzb_creation_failures')->count());
+        $this->assertSame('worker-two', DB::table('releases')->where('id', 1)->value('nzb_creation_claim_token'));
+        $this->assertSame(1, DB::table('collections')->count());
     }
 
     public function test_third_transient_creation_failure_deletes_release_and_cbp_rows(): void
@@ -218,6 +294,33 @@ class NzbCreationReliabilityTest extends TestCase
         $this->assertSame(0, (int) DB::table('releases')->where('id', 1)->value('nzbstatus'));
     }
 
+    public function test_writer_that_lost_its_claim_cannot_finalize_or_overwrite_the_winners_nzb(): void
+    {
+        $this->insertRelease(1, 'o', claimedAt: now(), completion: 91.67);
+        $this->insertWritableCbp(200, 2000, 1, totalParts: 3, arrivedParts: 3);
+        $release = Release::query()->findOrFail(1);
+        $release->setRelation('category', (object) ['title' => 'Misc', 'parent' => (object) ['title' => 'Other']]);
+        DB::table('releases')->where('id', 1)->update([
+            'nzb_creation_claim_token' => 'worker-two',
+            'nzb_creation_claimed_at' => now(),
+        ]);
+        $nzb = new NzbService(app(CollectionCleanupService::class));
+        $path = $nzb->getNzbPath((string) $release->guid, 0, true);
+        file_put_contents($path, gzencode('worker-two-final'));
+
+        $result = $nzb->createNzbForRelease($release);
+
+        $this->assertTrue($result->isClaimLost());
+        $this->assertSame('worker-two-final', unzipGzipFile($path));
+        $this->assertSame(0, (int) DB::table('releases')->where('id', 1)->value('nzbstatus'));
+        $this->assertSame('worker-two', DB::table('releases')->where('id', 1)->value('nzb_creation_claim_token'));
+        $this->assertSame(1, DB::table('collections')->count());
+        $this->assertSame(1, DB::table('binaries')->count());
+        $this->assertSame(3, DB::table('parts')->count());
+        $this->assertSame(91.67, $this->completionFor(1));
+        $this->assertSame([], glob($path.'.tmp.*') ?: []);
+    }
+
     public function test_writer_streams_multiple_keyset_pages_in_segment_order(): void
     {
         $this->insertRelease(1, 'h');
@@ -231,9 +334,9 @@ class NzbCreationReliabilityTest extends TestCase
         $this->insertWritableCbp(200, 2000, 1);
         DB::table('parts')->where('binaries_id', 2000)->delete();
         DB::table('parts')->insert([
-            ['binaries_id' => 2000, 'messageid' => '<part02@example.test>', 'partnumber' => 2, 'size' => 200],
-            ['binaries_id' => 2000, 'messageid' => '<part01@example.test>', 'partnumber' => 1, 'size' => 100],
-            ['binaries_id' => 2000, 'messageid' => '<part03@example.test>', 'partnumber' => 3, 'size' => 300],
+            ['binaries_id' => 2000, 'messageid' => '<part02@example.test>', 'partnumber' => 2, 'number' => 2, 'size' => 200],
+            ['binaries_id' => 2000, 'messageid' => '<part01@example.test>', 'partnumber' => 1, 'number' => 1, 'size' => 100],
+            ['binaries_id' => 2000, 'messageid' => '<part03@example.test>', 'partnumber' => 3, 'number' => 3, 'size' => 300],
         ]);
         $result = $this->writeNzb(1, new NzbService(app(CollectionCleanupService::class), new BinariesConfig(nzbStreamRows: 2)));
 
@@ -246,17 +349,84 @@ class NzbCreationReliabilityTest extends TestCase
         $this->assertSame(0, DB::table('release_nzb_creation_failures')->count());
     }
 
-    public function test_writer_leaves_the_creation_time_completion_untouched(): void
+    public function test_reclaim_during_stream_cannot_replace_the_winners_nzb_or_delete_cbp(): void
     {
-        // completion is measured from the CBP rows at release creation, not re-derived from what
-        // the writer happens to stream -- the writer would only ever produce a lossier number.
+        $this->insertRelease(1, 'r', claimedAt: now(), completion: 91.67);
+        $this->insertWritableCbp(200, 2000, 1, totalParts: 3, arrivedParts: 3);
+        $staleRelease = Release::query()->findOrFail(1);
+        $staleToken = (string) $staleRelease->getAttribute(NzbCreationCandidateQuery::CLAIM_TOKEN_COLUMN);
+        DB::table('releases')->where('id', 1)->update([
+            'nzb_creation_claim_token' => 'worker-two',
+            'nzb_creation_claimed_at' => now(),
+        ]);
+        $winnerRelease = Release::query()->findOrFail(1);
+        $winnerRelease->setRelation('category', (object) ['title' => 'Misc', 'parent' => (object) ['title' => 'Other']]);
+        $nzb = new NzbService(app(CollectionCleanupService::class), new BinariesConfig(nzbStreamRows: 2));
+        $staleWorker = (new ReleaseProcessingService(
+            nzb: $nzb,
+            releaseManagement: new DatabaseOnlyReleaseManagementService,
+            collectionCleanupService: app(CollectionCleanupService::class),
+        ))->setEchoCLI(false);
+        $deleteMethod = new \ReflectionMethod(ReleaseProcessingService::class, 'deleteFailedNzbCreationRelease');
+        $cleanupAttempted = false;
+        $staleDeleteResult = null;
+        $cbpCountsAfterStaleCleanup = [];
+        DB::listen(function (QueryExecuted $query) use (
+            &$cleanupAttempted,
+            &$staleDeleteResult,
+            &$cbpCountsAfterStaleCleanup,
+            $deleteMethod,
+            $staleWorker,
+            $staleRelease,
+            $staleToken,
+        ): void {
+            if ($cleanupAttempted || ! str_contains($query->sql, 'SELECT b.collections_id AS collection_id')) {
+                return;
+            }
+
+            $cleanupAttempted = true;
+            $staleDeleteResult = $deleteMethod->invoke(
+                $staleWorker,
+                $staleRelease,
+                NzbCreationResult::deterministic('The stale worker saw empty CBP.', [200]),
+                $staleToken,
+                1,
+            );
+            $cbpCountsAfterStaleCleanup = [
+                DB::table('collections')->count(),
+                DB::table('binaries')->count(),
+                DB::table('parts')->count(),
+            ];
+        });
+
+        $result = $nzb->createNzbForRelease($winnerRelease);
+
+        $this->assertTrue($cleanupAttempted);
+        $this->assertFalse($staleDeleteResult);
+        $this->assertSame([1, 1, 3], $cbpCountsAfterStaleCleanup);
+        $this->assertTrue($result->success, $result->reason);
+        $xml = unzipGzipFile((string) $result->path);
+        $this->assertIsString($xml);
+        $this->assertStringContainsString('binary2000-part1@example.test', $xml);
+        $this->assertStringContainsString('binary2000-part2@example.test', $xml);
+        $this->assertStringContainsString('binary2000-part3@example.test', $xml);
+        $this->assertSame(1, DB::table('releases')->count());
+        $this->assertSame(0, DB::table('collections')->count());
+        $this->assertSame(0, DB::table('binaries')->count());
+        $this->assertSame(0, DB::table('parts')->count());
+    }
+
+    public function test_writer_reconciles_creation_time_completion_with_the_cbp_it_writes(): void
+    {
+        // A late part arrived after release creation measured 91.67%, so the authoritative CBP
+        // measurement at write time must replace that stale value with the complete result.
         $this->insertRelease(1, 'i', completion: 91.67);
         $this->insertWritableCbp(200, 2000, 1, totalParts: 3, arrivedParts: 3);
 
         $result = $this->writeNzb(1);
 
         $this->assertTrue($result->success, $result->reason);
-        $this->assertSame(91.67, $this->completionFor(1));
+        $this->assertSame(100.0, $this->completionFor(1));
     }
 
     public function test_a_release_measured_sub_threshold_waits_for_the_repair_engine(): void
@@ -448,6 +618,7 @@ class NzbCreationReliabilityTest extends TestCase
                 'binaries_id' => $binaryId,
                 'messageid' => sprintf('<binary%d-part%d@example.test>', $binaryId, $partNumber),
                 'partnumber' => $partNumber,
+                'number' => $partNumber,
                 'size' => 100,
             ]);
         }
@@ -525,7 +696,8 @@ class NzbCreationReliabilityTest extends TestCase
             fromname VARCHAR(255) NULL,
             date DATETIME NULL,
             xref TEXT NULL,
-            groups_id INTEGER NULL
+            groups_id INTEGER NULL,
+            declaredfiles INTEGER NOT NULL DEFAULT 0
         )');
         DB::statement('CREATE TABLE binaries (
             id INTEGER PRIMARY KEY,
@@ -537,6 +709,7 @@ class NzbCreationReliabilityTest extends TestCase
             binaries_id INTEGER,
             messageid VARCHAR(255) NULL,
             partnumber INTEGER NULL,
+            number INTEGER NULL,
             size INTEGER NULL
         )');
         DB::table('root_categories')->insert(['id' => 1, 'title' => 'Other']);
@@ -586,6 +759,71 @@ class RelationDroppingNzbService extends FakeNzbCreationService
         $release->unsetRelation('nzbCreationFailure');
 
         return parent::createNzbForRelease($release);
+    }
+}
+
+class LeaseObservingNzbService extends NzbService
+{
+    /** @var list<string> */
+    public array $observedClaimTimes = [];
+
+    public function __construct()
+    {
+        parent::__construct(app(CollectionCleanupService::class));
+    }
+
+    public function createNzbForRelease(Release $release): NzbCreationResult
+    {
+        $this->observedClaimTimes[] = (string) DB::table('releases')
+            ->where('id', $release->id)
+            ->value('nzb_creation_claimed_at');
+
+        if (count($this->observedClaimTimes) === 1) {
+            Carbon::setTestNow(Carbon::now()->addMinutes(2));
+        }
+
+        return NzbCreationResult::success('/unused', []);
+    }
+}
+
+class WinningDuringFailureNzbService extends NzbService
+{
+    public string $winnerPath = '';
+
+    public function __construct()
+    {
+        parent::__construct(app(CollectionCleanupService::class));
+    }
+
+    public function createNzbForRelease(Release $release): NzbCreationResult
+    {
+        DB::table('releases')->where('id', $release->id)->update([
+            'nzbstatus' => self::NZB_ADDED,
+            'nzb_creation_claimed_at' => null,
+            'nzb_creation_claim_token' => null,
+        ]);
+        $this->winnerPath = $this->getNzbPath((string) $release->guid, 0, true);
+        file_put_contents($this->winnerPath, gzencode('winner-final'));
+
+        return NzbCreationResult::deterministic('The old worker saw empty CBP.');
+    }
+}
+
+class ReclaimedDuringTransientFailureNzbService extends NzbService
+{
+    public function __construct()
+    {
+        parent::__construct(app(CollectionCleanupService::class));
+    }
+
+    public function createNzbForRelease(Release $release): NzbCreationResult
+    {
+        DB::table('releases')->where('id', $release->id)->update([
+            'nzb_creation_claim_token' => 'worker-two',
+            'nzb_creation_claimed_at' => now(),
+        ]);
+
+        return NzbCreationResult::transient('The old worker lost its claim during I/O.');
     }
 }
 

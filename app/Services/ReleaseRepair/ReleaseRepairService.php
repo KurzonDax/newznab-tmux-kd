@@ -94,11 +94,21 @@ final class ReleaseRepairService
         $plan = $document->plan();
 
         if (! $plan->hasWork()) {
-            return $this->finish($release, $options, $this->unrepaired(
-                $completionBefore,
-                $isFinalAttempt,
-                $this->describeUnrecoverable($plan),
-            ));
+            $completionAfter = $document->measure()->percentage();
+            $outcome = $completionAfter >= $options->targetCompletion
+                ? ReleaseRepairOutcome::Repaired
+                : ($isFinalAttempt ? ReleaseRepairOutcome::Failed : ReleaseRepairOutcome::RetryPending);
+
+            return $this->finish($release, $options, new ReleaseRepairResult(
+                outcome: $outcome,
+                completionBefore: $completionBefore,
+                completionAfter: $completionAfter,
+                segmentsAdded: 0,
+                articlesProbed: 0,
+                nzbRewritten: false,
+                requeuedForAdditionalProcessing: false,
+                reason: $this->describeUnrecoverable($plan),
+            ), $completionAfter);
         }
 
         [$accepted, $probes] = $this->verify($plan, $options);

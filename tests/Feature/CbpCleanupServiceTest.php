@@ -223,9 +223,9 @@ class CbpCleanupServiceTest extends TestCase
         $this->assertSame(0, DB::table('binaries')->count());
         $this->assertSame(0, DB::table('collections')->count());
         $this->assertSame(1, (int) DB::table('releases')->where('id', 1)->value('nzbstatus'));
-        // completion belongs to release creation, which measured it from these same CBP rows
-        // before the writer got to them; writing the NZB must not restate it.
-        $this->assertSame(91.67, (float) DB::table('releases')->where('id', 1)->value('completion'));
+        // The writer reconciles against the CBP it just streamed, so late-arriving parts cannot
+        // leave stale completion behind after those source rows are removed.
+        $this->assertSame(100.0, (float) DB::table('releases')->where('id', 1)->value('completion'));
     }
 
     public function test_duplicate_release_path_cleans_up_collection_binary_and_parts(): void

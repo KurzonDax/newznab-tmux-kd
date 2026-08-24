@@ -114,6 +114,37 @@ final class NzbCreationCandidateQuery
         ]);
     }
 
+    /**
+     * @return Builder<Release>
+     */
+    public static function ownedPendingBuilder(int $releaseId, ?string $token): Builder
+    {
+        $query = Release::query()
+            ->where('id', $releaseId)
+            ->where('nzbstatus', NzbService::NZB_NONE);
+
+        if (! self::supportsClaims()) {
+            return $query;
+        }
+
+        if ($token === null) {
+            return $query->whereNull(self::CLAIM_TOKEN_COLUMN);
+        }
+
+        return $query->where(self::CLAIM_TOKEN_COLUMN, $token);
+    }
+
+    public static function refreshClaim(int $releaseId, string $token): bool
+    {
+        if (! self::supportsClaims()) {
+            return self::ownedPendingBuilder($releaseId, null)->exists();
+        }
+
+        return self::ownedPendingBuilder($releaseId, $token)->update([
+            self::CLAIMED_AT_COLUMN => now(),
+        ]) === 1;
+    }
+
     public static function supportsClaims(): bool
     {
         if (self::$supportsClaims !== null) {
