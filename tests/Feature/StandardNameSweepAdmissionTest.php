@@ -219,9 +219,49 @@ class StandardNameSweepAdmissionTest extends TestCase
 
         $this->assertIsString($monitorQuery);
         $this->assertStringNotContainsString('processrenames', $monitorQuery);
-        $this->assertStringNotContainsString('proc_nfo', $monitorQuery);
-        $this->assertStringNotContainsString('proc_files', $monitorQuery);
-        $this->assertStringNotContainsString('proc_par2', $monitorQuery);
+
+        foreach (array_keys(self::CONSUMED) as $column) {
+            $this->assertStringNotContainsString(
+                $column,
+                $monitorQuery,
+                "the stats query restates the sweep's {$column} term"
+            );
+        }
+    }
+
+    /**
+     * The count and the batch are generated from one predicate, so they must
+     * agree over every combination of unconsumed sources, not just one at a time.
+     */
+    #[Test]
+    public function the_monitor_count_and_the_candidate_batch_agree_across_the_whole_source_matrix(): void
+    {
+        config(['nntmux_srrdb.enabled' => true]);
+
+        $columns = array_keys(self::CONSUMED);
+        $combinations = 1 << count($columns);
+
+        for ($mask = 0; $mask < $combinations; $mask++) {
+            // Every release is ready for every source it leaves unconsumed, so
+            // the only thing distinguishing them is which sources are pending.
+            $overrides = ['nfostatus' => 1];
+            foreach ($columns as $bit => $column) {
+                if (($mask & (1 << $bit)) !== 0) {
+                    $overrides[$column] = 0;
+                }
+            }
+
+            $id = $mask + 1;
+            $this->insertRelease($id, $overrides);
+            $this->insertReleaseFile($id, "release-{$id}.rar", 'A1B2C3D4');
+        }
+
+        // Every combination but the empty one leaves a source unconsumed.
+        $expected = $combinations - 1;
+        $queries = new NameFixingQueryService;
+
+        $this->assertSame($expected, $queries->standardCandidateCount());
+        $this->assertCount($expected, $queries->standardCandidateBatch('a', $combinations));
     }
 
     #[Test]

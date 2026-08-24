@@ -1162,9 +1162,10 @@ class NameFixingService
                 continue;
             }
 
-            if ($srrdbFiles !== null && (int) ($release->proc_srrdb ?? self::PROC_SRRDB_DONE) === self::PROC_SRRDB_NONE) {
+            $releaseSrrdbFiles = $srrdbFiles[$releaseId] ?? [];
+            if ($releaseSrrdbFiles !== [] && $this->isSrrdbSweepCandidate($release)) {
                 $this->updateService->reset();
-                $this->attemptSrrdb($release, $srrdbFiles[$releaseId] ?? [], true, true, $show);
+                $this->attemptSrrdb($release, $releaseSrrdbFiles, true, true, $show);
             }
         }
 
@@ -1175,31 +1176,43 @@ class NameFixingService
     }
 
     /**
-     * Archive-CRC file rows for the SRRDB leg of a standard sweep batch.
-     *
-     * Returns null when SRRDB has nothing to do for this batch -- the source is
-     * disabled, or no admitted release still has `proc_srrdb` unconsumed -- so the
-     * sweep skips both the extra query and the SRRDB leg entirely.
+     * Archive-CRC file rows for the SRRDB leg of a standard sweep batch, keyed by
+     * release id and empty when the batch has no SRRDB work to do.
      *
      * @param  list<object>  $releases
      * @param  list<int>  $releaseIds
-     * @return array<int|string, list<object>>|null
+     * @return array<int|string, list<object>>
      */
-    private function standardBatchSrrdbFiles(array $releases, array $releaseIds): ?array
+    private function standardBatchSrrdbFiles(array $releases, array $releaseIds): array
     {
-        if (! config('nntmux_srrdb.enabled', false)) {
-            return null;
+        if (! $this->queries->srrdbEnabled()) {
+            return [];
         }
 
         foreach ($releases as $release) {
-            if ((int) ($release->proc_srrdb ?? self::PROC_SRRDB_DONE) === self::PROC_SRRDB_NONE) {
+            if ($this->isSrrdbSweepCandidate($release)) {
                 return $this->queries->groupByReleaseId(
                     $this->queries->fileRows($releaseIds, NameFixingQueryService::SOURCE_SRRDB)
                 );
             }
         }
 
-        return null;
+        return [];
+    }
+
+    /**
+     * Whether the standard sweep may run the SRRDB leg for this release.
+     *
+     * Mirrors the SRRDB term in the sweep's admission predicate. A release
+     * admitted on some other source may still be trusted or carry no archive
+     * CRC, and settling `proc_srrdb` for those rows would consume the source
+     * before the evidence it needs exists. The caller pairs this with a
+     * non-empty archive-CRC file list, the third half of the same gate.
+     */
+    private function isSrrdbSweepCandidate(object $release): bool
+    {
+        return (int) ($release->proc_srrdb ?? self::PROC_SRRDB_DONE) === self::PROC_SRRDB_NONE
+            && (int) ($release->is_trusted_name ?? 1) === 0;
     }
 
     /**

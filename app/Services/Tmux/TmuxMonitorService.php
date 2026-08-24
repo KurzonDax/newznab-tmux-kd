@@ -237,8 +237,10 @@ class TmuxMonitorService
         // The Fix Names pane sleeps at zero, so this has to be the sweep's own
         // admission predicate rather than a hand-written subset of it, exactly as
         // `work` is derived from AdditionalCandidateQuery below. It is collected
-        // ahead of the aggregate stats query, and guarded separately, so the pane
-        // gate never depends on the rest of that query succeeding.
+        // ahead of the aggregate stats query, and guarded separately, so an
+        // unrelated failure in that query cannot decide the pane's fate. A
+        // failure here still leaves the count at its zero default and sleeps the
+        // pane, which is the safe direction: the next cycle retries.
         try {
             $this->runVar['counts']['now']['processrenames'] = app(NameFixingQueryService::class)
                 ->standardCandidateCount();

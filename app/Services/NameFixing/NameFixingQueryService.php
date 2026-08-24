@@ -36,6 +36,12 @@ final class NameFixingQueryService
 
     private const TRUSTED_DONOR_PREDICATE = "(r.predb_id > 0 OR COALESCE(NULLIF(r.anidbid, ''), 0) > 0 OR r.is_trusted_name = 1)";
 
+    /**
+     * SRRDB never re-derives a name the indexer already trusts. Shared by the
+     * windowed candidate query and the standard sweep so the two cannot drift.
+     */
+    private const SRRDB_TRUST_PREDICATE = 'r.is_trusted_name = 0';
+
     private ConnectionInterface $database;
 
     /**
@@ -125,8 +131,8 @@ final class NameFixingQueryService
         return $this->database->select(
             'SELECT r.id AS releases_id, r.id, r.name, r.searchname, r.fromname, r.guid,
                     r.groups_id, r.categories_id, r.size AS relsize, r.completion, r.predb_id,
-                    r.nfostatus, r.proc_nfo, r.proc_uid, r.proc_files, r.proc_par2,
-                    r.proc_hash16k, r.proc_srr, r.proc_crc32, r.proc_srrdb
+                    r.nfostatus, r.is_trusted_name, r.proc_nfo, r.proc_uid, r.proc_files,
+                    r.proc_par2, r.proc_hash16k, r.proc_srr, r.proc_crc32, r.proc_srrdb
              FROM releases r
              WHERE r.leftguid = ?
              AND '.$this->standardSweepPredicate().'
@@ -185,7 +191,8 @@ final class NameFixingQueryService
 
         if ($this->srrdbEnabled()) {
             $sources[] = sprintf(
-                '(r.proc_srrdb = 0 AND r.is_trusted_name = 0 AND %s)',
+                '(r.proc_srrdb = 0 AND %s AND %s)',
+                self::SRRDB_TRUST_PREDICATE,
                 self::SOURCE_EXISTS[self::SOURCE_SRRDB]
             );
         }
@@ -193,7 +200,11 @@ final class NameFixingQueryService
         return 'r.isrenamed = 0 AND r.predb_id = 0 AND ('.implode(' OR ', $sources).')';
     }
 
-    private function srrdbEnabled(): bool
+    /**
+     * Whether SRRDB is configured at all. The sweep's predicate and the worker
+     * leg that settles `proc_srrdb` must agree on this, so both read it here.
+     */
+    public function srrdbEnabled(): bool
     {
         return (bool) config('nntmux_srrdb.enabled', false);
     }
@@ -454,7 +465,7 @@ final class NameFixingQueryService
         }
 
         if ($source === self::SOURCE_SRRDB) {
-            $where[] = 'r.is_trusted_name = 0';
+            $where[] = self::SRRDB_TRUST_PREDICATE;
         }
 
         if ($time === 1) {

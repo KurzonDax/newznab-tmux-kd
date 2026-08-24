@@ -321,13 +321,11 @@ class Tmux
 
         switch ((int) $qry) {
             case 1:
-                // NOTE: the "Fix Names" / `processrenames` count was previously computed
-                // here from a hand-written copy of three of the standard sweep's seven
-                // source terms, so the Fix Names pane slept while UID/SRR/hash/CRC work
-                // was waiting. It now lives in
-                // \App\Services\Tmux\TmuxMonitorService::getProcessCounts(), which calls
+                // NOTE: `processrenames` is deliberately absent here. A hand-written
+                // copy of part of the standard sweep's predicate slept the Fix Names
+                // pane on real work; the count now comes from
                 // \App\Services\NameFixing\NameFixingQueryService::standardCandidateCount()
-                // -- the same predicate the sweep itself selects on.
+                // via TmuxMonitorService::getProcessCounts().
                 $movieLookupSql = imdb_id_needs_lookup_sql('imdbid');
                 $lookupMovies = (int) Settings::settingValue('lookupimdb');
 

@@ -182,6 +182,78 @@ class NameFixingBatchTest extends TestCase
         Http::assertNothingSent();
     }
 
+    /**
+     * A release admitted on some other source can still be one the SRRDB worker
+     * refuses. Settling `proc_srrdb` for it would consume the source before the
+     * archive CRCs additional processing has yet to write ever exist.
+     */
+    #[Test]
+    public function the_sweep_leaves_srrdb_pending_when_the_release_has_no_archive_crc(): void
+    {
+        config(['nntmux_srrdb.enabled' => true]);
+        Http::fake();
+
+        $release = $this->processedRelease(60);
+        $release->proc_srrdb = NameFixingService::PROC_SRRDB_NONE;
+        $release->proc_uid = NameFixingService::PROC_UID_NONE;
+
+        $database = $this->createMock(ConnectionInterface::class);
+        $database->method('select')->willReturnCallback(
+            static fn (string $sql): array => str_contains($sql, 'r.proc_srrdb = 0') ? [$release] : []
+        );
+
+        $updateService = $this->createPartialMock(ReleaseUpdateService::class, ['updateSingleColumn']);
+        $updateService->expects($this->once())
+            ->method('updateSingleColumn')
+            ->with('proc_uid', NameFixingService::PROC_UID_DONE, 60);
+
+        $service = $this->serviceWith($database, $updateService);
+
+        $this->assertSame(['checked' => 1, 'fixed' => 0], $service->processStandardBatch('a', 100, false));
+        Http::assertNothingSent();
+    }
+
+    #[Test]
+    public function the_sweep_leaves_srrdb_pending_for_a_release_whose_name_is_already_trusted(): void
+    {
+        config(['nntmux_srrdb.enabled' => true]);
+        Http::fake();
+
+        $release = $this->processedRelease(70);
+        $release->proc_srrdb = NameFixingService::PROC_SRRDB_NONE;
+        $release->proc_uid = NameFixingService::PROC_UID_NONE;
+        $release->is_trusted_name = 1;
+
+        $database = $this->createMock(ConnectionInterface::class);
+        $database->method('select')->willReturnCallback(function (string $sql) use ($release): array {
+            if (str_contains($sql, 'r.proc_srrdb = 0')) {
+                return [$release];
+            }
+
+            if (str_contains($sql, 'LENGTH(rf.crc32) = 8')) {
+                return [(object) [
+                    'releases_id' => 70,
+                    'textstring' => 'Some.Release-GRP.rar',
+                    'filename' => 'Some.Release-GRP.rar',
+                    'crc32' => 'A1B2C3D4',
+                    'size' => 50_000_000,
+                ]];
+            }
+
+            return [];
+        });
+
+        $updateService = $this->createPartialMock(ReleaseUpdateService::class, ['updateSingleColumn']);
+        $updateService->expects($this->once())
+            ->method('updateSingleColumn')
+            ->with('proc_uid', NameFixingService::PROC_UID_DONE, 70);
+
+        $service = $this->serviceWith($database, $updateService);
+
+        $this->assertSame(['checked' => 1, 'fixed' => 0], $service->processStandardBatch('a', 100, false));
+        Http::assertNothingSent();
+    }
+
     private function serviceWith(
         ConnectionInterface $database,
         ReleaseUpdateService $updateService,
@@ -228,6 +300,7 @@ class NameFixingBatchTest extends TestCase
             'proc_srr' => NameFixingService::PROC_SRR_DONE,
             'proc_crc32' => NameFixingService::PROC_CRC_DONE,
             'proc_srrdb' => NameFixingService::PROC_SRRDB_DONE,
+            'is_trusted_name' => 0,
         ];
     }
 }

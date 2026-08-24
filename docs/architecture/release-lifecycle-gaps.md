@@ -12,7 +12,7 @@ Severity describes the consequence of the reachable state, not how frequently it
 
 **Reachable state and path.** `isrenamed=0, predb_id=0, nfostatus>=0, proc_*=0, categories_id` in Music/Movie/TV/etc. A raw multipart subject such as `[10/88] "Artist-Title-FLAC-1971-GRP.part09.rar"` is not accepted as a proper name, but #132 categorization can recognize Music at creation. Forced XXX (#138) or a forced group root (#140/#141, including bulk edits fixed by #183) create the same state even when the raw name itself is opaque.
 
-**Exclusion.** The process that should use the later NFO/files/PAR2/UID/SRR/hash/CRC evidence is `standardCandidateBatch`, but it ends with:
+**Exclusion (before #213).** The process that should use the later NFO/files/PAR2/UID/SRR/hash/CRC evidence is `standardCandidateBatch`, which then ended with:
 
 ```sql
 AND r.isrenamed = 0
@@ -21,7 +21,7 @@ AND r.predb_id = 0
 AND r.categories_id IN (<Category::OTHERS_GROUP>)
 ```
 
-(`NameFixingQueryService.php:129-145`). The ordinary pane calls every source with `--category=other` as well (`TmuxTaskRunner.php:438-449`). Audio-tag and RAR-file renames cover only releases whose AP routing, archive contents, settings, and tag/name evidence cooperate; they are not a general cross-category sweep. PreDB full text is the only category-independent name fixer, is not scheduled, and a PreDB row is attempted once.
+The ordinary pane still calls every windowed source with `--category=other` (`TmuxTaskRunner.php:438-449`). Audio-tag and RAR-file renames cover only releases whose AP routing, archive contents, settings, and tag/name evidence cooperate; they are not a general cross-category sweep. PreDB full text is the only category-independent name fixer, is not scheduled, and a PreDB row is attempted once.
 
 This was a long-standing category assumption made substantially more reachable by #132/#138/#140/#141 and left intact when #176 introduced the "standard" safety sweep. It corrupted no row, but permanently stranded naming and could also block renamed-only metadata.
 
@@ -31,7 +31,7 @@ This was a long-standing category assumption made substantially more reachable b
 
 **Reachable state and path.** An Other release has file/PAR2/UID/SRR/hash/CRC evidence and the matching `proc_* = 0`, but `nfostatus=-1` because NFO processing is disabled/size-excluded, or `nfostatus=-9/-10` because NFO attempts are exhausted. A -9 row without a nonempty NFO-like `release_files` row is not eligible for archive fallback (`NfoService.php:884-909`), so -9 itself may be terminal.
 
-**Exclusion.** Standard naming unconditionally requires `AND r.nfostatus > -1` before its OR across all seven independent sources (`NameFixingQueryService.php:129-143`). The tmux wake-up count repeats that requirement (`Tmux.php:344-345`). Neither predicate distinguishes "NFO not ready" from "NFO permanently unavailable," nor does it allow already-ready non-NFO evidence to proceed.
+**Exclusion (before #213).** Standard naming unconditionally required `AND r.nfostatus > -1` before its OR across all seven independent sources, and the tmux wake-up count repeated that requirement. Neither predicate distinguished "NFO not ready" from "NFO permanently unavailable," nor allowed already-ready non-NFO evidence to proceed.
 
 This coupled gate was surfaced by #176's standard sweep; it was a design regression in that new safety net over older independent source methods. Result: permanent name strand, with secondary metadata starvation.
 
@@ -41,20 +41,20 @@ This coupled gate was surfaced by #176's standard sweep; it was a design regress
 
 **Reachable state and path.** An otherwise eligible Other release has only one of `proc_uid`, `proc_srr`, `proc_hash16k`, or `proc_crc32` at 0 while `proc_nfo=proc_files=proc_par2=1`.
 
-**Contradiction.** The worker admits:
+**Contradiction (before #213).** The worker admitted:
 
 ```sql
 ... OR r.proc_uid = 0 OR r.proc_srr = 0
 OR r.proc_hash16k = 0 OR r.proc_crc32 = 0
 ```
 
-(`NameFixingQueryService.php:134-142`), but `processrenames` counts only:
+but `processrenames` counted only:
 
 ```sql
 (nfostatus = 1 AND proc_nfo = 0) OR proc_files = 0 OR proc_par2 = 0
 ```
 
-(`Tmux.php:344-345`). `runFixNamesTask()` disables the pane at a zero count (`TmuxTaskRunner.php:414-424`), so the broader worker query was never reached. This was a #176 regression caused by adding a standard worker without deriving the monitor from its predicate: queued work could remain forever, though another row could incidentally wake the pane.
+`runFixNamesTask()` disables the pane at a zero count (`TmuxTaskRunner.php:414-424`), so the broader worker query was never reached. This was a #176 regression caused by adding a standard worker without deriving the monitor from its predicate: queued work could remain forever, though another row could incidentally wake the pane.
 
 **Resolved (#213).** `processrenames` is gone from the tmux stats query and is now collected in `TmuxMonitorService::getProcessCounts()` from `NameFixingQueryService::standardCandidateCount()`, which shares `standardSweepPredicate()` with `standardCandidateBatch()`. The pane wakes exactly when the sweep would return work. `runFixNamesTask()` is unchanged and correct by derivation.
 
@@ -325,7 +325,7 @@ The claim machinery is described in the lifecycle document as a benign lease; th
 
 ### G31 — `passwordstatus >= 0` is a second silent standard-sweep gate (medium, stranded names)
 
-**Reachable state and path.** With inspection active, creation writes `passwordstatus=-1` (`Release.php:242-263`; `PasswordInspectionMode.php:17-20`), and only AP settles it. The standard sweep requires `passwordstatus >= 0` (`NameFixingQueryService.php:132`), and the monitor repeats it (`Tmux.php:344`).
+**Reachable state and path.** With inspection active, creation writes `passwordstatus=-1` (`Release.php:242-263`; `PasswordInspectionMode.php:17-20`), and only AP settles it. Before #213 the standard sweep required `passwordstatus >= 0`, and the monitor repeated it.
 
 **Exclusion.** A release AP never reaches — size-excluded above the maximum, or stranded per G5/G23/G24 — was excluded from the standard sweep indefinitely, the same shape as G1b's `nfostatus` gate. The windowed per-source methods do not check `passwordstatus`, so only the sweep (the safety net that matters after the six-hour windows expire) was affected.
 
@@ -379,9 +379,9 @@ These are drafts only. Labels are the repository's canonical triage labels from 
 
 | Finding / proposed title | Severity | Label | Body draft, including test-only acceptance criteria |
 |---|---:|---|---|
-| G1a — Let standard name fixing revisit unrenamed releases outside Other | High | resolved (#213) | Releases can be created or forced directly into a typed root with `isrenamed=0`, but both the standard sweep and automatic source passes require Other. Expand/replace that gate while preserving trusted-name and per-source safety. **Acceptance:** a PHPUnit feature test constructs unrenamed Music, Movie, forced-root, and Other rows with usable source flags and proves each intended row is selected exactly once; already-renamed and PreDB-matched controls remain excluded. |
-| G1b — Decouple standard non-NFO name sources from negative NFO status | High | resolved (#213) | `nfostatus>-1` blocks files/PAR2/UID/SRR/hash/CRC even when NFO is pending or terminally failed. Make each source depend only on its own readiness, while NFO itself still respects NFO status. **Acceptance:** query tests prove -1, -9, and -10 rows with non-NFO evidence are selected, NFO lookup is not attempted without `nfostatus=1`, and a row with no unprocessed evidence remains excluded. |
-| G2 — Derive Fix Names pane wake-up from the standard candidate query | High | resolved (#213) | The monitor omits four source flags admitted by the worker. Remove the duplicate predicate or make it exactly equivalent. **Acceptance:** orchestration/query tests cover UID-only, SRR-only, hash-only, and CRC-only backlog and prove `runFixNamesTask` launches; a fully processed control keeps the pane disabled. |
+| G1a — Let standard name fixing revisit unrenamed releases outside Other | High | `ready-for-agent` (#213, resolved) | Releases can be created or forced directly into a typed root with `isrenamed=0`, but both the standard sweep and automatic source passes require Other. Expand/replace that gate while preserving trusted-name and per-source safety. **Acceptance:** a PHPUnit feature test constructs unrenamed Music, Movie, forced-root, and Other rows with usable source flags and proves each intended row is selected exactly once; already-renamed and PreDB-matched controls remain excluded. |
+| G1b — Decouple standard non-NFO name sources from negative NFO status | High | `ready-for-agent` (#213, resolved) | `nfostatus>-1` blocks files/PAR2/UID/SRR/hash/CRC even when NFO is pending or terminally failed. Make each source depend only on its own readiness, while NFO itself still respects NFO status. **Acceptance:** query tests prove -1, -9, and -10 rows with non-NFO evidence are selected, NFO lookup is not attempted without `nfostatus=1`, and a row with no unprocessed evidence remains excluded. |
+| G2 — Derive Fix Names pane wake-up from the standard candidate query | High | `ready-for-agent` (#213, resolved) | The monitor omits four source flags admitted by the worker. Remove the duplicate predicate or make it exactly equivalent. **Acceptance:** orchestration/query tests cover UID-only, SRR-only, hash-only, and CRC-only backlog and prove `runFixNamesTask` launches; a fully processed control keeps the pane disabled. |
 | G3 — Give PreDB full-text matching an automatic, repeat-safe lifecycle | High | `ready-for-agent` | The only cross-category PreDB matcher is operator-only and consumes each PreDB row once. Add bounded automatic scheduling and a retry/reconciliation model that can match releases arriving after a title's first scan. **Acceptance:** tests prove the orchestrator invokes a bounded full-text batch, a title with no initial release can match a later release, and successful/flood results do not loop indefinitely. |
 | G4 — Do not consume PAR2 name-fix state before NZB availability | High | `ready-for-agent` | PAR2's source predicate is `1=1`, so a pre-NZB release can be attempted and marked done; `NzbContentsService::checkPar2()` also marks `proc_par2=1` when the NZB file is simply unreadable. Require `nzbstatus=1` (and retain/reopen state when evidence changes). **Acceptance:** a pre-NZB row is not selected or marked, becomes selected after NZB success, and a miss is retryable after a repair/rescan adds PAR2 evidence. |
 | G5 — Settle or hand off audio rows that reach the archive crash limit | Critical | `ready-for-agent` | An audio-routed row at `pp_timeout_count>=max` without `aud:declined` is admitted by neither path. Make the maximum an atomic state transition (settle, decline, or deletion according to policy), including crash recovery. **Acceptance:** tests construct limit and over-limit states before/after stale claims and prove every pending row is claimable by exactly one path or explicitly terminal, never neither. |
@@ -410,8 +410,8 @@ These are drafts only. Labels are the repository's canonical triage labels from 
 | G28 — Count and bound exception failures in general AP | High | `ready-for-agent` | A per-release exception clears the claim without settling or counting, so a poison release retries every cycle forever; the code comment claiming the timeout cap handles it is wrong. Route exception exits through the same counter/settlement machinery as timeouts. **Acceptance:** tests prove a repeatedly throwing release reaches the configured cap and is settled or deleted per policy, and a once-throwing release retries normally. |
 | G29 — Route every release deletion through the canonical cleanup path | High | `ready-for-agent` | Admin report deletes, the import-failure delete, and reset/truncate commands bypass `ReleaseManagementService`, leaving NZBs, artifacts, and search documents behind. Use the canonical delete (or replicate its cleanup) in every deleter. **Acceptance:** tests prove each path removes the NZB, artifacts, and search document, and bulk paths remain bounded. |
 | G30 — Sync repair/rescan state changes to the search index | High | `ready-for-agent` | Both recovery engines write with raw updates that bypass the observer, and no general reconciliation exists (the outbox dispatcher is dead code). Sync the changed fields after each recovery write, and either implement or remove the outbox. **Acceptance:** tests prove a repair requeue and a rescan completion update the index document (or record a retryable failure), and the dead-code path is resolved. |
-| G31 — Decouple the standard name sweep from the password pending sentinel | Medium | resolved (#213) | `passwordstatus>=0` silently excludes inspection-pending rows from the sweep, the same shape as the NFO gate. Let non-password evidence proceed while AP still owns password settlement. **Acceptance:** query tests prove a `-1` row with unprocessed evidence is selected and password inspection state is unchanged by naming. |
-| G32 — Add SRRDB to the standard sweep | Medium | resolved (#213) | The sweep's OR list omits `proc_srrdb`, so SRRDB work that ages past the six-hour window is never retried. Include it under the same trusted-name/config gates as level 21. **Acceptance:** query tests prove an aged eligible row is selected only when SRRDB is configured, and processed/ambiguous rows remain excluded. |
+| G31 — Decouple the standard name sweep from the password pending sentinel | Medium | `ready-for-agent` (#213, resolved) | `passwordstatus>=0` silently excludes inspection-pending rows from the sweep, the same shape as the NFO gate. Let non-password evidence proceed while AP still owns password settlement. **Acceptance:** query tests prove a `-1` row with unprocessed evidence is selected and password inspection state is unchanged by naming. |
+| G32 — Add SRRDB to the standard sweep | Medium | `ready-for-agent` (#213, resolved) | The sweep's OR list omits `proc_srrdb`, so SRRDB work that ages past the six-hour window is never retried. Include it under the same trusted-name/config gates as level 21. **Acceptance:** query tests prove an aged eligible row is selected only when SRRDB is configured, and processed/ambiguous rows remain excluded. |
 | G33 — Give every name source its own status column | Medium | `ready-for-agent` | XXX misses consume `proc_files` and media-movie misses consume `proc_uid`, blocking unrelated sources. Add dedicated columns (or a per-source bitmap) and migrate the shared writers. **Acceptance:** tests prove an XXX miss leaves the filename source eligible and a media-movie miss leaves the UID donor source eligible. |
 | G34 — Exclude in-flight claims from destructive sweeps | Medium | `ready-for-agent` | Deletion sweeps ignore live AP claims and running recovery passes, producing orphan artifact writes after deletion. Skip rows with a live claim/recovery lease, or re-verify existence before artifact writes. **Acceptance:** tests prove a claimed/in-recovery row is not swept during the lease and an expired lease restores sweep eligibility. |
 | G35 — Treat mid-window budget exhaustion as not-attempted in rescan | Medium | `ready-for-agent` | Budget exhaustion mid-window is misread as "headers absent" and burns a rescan outcome. Propagate the exhaustion so the pass is not counted as a verdict. **Acceptance:** tests prove exhaustion mid-window leaves rescan state unchanged and a completed window still records its true verdict. |
