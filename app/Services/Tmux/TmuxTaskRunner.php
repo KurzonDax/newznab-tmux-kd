@@ -427,9 +427,10 @@ class TmuxTaskRunner
         $log = $this->getLogFile('fixnames');
         $timeout = $this->fixNamesTimeout($runVar);
 
-        // The odd methods look at the last 6 hours only; the standard sweep
-        // that follows has no window, so anything a stalled method let age out
-        // is still picked up on a later cycle.
+        // The odd methods look at the last 6 hours only; the standard sweep that
+        // follows has no window and covers every one of their sources -- SRRDB
+        // included, under the same config gate as level 21 -- so anything a
+        // stalled method let age out is still picked up on a later cycle.
         $steps = [];
         if ($this->timeoutBinary() === null) {
             $steps[] = "echo 'fix_names_timeout is not enforced: coreutils timeout (or gtimeout) was not found on PATH' | tee -a {$log}";

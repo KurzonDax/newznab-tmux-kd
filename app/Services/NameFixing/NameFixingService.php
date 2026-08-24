@@ -349,6 +349,25 @@ class NameFixingService
     ): void {
         $this->updateService->reset();
         $this->updateService->incrementChecked();
+        $this->attemptSrrdb($release, $files, $echo, $nameStatus, $show);
+    }
+
+    /**
+     * Look the release's archive CRCs up on SRRDB and settle `proc_srrdb`.
+     *
+     * Shared by the windowed SRRDB method and the standard sweep so both consume
+     * the source the same way: a transient lookup failure leaves the row pending,
+     * an ambiguous result parks it, and anything else settles it.
+     *
+     * @param  list<object>  $files
+     */
+    private function attemptSrrdb(
+        object $release,
+        array $files,
+        bool $echo,
+        bool $nameStatus,
+        bool $show,
+    ): void {
         $files = $this->prioritizeSrrdbFiles($files);
         $completed = true;
         $ambiguous = false;
@@ -972,6 +991,7 @@ class NameFixingService
         $files = $this->queries->groupByReleaseId($this->queries->fileRows($releaseIds));
         $media = $this->queries->groupByReleaseId($this->queries->mediaRows($releaseIds));
         $hashes = $this->queries->groupByReleaseId($this->queries->hashRows($releaseIds));
+        $srrdbFiles = $this->standardBatchSrrdbFiles($releases, $releaseIds);
         $uidDonors = $this->queries->uidDonors($this->distinctValues($media, 'uid'));
         $crcDonors = $this->queries->crcDonors($this->distinctValues($files, 'crc32'));
         $hashDonors = $this->queries->hashDonors($this->distinctValues($hashes, 'hash'));
@@ -1127,14 +1147,24 @@ class NameFixingService
                 continue;
             }
 
+            $par2Matched = false;
             if ((int) $release->proc_par2 === self::PROC_PAR2_NONE) {
                 $this->updateService->reset();
-                $matched = $par2Processor !== null && $par2Processor($release);
-                if ($matched) {
+                $par2Matched = $par2Processor !== null && $par2Processor($release);
+                if ($par2Matched) {
                     $this->updateService->fixed++;
                 } else {
                     $this->updateService->updateSingleColumn('proc_par2', self::PROC_PAR2_DONE, $releaseId);
                 }
+            }
+
+            if ($par2Matched || $this->updateService->matched) {
+                continue;
+            }
+
+            if ($srrdbFiles !== null && (int) ($release->proc_srrdb ?? self::PROC_SRRDB_DONE) === self::PROC_SRRDB_NONE) {
+                $this->updateService->reset();
+                $this->attemptSrrdb($release, $srrdbFiles[$releaseId] ?? [], true, true, $show);
             }
         }
 
@@ -1142,6 +1172,34 @@ class NameFixingService
             'checked' => count($releases),
             'fixed' => $this->updateService->fixed - $fixedBefore,
         ];
+    }
+
+    /**
+     * Archive-CRC file rows for the SRRDB leg of a standard sweep batch.
+     *
+     * Returns null when SRRDB has nothing to do for this batch -- the source is
+     * disabled, or no admitted release still has `proc_srrdb` unconsumed -- so the
+     * sweep skips both the extra query and the SRRDB leg entirely.
+     *
+     * @param  list<object>  $releases
+     * @param  list<int>  $releaseIds
+     * @return array<int|string, list<object>>|null
+     */
+    private function standardBatchSrrdbFiles(array $releases, array $releaseIds): ?array
+    {
+        if (! config('nntmux_srrdb.enabled', false)) {
+            return null;
+        }
+
+        foreach ($releases as $release) {
+            if ((int) ($release->proc_srrdb ?? self::PROC_SRRDB_DONE) === self::PROC_SRRDB_NONE) {
+                return $this->queries->groupByReleaseId(
+                    $this->queries->fileRows($releaseIds, NameFixingQueryService::SOURCE_SRRDB)
+                );
+            }
+        }
+
+        return null;
     }
 
     /**

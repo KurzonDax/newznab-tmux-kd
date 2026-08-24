@@ -116,35 +116,86 @@ final class NameFixingQueryService
     }
 
     /**
+     * One GUID-partitioned page of the standard sweep's admitted releases.
+     *
      * @return list<object>
      */
     public function standardCandidateBatch(string $leftGuid, int $limit): array
     {
         return $this->database->select(
             'SELECT r.id AS releases_id, r.id, r.name, r.searchname, r.fromname, r.guid,
-                    r.groups_id, r.categories_id, r.size AS relsize, r.predb_id, r.nfostatus,
-                    r.proc_nfo, r.proc_uid, r.proc_files, r.proc_par2, r.proc_hash16k,
-                    r.proc_srr, r.proc_crc32
+                    r.groups_id, r.categories_id, r.size AS relsize, r.completion, r.predb_id,
+                    r.nfostatus, r.proc_nfo, r.proc_uid, r.proc_files, r.proc_par2,
+                    r.proc_hash16k, r.proc_srr, r.proc_crc32, r.proc_srrdb
              FROM releases r
              WHERE r.leftguid = ?
-             AND r.isrenamed = 0
-             AND r.predb_id = 0
-             AND r.passwordstatus >= 0
-             AND r.nfostatus > -1
-             AND (
-                (r.nfostatus = 1 AND r.proc_nfo = 0)
-                OR r.proc_files = 0
-                OR r.proc_uid = 0
-                OR r.proc_par2 = 0
-                OR r.proc_srr = 0
-                OR r.proc_hash16k = 0
-                OR r.proc_crc32 = 0
-             )
-             AND r.categories_id IN ('.implode(',', Category::OTHERS_GROUP).')
+             AND '.$this->standardSweepPredicate().'
              ORDER BY r.id DESC
              LIMIT ?',
             [$leftGuid, max(1, $limit)]
         );
+    }
+
+    /**
+     * How many releases the standard sweep would admit across every GUID bucket.
+     *
+     * This is the tmux Fix Names pane's wake-up gate. It shares
+     * {@see self::standardSweepPredicate()} with {@see self::standardCandidateBatch()}
+     * so the pane sleeps exactly when the sweep has nothing to do -- the
+     * hand-written copy it replaced counted only three of the sweep's sources
+     * and let the pane sleep on real UID/SRR/hash/CRC work.
+     */
+    public function standardCandidateCount(): int
+    {
+        $rows = $this->database->select(
+            'SELECT COUNT(*) AS aggregate FROM releases r WHERE '.$this->standardSweepPredicate()
+        );
+
+        return (int) ($rows[0]->aggregate ?? 0);
+    }
+
+    /**
+     * The single definition of the standard sweep's admission predicate.
+     *
+     * Admission is per-source readiness only: the release must be unrenamed and
+     * carry no PreDB identity, and at least one evidence source must be both
+     * ready and unconsumed. Deliberately absent are the cross-source gates and
+     * the category restriction that used to sit in front of the OR list -- a
+     * pending or failed NFO lookup, an unsettled password inspection, or a typed
+     * root category must not hide another source's evidence
+     * (docs/architecture/release-lifecycle-gaps.md, G1a/G1b/G31).
+     *
+     * The SRRDB term carries its own readiness because, unlike the other
+     * sources, the worker declines to settle `proc_srrdb` when the source is
+     * disabled, the name is already trusted, or there is no archive CRC to query
+     * with -- admitting those rows would keep the pane awake on work that can
+     * never drain.
+     */
+    private function standardSweepPredicate(): string
+    {
+        $sources = [
+            '(r.nfostatus = 1 AND r.proc_nfo = 0)',
+            'r.proc_files = 0',
+            'r.proc_uid = 0',
+            'r.proc_par2 = 0',
+            'r.proc_srr = 0',
+            'r.proc_hash16k = 0',
+            'r.proc_crc32 = 0',
+        ];
+
+        if ($this->srrdbEnabled()) {
+            $sources[] = sprintf(
+                '(r.proc_srrdb = 0 AND r.is_trusted_name = 0 AND %s)',
+                self::SOURCE_EXISTS[self::SOURCE_SRRDB]
+            );
+        }
+
+        return 'r.isrenamed = 0 AND r.predb_id = 0 AND ('.implode(' OR ', $sources).')';
+    }
+
+    private function srrdbEnabled(): bool
+    {
+        return (bool) config('nntmux_srrdb.enabled', false);
     }
 
     /**
