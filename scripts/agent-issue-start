@@ -24,11 +24,11 @@ done
 [[ -n "$issue_number" ]] || agent_fail 'usage: scripts/agent-issue-start [--recover] <issue-number>'
 agent_require_issue_number "$issue_number"
 
-script_repository_root="$(agent_repository_root "$script_directory/..")" || agent_fail 'startup helper is not in a Git repository'
+script_repository_root="$(agent_repository_root "$script_directory/..")" || agent_fail 'startup helper is not in a Git repository; run scripts/agent-issue-start from the primary checkout root'
 script_repository_root="$(cd "$script_repository_root" && pwd -P)"
-common_git_directory="$(agent_common_git_directory "$script_repository_root")" || agent_fail 'could not resolve the common Git directory'
-primary_checkout="$(agent_primary_checkout "$common_git_directory")" || agent_fail 'could not resolve the primary checkout'
-primary_checkout="$(cd "$primary_checkout" && pwd -P)" || agent_fail 'could not resolve the primary checkout path'
+common_git_directory="$(agent_common_git_directory "$script_repository_root")" || agent_fail 'could not resolve the common Git directory; run scripts/agent-issue-start from the primary checkout root'
+primary_checkout="$(agent_primary_checkout "$common_git_directory")" || agent_fail 'could not resolve the primary checkout; report the repository state to the user'
+primary_checkout="$(cd "$primary_checkout" && pwd -P)" || agent_fail 'could not resolve the primary checkout path; report the repository state to the user'
 
 [[ "$script_repository_root" == "$primary_checkout" ]] ||
     agent_fail 'run the startup helper tracked by the primary checkout'
@@ -38,39 +38,43 @@ agent_validate_origin "$primary_checkout"
 
 branch="issue/$issue_number"
 worktree_path="$(agent_expected_worktree_path "$primary_checkout" "$issue_number")" ||
-    agent_fail 'could not derive the issue worktree path'
+    agent_fail 'could not derive the issue worktree path; report the repository state to the user'
 worktrees_parent="$(dirname "$worktree_path")"
-current_login="$(gh api user --jq .login)" || agent_fail 'could not resolve the authenticated GitHub user'
+current_login="$(gh api user --jq .login)" || agent_fail 'could not resolve the authenticated GitHub user; verify gh auth status, then rerun scripts/agent-issue-start'
 
 # Read all ownership and readiness signals before the first GitHub write.
 issue_snapshot="$(gh issue view "$issue_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
     --json number,title,state,labels,assignees,comments,url \
     --jq "[.state, ([.labels[] | select(.name == \"ready-for-agent\")] | length), (.assignees | length), ([.assignees[] | select(.login == \"$current_login\")] | length)] | @tsv")" ||
-    agent_fail "could not read issue #$issue_number"
+    agent_fail "could not read issue #$issue_number; verify the issue number and gh auth status, then rerun scripts/agent-issue-start $issue_number"
 IFS=$'\t' read -r issue_state ready_label_count assignee_count current_user_assignment_count \
     <<<"$issue_snapshot"
 
 open_blocker_count="$(gh api "repos/$AGENT_EXPECTED_REPOSITORY/issues/$issue_number/dependencies/blocked_by?per_page=100" \
     --jq '[.[] | select(.state == "open" or .state == "OPEN")] | length')" ||
-    agent_fail "could not read dependencies for issue #$issue_number"
+    agent_fail "could not read dependencies for issue #$issue_number; check gh auth status, then rerun scripts/agent-issue-start $issue_number"
 pull_request_count="$(gh pr list --repo "$AGENT_EXPECTED_REPOSITORY" --state all --head "$branch" \
     --json number,state,headRefName,url,mergedAt --jq 'length')" ||
-    agent_fail 'could not inspect existing pull requests'
+    agent_fail 'could not inspect existing pull requests; check gh auth status, then rerun scripts/agent-issue-start'
 
-[[ "$issue_state" == OPEN ]] || agent_fail "issue #$issue_number is not open"
-[[ "$ready_label_count" -eq 1 ]] || agent_fail "issue #$issue_number is not labelled ready-for-agent"
-[[ "$open_blocker_count" -eq 0 ]] || agent_fail "issue #$issue_number has an open blocker"
-[[ "$pull_request_count" -le 1 ]] || agent_fail "multiple pull requests exist for $branch"
+[[ "$issue_state" == OPEN ]] ||
+    agent_fail "issue #$issue_number is not open; pick an open ready-for-agent issue instead"
+[[ "$ready_label_count" -eq 1 ]] ||
+    agent_fail "issue #$issue_number is not labelled ready-for-agent; ask the user to add the label, or pick a labelled issue"
+[[ "$open_blocker_count" -eq 0 ]] ||
+    agent_fail "issue #$issue_number has an open blocker; finish the blocker first, or pick an unblocked issue"
+[[ "$pull_request_count" -le 1 ]] ||
+    agent_fail "multiple pull requests exist for $branch; ask the user which one to keep, close the others, then rerun scripts/agent-issue-start"
 
 if [[ "$recover" == true ]]; then
     [[ "$assignee_count" -eq 1 && "$current_user_assignment_count" -eq 1 ]] ||
-        agent_fail "recovery requires issue #$issue_number to be assigned only to $current_login"
+        agent_fail "recovery requires issue #$issue_number to be assigned only to $current_login; report the ownership mismatch to the user"
 else
     [[ "$assignee_count" -eq 0 ]] ||
-        agent_fail "issue #$issue_number already has an assignee; only that assignee may use --recover"
+        agent_fail "issue #$issue_number already has an assignee; another session owns it: pick a different issue, or if you are that assignee recovering interrupted work, rerun with --recover"
 fi
 
-agent_fetch_origin_master "$primary_checkout" || agent_fail 'could not fetch current origin/master'
+agent_fetch_origin_master "$primary_checkout" || agent_fail "could not fetch current origin/master; check network access, then rerun scripts/agent-issue-start $issue_number"
 
 local_branch_exists=false
 remote_branch_exists=false
@@ -90,16 +94,16 @@ fi
 if [[ "$recover" == false ]]; then
     if [[ "$local_branch_exists" == true || "$remote_branch_exists" == true || "$path_exists" == true ||
         -n "$existing_worktree_path" || "$pull_request_count" -gt 0 ]]; then
-        agent_fail "issue #$issue_number already has reserved state; the assigned owner must inspect it and rerun with --recover"
+        agent_fail "issue #$issue_number already has reserved state; report it to the user: only the assigned owner may inspect it and rerun with --recover"
     fi
 
     mkdir -p "$worktrees_parent"
     if ! git -C "$primary_checkout" -c core.hooksPath=/dev/null worktree add -b "$branch" \
         "$worktree_path" origin/master; then
         if agent_local_branch_exists "$common_git_directory" "$branch"; then
-            agent_fail "another session acquired the branch lock for issue #$issue_number"
+            agent_fail "another session acquired the branch lock for issue #$issue_number; pick a different issue"
         fi
-        agent_fail "could not reserve the worktree for issue #$issue_number"
+        agent_fail "could not reserve the worktree for issue #$issue_number; inspect the git error above, then rerun scripts/agent-issue-start $issue_number"
     fi
 
     assignment_attempt=1
@@ -108,7 +112,7 @@ if [[ "$recover" == false ]]; then
         if [[ "$assignment_attempt" -ge 4 ]]; then
             git -C "$primary_checkout" worktree remove "$worktree_path"
             git --git-dir="$common_git_directory" branch -D "$branch"
-            agent_fail "could not assign issue #$issue_number; reservation released for an ordinary retry"
+            agent_fail "could not assign issue #$issue_number; reservation released, rerun scripts/agent-issue-start $issue_number"
         fi
         assignment_attempt=$((assignment_attempt + 1))
         sleep "$assignment_attempt"
@@ -116,15 +120,15 @@ if [[ "$recover" == false ]]; then
 else
     [[ "$local_branch_exists" == true || "$remote_branch_exists" == true || -n "$existing_worktree_path" ||
         "$path_exists" == true || "$pull_request_count" -gt 0 ]] ||
-        agent_fail "no interrupted state exists for issue #$issue_number"
+        agent_fail "no interrupted state exists for issue #$issue_number; start it normally with scripts/agent-issue-start $issue_number"
 
     if [[ -n "$existing_worktree_path" && "$existing_worktree_path" != "$worktree_path" ]]; then
-        agent_fail "the issue branch is checked out at an unexpected path: $existing_worktree_path"
+        agent_fail "the issue branch is checked out at an unexpected path: $existing_worktree_path; report it to the user before touching that checkout"
     fi
 
     if [[ "$path_exists" == true ]]; then
         [[ "$existing_worktree_path" == "$worktree_path" ]] ||
-            agent_fail "the recovery path exists but is not the registered issue worktree: $worktree_path"
+            agent_fail "the recovery path exists but is not the registered issue worktree: $worktree_path; report it to the user before touching that path"
     elif [[ "$local_branch_exists" == true ]]; then
         mkdir -p "$worktrees_parent"
         git -C "$primary_checkout" -c core.hooksPath=/dev/null worktree add "$worktree_path" "$branch"
@@ -134,7 +138,7 @@ else
         mkdir -p "$worktrees_parent"
         git -C "$primary_checkout" -c core.hooksPath=/dev/null worktree add "$worktree_path" "$branch"
     else
-        agent_fail "the recorded recovery state for issue #$issue_number is incomplete"
+        agent_fail "the recorded recovery state for issue #$issue_number is incomplete; report it to the user"
     fi
 fi
 
@@ -147,7 +151,7 @@ if ! (cd "$worktree_path" && scripts/agent-worktree-setup); then
     exit 1
 fi
 
-compose_project_name="$(agent_compose_project_name "$worktree_path")" || agent_fail 'could not derive the Compose project name'
+compose_project_name="$(agent_compose_project_name "$worktree_path")" || agent_fail 'could not derive the Compose project name; report the worktree path to the user'
 printf 'ISSUE_NUMBER=%s\n' "$issue_number"
 printf 'BRANCH=%s\n' "$branch"
 printf 'WORKTREE_PATH=%s\n' "$worktree_path"
