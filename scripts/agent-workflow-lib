@@ -14,7 +14,7 @@ agent_fail() {
 agent_require_issue_number() {
     local issue_number="$1"
 
-    [[ "$issue_number" =~ ^[1-9][0-9]*$ ]] || agent_fail 'issue number must be a positive integer'
+    [[ "$issue_number" =~ ^[1-9][0-9]*$ ]] || agent_fail 'issue number must be a positive integer; pass the numeric GitHub issue number'
 }
 
 agent_repository_root() {
@@ -68,9 +68,9 @@ agent_validate_origin() {
     local origin_url
 
     origin_url="$(git -C "$repository_root" remote get-url "$AGENT_REMOTE" 2>/dev/null)" ||
-        agent_fail "missing Git remote: $AGENT_REMOTE"
+        agent_fail "missing Git remote: $AGENT_REMOTE; run this command from a clone of $AGENT_EXPECTED_REPOSITORY"
     [[ "$origin_url" == "$AGENT_EXPECTED_ORIGIN" ]] ||
-        agent_fail "unexpected origin remote: $origin_url"
+        agent_fail "unexpected origin remote: $origin_url; run this command from a checkout whose origin is $AGENT_EXPECTED_ORIGIN"
 }
 
 agent_fetch_origin_master() {
@@ -123,7 +123,7 @@ agent_remote_branch_exists() {
             return 1
             ;;
         *)
-            agent_fail "could not inspect remote branch: $branch"
+            agent_fail "could not inspect remote branch: $branch; check network access, then rerun the command"
             ;;
     esac
 }
@@ -144,36 +144,36 @@ agent_load_issue_worktree_context() {
     local expected_worktree
 
     AGENT_WORKTREE_ROOT="$(agent_repository_root "$requested_root")" ||
-        agent_fail 'not inside a Git worktree'
+        agent_fail 'not inside a Git worktree; cd to the issue worktree created by scripts/agent-issue-start, then rerun the command'
     AGENT_WORKTREE_ROOT="$(cd "$AGENT_WORKTREE_ROOT" && pwd -P)" ||
-        agent_fail 'could not resolve worktree root'
+        agent_fail 'could not resolve worktree root; report the checkout state to the user'
     [[ "$(pwd -P)" == "$AGENT_WORKTREE_ROOT" ]] ||
         agent_fail 'run this command from the issue worktree root'
     [[ -f "$AGENT_WORKTREE_ROOT/.git" ]] ||
-        agent_fail 'the current checkout is not a linked worktree'
+        agent_fail 'the current checkout is not a linked worktree; run this command from the issue worktree created by scripts/agent-issue-start'
 
     AGENT_ISSUE_BRANCH="$(git -C "$AGENT_WORKTREE_ROOT" symbolic-ref --quiet --short HEAD 2>/dev/null)" ||
-        agent_fail 'the issue worktree must have a checked-out branch'
+        agent_fail 'the issue worktree must have a checked-out branch; switch it back to its issue/<number> branch, or report the state to the user'
     [[ "$AGENT_ISSUE_BRANCH" == issue/* ]] ||
-        agent_fail "expected an issue/<number> branch, found: $AGENT_ISSUE_BRANCH"
+        agent_fail "expected an issue/<number> branch, found: $AGENT_ISSUE_BRANCH; run this command from the issue worktree created by scripts/agent-issue-start"
     AGENT_ISSUE_NUMBER="${AGENT_ISSUE_BRANCH#issue/}"
     agent_require_issue_number "$AGENT_ISSUE_NUMBER"
 
     AGENT_COMMON_GIT_DIRECTORY="$(agent_common_git_directory "$AGENT_WORKTREE_ROOT")" ||
-        agent_fail 'could not resolve the common Git directory'
+        agent_fail 'could not resolve the common Git directory; report the checkout state to the user'
     AGENT_PRIMARY_CHECKOUT="$(agent_primary_checkout "$AGENT_COMMON_GIT_DIRECTORY")" ||
-        agent_fail 'could not resolve the primary checkout'
-    [[ -n "$AGENT_PRIMARY_CHECKOUT" ]] || agent_fail 'could not resolve the primary checkout'
+        agent_fail 'could not resolve the primary checkout; report the checkout state to the user'
+    [[ -n "$AGENT_PRIMARY_CHECKOUT" ]] || agent_fail 'could not resolve the primary checkout; report the checkout state to the user'
     AGENT_PRIMARY_CHECKOUT="$(cd "$AGENT_PRIMARY_CHECKOUT" && pwd -P)" ||
-        agent_fail 'could not resolve the primary checkout path'
+        agent_fail 'could not resolve the primary checkout path; report the checkout state to the user'
 
     expected_worktree="$(agent_expected_worktree_path "$AGENT_PRIMARY_CHECKOUT" "$AGENT_ISSUE_NUMBER")" ||
-        agent_fail 'could not derive the issue worktree path'
+        agent_fail 'could not derive the issue worktree path; report the repository state to the user'
     [[ "$AGENT_WORKTREE_ROOT" == "$expected_worktree" ]] ||
-        agent_fail "unexpected issue worktree path: $AGENT_WORKTREE_ROOT"
+        agent_fail "unexpected issue worktree path: $AGENT_WORKTREE_ROOT; report it to the user before touching this checkout"
 
     agent_validate_origin "$AGENT_WORKTREE_ROOT"
     # shellcheck disable=SC2034
     AGENT_COMPOSE_PROJECT_NAME="$(agent_compose_project_name "$AGENT_WORKTREE_ROOT")" ||
-        agent_fail 'could not derive the Compose project name'
+        agent_fail 'could not derive the Compose project name; report the worktree path to the user'
 }

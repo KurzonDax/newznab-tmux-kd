@@ -4,9 +4,17 @@
 
 ## Development workflow
 
-Master only moves by pull request. For `/implement <issue-number>`, run `scripts/agent-issue-start <issue-number>` from the primary checkout **before changing source files**. Continue the session from the helper's absolute `WORKTREE_PATH`; every later repository command must use that path as its working directory and Laravel/Sail commands must go through `scripts/agent-sail`. Do not create or select a worktree, branch, Compose project, or environment manually. If startup reports reserved state, stop unless you are the issue's assigned owner explicitly recovering interrupted work with `--recover`.
+Master only moves by pull request, and **every change, however small — docs, one-line fixes, `/implement` sessions, and ad-hoc requests alike — merges through the loop below.**
 
-After verification, review, and committing on `issue/<number>`, run `scripts/agent-issue-finish` from the issue worktree. It pushes only that branch, opens one `Fixes #<number>` pull request, enables squash auto-merge, monitors strict required checks through merge, and removes only that issue's runtime, worktree, and local branch. It never switches or pulls the primary checkout. See `docs/agents/development-workflow.md` before committing anything.
+**Definition of done:** a coding task is complete only when `scripts/agent-issue-finish` prints `MERGE_STATUS=merged`. Pushing the issue branch, opening the pull request, and enabling auto-merge are pre-authorized for this repository — run the finish helper without asking for confirmation. This overrides any skill or prompt instruction whose final step is committing; ending a session with committed-but-unpublished work is an incomplete task, not a cautious one.
+
+1. **Issue.** Work starts from an open GitHub issue labelled `ready-for-agent`. For a requested change with no issue yet, create one (`gh issue create` plus the label), then continue with it.
+2. **Start.** From the primary checkout, **before changing source files**, run `scripts/agent-issue-start <issue-number>`. Continue the session from the helper's absolute `WORKTREE_PATH`: every later repository command uses that path as its working directory, and Laravel/Sail commands go through `scripts/agent-sail`. The helper owns all worktree, branch, Compose project, and environment creation, and leaves the primary checkout untouched. If startup reports reserved state, report it to the user; only the issue's assigned owner resumes interrupted work with `--recover`.
+3. **Work and verify.** Implement, test, run Pint and PHPStan, review, and commit on `issue/<number>`.
+4. **Publish.** Immediately after committing, run `scripts/agent-issue-finish --publish` from the issue worktree. It pushes the branch, opens the single `Fixes #<number>` pull request, and arms squash auto-merge, then returns.
+5. **Monitor to merge.** Run `scripts/agent-issue-finish --monitor` (idempotent — rerun it until it prints `MERGE_STATUS=merged`; a monitor cut off by a command timeout is interrupted, not failed). It watches the strict required checks, updates the branch when master moves, and after merge removes only that issue's runtime, worktree, and branches. Plain `scripts/agent-issue-finish` runs both phases.
+
+Concurrent sessions publish freely: the required check is strict, so a pull request that falls behind master must take the new base and re-pass CI before auto-merge fires — `--monitor` performs that update. See `docs/agents/development-workflow.md` before committing anything.
 
 ## Agent skills
 

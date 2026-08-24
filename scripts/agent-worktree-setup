@@ -8,6 +8,42 @@ source "$script_directory/agent-workflow-lib"
 
 agent_load_issue_worktree_context .
 
+# The master ruleset requires an extra review for commits whose author is not
+# attributed to a GitHub account, which strands the finish helper at
+# REVIEW_REQUIRED. Catch that identity problem before any commit exists.
+git_user_name="$(git -C "$AGENT_WORKTREE_ROOT" config user.name || true)"
+git_user_email="$(git -C "$AGENT_WORKTREE_ROOT" config user.email || true)"
+[[ -n "$git_user_name" && -n "$git_user_email" ]] ||
+    agent_fail "git identity is unset; set git config user.name and user.email to a GitHub-attributed identity, then rerun scripts/agent-issue-start --recover $AGENT_ISSUE_NUMBER"
+
+github_identity="$(gh api user --jq '[.login, (.id | tostring), (.email // "")] | @tsv')" ||
+    agent_fail "could not resolve the authenticated GitHub user for the git identity check; verify gh auth status, then rerun scripts/agent-issue-start --recover $AGENT_ISSUE_NUMBER"
+IFS=$'\t' read -r github_login github_id github_public_email <<<"$github_identity"
+
+email_attributed=false
+for candidate_email in "$github_id+$github_login@users.noreply.github.com" \
+    "$github_login@users.noreply.github.com" "$github_public_email"; do
+    if [[ -n "$candidate_email" && "$git_user_email" == "$candidate_email" ]]; then
+        email_attributed=true
+        break
+    fi
+done
+if [[ "$email_attributed" == false ]]; then
+    if verified_emails="$(gh api --paginate user/emails --jq '.[] | select(.verified) | .email' 2>/dev/null)"; then
+        while IFS= read -r verified_email; do
+            if [[ "$git_user_email" == "$verified_email" ]]; then
+                email_attributed=true
+                break
+            fi
+        done <<<"$verified_emails"
+        [[ "$email_attributed" == true ]] ||
+            agent_fail "git user.email ($git_user_email) is not attributed to the $github_login GitHub account; set git config user.email to a verified or noreply address, then rerun scripts/agent-issue-start --recover $AGENT_ISSUE_NUMBER"
+    else
+        printf 'WARNING: could not read the verified emails for %s (the gh token usually lacks the user scope), so git user.email (%s) is unverified. An unattributed author email makes the pull request require an extra review.\n' \
+            "$github_login" "$git_user_email" >&2
+    fi
+fi
+
 git -C "$AGENT_WORKTREE_ROOT" ls-files --error-unmatch .env.testing >/dev/null 2>&1 ||
     agent_fail '.env.testing must be tracked'
 git -C "$AGENT_WORKTREE_ROOT" check-ignore --quiet .env ||
