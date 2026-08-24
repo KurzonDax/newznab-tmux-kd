@@ -226,7 +226,7 @@ class TrustedDonorNameFixingTest extends TestCase
             $table->char('leftguid', 1);
             $table->dateTime('adddate')->nullable();
             $table->unsignedInteger('predb_id')->default(0);
-            $table->unsignedInteger('anidbid')->default(0);
+            $table->unsignedInteger('anidbid')->nullable();
             $table->boolean('isrenamed')->default(false);
             $table->boolean('is_trusted_name')->default(false);
             $table->boolean('iscategorized')->default(false);
