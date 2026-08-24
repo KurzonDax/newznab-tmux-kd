@@ -6,7 +6,7 @@ namespace App\Services\ReleaseRepair;
 
 use App\Enums\ReleaseRepairOutcome;
 use App\Models\Release;
-use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
+use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\NNTP\NntpProviderPool;
 use App\Services\Nzb\NzbParserService;
 use App\Services\Nzb\NzbService;
@@ -225,11 +225,7 @@ final class ReleaseRepairService
             return false;
         }
 
-        Release::query()->where('id', $release->id)->update([
-            'haspreview' => -1,
-            'passwordstatus' => PasswordInspectionMode::pendingReleaseStatus(),
-            'pp_timeout_count' => 0,
-        ]);
+        Release::query()->where('id', $release->id)->update(ReleaseClaimant::rependValues());
 
         return true;
     }

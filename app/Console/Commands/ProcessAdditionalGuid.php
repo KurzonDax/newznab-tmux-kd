@@ -8,6 +8,7 @@ use App\Facades\Search;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\AdditionalProcessingOrchestrator;
 use App\Services\AdditionalProcessing\DTO\ReleaseProcessingResult;
+use App\Services\AdditionalProcessing\ReleaseClaimant;
 use Illuminate\Console\Command;
 
 class ProcessAdditionalGuid extends Command
@@ -70,14 +71,11 @@ class ProcessAdditionalGuid extends Command
         }
 
         if ($this->option('reset')) {
-            Release::where('id', $release->id)->update([
-                'passwordstatus' => -1,
-                'haspreview' => -1,
+            Release::where('id', $release->id)->update(array_merge([
                 'jpgstatus' => 0,
                 'videostatus' => 0,
                 'nfostatus' => -1,
-                'pp_timeout_count' => 0,
-            ]);
+            ], ReleaseClaimant::rependValues()));
             Search::updateRelease((int) $release->id);
             $this->info('Reset postprocessing flags for release ID '.$release->id.' (GUID '.$guid.')');
         }

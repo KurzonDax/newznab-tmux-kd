@@ -12,7 +12,6 @@ use App\Models\Predb;
 use App\Models\Release;
 use App\Models\ReleaseFile;
 use App\Models\Settings;
-use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
@@ -351,11 +350,11 @@ class ReleaseFileManager
             if (! $context->releaseHasPassword && $context->nzbHasCompressedFile && $releaseFilesCount === 0) {
                 Release::query()->where('id', $context->release->id)->update($updateRows);
             } else {
-                // An owed re-run must stay selectable: the candidate query
-                // matches the mode-aware pending password sentinel.
-                $updateRows['passwordstatus'] = $previewOwedRequeue
-                    ? PasswordInspectionMode::pendingReleaseStatus()
-                    : ($processPasswords ? $passwordStatus : ReleaseBrowseService::PASSWD_NONE);
+                if ($previewOwedRequeue) {
+                    $updateRows = array_merge($updateRows, ReleaseClaimant::rependValues());
+                } else {
+                    $updateRows['passwordstatus'] = $processPasswords ? $passwordStatus : ReleaseBrowseService::PASSWD_NONE;
+                }
                 $updateRows['rarinnerfilecount'] = $releaseFilesCount;
                 Release::query()->where('id', $context->release->id)->update($updateRows);
             }

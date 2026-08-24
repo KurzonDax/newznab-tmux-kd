@@ -33,6 +33,8 @@ class PostProcessingResetCounterTest extends TestCase
             $table->integer('videostatus')->default(1);
             $table->integer('nfostatus')->default(1);
             $table->unsignedInteger('pp_timeout_count')->default(0);
+            $table->timestamp('additional_pp_claimed_at')->nullable();
+            $table->string('additional_pp_claim_token', 64)->nullable();
         });
     }
 
@@ -42,6 +44,8 @@ class PostProcessingResetCounterTest extends TestCase
             'id' => 1,
             'categories_id' => Category::OTHER_MISC,
             'pp_timeout_count' => 2,
+            'additional_pp_claimed_at' => now(),
+            'additional_pp_claim_token' => 'worker-token',
         ]);
         Search::shouldReceive('updateRelease')->once()->with(1);
 
@@ -49,6 +53,9 @@ class PostProcessingResetCounterTest extends TestCase
 
         $release = DB::table('releases')->where('id', 1)->first();
         $this->assertSame(-1, (int) $release->haspreview);
+        $this->assertSame(0, (int) $release->passwordstatus);
         $this->assertSame(0, (int) $release->pp_timeout_count);
+        $this->assertNull($release->additional_pp_claimed_at);
+        $this->assertNull($release->additional_pp_claim_token);
     }
 }
