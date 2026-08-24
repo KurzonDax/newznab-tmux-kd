@@ -39,8 +39,6 @@ class CategorizationPipeline
 
     protected ObfuscatedSubjectExtractor $obfuscatedSubjectExtractor;
 
-    protected ForcedRootPolicy $forcedRootPolicy;
-
     /**
      * @param  iterable<AbstractCategorizationPipe>  $pipes
      */
@@ -48,7 +46,7 @@ class CategorizationPipeline
         iterable $pipes = [],
         ?NzbSplitUnwrapper $nzbSplitUnwrapper = null,
         ?ObfuscatedSubjectExtractor $obfuscatedSubjectExtractor = null,
-        ?ForcedRootPolicy $forcedRootPolicy = null,
+        private readonly ForcedRootPolicy $forcedRootPolicy = new ForcedRootPolicy,
     ) {
         $this->pipes = collect($pipes)
             ->sortBy(fn (AbstractCategorizationPipe $p) => $p->getPriority());
@@ -57,7 +55,6 @@ class CategorizationPipeline
         $this->catWebDL = (bool) Settings::settingValue('catwebdl');
         $this->nzbSplitUnwrapper = $nzbSplitUnwrapper ?? new NzbSplitUnwrapper;
         $this->obfuscatedSubjectExtractor = $obfuscatedSubjectExtractor ?? new ObfuscatedSubjectExtractor;
-        $this->forcedRootPolicy = $forcedRootPolicy ?? new ForcedRootPolicy;
     }
 
     /**

@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\UsenetGroup;
 use Illuminate\Contracts\Database\Query\Builder as QueryBuilderContract;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Selects the one Forced root that governs a release's complete group set.
@@ -63,6 +64,20 @@ final class ForcedRootPolicy
         }
 
         return $associatedForcedRoots === [] ? null : min($associatedForcedRoots);
+    }
+
+    public function selectForRelease(int|string $primaryGroupId, int $releaseId): ?int
+    {
+        $associatedGroupIds = DB::table('releases_groups')
+            ->where('releases_id', $releaseId)
+            ->pluck('groups_id')
+            ->all();
+
+        $groups = UsenetGroup::query()
+            ->whereIn('id', $this->groupIds($primaryGroupId, $associatedGroupIds))
+            ->get(['id', 'forced_root_categories_id']);
+
+        return $this->select($primaryGroupId, $groups);
     }
 
     /**

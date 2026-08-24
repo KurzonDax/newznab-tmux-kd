@@ -201,7 +201,7 @@ class AudioCandidateQueryTest extends TestCase
         $this->assertSame([1], $this->audioIds());
     }
 
-    public function test_a_small_crosspost_with_a_secondary_forced_music_group_is_audio_routed(): void
+    public function test_a_small_cross_posted_release_with_a_secondary_forced_music_group_is_audio_routed(): void
     {
         $this->seedRelease(1, Category::OTHER_MISC, groupId: 1, size: 5 * 1024 * 1024);
         DB::table('releases_groups')->insert([
@@ -225,7 +225,7 @@ class AudioCandidateQueryTest extends TestCase
         $this->assertSame([1], $this->videoIds());
     }
 
-    public function test_crosspost_policy_states_are_owned_by_exactly_one_path(): void
+    public function test_cross_posted_release_policy_states_are_owned_by_exactly_one_path(): void
     {
         $this->seedRelease(1, Category::OTHER_MISC, groupId: 1, size: 400 * 1024 * 1024);
         $this->seedRelease(2, Category::OTHER_MISC, groupId: 1, size: 400 * 1024 * 1024);
