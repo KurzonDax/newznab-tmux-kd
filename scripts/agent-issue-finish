@@ -207,6 +207,21 @@ cd "$cleanup_parent"
 git --git-dir="$AGENT_COMMON_GIT_DIRECTORY" worktree remove "$AGENT_WORKTREE_ROOT"
 git --git-dir="$AGENT_COMMON_GIT_DIRECTORY" branch -D "$AGENT_ISSUE_BRANCH"
 
+# The merge is done, so a failed or skipped sync must never fail the finish.
+primary_master_status=skipped
+if [[ "$(git -C "$AGENT_PRIMARY_CHECKOUT" symbolic-ref --quiet --short HEAD 2>/dev/null)" == master &&
+    -z "$(git -C "$AGENT_PRIMARY_CHECKOUT" status --porcelain --untracked-files=no)" ]]; then
+    if git -C "$AGENT_PRIMARY_CHECKOUT" pull --ff-only "$AGENT_REMOTE" master; then
+        primary_master_status=synced
+    else
+        primary_master_status=sync-failed
+    fi
+fi
+
 print_pull_request_status merged
 printf 'REMOVED_WORKTREE=%s\n' "$AGENT_WORKTREE_ROOT"
 printf 'REMOVED_BRANCH=%s\n' "$AGENT_ISSUE_BRANCH"
+printf 'PRIMARY_MASTER=%s\n' "$primary_master_status"
+if [[ "$primary_master_status" != synced ]]; then
+    printf 'Local master was not fast-forwarded; run git pull --ff-only in the primary checkout when it is clean and on master.\n'
+fi
