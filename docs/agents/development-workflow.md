@@ -31,7 +31,7 @@ WORKTREE_PATH=<absolute-path>
 COMPOSE_PROJECT_NAME=<path-derived-name>
 ```
 
-Use `WORKTREE_PATH` as the working directory for every later repository command in the session. Leave the primary checkout untouched — the helpers never switch or pull it, and a stale local `master` is harmless because startup always branches from current `origin/master`.
+Use `WORKTREE_PATH` as the working directory for every later repository command in the session. Leave the primary checkout alone while work is in flight — a stale local `master` is harmless because startup always branches from current `origin/master`, and the finish helper syncs it after merge.
 
 If setup fails after the branch reservation, the helper deliberately preserves the branch, worktree, runtime, and issue assignment. A second ordinary start refuses to take it over. The same assigned GitHub user may inspect that state and explicitly resume it from the primary checkout:
 
@@ -76,12 +76,13 @@ The monitor phase polls the pull request until it merges:
 
 - When strict checks require a fresh base (`BEHIND`), it fetches current `origin/master`, merges it only into the issue branch, pushes, and waits for the new check run. A conflict is left for explicit resolution in the issue worktree.
 - After merge, it stops only the worktree's Compose project, deletes only its remote issue branch if it remains, removes only its linked worktree, and deletes only its local issue branch, then prints `MERGE_STATUS=merged`.
+- It then fast-forwards the primary checkout's `master` when that checkout is clean and on `master`, reporting `PRIMARY_MASTER=synced`. A dirty or off-`master` checkout is left untouched (`PRIMARY_MASTER=skipped`) and a failed pull reports `PRIMARY_MASTER=sync-failed`; neither ever fails the finish — the corrective `git pull --ff-only` is printed for the user.
 - It is idempotent: rerun it as many times as needed, including after a previous monitor died mid-watch. Auto-merge never updates a `BEHIND` branch by itself, so a pull request whose monitoring session ended stays pending until some session reruns `--monitor`.
 - `--timeout-seconds <n>` bounds one invocation: when the window elapses before merge, the helper exits successfully with `MERGE_STATUS=pending` and the instruction to rerun. Use it when the calling tool enforces a command timeout — CI takes about seven minutes per run, and a base update doubles that, so an unbounded monitor can outlive a 10-minute tool limit. A monitor cut off either way is interrupted, not failed; the loop is done only at `MERGE_STATUS=merged`.
 
 Plain `scripts/agent-issue-finish` runs publish then an unbounded monitor. Every failure message names the next action; perform it and rerun the helper rather than ending the session.
 
-Other issue worktrees, containers, networks, dependency directories, and untracked files are outside the finish helper's cleanup scope, and it never switches or pulls the primary checkout.
+Other issue worktrees, containers, networks, dependency directories, and untracked files are outside the finish helper's cleanup scope; the only primary-checkout operation it performs is the post-merge fast-forward of `master`.
 
 ## Concurrent sessions
 
@@ -104,4 +105,5 @@ Run the complete sequence twice:
 9. Complete two pull requests that began from the same base; confirm the later effective merge candidate is updated and its required check reruns against the new base before merge.
 10. Publish one issue with `scripts/agent-issue-finish --publish` and confirm it returns within seconds with `MERGE_STATUS=pending` and auto-merge armed; kill its first `--monitor` mid-watch, rerun `--monitor`, and confirm the rerun resumes cleanly through `MERGE_STATUS=merged`.
 11. Run `scripts/agent-issue-finish --monitor --timeout-seconds 30` against a pull request with checks still running and confirm it exits successfully with `MERGE_STATUS=pending` and a rerun instruction.
-12. Run each issue's finish helper to completion, then confirm its runtime, worktree, and branches are gone while the peer session and the primary checkout's recorded branch, HEAD, status, and untracked files are unchanged.
+12. Run each issue's finish helper to completion, then confirm its runtime, worktree, and branches are gone, `PRIMARY_MASTER=synced` moved the primary checkout's `master` to the new `origin/master` tip (its status and untracked files otherwise unchanged), and the peer session is unaffected.
+13. Dirty the primary checkout (or switch it off `master`), finish another disposable issue, and confirm the helper still exits with `MERGE_STATUS=merged` while reporting `PRIMARY_MASTER=skipped` and leaving that checkout untouched.
