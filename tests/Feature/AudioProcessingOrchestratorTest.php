@@ -140,6 +140,11 @@ class AudioProcessingOrchestratorTest extends TestCase
             $table->timestamp('additional_pp_claimed_at')->nullable();
             $table->string('additional_pp_claim_token', 64)->nullable();
         });
+
+        Schema::create('releases_groups', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id');
+            $table->unsignedInteger('groups_id');
+        });
     }
 
     private function seedRelease(int $id): void

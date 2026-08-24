@@ -63,6 +63,10 @@ class RecategorizeReleasesCommandTest extends TestCase
             $table->integer('haspreview')->default(0);
             $table->integer('passwordstatus')->default(0);
         });
+        Schema::create('releases_groups', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id');
+            $table->unsignedInteger('groups_id');
+        });
 
         DB::table('settings')->insert([
             ['name' => 'categorizeforeign', 'value' => '0'],

@@ -131,7 +131,12 @@ class ReleaseCreationService
 
             $releaseID = null;
             if ($dupeCheck === null) {
-                $determinedCategory = $categorize->determineCategory($collection->groups_id, $cleanedName, $fromName);
+                $determinedCategory = $categorize->determineCategory(
+                    $collection->groups_id,
+                    $cleanedName,
+                    $fromName,
+                    associatedGroupIds: $releaseGroupIds[(int) $collection->id] ?? [],
+                );
 
                 try {
                     $releaseID = Release::insertRelease([

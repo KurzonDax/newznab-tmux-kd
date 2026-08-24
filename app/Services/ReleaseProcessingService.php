@@ -336,7 +336,8 @@ final class ReleaseProcessingService
                 $categoryResult = $categorizer->determineCategory(
                     $release->groups_id,
                     $release->{$type},
-                    $release->fromname
+                    $release->fromname,
+                    releaseId: (int) $release->id,
                 );
 
                 Release::query()

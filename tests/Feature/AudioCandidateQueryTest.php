@@ -79,6 +79,7 @@ class AudioCandidateQueryTest extends TestCase
             ['id' => 1, 'name' => 'alt.binaries.sounds.lossless', 'forced_root_categories_id' => null],
             ['id' => 2, 'name' => 'alt.binaries.boneless', 'forced_root_categories_id' => Category::MUSIC_ROOT],
             ['id' => 3, 'name' => 'alt.binaries.multimedia', 'forced_root_categories_id' => null],
+            ['id' => 4, 'name' => 'alt.binaries.movies', 'forced_root_categories_id' => Category::MOVIE_ROOT],
         ]);
 
         $this->resetCandidateQueryCaches();
@@ -200,7 +201,7 @@ class AudioCandidateQueryTest extends TestCase
         $this->assertSame([1], $this->audioIds());
     }
 
-    public function test_a_small_crosspost_ignores_a_secondary_forced_music_group_and_is_selected_by_neither_path(): void
+    public function test_a_small_crosspost_with_a_secondary_forced_music_group_is_audio_routed(): void
     {
         $this->seedRelease(1, Category::OTHER_MISC, groupId: 1, size: 5 * 1024 * 1024);
         DB::table('releases_groups')->insert([
@@ -208,8 +209,52 @@ class AudioCandidateQueryTest extends TestCase
             'groups_id' => 2,
         ]);
 
-        $this->assertSame([], $this->audioIds());
+        $this->assertSame([1], $this->audioIds());
         $this->assertSame([], $this->videoIds());
+    }
+
+    public function test_the_selected_non_music_force_routes_to_the_general_path(): void
+    {
+        $this->seedRelease(1, Category::OTHER_MISC, groupId: 1, size: 400 * 1024 * 1024);
+        DB::table('releases_groups')->insert([
+            ['releases_id' => 1, 'groups_id' => 2],
+            ['releases_id' => 1, 'groups_id' => 4],
+        ]);
+
+        $this->assertSame([], $this->audioIds());
+        $this->assertSame([1], $this->videoIds());
+    }
+
+    public function test_crosspost_policy_states_are_owned_by_exactly_one_path(): void
+    {
+        $this->seedRelease(1, Category::OTHER_MISC, groupId: 1, size: 400 * 1024 * 1024);
+        $this->seedRelease(2, Category::OTHER_MISC, groupId: 1, size: 400 * 1024 * 1024);
+        $this->seedRelease(3, Category::OTHER_MISC, groupId: 1, size: 400 * 1024 * 1024);
+        $this->seedRelease(4, Category::OTHER_MISC, groupId: 2, size: 400 * 1024 * 1024);
+        $this->seedRelease(5, Category::OTHER_MISC, groupId: 4, size: 400 * 1024 * 1024);
+        $this->seedRelease(6, Category::MUSIC_OTHER, groupId: 1, size: 400 * 1024 * 1024);
+        $this->seedRelease(7, Category::MUSIC_OTHER, groupId: 4, size: 400 * 1024 * 1024);
+
+        DB::table('releases_groups')->insert([
+            ['releases_id' => 2, 'groups_id' => 2],
+            ['releases_id' => 3, 'groups_id' => 2],
+            ['releases_id' => 3, 'groups_id' => 4],
+            ['releases_id' => 4, 'groups_id' => 4],
+            ['releases_id' => 5, 'groups_id' => 2],
+        ]);
+
+        $audioIds = $this->audioIds();
+        $videoIds = $this->videoIds();
+
+        $this->assertSame([2, 4, 6], $audioIds);
+        $this->assertSame([1, 3, 5, 7], $videoIds);
+        foreach (range(1, 7) as $releaseId) {
+            $this->assertSame(
+                1,
+                (int) in_array($releaseId, $audioIds, true) + (int) in_array($releaseId, $videoIds, true),
+                "Release {$releaseId} must have exactly one owner.",
+            );
+        }
     }
 
     public function test_the_audio_query_still_applies_the_global_maximum_size(): void

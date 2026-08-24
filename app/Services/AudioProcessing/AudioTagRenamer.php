@@ -59,6 +59,7 @@ final class AudioTagRenamer
                 $release->groups_id,
                 $newName,
                 (string) ($release->fromname ?? ''),
+                releaseId: (int) $release->id,
             ),
         };
 

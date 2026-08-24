@@ -941,6 +941,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         Schema::dropIfExists('predb');
         Schema::dropIfExists('release_files');
         Schema::dropIfExists('releases');
+        Schema::dropIfExists('releases_groups');
         Schema::dropIfExists('categories');
         Schema::dropIfExists('root_categories');
         Schema::dropIfExists('usenet_groups');
@@ -949,6 +950,10 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
             $table->unsignedInteger('id')->primary();
             $table->string('name');
             $table->unsignedInteger('forced_root_categories_id')->nullable();
+        });
+        Schema::create('releases_groups', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id');
+            $table->unsignedInteger('groups_id');
         });
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.test']);
 

@@ -77,6 +77,7 @@ class RecategorizeReleases extends Command
                     $release->groups_id,
                     $release->searchname,
                     $release->fromname,
+                    releaseId: (int) $release->id,
                 );
 
                 if ((int) $release->categories_id !== (int) $categoryResult['categories_id']) {

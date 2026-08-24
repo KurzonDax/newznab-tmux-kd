@@ -37,7 +37,8 @@ class RecategorizeReleaseAfterNameFix
         $result = $this->categorization->determineCategory(
             $release->groups_id,
             $event->newName,
-            (string) ($release->fromname ?? $event->poster)
+            (string) ($release->fromname ?? $event->poster),
+            releaseId: (int) $release->id,
         );
 
         $newCategoryId = (int) ($result['categories_id'] ?? $release->categories_id);

@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Models\Category;
 use App\Services\Categorization\CategorizationPipeline;
+use App\Services\Categorization\CategorizationService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -26,6 +27,10 @@ class GroupForcedRootCategorizationTest extends TestCase
     private const int FORCED_GROUP_ID = 57;
 
     private const int PLAIN_GROUP_ID = 58;
+
+    private const int MOVIE_FORCED_GROUP_ID = 59;
+
+    private const int MUSIC_FORCED_GROUP_ID = 60;
 
     /**
      * @return array<string, string>
@@ -159,9 +164,76 @@ class GroupForcedRootCategorizationTest extends TestCase
         );
     }
 
-    private function categorize(int $groupId, string $releaseName): int
+    public function test_a_forced_secondary_group_governs_regardless_of_scan_order(): void
     {
-        return (int) CategorizationPipeline::createDefault()->categorize($groupId, $releaseName)['categories_id'];
+        $releaseName = 'Unmistakably.Generic.Release.Name';
+
+        $this->assertSame(
+            Category::MUSIC_OTHER,
+            $this->categorize(self::PLAIN_GROUP_ID, $releaseName, [
+                self::PLAIN_GROUP_ID,
+                self::MUSIC_FORCED_GROUP_ID,
+            ]),
+        );
+        $this->assertSame(
+            Category::MUSIC_OTHER,
+            $this->categorize(self::MUSIC_FORCED_GROUP_ID, $releaseName, [
+                self::MUSIC_FORCED_GROUP_ID,
+                self::PLAIN_GROUP_ID,
+            ]),
+        );
+    }
+
+    public function test_a_forced_primary_group_wins_conflicting_forces(): void
+    {
+        $this->assertSame(
+            Category::XXX_OTHER,
+            $this->categorize(self::FORCED_GROUP_ID, 'Generic.Release', [
+                self::MOVIE_FORCED_GROUP_ID,
+                self::FORCED_GROUP_ID,
+            ]),
+        );
+    }
+
+    public function test_the_lowest_forced_root_wins_when_the_primary_group_is_unforced(): void
+    {
+        foreach ([
+            [self::FORCED_GROUP_ID, self::MOVIE_FORCED_GROUP_ID],
+            [self::MOVIE_FORCED_GROUP_ID, self::FORCED_GROUP_ID],
+        ] as $associatedGroupIds) {
+            $this->assertSame(
+                Category::MOVIE_OTHER,
+                $this->categorize(self::PLAIN_GROUP_ID, 'Generic.Release', $associatedGroupIds),
+            );
+        }
+    }
+
+    public function test_a_persisted_release_uses_its_junction_groups(): void
+    {
+        DB::table('releases_groups')->insert([
+            'releases_id' => 900,
+            'groups_id' => self::MUSIC_FORCED_GROUP_ID,
+        ]);
+
+        $result = (new CategorizationService)->determineCategory(
+            self::PLAIN_GROUP_ID,
+            'Generic.Release',
+            releaseId: 900,
+        );
+
+        $this->assertSame(Category::MUSIC_OTHER, $result['categories_id']);
+    }
+
+    /**
+     * @param  list<int>  $associatedGroupIds
+     */
+    private function categorize(int $groupId, string $releaseName, array $associatedGroupIds = []): int
+    {
+        return (int) CategorizationPipeline::createDefault()->categorize(
+            $groupId,
+            $releaseName,
+            associatedGroupIds: $associatedGroupIds,
+        )['categories_id'];
     }
 
     /**
@@ -185,6 +257,11 @@ class GroupForcedRootCategorizationTest extends TestCase
             $table->unsignedInteger('obfuscated_default_root_categories_id')->nullable();
             $table->unsignedInteger('forced_root_categories_id')->nullable();
         });
+
+        Schema::create('releases_groups', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id');
+            $table->unsignedInteger('groups_id');
+        });
     }
 
     private function seedGroups(): void
@@ -199,6 +276,16 @@ class GroupForcedRootCategorizationTest extends TestCase
                 'id' => self::PLAIN_GROUP_ID,
                 'name' => 'alt.binaries.multimedia',
                 'forced_root_categories_id' => null,
+            ],
+            [
+                'id' => self::MOVIE_FORCED_GROUP_ID,
+                'name' => 'alt.binaries.movies',
+                'forced_root_categories_id' => Category::MOVIE_ROOT,
+            ],
+            [
+                'id' => self::MUSIC_FORCED_GROUP_ID,
+                'name' => 'alt.binaries.sounds',
+                'forced_root_categories_id' => Category::MUSIC_ROOT,
             ],
         ]);
     }

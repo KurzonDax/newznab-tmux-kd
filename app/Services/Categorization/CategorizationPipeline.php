@@ -11,6 +11,7 @@ use App\Services\Categorization\Pipes\AbstractCategorizationPipe;
 use App\Services\Categorization\Pipes\CategorizationPassable;
 use App\Services\NameFixing\Extractors\ObfuscatedSubjectExtractor;
 use App\Services\NameFixing\NzbSplitUnwrapper;
+use App\Services\Releases\ForcedRootPolicy;
 use Illuminate\Pipeline\Pipeline;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
@@ -38,13 +39,16 @@ class CategorizationPipeline
 
     protected ObfuscatedSubjectExtractor $obfuscatedSubjectExtractor;
 
+    protected ForcedRootPolicy $forcedRootPolicy;
+
     /**
      * @param  iterable<AbstractCategorizationPipe>  $pipes
      */
     public function __construct(
         iterable $pipes = [],
         ?NzbSplitUnwrapper $nzbSplitUnwrapper = null,
-        ?ObfuscatedSubjectExtractor $obfuscatedSubjectExtractor = null
+        ?ObfuscatedSubjectExtractor $obfuscatedSubjectExtractor = null,
+        ?ForcedRootPolicy $forcedRootPolicy = null,
     ) {
         $this->pipes = collect($pipes)
             ->sortBy(fn (AbstractCategorizationPipe $p) => $p->getPriority());
@@ -53,6 +57,7 @@ class CategorizationPipeline
         $this->catWebDL = (bool) Settings::settingValue('catwebdl');
         $this->nzbSplitUnwrapper = $nzbSplitUnwrapper ?? new NzbSplitUnwrapper;
         $this->obfuscatedSubjectExtractor = $obfuscatedSubjectExtractor ?? new ObfuscatedSubjectExtractor;
+        $this->forcedRootPolicy = $forcedRootPolicy ?? new ForcedRootPolicy;
     }
 
     /**
@@ -73,26 +78,34 @@ class CategorizationPipeline
      * @param  string  $releaseName  The name of the release
      * @param  string|null  $poster  The poster name
      * @param  bool  $debug  Whether to include debug information
+     * @param  list<int>  $associatedGroupIds  Every normalized group associated with the release
      * @return array<string, mixed> The categorization result
      */
     public function categorize(
         int|string $groupId,
         string $releaseName,
         ?string $poster = '',
-        bool $debug = false
+        bool $debug = false,
+        array $associatedGroupIds = [],
     ): array {
         $releaseName = $this->nzbSplitUnwrapper->unwrap($releaseName) ?? $releaseName;
         $releaseName = $this->obfuscatedSubjectExtractor->extract($releaseName) ?? $releaseName;
 
-        $group = UsenetGroup::query()->findOrNew($groupId, [
-            'name',
-            'route_obfuscated_names',
-            'obfuscated_default_root_categories_id',
-            'forced_root_categories_id',
-        ]);
+        $groups = UsenetGroup::query()
+            ->whereIn('id', $this->forcedRootPolicy->groupIds($groupId, $associatedGroupIds))
+            ->get([
+                'id',
+                'name',
+                'route_obfuscated_names',
+                'obfuscated_default_root_categories_id',
+                'forced_root_categories_id',
+            ]);
+        $group = $groups->first(
+            static fn (UsenetGroup $candidate): bool => (int) $candidate->id === (int) $groupId,
+        ) ?? new UsenetGroup;
         $groupName = (string) ($group->name ?? '');
         $obfuscatedDefaultRootCategoryId = $group->obfuscated_default_root_categories_id;
-        $forcedRootCategoryId = $group->forced_root_categories_id;
+        $forcedRootCategoryId = $this->forcedRootPolicy->select($groupId, $groups);
 
         $context = new ReleaseContext(
             releaseName: $releaseName,
