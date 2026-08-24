@@ -43,12 +43,7 @@ class RecategorizeReleases extends Command
         if ($this->option('misc')) {
             $countQuery->whereIn('categories_id', Category::OTHERS_GROUP);
         } elseif ($this->option('all')) {
-            if ($this->confirm('This will reset categorization on all releases and re-categorize them all from scratch. Are you sure? (y/n)', false)) {
-                Release::query()->where('iscategorized', 1)->update([
-                    'iscategorized' => 0,
-                ]);
-                $countQuery->where('iscategorized', 0);
-            } else {
+            if (! $this->option('test') && ! $this->confirm('This will reset categorization on all releases and re-categorize them all from scratch. Are you sure? (y/n)', false)) {
                 $this->info('Reset script stopped.');
                 exit();
             }
@@ -70,49 +65,63 @@ class RecategorizeReleases extends Command
 
         $count = $countQuery->count();
 
-        $cat = new CategorizationService;
+        $categorizationService = new CategorizationService;
         $previewPolicy = new PreviewGenerationPolicy;
-        $results = $countQuery->select(['id', 'searchname', 'fromname', 'groups_id', 'categories_id'])->get();
         $bar = $this->output->createProgressBar($count);
         $bar->start();
-        foreach ($results as $result) {
-            $bar->advance();
-            $catId = $cat->determineCategory($result->groups_id, $result->searchname, $result->fromname);
-            if ((int) $result->categories_id !== (int) $catId['categories_id']) {
-                if ($this->option('test')) {
-                    $this->info('Would have changed '.$result->searchname.' from '.$result->categories_id.' to '.$catId['categories_id']);
-                } else {
-                    Release::query()->where('id', $result->id)->update([
-                        'iscategorized' => 1,
-                        'videos_id' => 0,
-                        'tv_episodes_id' => 0,
-                        'imdbid' => null,
-                        'musicinfo_id' => null,
-                        'consoleinfo_id' => null,
-                        'gamesinfo_id' => 0,
-                        'bookinfo_id' => 0,
-                        'anidbid' => null,
-                        'categories_id' => $catId['categories_id'],
-                    ]);
+        $countQuery
+            ->select(['id', 'searchname', 'fromname', 'groups_id', 'categories_id', 'iscategorized'])
+            ->eachById(function (Release $release) use ($bar, $categorizationService, $previewPolicy): void {
+                $bar->advance();
+                $categoryResult = $categorizationService->determineCategory(
+                    $release->groups_id,
+                    $release->searchname,
+                    $release->fromname,
+                );
 
-                    $previewPolicy->restoreOwedPreviews([(int) $result->id]);
-                    Search::updateRelease((int) $result->id);
+                if ((int) $release->categories_id !== (int) $categoryResult['categories_id']) {
+                    if ($this->option('test')) {
+                        $this->info('Would have changed '.$release->searchname.' from '.$release->categories_id.' to '.$categoryResult['categories_id']);
+                    } else {
+                        Release::query()->where('id', $release->id)->update([
+                            'iscategorized' => 1,
+                            'videos_id' => 0,
+                            'tv_episodes_id' => 0,
+                            'imdbid' => null,
+                            'musicinfo_id' => null,
+                            'consoleinfo_id' => null,
+                            'gamesinfo_id' => 0,
+                            'bookinfo_id' => null,
+                            'anidbid' => null,
+                            'categories_id' => $categoryResult['categories_id'],
+                        ]);
 
-                    /** @var Category|null $newCatName */
-                    $newCatName = Category::query()->where('id', $catId['categories_id'])->first();
+                        $previewPolicy->restoreOwedPreviews([(int) $release->id]);
+                        Search::updateRelease((int) $release->id);
 
-                    $this->line('');
-                    $this->output->writeln('<fg=yellow>ID       :</> '.$result->id);
-                    $this->output->writeln('<fg=green>Release  :</> '.$result->searchname);
-                    $this->output->writeln('<fg=cyan>Group    :</> '.$result->group->name);
-                    $oldCategoryTitle = $result->category?->parent ? ($result->category->parent->title.' -> '.$result->category->title) : ($result->category?->title ?? 'N/A'); // @phpstan-ignore nullsafe.neverNull
+                        /** @var Category|null $newCategory */
+                        $newCategory = Category::query()->where('id', $categoryResult['categories_id'])->first();
 
-                    $newCategoryTitle = $newCatName?->parent ? ($newCatName->parent->title.' -> '.$newCatName->title) : ($newCatName?->title ?? 'N/A'); // @phpstan-ignore nullsafe.neverNull
-                    $this->output->writeln('<fg=white>Category :</> '.$oldCategoryTitle.' <fg=yellow>→</> <fg=magenta>'.$newCategoryTitle.'</>');
-                    $this->line('');
+                        $this->line('');
+                        $this->output->writeln('<fg=yellow>ID       :</> '.$release->id);
+                        $this->output->writeln('<fg=green>Release  :</> '.$release->searchname);
+                        $this->output->writeln('<fg=cyan>Group    :</> '.$release->group->name);
+                        $oldCategoryTitle = $release->category?->parent ? ($release->category->parent->title.' -> '.$release->category->title) : ($release->category?->title ?? 'N/A'); // @phpstan-ignore nullsafe.neverNull
+
+                        $newCategoryTitle = $newCategory?->parent ? ($newCategory->parent->title.' -> '.$newCategory->title) : ($newCategory?->title ?? 'N/A'); // @phpstan-ignore nullsafe.neverNull
+                        $this->output->writeln('<fg=white>Category :</> '.$oldCategoryTitle.' <fg=yellow>→</> <fg=magenta>'.$newCategoryTitle.'</>');
+                        $this->line('');
+                    }
+                } elseif ($this->option('all')) {
+                    if ($this->option('test') && (int) $release->iscategorized !== 1) {
+                        $this->info('Would have finalized '.$release->searchname.' as categorized');
+                    } elseif (! $this->option('test')) {
+                        Release::query()->where('id', $release->id)->update([
+                            'iscategorized' => 1,
+                        ]);
+                    }
                 }
-            }
-        }
+            }, 1000);
         $bar->finish();
     }
 }
