@@ -228,6 +228,7 @@ final class ReleaseRepairService
         Release::query()->where('id', $release->id)->update([
             'haspreview' => -1,
             'passwordstatus' => PasswordInspectionMode::pendingReleaseStatus(),
+            'pp_timeout_count' => 0,
         ]);
 
         return true;

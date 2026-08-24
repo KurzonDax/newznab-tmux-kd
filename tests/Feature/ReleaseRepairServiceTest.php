@@ -240,6 +240,7 @@ class ReleaseRepairServiceTest extends TestCase
             PasswordInspectionMode::pendingReleaseStatus(),
             (int) DB::table('releases')->where('id', 1)->value('passwordstatus'),
         );
+        $this->assertSame(0, (int) DB::table('releases')->where('id', 1)->value('pp_timeout_count'));
     }
 
     #[Test]
@@ -492,7 +493,8 @@ class ReleaseRepairServiceTest extends TestCase
             recovery_claimed_at DATETIME NULL,
             postdate DATETIME NULL,
             haspreview INTEGER NOT NULL DEFAULT -1,
-            passwordstatus INTEGER NOT NULL DEFAULT -1
+            passwordstatus INTEGER NOT NULL DEFAULT -1,
+            pp_timeout_count INTEGER NOT NULL DEFAULT 2
         )');
         DB::statement('CREATE TABLE video_data (releases_id INTEGER PRIMARY KEY, videocodec VARCHAR(255) NULL)');
         DB::statement('CREATE TABLE audio_data (id INTEGER PRIMARY KEY, releases_id INTEGER, audioformat VARCHAR(255) NULL)');

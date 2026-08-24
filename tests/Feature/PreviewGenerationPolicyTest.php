@@ -114,6 +114,7 @@ class PreviewGenerationPolicyTest extends TestCase
             PasswordInspectionMode::pendingReleaseStatus(),
             (int) DB::table('releases')->where('id', 1)->value('passwordstatus')
         );
+        $this->assertSame(0, (int) DB::table('releases')->where('id', 1)->value('pp_timeout_count'));
 
         $this->assertSame(-2, (int) DB::table('releases')->where('id', 2)->value('haspreview'));
         $this->assertSame(0, (int) DB::table('releases')->where('id', 3)->value('haspreview'));
@@ -240,6 +241,7 @@ class PreviewGenerationPolicyTest extends TestCase
             $table->integer('categories_id');
             $table->integer('haspreview')->default(0);
             $table->integer('passwordstatus')->default(0);
+            $table->unsignedInteger('pp_timeout_count')->default(2);
             $table->integer('iscategorized')->default(0);
             $table->string('searchname')->default('');
             $table->integer('isrenamed')->default(0);

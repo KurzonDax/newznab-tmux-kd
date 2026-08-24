@@ -66,7 +66,15 @@ final class ReleaseClaimant
             ->where('r.nzbstatus', 1);
 
         if ($minSizeBytes > 0) {
-            $query->where('r.size', '>', $minSizeBytes);
+            if (self::supportsClaims()) {
+                $query->where(function (Builder $minimumSizeQuery) use ($minSizeBytes): void {
+                    $minimumSizeQuery
+                        ->where('r.size', '>', $minSizeBytes)
+                        ->orWhere('r.'.self::CLAIM_TOKEN_COLUMN, AudioRouting::DECLINED_TOKEN);
+                });
+            } else {
+                $query->where('r.size', '>', $minSizeBytes);
+            }
         }
         if ($maxSizeBytes > 0) {
             $query->where('r.size', '<', $maxSizeBytes);
@@ -266,6 +274,16 @@ final class ReleaseClaimant
             self::CLAIMED_AT_COLUMN => null,
             self::CLAIM_TOKEN_COLUMN => null,
         ];
+    }
+
+    /**
+     * Values shared by both paths when processing reaches a terminal state.
+     *
+     * @return array<string, int|null>
+     */
+    public static function settlementValues(): array
+    {
+        return array_merge(self::claimResetValues(), ['pp_timeout_count' => 0]);
     }
 
     public static function supportsClaims(): bool

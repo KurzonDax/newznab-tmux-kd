@@ -41,6 +41,7 @@ class RequeueMissingVideoPreviewsCommandTest extends TestCase
             $table->integer('rarinnerfilecount');
             $table->integer('isrenamed');
             $table->unsignedBigInteger('size')->default(500);
+            $table->unsignedInteger('pp_timeout_count')->default(2);
         });
 
         Schema::create('root_categories', function (Blueprint $table): void {
@@ -114,6 +115,7 @@ class RequeueMissingVideoPreviewsCommandTest extends TestCase
 
         $this->assertSame(-1, DB::table('releases')->where('id', 1)->value('haspreview'));
         $this->assertSame($pending, DB::table('releases')->where('id', 1)->value('passwordstatus'));
+        $this->assertSame(0, DB::table('releases')->where('id', 1)->value('pp_timeout_count'));
         $this->assertSame(-1, DB::table('releases')->where('id', 2)->value('haspreview'));
         $this->assertSame(1, DB::table('releases')->where('id', 3)->value('haspreview'));
         $this->assertSame(0, DB::table('releases')->where('id', 4)->value('haspreview'));
@@ -151,6 +153,7 @@ class RequeueMissingVideoPreviewsCommandTest extends TestCase
         foreach ([1, 2] as $id) {
             $this->assertSame(-1, DB::table('releases')->where('id', $id)->value('haspreview'));
             $this->assertSame($pending, DB::table('releases')->where('id', $id)->value('passwordstatus'));
+            $this->assertSame(0, DB::table('releases')->where('id', $id)->value('pp_timeout_count'));
         }
     }
 
@@ -187,6 +190,7 @@ class RequeueMissingVideoPreviewsCommandTest extends TestCase
         foreach ([1, 2] as $id) {
             $this->assertSame(-1, DB::table('releases')->where('id', $id)->value('haspreview'));
             $this->assertSame($pending, DB::table('releases')->where('id', $id)->value('passwordstatus'));
+            $this->assertSame(0, DB::table('releases')->where('id', $id)->value('pp_timeout_count'));
         }
 
         $this->assertSame(-1, DB::table('releases')->where('id', 3)->value('passwordstatus'));
@@ -295,6 +299,7 @@ class RequeueMissingVideoPreviewsCommandTest extends TestCase
 
         $this->assertSame(-1, DB::table('releases')->where('id', 1)->value('haspreview'));
         $this->assertSame(PasswordInspectionMode::pendingReleaseStatus(), DB::table('releases')->where('id', 1)->value('passwordstatus'));
+        $this->assertSame(0, DB::table('releases')->where('id', 1)->value('pp_timeout_count'));
         foreach ([2, 3, 4, 5, 6, 7, 8] as $id) {
             $this->assertSame(0, DB::table('releases')->where('id', $id)->value('haspreview'), "Release {$id} must not be requeued.");
         }

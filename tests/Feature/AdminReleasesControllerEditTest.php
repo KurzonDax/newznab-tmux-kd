@@ -266,6 +266,7 @@ class AdminReleasesControllerEditTest extends TestCase
                 $table->integer('movieinfo_id')->nullable();
                 $table->integer('haspreview')->default(0);
                 $table->integer('passwordstatus')->default(0);
+                $table->unsignedInteger('pp_timeout_count')->default(0);
             });
         }
 

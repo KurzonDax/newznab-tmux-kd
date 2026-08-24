@@ -48,6 +48,7 @@ class RequeueUnknownPayloadsCommandTest extends TestCase
             $table->integer('haspreview');
             $table->integer('passwordstatus');
             $table->integer('isrenamed');
+            $table->unsignedInteger('pp_timeout_count')->default(2);
         });
         Schema::create('release_files', function (Blueprint $table): void {
             $table->unsignedBigInteger('releases_id');
@@ -99,6 +100,7 @@ class RequeueUnknownPayloadsCommandTest extends TestCase
 
         $this->assertSame(-1, $eligible->fresh()?->haspreview);
         $this->assertSame(PasswordInspectionMode::pendingReleaseStatus(), $eligible->fresh()?->passwordstatus);
+        $this->assertSame(0, $eligible->fresh()?->pp_timeout_count);
         $this->assertSame(0, $normal->fresh()?->haspreview);
         $this->assertSame(1, $pendingPassword->fresh()?->passwordstatus);
         $this->assertSame(0, $tooSmall->fresh()?->haspreview);

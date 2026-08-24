@@ -558,6 +558,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
                 $table->tinyInteger('passwordstatus')->default(0);
                 $table->tinyInteger('haspreview')->default(0);
                 $table->tinyInteger('nzbstatus')->default(0);
+                $table->unsignedInteger('pp_timeout_count')->default(0);
             });
         }
 

@@ -87,6 +87,7 @@ class NntmuxResetPostProcessing extends Command
                             'jpgstatus' => 0,
                             'videostatus' => 0,
                             'nfostatus' => -1,
+                            'pp_timeout_count' => 0,
                         ]
                     );
                     Search::updateRelease((int) $releases->id);
@@ -366,6 +367,7 @@ class NntmuxResetPostProcessing extends Command
                         'jpgstatus' => 0,
                         'videostatus' => 0,
                         'nfostatus' => -1,
+                        'pp_timeout_count' => 0,
                     ]);
                 Search::updateRelease((int) $releases->id);
                 $bar->advance();

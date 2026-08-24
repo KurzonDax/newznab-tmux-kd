@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Facades\Search;
 use App\Services\AdditionalProcessing\AdditionalProcessingOrchestrator;
 use App\Services\AdditionalProcessing\DTO\AdditionalBatchResult;
 use App\Services\AdditionalProcessing\DTO\DownloadMetrics;
@@ -259,6 +260,26 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
         $this->assertStringContainsString('Persistence profile', $output);
     }
 
+    public function test_targeted_additional_reset_clears_the_attempt_counter(): void
+    {
+        DB::table('categories')->insert(['id' => 1]);
+        DB::table('releases')->insert([...$this->releaseRow(1, 'a'), 'pp_timeout_count' => 2]);
+        Search::shouldReceive('updateRelease')->once()->with(1);
+
+        $this->mock(AdditionalProcessingOrchestrator::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('processSingleGuid')
+                ->once()
+                ->with('a-guid-1')
+                ->andReturn(new ReleaseProcessingResult(1, 'a-guid-1', ProcessingOutcome::Completed));
+            $mock->shouldReceive('finish')->once();
+        });
+
+        $status = Artisan::call('releases:additional', ['--id' => 1, '--reset' => true]);
+
+        $this->assertSame(0, $status);
+        $this->assertSame(0, (int) DB::table('releases')->where('id', 1)->value('pp_timeout_count'));
+    }
+
     public function test_targeted_additional_command_fails_for_an_unsuccessful_typed_outcome(): void
     {
         DB::table('categories')->insert(['id' => 1]);
@@ -409,6 +430,10 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
             $table->integer('passwordstatus');
             $table->integer('haspreview');
             $table->integer('nzbstatus');
+            $table->integer('jpgstatus')->default(0);
+            $table->integer('videostatus')->default(0);
+            $table->integer('nfostatus')->default(-1);
+            $table->unsignedInteger('pp_timeout_count')->default(0);
             $table->unsignedInteger('categories_id');
             $table->unsignedInteger('groups_id')->default(0);
             $table->unsignedBigInteger('size');

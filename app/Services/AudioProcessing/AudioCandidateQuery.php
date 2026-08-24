@@ -9,8 +9,6 @@ use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Schema;
 
 /**
  * Single source of truth for "needs audio postprocessing" release selection.
@@ -31,9 +29,6 @@ use Illuminate\Support\Facades\Schema;
  */
 final class AudioCandidateQuery
 {
-    /** @var array<int, true> */
-    private static array $loggedTimeoutReleaseIds = [];
-
     /**
      * Apply the candidate-selection predicates to an Eloquent builder.
      *
@@ -63,41 +58,8 @@ final class AudioCandidateQuery
         }
 
         AudioRouting::applyAudioPath($query);
-        self::applyArchiveCrashGuard($query, logExclusions: ! $includeClaimed);
 
         return $query;
-    }
-
-    /**
-     * @param  Builder<Release>  $query
-     */
-    private static function applyArchiveCrashGuard(Builder $query, bool $logExclusions): void
-    {
-        if (! Schema::hasColumn('releases', 'pp_timeout_count')) {
-            return;
-        }
-
-        $maximum = ReleaseClaimant::maxPpTimeoutCount();
-        if ($logExclusions) {
-            $excludedReleases = (clone $query)
-                ->where('r.pp_timeout_count', '>=', $maximum)
-                ->get(['r.id', 'r.pp_timeout_count']);
-
-            foreach ($excludedReleases as $release) {
-                $id = (int) $release->id;
-                if (isset(self::$loggedTimeoutReleaseIds[$id])) {
-                    continue;
-                }
-
-                Log::warning(
-                    'Release '.$id.' excluded from audio post-processing after '
-                    .(int) $release->pp_timeout_count.' archive fetch attempt(s) (limit '.$maximum.').'
-                );
-                self::$loggedTimeoutReleaseIds[$id] = true;
-            }
-        }
-
-        $query->where('r.pp_timeout_count', '<', $maximum);
     }
 
     /**

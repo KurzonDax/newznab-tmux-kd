@@ -79,6 +79,7 @@ class RequeueAudioPreviewsTest extends TestCase
             $table->unsignedInteger('categories_id');
             $table->unsignedInteger('groups_id')->default(0);
             $table->unsignedBigInteger('size')->default(1000);
+            $table->unsignedInteger('pp_timeout_count')->default(0);
             $table->timestamp('additional_pp_claimed_at')->nullable();
             $table->string('additional_pp_claim_token', 64)->nullable();
         });
@@ -110,6 +111,7 @@ class RequeueAudioPreviewsTest extends TestCase
         $this->seedRelease(7, Category::MUSIC_MP3, haspreview: 1);
         $this->seedRelease(8, Category::MUSIC_MP3, haspreview: -1, passwordstatus: 0);
         $this->seedRelease(9, Category::MUSIC_MP3, haspreview: -1, claimToken: AudioRouting::DECLINED_TOKEN);
+        $this->seedRelease(10, Category::MUSIC_MP3, haspreview: -1, ppTimeoutCount: 3);
 
         $this->resetClaimSupportCache();
     }
@@ -128,7 +130,7 @@ class RequeueAudioPreviewsTest extends TestCase
 
         $this->artisan('releases:requeue-audio-previews')
             ->expectsOutputToContain('Dry run')
-            ->expectsOutputToContain('stranded repaired: 1')
+            ->expectsOutputToContain('stranded repaired: 2')
             ->expectsOutputToContain('re-queued from 0: 2')
             ->expectsOutputToContain('re-queued from -2: 1')
             ->expectsOutputToContain('declined re-queued: 0')
@@ -144,13 +146,13 @@ class RequeueAudioPreviewsTest extends TestCase
     public function apply_requeues_exactly_the_audio_routed_subset(): void
     {
         $this->artisan('releases:requeue-audio-previews --apply')
-            ->expectsOutputToContain('stranded repaired: 1')
+            ->expectsOutputToContain('stranded repaired: 2')
             ->expectsOutputToContain('re-queued from 0: 2')
             ->expectsOutputToContain('re-queued from -2: 1')
             ->expectsOutputToContain('declined re-queued: 0')
             ->assertSuccessful();
 
-        foreach ([1, 2, 3, 6] as $id) {
+        foreach ([1, 2, 3, 6, 10] as $id) {
             $this->assertPending($id);
         }
 
@@ -270,6 +272,7 @@ class RequeueAudioPreviewsTest extends TestCase
         int $passwordstatus = 0,
         int $groupId = self::PLAIN_GROUP,
         ?string $claimToken = null,
+        int $ppTimeoutCount = 2,
     ): void {
         DB::table('releases')->insert([
             'id' => $id,
@@ -280,6 +283,7 @@ class RequeueAudioPreviewsTest extends TestCase
             'nzbstatus' => 1,
             'categories_id' => $categoryId,
             'groups_id' => $groupId,
+            'pp_timeout_count' => $ppTimeoutCount,
             'additional_pp_claim_token' => $claimToken,
         ]);
     }
@@ -290,6 +294,7 @@ class RequeueAudioPreviewsTest extends TestCase
 
         $this->assertSame(-1, $release->haspreview, "release {$id} should be pending");
         $this->assertSame(0, $release->passwordstatus, "release {$id} should carry the pending sentinel");
+        $this->assertSame(0, $release->pp_timeout_count, "release {$id} should reset its attempt counter");
         $this->assertNull($release->additional_pp_claimed_at);
         $this->assertNull($release->additional_pp_claim_token);
     }

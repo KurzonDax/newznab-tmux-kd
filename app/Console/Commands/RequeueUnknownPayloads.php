@@ -58,6 +58,7 @@ class RequeueUnknownPayloads extends Command
                 $updated += Release::query()->whereKey($release->id)->update([
                     'haspreview' => -1,
                     'passwordstatus' => PasswordInspectionMode::pendingReleaseStatus(),
+                    'pp_timeout_count' => 0,
                 ]);
             }
 
