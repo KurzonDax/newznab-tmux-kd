@@ -15,48 +15,77 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          # HEAD^ is the base tip on pull_request merge commits and the previous
+          # master tip on squash-merge pushes, so a depth of 2 covers the diff.
+          fetch-depth: 2
+
+      - name: Detect a docs-only change
+        id: scope
+        run: |
+          changed_files="$(git diff --name-only HEAD^ HEAD)"
+          printf 'Changed files:\n%s\n' "$changed_files"
+          if [[ -n "$changed_files" ]] &&
+              ! grep -qvE '(^docs/|^\.ai/|\.md$|^LICENSE$)' <<<"$changed_files"; then
+            echo 'code=false' >> "$GITHUB_OUTPUT"
+            echo 'Docs-only change: heavy CI steps are skipped.'
+          else
+            echo 'code=true' >> "$GITHUB_OUTPUT"
+            echo 'Code change detected: running the full pipeline.'
+          fi
 
       - name: Copy env file
+        if: steps.scope.outputs.code == 'true'
         run: cp .env.test .env
 
       - name: Configure Sail identity
+        if: steps.scope.outputs.code == 'true'
         run: |
           echo "WWWUSER=$(id -u)" >> "$GITHUB_ENV"
           echo "WWWGROUP=$(id -g)" >> "$GITHUB_ENV"
 
       - name: Start Sail
+        if: steps.scope.outputs.code == 'true'
         run: ./sail up -d --build
 
       - name: Run composer install
+        if: steps.scope.outputs.code == 'true'
         run: make composer-install
 
       - name: Generate app key
+        if: steps.scope.outputs.code == 'true'
         run: |
           ./sail artisan key:generate --force
 
       - name: Audit dependencies (informational, never blocks merge)
+        if: steps.scope.outputs.code == 'true'
         continue-on-error: true
         run: make deps-audit
 
       - name: Run tests
+        if: steps.scope.outputs.code == 'true'
         run: ./sail test --compact
 
       - name: Run permission and test-isolation regressions
+        if: steps.scope.outputs.code == 'true'
         run: make test-permissions
 
       - name: Prove focused tests leave live caches unchanged
+        if: steps.scope.outputs.code == 'true'
         run: make test-focused-cache-isolation
 
       - name: Build frontend and run JS tests
+        if: steps.scope.outputs.code == 'true'
         run: |
           make npm-build
           ./sail npm run test:js
 
       - name: Verify production permissions
+        if: steps.scope.outputs.code == 'true'
         run: |
           make fix-permissions
           make check-permissions
 
       - name: Stop Sail
-        if: always()
+        if: always() && steps.scope.outputs.code == 'true'
         run: ./sail down

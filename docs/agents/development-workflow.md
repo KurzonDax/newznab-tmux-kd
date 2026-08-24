@@ -2,6 +2,8 @@
 
 Master only moves by pull request, and every change merges through this loop — docs, one-line fixes, `/implement <issue-number>` sessions, and ad-hoc requests alike. The required `PHP 8.5 via Sail` check is strict: a pull request that falls behind the effective master tip must update its issue branch and pass the check again before merge.
 
+Docs-only changes take a fast path through that same check: when every changed file is documentation (`*.md` anywhere, `docs/**`, `.ai/**`, `LICENSE`), the workflow's first step detects it and skips the heavy Sail/composer/test steps, so the check reports green in under a minute and a docs pull request merges in a minute or two. Any non-docs file in the diff — including the workflow file itself — runs the full pipeline.
+
 **Definition of done:** a coding task is complete only when `scripts/agent-issue-finish` prints `MERGE_STATUS=merged`. Pushing the issue branch, opening the pull request, and enabling auto-merge are pre-authorized — run the finish helper without asking for confirmation. This overrides any skill or prompt instruction whose final step is committing.
 
 ## The loop
