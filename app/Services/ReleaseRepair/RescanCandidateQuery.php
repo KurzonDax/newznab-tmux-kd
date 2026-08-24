@@ -80,7 +80,7 @@ final class RescanCandidateQuery
      */
     private static function measuredBelow(float $targetCompletion): Builder
     {
-        return Release::query()
+        return RecoveryLease::applyAvailable(Release::query())
             ->where('nzbstatus', NzbService::NZB_ADDED)
             ->where('completion', '>', 0)
             ->where('completion', '<', $targetCompletion)

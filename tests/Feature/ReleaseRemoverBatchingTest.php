@@ -26,7 +26,12 @@ class ReleaseRemoverBatchingTest extends TestCase
      */
     protected function bootstrapSettings(): array
     {
-        return ['categorizeforeign' => '0', 'catwebdl' => '0', 'innerfileblacklist' => ''];
+        return [
+            'categorizeforeign' => '0',
+            'catwebdl' => '0',
+            'innerfileblacklist' => '',
+            'releaseprocessingtimeout' => '120',
+        ];
     }
 
     protected function setUp(): void
@@ -60,6 +65,8 @@ class ReleaseRemoverBatchingTest extends TestCase
             $table->string('fromname')->nullable();
             $table->unsignedInteger('groups_id');
             $table->dateTime('adddate')->nullable();
+            $table->dateTime('additional_pp_claimed_at')->nullable();
+            $table->dateTime('recovery_claimed_at')->nullable();
         });
         Schema::create('release_files', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
@@ -94,10 +101,47 @@ class ReleaseRemoverBatchingTest extends TestCase
         ])->all());
 
         $management = Mockery::mock(ReleaseManagementService::class);
-        $management->shouldReceive('deleteBatch')
+        $management->shouldReceive('deleteBatchIfUnclaimed')
             ->once()
             ->withArgs(static fn ($releases): bool => $releases->count() === 125)
             ->andReturn(125);
+
+        $service = new ReleaseRemoverService(
+            $management,
+            Mockery::mock(NzbService::class),
+            Mockery::mock(ReleaseImageService::class)
+        );
+
+        self::assertTrue($service->removeCrap(true, 'full', 'blacklist'));
+    }
+
+    public function test_sweeps_exclude_live_processing_claims_but_include_stale_claims(): void
+    {
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.test']);
+        DB::table('binaryblacklist')->insert([
+            'groupname' => 'alt.binaries.*',
+            'regex' => '^blocked-',
+            'status' => BlacklistConstants::BLACKLIST_ENABLED,
+            'optype' => BlacklistConstants::OPTYPE_BLACKLIST,
+            'msgcol' => BlacklistConstants::BLACKLIST_FIELD_SUBJECT,
+        ]);
+
+        $live = now();
+        $stale = now()->subHour();
+
+        DB::table('releases')->insert([
+            $this->releaseRow(1, additionalClaimedAt: $live),
+            $this->releaseRow(2, recoveryClaimedAt: $live),
+            $this->releaseRow(3, additionalClaimedAt: $stale),
+            $this->releaseRow(4, recoveryClaimedAt: $stale),
+            $this->releaseRow(5),
+        ]);
+
+        $management = Mockery::mock(ReleaseManagementService::class);
+        $management->shouldReceive('deleteBatchIfUnclaimed')
+            ->once()
+            ->withArgs(static fn ($releases): bool => $releases->pluck('id')->map(intval(...))->all() === [3, 4, 5])
+            ->andReturn(3);
 
         $service = new ReleaseRemoverService(
             $management,
@@ -137,7 +181,7 @@ class ReleaseRemoverBatchingTest extends TestCase
         ]);
 
         $management = Mockery::mock(ReleaseManagementService::class);
-        $management->shouldReceive('deleteBatch')->once()->andReturn(1);
+        $management->shouldReceive('deleteBatchIfUnclaimed')->once()->andReturn(1);
 
         $service = new ReleaseRemoverService(
             $management,
@@ -182,5 +226,51 @@ class ReleaseRemoverBatchingTest extends TestCase
 
         self::assertSame(2, $deleted);
         self::assertSame(0, DB::table('releases')->count());
+    }
+
+    public function test_protected_batch_rechecks_claims_acquired_after_candidate_selection(): void
+    {
+        DB::table('releases')->insert([
+            $this->releaseRow(1),
+            $this->releaseRow(2),
+        ]);
+
+        $selected = DB::table('releases')
+            ->orderBy('id')
+            ->get(['id', 'guid']);
+
+        DB::table('releases')->where('id', 1)->update(['additional_pp_claimed_at' => now()]);
+        DB::table('releases')->where('id', 2)->update(['recovery_claimed_at' => now()]);
+
+        $nzb = Mockery::mock(NzbService::class);
+        $nzb->shouldNotReceive('deleteNzb');
+        $images = Mockery::mock(ReleaseImageService::class);
+        $images->shouldNotReceive('delete');
+        Search::shouldReceive('deleteReleases')->never();
+
+        $deleted = (new ReleaseManagementService)->deleteBatchIfUnclaimed($selected, $nzb, $images);
+
+        self::assertSame(0, $deleted);
+        self::assertSame([1, 2], DB::table('releases')->orderBy('id')->pluck('id')->map(intval(...))->all());
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function releaseRow(
+        int $id,
+        mixed $additionalClaimedAt = null,
+        mixed $recoveryClaimedAt = null,
+    ): array {
+        return [
+            'id' => $id,
+            'guid' => str_pad((string) $id, 40, '0', STR_PAD_LEFT),
+            'searchname' => 'blocked-'.$id,
+            'fromname' => 'poster',
+            'groups_id' => 1,
+            'adddate' => now(),
+            'additional_pp_claimed_at' => $additionalClaimedAt,
+            'recovery_claimed_at' => $recoveryClaimedAt,
+        ];
     }
 }

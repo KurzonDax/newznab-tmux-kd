@@ -20,13 +20,16 @@ finished with it. The predicate lives in one place,
 completion > 0 AND completion < completionpercent
   AND repair_outcome IN ('failed', 'skipped-floor', 'skipped-budget')
   AND (rescan_outcome IN ('failed', 'skipped-floor', 'skipped-budget')
-       OR declaredfiles IS NULL OR declaredfiles <= 0 OR declaredfiles <= totalpart)
+       OR declaredfiles <= 0 OR declaredfiles <= totalpart)
+  AND no live additional-processing claim or recovery lease
 ```
 
-Only *final* outcomes are deletable. The re-scan half also passes a release with nothing to look
-for, since it would be stamped final on sight and waiting for the stamp would only delay the
-reaper by a batch. The sweep does no timestamp arithmetic — the state machines own time and hand
-the reaper only what they have given up on. Manual commands
+Only *final* outcomes are deletable. A null `declaredfiles` value is unresolved, not proof that
+there is nothing to re-scan: the scheduled re-scan must read the stored NZB and persist the derived
+count before the sweep may judge that row. Derived zero and `declaredfiles <= totalpart` values do
+mean there is no whole-file shortfall, so those rows need no rescan stamp. The sweep does no retry
+timestamp arithmetic — the state machines own time and hand the reaper only what they have given
+up on. Manual commands
 (`nntmux:delete-releases --completion-max`) remain operator overrides and bypass the gate.
 
 `completion = 0` stays exempt: it is the "never measured" sentinel, meaning nothing declared a
@@ -78,12 +81,25 @@ php artisan releases:backfill-completion --understated
 # One repair pass over a bounded batch. Runs hourly from the scheduler.
 php artisan releases:repair-completion --dry-run -v
 php artisan releases:repair-completion --limit=250
+
+# One whole-file re-scan pass. Runs hourly immediately after repair, with its own budgets.
+php artisan releases:rescan-missing-files --dry-run -v
+php artisan releases:rescan-missing-files --limit=50
 ```
 
 `releases:repair-completion` is bounded per invocation on purpose. Repaired releases feed back
 into additional processing, whose capacity is `postthreads x maxaddprocessed` per cycle, and AP
 claims newest-first — so a flood here would starve fresh releases. The reaper needs no throttle:
 it only ever sees final outcomes, which appear at this drip rate by construction.
+
+Both scheduled commands use `withoutOverlapping`, and their declaration order is the recovery
+order: segment repair first, whole-file re-scan second. Each service stamps the shared nullable
+`recovery_claimed_at` lease before it touches a release and clears that lease in a `finally` path,
+including storage skips and exceptions. The lease and `additional_pp_claimed_at` use the same
+stale cutoff, so a crashed worker cannot protect a row forever. Automated destructive sweeps skip
+either live claim both during candidate selection and at a locked deletion boundary. If a worker
+claims a candidate between those checks, the boundary leaves its database row and artifacts
+untouched. Explicit operator deletion remains an override.
 
 ## How repair works
 
@@ -230,8 +246,9 @@ between a dropped group and a sulking connection, so it takes the normal two pas
 `failed`.
 
 The sweep waits for **both** state machines. `IncompleteReleaseSweepQuery` requires a final
-`repair_outcome` *and* either a final `rescan_outcome` or a release with nothing to re-scan —
-`declaredfiles` null, zero, or no greater than the files held.
+`repair_outcome` *and* either a final `rescan_outcome` or a *derived* release with nothing to
+re-scan — `declaredfiles` zero or no greater than the files held. Null remains rescan-eligible and
+is never deletion-eligible.
 
 ```bash
 # One re-scan pass over a bounded batch. --dry-run resolves declared counts and estimates

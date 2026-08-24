@@ -39,6 +39,27 @@ final class ReleaseRepairService
      */
     public function repair(Release $release, ReleaseRepairOptions $options): ReleaseRepairResult
     {
+        $lease = RecoveryLease::acquire($release);
+
+        if ($lease === null) {
+            return ReleaseRepairResult::notAttempted(
+                (float) $release->completion,
+                'Another recovery pass is already working this release.',
+            );
+        }
+
+        try {
+            return $this->repairWithLease($release, $options);
+        } finally {
+            $lease->release();
+        }
+    }
+
+    /**
+     * @throws \Exception
+     */
+    private function repairWithLease(Release $release, ReleaseRepairOptions $options): ReleaseRepairResult
+    {
         $completionBefore = (float) $release->completion;
         $isFinalAttempt = $release->repair_outcome === ReleaseRepairOutcome::RetryPending;
 

@@ -9,6 +9,8 @@ use App\Models\Release;
 use App\Models\ReleaseFile;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseImageService;
+use App\Services\Releases\ReleaseDeletionProtection;
+use App\Services\Releases\ReleaseManagementService;
 use Illuminate\Console\Command;
 
 class NntmuxRemoveBadReleases extends Command
@@ -28,16 +30,6 @@ class NntmuxRemoveBadReleases extends Command
     protected $description = 'Update releases that have passworded files inside archives and remove releases that cannot be PPA\'d properly';
 
     /**
-     * Create a new command instance.
-     *
-     * @return void
-     */
-    public function __construct()
-    {
-        parent::__construct();
-    }
-
-    /**
      * Execute the console command.
      *
      *
@@ -46,15 +38,20 @@ class NntmuxRemoveBadReleases extends Command
     public function handle(): void
     {
         // Select releases with password status -2 and smaller and delete them. Also delete the files from the filesystem.
-        $badReleases = Release::query()->where('passwordstatus', '<=', -2)->get();
+        $badReleases = ReleaseDeletionProtection::apply(Release::query())
+            ->where('passwordstatus', '<=', -2)
+            ->get();
+        $releaseManagement = app(ReleaseManagementService::class);
+        $nzb = app(NzbService::class);
+        $releaseImage = new ReleaseImageService;
+
         foreach ($badReleases as $badRelease) {
-            app(NzbService::class)->deleteNzb($badRelease->guid);
-            (new ReleaseImageService)->delete($badRelease->guid);
-            // Delete from search index
-            Search::deleteRelease($badRelease->id);
-            $badRelease->delete();
+            $releaseManagement->deleteSingleIfUnclaimed(
+                ['g' => (string) $badRelease->guid, 'i' => (int) $badRelease->id],
+                $nzb,
+                $releaseImage,
+            );
         }
-        Release::query()->where('passwordstatus', '=', -2)->delete();
 
         $passReleases = ReleaseFile::query()->where('passworded', '=', 1)->groupBy('releases_id')->get();
 

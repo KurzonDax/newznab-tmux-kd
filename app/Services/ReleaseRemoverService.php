@@ -8,6 +8,7 @@ use App\Enums\BlacklistConstants;
 use App\Models\Category;
 use App\Models\Settings;
 use App\Services\Nzb\NzbService;
+use App\Services\Releases\ReleaseDeletionProtection;
 use App\Services\Releases\ReleaseManagementService;
 use Carbon\Carbon;
 use Exception;
@@ -771,6 +772,7 @@ class ReleaseRemoverService
             }
 
             $lastId = (int) end($candidates)->id;
+            $candidates = ReleaseDeletionProtection::filterCandidates(collect($candidates))->all();
             $matches = collect();
 
             if ($includeFiles) {
@@ -806,11 +808,12 @@ class ReleaseRemoverService
                 }
             }
 
+            $removed = $matches->count();
             if ($this->delete && $matches->isNotEmpty()) {
-                $this->releaseManagement->deleteBatch($matches, $this->nzb, $this->releaseImage);
+                $removed = $this->releaseManagement->deleteBatchIfUnclaimed($matches, $this->nzb, $this->releaseImage);
             }
 
-            $this->deletedCount += $matches->count();
+            $this->deletedCount += $removed;
 
             if (count($candidates) === self::BATCH_SIZE) {
                 usleep(self::BATCH_PAUSE_US);
@@ -977,6 +980,7 @@ class ReleaseRemoverService
 
             $batch = collect($batch)->unique('id')->values();
             $lastId = (int) $batch->max('id');
+            $batch = ReleaseDeletionProtection::filterCandidates($batch);
 
             foreach ($batch as $release) {
                 if ($this->echoCLI) {
@@ -987,11 +991,12 @@ class ReleaseRemoverService
                 }
             }
 
+            $removed = $batch->count();
             if ($this->delete) {
-                $this->releaseManagement->deleteBatch($batch, $this->nzb, $this->releaseImage);
+                $removed = $this->releaseManagement->deleteBatchIfUnclaimed($batch, $this->nzb, $this->releaseImage);
             }
 
-            $this->deletedCount += $batch->count();
+            $this->deletedCount += $removed;
 
             if ($batch->count() === self::BATCH_SIZE) {
                 usleep(self::BATCH_PAUSE_US);

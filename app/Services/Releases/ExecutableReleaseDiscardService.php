@@ -115,13 +115,7 @@ class ExecutableReleaseDiscardService
      */
     public function discard(Release $release, string $matchedFileName): void
     {
-        Log::warning('Discarding release containing executable file', [
-            'release_id' => (int) $release->id,
-            'name' => (string) ($release->searchname ?? $release->name ?? ''),
-            'categories_id' => (int) $release->categories_id,
-            'poster' => (string) ($release->fromname ?? ''),
-            'file' => $matchedFileName,
-        ]);
+        $this->logDiscard($release, $matchedFileName);
 
         $this->releaseManagement->deleteSingle(
             ['g' => (string) $release->guid, 'i' => (int) $release->id],
@@ -168,7 +162,7 @@ class ExecutableReleaseDiscardService
 
         $discarded = 0;
 
-        Release::query()
+        ReleaseDeletionProtection::apply(Release::query())
             ->whereIn('categories_id', $categoryIds)
             ->whereExists(function (Builder $query): void {
                 $query->select(DB::raw(1))
@@ -191,7 +185,10 @@ class ExecutableReleaseDiscardService
                         continue;
                     }
 
-                    $this->discard($release, $matchedFileName);
+                    if (! $this->discardIfUnclaimed($release, $matchedFileName)) {
+                        continue;
+                    }
+
                     $discarded++;
 
                     if ($onDiscard !== null) {
@@ -203,6 +200,32 @@ class ExecutableReleaseDiscardService
             });
 
         return $discarded;
+    }
+
+    private function discardIfUnclaimed(Release $release, string $matchedFileName): bool
+    {
+        $deleted = $this->releaseManagement->deleteSingleIfUnclaimed(
+            ['g' => (string) $release->guid, 'i' => (int) $release->id],
+            app(NzbService::class),
+            new ReleaseImageService,
+        );
+
+        if ($deleted) {
+            $this->logDiscard($release, $matchedFileName);
+        }
+
+        return $deleted;
+    }
+
+    private function logDiscard(Release $release, string $matchedFileName): void
+    {
+        Log::warning('Discarding release containing executable file', [
+            'release_id' => (int) $release->id,
+            'name' => (string) ($release->searchname ?? $release->name ?? ''),
+            'categories_id' => (int) $release->categories_id,
+            'poster' => (string) ($release->fromname ?? ''),
+            'file' => $matchedFileName,
+        ]);
     }
 
     private function extensionRegex(): string
