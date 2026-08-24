@@ -419,6 +419,7 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
             ['name' => 'releaseprocessingtimeout', 'value' => '120'],
         ], ['name'], ['value']);
 
+        Schema::dropIfExists('releases_groups');
         Schema::dropIfExists('releases');
         Schema::dropIfExists('categories');
 
@@ -451,6 +452,11 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
             $table->dateTime('postdate')->nullable();
             $table->timestamp('additional_pp_claimed_at')->nullable();
             $table->string('additional_pp_claim_token', 64)->nullable();
+        });
+
+        Schema::create('releases_groups', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id');
+            $table->unsignedInteger('groups_id');
         });
     }
 }

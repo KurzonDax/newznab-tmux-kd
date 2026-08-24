@@ -7,6 +7,7 @@ namespace App\Services\Categorization;
 use App\Models\Category;
 use App\Services\Categorization\Pipes\AbstractCategorizationPipe;
 use Blacklight\Categorize;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Categorization service using Laravel Pipeline.
@@ -30,15 +31,30 @@ class CategorizationService
      * @param  string  $releaseName  The name of the release
      * @param  string|null  $poster  The poster name
      * @param  bool  $debug  Whether to include debug information
+     * @param  list<int>  $associatedGroupIds  Every normalized group associated with the release
+     * @param  int|null  $releaseId  A persisted release whose junction groups should be included
      * @return array<string, mixed> The categorization result with category ID and optional debug info
      */
     public function determineCategory(
         int|string $groupId,
         string $releaseName = '',
         ?string $poster = '',
-        bool $debug = false
+        bool $debug = false,
+        array $associatedGroupIds = [],
+        ?int $releaseId = null,
     ): array {
-        return $this->pipeline->categorize($groupId, $releaseName, $poster, $debug);
+        if ($releaseId !== null) {
+            $associatedGroupIds = array_values(array_unique([
+                ...$associatedGroupIds,
+                ...DB::table('releases_groups')
+                    ->where('releases_id', $releaseId)
+                    ->pluck('groups_id')
+                    ->map(static fn (mixed $groupId): int => (int) $groupId)
+                    ->all(),
+            ]));
+        }
+
+        return $this->pipeline->categorize($groupId, $releaseName, $poster, $debug, $associatedGroupIds);
     }
 
     /**

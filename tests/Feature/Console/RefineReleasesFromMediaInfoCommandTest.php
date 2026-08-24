@@ -27,9 +27,18 @@ class RefineReleasesFromMediaInfoCommandTest extends TestCase
         Schema::create('releases', function (Blueprint $table): void {
             $table->id();
             $table->unsignedInteger('categories_id');
+            $table->unsignedInteger('groups_id')->default(0);
             $table->boolean('iscategorized')->default(false);
             $table->integer('haspreview')->default(0);
             $table->integer('passwordstatus')->default(0);
+        });
+        Schema::create('usenet_groups', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedInteger('forced_root_categories_id')->nullable();
+        });
+        Schema::create('releases_groups', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id');
+            $table->unsignedInteger('groups_id');
         });
         Schema::create('video_data', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id')->primary();
