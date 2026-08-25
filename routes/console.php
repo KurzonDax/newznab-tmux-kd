@@ -71,6 +71,9 @@ Schedule::call(function () {
 Schedule::command('tmux:health-check --auto-restart')->everyThirtyMinutes()->withoutOverlapping();
 Schedule::command('nntmux:check-service-health')->everyMinute()->withoutOverlapping();
 Schedule::command('nntmux:search-repair --limit=100')->everyMinute()->withoutOverlapping();
+Schedule::command('nntmux:search-maintain')
+    ->cron((string) config('search.reconciliation.cron'))
+    ->withoutOverlapping();
 // Keep the admin dashboard snapshot (Cache::flexible) hot so admins never pay
 // the cold-cache cost when opening /admin/index.
 Schedule::command('admin:warm-dashboard')->everyMinute()->withoutOverlapping();

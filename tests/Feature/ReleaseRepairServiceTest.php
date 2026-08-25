@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Enums\ReleaseRepairOutcome;
+use App\Facades\Search;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use App\Services\NNTP\Contracts\ProviderClient;
@@ -43,6 +44,7 @@ class ReleaseRepairServiceTest extends TestCase
         config(['nntmux_settings.path_to_nzbs' => $this->nzbRoot]);
 
         $this->createSchema();
+        Search::spy();
     }
 
     protected function tearDown(): void
@@ -228,7 +230,11 @@ class ReleaseRepairServiceTest extends TestCase
         $before = $this->storedNzb($release);
         $this->providerArticles = [];
 
-        $result = $this->service()->repair($release->fresh(), new ReleaseRepairOptions);
+        $candidate = Release::query()->select([
+            'id', 'guid', 'completion', 'haspreview', 'repair_outcome', 'repair_attempted_at',
+            'repair_target_completion', 'repair_evaluated_target_completion', 'postdate',
+        ])->findOrFail($release->id);
+        $result = $this->service()->repair($candidate, new ReleaseRepairOptions);
         $stored = DB::table('releases')->where('id', 1)->first();
 
         $this->assertSame(0, $result->segmentsAdded);
@@ -241,6 +247,8 @@ class ReleaseRepairServiceTest extends TestCase
         foreach ($this->nameSourceColumns() as $column) {
             $this->assertSame(1, (int) $stored->{$column}, $column.' should remain settled without new evidence.');
         }
+
+        Search::shouldNotHaveReceived('updateRelease');
     }
 
     #[Test]
@@ -283,6 +291,7 @@ class ReleaseRepairServiceTest extends TestCase
         $this->assertSame(0, (int) DB::table('releases')->where('id', 1)->value('pp_timeout_count'));
         $stored = DB::table('releases')->where('id', 1)->first();
         $this->assertSame(1, (int) $stored->totalpart);
+        Search::shouldHaveReceived('updateRelease')->once()->with(1);
         $this->assertSame(100.0, (float) $stored->completion);
         $this->assertSame(-1, (int) $stored->nfostatus);
 
@@ -317,6 +326,27 @@ class ReleaseRepairServiceTest extends TestCase
         foreach ($this->nameSourceColumns() as $column) {
             $this->assertSame(0, (int) $stored->{$column}, $column.' should reset despite the AP artifact.');
         }
+    }
+
+    #[Test]
+    public function stored_only_recovery_changes_do_not_sync_the_search_index(): void
+    {
+        $release = $this->releaseWithNzb(1, completion: 40.0, segments: [1 => 1, 3 => 3]);
+        DB::table('releases')->where('id', 1)->update([
+            'totalpart' => 1,
+        ]);
+        DB::table('video_data')->insert(['releases_id' => 1, 'videocodec' => 'h264']);
+        $this->providerHasEveryArticle();
+
+        $candidate = Release::query()->select([
+            'id', 'guid', 'completion', 'haspreview', 'repair_outcome', 'repair_attempted_at',
+            'repair_target_completion', 'repair_evaluated_target_completion', 'postdate',
+        ])->findOrFail($release->id);
+        $result = $this->service()->repair($candidate, new ReleaseRepairOptions);
+
+        $this->assertSame(100.0, $result->completionAfter);
+        $this->assertFalse($result->requeuedForAdditionalProcessing);
+        Search::shouldNotHaveReceived('updateRelease');
     }
 
     #[Test]

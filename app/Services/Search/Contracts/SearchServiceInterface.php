@@ -86,6 +86,13 @@ interface SearchServiceInterface
     public function deleteReleases(iterable $ids): void;
 
     /**
+     * Return the bounded release-document projection after an id cursor.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function releaseDocumentsAfterId(int $afterId, int $limit): array;
+
+    /**
      * Insert a predb record into the search index.
      *
      * @param  array<string, mixed>  $parameters  Predb data with 'id', 'title', 'filename', 'source'

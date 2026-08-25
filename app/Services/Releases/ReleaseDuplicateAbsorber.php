@@ -99,14 +99,15 @@ class ReleaseDuplicateAbsorber
                 throw new RuntimeException('The incoming duplicate NZB could not replace the stored anchor NZB.');
             }
 
-            $this->evidenceChanged->apply($locked, $document, $incomingDeclaredFiles);
+            $this->evidenceChanged->apply($locked, $document, $incomingDeclaredFiles, scheduleSearchSync: false);
 
             $locked->forceFill([
                 'size' => $incomingSize,
                 'totalpart' => $document->fileCount(),
                 'declaredfiles' => $incomingDeclaredFiles,
                 'completion' => $document->measure($incomingDeclaredFiles)->percentage(),
-            ])->save();
+            ])->saveQuietly();
+            Release::syncSearchIndexAfterCommit((int) $locked->id);
 
             return true;
         }, 3);

@@ -32,4 +32,16 @@ class ReleaseRecoveryScheduleTest extends TestCase
         $this->assertSame('0 * * * *', $rescan->expression);
         $this->assertTrue($rescan->withoutOverlapping);
     }
+
+    #[Test]
+    public function bounded_search_maintenance_uses_the_configured_schedule_without_overlap(): void
+    {
+        $event = collect(app(Schedule::class)->events())->first(
+            static fn (Event $event): bool => str_contains($event->command ?? '', 'nntmux:search-maintain'),
+        );
+
+        $this->assertInstanceOf(Event::class, $event);
+        $this->assertSame((string) config('search.reconciliation.cron'), $event->expression);
+        $this->assertTrue($event->withoutOverlapping);
+    }
 }

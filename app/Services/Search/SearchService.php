@@ -173,6 +173,14 @@ class SearchService extends Manager implements SearchServiceInterface
     }
 
     /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function releaseDocumentsAfterId(int $afterId, int $limit): array
+    {
+        return $this->driver()->releaseDocumentsAfterId($afterId, $limit);
+    }
+
+    /**
      * Insert a predb record into the search index.
      *
      * @param  array<string, mixed>  $parameters

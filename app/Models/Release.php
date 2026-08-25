@@ -391,7 +391,13 @@ class Release extends Model
         return self::whereAnidbid($anidbID)->update(['anidbid' => -1]);
     }
 
-    private static function syncSearchIndexAfterCommit(int $releaseId): void
+    /**
+     * Schedule a release document sync after the current database transaction commits.
+     *
+     * Query-builder and raw SQL writers bypass ReleaseObserver. Any such writer that changes
+     * a field present in ReleaseSearchIndexDocument must explicitly call this method.
+     */
+    public static function syncSearchIndexAfterCommit(int $releaseId): void
     {
         if ($releaseId <= 0) {
             return;

@@ -115,11 +115,11 @@ class NntmuxSearchReconcileFetchIndexedIdsTest extends TestCase
         // Regression guard: Manticore SQL applies an implicit LIMIT 20 and max_matches=1000
         // when not specified, which previously caused most ids in large batches to be
         // falsely flagged as missing. The probe SQL MUST raise both to the batch size.
-        $client = new class extends Client
+        $client = new class(false) extends Client
         {
             public ?string $capturedSql = null;
 
-            public function __construct() {}
+            public function __construct(private readonly bool $unused) {}
 
             public function sql(mixed ...$params): mixed
             {
@@ -146,6 +146,44 @@ class NntmuxSearchReconcileFetchIndexedIdsTest extends TestCase
         $driverSource = file_get_contents(__DIR__.'/../../app/Services/Search/Drivers/ManticoreSearchDriver.php');
         self::assertIsString($driverSource);
         self::assertStringContainsString('ORDER BY id ASC', $driverSource);
+    }
+
+    #[Test]
+    public function manticore_returns_the_bounded_reconciliation_projection_after_the_cursor(): void
+    {
+        $client = new class([101 => ['searchname' => 'First.Release', 'totalpart' => '10', 'passwordstatus' => '-1', 'nfostatus' => '-1', 'haspreview' => '0'], 102 => ['searchname' => 'Second.Release', 'totalpart' => '20', 'passwordstatus' => '0', 'nfostatus' => '1', 'haspreview' => '1']]) extends Client
+        {
+            public ?string $capturedSql = null;
+
+            /** @param array<int, array<string, string>> $response */
+            public function __construct(private readonly array $response) {}
+
+            public function sql(mixed ...$params): mixed
+            {
+                $this->capturedSql = $params[0] ?? null;
+
+                return $this->response;
+            }
+        };
+
+        $driverRef = new ReflectionClass(ManticoreSearchDriver::class);
+        /** @var ManticoreSearchDriver $driver */
+        $driver = $driverRef->newInstanceWithoutConstructor();
+        $driverRef->getProperty('config')->setValue($driver, [
+            'indexes' => ['releases' => 'releases_rt'],
+        ]);
+        $driverRef->getProperty('manticoreSearch')->setValue($driver, $client);
+
+        $documents = $driver->releaseDocumentsAfterId(100, 2);
+
+        $this->assertSame([101, 102], array_keys($documents));
+        $this->assertSame('First.Release', $documents[101]['searchname']);
+        $this->assertSame(10, $documents[101]['totalpart']);
+        $this->assertSame(-1, $documents[101]['passwordstatus']);
+        $this->assertSame(1, $documents[102]['haspreview']);
+        $this->assertNotNull($client->capturedSql);
+        $this->assertStringContainsString('searchname', $client->capturedSql);
+        $this->assertStringContainsString('WHERE id > 100 ORDER BY id ASC LIMIT 2', $client->capturedSql);
     }
 
     /**
