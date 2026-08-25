@@ -21,6 +21,7 @@ use App\Services\AudioProcessing\AudioSourceSelector;
 use App\Services\AudioProcessing\AudioTagRenamer;
 use App\Services\Categorization\CategorizationService;
 use App\Services\Categorization\MediaInfoRefinementService;
+use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\ReleaseExtraService;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\TempWorkspaceService;
@@ -67,7 +68,7 @@ class AudioProcessingServiceProvider extends ServiceProvider
         $this->app->singleton(AudioTagRenamer::class, fn ($app): AudioTagRenamer => new AudioTagRenamer(
             $app->make(AudioProcessingConfiguration::class),
             new CategorizationService,
-            $app->make(ReleaseSearchSyncCoordinator::class),
+            $app->make(ReleaseUpdateService::class),
             $app->make(PreviewGenerationPolicy::class),
         ));
 

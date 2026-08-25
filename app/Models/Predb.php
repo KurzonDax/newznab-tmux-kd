@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Facades\Search;
+use App\Services\NameFixing\ReleaseUpdateService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Cache;
@@ -125,9 +126,13 @@ class Predb extends Model
         if ($res !== null) {
             $total = \count($res);
             cli()->primary(number_format($total).' releases to match.');
+            $releaseUpdates = app(ReleaseUpdateService::class);
 
             foreach ($res as $row) {
-                Release::query()->where('id', $row['releases_id'])->update(['predb_id' => $row['predb_id']]);
+                $releaseUpdates->attachPredbId(
+                    (int) $row['releases_id'],
+                    (int) $row['predb_id'],
+                );
 
                 if (config('nntmux.echocli')) {
                     cli()->overWritePrimary(

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Events\ReleaseNameFixed;
 use App\Facades\Search;
 use App\Models\Category;
 use App\Models\Release;
@@ -26,6 +27,7 @@ use App\Services\AudioProcessing\AudioSourceSelector;
 use App\Services\AudioProcessing\AudioTagRenamer;
 use App\Services\Categorization\CategorizationService;
 use App\Services\Categorization\MediaInfoRefinementService;
+use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\ReleaseExtraService;
 use App\Services\Releases\PreviewGenerationPolicy;
 use FFMpeg\Driver\FFMpegDriver;
@@ -36,6 +38,7 @@ use FFMpeg\FFProbe\DataMapping\Stream;
 use FFMpeg\FFProbe\DataMapping\StreamCollection;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use Mhor\MediaInfo\Attribute\Mode;
 use Mhor\MediaInfo\Container\MediaInfoContainer;
@@ -89,9 +92,19 @@ class AudioReleaseProcessorTest extends TestCase
             $table->unsignedInteger('groups_id')->default(0);
             $table->unsignedInteger('predb_id')->default(0);
             $table->string('fromname')->default('');
+            $table->unsignedInteger('videos_id')->default(0);
+            $table->integer('tv_episodes_id')->default(0);
+            $table->integer('movieinfo_id')->nullable();
+            $table->string('imdbid')->nullable();
+            $table->integer('musicinfo_id')->nullable();
+            $table->integer('consoleinfo_id')->nullable();
+            $table->integer('bookinfo_id')->nullable();
+            $table->integer('anidbid')->nullable();
+            $table->integer('gamesinfo_id')->default(0);
             $table->integer('proc_pp')->default(0);
             $table->boolean('iscategorized')->default(false);
             $table->boolean('isrenamed')->default(false);
+            $table->boolean('is_trusted_name')->default(false);
             $table->integer('haspreview')->default(-1);
             $table->integer('passwordstatus')->default(-1);
             $table->unsignedInteger('pp_timeout_count')->default(0);
@@ -255,8 +268,20 @@ class AudioReleaseProcessorTest extends TestCase
 
     public function test_an_unidentified_release_is_renamed_from_its_own_tags(): void
     {
+        Event::fake([ReleaseNameFixed::class]);
         $this->renamesFromTags = true;
-        $release = $this->makeRelease(['categories_id' => Category::MUSIC_OTHER]);
+        $release = $this->makeRelease([
+            'categories_id' => Category::MUSIC_OTHER,
+            'videos_id' => 41,
+            'tv_episodes_id' => 42,
+            'movieinfo_id' => 47,
+            'imdbid' => 'tt1234567',
+            'musicinfo_id' => 43,
+            'consoleinfo_id' => 44,
+            'bookinfo_id' => 45,
+            'anidbid' => 46,
+            'gamesinfo_id' => 48,
+        ]);
 
         $this->makeProcessor($this->taggedContainer())->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
 
@@ -265,6 +290,23 @@ class AudioReleaseProcessorTest extends TestCase
         $this->assertSame(Category::MUSIC_MP3, (int) $renamed->categories_id);
         $this->assertSame(1, (int) $renamed->isrenamed);
         $this->assertSame(1, (int) $renamed->iscategorized);
+        $this->assertSame(1, (int) $renamed->is_trusted_name);
+        $this->assertSame(1, (int) $renamed->proc_pp);
+        $this->assertSame(0, (int) $renamed->videos_id);
+        $this->assertSame(0, (int) $renamed->tv_episodes_id);
+        $this->assertNull($renamed->movieinfo_id);
+        $this->assertNull($renamed->imdbid);
+        $this->assertNull($renamed->musicinfo_id);
+        $this->assertNull($renamed->consoleinfo_id);
+        $this->assertNull($renamed->bookinfo_id);
+        $this->assertNull($renamed->anidbid);
+        $this->assertSame(0, (int) $renamed->gamesinfo_id);
+        Event::assertDispatched(
+            ReleaseNameFixed::class,
+            fn (ReleaseNameFixed $event): bool => $event->releaseId === (int) $release->id
+                && $event->newName === 'Test Artist - Test Album (2019) MP3'
+                && $event->categoryOverride === Category::MUSIC_MP3,
+        );
     }
 
     public function test_a_predb_matched_release_keeps_its_scene_name(): void
@@ -525,7 +567,7 @@ class AudioReleaseProcessorTest extends TestCase
         return new AudioTagRenamer(
             $config,
             new CategorizationService,
-            new ReleaseSearchSyncCoordinator(new PersistenceMetricsCollector),
+            new ReleaseUpdateService,
             new PreviewGenerationPolicy,
         );
     }

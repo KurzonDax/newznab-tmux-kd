@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Events\ReleaseNameFixed;
 use App\Facades\Search;
 use App\Models\Category;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
@@ -13,6 +14,7 @@ use App\Services\Releases\ReleaseManagementService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
 use Tests\Support\IsolatedSqliteDatabase;
@@ -164,6 +166,7 @@ class PreviewGenerationPolicyTest extends TestCase
 
     public function test_book_junk_recategorization_restores_an_owed_preview(): void
     {
+        Event::fake([ReleaseNameFixed::class]);
         Search::shouldReceive('updateRelease')->zeroOrMoreTimes()->andReturnNull();
 
         DB::table('releases')->insert([
@@ -179,6 +182,7 @@ class PreviewGenerationPolicyTest extends TestCase
 
     public function test_book_magazine_recategorization_restores_an_owed_preview(): void
     {
+        Event::fake([ReleaseNameFixed::class]);
         Search::shouldReceive('updateRelease')->zeroOrMoreTimes()->andReturnNull();
 
         DB::table('releases')->insert([
@@ -238,6 +242,7 @@ class PreviewGenerationPolicyTest extends TestCase
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('guid');
+            $table->unsignedInteger('groups_id')->default(0);
             $table->integer('categories_id');
             $table->integer('haspreview')->default(0);
             $table->integer('passwordstatus')->default(0);
@@ -245,6 +250,17 @@ class PreviewGenerationPolicyTest extends TestCase
             $table->integer('iscategorized')->default(0);
             $table->string('searchname')->default('');
             $table->integer('isrenamed')->default(0);
+            $table->integer('is_trusted_name')->default(0);
+            $table->unsignedInteger('videos_id')->default(0);
+            $table->integer('tv_episodes_id')->default(0);
+            $table->integer('movieinfo_id')->nullable();
+            $table->string('imdbid')->nullable();
+            $table->integer('musicinfo_id')->nullable();
+            $table->integer('consoleinfo_id')->nullable();
+            $table->integer('bookinfo_id')->nullable();
+            $table->integer('anidbid')->nullable();
+            $table->integer('gamesinfo_id')->default(0);
+            $table->unsignedInteger('predb_id')->default(0);
         });
 
         DB::table('root_categories')->insert([

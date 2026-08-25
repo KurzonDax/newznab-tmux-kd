@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Events\ReleaseNameFixed;
 use App\Facades\Search;
 use App\Models\Category;
 use App\Models\Release;
 use App\Services\BookService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
@@ -38,6 +40,7 @@ class BookServiceObfuscatedNormalizationTest extends TestCase
         ], ['name'], ['value']);
 
         $this->createSchema();
+        Event::fake([ReleaseNameFixed::class]);
     }
 
     protected function tearDown(): void
@@ -62,13 +65,15 @@ class BookServiceObfuscatedNormalizationTest extends TestCase
             'leftguid' => 'a',
             'fromname' => 'poster@example.com',
             'categories_id' => Category::BOOKS_MAGAZINES,
-            'videos_id' => 0,
-            'tv_episodes_id' => 0,
-            'imdbid' => null,
-            'musicinfo_id' => null,
-            'consoleinfo_id' => null,
+            'videos_id' => 41,
+            'tv_episodes_id' => 42,
+            'movieinfo_id' => 47,
+            'imdbid' => 'tt1234567',
+            'musicinfo_id' => 43,
+            'consoleinfo_id' => 44,
             'bookinfo_id' => 123,
-            'anidbid' => null,
+            'anidbid' => 46,
+            'gamesinfo_id' => 48,
             'predb_id' => 0,
             'iscategorized' => 1,
             'isrenamed' => 0,
@@ -91,6 +96,20 @@ class BookServiceObfuscatedNormalizationTest extends TestCase
         $this->assertSame("Woman's Day New Zealand - Issue 45 April 27 2026", $release->searchname);
         $this->assertSame(123, (int) $release->bookinfo_id);
         $this->assertSame(1, (int) $release->isrenamed);
+        $this->assertSame(0, (int) $release->is_trusted_name);
+        $this->assertSame(0, (int) $release->videos_id);
+        $this->assertSame(0, (int) $release->tv_episodes_id);
+        $this->assertNull($release->movieinfo_id);
+        $this->assertNull($release->imdbid);
+        $this->assertNull($release->musicinfo_id);
+        $this->assertNull($release->consoleinfo_id);
+        $this->assertNull($release->anidbid);
+        $this->assertSame(0, (int) $release->gamesinfo_id);
+        Event::assertDispatched(
+            ReleaseNameFixed::class,
+            fn (ReleaseNameFixed $event): bool => $event->releaseId === 1
+                && $event->newName === "Woman's Day New Zealand - Issue 45 April 27 2026",
+        );
     }
 
     public function test_process_book_releases_normalizes_existing_mcn_magazine_searchname(): void
@@ -164,14 +183,17 @@ class BookServiceObfuscatedNormalizationTest extends TestCase
                 $table->integer('categories_id')->default(Category::OTHER_MISC);
                 $table->unsignedInteger('videos_id')->default(0);
                 $table->integer('tv_episodes_id')->default(0);
+                $table->integer('movieinfo_id')->nullable();
                 $table->string('imdbid')->nullable();
                 $table->integer('musicinfo_id')->nullable();
                 $table->integer('consoleinfo_id')->nullable();
                 $table->integer('bookinfo_id')->nullable();
                 $table->integer('anidbid')->nullable();
+                $table->integer('gamesinfo_id')->default(0);
                 $table->unsignedInteger('predb_id')->default(0);
                 $table->tinyInteger('iscategorized')->default(0);
                 $table->tinyInteger('isrenamed')->default(0);
+                $table->tinyInteger('is_trusted_name')->default(0);
                 $table->tinyInteger('proc_nfo')->default(0);
                 $table->tinyInteger('proc_files')->default(0);
                 $table->tinyInteger('proc_par2')->default(0);
