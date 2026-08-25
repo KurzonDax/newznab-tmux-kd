@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use App\Enums\NzbImportStatus;
+use App\Facades\Search;
 use App\Models\Category;
 use App\Services\Nzb\NzbImportService;
+use App\Services\ReleaseImageService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\IsolatedSqliteDatabase;
@@ -29,6 +32,7 @@ final class NzbImportServiceTest extends TestCase
             'catwebdl' => '0',
             'title' => 'NNTmux Test',
             'home_link' => '/',
+            'nzbsplitlevel' => '1',
         ];
     }
 
@@ -275,6 +279,72 @@ final class NzbImportServiceTest extends TestCase
 
         $this->assertFalse($service->writeForTest($path, '<nzb />'));
         $this->assertFileDoesNotExist($path);
+    }
+
+    public function test_failed_compressed_storage_removes_the_inserted_release_and_all_artifacts(): void
+    {
+        $nzbRoot = $this->makeTempDirectory('failed-import-nzb').'/';
+        $coversRoot = $this->makeTempDirectory('failed-import-covers');
+        config([
+            'nntmux_settings.path_to_nzbs' => $nzbRoot,
+            'nntmux_settings.covers_path' => $coversRoot,
+        ]);
+        Schema::create('releases', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->string('guid', 40);
+        });
+
+        Search::shouldReceive('updateRelease')->once()->with(7);
+        Search::shouldReceive('deleteReleases')->once()->with([7]);
+
+        $service = new class(['Browser' => true]) extends NzbImportService
+        {
+            /** @var list<string> */
+            public array $artifactPaths = [];
+
+            protected function getAllGroups(): bool
+            {
+                return true;
+            }
+
+            protected function scanNZBFile(mixed &$nzbXML, mixed $nzbFileName = '', mixed $source = ''): NzbImportStatus
+            {
+                $this->relGuid = str_repeat('f', 40);
+                $this->relId = 7;
+                DB::table('releases')->insert(['id' => $this->relId, 'guid' => $this->relGuid]);
+                Search::updateRelease($this->relId);
+
+                return NzbImportStatus::Inserted;
+            }
+
+            protected function writeCompressedNzb(string $path, string $contents): bool
+            {
+                $images = new ReleaseImageService;
+                $this->artifactPaths = [
+                    $path,
+                    $images->vidSavePath.$this->relGuid.'.ogv',
+                    $images->audSavePath.$this->relGuid.'.mp3',
+                    $images->audSavePath.$this->relGuid.'_spectrum.png',
+                ];
+
+                foreach ($this->artifactPaths as $artifactPath) {
+                    File::ensureDirectoryExists(dirname($artifactPath));
+                    File::put($artifactPath, 'partial import');
+                }
+
+                return false;
+            }
+        };
+        $source = $this->makeNzbFile('failed-compressed-storage');
+
+        $result = $service->beginImport([$source], deleteFailed: true);
+
+        $this->assertIsString($result);
+        $this->assertDatabaseMissing('releases', ['id' => 7]);
+        $this->assertFileDoesNotExist($source);
+        foreach ($service->artifactPaths as $artifactPath) {
+            $this->assertFileDoesNotExist($artifactPath);
+        }
     }
 
     private function makeNzbFile(string $suffix): string

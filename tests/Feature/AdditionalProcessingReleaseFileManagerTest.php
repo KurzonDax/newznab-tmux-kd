@@ -854,12 +854,21 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
     public function test_release_timeout_at_the_cap_still_deletes_the_release_and_nzb(): void
     {
         $nzbRoot = $this->makeTempDirectory('nntmux-timeout-cap-nzb').'/';
-        config(['nntmux_settings.path_to_nzbs' => $nzbRoot]);
+        $coversRoot = $this->makeTempDirectory('nntmux-timeout-cap-covers');
+        config([
+            'nntmux_settings.path_to_nzbs' => $nzbRoot,
+            'nntmux_settings.covers_path' => $coversRoot,
+        ]);
 
         DB::table('releases')->insert(array_merge($this->releaseRow(), ['pp_timeout_count' => 2]));
         $nzbPath = $nzbRoot.'g/guid-1.nzb.gz';
+        $audioPreviewPath = $coversRoot.'/audiosample/guid-1.mp3';
+        $audioSpectrogramPath = $coversRoot.'/audiosample/guid-1_spectrum.png';
         File::ensureDirectoryExists(dirname($nzbPath));
+        File::ensureDirectoryExists(dirname($audioPreviewPath));
         File::put($nzbPath, 'deleted');
+        File::put($audioPreviewPath, 'deleted');
+        File::put($audioSpectrogramPath, 'deleted');
         Search::shouldReceive('deleteRelease')->once()->with(1);
 
         $deleted = $this->makeManager()->handleReleaseTimeout(
@@ -870,6 +879,8 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         $this->assertTrue($deleted);
         $this->assertNull(Release::query()->find(1));
         $this->assertFileDoesNotExist($nzbPath);
+        $this->assertFileDoesNotExist($audioPreviewPath);
+        $this->assertFileDoesNotExist($audioSpectrogramPath);
     }
 
     private function makeManager(?NameFixingService $nameFixing = null): ReleaseFileManager

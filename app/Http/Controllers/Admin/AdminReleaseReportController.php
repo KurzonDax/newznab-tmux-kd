@@ -9,7 +9,10 @@ use App\Http\Requests\Admin\AdminReleaseReportBulkActionRequest;
 use App\Http\Requests\Admin\AdminReleaseReportListRequest;
 use App\Models\Release;
 use App\Models\ReleaseReport;
+use App\Services\Nzb\NzbService;
+use App\Services\ReleaseImageService;
 use App\Services\Releases\ReleaseBrowseService;
+use App\Services\Releases\ReleaseManagementService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -17,6 +20,14 @@ use Illuminate\View\View;
 
 class AdminReleaseReportController extends BasePageController
 {
+    public function __construct(
+        private readonly ReleaseManagementService $releaseManagement,
+        private readonly NzbService $nzb,
+        private readonly ReleaseImageService $releaseImage,
+    ) {
+        parent::__construct();
+    }
+
     /**
      * Display a listing of release reports.
      */
@@ -109,8 +120,11 @@ class AdminReleaseReportController extends BasePageController
             $releaseName = $release->searchname;
             $releaseId = $report->releases_id;
 
-            // Delete the release
-            Release::where('id', $releaseId)->delete();
+            $this->releaseManagement->deleteSingle(
+                ['g' => (string) $release->guid, 'i' => (int) $releaseId],
+                $this->nzb,
+                $this->releaseImage,
+            );
 
             // Update all reports for this release to resolved
             ReleaseReport::where('releases_id', $releaseId)
@@ -228,28 +242,28 @@ class AdminReleaseReportController extends BasePageController
     private function bulkDeleteReportedReleases(array $reportIds): int
     {
         $reports = ReleaseReport::query()
-            ->with('release:id')
+            ->with('release:id,guid')
             ->whereIn('id', $reportIds)
             ->get(['id', 'releases_id']);
 
-        $count = 0;
+        $reportsWithReleases = $reports
+            ->filter(static fn (ReleaseReport $report): bool => $report->release instanceof Release);
+        $releases = $reportsWithReleases
+            ->pluck('release')
+            ->unique('id')
+            ->values();
 
-        foreach ($reports as $report) {
-            if (! $report->release) {
-                continue;
-            }
-
-            $releaseId = $report->releases_id;
-            Release::where('id', $releaseId)->delete();
-            ReleaseReport::where('releases_id', $releaseId)
+        $deletedCount = $this->releaseManagement->deleteBatch($releases, $this->nzb, $this->releaseImage);
+        if ($deletedCount > 0) {
+            ReleaseReport::query()
+                ->whereIn('releases_id', $releases->pluck('id')->all())
                 ->update([
                     'status' => 'resolved',
                     'reviewed_by' => Auth::id(),
                     'reviewed_at' => now(),
                 ]);
-            $count++;
         }
 
-        return $count;
+        return $deletedCount > 0 ? $reportsWithReleases->count() : 0;
     }
 }
