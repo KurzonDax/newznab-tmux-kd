@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Enums\PredbSearchStatus;
 use App\Services\NameFixing\NameFixingQueryService;
 use App\Services\NameFixing\NameFixingService;
 use App\Services\NfoService;
 use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbContentsService;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -152,8 +154,6 @@ class ReleasesFixNamesGroup extends Command
         $bar->start();
 
         foreach ($pres as $pre) {
-            $searched = 0;
-
             try {
                 $ftmatched = $this->nameFixingService->matchPredbFulltext($pre);
             } catch (RuntimeException $exception) {
@@ -165,14 +165,21 @@ class ReleasesFixNamesGroup extends Command
             }
 
             if ($ftmatched > 0) {
-                $searched = 1;
+                $status = PredbSearchStatus::Matched;
             } elseif ($ftmatched < 0) {
-                $searched = -6;
+                $status = PredbSearchStatus::Flood;
             } else {
-                $searched = (int) $pre->searched - 1;
+                $current = PredbSearchStatus::from((int) $pre->searched);
+                $status = $current->afterMiss();
             }
 
-            DB::update('UPDATE predb SET searched = ? WHERE id = ?', [$searched, $pre->predb_id]);
+            $delayDays = $status->retryDelayDays();
+            DB::table('predb')->where('id', $pre->predb_id)->update([
+                'searched' => $status->value,
+                'next_predb_search_at' => $delayDays === null
+                    ? null
+                    : CarbonImmutable::now()->addDays($delayDays)->toDateTimeString(),
+            ]);
             $this->checked++;
 
             $bar->advance();

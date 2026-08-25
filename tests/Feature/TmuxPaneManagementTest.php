@@ -398,7 +398,7 @@ SH;
         ];
     }
 
-    public function test_fix_names_chain_bounds_every_step_and_ends_with_the_standard_sweep(): void
+    public function test_fix_names_chain_bounds_every_step_and_ends_with_standard_then_predb_sweeps(): void
     {
         config(['nntmux_srrdb.enabled' => false]);
         $this->fakeFixNamesPane();
@@ -420,11 +420,26 @@ SH;
         $expectedOrder[] = '/usr/bin/timeout -k 10 900 php ';
         $expectedOrder[] = 'multiprocessing:fixrelnames standard';
         $expectedOrder[] = 'fix-names standard sweep timed out after 900s';
+        $expectedOrder[] = '/usr/bin/timeout -k 10 900 php ';
+        $expectedOrder[] = 'multiprocessing:fixrelnames predbft';
+        $expectedOrder[] = 'fix-names predb full-text sweep timed out after 900s';
         $expectedOrder[] = "date +'%Y-%m-%d %T'";
 
         $this->assertAppearInOrder($expectedOrder, $command);
-        $this->assertSame(10, substr_count($command, '| tee -a '), 'every step logs to the pane log');
-        $this->assertSame(10, substr_count($command, '/usr/bin/timeout -k 10 900 '), 'every step is bounded');
+        $this->assertSame(11, substr_count($command, '| tee -a '), 'every step logs to the pane log');
+        $this->assertSame(11, substr_count($command, '/usr/bin/timeout -k 10 900 '), 'every step is bounded');
+    }
+
+    public function test_fix_names_task_wakes_for_predb_only_work(): void
+    {
+        $this->fakeFixNamesPane();
+
+        $this->assertTrue($this->runnerWithTimeoutBinary('timeout')->runPaneTask('fixnames', [], [
+            'settings' => ['fix_names' => 1, 'fix_timer' => 300],
+            'counts' => ['now' => ['processrenames' => 0, 'processpredbft' => 1]],
+        ]));
+
+        $this->assertStringContainsString('multiprocessing:fixrelnames predbft', $this->respawnedCommand());
     }
 
     #[DataProvider('fixNamesTimeoutProvider')]

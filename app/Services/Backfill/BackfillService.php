@@ -7,6 +7,7 @@ namespace App\Services\Backfill;
 use App\Models\Settings;
 use App\Models\UsenetGroup;
 use App\Services\Binaries\BinariesService;
+use App\Services\NameFixing\PredbSearchLifecycle;
 use App\Services\NNTP\NNTPService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
@@ -31,14 +32,18 @@ final class BackfillService
 
     private NNTPService $nntp;
 
+    private PredbSearchLifecycle $predbSearchLifecycle;
+
     public function __construct(
         ?BackfillConfig $config = null,
         ?BinariesService $binaries = null,
         ?NNTPService $nntp = null,
+        ?PredbSearchLifecycle $predbSearchLifecycle = null,
     ) {
         $this->config = $config ?? BackfillConfig::fromSettings();
         $this->binaries = $binaries ?? new BinariesService;
         $this->nntp = $nntp ?? new NNTPService;
+        $this->predbSearchLifecycle = $predbSearchLifecycle ?? new PredbSearchLifecycle;
     }
 
     /**
@@ -344,6 +349,7 @@ final class BackfillService
         $messageBuffer = $this->binaries->getMessageBuffer();
         $last = $groupArr['first_record'] - 1;
         $first = max($last - $messageBuffer + 1, $targetPost);
+        $newestCoveredAt = Carbon::parse((string) $groupArr['first_record_postdate']);
 
         while (true) {
             $this->logChunkProgress($first, $last, $shortGroupName, $remainingGroups, $targetPost);
@@ -351,7 +357,11 @@ final class BackfillService
             flush();
             $scanResult = $this->binaries->scan($groupArr, $first, $last, $this->config->safePartRepair);
 
-            $this->updateGroupRecord($groupArr, $first, $scanResult);
+            $oldestCoveredAt = $this->updateGroupRecord($groupArr, $first, $scanResult);
+            if ($scanResult !== []) {
+                $this->predbSearchLifecycle->rearmForBackfillWindow($oldestCoveredAt, $newestCoveredAt);
+            }
+            $newestCoveredAt = $oldestCoveredAt;
 
             if ($first === $targetPost) {
                 break;
@@ -369,13 +379,15 @@ final class BackfillService
      * @param  array<string, mixed>  $groupArr
      * @param  array<string, mixed>  $scanResult
      */
-    private function updateGroupRecord(array $groupArr, int $first, ?array $scanResult): void
+    private function updateGroupRecord(array $groupArr, int $first, array $scanResult): Carbon
     {
         $newDate = isset($scanResult['firstArticleDate'])
             ? strtotime($scanResult['firstArticleDate'])
             : $this->binaries->postdate($first, $this->nntp->selectGroup($groupArr['name']));
 
         UsenetGroup::recordBackfillProgress((int) $groupArr['id'], $first, (int) $newDate);
+
+        return Carbon::createFromTimestamp((int) $newDate, config('app.timezone'));
     }
 
     /**

@@ -102,9 +102,9 @@ class NameFixingQueryServiceTest extends TestCase
             ->with(
                 $this->callback(static fn (string $sql): bool => str_contains($sql, 'MOD(p.id, ?) = ?')
                     && ! str_contains($sql, 'OFFSET')),
-                $this->callback(static fn (array $bindings): bool => $bindings[1] === 4
-                    && $bindings[2] === 2
-                    && $bindings[3] === 250)
+                $this->callback(static fn (array $bindings): bool => $bindings[2] === 4
+                    && $bindings[3] === 2
+                    && $bindings[4] === 250)
             )
             ->willReturn([]);
 
