@@ -266,32 +266,36 @@ class NzbContentsService
     {
         $this->lastPar2Stats = ['files' => 0, 'attempts' => 0];
 
-        $nzbFile = $nameStatus === 1 ? $this->loadNzb($guid) : false;
-        if ($nzbFile !== false) {
-            foreach ($nzbFile->file as $nzbContents) {
-                $this->lastPar2Stats['files']++;
+        if ($nameStatus !== 1) {
+            return false;
+        }
 
-                if (preg_match(self::PAR2_SUBJECT_PATTERN, (string) $nzbContents->attributes()->subject) !== 1) {
-                    continue;
-                }
-                // Keep counting files past the cap so the --show line reports
-                // the NZB's real size; only the fetches stop.
-                if ($this->lastPar2Stats['attempts'] >= self::MAX_PAR2_FETCH_ATTEMPTS) {
-                    continue;
-                }
+        $nzbFile = $this->loadNzb($guid);
+        if ($nzbFile === false) {
+            return false;
+        }
 
-                $this->lastPar2Stats['attempts']++;
-                if ($this->postProcessService->parsePAR2((string) $nzbContents->segments->segment, $relID, $groupID, $this->nntp, $show)) {
-                    Release::query()->where('id', $relID)->update(['proc_par2' => 1]);
+        foreach ($nzbFile->file as $nzbContents) {
+            $this->lastPar2Stats['files']++;
 
-                    return true;
-                }
+            if (preg_match(self::PAR2_SUBJECT_PATTERN, (string) $nzbContents->attributes()->subject) !== 1) {
+                continue;
+            }
+            // Keep counting files past the cap so the --show line reports
+            // the NZB's real size; only the fetches stop.
+            if ($this->lastPar2Stats['attempts'] >= self::MAX_PAR2_FETCH_ATTEMPTS) {
+                continue;
+            }
+
+            $this->lastPar2Stats['attempts']++;
+            if ($this->postProcessService->parsePAR2((string) $nzbContents->segments->segment, $relID, $groupID, $this->nntp, $show)) {
+                Release::query()->where('id', $relID)->update(['proc_par2' => 1]);
+
+                return true;
             }
         }
 
-        if ($nameStatus === 1) {
-            Release::query()->where('id', $relID)->update(['proc_par2' => 1]);
-        }
+        Release::query()->where('id', $relID)->update(['proc_par2' => 1]);
 
         return false;
     }

@@ -69,7 +69,7 @@ class NameFixingBatchTest extends TestCase
      * one of them was stalled is still visited and leaves with its proc flag set.
      */
     #[Test]
-    public function the_sweep_processes_an_aged_out_release_and_settles_its_par2_flag(): void
+    public function the_sweep_leaves_par2_status_ownership_to_the_par2_processor(): void
     {
         $release = $this->processedRelease(30);
         $release->proc_par2 = NameFixingService::PROC_PAR2_NONE;
@@ -87,9 +87,7 @@ class NameFixingBatchTest extends TestCase
         });
 
         $updateService = $this->createPartialMock(ReleaseUpdateService::class, ['updateSingleColumn']);
-        $updateService->expects($this->once())
-            ->method('updateSingleColumn')
-            ->with('proc_par2', NameFixingService::PROC_PAR2_DONE, 30);
+        $updateService->expects($this->never())->method('updateSingleColumn');
 
         $serviceReflection = new ReflectionClass(NameFixingService::class);
         $service = $serviceReflection->newInstanceWithoutConstructor();
@@ -254,6 +252,75 @@ class NameFixingBatchTest extends TestCase
         Http::assertNothingSent();
     }
 
+    #[Test]
+    public function the_sweep_records_an_xxx_miss_without_consuming_general_filenames(): void
+    {
+        $release = $this->processedRelease(80);
+        $release->proc_xxx = NameFixingService::PROC_XXX_NONE;
+
+        $database = $this->createMock(ConnectionInterface::class);
+        $database->method('select')->willReturnCallback(function (string $sql) use ($release): array {
+            if (str_contains($sql, 'r.proc_xxx = 0')) {
+                return [$release];
+            }
+
+            if (str_contains($sql, 'FROM release_files rf')) {
+                return [(object) [
+                    'releases_id' => 80,
+                    'textstring' => 'SDPORN',
+                    'filename' => 'SDPORN',
+                    'crc32' => null,
+                ]];
+            }
+
+            return [];
+        });
+
+        $updateService = $this->createPartialMock(ReleaseUpdateService::class, ['updateSingleColumn']);
+        $updateService->expects($this->once())
+            ->method('updateSingleColumn')
+            ->with('proc_xxx', NameFixingService::PROC_XXX_DONE, 80);
+
+        $service = $this->serviceWith($database, $updateService);
+
+        $this->assertSame(['checked' => 1, 'fixed' => 0], $service->processStandardBatch('a', 100, false));
+    }
+
+    #[Test]
+    public function the_sweep_records_a_media_movie_miss_without_consuming_uid(): void
+    {
+        $release = $this->processedRelease(90);
+        $release->proc_media_movie = NameFixingService::PROC_MEDIA_MOVIE_NONE;
+
+        $database = $this->createMock(ConnectionInterface::class);
+        $database->method('select')->willReturnCallback(function (string $sql) use ($release): array {
+            if (str_contains($sql, 'r.proc_media_movie = 0')) {
+                return [$release];
+            }
+
+            if (str_contains($sql, 'FROM media_infos mi')) {
+                return [(object) [
+                    'releases_id' => 90,
+                    'uid' => '',
+                    'movie_name' => 'Movie.Name.2026-GROUP',
+                    'file_name' => 'movie.mkv',
+                ]];
+            }
+
+            return [];
+        });
+
+        $updateService = $this->createPartialMock(ReleaseUpdateService::class, ['updateRelease', 'updateSingleColumn']);
+        $updateService->expects($this->once())->method('updateRelease');
+        $updateService->expects($this->once())
+            ->method('updateSingleColumn')
+            ->with('proc_media_movie', NameFixingService::PROC_MEDIA_MOVIE_DONE, 90);
+
+        $service = $this->serviceWith($database, $updateService);
+
+        $this->assertSame(['checked' => 1, 'fixed' => 0], $service->processStandardBatch('a', 100, false));
+    }
+
     private function serviceWith(
         ConnectionInterface $database,
         ReleaseUpdateService $updateService,
@@ -294,6 +361,8 @@ class NameFixingBatchTest extends TestCase
             'nfostatus' => 0,
             'proc_nfo' => NameFixingService::PROC_NFO_DONE,
             'proc_files' => NameFixingService::PROC_FILES_DONE,
+            'proc_xxx' => NameFixingService::PROC_XXX_DONE,
+            'proc_media_movie' => NameFixingService::PROC_MEDIA_MOVIE_DONE,
             'proc_par2' => NameFixingService::PROC_PAR2_DONE,
             'proc_uid' => NameFixingService::PROC_UID_DONE,
             'proc_hash16k' => NameFixingService::PROC_HASH16K_DONE,

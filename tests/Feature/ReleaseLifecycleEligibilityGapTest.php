@@ -77,18 +77,51 @@ class ReleaseLifecycleEligibilityGapTest extends TestCase
     }
 
     #[Test]
-    public function par2_name_fixing_can_mark_a_release_done_before_its_nzb_exists(): void
+    public function par2_name_fixing_waits_until_the_nzb_exists(): void
     {
         $this->insertRelease(1, Category::OTHER_MISC, nfostatus: -1, nzbstatus: 0);
 
-        $this->assertSame([1], $this->sourceCandidateIds(NameFixingQueryService::SOURCE_PAR2));
+        $this->assertSame([], $this->sourceCandidateIds(NameFixingQueryService::SOURCE_PAR2));
 
+        DB::table('releases')->where('id', 1)->update(['nzbstatus' => 1]);
+
+        $this->assertSame([1], $this->sourceCandidateIds(NameFixingQueryService::SOURCE_PAR2));
+    }
+
+    #[Test]
+    public function an_xxx_miss_leaves_the_general_filename_source_eligible(): void
+    {
+        $this->insertRelease(1, Category::OTHER_MISC, nfostatus: 0);
         DB::table('releases')->where('id', 1)->update([
-            'nzbstatus' => 1,
-            'proc_par2' => 1,
+            'proc_xxx' => 1,
+            'proc_files' => 0,
+        ]);
+        DB::table('release_files')->insert([
+            'releases_id' => 1,
+            'name' => 'SDPORN',
         ]);
 
-        $this->assertSame([], $this->sourceCandidateIds(NameFixingQueryService::SOURCE_PAR2));
+        $this->assertSame([], $this->sourceCandidateIds(NameFixingQueryService::SOURCE_XXX));
+        $this->assertSame([1], $this->sourceCandidateIds(NameFixingQueryService::SOURCE_FILES));
+    }
+
+    #[Test]
+    public function a_media_movie_miss_leaves_the_uid_source_eligible(): void
+    {
+        $this->insertRelease(1, Category::OTHER_MISC, nfostatus: 0);
+        DB::table('releases')->where('id', 1)->update([
+            'proc_media_movie' => 1,
+            'proc_uid' => 0,
+        ]);
+        DB::table('media_infos')->insert([
+            'releases_id' => 1,
+            'unique_id' => 'uid-1',
+            'movie_name' => 'Movie Name',
+            'file_name' => 'movie.mkv',
+        ]);
+
+        $this->assertSame([], $this->sourceCandidateIds(NameFixingQueryService::SOURCE_MEDIA_MOVIE));
+        $this->assertSame([1], $this->sourceCandidateIds(NameFixingQueryService::SOURCE_UID));
     }
 
     /** @return list<int> */
@@ -128,6 +161,8 @@ class ReleaseLifecycleEligibilityGapTest extends TestCase
             'proc_nfo' => 0,
             'proc_uid' => 0,
             'proc_files' => 0,
+            'proc_xxx' => 0,
+            'proc_media_movie' => 0,
             'proc_par2' => 0,
             'proc_hash16k' => 0,
             'proc_srr' => 0,
@@ -160,6 +195,8 @@ class ReleaseLifecycleEligibilityGapTest extends TestCase
             proc_nfo INTEGER NOT NULL DEFAULT 0,
             proc_uid INTEGER NOT NULL DEFAULT 0,
             proc_files INTEGER NOT NULL DEFAULT 0,
+            proc_xxx INTEGER NOT NULL DEFAULT 0,
+            proc_media_movie INTEGER NOT NULL DEFAULT 0,
             proc_par2 INTEGER NOT NULL DEFAULT 0,
             proc_hash16k INTEGER NOT NULL DEFAULT 0,
             proc_srr INTEGER NOT NULL DEFAULT 0,
@@ -169,6 +206,22 @@ class ReleaseLifecycleEligibilityGapTest extends TestCase
             passwordstatus INTEGER NOT NULL DEFAULT 0,
             is_trusted_name INTEGER NOT NULL DEFAULT 0,
             completion INTEGER NOT NULL DEFAULT 0
+        )');
+
+        DB::statement('DROP TABLE IF EXISTS release_files');
+        DB::statement('CREATE TABLE release_files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            releases_id INTEGER NOT NULL,
+            name VARCHAR(255) NOT NULL
+        )');
+
+        DB::statement('DROP TABLE IF EXISTS media_infos');
+        DB::statement('CREATE TABLE media_infos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            releases_id INTEGER NOT NULL,
+            unique_id VARCHAR(255),
+            movie_name VARCHAR(255),
+            file_name VARCHAR(255)
         )');
     }
 }

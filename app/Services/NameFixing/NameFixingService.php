@@ -32,6 +32,14 @@ class NameFixingService
 
     public const PROC_FILES_DONE = 1;
 
+    public const PROC_XXX_NONE = 0;
+
+    public const PROC_XXX_DONE = 1;
+
+    public const PROC_MEDIA_MOVIE_NONE = 0;
+
+    public const PROC_MEDIA_MOVIE_DONE = 1;
+
     public const PROC_PAR2_NONE = 0;
 
     public const PROC_PAR2_DONE = 1;
@@ -1003,6 +1011,14 @@ class NameFixingService
             $releaseId = (int) $release->releases_id;
             $releaseMedia = $media[$releaseId] ?? [];
             $releaseFiles = $files[$releaseId] ?? [];
+            $releaseMovieNames = array_values(array_filter(
+                $releaseMedia,
+                static fn (object $row): bool => ! empty($row->movie_name)
+            ));
+            $releaseXxxFiles = array_values(array_filter(
+                $releaseFiles,
+                static fn (object $file): bool => stripos((string) $file->textstring, 'SDPORN') !== false
+            ));
 
             if ((int) $release->proc_uid === self::PROC_UID_NONE) {
                 $this->updateService->reset();
@@ -1014,22 +1030,27 @@ class NameFixingService
                 }
 
                 if (! $this->updateService->matched) {
-                    foreach ($releaseMedia as $row) {
-                        if (empty($row->movie_name)) {
-                            continue;
-                        }
+                    $this->updateService->updateSingleColumn('proc_uid', self::PROC_UID_DONE, $releaseId);
+                }
+            }
 
-                        $candidate = clone $release;
-                        $candidate->movie_name = $row->movie_name;
-                        $candidate->file_name = $row->file_name;
-                        if ($this->mediaMovieNameCheck($candidate, true, 'Mediainfo, ', true, $show)) {
-                            break;
-                        }
+            if ($this->updateService->matched) {
+                continue;
+            }
+
+            if ((int) $release->proc_media_movie === self::PROC_MEDIA_MOVIE_NONE && $releaseMovieNames !== []) {
+                $this->updateService->reset();
+                foreach ($releaseMovieNames as $row) {
+                    $candidate = clone $release;
+                    $candidate->movie_name = $row->movie_name;
+                    $candidate->file_name = $row->file_name;
+                    if ($this->mediaMovieNameCheck($candidate, true, 'Mediainfo, ', true, $show)) {
+                        break;
                     }
                 }
 
                 if (! $this->updateService->matched) {
-                    $this->updateService->updateSingleColumn('proc_uid', self::PROC_UID_DONE, $releaseId);
+                    $this->updateService->updateSingleColumn('proc_media_movie', self::PROC_MEDIA_MOVIE_DONE, $releaseId);
                 }
             }
 
@@ -1147,14 +1168,31 @@ class NameFixingService
                 continue;
             }
 
+            if ((int) $release->proc_xxx === self::PROC_XXX_NONE && $releaseXxxFiles !== []) {
+                $this->updateService->reset();
+                foreach ($releaseXxxFiles as $file) {
+                    $candidate = clone $release;
+                    $candidate->textstring = (string) $file->textstring;
+                    if ($this->xxxNameCheck($candidate, true, 'XXX filenames, ', true, $show)) {
+                        break;
+                    }
+                }
+
+                if (! $this->updateService->matched) {
+                    $this->updateService->updateSingleColumn('proc_xxx', self::PROC_XXX_DONE, $releaseId);
+                }
+            }
+
+            if ($this->updateService->matched) {
+                continue;
+            }
+
             $par2Matched = false;
             if ((int) $release->proc_par2 === self::PROC_PAR2_NONE) {
                 $this->updateService->reset();
                 $par2Matched = $par2Processor !== null && $par2Processor($release);
                 if ($par2Matched) {
                     $this->updateService->fixed++;
-                } else {
-                    $this->updateService->updateSingleColumn('proc_par2', self::PROC_PAR2_DONE, $releaseId);
                 }
             }
 
@@ -1321,8 +1359,6 @@ class NameFixingService
 
                 if ($renamed) {
                     $this->updateService->fixed++;
-                } else {
-                    $this->markProcessed($echo, $nameStatus, 'proc_par2', (int) $release->releases_id);
                 }
 
                 $this->updateService->incrementChecked();
@@ -1339,7 +1375,7 @@ class NameFixingService
     public function fixXXXNamesWithFiles(int $time, bool $echo, int $cats, bool $nameStatus, bool $show): void
     {
         $this->echoStartMessage($time, 'file names');
-        $type = 'Filenames, ';
+        $type = 'XXX filenames, ';
 
         if (! $this->startBatch(NameFixingQueryService::SOURCE_XXX, $time, $cats, ' xxx file names to process.')) {
             cli()->info('Nothing to fix.');
@@ -1365,7 +1401,7 @@ class NameFixingService
                 }
 
                 if (! $this->updateService->matched) {
-                    $this->markProcessed($echo, $nameStatus, 'proc_files', (int) $release->releases_id);
+                    $this->markProcessed($echo, $nameStatus, 'proc_xxx', (int) $release->releases_id);
                 }
 
                 $this->echoRenamed($show);
@@ -1410,7 +1446,7 @@ class NameFixingService
                 }
 
                 if (! $this->updateService->matched) {
-                    $this->markProcessed($echo, $nameStatus, 'proc_uid', (int) $release->releases_id);
+                    $this->markProcessed($echo, $nameStatus, 'proc_media_movie', (int) $release->releases_id);
                 }
 
                 $this->echoRenamed($show);
@@ -1543,6 +1579,9 @@ class NameFixingService
             case 'Filenames, ':
                 $this->updateService->updateSingleColumn('proc_files', self::PROC_FILES_DONE, $releaseId);
                 break;
+            case 'XXX filenames, ':
+                $this->updateService->updateSingleColumn('proc_xxx', self::PROC_XXX_DONE, $releaseId);
+                break;
             case 'PAR2, ':
                 $this->updateService->updateSingleColumn('proc_par2', self::PROC_PAR2_DONE, $releaseId);
                 break;
@@ -1553,8 +1592,10 @@ class NameFixingService
                 $this->updateService->updateSingleColumn('proc_srr', self::PROC_SRR_DONE, $releaseId);
                 break;
             case 'UID, ':
-            case 'Mediainfo, ':
                 $this->updateService->updateSingleColumn('proc_uid', self::PROC_UID_DONE, $releaseId);
+                break;
+            case 'Mediainfo, ':
+                $this->updateService->updateSingleColumn('proc_media_movie', self::PROC_MEDIA_MOVIE_DONE, $releaseId);
                 break;
             case 'CRC32, ':
                 $this->updateService->updateSingleColumn('proc_crc32', self::PROC_CRC_DONE, $releaseId);

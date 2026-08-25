@@ -95,6 +95,21 @@ class NzbContentsCheckPar2Test extends TestCase
     }
 
     #[Test]
+    public function an_unreadable_nzb_remains_retryable(): void
+    {
+        DB::table('releases')->insert([
+            'id' => 1,
+            'guid' => $this->guid(1),
+            'nzbstatus' => 1,
+        ]);
+
+        $this->par2Processor->shouldNotReceive('parseFromMessage');
+
+        $this->assertFalse($this->service()->checkPar2($this->guid(1), 1, 7, 1, 0));
+        $this->assertSame(0, $this->procPar2Of(1));
+    }
+
+    #[Test]
     public function fetch_attempts_are_capped_per_release(): void
     {
         $subjects = [];
