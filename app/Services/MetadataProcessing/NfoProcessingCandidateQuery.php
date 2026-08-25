@@ -23,7 +23,7 @@ final class NfoProcessingCandidateQuery
         ?int $lookupMode = null,
     ): Builder {
         $resolvedLookupMode = $lookupMode ?? (int) Settings::settingValue('lookupnfo');
-        $query = Release::query()->from('releases as r')->select('r.*');
+        $query = Release::query()->from('releases as r');
 
         if ($resolvedLookupMode !== 1) {
             return $query->whereRaw('0 = 1');

@@ -5,6 +5,11 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Models\Category;
+use App\Models\Release;
+use App\Services\AnimeProcessor;
+use App\Services\BookService;
+use App\Services\ConsoleService;
+use App\Services\GamesService;
 use App\Services\MetadataProcessing\AnimeProcessingCandidateQuery;
 use App\Services\MetadataProcessing\BookProcessingCandidateQuery;
 use App\Services\MetadataProcessing\ConsoleProcessingCandidateQuery;
@@ -12,14 +17,19 @@ use App\Services\MetadataProcessing\GameProcessingCandidateQuery;
 use App\Services\MetadataProcessing\MovieProcessingCandidateQuery;
 use App\Services\MetadataProcessing\MusicProcessingCandidateQuery;
 use App\Services\MetadataProcessing\NfoProcessingCandidateQuery;
+use App\Services\MovieService;
+use App\Services\MusicService;
+use App\Services\NfoService;
 use App\Services\Runners\PostProcessRunner;
 use App\Services\Tmux\TmuxMonitorService;
+use App\Services\TvProcessing\TvEpisodeRevisitService;
 use App\Services\TvProcessing\TvProcessingCandidateQuery;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
+use ReflectionClass;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
@@ -215,8 +225,9 @@ class MetadataProcessingCandidateQueryTest extends TestCase
         $this->assertSame(0, (int) $disabledStatistics['counts']['now']['processnfo']);
 
         DB::table('settings')->where('name', 'lookupnfo')->update(['value' => '1']);
+        $this->insertRelease(3, Category::OTHER_MISC, 'a', false);
 
-        $this->assertSame([1], NfoProcessingCandidateQuery::query()->pluck('id')->all());
+        $this->assertSame([1, 3], NfoProcessingCandidateQuery::query()->pluck('id')->all());
 
         $enabledRunner = $this->capturingRunner();
         $enabledRunner->processNfo();
@@ -224,7 +235,7 @@ class MetadataProcessingCandidateQueryTest extends TestCase
         $this->assertStringContainsString('artisan postprocess:guid nfo a', $enabledRunner->capturedCommands[0]);
 
         $enabledStatistics = $this->collectStatistics();
-        $this->assertSame(1, (int) $enabledStatistics['counts']['now']['processnfo']);
+        $this->assertSame(2, (int) $enabledStatistics['counts']['now']['processnfo']);
     }
 
     /**
@@ -237,12 +248,12 @@ class MetadataProcessingCandidateQueryTest extends TestCase
         string $runnerMethod,
         string $commandFragment,
         string $countKey,
-        int $enabledMode,
-        int $categoryId,
-        int $expectedEnabledCount,
+        array $enabledModes,
+        array $eligibleCategoryIds,
+        array $excludedCategoryIds,
     ): void {
         DB::table('settings')->where('name', $setting)->update(['value' => '0']);
-        $this->insertRelease(1, $categoryId, 'a', true);
+        $this->insertRelease(1, $eligibleCategoryIds[0], 'a', true);
 
         $this->assertSame([], $candidateQuery::query()->pluck('id')->all());
 
@@ -251,39 +262,84 @@ class MetadataProcessingCandidateQueryTest extends TestCase
         $this->assertSame([], $disabledRunner->capturedCommands);
         $this->assertSame(0, (int) $this->collectStatistics()['counts']['now'][$countKey]);
 
-        DB::table('releases')->delete();
-        DB::table('settings')->where('name', $setting)->update(['value' => (string) $enabledMode]);
-        $this->insertRelease(1, $categoryId, 'a', false);
-        $this->insertRelease(2, $categoryId, 'b', true);
+        foreach ($enabledModes as $enabledMode) {
+            DB::table('releases')->delete();
+            DB::table('settings')->where('name', $setting)->update(['value' => (string) $enabledMode]);
+            $nextId = 1;
+            $nextGuidCharacter = 'a';
+            foreach ($eligibleCategoryIds as $categoryId) {
+                $this->insertRelease($nextId++, $categoryId, $nextGuidCharacter++, false);
+                $this->insertRelease($nextId++, $categoryId, $nextGuidCharacter++, true);
+            }
+            foreach ($excludedCategoryIds as $categoryId) {
+                $this->insertRelease($nextId++, $categoryId, $nextGuidCharacter++, true);
+            }
 
-        $this->assertCount($expectedEnabledCount, $candidateQuery::query()->get());
+            $expectedEnabledCount = count($eligibleCategoryIds) * ($enabledMode === 2 ? 1 : 2);
 
-        $enabledRunner = $this->capturingRunner();
-        $this->runMetadataType($enabledRunner, $runnerMethod);
-        $this->assertCount($expectedEnabledCount, $enabledRunner->capturedCommands);
-        foreach ($enabledRunner->capturedCommands as $command) {
-            $this->assertStringContainsString('artisan '.$commandFragment, $command);
+            $this->assertCount($expectedEnabledCount, $candidateQuery::query()->get());
+
+            $enabledRunner = $this->capturingRunner();
+            $this->runMetadataType($enabledRunner, $runnerMethod);
+            $this->assertCount($expectedEnabledCount, $enabledRunner->capturedCommands);
+            foreach ($enabledRunner->capturedCommands as $command) {
+                $this->assertStringContainsString('artisan '.$commandFragment, $command);
+            }
+            $this->assertSame(
+                $expectedEnabledCount,
+                (int) $this->collectStatistics()['counts']['now'][$countKey],
+            );
         }
-        $this->assertSame(
-            $expectedEnabledCount,
-            (int) $this->collectStatistics()['counts']['now'][$countKey],
-        );
     }
 
     /**
-     * @return array<string, array{class-string, string, string, string, string, int, int, int}>
+     * @return array<string, array{class-string, string, string, string, string, list<int>, list<int>, list<int>}>
      */
     public static function metadataTypeProvider(): array
     {
         return [
-            'anime' => [AnimeProcessingCandidateQuery::class, 'lookupanidb', 'processAnime', 'postprocess:guid anime', 'processanime', 1, Category::TV_ANIME, 2],
-            'books' => [BookProcessingCandidateQuery::class, 'lookupbooks', 'processBooks', 'postprocess:guid books', 'processbooks', 2, Category::BOOKS_EBOOK, 1],
-            'console' => [ConsoleProcessingCandidateQuery::class, 'lookupgames', 'processConsoles', 'postprocess:guid console', 'processconsole', 2, Category::GAME_PS4, 1],
-            'PC games' => [GameProcessingCandidateQuery::class, 'lookupgames', 'processGames', 'postprocess:guid games', 'processgames', 2, Category::PC_GAMES, 1],
-            'movies' => [MovieProcessingCandidateQuery::class, 'lookupimdb', 'processMovies', 'postprocess:guid movie', 'processmovies', 2, Category::MOVIE_HD, 1],
-            'music' => [MusicProcessingCandidateQuery::class, 'lookupmusic', 'processMusic', 'postprocess:guid music', 'processmusic', 2, Category::MUSIC_MP3, 1],
-            'NFO' => [NfoProcessingCandidateQuery::class, 'lookupnfo', 'processNfo', 'postprocess:guid nfo', 'processnfo', 1, Category::OTHER_MISC, 2],
-            'TV' => [TvProcessingCandidateQuery::class, 'lookuptv', 'processTv', 'postprocess:tv-pipeline', 'processtv', 2, Category::TV_HD, 1],
+            'anime' => [AnimeProcessingCandidateQuery::class, 'lookupanidb', 'processAnime', 'postprocess:guid anime', 'processanime', [1], [Category::TV_ANIME], [Category::TV_ANIME - 1, Category::TV_ANIME + 1]],
+            'books' => [BookProcessingCandidateQuery::class, 'lookupbooks', 'processBooks', 'postprocess:guid books', 'processbooks', [1, 2], [Category::BOOKS_ROOT, Category::BOOKS_UNKNOWN, Category::MUSIC_AUDIOBOOK], [Category::BOOKS_ROOT - 1, Category::BOOKS_UNKNOWN + 1]],
+            'console' => [ConsoleProcessingCandidateQuery::class, 'lookupgames', 'processConsoles', 'postprocess:guid console', 'processconsole', [1, 2], [Category::GAME_ROOT, Category::GAME_OTHER], [Category::GAME_ROOT - 1, Category::GAME_OTHER + 1]],
+            'PC games' => [GameProcessingCandidateQuery::class, 'lookupgames', 'processGames', 'postprocess:guid games', 'processgames', [1, 2], [Category::PC_GAMES], [Category::PC_GAMES - 1, Category::PC_GAMES + 1]],
+            'movies' => [MovieProcessingCandidateQuery::class, 'lookupimdb', 'processMovies', 'postprocess:guid movie', 'processmovies', [1, 2], [Category::MOVIE_ROOT, Category::MOVIE_OTHER], [Category::MOVIE_ROOT - 1, Category::MOVIE_OTHER + 1]],
+            'music' => [MusicProcessingCandidateQuery::class, 'lookupmusic', 'processMusic', 'postprocess:guid music', 'processmusic', [1, 2], [Category::MUSIC_MP3, Category::MUSIC_LOSSLESS, Category::MUSIC_OTHER], [Category::MUSIC_AUDIOBOOK]],
+            'NFO' => [NfoProcessingCandidateQuery::class, 'lookupnfo', 'processNfo', 'postprocess:guid nfo', 'processnfo', [1], [Category::OTHER_MISC], []],
+            'TV' => [TvProcessingCandidateQuery::class, 'lookuptv', 'processTv', 'postprocess:tv-pipeline', 'processtv', [1, 2], [Category::TV_ROOT, Category::TV_OTHER], [Category::TV_ROOT - 1, Category::TV_ANIME, Category::TV_OTHER + 1]],
+        ];
+    }
+
+    /**
+     * @param  class-string  $workerClass
+     * @param  class-string  $candidateQuery
+     */
+    #[DataProvider('workerSelectionProvider')]
+    public function test_worker_selection_is_wired_to_the_shared_candidate_query(
+        string $workerClass,
+        string $candidateQuery,
+    ): void {
+        $workerFile = (new ReflectionClass($workerClass))->getFileName();
+
+        $this->assertIsString($workerFile);
+        $workerSource = file_get_contents($workerFile);
+        $this->assertIsString($workerSource);
+        $this->assertStringContainsString(class_basename($candidateQuery).'::query(', $workerSource);
+    }
+
+    /**
+     * @return array<string, array{class-string, class-string}>
+     */
+    public static function workerSelectionProvider(): array
+    {
+        return [
+            'anime' => [AnimeProcessor::class, AnimeProcessingCandidateQuery::class],
+            'books' => [BookService::class, BookProcessingCandidateQuery::class],
+            'console' => [ConsoleService::class, ConsoleProcessingCandidateQuery::class],
+            'PC games' => [GamesService::class, GameProcessingCandidateQuery::class],
+            'movies' => [MovieService::class, MovieProcessingCandidateQuery::class],
+            'music' => [MusicService::class, MusicProcessingCandidateQuery::class],
+            'NFO' => [NfoService::class, NfoProcessingCandidateQuery::class],
+            'TV' => [TvEpisodeRevisitService::class, TvProcessingCandidateQuery::class],
         ];
     }
 
@@ -340,7 +396,7 @@ class MetadataProcessingCandidateQueryTest extends TestCase
 
     private function insertRelease(int $id, int $categoryId, string $leftGuid, bool $renamed): void
     {
-        DB::table('releases')->insert([
+        Release::withoutEvents(fn (): Release => Release::factory()->create([
             'id' => $id,
             'name' => 'Metadata Candidate '.$id,
             'searchname' => 'Metadata Candidate '.$id,
@@ -352,7 +408,7 @@ class MetadataProcessingCandidateQueryTest extends TestCase
             'leftguid' => $leftGuid,
             'categories_id' => $categoryId,
             'isrenamed' => $renamed,
-        ]);
+        ]));
     }
 
     private function createSchema(): void
@@ -361,6 +417,7 @@ class MetadataProcessingCandidateQueryTest extends TestCase
             $table->increments('id');
             $table->string('name');
             $table->string('searchname');
+            $table->string('fromname');
             $table->unsignedInteger('groups_id');
             $table->unsignedBigInteger('size');
             $table->dateTime('postdate');
