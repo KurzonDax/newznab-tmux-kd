@@ -359,6 +359,97 @@ SH;
         });
     }
 
+    #[DataProvider('emptyProcessingPaneProvider')]
+    public function test_processing_pane_parks_when_its_candidate_backlogs_are_empty(
+        string $taskName,
+        string $paneRole,
+        array $settings,
+        array $counts,
+        string $displayName,
+        string $reason,
+        string $forbiddenCommand,
+    ): void {
+        Process::fake(function (PendingProcess $process) use ($paneRole) {
+            if (is_array($process->command) && in_array('list-panes', $process->command, true)) {
+                return Process::result("%9\t{$paneRole}\n");
+            }
+
+            return Process::result();
+        });
+
+        $runner = new TmuxTaskRunner('test-session');
+
+        $this->assertTrue($runner->runPaneTask($taskName, [], [
+            'settings' => $settings,
+            'constants' => ['sequential' => 0],
+            'counts' => ['now' => $counts],
+        ]));
+
+        Process::assertRan(function (PendingProcess $process) use ($displayName, $reason): bool {
+            return is_array($process->command)
+                && in_array('respawn-pane', $process->command, true)
+                && in_array('-k', $process->command, true)
+                && str_contains((string) end($process->command), "{$displayName} has been disabled")
+                && str_contains((string) end($process->command), $reason);
+        });
+        Process::assertDidntRun(function (PendingProcess $process) use ($forbiddenCommand): bool {
+            return is_array($process->command)
+                && in_array('respawn-pane', $process->command, true)
+                && str_contains((string) end($process->command), $forbiddenCommand);
+        });
+    }
+
+    /**
+     * @return array<string, array{string, string, array<string, int>, array<string, int>, string, string, string}>
+     */
+    public static function emptyProcessingPaneProvider(): array
+    {
+        return [
+            'books, music, and games' => [
+                'amazon',
+                'post_metadata',
+                ['post_amazon' => 1],
+                [
+                    'processmusic' => 0,
+                    'processbooks' => 0,
+                    'processconsole' => 0,
+                    'processgames' => 0,
+                    'audio_work_available' => 0,
+                ],
+                'Post-process Metadata',
+                'no music/books/games or audio previews to process',
+                'multiprocessing:postprocess ama',
+            ],
+            'TV and anime' => [
+                'tv',
+                'post_tv',
+                ['post_non' => 1, 'processtvrage' => 1, 'processanime' => 1],
+                ['processtv' => 0, 'processanime' => 0],
+                'Post-process TV/Anime',
+                'no work for enabled types (TV, Anime)',
+                'multiprocessing:postprocess tv',
+            ],
+            'movies' => [
+                'movies',
+                'post_movies',
+                ['post_non' => 1, 'processmovies' => 1],
+                ['processmovies' => 0],
+                'Post-process Movies',
+                'no work available',
+                'multiprocessing:postprocess mov',
+            ],
+            'NFO' => [
+                'ppadditional',
+                'post_additional',
+                ['post' => 2],
+                ['processnfo' => 0, 'work_available' => 0],
+                'Post-process Additional',
+                'no NFOs to process',
+                'multiprocessing:postprocess nfo',
+            ],
+        ];
+    }
+
     #[DataProvider('srrdbFixNameLevelProvider')]
     public function test_fix_names_task_only_includes_srrdb_level_when_enabled(bool $enabled): void
     {

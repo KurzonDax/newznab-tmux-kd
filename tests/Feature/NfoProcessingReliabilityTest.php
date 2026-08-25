@@ -53,6 +53,7 @@ class NfoProcessingReliabilityTest extends TestCase
             'minsizetoprocessnfo' => '0',
             'nzbsplitlevel' => '1',
             'lookuppar2' => '0',
+            'lookupnfo' => '1',
         ];
     }
 

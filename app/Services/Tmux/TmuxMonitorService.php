@@ -10,6 +10,13 @@ use App\Models\Release;
 use App\Models\Settings;
 use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
 use App\Services\AudioProcessing\AudioCandidateQuery;
+use App\Services\MetadataProcessing\AnimeProcessingCandidateQuery;
+use App\Services\MetadataProcessing\BookProcessingCandidateQuery;
+use App\Services\MetadataProcessing\ConsoleProcessingCandidateQuery;
+use App\Services\MetadataProcessing\GameProcessingCandidateQuery;
+use App\Services\MetadataProcessing\MovieProcessingCandidateQuery;
+use App\Services\MetadataProcessing\MusicProcessingCandidateQuery;
+use App\Services\MetadataProcessing\NfoProcessingCandidateQuery;
 use App\Services\NameFixing\NameFixingQueryService;
 use App\Services\TvProcessing\TvProcessingCandidateQuery;
 use Illuminate\Support\Facades\DB;
@@ -256,10 +263,41 @@ class TmuxMonitorService
             logger()->error('Error collecting the PreDB full-text backlog: '.$e->getMessage());
         }
 
-        try {
-            $this->runVar['counts']['now']['processtv'] = TvProcessingCandidateQuery::count();
-        } catch (\Exception $e) {
-            logger()->error('Error collecting the TV processing backlog: '.$e->getMessage());
+        $settings = $this->runVar['settings'];
+        $gameLookupMode = (int) ($this->runVar['settings']['processgames'] ?? 0);
+        $candidateBacklogs = [
+            'processtv' => fn (): int => TvProcessingCandidateQuery::count(
+                lookupMode: (int) ($settings['processtvrage'] ?? 0),
+            ),
+            'processmusic' => fn (): int => MusicProcessingCandidateQuery::query(
+                lookupMode: (int) ($settings['processmusic'] ?? 0),
+            )->count(),
+            'processbooks' => fn (): int => BookProcessingCandidateQuery::query(
+                lookupMode: (int) ($settings['processbooks'] ?? 0),
+            )->count(),
+            'processconsole' => fn (): int => ConsoleProcessingCandidateQuery::query(
+                lookupMode: $gameLookupMode,
+            )->count(),
+            'processgames' => fn (): int => GameProcessingCandidateQuery::query(
+                lookupMode: $gameLookupMode,
+            )->count(),
+            'processmovies' => fn (): int => MovieProcessingCandidateQuery::query(
+                lookupMode: (int) ($settings['processmovies'] ?? 0),
+            )->count(),
+            'processanime' => fn (): int => AnimeProcessingCandidateQuery::query(
+                lookupMode: (int) ($settings['processanime'] ?? 0),
+            )->count(),
+            'processnfo' => fn (): int => NfoProcessingCandidateQuery::query(
+                lookupMode: (int) ($settings['processnfo'] ?? 0),
+            )->count(),
+        ];
+
+        foreach ($candidateBacklogs as $countName => $candidateCount) {
+            try {
+                $this->runVar['counts']['now'][$countName] = $candidateCount();
+            } catch (\Exception $e) {
+                logger()->error("Error collecting the {$countName} backlog: ".$e->getMessage());
+            }
         }
 
         try {

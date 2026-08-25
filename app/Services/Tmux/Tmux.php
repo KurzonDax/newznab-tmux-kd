@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Tmux;
 
-use App\Models\Category;
 use App\Models\Settings;
 use App\Services\NameFixing\NameFixingService;
 use App\Services\NfoService;
@@ -326,42 +325,14 @@ class Tmux
                 // pane on real work; the count now comes from
                 // \App\Services\NameFixing\NameFixingQueryService::standardCandidateCount()
                 // via TmuxMonitorService::getProcessCounts().
-                $movieLookupSql = imdb_id_needs_lookup_sql('imdbid');
-                $lookupMovies = (int) Settings::settingValue('lookupimdb');
-
-                if ($lookupMovies <= 0) {
-                    $movieLookupSql = '0 = 1';
-                } elseif ($lookupMovies === 2) {
-                    $movieLookupSql .= ' AND isrenamed = 1';
-                }
-
                 return sprintf(
                     '
 					SELECT
-					SUM(IF(categories_id = %d AND anidbid IS NULL,1,0)) AS processanime,
-                      SUM(IF(categories_id BETWEEN %d AND %d AND '.$movieLookupSql.',1,0)) AS processmovies,
-					SUM(IF(categories_id IN (%d, %d, %d) AND musicinfo_id IS NULL,1,0)) AS processmusic,
-					SUM(IF(categories_id BETWEEN %d AND %d AND consoleinfo_id IS NULL,1,0)) AS processconsole,
-					SUM(IF(categories_id BETWEEN %d AND %d AND bookinfo_id IS NULL,1,0)) AS processbooks,
-					SUM(IF(categories_id = %d AND gamesinfo_id = 0,1,0)) AS processgames,
-					SUM(IF(1=1 %s,1,0)) AS processnfo,
 					SUM(IF(isrenamed = %d,1,0)) AS renamed,
           SUM(IF(nfostatus = %d,1,0)) AS nfo,
 					SUM(IF(predb_id > 0,1,0)) AS predb_matched,
 					COUNT(DISTINCT(predb_id)) AS distinct_predb_matched
 					FROM releases r',
-                    Category::TV_ANIME,
-                    Category::MOVIE_ROOT,
-                    Category::MOVIE_OTHER,
-                    Category::MUSIC_MP3,
-                    Category::MUSIC_LOSSLESS,
-                    Category::MUSIC_OTHER,
-                    Category::GAME_ROOT,
-                    Category::GAME_OTHER,
-                    Category::BOOKS_ROOT,
-                    Category::BOOKS_UNKNOWN,
-                    Category::PC_GAMES,
-                    NfoService::NfoQueryString(),
                     NameFixingService::IS_RENAMED_DONE,
                     NfoService::NFO_FOUND
                 );

@@ -13,6 +13,7 @@ use App\Models\Genre;
 use App\Models\Release;
 use App\Models\Settings;
 use App\Services\IGDB\Exceptions\IgdbHttpException;
+use App\Services\MetadataProcessing\ConsoleProcessingCandidateQuery;
 use App\Support\MetadataSearchLookup;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
@@ -42,8 +43,6 @@ class ConsoleService
 
     public string $imgSavePath;
 
-    public bool $renamed;
-
     /**
      * @var array<string, mixed>
      */
@@ -62,8 +61,6 @@ class ConsoleService
         $this->gameQty = (Settings::settingValue('maxgamesprocessed') !== '') ? (int) Settings::settingValue('maxgamesprocessed') : 150;
         $this->lookupThrottleMs = (Settings::settingValue('amazonsleep') !== '') ? (int) Settings::settingValue('amazonsleep') : 1000;
         $this->imgSavePath = config('nntmux_settings.covers_path').'/console/';
-        $this->renamed = (int) Settings::settingValue('lookupgames') === 2;
-
         $this->failCache = [];
     }
 
@@ -492,24 +489,13 @@ class ConsoleService
      *
      * @throws \Exception
      */
-    public function processConsoleReleases(string $groupID = '', string $guidChar = ''): void
-    {
-        $query = Release::query()
-            ->select(['searchname', 'id'])
-            ->whereBetween('categories_id', [Category::GAME_ROOT, Category::GAME_OTHER])
-            ->whereNull('consoleinfo_id');
-
-        if ($guidChar !== '') {
-            $query->where('leftguid', 'like', $guidChar.'%');
-        }
-
-        if ($groupID !== '') {
-            $query->where('groups_id', $groupID);
-        }
-
-        if ($this->renamed === true) {
-            $query->where('isrenamed', '=', 1);
-        }
+    public function processConsoleReleases(
+        string $groupID = '',
+        string $guidChar = '',
+        ?int $lookupMode = null,
+    ): void {
+        $query = ConsoleProcessingCandidateQuery::query($groupID, $guidChar, $lookupMode)
+            ->select(['searchname', 'id']);
 
         $res = $query->limit($this->gameQty)->orderBy('postdate')->get();
 

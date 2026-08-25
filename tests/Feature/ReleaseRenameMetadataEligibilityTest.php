@@ -9,9 +9,12 @@ use App\Models\Category;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
+use App\Services\MetadataProcessing\AnimeProcessingCandidateQuery;
+use App\Services\MetadataProcessing\BookProcessingCandidateQuery;
+use App\Services\MetadataProcessing\ConsoleProcessingCandidateQuery;
+use App\Services\MetadataProcessing\MusicProcessingCandidateQuery;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\Runners\PostProcessRunner;
-use App\Services\Tmux\Tmux;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -53,7 +56,7 @@ class ReleaseRenameMetadataEligibilityTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_central_renames_remain_eligible_for_metadata_processing_and_monitor_counts(): void
+    public function test_central_renames_remain_eligible_for_metadata_processing(): void
     {
         Event::fake([ReleaseNameFixed::class]);
         $synchronizedReleaseIds = [];
@@ -128,15 +131,10 @@ class ReleaseRenameMetadataEligibilityTest extends TestCase
         $this->assertStringContainsString('artisan postprocess:guid books 3', $runner->capturedCommands[2]);
         $this->assertStringContainsString('artisan postprocess:guid anime 4', $runner->capturedCommands[3]);
 
-        $monitorQuery = (new Tmux)->proc_query(1, 'testing');
-        $this->assertIsString($monitorQuery);
-        $monitorCounts = DB::selectOne(str_replace('IF(', 'IIF(', $monitorQuery));
-
-        $this->assertNotNull($monitorCounts);
-        $this->assertSame(1, (int) $monitorCounts->processmusic);
-        $this->assertSame(1, (int) $monitorCounts->processconsole);
-        $this->assertSame(1, (int) $monitorCounts->processbooks);
-        $this->assertSame(1, (int) $monitorCounts->processanime);
+        $this->assertSame(1, MusicProcessingCandidateQuery::query()->count());
+        $this->assertSame(1, ConsoleProcessingCandidateQuery::query()->count());
+        $this->assertSame(1, BookProcessingCandidateQuery::query()->count());
+        $this->assertSame(1, AnimeProcessingCandidateQuery::query()->count());
     }
 
     /**
