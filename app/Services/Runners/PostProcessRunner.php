@@ -11,6 +11,7 @@ use App\Services\AdditionalProcessing\AdditionalProcessingOrchestrator;
 use App\Services\AudioProcessing\AudioCandidateQuery;
 use App\Services\NfoService;
 use App\Services\TempWorkspaceService;
+use App\Services\TvProcessing\TvProcessingCandidateQuery;
 use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -460,38 +461,17 @@ class PostProcessRunner extends BaseRunner
             return;
         }
 
-        $condLookup = ((int) Settings::settingValue('lookuptv') === 2 ? 'AND isrenamed = 1' : '');
-        $condRenamedOnly = ($renamedOnly ? 'AND isrenamed = 1' : '');
-
-        $checkSql = '
-            SELECT id
-            FROM releases
-            WHERE categories_id BETWEEN 5000 AND 5999
-            AND categories_id != 5070
-            AND videos_id = 0
-            AND size > 1048576
-            AND tv_episodes_id BETWEEN -3 AND 0
-            '.$condLookup.' '.$condRenamedOnly.'
-            LIMIT 1';
-        if (count(DB::select($checkSql)) === 0) {
+        if (! TvProcessingCandidateQuery::query(renamedOnly: $renamedOnly)->exists()) {
             $this->headerNone();
 
             return;
         }
 
         $renamedFlag = ($renamedOnly ? 2 : 1);
-        $bucketExpr = $this->guidBucketExpression();
-        $sql = '
-            SELECT DISTINCT '.$bucketExpr.' AS id, '.$renamedFlag.' AS renamed
-            FROM releases
-            WHERE categories_id BETWEEN 5000 AND 5999
-            AND categories_id != 5070
-            AND videos_id = 0
-            AND tv_episodes_id BETWEEN -3 AND 0
-            AND size > 1048576
-            '.$condLookup.' '.$condRenamedOnly.'
-            LIMIT 16';
-        $queue = DB::select($sql);
+        $queue = TvProcessingCandidateQuery::buckets($renamedOnly);
+        foreach ($queue as $bucket) {
+            $bucket->renamed = $renamedFlag;
+        }
 
         $maxProcesses = (int) Settings::settingValue('postthreadsnon');
 
@@ -503,7 +483,7 @@ class PostProcessRunner extends BaseRunner
      * Run pipelined TV post-processing across multiple GUID buckets in parallel.
      * Each parallel process runs the full provider pipeline sequentially.
      *
-     * @param  array<string, mixed>  $releases
+     * @param  list<object{id: string, renamed?: int}>  $releases
      */
     private function runPostProcessTvPipeline(array $releases, int $maxProcesses, string $desc, bool $renamedOnly): void
     {
@@ -566,21 +546,7 @@ class PostProcessRunner extends BaseRunner
             return false;
         }
 
-        $condLookup = ((int) Settings::settingValue('lookuptv') === 2 ? 'AND isrenamed = 1' : '');
-        $condRenamedOnly = ($renamedOnly ? 'AND isrenamed = 1' : '');
-
-        $checkSql = '
-            SELECT id
-            FROM releases
-            WHERE categories_id BETWEEN 5000 AND 5999
-            AND categories_id != 5070
-            AND videos_id = 0
-            AND size > 1048576
-            AND tv_episodes_id BETWEEN -3 AND 0
-            '.$condLookup.' '.$condRenamedOnly.'
-            LIMIT 1';
-
-        return count(DB::select($checkSql)) > 0;
+        return TvProcessingCandidateQuery::query(renamedOnly: $renamedOnly)->exists();
     }
 
     public function processAnime(): void

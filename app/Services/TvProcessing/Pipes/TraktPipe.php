@@ -56,7 +56,7 @@ class TraktPipe extends AbstractTvProviderPipe
         $cleanName = $parsedInfo['cleanname'];
 
         // Check if we've already failed this title
-        if ($this->isInTitleCache($cleanName)) {
+        if ($context->videosId <= 0 && $this->isInTitleCache($cleanName)) {
             $this->outputSkipped($cleanName);
 
             return TvProcessingResult::skipped('previously failed', $this->getName());
@@ -66,7 +66,9 @@ class TraktPipe extends AbstractTvProviderPipe
         $siteId = false;
 
         // Find the Video ID if it already exists
-        $videoId = $trakt->getByTitle($cleanName, self::TYPE_TV, self::SOURCE_TRAKT);
+        $videoId = $context->videosId > 0
+            ? $context->videosId
+            : $trakt->getByTitle($cleanName, self::TYPE_TV, self::SOURCE_TRAKT);
 
         // If not found and cleanName contains a year in parentheses, try without the year
         if ($videoId === 0 && preg_match('/^(.+?)\s*\(\d{4}\)$/', (string) $cleanName, $yearMatch)) {

@@ -18,6 +18,10 @@ return [
     'multiprocessing_max_child_time' => env('NN_MULTIPROCESSING_MAX_CHILD_TIME', 1800),
     'concurrency_timeout' => env('NN_CONCURRENCY_TIMEOUT'),
     'stream_fork_output' => env('STREAM_FORK_OUTPUT', false),
+    // How long episode metadata may lag a release before a known-show miss becomes terminal.
+    'tv_episode_revisit_window_days' => (int) env('TV_EPISODE_REVISIT_WINDOW_DAYS', 14),
+    // Minimum delay between complete provider passes for the same missing episode.
+    'tv_episode_revisit_interval_hours' => (int) env('TV_EPISODE_REVISIT_INTERVAL_HOURS', 6),
     'cbp' => [
         // Bound the amount of header data retained and written in one transaction.
         'header_chunk_size' => (int) env('CBP_HEADER_CHUNK_SIZE', 500),

@@ -57,7 +57,7 @@ class TvdbPipe extends AbstractTvProviderPipe
         $cleanName = $parsedInfo['cleanname'];
 
         // Check if we've already failed this title
-        if ($this->isInTitleCache($cleanName)) {
+        if ($context->videosId <= 0 && $this->isInTitleCache($cleanName)) {
             $this->outputSkipped($cleanName);
 
             return TvProcessingResult::skipped('previously failed', $this->getName());
@@ -68,7 +68,10 @@ class TvdbPipe extends AbstractTvProviderPipe
         $posterUrl = '';
 
         // Find the Video ID if it already exists by checking the title
-        $videoId = $tvdb->getByTitle($cleanName, self::TYPE_TV);
+        $isEpisodeRevisit = $context->videosId > 0;
+        $videoId = $isEpisodeRevisit
+            ? $context->videosId
+            : $tvdb->getByTitle($cleanName, self::TYPE_TV);
 
         // If not found and cleanName contains a year in parentheses, try without the year
         if ($videoId === 0 && preg_match('/^(.+?)\s*\(\d{4}\)$/', (string) $cleanName, $yearMatch)) {
@@ -127,12 +130,14 @@ class TvdbPipe extends AbstractTvProviderPipe
         }
 
         // Fetch poster if available
-        if (! empty($posterUrl)) {
-            $tvdb->getPoster($videoId);
-        } else {
-            $this->fetchFanartPoster($videoId, $siteId);
+        if (! $isEpisodeRevisit) {
+            if (! empty($posterUrl)) {
+                $tvdb->getPoster($videoId);
+            } else {
+                $this->fetchFanartPoster($videoId, $siteId);
+            }
+            $tvdb->getBanner($videoId, $siteId);
         }
-        $tvdb->getBanner($videoId, $siteId);
 
         // Process episode
         $seriesNo = ! empty($parsedInfo['season']) ? preg_replace('/^S0*/i', '', (string) $parsedInfo['season']) : '';

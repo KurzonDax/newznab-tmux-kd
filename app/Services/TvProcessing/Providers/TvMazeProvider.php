@@ -78,7 +78,7 @@ class TvMazeProvider extends AbstractTvProvider
                 // Clean the show name for better match probability
                 $release = $this->parseInfo($row['searchname']);
                 if (\is_array($release) && $release['name'] !== '') {
-                    if (\in_array($release['cleanname'], $this->titleCache, false)) {
+                    if ((int) ($row['videos_id'] ?? 0) <= 0 && \in_array($release['cleanname'], $this->titleCache, false)) {
                         if ($this->echooutput) {
                             cli()->primaryOver('    → ');
                             cli()->alternateOver($this->truncateTitle($release['cleanname']));
@@ -92,7 +92,10 @@ class TvMazeProvider extends AbstractTvProvider
                     }
 
                     // Find the Video ID if it already exists by checking the title against stored TVMaze titles
-                    $videoId = $this->getByTitle($release['cleanname'], parent::TYPE_TV, parent::SOURCE_TVMAZE);
+                    $isEpisodeRevisit = (int) ($row['videos_id'] ?? 0) > 0;
+                    $videoId = $isEpisodeRevisit
+                        ? (int) $row['videos_id']
+                        : $this->getByTitle($release['cleanname'], parent::TYPE_TV, parent::SOURCE_TVMAZE);
 
                     // Force local lookup only
                     // $local = true, $lookupsetting = false and vice versa
@@ -140,7 +143,9 @@ class TvMazeProvider extends AbstractTvProvider
 
                     if (is_numeric($videoId) && $videoId > 0 && is_numeric($siteId) && $siteId > 0) {
                         // Now that we have valid video and tvmaze ids, try to get the poster
-                        $this->getPoster($videoId);
+                        if (! $isEpisodeRevisit) {
+                            $this->getPoster($videoId);
+                        }
 
                         $seriesNo = preg_replace('/^S0*/i', '', (string) $release['season']);
                         $episodeNo = preg_replace('/^E0*/i', '', (string) $release['episode']);

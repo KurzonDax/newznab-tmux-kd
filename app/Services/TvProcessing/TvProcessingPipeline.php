@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\TvProcessing;
 
-use App\Models\Category;
-use App\Models\Release;
 use App\Models\Settings;
 use App\Services\TvProcessing\Pipes\AbstractTvProviderPipe;
 use App\Services\TvProcessing\Pipes\LocalDbPipe;
@@ -95,6 +93,10 @@ class TvProcessingPipeline
             ->through($this->pipes->values()->all())
             ->thenReturn();
 
+        if (! $result->result->isMatched()) {
+            app(TvEpisodeRevisitService::class)->settleFinalFailure($context->releaseId);
+        }
+
         return $result->toArray();
     }
 
@@ -114,6 +116,7 @@ class TvProcessingPipeline
 
         $this->resetStats();
         $startTime = microtime(true);
+        app(TvEpisodeRevisitService::class)->finalizeExpired($groupID, $guidChar, $processTV);
 
         // Get releases that need processing
         $releases = $this->getTvReleases($groupID, $guidChar, $processTV);
@@ -148,7 +151,7 @@ class TvProcessingPipeline
      */
     protected function getTvReleases(string $groupID, string $guidChar, int $processTV): Collection
     {
-        $qry = Release::query()
+        $qry = TvProcessingCandidateQuery::query($groupID, $guidChar, $processTV)
             ->select([
                 'id',
                 'guid',
@@ -161,24 +164,8 @@ class TvProcessingPipeline
                 'tv_episodes_id',
                 'postdate',
             ])
-            ->where(['videos_id' => 0, 'tv_episodes_id' => 0])
-            ->where('size', '>', 1048576)
-            ->whereBetween('categories_id', [Category::TV_ROOT, Category::TV_OTHER])
-            ->where('categories_id', '<>', Category::TV_ANIME)
             ->orderByDesc('postdate')
             ->limit($this->tvqty);
-
-        if ($groupID !== '') {
-            $qry->where('groups_id', $groupID);
-        }
-
-        if ($guidChar !== '') {
-            $qry->where('leftguid', $guidChar);
-        }
-
-        if ($processTV === 2) {
-            $qry->where('isrenamed', '=', 1);
-        }
 
         return $qry->get();
     }

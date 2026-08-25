@@ -11,6 +11,7 @@ use App\Models\TvEpisode;
 use App\Models\TvInfo;
 use App\Models\Video;
 use App\Services\Releases\ReleaseBrowseService;
+use App\Services\TvProcessing\TvProcessingCandidateQuery;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
@@ -47,8 +48,6 @@ abstract class AbstractTvProvider extends BaseVideoProvider
     protected const PROCESS_TMDB = -2;   // Process TMDB Third
 
     protected const PROCESS_TRAKT = -3;   // Process Trakt Fourth
-
-    protected const PROCESS_IMDB = -4;   // Process IMDB Fifth
 
     protected const NO_MATCH_FOUND = -6;   // Failed All Methods
 
@@ -143,22 +142,9 @@ abstract class AbstractTvProvider extends BaseVideoProvider
             return $ret;
         }
 
-        $qry = Release::query()
-            ->where(['videos_id' => 0, 'tv_episodes_id' => $status])
-            ->where('size', '>', 1048576)
-            ->whereBetween('categories_id', [Category::TV_ROOT, Category::TV_OTHER])
-            ->where('categories_id', '<>', Category::TV_ANIME)
+        $qry = TvProcessingCandidateQuery::providerStage($status, $groupID, $guidChar, $lookupSetting)
             ->orderByDesc('postdate')
             ->limit($this->tvqty);
-        if ($groupID !== '') {
-            $qry->where('groups_id', $groupID);
-        }
-        if ($guidChar !== '') {
-            $qry->where('leftguid', $guidChar);
-        }
-        if ($lookupSetting === 2) {
-            $qry->where('isrenamed', '=', 1);
-        }
 
         return $qry->get();
     }
@@ -170,6 +156,9 @@ abstract class AbstractTvProvider extends BaseVideoProvider
         if ($release) {
             $release->videos_id = $videoId;
             $release->tv_episodes_id = $episodeId;
+            if ($episodeId > 0) {
+                $release->tv_episode_lookup_attempted_at = null;
+            }
             $release->save();
         }
 

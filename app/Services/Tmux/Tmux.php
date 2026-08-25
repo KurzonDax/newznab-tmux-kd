@@ -338,7 +338,6 @@ class Tmux
                 return sprintf(
                     '
 					SELECT
-					SUM(IF(categories_id BETWEEN %d AND %d AND categories_id != %d AND videos_id = 0 AND tv_episodes_id BETWEEN -3 AND 0 AND size > 1048576,1,0)) AS processtv,
 					SUM(IF(categories_id = %d AND anidbid IS NULL,1,0)) AS processanime,
                       SUM(IF(categories_id BETWEEN %d AND %d AND '.$movieLookupSql.',1,0)) AS processmovies,
 					SUM(IF(categories_id IN (%d, %d, %d) AND musicinfo_id IS NULL,1,0)) AS processmusic,
@@ -351,9 +350,6 @@ class Tmux
 					SUM(IF(predb_id > 0,1,0)) AS predb_matched,
 					COUNT(DISTINCT(predb_id)) AS distinct_predb_matched
 					FROM releases r',
-                    Category::TV_ROOT,
-                    Category::TV_OTHER,
-                    Category::TV_ANIME,
                     Category::TV_ANIME,
                     Category::MOVIE_ROOT,
                     Category::MOVIE_OTHER,

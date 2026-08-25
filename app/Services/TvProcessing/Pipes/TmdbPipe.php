@@ -56,7 +56,7 @@ class TmdbPipe extends AbstractTvProviderPipe
         $cleanName = $parsedInfo['cleanname'];
 
         // Check if we've already failed this title
-        if ($this->isInTitleCache($cleanName)) {
+        if ($context->videosId <= 0 && $this->isInTitleCache($cleanName)) {
             $this->outputSkipped($cleanName);
 
             return TvProcessingResult::skipped('previously failed', $this->getName());
@@ -66,7 +66,10 @@ class TmdbPipe extends AbstractTvProviderPipe
         $siteId = false;
 
         // Find the Video ID if it already exists
-        $videoId = $tmdb->getByTitle($cleanName, self::TYPE_TV, self::SOURCE_TMDB);
+        $isEpisodeRevisit = $context->videosId > 0;
+        $videoId = $isEpisodeRevisit
+            ? $context->videosId
+            : $tmdb->getByTitle($cleanName, self::TYPE_TV, self::SOURCE_TMDB);
 
         // If not found and cleanName contains a year in parentheses, try without the year
         if ($videoId === 0 && preg_match('/^(.+?)\s*\(\d{4}\)$/', (string) $cleanName, $yearMatch)) {
@@ -119,7 +122,7 @@ class TmdbPipe extends AbstractTvProviderPipe
         }
 
         // Fetch poster if we have one
-        if (! empty($tmdbShow['poster'] ?? '')) {
+        if (! $isEpisodeRevisit && ! empty($tmdbShow['poster'] ?? '')) {
             $tmdb->getPoster($videoId);
         }
 

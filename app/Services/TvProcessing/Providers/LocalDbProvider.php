@@ -42,10 +42,20 @@ class LocalDbProvider extends AbstractTvProvider
             }
 
             // Try to find the show in our local database by title
-            $videoId = $this->getByTitle($showInfo['cleanname'], parent::TYPE_TV, 0);
+            $videoId = (int) $release->videos_id > 0
+                ? (int) $release->videos_id
+                : $this->getByTitle($showInfo['cleanname'], parent::TYPE_TV, 0);
 
             if ($videoId !== 0 && $videoId !== false) {
                 // Found a matching show in local DB
+                if (($showInfo['episode'] ?? null) === 'all') {
+                    $this->setVideoIdFound($videoId, $release->id, 0);
+                    $this->setVideoNotFound(parent::NO_MATCH_FOUND, $release->id);
+                    $matchedCount++;
+
+                    continue;
+                }
+
                 $episodeId = false;
                 $hasEpisodeNumbers = isset($showInfo['season'], $showInfo['episode']) && $showInfo['episode'] !== 'all' && (int) $showInfo['season'] > 0 && (int) $showInfo['episode'] > 0;
                 $hasAirdate = ! empty($showInfo['airdate']);
