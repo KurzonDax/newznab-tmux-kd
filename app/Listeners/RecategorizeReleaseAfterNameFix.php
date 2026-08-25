@@ -34,14 +34,18 @@ class RecategorizeReleaseAfterNameFix
             return;
         }
 
-        $result = $this->categorization->determineCategory(
-            $release->groups_id,
-            $event->newName,
-            (string) ($release->fromname ?? $event->poster),
-            releaseId: (int) $release->id,
-        );
+        if ($event->categoryOverride !== null) {
+            $newCategoryId = $event->categoryOverride;
+        } else {
+            $result = $this->categorization->determineCategory(
+                $release->groups_id,
+                $event->newName,
+                (string) ($release->fromname ?? $event->poster),
+                releaseId: (int) $release->id,
+            );
 
-        $newCategoryId = (int) ($result['categories_id'] ?? $release->categories_id);
+            $newCategoryId = (int) ($result['categories_id'] ?? $release->categories_id);
+        }
 
         if ((int) $release->categories_id === $newCategoryId && (int) $release->iscategorized === 1) {
             $this->mediaInfoRefinement->refine((int) $release->id);

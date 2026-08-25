@@ -98,10 +98,16 @@ class TrustedDonorNameFixingTest extends TestCase
             ['releases_id' => 2, 'name' => 'movie.mkv', 'crc32' => 'AABBCCDD'],
         ]);
 
-        Search::shouldReceive('updateRelease')->never();
+        Search::shouldReceive('updateRelease')->once()->with(2);
         app(NameFixingService::class)->fixNamesWithCrc(2, true, 2, true, false);
 
         $this->assertSame(77, (int) DB::table('releases')->where('id', 2)->value('predb_id'));
+        $this->assertSame(1, (int) DB::table('releases')->where('id', 2)->value('isrenamed'));
+        $this->assertSame(1, (int) DB::table('releases')->where('id', 2)->value('is_trusted_name'));
+        Event::assertDispatched(
+            ReleaseNameFixed::class,
+            fn (ReleaseNameFixed $event): bool => $event->releaseId === 2,
+        );
     }
 
     public function test_same_name_trusted_donor_without_predb_marks_target_processed(): void
@@ -240,10 +246,12 @@ class TrustedDonorNameFixingTest extends TestCase
             $table->integer('proc_crc32')->default(0);
             $table->unsignedInteger('videos_id')->default(0);
             $table->unsignedInteger('tv_episodes_id')->default(0);
+            $table->unsignedInteger('movieinfo_id')->nullable();
             $table->string('imdbid')->nullable();
             $table->unsignedInteger('musicinfo_id')->nullable();
             $table->unsignedInteger('consoleinfo_id')->nullable();
             $table->unsignedInteger('bookinfo_id')->nullable();
+            $table->integer('gamesinfo_id')->default(0);
         });
 
         Schema::create('release_files', function (Blueprint $table): void {

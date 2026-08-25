@@ -8,6 +8,7 @@ use App\Events\ReleaseNameFixed;
 use App\Facades\Search;
 use App\Listeners\RecategorizeReleaseAfterNameFix;
 use App\Models\Category;
+use App\Models\Predb;
 use App\Models\Release;
 use App\Models\UsenetGroup;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
@@ -19,6 +20,7 @@ use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\Releases\PreviewGenerationPolicy;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
 use Tests\Support\IsolatedSqliteDatabase;
@@ -543,6 +545,44 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
         $this->assertSame([(int) $release->id], $synchronized);
     }
 
+    public function test_name_fix_listener_honors_an_explicit_category_override(): void
+    {
+        Search::shouldReceive('updateRelease')->once();
+
+        $release = Release::factory()->create([
+            'categories_id' => Category::MUSIC_MP3,
+            'iscategorized' => 1,
+            'guid' => str_repeat('a', 40),
+            'leftguid' => 'a',
+        ]);
+        $categorization = Mockery::mock(CategorizationService::class);
+        $categorization->shouldNotReceive('determineCategory');
+        $previewPolicy = new PreviewGenerationPolicy;
+        $listener = new RecategorizeReleaseAfterNameFix(
+            $categorization,
+            $previewPolicy,
+            new MediaInfoRefinementService(
+                $previewPolicy,
+                new ReleaseSearchSyncCoordinator(
+                    new PersistenceMetricsCollector,
+                    static function (int $releaseId): void {},
+                ),
+            ),
+        );
+
+        $listener->handle(new ReleaseNameFixed(
+            (int) $release->id,
+            'old-name',
+            'Artist - Album FLAC',
+            Category::MUSIC_OTHER,
+            1,
+            categoryOverride: Category::MUSIC_MP3,
+        ));
+
+        $this->assertSame(Category::MUSIC_MP3, (int) $release->fresh()->categories_id);
+        $this->assertSame(1, (int) $release->fresh()->iscategorized);
+    }
+
     public function test_internal_processing_status_updates_do_not_refresh_the_search_index(): void
     {
         Search::shouldReceive('updateRelease')->once();
@@ -560,10 +600,131 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
         ]);
 
         app(ReleaseUpdateService::class)->updateSingleColumn('proc_nfo', 1, $release->id);
-        app(ReleaseUpdateService::class)->attachPredbId($release->id, 123);
 
         $this->assertSame(1, (int) $release->fresh()->proc_nfo);
-        $this->assertSame(123, (int) $release->fresh()->predb_id);
+    }
+
+    public function test_exact_predb_attachment_applies_the_canonical_name_transition(): void
+    {
+        Search::shouldReceive('updateRelease')->once();
+        Event::fake([ReleaseNameFixed::class]);
+
+        $group = UsenetGroup::query()->create([
+            'name' => 'alt.binaries.test',
+            'active' => 1,
+            'backfill' => 0,
+        ]);
+        $release = Release::factory()->create([
+            'searchname' => 'Exact.PreDB.Title-GROUP',
+            'groups_id' => $group->id,
+            'guid' => str_repeat('p', 40),
+            'leftguid' => 'p',
+            'videos_id' => 41,
+            'tv_episodes_id' => 42,
+            'imdbid' => 'tt1234567',
+            'musicinfo_id' => 43,
+            'consoleinfo_id' => 44,
+            'bookinfo_id' => 45,
+            'anidbid' => 46,
+            'isrenamed' => 0,
+            'is_trusted_name' => 0,
+        ]);
+        $synchronized = [];
+        $updates = new ReleaseUpdateService(
+            searchSyncCoordinator: new ReleaseSearchSyncCoordinator(
+                new PersistenceMetricsCollector,
+                function (int $releaseId) use (&$synchronized): void {
+                    $synchronized[] = $releaseId;
+                },
+            ),
+        );
+
+        $updates->attachPredbId((int) $release->id, 123);
+
+        $release->refresh();
+        $this->assertSame(123, (int) $release->predb_id);
+        $this->assertSame(1, (int) $release->isrenamed);
+        $this->assertSame(1, (int) $release->is_trusted_name);
+        $this->assertSame(0, (int) $release->videos_id);
+        $this->assertSame(0, (int) $release->tv_episodes_id);
+        $this->assertNull($release->imdbid);
+        $this->assertNull($release->musicinfo_id);
+        $this->assertNull($release->consoleinfo_id);
+        $this->assertNull($release->bookinfo_id);
+        $this->assertNull($release->anidbid);
+        $this->assertSame([(int) $release->id], $synchronized);
+        Event::assertDispatched(
+            ReleaseNameFixed::class,
+            fn (ReleaseNameFixed $event): bool => $event->releaseId === (int) $release->id
+                && $event->oldName === 'Exact.PreDB.Title-GROUP'
+                && $event->newName === 'Exact.PreDB.Title-GROUP',
+        );
+    }
+
+    public function test_predb_title_sweep_applies_the_canonical_name_transition(): void
+    {
+        Search::shouldReceive('updateRelease')->twice();
+        Event::fake([ReleaseNameFixed::class]);
+
+        $predbId = DB::table('predb')->insertGetId(['title' => 'Exact.PreDB.Title-GROUP']);
+        $release = Release::factory()->create([
+            'searchname' => 'Exact.PreDB.Title-GROUP',
+            'guid' => str_repeat('q', 40),
+            'leftguid' => 'q',
+            'predb_id' => 0,
+            'isrenamed' => 0,
+            'is_trusted_name' => 0,
+            'musicinfo_id' => 43,
+        ]);
+
+        Predb::checkPre();
+
+        $release->refresh();
+        $this->assertSame($predbId, (int) $release->predb_id);
+        $this->assertSame(1, (int) $release->isrenamed);
+        $this->assertSame(1, (int) $release->is_trusted_name);
+        $this->assertNull($release->musicinfo_id);
+        Event::assertDispatched(
+            ReleaseNameFixed::class,
+            fn (ReleaseNameFixed $event): bool => $event->releaseId === (int) $release->id,
+        );
+    }
+
+    public function test_srrdb_attachment_applies_the_canonical_name_transition(): void
+    {
+        Search::shouldReceive('updateRelease')->once();
+        Event::fake([ReleaseNameFixed::class]);
+
+        $release = Release::factory()->create([
+            'searchname' => 'Exact.SRRDB.Title-GROUP',
+            'guid' => str_repeat('s', 40),
+            'leftguid' => 's',
+            'bookinfo_id' => 45,
+        ]);
+        $synchronized = [];
+        $updates = new ReleaseUpdateService(
+            searchSyncCoordinator: new ReleaseSearchSyncCoordinator(
+                new PersistenceMetricsCollector,
+                function (int $releaseId) use (&$synchronized): void {
+                    $synchronized[] = $releaseId;
+                },
+            ),
+        );
+
+        $updates->attachSrrdbMatch((int) $release->id, 321, 'tt7654321');
+
+        $release->refresh();
+        $this->assertSame(321, (int) $release->predb_id);
+        $this->assertSame('tt7654321', $release->imdbid);
+        $this->assertSame(1, (int) $release->proc_srrdb);
+        $this->assertSame(1, (int) $release->isrenamed);
+        $this->assertSame(1, (int) $release->is_trusted_name);
+        $this->assertNull($release->bookinfo_id);
+        $this->assertSame([(int) $release->id], $synchronized);
+        Event::assertDispatched(
+            ReleaseNameFixed::class,
+            fn (ReleaseNameFixed $event): bool => $event->releaseId === (int) $release->id,
+        );
     }
 
     private function createSchema(): void
@@ -619,11 +780,13 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
                 $table->integer('categories_id')->default(Category::OTHER_MISC);
                 $table->unsignedInteger('videos_id')->default(0);
                 $table->integer('tv_episodes_id')->default(0);
+                $table->integer('movieinfo_id')->nullable();
                 $table->string('imdbid')->nullable();
                 $table->integer('musicinfo_id')->nullable();
                 $table->integer('consoleinfo_id')->nullable();
                 $table->integer('bookinfo_id')->nullable();
                 $table->integer('anidbid')->nullable();
+                $table->integer('gamesinfo_id')->default(0);
                 $table->unsignedInteger('predb_id')->default(0);
                 $table->tinyInteger('iscategorized')->default(0);
                 $table->tinyInteger('isrenamed')->default(0);
@@ -637,10 +800,18 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
                 $table->tinyInteger('proc_hash16k')->default(0);
                 $table->tinyInteger('proc_srr')->default(0);
                 $table->tinyInteger('proc_crc32')->default(0);
+                $table->tinyInteger('proc_srrdb')->default(0);
                 $table->tinyInteger('passwordstatus')->default(0);
                 $table->tinyInteger('haspreview')->default(0);
                 $table->tinyInteger('nzbstatus')->default(0);
                 $table->unsignedInteger('pp_timeout_count')->default(0);
+            });
+        }
+
+        if (! Schema::hasTable('predb')) {
+            Schema::create('predb', function (Blueprint $table): void {
+                $table->increments('id');
+                $table->string('title')->unique();
             });
         }
 

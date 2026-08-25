@@ -430,10 +430,12 @@ class SrrdbNameFixingTest extends TestCase
             $table->integer('proc_srrdb')->default(0);
             $table->unsignedInteger('videos_id')->default(0);
             $table->unsignedInteger('tv_episodes_id')->default(0);
+            $table->unsignedInteger('movieinfo_id')->nullable();
             $table->string('imdbid')->nullable();
             $table->unsignedInteger('musicinfo_id')->nullable();
             $table->unsignedInteger('consoleinfo_id')->nullable();
             $table->unsignedInteger('bookinfo_id')->nullable();
+            $table->integer('gamesinfo_id')->default(0);
         });
 
         Schema::create('release_files', function (Blueprint $table): void {

@@ -13,6 +13,7 @@ use App\Models\Category;
 use App\Models\Release;
 use App\Models\Settings;
 use App\Services\NameFixing\Extractors\ObfuscatedSubjectExtractor;
+use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Support\BookIsbn;
@@ -57,6 +58,7 @@ class BookService
         private ItunesService $itunes = new ItunesService,
         private BookMatchScorer $scorer = new BookMatchScorer,
         private ReleaseImageService $releaseImageService = new ReleaseImageService,
+        private ReleaseUpdateService $releaseUpdateService = new ReleaseUpdateService,
     ) {
         $this->echooutput = config('nntmux.echocli');
 
@@ -465,11 +467,10 @@ class BookService
                 continue;
             }
 
-            Release::query()->where('id', (int) $release->id)->update([
-                'searchname' => $normalizedSearchName,
-                'isrenamed' => 1,
-            ]);
-            Search::updateRelease((int) $release->id);
+            $this->releaseUpdateService->renameFromBookMetadata(
+                (int) $release->id,
+                $normalizedSearchName,
+            );
         }
     }
 
@@ -556,11 +557,10 @@ class BookService
         $parsed = $this->parseReleaseName($rawReleaseName, (string) $releasetype);
         $normalizedReleaseName = $this->determineReadableBookSearchName($rawReleaseName, $parsed) ?? $rawReleaseName;
         if ($normalizedReleaseName !== $rawReleaseName) {
-            Release::query()->where('id', (int) $releaseID)->update([
-                'searchname' => $normalizedReleaseName,
-                'isrenamed' => 1,
-            ]);
-            Search::updateRelease((int) $releaseID);
+            $this->releaseUpdateService->renameFromBookMetadata(
+                (int) $releaseID,
+                $normalizedReleaseName,
+            );
         }
         $this->parsedBookResult = $parsed;
         $this->parsedIsbn = $parsed->isbn;

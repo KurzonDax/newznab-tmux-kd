@@ -49,13 +49,13 @@ class ReleaseUpdateService
         'SRRDB, ',
         'PreDB FT Exact, ',
         'PreDB file match, ',
+        'Audio tags, ',
     ];
 
     /**
      * @var list<string>
      */
     private const SINGLE_UPDATE_COLUMNS = [
-        'predb_id',
         'proc_nfo',
         'proc_files',
         'proc_xxx',
@@ -200,7 +200,6 @@ class ReleaseUpdateService
             // Determine if the source is trusted enough to bypass plausibility checks
             $sourceTrust = $this->sourceTrustPolicy($type, $method, $preId);
             $trustedSource = $sourceTrust['bypass_plausibility'];
-            $trustedDonorName = $sourceTrust['trusted_donor'];
             $acceptedDescriptiveTitle = $descriptiveTitleCandidate
                 && $this->fileNameCleaner->isDescriptiveTitle($name)
                 && $this->fileNameCleaner->currentNameLooksObfuscated(
@@ -256,9 +255,9 @@ class ReleaseUpdateService
                         $release,
                         $newTitle,
                         $type,
+                        $method,
                         $nameStatus,
                         $preId,
-                        $trustedDonorName,
                         $imdbId,
                     );
                 }
@@ -347,27 +346,42 @@ class ReleaseUpdateService
         object $release,
         string $newTitle,
         string $type,
+        string $method,
         bool $nameStatus,
         int $preId,
-        bool $trustedDonorName,
         ?string $imdbId,
+        ?int $categoryOverride = null,
+        bool $preserveBookInfo = false,
     ): void {
-        DB::transaction(function () use ($release, $newTitle, $type, $nameStatus, $preId, $trustedDonorName, $imdbId): void {
+        $releaseId = (int) ($release->releases_id ?? $release->id);
+        $trustedDonorName = $this->sourceTrustPolicy($type, $method, $preId)['trusted_donor'];
+
+        DB::transaction(function () use ($release, $releaseId, $newTitle, $type, $nameStatus, $preId, $trustedDonorName, $imdbId, $categoryOverride, $preserveBookInfo): void {
             if ($nameStatus === true) {
                 $status = $this->getStatusColumnsForType($type);
 
                 $updateColumns = [
                     'videos_id' => 0,
                     'tv_episodes_id' => 0,
+                    'movieinfo_id' => null,
                     'imdbid' => $imdbId,
                     'musicinfo_id' => null,
                     'consoleinfo_id' => null,
                     'bookinfo_id' => null,
                     'anidbid' => null,
+                    'gamesinfo_id' => 0,
                     'predb_id' => $preId,
                     'searchname' => $newTitle,
                     'is_trusted_name' => $trustedDonorName,
                 ];
+
+                if ($preserveBookInfo) {
+                    unset($updateColumns['bookinfo_id']);
+                }
+
+                if ($categoryOverride !== null) {
+                    $updateColumns['categories_id'] = $categoryOverride;
+                }
 
                 if (! empty($status)) {
                     foreach ($status as $key => $stat) {
@@ -376,37 +390,41 @@ class ReleaseUpdateService
                 }
 
                 Release::query()
-                    ->where('id', $release->releases_id)
+                    ->where('id', $releaseId)
                     ->update($updateColumns);
             } else {
                 Release::query()
-                    ->where('id', $release->releases_id)
-                    ->update([
+                    ->where('id', $releaseId)
+                    ->update(array_filter([
                         'videos_id' => 0,
                         'tv_episodes_id' => 0,
+                        'movieinfo_id' => null,
                         'imdbid' => $imdbId,
                         'musicinfo_id' => null,
                         'consoleinfo_id' => null,
                         'bookinfo_id' => null,
                         'anidbid' => null,
+                        'gamesinfo_id' => 0,
                         'predb_id' => $preId,
                         'searchname' => $newTitle,
                         'is_trusted_name' => $trustedDonorName,
                         'iscategorized' => 1,
-                    ]);
+                        'categories_id' => $categoryOverride,
+                    ], static fn (mixed $value, string $key): bool => $key !== 'categories_id' || $value !== null, ARRAY_FILTER_USE_BOTH));
             }
 
             event(new ReleaseNameFixed(
-                (int) $release->releases_id,
+                $releaseId,
                 (string) $release->searchname,
                 $newTitle,
                 (int) $release->categories_id,
                 $release->groups_id,
-                (string) ($release->fromname ?? '')
+                (string) ($release->fromname ?? ''),
+                $categoryOverride,
             ));
         });
 
-        $this->searchSyncCoordinator->request((int) $release->releases_id);
+        $this->searchSyncCoordinator->request($releaseId);
     }
 
     /**
@@ -422,6 +440,9 @@ class ReleaseUpdateService
             'Filenames, ', 'file matched source: ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_files' => 1],
             'XXX filenames, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_xxx' => 1],
             'PreDB FT Exact, ' => ['isrenamed' => 1, 'iscategorized' => 1],
+            'PreDB exact, ' => ['isrenamed' => 1, 'iscategorized' => 1],
+            'Audio tags, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_pp' => 1],
+            'Book title, ' => ['isrenamed' => 1, 'iscategorized' => 1],
             'sorter, ' => ['isrenamed' => 1, 'iscategorized' => 1],
             'UID, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_uid' => 1],
             'Mediainfo, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_media_movie' => 1],
@@ -453,10 +474,69 @@ class ReleaseUpdateService
             return;
         }
 
-        $this->updateSingleColumn('predb_id', $predbId, $releaseId);
+        $release = Release::query()->find($releaseId);
+        if ($release === null) {
+            return;
+        }
+
+        $this->performDatabaseUpdate(
+            $release,
+            (string) $release->searchname,
+            'PreDB exact, ',
+            'Exact title match',
+            true,
+            $predbId,
+            null,
+        );
         $this->relid = $releaseId;
         $this->matched = true;
         $this->done = true;
+    }
+
+    public function renameFromAudioTags(int $releaseId, string $newTitle, int $categoryId): void
+    {
+        if ($releaseId === 0 || $newTitle === '') {
+            return;
+        }
+
+        $release = Release::query()->find($releaseId);
+        if ($release === null) {
+            return;
+        }
+
+        $this->performDatabaseUpdate(
+            $release,
+            $newTitle,
+            'Audio tags, ',
+            'Embedded media tags',
+            true,
+            0,
+            null,
+            $categoryId,
+        );
+    }
+
+    public function renameFromBookMetadata(int $releaseId, string $newTitle): void
+    {
+        if ($releaseId === 0 || $newTitle === '') {
+            return;
+        }
+
+        $release = Release::query()->find($releaseId);
+        if ($release === null) {
+            return;
+        }
+
+        $this->performDatabaseUpdate(
+            $release,
+            $newTitle,
+            'Book title, ',
+            'Parsed book metadata',
+            true,
+            0,
+            null,
+            preserveBookInfo: true,
+        );
     }
 
     public function attachSrrdbMatch(int $releaseId, int $predbId, ?string $imdbId): void
@@ -465,14 +545,20 @@ class ReleaseUpdateService
             return;
         }
 
-        Release::query()->where('id', $releaseId)->update([
-            'predb_id' => $predbId,
-            'imdbid' => $imdbId,
-            'proc_srrdb' => 1,
-            'isrenamed' => 1,
-            'is_trusted_name' => 1,
-        ]);
-        $this->searchSyncCoordinator->request($releaseId);
+        $release = Release::query()->find($releaseId);
+        if ($release === null) {
+            return;
+        }
+
+        $this->performDatabaseUpdate(
+            $release,
+            (string) $release->searchname,
+            'SRRDB, ',
+            'Verified archive CRC match',
+            true,
+            $predbId,
+            $imdbId,
+        );
         $this->relid = $releaseId;
         $this->matched = true;
         $this->done = true;

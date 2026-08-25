@@ -7,7 +7,6 @@ namespace App\Services\AudioProcessing;
 use App\Models\Category;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\AudioTagExtractor;
-use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\Categorization\CategorizationService;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\Releases\PreviewGenerationPolicy;
@@ -26,7 +25,7 @@ final class AudioTagRenamer
     public function __construct(
         private readonly AudioProcessingConfiguration $config,
         private readonly CategorizationService $categorize,
-        private readonly ReleaseSearchSyncCoordinator $searchSyncCoordinator,
+        private readonly ReleaseUpdateService $releaseUpdateService,
         private readonly PreviewGenerationPolicy $previewPolicy,
     ) {}
 
@@ -66,18 +65,15 @@ final class AudioTagRenamer
         $newTitle = substr($newName, 0, 255);
         $releaseId = (int) $release->id;
 
-        Release::query()->whereKey($releaseId)->update([
-            'searchname' => $newTitle,
-            'categories_id' => is_array($newCategory) ? $newCategory['categories_id'] : $newCategory,
-            'iscategorized' => 1,
-            'isrenamed' => 1,
-            'proc_pp' => 1,
-        ]);
+        $this->releaseUpdateService->renameFromAudioTags(
+            $releaseId,
+            $newTitle,
+            (int) (is_array($newCategory) ? $newCategory['categories_id'] : $newCategory),
+        );
 
         // The new category may sit under a root with preview generation enabled
         // where the old one did not (ADR 0004 owed regeneration).
         $this->previewPolicy->restoreOwedPreviews([$releaseId]);
-        $this->searchSyncCoordinator->request($releaseId);
 
         if ($this->config->echoCLI) {
             $releaseInfo = (object) [
@@ -88,7 +84,7 @@ final class AudioTagRenamer
                 'releases_id' => $releaseId,
                 'filename' => '',
             ];
-            (new ReleaseUpdateService)->echoReleaseInfo(
+            $this->releaseUpdateService->echoReleaseInfo(
                 $releaseInfo,
                 $newTitle,
                 is_array($newCategory) ? $newCategory : ['categories_id' => $newCategory],

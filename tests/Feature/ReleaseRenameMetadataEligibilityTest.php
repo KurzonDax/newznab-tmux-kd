@@ -96,6 +96,8 @@ class ReleaseRenameMetadataEligibilityTest extends TestCase
             $this->assertNull($release->consoleinfo_id);
             $this->assertNull($release->bookinfo_id);
             $this->assertNull($release->anidbid);
+            $this->assertSame(0, (int) $release->gamesinfo_id);
+            $this->assertNull($release->movieinfo_id);
         }
 
         $runner = new class extends PostProcessRunner
@@ -159,6 +161,8 @@ class ReleaseRenameMetadataEligibilityTest extends TestCase
             'consoleinfo_id' => 102,
             'bookinfo_id' => 103,
             'anidbid' => 104,
+            'gamesinfo_id' => 105,
+            'movieinfo_id' => 106,
         ];
     }
 
@@ -184,6 +188,7 @@ class ReleaseRenameMetadataEligibilityTest extends TestCase
             $table->integer('bookinfo_id')->nullable();
             $table->integer('anidbid')->nullable();
             $table->integer('gamesinfo_id')->default(0);
+            $table->integer('movieinfo_id')->nullable();
             $table->unsignedInteger('predb_id')->default(0);
             $table->tinyInteger('iscategorized')->default(0);
             $table->tinyInteger('isrenamed')->default(0);

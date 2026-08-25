@@ -19,5 +19,6 @@ class ReleaseNameFixed
         public readonly int $oldCategoryId,
         public readonly int|string $groupId,
         public readonly string $poster = '',
+        public readonly ?int $categoryOverride = null,
     ) {}
 }
