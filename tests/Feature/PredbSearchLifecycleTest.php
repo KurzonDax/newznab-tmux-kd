@@ -124,6 +124,28 @@ class PredbSearchLifecycleTest extends TestCase
         $this->assertPredbState(PredbSearchStatus::Unsearched, null);
     }
 
+    public function test_backend_unavailability_rolls_back_outcomes_collected_earlier_in_the_batch(): void
+    {
+        $this->insertPredb(id: 1);
+        $this->insertPredb(id: 2, title: 'Another.Valid.Scene.Release-GROUP');
+        $nameFixing = $this->mock(NameFixingService::class);
+        $nameFixing->shouldReceive('matchPredbFulltext')
+            ->once()
+            ->andReturn(0);
+        $nameFixing->shouldReceive('matchPredbFulltext')
+            ->once()
+            ->andThrow(new RuntimeException('Search backend unavailable'));
+
+        $this->artisan('releases:fix-names-group', [
+            'type' => 'predbft',
+            '--limit' => 2,
+            '--thread' => 1,
+            '--workers' => 1,
+        ])->assertFailed();
+
+        $this->assertSame([0, 0], $this->storedSearchStates());
+    }
+
     public function test_each_cycle_is_bounded_by_the_per_run_limit_times_configured_threads(): void
     {
         config(['nntmux.stream_fork_output' => true]);
@@ -176,7 +198,10 @@ class PredbSearchLifecycleTest extends TestCase
         $binaries->method('getMessageBuffer')->willReturn(100);
         $binaries->expects($this->once())
             ->method('scan')
-            ->willReturn(['firstArticleDate' => '2026-07-10 00:00:00']);
+            ->willReturn([
+                'firstArticleDate' => '2026-07-10 00:00:00',
+                'lastArticleDate' => '2026-07-12 00:00:00',
+            ]);
         $nntp = new class extends NNTPService
         {
             public function selectGroup(string $group, mixed $articles = false, bool $force = false): mixed
@@ -209,6 +234,57 @@ class PredbSearchLifecycleTest extends TestCase
         $this->runPredbBatch();
 
         $this->assertSame(PredbSearchStatus::Matched->value, (int) DB::table('predb')->find(1)->searched);
+    }
+
+    public function test_an_empty_backfill_chunk_does_not_widen_the_next_successful_rearm_window(): void
+    {
+        DB::table('usenet_groups')->insert([
+            'id' => 1,
+            'name' => 'alt.binaries.test',
+            'first_record' => 1_000,
+            'first_record_postdate' => '2026-07-12 00:00:00',
+        ]);
+        $this->insertPredbWithState(1, PredbSearchStatus::Parked, '2026-07-07 12:00:00');
+        $this->insertPredbWithState(2, PredbSearchStatus::Parked, '2026-07-10 12:00:00');
+
+        $binaries = $this->createMock(BinariesService::class);
+        $binaries->method('getMessageBuffer')->willReturn(100);
+        $binaries->expects($this->exactly(2))
+            ->method('scan')
+            ->willReturnOnConsecutiveCalls(
+                [],
+                [
+                    'firstArticleDate' => '2026-07-07 00:00:00',
+                    'lastArticleDate' => '2026-07-08 00:00:00',
+                ],
+            );
+        $binaries->expects($this->once())
+            ->method('postdate')
+            ->willReturn(strtotime('2026-07-10 00:00:00'));
+        $nntp = new class extends NNTPService
+        {
+            public function selectGroup(string $group, mixed $articles = false, bool $force = false): mixed
+            {
+                return ['first' => 1, 'last' => 2_000];
+            }
+        };
+        $service = new BackfillService(
+            config: new BackfillConfig,
+            binaries: $binaries,
+            nntp: $nntp,
+            predbSearchLifecycle: new PredbSearchLifecycle,
+        );
+
+        $service->backfillGroup([
+            'id' => 1,
+            'name' => 'alt.binaries.test',
+            'first_record' => 1_000,
+            'first_record_postdate' => '2026-07-12 00:00:00',
+            'backfill_target' => 30,
+        ], remainingGroups: 0, articles: 200);
+
+        $this->assertSame(PredbSearchStatus::Unsearched->value, (int) DB::table('predb')->find(1)->searched);
+        $this->assertSame(PredbSearchStatus::Parked->value, (int) DB::table('predb')->find(2)->searched);
     }
 
     private function runPredbBatch(int $limit = 1): void

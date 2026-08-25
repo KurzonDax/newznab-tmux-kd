@@ -13,12 +13,9 @@ use Illuminate\Support\Facades\Log;
 
 class ReleasesRunner extends BaseRunner
 {
-    private readonly NameFixingQueryService $queries;
-
-    public function __construct(?NameFixingQueryService $queries = null)
-    {
-        $this->queries = $queries ?? app(NameFixingQueryService::class);
-    }
+    public function __construct(
+        private readonly NameFixingQueryService $queries = new NameFixingQueryService,
+    ) {}
 
     public function releases(): void
     {

@@ -153,6 +153,8 @@ class ReleasesFixNamesGroup extends Command
         $bar = $this->output->createProgressBar(count($pres));
         $bar->start();
 
+        /** @var list<array{predb_id: int, searched: int, next_predb_search_at: string|null}> $outcomes */
+        $outcomes = [];
         foreach ($pres as $pre) {
             try {
                 $ftmatched = $this->nameFixingService->matchPredbFulltext($pre);
@@ -174,16 +176,26 @@ class ReleasesFixNamesGroup extends Command
             }
 
             $delayDays = $status->retryDelayDays();
-            DB::table('predb')->where('id', $pre->predb_id)->update([
+            $outcomes[] = [
+                'predb_id' => (int) $pre->predb_id,
                 'searched' => $status->value,
                 'next_predb_search_at' => $delayDays === null
                     ? null
                     : CarbonImmutable::now()->addDays($delayDays)->toDateTimeString(),
-            ]);
-            $this->checked++;
+            ];
 
             $bar->advance();
         }
+
+        DB::transaction(static function () use ($outcomes): void {
+            foreach ($outcomes as $outcome) {
+                DB::table('predb')->where('id', $outcome['predb_id'])->update([
+                    'searched' => $outcome['searched'],
+                    'next_predb_search_at' => $outcome['next_predb_search_at'],
+                ]);
+            }
+        });
+        $this->checked += count($outcomes);
 
         $bar->finish();
         $this->newLine(2);
