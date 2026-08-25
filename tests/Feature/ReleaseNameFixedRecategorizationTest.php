@@ -99,6 +99,86 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
         $this->assertSame(1, (int) $release->isrenamed);
     }
 
+    public function test_xxx_filename_rename_consumes_only_the_xxx_source(): void
+    {
+        Search::shouldReceive('updateRelease')->twice();
+
+        $group = UsenetGroup::query()->create([
+            'name' => 'alt.binaries.xxx',
+            'active' => 1,
+            'backfill' => 0,
+        ]);
+        $release = Release::factory()->create([
+            'name' => 'd41d8cd98f00b204e9800998ecf8427e',
+            'searchname' => 'd41d8cd98f00b204e9800998ecf8427e',
+            'fromname' => 'poster@example.com',
+            'groups_id' => $group->id,
+            'categories_id' => Category::OTHER_HASHED,
+            'iscategorized' => 1,
+            'isrenamed' => 0,
+            'guid' => str_repeat('x', 40),
+            'leftguid' => 'x',
+            'size' => 1,
+            'postdate' => now(),
+            'adddate' => now(),
+        ]);
+
+        app(ReleaseUpdateService::class)->updateRelease(
+            $release->fresh(),
+            'XXX.Release.2026.1080p-GROUP',
+            'fileCheck: XXX SDPORN',
+            true,
+            'XXX filenames, ',
+            true,
+            false,
+        );
+
+        $release->refresh();
+
+        $this->assertSame(1, (int) $release->proc_xxx);
+        $this->assertSame(0, (int) $release->proc_files);
+    }
+
+    public function test_media_movie_rename_consumes_only_the_media_movie_source(): void
+    {
+        Search::shouldReceive('updateRelease')->twice();
+
+        $group = UsenetGroup::query()->create([
+            'name' => 'alt.binaries.movies',
+            'active' => 1,
+            'backfill' => 0,
+        ]);
+        $release = Release::factory()->create([
+            'name' => 'd41d8cd98f00b204e9800998ecf8427e',
+            'searchname' => 'd41d8cd98f00b204e9800998ecf8427e',
+            'fromname' => 'poster@example.com',
+            'groups_id' => $group->id,
+            'categories_id' => Category::OTHER_HASHED,
+            'iscategorized' => 1,
+            'isrenamed' => 0,
+            'guid' => str_repeat('m', 40),
+            'leftguid' => 'm',
+            'size' => 1,
+            'postdate' => now(),
+            'adddate' => now(),
+        ]);
+
+        app(ReleaseUpdateService::class)->updateRelease(
+            $release->fresh(),
+            'Movie.Name.2026.1080p-GROUP',
+            'MediaInfo: Movie Name',
+            true,
+            'Mediainfo, ',
+            true,
+            false,
+        );
+
+        $release->refresh();
+
+        $this->assertSame(1, (int) $release->proc_media_movie);
+        $this->assertSame(0, (int) $release->proc_uid);
+    }
+
     public function test_renaming_a_policy_skipped_release_flips_it_back_to_pending(): void
     {
         // Two syncs from the rename path plus one from the owed-preview flip.
@@ -550,8 +630,10 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
                 $table->tinyInteger('is_trusted_name')->default(0);
                 $table->tinyInteger('proc_nfo')->default(0);
                 $table->tinyInteger('proc_files')->default(0);
+                $table->tinyInteger('proc_xxx')->default(0);
                 $table->tinyInteger('proc_par2')->default(0);
                 $table->tinyInteger('proc_uid')->default(0);
+                $table->tinyInteger('proc_media_movie')->default(0);
                 $table->tinyInteger('proc_hash16k')->default(0);
                 $table->tinyInteger('proc_srr')->default(0);
                 $table->tinyInteger('proc_crc32')->default(0);

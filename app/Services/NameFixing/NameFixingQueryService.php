@@ -55,8 +55,8 @@ final class NameFixingQueryService
         self::SOURCE_UID => 'proc_uid',
         self::SOURCE_HASH => 'proc_hash16k',
         self::SOURCE_PAR2 => 'proc_par2',
-        self::SOURCE_XXX => 'proc_files',
-        self::SOURCE_MEDIA_MOVIE => 'proc_uid',
+        self::SOURCE_XXX => 'proc_xxx',
+        self::SOURCE_MEDIA_MOVIE => 'proc_media_movie',
         self::SOURCE_SRRDB => 'proc_srrdb',
     ];
 
@@ -70,7 +70,7 @@ final class NameFixingQueryService
         self::SOURCE_CRC => "EXISTS (SELECT 1 FROM release_files source_crc WHERE source_crc.releases_id = r.id AND source_crc.crc32 IS NOT NULL AND source_crc.crc32 != '')",
         self::SOURCE_UID => "EXISTS (SELECT 1 FROM media_infos source_media WHERE source_media.releases_id = r.id AND source_media.unique_id IS NOT NULL AND source_media.unique_id != '')",
         self::SOURCE_HASH => "EXISTS (SELECT 1 FROM par_hashes source_hash WHERE source_hash.releases_id = r.id AND source_hash.hash != '')",
-        self::SOURCE_PAR2 => '1 = 1',
+        self::SOURCE_PAR2 => 'r.nzbstatus = 1',
         self::SOURCE_XXX => "EXISTS (SELECT 1 FROM release_files source_xxx WHERE source_xxx.releases_id = r.id AND source_xxx.name LIKE '%SDPORN%')",
         self::SOURCE_MEDIA_MOVIE => "EXISTS (SELECT 1 FROM media_infos source_movie WHERE source_movie.releases_id = r.id AND source_movie.movie_name IS NOT NULL AND source_movie.movie_name != '')",
         self::SOURCE_SRRDB => 'EXISTS (SELECT 1 FROM release_files source_srrdb WHERE source_srrdb.releases_id = r.id AND LENGTH(source_srrdb.crc32) = 8)',
@@ -132,7 +132,8 @@ final class NameFixingQueryService
             'SELECT r.id AS releases_id, r.id, r.name, r.searchname, r.fromname, r.guid,
                     r.groups_id, r.categories_id, r.size AS relsize, r.completion, r.predb_id,
                     r.nfostatus, r.is_trusted_name, r.proc_nfo, r.proc_uid, r.proc_files,
-                    r.proc_par2, r.proc_hash16k, r.proc_srr, r.proc_crc32, r.proc_srrdb
+                    r.proc_xxx, r.proc_media_movie, r.proc_par2, r.proc_hash16k,
+                    r.proc_srr, r.proc_crc32, r.proc_srrdb
              FROM releases r
              WHERE r.leftguid = ?
              AND '.$this->standardSweepPredicate().'
@@ -171,19 +172,22 @@ final class NameFixingQueryService
      * root category must not hide another source's evidence
      * (docs/architecture/release-lifecycle-gaps.md, G1a/G1b/G31).
      *
-     * The SRRDB term carries its own readiness because, unlike the other
-     * sources, the worker declines to settle `proc_srrdb` when the source is
-     * disabled, the name is already trusted, or there is no archive CRC to query
-     * with -- admitting those rows would keep the pane awake on work that can
-     * never drain.
+     * Sources whose evidence may not exist yet carry their own readiness:
+     * NFO requires a stored NFO, PAR2 requires a written NZB, and the dedicated
+     * XXX/media-movie terms require their matching file or media-info row. SRRDB
+     * also requires an archive CRC, an untrusted name, and an enabled source.
+     * These gates keep the pane asleep until the worker can record an honest
+     * verdict.
      */
     private function standardSweepPredicate(): string
     {
         $sources = [
             '(r.nfostatus = 1 AND r.proc_nfo = 0)',
             'r.proc_files = 0',
+            '(r.proc_xxx = 0 AND '.self::SOURCE_EXISTS[self::SOURCE_XXX].')',
             'r.proc_uid = 0',
-            'r.proc_par2 = 0',
+            '(r.proc_media_movie = 0 AND '.self::SOURCE_EXISTS[self::SOURCE_MEDIA_MOVIE].')',
+            '(r.nzbstatus = 1 AND r.proc_par2 = 0)',
             'r.proc_srr = 0',
             'r.proc_hash16k = 0',
             'r.proc_crc32 = 0',

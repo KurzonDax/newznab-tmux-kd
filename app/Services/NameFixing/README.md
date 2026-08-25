@@ -17,10 +17,11 @@ Admission is per-source readiness only: unrenamed, no PreDB identity, and at
 least one evidence source both ready and unconsumed. There is no category
 restriction and no cross-source gate -- a pending or terminally failed NFO
 lookup and an unsettled `passwordstatus` must not hide another source's
-evidence. The NFO term keeps its own `nfostatus = 1 AND proc_nfo = 0`
-readiness; the other terms are bare `proc_* = 0`.
+evidence. The NFO term requires `nfostatus = 1`, PAR2 requires `nzbstatus = 1`,
+and the dedicated XXX and media-movie terms require their corresponding file or
+media-info evidence. Other built-in terms are bare `proc_* = 0` checks.
 
-SRRDB is the exception that carries readiness in its term, because
+SRRDB also carries readiness in its term, because
 `processStandardBatch()` declines to settle `proc_srrdb` when the source is
 disabled, the name is trusted, or there is no archive CRC to query with.
 Admitting rows the worker will not settle would keep the pane awake forever,

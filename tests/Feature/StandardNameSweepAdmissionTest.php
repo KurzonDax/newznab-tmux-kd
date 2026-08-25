@@ -37,6 +37,8 @@ class StandardNameSweepAdmissionTest extends TestCase
         'proc_nfo' => 1,
         'proc_uid' => 1,
         'proc_files' => 1,
+        'proc_xxx' => 1,
+        'proc_media_movie' => 1,
         'proc_par2' => 1,
         'proc_hash16k' => 1,
         'proc_srr' => 1,
@@ -115,9 +117,33 @@ class StandardNameSweepAdmissionTest extends TestCase
     }
 
     #[Test]
+    public function the_par2_term_keeps_its_own_nzb_readiness(): void
+    {
+        $this->insertRelease(1, [
+            'proc_par2' => 0,
+            'nzbstatus' => 0,
+        ]);
+
+        $this->assertSame([], $this->candidateIds());
+
+        DB::table('releases')->where('id', 1)->update(['nzbstatus' => 1]);
+
+        $this->assertSame([1], $this->candidateIds());
+    }
+
+    #[Test]
     public function a_release_with_every_source_consumed_is_not_admitted(): void
     {
         $this->insertRelease(1, ['nfostatus' => 1]);
+
+        $this->assertSame([], $this->candidateIds());
+    }
+
+    #[Test]
+    public function new_source_flags_do_not_admit_a_release_before_their_evidence_exists(): void
+    {
+        $this->insertRelease(1, ['proc_xxx' => 0]);
+        $this->insertRelease(2, ['proc_media_movie' => 0]);
 
         $this->assertSame([], $this->candidateIds());
     }
@@ -184,7 +210,11 @@ class StandardNameSweepAdmissionTest extends TestCase
         }
 
         $this->insertRelease(1, $overrides);
-        $this->insertReleaseFile(1, 'Some.Release-GRP.rar', 'A1B2C3D4');
+        $fileName = $column === 'proc_xxx' ? 'Some.SDPORN.Release-GRP.rar' : 'Some.Release-GRP.rar';
+        $this->insertReleaseFile(1, $fileName, 'A1B2C3D4');
+        if ($column === 'proc_media_movie') {
+            $this->insertMediaInfo(1);
+        }
 
         $this->assertSame(1, $queries->standardCandidateCount());
         $this->assertSame([1], $this->candidateIds());
@@ -204,6 +234,8 @@ class StandardNameSweepAdmissionTest extends TestCase
             'nfo' => ['proc_nfo'],
             'uid' => ['proc_uid'],
             'files' => ['proc_files'],
+            'xxx' => ['proc_xxx'],
+            'media movie' => ['proc_media_movie'],
             'par2' => ['proc_par2'],
             'hash16k' => ['proc_hash16k'],
             'srr' => ['proc_srr'],
@@ -253,7 +285,8 @@ class StandardNameSweepAdmissionTest extends TestCase
 
             $id = $mask + 1;
             $this->insertRelease($id, $overrides);
-            $this->insertReleaseFile($id, "release-{$id}.rar", 'A1B2C3D4');
+            $this->insertReleaseFile($id, "release-{$id}.SDPORN.rar", 'A1B2C3D4');
+            $this->insertMediaInfo($id);
         }
 
         // Every combination but the empty one leaves a source unconsumed.
@@ -345,6 +378,14 @@ class StandardNameSweepAdmissionTest extends TestCase
         ]);
     }
 
+    private function insertMediaInfo(int $releaseId): void
+    {
+        DB::table('media_infos')->insert([
+            'releases_id' => $releaseId,
+            'movie_name' => "Movie.Name.{$releaseId}.2026-GROUP",
+        ]);
+    }
+
     private function createSchema(): void
     {
         DB::statement('DROP TABLE IF EXISTS releases');
@@ -366,6 +407,8 @@ class StandardNameSweepAdmissionTest extends TestCase
             proc_nfo INTEGER NOT NULL DEFAULT 0,
             proc_uid INTEGER NOT NULL DEFAULT 0,
             proc_files INTEGER NOT NULL DEFAULT 0,
+            proc_xxx INTEGER NOT NULL DEFAULT 0,
+            proc_media_movie INTEGER NOT NULL DEFAULT 0,
             proc_par2 INTEGER NOT NULL DEFAULT 0,
             proc_hash16k INTEGER NOT NULL DEFAULT 0,
             proc_srr INTEGER NOT NULL DEFAULT 0,
@@ -383,6 +426,13 @@ class StandardNameSweepAdmissionTest extends TestCase
             name VARCHAR(255) NOT NULL,
             crc32 VARCHAR(8) NULL,
             size INTEGER NOT NULL DEFAULT 0
+        )');
+
+        DB::statement('DROP TABLE IF EXISTS media_infos');
+        DB::statement('CREATE TABLE media_infos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            releases_id INTEGER NOT NULL,
+            movie_name VARCHAR(255)
         )');
     }
 }
