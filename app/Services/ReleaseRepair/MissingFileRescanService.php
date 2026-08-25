@@ -42,8 +42,9 @@ use Illuminate\Support\Facades\Log;
  * - **Our storage failed** -- no NZB on disk, an unparseable one, one we could not write back.
  *   Records nothing. Two unmounted volumes in a row must not add up to a verdict, and the release
  *   is simply seen again next run. Same rule {@see ReleaseRepairService} follows.
- * - **The run ran out of budget** before reaching the release. Records nothing: it never had its
- *   turn, so it cannot have failed.
+ * - **The run ran out of budget** before reaching the release, or before its complete window was
+ *   read. Records no negative verdict: an unread tail may still contain the missing headers.
+ *   Matches from the read portion remain useful and are persisted.
  * - **The release can never be re-scanned** -- it points at a group row that is gone, declares no
  *   more files than it holds, has no window to aim at, or holds files with no file index to place
  *   a recovered one against. Stamped final on sight: none of those read differently on a later
@@ -215,7 +216,7 @@ final class MissingFileRescanService
             ));
         }
 
-        [$matched, $linesFetched, $fetchFailed] = $this->fetch($window, $options, $budget, new MissingFileMatcher(
+        [$matched, $linesFetched, $fetchFailed, $windowReadCompletely] = $this->fetch($window, $options, $budget, new MissingFileMatcher(
             poster: $envelope->poster,
             declaredFiles: $declared,
             heldSubjects: $subjects,
@@ -227,6 +228,22 @@ final class MissingFileRescanService
                 return $this->skip($release, MissingFileRescanResult::notAttempted(
                     $completionBefore,
                     'The overview fetch failed before anything was matched.',
+                ));
+            }
+
+            if (! $windowReadCompletely) {
+                return $this->skip($release, new MissingFileRescanResult(
+                    outcome: null,
+                    completionBefore: $completionBefore,
+                    completionAfter: $completionBefore,
+                    declaredFiles: $declared,
+                    filesHeld: $held,
+                    filesRecovered: 0,
+                    segmentsAdded: 0,
+                    articlesRequested: $window->width(),
+                    overviewLinesFetched: $linesFetched,
+                    nzbRewritten: false,
+                    reason: 'The run budget was spent before the release window was fully read.',
                 ));
             }
 
@@ -254,8 +271,15 @@ final class MissingFileRescanService
             ));
         }
 
+        $outcome = match (true) {
+            $completionAfter >= $options->targetCompletion => ReleaseRepairOutcome::Repaired,
+            ! $windowReadCompletely => null,
+            $isFinalAttempt => ReleaseRepairOutcome::Failed,
+            default => ReleaseRepairOutcome::RetryPending,
+        };
+
         return $this->finish($release, $options, new MissingFileRescanResult(
-            outcome: ReleaseRepairOutcome::Repaired,
+            outcome: $outcome,
             completionBefore: $completionBefore,
             completionAfter: $completionAfter,
             declaredFiles: $declared,
@@ -265,17 +289,32 @@ final class MissingFileRescanService
             articlesRequested: $window->width(),
             overviewLinesFetched: $linesFetched,
             nzbRewritten: true,
-            reason: sprintf('Recovered %d file(s), %d segment(s).', \count($recovered), $added),
+            reason: match (true) {
+                $windowReadCompletely => sprintf('Recovered %d file(s), %d segment(s).', \count($recovered), $added),
+                $fetchFailed => sprintf(
+                    'Recovered %d file(s), %d segment(s) before the overview fetch failed.',
+                    \count($recovered),
+                    $added,
+                ),
+                default => sprintf(
+                    'Recovered %d file(s), %d segment(s) before the run budget was spent.',
+                    \count($recovered),
+                    $added,
+                ),
+            },
         ), $completionAfter);
     }
 
     /**
      * Read the window in XOVER-sized batches, keeping only what belongs to this release.
      *
-     * @return array{0: array<int, array<int, OverviewLine>>, 1: int, 2: bool} Matched lines by file
-     *                                                                         index and segment number,
-     *                                                                         lines read, and whether
-     *                                                                         a fetch errored.
+     * @return array{0: array<int, array<int, OverviewLine>>, 1: int, 2: bool, 3: bool} Matched lines
+     *                                                                                  by file index and
+     *                                                                                  segment number,
+     *                                                                                  lines read, whether
+     *                                                                                  a fetch errored, and
+     *                                                                                  whether the complete
+     *                                                                                  window was read.
      *
      * @throws \Exception
      */
@@ -288,9 +327,12 @@ final class MissingFileRescanService
         $matched = [];
         $linesFetched = 0;
         $batch = max(1, $options->overviewBatchSize);
+        $windowReadCompletely = true;
 
         for ($start = $window->first; $start <= $window->last; $start += $batch) {
             if ($budget->isExhausted()) {
+                $windowReadCompletely = false;
+
                 break;
             }
 
@@ -298,7 +340,7 @@ final class MissingFileRescanService
             $headers = $this->nntp->getXOVER($start.'-'.$end);
 
             if (NNTPService::isError($headers) || ! \is_array($headers)) {
-                return [$matched, $linesFetched, true];
+                return [$matched, $linesFetched, true, false];
             }
 
             $linesFetched += \count($headers);
@@ -319,7 +361,7 @@ final class MissingFileRescanService
             }
         }
 
-        return [$matched, $linesFetched, false];
+        return [$matched, $linesFetched, false, $windowReadCompletely];
     }
 
     /**
@@ -430,20 +472,64 @@ final class MissingFileRescanService
         MissingFileRescanResult $result,
         ?float $completion = null,
     ): MissingFileRescanResult {
-        if ($options->dryRun || $result->outcome === null) {
+        if ($release->rescan_outcome === ReleaseRepairOutcome::Repaired
+            && $result->outcome !== null
+            && $result->outcome !== ReleaseRepairOutcome::Repaired) {
+            $result = new MissingFileRescanResult(
+                outcome: ReleaseRepairOutcome::Repaired,
+                completionBefore: $result->completionBefore,
+                completionAfter: $result->completionAfter,
+                declaredFiles: $result->declaredFiles,
+                filesHeld: $result->filesHeld,
+                filesRecovered: $result->filesRecovered,
+                segmentsAdded: $result->segmentsAdded,
+                articlesRequested: $result->articlesRequested,
+                overviewLinesFetched: $result->overviewLinesFetched,
+                nzbRewritten: $result->nzbRewritten,
+                reason: $result->reason,
+            );
+        }
+
+        if ($options->dryRun) {
             return $result;
         }
 
-        $values = [
-            'rescan_attempted_at' => Carbon::now(),
-            'rescan_outcome' => $result->outcome->value,
-        ];
+        $values = [];
+
+        if ($result->outcome !== null) {
+            $values = [
+                'rescan_attempted_at' => Carbon::now(),
+                'rescan_outcome' => $result->outcome->value,
+                'rescan_target_completion' => $result->outcome === ReleaseRepairOutcome::Repaired
+                    ? $options->targetCompletion
+                    : null,
+            ];
+        }
 
         if ($completion !== null) {
             $values['completion'] = $completion;
+
+            if ($completion >= $options->targetCompletion
+                && $release->repair_outcome === ReleaseRepairOutcome::RetryPending) {
+                $values['repair_outcome'] = ReleaseRepairOutcome::Repaired->value;
+                $values['repair_target_completion'] = $options->targetCompletion;
+            }
         }
 
         Release::query()->where('id', $release->id)->update($values);
+
+        if ($result->outcome === null) {
+            Log::warning('Release header re-scan stopped before reading the complete window', [
+                'release_id' => $release->id,
+                'completion_after' => $result->completionAfter,
+                'files_recovered' => $result->filesRecovered,
+                'segments_added' => $result->segmentsAdded,
+                'overview_lines' => $result->overviewLinesFetched,
+                'reason' => $result->reason,
+            ]);
+
+            return $result;
+        }
 
         Log::debug('Release header re-scan finished', [
             'release_id' => $release->id,

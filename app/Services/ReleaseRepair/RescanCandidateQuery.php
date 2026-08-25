@@ -50,6 +50,18 @@ final class RescanCandidateQuery
             return $dueRetries;
         }
 
+        $reopened = self::measuredBelow($targetCompletion)
+            ->where('rescan_outcome', ReleaseRepairOutcome::Repaired->value)
+            ->where('rescan_target_completion', '<', $targetCompletion)
+            ->orderByRaw('declaredfiles - totalpart')
+            ->orderByDesc('postdate')
+            ->limit($limit - $dueRetries->count())
+            ->get();
+
+        if ($dueRetries->count() + $reopened->count() >= $limit) {
+            return $dueRetries->concat($reopened);
+        }
+
         $neverAttempted = self::measuredBelow($targetCompletion)
             ->whereNull('rescan_outcome')
             ->where(function (Builder $query): void {
@@ -64,10 +76,10 @@ final class RescanCandidateQuery
             ->orderByRaw('CASE WHEN declaredfiles IS NULL THEN 1 ELSE 0 END')
             ->orderByRaw('CASE WHEN declaredfiles IS NULL THEN 0 ELSE declaredfiles - totalpart END')
             ->orderByDesc('postdate')
-            ->limit($limit - $dueRetries->count())
+            ->limit($limit - $dueRetries->count() - $reopened->count())
             ->get();
 
-        return $dueRetries->concat($neverAttempted);
+        return $dueRetries->concat($reopened)->concat($neverAttempted);
     }
 
     /**
@@ -87,7 +99,8 @@ final class RescanCandidateQuery
             ->select([
                 'id', 'guid', 'groups_id', 'completion', 'postdate', 'totalpart',
                 'declaredfiles', 'firstarticle', 'lastarticle',
-                'rescan_outcome', 'rescan_attempted_at',
+                'repair_outcome', 'repair_target_completion',
+                'rescan_outcome', 'rescan_attempted_at', 'rescan_target_completion',
             ]);
     }
 }

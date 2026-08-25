@@ -365,7 +365,7 @@ class ReleaseRepairGateTest extends TestCase
     }
 
     #[Test]
-    public function a_partial_re_scan_recorded_as_repaired_is_stranded_between_recovery_and_the_sweep(): void
+    public function a_below_target_partial_rescan_is_always_owned_by_recovery_or_the_sweep(): void
     {
         $this->insertRelease(
             1,
@@ -373,27 +373,60 @@ class ReleaseRepairGateTest extends TestCase
             outcome: ReleaseRepairOutcome::Failed,
             declaredFiles: 40,
             totalPart: 39,
-            rescanOutcome: ReleaseRepairOutcome::Repaired,
+            rescanOutcome: ReleaseRepairOutcome::RetryPending,
+            rescanAttemptedAt: Carbon::now()->subHours(100)->toDateTimeString(),
+        );
+        $this->insertRelease(
+            2,
+            completion: 80.0,
+            outcome: ReleaseRepairOutcome::Failed,
+            declaredFiles: 40,
+            totalPart: 39,
+            rescanOutcome: ReleaseRepairOutcome::Failed,
         );
 
         $this->assertTrue(ReleaseRepairCandidateQuery::batch(10, 95.0, 72)->isEmpty());
-        $this->assertTrue(RescanCandidateQuery::batch(10, 95.0, 72)->isEmpty());
-        $this->assertSame([], $this->sweptIds(95.0));
+        $this->assertSame(
+            [1],
+            RescanCandidateQuery::batch(10, 95.0, 72)->pluck('id')->map(intval(...))->all(),
+        );
+        $this->assertSame([2], $this->sweptIds(95.0));
     }
 
     #[Test]
-    public function a_release_repaired_to_an_old_target_is_not_reopened_when_the_target_rises(): void
+    public function repaired_releases_reopen_only_when_the_completion_target_rises(): void
     {
         $this->insertRelease(
             1,
             completion: 96.0,
             outcome: ReleaseRepairOutcome::Repaired,
-            declaredFiles: 12,
+            repairTargetCompletion: 95.0,
+            declaredFiles: 13,
             totalPart: 12,
+            rescanOutcome: ReleaseRepairOutcome::Repaired,
+            rescanTargetCompletion: 95.0,
+        );
+        $this->insertRelease(
+            2,
+            completion: 96.0,
+            outcome: ReleaseRepairOutcome::Repaired,
+            repairTargetCompletion: 99.0,
+            declaredFiles: 13,
+            totalPart: 12,
+            rescanOutcome: ReleaseRepairOutcome::Repaired,
+            rescanTargetCompletion: 99.0,
         );
 
-        $this->assertTrue(ReleaseRepairCandidateQuery::batch(10, 99.0, 72)->isEmpty());
-        $this->assertTrue(RescanCandidateQuery::batch(10, 99.0, 72)->isEmpty());
+        $this->assertSame(
+            [1],
+            ReleaseRepairCandidateQuery::batch(10, 99.0, 72)->pluck('id')->map(intval(...))->all(),
+        );
+        $this->assertSame(
+            [1],
+            RescanCandidateQuery::batch(10, 99.0, 72)->pluck('id')->map(intval(...))->all(),
+        );
+        $this->assertTrue(ReleaseRepairCandidateQuery::batch(10, 95.0, 72)->isEmpty());
+        $this->assertTrue(RescanCandidateQuery::batch(10, 95.0, 72)->isEmpty());
         $this->assertSame([], $this->sweptIds(99.0));
     }
 
@@ -421,6 +454,8 @@ class ReleaseRepairGateTest extends TestCase
         ?string $rescanAttemptedAt = null,
         ?string $additionalClaimedAt = null,
         ?string $recoveryClaimedAt = null,
+        ?float $repairTargetCompletion = null,
+        ?float $rescanTargetCompletion = null,
     ): void {
         DB::table('releases')->insert([
             'id' => $id,
@@ -429,8 +464,10 @@ class ReleaseRepairGateTest extends TestCase
             'completion' => $completion,
             'repair_outcome' => $outcome?->value,
             'repair_attempted_at' => $attemptedAt,
+            'repair_target_completion' => $repairTargetCompletion,
             'rescan_outcome' => $rescanOutcome?->value,
             'rescan_attempted_at' => $rescanAttemptedAt,
+            'rescan_target_completion' => $rescanTargetCompletion,
             'additional_pp_claimed_at' => $additionalClaimedAt,
             'recovery_claimed_at' => $recoveryClaimedAt,
             'declaredfiles' => $declaredFiles,
@@ -450,8 +487,10 @@ class ReleaseRepairGateTest extends TestCase
             completion DOUBLE NOT NULL DEFAULT 0,
             repair_attempted_at DATETIME NULL,
             repair_outcome VARCHAR(16) NULL,
+            repair_target_completion DOUBLE NULL,
             rescan_attempted_at DATETIME NULL,
             rescan_outcome VARCHAR(16) NULL,
+            rescan_target_completion DOUBLE NULL,
             additional_pp_claimed_at DATETIME NULL,
             recovery_claimed_at DATETIME NULL,
             declaredfiles INTEGER NULL,

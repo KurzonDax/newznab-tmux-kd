@@ -69,6 +69,7 @@ class MissingFileRescanServiceTest extends TestCase
         $this->assertSame(2, $result->segmentsAdded);
         $this->assertTrue($result->nzbRewritten);
         $this->assertSame('repaired', $this->storedOutcome(1));
+        $this->assertSame(95.0, (float) DB::table('releases')->where('id', 1)->value('rescan_target_completion'));
 
         $nzb = $this->storedNzb($release);
         $this->assertStringContainsString('[3/3] - &quot;Example.part03.rar&quot; yEnc (1/2)', $nzb);
@@ -137,11 +138,74 @@ class MissingFileRescanServiceTest extends TestCase
 
         $result = $this->service()->rescan($release, $this->rescanOptions(), $this->budget());
 
-        $this->assertSame(ReleaseRepairOutcome::Repaired, $result->outcome);
+        $this->assertSame(ReleaseRepairOutcome::RetryPending, $result->outcome);
         $this->assertSame(1, $result->filesRecovered);
         $this->assertSame(2, $result->segmentsAdded, 'Only the segments the window actually held.');
+        $this->assertNull(DB::table('releases')->where('id', 1)->value('rescan_target_completion'));
         $this->assertStringContainsString('number="1"', $this->storedNzb($release));
         $this->assertStringContainsString('number="4"', $this->storedNzb($release));
+    }
+
+    #[Test]
+    public function a_below_target_recovery_on_the_owed_retry_is_final_but_keeps_the_recovered_file(): void
+    {
+        $lines = $this->articlesForFile(3, segments: 4, startingAt: 1150);
+        unset($lines[1151], $lines[1152]);
+
+        $release = $this->releaseHolding(
+            [1, 2],
+            declaredFiles: 3,
+            firstArticle: 1000,
+            lastArticle: 1200,
+            rescanOutcome: ReleaseRepairOutcome::RetryPending,
+            rescanAttemptedAt: Carbon::now()->subHours(80)->toDateTimeString(),
+        );
+        $this->groupCarries($lines);
+
+        $result = $this->service()->rescan($release, $this->rescanOptions(), $this->budget());
+
+        $this->assertSame(ReleaseRepairOutcome::Failed, $result->outcome);
+        $this->assertSame(2, $result->segmentsAdded);
+        $this->assertStringContainsString('found-3-1@example.local', $this->storedNzb($release));
+    }
+
+    #[Test]
+    public function a_reopened_rescan_that_cannot_reach_the_higher_target_stays_repaired(): void
+    {
+        $release = $this->releaseHolding(
+            [1, 2],
+            declaredFiles: 3,
+            firstArticle: 1000,
+            lastArticle: 1200,
+            rescanOutcome: ReleaseRepairOutcome::Repaired,
+            rescanTargetCompletion: 95.0,
+        );
+        $this->groupCarries([]);
+
+        $result = $this->service()->rescan($release, $this->rescanOptions(targetCompletion: 99.0), $this->budget());
+
+        $this->assertSame(ReleaseRepairOutcome::Repaired, $result->outcome);
+        $this->assertSame(99.0, (float) DB::table('releases')->where('id', 1)->value('rescan_target_completion'));
+        $this->assertFalse($result->outcome->isFinal(), 'Raising policy must never make grandfathered content deletable.');
+    }
+
+    #[Test]
+    public function a_rescan_reaching_target_settles_a_dangling_repair_retry(): void
+    {
+        $release = $this->releaseHolding(
+            [1, 2],
+            declaredFiles: 3,
+            firstArticle: 1000,
+            lastArticle: 1200,
+            repairOutcome: ReleaseRepairOutcome::RetryPending,
+        );
+        $this->groupCarries($this->articlesForFile(3, segments: 2, startingAt: 1150));
+
+        $this->service()->rescan($release, $this->rescanOptions(), $this->budget());
+        $stored = DB::table('releases')->where('id', 1)->first();
+
+        $this->assertSame('repaired', $stored->repair_outcome);
+        $this->assertSame(95.0, (float) $stored->repair_target_completion);
     }
 
     #[Test]
@@ -285,7 +349,52 @@ class MissingFileRescanServiceTest extends TestCase
         $this->assertSame(1, $this->nntp->xoverCalls, 'Fetching stops as soon as the budget is gone.');
         $this->assertSame(6, $budget->spent());
         $this->assertTrue($budget->isExhausted());
+        $this->assertSame(6, $result->overviewLinesFetched);
         $this->assertSame(0, $result->segmentsAdded, 'The recoverable file sat past the first batch.');
+        $this->assertNull($result->outcome, 'An unread tail cannot support a negative verdict.');
+        $this->assertNull($this->storedOutcome(1));
+
+        $retry = $this->service()->rescan($release->fresh(), $this->rescanOptions(overviewBatchSize: 100), $this->budget());
+
+        $this->assertSame(ReleaseRepairOutcome::Repaired, $retry->outcome);
+        $this->assertGreaterThan(1, $this->nntp->xoverCalls, 'The next pass starts the window again with a fresh budget.');
+    }
+
+    #[Test]
+    public function an_incomplete_window_persists_matches_without_writing_a_shortfall_verdict(): void
+    {
+        $release = $this->releaseHolding([1, 2], declaredFiles: 3, firstArticle: 1000, lastArticle: 1200);
+        $lines = $this->articlesForFile(3, segments: 4, startingAt: 1000);
+        unset($lines[1001], $lines[1002]);
+        $this->groupCarries($lines);
+
+        $result = $this->service()->rescan(
+            $release,
+            $this->rescanOptions(overviewBatchSize: 100),
+            new RescanRunBudget(1),
+        );
+
+        $this->assertNull($result->outcome);
+        $this->assertNull($this->storedOutcome(1));
+        $this->assertSame(2, $result->segmentsAdded);
+        $this->assertStringContainsString('found-3-1@example.local', $this->storedNzb($release));
+    }
+
+    #[Test]
+    public function an_incomplete_window_may_record_repaired_when_its_matches_reach_the_target(): void
+    {
+        $release = $this->releaseHolding([1, 2], declaredFiles: 3, firstArticle: 1000, lastArticle: 1200);
+        $this->groupCarries($this->articlesForFile(3, segments: 2, startingAt: 1000));
+
+        $result = $this->service()->rescan(
+            $release,
+            $this->rescanOptions(overviewBatchSize: 100),
+            new RescanRunBudget(1),
+        );
+
+        $this->assertSame(ReleaseRepairOutcome::Repaired, $result->outcome);
+        $this->assertSame('repaired', $this->storedOutcome(1));
+        $this->assertSame(95.0, (float) DB::table('releases')->where('id', 1)->value('rescan_target_completion'));
     }
 
     #[Test]
@@ -470,12 +579,14 @@ class MissingFileRescanServiceTest extends TestCase
     }
 
     private function rescanOptions(
+        float $targetCompletion = 95.0,
         int $maxArticlesPerRelease = 500000,
         int $windowMinutes = 0,
         int $overviewBatchSize = 20000,
         bool $dryRun = false,
     ): MissingFileRescanOptions {
         return new MissingFileRescanOptions(
+            targetCompletion: $targetCompletion,
             windowMinutes: $windowMinutes,
             maxArticlesPerRelease: $maxArticlesPerRelease,
             overviewBatchSize: $overviewBatchSize,
@@ -542,6 +653,9 @@ class MissingFileRescanServiceTest extends TestCase
         ?ReleaseRepairOutcome $rescanOutcome = null,
         ?string $rescanAttemptedAt = null,
         bool $withFileIndex = true,
+        ?ReleaseRepairOutcome $repairOutcome = null,
+        ?float $repairTargetCompletion = null,
+        ?float $rescanTargetCompletion = null,
     ): Release {
         $guid = sprintf('%032x', 1);
 
@@ -557,8 +671,11 @@ class MissingFileRescanServiceTest extends TestCase
             'declaredfiles' => $declaredFiles,
             'firstarticle' => $firstArticle,
             'lastarticle' => $lastArticle,
+            'repair_outcome' => $repairOutcome?->value,
+            'repair_target_completion' => $repairTargetCompletion,
             'rescan_outcome' => $rescanOutcome?->value,
             'rescan_attempted_at' => $rescanAttemptedAt,
+            'rescan_target_completion' => $rescanTargetCompletion,
             'postdate' => '2024-01-02 00:00:00',
         ]);
 
@@ -611,8 +728,10 @@ class MissingFileRescanServiceTest extends TestCase
             lastarticle INTEGER NULL,
             repair_attempted_at DATETIME NULL,
             repair_outcome VARCHAR(16) NULL,
+            repair_target_completion DOUBLE NULL,
             rescan_attempted_at DATETIME NULL,
             rescan_outcome VARCHAR(16) NULL,
+            rescan_target_completion DOUBLE NULL,
             recovery_claimed_at DATETIME NULL,
             postdate DATETIME NULL,
             haspreview INTEGER NOT NULL DEFAULT -1,

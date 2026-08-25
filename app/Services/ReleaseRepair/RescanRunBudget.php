@@ -11,8 +11,9 @@ namespace App\Services\ReleaseRepair;
  * the primary provider -- the same connections live header scanning needs. The per-release
  * ceiling stops one pathological release; this stops a batch of merely large ones.
  *
- * Exhausting it ends the *fetching*, not the run: the releases already read are still written and
- * stamped, and the ones not reached keep their state and lead the next invocation's batch.
+ * Exhausting it ends the *fetching*, not the run: matches already read may still be written, but
+ * an incomplete window cannot produce a negative verdict. Releases not reached keep their state
+ * and lead the next invocation's batch.
  */
 final class RescanRunBudget
 {

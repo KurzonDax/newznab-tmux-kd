@@ -39,7 +39,9 @@ part total, not that the release is empty.
 
 `releases.repair_attempted_at` and `releases.repair_outcome` are both load-bearing: the sweep
 reads the outcome, the retry pass reads both. `rescan_attempted_at` / `rescan_outcome` mirror them
-for the header re-scan and share the same values.
+for the header re-scan and share the same values. Each engine also stores the completion target its
+`repaired` verdict was last judged under in `repair_target_completion` or
+`rescan_target_completion`; other outcomes leave that target null.
 
 | Outcome | Meaning | Deletable |
 | --- | --- | --- |
@@ -50,6 +52,13 @@ for the header re-scan and share the same values.
 | `skipped-floor` | Nothing worth spending network on; no articles were ever probed | **yes** |
 | `skipped-budget` | The re-scan window was wider than the ceiling allows | **yes** |
 
+Target stamps make policy changes declarative. A repaired row is reopened only when its stamp is
+below the current `completionpercent`; an unchanged or lower target selects nothing. That higher-
+target pass is upside-only: reaching the new target advances the stamp, while falling short keeps
+the non-deletable `repaired` verdict and records that it was judged under the new target. Either
+way the same target does not select the row repeatedly. Rows that have never met a target still
+follow the normal `retry-pending` to `failed` path.
+
 A pass that could not *run* — no NZB on disk, an unparseable NZB, an NZB that could not be
 written back — records nothing at all. Those say something about our storage, not about whether
 the release's articles are still on the provider, so they must not advance the state machine:
@@ -57,7 +66,9 @@ two unmounted volumes in a row would otherwise be enough to mark a release `fail
 release is simply picked up again next invocation, and the command reports it under
 "Not attempted".
 
-Every release gets at most **two network passes** per engine. The retry window
+Every release that has never met a target gets at most **two network passes** per engine. A later
+target increase may give an already-repaired row one upside-only pass under the new policy. The
+retry window
 (`repair_retry_after_hours`, 72 hours by default) exists because fresh releases are
 stale-promoted at 8 hours and repaired within hours, while their articles may still be
 propagating across the provider farm: a first attempt at hour 10 can fail where a recheck at
@@ -229,7 +240,8 @@ lines have been read). The repair engine's own tunables live there too:
 `repair_max_stat_probes`, `repair_limit`. CLI flags override any of them for one run.
 
 `rescan_outcome` / `rescan_attempted_at` mirror the repair columns and use the same enum, plus
-`skipped-budget`. Two passes maximum, same as repair. Never-attempted releases are taken
+`skipped-budget`; `rescan_target_completion` carries the target for a repaired verdict. Two passes
+maximum for rows that have never met a target, same as repair. Never-attempted releases are taken
 **smallest shortfall first**: a release missing two files of forty is both likeliest to be
 recovered and cheapest to try, while one missing seven hundred is a posting session that never
 arrived. Releases whose declared count has not been derived yet have no known shortfall, so they
@@ -238,7 +250,11 @@ queue behind the ones that do, newest first.
 Because the sweep now waits on this column, "record nothing" is narrower here than it is for
 repair — anything left unstamped is a release the reaper can never touch. Storage faults (no NZB,
 an unparseable one, one that could not be written back) still record nothing, and so does a
-release the per-run budget never reached. But a release that can *never* be re-scanned — it points
+release the per-run budget never reached. Exhausting that budget after only part of a release's
+window is also not a negative verdict: matched files are still persisted, and the completion value
+is refreshed, but the rescan state stays untouched unless those matches reached the target. The
+next invocation re-derives and reads the whole window with a fresh budget; there is no resume
+cursor. But a release that can *never* be re-scanned — it points
 at a group row that is gone, has no window to aim at, declares no more files than it holds, or
 holds files with no file index to place a recovered one against — is stamped final on sight, since
 none of those read differently on a later pass. A provider that refuses the group is ambiguous
