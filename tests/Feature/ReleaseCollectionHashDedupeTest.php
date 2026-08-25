@@ -8,6 +8,7 @@ use App\Services\CollectionCleanupService;
 use App\Services\ReleaseCleaningService;
 use App\Services\ReleaseCreationService;
 use App\Services\Releases\CollectionCompletionMeasurer;
+use App\Services\Releases\ReleaseDuplicateAbsorber;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -260,7 +261,8 @@ class ReleaseCollectionHashDedupeTest extends TestCase
             app(ReleaseCleaningService::class),
             app(CollectionCleanupService::class),
             app(ReleaseDuplicateFinder::class),
-            app(CollectionCompletionMeasurer::class)
+            app(CollectionCompletionMeasurer::class),
+            app(ReleaseDuplicateAbsorber::class),
         );
     }
 
@@ -322,6 +324,7 @@ class ReleaseCollectionHashDedupeTest extends TestCase
             id INTEGER PRIMARY KEY,
             name VARCHAR(255),
             searchname VARCHAR(255),
+            searchname_normalized VARCHAR(255),
             totalpart INTEGER,
             declaredfiles INTEGER NULL,
             firstarticle INTEGER NULL,

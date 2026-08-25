@@ -24,6 +24,7 @@ use App\Services\Releases\IncompleteReleaseSweepQuery;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Releases\ReleaseDeletionProtection;
+use App\Services\Releases\ReleaseDuplicateAbsorber;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use App\Services\Releases\ReleaseManagementService;
 use App\Support\Data\NzbCreationResult;
@@ -115,7 +116,8 @@ final class ReleaseProcessingService
                 $this->releaseCleaning,
                 $this->collectionCleanupService,
                 app(ReleaseDuplicateFinder::class),
-                app(CollectionCompletionMeasurer::class)
+                app(CollectionCompletionMeasurer::class),
+                app(ReleaseDuplicateAbsorber::class),
             );
         $this->postProcessService = $postProcessService;
         $this->binariesConfig = $binariesConfig ?? BinariesConfig::fromSettings();

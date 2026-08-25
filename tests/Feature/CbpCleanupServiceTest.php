@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\CollectionFileCheckStatus;
+use App\Facades\Search;
 use App\Models\Release;
 use App\Services\CollectionCleanupService;
 use App\Services\Nzb\NzbService;
@@ -10,7 +11,9 @@ use App\Services\ReleaseCleaningService;
 use App\Services\ReleaseCreationService;
 use App\Services\ReleaseProcessingService;
 use App\Services\Releases\CollectionCompletionMeasurer;
+use App\Services\Releases\ReleaseDuplicateAbsorber;
 use App\Services\Releases\ReleaseDuplicateFinder;
+use App\Support\ReleaseNameNormalizer;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -18,6 +21,8 @@ use Tests\TestCase;
 class CbpCleanupServiceTest extends TestCase
 {
     private string $originalTimezone;
+
+    private string $nzbDirectory;
 
     protected function setUp(): void
     {
@@ -28,6 +33,12 @@ class CbpCleanupServiceTest extends TestCase
         config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => ':memory:']);
         DB::purge();
         DB::reconnect();
+        $this->nzbDirectory = $this->makeTempDirectory('cbp-dedupe').DIRECTORY_SEPARATOR;
+        config([
+            'nntmux_settings.path_to_nzbs' => $this->nzbDirectory,
+            'nntmux_settings.check_passworded_rars' => true,
+            'nntmux_settings.unrar_path' => '/usr/bin/unrar',
+        ]);
         $this->registerSqliteFunction('UNIX_TIMESTAMP', static fn (?string $value): int => strtotime((string) $value));
         $this->registerSqliteFunction(
             'REGEXP',
@@ -46,6 +57,7 @@ class CbpCleanupServiceTest extends TestCase
 
         $this->createTables();
         $this->seedSettings();
+        Search::shouldReceive('updateRelease')->zeroOrMoreTimes();
     }
 
     protected function tearDown(): void
@@ -247,6 +259,7 @@ class CbpCleanupServiceTest extends TestCase
             'categories_id' => 1,
             'nfostatus' => -1,
             'nzbstatus' => NzbService::NZB_NONE,
+            'completion' => 100.0,
             'isrenamed' => 1,
             'iscategorized' => 1,
             'predb_id' => 0,
@@ -288,7 +301,8 @@ class CbpCleanupServiceTest extends TestCase
             app(ReleaseCleaningService::class),
             app(CollectionCleanupService::class),
             app(ReleaseDuplicateFinder::class),
-            app(CollectionCompletionMeasurer::class)
+            app(CollectionCompletionMeasurer::class),
+            app(ReleaseDuplicateAbsorber::class),
         );
         $result = $service->createReleases(null, 10, false);
 
@@ -296,6 +310,94 @@ class CbpCleanupServiceTest extends TestCase
         $this->assertSame(0, DB::table('parts')->count());
         $this->assertSame(0, DB::table('binaries')->count());
         $this->assertSame(0, DB::table('collections')->count());
+    }
+
+    public function test_more_complete_duplicate_collection_is_absorbed_into_the_existing_release(): void
+    {
+        $guid = str_repeat('h', 36);
+        DB::table('releases')->insert([
+            'id' => 3,
+            'name' => 'Better.Native.Repost',
+            'searchname' => 'Better.Native.Repost',
+            'searchname_normalized' => 'Better.Native.Repost',
+            'totalpart' => 1,
+            'declaredfiles' => 1,
+            'groups_id' => 1,
+            'adddate' => now()->format('Y-m-d H:i:s'),
+            'guid' => $guid,
+            'leftguid' => 'h',
+            'postdate' => now()->format('Y-m-d H:i:s'),
+            'fromname' => 'poster@example.com',
+            'size' => 19_000,
+            'passwordstatus' => 1,
+            'haspreview' => 0,
+            'categories_id' => 1,
+            'nfostatus' => 0,
+            'nzbstatus' => NzbService::NZB_ADDED,
+            'completion' => 95.0,
+            'isrenamed' => 1,
+            'is_trusted_name' => 1,
+            'iscategorized' => 1,
+            'predb_id' => 0,
+        ]);
+
+        $nzb = app(NzbService::class);
+        file_put_contents(
+            $nzb->getNzbPath($guid, 0, true),
+            gzencode('<nzb><file subject="old"><segments><segment bytes="1000" number="1">old@example.test</segment></segments></file></nzb>'),
+        );
+
+        DB::table('collections')->insert([
+            'id' => 301,
+            'subject' => 'Better.Native.Repost',
+            'fromname' => 'poster@example.com',
+            'date' => now()->subHour()->format('Y-m-d H:i:s'),
+            'dateadded' => now()->subHour()->format('Y-m-d H:i:s'),
+            'added' => now()->subHour()->format('Y-m-d H:i:s'),
+            'xref' => 'alt.test:301',
+            'groups_id' => 1,
+            'totalfiles' => 1,
+            'declaredfiles' => 1,
+            'filesize' => 20_000,
+            'filecheck' => CollectionFileCheckStatus::Sized->value,
+            'collectionhash' => 'better-native-hash',
+            'collection_regexes_id' => 0,
+            'releases_id' => null,
+            'noise' => '',
+        ]);
+        DB::table('binaries')->insert([
+            'id' => 3010,
+            'name' => 'Better.Native.Repost.part01.rar yEnc (1/20)',
+            'collections_id' => 301,
+            'totalparts' => 20,
+        ]);
+        foreach (range(1, 20) as $part) {
+            DB::table('parts')->insert([
+                'binaries_id' => 3010,
+                'number' => $part,
+                'messageid' => "<new-{$part}@example.test>",
+                'partnumber' => $part,
+                'size' => 1_000,
+            ]);
+        }
+
+        $result = app(ReleaseCreationService::class)->createReleases(null, 10, false);
+
+        $this->assertSame(['added' => 0, 'dupes' => 1], $result);
+        $this->assertSame(1, DB::table('releases')->count());
+        $stored = DB::table('releases')->find(3);
+        $this->assertNotNull($stored);
+        $this->assertSame($guid, $stored->guid);
+        $this->assertSame(20_000, (int) $stored->size);
+        $this->assertSame(100.0, (float) $stored->completion);
+        $this->assertSame(1, (int) $stored->totalpart);
+        $this->assertSame(0, (int) $stored->proc_files);
+        $this->assertSame(0, DB::table('collections')->count());
+
+        $contents = $nzb->readNzbContents($guid);
+        $this->assertIsString($contents);
+        $this->assertStringContainsString('new-20@example.test', $contents);
+        $this->assertStringNotContainsString('old@example.test', $contents);
     }
 
     public function test_release_duplicate_finder_matches_searchname_within_size_band(): void
@@ -522,7 +624,7 @@ class CbpCleanupServiceTest extends TestCase
         $this->assertNull($reason);
     }
 
-    public function test_normalized_duplicate_fallback_can_omit_the_true_match_after_twenty_five_prefixes(): void
+    public function test_normalized_duplicate_identity_finds_the_true_match_after_twenty_five_prefixes(): void
     {
         for ($id = 101; $id <= 125; $id++) {
             $this->insertRelease($id, 'ReleaseName.Extras.'.$id, 13_897_458_182);
@@ -537,11 +639,12 @@ class CbpCleanupServiceTest extends TestCase
             13_897_458_182
         );
 
-        $this->assertNull($dup);
-        $this->assertNull($reason);
+        $this->assertNotNull($dup);
+        $this->assertSame(126, (int) $dup->id);
+        $this->assertSame('normalized_searchname_match', $reason);
     }
 
-    public function test_normalized_duplicate_fallback_cannot_see_a_legacy_counter_prefix(): void
+    public function test_normalized_duplicate_identity_sees_a_legacy_counter_prefix(): void
     {
         $this->insertRelease(127, '[10/88] "ReleaseName.part009.rar" yEnc', 13_897_458_182);
 
@@ -553,8 +656,69 @@ class CbpCleanupServiceTest extends TestCase
             13_897_458_182
         );
 
-        $this->assertNull($dup);
-        $this->assertNull($reason);
+        $this->assertNotNull($dup);
+        $this->assertSame(127, (int) $dup->id);
+        $this->assertSame('normalized_searchname_match', $reason);
+    }
+
+    public function test_duplicate_anchor_is_highest_completion_with_id_as_tiebreak(): void
+    {
+        $this->insertRelease(130, '"ReleaseName.part001.rar"', 13_897_458_182);
+        $this->insertRelease(129, 'ReleaseName.par2', 13_897_458_182);
+        $this->insertRelease(128, 'ReleaseName.rar', 13_897_458_182);
+        DB::table('releases')->where('id', 130)->update(['completion' => 95.0]);
+        DB::table('releases')->where('id', 129)->update(['completion' => 95.0]);
+        DB::table('releases')->where('id', 128)->update(['completion' => 80.0]);
+
+        $finder = app(ReleaseDuplicateFinder::class);
+
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            [$dup, $reason] = $finder->findDuplicate('ReleaseName', 'ReleaseName', 0, 13_897_458_182);
+
+            $this->assertNotNull($dup);
+            $this->assertSame(129, (int) $dup->id);
+            $this->assertSame('normalized_searchname_match', $reason);
+        }
+    }
+
+    public function test_exact_duplicate_anchor_uses_the_same_quality_ordering(): void
+    {
+        $this->insertRelease(133, 'Exact.ReleaseName', 13_897_458_182);
+        $this->insertRelease(132, 'Exact.ReleaseName', 13_897_458_182);
+        $this->insertRelease(131, 'Exact.ReleaseName', 13_897_458_182);
+        DB::table('releases')->where('id', 133)->update(['completion' => 95.0]);
+        DB::table('releases')->where('id', 132)->update(['completion' => 95.0]);
+        DB::table('releases')->where('id', 131)->update(['completion' => 80.0]);
+
+        [$dup, $reason] = app(ReleaseDuplicateFinder::class)->findDuplicate(
+            'Exact.ReleaseName',
+            'Exact.ReleaseName',
+            0,
+            13_897_458_182,
+        );
+
+        $this->assertNotNull($dup);
+        $this->assertSame(132, (int) $dup->id);
+        $this->assertSame('searchname_match', $reason);
+    }
+
+    public function test_quality_ordering_selects_the_best_anchor_across_exact_and_normalized_matches(): void
+    {
+        $this->insertRelease(134, 'Cross.Arm.Release', 13_897_458_182);
+        $this->insertRelease(135, '[1/2] "Cross.Arm.Release.part001.rar" yEnc', 13_897_458_182);
+        DB::table('releases')->where('id', 134)->update(['completion' => 80.0]);
+        DB::table('releases')->where('id', 135)->update(['completion' => 95.0]);
+
+        [$dup, $reason] = app(ReleaseDuplicateFinder::class)->findDuplicate(
+            'Cross.Arm.Release',
+            'Cross.Arm.Release',
+            0,
+            13_897_458_182,
+        );
+
+        $this->assertNotNull($dup);
+        $this->assertSame(135, (int) $dup->id);
+        $this->assertSame('normalized_searchname_match', $reason);
     }
 
     private function insertRelease(int $id, string $searchName, int $size): void
@@ -563,6 +727,7 @@ class CbpCleanupServiceTest extends TestCase
             'id' => $id,
             'name' => 'raw-subject-'.$id,
             'searchname' => $searchName,
+            'searchname_normalized' => ReleaseNameNormalizer::normalize($searchName),
             'totalpart' => 135,
             'groups_id' => 1,
             'adddate' => now()->format('Y-m-d H:i:s'),
@@ -610,6 +775,7 @@ class CbpCleanupServiceTest extends TestCase
             id INTEGER PRIMARY KEY,
             name VARCHAR(255),
             searchname VARCHAR(255),
+            searchname_normalized VARCHAR(255),
             totalpart INTEGER,
             declaredfiles INTEGER NULL,
             firstarticle INTEGER NULL,
@@ -627,7 +793,19 @@ class CbpCleanupServiceTest extends TestCase
             nfostatus INTEGER,
             nzbstatus INTEGER,
             completion DOUBLE NOT NULL DEFAULT 0,
+            pp_timeout_count INTEGER NOT NULL DEFAULT 0,
+            proc_nfo INTEGER NOT NULL DEFAULT 0,
+            proc_files INTEGER NOT NULL DEFAULT 0,
+            proc_srr INTEGER NOT NULL DEFAULT 0,
+            proc_crc32 INTEGER NOT NULL DEFAULT 0,
+            proc_uid INTEGER NOT NULL DEFAULT 0,
+            proc_hash16k INTEGER NOT NULL DEFAULT 0,
+            proc_par2 INTEGER NOT NULL DEFAULT 0,
+            proc_srrdb INTEGER NOT NULL DEFAULT 0,
+            proc_xxx INTEGER NOT NULL DEFAULT 0,
+            proc_media_movie INTEGER NOT NULL DEFAULT 0,
             isrenamed INTEGER,
+            is_trusted_name INTEGER NOT NULL DEFAULT 0,
             iscategorized INTEGER,
             predb_id INTEGER,
             source VARCHAR(255) NULL
@@ -669,6 +847,8 @@ class CbpCleanupServiceTest extends TestCase
             partnumber INTEGER,
             size INTEGER
         )');
+        DB::statement('CREATE TABLE video_data (id INTEGER PRIMARY KEY, releases_id INTEGER)');
+        DB::statement('CREATE TABLE audio_data (id INTEGER PRIMARY KEY, releases_id INTEGER)');
         DB::statement('CREATE TABLE release_naming_regexes (
             id INTEGER PRIMARY KEY,
             group_regex VARCHAR(255),

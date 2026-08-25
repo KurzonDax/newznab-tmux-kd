@@ -15,6 +15,7 @@ use App\Services\Categorization\CategorizationService;
 use App\Services\Nzb\NzbService;
 use App\Services\Releases\CollectionArticleRangeMeasurer;
 use App\Services\Releases\CollectionCompletionMeasurer;
+use App\Services\Releases\ReleaseDuplicateAbsorber;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use App\Support\Utf8;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -30,6 +31,7 @@ class ReleaseCreationService
         private readonly CollectionCleanupService $collectionCleanupService,
         private readonly ReleaseDuplicateFinder $releaseDuplicateFinder,
         private readonly CollectionCompletionMeasurer $completionMeasurer,
+        private readonly ReleaseDuplicateAbsorber $releaseDuplicateAbsorber,
         private readonly CollectionArticleRangeMeasurer $articleRangeMeasurer = new CollectionArticleRangeMeasurer,
     ) {}
 
@@ -195,9 +197,29 @@ class ReleaseCreationService
             }
 
             if ($dupeCheck !== null) {
+                $absorbed = false;
+                if ($this->releaseDuplicateAbsorber->supportsReason($dupeReason)) {
+                    try {
+                        $absorbed = $this->releaseDuplicateAbsorber->absorbCollection(
+                            $dupeCheck,
+                            $collection,
+                            ($completionSignals[(int) $collection->id] ?? null)?->percentage() ?? 0.0,
+                        );
+                    } catch (\Throwable $exception) {
+                        Log::error('A better duplicate collection could not be absorbed; preserving it for retry.', [
+                            'matched_release_id' => $dupeCheck->id,
+                            'collection_id' => $collection->id,
+                            'exception' => $exception,
+                        ]);
+
+                        continue;
+                    }
+                }
+
                 Log::info('Release import skipped as duplicate', [
                     'reason' => $dupeReason,
                     'matched_release_id' => $dupeCheck->id,
+                    'absorbed' => $absorbed,
                     'new_searchname' => $searchName,
                     'existing_searchname' => $dupeCheck->searchname,
                     'new_size' => (int) $collection->filesize,

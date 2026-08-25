@@ -162,23 +162,7 @@ class NzbService
                 return NzbCreationResult::transient("Failed to open temporary NZB file for writing: {$tempPath}", $collectionIds, $path);
             }
 
-            $XMLWriter->startDocument('1.0', 'UTF-8');
-            $XMLWriter->startDtd(self::NZB_DTD_NAME, self::NZB_DTD_PUBLIC, self::NZB_DTD_EXTERNAL);
-            $XMLWriter->endDtd();
-            $XMLWriter->writeComment($this->nzbCommentString);
-
-            $XMLWriter->startElement('nzb');
-            $XMLWriter->writeAttribute('xmlns', self::NZB_XML_NS);
-            $XMLWriter->startElement('head');
-            $XMLWriter->startElement('meta');
-            $XMLWriter->writeAttribute('type', 'category');
-            $XMLWriter->text(! empty($release->category->parent) ? $release->category->parent->title.' >'.$release->category->title : 'Other > Misc');
-            $XMLWriter->endElement();
-            $XMLWriter->startElement('meta');
-            $XMLWriter->writeAttribute('type', 'name');
-            $XMLWriter->text($release->name);
-            $XMLWriter->endElement();
-            $XMLWriter->endElement(); // head
+            $this->startNzbDocument($XMLWriter, $release);
             if (! $this->flushXmlWriter($XMLWriter, $gz)) {
                 return NzbCreationResult::transient("Failed to write NZB header to temporary file: {$tempPath}", $collectionIds, $path);
             }
@@ -191,8 +175,7 @@ class NzbService
                     $binaryId = (int) $row->binary_id;
                     if ($binaryId !== $openBinaryId) {
                         if ($openBinaryId > 0) {
-                            $XMLWriter->endElement(); // segments
-                            $XMLWriter->endElement(); // file
+                            $this->endNzbFile($XMLWriter);
                             if (! $this->flushXmlWriter($XMLWriter, $gz)) {
                                 return NzbCreationResult::transient("Failed to write NZB file entry to temporary file: {$tempPath}", $collectionIds, $path);
                             }
@@ -205,16 +188,13 @@ class NzbService
                         }
 
                         $subject = $this->buildBinarySubject((string) $row->binary_name, (int) $row->totalparts);
-                        $XMLWriter->startElement('file');
-                        $XMLWriter->writeAttribute('poster', (string) $collection->fromname);
-                        $XMLWriter->writeAttribute('date', (string) $collection->udate);
-                        $XMLWriter->writeAttribute('subject', (string) $subject);
-                        $XMLWriter->startElement('groups');
-                        foreach ($groups as $group) {
-                            $XMLWriter->writeElement('group', $group);
-                        }
-                        $XMLWriter->endElement(); // groups
-                        $XMLWriter->startElement('segments');
+                        $this->startNzbFile(
+                            $XMLWriter,
+                            (string) $collection->fromname,
+                            (string) $collection->udate,
+                            $subject,
+                            $groups,
+                        );
                         $openBinaryId = $binaryId;
                     }
 
@@ -223,11 +203,7 @@ class NzbService
                         return NzbCreationResult::deterministic("Part {$row->partnumber} for binary {$binaryId} has an empty message ID.", $collectionIds, $path);
                     }
 
-                    $XMLWriter->startElement('segment');
-                    $XMLWriter->writeAttribute('bytes', (string) $row->size);
-                    $XMLWriter->writeAttribute('number', (string) $row->partnumber);
-                    $XMLWriter->text($messageId);
-                    $XMLWriter->endElement();
+                    $this->writeNzbSegment($XMLWriter, (int) $row->size, (int) $row->partnumber, $messageId);
 
                     $cursor = [
                         'collection_id' => (int) $row->collection_id,
@@ -239,13 +215,10 @@ class NzbService
             } while (\count($page) === $this->binariesConfig->nzbStreamRows);
 
             if ($openBinaryId > 0) {
-                $XMLWriter->endElement(); // segments
-                $XMLWriter->endElement(); // file
+                $this->endNzbFile($XMLWriter);
             }
 
-            $XMLWriter->writeComment($this->siteCommentString);
-            $XMLWriter->endElement(); // nzb
-            $XMLWriter->endDocument();
+            $this->endNzbDocument($XMLWriter);
             if (! $this->flushXmlWriter($XMLWriter, $gz)) {
                 return NzbCreationResult::transient("Failed to write NZB footer to temporary file: {$tempPath}", $collectionIds, $path);
             }
@@ -325,6 +298,72 @@ class NzbService
         chmod($path, 0777);
 
         return NzbCreationResult::success($path, $collectionIds);
+    }
+
+    private function startNzbDocument(\XMLWriter $writer, Release $release): void
+    {
+        $writer->startDocument('1.0', 'UTF-8');
+        $writer->startDtd(self::NZB_DTD_NAME, self::NZB_DTD_PUBLIC, self::NZB_DTD_EXTERNAL);
+        $writer->endDtd();
+        $writer->writeComment($this->nzbCommentString);
+        $writer->startElement('nzb');
+        $writer->writeAttribute('xmlns', self::NZB_XML_NS);
+        $writer->startElement('head');
+        $writer->startElement('meta');
+        $writer->writeAttribute('type', 'category');
+        $writer->text(! empty($release->category->parent)
+            ? $release->category->parent->title.' >'.$release->category->title
+            : 'Other > Misc');
+        $writer->endElement();
+        $writer->startElement('meta');
+        $writer->writeAttribute('type', 'name');
+        $writer->text((string) $release->name);
+        $writer->endElement();
+        $writer->endElement();
+    }
+
+    /**
+     * @param  list<string>  $groups
+     */
+    private function startNzbFile(
+        \XMLWriter $writer,
+        string $poster,
+        string $date,
+        string $subject,
+        array $groups,
+    ): void {
+        $writer->startElement('file');
+        $writer->writeAttribute('poster', $poster);
+        $writer->writeAttribute('date', $date);
+        $writer->writeAttribute('subject', $subject);
+        $writer->startElement('groups');
+        foreach ($groups as $group) {
+            $writer->writeElement('group', $group);
+        }
+        $writer->endElement();
+        $writer->startElement('segments');
+    }
+
+    private function writeNzbSegment(\XMLWriter $writer, int $bytes, int $number, string $messageId): void
+    {
+        $writer->startElement('segment');
+        $writer->writeAttribute('bytes', (string) $bytes);
+        $writer->writeAttribute('number', (string) $number);
+        $writer->text($messageId);
+        $writer->endElement();
+    }
+
+    private function endNzbFile(\XMLWriter $writer): void
+    {
+        $writer->endElement();
+        $writer->endElement();
+    }
+
+    private function endNzbDocument(\XMLWriter $writer): void
+    {
+        $writer->writeComment($this->siteCommentString);
+        $writer->endElement();
+        $writer->endDocument();
     }
 
     /**
@@ -504,6 +543,96 @@ class NzbService
         $contents = unzipGzipFile($nzbPath);
 
         return ! empty($contents) ? $contents : false;
+    }
+
+    /**
+     * Render one incoming collection as NZB XML so a better repost can replace an anchor in place.
+     */
+    public function buildNzbContentsForCollection(Release $release, int $collectionId): string|false
+    {
+        $collection = Collection::query()
+            ->where('collections.id', $collectionId)
+            ->join('usenet_groups', 'collections.groups_id', '=', 'usenet_groups.id')
+            ->select(['collections.*', 'usenet_groups.name as groupname'])
+            ->first();
+
+        if ($collection === null) {
+            return false;
+        }
+
+        $binaryCount = DB::table('binaries')->where('collections_id', $collectionId)->count();
+        $rows = DB::table('binaries as b')
+            ->join('parts as p', 'p.binaries_id', '=', 'b.id')
+            ->where('b.collections_id', $collectionId)
+            ->orderBy('b.name')
+            ->orderBy('b.id')
+            ->orderBy('p.partnumber')
+            ->get([
+                'b.id as binary_id',
+                'b.name as binary_name',
+                'b.totalparts',
+                'p.messageid',
+                'p.size',
+                'p.partnumber',
+            ]);
+
+        if ($binaryCount === 0 || $rows->pluck('binary_id')->unique()->count() !== $binaryCount) {
+            return false;
+        }
+
+        $groups = [];
+        if (Schema::hasTable('collection_groups')) {
+            $groups = DB::table('collection_groups')
+                ->where('collections_id', $collectionId)
+                ->orderBy('group_name')
+                ->pluck('group_name')
+                ->map(static fn (mixed $group): string => (string) $group)
+                ->all();
+        }
+        if ($groups === []) {
+            $groups = $this->groupsFromXref((string) $collection->xref);
+        }
+        if ($groups === []) {
+            $groups = [(string) $collection->getAttribute('groupname')];
+        }
+
+        $release->loadMissing('category.parent');
+        $writer = new \XMLWriter;
+        $writer->openMemory();
+        $writer->setIndent(true);
+        $writer->setIndentString('  ');
+        $this->startNzbDocument($writer, $release);
+
+        $openBinaryId = null;
+        foreach ($rows as $row) {
+            $binaryId = (int) $row->binary_id;
+            if ($binaryId !== $openBinaryId) {
+                if ($openBinaryId !== null) {
+                    $this->endNzbFile($writer);
+                }
+
+                $this->startNzbFile(
+                    $writer,
+                    (string) $collection->fromname,
+                    (string) strtotime((string) $collection->date),
+                    $this->buildBinarySubject((string) $row->binary_name, (int) $row->totalparts),
+                    $groups,
+                );
+                $openBinaryId = $binaryId;
+            }
+
+            $messageId = $this->normalizeSegmentMessageId((string) $row->messageid);
+            if ($messageId === '') {
+                return false;
+            }
+
+            $this->writeNzbSegment($writer, (int) $row->size, (int) $row->partnumber, $messageId);
+        }
+
+        $this->endNzbFile($writer);
+        $this->endNzbDocument($writer);
+
+        return $writer->outputMemory();
     }
 
     /**

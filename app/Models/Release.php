@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Enums\ReleaseRepairOutcome;
 use App\Facades\Search;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
+use App\Support\ReleaseNameNormalizer;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -213,6 +214,19 @@ class Release extends Model
     }
 
     /**
+     * Keep the displayed search name and its indexed dedupe identity inseparable at every writer.
+     *
+     * @return array{searchname: string, searchname_normalized: string}
+     */
+    public static function searchNameValues(string $searchName): array
+    {
+        return [
+            'searchname' => $searchName,
+            'searchname_normalized' => ReleaseNameNormalizer::normalize($searchName),
+        ];
+    }
+
+    /**
      * @return HasOne<VideoData, $this>
      */
     public function videoData(): HasOne
@@ -253,7 +267,7 @@ class Release extends Model
             ->insertGetId(
                 [
                     'name' => $parameters['name'],
-                    'searchname' => $parameters['searchname'],
+                    ...self::searchNameValues((string) $parameters['searchname']),
                     'totalpart' => $parameters['totalpart'],
                     // Explicit list: a column not named here is silently dropped.
                     'declaredfiles' => $parameters['declaredfiles'] ?? null,
@@ -297,7 +311,7 @@ class Release extends Model
         self::whereId($id)->update(
             [
                 'name' => $name,
-                'searchname' => $searchName,
+                ...self::searchNameValues((string) $searchName),
                 'fromname' => $fromName,
                 'categories_id' => $categoryId,
                 'totalpart' => $parts,

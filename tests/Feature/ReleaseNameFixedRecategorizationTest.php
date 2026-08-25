@@ -770,6 +770,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
                 $table->increments('id');
                 $table->string('name')->default('');
                 $table->string('searchname')->default('');
+                $table->string('searchname_normalized')->nullable();
                 $table->unsignedInteger('groups_id')->default(0);
                 $table->unsignedBigInteger('size')->default(0);
                 $table->dateTime('postdate')->nullable();

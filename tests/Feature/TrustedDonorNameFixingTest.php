@@ -224,6 +224,7 @@ class TrustedDonorNameFixingTest extends TestCase
             $table->unsignedInteger('id')->primary();
             $table->string('name');
             $table->string('searchname');
+            $table->string('searchname_normalized')->nullable();
             $table->string('fromname')->nullable();
             $table->unsignedInteger('groups_id');
             $table->unsignedInteger('categories_id');

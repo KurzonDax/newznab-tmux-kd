@@ -14,7 +14,13 @@ namespace App\Support;
  */
 final class ReleaseNameNormalizer
 {
-    /** A name that is wrapped in double quotes end to end, with no quotes inside. */
+    /** Leading multipart counter decoration: [10/88] */
+    private const string COUNTER_PREFIX_REGEX = '/^(?:\[\d+\/\d+\]\s*)+/';
+
+    /** A trailing yEnc marker, optionally separated from the filename by whitespace. */
+    private const string YENC_SUFFIX_REGEX = '/\s+yenc\s*$/i';
+
+    /** A filename that is wrapped in double quotes after outer subject decoration is removed. */
     private const string WRAPPING_QUOTES_REGEX = '/^"([^"]*)"$/';
 
     /** Par2 recovery volume suffix: .vol012+10.par2 */
@@ -26,6 +32,10 @@ final class ReleaseNameNormalizer
     public static function normalize(string $name): string
     {
         $normalized = trim($name);
+
+        $normalized = (string) preg_replace(self::COUNTER_PREFIX_REGEX, '', $normalized);
+        $normalized = (string) preg_replace(self::YENC_SUFFIX_REGEX, '', trim($normalized));
+        $normalized = trim($normalized);
 
         if (preg_match(self::WRAPPING_QUOTES_REGEX, $normalized, $hit) === 1) {
             $normalized = trim($hit[1]);

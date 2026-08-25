@@ -371,7 +371,7 @@ class ReleaseUpdateService
                     'anidbid' => null,
                     'gamesinfo_id' => 0,
                     'predb_id' => $preId,
-                    'searchname' => $newTitle,
+                    ...Release::searchNameValues($newTitle),
                     'is_trusted_name' => $trustedDonorName,
                 ];
 
@@ -406,7 +406,7 @@ class ReleaseUpdateService
                         'anidbid' => null,
                         'gamesinfo_id' => 0,
                         'predb_id' => $preId,
-                        'searchname' => $newTitle,
+                        ...Release::searchNameValues($newTitle),
                         'is_trusted_name' => $trustedDonorName,
                         'iscategorized' => 1,
                         'categories_id' => $categoryOverride,

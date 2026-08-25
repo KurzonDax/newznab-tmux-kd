@@ -50,6 +50,7 @@ class ReleaseObserver
             'tv_episodes_id',
             'size',
             'totalpart',
+            'completion',
             'grabs',
             'passwordstatus',
             'groups_id',

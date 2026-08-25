@@ -91,7 +91,7 @@ class FixNzbSplitNames extends Command
                     ->where('id', $release->id)
                     ->update([
                         'name' => $newTitle,
-                        'searchname' => $newTitle,
+                        ...Release::searchNameValues($newTitle),
                         'categories_id' => $newCategoryId,
                         'isrenamed' => 1,
                         'iscategorized' => 1,

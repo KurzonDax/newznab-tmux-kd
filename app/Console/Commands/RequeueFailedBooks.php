@@ -85,7 +85,7 @@ class RequeueFailedBooks extends Command
                 $updates['bookinfo_id'] = null;
             }
             if ($normalized !== null && $normalized !== $release->searchname) {
-                $updates['searchname'] = $normalized;
+                $updates += Release::searchNameValues($normalized);
                 $updates['isrenamed'] = 1;
             }
 

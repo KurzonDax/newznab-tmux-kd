@@ -252,6 +252,7 @@ class AdminReleasesControllerEditTest extends TestCase
                 $table->string('guid');
                 $table->string('name')->default('');
                 $table->string('searchname')->default('');
+                $table->string('searchname_normalized')->nullable();
                 $table->string('fromname')->nullable();
                 $table->integer('categories_id')->default(10);
                 $table->integer('totalpart')->nullable();
