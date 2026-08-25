@@ -5,19 +5,28 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Models\Release;
+use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
 use App\Services\AdditionalProcessing\AdditionalProcessingOrchestrator;
 use App\Services\AdditionalProcessing\ConsoleOutputService;
 use App\Services\AdditionalProcessing\DTO\ReleaseProcessingResult;
 use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
 use App\Services\AdditionalProcessing\ReleaseFileManager;
 use App\Services\AdditionalProcessing\ReleaseProcessor;
+use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
+use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
+use App\Services\NameFixing\NameFixingService;
+use App\Services\NfoService;
+use App\Services\Nzb\NzbService;
+use App\Services\ReleaseImageService;
 use App\Services\TempWorkspaceService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
+use Symfony\Component\Process\Process;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 use Tests\Unit\AdditionalProcessing\CreatesProcessingConfiguration;
@@ -137,6 +146,50 @@ class AdditionalProcessingOrchestratorClaimTest extends TestCase
                     && array_key_exists('stage_seconds', $context)
                     && array_key_exists('peak_memory_bytes', $context)),
             );
+    }
+
+    public function test_process_timeout_exception_is_counted_and_settled_at_the_cap(): void
+    {
+        DB::table('categories')->insert(['id' => 1]);
+        DB::table('releases')->insert($this->releaseRow());
+        $releaseManager = new ReleaseFileManager(
+            $this->makeConfig(),
+            Mockery::mock(ReleaseImageService::class),
+            Mockery::mock(NfoService::class),
+            Mockery::mock(NzbService::class),
+            Mockery::mock(NameFixingService::class),
+            searchSyncCoordinator: new ReleaseSearchSyncCoordinator(
+                new PersistenceMetricsCollector,
+                static function (int $releaseId): void {},
+            ),
+        );
+        $timedOutProcess = new Process(['php', '-v']);
+        $timedOutProcess->setTimeout(1);
+        $processor = new TimedOutAdditionalReleaseProcessor(
+            new ProcessTimedOutException($timedOutProcess, ProcessTimedOutException::TYPE_GENERAL),
+        );
+        $orchestrator = new AdditionalProcessingOrchestrator(
+            $this->makeConfig([
+                'queryLimit' => 25,
+                'minSizeBytes' => 0,
+                'maxSizeBytes' => 107374182400,
+                'maxPpTimeoutCount' => 1,
+            ]),
+            $processor,
+            new RecordingTempWorkspaceService,
+            new RecordingConsoleOutputService,
+            $releaseManager,
+        );
+
+        $result = $orchestrator->start('', 'a');
+        $release = Release::query()->findOrFail(1);
+
+        $this->assertSame(1, $processor->processCalls);
+        $this->assertTrue($result->hasOutcome(ProcessingOutcome::Failed));
+        $this->assertSame(1, (int) $release->pp_timeout_count);
+        $this->assertSame(0, (int) $release->haspreview);
+        $this->assertSame(0, (int) $release->passwordstatus);
+        $this->assertFalse(AdditionalCandidateQuery::hasAnyCandidate());
     }
 
     public function test_storage_unavailability_aborts_the_batch_and_releases_remaining_claims(): void
@@ -333,6 +386,20 @@ class FailingAdditionalReleaseProcessor extends ReleaseProcessor
         $this->processCalls++;
 
         throw new \RuntimeException('boom');
+    }
+}
+
+class TimedOutAdditionalReleaseProcessor extends ReleaseProcessor
+{
+    public int $processCalls = 0;
+
+    public function __construct(private readonly ProcessTimedOutException $exception) {}
+
+    public function process(ReleaseProcessingContext $context, string $mainTmpPath): ReleaseProcessingResult
+    {
+        $this->processCalls++;
+
+        throw $this->exception;
     }
 }
 

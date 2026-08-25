@@ -14,6 +14,7 @@ use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use App\Services\AdditionalProcessing\ConsoleOutputService;
 use App\Services\AdditionalProcessing\DTO\DownloadMetrics;
 use App\Services\AdditionalProcessing\Enums\DownloadKind;
+use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
 use App\Services\AdditionalProcessing\MediaExtractionService;
 use App\Services\AdditionalProcessing\NzbContentParser;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
@@ -33,7 +34,9 @@ use App\Services\Nzb\NzbService;
 use App\Services\Par2Processor;
 use App\Services\ReleaseImageService;
 use App\Services\Releases\PreviewGenerationPolicy;
+use App\Services\Releases\ReleaseBrowseService;
 use App\Services\TempWorkspaceService;
+use dariusiii\rarinfo\ArchiveInfo;
 use dariusiii\rarinfo\Par2Info;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
@@ -512,6 +515,112 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
             'hash' => '1234567890abcdef1234567890abcdef',
         ]);
         $this->assertSame('Canonical.Release.2026', DB::table('releases')->where('id', 1)->value('searchname'));
+    }
+
+    public function test_encrypted_zip_entry_is_stamped_passworded_and_removed_from_additional_candidates(): void
+    {
+        DB::table('releases')->insert(array_merge($this->releaseRow(), [
+            'size' => 2 * 1048576,
+            'nfostatus' => 1,
+            'postdate' => '2026-08-24 12:00:00',
+        ]));
+
+        Search::shouldReceive('updateRelease')->once()->with(1);
+        $config = $this->makeConfig([
+            'extractUsingRarInfo' => false,
+            'processPasswords' => true,
+            'unzipPath' => '/usr/bin/unzip',
+        ]);
+        $persistenceMetrics = new PersistenceMetricsCollector;
+        $searchSync = new ReleaseSearchSyncCoordinator($persistenceMetrics);
+        $manager = new ReleaseFileManager(
+            $config,
+            new ReleaseImageService,
+            new NfoService,
+            new TestNzbService,
+            new CountingNameFixingService,
+            searchSyncCoordinator: $searchSync,
+        );
+
+        $nzbParser = Mockery::mock(NzbContentParser::class);
+        $nzbParser->shouldReceive('parseNzb')->once()->with('guid-1')->andReturn([
+            'error' => null,
+            'contents' => [[
+                'title' => 'archive.zip',
+                'segments' => ['<archive>'],
+                'size' => 1024,
+                'partsactual' => 1,
+            ]],
+        ]);
+        $downloadService = Mockery::mock(UsenetDownloadService::class);
+        $downloadService->shouldReceive('beginReleaseScope')->once()->andReturnNull();
+        $downloadService->shouldReceive('finishReleaseScope')->once()->andReturn(new DownloadMetrics);
+        $downloadService->shouldReceive('download')->once()->with(
+            DownloadKind::Compressed,
+            ['<archive>'],
+            'alt.binaries.test',
+            1,
+            'archive.zip',
+        )->andReturn([
+            'success' => true,
+            'data' => 'ARCHIVE',
+            'groupUnavailable' => false,
+            'error' => null,
+        ]);
+
+        $archiveInfo = Mockery::mock(ArchiveInfo::class);
+        $archiveInfo->error = '';
+        $archiveInfo->shouldReceive('setData')->once()->with('ARCHIVE', true)->andReturnTrue();
+        $archiveInfo->shouldReceive('getSummary')->once()->with(true)->andReturn([
+            'main_type' => ArchiveInfo::TYPE_ZIP,
+            'is_encrypted' => 0,
+        ]);
+        $archiveInfo->shouldReceive('getArchiveFileList')->once()->andReturn([
+            ['name' => 'readme.txt', 'size' => 128, 'pass' => 0],
+            ['name' => 'activation.exe', 'size' => 1024, 'pass' => 1],
+        ]);
+        $archiveService = new ArchiveExtractionService(
+            $config,
+            $archiveInfo,
+            Mockery::mock(Par2Info::class),
+            static fn (string $command): string => "\n__NNTMUX_UNZIP_EXIT_CODE__=1\n",
+        );
+
+        $tmpPath = $this->makeTempDirectory('nntmux-passworded-zip').'/';
+        $tempWorkspace = Mockery::mock(TempWorkspaceService::class);
+        $tempWorkspace->shouldReceive('createReleaseTempFolder')->once()->andReturn($tmpPath);
+        $tempWorkspace->shouldReceive('clearDirectory')->once()->with($tmpPath, false)->andReturnNull();
+        $output = Mockery::mock(ConsoleOutputService::class);
+        $output->shouldReceive('echoReleaseStart')->once()->andReturnNull();
+        $output->shouldReceive('setProcessTitle')->once()->andReturnNull();
+        $output->shouldReceive('echoCompressedDownload')->once()->andReturnNull();
+
+        $processor = new ReleaseProcessor(
+            $config,
+            $nzbParser,
+            new AdditionalWorkPlanner($config),
+            $archiveService,
+            Mockery::mock(MediaExtractionService::class),
+            $downloadService,
+            $manager,
+            Mockery::mock(ReleaseFilesArchiveFallback::class),
+            $tempWorkspace,
+            $output,
+            $searchSync,
+            $persistenceMetrics,
+            previewPolicy: new AlwaysEnabledPreviewPolicy,
+        );
+
+        $result = $processor->process(
+            new ReleaseProcessingContext(Release::query()->findOrFail(1)),
+            $tmpPath,
+        );
+        $release = Release::query()->findOrFail(1);
+
+        $this->assertSame(ProcessingOutcome::Passworded, $result->outcome);
+        $this->assertSame(ReleaseBrowseService::PASSWD_RAR, (int) $release->passwordstatus);
+        $this->assertSame(0, (int) $release->haspreview);
+        $this->assertFalse(AdditionalCandidateQuery::hasAnyCandidate());
     }
 
     public function test_legacy_par2_processor_persists_hashes_when_release_file_listing_is_disabled(): void

@@ -11,7 +11,7 @@ use dariusiii\rarinfo\Par2Info;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
 
 class ArchiveExtractionServiceTest extends TestCase
 {
@@ -74,6 +74,87 @@ class ArchiveExtractionServiceTest extends TestCase
         $this->assertSame('avi', $service->detectStandaloneVideo($avi));
         $this->assertSame('mp4', $service->detectStandaloneVideo($mp4));
         $this->assertNull($service->detectStandaloneVideo('tiny'));
+    }
+
+    #[Test]
+    public function it_runs_zip_extraction_non_interactively_under_the_configured_timeout(): void
+    {
+        $archiveInfo = Mockery::mock(ArchiveInfo::class);
+        $archiveInfo->error = '';
+        $archiveInfo->shouldReceive('setData')->once()->with('ARCHIVE', true)->andReturn(true);
+        $archiveInfo->shouldReceive('getSummary')->once()->with(true)->andReturn([
+            'main_type' => ArchiveInfo::TYPE_ZIP,
+            'is_encrypted' => 0,
+        ]);
+        $archiveInfo->shouldReceive('getArchiveFileList')->once()->andReturn([
+            ['name' => 'movie.mkv', 'size' => 1024],
+        ]);
+        $commands = [];
+        $service = new ArchiveExtractionService(
+            $this->makeConfig([
+                'extractUsingRarInfo' => false,
+                'unzipPath' => '/usr/bin/unzip',
+                'timeoutPath' => '/usr/bin/timeout',
+                'timeoutSeconds' => 60,
+            ]),
+            $archiveInfo,
+            Mockery::mock(Par2Info::class),
+            static function (string $command) use (&$commands): string {
+                $commands[] = $command;
+
+                return "\n__NNTMUX_UNZIP_EXIT_CODE__=0\n";
+            },
+        );
+
+        $result = $service->processCompressedData(
+            'ARCHIVE',
+            new ReleaseProcessingContext(new Release(['id' => 1, 'guid' => 'fixture-guid'])),
+            $this->makeTempDirectory('zip-command').'/',
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('z', $result['archiveMarker']);
+        $this->assertCount(1, $commands);
+        $this->assertStringContainsString(
+            '"/usr/bin/timeout" --foreground --signal=KILL 60 "/usr/bin/unzip" -P \'\' -qq -o ',
+            $commands[0],
+        );
+        $this->assertStringNotContainsString(' -t ', $commands[0]);
+    }
+
+    #[Test]
+    public function it_classifies_an_unzip_incorrect_password_exit_as_passworded(): void
+    {
+        $archiveInfo = Mockery::mock(ArchiveInfo::class);
+        $archiveInfo->error = '';
+        $archiveInfo->shouldReceive('setData')->once()->with('ARCHIVE', true)->andReturn(true);
+        $archiveInfo->shouldReceive('getSummary')->once()->with(true)->andReturn([
+            'main_type' => ArchiveInfo::TYPE_ZIP,
+            'is_encrypted' => 0,
+        ]);
+        $archiveInfo->shouldReceive('getArchiveFileList')->once()->andReturn([
+            ['name' => 'readme.txt', 'size' => 128, 'pass' => 0],
+            ['name' => 'activation.exe', 'size' => 1024, 'pass' => 1],
+        ]);
+        $service = new ArchiveExtractionService(
+            $this->makeConfig([
+                'extractUsingRarInfo' => false,
+                'unzipPath' => '/usr/bin/unzip',
+            ]),
+            $archiveInfo,
+            Mockery::mock(Par2Info::class),
+            static fn (string $command): string => "\n__NNTMUX_UNZIP_EXIT_CODE__=1\n",
+        );
+
+        $result = $service->processCompressedData(
+            'ARCHIVE',
+            new ReleaseProcessingContext(new Release(['id' => 1, 'guid' => 'fixture-guid'])),
+            $this->makeTempDirectory('passworded-zip').'/',
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertTrue($result['hasPassword']);
+        $this->assertSame(ReleaseBrowseService::PASSWD_RAR, $result['passwordStatus']);
     }
 
     #[Test]
