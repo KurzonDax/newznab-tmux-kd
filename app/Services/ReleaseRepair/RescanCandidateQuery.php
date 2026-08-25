@@ -52,7 +52,13 @@ final class RescanCandidateQuery
 
         $reopened = self::measuredBelow($targetCompletion)
             ->where('rescan_outcome', ReleaseRepairOutcome::Repaired->value)
-            ->where('rescan_target_completion', '<', $targetCompletion)
+            ->where(function (Builder $query) use ($targetCompletion): void {
+                $query->where('rescan_evaluated_target_completion', '<', $targetCompletion)
+                    ->orWhere(function (Builder $query) use ($targetCompletion): void {
+                        $query->whereNull('rescan_evaluated_target_completion')
+                            ->where('rescan_target_completion', '<', $targetCompletion);
+                    });
+            })
             ->orderByRaw('declaredfiles - totalpart')
             ->orderByDesc('postdate')
             ->limit($limit - $dueRetries->count())
@@ -101,6 +107,7 @@ final class RescanCandidateQuery
                 'declaredfiles', 'firstarticle', 'lastarticle',
                 'repair_outcome', 'repair_target_completion',
                 'rescan_outcome', 'rescan_attempted_at', 'rescan_target_completion',
+                'rescan_evaluated_target_completion',
             ]);
     }
 }

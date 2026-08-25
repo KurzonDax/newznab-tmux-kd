@@ -144,9 +144,10 @@ files remain in the NZB in either case, so the row is always owned by recovery o
 
 **Exclusion.** Although `completion<99` now holds, repair selects only `repair_outcome=retry-pending` or null (`ReleaseRepairCandidateQuery.php:39-53`), rescan selects only its retry/null states, and the sweep deletes only failure/skip outcomes. No transition invalidates a former `repaired` verdict when the target changes.
 
-**Resolved (#216).** Each `repaired` verdict records the target it was judged under. Candidate
-queries reopen it only when the current target is higher; that pass can improve the release but
-cannot turn the previously successful verdict into a deletable outcome.
+**Resolved (#216).** Each `repaired` verdict records both the target it achieved and the latest
+target it evaluated. Candidate queries reopen it only when the current target is higher than the
+latter; that pass can improve the release but cannot change the earlier achieved target or turn
+the previously successful verdict into a deletable outcome when it falls short.
 
 **Shared root cause for G9 and G10.** Before #216, `Repaired` was a universally invisible outcome:
 `ReleaseRepairOutcome::Repaired->isFinal()` was false, keeping it out of the sweep, while both

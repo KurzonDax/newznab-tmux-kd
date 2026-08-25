@@ -425,6 +425,14 @@ class ReleaseRepairGateTest extends TestCase
             [1],
             RescanCandidateQuery::batch(10, 99.0, 72)->pluck('id')->map(intval(...))->all(),
         );
+
+        DB::table('releases')->where('id', 1)->update([
+            'repair_evaluated_target_completion' => 99.0,
+            'rescan_evaluated_target_completion' => 99.0,
+        ]);
+
+        $this->assertTrue(ReleaseRepairCandidateQuery::batch(10, 99.0, 72)->isEmpty());
+        $this->assertTrue(RescanCandidateQuery::batch(10, 99.0, 72)->isEmpty());
         $this->assertTrue(ReleaseRepairCandidateQuery::batch(10, 95.0, 72)->isEmpty());
         $this->assertTrue(RescanCandidateQuery::batch(10, 95.0, 72)->isEmpty());
         $this->assertSame([], $this->sweptIds(99.0));
@@ -456,6 +464,8 @@ class ReleaseRepairGateTest extends TestCase
         ?string $recoveryClaimedAt = null,
         ?float $repairTargetCompletion = null,
         ?float $rescanTargetCompletion = null,
+        ?float $repairEvaluatedTargetCompletion = null,
+        ?float $rescanEvaluatedTargetCompletion = null,
     ): void {
         DB::table('releases')->insert([
             'id' => $id,
@@ -465,9 +475,11 @@ class ReleaseRepairGateTest extends TestCase
             'repair_outcome' => $outcome?->value,
             'repair_attempted_at' => $attemptedAt,
             'repair_target_completion' => $repairTargetCompletion,
+            'repair_evaluated_target_completion' => $repairEvaluatedTargetCompletion ?? $repairTargetCompletion,
             'rescan_outcome' => $rescanOutcome?->value,
             'rescan_attempted_at' => $rescanAttemptedAt,
             'rescan_target_completion' => $rescanTargetCompletion,
+            'rescan_evaluated_target_completion' => $rescanEvaluatedTargetCompletion ?? $rescanTargetCompletion,
             'additional_pp_claimed_at' => $additionalClaimedAt,
             'recovery_claimed_at' => $recoveryClaimedAt,
             'declaredfiles' => $declaredFiles,
@@ -488,9 +500,11 @@ class ReleaseRepairGateTest extends TestCase
             repair_attempted_at DATETIME NULL,
             repair_outcome VARCHAR(16) NULL,
             repair_target_completion DOUBLE NULL,
+            repair_evaluated_target_completion DOUBLE NULL,
             rescan_attempted_at DATETIME NULL,
             rescan_outcome VARCHAR(16) NULL,
             rescan_target_completion DOUBLE NULL,
+            rescan_evaluated_target_completion DOUBLE NULL,
             additional_pp_claimed_at DATETIME NULL,
             recovery_claimed_at DATETIME NULL,
             declaredfiles INTEGER NULL,

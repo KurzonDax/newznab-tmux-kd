@@ -55,4 +55,21 @@ final readonly class MissingFileRescanResult
             reason: $reason,
         );
     }
+
+    public function withOutcome(ReleaseRepairOutcome $outcome): self
+    {
+        return new self(
+            outcome: $outcome,
+            completionBefore: $this->completionBefore,
+            completionAfter: $this->completionAfter,
+            declaredFiles: $this->declaredFiles,
+            filesHeld: $this->filesHeld,
+            filesRecovered: $this->filesRecovered,
+            segmentsAdded: $this->segmentsAdded,
+            articlesRequested: $this->articlesRequested,
+            overviewLinesFetched: $this->overviewLinesFetched,
+            nzbRewritten: $this->nzbRewritten,
+            reason: $this->reason,
+        );
+    }
 }

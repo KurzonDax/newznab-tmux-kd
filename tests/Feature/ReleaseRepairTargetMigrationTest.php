@@ -58,13 +58,19 @@ class ReleaseRepairTargetMigrationTest extends TestCase
         $unrepaired = DB::table('releases')->find(2);
 
         $this->assertSame(97.0, (float) $repaired->repair_target_completion);
+        $this->assertSame(97.0, (float) $repaired->repair_evaluated_target_completion);
         $this->assertSame(97.0, (float) $repaired->rescan_target_completion);
+        $this->assertSame(97.0, (float) $repaired->rescan_evaluated_target_completion);
         $this->assertNull($unrepaired->repair_target_completion);
+        $this->assertNull($unrepaired->repair_evaluated_target_completion);
         $this->assertNull($unrepaired->rescan_target_completion);
+        $this->assertNull($unrepaired->rescan_evaluated_target_completion);
 
         $migration->down();
 
         $this->assertFalse(Schema::hasColumn('releases', 'repair_target_completion'));
+        $this->assertFalse(Schema::hasColumn('releases', 'repair_evaluated_target_completion'));
         $this->assertFalse(Schema::hasColumn('releases', 'rescan_target_completion'));
+        $this->assertFalse(Schema::hasColumn('releases', 'rescan_evaluated_target_completion'));
     }
 }

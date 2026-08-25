@@ -298,12 +298,19 @@ final class ReleaseRepairService
             return $result;
         }
 
+        $preservesEarlierAchievement = $release->repair_outcome === ReleaseRepairOutcome::Repaired
+            && $result->outcome === ReleaseRepairOutcome::Repaired
+            && $result->completionAfter < $options->targetCompletion;
+
         $values = [
             'repair_attempted_at' => Carbon::now(),
             'repair_outcome' => $result->outcome->value,
             'repair_target_completion' => $result->outcome === ReleaseRepairOutcome::Repaired
-                ? $options->targetCompletion
+                ? ($preservesEarlierAchievement
+                    ? $release->repair_target_completion
+                    : $options->targetCompletion)
                 : null,
+            'repair_evaluated_target_completion' => $options->targetCompletion,
         ];
 
         if ($completion !== null) {

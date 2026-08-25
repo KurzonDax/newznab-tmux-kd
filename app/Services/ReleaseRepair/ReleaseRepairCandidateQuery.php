@@ -49,7 +49,13 @@ final class ReleaseRepairCandidateQuery
 
         $reopened = self::measuredBelow($targetCompletion)
             ->where('repair_outcome', ReleaseRepairOutcome::Repaired->value)
-            ->where('repair_target_completion', '<', $targetCompletion)
+            ->where(function (Builder $query) use ($targetCompletion): void {
+                $query->where('repair_evaluated_target_completion', '<', $targetCompletion)
+                    ->orWhere(function (Builder $query) use ($targetCompletion): void {
+                        $query->whereNull('repair_evaluated_target_completion')
+                            ->where('repair_target_completion', '<', $targetCompletion);
+                    });
+            })
             ->orderByDesc('postdate')
             ->limit($limit - $dueRetries->count())
             ->get();
@@ -83,7 +89,7 @@ final class ReleaseRepairCandidateQuery
             ->where('completion', '<', $targetCompletion)
             ->select([
                 'id', 'guid', 'completion', 'haspreview', 'repair_outcome', 'repair_attempted_at',
-                'repair_target_completion', 'postdate',
+                'repair_target_completion', 'repair_evaluated_target_completion', 'postdate',
             ]);
     }
 }

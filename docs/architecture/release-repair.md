@@ -39,9 +39,10 @@ part total, not that the release is empty.
 
 `releases.repair_attempted_at` and `releases.repair_outcome` are both load-bearing: the sweep
 reads the outcome, the retry pass reads both. `rescan_attempted_at` / `rescan_outcome` mirror them
-for the header re-scan and share the same values. Each engine also stores the completion target its
-`repaired` verdict was last judged under in `repair_target_completion` or
-`rescan_target_completion`; other outcomes leave that target null.
+for the header re-scan and share the same values. Each engine stores the completion target its
+`repaired` verdict achieved in `repair_target_completion` or `rescan_target_completion`; other
+outcomes leave that target null. The matching `*_evaluated_target_completion` column records the
+latest policy target that engine actually considered.
 
 | Outcome | Meaning | Deletable |
 | --- | --- | --- |
@@ -52,12 +53,12 @@ for the header re-scan and share the same values. Each engine also stores the co
 | `skipped-floor` | Nothing worth spending network on; no articles were ever probed | **yes** |
 | `skipped-budget` | The re-scan window was wider than the ceiling allows | **yes** |
 
-Target stamps make policy changes declarative. A repaired row is reopened only when its stamp is
-below the current `completionpercent`; an unchanged or lower target selects nothing. That higher-
-target pass is upside-only: reaching the new target advances the stamp, while falling short keeps
-the non-deletable `repaired` verdict and records that it was judged under the new target. Either
-way the same target does not select the row repeatedly. Rows that have never met a target still
-follow the normal `retry-pending` to `failed` path.
+Target stamps make policy changes declarative. A repaired row is reopened only when its latest
+evaluated target is below the current `completionpercent`; an unchanged or lower target selects
+nothing. That higher-target pass is upside-only: reaching the new target advances both stamps,
+while falling short preserves the earlier achieved target and advances only the evaluated target.
+Either way the same target does not select the row repeatedly. Rows that have never met a target
+still follow the normal `retry-pending` to `failed` path.
 
 A pass that could not *run* — no NZB on disk, an unparseable NZB, an NZB that could not be
 written back — records nothing at all. Those say something about our storage, not about whether
@@ -240,8 +241,9 @@ lines have been read). The repair engine's own tunables live there too:
 `repair_max_stat_probes`, `repair_limit`. CLI flags override any of them for one run.
 
 `rescan_outcome` / `rescan_attempted_at` mirror the repair columns and use the same enum, plus
-`skipped-budget`; `rescan_target_completion` carries the target for a repaired verdict. Two passes
-maximum for rows that have never met a target, same as repair. Never-attempted releases are taken
+`skipped-budget`; `rescan_target_completion` carries the achieved target for a repaired verdict,
+and `rescan_evaluated_target_completion` prevents the same higher policy from reopening it again.
+Two passes maximum for rows that have never met a target, same as repair. Never-attempted releases are taken
 **smallest shortfall first**: a release missing two files of forty is both likeliest to be
 recovered and cheapest to try, while one missing seven hundred is a posting session that never
 arrived. Releases whose declared count has not been derived yet have no known shortfall, so they

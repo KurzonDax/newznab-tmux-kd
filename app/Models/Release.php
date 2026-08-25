@@ -78,8 +78,10 @@ class Release extends Model
         return [
             'repair_outcome' => ReleaseRepairOutcome::class,
             'repair_target_completion' => 'float',
+            'repair_evaluated_target_completion' => 'float',
             'rescan_outcome' => ReleaseRepairOutcome::class,
             'rescan_target_completion' => 'float',
+            'rescan_evaluated_target_completion' => 'float',
         ];
     }
 

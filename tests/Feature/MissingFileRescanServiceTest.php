@@ -70,6 +70,7 @@ class MissingFileRescanServiceTest extends TestCase
         $this->assertTrue($result->nzbRewritten);
         $this->assertSame('repaired', $this->storedOutcome(1));
         $this->assertSame(95.0, (float) DB::table('releases')->where('id', 1)->value('rescan_target_completion'));
+        $this->assertSame(95.0, (float) DB::table('releases')->where('id', 1)->value('rescan_evaluated_target_completion'));
 
         $nzb = $this->storedNzb($release);
         $this->assertStringContainsString('[3/3] - &quot;Example.part03.rar&quot; yEnc (1/2)', $nzb);
@@ -185,7 +186,9 @@ class MissingFileRescanServiceTest extends TestCase
         $result = $this->service()->rescan($release, $this->rescanOptions(targetCompletion: 99.0), $this->budget());
 
         $this->assertSame(ReleaseRepairOutcome::Repaired, $result->outcome);
-        $this->assertSame(99.0, (float) DB::table('releases')->where('id', 1)->value('rescan_target_completion'));
+        $stored = DB::table('releases')->where('id', 1)->first();
+        $this->assertSame(95.0, (float) $stored->rescan_target_completion);
+        $this->assertSame(99.0, (float) $stored->rescan_evaluated_target_completion);
         $this->assertFalse($result->outcome->isFinal(), 'Raising policy must never make grandfathered content deletable.');
     }
 
@@ -206,6 +209,7 @@ class MissingFileRescanServiceTest extends TestCase
 
         $this->assertSame('repaired', $stored->repair_outcome);
         $this->assertSame(95.0, (float) $stored->repair_target_completion);
+        $this->assertSame(95.0, (float) $stored->repair_evaluated_target_completion);
     }
 
     #[Test]
@@ -673,9 +677,11 @@ class MissingFileRescanServiceTest extends TestCase
             'lastarticle' => $lastArticle,
             'repair_outcome' => $repairOutcome?->value,
             'repair_target_completion' => $repairTargetCompletion,
+            'repair_evaluated_target_completion' => $repairTargetCompletion,
             'rescan_outcome' => $rescanOutcome?->value,
             'rescan_attempted_at' => $rescanAttemptedAt,
             'rescan_target_completion' => $rescanTargetCompletion,
+            'rescan_evaluated_target_completion' => $rescanTargetCompletion,
             'postdate' => '2024-01-02 00:00:00',
         ]);
 
@@ -729,9 +735,11 @@ class MissingFileRescanServiceTest extends TestCase
             repair_attempted_at DATETIME NULL,
             repair_outcome VARCHAR(16) NULL,
             repair_target_completion DOUBLE NULL,
+            repair_evaluated_target_completion DOUBLE NULL,
             rescan_attempted_at DATETIME NULL,
             rescan_outcome VARCHAR(16) NULL,
             rescan_target_completion DOUBLE NULL,
+            rescan_evaluated_target_completion DOUBLE NULL,
             recovery_claimed_at DATETIME NULL,
             postdate DATETIME NULL,
             haspreview INTEGER NOT NULL DEFAULT -1,

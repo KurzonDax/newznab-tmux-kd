@@ -71,6 +71,7 @@ class ReleaseRepairServiceTest extends TestCase
 
         $this->assertSame('repaired', $this->storedOutcome(1));
         $this->assertSame(95.0, (float) DB::table('releases')->where('id', 1)->value('repair_target_completion'));
+        $this->assertSame(95.0, (float) DB::table('releases')->where('id', 1)->value('repair_evaluated_target_completion'));
         $this->assertSame(100.0, (float) DB::table('releases')->where('id', 1)->value('completion'));
         $this->assertStringContainsString('part5of5.Tok@host', $this->storedNzb($release));
     }
@@ -207,7 +208,9 @@ class ReleaseRepairServiceTest extends TestCase
 
         $this->assertSame(ReleaseRepairOutcome::Repaired, $result->outcome);
         $this->assertSame('repaired', $this->storedOutcome(1));
-        $this->assertSame(99.0, (float) DB::table('releases')->where('id', 1)->value('repair_target_completion'));
+        $stored = DB::table('releases')->where('id', 1)->first();
+        $this->assertSame(95.0, (float) $stored->repair_target_completion);
+        $this->assertSame(99.0, (float) $stored->repair_evaluated_target_completion);
         $this->assertFalse($result->outcome->isFinal(), 'Raising policy must never make grandfathered content deletable.');
     }
 
@@ -456,6 +459,7 @@ class ReleaseRepairServiceTest extends TestCase
             'repair_outcome' => $outcome?->value,
             'repair_attempted_at' => $attemptedAt,
             'repair_target_completion' => $targetCompletion,
+            'repair_evaluated_target_completion' => $targetCompletion,
             'postdate' => '2024-01-01 00:00:00',
             'haspreview' => -1,
             'passwordstatus' => -1,
@@ -513,6 +517,7 @@ class ReleaseRepairServiceTest extends TestCase
             repair_attempted_at DATETIME NULL,
             repair_outcome VARCHAR(16) NULL,
             repair_target_completion DOUBLE NULL,
+            repair_evaluated_target_completion DOUBLE NULL,
             recovery_claimed_at DATETIME NULL,
             postdate DATETIME NULL,
             haspreview INTEGER NOT NULL DEFAULT -1,

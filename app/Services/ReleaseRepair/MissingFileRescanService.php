@@ -475,19 +475,7 @@ final class MissingFileRescanService
         if ($release->rescan_outcome === ReleaseRepairOutcome::Repaired
             && $result->outcome !== null
             && $result->outcome !== ReleaseRepairOutcome::Repaired) {
-            $result = new MissingFileRescanResult(
-                outcome: ReleaseRepairOutcome::Repaired,
-                completionBefore: $result->completionBefore,
-                completionAfter: $result->completionAfter,
-                declaredFiles: $result->declaredFiles,
-                filesHeld: $result->filesHeld,
-                filesRecovered: $result->filesRecovered,
-                segmentsAdded: $result->segmentsAdded,
-                articlesRequested: $result->articlesRequested,
-                overviewLinesFetched: $result->overviewLinesFetched,
-                nzbRewritten: $result->nzbRewritten,
-                reason: $result->reason,
-            );
+            $result = $result->withOutcome(ReleaseRepairOutcome::Repaired);
         }
 
         if ($options->dryRun) {
@@ -497,12 +485,19 @@ final class MissingFileRescanService
         $values = [];
 
         if ($result->outcome !== null) {
+            $preservesEarlierAchievement = $release->rescan_outcome === ReleaseRepairOutcome::Repaired
+                && $result->outcome === ReleaseRepairOutcome::Repaired
+                && $result->completionAfter < $options->targetCompletion;
+
             $values = [
                 'rescan_attempted_at' => Carbon::now(),
                 'rescan_outcome' => $result->outcome->value,
                 'rescan_target_completion' => $result->outcome === ReleaseRepairOutcome::Repaired
-                    ? $options->targetCompletion
+                    ? ($preservesEarlierAchievement
+                        ? $release->rescan_target_completion
+                        : $options->targetCompletion)
                     : null,
+                'rescan_evaluated_target_completion' => $options->targetCompletion,
             ];
         }
 
@@ -513,6 +508,7 @@ final class MissingFileRescanService
                 && $release->repair_outcome === ReleaseRepairOutcome::RetryPending) {
                 $values['repair_outcome'] = ReleaseRepairOutcome::Repaired->value;
                 $values['repair_target_completion'] = $options->targetCompletion;
+                $values['repair_evaluated_target_completion'] = $options->targetCompletion;
             }
         }
 
