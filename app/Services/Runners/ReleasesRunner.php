@@ -6,12 +6,17 @@ namespace App\Services\Runners;
 
 use App\Models\Settings;
 use App\Models\UsenetGroup;
+use App\Services\NameFixing\NameFixingQueryService;
 use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class ReleasesRunner extends BaseRunner
 {
+    public function __construct(
+        private readonly NameFixingQueryService $queries = new NameFixingQueryService,
+    ) {}
+
     public function releases(): void
     {
         $groups = DB::select('SELECT id, name FROM usenet_groups WHERE (active = 1 OR backfill = 1)');
@@ -132,11 +137,10 @@ class ReleasesRunner extends BaseRunner
         $leftGuids = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'];
 
         if ($mode === 'predbft') {
-            $preCount = DB::select(
-                "SELECT COUNT(p.id) AS num FROM predb p WHERE LENGTH(p.title) >= 15 AND p.title NOT REGEXP '[\"\<\> ]' AND p.searched = 0 AND p.predate < (NOW() - INTERVAL 1 DAY)"
-            );
-            if (! empty($preCount) && (int) $preCount[0]->num > 0 && $maxPerRun > 0) {
-                $leftGuids = \array_slice($leftGuids, 0, (int) ceil($preCount[0]->num / $maxPerRun));
+            $preCount = $this->queries->predbCandidateCount();
+            if ($preCount > 0 && $maxPerRun > 0) {
+                $workerCount = min($maxThreads, (int) ceil($preCount / $maxPerRun));
+                $leftGuids = \array_slice($leftGuids, 0, $workerCount);
             } else {
                 $leftGuids = [];
             }

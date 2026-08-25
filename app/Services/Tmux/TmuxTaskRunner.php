@@ -412,7 +412,8 @@ class TmuxTaskRunner
     protected function runFixNamesTask(array $runVar): bool
     {
         $enabled = (int) ($runVar['settings']['fix_names'] ?? 0);
-        $work = (int) ($runVar['counts']['now']['processrenames'] ?? 0);
+        $work = (int) ($runVar['counts']['now']['processrenames'] ?? 0)
+            + (int) ($runVar['counts']['now']['processpredbft'] ?? 0);
         $pane = $this->paneManager->paneForRole(TmuxPaneRole::FixNames, '1.0');
 
         if ($enabled !== 1) {
@@ -453,6 +454,13 @@ class TmuxTaskRunner
         $steps[] = $this->boundedStep(
             'fix-names standard sweep',
             "php {$artisan} multiprocessing:fixrelnames standard",
+            $timeout,
+            $log
+        );
+
+        $steps[] = $this->boundedStep(
+            'fix-names predb full-text sweep',
+            "php {$artisan} multiprocessing:fixrelnames predbft",
             $timeout,
             $log
         );

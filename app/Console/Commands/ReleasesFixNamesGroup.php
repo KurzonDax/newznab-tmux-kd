@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Enums\PredbSearchStatus;
 use App\Services\NameFixing\NameFixingQueryService;
 use App\Services\NameFixing\NameFixingService;
 use App\Services\NfoService;
 use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbContentsService;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -151,9 +153,9 @@ class ReleasesFixNamesGroup extends Command
         $bar = $this->output->createProgressBar(count($pres));
         $bar->start();
 
+        /** @var list<array{predb_id: int, searched: int, next_predb_search_at: string|null}> $outcomes */
+        $outcomes = [];
         foreach ($pres as $pre) {
-            $searched = 0;
-
             try {
                 $ftmatched = $this->nameFixingService->matchPredbFulltext($pre);
             } catch (RuntimeException $exception) {
@@ -165,18 +167,35 @@ class ReleasesFixNamesGroup extends Command
             }
 
             if ($ftmatched > 0) {
-                $searched = 1;
+                $status = PredbSearchStatus::Matched;
             } elseif ($ftmatched < 0) {
-                $searched = -6;
+                $status = PredbSearchStatus::Flood;
             } else {
-                $searched = (int) $pre->searched - 1;
+                $current = PredbSearchStatus::from((int) $pre->searched);
+                $status = $current->afterMiss();
             }
 
-            DB::update('UPDATE predb SET searched = ? WHERE id = ?', [$searched, $pre->predb_id]);
-            $this->checked++;
+            $delayDays = $status->retryDelayDays();
+            $outcomes[] = [
+                'predb_id' => (int) $pre->predb_id,
+                'searched' => $status->value,
+                'next_predb_search_at' => $delayDays === null
+                    ? null
+                    : CarbonImmutable::now()->addDays($delayDays)->toDateTimeString(),
+            ];
 
             $bar->advance();
         }
+
+        DB::transaction(static function () use ($outcomes): void {
+            foreach ($outcomes as $outcome) {
+                DB::table('predb')->where('id', $outcome['predb_id'])->update([
+                    'searched' => $outcome['searched'],
+                    'next_predb_search_at' => $outcome['next_predb_search_at'],
+                ]);
+            }
+        });
+        $this->checked += count($outcomes);
 
         $bar->finish();
         $this->newLine(2);

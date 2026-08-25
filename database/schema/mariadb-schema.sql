@@ -701,6 +701,7 @@ CREATE TABLE `predb` (
   `files` varchar(50) DEFAULT NULL COMMENT 'How many files does this pre have ?',
   `filename` varchar(255) NOT NULL DEFAULT '',
   `searched` tinyint(1) NOT NULL DEFAULT 0,
+  `next_predb_search_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `ix_predb_title` (`title`),
   KEY `ix_predb_requestid` (`requestid`,`groups_id`),
@@ -709,6 +710,7 @@ CREATE TABLE `predb` (
   KEY `ix_predb_source` (`source`),
   KEY `ix_predb_searched` (`searched`),
   KEY `ix_predb_searched_predate_id` (`searched`,`predate`,`id`),
+  KEY `ix_predb_search_lifecycle` (`searched`,`next_predb_search_at`,`predate`,`id`),
   FULLTEXT KEY `ft_predb_filename` (`filename`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_unicode_ci;
 DROP TABLE IF EXISTS `predb_crcs`;

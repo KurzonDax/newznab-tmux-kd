@@ -28,7 +28,8 @@ use Illuminate\Support\Facades\Cache;
  * @property string|null $nukereason If this pre is nuked, what is the reason?
  * @property string|null $files How many files does this pre have ?
  * @property string $filename
- * @property bool $searched
+ * @property int $searched
+ * @property string|null $next_predb_search_at
  *
  * @method static \Illuminate\Database\Eloquent\Builder|\App\Models\Predb whereCategory($value)
  * @method static \Illuminate\Database\Eloquent\Builder|\App\Models\Predb whereFilename($value)

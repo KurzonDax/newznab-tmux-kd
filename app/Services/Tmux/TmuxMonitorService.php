@@ -249,6 +249,13 @@ class TmuxMonitorService
         }
 
         try {
+            $this->runVar['counts']['now']['processpredbft'] = app(NameFixingQueryService::class)
+                ->predbCandidateCount();
+        } catch (\Exception $e) {
+            logger()->error('Error collecting the PreDB full-text backlog: '.$e->getMessage());
+        }
+
+        try {
             $dbName = config('nntmux.db_name');
 
             $proc1Query = $this->tmux->proc_query(1, $dbName, '');
@@ -466,6 +473,7 @@ class TmuxMonitorService
             'processmovies' => 0,
             'processmusic' => 0,
             'processnfo' => 0,
+            'processpredbft' => 0,
             'processrenames' => 0,
             'processtv' => 0,
             'releases' => 0,

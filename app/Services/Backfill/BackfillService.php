@@ -7,6 +7,7 @@ namespace App\Services\Backfill;
 use App\Models\Settings;
 use App\Models\UsenetGroup;
 use App\Services\Binaries\BinariesService;
+use App\Services\NameFixing\PredbSearchLifecycle;
 use App\Services\NNTP\NNTPService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
@@ -35,6 +36,7 @@ final class BackfillService
         ?BackfillConfig $config = null,
         ?BinariesService $binaries = null,
         ?NNTPService $nntp = null,
+        private PredbSearchLifecycle $predbSearchLifecycle = new PredbSearchLifecycle,
     ) {
         $this->config = $config ?? BackfillConfig::fromSettings();
         $this->binaries = $binaries ?? new BinariesService;
@@ -352,6 +354,15 @@ final class BackfillService
             $scanResult = $this->binaries->scan($groupArr, $first, $last, $this->config->safePartRepair);
 
             $this->updateGroupRecord($groupArr, $first, $scanResult);
+            $firstArticleDate = $scanResult['firstArticleDate'] ?? null;
+            $lastArticleDate = $scanResult['lastArticleDate'] ?? null;
+            if (is_string($firstArticleDate) && $firstArticleDate !== ''
+                && is_string($lastArticleDate) && $lastArticleDate !== '') {
+                $this->predbSearchLifecycle->rearmForBackfillWindow(
+                    Carbon::parse($firstArticleDate),
+                    Carbon::parse($lastArticleDate),
+                );
+            }
 
             if ($first === $targetPost) {
                 break;
@@ -369,7 +380,7 @@ final class BackfillService
      * @param  array<string, mixed>  $groupArr
      * @param  array<string, mixed>  $scanResult
      */
-    private function updateGroupRecord(array $groupArr, int $first, ?array $scanResult): void
+    private function updateGroupRecord(array $groupArr, int $first, array $scanResult): void
     {
         $newDate = isset($scanResult['firstArticleDate'])
             ? strtotime($scanResult['firstArticleDate'])

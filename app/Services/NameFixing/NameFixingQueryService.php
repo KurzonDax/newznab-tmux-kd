@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\NameFixing;
 
+use App\Enums\PredbSearchStatus;
 use App\Models\Category;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\ConnectionInterface;
@@ -349,24 +350,46 @@ final class NameFixingQueryService
     {
         $workerCount = max(1, min(16, $workers));
         $workerSlot = max(1, min($workerCount, $worker)) - 1;
+        $now = CarbonImmutable::now();
 
         return $this->database->select(
             'SELECT p.id AS predb_id, p.title, p.source, p.searched
              FROM predb p
-             WHERE LENGTH(p.title) >= 15
-             AND p.title NOT REGEXP \'["<> ]\'
-             AND p.searched = 0
-             AND p.predate < ?
+             WHERE '.$this->predbEligibilitySql().'
              AND MOD(p.id, ?) = ?
              ORDER BY p.predate ASC, p.id ASC
              LIMIT ?',
             [
-                CarbonImmutable::now()->subDay()->toDateTimeString(),
+                $now->toDateTimeString(),
+                $now->subDay()->toDateTimeString(),
                 $workerCount,
                 $workerSlot,
                 max(1, $limit),
             ]
         );
+    }
+
+    public function predbCandidateCount(): int
+    {
+        $now = CarbonImmutable::now();
+        $rows = $this->database->select(
+            'SELECT COUNT(p.id) AS num FROM predb p WHERE '.$this->predbEligibilitySql(),
+            [$now->toDateTimeString(), $now->subDay()->toDateTimeString()],
+        );
+
+        return (int) ($rows[0]->num ?? 0);
+    }
+
+    private function predbEligibilitySql(): string
+    {
+        return 'LENGTH(p.title) >= 15
+                AND p.title NOT LIKE \'%"%\'
+                AND p.title NOT LIKE \'%<%\'
+                AND p.title NOT LIKE \'%>%\'
+                AND p.title NOT LIKE \'% %\'
+                AND p.searched IN ('.implode(',', PredbSearchStatus::retryableValues()).')
+                AND (p.next_predb_search_at IS NULL OR p.next_predb_search_at <= ?)
+                AND p.predate < ?';
     }
 
     /**
