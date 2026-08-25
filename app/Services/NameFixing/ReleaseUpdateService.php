@@ -200,20 +200,30 @@ class ReleaseUpdateService
             // Determine if the source is trusted enough to bypass plausibility checks
             $sourceTrust = $this->sourceTrustPolicy($type, $method, $preId);
             $trustedSource = $sourceTrust['bypass_plausibility'];
+            $currentNameObfuscated = $this->fileNameCleaner->currentNameLooksObfuscated(
+                (string) $release->searchname,
+                (int) ($release->categories_id ?? $release->categoryid ?? 0),
+                isset($release->matchedBy)
+                    ? (string) $release->matchedBy
+                    : (isset($release->matched_by) ? (string) $release->matched_by : null),
+            );
             $acceptedDescriptiveTitle = $descriptiveTitleCandidate
                 && $this->fileNameCleaner->isDescriptiveTitle($name)
-                && $this->fileNameCleaner->currentNameLooksObfuscated(
-                    (string) $release->searchname,
-                    (int) ($release->categories_id ?? $release->categoryid ?? 0),
-                    isset($release->matchedBy)
-                        ? (string) $release->matchedBy
-                        : (isset($release->matched_by) ? (string) $release->matched_by : null),
-                );
+                && $currentNameObfuscated;
 
             if (! $trustedSource
                 && ! $acceptedDescriptiveTitle
                 && ! $this->fileNameCleaner->isPlausibleReleaseTitle($normalizedName)) {
                 // Skip low-quality rename candidates for untrusted sources
+                $this->done = true;
+
+                return;
+            }
+
+            if (! $trustedSource
+                && ! $acceptedDescriptiveTitle
+                && ! $currentNameObfuscated
+                && $this->fileNameCleaner->isLessInformativeThan($normalizedName, (string) $release->searchname)) {
                 $this->done = true;
 
                 return;

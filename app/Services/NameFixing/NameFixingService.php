@@ -1538,16 +1538,16 @@ class NameFixingService
                 break;
 
             case 'Filenames, ':
-                // Try direct file name extraction first (handles NZBSPLIT wrappers)
+                // Try authoritative PreDB filename matching before generic extraction.
+                if (! $this->updateService->matched) {
+                    $this->preDbFileCheck($release, $echo, $type, $nameStatus, $show);
+                }
+                // Fall back to direct extraction (including NZBSPLIT wrappers).
                 if (! $this->updateService->matched) {
                     $result = $this->fileExtractor->extractFromFile($release->textstring);
                     if ($result !== null) {
                         $this->updateService->updateRelease($release, $result->newName, 'fileCheck: '.$result->method, $echo, $type, $nameStatus, $show);
                     }
-                }
-                // Try PreDB file check
-                if (! $this->updateService->matched) {
-                    $this->preDbFileCheck($release, $echo, $type, $nameStatus, $show);
                 }
                 break;
 
