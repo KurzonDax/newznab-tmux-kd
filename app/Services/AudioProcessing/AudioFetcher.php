@@ -163,7 +163,10 @@ final class AudioFetcher
                     $listing = $this->archiveService->listArchiveContentsAtPath($archivePath);
 
                     if ($listing['hasPassword']) {
-                        return AudioFetchResult::failed('The archive is password protected.');
+                        return AudioFetchResult::failed(
+                            'The archive is password protected.',
+                            archivePassworded: true,
+                        );
                     }
 
                     foreach ($listing['files'] as $file) {

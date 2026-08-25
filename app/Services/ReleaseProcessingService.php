@@ -599,7 +599,16 @@ final class ReleaseProcessingService
 
         $normalizedGroupId = $this->normalizeGroupId($groupID);
         $groupIDs = $normalizedGroupId === null
-            ? UsenetGroup::getActiveIDs()
+            ? UsenetGroup::query()
+                ->whereExists(static function (Builder $query): void {
+                    $query->selectRaw('1')
+                        ->from('collections')
+                        ->whereColumn('collections.groups_id', 'usenet_groups.id')
+                        ->where('collections.filecheck', CollectionFileCheckStatus::Sized->value)
+                        ->where('collections.filesize', '>', 0);
+                })
+                ->orderBy('name')
+                ->get(['id'])
             : [['id' => $normalizedGroupId]];
 
         $stats = ['minSize' => 0, 'maxSize' => 0, 'minFiles' => 0, 'par2Only' => 0];
@@ -960,7 +969,14 @@ final class ReleaseProcessingService
         }
 
         $groupIDs = $groupID === ''
-            ? UsenetGroup::getActiveIDs()
+            ? UsenetGroup::query()
+                ->whereExists(static function (Builder $query): void {
+                    $query->selectRaw('1')
+                        ->from('releases')
+                        ->whereColumn('releases.groups_id', 'usenet_groups.id');
+                })
+                ->orderBy('name')
+                ->get(['id'])
             : [['id' => $groupID]];
 
         foreach ($groupIDs as $grpID) {
@@ -1241,10 +1257,6 @@ final class ReleaseProcessingService
      */
     private function deleteReleasesUnderMinFiles(int|string $groupId, array &$stats): void
     {
-        if ($this->settings->minFilesToFormRelease <= 0) {
-            return;
-        }
-
         $releases = $this->releaseSweepQuery()
             ->where('releases.groups_id', $groupId)
             ->join('usenet_groups', 'usenet_groups.id', '=', 'releases.groups_id')

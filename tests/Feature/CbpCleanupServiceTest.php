@@ -40,6 +40,7 @@ class CbpCleanupServiceTest extends TestCase
             'nntmux_settings.unrar_path' => '/usr/bin/unrar',
         ]);
         $this->registerSqliteFunction('UNIX_TIMESTAMP', static fn (?string $value): int => strtotime((string) $value));
+        $this->registerSqliteFunction('GREATEST', static fn (mixed ...$values): mixed => max($values));
         $this->registerSqliteFunction(
             'REGEXP',
             static function (?string $subject, ?string $pattern): int {
@@ -166,6 +167,46 @@ class CbpCleanupServiceTest extends TestCase
 
         $this->assertFalse(DB::table('collections')->where('id', 130)->exists());
         $this->assertTrue(DB::table('collections')->where('id', 131)->exists());
+    }
+
+    public function test_inactive_groups_with_sized_collections_keep_their_quality_policy(): void
+    {
+        DB::table('usenet_groups')->insert([
+            'id' => 2,
+            'name' => 'alt.inactive',
+            'active' => 0,
+            'minsizetoformrelease' => 1000,
+            'minfilestoformrelease' => 3,
+        ]);
+
+        $this->insertSizedCollectionTree(140, 2, 500, 5);
+        $this->insertSizedCollectionTree(141, 2, 6000, 5);
+        $this->insertSizedCollectionTree(142, 2, 2000, 1);
+
+        app(ReleaseProcessingService::class)->setEchoCLI(false)->deleteUnwantedCollections(null);
+
+        $this->assertDatabaseMissing('collections', ['id' => 140]);
+        $this->assertDatabaseMissing('collections', ['id' => 141]);
+        $this->assertDatabaseMissing('collections', ['id' => 142]);
+        $this->assertSame(0, DB::table('binaries')->whereIn('collections_id', [140, 141, 142])->count());
+        $this->assertSame(0, DB::table('parts')->whereIn('binaries_id', [1400, 1410, 1420])->count());
+    }
+
+    public function test_inactive_groups_with_releases_are_included_in_per_group_cleanup(): void
+    {
+        DB::table('usenet_groups')->insert([
+            'id' => 2,
+            'name' => 'alt.inactive',
+            'active' => 0,
+            'minsizetoformrelease' => 0,
+            'minfilestoformrelease' => 200,
+        ]);
+        $this->insertRelease(140, 'Inactive.Underfilled.Release', 1000, groupId: 2);
+        Search::shouldReceive('deleteReleases')->once()->with([140]);
+
+        app(ReleaseProcessingService::class)->setEchoCLI(false)->deletedReleasesByGroup();
+
+        $this->assertDatabaseMissing('releases', ['id' => 140]);
     }
 
     public function test_nzb_creation_cleans_up_collection_binary_and_parts_explicitly(): void
@@ -721,7 +762,7 @@ class CbpCleanupServiceTest extends TestCase
         $this->assertSame('normalized_searchname_match', $reason);
     }
 
-    private function insertRelease(int $id, string $searchName, int $size): void
+    private function insertRelease(int $id, string $searchName, int $size, int $groupId = 1): void
     {
         DB::table('releases')->insert([
             'id' => $id,
@@ -729,7 +770,7 @@ class CbpCleanupServiceTest extends TestCase
             'searchname' => $searchName,
             'searchname_normalized' => ReleaseNameNormalizer::normalize($searchName),
             'totalpart' => 135,
-            'groups_id' => 1,
+            'groups_id' => $groupId,
             'adddate' => now()->format('Y-m-d H:i:s'),
             'guid' => str_pad((string) $id, 36, 'g'),
             'leftguid' => 'g',
@@ -755,6 +796,9 @@ class CbpCleanupServiceTest extends TestCase
             'collection_timeout' => '48',
             'last_run_time' => '',
             'partretentionhours' => '1',
+            'maxsizetoformrelease' => '5000',
+            'minsizetoformrelease' => '0',
+            'minfilestoformrelease' => '0',
             'nzbsplitlevel' => '1',
             'check_passworded_rars' => '0',
             'categorizeforeign' => '1',
@@ -769,7 +813,13 @@ class CbpCleanupServiceTest extends TestCase
     private function createTables(): void
     {
         DB::statement('CREATE TABLE settings (name VARCHAR(255) PRIMARY KEY, value TEXT)');
-        DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name VARCHAR(255))');
+        DB::statement('CREATE TABLE usenet_groups (
+            id INTEGER PRIMARY KEY,
+            name VARCHAR(255),
+            active INTEGER NOT NULL DEFAULT 1,
+            minsizetoformrelease INTEGER NULL,
+            minfilestoformrelease INTEGER NULL
+        )');
         DB::statement('CREATE TABLE categories (id INTEGER PRIMARY KEY, title VARCHAR(255), parent_categories_id INTEGER NULL)');
         DB::statement('CREATE TABLE releases (
             id INTEGER PRIMARY KEY,
@@ -923,6 +973,42 @@ class CbpCleanupServiceTest extends TestCase
             'binaries_id' => $id * 10,
             'number' => 1,
             'messageid' => "<database-clock-{$id}@example.com>",
+            'partnumber' => 1,
+            'size' => 10,
+        ]);
+    }
+
+    private function insertSizedCollectionTree(int $id, int $groupId, int $fileSize, int $totalFiles): void
+    {
+        $timestamp = now()->format('Y-m-d H:i:s');
+        DB::table('collections')->insert([
+            'id' => $id,
+            'subject' => "Inactive.Group.Policy.{$id}",
+            'fromname' => 'poster@example.com',
+            'date' => $timestamp,
+            'dateadded' => $timestamp,
+            'added' => $timestamp,
+            'last_seen_at' => $timestamp,
+            'xref' => "alt.inactive:{$id}",
+            'groups_id' => $groupId,
+            'totalfiles' => $totalFiles,
+            'filesize' => $fileSize,
+            'filecheck' => CollectionFileCheckStatus::Sized->value,
+            'collectionhash' => "inactive-policy-{$id}",
+            'collection_regexes_id' => 0,
+            'releases_id' => null,
+            'noise' => '',
+        ]);
+        DB::table('binaries')->insert([
+            'id' => $id * 10,
+            'name' => "Inactive.Group.Policy.{$id}.rar",
+            'collections_id' => $id,
+            'totalparts' => 1,
+        ]);
+        DB::table('parts')->insert([
+            'binaries_id' => $id * 10,
+            'number' => 1,
+            'messageid' => "<inactive-policy-{$id}@example.com>",
             'partnumber' => 1,
             'size' => 10,
         ]);
