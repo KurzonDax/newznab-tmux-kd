@@ -39,6 +39,8 @@ class NzbImportService
 
     protected ReleaseDuplicateFinder $releaseDuplicateFinder;
 
+    protected NzbParserService $parserService;
+
     /**
      * List of all the group names/ids in the DB.
      *
@@ -78,6 +80,7 @@ class NzbImportService
         $this->nzb = app(NzbService::class);
         $this->releaseCleaner = new ReleaseCleaningService;
         $this->releaseDuplicateFinder = app(ReleaseDuplicateFinder::class);
+        $this->parserService = app(NzbParserService::class);
         $this->crossPostt = Settings::settingValue('crossposttime') !== '' ? Settings::settingValue('crossposttime') : 2;
 
         // Set properties from options
@@ -370,6 +373,7 @@ class NzbImportService
     {
         $binary_names = [];
         $segmentMessageIds = [];
+        $completion = new CompletionTally;
         $totalFiles = $totalSize = $groupID = 0;
         $isBlackListed = $groupName = $firstName = $posterName = $postDate = false;
 
@@ -439,8 +443,10 @@ class NzbImportService
             if ($groupID !== -1 && ! $isBlackListed) {
                 // Get the size of the release and collect the segment
                 // message-IDs for the deterministic import hash.
-                if (\count($file->segments->segment) > 0) {
-                    foreach ($file->segments->segment as $segment) {
+                $segments = $file->segments->segment;
+                $segmentCount = \count($segments);
+                if ($segmentCount > 0) {
+                    foreach ($segments as $segment) {
                         $totalSize += (int) $segment->attributes()->bytes;
                         $messageId = trim((string) $segment);
                         if ($messageId !== '') {
@@ -448,6 +454,13 @@ class NzbImportService
                         }
                     }
                 }
+
+                $subject = (string) $file->attributes()->subject;
+                $completion->addFile(
+                    $segmentCount,
+                    $this->parserService->extractPartsTotal($subject),
+                    $this->parserService->extractFilesTotal($subject),
+                );
             } else {
                 if ($isBlackListed) {
                     $errorMessage = 'Subject is blacklisted: '.mb_convert_encoding(trim($firstName), 'UTF-8', mb_list_encodings());
@@ -466,6 +479,8 @@ class NzbImportService
         // After scanning all files, persist any matched whitelist/blacklist usage
         $this->blacklistService->updateBlacklistUsage($this->blacklistService->getAndClearIdsToUpdate()); // @phpstan-ignore argument.type
 
+        $completionSignals = $completion->signals();
+
         // Try to insert the NZB details into the DB.
         return $this->insertNZB(
             [
@@ -477,6 +492,8 @@ class NzbImportService
                 'groupName' => $groupName,
                 'totalFiles' => $totalFiles,
                 'totalSize' => $totalSize,
+                'completion' => $completionSignals->percentage(),
+                'declaredFiles' => $completionSignals->filesDeclared,
                 'nzbCategoryId' => $this->resolveNzbCategoryId($nzbXML),
                 'segmentMessageIds' => $segmentMessageIds,
             ]
@@ -632,6 +649,7 @@ class NzbImportService
                     'name' => $escapedSubject,
                     'searchname' => $escapedSearchName,
                     'totalpart' => $nzbDetails['totalFiles'],
+                    'declaredfiles' => $nzbDetails['declaredFiles'],
                     'groups_id' => $nzbDetails['groups_id'],
                     'guid' => $this->relGuid,
                     'postdate' => $nzbDetails['postDate'],
@@ -642,6 +660,7 @@ class NzbImportService
                     'is_trusted_name' => $properlyNamed || $predbIdInt > 0,
                     'predb_id' => $predbIdInt,
                     'nzbstatus' => NzbService::NZB_ADDED,
+                    'completion' => $nzbDetails['completion'],
                     'collectionhash' => $importHash,
                 ]
             );
