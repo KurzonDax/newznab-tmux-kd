@@ -6,7 +6,6 @@ namespace App\Services\ReleaseRepair;
 
 use App\Enums\ReleaseRepairOutcome;
 use App\Models\Release;
-use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\NNTP\NntpProviderPool;
 use App\Services\Nzb\NzbParserService;
 use App\Services\Nzb\NzbService;
@@ -30,6 +29,7 @@ final class ReleaseRepairService
         private readonly NzbService $nzb,
         private readonly NntpProviderPool $pool,
         private readonly NzbParserService $parser = new NzbParserService,
+        private readonly EvidenceChangedTransition $evidenceChanged = new EvidenceChangedTransition,
     ) {}
 
     /**
@@ -144,7 +144,7 @@ final class ReleaseRepairService
 
         $requeued = ! $options->dryRun
             && $added > 0
-            && $this->requeueForAdditionalProcessing($release);
+            && $this->evidenceChanged->apply($release, $document);
 
         return $this->finish($release, $options, new ReleaseRepairResult(
             outcome: $outcome,
@@ -208,25 +208,6 @@ final class ReleaseRepairService
         }
 
         return [$accepted, $probes];
-    }
-
-    /**
-     * Re-open a repaired release to additional processing -- but only when it could gain from it.
-     *
-     * The reset costs an AP slot, so it is spent only where repair actually added segments and
-     * the release has nothing to show for its previous pass. A release that already carries
-     * media info or a preview is one AP cannot improve, and re-queuing it would displace a fresh
-     * release that could be.
-     */
-    private function requeueForAdditionalProcessing(Release $release): bool
-    {
-        if ($release->hasProcessingArtifacts()) {
-            return false;
-        }
-
-        Release::query()->where('id', $release->id)->update(ReleaseClaimant::rependValues());
-
-        return true;
     }
 
     /**

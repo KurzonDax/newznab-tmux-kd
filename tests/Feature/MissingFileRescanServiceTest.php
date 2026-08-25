@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Enums\ReleaseRepairOutcome;
 use App\Models\Release;
+use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\Binaries\BinariesService;
 use App\Services\NNTP\NNTPService;
@@ -108,12 +109,23 @@ class MissingFileRescanServiceTest extends TestCase
     }
 
     #[Test]
-    public function a_successful_rescan_does_not_requeue_settled_additional_processing(): void
+    public function a_successful_rescan_requeues_every_missed_evidence_consumer(): void
     {
         $release = $this->releaseHolding([1, 2], declaredFiles: 3, firstArticle: 1000, lastArticle: 1200);
         DB::table('releases')->where('id', $release->id)->update([
             'haspreview' => 0,
             'passwordstatus' => 0,
+            'nfostatus' => 0,
+            'proc_nfo' => 1,
+            'proc_files' => 1,
+            'proc_srr' => 1,
+            'proc_crc32' => 1,
+            'proc_uid' => 1,
+            'proc_hash16k' => 1,
+            'proc_par2' => 1,
+            'proc_srrdb' => 1,
+            'proc_xxx' => 1,
+            'proc_media_movie' => 1,
         ]);
         $this->groupCarries($this->articlesForFile(3, segments: 2, startingAt: 1150));
 
@@ -121,8 +133,38 @@ class MissingFileRescanServiceTest extends TestCase
         $stored = DB::table('releases')->where('id', $release->id)->first();
 
         $this->assertSame(ReleaseRepairOutcome::Repaired, $result->outcome);
+        $this->assertSame(3, (int) $stored->totalpart);
+        $this->assertSame(100.0, (float) $stored->completion);
+        $this->assertSame(-1, (int) $stored->haspreview);
+        $this->assertSame(PasswordInspectionMode::pendingReleaseStatus(), (int) $stored->passwordstatus);
+        $this->assertSame(-1, (int) $stored->nfostatus);
+
+        foreach ($this->nameSourceColumns() as $column) {
+            $this->assertSame(0, (int) $stored->{$column}, $column.' should be eligible once more.');
+        }
+    }
+
+    #[Test]
+    public function a_rescan_without_another_file_addition_does_not_repeat_the_evidence_transition(): void
+    {
+        $release = $this->releaseHolding([1, 2], declaredFiles: 3, firstArticle: 1000, lastArticle: 1200);
+        $this->groupCarries($this->articlesForFile(3, segments: 2, startingAt: 1150));
+
+        $this->service()->rescan($release, $this->rescanOptions(), $this->budget());
+        DB::table('releases')->where('id', $release->id)->update([
+            'haspreview' => 0,
+            'passwordstatus' => 0,
+            'nfostatus' => 0,
+            'proc_files' => 1,
+        ]);
+
+        $this->service()->rescan($release->fresh(), $this->rescanOptions(), $this->budget());
+        $stored = DB::table('releases')->where('id', $release->id)->first();
+
         $this->assertSame(0, (int) $stored->haspreview);
         $this->assertSame(0, (int) $stored->passwordstatus);
+        $this->assertSame(0, (int) $stored->nfostatus);
+        $this->assertSame(1, (int) $stored->proc_files);
     }
 
     #[Test]
@@ -718,6 +760,25 @@ class MissingFileRescanServiceTest extends TestCase
         return $value === null ? null : (string) $value;
     }
 
+    /**
+     * @return list<string>
+     */
+    private function nameSourceColumns(): array
+    {
+        return [
+            'proc_nfo',
+            'proc_files',
+            'proc_srr',
+            'proc_crc32',
+            'proc_uid',
+            'proc_hash16k',
+            'proc_par2',
+            'proc_srrdb',
+            'proc_xxx',
+            'proc_media_movie',
+        ];
+    }
+
     private function createSchema(): void
     {
         DB::statement('DROP TABLE IF EXISTS releases');
@@ -743,8 +804,24 @@ class MissingFileRescanServiceTest extends TestCase
             recovery_claimed_at DATETIME NULL,
             postdate DATETIME NULL,
             haspreview INTEGER NOT NULL DEFAULT -1,
-            passwordstatus INTEGER NOT NULL DEFAULT -1
+            passwordstatus INTEGER NOT NULL DEFAULT -1,
+            pp_timeout_count INTEGER NOT NULL DEFAULT 2,
+            predb_id INTEGER NOT NULL DEFAULT 0,
+            isrenamed INTEGER NOT NULL DEFAULT 0,
+            nfostatus INTEGER NOT NULL DEFAULT -1,
+            proc_nfo INTEGER NOT NULL DEFAULT 0,
+            proc_files INTEGER NOT NULL DEFAULT 0,
+            proc_srr INTEGER NOT NULL DEFAULT 0,
+            proc_crc32 INTEGER NOT NULL DEFAULT 0,
+            proc_uid INTEGER NOT NULL DEFAULT 0,
+            proc_hash16k INTEGER NOT NULL DEFAULT 0,
+            proc_par2 INTEGER NOT NULL DEFAULT 0,
+            proc_srrdb INTEGER NOT NULL DEFAULT 0,
+            proc_xxx INTEGER NOT NULL DEFAULT 0,
+            proc_media_movie INTEGER NOT NULL DEFAULT 0
         )');
+        DB::statement('CREATE TABLE video_data (releases_id INTEGER PRIMARY KEY, videocodec VARCHAR(255) NULL)');
+        DB::statement('CREATE TABLE audio_data (id INTEGER PRIMARY KEY, releases_id INTEGER, audioformat VARCHAR(255) NULL)');
         DB::statement('CREATE TABLE usenet_groups (
             id INTEGER PRIMARY KEY,
             name VARCHAR(255),
