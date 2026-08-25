@@ -67,12 +67,12 @@ class ReleaseRepairGateTest extends TestCase
     }
 
     #[Test]
-    public function the_never_measured_nzb_import_state_is_selected_by_no_recovery_or_sweep(): void
+    public function a_measured_nzb_import_is_selected_by_both_recovery_paths_before_the_sweep(): void
     {
-        $this->insertRelease(1, completion: 0.0, outcome: null, declaredFiles: null);
+        $this->insertRelease(1, completion: 50.0, outcome: null, declaredFiles: 2, totalPart: 1);
 
-        $this->assertTrue(ReleaseRepairCandidateQuery::batch(10, 95.0, 72)->isEmpty());
-        $this->assertTrue(RescanCandidateQuery::batch(10, 95.0, 72)->isEmpty());
+        $this->assertSame([1], ReleaseRepairCandidateQuery::batch(10, 95.0, 72)->pluck('id')->map(intval(...))->all());
+        $this->assertSame([1], RescanCandidateQuery::batch(10, 95.0, 72)->pluck('id')->map(intval(...))->all());
         $this->assertSame([], $this->sweptIds(95.0));
     }
 

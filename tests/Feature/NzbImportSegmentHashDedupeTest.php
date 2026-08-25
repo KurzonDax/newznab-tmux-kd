@@ -4,7 +4,12 @@ namespace Tests\Feature;
 
 use App\Enums\NzbImportStatus;
 use App\Facades\Search;
+use App\Models\Release;
+use App\Models\UsenetGroup;
+use App\Services\Binaries\BinariesConfig;
+use App\Services\Binaries\BinariesService;
 use App\Services\Nzb\NzbImportService;
+use App\Services\ReleaseRepair\RescanWindowResolver;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
@@ -42,14 +47,77 @@ class NzbImportSegmentHashDedupeTest extends TestCase
     public function test_import_persists_sorted_segment_message_id_hash(): void
     {
         $status = $this->scan($this->makeNzb([
-            ['subject' => 'Hashed.Import.Release', 'segments' => ['seg-b@example.com', 'seg-a@example.com']],
-            ['subject' => 'Hashed.Import.Release (2/2)', 'segments' => ['seg-c@example.com']],
+            ['subject' => '[1/2] Hashed.Import.Release.part01.rar yEnc (1/2)', 'segments' => ['seg-b@example.com', 'seg-a@example.com']],
+            ['subject' => '[2/2] Hashed.Import.Release.part02.rar yEnc (1/1)', 'segments' => ['seg-c@example.com']],
         ]));
 
         $this->assertSame(NzbImportStatus::Inserted, $status);
         $expected = sha1("seg-a@example.com\nseg-b@example.com\nseg-c@example.com", true);
         $this->assertSame($expected, DB::table('releases')->value('collectionhash'));
+        $this->assertSame(100.0, (float) DB::table('releases')->value('completion'));
+        $this->assertSame(2, DB::table('releases')->value('declaredfiles'));
+        $this->assertNull(DB::table('releases')->value('firstarticle'));
+        $this->assertNull(DB::table('releases')->value('lastarticle'));
+    }
+
+    public function test_import_measures_partial_nzb_without_nfo_processing(): void
+    {
+        $status = $this->scan($this->makeNzb([
+            ['subject' => '[1/2] Partial.Import.Release.part01.rar yEnc (1/4)', 'segments' => ['part1-1@example.com', 'part1-2@example.com']],
+            ['subject' => '[2/2] Partial.Import.Release.part02.rar yEnc (1/4)', 'segments' => ['part2-1@example.com', 'part2-2@example.com', 'part2-3@example.com', 'part2-4@example.com']],
+        ]));
+
+        $this->assertSame(NzbImportStatus::Inserted, $status);
+        $this->assertSame(75.0, (float) DB::table('releases')->value('completion'));
+        $this->assertSame(2, DB::table('releases')->value('declaredfiles'));
+    }
+
+    public function test_import_without_declared_totals_keeps_the_never_measured_sentinel(): void
+    {
+        $status = $this->scan($this->makeNzb([
+            ['subject' => 'Unmeasurable.Import.Release', 'segments' => ['unknown-total@example.com']],
+        ]));
+
+        $this->assertSame(NzbImportStatus::Inserted, $status);
         $this->assertSame(0.0, (float) DB::table('releases')->value('completion'));
+        $this->assertSame(0, DB::table('releases')->value('declaredfiles'));
+    }
+
+    public function test_import_without_article_anchors_resolves_its_rescan_window_from_postdate(): void
+    {
+        $status = $this->scan($this->makeNzb([
+            ['subject' => '[1/2] Rescan.Import.Release.part01.rar yEnc (1/2)', 'segments' => ['rescan-1@example.com']],
+        ]));
+
+        $this->assertSame(NzbImportStatus::Inserted, $status);
+
+        $binaries = new class(new BinariesConfig(echoCli: false)) extends BinariesService
+        {
+            /** @var list<int> */
+            public array $requestedTimestamps = [];
+
+            public function articleForTimestamp(int $goalTime, array $data): string
+            {
+                $this->requestedTimestamps[] = $goalTime;
+
+                return count($this->requestedTimestamps) === 1 ? '200' : '400';
+            }
+        };
+        $release = Release::query()->firstOrFail();
+        $group = UsenetGroup::query()->firstOrFail();
+        $window = (new RescanWindowResolver($binaries))->resolve(
+            $release,
+            $group,
+            ['first' => 1, 'last' => 1000, 'group' => 'alt.test'],
+            60,
+        );
+
+        $this->assertNotNull($window);
+        $this->assertFalse($window->anchored);
+        $this->assertSame(200, $window->first);
+        $this->assertSame(400, $window->last);
+        $postdate = strtotime((string) $release->postdate);
+        $this->assertSame([$postdate - 3600, $postdate + 3600], $binaries->requestedTimestamps);
     }
 
     public function test_reimport_with_rewritten_subject_is_duplicate_via_hash(): void
