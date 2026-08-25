@@ -4,12 +4,17 @@ declare(strict_types=1);
 
 namespace App\Services\Runners;
 
-use App\Models\Category;
 use App\Models\Settings;
 use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
 use App\Services\AdditionalProcessing\AdditionalProcessingOrchestrator;
 use App\Services\AudioProcessing\AudioCandidateQuery;
-use App\Services\NfoService;
+use App\Services\MetadataProcessing\AnimeProcessingCandidateQuery;
+use App\Services\MetadataProcessing\BookProcessingCandidateQuery;
+use App\Services\MetadataProcessing\ConsoleProcessingCandidateQuery;
+use App\Services\MetadataProcessing\GameProcessingCandidateQuery;
+use App\Services\MetadataProcessing\MovieProcessingCandidateQuery;
+use App\Services\MetadataProcessing\MusicProcessingCandidateQuery;
+use App\Services\MetadataProcessing\NfoProcessingCandidateQuery;
 use App\Services\TempWorkspaceService;
 use App\Services\TvProcessing\TvProcessingCandidateQuery;
 use Illuminate\Support\Facades\Concurrency;
@@ -154,69 +159,65 @@ class PostProcessRunner extends BaseRunner
     /**
      * @return array<int, object{id: string}>
      */
-    private function getBooksBuckets(): array
+    private function getBooksBuckets(int $lookupMode): array
     {
         $bucketExpr = $this->guidBucketExpression();
-        $workCondition = $this->bookWorkCondition();
 
-        return DB::select('
-            SELECT DISTINCT '.$bucketExpr.' AS id
-            FROM releases
-            WHERE (
-                categories_id BETWEEN '.Category::BOOKS_ROOT.' AND '.Category::BOOKS_UNKNOWN.'
-                OR categories_id = '.Category::MUSIC_AUDIOBOOK.'
-            )
-            AND '.$workCondition.'
-            LIMIT 16');
+        return BookProcessingCandidateQuery::query(lookupMode: $lookupMode)
+            ->selectRaw($bucketExpr.' AS id')
+            ->distinct()
+            ->limit(16)
+            ->toBase()
+            ->get()
+            ->all();
     }
 
     /**
      * @return array<int, object{id: string}>
      */
-    private function getMusicBuckets(): array
+    private function getMusicBuckets(int $lookupMode): array
     {
         $bucketExpr = $this->guidBucketExpression();
 
-        return DB::select('
-            SELECT DISTINCT '.$bucketExpr.' AS id
-            FROM releases
-            WHERE categories_id IN ('.Category::MUSIC_MP3.', '.Category::MUSIC_LOSSLESS.', '.Category::MUSIC_OTHER.')
-            AND musicinfo_id IS NULL
-            LIMIT 16');
+        return MusicProcessingCandidateQuery::query(lookupMode: $lookupMode)
+            ->selectRaw($bucketExpr.' AS id')
+            ->distinct()
+            ->limit(16)
+            ->toBase()
+            ->get()
+            ->all();
     }
 
     /**
      * @return array<int, object{id: string}>
      */
-    private function getConsoleBuckets(): array
+    private function getConsoleBuckets(int $lookupMode): array
     {
         $bucketExpr = $this->guidBucketExpression();
-        $renamedFilter = (int) Settings::settingValue('lookupgames') === 2 ? 'AND isrenamed = 1' : '';
 
-        return DB::select('
-            SELECT DISTINCT '.$bucketExpr.' AS id
-            FROM releases
-            WHERE categories_id BETWEEN '.Category::GAME_ROOT.' AND '.Category::GAME_OTHER.'
-            AND consoleinfo_id IS NULL
-            '.$renamedFilter.'
-            LIMIT 16');
+        return ConsoleProcessingCandidateQuery::query(lookupMode: $lookupMode)
+            ->selectRaw($bucketExpr.' AS id')
+            ->distinct()
+            ->limit(16)
+            ->toBase()
+            ->get()
+            ->all();
     }
 
     /**
      * @return array<int, object{id: string}>
      */
-    private function getGamesBuckets(): array
+    private function getGamesBuckets(int $lookupMode): array
     {
         $bucketExpr = $this->guidBucketExpression();
-        $renamedFilter = (int) Settings::settingValue('lookupgames') === 2 ? 'AND isrenamed = 1' : '';
 
-        return DB::select('
-            SELECT DISTINCT '.$bucketExpr.' AS id
-            FROM releases
-            WHERE categories_id = '.Category::PC_GAMES.'
-            AND gamesinfo_id = 0
-            '.$renamedFilter.'
-            LIMIT 16');
+        return GameProcessingCandidateQuery::query(lookupMode: $lookupMode)
+            ->selectRaw($bucketExpr.' AS id')
+            ->distinct()
+            ->limit(16)
+            ->toBase()
+            ->get()
+            ->all();
     }
 
     public function processAdditional(): void
@@ -387,28 +388,27 @@ class PostProcessRunner extends BaseRunner
 
     public function processNfo(): void
     {
-        if ((int) Settings::settingValue('lookupnfo') !== 1) {
+        $lookupMode = (int) Settings::settingValue('lookupnfo');
+        if ($lookupMode !== 1) {
             $this->headerNone();
 
             return;
         }
 
-        $nfoQuery = NfoService::NfoQueryString();
-
-        $checkSql = 'SELECT r.id FROM releases r WHERE 1=1 '.$nfoQuery.' LIMIT 1';
-        if (count(DB::select($checkSql)) === 0) {
+        if (! NfoProcessingCandidateQuery::query(lookupMode: $lookupMode)->exists()) {
             $this->headerNone();
 
             return;
         }
 
         $bucketExpr = $this->guidBucketExpression('r.leftguid');
-        $sql = '
-            SELECT DISTINCT '.$bucketExpr.' AS id
-            FROM releases r
-            WHERE 1=1 '.$nfoQuery.'
-            LIMIT 16';
-        $queue = DB::select($sql);
+        $queue = NfoProcessingCandidateQuery::query(lookupMode: $lookupMode)
+            ->selectRaw($bucketExpr.' AS id')
+            ->distinct()
+            ->limit(16)
+            ->toBase()
+            ->get()
+            ->all();
 
         $maxProcesses = (int) Settings::settingValue('nfothreads');
         $this->runPostProcess($queue, $maxProcesses, 'nfo', 'nfo postprocessing');
@@ -416,23 +416,18 @@ class PostProcessRunner extends BaseRunner
 
     public function processMovies(bool $renamedOnly): void
     {
-        if ((int) Settings::settingValue('lookupimdb') <= 0) {
+        $lookupMode = (int) Settings::settingValue('lookupimdb');
+        if ($lookupMode <= 0) {
             $this->headerNone();
 
             return;
         }
 
-        $condLookup = ((int) Settings::settingValue('lookupimdb') === 2 ? 'AND isrenamed = 1' : '');
-        $condRenamedOnly = ($renamedOnly ? 'AND isrenamed = 1' : '');
-
-        $checkSql = '
-            SELECT id
-            FROM releases
-            WHERE categories_id BETWEEN 2000 AND 2999
-            AND '.imdb_id_needs_lookup_sql('imdbid').'
-            '.$condLookup.' '.$condRenamedOnly.'
-            LIMIT 1';
-        if (count(DB::select($checkSql)) === 0) {
+        $candidateQuery = MovieProcessingCandidateQuery::query(
+            lookupMode: $lookupMode,
+            renamedOnly: $renamedOnly,
+        );
+        if (! $candidateQuery->exists()) {
             $this->headerNone();
 
             return;
@@ -440,14 +435,16 @@ class PostProcessRunner extends BaseRunner
 
         $renamedFlag = ($renamedOnly ? 2 : 1);
         $bucketExpr = $this->guidBucketExpression();
-        $sql = '
-            SELECT DISTINCT '.$bucketExpr.' AS id, '.$renamedFlag.' AS renamed
-            FROM releases
-            WHERE categories_id BETWEEN 2000 AND 2999
-            AND '.imdb_id_needs_lookup_sql('imdbid').'
-            '.$condLookup.' '.$condRenamedOnly.'
-            LIMIT 16';
-        $queue = DB::select($sql);
+        $queue = MovieProcessingCandidateQuery::query(
+            lookupMode: $lookupMode,
+            renamedOnly: $renamedOnly,
+        )
+            ->selectRaw($bucketExpr.' AS id, ? AS renamed', [$renamedFlag])
+            ->distinct()
+            ->limit(16)
+            ->toBase()
+            ->get()
+            ->all();
 
         $maxProcesses = (int) Settings::settingValue('postthreadsnon');
         $this->runPostProcess($queue, $maxProcesses, 'movie', 'movies postprocessing');
@@ -455,20 +452,21 @@ class PostProcessRunner extends BaseRunner
 
     public function processTv(bool $renamedOnly): void
     {
-        if ((int) Settings::settingValue('lookuptv') <= 0) {
+        $lookupMode = (int) Settings::settingValue('lookuptv');
+        if ($lookupMode <= 0) {
             $this->headerNone();
 
             return;
         }
 
-        if (! TvProcessingCandidateQuery::query(renamedOnly: $renamedOnly)->exists()) {
+        if (! TvProcessingCandidateQuery::query(processTv: $lookupMode, renamedOnly: $renamedOnly)->exists()) {
             $this->headerNone();
 
             return;
         }
 
         $renamedFlag = ($renamedOnly ? 2 : 1);
-        $queue = TvProcessingCandidateQuery::buckets($renamedOnly);
+        $queue = TvProcessingCandidateQuery::buckets($renamedOnly, $lookupMode);
         foreach ($queue as $bucket) {
             $bucket->renamed = $renamedFlag;
         }
@@ -542,41 +540,37 @@ class PostProcessRunner extends BaseRunner
      */
     public function hasTvWork(bool $renamedOnly): bool
     {
-        if ((int) Settings::settingValue('lookuptv') <= 0) {
+        $lookupMode = (int) Settings::settingValue('lookuptv');
+        if ($lookupMode <= 0) {
             return false;
         }
 
-        return TvProcessingCandidateQuery::query(renamedOnly: $renamedOnly)->exists();
+        return TvProcessingCandidateQuery::query(processTv: $lookupMode, renamedOnly: $renamedOnly)->exists();
     }
 
     public function processAnime(): void
     {
-        if ((int) Settings::settingValue('lookupanidb') <= 0) {
+        $lookupMode = (int) Settings::settingValue('lookupanidb');
+        if ($lookupMode <= 0) {
             $this->headerNone();
 
             return;
         }
 
-        $checkSql = '
-            SELECT id
-            FROM releases
-            WHERE categories_id = 5070
-            AND anidbid IS NULL
-            LIMIT 1';
-        if (count(DB::select($checkSql)) === 0) {
+        if (! AnimeProcessingCandidateQuery::query(lookupMode: $lookupMode)->exists()) {
             $this->headerNone();
 
             return;
         }
 
         $bucketExpr = $this->guidBucketExpression();
-        $sql = '
-            SELECT DISTINCT '.$bucketExpr.' AS id
-            FROM releases
-            WHERE categories_id = 5070
-            AND anidbid IS NULL
-            LIMIT 16';
-        $queue = DB::select($sql);
+        $queue = AnimeProcessingCandidateQuery::query(lookupMode: $lookupMode)
+            ->selectRaw($bucketExpr.' AS id')
+            ->distinct()
+            ->limit(16)
+            ->toBase()
+            ->get()
+            ->all();
 
         $maxProcesses = (int) Settings::settingValue('postthreadsnon');
         $this->runPostProcess($queue, $maxProcesses, 'anime', 'anime postprocessing');
@@ -584,133 +578,81 @@ class PostProcessRunner extends BaseRunner
 
     public function processBooks(): void
     {
-        if ((int) Settings::settingValue('lookupbooks') <= 0) {
+        $lookupMode = (int) Settings::settingValue('lookupbooks');
+        if ($lookupMode <= 0) {
             $this->headerNone();
 
             return;
         }
 
-        $workCondition = $this->bookWorkCondition();
-
-        $checkSql = '
-            SELECT id
-            FROM releases
-            WHERE (
-                categories_id BETWEEN 7000 AND 7999
-                OR categories_id = 3030
-            )
-            AND '.$workCondition.'
-            LIMIT 1';
-        if (count(DB::select($checkSql)) === 0) {
+        if (! BookProcessingCandidateQuery::query(lookupMode: $lookupMode)->exists()) {
             $this->headerNone();
 
             return;
         }
 
-        $bucketExpr = $this->guidBucketExpression();
-        $sql = '
-            SELECT DISTINCT '.$bucketExpr.' AS id
-            FROM releases
-            WHERE (
-                categories_id BETWEEN 7000 AND 7999
-                OR categories_id = 3030
-            )
-            AND '.$workCondition.'
-            LIMIT 16';
-        $queue = DB::select($sql);
+        $queue = $this->getBooksBuckets($lookupMode);
 
         $maxProcesses = (int) Settings::settingValue('postthreadsamazon');
         $this->runPostProcess($queue, $maxProcesses, 'books', 'books postprocessing');
     }
 
-    private function bookWorkCondition(): string
-    {
-        if ((int) Settings::settingValue('lookupbooks') === 2) {
-            return '(bookinfo_id IS NULL AND isrenamed = 1)';
-        }
-
-        return '(bookinfo_id IS NULL
-            OR searchname LIKE "N:/NZB%"
-            OR searchname LIKE "N_NZB_%"
-            OR name LIKE "N:/NZB%"
-            OR name LIKE "N_NZB_%")';
-    }
-
     public function processMusic(): void
     {
-        if ((int) Settings::settingValue('lookupmusic') <= 0) {
+        $lookupMode = (int) Settings::settingValue('lookupmusic');
+        if ($lookupMode <= 0) {
             $this->headerNone();
 
             return;
         }
 
-        $checkSql = '
-            SELECT id
-            FROM releases
-            WHERE categories_id IN ('.Category::MUSIC_MP3.', '.Category::MUSIC_LOSSLESS.', '.Category::MUSIC_OTHER.')
-            AND musicinfo_id IS NULL
-            LIMIT 1';
-        if (count(DB::select($checkSql)) === 0) {
+        if (! MusicProcessingCandidateQuery::query(lookupMode: $lookupMode)->exists()) {
             $this->headerNone();
 
             return;
         }
 
-        $queue = $this->getMusicBuckets();
+        $queue = $this->getMusicBuckets($lookupMode);
         $maxProcesses = (int) Settings::settingValue('postthreadsamazon');
         $this->runPostProcess($queue, $maxProcesses, 'music', 'music postprocessing');
     }
 
     public function processConsoles(): void
     {
-        if ((int) Settings::settingValue('lookupgames') <= 0) {
+        $lookupMode = (int) Settings::settingValue('lookupgames');
+        if ($lookupMode <= 0) {
             $this->headerNone();
 
             return;
         }
 
-        $renamedFilter = (int) Settings::settingValue('lookupgames') === 2 ? 'AND isrenamed = 1' : '';
-        $checkSql = '
-            SELECT id
-            FROM releases
-            WHERE categories_id BETWEEN '.Category::GAME_ROOT.' AND '.Category::GAME_OTHER.'
-            AND consoleinfo_id IS NULL
-            '.$renamedFilter.'
-            LIMIT 1';
-        if (count(DB::select($checkSql)) === 0) {
+        if (! ConsoleProcessingCandidateQuery::query(lookupMode: $lookupMode)->exists()) {
             $this->headerNone();
 
             return;
         }
 
-        $queue = $this->getConsoleBuckets();
+        $queue = $this->getConsoleBuckets($lookupMode);
         $maxProcesses = (int) Settings::settingValue('postthreadsamazon');
         $this->runPostProcess($queue, $maxProcesses, 'console', 'console postprocessing');
     }
 
     public function processGames(): void
     {
-        if ((int) Settings::settingValue('lookupgames') <= 0) {
+        $lookupMode = (int) Settings::settingValue('lookupgames');
+        if ($lookupMode <= 0) {
             $this->headerNone();
 
             return;
         }
 
-        $renamedFilter = (int) Settings::settingValue('lookupgames') === 2 ? 'AND isrenamed = 1' : '';
-        $checkSql = '
-            SELECT id
-            FROM releases
-            WHERE categories_id = '.Category::PC_GAMES.'
-            AND gamesinfo_id = 0
-            '.$renamedFilter.'
-            LIMIT 1';
-        if (count(DB::select($checkSql)) === 0) {
+        if (! GameProcessingCandidateQuery::query(lookupMode: $lookupMode)->exists()) {
             $this->headerNone();
 
             return;
         }
 
-        $queue = $this->getGamesBuckets();
+        $queue = $this->getGamesBuckets($lookupMode);
         $maxProcesses = (int) Settings::settingValue('postthreadsamazon');
         $this->runPostProcess($queue, $maxProcesses, 'games', 'games postprocessing');
     }
@@ -720,24 +662,27 @@ class PostProcessRunner extends BaseRunner
         $maxProcesses = (int) Settings::settingValue('postthreadsamazon');
         $tasks = [];
 
-        if ((int) Settings::settingValue('lookupbooks') > 0) {
-            foreach ($this->getBooksBuckets() as $row) {
+        $bookLookupMode = (int) Settings::settingValue('lookupbooks');
+        if ($bookLookupMode > 0) {
+            foreach ($this->getBooksBuckets($bookLookupMode) as $row) {
                 $tasks[] = (object) ['type' => 'books', 'id' => (string) $row->id];
             }
         }
 
-        if ((int) Settings::settingValue('lookupmusic') > 0) {
-            foreach ($this->getMusicBuckets() as $row) {
+        $musicLookupMode = (int) Settings::settingValue('lookupmusic');
+        if ($musicLookupMode > 0) {
+            foreach ($this->getMusicBuckets($musicLookupMode) as $row) {
                 $tasks[] = (object) ['type' => 'music', 'id' => (string) $row->id];
             }
         }
 
-        if ((int) Settings::settingValue('lookupgames') > 0) {
-            foreach ($this->getConsoleBuckets() as $row) {
+        $gameLookupMode = (int) Settings::settingValue('lookupgames');
+        if ($gameLookupMode > 0) {
+            foreach ($this->getConsoleBuckets($gameLookupMode) as $row) {
                 $tasks[] = (object) ['type' => 'console', 'id' => (string) $row->id];
             }
 
-            foreach ($this->getGamesBuckets() as $row) {
+            foreach ($this->getGamesBuckets($gameLookupMode) as $row) {
                 $tasks[] = (object) ['type' => 'games', 'id' => (string) $row->id];
             }
         }

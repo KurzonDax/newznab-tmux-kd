@@ -359,6 +359,44 @@ SH;
         });
     }
 
+    public function test_metadata_pane_parks_when_every_candidate_backlog_is_empty(): void
+    {
+        Process::fake(function (PendingProcess $process) {
+            if (is_array($process->command) && in_array('list-panes', $process->command, true)) {
+                return Process::result("%9\tpost_metadata\n");
+            }
+
+            return Process::result();
+        });
+
+        $runner = new TmuxTaskRunner('test-session');
+
+        $this->assertTrue($runner->runPaneTask('amazon', [], [
+            'settings' => ['post_amazon' => 1],
+            'constants' => ['sequential' => 0],
+            'counts' => ['now' => [
+                'processmusic' => 0,
+                'processbooks' => 0,
+                'processconsole' => 0,
+                'processgames' => 0,
+                'audio_work_available' => 0,
+            ]],
+        ]));
+
+        Process::assertRan(function (PendingProcess $process): bool {
+            return is_array($process->command)
+                && in_array('respawn-pane', $process->command, true)
+                && in_array('-k', $process->command, true)
+                && str_contains((string) end($process->command), 'Post-process Metadata has been disabled')
+                && str_contains((string) end($process->command), 'no music/books/games or audio previews to process');
+        });
+        Process::assertDidntRun(function (PendingProcess $process): bool {
+            return is_array($process->command)
+                && in_array('respawn-pane', $process->command, true)
+                && str_contains((string) end($process->command), 'multiprocessing:postprocess ama');
+        });
+    }
+
     #[DataProvider('srrdbFixNameLevelProvider')]
     public function test_fix_names_task_only_includes_srrdb_level_when_enabled(bool $enabled): void
     {

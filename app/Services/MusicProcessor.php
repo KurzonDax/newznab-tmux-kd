@@ -18,8 +18,9 @@ class MusicProcessor
 
     public function process(string $groupID = '', string $guidChar = ''): void
     {
-        if ((int) Settings::settingValue('lookupmusic') !== 0) {
-            (new MusicService)->processMusicReleases(false, $groupID, $guidChar);
+        $lookupMode = (int) Settings::settingValue('lookupmusic');
+        if ($lookupMode !== 0) {
+            (new MusicService)->processMusicReleases(false, $groupID, $guidChar, $lookupMode);
         }
     }
 }

@@ -10,6 +10,7 @@ use App\Models\ReleaseFile;
 use App\Models\ReleaseNfo;
 use App\Models\Settings;
 use App\Models\UsenetGroup;
+use App\Services\MetadataProcessing\NfoProcessingCandidateQuery;
 use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbContentsService;
 use App\Services\Nzb\NzbParserService;
@@ -116,17 +117,7 @@ class NfoService
     /**
      * Lazily loaded from settings + cache when NFO processing runs.
      */
-    protected ?int $maxSize = null;
-
-    /**
-     * Lazily loaded from settings + cache when NFO processing runs.
-     */
     private ?int $maxRetries = null;
-
-    /**
-     * Lazily loaded from settings + cache when NFO processing runs.
-     */
-    protected ?int $minSize = null;
 
     /**
      * @var string Temporary path for processing files.
@@ -194,28 +185,6 @@ class NfoService
         }
 
         return $this->maxRetries;
-    }
-
-    private function getMaxSize(): int
-    {
-        if ($this->maxSize === null) {
-            $this->maxSize = (int) $this->rememberNfoSetting('nfo_maxsizetoprocessnfo', function () {
-                return (int) Settings::settingValue('maxsizetoprocessnfo');
-            });
-        }
-
-        return $this->maxSize;
-    }
-
-    private function getMinSize(): int
-    {
-        if ($this->minSize === null) {
-            $this->minSize = (int) $this->rememberNfoSetting('nfo_minsizetoprocessnfo', function () {
-                return (int) Settings::settingValue('minsizetoprocessnfo');
-            });
-        }
-
-        return $this->minSize;
     }
 
     /**
@@ -839,27 +808,7 @@ class NfoService
      */
     private function buildNfoProcessingQuery(string $groupID, string $guidChar): \Illuminate\Database\Eloquent\Builder // @phpstan-ignore class.notFound, missingType.generics, return.phpDocType
     {
-        $query = Release::query()
-            ->where('nzbstatus', 1)
-            ->whereBetween('nfostatus', [$this->getMaxRetries(), self::NFO_UNPROC]);
-
-        if ($guidChar !== '') {
-            $query->where('leftguid', $guidChar);
-        }
-
-        if ($groupID !== '') {
-            $query->where('groups_id', $groupID);
-        }
-
-        if ($this->getMaxSize() > 0) {
-            $query->where('size', '<', $this->getMaxSize());
-        }
-
-        if ($this->getMinSize() > 0) {
-            $query->where('size', '>', $this->getMinSize());
-        }
-
-        return $query;
+        return NfoProcessingCandidateQuery::query($groupID, $guidChar);
     }
 
     /**
@@ -1759,12 +1708,7 @@ class NfoService
     {
         Cache::forget('nfo_maxnfoprocessed');
         Cache::forget('nfo_maxnforetries');
-        Cache::forget('nfo_maxsizetoprocessnfo');
-        Cache::forget('nfo_minsizetoprocessnfo');
-
         $this->nzbs = null;
         $this->maxRetries = null;
-        $this->maxSize = null;
-        $this->minSize = null;
     }
 }

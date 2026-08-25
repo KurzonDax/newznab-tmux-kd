@@ -98,21 +98,21 @@ final class TvProcessingCandidateQuery
             });
     }
 
-    public static function count(bool $renamedOnly = false): int
+    public static function count(bool $renamedOnly = false, ?int $lookupMode = null): int
     {
-        return self::query(renamedOnly: $renamedOnly)->count();
+        return self::query(processTv: $lookupMode, renamedOnly: $renamedOnly)->count();
     }
 
     /**
      * @return list<object{id: string}>
      */
-    public static function buckets(bool $renamedOnly = false): array
+    public static function buckets(bool $renamedOnly = false, ?int $lookupMode = null): array
     {
         $bucketExpression = DB::getDriverName() === 'sqlite'
             ? 'substr(leftguid, 1, 1)'
             : 'LEFT(leftguid, 1)';
 
-        return self::query(renamedOnly: $renamedOnly)
+        return self::query(processTv: $lookupMode, renamedOnly: $renamedOnly)
             ->selectRaw($bucketExpression.' AS id')
             ->distinct()
             ->limit(16)
@@ -136,6 +136,10 @@ final class TvProcessingCandidateQuery
             ->where('size', '>', self::MINIMUM_SIZE_BYTES)
             ->whereBetween('categories_id', [Category::TV_ROOT, Category::TV_OTHER])
             ->where('categories_id', '<>', Category::TV_ANIME);
+
+        if ($resolvedProcessTv <= 0) {
+            return $query->whereRaw('0 = 1');
+        }
 
         if ($groupId !== '') {
             $query->where('groups_id', $groupId);

@@ -12,6 +12,7 @@ use App\Models\Genre;
 use App\Models\MusicInfo;
 use App\Models\Release;
 use App\Models\Settings;
+use App\Services\MetadataProcessing\MusicProcessingCandidateQuery;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Support\MetadataSearchLookup;
 use Illuminate\Support\Facades\Cache;
@@ -38,8 +39,6 @@ class MusicService
 
     public string $imgSavePath;
 
-    public mixed $renamed;
-
     /**
      * Store names of failed lookup items.
      *
@@ -57,8 +56,6 @@ class MusicService
         $this->musicqty = Settings::settingValue('maxmusicprocessed') !== '' ? (int) Settings::settingValue('maxmusicprocessed') : 150;
         $this->sleeptime = Settings::settingValue('amazonsleep') !== '' ? (int) Settings::settingValue('amazonsleep') : 1000;
         $this->imgSavePath = config('nntmux_settings.covers_path').'/music/';
-        $this->renamed = (int) Settings::settingValue('lookupmusic') === 2 ? 'AND isrenamed = 1' : '';
-
         $this->failCache = [];
     }
 
@@ -476,32 +473,16 @@ class MusicService
      *
      * @throws \Exception
      */
-    public function processMusicReleases(bool $local = false, string $groupID = '', string $guidChar = ''): void
-    {
-        $guidFilter = $guidChar !== '' ? 'AND leftguid LIKE '.DB::getPdo()->quote($guidChar.'%') : '';
-        $groupFilter = $groupID !== '' ? 'AND groups_id = '.(int) $groupID : '';
-
-        $res = DB::select(
-            sprintf(
-                '
-                SELECT searchname, id
-                FROM releases
-                WHERE musicinfo_id IS NULL
-                %s
-                %s
-                %s
-                AND categories_id IN (%s, %s, %s)
-                ORDER BY postdate DESC
-                LIMIT %d',
-                $this->renamed,
-                $guidFilter,
-                $groupFilter,
-                Category::MUSIC_MP3,
-                Category::MUSIC_LOSSLESS,
-                Category::MUSIC_OTHER,
-                $this->musicqty
-            )
-        );
+    public function processMusicReleases(
+        bool $local = false,
+        string $groupID = '',
+        string $guidChar = '',
+        ?int $lookupMode = null,
+    ): void {
+        $res = MusicProcessingCandidateQuery::query($groupID, $guidChar, $lookupMode)
+            ->orderByDesc('postdate')
+            ->limit($this->musicqty)
+            ->get(['searchname', 'id']);
 
         if (! empty($res)) {
             foreach ($res as $arr) {

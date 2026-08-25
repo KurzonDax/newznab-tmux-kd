@@ -6,9 +6,9 @@ namespace App\Services;
 
 use App\Models\AnidbInfo;
 use App\Models\AnidbTitle;
-use App\Models\Category;
 use App\Models\Release;
 use App\Models\Settings;
+use App\Services\MetadataProcessing\AnimeProcessingCandidateQuery;
 use App\Services\PopulateAniListService as PaList;
 
 class AnimeProcessor
@@ -67,11 +67,12 @@ class AnimeProcessor
      */
     public function process(string $groupID = '', string $guidChar = ''): void
     {
-        if ((int) Settings::settingValue('lookupanidb') === 0) {
+        $lookupMode = (int) Settings::settingValue('lookupanidb');
+        if ($lookupMode === 0) {
             return;
         }
 
-        $this->processAnimeReleases($groupID, $guidChar);
+        $this->processAnimeReleases($groupID, $guidChar, $lookupMode);
     }
 
     /**
@@ -82,19 +83,12 @@ class AnimeProcessor
      *
      * @throws \Exception
      */
-    public function processAnimeReleases(string $groupID = '', string $guidChar = ''): void
-    {
-        $query = Release::query()
-            ->whereNull('anidbid')
-            ->where('categories_id', Category::TV_ANIME);
-
-        if ($guidChar !== '') {
-            $query->where('leftguid', 'like', $guidChar.'%');
-        }
-
-        if ($groupID !== '') {
-            $query->where('groups_id', $groupID);
-        }
+    public function processAnimeReleases(
+        string $groupID = '',
+        string $guidChar = '',
+        ?int $lookupMode = null,
+    ): void {
+        $query = AnimeProcessingCandidateQuery::query($groupID, $guidChar, $lookupMode);
 
         $results = $query->orderByDesc('postdate')
             ->limit($this->aniqty)

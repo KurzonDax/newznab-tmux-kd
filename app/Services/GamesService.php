@@ -13,6 +13,7 @@ use App\Models\Genre;
 use App\Models\Release;
 use App\Models\Settings;
 use App\Services\IGDB\Exceptions\IgdbHttpException;
+use App\Services\MetadataProcessing\GameProcessingCandidateQuery;
 use App\Services\Releases\ReleaseBrowseService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Model;
@@ -48,8 +49,6 @@ class GamesService
     public int $matchPercentage;
 
     public bool $maxHitRequest;
-
-    public string $renamed;
 
     public string $catWhere;
 
@@ -89,7 +88,6 @@ class GamesService
 
         $this->gameQty = Settings::settingValue('maxgamesprocessed') !== '' ? (int) Settings::settingValue('maxgamesprocessed') : 150;
         $this->imgSavePath = config('nntmux_settings.covers_path').'/games/';
-        $this->renamed = (int) Settings::settingValue('lookupgames') === 2 ? 'AND isrenamed = 1' : '';
         $this->matchPercentage = 60;
         $this->maxHitRequest = false;
         $this->catWhere = 'AND categories_id = '.Category::PC_GAMES.' ';
@@ -741,8 +739,11 @@ class GamesService
      *
      * @throws \Exception
      */
-    public function processGamesReleases(string $groupID = '', string $guidChar = ''): void
-    {
+    public function processGamesReleases(
+        string $groupID = '',
+        string $guidChar = '',
+        ?int $lookupMode = null,
+    ): void {
         // Reset stats
         $this->processedCount = 0;
         $this->matchedCount = 0;
@@ -751,21 +752,7 @@ class GamesService
 
         $startTime = microtime(true);
 
-        $query = Release::query()
-            ->where('gamesinfo_id', '=', 0)
-            ->where('categories_id', '=', Category::PC_GAMES);
-
-        if ($guidChar !== '') {
-            $query->where('leftguid', 'like', $guidChar.'%');
-        }
-
-        if ($groupID !== '') {
-            $query->where('groups_id', $groupID);
-        }
-
-        if ((int) Settings::settingValue('lookupgames') === 2) {
-            $query->where('isrenamed', '=', 1);
-        }
+        $query = GameProcessingCandidateQuery::query($groupID, $guidChar, $lookupMode);
 
         $query->select(['searchname', 'id'])
             ->orderByDesc('postdate')

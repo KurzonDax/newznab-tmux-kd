@@ -18,8 +18,9 @@ class ConsolesProcessor
 
     public function process(string $groupID = '', string $guidChar = ''): void
     {
-        if ((int) Settings::settingValue('lookupgames') !== 0) {
-            (new ConsoleService)->processConsoleReleases($groupID, $guidChar);
+        $lookupMode = (int) Settings::settingValue('lookupgames');
+        if ($lookupMode !== 0) {
+            (new ConsoleService)->processConsoleReleases($groupID, $guidChar, $lookupMode);
         }
     }
 }

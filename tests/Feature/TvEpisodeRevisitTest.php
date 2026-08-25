@@ -322,7 +322,7 @@ class TvEpisodeRevisitTest extends TestCase
         $runVar = new ReflectionProperty(TmuxMonitorService::class, 'runVar');
         $runVar->setValue($monitor, [
             'counts' => ['now' => []],
-            'settings' => [],
+            'settings' => ['processtvrage' => 1],
             'timers' => ['query' => []],
         ]);
 

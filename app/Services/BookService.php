@@ -12,6 +12,7 @@ use App\Models\BookInfo;
 use App\Models\Category;
 use App\Models\Release;
 use App\Models\Settings;
+use App\Services\MetadataProcessing\BookProcessingCandidateQuery;
 use App\Services\NameFixing\Extractors\ObfuscatedSubjectExtractor;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\Releases\PreviewGenerationPolicy;
@@ -40,8 +41,6 @@ class BookService
 
     public string $imgSavePath;
 
-    public string $renamed;
-
     public ?string $parsedIsbn;
 
     public ?BookParseResult $parsedBookResult;
@@ -65,8 +64,6 @@ class BookService
         $this->bookqty = Settings::settingValue('maxbooksprocessed') !== '' ? (int) Settings::settingValue('maxbooksprocessed') : 300;
         $this->sleeptime = Settings::settingValue('amazonsleep') !== '' ? (int) Settings::settingValue('amazonsleep') : 1000;
         $this->imgSavePath = storage_path('covers/book/');
-
-        $this->renamed = (int) Settings::settingValue('lookupbooks') === 2 ? 'AND isrenamed = 1' : '';
 
         $this->parsedIsbn = null;
         $this->parsedBookResult = null;
@@ -393,30 +390,17 @@ class BookService
      *
      * @throws \Exception
      */
-    public function processBookReleases(string $groupID = '', string $guidChar = ''): void
-    {
-        $this->normalizeBookSearchNames($groupID, $guidChar);
+    public function processBookReleases(
+        string $groupID = '',
+        string $guidChar = '',
+        ?int $lookupMode = null,
+    ): void {
+        $this->normalizeBookSearchNames($groupID, $guidChar, $lookupMode);
 
-        $query = Release::query()
+        $query = BookProcessingCandidateQuery::query($groupID, $guidChar, $lookupMode)
             ->whereNull('bookinfo_id')
-            ->where(static function ($builder): void {
-                $builder->whereBetween('categories_id', [Category::BOOKS_ROOT, Category::BOOKS_UNKNOWN])
-                    ->orWhere('categories_id', Category::MUSIC_AUDIOBOOK);
-            })
             ->orderByDesc('postdate')
             ->limit($this->bookqty);
-
-        if ($guidChar !== '') {
-            $query->where('leftguid', 'like', $guidChar.'%');
-        }
-
-        if ($groupID !== '') {
-            $query->where('groups_id', $groupID);
-        }
-
-        if ($this->renamed !== '') {
-            $query->where('isrenamed', 1);
-        }
 
         $this->processBookReleasesHelper(
             $query->get(['searchname', 'id', 'categories_id']),
@@ -429,33 +413,15 @@ class BookService
         );
     }
 
-    protected function normalizeBookSearchNames(string $groupID = '', string $guidChar = ''): void
-    {
-        $query = Release::query()
+    protected function normalizeBookSearchNames(
+        string $groupID = '',
+        string $guidChar = '',
+        ?int $lookupMode = null,
+    ): void {
+        $query = BookProcessingCandidateQuery::query($groupID, $guidChar, $lookupMode)
             ->select(['id', 'name', 'searchname', 'categories_id', 'isrenamed'])
-            ->where(static function ($builder): void {
-                $builder->whereBetween('categories_id', [Category::BOOKS_ROOT, Category::BOOKS_UNKNOWN])
-                    ->orWhere('categories_id', Category::MUSIC_AUDIOBOOK);
-            })
-            ->where(function ($builder): void {
-                if ($this->renamed === '') {
-                    $builder->where('isrenamed', 0);
-                }
-                $builder->orWhere('searchname', 'like', 'N:/NZB%')
-                    ->orWhere('searchname', 'like', 'N_NZB_%')
-                    ->orWhere('name', 'like', 'N:/NZB%')
-                    ->orWhere('name', 'like', 'N_NZB_%');
-            })
             ->orderByDesc('postdate')
             ->limit($this->bookqty);
-
-        if ($guidChar !== '') {
-            $query->where('leftguid', 'like', $guidChar.'%');
-        }
-
-        if ($groupID !== '') {
-            $query->where('groups_id', $groupID);
-        }
 
         foreach ($query->get() as $release) {
             $releaseType = (int) $release->categories_id === Category::MUSIC_AUDIOBOOK ? 'audiobook' : 'ebook';

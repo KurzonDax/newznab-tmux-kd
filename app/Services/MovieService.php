@@ -7,10 +7,10 @@ namespace App\Services;
 use aharen\OMDbAPI;
 use App\Enums\ImageAssetProfile;
 use App\Facades\Search;
-use App\Models\Category;
 use App\Models\MovieInfo;
 use App\Models\Release;
 use App\Models\Settings;
+use App\Services\MetadataProcessing\MovieProcessingCandidateQuery;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Search\MovieSearchIndexSync;
 use App\Services\TvProcessing\Providers\TraktProvider;
@@ -1053,25 +1053,8 @@ class MovieService
             return;
         }
 
-        $query = Release::query()
-            ->select(['searchname', 'id'])
-            ->whereBetween('categories_id', [Category::MOVIE_ROOT, Category::MOVIE_OTHER])
-            ->where(function ($query): void {
-                $query->whereNull('imdbid')
-                    ->orWhereIn('imdbid', imdb_id_pending_values());
-            });
-
-        if ($groupID !== '') {
-            $query->where('groups_id', $groupID);
-        }
-
-        if ($guidChar !== '') {
-            $query->where('leftguid', $guidChar);
-        }
-
-        if ((int) $lookupIMDB === 2) {
-            $query->where('isrenamed', '=', 1);
-        }
+        $query = MovieProcessingCandidateQuery::query($groupID, $guidChar, $lookupIMDB)
+            ->select(['searchname', 'id']);
 
         $res = $query->orderByDesc('id')->limit($this->movieqty)->get();
 

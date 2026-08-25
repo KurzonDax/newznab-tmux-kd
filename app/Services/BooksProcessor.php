@@ -18,8 +18,9 @@ class BooksProcessor
 
     public function process(string $groupID = '', string $guidChar = ''): void
     {
-        if ((int) Settings::settingValue('lookupbooks') !== 0) {
-            (new BookService)->processBookReleases($groupID, $guidChar);
+        $lookupMode = (int) Settings::settingValue('lookupbooks');
+        if ($lookupMode !== 0) {
+            (new BookService)->processBookReleases($groupID, $guidChar, $lookupMode);
         }
     }
 }
