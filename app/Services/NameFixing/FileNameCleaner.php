@@ -82,6 +82,12 @@ class FileNameCleaner
      */
     private const SUBTITLE_EXTENSIONS = '/\.(srt|sub|idx|ass|ssa|vtt|sup)$/i';
 
+    private const YEAR_SIGNAL = '/\b(19|20)\d{2}\b/';
+
+    private const QUALITY_SOURCE_SIGNAL = '/\b(480p|720p|1080p|2160p|4k|ntsc|pal|dvd(?:r|rip)?|webrip|web[ .-]?dl|bluray|bdrip|hdtv|hdrip|xvid|x264|x265|hevc|h\.?264|ts|cam|r5|proper|repack)\b/i';
+
+    private const TV_SIGNAL = '/\bS\d{1,2}(?:[Eex]\d{1,3})?\b/i';
+
     /**
      * Clean a filename for PreDB matching.
      *
@@ -257,13 +263,80 @@ class FileNameCleaner
         }
 
         // Check for valid release indicators
-        $hasGroupSuffix = (bool) preg_match('/[-.][A-Za-z0-9]{2,}$/', $t);
-        $hasYear = (bool) preg_match('/\b(19|20)\d{2}\b/', $t);
-        $hasQuality = (bool) preg_match('/\b(480p|720p|1080p|2160p|4k|webrip|web[ .-]?dl|bluray|bdrip|dvdrip|hdtv|hdrip|xvid|x264|x265|hevc|h\.?264|ts|cam|r5|proper|repack)\b/i', $t);
-        $hasTV = (bool) preg_match('/\bS\d{1,2}[Eex]\d{1,3}\b/i', $t);
+        $signals = $this->informationSignals($t);
         $hasXXX = (bool) preg_match('/\bXXX\b/i', $t);
 
-        return $hasGroupSuffix || ($hasTV && $hasQuality) || ($hasYear && ($hasQuality || $hasTV)) || $hasXXX || $hasQuality || $hasTV;
+        return $signals['group_suffix']
+            || ($signals['tv'] && $signals['quality_source'])
+            || ($signals['year'] && ($signals['quality_source'] || $signals['tv']))
+            || $hasXXX
+            || $signals['quality_source']
+            || $signals['tv'];
+    }
+
+    /**
+     * Determine whether a candidate loses information carried by a plausible current name.
+     */
+    public function isLessInformativeThan(string $candidate, string $currentName): bool
+    {
+        $current = $this->informationProfile($currentName);
+        if (! $current['plausible']) {
+            return false;
+        }
+
+        $replacement = $this->informationProfile($candidate);
+        foreach (['year', 'quality_source', 'tv'] as $signal) {
+            if ($current[$signal] && ! $replacement[$signal]) {
+                return true;
+            }
+        }
+
+        return ! $replacement['year']
+            && ! $replacement['quality_source']
+            && ! $replacement['tv']
+            && $replacement['tokens'] < $current['tokens'];
+    }
+
+    /**
+     * Identify the short scene-group abbreviation names targeted by the one-time repair.
+     */
+    public function isAbbreviationStub(string $name): bool
+    {
+        $profile = $this->informationProfile($name);
+
+        return $profile['plausible']
+            && $profile['group_suffix']
+            && ! $profile['year']
+            && ! $profile['quality_source']
+            && ! $profile['tv']
+            && $profile['tokens'] <= 3;
+    }
+
+    /**
+     * @return array{plausible: bool, group_suffix: bool, year: bool, quality_source: bool, tv: bool, tokens: int}
+     */
+    private function informationProfile(string $name): array
+    {
+        $normalized = $this->normalizeCandidateTitle($name);
+
+        return [
+            'plausible' => $this->isPlausibleReleaseTitle($normalized),
+            ...$this->informationSignals($normalized),
+        ];
+    }
+
+    /**
+     * @return array{group_suffix: bool, year: bool, quality_source: bool, tv: bool, tokens: int}
+     */
+    private function informationSignals(string $name): array
+    {
+        return [
+            'group_suffix' => (bool) preg_match('/[-.][A-Za-z0-9]{2,}$/', $name),
+            'year' => (bool) preg_match(self::YEAR_SIGNAL, $name),
+            'quality_source' => (bool) preg_match(self::QUALITY_SOURCE_SIGNAL, $name),
+            'tv' => (bool) preg_match(self::TV_SIGNAL, $name),
+            'tokens' => preg_match_all('/[A-Za-z0-9]{2,}/', $name),
+        ];
     }
 
     /**

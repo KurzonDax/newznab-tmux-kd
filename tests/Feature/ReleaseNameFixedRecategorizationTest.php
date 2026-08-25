@@ -16,6 +16,8 @@ use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\Categorization\CategorizationService;
 use App\Services\Categorization\MediaInfoRefinementService;
+use App\Services\NameFixing\DowngradedNameRestorer;
+use App\Services\NameFixing\FileNameCleaner;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\Releases\PreviewGenerationPolicy;
 use Illuminate\Database\Schema\Blueprint;
@@ -725,6 +727,124 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             ReleaseNameFixed::class,
             fn (ReleaseNameFixed $event): bool => $event->releaseId === (int) $release->id,
         );
+    }
+
+    public function test_downgraded_name_restorer_dry_run_reports_without_changing_releases(): void
+    {
+        Search::shouldReceive('updateRelease')->never();
+
+        $group = UsenetGroup::query()->create([
+            'name' => 'alt.binaries.movies',
+            'active' => 1,
+            'backfill' => 0,
+        ]);
+        $release = Release::withoutEvents(fn (): Release => Release::factory()->create([
+            'name' => '[12123]-[FULL]-[ The.Odd.Life.of.Timothy.Green.2012.NTSC.DVDR-SCREAM ]-[alt.binaries.really.long.movies.collection]-[013/111] -',
+            'searchname' => 'Tolotg-Scream',
+            'groups_id' => $group->id,
+            'categories_id' => Category::MOVIE_OTHER,
+            'guid' => str_repeat('d', 40),
+            'leftguid' => 'd',
+        ]));
+        $unquoted = Release::withoutEvents(fn (): Release => Release::factory()->create([
+            'name' => '[01/10] Recovered.Movie.2014.720p.WEB-DL-GROUP yEnc',
+            'searchname' => 'Recoveredm-GROUP',
+            'groups_id' => $group->id,
+            'categories_id' => Category::MOVIE_OTHER,
+            'guid' => str_repeat('u', 40),
+            'leftguid' => 'u',
+        ]));
+
+        $limitedResult = app(DowngradedNameRestorer::class)->run(dryRun: true, limit: 1);
+
+        $this->assertSame(1, $limitedResult->scanned);
+        $this->assertCount(1, $limitedResult->pairs);
+
+        $result = app(DowngradedNameRestorer::class)->run(dryRun: true, limit: null);
+
+        $this->assertSame(2, $result->scanned);
+        $this->assertSame(0, $result->restored);
+        $this->assertSame(0, $result->skipped);
+        $this->assertSame([
+            [
+                'release_id' => (int) $release->id,
+                'old' => 'Tolotg-Scream',
+                'new' => 'The.Odd.Life.of.Timothy.Green.2012.NTSC.DVDR-SCREAM',
+            ],
+            [
+                'release_id' => (int) $unquoted->id,
+                'old' => 'Recoveredm-GROUP',
+                'new' => 'Recovered.Movie.2014.720p.WEB-DL-GROUP',
+            ],
+        ], $result->pairs);
+        $this->assertSame('Tolotg-Scream', $release->fresh()->searchname);
+        $this->assertSame('Recoveredm-GROUP', $unquoted->fresh()->searchname);
+    }
+
+    public function test_downgraded_name_restorer_applies_the_canonical_name_transition(): void
+    {
+        Search::shouldReceive('updateRelease')->never();
+
+        $group = UsenetGroup::query()->create([
+            'name' => 'alt.binaries.movies',
+            'active' => 1,
+            'backfill' => 0,
+        ]);
+        $restoredTitle = 'The.Odd.Life.of.Timothy.Green.2012.NTSC.DVDR-SCREAM';
+        $predb = Predb::query()->create(['title' => $restoredTitle]);
+        $downgraded = Release::withoutEvents(fn (): Release => Release::factory()->create([
+            'name' => '[12123]-[FULL]-[a.b.mooveeEFNet]-[ '.$restoredTitle.' ]-[013/111] -',
+            'searchname' => 'Tolotg-Scream',
+            'groups_id' => $group->id,
+            'categories_id' => Category::MOVIE_OTHER,
+            'guid' => str_repeat('r', 40),
+            'leftguid' => 'r',
+            'videos_id' => 11,
+            'movieinfo_id' => 12,
+        ]));
+        $legitimatelyShort = Release::withoutEvents(fn (): Release => Release::factory()->create([
+            'name' => '[12124]-[FULL]-[a.b.mooveeEFNet]-[ Upstream-GROUP ]-[001/010] -',
+            'searchname' => 'Upstream-GROUP',
+            'groups_id' => $group->id,
+            'categories_id' => Category::MOVIE_OTHER,
+            'guid' => str_repeat('s', 40),
+            'leftguid' => 's',
+        ]));
+        $untrusted = Release::withoutEvents(fn (): Release => Release::factory()->create([
+            'name' => '[12125]-[FULL]-[alt.binaries.movies]-[ Recovered.Movie.2014.720p.WEB-DL-GROUP ]-[001/010] -',
+            'searchname' => 'Recoveredm-GROUP',
+            'groups_id' => $group->id,
+            'categories_id' => Category::MOVIE_OTHER,
+            'guid' => str_repeat('t', 40),
+            'leftguid' => 't',
+            'is_trusted_name' => 1,
+        ]));
+        $synchronized = [];
+        $updates = new ReleaseUpdateService(
+            searchSyncCoordinator: new ReleaseSearchSyncCoordinator(
+                new PersistenceMetricsCollector,
+                static function (int $releaseId) use (&$synchronized): void {
+                    $synchronized[] = $releaseId;
+                },
+            ),
+        );
+        $restorer = new DowngradedNameRestorer(new FileNameCleaner, $updates);
+
+        $result = $restorer->run(dryRun: false, limit: null);
+
+        $downgraded->refresh();
+        $this->assertSame(3, $result->scanned);
+        $this->assertSame(2, $result->restored);
+        $this->assertSame(1, $result->skipped);
+        $this->assertSame($restoredTitle, $downgraded->searchname);
+        $this->assertSame((int) $predb->id, (int) $downgraded->predb_id);
+        $this->assertSame(0, (int) $downgraded->videos_id);
+        $this->assertNull($downgraded->movieinfo_id);
+        $this->assertNotSame(Category::MOVIE_OTHER, (int) $downgraded->categories_id);
+        $this->assertSame('Upstream-GROUP', $legitimatelyShort->fresh()->searchname);
+        $this->assertSame('Recovered.Movie.2014.720p.WEB-DL-GROUP', $untrusted->fresh()->searchname);
+        $this->assertSame(0, (int) $untrusted->fresh()->is_trusted_name);
+        $this->assertSame([(int) $downgraded->id, (int) $untrusted->id], $synchronized);
     }
 
     private function createSchema(): void
