@@ -16,3 +16,6 @@ The additional path already learned this once with a single query pair: a mismat
 
 ## Declining is a claim-token sentinel, not a column
 When the audio worker's article-1 probe finds video, or no audio stream, it writes `AudioRouting::DECLINED_TOKEN` into `additional_pp_claim_token` and clears `additional_pp_claimed_at`. The audio query then excludes the release and the video query claims it. Do not add a `releases` column for this — the table was deliberately slimmed. Two consequences to keep in mind: `haspreview` stays `-1` across a decline (the video path still owes the release a run), and if the video path later fails without settling `haspreview`, the cleared token puts the release back on the audio path for one more probe.
+
+## Audio settlement preserves archive password evidence
+When the audio path already fetches an archive head and its listing reports encryption, settle `passwordstatus` as `ReleaseBrowseService::PASSWD_RAR`; direct audio and unencrypted archives settle as `PASSWD_NONE`. Do not add NNTP fetches, deep archive inspection, or general-path deferral solely to determine this verdict.

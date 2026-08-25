@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Services\CollectionCleanupService;
 use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseImageService;
@@ -14,6 +15,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -494,13 +496,20 @@ class UsenetGroup extends Model
         if ($id === false) {
             self::resetall();
         } else {
+            app(CollectionCleanupService::class)->deleteCollectionsForGroup((int) $id);
             self::reset($id);
         }
 
         $res = Release::query()->select(['id', 'guid']);
 
         if ($id !== false) {
-            $res->where('groups_id', $id);
+            $res->where('groups_id', $id)
+                ->whereNotExists(static function (QueryBuilder $query) use ($id): void {
+                    $query->selectRaw('1')
+                        ->from('releases_groups as surviving_group')
+                        ->whereColumn('surviving_group.releases_id', 'releases.id')
+                        ->where('surviving_group.groups_id', '<>', $id);
+                });
         }
 
         $releases = $res->get();

@@ -20,22 +20,23 @@ final readonly class AudioFetchResult
         public string $extension,
         public ?MediaInfoContainer $mediaInfo,
         public bool $declined,
+        public bool $archivePassworded,
         public string $reason,
     ) {}
 
     public static function fetched(string $path, string $extension, ?MediaInfoContainer $mediaInfo): self
     {
-        return new self($path, strtolower($extension), $mediaInfo, false, '');
+        return new self($path, strtolower($extension), $mediaInfo, false, false, '');
     }
 
     public static function declined(string $reason): self
     {
-        return new self(null, '', null, true, $reason);
+        return new self(null, '', null, true, false, $reason);
     }
 
-    public static function failed(string $reason): self
+    public static function failed(string $reason, bool $archivePassworded = false): self
     {
-        return new self(null, '', null, false, $reason);
+        return new self(null, '', null, false, $archivePassworded, $reason);
     }
 
     public function succeeded(): bool

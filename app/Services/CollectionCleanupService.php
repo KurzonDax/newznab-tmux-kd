@@ -284,6 +284,34 @@ class CollectionCleanupService
         return $deletedCollections;
     }
 
+    public function deleteCollectionsForGroup(int $groupId, bool $echoCLI = false): int
+    {
+        $deleted = 0;
+
+        do {
+            $ids = DB::table('collections')
+                ->where('groups_id', $groupId)
+                ->orderBy('id')
+                ->limit($this->sqlChunkSize())
+                ->pluck('id')
+                ->map(static fn (mixed $id): int => (int) $id)
+                ->all();
+
+            if ($ids === []) {
+                break;
+            }
+
+            $affected = $this->deleteCollectionsAndDescendants($ids, 'Group purge', $echoCLI);
+            $deleted += $affected;
+
+            if ($affected < count($ids)) {
+                break;
+            }
+        } while (true);
+
+        return $deleted;
+    }
+
     private function sqlChunkSize(): int
     {
         return $this->binariesConfig->sqlChunkSize;

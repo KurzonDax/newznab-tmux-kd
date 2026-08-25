@@ -30,6 +30,7 @@ use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\ReleaseExtraService;
 use App\Services\Releases\PreviewGenerationPolicy;
+use App\Services\Releases\ReleaseBrowseService;
 use FFMpeg\Driver\FFMpegDriver;
 use FFMpeg\FFMpeg;
 use FFMpeg\FFProbe;
@@ -434,6 +435,55 @@ class AudioReleaseProcessorTest extends TestCase
         $this->assertNull($row->additional_pp_claim_token);
     }
 
+    public function test_an_encrypted_archive_head_settles_passworded_without_an_extra_download(): void
+    {
+        $release = $this->makeRelease();
+        $processor = $this->makeProcessor(
+            $this->taggedContainer(),
+            expectsPreview: false,
+            expectsExtraXml: false,
+            nzbContents: [[
+                'title' => 'Album.part01.rar',
+                'segments' => ['<rar-1>', '<rar-2>', '<rar-3>'],
+            ]],
+            archivePassworded: true,
+        );
+
+        $result = $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(ProcessingOutcome::NoUsefulArtifacts, $result->outcome);
+        $this->assertStringContainsString('password protected', $result->reason);
+        $this->assertSame(
+            [['<rar-1>', '<rar-2>', '<rar-3>']],
+            $this->downloads,
+            'The encryption verdict must use the archive bytes already fetched.',
+        );
+        $this->assertSame(
+            ReleaseBrowseService::PASSWD_RAR,
+            (int) DB::table('releases')->where('id', $release->id)->value('passwordstatus'),
+        );
+    }
+
+    public function test_an_unencrypted_archive_without_audio_still_settles_not_passworded(): void
+    {
+        $release = $this->makeRelease();
+        $processor = $this->makeProcessor(
+            $this->taggedContainer(),
+            expectsPreview: false,
+            expectsExtraXml: false,
+            nzbContents: [['title' => 'Album.part01.rar', 'segments' => ['<rar-1>']]],
+            archivePassworded: false,
+        );
+
+        $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame([['<rar-1>']], $this->downloads);
+        $this->assertSame(
+            ReleaseBrowseService::PASSWD_NONE,
+            (int) DB::table('releases')->where('id', $release->id)->value('passwordstatus'),
+        );
+    }
+
     /**
      * @param  array<string, mixed>  $attributes
      */
@@ -459,6 +509,7 @@ class AudioReleaseProcessorTest extends TestCase
         bool $previewsEnabled = true,
         ?array $nzbContents = null,
         ?int $maxArchiveBytes = null,
+        ?bool $archivePassworded = null,
     ): AudioReleaseProcessor {
         $config = $this->config($maxArchiveBytes);
 
@@ -490,6 +541,14 @@ class AudioReleaseProcessorTest extends TestCase
 
         $encoder = new AudioPreviewEncoder($config, $this->encoderTools());
 
+        $archiveService = Mockery::mock(ArchiveExtractionService::class);
+        if ($archivePassworded !== null) {
+            $archiveService->shouldReceive('listArchiveContentsAtPath')->once()->andReturn([
+                'hasPassword' => $archivePassworded,
+                'files' => [],
+            ]);
+        }
+
         $releaseExtra = Mockery::mock(ReleaseExtraService::class);
         $expectsExtraXml
             ? $releaseExtra->shouldReceive('addFromXml')->once()
@@ -504,7 +563,7 @@ class AudioReleaseProcessorTest extends TestCase
             new AudioFetcher(
                 $config,
                 $downloadService,
-                Mockery::mock(ArchiveExtractionService::class),
+                $archiveService,
                 $tools,
                 Mockery::mock(AudioDecodableLengthProbe::class)->shouldIgnoreMissing(0.0),
             ),

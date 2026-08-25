@@ -102,7 +102,16 @@ final class AudioReleaseProcessor
         }
 
         if (! $fetched->succeeded() || $fetched->path === null) {
-            return $this->finish($release, false, $tagsRecorded, ProcessingOutcome::NoUsefulArtifacts, $fetched->reason);
+            return $this->finish(
+                $release,
+                false,
+                $tagsRecorded,
+                ProcessingOutcome::NoUsefulArtifacts,
+                $fetched->reason,
+                $fetched->archivePassworded
+                    ? ReleaseBrowseService::PASSWD_RAR
+                    : ReleaseBrowseService::PASSWD_NONE,
+            );
         }
 
         try {
@@ -226,6 +235,7 @@ final class AudioReleaseProcessor
         bool $tagsRecorded,
         ProcessingOutcome $outcome,
         string $reason = '',
+        int $passwordStatus = ReleaseBrowseService::PASSWD_NONE,
     ): AudioProcessingResult {
         return $this->settle(
             $release,
@@ -234,6 +244,7 @@ final class AudioReleaseProcessor
             $tagsRecorded,
             $outcome,
             $reason,
+            $passwordStatus,
         );
     }
 
@@ -246,6 +257,7 @@ final class AudioReleaseProcessor
             $tagsRecorded,
             ProcessingOutcome::NoUsefulArtifacts,
             'Preview generation is disabled for this release\'s root category.',
+            ReleaseBrowseService::PASSWD_NONE,
         );
     }
 
@@ -256,12 +268,13 @@ final class AudioReleaseProcessor
         bool $tagsRecorded,
         ProcessingOutcome $outcome,
         string $reason,
+        int $passwordStatus,
     ): AudioProcessingResult {
         $releaseId = (int) $release->id;
 
         Release::query()->where('id', $releaseId)->update(array_merge([
             'haspreview' => $hasPreview,
-            'passwordstatus' => ReleaseBrowseService::PASSWD_NONE,
+            'passwordstatus' => $passwordStatus,
         ], ReleaseClaimant::settlementValues()));
 
         $this->searchSyncCoordinator->request($releaseId);
