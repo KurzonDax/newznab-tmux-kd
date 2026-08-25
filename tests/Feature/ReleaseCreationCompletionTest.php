@@ -11,6 +11,7 @@ use App\Services\ReleaseCleaningService;
 use App\Services\ReleaseCreationService;
 use App\Services\Releases\CollectionArticleRangeMeasurer;
 use App\Services\Releases\CollectionCompletionMeasurer;
+use App\Services\Releases\ReleaseDuplicateAbsorber;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\Test;
@@ -62,6 +63,10 @@ class ReleaseCreationCompletionTest extends TestCase
         $this->assertSame(['added' => 1, 'dupes' => 0], $this->service()->createReleases(null, 10, false));
         $this->assertEqualsWithDelta(98.18, $this->completionOfFirstRelease(), 0.01);
         $this->assertSame(0, (int) DB::table('releases')->value('nzbstatus'));
+        $this->assertSame(
+            'Partial.Release.S01E01',
+            DB::table('releases')->value('searchname_normalized'),
+        );
     }
 
     #[Test]
@@ -277,6 +282,7 @@ class ReleaseCreationCompletionTest extends TestCase
             app(CollectionCleanupService::class),
             app(ReleaseDuplicateFinder::class),
             app(CollectionCompletionMeasurer::class),
+            app(ReleaseDuplicateAbsorber::class),
             app(CollectionArticleRangeMeasurer::class),
         );
     }
@@ -365,6 +371,7 @@ class ReleaseCreationCompletionTest extends TestCase
             id INTEGER PRIMARY KEY,
             name VARCHAR(255),
             searchname VARCHAR(255),
+            searchname_normalized VARCHAR(255),
             totalpart INTEGER,
             declaredfiles INTEGER NULL,
             firstarticle INTEGER NULL,

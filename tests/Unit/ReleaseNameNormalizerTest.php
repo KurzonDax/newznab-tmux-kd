@@ -33,6 +33,12 @@ class ReleaseNameNormalizerTest extends TestCase
             'zip' => ['Some.Release.Name.zip', 'Some.Release.Name'],
             'plain par2' => ['Some.Release.Name.par2', 'Some.Release.Name'],
             'quotes only' => ['"Some.Release.Name"', 'Some.Release.Name'],
+            'leading multipart counter' => ['[10/88] Some.Release.Name', 'Some.Release.Name'],
+            'trailing yenc marker' => ['Some.Release.Name yEnc', 'Some.Release.Name'],
+            'counter and yenc outside filename quotes' => [
+                '[10/88] "Some.Release.Name.part009.rar" yEnc',
+                'Some.Release.Name',
+            ],
             'surrounding whitespace' => ['  Some.Release.Name  ', 'Some.Release.Name'],
             'already clean' => ['Some.Release.Name', 'Some.Release.Name'],
         ];
@@ -62,5 +68,14 @@ class ReleaseNameNormalizerTest extends TestCase
     public function test_names_without_raw_subject_leftovers_are_untouched(string $name): void
     {
         $this->assertSame($name, ReleaseNameNormalizer::normalize($name));
+    }
+
+    #[DataProvider('normalizationProvider')]
+    public function test_normalization_is_idempotent(string $name, string $expected): void
+    {
+        $normalized = ReleaseNameNormalizer::normalize($name);
+
+        $this->assertSame($expected, $normalized);
+        $this->assertSame($normalized, ReleaseNameNormalizer::normalize($normalized));
     }
 }

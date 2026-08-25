@@ -88,6 +88,7 @@ class AudioReleaseProcessorTest extends TestCase
             $table->string('guid');
             $table->string('name')->default('');
             $table->string('searchname')->default('');
+            $table->string('searchname_normalized')->nullable();
             $table->unsignedInteger('categories_id')->default(0);
             $table->unsignedInteger('groups_id')->default(0);
             $table->unsignedInteger('predb_id')->default(0);

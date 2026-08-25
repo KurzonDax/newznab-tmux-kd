@@ -13,6 +13,7 @@ use App\Models\UsenetGroup;
 use App\Services\BlacklistService;
 use App\Services\Categorization\CategorizationService;
 use App\Services\ReleaseCleaningService;
+use App\Services\Releases\ReleaseDuplicateAbsorber;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use App\Support\Utf8;
 use Illuminate\Contracts\Filesystem\FileNotFoundException;
@@ -38,6 +39,8 @@ class NzbImportService
     protected CategorizationService $category;
 
     protected ReleaseDuplicateFinder $releaseDuplicateFinder;
+
+    protected ReleaseDuplicateAbsorber $releaseDuplicateAbsorber;
 
     protected NzbParserService $parserService;
 
@@ -80,6 +83,7 @@ class NzbImportService
         $this->nzb = app(NzbService::class);
         $this->releaseCleaner = new ReleaseCleaningService;
         $this->releaseDuplicateFinder = app(ReleaseDuplicateFinder::class);
+        $this->releaseDuplicateAbsorber = app(ReleaseDuplicateAbsorber::class);
         $this->parserService = app(NzbParserService::class);
         $this->crossPostt = Settings::settingValue('crossposttime') !== '' ? Settings::settingValue('crossposttime') : 2;
 
@@ -496,6 +500,7 @@ class NzbImportService
                 'declaredFiles' => $completionSignals->filesDeclared,
                 'nzbCategoryId' => $this->resolveNzbCategoryId($nzbXML),
                 'segmentMessageIds' => $segmentMessageIds,
+                'nzbXml' => $nzbXML->asXML(),
             ]
         );
     }
@@ -618,9 +623,26 @@ class NzbImportService
         );
 
         if ($dupeCheck !== null) {
+            $absorbed = false;
+            if ($this->releaseDuplicateAbsorber->supportsReason($dupeReason)) {
+                $nzbXml = $nzbDetails['nzbXml'] ?? false;
+                if (! \is_string($nzbXml)) {
+                    throw new \RuntimeException('The incoming duplicate NZB could not be serialized.');
+                }
+
+                $absorbed = $this->releaseDuplicateAbsorber->absorbXml(
+                    $dupeCheck,
+                    $nzbXml,
+                    (int) $nzbDetails['totalSize'],
+                    (int) $nzbDetails['declaredFiles'],
+                    (float) $nzbDetails['completion'],
+                );
+            }
+
             Log::info('NZB import skipped as duplicate', [
                 'reason' => $dupeReason,
                 'matched_release_id' => $dupeCheck->id,
+                'absorbed' => $absorbed,
                 'new_searchname' => $escapedSearchName,
                 'existing_searchname' => $dupeCheck->searchname,
                 'new_size' => (int) $nzbDetails['totalSize'],
@@ -678,6 +700,7 @@ class NzbImportService
             Log::info('NZB import skipped as duplicate', [
                 'reason' => 'collectionhash_match',
                 'matched_release_id' => $existing->id,
+                'absorbed' => false,
                 'new_searchname' => $escapedSearchName,
                 'existing_searchname' => $existing->searchname,
                 'new_size' => (int) $nzbDetails['totalSize'],

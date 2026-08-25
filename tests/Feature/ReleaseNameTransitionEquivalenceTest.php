@@ -38,6 +38,7 @@ class ReleaseNameTransitionEquivalenceTest extends TestCase
             $table->increments('id');
             $table->string('name');
             $table->string('searchname');
+            $table->string('searchname_normalized')->default('');
             $table->unsignedInteger('groups_id');
             $table->integer('categories_id');
             $table->string('fromname')->nullable();
@@ -125,6 +126,7 @@ class ReleaseNameTransitionEquivalenceTest extends TestCase
             $this->assertSame(1, (int) $release->isrenamed);
             $this->assertSame(1, (int) $release->iscategorized);
             $this->assertSame($targetName, $release->searchname);
+            $this->assertSame($targetName, $release->searchname_normalized);
         }
 
         $this->assertNull($releases[1]->bookinfo_id);

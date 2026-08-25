@@ -9,12 +9,15 @@ use App\Models\UsenetGroup;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\Binaries\BinariesService;
 use App\Services\Nzb\NzbImportService;
+use App\Services\Nzb\NzbService;
 use App\Services\ReleaseRepair\RescanWindowResolver;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class NzbImportSegmentHashDedupeTest extends TestCase
 {
+    private string $nzbDirectory;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -22,6 +25,12 @@ class NzbImportSegmentHashDedupeTest extends TestCase
         config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => ':memory:']);
         DB::purge();
         DB::reconnect();
+        $this->nzbDirectory = $this->makeTempDirectory('import-dedupe').DIRECTORY_SEPARATOR;
+        config([
+            'nntmux_settings.path_to_nzbs' => $this->nzbDirectory,
+            'nntmux_settings.check_passworded_rars' => true,
+            'nntmux_settings.unrar_path' => '/usr/bin/unrar',
+        ]);
         $this->registerSqliteFunction('UNIX_TIMESTAMP', static fn (?string $value): int => strtotime((string) $value));
         $this->registerSqliteFunction(
             'REGEXP',
@@ -147,6 +156,46 @@ class NzbImportSegmentHashDedupeTest extends TestCase
         $this->assertSame(1, DB::table('releases')->count());
     }
 
+    public function test_more_complete_same_name_import_is_absorbed_into_the_existing_release(): void
+    {
+        $partial = $this->makeNzb([
+            [
+                'subject' => '[1/1] Better.Repost.part01.rar yEnc (1/20)',
+                'segments' => array_map(static fn (int $part): string => "old-{$part}@example.test", range(1, 19)),
+            ],
+        ]);
+        $this->assertSame(NzbImportStatus::Inserted, $this->scan($partial));
+
+        $anchor = Release::query()->firstOrFail();
+        $anchorId = (int) $anchor->id;
+        $anchorGuid = (string) $anchor->guid;
+        $nzb = app(NzbService::class);
+        file_put_contents($nzb->getNzbPath($anchorGuid, 0, true), gzencode((string) $partial->asXML()));
+
+        $complete = $this->makeNzb([
+            [
+                'subject' => '[1/1] Better.Repost.part01.rar yEnc (1/20)',
+                'segments' => array_map(static fn (int $part): string => "new-{$part}@example.test", range(1, 20)),
+            ],
+        ]);
+        $this->assertSame(NzbImportStatus::Duplicate, $this->scan($complete));
+
+        $stored = Release::query()->firstOrFail();
+        $this->assertSame(1, Release::query()->count());
+        $this->assertSame($anchorId, (int) $stored->id);
+        $this->assertSame($anchorGuid, (string) $stored->guid);
+        $this->assertSame(100.0, (float) $stored->completion);
+        $this->assertSame(20_000, (int) $stored->size);
+        $this->assertSame(1, (int) $stored->totalpart);
+        $this->assertSame(1, (int) $stored->declaredfiles);
+        $this->assertSame(0, (int) $stored->proc_files);
+
+        $contents = $nzb->readNzbContents($anchorGuid);
+        $this->assertIsString($contents);
+        $this->assertStringContainsString('new-20@example.test', $contents);
+        $this->assertStringNotContainsString('old-1@example.test', $contents);
+    }
+
     public function test_zero_segment_nzbs_get_null_hash_and_do_not_collide(): void
     {
         $first = $this->scan($this->makeNzb([['subject' => 'Empty.Segments.One', 'segments' => []]]));
@@ -245,6 +294,7 @@ class NzbImportSegmentHashDedupeTest extends TestCase
             id INTEGER PRIMARY KEY,
             name VARCHAR(255),
             searchname VARCHAR(255),
+            searchname_normalized VARCHAR(255),
             totalpart INTEGER,
             declaredfiles INTEGER NULL,
             firstarticle INTEGER NULL,
@@ -262,6 +312,17 @@ class NzbImportSegmentHashDedupeTest extends TestCase
             nfostatus INTEGER,
             nzbstatus INTEGER,
             completion DOUBLE NOT NULL DEFAULT 0,
+            pp_timeout_count INTEGER NOT NULL DEFAULT 0,
+            proc_nfo INTEGER NOT NULL DEFAULT 0,
+            proc_files INTEGER NOT NULL DEFAULT 0,
+            proc_srr INTEGER NOT NULL DEFAULT 0,
+            proc_crc32 INTEGER NOT NULL DEFAULT 0,
+            proc_uid INTEGER NOT NULL DEFAULT 0,
+            proc_hash16k INTEGER NOT NULL DEFAULT 0,
+            proc_par2 INTEGER NOT NULL DEFAULT 0,
+            proc_srrdb INTEGER NOT NULL DEFAULT 0,
+            proc_xxx INTEGER NOT NULL DEFAULT 0,
+            proc_media_movie INTEGER NOT NULL DEFAULT 0,
             isrenamed INTEGER,
             is_trusted_name INTEGER DEFAULT 0,
             iscategorized INTEGER,
@@ -270,6 +331,8 @@ class NzbImportSegmentHashDedupeTest extends TestCase
             collectionhash BLOB NULL
         )');
         DB::statement('CREATE UNIQUE INDEX ux_releases_collectionhash ON releases (collectionhash)');
+        DB::statement('CREATE TABLE video_data (id INTEGER PRIMARY KEY, releases_id INTEGER)');
+        DB::statement('CREATE TABLE audio_data (id INTEGER PRIMARY KEY, releases_id INTEGER)');
         DB::statement('CREATE TABLE release_naming_regexes (
             id INTEGER PRIMARY KEY,
             group_regex VARCHAR(255),

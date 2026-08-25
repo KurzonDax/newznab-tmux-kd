@@ -21,14 +21,22 @@ use Illuminate\Database\Eloquent\Builder;
 final class ReleaseDuplicateFinder
 {
     /**
-     * How many size-band candidates the normalized fallback inspects before giving up.
-     */
-    private const int NORMALIZED_CANDIDATE_LIMIT = 25;
-
-    /**
      * @var list<string>
      */
-    private const array SELECTED_COLUMNS = ['id', 'predb_id', 'searchname', 'fromname', 'size', 'name'];
+    private const array SELECTED_COLUMNS = [
+        'id',
+        'predb_id',
+        'searchname',
+        'searchname_normalized',
+        'fromname',
+        'size',
+        'name',
+        'completion',
+        'guid',
+        'totalpart',
+        'declaredfiles',
+        'nzbstatus',
+    ];
 
     /**
      * @return array{0: ?Release, 1: ?string} Tuple of matched release (if any) and dedupe reason for logging.
@@ -63,18 +71,29 @@ final class ReleaseDuplicateFinder
             $query->where('name', $cleanRelName);
         }
 
-        $dup = $query->first(self::SELECTED_COLUMNS);
+        $dup = $query
+            ->orderByDesc('completion')
+            ->orderBy('id')
+            ->first(self::SELECTED_COLUMNS);
 
-        if ($dup !== null) {
+        if ($dup !== null && $predbId > 0 && (int) $dup->predb_id === $predbId) {
             return [$dup, $this->resolveReason($dup, $searchName, $predbId)];
         }
 
         if ($searchName !== '') {
-            $dup = $this->findNormalizedMatch($lowSize, $highSize, $searchName);
+            $normalizedMatch = $this->findNormalizedMatch($lowSize, $highSize, $searchName);
 
-            if ($dup !== null) {
-                return [$dup, 'normalized_searchname_match'];
+            if ($normalizedMatch !== null) {
+                $reason = (string) $normalizedMatch->searchname === $searchName
+                    ? 'searchname_match'
+                    : 'normalized_searchname_match';
+
+                return [$normalizedMatch, $reason];
             }
+        }
+
+        if ($dup !== null) {
+            return [$dup, $this->resolveReason($dup, $searchName, $predbId)];
         }
 
         return [null, null];
@@ -83,11 +102,8 @@ final class ReleaseDuplicateFinder
     /**
      * Retry the searchname match with raw-subject leftovers stripped from both sides.
      *
-     * Only index-friendly predicates reach the database: an equality on the
-     * normalized candidate (stored value already clean) plus two prefix LIKEs
-     * (stored value still carries a suffix, quoted or not). Whether a candidate
-     * really is the same upload is decided in PHP, so no REPLACE() scan of the
-     * releases table is needed.
+     * The persisted identity makes the database prefilter complete and indexable.
+     * PHP verification remains as a cheap invariant check against writer drift.
      */
     private function findNormalizedMatch(int $lowSize, int $highSize, string $searchName): ?Release
     {
@@ -97,16 +113,11 @@ final class ReleaseDuplicateFinder
             return null;
         }
 
-        // Wildcards are left unescaped on purpose: LIKE only widens the candidate
-        // set, and every candidate is verified below.
         $candidates = Release::query()
             ->whereBetween('size', [$lowSize, $highSize])
-            ->where(function (Builder $w) use ($normalized): void {
-                $w->where('searchname', $normalized)
-                    ->orWhere('searchname', 'like', $normalized.'.%')
-                    ->orWhere('searchname', 'like', '"'.$normalized.'%');
-            })
-            ->limit(self::NORMALIZED_CANDIDATE_LIMIT)
+            ->where('searchname_normalized', $normalized)
+            ->orderByDesc('completion')
+            ->orderBy('id')
             ->get(self::SELECTED_COLUMNS);
 
         foreach ($candidates as $candidate) {
