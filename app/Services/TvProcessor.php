@@ -11,6 +11,8 @@ use App\Services\TvProcessing\Providers\TmdbProvider;
 use App\Services\TvProcessing\Providers\TraktProvider;
 use App\Services\TvProcessing\Providers\TvdbProvider;
 use App\Services\TvProcessing\Providers\TvMazeProvider;
+use App\Services\TvProcessing\TvEpisodeRevisitService;
+use App\Services\TvProcessing\TvProcessingCandidateQuery;
 
 class TvProcessor
 {
@@ -55,6 +57,8 @@ class TvProcessor
         if ($processTV <= 0) {
             return;
         }
+
+        app(TvEpisodeRevisitService::class)->finalizeExpired($groupID, $guidChar, $processTV);
 
         if ($mode === self::MODE_PARALLEL) {
             $this->processParallel($groupID, $guidChar, $processTV);
@@ -202,7 +206,12 @@ class TvProcessor
     {
         $status = $provider['status'] ?? 0;
 
-        $baseQuery = Release::query()
+        $baseQuery = TvProcessingCandidateQuery::providerStage(
+            $status,
+            $groupID,
+            $guidChar,
+            $processTV,
+        )
             ->select([
                 'id',
                 'guid',
@@ -214,23 +223,7 @@ class TvProcessor
                 'videos_id',
                 'tv_episodes_id',
                 'postdate',
-            ])
-            ->where(['videos_id' => 0, 'tv_episodes_id' => $status])
-            ->where('size', '>', 1048576)
-            ->whereBetween('categories_id', [5000, 5999])
-            ->where('categories_id', '<>', 5070);
-
-        if ($groupID !== '') {
-            $baseQuery->where('groups_id', $groupID);
-        }
-
-        if ($guidChar !== '') {
-            $baseQuery->where('leftguid', $guidChar);
-        }
-
-        if ($processTV === 2) {
-            $baseQuery->where('isrenamed', '=', 1);
-        }
+            ]);
 
         $total = (clone $baseQuery)->count();
         if ($total === 0) {

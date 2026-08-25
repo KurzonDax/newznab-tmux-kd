@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\TvProcessing\Pipes;
 
 use App\Services\TvProcessing\Providers\LocalDbProvider;
+use App\Services\TvProcessing\TvEpisodeRevisitService;
 use App\Services\TvProcessing\TvProcessingPassable;
 use App\Services\TvProcessing\TvProcessingResult;
 
@@ -56,7 +57,9 @@ class LocalDbPipe extends AbstractTvProviderPipe
         $localDb = $this->getLocalDb();
 
         // Try to find the show in our local database by title
-        $videoId = $localDb->getByTitle($cleanName, self::TYPE_TV, 0);
+        $videoId = $context->videosId > 0
+            ? $context->videosId
+            : $localDb->getByTitle($cleanName, self::TYPE_TV, 0);
 
         // If not found and cleanName contains a year in parentheses, try without the year
         if (($videoId === 0 || $videoId === false) && preg_match('/^(.+?)\s*\(\d{4}\)$/', (string) $cleanName, $yearMatch)) {
@@ -68,6 +71,13 @@ class LocalDbPipe extends AbstractTvProviderPipe
             $this->outputNotFound($cleanName);
 
             return TvProcessingResult::notFound($this->getName(), ['title' => $cleanName]);
+        }
+
+        if (($parsedInfo['episode'] ?? null) === 'all') {
+            $localDb->setVideoIdFound($videoId, $context->releaseId, 0);
+            $localDb->setVideoNotFound(TvEpisodeRevisitService::NO_MATCH_FOUND, $context->releaseId);
+
+            return TvProcessingResult::matched($videoId, 0, $this->getName(), ['full_season' => true]);
         }
 
         // Found a matching show in local DB

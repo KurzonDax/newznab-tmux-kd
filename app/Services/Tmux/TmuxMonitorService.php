@@ -11,6 +11,7 @@ use App\Models\Settings;
 use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
 use App\Services\AudioProcessing\AudioCandidateQuery;
 use App\Services\NameFixing\NameFixingQueryService;
+use App\Services\TvProcessing\TvProcessingCandidateQuery;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -253,6 +254,12 @@ class TmuxMonitorService
                 ->predbCandidateCount();
         } catch (\Exception $e) {
             logger()->error('Error collecting the PreDB full-text backlog: '.$e->getMessage());
+        }
+
+        try {
+            $this->runVar['counts']['now']['processtv'] = TvProcessingCandidateQuery::count();
+        } catch (\Exception $e) {
+            logger()->error('Error collecting the TV processing backlog: '.$e->getMessage());
         }
 
         try {

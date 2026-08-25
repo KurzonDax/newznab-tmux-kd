@@ -88,7 +88,7 @@ class TvdbProvider extends AbstractTvProvider
 
             $release = $this->parseInfo($row['searchname']);
             if (\is_array($release) && $release['name'] !== '') {
-                if (\in_array($release['cleanname'], $this->titleCache, false)) {
+                if ((int) ($row['videos_id'] ?? 0) <= 0 && \in_array($release['cleanname'], $this->titleCache, false)) {
                     if ($this->echooutput) {
                         cli()->primaryOver('    → ');
                         cli()->alternateOver($this->truncateTitle($release['cleanname']));
@@ -101,7 +101,10 @@ class TvdbProvider extends AbstractTvProvider
                     continue;
                 }
 
-                $videoId = $this->getByTitle($release['cleanname'], parent::TYPE_TV);
+                $isEpisodeRevisit = (int) ($row['videos_id'] ?? 0) > 0;
+                $videoId = $isEpisodeRevisit
+                    ? (int) $row['videos_id']
+                    : $this->getByTitle($release['cleanname'], parent::TYPE_TV);
 
                 if ($videoId !== 0) {
                     $siteId = $this->getSiteByID('tvdb', (int) $videoId);
@@ -112,7 +115,7 @@ class TvdbProvider extends AbstractTvProvider
                     $lookupSetting = false;
                 }
 
-                if ($siteId === false && $lookupSetting) {
+                if ($siteId === false && $lookupSetting && ! $isEpisodeRevisit) {
                     if ($this->echooutput) {
                         cli()->primaryOver('    → ');
                         cli()->headerOver($this->truncateTitle($release['cleanname']));
@@ -141,16 +144,18 @@ class TvdbProvider extends AbstractTvProvider
                 }
 
                 if ((int) $videoId > 0 && (int) $siteId > 0) {
-                    if (! empty($tvdbShow['poster'])) {
-                        $this->getPoster($videoId);
-                    } elseif ($this->fanart->isConfigured()) {
-                        $posterUrl = $this->fanart->getBestTvPoster($siteId);
-                        if (! empty($posterUrl)) {
-                            $this->posterUrl = $posterUrl;
+                    if (! $isEpisodeRevisit) {
+                        if (! empty($tvdbShow['poster'])) {
                             $this->getPoster($videoId);
+                        } elseif ($this->fanart->isConfigured()) {
+                            $posterUrl = $this->fanart->getBestTvPoster($siteId);
+                            if (! empty($posterUrl)) {
+                                $this->posterUrl = $posterUrl;
+                                $this->getPoster($videoId);
+                            }
                         }
+                        $this->getBanner((int) $videoId, (int) $siteId);
                     }
-                    $this->getBanner((int) $videoId, (int) $siteId);
 
                     $seriesNo = (! empty($release['season']) ? preg_replace('/^S0*/i', '', (string) $release['season']) : '');
                     $episodeNo = (! empty($release['episode']) ? preg_replace('/^E0*/i', '', (string) $release['episode']) : '');

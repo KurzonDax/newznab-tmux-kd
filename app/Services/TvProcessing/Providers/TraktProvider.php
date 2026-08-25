@@ -8,6 +8,7 @@ use App\Enums\ImageAssetProfile;
 use App\Models\Video;
 use App\Services\ReleaseImageService;
 use App\Services\TraktService;
+use App\Services\TvProcessing\TvEpisodeRevisitService;
 use DariusIII\TVMaze\TVMaze;
 use Illuminate\Support\Carbon;
 
@@ -76,21 +77,23 @@ class TraktProvider extends AbstractTvProvider
                 // Clean the show name for better match probability
                 $release = $this->parseInfo($row['searchname']);
                 if (\is_array($release) && $release['name'] !== '') {
-                    if (\in_array($release['cleanname'], $this->titleCache, false)) {
+                    if ((int) ($row['videos_id'] ?? 0) <= 0 && \in_array($release['cleanname'], $this->titleCache, false)) {
                         if ($this->echooutput) {
                             cli()->primaryOver('    → ');
                             cli()->alternateOver($this->truncateTitle($release['cleanname']));
                             cli()->primaryOver(' → ');
                             cli()->alternate('Skipped (previously failed)');
                         }
-                        $this->setVideoNotFound(parent::PROCESS_IMDB, $row['id']);
+                        $this->settleFailure($row);
                         $skipped++;
 
                         continue;
                     }
 
-                    // Find the Video ID if it already exists by checking the title.
-                    $videoId = $this->getByTitle($release['cleanname'], parent::TYPE_TV, parent::SOURCE_TRAKT);
+                    // A revisit already owns its show identity; only look up the episode.
+                    $videoId = (int) ($row['videos_id'] ?? 0) > 0
+                        ? (int) $row['videos_id']
+                        : $this->getByTitle($release['cleanname'], parent::TYPE_TV, parent::SOURCE_TRAKT);
 
                     // Force local lookup only
                     if ($local === true) {
@@ -181,7 +184,7 @@ class TraktProvider extends AbstractTvProvider
                         } else {
                             // Processing failed, set the episode ID to the next processing group
                             $this->setVideoIdFound($videoId, $row['id'], 0);
-                            $this->setVideoNotFound(parent::PROCESS_IMDB, $row['id']);
+                            app(TvEpisodeRevisitService::class)->settleFinalFailure((int) $row['id']);
                             if ($this->echooutput) {
                                 cli()->primaryOver('    → ');
                                 cli()->alternateOver($this->truncateTitle($release['cleanname']));
@@ -191,7 +194,7 @@ class TraktProvider extends AbstractTvProvider
                         }
                     } else {
                         // Processing failed, set the episode ID to the next processing group
-                        $this->setVideoNotFound(parent::PROCESS_IMDB, $row['id']);
+                        $this->settleFailure($row);
                         $this->titleCache[] = $release['cleanname'] ?? null;
                         if ($this->echooutput) {
                             cli()->primaryOver('    → ');
@@ -202,7 +205,7 @@ class TraktProvider extends AbstractTvProvider
                     }
                 } else {
                     // Processing failed, set the episode ID to the next processing group
-                    $this->setVideoNotFound(parent::PROCESS_IMDB, $row['id']);
+                    $this->settleFailure($row);
                     $this->titleCache[] = $release['cleanname'] ?? null;
                     if ($this->echooutput) {
                         cli()->primaryOver('    → ');
@@ -220,6 +223,20 @@ class TraktProvider extends AbstractTvProvider
                 cli()->primary(sprintf('%d matched, %d skipped', $matched, $skipped));
             }
         }
+    }
+
+    /**
+     * @param  array<string, mixed>|\ArrayAccess<string, mixed>  $row
+     */
+    private function settleFailure(array|\ArrayAccess $row): void
+    {
+        if ((int) ($row['videos_id'] ?? 0) > 0) {
+            app(TvEpisodeRevisitService::class)->settleFinalFailure((int) $row['id']);
+
+            return;
+        }
+
+        $this->setVideoNotFound(parent::NO_MATCH_FOUND, $row['id']);
     }
 
     /**

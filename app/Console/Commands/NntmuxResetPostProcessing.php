@@ -83,6 +83,7 @@ class NntmuxResetPostProcessing extends Command
                             'bookinfo_id' => null,
                             'videos_id' => 0,
                             'tv_episodes_id' => 0,
+                            'tv_episode_lookup_attempted_at' => null,
                             'jpgstatus' => 0,
                             'videostatus' => 0,
                             'nfostatus' => -1,
@@ -326,7 +327,7 @@ class NntmuxResetPostProcessing extends Command
 
     private function resetTv(): void
     {
-        $qry = Release::query()->where('videos_id', '!=', 0)->where('tv_episodes_id', '!=', 0)->whereBetween('categories_id', [Category::TV_ROOT, Category::TV_OTHER])->get();
+        $qry = Release::query()->where('videos_id', '!=', 0)->whereBetween('categories_id', [Category::TV_ROOT, Category::TV_OTHER])->get();
         $total = $qry->count();
         if ($total > 0) {
             $bar = $this->output->createProgressBar($total);
@@ -337,6 +338,7 @@ class NntmuxResetPostProcessing extends Command
                     [
                         'videos_id' => 0,
                         'tv_episodes_id' => 0,
+                        'tv_episode_lookup_attempted_at' => null,
                     ]);
                 Search::updateRelease((int) $releases->id);
                 $bar->advance();

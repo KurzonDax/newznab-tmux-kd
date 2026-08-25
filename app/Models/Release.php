@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Pagination\LengthAwarePaginator as PaginatorLengthAware;
 use Illuminate\Pagination\Paginator;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -53,6 +54,7 @@ use Illuminate\Support\Facades\DB;
  * @property int|null $_totalcount From subquery count
  * @property list<int|float|string>|null $_search_last_sort Transient search cursor tuple
  * @property bool|null $_search_has_more Transient search pagination state
+ * @property Carbon|null $tv_episode_lookup_attempted_at Last completed missing-episode provider pass
  */
 class Release extends Model
 {
@@ -82,6 +84,7 @@ class Release extends Model
             'rescan_outcome' => ReleaseRepairOutcome::class,
             'rescan_target_completion' => 'float',
             'rescan_evaluated_target_completion' => 'float',
+            'tv_episode_lookup_attempted_at' => 'datetime',
         ];
     }
 
