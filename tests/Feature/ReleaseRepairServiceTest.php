@@ -220,14 +220,27 @@ class ReleaseRepairServiceTest extends TestCase
         // A wrong template would fill the file with IDs that fail at download time, which is
         // worse than leaving the release short.
         $release = $this->releaseWithNzb(1, completion: 40.0, segments: [1 => 1, 3 => 3]);
+        DB::table('releases')->where('id', 1)->update(array_merge([
+            'haspreview' => 0,
+            'passwordstatus' => 0,
+            'nfostatus' => 0,
+        ], array_fill_keys($this->nameSourceColumns(), 1)));
         $before = $this->storedNzb($release);
         $this->providerArticles = [];
 
-        $result = $this->service()->repair($release, new ReleaseRepairOptions);
+        $result = $this->service()->repair($release->fresh(), new ReleaseRepairOptions);
+        $stored = DB::table('releases')->where('id', 1)->first();
 
         $this->assertSame(0, $result->segmentsAdded);
         $this->assertGreaterThan(0, $result->articlesProbed);
         $this->assertSame($before, $this->storedNzb($release));
+        $this->assertSame(0, (int) $stored->haspreview);
+        $this->assertSame(0, (int) $stored->passwordstatus);
+        $this->assertSame(0, (int) $stored->nfostatus);
+
+        foreach ($this->nameSourceColumns() as $column) {
+            $this->assertSame(1, (int) $stored->{$column}, $column.' should remain settled without new evidence.');
+        }
     }
 
     #[Test]
@@ -251,7 +264,11 @@ class ReleaseRepairServiceTest extends TestCase
     public function a_repaired_release_with_no_artifacts_is_re_queued_for_additional_processing(): void
     {
         $release = $this->releaseWithNzb(1, completion: 40.0, segments: [1 => 1, 3 => 3]);
-        DB::table('releases')->where('id', 1)->update(['haspreview' => 0, 'passwordstatus' => 0]);
+        DB::table('releases')->where('id', 1)->update(array_merge([
+            'haspreview' => 0,
+            'passwordstatus' => 0,
+            'nfostatus' => 0,
+        ], array_fill_keys($this->nameSourceColumns(), 1)));
         $this->providerHasEveryArticle();
 
         $result = $this->service()->repair($release->fresh(), new ReleaseRepairOptions);
@@ -264,6 +281,14 @@ class ReleaseRepairServiceTest extends TestCase
             (int) DB::table('releases')->where('id', 1)->value('passwordstatus'),
         );
         $this->assertSame(0, (int) DB::table('releases')->where('id', 1)->value('pp_timeout_count'));
+        $stored = DB::table('releases')->where('id', 1)->first();
+        $this->assertSame(1, (int) $stored->totalpart);
+        $this->assertSame(100.0, (float) $stored->completion);
+        $this->assertSame(-1, (int) $stored->nfostatus);
+
+        foreach ($this->nameSourceColumns() as $column) {
+            $this->assertSame(0, (int) $stored->{$column}, $column.' should be eligible once more.');
+        }
     }
 
     #[Test]
@@ -272,7 +297,11 @@ class ReleaseRepairServiceTest extends TestCase
         // Additional processing cannot improve on what it already produced, and the slot is
         // better spent on a fresh release.
         $release = $this->releaseWithNzb(1, completion: 40.0, segments: [1 => 1, 3 => 3]);
-        DB::table('releases')->where('id', 1)->update(['haspreview' => 0, 'passwordstatus' => 0]);
+        DB::table('releases')->where('id', 1)->update(array_merge([
+            'haspreview' => 0,
+            'passwordstatus' => 0,
+            'nfostatus' => 0,
+        ], array_fill_keys($this->nameSourceColumns(), 1)));
         DB::table('video_data')->insert(['releases_id' => 1, 'videocodec' => 'h264']);
         $this->providerHasEveryArticle();
 
@@ -281,6 +310,32 @@ class ReleaseRepairServiceTest extends TestCase
         $this->assertGreaterThan($result->completionBefore, $result->completionAfter);
         $this->assertFalse($result->requeuedForAdditionalProcessing);
         $this->assertSame(0, (int) DB::table('releases')->where('id', 1)->value('haspreview'));
+        $stored = DB::table('releases')->where('id', 1)->first();
+        $this->assertSame(0, (int) $stored->passwordstatus);
+        $this->assertSame(-1, (int) $stored->nfostatus);
+
+        foreach ($this->nameSourceColumns() as $column) {
+            $this->assertSame(0, (int) $stored->{$column}, $column.' should reset despite the AP artifact.');
+        }
+    }
+
+    #[Test]
+    public function successful_name_and_nfo_verdicts_survive_repaired_evidence(): void
+    {
+        $release = $this->releaseWithNzb(1, completion: 40.0, segments: [1 => 1, 3 => 3]);
+        DB::table('releases')->where('id', 1)->update(array_merge([
+            'isrenamed' => 1,
+            'predb_id' => 42,
+            'nfostatus' => 1,
+        ], array_fill_keys($this->nameSourceColumns(), 1)));
+        $this->providerHasEveryArticle();
+
+        $this->service()->repair($release->fresh(), new ReleaseRepairOptions);
+        $stored = DB::table('releases')->where('id', 1)->first();
+
+        $this->assertSame(1, (int) $stored->isrenamed);
+        $this->assertSame(42, (int) $stored->predb_id);
+        $this->assertSame(1, (int) $stored->nfostatus);
     }
 
     #[Test]
@@ -504,6 +559,25 @@ class ReleaseRepairServiceTest extends TestCase
         return $value === null ? null : (string) $value;
     }
 
+    /**
+     * @return list<string>
+     */
+    private function nameSourceColumns(): array
+    {
+        return [
+            'proc_nfo',
+            'proc_files',
+            'proc_srr',
+            'proc_crc32',
+            'proc_uid',
+            'proc_hash16k',
+            'proc_par2',
+            'proc_srrdb',
+            'proc_xxx',
+            'proc_media_movie',
+        ];
+    }
+
     private function createSchema(): void
     {
         DB::statement('DROP TABLE IF EXISTS releases');
@@ -520,9 +594,23 @@ class ReleaseRepairServiceTest extends TestCase
             repair_evaluated_target_completion DOUBLE NULL,
             recovery_claimed_at DATETIME NULL,
             postdate DATETIME NULL,
+            totalpart INTEGER NOT NULL DEFAULT 0,
             haspreview INTEGER NOT NULL DEFAULT -1,
             passwordstatus INTEGER NOT NULL DEFAULT -1,
-            pp_timeout_count INTEGER NOT NULL DEFAULT 2
+            pp_timeout_count INTEGER NOT NULL DEFAULT 2,
+            predb_id INTEGER NOT NULL DEFAULT 0,
+            isrenamed INTEGER NOT NULL DEFAULT 0,
+            nfostatus INTEGER NOT NULL DEFAULT -1,
+            proc_nfo INTEGER NOT NULL DEFAULT 0,
+            proc_files INTEGER NOT NULL DEFAULT 0,
+            proc_srr INTEGER NOT NULL DEFAULT 0,
+            proc_crc32 INTEGER NOT NULL DEFAULT 0,
+            proc_uid INTEGER NOT NULL DEFAULT 0,
+            proc_hash16k INTEGER NOT NULL DEFAULT 0,
+            proc_par2 INTEGER NOT NULL DEFAULT 0,
+            proc_srrdb INTEGER NOT NULL DEFAULT 0,
+            proc_xxx INTEGER NOT NULL DEFAULT 0,
+            proc_media_movie INTEGER NOT NULL DEFAULT 0
         )');
         DB::statement('CREATE TABLE video_data (releases_id INTEGER PRIMARY KEY, videocodec VARCHAR(255) NULL)');
         DB::statement('CREATE TABLE audio_data (id INTEGER PRIMARY KEY, releases_id INTEGER, audioformat VARCHAR(255) NULL)');

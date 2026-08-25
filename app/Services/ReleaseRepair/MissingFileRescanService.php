@@ -60,6 +60,7 @@ final class MissingFileRescanService
         private readonly RescanWindowResolver $windowResolver,
         private readonly DeclaredFileCount $declaredFileCount = new DeclaredFileCount,
         private readonly NzbParserService $parser = new NzbParserService,
+        private readonly EvidenceChangedTransition $evidenceChanged = new EvidenceChangedTransition,
     ) {}
 
     /**
@@ -269,6 +270,10 @@ final class MissingFileRescanService
                 $completionBefore,
                 'Re-scanned NZB could not be written back to disk.',
             ));
+        }
+
+        if ($added > 0) {
+            $this->evidenceChanged->apply($release, $document, $declared);
         }
 
         $outcome = match (true) {
