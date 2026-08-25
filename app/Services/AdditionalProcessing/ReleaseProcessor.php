@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services\AdditionalProcessing;
 
+use App\Enums\NzbParseFailure;
 use App\Models\UsenetGroup;
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\DTO\ArchiveCandidate;
 use App\Services\AdditionalProcessing\DTO\ReleaseProcessingResult;
 use App\Services\AdditionalProcessing\Enums\DownloadKind;
 use App\Services\AdditionalProcessing\Enums\Mp4MoovSpliceStatus;
-use App\Services\AdditionalProcessing\Enums\NzbParseFailure;
 use App\Services\AdditionalProcessing\Enums\PayloadClassification;
 use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
 use App\Services\AdditionalProcessing\Enums\ProcessingStage;

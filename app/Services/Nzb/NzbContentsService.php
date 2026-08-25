@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Nzb;
 
+use App\Enums\NzbParseFailure;
 use App\Models\Release;
 use App\Models\Settings;
 use App\Services\NfoService;
@@ -73,14 +74,18 @@ class NzbContentsService
      * @param  int  $relID  The release ID.
      * @param  int  $groupID  The group ID.
      * @param  string  $groupName  The group name.
-     * @return string|false The verified NFO content as a string, or false if not found, download failed, or verification failed.
+     * @return string|false|NzbParseFailure The verified NFO content, a terminal no-NFO verdict, or a retryable NZB read failure.
      *
      * @throws \Exception If NNTP operations fail.
      */
-    public function getNfoFromNzb(string $guid, int $relID, int $groupID, string $groupName): string|false
+    public function getNfoFromNzb(string $guid, int $relID, int $groupID, string $groupName): string|false|NzbParseFailure
     {
         // Step 1: Attempt to find a potential NFO message ID
         $messageID = $this->parseNzb($guid, $relID, $groupID, true);
+
+        if ($messageID instanceof NzbParseFailure) {
+            return $messageID;
+        }
 
         // If no NFO message ID found
         if ($messageID === false || ! isset($messageID['id'])) {
@@ -134,15 +139,15 @@ class NzbContentsService
      * @param  int  $relID  The release ID.
      * @param  int  $groupID  The group ID.
      * @param  bool  $nfoCheck  Whether to specifically look for an NFO file.
-     * @return array<string, mixed>|false An array containing NFO message ID and hidden status, or false if not found/error.
+     * @return array<string, mixed>|false|NzbParseFailure An NFO message ID, a no-NFO verdict, or a retryable NZB read failure.
      *
      * @throws \Exception If NNTP operations fail.
      */
-    public function parseNzb(string $guid, int $relID, int $groupID, bool $nfoCheck = false): bool|array
+    public function parseNzb(string $guid, int $relID, int $groupID, bool $nfoCheck = false): bool|array|NzbParseFailure
     {
         $nzbFile = $this->loadNzb($guid);
-        if ($nzbFile === false) {
-            return false;
+        if ($nzbFile instanceof NzbParseFailure) {
+            return $nzbFile;
         }
 
         $messageID = $hiddenID = '';
@@ -226,14 +231,16 @@ class NzbContentsService
      * Loads and parses an NZB file based on a GUID.
      *
      * @param  string  $guid  The release GUID to locate the NZB file
-     * @return \SimpleXMLElement|false The parsed NZB file as SimpleXMLElement or false on failure
+     * @return \SimpleXMLElement|NzbParseFailure The parsed NZB or its retryable read failure.
      */
-    public function loadNzb(string $guid): \SimpleXMLElement|false
+    public function loadNzb(string $guid): \SimpleXMLElement|NzbParseFailure
     {
         // Fetch the NZB file path using the GUID
         $nzbPath = $this->nzbService->nzbPath($guid);
         if ($nzbPath === false) {
-            return false;
+            return $this->nzbService->hasReadableNzbStorage()
+                ? NzbParseFailure::Missing
+                : NzbParseFailure::StorageUnavailable;
         }
 
         // Attempt to decompress the NZB file
@@ -245,10 +252,11 @@ class NzbContentsService
                 echo PHP_EOL."Unable to decompress: {$nzbPath} - {$formattedPerms} - may have bad file permissions, skipping.".PHP_EOL;
             }
 
-            return false;
+            return NzbParseFailure::Broken;
         }
 
-        return $this->parserService->parseNzbXml($nzbContents, $this->echoOutput, $guid);
+        return $this->parserService->parseNzbXml($nzbContents, $this->echoOutput, $guid)
+            ?: NzbParseFailure::Broken;
     }
 
     /**
@@ -271,7 +279,7 @@ class NzbContentsService
         }
 
         $nzbFile = $this->loadNzb($guid);
-        if ($nzbFile === false) {
+        if ($nzbFile instanceof NzbParseFailure) {
             return false;
         }
 

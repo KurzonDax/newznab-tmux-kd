@@ -2,13 +2,13 @@
 
 namespace Tests\Unit\AdditionalProcessing;
 
+use App\Enums\NzbParseFailure;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\AdditionalWorkPlanner;
 use App\Services\AdditionalProcessing\ArchiveExtractionService;
 use App\Services\AdditionalProcessing\ConsoleOutputService;
 use App\Services\AdditionalProcessing\DTO\DownloadMetrics;
 use App\Services\AdditionalProcessing\Enums\DownloadKind;
-use App\Services\AdditionalProcessing\Enums\NzbParseFailure;
 use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
 use App\Services\AdditionalProcessing\Enums\ProcessingStage;
 use App\Services\AdditionalProcessing\MediaExtractionService;
