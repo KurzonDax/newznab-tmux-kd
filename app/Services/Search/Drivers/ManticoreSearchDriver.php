@@ -16,13 +16,13 @@ use App\Models\Video;
 use App\Services\Search\Contracts\SearchDriverInterface;
 use App\Services\Search\DTO\ReleaseSearchQuery;
 use App\Services\Search\DTO\SearchPage;
+use App\Services\Search\ReleaseSearchIndexFailures;
 use App\Services\Search\Support\ManticoreClientFactory;
 use App\Services\Search\Support\ManticoreIndexRegistry;
 use App\Services\Search\Support\ReleaseIndexProjection;
 use App\Support\ReleaseSearchIndexDocument;
 use App\Support\SecondaryIndexDocuments;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Manticoresearch\Client;
 use Manticoresearch\Exceptions\ResponseException;
@@ -234,6 +234,57 @@ class ManticoreSearchDriver implements SearchDriverInterface
     }
 
     /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function releaseDocumentsAfterId(int $afterId, int $limit): array
+    {
+        $afterId = max(0, $afterId);
+        $limit = max(1, min(10000, $limit));
+        $index = $this->getReleasesIndex();
+
+        if (preg_match('/^[a-zA-Z0-9_]+$/', $index) !== 1) {
+            throw new \InvalidArgumentException('Unsafe Manticore index name.');
+        }
+
+        $fields = implode(', ', ReleaseSearchIndexDocument::fields());
+        $sql = "SELECT {$fields} FROM {$index} WHERE id > {$afterId} ORDER BY id ASC LIMIT {$limit} OPTION max_matches={$limit}";
+        $response = $this->manticoreSearch->sql($sql, true);
+
+        if (! is_array($response)) {
+            return [];
+        }
+
+        $documents = [];
+        foreach ($response as $key => $value) {
+            if (! is_array($value)) {
+                continue;
+            }
+
+            $id = isset($value['id']) ? (int) $value['id'] : (ctype_digit((string) $key) ? (int) $key : 0);
+            if ($id > $afterId) {
+                $documents[$id] = ReleaseSearchIndexDocument::normalizeForReconciliation($value, $id);
+            }
+        }
+
+        if ($documents === [] && isset($response['data']) && is_array($response['data'])) {
+            foreach ($response['data'] as $value) {
+                if (! is_array($value)) {
+                    continue;
+                }
+
+                $id = (int) ($value['id'] ?? 0);
+                if ($id > $afterId) {
+                    $documents[$id] = ReleaseSearchIndexDocument::normalizeForReconciliation($value, $id);
+                }
+            }
+        }
+
+        ksort($documents);
+
+        return array_slice($documents, 0, $limit, true);
+    }
+
+    /**
      * Check if autocomplete is enabled.
      */
     public function isAutocompleteEnabled(): bool
@@ -318,7 +369,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
 
         $releaseId = (int) $parameters['id'];
         if (! $this->replaceReleaseDocumentWithRetry($parameters)) {
-            $this->recordReleaseIndexFailure($releaseId, 'insertRelease', 'upsert');
+            ReleaseSearchIndexFailures::record($releaseId, 'insertRelease');
         }
     }
 
@@ -352,7 +403,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
                 $this->manticoreSearch->table($indexName)
                     ->replaceDocument($document, $releaseId);
 
-                $this->resolveReleaseIndexFailure($releaseId);
+                ReleaseSearchIndexFailures::resolve($releaseId);
 
                 return true;
             } catch (\Throwable $e) {
@@ -430,64 +481,6 @@ class ManticoreSearchDriver implements SearchDriverInterface
         }
 
         return $invalidFields;
-    }
-
-    private function recordReleaseIndexFailure(int $releaseId, string $phase, string $operation = 'upsert'): void
-    {
-        Cache::increment('search:index:failures:releases');
-        try {
-            $existing = DB::table('search_index_failures')
-                ->where('release_id', $releaseId)
-                ->first(['attempts']);
-            $attempts = ((int) ($existing->attempts ?? 0)) + 1;
-            DB::table('search_index_failures')->updateOrInsert(
-                ['release_id' => $releaseId],
-                [
-                    'operation' => $operation,
-                    'attempts' => $attempts,
-                    'last_error' => $phase,
-                    'next_attempt_at' => now()->addSeconds(min(3600, 2 ** min($attempts, 10))),
-                    'resolved_at' => null,
-                    'updated_at' => now(),
-                    'created_at' => now(),
-                ]
-            );
-        } catch (\Throwable $e) {
-            Log::error('ManticoreSearch: unable to persist release index failure', [
-                'release_id' => $releaseId,
-                'phase' => $phase,
-                'error' => $e->getMessage(),
-            ]);
-        }
-        if (Cache::add('search:index:release_index_warn_lock', true, 60)) {
-            Log::warning('ManticoreSearch: release indexing failure', [
-                'release_id_sample' => $releaseId,
-                'phase' => $phase,
-                'failures_total' => (int) Cache::get('search:index:failures:releases', 0),
-            ]);
-        }
-    }
-
-    private function resolveReleaseIndexFailure(int $releaseId): void
-    {
-        if ($releaseId <= 0) {
-            return;
-        }
-
-        try {
-            DB::table('search_index_failures')
-                ->where('release_id', $releaseId)
-                ->update([
-                    'resolved_at' => now(),
-                    'next_attempt_at' => null,
-                    'updated_at' => now(),
-                ]);
-        } catch (\Throwable $e) {
-            Log::debug('ManticoreSearch: unable to mark release index failure resolved', [
-                'release_id' => $releaseId,
-                'error' => $e->getMessage(),
-            ]);
-        }
     }
 
     private function recordReleaseNotFoundForIndex(int|string $releaseID): void
@@ -570,7 +563,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
                 $this->manticoreSearch->table($this->getReleasesIndex())
                     ->deleteDocumentsByIds($ids);
                 foreach ($ids as $id) {
-                    $this->resolveReleaseIndexFailure((int) $id);
+                    ReleaseSearchIndexFailures::resolve((int) $id);
                 }
 
                 return;
@@ -587,7 +580,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
                     'ids' => $ids,
                 ]);
                 foreach ($ids as $id) {
-                    $this->recordReleaseIndexFailure((int) $id, 'deleteReleases: '.$e->getMessage(), 'delete');
+                    ReleaseSearchIndexFailures::record((int) $id, 'deleteReleases: '.$e->getMessage(), 'delete');
                 }
             }
         }
@@ -977,7 +970,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
             Log::error('ManticoreSearch updateRelease error: '.$e->getMessage(), [
                 'release_id' => $releaseID,
             ]);
-            $this->recordReleaseIndexFailure((int) $releaseID, 'updateRelease_query');
+            ReleaseSearchIndexFailures::record((int) $releaseID, 'updateRelease_query');
         }
     }
 

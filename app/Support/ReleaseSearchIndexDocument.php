@@ -63,6 +63,21 @@ final class ReleaseSearchIndexDocument
     }
 
     /**
+     * Normalize either a DB projection or a driver response for drift comparison.
+     *
+     * @param  array<string, mixed>  $document
+     * @return array<string, mixed>
+     */
+    public static function normalizeForReconciliation(array $document, int $fallbackId = 0): array
+    {
+        if (! isset($document['id']) && $fallbackId > 0) {
+            $document['id'] = $fallbackId;
+        }
+
+        return self::normalizeForBulk($document);
+    }
+
+    /**
      * @param  array<string, mixed>  $row  Keys from DB or insert parameters
      * @return array<string, mixed>
      */

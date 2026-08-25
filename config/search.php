@@ -17,6 +17,11 @@ return [
 
     'cursor_ttl_minutes' => (int) env('SEARCH_CURSOR_TTL_MINUTES', 15),
 
+    'reconciliation' => [
+        'batch_size' => (int) env('SEARCH_RECONCILE_BATCH_SIZE', 100),
+        'cron' => env('SEARCH_RECONCILE_CRON', '*/5 * * * *'),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Search Driver Configurations

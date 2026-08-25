@@ -15,6 +15,7 @@ use App\Models\Video;
 use App\Services\Search\Contracts\SearchDriverInterface;
 use App\Services\Search\DTO\ReleaseSearchQuery;
 use App\Services\Search\DTO\SearchPage;
+use App\Services\Search\ReleaseSearchIndexFailures;
 use App\Services\Search\Support\ElasticsearchClientFactory;
 use App\Services\Search\Support\ElasticsearchResponseHelper;
 use App\Services\Search\Support\ReleaseIndexProjection;
@@ -1056,10 +1057,15 @@ class ElasticSearchDriver implements SearchDriverInterface
      */
     public function insertRelease(array $parameters): void
     {
-        if (empty($parameters['id']) || ! $this->isElasticsearchAvailable()) {
-            if (empty($parameters['id'])) {
-                Log::warning('ElasticSearch: Cannot insert release without ID');
-            }
+        if (empty($parameters['id'])) {
+            Log::warning('ElasticSearch: Cannot insert release without ID');
+
+            return;
+        }
+
+        $releaseId = (int) $parameters['id'];
+        if (! $this->isElasticsearchAvailable()) {
+            ReleaseSearchIndexFailures::record($releaseId, 'insertRelease_unavailable');
 
             return;
         }
@@ -1067,15 +1073,18 @@ class ElasticSearchDriver implements SearchDriverInterface
         try {
             $client = $this->getClient();
             $client->index($this->buildReleaseDocument($parameters));
+            ReleaseSearchIndexFailures::resolve($releaseId);
 
         } catch (ElasticsearchException $e) {
             Log::error('ElasticSearch insertRelease error: '.$e->getMessage(), [
-                'release_id' => $parameters['id'],
+                'release_id' => $releaseId,
             ]);
+            ReleaseSearchIndexFailures::record($releaseId, 'insertRelease: '.$e->getMessage());
         } catch (\Throwable $e) {
             Log::error('ElasticSearch insertRelease unexpected error: '.$e->getMessage(), [
-                'release_id' => $parameters['id'],
+                'release_id' => $releaseId,
             ]);
+            ReleaseSearchIndexFailures::record($releaseId, 'insertRelease: '.$e->getMessage());
         }
     }
 
@@ -1093,6 +1102,8 @@ class ElasticSearchDriver implements SearchDriverInterface
         }
 
         if (! $this->isElasticsearchAvailable()) {
+            ReleaseSearchIndexFailures::record((int) $releaseID, 'updateRelease_unavailable');
+
             return;
         }
 
@@ -1112,10 +1123,12 @@ class ElasticSearchDriver implements SearchDriverInterface
             Log::error('ElasticSearch updateRelease error: '.$e->getMessage(), [
                 'release_id' => $releaseID,
             ]);
+            ReleaseSearchIndexFailures::record((int) $releaseID, 'updateRelease_query: '.$e->getMessage());
         } catch (\Throwable $e) {
             Log::error('ElasticSearch updateRelease unexpected error: '.$e->getMessage(), [
                 'release_id' => $releaseID,
             ]);
+            ReleaseSearchIndexFailures::record((int) $releaseID, 'updateRelease_query: '.$e->getMessage());
         }
     }
 
@@ -1225,9 +1238,15 @@ class ElasticSearchDriver implements SearchDriverInterface
             static fn (int $id): bool => $id > 0
         )));
 
-        if ($ids === [] || ! $this->isElasticsearchAvailable()) {
-            if ($ids === []) {
-                Log::warning('ElasticSearch: Cannot delete release without ID');
+        if ($ids === []) {
+            Log::warning('ElasticSearch: Cannot delete release without ID');
+
+            return;
+        }
+
+        if (! $this->isElasticsearchAvailable()) {
+            foreach ($ids as $id) {
+                ReleaseSearchIndexFailures::record($id, 'deleteReleases_unavailable', 'delete');
             }
 
             return;
@@ -1239,12 +1258,17 @@ class ElasticSearchDriver implements SearchDriverInterface
             foreach ($ids as $id) {
                 $body[] = ['delete' => ['_index' => $this->getReleasesIndex(), '_id' => $id]];
             }
-            $client->bulk(['body' => $body]);
+            $response = ElasticsearchResponseHelper::asArray($client->bulk(['body' => $body]));
+            $this->recordReleaseDeleteResults($ids, $response);
 
         } catch (\Throwable $e) {
             if (ElasticsearchResponseHelper::isNotFound($e)) {
                 if (config('app.debug')) {
                     Log::debug('ElasticSearch deleteReleases: document not found', ['release_ids' => $ids]);
+                }
+
+                foreach ($ids as $id) {
+                    ReleaseSearchIndexFailures::resolve($id);
                 }
 
                 return;
@@ -1254,14 +1278,81 @@ class ElasticSearchDriver implements SearchDriverInterface
                 Log::error('ElasticSearch deleteReleases error: '.$e->getMessage(), [
                     'release_ids' => $ids,
                 ]);
-
-                return;
+            } else {
+                Log::error('ElasticSearch deleteReleases unexpected error: '.$e->getMessage(), [
+                    'release_ids' => $ids,
+                ]);
             }
 
-            Log::error('ElasticSearch deleteReleases unexpected error: '.$e->getMessage(), [
-                'release_ids' => $ids,
-            ]);
+            foreach ($ids as $id) {
+                ReleaseSearchIndexFailures::record($id, 'deleteReleases: '.$e->getMessage(), 'delete');
+            }
         }
+    }
+
+    /**
+     * @param  list<int>  $ids
+     * @param  array<string, mixed>  $response
+     */
+    private function recordReleaseDeleteResults(array $ids, array $response): void
+    {
+        $unreportedIds = array_fill_keys($ids, true);
+
+        foreach ((array) ($response['items'] ?? []) as $item) {
+            $result = (array) (((array) $item)['delete'] ?? []);
+            $id = (int) ($result['_id'] ?? 0);
+
+            if (! isset($unreportedIds[$id])) {
+                continue;
+            }
+
+            unset($unreportedIds[$id]);
+            $status = (int) ($result['status'] ?? 0);
+            if (($status >= 200 && $status < 300) || $status === 404) {
+                ReleaseSearchIndexFailures::resolve($id);
+
+                continue;
+            }
+
+            $error = json_encode($result['error'] ?? 'unknown bulk delete failure');
+            ReleaseSearchIndexFailures::record($id, 'deleteReleases: '.($error ?: 'unknown bulk delete failure'), 'delete');
+        }
+
+        foreach (array_keys($unreportedIds) as $id) {
+            ReleaseSearchIndexFailures::record((int) $id, 'deleteReleases: missing bulk item response', 'delete');
+        }
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function releaseDocumentsAfterId(int $afterId, int $limit): array
+    {
+        $afterId = max(0, $afterId);
+        $limit = max(1, min(self::MAX_RESULTS, $limit));
+        $response = $this->getClient()->search([
+            'index' => $this->getReleasesIndex(),
+            'body' => [
+                'query' => ['range' => ['id' => ['gt' => $afterId]]],
+                'sort' => [['id' => ['order' => 'asc']]],
+                'size' => $limit,
+                '_source' => ReleaseSearchIndexDocument::fields(),
+            ],
+        ]);
+
+        $documents = [];
+        foreach ($response['hits']['hits'] ?? [] as $hit) {
+            $source = (array) ($hit['_source'] ?? []);
+            $id = (int) ($source['id'] ?? $hit['_id'] ?? 0);
+
+            if ($id <= $afterId) {
+                continue;
+            }
+
+            $documents[$id] = ReleaseSearchIndexDocument::normalizeForReconciliation($source, $id);
+        }
+
+        return $documents;
     }
 
     /**

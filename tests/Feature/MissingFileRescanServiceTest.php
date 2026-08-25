@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Enums\ReleaseRepairOutcome;
+use App\Facades\Search;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use App\Services\Binaries\BinariesConfig;
@@ -44,6 +45,7 @@ class MissingFileRescanServiceTest extends TestCase
 
         $this->nntp = new FakeHeaderNntp;
         $this->createSchema();
+        Search::spy();
     }
 
     protected function tearDown(): void
@@ -142,6 +144,8 @@ class MissingFileRescanServiceTest extends TestCase
         foreach ($this->nameSourceColumns() as $column) {
             $this->assertSame(0, (int) $stored->{$column}, $column.' should be eligible once more.');
         }
+
+        Search::shouldHaveReceived('updateRelease')->once()->with(1);
     }
 
     #[Test]
@@ -165,6 +169,7 @@ class MissingFileRescanServiceTest extends TestCase
         $this->assertSame(0, (int) $stored->passwordstatus);
         $this->assertSame(0, (int) $stored->nfostatus);
         $this->assertSame(1, (int) $stored->proc_files);
+        Search::shouldHaveReceived('updateRelease')->once()->with(1);
     }
 
     #[Test]
