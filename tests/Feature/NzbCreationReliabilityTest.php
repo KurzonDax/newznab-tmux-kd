@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Enums\ReleaseRepairOutcome;
+use App\Facades\Search;
 use App\Models\Release;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\CollectionCleanupService;
@@ -18,6 +19,7 @@ use App\Support\Data\NzbCreationResult;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Psr\Log\AbstractLogger;
 use Tests\Support\IsolatedSqliteDatabase;
@@ -112,18 +114,43 @@ class NzbCreationReliabilityTest extends TestCase
 
     public function test_deterministic_creation_failure_deletes_release_and_cbp_rows(): void
     {
+        $coversRoot = $this->makeTempDirectory('nzb-failure-covers');
+        config(['nntmux_settings.covers_path' => $coversRoot]);
         $this->insertRelease(1, 'a');
         $this->insertCbp(200, 2000, 1);
 
-        $service = $this->releaseProcessingService(
+        $guid = str_repeat('a', 36);
+        $nzb = new FakeNzbCreationService(
             NzbCreationResult::deterministic('Collection has invalid data.', [200])
         );
+        $releaseImage = new ReleaseImageService;
+        $artifacts = [
+            $nzb->getNzbPath($guid, 1, true),
+            $releaseImage->vidSavePath.$guid.'.ogv',
+            $releaseImage->audSavePath.$guid.'.mp3',
+            $releaseImage->audSavePath.$guid.'_spectrum.png',
+        ];
+        foreach ($artifacts as $path) {
+            File::ensureDirectoryExists(dirname($path));
+            File::put($path, 'delete me');
+        }
+        Search::shouldReceive('deleteRelease')->once()->with(1);
+
+        $service = (new ReleaseProcessingService(
+            nzb: $nzb,
+            releaseManagement: new ReleaseManagementService,
+            releaseImage: $releaseImage,
+            collectionCleanupService: app(CollectionCleanupService::class),
+        ))->setEchoCLI(false);
 
         $this->assertSame(0, $service->createNZBs(null));
         $this->assertSame(0, DB::table('releases')->count());
         $this->assertSame(0, DB::table('collections')->count());
         $this->assertSame(0, DB::table('binaries')->count());
         $this->assertSame(0, DB::table('parts')->count());
+        foreach ($artifacts as $path) {
+            $this->assertFileDoesNotExist($path);
+        }
     }
 
     public function test_deterministic_failure_after_another_worker_succeeds_deletes_nothing(): void

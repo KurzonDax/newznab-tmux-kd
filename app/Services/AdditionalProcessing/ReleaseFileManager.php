@@ -482,16 +482,7 @@ class ReleaseFileManager
 
             // Delete preview assets
             try {
-                $files = [$this->releaseImage->vidSavePath.$guid.'.ogv'];
-                foreach (['webp', 'jpg', 'jpeg'] as $extension) {
-                    $files[] = $this->releaseImage->imgSavePath.$guid.'_thumb.'.$extension;
-                    $files[] = $this->releaseImage->jpgSavePath.$guid.'_thumb.'.$extension;
-                }
-                foreach ($files as $file) {
-                    if (File::exists($file)) {
-                        File::delete($file);
-                    }
-                }
+                $this->releaseImage->delete($guid);
             } catch (\Throwable) {
                 // Ignore
             }

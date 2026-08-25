@@ -13,8 +13,10 @@ use App\Models\UsenetGroup;
 use App\Services\BlacklistService;
 use App\Services\Categorization\CategorizationService;
 use App\Services\ReleaseCleaningService;
+use App\Services\ReleaseImageService;
 use App\Services\Releases\ReleaseDuplicateAbsorber;
 use App\Services\Releases\ReleaseDuplicateFinder;
+use App\Services\Releases\ReleaseManagementService;
 use App\Support\Utf8;
 use Illuminate\Contracts\Filesystem\FileNotFoundException;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -43,6 +45,10 @@ class NzbImportService
     protected ReleaseDuplicateAbsorber $releaseDuplicateAbsorber;
 
     protected NzbParserService $parserService;
+
+    protected ReleaseManagementService $releaseManagement;
+
+    protected ReleaseImageService $releaseImage;
 
     /**
      * List of all the group names/ids in the DB.
@@ -75,8 +81,11 @@ class NzbImportService
     /**
      * @param  array<string, mixed>  $options
      */
-    public function __construct(array $options = [])
-    {
+    public function __construct(
+        array $options = [],
+        ?ReleaseManagementService $releaseManagement = null,
+        ?ReleaseImageService $releaseImage = null,
+    ) {
         $this->echoCLI = config('nntmux.echocli');
         $this->blacklistService = new BlacklistService;
         $this->category = new CategorizationService;
@@ -85,6 +94,8 @@ class NzbImportService
         $this->releaseDuplicateFinder = app(ReleaseDuplicateFinder::class);
         $this->releaseDuplicateAbsorber = app(ReleaseDuplicateAbsorber::class);
         $this->parserService = app(NzbParserService::class);
+        $this->releaseManagement = $releaseManagement ?? app(ReleaseManagementService::class);
+        $this->releaseImage = $releaseImage ?? new ReleaseImageService;
         $this->crossPostt = Settings::settingValue('crossposttime') !== '' ? Settings::settingValue('crossposttime') : 2;
 
         // Set properties from options
@@ -238,8 +249,7 @@ class NzbImportService
                         $destination = $path ?? $this->relGuid;
                         $this->echoOut('ERROR: Problem compressing NZB file to: '.$destination);
 
-                        // Remove the release.
-                        Release::query()->where('guid', $this->relGuid)->delete();
+                        $this->deleteImportedRelease();
                         $reportResult($nzbFilePath, NzbImportStatus::Failed);
 
                         if ($deleteFailed) {
@@ -302,6 +312,18 @@ class NzbImportService
         }
 
         return true;
+    }
+
+    private function deleteImportedRelease(): void
+    {
+        $release = Release::query()
+            ->where('guid', $this->relGuid)
+            ->first(['id', 'guid']);
+        if ($release === null) {
+            return;
+        }
+
+        $this->releaseManagement->deleteBatch([$release], $this->nzb, $this->releaseImage);
     }
 
     /**

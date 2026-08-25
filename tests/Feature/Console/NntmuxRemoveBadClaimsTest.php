@@ -6,8 +6,9 @@ namespace Tests\Feature\Console;
 
 use App\Facades\Search;
 use App\Services\Nzb\NzbService;
+use App\Services\ReleaseImageService;
 use Illuminate\Support\Facades\DB;
-use Mockery;
+use Illuminate\Support\Facades\File;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
@@ -16,12 +17,21 @@ class NntmuxRemoveBadClaimsTest extends TestCase
 {
     use IsolatedSqliteDatabase;
 
+    private string $nzbRoot;
+
+    private string $coversRoot;
+
     protected function setUp(): void
     {
         parent::setUp();
         $this->bootIsolatedDatabase();
         $this->createSchema();
-        config(['nntmux_settings.covers_path' => $this->makeTempDirectory('remove-bad-covers')]);
+        $this->nzbRoot = $this->makeTempDirectory('remove-bad-nzb').'/';
+        $this->coversRoot = $this->makeTempDirectory('remove-bad-covers');
+        config([
+            'nntmux_settings.path_to_nzbs' => $this->nzbRoot,
+            'nntmux_settings.covers_path' => $this->coversRoot,
+        ]);
     }
 
     protected function tearDown(): void
@@ -35,6 +45,7 @@ class NntmuxRemoveBadClaimsTest extends TestCase
         return [
             'categorizeforeign' => '0',
             'catwebdl' => '0',
+            'nzbsplitlevel' => '1',
             'releaseprocessingtimeout' => '120',
         ];
     }
@@ -53,14 +64,25 @@ class NntmuxRemoveBadClaimsTest extends TestCase
             $this->releaseRow(5),
         ]);
 
-        $nzb = Mockery::mock(NzbService::class);
-        $nzb->shouldReceive('deleteNzb')->times(3)->andReturnTrue();
-        app()->instance(NzbService::class, $nzb);
-        Search::shouldReceive('deleteReleases')->times(3);
+        $protectedArtifacts = $this->createArtifacts(1);
+        $deletedArtifacts = [
+            ...$this->createArtifacts(3),
+            ...$this->createArtifacts(4),
+            ...$this->createArtifacts(5),
+        ];
+        foreach ([3, 4, 5] as $releaseId) {
+            Search::shouldReceive('deleteReleases')->once()->with([$releaseId]);
+        }
 
         $this->artisan('nntmux:remove-bad')->assertSuccessful();
 
         $this->assertSame([1, 2], DB::table('releases')->orderBy('id')->pluck('id')->map(intval(...))->all());
+        foreach ($deletedArtifacts as $path) {
+            $this->assertFileDoesNotExist($path);
+        }
+        foreach ($protectedArtifacts as $path) {
+            $this->assertFileExists($path);
+        }
     }
 
     /**
@@ -95,5 +117,28 @@ class NntmuxRemoveBadClaimsTest extends TestCase
             releases_id INTEGER NOT NULL,
             passworded INTEGER NOT NULL DEFAULT 0
         )');
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function createArtifacts(int $releaseId): array
+    {
+        $guid = sprintf('%032x', $releaseId);
+        $nzb = app(NzbService::class);
+        $images = new ReleaseImageService;
+        $paths = [
+            $nzb->getNzbPath($guid, 1, true),
+            $images->vidSavePath.$guid.'.ogv',
+            $images->audSavePath.$guid.'.mp3',
+            $images->audSavePath.$guid.'_spectrum.png',
+        ];
+
+        foreach ($paths as $path) {
+            File::ensureDirectoryExists(dirname($path));
+            File::put($path, 'delete me');
+        }
+
+        return $paths;
     }
 }
