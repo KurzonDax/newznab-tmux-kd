@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\AdditionalProcessing;
 
-use App\Services\AdditionalProcessing\Enums\NzbParseFailure;
+use App\Enums\NzbParseFailure;
 use App\Services\AdditionalProcessing\NzbContentParser;
 use App\Services\Nzb\NzbParserService;
 use App\Services\Nzb\NzbService;

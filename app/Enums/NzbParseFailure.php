@@ -1,8 +1,6 @@
 <?php
 
-declare(strict_types=1);
-
-namespace App\Services\AdditionalProcessing\Enums;
+namespace App\Enums;
 
 enum NzbParseFailure: string
 {

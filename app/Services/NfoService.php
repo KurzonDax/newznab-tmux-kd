@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\NzbParseFailure;
 use App\Models\Release;
 use App\Models\ReleaseFile;
 use App\Models\ReleaseNfo;
@@ -722,6 +723,12 @@ class NfoService
      */
     public function processNfoFiles(NNTPService $nntp, string $groupID = '', string $guidChar = '', bool $processImdb = true, bool $processTv = true): int
     {
+        if (! app(NzbService::class)->hasReadableNzbStorage()) {
+            Log::warning('NFO processing skipped because NZB storage is unavailable.');
+
+            return 0;
+        }
+
         $processedCount = 0;
 
         // Build base query with all filters
@@ -754,6 +761,21 @@ class NfoService
                 try {
                     $groupName = UsenetGroup::getNameByID($release['groups_id']);
                     $fetchedBinary = $nzbContentsService->getNfoFromNzb($release['guid'], $release['id'], $release['groups_id'], $groupName);
+
+                    if ($fetchedBinary === NzbParseFailure::StorageUnavailable) {
+                        Log::warning('NFO processing stopped because NZB storage is unavailable.', [
+                            'release_id' => $release['id'],
+                            'guid' => $release['guid'],
+                        ]);
+
+                        return $processedCount;
+                    }
+
+                    if ($fetchedBinary instanceof NzbParseFailure) {
+                        Release::whereId($release['id'])->decrement('nfostatus');
+
+                        continue;
+                    }
 
                     // Fallback: try extracting NFO from a RAR/ZIP in the NZB
                     if ($fetchedBinary === false) {
@@ -792,7 +814,7 @@ class NfoService
             }
         }
 
-        // Second pass: attempt archive-based extraction for NFO_FAILED (-9) releases
+        // Second pass: attempt archive-based extraction for exhausted releases
         // that have NFO files listed in release_files with non-zero size.
         $archiveProcessed = $this->processFailedReleasesViaArchive($nntp, $groupID, $guidChar);
         $processedCount += $archiveProcessed;
@@ -818,6 +840,7 @@ class NfoService
     private function buildNfoProcessingQuery(string $groupID, string $guidChar): \Illuminate\Database\Eloquent\Builder // @phpstan-ignore class.notFound, missingType.generics, return.phpDocType
     {
         $query = Release::query()
+            ->where('nzbstatus', 1)
             ->whereBetween('nfostatus', [$this->getMaxRetries(), self::NFO_UNPROC]);
 
         if ($guidChar !== '') {
@@ -875,14 +898,15 @@ class NfoService
     }
 
     /**
-     * Process releases at NFO_FAILED (-9) that have NFO files in release_files
+     * Process exhausted releases that have NFO files in release_files
      * with non-zero size. Attempts archive-based extraction via unrar.
      * On failure, sets nfostatus to NFO_FAILED_ARCHIVE (-10) to prevent further retries.
      */
     private function processFailedReleasesViaArchive(NNTPService $nntp, string $groupID, string $guidChar): int
     {
         $query = Release::query()
-            ->where('nfostatus', self::NFO_FAILED)
+            ->where('nzbstatus', 1)
+            ->whereBetween('nfostatus', [self::NFO_FAILED_ARCHIVE + 1, $this->getMaxRetries()])
             ->whereExists(function ($sub) {
                 $sub->select(DB::raw(1))
                     ->from('release_files')
@@ -981,7 +1005,7 @@ class NfoService
         $maxRetries = ($dummy >= 0 ? -($dummy + 1) : self::NFO_UNPROC);
 
         return sprintf(
-            'AND r.nfostatus BETWEEN %d AND %d %s %s',
+            'AND r.nzbstatus = 1 AND r.nfostatus BETWEEN %d AND %d %s %s',
             ($maxRetries < -8 ? -8 : $maxRetries),
             self::NFO_UNPROC,
             ($maxSize > 0 ? ('AND r.size < '.$maxSize) : ''),

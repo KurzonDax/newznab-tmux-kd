@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\AdditionalProcessing;
 
+use App\Enums\NzbParseFailure;
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
-use App\Services\AdditionalProcessing\Enums\NzbParseFailure;
 use App\Services\Nzb\NzbParserService;
 use App\Services\Nzb\NzbService;
 use Illuminate\Support\Facades\File;
