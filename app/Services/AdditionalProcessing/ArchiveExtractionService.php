@@ -19,6 +19,10 @@ use Illuminate\Support\Facades\Log;
  */
 class ArchiveExtractionService
 {
+    private const int UNZIP_INCORRECT_PASSWORD_EXIT_CODE = 82;
+
+    private const string UNZIP_EXIT_CODE_MARKER = '__NNTMUX_UNZIP_EXIT_CODE__';
+
     private ArchiveInfo $archiveInfo;
 
     private Par2Info $par2Info;
@@ -117,7 +121,15 @@ class ArchiveExtractionService
         $this->prepareExtractionDirectories($tmpPath);
 
         // Process based on archive type
-        $archiveMarker = $this->extractArchive($compressedData, $dataSummary, $tmpPath);
+        $extraction = $this->extractArchive($compressedData, $dataSummary, $tmpPath);
+        if ($extraction['hasPassword']) {
+            return [
+                'success' => false,
+                'files' => [],
+                'hasPassword' => true,
+                'passwordStatus' => ReleaseBrowseService::PASSWD_RAR,
+            ];
+        }
 
         // Get file list
         $files = $this->archiveInfo->getArchiveFileList();
@@ -130,7 +142,7 @@ class ArchiveExtractionService
             'files' => $files,
             'hasPassword' => false,
             'passwordStatus' => ReleaseBrowseService::PASSWD_NONE,
-            'archiveMarker' => $archiveMarker,
+            'archiveMarker' => $extraction['marker'],
             'dataSummary' => $dataSummary,
         ];
     }
@@ -294,8 +306,9 @@ class ArchiveExtractionService
      * Extract archive based on type.
      *
      * @param  array<string, mixed>  $dataSummary
+     * @return array{marker: string, hasPassword: bool}
      */
-    private function extractArchive(string $compressedData, array $dataSummary, string $tmpPath): string
+    private function extractArchive(string $compressedData, array $dataSummary, string $tmpPath): array
     {
         $killString = $this->config->getKillString();
 
@@ -308,20 +321,62 @@ class ArchiveExtractionService
                     File::delete($fileName);
                 }
 
-                return 'r';
+                return ['marker' => 'r', 'hasPassword' => false];
 
             case ArchiveInfo::TYPE_ZIP:
                 if (! $this->config->extractUsingRarInfo && $this->config->unzipPath) {
                     $fileName = $tmpPath.uniqid('', true).'.zip';
                     File::put($fileName, $compressedData);
-                    runCmd($this->config->unzipPath.' -o "'.$fileName.'" -d "'.$tmpPath.'unzip/"');
-                    File::delete($fileName);
+                    try {
+                        $output = ($this->commandRunner)(
+                            $killString.$this->config->unzipPath.'" -P \'\' -qq -o "'.$fileName.'" -d "'.$tmpPath.'unzip/"'
+                            .'; nntmux_unzip_exit_code=$?; '
+                            .'printf \'\n'.self::UNZIP_EXIT_CODE_MARKER.'=%s\n\' "$nntmux_unzip_exit_code"'
+                        );
+                    } finally {
+                        File::delete($fileName);
+                    }
+
+                    if ($this->unzipReportedIncorrectPassword($output)) {
+                        return ['marker' => 'z', 'hasPassword' => true];
+                    }
                 }
 
-                return 'z';
+                return ['marker' => 'z', 'hasPassword' => false];
         }
 
-        return '';
+        return ['marker' => '', 'hasPassword' => false];
+    }
+
+    private function unzipReportedIncorrectPassword(string $output): bool
+    {
+        if (str_contains(strtolower($output), 'incorrect password')) {
+            return true;
+        }
+
+        $matched = preg_match(
+            '/'.preg_quote(self::UNZIP_EXIT_CODE_MARKER, '/').'=(\d+)\s*$/',
+            $output,
+            $matches,
+        );
+
+        if ($matched !== 1) {
+            return false;
+        }
+
+        $exitCode = (int) $matches[1];
+        if ($exitCode === self::UNZIP_INCORRECT_PASSWORD_EXIT_CODE) {
+            return true;
+        }
+
+        if ($exitCode === 0) {
+            return false;
+        }
+
+        $files = $this->archiveInfo->getArchiveFileList();
+
+        return is_array($files)
+            && array_any($files, static fn (array $file): bool => ! empty($file['pass']));
     }
 
     /**
