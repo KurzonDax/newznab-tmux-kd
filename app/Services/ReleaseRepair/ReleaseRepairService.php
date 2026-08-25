@@ -67,7 +67,9 @@ final class ReleaseRepairService
             // Below the floor, so no articles are probed at all: this outcome is final on the
             // first sight of the release, without ever touching the network.
             return $this->finish($release, $options, new ReleaseRepairResult(
-                outcome: ReleaseRepairOutcome::SkippedFloor,
+                outcome: $release->repair_outcome === ReleaseRepairOutcome::Repaired
+                    ? ReleaseRepairOutcome::Repaired
+                    : ReleaseRepairOutcome::SkippedFloor,
                 completionBefore: $completionBefore,
                 completionAfter: $completionBefore,
                 segmentsAdded: 0,
@@ -95,9 +97,7 @@ final class ReleaseRepairService
 
         if (! $plan->hasWork()) {
             $completionAfter = $document->measure()->percentage();
-            $outcome = $completionAfter >= $options->targetCompletion
-                ? ReleaseRepairOutcome::Repaired
-                : ($isFinalAttempt ? ReleaseRepairOutcome::Failed : ReleaseRepairOutcome::RetryPending);
+            $outcome = $this->outcomeFor($release, $completionAfter, $options->targetCompletion, $isFinalAttempt);
 
             return $this->finish($release, $options, new ReleaseRepairResult(
                 outcome: $outcome,
@@ -115,6 +115,7 @@ final class ReleaseRepairService
 
         if ($accepted === []) {
             return $this->finish($release, $options, $this->unrepaired(
+                $release,
                 $completionBefore,
                 $isFinalAttempt,
                 'No synthesized message-ID could be confirmed on any provider.',
@@ -139,9 +140,7 @@ final class ReleaseRepairService
             }
         }
 
-        $outcome = $completionAfter >= $options->targetCompletion
-            ? ReleaseRepairOutcome::Repaired
-            : ($isFinalAttempt ? ReleaseRepairOutcome::Failed : ReleaseRepairOutcome::RetryPending);
+        $outcome = $this->outcomeFor($release, $completionAfter, $options->targetCompletion, $isFinalAttempt);
 
         $requeued = ! $options->dryRun
             && $added > 0
@@ -233,10 +232,17 @@ final class ReleaseRepairService
     /**
      * The outcome for a pass that ran and could not add anything: one more chance, or the end.
      */
-    private function unrepaired(float $completionBefore, bool $isFinalAttempt, string $reason, int $probes = 0): ReleaseRepairResult
-    {
+    private function unrepaired(
+        Release $release,
+        float $completionBefore,
+        bool $isFinalAttempt,
+        string $reason,
+        int $probes = 0,
+    ): ReleaseRepairResult {
         return new ReleaseRepairResult(
-            outcome: $isFinalAttempt ? ReleaseRepairOutcome::Failed : ReleaseRepairOutcome::RetryPending,
+            outcome: $release->repair_outcome === ReleaseRepairOutcome::Repaired
+                ? ReleaseRepairOutcome::Repaired
+                : ($isFinalAttempt ? ReleaseRepairOutcome::Failed : ReleaseRepairOutcome::RetryPending),
             completionBefore: $completionBefore,
             completionAfter: $completionBefore,
             segmentsAdded: 0,
@@ -245,6 +251,19 @@ final class ReleaseRepairService
             requeuedForAdditionalProcessing: false,
             reason: $reason,
         );
+    }
+
+    private function outcomeFor(
+        Release $release,
+        float $completionAfter,
+        float $targetCompletion,
+        bool $isFinalAttempt,
+    ): ReleaseRepairOutcome {
+        if ($completionAfter >= $targetCompletion || $release->repair_outcome === ReleaseRepairOutcome::Repaired) {
+            return ReleaseRepairOutcome::Repaired;
+        }
+
+        return $isFinalAttempt ? ReleaseRepairOutcome::Failed : ReleaseRepairOutcome::RetryPending;
     }
 
     private function describeUnrecoverable(ReleaseRepairPlan $plan): string
@@ -279,9 +298,19 @@ final class ReleaseRepairService
             return $result;
         }
 
+        $preservesEarlierAchievement = $release->repair_outcome === ReleaseRepairOutcome::Repaired
+            && $result->outcome === ReleaseRepairOutcome::Repaired
+            && $result->completionAfter < $options->targetCompletion;
+
         $values = [
             'repair_attempted_at' => Carbon::now(),
             'repair_outcome' => $result->outcome->value,
+            'repair_target_completion' => $result->outcome === ReleaseRepairOutcome::Repaired
+                ? ($preservesEarlierAchievement
+                    ? $release->repair_target_completion
+                    : $options->targetCompletion)
+                : null,
+            'repair_evaluated_target_completion' => $options->targetCompletion,
         ];
 
         if ($completion !== null) {

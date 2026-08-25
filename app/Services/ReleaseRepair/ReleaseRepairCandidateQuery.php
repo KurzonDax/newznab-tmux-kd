@@ -47,13 +47,30 @@ final class ReleaseRepairCandidateQuery
             return $dueRetries;
         }
 
-        $neverAttempted = self::measuredBelow($targetCompletion)
-            ->whereNull('repair_outcome')
+        $reopened = self::measuredBelow($targetCompletion)
+            ->where('repair_outcome', ReleaseRepairOutcome::Repaired->value)
+            ->where(function (Builder $query) use ($targetCompletion): void {
+                $query->where('repair_evaluated_target_completion', '<', $targetCompletion)
+                    ->orWhere(function (Builder $query) use ($targetCompletion): void {
+                        $query->whereNull('repair_evaluated_target_completion')
+                            ->where('repair_target_completion', '<', $targetCompletion);
+                    });
+            })
             ->orderByDesc('postdate')
             ->limit($limit - $dueRetries->count())
             ->get();
 
-        return $dueRetries->concat($neverAttempted);
+        if ($dueRetries->count() + $reopened->count() >= $limit) {
+            return $dueRetries->concat($reopened);
+        }
+
+        $neverAttempted = self::measuredBelow($targetCompletion)
+            ->whereNull('repair_outcome')
+            ->orderByDesc('postdate')
+            ->limit($limit - $dueRetries->count() - $reopened->count())
+            ->get();
+
+        return $dueRetries->concat($reopened)->concat($neverAttempted);
     }
 
     /**
@@ -70,6 +87,9 @@ final class ReleaseRepairCandidateQuery
             ->where('nzbstatus', NzbService::NZB_ADDED)
             ->where('completion', '>', 0)
             ->where('completion', '<', $targetCompletion)
-            ->select(['id', 'guid', 'completion', 'haspreview', 'repair_outcome', 'repair_attempted_at', 'postdate']);
+            ->select([
+                'id', 'guid', 'completion', 'haspreview', 'repair_outcome', 'repair_attempted_at',
+                'repair_target_completion', 'repair_evaluated_target_completion', 'postdate',
+            ]);
     }
 }

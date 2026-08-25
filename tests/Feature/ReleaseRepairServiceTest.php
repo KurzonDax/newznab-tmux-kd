@@ -70,6 +70,8 @@ class ReleaseRepairServiceTest extends TestCase
         $this->assertTrue($result->nzbRewritten);
 
         $this->assertSame('repaired', $this->storedOutcome(1));
+        $this->assertSame(95.0, (float) DB::table('releases')->where('id', 1)->value('repair_target_completion'));
+        $this->assertSame(95.0, (float) DB::table('releases')->where('id', 1)->value('repair_evaluated_target_completion'));
         $this->assertSame(100.0, (float) DB::table('releases')->where('id', 1)->value('completion'));
         $this->assertStringContainsString('part5of5.Tok@host', $this->storedNzb($release));
     }
@@ -189,6 +191,27 @@ class ReleaseRepairServiceTest extends TestCase
 
         $this->assertSame(ReleaseRepairOutcome::RetryPending, $result->outcome);
         $this->assertSame('retry-pending', $this->storedOutcome(1));
+    }
+
+    #[Test]
+    public function a_reopened_repaired_release_that_cannot_reach_the_higher_target_stays_repaired(): void
+    {
+        $release = $this->releaseWithNzb(
+            1,
+            completion: 96.0,
+            segments: [1 => 1, 2 => 2, 3 => 3],
+            outcome: ReleaseRepairOutcome::Repaired,
+            targetCompletion: 95.0,
+        );
+
+        $result = $this->service()->repair($release, new ReleaseRepairOptions(targetCompletion: 99.0));
+
+        $this->assertSame(ReleaseRepairOutcome::Repaired, $result->outcome);
+        $this->assertSame('repaired', $this->storedOutcome(1));
+        $stored = DB::table('releases')->where('id', 1)->first();
+        $this->assertSame(95.0, (float) $stored->repair_target_completion);
+        $this->assertSame(99.0, (float) $stored->repair_evaluated_target_completion);
+        $this->assertFalse($result->outcome->isFinal(), 'Raising policy must never make grandfathered content deletable.');
     }
 
     #[Test]
@@ -424,6 +447,7 @@ class ReleaseRepairServiceTest extends TestCase
         int $files = 1,
         ?ReleaseRepairOutcome $outcome = null,
         ?string $attemptedAt = null,
+        ?float $targetCompletion = null,
     ): Release {
         $guid = sprintf('%032x', $id);
 
@@ -434,6 +458,8 @@ class ReleaseRepairServiceTest extends TestCase
             'completion' => $completion,
             'repair_outcome' => $outcome?->value,
             'repair_attempted_at' => $attemptedAt,
+            'repair_target_completion' => $targetCompletion,
+            'repair_evaluated_target_completion' => $targetCompletion,
             'postdate' => '2024-01-01 00:00:00',
             'haspreview' => -1,
             'passwordstatus' => -1,
@@ -490,6 +516,8 @@ class ReleaseRepairServiceTest extends TestCase
             completion DOUBLE NOT NULL DEFAULT 0,
             repair_attempted_at DATETIME NULL,
             repair_outcome VARCHAR(16) NULL,
+            repair_target_completion DOUBLE NULL,
+            repair_evaluated_target_completion DOUBLE NULL,
             recovery_claimed_at DATETIME NULL,
             postdate DATETIME NULL,
             haspreview INTEGER NOT NULL DEFAULT -1,

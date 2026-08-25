@@ -134,7 +134,9 @@ This is a #161 regression: null was designed as "derive locally on first rescan 
 
 **Exclusion.** Rescan only revisits `retry-pending` or null (`RescanCandidateQuery.php:42-58`); the segment repair query only revisits repair's own retry/null state (`ReleaseRepairCandidateQuery.php:39-53`); the sweep requires deletion-final rescan state when `declaredfiles>totalpart` (`IncompleteReleaseSweepQuery.php:45-50`). Therefore `completion<target,rescan_outcome=repaired` is selected by none of them.
 
-This is a #161 state-machine regression. `ReleaseRepairGateTest::a_partial_re_scan_recorded_as_repaired_is_stranded_between_recovery_and_the_sweep` proves the dead state. It strands remaining recovery and retains policy-incomplete content forever.
+**Resolved (#216).** Whole-file recovery now compares its post-write completion with the live
+target. A below-target first pass writes `retry-pending`; the owed retry writes `failed`. Recovered
+files remain in the NZB in either case, so the row is always owned by recovery or the sweep.
 
 ### G10 — raising the completion target does not reopen rows repaired to the old target (medium, stranded policy work)
 
@@ -142,9 +144,16 @@ This is a #161 state-machine regression. `ReleaseRepairGateTest::a_partial_re_sc
 
 **Exclusion.** Although `completion<99` now holds, repair selects only `repair_outcome=retry-pending` or null (`ReleaseRepairCandidateQuery.php:39-53`), rescan selects only its retry/null states, and the sweep deletes only failure/skip outcomes. No transition invalidates a former `repaired` verdict when the target changes.
 
-This is a #151/#161 state-model gap. `ReleaseRepairGateTest::a_release_repaired_to_an_old_target_is_not_reopened_when_the_target_rises` proves all three gates reject it. It does not delete or corrupt; it leaves current-policy work permanently undone.
+**Resolved (#216).** Each `repaired` verdict records both the target it achieved and the latest
+target it evaluated. Candidate queries reopen it only when the current target is higher than the
+latter; that pass can improve the release but cannot change the earlier achieved target or turn
+the previously successful verdict into a deletable outcome when it falls short.
 
-**Shared root cause for G9 and G10.** `Repaired` is a universally invisible outcome: `ReleaseRepairOutcome::Repaired->isFinal()` is false (`ReleaseRepairOutcome.php:56-61`), keeping it out of the sweep's deletable set, while both candidate queries revisit only retry-pending/null. Any writer that leaves a `repaired` stamp on a below-target row therefore strands it; a single reopen-or-finalize rule closes both gaps. A related dangling state: a rescan that lifts completion to or above the target while `repair_outcome='retry-pending'` leaves that stamp permanently unvisited — harmless (the row is unsweepable) but misleading.
+**Shared root cause for G9 and G10.** Before #216, `Repaired` was a universally invisible outcome:
+`ReleaseRepairOutcome::Repaired->isFinal()` was false, keeping it out of the sweep, while both
+candidate queries revisited only retry-pending/null. Target stamps now make old successes visible
+only after a target increase, and a rescan that reaches the live target settles a dangling segment-
+repair retry as `repaired` under that target.
 
 ### G11 — NZB imports can remain in protected `completion=0` without an eligible NFO pass (high, stranded completion)
 
@@ -348,6 +357,10 @@ The claim machinery is described in the lifecycle document as a benign lease; th
 ### G35 — rescan budget exhaustion mid-window is misread as a verdict (medium, incorrect outcome)
 
 **Wrong transition.** `MissingFileRescanService::fetch()` breaks out on budget exhaustion mid-window returning `fetchFailed=false` (`:268-271`); if nothing matched in the portion actually read, the caller treats it as a genuine "no header in the window belongs to this release" verdict (`:209-217`) and stamps RetryPending/Failed — even though the unread tail of the window may hold the missing headers. Only exhaustion *before the first batch* is correctly treated as not-attempted (`:187-192`).
+
+**Resolved (#216).** Fetch now reports whether the complete window was read. An incomplete window
+never writes a negative verdict; it may persist matches and record `repaired` only if they reach
+the target. A later invocation starts the whole window again with a fresh run budget.
 
 ### G36 — repair's AP requeue resets only preview/password, not NFO or `proc_*` evidence (low, stale derived state)
 
