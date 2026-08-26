@@ -272,7 +272,7 @@ class TvEpisodeRevisitTest extends TestCase
                 return 0;
             }
 
-            public function getShowInfo(string $name): bool|array
+            public function getShowInfo(string $name, ?int $releaseYear = null): bool|array
             {
                 $this->showLookupCount++;
 

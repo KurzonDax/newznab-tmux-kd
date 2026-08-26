@@ -180,7 +180,7 @@ class LocalDbProvider extends AbstractTvProvider
     /**
      * @return array<string, mixed>
      */
-    public function getShowInfo(string $name): bool|array
+    public function getShowInfo(string $name, ?int $releaseYear = null): bool|array
     {
         return false;
     }

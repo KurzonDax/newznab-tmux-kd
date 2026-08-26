@@ -262,9 +262,10 @@ class TmdbProvider extends AbstractTvProvider
      *
      * @return array<string, mixed>|false
      */
-    public function getShowInfo(string $name): bool|array
+    public function getShowInfo(string $name, ?int $releaseYear = null): bool|array
     {
         $return = false;
+        $releaseYear = $this->resolveReleaseYear($name, $releaseYear);
 
         $this->tmdbClient = app(TmdbClient::class);
 
@@ -277,7 +278,7 @@ class TmdbProvider extends AbstractTvProvider
         sleep(1);
 
         if ($response !== null && ! empty($response['results']) && is_array($response['results'])) {
-            $return = $this->matchShowInfo($response['results'], $name);
+            $return = $this->matchShowInfo($response['results'], $name, $releaseYear);
         }
 
         return $return;
@@ -287,7 +288,7 @@ class TmdbProvider extends AbstractTvProvider
      * @param  array<string, mixed>  $shows
      * @return array<string, mixed>|false
      */
-    private function matchShowInfo(array $shows, string $cleanName): bool|array
+    private function matchShowInfo(array $shows, string $cleanName, ?int $releaseYear): bool|array
     {
         $return = false;
         $highestMatch = 0;
@@ -295,6 +296,10 @@ class TmdbProvider extends AbstractTvProvider
 
         foreach ($shows as $show) {
             if (! is_array($show) || ! $this->checkRequiredAttr($show, 'tmdbS')) {
+                continue;
+            }
+
+            if (! $this->isPremiereYearPlausible($show['first_air_date'], $releaseYear)) {
                 continue;
             }
 

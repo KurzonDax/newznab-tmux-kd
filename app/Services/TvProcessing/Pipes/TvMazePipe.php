@@ -71,12 +71,6 @@ class TvMazePipe extends AbstractTvProviderPipe
             ? $context->videosId
             : $tvmaze->getByTitle($cleanName, self::TYPE_TV, self::SOURCE_TVMAZE);
 
-        // If not found and cleanName contains a year in parentheses, try without the year
-        if ($videoId === 0 && preg_match('/^(.+?)\s*\(\d{4}\)$/', (string) $cleanName, $yearMatch)) {
-            $nameWithoutYear = trim($yearMatch[1]);
-            $videoId = $tvmaze->getByTitle($nameWithoutYear, self::TYPE_TV, self::SOURCE_TVMAZE);
-        }
-
         if ($videoId !== 0) {
             $siteId = $tvmaze->getSiteByID('tvmaze', (int) $videoId);
             // If show exists in local DB but doesn't have a TVMaze ID, use the existing video
@@ -97,9 +91,9 @@ class TvMazePipe extends AbstractTvProviderPipe
             $tvmazeShow = $tvmaze->getShowInfo((string) $cleanName);
 
             // If not found and cleanName contains a year in parentheses, try without the year
-            if ($tvmazeShow === false && preg_match('/^(.+?)\s*\(\d{4}\)$/', (string) $cleanName, $yearMatch)) {
+            if ($tvmazeShow === false && preg_match('/^(.+?)\s*\((\d{4})\)$/', (string) $cleanName, $yearMatch)) {
                 $nameWithoutYear = trim($yearMatch[1]);
-                $tvmazeShow = $tvmaze->getShowInfo($nameWithoutYear);
+                $tvmazeShow = $tvmaze->getShowInfo($nameWithoutYear, (int) $yearMatch[2]);
             }
 
             if (is_array($tvmazeShow)) {

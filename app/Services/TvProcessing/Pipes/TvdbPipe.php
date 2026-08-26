@@ -73,12 +73,6 @@ class TvdbPipe extends AbstractTvProviderPipe
             ? $context->videosId
             : $tvdb->getByTitle($cleanName, self::TYPE_TV);
 
-        // If not found and cleanName contains a year in parentheses, try without the year
-        if ($videoId === 0 && preg_match('/^(.+?)\s*\(\d{4}\)$/', (string) $cleanName, $yearMatch)) {
-            $nameWithoutYear = trim($yearMatch[1]);
-            $videoId = $tvdb->getByTitle($nameWithoutYear, self::TYPE_TV);
-        }
-
         if ($videoId !== 0) {
             $siteId = $tvdb->getSiteByID('tvdb', (int) $videoId);
             // If show exists in local DB but doesn't have a TVDB ID, use the existing video
@@ -106,9 +100,9 @@ class TvdbPipe extends AbstractTvProviderPipe
             $tvdbShow = $tvdb->getShowInfo((string) $cleanName);
 
             // If not found and cleanName contains a year in parentheses, try without the year
-            if ($tvdbShow === false && preg_match('/^(.+?)\s*\(\d{4}\)$/', (string) $cleanName, $yearMatch)) {
+            if ($tvdbShow === false && preg_match('/^(.+?)\s*\((\d{4})\)$/', (string) $cleanName, $yearMatch)) {
                 $nameWithoutYear = trim($yearMatch[1]);
-                $tvdbShow = $tvdb->getShowInfo($nameWithoutYear);
+                $tvdbShow = $tvdb->getShowInfo($nameWithoutYear, (int) $yearMatch[2]);
             }
 
             if (is_array($tvdbShow)) {
