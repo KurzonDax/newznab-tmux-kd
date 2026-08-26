@@ -134,6 +134,14 @@ class AbstractTvProviderTest extends ImdbScraperTestCase
                 'Example.Show.S02E03.1080p.WEB-DL.x264',
                 ['cleanname' => 'Example Show', 'season' => 2, 'episode' => 3, 'airdate' => ''],
             ],
+            'dotted acronym before the next title word' => [
+                'L.A.Law.S08E22.Finish.Line.1080p.DSNP.WEBRip.10bit.EAC3.5.1.X265-IVy',
+                ['cleanname' => 'LA Law', 'season' => 8, 'episode' => 22, 'airdate' => ''],
+            ],
+            'dotted acronym without a following title word' => [
+                'S.W.A.T.S08E22.1080p.WEB-DL.x264',
+                ['cleanname' => 'SWAT', 'season' => 8, 'episode' => 22, 'airdate' => ''],
+            ],
             'episode word' => [
                 'Chernobyl.Episode.S01E03.1080p.WEB-DL.x264',
                 ['cleanname' => 'Chernobyl', 'season' => 1, 'episode' => 3, 'airdate' => ''],
