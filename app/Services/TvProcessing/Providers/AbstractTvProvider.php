@@ -114,7 +114,7 @@ abstract class AbstractTvProvider extends BaseVideoProvider
      * @param  string  $name  Title of programme to look up. Usually a cleaned up version from releases table.
      * @return array<string, mixed>|false False on failure, an array of information fields otherwise.
      */
-    abstract public function getShowInfo(string $name): bool|array;
+    abstract public function getShowInfo(string $name, ?int $releaseYear = null): bool|array;
 
     /**
      * Assigns API show response values to a formatted array for insertion

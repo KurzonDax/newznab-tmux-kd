@@ -271,10 +271,11 @@ class TvdbProvider extends AbstractTvProvider
      * @throws ParseException
      * @throws ExceptionInterface
      */
-    public function getShowInfo(string $name): bool|array
+    public function getShowInfo(string $name, ?int $releaseYear = null): bool|array
     {
         $return = $response = false;
         $highestMatch = 0;
+        $releaseYear = $this->resolveReleaseYear($name, $releaseYear);
         try {
             $response = $this->client->search()->search($name, ['type' => 'series']);
         } catch (ResourceNotFoundException $e) {
@@ -293,6 +294,10 @@ class TvdbProvider extends AbstractTvProvider
         if (\is_array($response)) {
             foreach ($response as $show) {
                 if ($this->checkRequiredAttr($show, 'tvdbS')) {
+                    if (! $this->isPremiereYearPlausible($show->first_air_time, $releaseYear)) {
+                        continue;
+                    }
+
                     if (strtolower($show->name) === strtolower($name)) {
                         $highest = $show;
                         break;

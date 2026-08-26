@@ -284,13 +284,14 @@ class TvMazeProvider extends AbstractTvProvider
      *
      * @return array<string, mixed>
      */
-    public function getShowInfo(string $name): array|bool
+    public function getShowInfo(string $name, ?int $releaseYear = null): array|bool
     {
         $return = $response = false;
+        $releaseYear = $this->resolveReleaseYear($name, $releaseYear);
 
         // TVMaze does NOT like shows with the year in them even without the parentheses
         // Do this for the API Search only as a local lookup should require it
-        $name = preg_replace('# \((19|20)\d{2}\)$#', '', $name);
+        $name = $this->stripReleaseYear($name);
 
         // Try for the best match with AKAs embedded
         $response = $this->client->singleSearchAkas($name);
@@ -298,13 +299,13 @@ class TvMazeProvider extends AbstractTvProvider
         sleep(1);
 
         if (\is_array($response)) {
-            $return = $this->matchShowInfo($response, $name);
+            $return = $this->matchShowInfo($response, $name, $releaseYear);
         }
         if ($return === false) {
             // Try for the best match via full search (no AKAs can be returned but the search is better)
             $response = $this->client->search($name);
             if (\is_array($response)) {
-                $return = $this->matchShowInfo($response, $name);
+                $return = $this->matchShowInfo($response, $name, $releaseYear);
             }
         }
         // If we didn't get any aliases do a direct alias lookup
@@ -321,7 +322,7 @@ class TvMazeProvider extends AbstractTvProvider
      * @param  array<string, mixed>  $shows
      * @return array<string, mixed>
      */
-    private function matchShowInfo(array $shows, string $cleanName): false|array
+    private function matchShowInfo(array $shows, string $cleanName, ?int $releaseYear): false|array
     {
         $return = false;
         $highestMatch = 0;
@@ -329,6 +330,10 @@ class TvMazeProvider extends AbstractTvProvider
 
         foreach ($shows as $show) {
             if ($this->checkRequiredAttr($show, 'tvmazeS')) {
+                if (! $this->isPremiereYearPlausible($show->premiered, $releaseYear)) {
+                    continue;
+                }
+
                 // Exact title match
                 if (strcasecmp($show->name, $cleanName) === 0) {
                     $highest = $show;

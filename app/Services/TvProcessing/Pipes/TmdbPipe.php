@@ -71,12 +71,6 @@ class TmdbPipe extends AbstractTvProviderPipe
             ? $context->videosId
             : $tmdb->getByTitle($cleanName, self::TYPE_TV, self::SOURCE_TMDB);
 
-        // If not found and cleanName contains a year in parentheses, try without the year
-        if ($videoId === 0 && preg_match('/^(.+?)\s*\(\d{4}\)$/', (string) $cleanName, $yearMatch)) {
-            $nameWithoutYear = trim($yearMatch[1]);
-            $videoId = $tmdb->getByTitle($nameWithoutYear, self::TYPE_TV, self::SOURCE_TMDB);
-        }
-
         if ($videoId !== 0) {
             $siteId = $tmdb->getSiteByID('tmdb', (int) $videoId);
             // If show exists in local DB with a TMDB ID, use it directly
@@ -98,9 +92,9 @@ class TmdbPipe extends AbstractTvProviderPipe
             $tmdbShow = $tmdb->getShowInfo((string) $cleanName);
 
             // If not found and cleanName contains a year in parentheses, try without the year
-            if ($tmdbShow === false && preg_match('/^(.+?)\s*\(\d{4}\)$/', (string) $cleanName, $yearMatch)) {
+            if ($tmdbShow === false && preg_match('/^(.+?)\s*\((\d{4})\)$/', (string) $cleanName, $yearMatch)) {
                 $nameWithoutYear = trim($yearMatch[1]);
-                $tmdbShow = $tmdb->getShowInfo($nameWithoutYear);
+                $tmdbShow = $tmdb->getShowInfo($nameWithoutYear, (int) $yearMatch[2]);
             }
 
             if (is_array($tmdbShow)) {

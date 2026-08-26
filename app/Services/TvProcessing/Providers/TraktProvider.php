@@ -371,21 +371,23 @@ class TraktProvider extends AbstractTvProvider
      *
      * @return array<string, mixed>|false
      */
-    public function getShowInfo(string $name): array|bool
+    public function getShowInfo(string $name, ?int $releaseYear = null): array|bool
     {
         $return = $response = false;
         $highestMatch = 0;
         $highest = null;
+        $releaseYear = $this->resolveReleaseYear($name, $releaseYear);
 
         // Trakt does NOT like shows with the year in them even without the parentheses
         // Do this for the API Search only as a local lookup should require it
-        $name = preg_replace('# \((19|20)\d{2}\)$#', '', $name);
+        $name = $this->stripReleaseYear($name);
 
         $response = (array) $this->client->searchShows($name);
 
         sleep(1);
 
-        foreach ($response as $show) {
+        $candidates = [];
+        foreach ($response as $index => $show) {
             if (is_array($show) && isset($show['show']) && is_array($show['show'])) {
                 $showTitle = (string) ($show['show']['title'] ?? '');
                 if ($showTitle === '') {
@@ -394,6 +396,12 @@ class TraktProvider extends AbstractTvProvider
 
                 // Check for exact title match first and then terminate if found
                 if (strcasecmp($showTitle, $name) === 0) {
+                    if ($releaseYear !== null) {
+                        $candidates[] = ['match' => 100.0, 'index' => $index, 'show' => $show];
+
+                        continue;
+                    }
+
                     $highest = $show;
                     break;
                 }
@@ -406,8 +414,32 @@ class TraktProvider extends AbstractTvProvider
                     $highestMatch = $matchPercent;
                     $highest = $show;
                 }
+
+                if ($releaseYear !== null && $matchPercent > 0) {
+                    $candidates[] = ['match' => $matchPercent, 'index' => $index, 'show' => $show];
+                }
             }
         }
+
+        if ($releaseYear !== null) {
+            usort($candidates, static fn (array $left, array $right): int => [$right['match'], $left['index']] <=> [$left['match'], $right['index']]);
+
+            foreach ($candidates as $candidate) {
+                $traktId = (int) ($candidate['show']['show']['ids']['trakt'] ?? 0);
+                if ($traktId === 0) {
+                    continue;
+                }
+
+                $fullShow = $this->client->getShowSummary($traktId);
+                if ($this->checkRequiredAttr($fullShow, 'traktS')
+                    && $this->isPremiereYearPlausible($fullShow['first_aired'] ?? null, $releaseYear)) {
+                    return $this->formatShowInfo($fullShow);
+                }
+            }
+
+            return false;
+        }
+
         if ($highest !== null && ! empty($highest['show']['ids']['trakt'])) {
             $fullShow = $this->client->getShowSummary($highest['show']['ids']['trakt']);
             if ($this->checkRequiredAttr($fullShow, 'traktS')) {

@@ -183,6 +183,42 @@ abstract class BaseVideoProvider
         return 0;
     }
 
+    protected function resolveReleaseYear(string $title, ?int $releaseYear = null): ?int
+    {
+        if ($releaseYear !== null) {
+            return $releaseYear;
+        }
+
+        return preg_match('/\((\d{4})\)$/', $title, $yearMatch) === 1
+            ? (int) $yearMatch[1]
+            : null;
+    }
+
+    protected function stripReleaseYear(string $title): string
+    {
+        return trim((string) preg_replace('/\s*\(\d{4}\)$/', '', $title));
+    }
+
+    protected function isPremiereYearPlausible(mixed $premiereDate, ?int $releaseYear): bool
+    {
+        if ($releaseYear === null) {
+            return true;
+        }
+
+        if (! is_string($premiereDate)
+            || preg_match('/^(\d{4})-(\d{2})/', $premiereDate, $dateMatch) !== 1) {
+            return false;
+        }
+
+        $premiereYear = (int) $dateMatch[1];
+        $premiereMonth = (int) $dateMatch[2];
+        $isEarlyFollowingYear = $premiereYear === $releaseYear + self::MAX_PREMIERE_YEARS_AFTER_RELEASE
+            && $premiereMonth === self::FOLLOWING_YEAR_TOLERANCE_MONTH;
+
+        return $premiereYear >= $releaseYear - self::MAX_PREMIERE_YEARS_BEFORE_RELEASE
+            && ($premiereYear <= $releaseYear || $isEarlyFollowingYear);
+    }
+
     private function getYearAwareTitleMatch(string $title, int $type, int $source, int $releaseYear): int
     {
         $titleVariants = $this->getTitleVariants($title);
@@ -234,19 +270,12 @@ abstract class BaseVideoProvider
         $bestRank = null;
 
         foreach (Video::query()->whereKey(array_keys($matchQualityByVideoId))->get(['id', 'started']) as $candidate) {
-            if (! preg_match('/^(\d{4})-(\d{2})-(\d{2})/', $candidate->started, $dateMatch)) {
+            if (! $this->isPremiereYearPlausible($candidate->started, $releaseYear)
+                || ! preg_match('/^(\d{4})-/', $candidate->started, $dateMatch)) {
                 continue;
             }
 
             $premiereYear = (int) $dateMatch[1];
-            $premiereMonth = (int) $dateMatch[2];
-            $isEarlyFollowingYear = $premiereYear === $releaseYear + self::MAX_PREMIERE_YEARS_AFTER_RELEASE
-                && $premiereMonth === self::FOLLOWING_YEAR_TOLERANCE_MONTH;
-
-            if ($premiereYear < $releaseYear - self::MAX_PREMIERE_YEARS_BEFORE_RELEASE
-                || ($premiereYear > $releaseYear && ! $isEarlyFollowingYear)) {
-                continue;
-            }
 
             $rank = [
                 $preferredSiblingByVideoId[(int) $candidate->id] ? 0 : 1,
