@@ -118,79 +118,71 @@ abstract class BaseVideoProvider
 
     public function getByTitle(string $title, int $type, int $source = 0): mixed
     {
-        // Check if we already have an entry for this show.
-        $res = $this->getTitleExact($title, $type, $source);
-        if ($res !== 0) {
-            return $res;
-        }
+        $titleVariants = [$title];
 
-        // If title contains a year in parentheses, try without the year
-        if (preg_match('/^(.+?)\s*\(\d{4}\)$/', (string) $title, $yearMatch)) {
+        if (preg_match('/^(.+?)\s*\(\d{4}\)$/', $title, $yearMatch)) {
             $titleWithoutYear = trim($yearMatch[1]);
-            $res = $this->getTitleExact($titleWithoutYear, $type, $source);
-            if ($res !== 0) {
-                return $res;
+            if ($titleWithoutYear !== $title) {
+                $titleVariants[] = $titleWithoutYear;
             }
         }
 
-        // Check alt. title (Strip ' and :) Maybe strip more in the future.
-        $res = $this->getAlternativeTitleExact($title, $type, $source);
-        if ($res !== 0) {
-            return $res;
-        }
-
-        $title2 = str_ireplace(' and ', ' & ', $title);
-        if ((string) $title !== (string) $title2) {
-            $res = $this->getTitleExact($title2, $type, $source);
-            if ($res !== 0) {
-                return $res;
-            }
-            $pieces = explode(' ', $title2);
-            $title2 = '%';
-            foreach ($pieces as $piece) {
-                $title2 .= str_ireplace(["'", '!'], '', $piece).'%';
-            }
-            $res = $this->getTitleLoose($title2, $type, $source);
-            if ($res !== 0) {
-                return $res;
+        foreach ($titleVariants as $titleVariant) {
+            $videoId = $this->getTitleExact($titleVariant, $type, $source);
+            if ($videoId !== 0) {
+                return $videoId;
             }
         }
 
-        // Some words are spelled correctly 2 ways
-        // example theatre and theater
-        $title2 = str_ireplace('er', 're', $title);
-        if ((string) $title !== (string) $title2) {
-            $res = $this->getTitleExact($title2, $type, $source);
-            if ($res !== 0) {
-                return $res;
+        foreach ($titleVariants as $titleVariant) {
+            // Check alt. title (Strip ' and :) Maybe strip more in the future.
+            $videoId = $this->getAlternativeTitleExact($titleVariant, $type, $source);
+            if ($videoId !== 0) {
+                return $videoId;
             }
-            $pieces = explode(' ', $title2);
-            $title2 = '%';
-            foreach ($pieces as $piece) {
-                $title2 .= str_ireplace(["'", '!'], '', $piece).'%';
+
+            $andNormalizedTitle = str_ireplace(' and ', ' & ', $titleVariant);
+            $britishSpellingTitle = str_ireplace('er', 're', $titleVariant);
+
+            foreach ([$andNormalizedTitle, $britishSpellingTitle] as $transformedTitle) {
+                if ($titleVariant === $transformedTitle) {
+                    continue;
+                }
+
+                $videoId = $this->getTitleExact($transformedTitle, $type, $source);
+                if ($videoId !== 0) {
+                    return $videoId;
+                }
+
+                $videoId = $this->getLooseTitleMatch($transformedTitle, $type, $source);
+                if ($videoId !== 0) {
+                    return $videoId;
+                }
             }
-            $res = $this->getTitleLoose($title2, $type, $source);
-            if ($res !== 0) {
-                return $res;
-            }
-        } else {
+
             // If there was not an exact title match, look for title with missing chars
             // example release name :Zorro 1990, tvrage name Zorro (1990)
             // Only search if the title contains more than one word to prevent incorrect matches
-            $pieces = explode(' ', $title);
-            if (\count($pieces) > 1) {
-                $title2 = '%';
-                foreach ($pieces as $piece) {
-                    $title2 .= str_ireplace(["'", '!'], '', $piece).'%';
-                }
-                $res = $this->getTitleLoose($title2, $type, $source);
-                if ($res !== 0) {
-                    return $res;
+            $titleWords = explode(' ', $titleVariant);
+            if (\count($titleWords) > 1) {
+                $videoId = $this->getLooseTitleMatch($titleVariant, $type, $source);
+                if ($videoId !== 0) {
+                    return $videoId;
                 }
             }
         }
 
         return 0;
+    }
+
+    private function getLooseTitleMatch(string $title, int $type, int $source): mixed
+    {
+        $looseTitle = '%';
+        foreach (explode(' ', $title) as $titleWord) {
+            $looseTitle .= str_ireplace(["'", '!'], '', $titleWord).'%';
+        }
+
+        return $this->getTitleLoose($looseTitle, $type, $source);
     }
 
     public function getTitleExact(string $title, int $type, int $source = 0): int
@@ -273,14 +265,14 @@ abstract class BaseVideoProvider
         if (! empty($title)) {
             if ($source > 0) {
                 $query = Video::query()
-                    ->whereRaw("REPLACE(title,'\'','') = ?", $title)
+                    ->whereRaw("REPLACE(title, ?, '') = ?", ["'", $title])
                     ->orWhereRaw("REPLACE(title,':','') = ?", $title)
                     ->where('type', '=', $type)
                     ->where('source', '=', $source)
                     ->first();
             } else {
                 $query = Video::query()
-                    ->whereRaw("REPLACE(title,'\'','') = ?", $title)
+                    ->whereRaw("REPLACE(title, ?, '') = ?", ["'", $title])
                     ->orWhereRaw("REPLACE(title,':','') = ?", $title)
                     ->where('type', '=', $type)
                     ->first();
