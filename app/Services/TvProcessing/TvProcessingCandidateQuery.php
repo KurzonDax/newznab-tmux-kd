@@ -116,8 +116,9 @@ final class TvProcessingCandidateQuery
             ->selectRaw($bucketExpression.' AS id')
             ->distinct()
             ->limit(16)
+            ->toBase()
             ->get()
-            ->map(static fn (Release $release): object => (object) ['id' => (string) $release->getAttribute('id')])
+            ->map(static fn (\stdClass $row): object => (object) ['id' => (string) $row->id])
             ->values()
             ->all();
     }

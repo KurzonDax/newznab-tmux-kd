@@ -83,6 +83,24 @@ class TvEpisodeRevisitTest extends TestCase
     }
 
     #[Test]
+    public function bucket_fan_out_preserves_distinct_hex_guid_characters(): void
+    {
+        $this->insertRelease(1, ['leftguid' => '1']);
+        $this->insertRelease(2, ['leftguid' => 'a']);
+        $this->insertRelease(3, ['leftguid' => 'f']);
+
+        $bucketIds = array_map(
+            static fn (object $bucket): string => $bucket->id,
+            TvProcessingCandidateQuery::buckets(),
+        );
+
+        sort($bucketIds);
+
+        $this->assertSame(['1', 'a', 'f'], $bucketIds);
+        $this->assertSame($bucketIds, array_values(array_unique($bucketIds)));
+    }
+
+    #[Test]
     public function worker_gate_and_monitor_count_use_the_shared_revisit_predicate(): void
     {
         Log::spy();
