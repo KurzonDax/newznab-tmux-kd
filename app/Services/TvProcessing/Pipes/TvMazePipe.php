@@ -67,9 +67,12 @@ class TvMazePipe extends AbstractTvProviderPipe
 
         // Find the Video ID if it already exists
         $isEpisodeRevisit = $context->videosId > 0;
-        $videoId = $isEpisodeRevisit
-            ? $context->videosId
-            : $tvmaze->getByTitle($cleanName, self::TYPE_TV, self::SOURCE_TVMAZE);
+        $videoId = $tvmaze->getByRelease(
+            $parsedInfo,
+            self::TYPE_TV,
+            self::SOURCE_TVMAZE,
+            $context->videosId,
+        );
 
         if ($videoId !== 0) {
             $siteId = $tvmaze->getSiteByID('tvmaze', (int) $videoId);

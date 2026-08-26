@@ -42,11 +42,13 @@ class LocalDbProvider extends AbstractTvProvider
             }
 
             // Try to find the show in our local database by title
-            $videoId = (int) $release->videos_id > 0
-                ? (int) $release->videos_id
-                : $this->getByTitle($showInfo['cleanname'], parent::TYPE_TV, 0);
+            $videoId = $this->getByRelease(
+                $showInfo,
+                parent::TYPE_TV,
+                fallbackVideoId: (int) $release->videos_id,
+            );
 
-            if ($videoId !== 0 && $videoId !== false) {
+            if ($videoId !== 0) {
                 // Found a matching show in local DB
                 if (($showInfo['episode'] ?? null) === 'all') {
                     $this->setVideoIdFound($videoId, $release->id, 0);
@@ -123,7 +125,7 @@ class LocalDbProvider extends AbstractTvProvider
                 }
             }
 
-            if (! $matched && $videoId === false || $videoId === 0) {
+            if (! $matched && $videoId === 0) {
                 $notFoundCount++;
                 if ($this->echooutput) {
                     cli()->primaryOver('    → ');

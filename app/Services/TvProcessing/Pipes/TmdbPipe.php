@@ -67,9 +67,12 @@ class TmdbPipe extends AbstractTvProviderPipe
 
         // Find the Video ID if it already exists
         $isEpisodeRevisit = $context->videosId > 0;
-        $videoId = $isEpisodeRevisit
-            ? $context->videosId
-            : $tmdb->getByTitle($cleanName, self::TYPE_TV, self::SOURCE_TMDB);
+        $videoId = $tmdb->getByRelease(
+            $parsedInfo,
+            self::TYPE_TV,
+            self::SOURCE_TMDB,
+            $context->videosId,
+        );
 
         if ($videoId !== 0) {
             $siteId = $tmdb->getSiteByID('tmdb', (int) $videoId);

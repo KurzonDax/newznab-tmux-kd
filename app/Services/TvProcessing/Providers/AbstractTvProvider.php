@@ -24,6 +24,8 @@ use Illuminate\Support\Facades\DB;
  */
 abstract class AbstractTvProvider extends BaseVideoProvider
 {
+    private const FOLLOWING_RELEASE_TOKEN = '[^a-z0-9]([(|\[]\w+[)|\]]\s)*?(\d\d-\d\d|\d{1,3}x\d{2,3}|\(?(19|20)\d{2}\)?|(480|720|1080|2160)[ip]|AAC2?|BD-?Rip|Blu-?Ray|D0?\d|DD5|DiVX|DLMux|DTS|DVD(-?Rip)?|E\d{2,3}|EP\d{1,3}|[HX][\-_. ]?26[45]|ITA(-ENG)?|HEVC|[HPS]DTV|PROPER|REPACK|Season|Episode|S\d+[^a-z0-9]?((E\d+)[abr]?)*|WEB[\-_. ]?(DL|Rip)|XViD)[^a-z0-9]?';
+
     // Television Sources
     protected const SOURCE_NONE = 0;   // No Scrape source
 
@@ -464,6 +466,7 @@ abstract class AbstractTvProvider extends BaseVideoProvider
 
             // Get the Season/Episode/Airdate
             $showInfo += $this->parseSeasonEp($relname);
+            $showInfo['episode_title'] = $this->parseEpisodeTitle($relname);
 
             // --- Post-parse correction for daily talk shows misclassified as Season = Year ---
             if (isset($showInfo['season'], $showInfo['episode']) && ! isset($showInfo['airdate'])) {
@@ -506,7 +509,7 @@ abstract class AbstractTvProvider extends BaseVideoProvider
     {
         $showName = '';
 
-        $following = '[^a-z0-9]([(|\[]\w+[)|\]]\s)*?(\d\d-\d\d|\d{1,3}x\d{2,3}|\(?(19|20)\d{2}\)?|(480|720|1080|2160)[ip]|AAC2?|BD-?Rip|Blu-?Ray|D0?\d|DD5|DiVX|DLMux|DTS|DVD(-?Rip)?|E\d{2,3}|EP\d{1,3}|[HX][\-_. ]?26[45]|ITA(-ENG)?|HEVC|[HPS]DTV|PROPER|REPACK|Season|Episode|S\d+[^a-z0-9]?((E\d+)[abr]?)*|WEB[\-_. ]?(DL|Rip)|XViD)[^a-z0-9]?';
+        $following = self::FOLLOWING_RELEASE_TOKEN;
 
         // Handle fansub/release group prefixes like [SubsPlease], [Erai-raws], [ASW], etc.
         $cleanRelname = preg_replace('/^\[[^]]+][_\s]*/i', '', $relname);
@@ -544,6 +547,21 @@ abstract class AbstractTvProvider extends BaseVideoProvider
         $showName = trim(preg_replace('/\s{2,}/', ' ', $showName));
 
         return $showName;
+    }
+
+    private function parseEpisodeTitle(string $relname): string
+    {
+        if (preg_match(
+            '/[^a-z0-9]s\d{1,2}[^a-z0-9]?e\d{1,3}[abr]?(?P<title>.*?)(?='.self::FOLLOWING_RELEASE_TOKEN.'|$)/i',
+            $relname,
+            $matches,
+        ) !== 1) {
+            return '';
+        }
+
+        $title = preg_replace('/[._]+/', ' ', (string) $matches['title']);
+
+        return preg_replace('/\s+/', ' ', trim($title ?? '', " \t\n\r\0\x0B-")) ?? '';
     }
 
     /**

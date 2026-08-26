@@ -404,11 +404,18 @@ class TvEpisodeRevisitTest extends TestCase
             $table->tinyInteger('source')->default(0);
         });
 
+        Schema::create('videos_aliases', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->unsignedInteger('videos_id');
+            $table->string('title');
+        });
+
         Schema::create('tv_episodes', function (Blueprint $table): void {
             $table->increments('id');
             $table->unsignedInteger('videos_id');
             $table->unsignedInteger('series')->default(0);
             $table->unsignedInteger('episode')->default(0);
+            $table->string('title')->default('');
             $table->dateTime('firstaired')->nullable();
         });
     }

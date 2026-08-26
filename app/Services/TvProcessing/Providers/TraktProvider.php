@@ -91,9 +91,12 @@ class TraktProvider extends AbstractTvProvider
                     }
 
                     // A revisit already owns its show identity; only look up the episode.
-                    $videoId = (int) ($row['videos_id'] ?? 0) > 0
-                        ? (int) $row['videos_id']
-                        : $this->getByTitle($release['cleanname'], parent::TYPE_TV, parent::SOURCE_TRAKT);
+                    $videoId = $this->getByRelease(
+                        $release,
+                        parent::TYPE_TV,
+                        parent::SOURCE_TRAKT,
+                        (int) ($row['videos_id'] ?? 0),
+                    );
 
                     // Force local lookup only
                     if ($local === true) {
