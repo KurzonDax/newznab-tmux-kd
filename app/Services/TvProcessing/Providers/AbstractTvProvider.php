@@ -553,10 +553,17 @@ abstract class AbstractTvProvider extends BaseVideoProvider
     {
         return preg_replace_callback(
             '/\b((?:[A-Za-z]\.){2,}[A-Za-z]?\.?)\b/',
-            function ($matches) {
-                return str_replace('.', '', $matches[1]);
+            function (array $matches) use ($str): string {
+                $acronym = $matches[1][0];
+                $nextCharacterOffset = $matches[0][1] + strlen($matches[0][0]);
+                $hasJoinedFollowingWord = str_ends_with($acronym, '.')
+                    && isset($str[$nextCharacterOffset])
+                    && preg_match('/\w/', $str[$nextCharacterOffset]) === 1;
+
+                return str_replace('.', '', $acronym).($hasJoinedFollowingWord ? ' ' : '');
             },
-            $str
+            $str,
+            flags: PREG_OFFSET_CAPTURE,
         );
     }
 
