@@ -37,6 +37,22 @@ use Illuminate\Support\Facades\Cache;
  */
 abstract class BaseVideoProvider
 {
+    private const MAX_PREMIERE_YEARS_BEFORE_RELEASE = 5;
+
+    private const MAX_PREMIERE_YEARS_AFTER_RELEASE = 1;
+
+    private const FOLLOWING_YEAR_TOLERANCE_MONTH = 1;
+
+    private const MATCH_EXACT_SIBLING = 0;
+
+    private const MATCH_EXACT_TITLE = 1;
+
+    private const MATCH_NORMALIZED_SIBLING = 2;
+
+    private const MATCH_NORMALIZED_TITLE = 3;
+
+    private const MATCH_LOOSE_TITLE = 4;
+
     // Video Type Identifiers
     protected const TYPE_TV = 0; // Type of video is a TV Programme/Show
 
@@ -118,61 +134,247 @@ abstract class BaseVideoProvider
 
     public function getByTitle(string $title, int $type, int $source = 0): mixed
     {
-        $titleVariants = [$title];
+        if (preg_match('/^(.+?)\s*\((\d{4})\)$/', $title, $yearMatch)) {
+            $exactVideoId = $this->getTitleExact($title, $type, $source);
+            if ($exactVideoId !== 0) {
+                return $exactVideoId;
+            }
 
-        if (preg_match('/^(.+?)\s*\(\d{4}\)$/', $title, $yearMatch)) {
             $titleWithoutYear = trim($yearMatch[1]);
-            if ($titleWithoutYear !== $title) {
-                $titleVariants[] = $titleWithoutYear;
-            }
+
+            return $this->getYearAwareTitleMatch($titleWithoutYear, $type, $source, (int) $yearMatch[2]);
         }
 
-        foreach ($titleVariants as $titleVariant) {
-            $videoId = $this->getTitleExact($titleVariant, $type, $source);
+        $videoId = $this->getTitleExact($title, $type, $source);
+        if ($videoId !== 0) {
+            return $videoId;
+        }
+
+        // Check alt. title (Strip ' and :) Maybe strip more in the future.
+        $videoId = $this->getAlternativeTitleExact($title, $type, $source);
+        if ($videoId !== 0) {
+            return $videoId;
+        }
+
+        foreach (array_slice($this->getTitleVariants($title), 1) as $transformedTitle) {
+
+            $videoId = $this->getTitleExact($transformedTitle, $type, $source);
+            if ($videoId !== 0) {
+                return $videoId;
+            }
+
+            $videoId = $this->getLooseTitleMatch($transformedTitle, $type, $source);
             if ($videoId !== 0) {
                 return $videoId;
             }
         }
 
-        foreach ($titleVariants as $titleVariant) {
-            // Check alt. title (Strip ' and :) Maybe strip more in the future.
-            $videoId = $this->getAlternativeTitleExact($titleVariant, $type, $source);
+        // If there was not an exact title match, look for title with missing chars
+        // example release name :Zorro 1990, tvrage name Zorro (1990)
+        // Only search if the title contains more than one word to prevent incorrect matches
+        $titleWords = explode(' ', $title);
+        if (\count($titleWords) > 1) {
+            $videoId = $this->getLooseTitleMatch($title, $type, $source);
             if ($videoId !== 0) {
                 return $videoId;
-            }
-
-            $andNormalizedTitle = str_ireplace(' and ', ' & ', $titleVariant);
-            $britishSpellingTitle = str_ireplace('er', 're', $titleVariant);
-
-            foreach ([$andNormalizedTitle, $britishSpellingTitle] as $transformedTitle) {
-                if ($titleVariant === $transformedTitle) {
-                    continue;
-                }
-
-                $videoId = $this->getTitleExact($transformedTitle, $type, $source);
-                if ($videoId !== 0) {
-                    return $videoId;
-                }
-
-                $videoId = $this->getLooseTitleMatch($transformedTitle, $type, $source);
-                if ($videoId !== 0) {
-                    return $videoId;
-                }
-            }
-
-            // If there was not an exact title match, look for title with missing chars
-            // example release name :Zorro 1990, tvrage name Zorro (1990)
-            // Only search if the title contains more than one word to prevent incorrect matches
-            $titleWords = explode(' ', $titleVariant);
-            if (\count($titleWords) > 1) {
-                $videoId = $this->getLooseTitleMatch($titleVariant, $type, $source);
-                if ($videoId !== 0) {
-                    return $videoId;
-                }
             }
         }
 
         return 0;
+    }
+
+    private function getYearAwareTitleMatch(string $title, int $type, int $source, int $releaseYear): int
+    {
+        $titleVariants = $this->getTitleVariants($title);
+        $likePatterns = array_map($this->getYearAwareLikePattern(...), $titleVariants);
+
+        $videoCandidates = $this->constrainYearAwareTitles(
+            $this->getVideoCandidateQuery($type, $source)
+                ->select(['videos.id', 'videos.title as candidate_title']),
+            'videos.title',
+            $likePatterns,
+        )->get();
+
+        $aliasCandidates = $this->constrainYearAwareTitles(
+            $this->getVideoCandidateQuery($type, $source)
+                ->select(['videos.id', 'videos_aliases.title as candidate_title'])
+                ->join('videos_aliases', 'videos.id', '=', 'videos_aliases.videos_id'),
+            'videos_aliases.title',
+            $likePatterns,
+        )->get();
+
+        /** @var array<int, int> $matchQualityByVideoId */
+        $matchQualityByVideoId = [];
+
+        /** @var array<int, bool> $preferredSiblingByVideoId */
+        $preferredSiblingByVideoId = [];
+
+        foreach ($videoCandidates->concat($aliasCandidates) as $candidate) {
+            $candidateTitle = $candidate->getAttribute('candidate_title');
+            if (! is_string($candidateTitle)) {
+                continue;
+            }
+
+            $matchQuality = $this->getYearAwareTitleMatchQuality($candidateTitle, $titleVariants);
+            if ($matchQuality === null) {
+                continue;
+            }
+
+            $videoId = (int) $candidate->id;
+            $matchQualityByVideoId[$videoId] = min($matchQualityByVideoId[$videoId] ?? PHP_INT_MAX, $matchQuality);
+            $preferredSiblingByVideoId[$videoId] = ($preferredSiblingByVideoId[$videoId] ?? false)
+                || $this->isPreferredYearAwareSibling($candidateTitle, $titleVariants);
+        }
+
+        if ($matchQualityByVideoId === []) {
+            return 0;
+        }
+
+        $bestVideoId = 0;
+        $bestRank = null;
+
+        foreach (Video::query()->whereKey(array_keys($matchQualityByVideoId))->get(['id', 'started']) as $candidate) {
+            if (! preg_match('/^(\d{4})-(\d{2})-(\d{2})/', $candidate->started, $dateMatch)) {
+                continue;
+            }
+
+            $premiereYear = (int) $dateMatch[1];
+            $premiereMonth = (int) $dateMatch[2];
+            $isEarlyFollowingYear = $premiereYear === $releaseYear + self::MAX_PREMIERE_YEARS_AFTER_RELEASE
+                && $premiereMonth === self::FOLLOWING_YEAR_TOLERANCE_MONTH;
+
+            if ($premiereYear < $releaseYear - self::MAX_PREMIERE_YEARS_BEFORE_RELEASE
+                || ($premiereYear > $releaseYear && ! $isEarlyFollowingYear)) {
+                continue;
+            }
+
+            $rank = [
+                $preferredSiblingByVideoId[(int) $candidate->id] ? 0 : 1,
+                $premiereYear > $releaseYear ? 1 : 0,
+                abs($releaseYear - $premiereYear),
+                $matchQualityByVideoId[(int) $candidate->id],
+                (int) $candidate->id,
+            ];
+
+            if ($bestRank === null || $rank < $bestRank) {
+                $bestVideoId = (int) $candidate->id;
+                $bestRank = $rank;
+            }
+        }
+
+        return $bestVideoId;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function getTitleVariants(string $title): array
+    {
+        return array_values(array_unique([
+            $title,
+            str_ireplace(' and ', ' & ', $title),
+            str_ireplace('er', 're', $title),
+        ]));
+    }
+
+    /**
+     * @return Builder<Video>
+     */
+    private function getVideoCandidateQuery(int $type, int $source): Builder
+    {
+        return Video::query()
+            ->where('videos.type', $type)
+            ->when($source > 0, fn (Builder $query): Builder => $query->where('videos.source', $source));
+    }
+
+    /**
+     * @param  Builder<Video>  $query
+     * @param  list<string>  $likePatterns
+     * @return Builder<Video>
+     */
+    private function constrainYearAwareTitles(Builder $query, string $titleColumn, array $likePatterns): Builder
+    {
+        return $query->where(function (Builder $query) use ($likePatterns, $titleColumn): void {
+            foreach ($likePatterns as $likePattern) {
+                $query->orWhereRaw(
+                    "REPLACE(REPLACE(REPLACE($titleColumn, ?, ''), ?, ''), ?, '') LIKE ?",
+                    ["'", ':', '!', $likePattern],
+                );
+            }
+        });
+    }
+
+    private function getYearAwareLikePattern(string $title): string
+    {
+        $normalizedTitle = $this->normalizeYearAwareTitle($title);
+
+        return '%'.str_replace(' ', '%', $normalizedTitle).'%';
+    }
+
+    /**
+     * @param  list<string>  $titleVariants
+     */
+    private function getYearAwareTitleMatchQuality(string $candidateTitle, array $titleVariants): ?int
+    {
+        $normalizedCandidate = $this->normalizeYearAwareTitle($candidateTitle);
+        $bestQuality = null;
+
+        foreach ($titleVariants as $titleVariant) {
+            if (preg_match('/^'.preg_quote($titleVariant, '/').'\s+\([^)]+\)$/iu', $candidateTitle) === 1) {
+                return self::MATCH_EXACT_SIBLING;
+            }
+
+            if (strcasecmp($candidateTitle, $titleVariant) === 0) {
+                return self::MATCH_EXACT_TITLE;
+            }
+
+            $normalizedVariant = $this->normalizeYearAwareTitle($titleVariant);
+            if (preg_match('/^'.preg_quote($normalizedVariant, '/').'\s+\([^)]+\)$/iu', $normalizedCandidate) === 1) {
+                $bestQuality = min($bestQuality ?? PHP_INT_MAX, self::MATCH_NORMALIZED_SIBLING);
+            }
+
+            if (strcasecmp($normalizedCandidate, $normalizedVariant) === 0) {
+                $bestQuality = min($bestQuality ?? PHP_INT_MAX, self::MATCH_NORMALIZED_TITLE);
+            }
+
+            $words = explode(' ', $normalizedVariant);
+            $wordPattern = implode('.*', array_map(
+                static fn (string $word): string => preg_quote($word, '/'),
+                $words,
+            ));
+
+            if (preg_match('/'.$wordPattern.'(?:\s+\([^)]+\))?$/iu', $normalizedCandidate) === 1) {
+                $bestQuality = min($bestQuality ?? PHP_INT_MAX, self::MATCH_LOOSE_TITLE);
+            }
+        }
+
+        return $bestQuality;
+    }
+
+    /**
+     * @param  list<string>  $titleVariants
+     */
+    private function isPreferredYearAwareSibling(string $candidateTitle, array $titleVariants): bool
+    {
+        $normalizedCandidate = $this->normalizeYearAwareTitle($candidateTitle);
+
+        foreach ($titleVariants as $titleVariant) {
+            if (preg_match('/^'.preg_quote($titleVariant, '/').'\s+\((?:\d{4}|[a-z]{2,3})\)$/iu', $candidateTitle) === 1) {
+                return true;
+            }
+
+            $normalizedVariant = $this->normalizeYearAwareTitle($titleVariant);
+            if (preg_match('/^'.preg_quote($normalizedVariant, '/').'\s+\([a-z]{2,3}\)$/iu', $normalizedCandidate) === 1) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function normalizeYearAwareTitle(string $title): string
+    {
+        return preg_replace('/\s+/', ' ', trim(str_replace(["'", ':', '!'], '', $title))) ?? '';
     }
 
     private function getLooseTitleMatch(string $title, int $type, int $source): mixed
