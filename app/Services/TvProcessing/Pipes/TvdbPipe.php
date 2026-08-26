@@ -69,9 +69,11 @@ class TvdbPipe extends AbstractTvProviderPipe
 
         // Find the Video ID if it already exists by checking the title
         $isEpisodeRevisit = $context->videosId > 0;
-        $videoId = $isEpisodeRevisit
-            ? $context->videosId
-            : $tvdb->getByTitle($cleanName, self::TYPE_TV);
+        $videoId = $tvdb->getByRelease(
+            $parsedInfo,
+            self::TYPE_TV,
+            fallbackVideoId: $context->videosId,
+        );
 
         if ($videoId !== 0) {
             $siteId = $tvdb->getSiteByID('tvdb', (int) $videoId);

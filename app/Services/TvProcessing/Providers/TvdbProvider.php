@@ -102,9 +102,11 @@ class TvdbProvider extends AbstractTvProvider
                 }
 
                 $isEpisodeRevisit = (int) ($row['videos_id'] ?? 0) > 0;
-                $videoId = $isEpisodeRevisit
-                    ? (int) $row['videos_id']
-                    : $this->getByTitle($release['cleanname'], parent::TYPE_TV);
+                $videoId = $this->getByRelease(
+                    $release,
+                    parent::TYPE_TV,
+                    fallbackVideoId: (int) ($row['videos_id'] ?? 0),
+                );
 
                 if ($videoId !== 0) {
                     $siteId = $this->getSiteByID('tvdb', (int) $videoId);

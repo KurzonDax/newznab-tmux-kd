@@ -66,9 +66,12 @@ class TraktPipe extends AbstractTvProviderPipe
         $siteId = false;
 
         // Find the Video ID if it already exists
-        $videoId = $context->videosId > 0
-            ? $context->videosId
-            : $trakt->getByTitle($cleanName, self::TYPE_TV, self::SOURCE_TRAKT);
+        $videoId = $trakt->getByRelease(
+            $parsedInfo,
+            self::TYPE_TV,
+            self::SOURCE_TRAKT,
+            $context->videosId,
+        );
 
         if ($videoId !== 0) {
             $siteId = $trakt->getSiteIDFromVideoID('trakt', (int) $videoId);

@@ -108,7 +108,12 @@ final class FetchTvBannersCommandTest extends TestCase
         $this->fakeFanartAndImageResponses();
 
         $provider = Mockery::mock(TvdbProvider::class);
-        $provider->shouldReceive('getByTitle')->once()->with('New Match', 0)->andReturn(0);
+        $provider->shouldReceive('getByRelease')->once()->withArgs(
+            static fn (array $showInfo, int $type, int $source, int $fallbackVideoId): bool => $showInfo['cleanname'] === 'New Match'
+                && $type === 0
+                && $source === 0
+                && $fallbackVideoId === 0,
+        )->andReturn(0);
         $provider->shouldReceive('getShowInfo')->once()->with('New Match')->andReturn([
             'tvdb' => 4001,
             'poster' => 'https://assets.example/poster.png',

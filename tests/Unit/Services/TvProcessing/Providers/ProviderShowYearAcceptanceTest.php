@@ -193,8 +193,12 @@ final class ProviderShowYearAcceptanceTest extends TestCase
     public function a_year_mismatched_local_show_is_skipped_before_the_modern_api_show_is_added_and_bound(): void
     {
         $provider = Mockery::mock(TvdbProvider::class);
-        $provider->shouldReceive('getByTitle')->once()->with('The Flash (2014)', 0)->andReturn(0);
-        $provider->shouldNotReceive('getByTitle')->with('The Flash', 0);
+        $provider->shouldReceive('getByRelease')->once()->withArgs(
+            static fn (array $showInfo, int $type, int $source, int $fallbackVideoId): bool => $showInfo['cleanname'] === 'The Flash (2014)'
+                && $type === 0
+                && $source === 0
+                && $fallbackVideoId === 0,
+        )->andReturn(0);
         $provider->shouldReceive('getShowInfo')->once()->with('The Flash (2014)')->andReturnFalse();
         $provider->shouldReceive('getShowInfo')->once()->with('The Flash', 2014)->andReturn([
             'tvdb' => 200,

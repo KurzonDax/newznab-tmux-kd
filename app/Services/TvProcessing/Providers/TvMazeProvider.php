@@ -93,9 +93,12 @@ class TvMazeProvider extends AbstractTvProvider
 
                     // Find the Video ID if it already exists by checking the title against stored TVMaze titles
                     $isEpisodeRevisit = (int) ($row['videos_id'] ?? 0) > 0;
-                    $videoId = $isEpisodeRevisit
-                        ? (int) $row['videos_id']
-                        : $this->getByTitle($release['cleanname'], parent::TYPE_TV, parent::SOURCE_TVMAZE);
+                    $videoId = $this->getByRelease(
+                        $release,
+                        parent::TYPE_TV,
+                        parent::SOURCE_TVMAZE,
+                        (int) ($row['videos_id'] ?? 0),
+                    );
 
                     // Force local lookup only
                     // $local = true, $lookupsetting = false and vice versa

@@ -56,18 +56,9 @@ class LocalDbPipe extends AbstractTvProviderPipe
         $cleanName = $parsedInfo['cleanname'];
         $localDb = $this->getLocalDb();
 
-        // Try to find the show in our local database by title
-        $videoId = $context->videosId > 0
-            ? $context->videosId
-            : $localDb->getByTitle($cleanName, self::TYPE_TV, 0);
+        $videoId = $localDb->getByRelease($parsedInfo, self::TYPE_TV, fallbackVideoId: $context->videosId);
 
-        // If not found and cleanName contains a year in parentheses, try without the year
-        if (($videoId === 0 || $videoId === false) && preg_match('/^(.+?)\s*\(\d{4}\)$/', (string) $cleanName, $yearMatch)) {
-            $nameWithoutYear = trim($yearMatch[1]);
-            $videoId = $localDb->getByTitle($nameWithoutYear, self::TYPE_TV, 0);
-        }
-
-        if ($videoId === 0 || $videoId === false) {
+        if ($videoId === 0) {
             $this->outputNotFound($cleanName);
 
             return TvProcessingResult::notFound($this->getName(), ['title' => $cleanName]);

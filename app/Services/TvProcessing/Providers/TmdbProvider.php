@@ -78,9 +78,12 @@ class TmdbProvider extends AbstractTvProvider
 
                     // Find the Video ID if it already exists by checking the title against stored TMDB titles
                     $isEpisodeRevisit = (int) ($row['videos_id'] ?? 0) > 0;
-                    $videoId = $isEpisodeRevisit
-                        ? (int) $row['videos_id']
-                        : $this->getByTitle($release['cleanname'], parent::TYPE_TV, parent::SOURCE_TMDB);
+                    $videoId = $this->getByRelease(
+                        $release,
+                        parent::TYPE_TV,
+                        parent::SOURCE_TMDB,
+                        (int) ($row['videos_id'] ?? 0),
+                    );
 
                     // Force local lookup only
                     if ($local === true) {
