@@ -4,13 +4,31 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\TvProcessing\Providers;
 
+use App\Services\TvProcessing\Providers\LocalDbProvider;
 use App\Services\TvProcessing\Providers\TraktProvider;
 use Illuminate\Support\Facades\Cache;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Unit\ImdbScraperTestCase;
 
 class AbstractTvProviderTest extends ImdbScraperTestCase
 {
+    /**
+     * @param  array{cleanname: string, season: int, episode: int, airdate: string}  $expected
+     */
+    #[Test]
+    #[DataProvider('episodeFormats')]
+    public function it_parses_episode_formats_without_leaking_boundaries_into_titles(string $releaseName, array $expected): void
+    {
+        $showInfo = (new LocalDbProvider)->parseInfo($releaseName);
+
+        $this->assertIsArray($showInfo);
+        $this->assertSame($expected['cleanname'], $showInfo['cleanname']);
+        $this->assertSame($expected['season'], $showInfo['season']);
+        $this->assertSame($expected['episode'], $showInfo['episode']);
+        $this->assertSame($expected['airdate'], $showInfo['airdate']);
+    }
+
     #[Test]
     public function it_accepts_numeric_values_in_check_match(): void
     {
@@ -92,5 +110,38 @@ class AbstractTvProviderTest extends ImdbScraperTestCase
         $method = new \ReflectionMethod($provider, 'buildUpdateQuery');
 
         return $method->invoke($provider, 123, $show);
+    }
+
+    /**
+     * @return array<string, array{string, array{cleanname: string, season: int, episode: int, airdate: string}}>
+     */
+    public static function episodeFormats(): array
+    {
+        return [
+            'zero-padded EP token' => [
+                'Juui.Dolittle.EP06.1080p.AMZN.WEB-DL.DDP2.0.H.264-MagicStar',
+                ['cleanname' => 'Juui Dolittle', 'season' => 1, 'episode' => 6, 'airdate' => ''],
+            ],
+            'single-digit EP token and episode title' => [
+                'BBC.Adventures.in.Architecture.EP1.Beauty.720p.HDTV.x264',
+                ['cleanname' => 'BBC Adventures in Architecture', 'season' => 1, 'episode' => 1, 'airdate' => ''],
+            ],
+            'non-episode word starting with EP' => [
+                'World.Of.EPCOT.S01E02.1080p.WEB-DL.x264',
+                ['cleanname' => 'World Of EPCOT', 'season' => 1, 'episode' => 2, 'airdate' => ''],
+            ],
+            'season and episode' => [
+                'Example.Show.S02E03.1080p.WEB-DL.x264',
+                ['cleanname' => 'Example Show', 'season' => 2, 'episode' => 3, 'airdate' => ''],
+            ],
+            'episode word' => [
+                'Chernobyl.Episode.S01E03.1080p.WEB-DL.x264',
+                ['cleanname' => 'Chernobyl', 'season' => 1, 'episode' => 3, 'airdate' => ''],
+            ],
+            'airdate' => [
+                'Example.Show.2024.01.15.720p.HDTV.x264',
+                ['cleanname' => 'Example Show', 'season' => 0, 'episode' => 0, 'airdate' => '2024-01-15'],
+            ],
+        ];
     }
 }
