@@ -41,6 +41,47 @@ class ReleaseNameNormalizerTest extends TestCase
             ],
             'surrounding whitespace' => ['  Some.Release.Name  ', 'Some.Release.Name'],
             'already clean' => ['Some.Release.Name', 'Some.Release.Name'],
+            'dash separator between counter and quoted filename' => [
+                '[51/60] - "FC2.PPV.4963596.Foo.1080p.mp4" yEnc',
+                'FC2.PPV.4963596.Foo.1080p.mp4',
+            ],
+            'short quoted filename behind a dash' => [
+                '[10/10] - "p4.1080p.mp4" yEnc',
+                'p4.1080p.mp4',
+            ],
+            'trailing size annotation in megabytes' => [
+                '[02/24] - "Show.S11E02.HDTV.x264-GRP.nfo" - 288,96 MB yEnc',
+                'Show.S11E02.HDTV.x264-GRP',
+            ],
+            'trailing size annotation in gigabytes' => [
+                '[1/5] - "Foo.Bar.2020.1080p.mkv" - 7,87 GB yEnc',
+                'Foo.Bar.2020.1080p.mkv',
+            ],
+            'underscore and bracket residue before the quotes' => [
+                '[3/9]_-_"Some.Release.Name.part002.rar" yEnc',
+                'Some.Release.Name',
+            ],
+            'quoted nfo companion file' => ['"Some.Release.Name.nfo"', 'Some.Release.Name'],
+            'title outside the quotes wins over the filename' => [
+                '[1/3] - IP Scanner Pro 3.21-Sebaro - "IP Scanner Pro 3.21-Sebaro.rar" yEnc',
+                'IP Scanner Pro 3.21-Sebaro - "IP Scanner Pro 3.21-Sebaro.rar"',
+            ],
+            'parenthesised counter prefix' => [
+                '(002/159) "hw7468.part001.rar" - 22,78 GB',
+                'hw7468',
+            ],
+            'counters stacked behind separators' => [
+                '[1/8] - [01/17] - "Foo.part01.rar" yEnc',
+                'Foo',
+            ],
+            'en dash separator before the quotes' => [
+                '[1/9] – "Foo.Bar.2020.1080p.mkv" yEnc',
+                'Foo.Bar.2020.1080p.mkv',
+            ],
+            'title before an inline counter is left alone' => [
+                'IP Scanner Pro 3.21-Sebaro - [1/3] - "IP Scanner Pro 3.21-Sebaro.rar" yEnc',
+                'IP Scanner Pro 3.21-Sebaro - [1/3] - "IP Scanner Pro 3.21-Sebaro.rar"',
+            ],
         ];
     }
 
@@ -61,6 +102,9 @@ class ReleaseNameNormalizerTest extends TestCase
             'partial quote' => ['"Unbalanced.Release.Name'],
             'part number without archive extension' => ['Some.Release.Name.part018'],
             'rar inside the name' => ['Some.rar.Documentary.2019.1080p'],
+            'bitrate is not a size annotation' => ['Some.Album.2019.320kbps'],
+            'resolution is not a size annotation' => ['Some.Release.Name.2160p'],
+            'leading non-ascii letter is not residue' => ['Ärzte.Live.2019.1080p'],
         ];
     }
 
@@ -68,6 +112,13 @@ class ReleaseNameNormalizerTest extends TestCase
     public function test_names_without_raw_subject_leftovers_are_untouched(string $name): void
     {
         $this->assertSame($name, ReleaseNameNormalizer::normalize($name));
+    }
+
+    public function test_subjects_that_are_not_valid_utf8_are_not_collapsed(): void
+    {
+        $name = "[1/2] - \"Fu\xC3\x28bar.Release.rar\" yEnc";
+
+        $this->assertSame("Fu\xC3\x28bar.Release", ReleaseNameNormalizer::normalize($name));
     }
 
     #[DataProvider('normalizationProvider')]
