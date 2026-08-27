@@ -171,6 +171,7 @@ class ReleaseRenameMetadataEligibilityTest extends TestCase
             $table->string('name');
             $table->string('searchname');
             $table->string('searchname_normalized')->nullable();
+            $table->string('display_name')->nullable();
             $table->unsignedInteger('groups_id');
             $table->unsignedBigInteger('size');
             $table->dateTime('postdate');

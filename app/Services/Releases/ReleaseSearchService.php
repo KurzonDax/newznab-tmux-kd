@@ -304,7 +304,7 @@ class ReleaseSearchService
             $whereSql = 'WHERE r.id IN ('.$idList.')';
 
             $sql = sprintf(
-                "SELECT r.id, r.searchname, r.guid, r.postdate, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate,
+                "SELECT r.id, r.searchname, r.display_name, r.guid, r.postdate, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate,
                     cp.title AS parent_category, c.title AS sub_category,
                     CONCAT(cp.title, ' > ', c.title) AS category_name,
                     g.name AS group_name,
@@ -420,7 +420,7 @@ class ReleaseSearchService
         $whereSql = 'WHERE '.implode(' AND ', $conditions);
 
         $sql = sprintf(
-            "SELECT r.id, r.searchname, r.guid, r.postdate, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate,
+            "SELECT r.id, r.searchname, r.display_name, r.guid, r.postdate, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate,
                     cp.title AS parent_category, c.title AS sub_category,
                     CONCAT(cp.title, ' > ', c.title) AS category_name,
                     g.name AS group_name,
@@ -577,7 +577,7 @@ class ReleaseSearchService
         $whereSql = 'WHERE '.implode(' AND ', $conditions);
 
         $sql = sprintf(
-            "SELECT r.id, r.searchname, r.guid, r.postdate, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate,
+            "SELECT r.id, r.searchname, r.display_name, r.guid, r.postdate, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate,
                     cp.title AS parent_category, c.title AS sub_category,
                     CONCAT(cp.title, ' > ', c.title) AS category_name,
                     g.name AS group_name,
@@ -883,7 +883,7 @@ class ReleaseSearchService
 
         // Optimized select list – only fields required by XML (extended) and transformers
         $baseSql = sprintf(
-            "SELECT r.id, r.searchname, r.guid, r.postdate, r.groups_id, r.categories_id,
+            "SELECT r.id, r.searchname, r.display_name, r.guid, r.postdate, r.groups_id, r.categories_id,
                     r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments,
                     r.adddate, r.videos_id, r.tv_episodes_id,
                     v.title, v.tvdb, v.trakt, v.imdb, v.tmdb, v.tvmaze, v.tvrage,
@@ -1073,7 +1073,7 @@ class ReleaseSearchService
             ($skipSqlReleaseFilters || empty($excludedCategories) ? '' : sprintf('AND r.categories_id NOT IN(%s)', implode(',', array_map('intval', $excludedCategories))))
         );
         $baseSql = sprintf(
-            "SELECT r.searchname, r.guid, r.postdate, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate,
+            "SELECT r.searchname, r.display_name, r.guid, r.postdate, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate,
                 r.tv_episodes_id, v.title, v.tvdb, v.trakt, v.imdb, v.tmdb, v.tvmaze, v.tvrage,
                 tve.series, tve.episode, tve.firstaired, cp.title AS parent_category, c.title AS sub_category,
                 CONCAT(cp.title, ' > ', c.title) AS category_name, g.name AS group_name
@@ -1167,7 +1167,7 @@ class ReleaseSearchService
             ($maxAge > 0 ? sprintf(' AND r.postdate > NOW() - INTERVAL %d DAY ', $maxAge) : '')
         );
         $baseSql = sprintf(
-            "SELECT r.id, r.searchname, r.guid, r.postdate, r.groups_id, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate, r.haspreview, r.jpgstatus,  cp.title AS parent_category, c.title AS sub_category,
+            "SELECT r.id, r.searchname, r.display_name, r.guid, r.postdate, r.groups_id, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate, r.haspreview, r.jpgstatus,  cp.title AS parent_category, c.title AS sub_category,
 				CONCAT(cp.title, ' > ', c.title) AS category_name,
 				g.name AS group_name,
 				rn.releases_id AS nfoid
@@ -1327,7 +1327,7 @@ class ReleaseSearchService
 
         // Select only fields required by XML/API transformers
         $baseSql = sprintf(
-            "SELECT r.id, r.searchname, r.guid, r.postdate, r.categories_id,
+            "SELECT r.id, r.searchname, r.display_name, r.guid, r.postdate, r.categories_id,
                     r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments,
                     r.adddate,
                     %s
@@ -1938,7 +1938,7 @@ class ReleaseSearchService
     private function buildSearchBaseSql(string $whereSql): string
     {
         return sprintf(
-            "SELECT r.id, r.searchname, r.guid, r.postdate, r.categories_id, r.size,
+            "SELECT r.id, r.searchname, r.display_name, r.guid, r.postdate, r.categories_id, r.size,
                     r.totalpart, r.fromname, r.grabs, r.comments, r.adddate,
                     r.videos_id, r.haspreview, r.jpgstatus, r.nfostatus,
                     CONCAT(cp.title, ' > ', c.title) AS category_name,

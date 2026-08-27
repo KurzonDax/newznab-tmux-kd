@@ -64,7 +64,7 @@
                                         </div>
                                         <div class="flex-1 min-w-0">
                                             <a href="{{ url('/details/' . $result->guid) }}" class="text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 font-medium break-all block">
-                                                {{ $result->searchname }}
+                                                {{ release_display_name($result) }}
                                             </a>
                                             @if(!empty($result->failed_count) && $result->failed_count > 0)
                                                 <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 mt-1">

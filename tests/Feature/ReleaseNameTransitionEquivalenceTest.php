@@ -39,6 +39,7 @@ class ReleaseNameTransitionEquivalenceTest extends TestCase
             $table->string('name');
             $table->string('searchname');
             $table->string('searchname_normalized')->default('');
+            $table->string('display_name')->nullable();
             $table->unsignedInteger('groups_id');
             $table->integer('categories_id');
             $table->string('fromname')->nullable();

@@ -250,6 +250,7 @@ class PreviewGenerationPolicyTest extends TestCase
             $table->integer('iscategorized')->default(0);
             $table->string('searchname')->default('');
             $table->string('searchname_normalized')->nullable();
+            $table->string('display_name')->nullable();
             $table->integer('isrenamed')->default(0);
             $table->integer('is_trusted_name')->default(0);
             $table->unsignedInteger('videos_id')->default(0);

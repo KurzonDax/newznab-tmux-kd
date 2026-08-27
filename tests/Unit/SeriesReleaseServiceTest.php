@@ -124,6 +124,7 @@ class SeriesReleaseServiceTest extends TestCase
             $table->increments('id');
             $table->string('name')->nullable();
             $table->string('searchname')->default('');
+            $table->string('display_name')->nullable();
             $table->string('fromname')->nullable();
             $table->dateTime('postdate')->nullable();
             $table->dateTime('adddate')->nullable();

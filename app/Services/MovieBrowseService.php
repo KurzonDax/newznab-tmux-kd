@@ -193,7 +193,7 @@ class MovieBrowseService
 
         // Step 3: Get the top 2 releases per movie without issuing one query per movie.
         $rankedReleases = DB::table('releases as r')
-            ->select(['r.id', 'r.imdbid', 'r.guid', 'r.searchname', 'r.size', 'r.postdate', 'r.adddate', 'r.haspreview'])
+            ->select(['r.id', 'r.imdbid', 'r.guid', 'r.searchname', 'r.display_name', 'r.size', 'r.postdate', 'r.adddate', 'r.haspreview'])
             ->selectRaw('ROW_NUMBER() OVER (PARTITION BY r.imdbid ORDER BY r.postdate DESC) AS release_rank')
             ->whereIn('r.imdbid', $movieImdbIds)
             ->whereRaw("r.passwordstatus {$this->showPasswords}");
@@ -247,7 +247,7 @@ class MovieBrowseService
         $whereExcluded = count($excludedCats) > 0 ? ' AND r.categories_id NOT IN ('.implode(',', $excludedCats).')' : '';
         $quotedId = escapeString($imdbid);
 
-        $sql = 'SELECT r.id, r.guid, r.searchname, r.size, r.postdate, r.adddate, r.haspreview '
+        $sql = 'SELECT r.id, r.guid, r.searchname, r.display_name, r.size, r.postdate, r.adddate, r.haspreview '
             .'FROM releases r '
             .'WHERE r.imdbid = '.$quotedId.' '
             ."AND r.passwordstatus {$this->showPasswords} "
