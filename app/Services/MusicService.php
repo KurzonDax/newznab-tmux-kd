@@ -216,11 +216,11 @@ class MusicService
         $inMusicIds = implode(',', array_map('intval', $musicIds));
 
         // Step 3: Get top 2 releases per music entity using ROW_NUMBER()
-        $releasesSql = 'SELECT ranked.id, ranked.musicinfo_id, ranked.guid, ranked.searchname, '
+        $releasesSql = 'SELECT ranked.id, ranked.musicinfo_id, ranked.guid, ranked.searchname, ranked.completion, ranked.repair_outcome, ranked.rescan_outcome, '
             .'ranked.size, ranked.postdate, ranked.adddate, ranked.haspreview, ranked.grabs, '
             .'ranked.comments, ranked.totalpart, ranked.group_name, ranked.nfoid, ranked.failed_count '
             .'FROM ( '
-            .'SELECT r.id, r.musicinfo_id, r.guid, r.searchname, r.size, r.postdate, r.adddate, '
+            .'SELECT r.id, r.musicinfo_id, r.guid, r.searchname, r.completion, r.repair_outcome, r.rescan_outcome, r.size, r.postdate, r.adddate, '
             .'r.haspreview, r.grabs, r.comments, r.totalpart, g.name AS group_name, '
             .'rn.releases_id AS nfoid, df.failed AS failed_count, '
             .'ROW_NUMBER() OVER (PARTITION BY r.musicinfo_id ORDER BY r.postdate DESC) AS rn '

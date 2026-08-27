@@ -59,7 +59,7 @@ final class ReleaseIndexProjection
                 'r.id', 'r.guid', 'r.name', 'r.searchname', 'r.fromname', 'r.categories_id',
                 'r.groups_id', 'r.size', 'r.postdate', 'r.adddate', 'r.totalpart', 'r.grabs',
                 'r.comments', 'r.passwordstatus', 'r.nzbstatus', 'r.nfostatus', 'r.haspreview',
-                'r.jpgstatus', 'r.videos_id', 'r.tv_episodes_id', 'r.movieinfo_id', 'r.imdbid',
+                'r.jpgstatus', 'r.completion', 'r.videos_id', 'r.tv_episodes_id', 'r.movieinfo_id', 'r.imdbid',
                 'r.anidbid', 'g.name as group_name', 'c.root_categories_id as parentid',
                 'c.title as sub_category', 'tve.title as episode_title', 'tve.series',
                 'tve.episode', 'tve.firstaired',

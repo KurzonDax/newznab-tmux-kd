@@ -39,6 +39,7 @@ final class ManticoreIndexRegistry
                 'jpgstatus' => ['type' => 'integer'], 'nfoid' => ['type' => 'integer'],
                 'reid' => ['type' => 'integer'],
                 'passwordstatus' => ['type' => 'bigint'], 'groups_id' => ['type' => 'integer'],
+                'completion' => ['type' => 'float'],
                 'nzbstatus' => ['type' => 'integer'], 'haspreview' => ['type' => 'bigint'],
                 'media_movie_name' => ['type' => 'text'], 'media_file_name' => ['type' => 'text'],
                 'media_unique_id' => ['type' => 'string'], 'media_container_format' => ['type' => 'text'],

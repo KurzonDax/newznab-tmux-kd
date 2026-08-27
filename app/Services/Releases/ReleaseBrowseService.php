@@ -9,6 +9,7 @@ use App\Models\Category;
 use App\Models\Release;
 use App\Models\Settings;
 use App\Models\UsenetGroup;
+use App\Support\ReleaseCompletion;
 use App\Support\ReleaseSearchIndexDocument;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -40,9 +41,9 @@ class ReleaseBrowseService
      * @param  array<int, int>  $excludedCats
      * @return Collection|mixed
      */
-    public function getBrowseRange(mixed $page, mixed $cat, mixed $start, mixed $num, mixed $orderBy, int $maxAge = -1, array $excludedCats = [], int|string $groupName = -1, int $minSize = 0, ?string $searchTerm = null): mixed
+    public function getBrowseRange(mixed $page, mixed $cat, mixed $start, mixed $num, mixed $orderBy, int $maxAge = -1, array $excludedCats = [], int|string $groupName = -1, int $minSize = 0, ?string $searchTerm = null, int $minCompletion = 0): mixed
     {
-        $releases = $this->executeBrowseQuery('browse', $page, $cat, $start, $num, $orderBy, $maxAge, $excludedCats, $groupName, $minSize, $searchTerm);
+        $releases = $this->executeBrowseQuery('browse', $page, $cat, $start, $num, $orderBy, $maxAge, $excludedCats, $groupName, $minSize, $searchTerm, $minCompletion);
         if (is_iterable($releases)) {
             $this->previewDataLoader->load($releases);
         }
@@ -87,6 +88,9 @@ class ReleaseBrowseService
             ->select([
                 'r.id',
                 'r.searchname',
+                'r.completion',
+                'r.repair_outcome',
+                'r.rescan_outcome',
                 'r.guid',
                 'r.postdate',
                 'r.categories_id',
@@ -132,11 +136,13 @@ class ReleaseBrowseService
      * @param  string  $purpose  'browse' for web views, 'api' for API responses
      * @param  string|null  $searchTerm  Optional search term to filter by (uses search index)
      * @param  array<int, int>  $excludedCats
+     * @param  int  $minCompletion  Minimum stored completion percentage; 0 keeps every release
      * @return Collection|mixed
      */
-    private function executeBrowseQuery(string $purpose, mixed $page, mixed $cat, mixed $start, mixed $num, mixed $orderBy, int $maxAge = -1, array $excludedCats = [], int|string $groupName = -1, int $minSize = 0, ?string $searchTerm = null): mixed
+    private function executeBrowseQuery(string $purpose, mixed $page, mixed $cat, mixed $start, mixed $num, mixed $orderBy, int $maxAge = -1, array $excludedCats = [], int|string $groupName = -1, int $minSize = 0, ?string $searchTerm = null, int $minCompletion = 0): mixed
     {
         $cacheVersion = $this->getCacheVersion();
+        $minCompletion = ReleaseCompletion::normalizeThreshold($minCompletion);
         $page = max(1, $page);
         $start = max(0, $start);
 
@@ -192,6 +198,7 @@ class ReleaseBrowseService
                     'sort_field' => $indexSort,
                     'sort_dir' => $orderBy[1] ?? 'desc',
                     'try_fuzzy' => true,
+                    'min_completion' => $minCompletion,
                 ], (int) $num, (int) $start);
                 $searchIndexIds = $filtered['ids'];
                 $searchIndexTotal = $filtered['total'];
@@ -233,7 +240,7 @@ class ReleaseBrowseService
             $innerSelect = 'SELECT r.id, r.searchname, r.guid, r.postdate, r.groups_id, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate, r.videos_id, r.tv_episodes_id, r.haspreview, r.nfostatus, g.name AS group_name, r.movieinfo_id';
         } else {
             // Browse only needs columns used in browse/index.blade.php and search/index.blade.php
-            $outerSelect = "SELECT r.id, r.searchname, r.guid, r.postdate, r.categories_id, r.size, r.totalpart, r.fromname, r.grabs, r.comments, r.adddate, r.videos_id, r.haspreview, r.jpgstatus, r.nfostatus, r.group_name,
+            $outerSelect = "SELECT r.id, r.searchname, r.completion, r.repair_outcome, r.rescan_outcome, r.guid, r.postdate, r.categories_id, r.size, r.totalpart, r.fromname, r.grabs, r.comments, r.adddate, r.videos_id, r.haspreview, r.jpgstatus, r.nfostatus, r.group_name,
 					CONCAT(cp.title, ' > ', c.title) AS category_name,
 					MAX(df.failed) AS failed_count,
         COUNT(DISTINCT rr.id) AS total_report_count,
@@ -254,7 +261,7 @@ class ReleaseBrowseService
 			LEFT OUTER JOIN release_nfos rn ON rn.releases_id = r.id
       LEFT OUTER JOIN dnzb_failures df ON df.release_id = r.id
       LEFT OUTER JOIN release_reports rr ON rr.releases_id = r.id';
-            $innerSelect = 'SELECT r.id, r.searchname, r.guid, r.postdate, r.groups_id, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate, r.videos_id, r.haspreview, r.jpgstatus, r.nfostatus, g.name AS group_name, r.movieinfo_id';
+            $innerSelect = 'SELECT r.id, r.searchname, r.completion, r.repair_outcome, r.rescan_outcome, r.guid, r.postdate, r.groups_id, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate, r.videos_id, r.haspreview, r.jpgstatus, r.nfostatus, g.name AS group_name, r.movieinfo_id';
         }
 
         $qry = $outerSelect.sprintf(
@@ -265,7 +272,7 @@ class ReleaseBrowseService
 				FROM releases r
 				LEFT JOIN usenet_groups g ON g.id = r.groups_id
 				WHERE r.passwordstatus %1\$s
-				%2\$s %3\$s %4\$s %5\$s %6\$s %7\$s
+				%2\$s %3\$s %4\$s %5\$s %6\$s %7\$s %11\$s
 				ORDER BY %8\$s %9\$s %10\$s
 			) r
 			{$outerJoins}
@@ -280,7 +287,8 @@ class ReleaseBrowseService
             $searchIndexFilter,
             $orderBy[0], // @phpstan-ignore offsetAccess.notFound
             $orderBy[1], // @phpstan-ignore offsetAccess.notFound
-            ($start === 0 ? ' LIMIT '.$num : ' LIMIT '.$num.' OFFSET '.$start)
+            ($start === 0 ? ' LIMIT '.$num : ' LIMIT '.$num.' OFFSET '.$start),
+            $minCompletion > 0 ? sprintf(' AND r.completion >= %d ', $minCompletion) : ''
         );
 
         $cacheKey = md5($cacheVersion.$qry.$page);
@@ -294,7 +302,7 @@ class ReleaseBrowseService
             if (! empty($searchIndexIds)) {
                 $sql[0]->_totalcount = $sql[0]->_totalrows = $searchIndexTotal ?? count($searchIndexIds);
             } else {
-                $possibleRows = $this->getBrowseCount($cat, $maxAge, $excludedCats, $groupName);
+                $possibleRows = $this->getBrowseCount($cat, $maxAge, $excludedCats, $groupName, $minCompletion);
                 $sql[0]->_totalcount = $sql[0]->_totalrows = $possibleRows;
             }
         }
@@ -312,13 +320,14 @@ class ReleaseBrowseService
      * @param  array<string, mixed>  $cat
      * @param  array<int, int>  $excludedCats
      */
-    public function getBrowseCount(array $cat, int $maxAge = -1, array $excludedCats = [], int|string $groupName = ''): int
+    public function getBrowseCount(array $cat, int $maxAge = -1, array $excludedCats = [], int|string $groupName = '', int $minCompletion = 0): int
     {
         $maxResults = (int) config('nntmux.max_pager_results', 500000);
         $cacheExpiry = (int) config('nntmux.cache_expiry_short', 5);
+        $minCompletion = ReleaseCompletion::normalizeThreshold($minCompletion);
 
         // Build a unique cache key for this specific query
-        $cacheKey = 'browse_count_'.md5(serialize($cat).$maxAge.serialize($excludedCats).$groupName);
+        $cacheKey = 'browse_count_'.md5(serialize($cat).$maxAge.serialize($excludedCats).$groupName.$minCompletion);
 
         // Check cache first - use longer cache time for count queries since they're expensive
         $count = Cache::get($cacheKey);
@@ -342,6 +351,10 @@ class ReleaseBrowseService
 
         if (! empty($excludedCats)) {
             $conditions[] = 'r.categories_id NOT IN ('.implode(',', array_map('intval', $excludedCats)).')';
+        }
+
+        if ($minCompletion > 0) {
+            $conditions[] = 'r.completion >= '.$minCompletion;
         }
 
         // Only add group filter if specified - this requires a JOIN
@@ -477,14 +490,14 @@ class ReleaseBrowseService
         $fieldOrder = implode(',', $ids);
 
         $sql = sprintf(
-            "SELECT r.id, r.searchname, r.guid, r.postdate, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate, r.videos_id, r.haspreview, r.nfostatus, r.group_name,
+            "SELECT r.id, r.searchname, r.completion, r.repair_outcome, r.rescan_outcome, r.guid, r.postdate, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate, r.videos_id, r.haspreview, r.nfostatus, r.group_name,
 				CONCAT(cp.title, ' > ', c.title) AS category_name,
 				rn.releases_id AS nfoid,
 				v.tvdb, v.trakt, v.tvrage, v.tvmaze, v.imdb, v.tmdb,
 				m.imdbid, m.tmdbid, m.traktid,
 				tve.title, tve.series, tve.episode, tve.firstaired
 			FROM (
-				SELECT r.id, r.searchname, r.guid, r.postdate, r.groups_id, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate, r.videos_id, r.tv_episodes_id, r.haspreview, r.nfostatus, g.name AS group_name, r.movieinfo_id
+				SELECT r.id, r.searchname, r.completion, r.repair_outcome, r.rescan_outcome, r.guid, r.postdate, r.groups_id, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate, r.videos_id, r.tv_episodes_id, r.haspreview, r.nfostatus, g.name AS group_name, r.movieinfo_id
 				FROM releases r
 				LEFT JOIN usenet_groups g ON g.id = r.groups_id
 				WHERE r.id IN (%s)
@@ -606,7 +619,7 @@ class ReleaseBrowseService
     {
         $orderBy = $this->getBrowseOrder($orderBy);
         $sql = sprintf(
-            "SELECT r.id, r.searchname, r.guid, r.postdate, r.groups_id, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate, r.videos_id, r.tv_episodes_id, r.haspreview, r.jpgstatus,  cp.title AS parent_category, c.title AS sub_category,
+            "SELECT r.id, r.searchname, r.completion, r.repair_outcome, r.rescan_outcome, r.guid, r.postdate, r.groups_id, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate, r.videos_id, r.tv_episodes_id, r.haspreview, r.jpgstatus,  cp.title AS parent_category, c.title AS sub_category,
 					CONCAT(cp.title, '->', c.title) AS category_name
 				FROM releases r
 				LEFT JOIN categories c ON c.id = r.categories_id

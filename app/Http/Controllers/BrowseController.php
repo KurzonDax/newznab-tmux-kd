@@ -185,7 +185,19 @@ class BrowseController extends BasePageController
     {
         $perPage = (int) config('nntmux.items_per_page');
         $offset = $this->paginationOffset($page, $perPage);
-        $rslt = $this->releaseBrowseService->getBrowseRange($page, $categories, $offset, $perPage, $orderBy, -1, (array) $this->userdata->categoryexclusions, $group);
+        $rslt = $this->releaseBrowseService->getBrowseRange(
+            $page,
+            $categories,
+            $offset,
+            $perPage,
+            $orderBy,
+            -1,
+            (array) $this->userdata->categoryexclusions,
+            $group,
+            0,
+            null,
+            $this->resolveMinCompletion($request)
+        );
 
         return $this->paginate($rslt ?? [], $rslt[0]->_totalcount ?? 0, $perPage, $page, $request->url(), $request->query());
     }

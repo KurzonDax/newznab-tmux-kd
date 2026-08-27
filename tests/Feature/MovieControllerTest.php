@@ -293,6 +293,9 @@ class MovieControllerTest extends TestCase
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('searchname')->default('');
+            $table->float('completion')->default(0);
+            $table->string('repair_outcome')->nullable();
+            $table->string('rescan_outcome')->nullable();
             $table->dateTime('postdate')->nullable();
             $table->dateTime('adddate')->nullable();
             $table->string('guid')->nullable();

@@ -365,7 +365,7 @@ interface SearchServiceInterface
      *                                          groups_id (int|null), password_allow_rar (bool), password_status_min (int|null),
      *                                          has_media_info (bool|null), media_unique_id (string|null),
      *                                          min_video_width (int), max_video_width (int),
-     *                                          min_video_height (int), max_video_height (int),
+     *                                          min_video_height (int), max_video_height (int), min_completion (int),
      *                                          sort_field (string), sort_dir (string), try_fuzzy (bool), release_ids (list<int>|null)
      * @return array{ids: list<int>, total: int, fuzzy: bool}
      */

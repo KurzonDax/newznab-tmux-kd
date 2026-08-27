@@ -3275,6 +3275,11 @@ class ElasticSearchDriver implements SearchDriverInterface
             $filter[] = ['range' => ['media_video_height' => $range]];
         }
 
+        $minCompletion = (int) ($criteria['min_completion'] ?? 0);
+        if ($minCompletion > 0) {
+            $filter[] = ['range' => ['completion' => ['gte' => $minCompletion]]];
+        }
+
         return $filter;
     }
 

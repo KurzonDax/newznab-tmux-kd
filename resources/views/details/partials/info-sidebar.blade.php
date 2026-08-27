@@ -16,6 +16,24 @@
                         <dd class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ $release->totalpart ?? 0 }}</dd>
                     </div>
                     <div>
+                        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Completion</dt>
+                        <dd class="mt-1 text-sm text-gray-900 dark:text-gray-100">
+                            @if(\App\Support\ReleaseCompletion::isMeasured($release->completion ?? null))
+                                {{ \App\Support\ReleaseCompletion::percent($release->completion) }}%
+                            @else
+                                Not measured
+                            @endif
+                        </dd>
+                    </div>
+                    @if(\App\Support\ReleaseCompletion::isIncomplete($release->completion ?? null))
+                        <div>
+                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Repair status</dt>
+                            <dd class="mt-1 text-sm text-gray-900 dark:text-gray-100">
+                                {{ \App\Support\ReleaseCompletion::repairLabel($release->repair_outcome ?? null, $release->rescan_outcome ?? null) }}
+                            </dd>
+                        </div>
+                    @endif
+                    <div>
                         <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Added</dt>
                         <dd class="mt-1 text-sm text-gray-900 dark:text-gray-100">{{ userDate($release->adddate, 'M d, Y H:i') }}</dd>
                     </div>

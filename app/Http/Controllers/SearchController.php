@@ -95,7 +95,9 @@ class SearchController extends BasePageController
                 -1,
                 $this->userdata->categoryexclusions ?? [],
                 'basic',
-                $categoryID);
+                $categoryID,
+                0,
+                $this->resolveMinCompletion($request));
 
             $results = $this->paginate($rslt ?? [], $rslt[0]->_totalrows ?? 0, $perPage, $page, $request->url(), $request->query());
             $category = $categoryID;
@@ -187,7 +189,9 @@ class SearchController extends BasePageController
                 -1,
                 $this->userdata->categoryexclusions ?? [],
                 'advanced',
-                $this->resolveCategoryIdsFromRequest($request)
+                $this->resolveCategoryIdsFromRequest($request),
+                0,
+                $this->resolveMinCompletion($request)
             );
 
             $results = $this->paginate($rslt ?? [], $rslt[0]->_totalrows ?? 0, $perPage, $page, $request->url(), $request->query());
