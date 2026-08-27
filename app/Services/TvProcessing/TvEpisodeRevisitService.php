@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\TvProcessing;
 
 use App\Models\Release;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 
 final class TvEpisodeRevisitService
@@ -20,15 +21,21 @@ final class TvEpisodeRevisitService
         int|string|null $processTv = null,
     ): int {
         return TvProcessingCandidateQuery::query($groupId, $guidChar, $processTv)
-            ->where('videos_id', '>', 0)
             ->where('postdate', '<', TvProcessingCandidateQuery::revisitWindowCutoff())
+            ->where(function (Builder $finalizable): void {
+                $finalizable->where('videos_id', '>', 0)
+                    ->orWhere(function (Builder $ambiguous): void {
+                        $ambiguous->where('videos_id', 0)
+                            ->whereNotNull('tv_episode_lookup_attempted_at');
+                    });
+            })
             ->update(['tv_episodes_id' => self::NO_MATCH_FOUND]);
     }
 
     /**
      * Settle the final provider's failure according to the release's partial match.
      */
-    public function settleFinalFailure(int $releaseId): void
+    public function settleFinalFailure(int $releaseId, bool $ambiguous = false): void
     {
         $release = Release::query()->find($releaseId, ['id', 'videos_id', 'postdate']);
         if ($release === null) {
@@ -37,17 +44,28 @@ final class TvEpisodeRevisitService
 
         $postdate = Carbon::parse((string) $release->postdate);
 
-        if ((int) $release->videos_id <= 0 || $postdate->lt(TvProcessingCandidateQuery::revisitWindowCutoff())) {
-            $release->newQuery()->whereKey($releaseId)->update([
+        if (((int) $release->videos_id <= 0 && ! $ambiguous)
+            || $postdate->lt(TvProcessingCandidateQuery::revisitWindowCutoff())) {
+            $updates = [
                 'tv_episodes_id' => self::NO_MATCH_FOUND,
-            ]);
+            ];
+            if ($ambiguous) {
+                $updates['videos_id'] = 0;
+            }
+
+            $release->newQuery()->whereKey($releaseId)->update($updates);
 
             return;
         }
 
-        $release->newQuery()->whereKey($releaseId)->update([
+        $updates = [
             'tv_episodes_id' => TvProcessingCandidateQuery::FIRST_PROVIDER_STATUS,
             'tv_episode_lookup_attempted_at' => now(),
-        ]);
+        ];
+        if ($ambiguous) {
+            $updates['videos_id'] = 0;
+        }
+
+        $release->newQuery()->whereKey($releaseId)->update($updates);
     }
 }

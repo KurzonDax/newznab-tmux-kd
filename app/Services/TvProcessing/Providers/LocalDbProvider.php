@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\TvProcessing\Providers;
 
 use App\Services\ReleaseImageService;
+use App\Services\TvProcessing\TvEpisodeRevisitService;
 
 /**
  * Class LocalDbProvider -- performs local database lookups before hitting external APIs.
@@ -42,11 +43,19 @@ class LocalDbProvider extends AbstractTvProvider
             }
 
             // Try to find the show in our local database by title
-            $videoId = $this->getByRelease(
+            $resolution = $this->resolveByRelease(
                 $showInfo,
                 parent::TYPE_TV,
                 fallbackVideoId: (int) $release->videos_id,
+                releaseId: (int) $release->id,
             );
+            if ($resolution->isAmbiguous()) {
+                app(TvEpisodeRevisitService::class)->settleFinalFailure((int) $release->id, ambiguous: true);
+
+                continue;
+            }
+
+            $videoId = $resolution->videoId;
 
             if ($videoId !== 0) {
                 // Found a matching show in local DB

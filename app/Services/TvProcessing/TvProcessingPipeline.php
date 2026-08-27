@@ -94,7 +94,10 @@ class TvProcessingPipeline
             ->thenReturn();
 
         if (! $result->result->isMatched()) {
-            app(TvEpisodeRevisitService::class)->settleFinalFailure($context->releaseId);
+            app(TvEpisodeRevisitService::class)->settleFinalFailure(
+                $context->releaseId,
+                ambiguous: $result->isAmbiguous(),
+            );
         }
 
         return $result->toArray();

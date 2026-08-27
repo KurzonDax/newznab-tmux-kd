@@ -73,26 +73,24 @@ final class EpisodeAwareVideoTitleLookupTest extends TestCase
     }
 
     #[Test]
-    public function unique_episode_existence_selects_a_same_titled_show_without_an_episode_title(): void
+    public function unique_episode_existence_does_not_select_a_same_titled_show_without_an_episode_title(): void
     {
         $documentaryVideoId = $this->createVideo('Yellowstone', '2009-03-15');
         $dramaVideoId = $this->createVideo('Yellowstone (2018)', '2018-06-20');
         $this->createEpisode($documentaryVideoId, 1, 1, 'Winter');
-        $dramaEpisodeId = $this->createEpisode($dramaVideoId, 2, 8, 'Behind Us Only Grey');
+        $this->createEpisode($dramaVideoId, 2, 8, 'Behind Us Only Grey');
 
         $result = $this->processThroughLocalDb(
             'Yellowstone.S02E08.1080p.WEB-DL.DD5.1.H264',
-            expectedVideoId: $dramaVideoId,
-            expectedEpisodeId: $dramaEpisodeId,
         );
 
-        $this->assertSame($dramaVideoId, $result->result->videoId);
-        $this->assertSame($dramaEpisodeId, $result->result->episodeId);
+        $this->assertNull($result->result->videoId);
+        $this->assertTrue($result->isAmbiguous());
         $this->assertSame('', $result->parsedInfo['episode_title'] ?? null);
     }
 
     #[Test]
-    public function shared_episode_existence_without_a_title_keeps_exact_base_title_precedence(): void
+    public function shared_episode_existence_without_a_title_defers_instead_of_using_base_title_precedence(): void
     {
         $baseVideoId = $this->createVideo('Shared Show', '2001-01-01');
         $siblingVideoId = $this->createVideo('Shared Show (US)', '2020-01-01');
@@ -103,11 +101,11 @@ final class EpisodeAwareVideoTitleLookupTest extends TestCase
         $showInfo = $provider->parseInfo('Shared.Show.S01E01.1080p.WEB-DL');
 
         $this->assertIsArray($showInfo);
-        $this->assertSame($baseVideoId, $provider->getByRelease($showInfo, 0));
+        $this->assertSame(0, $provider->getByRelease($showInfo, 0));
     }
 
     #[Test]
-    public function episode_title_similarity_below_the_threshold_keeps_current_precedence(): void
+    public function episode_title_similarity_below_the_threshold_defers_instead_of_using_current_precedence(): void
     {
         $baseVideoId = $this->createVideo('Castle', '2003-01-01');
         $modernVideoId = $this->createVideo('Castle (2009)', '2009-03-09');
@@ -119,7 +117,7 @@ final class EpisodeAwareVideoTitleLookupTest extends TestCase
 
         $this->assertIsArray($showInfo);
         $this->assertSame('PhDead', $showInfo['episode_title'] ?? null);
-        $this->assertSame($baseVideoId, $provider->getByRelease($showInfo, 0));
+        $this->assertSame(0, $provider->getByRelease($showInfo, 0));
     }
 
     #[Test]
@@ -144,13 +142,17 @@ final class EpisodeAwareVideoTitleLookupTest extends TestCase
     private function processThroughLocalDb(
         string $searchName,
         int $currentVideoId = 0,
-        int $expectedVideoId = 0,
+        ?int $expectedVideoId = null,
         int $expectedEpisodeId = 0,
     ): TvProcessingPassable {
         $provider = Mockery::mock(LocalDbProvider::class)->makePartial();
-        $provider->shouldReceive('setVideoIdFound')
-            ->once()
-            ->with($expectedVideoId, 99, $expectedEpisodeId);
+        if ($expectedVideoId === null) {
+            $provider->shouldNotReceive('setVideoIdFound');
+        } else {
+            $provider->shouldReceive('setVideoIdFound')
+                ->once()
+                ->with($expectedVideoId, 99, $expectedEpisodeId);
+        }
 
         $showInfo = $provider->parseInfo($searchName);
         $this->assertIsArray($showInfo);
