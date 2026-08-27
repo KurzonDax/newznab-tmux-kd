@@ -345,7 +345,7 @@ class BinariesService
         $this->startUpdate = Carbon::now();  // Reset before storage begins
         $this->timeCleaning = $this->startUpdate->diffInSeconds($this->startCleaning, true);
 
-        $headersNotInserted = [];
+        $storageReport = HeaderStorageReport::empty();
         $repairedNumbers = [];
         $missingPartSet = $missingParts === null
             ? null
@@ -369,17 +369,22 @@ class BinariesService
 
             if ($parseResult['headers'] !== []) {
                 try {
-                    $headersNotInserted = array_merge(
-                        $headersNotInserted,
+                    $storageReport = $storageReport->merge(
                         $this->headerStorage->store($parseResult['headers'], $groupMySQL, $addToPartRepair)
                     );
                 } catch (\Throwable $e) {
                     $this->logError('storeHeaders failed: '.$e->getMessage());
+                    $thrownNumbers = [];
                     foreach ($parseResult['headers'] as $failedHeader) {
                         if (isset($failedHeader['Number'])) {
-                            $headersNotInserted[] = $failedHeader['Number'];
+                            $thrownNumbers[] = $failedHeader['Number'];
                         }
                     }
+                    $storageReport = $storageReport->withRolledBackChunk(
+                        $thrownNumbers,
+                        unresolvedHeaders: 0,
+                        rejectedHeaders: \count($thrownNumbers),
+                    );
                 }
             }
 
@@ -401,7 +406,7 @@ class BinariesService
 
         // Handle part repair tracking
         if ($addToPartRepair) {
-            $this->handlePartRepairTracking($headersNotInserted);
+            $this->handlePartRepairTracking($storageReport);
         }
 
         $this->outputHeaderDuration();
@@ -859,15 +864,21 @@ class BinariesService
         return $headers;
     }
 
-    /**
-     * @param  array<int, int|string>  $headersNotInserted
-     */
-    private function handlePartRepairTracking(array $headersNotInserted): void
+    private function handlePartRepairTracking(HeaderStorageReport $storageReport): void
     {
-        $notInsertedCount = \count($headersNotInserted);
-        if ($notInsertedCount > 0) {
+        $headersNotInserted = $storageReport->uniqueFailedNumbers();
+        if ($headersNotInserted !== []) {
             $this->missedPartHandler->addMissingParts($headersNotInserted, $this->groupMySQL['id']);
-            $this->log($notInsertedCount.' articles failed to insert!', __FUNCTION__, 'warning');
+        }
+
+        // A rolled-back chunk queues every article number it carried, so the raw
+        // count is a refetch instruction, not a data-loss count. Report both.
+        if (! $storageReport->hasNothingToReport()) {
+            $this->log(
+                $storageReport->describe(),
+                __FUNCTION__,
+                $headersNotInserted === [] ? 'primary' : 'warning'
+            );
         }
 
         // Find missing article numbers without materialising range($first, $last)

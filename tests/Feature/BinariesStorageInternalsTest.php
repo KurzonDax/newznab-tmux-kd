@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\Binaries\BinaryHandler;
 use App\Services\Binaries\CollectionHandler;
+use App\Services\Binaries\HeaderFailureReason;
 use App\Services\Binaries\HeaderParser;
 use App\Services\Binaries\HeaderStorageService;
 use App\Services\Binaries\HeaderStorageTransaction;
@@ -149,7 +150,7 @@ class BinariesStorageInternalsTest extends TestCase
             $this->parsedHeader(302, 2, 'Chunk.One', 100),
             $this->parsedHeader(303, 1, 'Chunk.Two', 999),
             $this->parsedHeader(304, 2, 'Chunk.Two', 999),
-        ], ['id' => 1, 'name' => 'alt.test'], true);
+        ], ['id' => 1, 'name' => 'alt.test'], true)->uniqueFailedNumbers();
 
         sort($failed);
 
@@ -168,7 +169,7 @@ class BinariesStorageInternalsTest extends TestCase
         $failed = $service->store([
             $this->parsedHeader(401, 1, 'Batch.Release', 150),
             $this->parsedHeader(402, 2, 'Batch.Release', 175),
-        ], ['id' => 1, 'name' => 'alt.test'], true);
+        ], ['id' => 1, 'name' => 'alt.test'], true)->uniqueFailedNumbers();
 
         $binary = DB::table('binaries')->first();
 
@@ -187,11 +188,11 @@ class BinariesStorageInternalsTest extends TestCase
         $service = new HeaderStorageService($this->deterministicCollectionHandler(), config: new BinariesConfig(sqlChunkSize: 10));
         $this->assertSame([], $service->store([
             $this->parsedHeader(501, 1, 'Existing.Batch.Release', 100),
-        ], ['id' => 1, 'name' => 'alt.test'], true));
+        ], ['id' => 1, 'name' => 'alt.test'], true)->uniqueFailedNumbers());
 
         $this->assertSame([], $service->store([
             $this->parsedHeader(502, 2, 'Existing.Batch.Release', 150),
-        ], ['id' => 1, 'name' => 'alt.test'], true));
+        ], ['id' => 1, 'name' => 'alt.test'], true)->uniqueFailedNumbers());
 
         $binary = DB::table('binaries')->first();
 
@@ -213,7 +214,7 @@ class BinariesStorageInternalsTest extends TestCase
         ];
 
         for ($attempt = 0; $attempt < 3; $attempt++) {
-            $this->assertSame([], $service->store($headers, ['id' => 1, 'name' => 'alt.test'], true));
+            $this->assertSame([], $service->store($headers, ['id' => 1, 'name' => 'alt.test'], true)->uniqueFailedNumbers());
         }
 
         $binary = DB::table('binaries')->first();
@@ -255,7 +256,7 @@ class BinariesStorageInternalsTest extends TestCase
         $header = $this->parsedHeader(910, 1, 'Invalid.Message.Release', 100);
         $header['Message-ID'] = "<invalid\u{00E9}@example>";
 
-        $this->assertSame([910], $service->store([$header], ['id' => 1, 'name' => 'alt.test'], true));
+        $this->assertSame([910], $service->store([$header], ['id' => 1, 'name' => 'alt.test'], true)->uniqueFailedNumbers());
         $this->assertSame(0, DB::table('collections')->count());
         $this->assertSame(0, DB::table('binaries')->count());
         $this->assertSame(0, DB::table('parts')->count());
@@ -269,7 +270,7 @@ class BinariesStorageInternalsTest extends TestCase
         $second = $this->parsedHeader(921, 1, 'Unknown.File.Release', 100);
         $second['From'] = 'another-poster@example.com';
 
-        $this->assertSame([], $service->store([$first, $second], ['id' => 1, 'name' => 'alt.test'], true));
+        $this->assertSame([], $service->store([$first, $second], ['id' => 1, 'name' => 'alt.test'], true)->uniqueFailedNumbers());
         $this->assertSame(1, DB::table('collections')->count());
         $this->assertSame(2, DB::table('binaries')->count());
         $this->assertSame(2, DB::table('parts')->count());
@@ -282,7 +283,7 @@ class BinariesStorageInternalsTest extends TestCase
         $header = $this->parsedHeader(930, 1, 'Cross.Post.Release', 100);
         $header['Xref'] = 'news.example alt.binaries.one:930 alt.binaries.two:931 alt.binaries.one:930';
 
-        $this->assertSame([], $service->store([$header], ['id' => 1, 'name' => 'alt.binaries.one'], true));
+        $this->assertSame([], $service->store([$header], ['id' => 1, 'name' => 'alt.binaries.one'], true)->uniqueFailedNumbers());
         $this->assertSame(
             ['alt.binaries.one', 'alt.binaries.two'],
             DB::table('collection_groups')->orderBy('group_name')->pluck('group_name')->all()
@@ -469,6 +470,136 @@ class BinariesStorageInternalsTest extends TestCase
                 return ['id' => 0, 'name' => $subject];
             }
         }, sqlChunkSize: $sqlChunkSize);
+    }
+
+    public function test_silent_collection_race_is_retried_and_the_chunk_stores(): void
+    {
+        $this->createHeaderStorageTables();
+        $attempts = $this->simulateUnresolvedCollectionRace(1);
+
+        $service = new HeaderStorageService($this->deterministicCollectionHandler(), config: new BinariesConfig(sqlChunkSize: 10));
+        $report = $service->store([
+            $this->parsedHeader(601, 1, 'Raced.Release', 100),
+            $this->parsedHeader(602, 2, 'Raced.Release', 150),
+        ], ['id' => 1, 'name' => 'alt.test'], true);
+
+        $this->assertSame([], $report->uniqueFailedNumbers());
+        $this->assertSame(0, $report->rolledBackChunks);
+        $this->assertSame(0, $report->unresolvedHeaders);
+        $this->assertSame(1, $report->recoveredChunks);
+        $this->assertSame(2, $attempts->count);
+        $this->assertSame(2, DB::table('parts')->count());
+        $this->assertSame('1 chunk stored on retry.', $report->describe());
+    }
+
+    public function test_permanently_unresolved_headers_are_reported_as_one_rolled_back_chunk(): void
+    {
+        $this->createHeaderStorageTables();
+        $attempts = $this->simulateUnresolvedCollectionRace(PHP_INT_MAX);
+
+        $service = new HeaderStorageService($this->deterministicCollectionHandler(), config: new BinariesConfig(sqlChunkSize: 10));
+        $report = $service->store([
+            $this->parsedHeader(701, 1, 'Unresolvable.Release', 100),
+            $this->parsedHeader(702, 2, 'Unresolvable.Release', 150),
+        ], ['id' => 1, 'name' => 'alt.test'], true);
+
+        $failed = $report->uniqueFailedNumbers();
+        sort($failed);
+
+        $this->assertSame([701, 702], $failed);
+        $this->assertSame(1, $report->rolledBackChunks);
+        $this->assertSame(2, $report->unresolvedHeaders);
+        $this->assertSame(0, $report->rejectedHeaders);
+        $this->assertSame(0, $report->recoveredChunks);
+        $this->assertSame(5, $attempts->count);
+        $this->assertSame(
+            '2 articles queued for part repair (2 headers unresolved, 1 chunk rolled back).',
+            $report->describe()
+        );
+        $this->assertSame(0, DB::table('parts')->count());
+    }
+
+    public function test_rejected_header_is_not_retried_and_is_reported_as_rejected(): void
+    {
+        $this->createHeaderStorageTables();
+        $attempts = $this->simulateUnresolvedCollectionRace(0);
+
+        $service = new HeaderStorageService($this->deterministicCollectionHandler(), config: new BinariesConfig(sqlChunkSize: 10));
+        $header = $this->parsedHeader(910, 1, 'Invalid.Message.Release', 100);
+        $header['Message-ID'] = "<invalid\u{00E9}@example>";
+
+        $report = $service->store([$header], ['id' => 1, 'name' => 'alt.test'], true);
+
+        $this->assertSame([910], $report->uniqueFailedNumbers());
+        $this->assertSame(1, $report->rejectedHeaders);
+        $this->assertSame(0, $report->unresolvedHeaders);
+        $this->assertSame(1, $report->rolledBackChunks);
+        $this->assertSame(1, $attempts->count, 'A header rejected on its own merits must not be retried.');
+        $this->assertSame(
+            '1 article queued for part repair (1 header rejected, 1 chunk rolled back).',
+            $report->describe()
+        );
+    }
+
+    public function test_chunk_retry_policy_covers_transient_locks_and_silent_races_only(): void
+    {
+        $service = new HeaderStorageService($this->deterministicCollectionHandler(), config: new BinariesConfig(sqlChunkSize: 10));
+        $isRetryable = new \ReflectionMethod($service, 'isRetryableChunkFailure');
+
+        $pdoDeadlock = new \PDOException('SQLSTATE[40001]: Serialization failure: 1213 Deadlock found');
+        $pdoDeadlock->errorInfo = ['40001', 1213, 'Deadlock found'];
+        $deadlock = new QueryException('mariadb', 'INSERT INTO collections ...', [], $pdoDeadlock);
+
+        $this->setPrivateProperty($service, 'lastStorageException', $deadlock);
+        $this->setPrivateProperty($service, 'attemptFailures', []);
+        $this->assertTrue($isRetryable->invoke($service), 'Transient lock failures still retry.');
+
+        $this->setPrivateProperty($service, 'lastStorageException', null);
+        $this->setPrivateProperty($service, 'attemptFailures', [HeaderFailureReason::UnresolvedCollection, HeaderFailureReason::UnresolvedBinary]);
+        $this->assertTrue($isRetryable->invoke($service), 'Silent unresolved ids retry.');
+
+        $this->setPrivateProperty($service, 'attemptFailures', [HeaderFailureReason::UnresolvedCollection, HeaderFailureReason::RejectedPart]);
+        $this->assertFalse($isRetryable->invoke($service), 'A rejected header makes the chunk permanently bad.');
+
+        $this->setPrivateProperty($service, 'attemptFailures', []);
+        $this->assertFalse($isRetryable->invoke($service), 'A silent failure with no unresolved id is not retryable.');
+
+        $pdoDuplicate = new \PDOException('SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry');
+        $pdoDuplicate->errorInfo = ['23000', 1062, 'Duplicate entry'];
+        $this->setPrivateProperty($service, 'lastStorageException', new QueryException('mariadb', 'INSERT INTO collections ...', [], $pdoDuplicate));
+        $this->setPrivateProperty($service, 'attemptFailures', [HeaderFailureReason::UnresolvedCollection]);
+        $this->assertFalse($isRetryable->invoke($service), 'A real exception is never treated as the silent race.');
+    }
+
+    /**
+     * Reproduce the production race: the collection insert lands harmlessly on a peer
+     * worker's committed row, but this transaction's snapshot cannot see it, so the
+     * resolving select comes back empty and no exception is raised.
+     *
+     * @param  int  $sabotageAttempts  How many storage attempts should hit the race
+     * @return object{count: int} Collection insert attempts observed
+     */
+    private function simulateUnresolvedCollectionRace(int $sabotageAttempts): object
+    {
+        $attempts = new class
+        {
+            public int $count = 0;
+        };
+
+        DB::listen(static function (QueryExecuted $query) use ($attempts, $sabotageAttempts): void {
+            if (! str_starts_with($query->sql, 'insert or ignore into "collections"')) {
+                return;
+            }
+
+            $attempts->count++;
+            if ($attempts->count > $sabotageAttempts) {
+                return;
+            }
+
+            DB::table('collections')->delete();
+        });
+
+        return $attempts;
     }
 
     private function setPrivateProperty(object $object, string $property, mixed $value): void
