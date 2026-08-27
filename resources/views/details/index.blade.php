@@ -11,7 +11,7 @@
         <nav class="text-sm text-gray-600 dark:text-gray-400">
             <a href="{{ url('/') }}" class="hover:text-primary-600 dark:hover:text-primary-400">Home</a>
             <i class="fas fa-chevron-right mx-2 text-xs"></i>
-            <span class="wrap-break-word break-all">{{ $release->searchname }}</span>
+            <span class="wrap-break-word break-all">{{ release_display_name($release) }}</span>
         </nav>
     </div>
 

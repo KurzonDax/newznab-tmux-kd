@@ -42,6 +42,7 @@ final class ReleaseDuplicateAbsorberTest extends TestCase
             $table->string('name');
             $table->string('searchname');
             $table->string('searchname_normalized');
+            $table->string('display_name')->nullable();
             $table->string('guid', 36)->unique();
             $table->unsignedBigInteger('size');
             $table->unsignedInteger('totalpart');

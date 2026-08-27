@@ -130,6 +130,7 @@ class SeriesReleaseService
         return $query->select([
             'r.id',
             'r.searchname',
+            'r.display_name',
             'r.completion',
             'r.repair_outcome',
             'r.rescan_outcome',
@@ -231,6 +232,7 @@ class SeriesReleaseService
             ->select([
                 'r.id',
                 'r.searchname',
+                'r.display_name',
                 'r.completion',
                 'r.repair_outcome',
                 'r.rescan_outcome',

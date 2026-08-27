@@ -127,6 +127,7 @@ class SeriesReleaseServiceTest extends TestCase
             $table->float('completion')->default(0);
             $table->string('repair_outcome')->nullable();
             $table->string('rescan_outcome')->nullable();
+            $table->string('display_name')->nullable();
             $table->string('fromname')->nullable();
             $table->dateTime('postdate')->nullable();
             $table->dateTime('adddate')->nullable();

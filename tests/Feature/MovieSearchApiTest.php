@@ -225,6 +225,7 @@ final class MovieSearchApiTest extends TestCase
             $table->float('completion')->default(0);
             $table->string('repair_outcome')->nullable();
             $table->string('rescan_outcome')->nullable();
+            $table->string('display_name')->nullable();
             $table->string('fromname')->nullable();
             $table->string('postdate')->nullable();
             $table->string('adddate')->nullable();

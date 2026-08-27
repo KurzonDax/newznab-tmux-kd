@@ -121,7 +121,7 @@
                                     <a href="{{ url('/details/' . $guid) }}" class="block">
                                         @if(!empty($result->cover))
                                             <img src="{{ url('/covers/games/' . $result->cover) }}"
-                                                 alt="{{ $result->title ?? $result->searchname }}"
+                                                 alt="{{ $result->title ?? release_display_name($result) }}"
                                                  class="w-32 h-48 object-cover"
                                                  loading="lazy"
                                                  data-fallback-src="{{ url('/images/no-cover.png') }}">
@@ -142,7 +142,7 @@
                             <div class="flex-1 p-4">
                                 <div class="flex justify-between items-start mb-2">
                                     <div class="flex-1">
-                                        <h3 class="text-xl font-bold text-gray-900 dark:text-gray-100">{{ $result->title ?? $result->searchname }}</h3>
+                                        <h3 class="text-xl font-bold text-gray-900 dark:text-gray-100">{{ $result->title ?? release_display_name($result) }}</h3>
 
                                         @if($totalFailed > 0)
                                             <div class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800 border border-red-200 mt-1">

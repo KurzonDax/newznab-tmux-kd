@@ -4,7 +4,7 @@
                     <!-- Cover Image -->
                     <div class="shrink-0">
                         <img src="{{ getReleaseCover($release) }}"
-                             alt="{{ $release->searchname }}"
+                             alt="{{ release_display_name($release) }}"
                              class="detail-cover-image w-48 h-72 object-cover max-w-[192px] max-h-[288px]"
                              data-fallback-src="{{ asset('assets/images/no-cover.png') }}">
                     </div>
@@ -12,7 +12,7 @@
                     <!-- Title and Actions -->
                     <div class="flex-1">
                         <div class="mb-3">
-                            <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200 mb-2 wrap-break-word break-all">{{ $release->searchname }}</h2>
+                            <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200 mb-2 wrap-break-word break-all">{{ release_display_name($release) }}</h2>
                             <div class="flex flex-wrap gap-2">
                                 @if(!empty($totalReportCount) && $totalReportCount > 0)
                                     <div class="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 border border-orange-200 dark:border-orange-800"
