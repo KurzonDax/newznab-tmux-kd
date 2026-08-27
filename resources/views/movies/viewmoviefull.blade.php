@@ -180,11 +180,11 @@
 
                     <div class="space-y-3" id="releases-container">
                         @foreach($releases as $release)
-                            <div class="movie-release-card release-item bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-700" data-release-name="{{ strtolower($release->searchname) }}">
+                            <div class="movie-release-card release-item bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-700" data-release-name="{{ strtolower(release_display_name($release)) }}">
                                 <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                                     <div class="flex-1 min-w-0">
-                                        <a href="{{ url('/details/' . $release->guid) }}" class="text-base text-gray-800 dark:text-gray-200 hover:text-primary-600 dark:text-primary-400 font-medium block truncate" title="{{ $release->searchname }}">
-                                            {{ $release->searchname }}
+                                        <a href="{{ url('/details/' . $release->guid) }}" class="text-base text-gray-800 dark:text-gray-200 hover:text-primary-600 dark:text-primary-400 font-medium block truncate" title="{{ release_display_name($release) }}">
+                                            {{ release_display_name($release) }}
                                         </a>
                                         <div class="flex flex-wrap items-center gap-4 mt-2 text-sm text-gray-500">
                                             <span>

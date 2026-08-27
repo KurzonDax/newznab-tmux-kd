@@ -16,7 +16,7 @@
                                     <div class="flex items-center gap-2 flex-wrap">
                                         <a href="{{ url('/details/' . $release->guid) }}"
                                            class="text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 font-medium wrap-break-word break-all">
-                                            {{ $release->searchname }}
+                                            {{ release_display_name($release) }}
                                         </a>
                                         @if(($release->failed_count ?? 0) > 0)
                                             <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800"

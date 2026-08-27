@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Models\Country as CountryModel;
 use App\Models\Release;
 use App\Services\Nzb\NzbService;
+use App\Support\ReleaseDisplayNameFormatter;
 use GuzzleHttp\Client;
 use GuzzleHttp\Cookie\CookieJar;
 use GuzzleHttp\Cookie\SetCookie;
@@ -167,6 +168,22 @@ if (! function_exists('getSimilarName')) {
     function getSimilarName(string $name): string
     {
         return implode(' ', \array_slice(str_word_count(str_replace(['.', '_', '-'], ' ', $name), 2), 0, 2));
+    }
+}
+
+if (! function_exists('release_display_name')) {
+    /**
+     * The readable release name for user-facing pages.
+     *
+     * Admin screens, the API, and RSS keep rendering the raw searchname; this
+     * is the single place the display fallback lives, so plain query rows and
+     * Eloquent models read the same way.
+     *
+     * @param  object|array<string, mixed>|null  $release
+     */
+    function release_display_name(object|array|null $release): string
+    {
+        return ReleaseDisplayNameFormatter::displayFor($release);
     }
 }
 

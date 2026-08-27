@@ -14,8 +14,8 @@
                 {{-- Release Name --}}
                 <a href="{{ url('/details/' . $release->guid) }}"
                    class="text-sm text-gray-800 dark:text-gray-200 hover:text-primary-600 dark:hover:text-primary-400 font-medium block break-all"
-                   title="{{ $release->searchname }}">
-                    {{ $release->searchname }}
+                   title="{{ release_display_name($release) }}">
+                    {{ release_display_name($release) }}
                 </a>
 
                 {{-- Info Badges --}}

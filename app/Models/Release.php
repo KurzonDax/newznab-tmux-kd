@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Enums\ReleaseRepairOutcome;
 use App\Facades\Search;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
+use App\Support\ReleaseDisplayNameFormatter;
 use App\Support\ReleaseNameNormalizer;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -214,15 +215,17 @@ class Release extends Model
     }
 
     /**
-     * Keep the displayed search name and its indexed dedupe identity inseparable at every writer.
+     * Keep the search name, its indexed dedupe identity, and its readable
+     * rendering inseparable at every writer.
      *
-     * @return array{searchname: string, searchname_normalized: string}
+     * @return array{searchname: string, searchname_normalized: string, display_name: string}
      */
     public static function searchNameValues(string $searchName): array
     {
         return [
             'searchname' => $searchName,
             'searchname_normalized' => ReleaseNameNormalizer::normalize($searchName),
+            'display_name' => ReleaseDisplayNameFormatter::format($searchName),
         ];
     }
 

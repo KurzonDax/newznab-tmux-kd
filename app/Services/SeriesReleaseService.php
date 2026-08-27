@@ -130,6 +130,7 @@ class SeriesReleaseService
         return $query->select([
             'r.id',
             'r.searchname',
+            'r.display_name',
             'r.guid',
             'r.postdate',
             'r.groups_id',
@@ -228,6 +229,7 @@ class SeriesReleaseService
             ->select([
                 'r.id',
                 'r.searchname',
+                'r.display_name',
                 'r.guid',
                 'r.postdate',
                 'r.groups_id',

@@ -826,6 +826,7 @@ class CbpCleanupServiceTest extends TestCase
             name VARCHAR(255),
             searchname VARCHAR(255),
             searchname_normalized VARCHAR(255),
+            display_name VARCHAR(255),
             totalpart INTEGER,
             declaredfiles INTEGER NULL,
             firstarticle INTEGER NULL,

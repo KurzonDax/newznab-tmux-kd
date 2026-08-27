@@ -77,7 +77,7 @@
                             @endif
                             <div class="flex-1">
                                 <div class="flex items-center gap-2 flex-wrap">
-                                    <a href="{{ url('/details/' . $result->guid) }}" class="text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 font-medium wrap-break-word break-all">{{ $result->searchname }}</a>
+                                    <a href="{{ url('/details/' . $result->guid) }}" class="text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 font-medium wrap-break-word break-all">{{ release_display_name($result) }}</a>
                                     @if($reportedCount > 0)
                                         <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200"
                                               title="Reported: {{ $result->all_report_reasons ?? \App\Models\ReleaseReport::reasonKeysToLabels($result->report_reasons ?? '') }} | Original report: {{ $result->latest_report_reason ?? 'Unknown' }} - {{ $result->latest_report_description ?? 'No additional report details were provided.' }}">
@@ -251,7 +251,7 @@
                         @endif
                     @endif
                     <a href="{{ url('/details/' . $result->guid) }}" class="text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 font-medium wrap-break-word text-base break-all">
-                        {{ $result->searchname }}
+                        {{ release_display_name($result) }}
                     </a>
                     <div class="flex flex-wrap items-center gap-2 mt-2">
                         @if($reportedCount > 0)

@@ -77,7 +77,7 @@
                                     <td class="px-4 py-3">
                                         <a href="{{ url('/details/' . $result->release->guid) }}"
                                            class="text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 font-semibold wrap-break-word break-all">
-                                            {{ $result->release->searchname }}
+                                            {{ release_display_name($result->release) }}
                                         </a>
                                     </td>
                                     <td class="px-4 py-3">
@@ -103,7 +103,7 @@
                                                class="cart-delete-link px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded hover:bg-red-200 dark:hover:bg-red-900/50 text-sm"
                                                title="Delete from cart"
                                                data-delete-url="{{ url('/cart/delete/' . $result->release->guid) }}"
-                                               data-release-name="{{ Str::limit($result->release->searchname, 50) }}">
+                                               data-release-name="{{ Str::limit(release_display_name($result->release), 50) }}">
                                                 <i class="fa fa-trash"></i>
                                             </button>
                                         </div>
@@ -127,7 +127,7 @@
                                        @change="onCheckboxChange()">
                                 <a href="{{ url('/details/' . $result->release->guid) }}"
                                    class="text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300 font-semibold text-sm break-all flex-1">
-                                    {{ $result->release->searchname }}
+                                    {{ release_display_name($result->release) }}
                                 </a>
                             </div>
                             <div class="flex items-center justify-between">
@@ -143,7 +143,7 @@
                                     </x-button-link>
                                     <button type="button" class="cart-delete-link px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded text-sm" title="Delete"
                                             data-delete-url="{{ url('/cart/delete/' . $result->release->guid) }}"
-                                            data-release-name="{{ Str::limit($result->release->searchname, 50) }}">
+                                            data-release-name="{{ Str::limit(release_display_name($result->release), 50) }}">
                                         <i class="fa fa-trash"></i>
                                     </button>
                                 </div>

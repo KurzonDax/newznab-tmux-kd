@@ -119,6 +119,10 @@ The year of `videos.started`, when a series first aired; the Year picker filters
 Field qualifiers in a Movies search—`title:`, `actor:`/`actors:`, `director:`, and `plot:`—that restrict the following word or quoted phrase to that movie detail. Words without a prefix may match any of those details, but every search word must match somewhere.
 _Avoid_: "advanced syntax" for the separate Advanced form fields; both inputs produce the same movie search constraints.
 
+**Display Name**:
+The derived, regenerable human-readable rendering of a release's Search Name (`releases.display_name`), shown only on user-facing web pages. Dots and underscores become spaces except inside recognised spans — dates, dotted version numbers, and A/V tokens such as `H.264` or `DD5.1` — and a trailing container extension is kept but uppercased. It is never used for matching, dedupe, API or RSS output, or search indexing: `searchname` stays canonical, and a null Display Name falls back to it.
+_Avoid_: "pretty name" in code; prettifying `searchname` itself.
+
 **Descriptive Title**:
 A human-written, non-scene inner *video* file name (e.g. `My Wife Is In Heat`, `SupergirlPerv`) accepted as a release name only when the release's current name looks obfuscated or hashed and no scene pattern or predb match was found. Anything but known junk (`video1`, `movie`, DVD structure names, hashes) qualifies; a current name that already reads as a real title is never overwritten. Site-wide on/off setting, on by default.
 _Avoid_: "plausible title" — that is the existing scene-shape check a candidate must pass, which Descriptive Titles deliberately do not.
