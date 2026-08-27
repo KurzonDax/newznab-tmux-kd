@@ -161,6 +161,8 @@ class TmdbPipe extends AbstractTvProviderPipe
             }
         }
 
+        $episode = $this->resolveEpisodeByTitle($tmdb, $videoId, $parsedInfo, $episode);
+
         if ($episode !== false && is_numeric($episode) && $episode > 0) {
             // Success!
             $tmdb->setVideoIdFound($videoId, $context->releaseId, $episode);
@@ -238,6 +240,8 @@ class TmdbPipe extends AbstractTvProviderPipe
 
         // Try to find episode in local DB
         $episode = $tmdb->getBySeasonEp($videoId, $seriesNo, $episodeNo, $parsedInfo['airdate'] ?? '');
+
+        $episode = $this->resolveEpisodeByTitle($tmdb, $videoId, $parsedInfo, $episode);
 
         if ($episode !== false && is_numeric($episode) && $episode > 0) {
             $tmdb->setVideoIdFound($videoId, $context->releaseId, $episode);

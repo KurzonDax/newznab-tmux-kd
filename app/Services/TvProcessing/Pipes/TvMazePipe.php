@@ -162,6 +162,8 @@ class TvMazePipe extends AbstractTvProviderPipe
             }
         }
 
+        $episode = $this->resolveEpisodeByTitle($tvmaze, $videoId, $parsedInfo, $episode);
+
         if ($episode !== false && is_numeric($episode) && $episode > 0) {
             // Success!
             $tvmaze->setVideoIdFound($videoId, $context->releaseId, $episode);
@@ -239,6 +241,8 @@ class TvMazePipe extends AbstractTvProviderPipe
 
         // Try to find episode in local DB
         $episode = $tvmaze->getBySeasonEp($videoId, $seriesNo, $episodeNo, $parsedInfo['airdate'] ?? '');
+
+        $episode = $this->resolveEpisodeByTitle($tvmaze, $videoId, $parsedInfo, $episode);
 
         if ($episode !== false && is_numeric($episode) && $episode > 0) {
             $tvmaze->setVideoIdFound($videoId, $context->releaseId, $episode);

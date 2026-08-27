@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\TvProcessing\Pipes;
 
+use App\Services\TvProcessing\Providers\AbstractTvProvider;
 use App\Services\TvProcessing\TvProcessingPassable;
 use App\Services\TvProcessing\TvProcessingResult;
 use Closure;
@@ -82,6 +83,29 @@ abstract class AbstractTvProviderPipe
      * Attempt to process the release through this provider.
      */
     abstract protected function process(TvProcessingPassable $passable): TvProcessingResult;
+
+    /**
+     * Last resort for a bound show whose season/episode (or airdate) lookup missed.
+     *
+     * Distributor renumbering gives releases a season/episode that can never exist in the
+     * provider's layout, but the release name still carries the episode title. Resolve it
+     * against the bound show's own episode list; the show binding is never reconsidered.
+     *
+     * @param  array<string, mixed>  $parsedInfo
+     * @return int|false
+     */
+    protected function resolveEpisodeByTitle(
+        AbstractTvProvider $provider,
+        int $videoId,
+        array $parsedInfo,
+        bool|int $episode,
+    ): bool|int {
+        if ($episode !== false) {
+            return $episode;
+        }
+
+        return $provider->getByEpisodeTitle($videoId, (string) ($parsedInfo['episode_title'] ?? ''));
+    }
 
     /**
      * Check if this provider should be skipped for the given passable.

@@ -99,6 +99,7 @@ class LocalDbPipe extends AbstractTvProviderPipe
                 (int) ($parsedInfo['episode'] ?? 0),
                 $parsedInfo['airdate'] ?? ''
             );
+            $episodeId = $this->resolveEpisodeByTitle($localDb, $videoId, $parsedInfo, $episodeId);
         }
 
         if ($episodeId !== false && $episodeId > 0) {

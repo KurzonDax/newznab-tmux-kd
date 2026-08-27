@@ -152,6 +152,8 @@ class TraktPipe extends AbstractTvProviderPipe
             }
         }
 
+        $episode = $this->resolveEpisodeByTitle($trakt, $videoId, $parsedInfo, $episode);
+
         if ($episode !== false && is_numeric($episode) && $episode > 0) {
             // Success!
             $trakt->setVideoIdFound($videoId, $context->releaseId, $episode);
@@ -229,6 +231,8 @@ class TraktPipe extends AbstractTvProviderPipe
 
         // Try to find episode in local DB
         $episode = $trakt->getBySeasonEp($videoId, $seriesNo, $episodeNo, $parsedInfo['airdate'] ?? '');
+
+        $episode = $this->resolveEpisodeByTitle($trakt, $videoId, $parsedInfo, $episode);
 
         if ($episode !== false && is_numeric($episode) && $episode > 0) {
             $trakt->setVideoIdFound($videoId, $context->releaseId, $episode);
