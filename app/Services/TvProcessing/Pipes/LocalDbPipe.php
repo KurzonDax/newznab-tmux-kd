@@ -56,7 +56,22 @@ class LocalDbPipe extends AbstractTvProviderPipe
         $cleanName = $parsedInfo['cleanname'];
         $localDb = $this->getLocalDb();
 
-        $videoId = $localDb->getByRelease($parsedInfo, self::TYPE_TV, fallbackVideoId: $context->videosId);
+        $resolution = $localDb->resolveByRelease(
+            $parsedInfo,
+            self::TYPE_TV,
+            fallbackVideoId: $context->videosId,
+            releaseId: $context->releaseId,
+        );
+        if ($resolution->isAmbiguous()) {
+            $passable->markAmbiguous();
+
+            return TvProcessingResult::notFound($this->getName(), [
+                'title' => $cleanName,
+                'ambiguous' => true,
+            ]);
+        }
+
+        $videoId = $resolution->videoId;
 
         if ($videoId === 0) {
             $this->outputNotFound($cleanName);

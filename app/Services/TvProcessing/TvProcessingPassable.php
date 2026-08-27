@@ -15,6 +15,8 @@ class TvProcessingPassable
 
     public bool $debug;
 
+    private bool $ambiguous = false;
+
     /**
      * @var array<string, mixed>
      */
@@ -37,7 +39,7 @@ class TvProcessingPassable
      */
     public function shouldStopProcessing(): bool
     {
-        return $this->result->isMatched();
+        return $this->result->isMatched() || $this->ambiguous;
     }
 
     /**
@@ -88,6 +90,16 @@ class TvProcessingPassable
         return $this->parsedInfo !== null
             && ! empty($this->parsedInfo['name'])
             && isset($this->parsedInfo['season'], $this->parsedInfo['episode']);
+    }
+
+    public function markAmbiguous(): void
+    {
+        $this->ambiguous = true;
+    }
+
+    public function isAmbiguous(): bool
+    {
+        return $this->ambiguous;
     }
 
     /**

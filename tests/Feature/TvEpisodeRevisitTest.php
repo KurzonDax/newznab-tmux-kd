@@ -155,6 +155,103 @@ class TvEpisodeRevisitTest extends TestCase
     }
 
     #[Test]
+    public function the_provider_pipeline_binds_an_ambiguous_release_from_its_inner_filename(): void
+    {
+        Event::fake();
+        $this->insertRelease(1, ['searchname' => 'Castle.S01E01.TR.EN']);
+        DB::table('videos')->insert([
+            [
+                'id' => 10,
+                'type' => 0,
+                'title' => 'Castle',
+                'started' => '2003-09-13',
+                'source' => 0,
+                'tvdb' => 78699,
+            ],
+            [
+                'id' => 20,
+                'type' => 0,
+                'title' => 'Castle (2009)',
+                'started' => '2009-03-09',
+                'source' => 0,
+                'tvdb' => 83462,
+            ],
+        ]);
+        DB::table('tv_episodes')->insert([
+            'id' => 201,
+            'videos_id' => 20,
+            'series' => 1,
+            'episode' => 1,
+            'title' => 'Flowers for Your Grave',
+            'firstaired' => '2009-03-09 00:00:00',
+        ]);
+        DB::table('release_files')->insert([
+            'releases_id' => 1,
+            'name' => 'castle.2009.s01e01.720p.web.mkv',
+        ]);
+
+        (new TvProcessor(false))->process('', 'a', 1);
+
+        $release = DB::table('releases')->find(1);
+        $this->assertSame(20, (int) $release->videos_id);
+        $this->assertSame(201, (int) $release->tv_episodes_id);
+        $this->assertNull($release->tv_episode_lookup_attempted_at);
+    }
+
+    #[Test]
+    public function the_provider_pipeline_clears_a_sticky_binding_and_defers_without_artifact_evidence(): void
+    {
+        Event::fake();
+        $this->insertRelease(1, [
+            'searchname' => 'Castle.S01E01.TR.EN',
+            'videos_id' => 10,
+        ]);
+        DB::table('videos')->insert([
+            [
+                'id' => 10,
+                'type' => 0,
+                'title' => 'Castle',
+                'started' => '2003-09-13',
+                'source' => 0,
+                'tvdb' => 78699,
+            ],
+            [
+                'id' => 20,
+                'type' => 0,
+                'title' => 'Castle (2009)',
+                'started' => '2009-03-09',
+                'source' => 0,
+                'tvdb' => 83462,
+            ],
+        ]);
+        DB::table('tv_episodes')->insert([
+            [
+                'id' => 101,
+                'videos_id' => 10,
+                'series' => 1,
+                'episode' => 1,
+                'title' => 'Pilot',
+                'firstaired' => '2003-09-13 00:00:00',
+            ],
+            [
+                'id' => 201,
+                'videos_id' => 20,
+                'series' => 1,
+                'episode' => 1,
+                'title' => 'Flowers for Your Grave',
+                'firstaired' => '2009-03-09 00:00:00',
+            ],
+        ]);
+
+        (new TvProcessor(false))->process('', 'a', 1);
+
+        $release = DB::table('releases')->find(1);
+        $this->assertSame(0, (int) $release->videos_id);
+        $this->assertSame(0, (int) $release->tv_episodes_id);
+        $this->assertSame('2026-08-25 12:00:00', $release->tv_episode_lookup_attempted_at);
+    }
+
+    #[Test]
     public function an_expired_revisit_is_finalized_without_invoking_a_provider(): void
     {
         $this->insertRelease(1, [
@@ -179,6 +276,39 @@ class TvEpisodeRevisitTest extends TestCase
         $this->assertSame(0, (int) $release->tv_episodes_id);
         $this->assertSame('2026-08-25 12:00:00', $release->tv_episode_lookup_attempted_at);
         $this->assertSame(0, TvProcessingCandidateQuery::count());
+    }
+
+    #[Test]
+    public function an_ambiguous_show_is_paced_then_retried_and_finalized_when_its_window_expires(): void
+    {
+        $this->insertRelease(1);
+
+        (new TvEpisodeRevisitService)->settleFinalFailure(1, ambiguous: true);
+
+        $release = DB::table('releases')->find(1);
+        $this->assertSame(0, (int) $release->videos_id);
+        $this->assertSame(0, (int) $release->tv_episodes_id);
+        $this->assertSame('2026-08-25 12:00:00', $release->tv_episode_lookup_attempted_at);
+        $this->assertSame(0, TvProcessingCandidateQuery::count());
+
+        Carbon::setTestNow('2026-08-25 19:00:00');
+        $this->assertSame([1], TvProcessingCandidateQuery::query()->pluck('id')->all());
+
+        Carbon::setTestNow('2026-09-09 12:00:00');
+        $this->assertSame(1, (new TvEpisodeRevisitService)->finalizeExpired());
+        $this->assertSame(-6, (int) DB::table('releases')->where('id', 1)->value('tv_episodes_id'));
+    }
+
+    #[Test]
+    public function a_true_no_show_failure_remains_immediately_terminal(): void
+    {
+        $this->insertRelease(1);
+
+        (new TvEpisodeRevisitService)->settleFinalFailure(1);
+
+        $release = DB::table('releases')->find(1);
+        $this->assertSame(-6, (int) $release->tv_episodes_id);
+        $this->assertNull($release->tv_episode_lookup_attempted_at);
     }
 
     #[Test]
@@ -401,7 +531,14 @@ class TvEpisodeRevisitTest extends TestCase
             $table->increments('id');
             $table->tinyInteger('type')->default(0);
             $table->string('title');
+            $table->dateTime('started')->nullable();
             $table->tinyInteger('source')->default(0);
+            $table->string('imdb')->default('');
+            $table->unsignedInteger('tmdb')->default(0);
+            $table->unsignedInteger('trakt')->default(0);
+            $table->unsignedInteger('tvdb')->default(0);
+            $table->unsignedInteger('tvmaze')->default(0);
+            $table->unsignedInteger('tvrage')->default(0);
         });
 
         Schema::create('videos_aliases', function (Blueprint $table): void {
@@ -417,6 +554,22 @@ class TvEpisodeRevisitTest extends TestCase
             $table->unsignedInteger('episode')->default(0);
             $table->string('title')->default('');
             $table->dateTime('firstaired')->nullable();
+        });
+
+        Schema::create('release_files', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id');
+            $table->string('name');
+        });
+
+        Schema::create('media_infos', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->unsignedInteger('releases_id');
+            $table->string('movie_name')->nullable();
+        });
+
+        Schema::create('release_nfos', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id')->primary();
+            $table->binary('nfo')->nullable();
         });
     }
 }

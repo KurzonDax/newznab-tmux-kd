@@ -48,7 +48,14 @@ final class TvProcessingCandidateQuery
         return $query->where(function (Builder $candidate): void {
             $candidate->where(function (Builder $unmatched): void {
                 $unmatched->where('videos_id', 0)
-                    ->whereBetween('tv_episodes_id', [self::FINAL_PROVIDER_STATUS, self::FIRST_PROVIDER_STATUS]);
+                    ->whereBetween('tv_episodes_id', [self::FINAL_PROVIDER_STATUS, self::FIRST_PROVIDER_STATUS])
+                    ->where(function (Builder $actionable): void {
+                        $actionable->where('tv_episodes_id', '<', self::FIRST_PROVIDER_STATUS)
+                            ->orWhere(function (Builder $firstProvider): void {
+                                $firstProvider->where('tv_episodes_id', self::FIRST_PROVIDER_STATUS);
+                                self::constrainFirstProviderDue($firstProvider, includeExpired: true);
+                            });
+                    });
             })->orWhere(function (Builder $episodeMissing): void {
                 $episodeMissing->where('videos_id', '>', 0)
                     ->whereBetween('tv_episodes_id', [self::FINAL_PROVIDER_STATUS, self::FIRST_PROVIDER_STATUS])
@@ -57,11 +64,8 @@ final class TvProcessingCandidateQuery
                             ->orWhere('tv_episodes_id', '<', self::FIRST_PROVIDER_STATUS)
                             ->orWhere(function (Builder $due): void {
                                 $due->where('tv_episodes_id', self::FIRST_PROVIDER_STATUS)
-                                    ->where('postdate', '>=', self::revisitWindowCutoff())
-                                    ->where(function (Builder $paced): void {
-                                        $paced->whereNull('tv_episode_lookup_attempted_at')
-                                            ->orWhere('tv_episode_lookup_attempted_at', '<=', self::pacingCutoff());
-                                    });
+                                    ->where('postdate', '>=', self::revisitWindowCutoff());
+                                self::constrainFirstProviderDue($due, includeExpired: false);
                             });
                     });
             });
@@ -83,19 +87,34 @@ final class TvProcessingCandidateQuery
 
         return $query->where('tv_episodes_id', $status)
             ->where(function (Builder $stage) use ($status): void {
-                $stage->where('videos_id', 0)
+                $stage->where(function (Builder $unmatched) use ($status): void {
+                    $unmatched->where('videos_id', 0);
+
+                    if ($status === self::FIRST_PROVIDER_STATUS) {
+                        self::constrainFirstProviderDue($unmatched, includeExpired: true);
+                    }
+                })
                     ->orWhere(function (Builder $episodeMissing) use ($status): void {
                         $episodeMissing->where('videos_id', '>', 0);
 
                         if ($status === self::FIRST_PROVIDER_STATUS) {
-                            $episodeMissing->where(function (Builder $due): void {
-                                $due->where('postdate', '<', self::revisitWindowCutoff())
-                                    ->orWhereNull('tv_episode_lookup_attempted_at')
-                                    ->orWhere('tv_episode_lookup_attempted_at', '<=', self::pacingCutoff());
-                            });
+                            self::constrainFirstProviderDue($episodeMissing, includeExpired: true);
                         }
                     });
             });
+    }
+
+    /** @param Builder<Release> $query */
+    private static function constrainFirstProviderDue(Builder $query, bool $includeExpired): void
+    {
+        $query->where(function (Builder $due) use ($includeExpired): void {
+            $due->whereNull('tv_episode_lookup_attempted_at')
+                ->orWhere('tv_episode_lookup_attempted_at', '<=', self::pacingCutoff());
+
+            if ($includeExpired) {
+                $due->orWhere('postdate', '<', self::revisitWindowCutoff());
+            }
+        });
     }
 
     public static function count(bool $renamedOnly = false, ?int $lookupMode = null): int

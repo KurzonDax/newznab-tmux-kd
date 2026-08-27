@@ -29,6 +29,8 @@ use App\Models\TvEpisode;
 use App\Models\TvInfo;
 use App\Models\Video;
 use App\Models\VideoAlias;
+use App\Services\TvProcessing\TvArtifactIdentityResolver;
+use App\Services\TvProcessing\TvShowResolution;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -86,6 +88,11 @@ abstract class BaseVideoProvider
      * Calls work query function and initiates processing.
      */
     abstract public function processSite(int $groupID, string $guidChar, int $process, bool $local = false): void;
+
+    /**
+     * @return array<string, mixed>|false
+     */
+    abstract public function parseInfo(string $relname): bool|array;
 
     /**
      * @return false|mixed
@@ -193,20 +200,97 @@ abstract class BaseVideoProvider
      */
     public function getByRelease(array $showInfo, int $type, int $source = 0, int $fallbackVideoId = 0): int
     {
-        $title = (string) ($showInfo['cleanname'] ?? '');
-        $fallbackVideoId = $fallbackVideoId > 0
-            ? $fallbackVideoId
-            : (int) $this->getByTitle($title, $type, $source);
+        return $this->resolveByRelease($showInfo, $type, $source, $fallbackVideoId)->videoId;
+    }
 
-        $season = (int) ($showInfo['season'] ?? 0);
-        $episode = (int) ($showInfo['episode'] ?? 0);
-        if ($title === '' || $season <= 0 || $episode <= 0) {
-            return $fallbackVideoId;
+    /**
+     * Resolve a local show without making an irreversible choice between ambiguous title siblings.
+     *
+     * @param  array<string, mixed>  $showInfo
+     */
+    public function resolveByRelease(
+        array $showInfo,
+        int $type,
+        int $source = 0,
+        int $fallbackVideoId = 0,
+        int $releaseId = 0,
+    ): TvShowResolution {
+        $title = (string) ($showInfo['cleanname'] ?? '');
+        $existingVideoId = $fallbackVideoId;
+
+        if ($title === '') {
+            return $existingVideoId > 0
+                ? TvShowResolution::matched($existingVideoId)
+                : TvShowResolution::notFound();
         }
 
         $candidateVideoIds = $this->getEpisodeAwareCandidateVideoIds($title, $type, $source);
         if ($candidateVideoIds === []) {
+            return $existingVideoId > 0
+                ? TvShowResolution::matched($existingVideoId)
+                : TvShowResolution::notFound();
+        }
+
+        if (count($candidateVideoIds) === 1) {
+            return TvShowResolution::matched($candidateVideoIds[0]);
+        }
+
+        $titleVideoId = (int) $this->getByTitle($title, $type, $source);
+        $evidenceVideoId = $this->resolveDiscriminatingEvidence(
+            $showInfo,
+            $candidateVideoIds,
+            $titleVideoId,
+        );
+        if ($evidenceVideoId > 0) {
+            return TvShowResolution::matched($evidenceVideoId);
+        }
+
+        if ($releaseId > 0) {
+            $artifactVideoId = (new TvArtifactIdentityResolver)->resolve(
+                $releaseId,
+                $candidateVideoIds,
+                function (string $artifactName) use ($type, $source, $candidateVideoIds): int {
+                    $artifactInfo = $this->parseInfo($artifactName);
+                    if (! is_array($artifactInfo)) {
+                        return 0;
+                    }
+
+                    $resolution = $this->resolveByRelease($artifactInfo, $type, $source);
+
+                    return in_array($resolution->videoId, $candidateVideoIds, true)
+                        ? $resolution->videoId
+                        : 0;
+                },
+            );
+
+            if ($artifactVideoId !== null) {
+                return TvShowResolution::matched($artifactVideoId);
+            }
+        }
+
+        return TvShowResolution::ambiguous();
+    }
+
+    /**
+     * @param  array<string, mixed>  $showInfo
+     * @param  list<int>  $candidateVideoIds
+     */
+    private function resolveDiscriminatingEvidence(
+        array $showInfo,
+        array $candidateVideoIds,
+        int $fallbackVideoId,
+    ): int {
+        $title = (string) ($showInfo['cleanname'] ?? '');
+        if ($this->resolveReleaseYear($title) !== null
+            && in_array($fallbackVideoId, $candidateVideoIds, true)) {
             return $fallbackVideoId;
+        }
+
+        $season = (int) ($showInfo['season'] ?? 0);
+        $episode = (int) ($showInfo['episode'] ?? 0);
+        $releaseEpisodeTitle = (string) ($showInfo['episode_title'] ?? '');
+        if ($season <= 0 || $episode <= 0 || $releaseEpisodeTitle === '') {
+            return 0;
         }
 
         $episodes = TvEpisode::query()
@@ -216,39 +300,28 @@ abstract class BaseVideoProvider
             ->get(['videos_id', 'title']);
 
         if ($episodes->isEmpty()) {
-            return $fallbackVideoId;
+            return 0;
         }
 
-        $releaseEpisodeTitle = (string) ($showInfo['episode_title'] ?? '');
-        if ($releaseEpisodeTitle !== '') {
-            /** @var array<int, float> $similarityByVideoId */
-            $similarityByVideoId = [];
+        /** @var array<int, float> $similarityByVideoId */
+        $similarityByVideoId = [];
 
-            foreach ($episodes as $candidateEpisode) {
-                $videoId = (int) $candidateEpisode->videos_id;
-                $similarityByVideoId[$videoId] = max(
-                    $similarityByVideoId[$videoId] ?? 0.0,
-                    $this->episodeTitleSimilarity($releaseEpisodeTitle, (string) $candidateEpisode->title),
-                );
-            }
-
-            $bestSimilarity = max($similarityByVideoId);
-            $bestTitleMatches = array_keys(array_filter(
-                $similarityByVideoId,
-                static fn (float $similarity): bool => $similarity >= self::EPISODE_TITLE_SIMILARITY_THRESHOLD
-                    && $similarity === $bestSimilarity,
-            ));
-
-            if (count($bestTitleMatches) === 1) {
-                return (int) $bestTitleMatches[0];
-            }
+        foreach ($episodes as $candidateEpisode) {
+            $videoId = (int) $candidateEpisode->videos_id;
+            $similarityByVideoId[$videoId] = max(
+                $similarityByVideoId[$videoId] ?? 0.0,
+                $this->episodeTitleSimilarity($releaseEpisodeTitle, (string) $candidateEpisode->title),
+            );
         }
 
-        $videosWithEpisode = $episodes->pluck('videos_id')->map(static fn (mixed $id): int => (int) $id)->unique()->values();
+        $bestSimilarity = max($similarityByVideoId);
+        $bestTitleMatches = array_keys(array_filter(
+            $similarityByVideoId,
+            static fn (float $similarity): bool => $similarity >= self::EPISODE_TITLE_SIMILARITY_THRESHOLD
+                && $similarity === $bestSimilarity,
+        ));
 
-        return $videosWithEpisode->count() === 1
-            ? (int) $videosWithEpisode->first()
-            : $fallbackVideoId;
+        return count($bestTitleMatches) === 1 ? (int) $bestTitleMatches[0] : 0;
     }
 
     protected function resolveReleaseYear(string $title, ?int $releaseYear = null): ?int
