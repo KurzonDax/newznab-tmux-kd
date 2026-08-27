@@ -601,9 +601,13 @@ class ReleaseProcessor
 
                 // Dynamic segment budget: for a bare non-faststart MP4 the
                 // duration is unknowable before the moov splice, so a failed
-                // splice means no top-up.
+                // splice means no top-up. After a splice the tail window is
+                // already on disk, so the top-up must stop before it.
                 if (! $needsMoovSplice || $splice !== null) {
-                    $topUpData = $this->dynamicBudgetTopUp($context, $fileLocation, $headData);
+                    $fetchedTailIds = $splice !== null && $context->workPlan !== null
+                        ? $context->workPlan->expandedMediaInfoTailMessageIds($this->config->mp4TailMaxSegments)
+                        : [];
+                    $topUpData = $this->dynamicBudgetTopUp($context, $fileLocation, $headData, $fetchedTailIds);
                     if ($topUpData !== null) {
                         if ($splice !== null) {
                             $merged = $this->mp4MoovSplicer->splice($headData.$topUpData, $splice['moov'], true);
@@ -756,17 +760,36 @@ class ReleaseProcessor
      * when the fixed-count behavior stands (toggle off, unknown bitrate,
      * target already met, ceiling reached, or segment gaps).
      */
+    /**
+     * @param  list<string>  $tailWindowMessageIds  Segment ids already fetched for the MP4 tail; the top-up pool stops before the first of them so no byte is fetched twice.
+     */
     private function dynamicBudgetTopUp(
         ReleaseProcessingContext $context,
         string $probeFileLocation,
         string $headData,
+        array $tailWindowMessageIds = [],
     ): ?string {
         $plan = $context->workPlan;
         if ($plan === null
-            || $plan->mediaInfoExpansionMessageIds === []
             || $this->config->previewTargetSeconds <= 0
             || ! $this->dynamicBudgetPolicy->enabledForCategory((int) $context->release->categories_id)
         ) {
+            return null;
+        }
+
+        $expansionPool = $plan->mediaInfoExpansionMessageIds;
+        if ($tailWindowMessageIds !== []) {
+            $fetchedTail = array_flip($tailWindowMessageIds);
+            $prefix = [];
+            foreach ($expansionPool as $messageId) {
+                if (isset($fetchedTail[$messageId])) {
+                    break;
+                }
+                $prefix[] = $messageId;
+            }
+            $expansionPool = $prefix;
+        }
+        if ($expansionPool === []) {
             return null;
         }
 
@@ -794,7 +817,7 @@ class ReleaseProcessor
         $segmentsByCeiling = $this->config->previewMaxFetchBytes > 0
             ? intdiv(max($this->config->previewMaxFetchBytes - $alreadyFetchedBytes, 0), $perSegmentBytes)
             : PHP_INT_MAX;
-        $segmentCount = min($segmentsByTarget, $segmentsByCeiling, count($plan->mediaInfoExpansionMessageIds));
+        $segmentCount = min($segmentsByTarget, $segmentsByCeiling, count($expansionPool));
         if ($segmentCount <= 0) {
             return null;
         }
@@ -810,7 +833,7 @@ class ReleaseProcessor
 
         $download = $this->downloadService->download(
             DownloadKind::MediaInfoTopUp,
-            array_slice($plan->mediaInfoExpansionMessageIds, 0, $segmentCount),
+            array_slice($expansionPool, 0, $segmentCount),
             $context->releaseGroupName,
             $context->release->id,
         );

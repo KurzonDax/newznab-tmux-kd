@@ -1016,6 +1016,11 @@ class ReleaseProcessorTest extends TestCase
             [DownloadKind::MediaInfo, DownloadKind::MediaInfoTail, DownloadKind::MediaInfoTopUp],
             array_column($downloadCalls->calls, 'kind'),
         );
+        $this->assertSame(
+            ['<s3>', '<s4>', '<s5>', '<s6>'],
+            $downloadCalls->calls[2]['messageIds'],
+            'The top-up must stop before the already-fetched tail window: no byte is fetched twice.'
+        );
         $this->assertStringEndsWith('media.mp4', $mediaCalls->mediaInfoFiles[0]['path']);
         $this->assertStringEndsWith($this->validMoovAtom(), $mediaCalls->mediaInfoFiles[0]['data']);
         $this->assertStringContainsString('TOPUP-DATA', $mediaCalls->mediaInfoFiles[0]['data']);

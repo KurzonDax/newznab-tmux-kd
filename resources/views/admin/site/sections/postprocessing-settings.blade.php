@@ -97,7 +97,7 @@
                                 <x-input class="flex-1" id="preview_target_seconds" name="preview_target_seconds" value="{{ $site['preview_target_seconds'] ?? '30' }}" />
                                 <span class="surface-panel-alt px-3 py-2 rounded-md">seconds</span>
                             </div>
-                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Seconds of the main video file the dynamic segment budget aims to fetch for roots with the budget enabled (see Advanced Settings). The ceiling below wins over this target. Default: 30.</p>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Seconds of the main video file the dynamic segment budget aims to fetch for roots with the budget enabled (see Advanced Settings). The ceiling below wins over this target. Set to 0 to disable top-ups everywhere. Default: 30.</p>
                         </div>
 
                         <div>

@@ -147,7 +147,11 @@ final readonly class ProcessingConfiguration
         $this->payloadSniffSmallSegmentLimit = max((int) config('nntmux_settings.payload_sniff_small_segment_limit'), 1);
         $this->mp4TailFetch = (bool) config('nntmux_settings.mp4_tail_fetch');
         $this->mp4TailMaxSegments = max((int) config('nntmux_settings.mp4_tail_max_segments'), 1);
-        $this->previewTargetSeconds = max(0, (int) (Settings::settingValue('preview_target_seconds') ?: 30));
+        $previewTargetSeconds = Settings::settingValue('preview_target_seconds');
+        // An explicit '0' is a legitimate "no dynamic top-up anywhere".
+        $this->previewTargetSeconds = ($previewTargetSeconds === '' || $previewTargetSeconds === null)
+            ? 30
+            : max(0, (int) $previewTargetSeconds);
         $previewMaxFetchMb = Settings::settingValue('preview_max_fetch_mb');
         $previewMaxFetchMb = ($previewMaxFetchMb === '' || $previewMaxFetchMb === null) ? 300 : max(0, (int) $previewMaxFetchMb);
         $this->previewMaxFetchBytes = $previewMaxFetchMb * 1024 * 1024;
