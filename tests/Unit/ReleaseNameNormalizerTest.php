@@ -66,6 +66,18 @@ class ReleaseNameNormalizerTest extends TestCase
                 '[1/3] - IP Scanner Pro 3.21-Sebaro - "IP Scanner Pro 3.21-Sebaro.rar" yEnc',
                 'IP Scanner Pro 3.21-Sebaro - "IP Scanner Pro 3.21-Sebaro.rar"',
             ],
+            'parenthesised counter prefix' => [
+                '(002/159) "hw7468.part001.rar" - 22,78 GB',
+                'hw7468',
+            ],
+            'counters stacked behind separators' => [
+                '[1/8] - [01/17] - "Foo.part01.rar" yEnc',
+                'Foo',
+            ],
+            'en dash separator before the quotes' => [
+                '[1/9] – "Foo.Bar.2020.1080p.mkv" yEnc',
+                'Foo.Bar.2020.1080p.mkv',
+            ],
             'title before an inline counter is left alone' => [
                 'IP Scanner Pro 3.21-Sebaro - [1/3] - "IP Scanner Pro 3.21-Sebaro.rar" yEnc',
                 'IP Scanner Pro 3.21-Sebaro - [1/3] - "IP Scanner Pro 3.21-Sebaro.rar"',
@@ -100,6 +112,13 @@ class ReleaseNameNormalizerTest extends TestCase
     public function test_names_without_raw_subject_leftovers_are_untouched(string $name): void
     {
         $this->assertSame($name, ReleaseNameNormalizer::normalize($name));
+    }
+
+    public function test_subjects_that_are_not_valid_utf8_are_not_collapsed(): void
+    {
+        $name = "[1/2] - \"Fu\xC3\x28bar.Release.rar\" yEnc";
+
+        $this->assertSame("Fu\xC3\x28bar.Release", ReleaseNameNormalizer::normalize($name));
     }
 
     #[DataProvider('normalizationProvider')]
