@@ -87,11 +87,13 @@ class NzbParserService
             // Parts.
             if (! isset($result[$i]['segments'])) {
                 $result[$i]['segments'] = [];
+                $result[$i]['segmentNumbers'] = [];
             }
 
             // File size.
             foreach ($file->segments->segment as $segment) {
                 $result[$i]['segments'][] = (string) $segment;
+                $result[$i]['segmentNumbers'][] = (int) $segment->attributes()->number;
                 $fileSize += $segment->attributes()->bytes;
                 $numSegments++;
             }

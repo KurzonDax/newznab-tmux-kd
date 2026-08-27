@@ -74,7 +74,7 @@ class VideoFrameExtractorTest extends TestCase
         $this->assertLessThan($duration, $timestamp);
     }
 
-    public function test_it_retries_with_earlier_strategies_when_generated_frames_are_invalid(): void
+    public function test_it_tries_the_near_end_seek_first_and_falls_back_through_the_remaining_strategies(): void
     {
         $attempts = [];
         $extractor = new VideoFrameExtractor(
@@ -97,8 +97,7 @@ class VideoFrameExtractorTest extends TestCase
                 $attempts[] = 'timestamp:'.$timestamp;
 
                 if ($timestamp === '0.000') {
-                    $image = imagecreatetruecolor(1, 1);
-                    imagejpeg($image, $this->framePath);
+                    $this->writeNonFlatJpeg($this->framePath);
                 } else {
                     file_put_contents($this->framePath, 'not a jpeg');
                 }
@@ -109,11 +108,74 @@ class VideoFrameExtractorTest extends TestCase
 
         $this->assertTrue($extractor->extractRepresentativeFrame($this->videoPath, $this->framePath));
         $this->assertSame([
+            'timestamp:1.020',
             'scene',
             'thumbnail',
-            'timestamp:1.020',
             'timestamp:0.000',
         ], $attempts);
+    }
+
+    public function test_it_rejects_a_flat_frame_and_accepts_the_next_strategys_non_flat_frame(): void
+    {
+        $attempts = [];
+        $extractor = new VideoFrameExtractor(
+            $this->makeConfig(['ffmpegPath' => '/usr/bin/ffmpeg']),
+            function (array $command, int $timeout) use (&$attempts): string {
+                if (in_array('null', $command, true)) {
+                    return 'frame=30 time=00:00:01.20 bitrate=N/A';
+                }
+
+                $filterIndex = array_search('-vf', $command, true);
+                if ($filterIndex !== false) {
+                    $attempts[] = 'scene-or-thumbnail';
+                    $this->writeNonFlatJpeg($this->framePath);
+
+                    return '';
+                }
+
+                $attempts[] = 'near-end';
+                $this->writeFlatJpeg($this->framePath);
+
+                return '';
+            },
+        );
+
+        $this->assertTrue($extractor->extractRepresentativeFrame($this->videoPath, $this->framePath));
+        $this->assertSame(['near-end', 'scene-or-thumbnail'], $attempts);
+    }
+
+    public function test_it_returns_false_when_every_strategy_yields_a_flat_frame(): void
+    {
+        $extractor = new VideoFrameExtractor(
+            $this->makeConfig(['ffmpegPath' => '/usr/bin/ffmpeg']),
+            function (array $command, int $timeout): string {
+                if (in_array('null', $command, true)) {
+                    return 'frame=30 time=00:00:01.20 bitrate=N/A';
+                }
+
+                $this->writeFlatJpeg($this->framePath);
+
+                return '';
+            },
+        );
+
+        $this->assertFalse($extractor->extractRepresentativeFrame($this->videoPath, $this->framePath));
+    }
+
+    private function writeNonFlatJpeg(string $path): void
+    {
+        $image = imagecreatetruecolor(64, 64);
+        $white = imagecolorallocate($image, 255, 255, 255);
+        imagefilledrectangle($image, 32, 0, 63, 63, $white);
+        imagejpeg($image, $path);
+    }
+
+    private function writeFlatJpeg(string $path): void
+    {
+        $image = imagecreatetruecolor(64, 64);
+        $nearBlack = imagecolorallocate($image, 12, 12, 12);
+        imagefilledrectangle($image, 0, 0, 63, 63, $nearBlack);
+        imagejpeg($image, $path);
     }
 
     public function test_it_returns_false_when_every_frame_strategy_throws(): void

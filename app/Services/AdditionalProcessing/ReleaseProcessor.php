@@ -17,6 +17,7 @@ use App\Services\AdditionalProcessing\Enums\ProcessingStage;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ProcessingMetrics;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
+use App\Services\Releases\DynamicPreviewBudgetPolicy;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\TempWorkspaceService;
@@ -48,6 +49,8 @@ class ReleaseProcessor
         private readonly PreviewGenerationPolicy $previewPolicy = new PreviewGenerationPolicy,
         private readonly PayloadSniffer $payloadSniffer = new PayloadSniffer,
         private readonly Mp4MoovSplicer $mp4MoovSplicer = new Mp4MoovSplicer,
+        private readonly DynamicPreviewBudgetPolicy $dynamicBudgetPolicy = new DynamicPreviewBudgetPolicy,
+        private readonly VideoHeadProbe $headProbe = new VideoHeadProbe,
     ) {}
 
     public function process(ReleaseProcessingContext $context, string $mainTmpPath): ReleaseProcessingResult
@@ -584,12 +587,37 @@ class ReleaseProcessor
 
             if ($result['success'] && is_string($result['data']) && $this->downloadService->meetsMinimumSize($result['data'])) {
                 $this->output->echoMediaInfoDownload();
+                $headData = $result['data'];
+                $needsMoovSplice = $this->config->mp4TailFetch
+                    && $this->payloadSniffer->classify($headData)->classification === PayloadClassification::Mp4
+                    && $this->mp4MoovSplicer->needsTail($headData);
                 $fileLocation = $context->tmpPath.'media.avi';
-                File::put($fileLocation, $result['data']);
-                $splicedData = $this->spliceMp4Tail($result['data'], $context);
-                if ($splicedData !== null) {
+                File::put($fileLocation, $headData);
+                $splice = $needsMoovSplice ? $this->spliceMp4Tail($headData, $context) : null;
+                if ($splice !== null) {
                     $fileLocation = $context->tmpPath.'media.mp4';
-                    File::put($fileLocation, $splicedData);
+                    File::put($fileLocation, $splice['data']);
+                }
+
+                // Dynamic segment budget: for a bare non-faststart MP4 the
+                // duration is unknowable before the moov splice, so a failed
+                // splice means no top-up. After a splice the tail window is
+                // already on disk, so the top-up must stop before it.
+                if (! $needsMoovSplice || $splice !== null) {
+                    $fetchedTailIds = $splice !== null && $context->workPlan !== null
+                        ? $context->workPlan->expandedMediaInfoTailMessageIds($this->config->mp4TailMaxSegments)
+                        : [];
+                    $topUpData = $this->dynamicBudgetTopUp($context, $fileLocation, $headData, $fetchedTailIds);
+                    if ($topUpData !== null) {
+                        if ($splice !== null) {
+                            $merged = $this->mp4MoovSplicer->splice($headData.$topUpData, $splice['moov'], true);
+                            if ($merged->status === Mp4MoovSpliceStatus::Spliced && $merged->data !== null) {
+                                File::put($fileLocation, $merged->data);
+                            }
+                        } else {
+                            File::put($fileLocation, $headData.$topUpData);
+                        }
+                    }
                 }
 
                 if (! $context->foundMediaInfo && $this->mediaService->getMediaInfo($fileLocation, $context->release->id)) {
@@ -636,19 +664,28 @@ class ReleaseProcessor
         }
     }
 
-    private function spliceMp4Tail(string $head, ReleaseProcessingContext $context): ?string
+    /**
+     * Fetch the MP4 tail and splice the moov onto the head. The caller checks
+     * that the head is an MP4 whose moov lives at the end of the file.
+     *
+     * @return array{data: string, moov: string}|null The spliced file plus the bare moov atom for re-splicing after a dynamic top-up.
+     */
+    private function spliceMp4Tail(string $head, ReleaseProcessingContext $context): ?array
     {
-        if (! $this->config->mp4TailFetch
-            || $this->payloadSniffer->classify($head)->classification !== PayloadClassification::Mp4
-            || ! $this->mp4MoovSplicer->needsTail($head)
-        ) {
-            return null;
-        }
-
         $plan = $context->workPlan;
         if ($plan === null || $plan->mediaInfoTailMessageIds === []) {
             $context->recordMp4MoovMissing();
             $this->output->echoMp4MoovMissing();
+
+            return null;
+        }
+
+        // Contiguity gate: a tail window with gaps — or one that never
+        // reaches the declared end of the file — can never contain a usable
+        // moov, so skip the fetches entirely and record the distinct reason.
+        if (! $plan->mediaInfoTailContiguous) {
+            $context->recordSegmentGapSkip();
+            $this->output->echoSegmentGapSkip();
 
             return null;
         }
@@ -682,11 +719,16 @@ class ReleaseProcessor
             $atSegmentCap = $downloadedSegmentCount >= $maximumSegments;
             $splice = $this->mp4MoovSplicer->splice($head, $tail, $atSegmentCap);
 
-            if ($splice->status === Mp4MoovSpliceStatus::Spliced) {
+            if ($splice->status === Mp4MoovSpliceStatus::Spliced && $splice->data !== null) {
                 $context->recordMp4MoovFound();
                 $this->output->echoMp4MoovFound();
 
-                return $splice->data;
+                // rewriteMdatSize() preserves the head's length, so the moov
+                // is exactly the bytes appended after it.
+                return [
+                    'data' => $splice->data,
+                    'moov' => substr($splice->data, strlen($head)),
+                ];
             }
             if ($splice->status === Mp4MoovSpliceStatus::Missing) {
                 $context->recordMp4MoovMissing();
@@ -708,6 +750,106 @@ class ReleaseProcessor
         $this->output->echoMp4MoovMissing();
 
         return null;
+    }
+
+    /**
+     * Dynamic segment budget (see CONTEXT.md): probe the fetched head for the
+     * overall bitrate, then fetch just enough additional head segments to
+     * reach the target duration, under the hard byte ceiling covering the
+     * total fetched for this file. Returns the fetched top-up bytes, or null
+     * when the fixed-count behavior stands (toggle off, unknown bitrate,
+     * target already met, ceiling reached, or segment gaps).
+     */
+    /**
+     * @param  list<string>  $tailWindowMessageIds  Segment ids already fetched for the MP4 tail; the top-up pool stops before the first of them so no byte is fetched twice.
+     */
+    private function dynamicBudgetTopUp(
+        ReleaseProcessingContext $context,
+        string $probeFileLocation,
+        string $headData,
+        array $tailWindowMessageIds = [],
+    ): ?string {
+        $plan = $context->workPlan;
+        if ($plan === null
+            || $this->config->previewTargetSeconds <= 0
+            || ! $this->dynamicBudgetPolicy->enabledForCategory((int) $context->release->categories_id)
+        ) {
+            return null;
+        }
+
+        $expansionPool = $plan->mediaInfoExpansionMessageIds;
+        if ($tailWindowMessageIds !== []) {
+            $fetchedTail = array_flip($tailWindowMessageIds);
+            $prefix = [];
+            foreach ($expansionPool as $messageId) {
+                if (isset($fetchedTail[$messageId])) {
+                    break;
+                }
+                $prefix[] = $messageId;
+            }
+            $expansionPool = $prefix;
+        }
+        if ($expansionPool === []) {
+            return null;
+        }
+
+        $bytesPerSecond = $this->headProbe
+            ->probe($probeFileLocation, $this->config)
+            ?->bytesPerSecond($plan->mediaInfoFileSizeBytes);
+        if ($bytesPerSecond === null || $bytesPerSecond <= 0) {
+            // Unknown bitrate: keep the fixed-count behavior rather than guess.
+            return null;
+        }
+
+        $headSegmentCount = count($context->mediaInfoMessageIDs);
+        $perSegmentBytes = $headSegmentCount > 0 ? intdiv(strlen($headData), $headSegmentCount) : 0;
+        if ($perSegmentBytes <= 0) {
+            return null;
+        }
+
+        $neededBytes = (int) ceil($bytesPerSecond * $this->config->previewTargetSeconds) - strlen($headData);
+        if ($neededBytes <= 0) {
+            return null;
+        }
+
+        $alreadyFetchedBytes = strlen($headData) + $context->mp4TailMetrics->tailBytes;
+        $segmentsByTarget = (int) ceil($neededBytes / $perSegmentBytes);
+        $segmentsByCeiling = $this->config->previewMaxFetchBytes > 0
+            ? intdiv(max($this->config->previewMaxFetchBytes - $alreadyFetchedBytes, 0), $perSegmentBytes)
+            : PHP_INT_MAX;
+        $segmentCount = min($segmentsByTarget, $segmentsByCeiling, count($expansionPool));
+        if ($segmentCount <= 0) {
+            return null;
+        }
+
+        // Contiguity gate: gaps inside the needed head range make the top-up
+        // pointless — the decoder stops at the first missing byte.
+        if ($headSegmentCount + $segmentCount > $plan->mediaInfoContiguousHeadSegments) {
+            $context->recordSegmentGapSkip();
+            $this->output->echoSegmentGapSkip();
+
+            return null;
+        }
+
+        $download = $this->downloadService->download(
+            DownloadKind::MediaInfoTopUp,
+            array_slice($expansionPool, 0, $segmentCount),
+            $context->releaseGroupName,
+            $context->release->id,
+        );
+        if ($download['groupUnavailable']) {
+            $context->groupUnavailable = true;
+            $this->output->echoGroupUnavailable();
+
+            return null;
+        }
+        if (! $download['success'] || ! is_string($download['data'])) {
+            return null;
+        }
+
+        $this->output->echoDynamicTopUpFetched(strlen($download['data']));
+
+        return $download['data'];
     }
 
     /**

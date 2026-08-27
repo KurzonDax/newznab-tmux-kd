@@ -26,6 +26,10 @@ final readonly class AdditionalWorkPlanner
         $mediaInfoMessageIds = [];
         $mediaInfoTailMessageIds = [];
         $mediaInfoTailExpansionMessageIds = [];
+        $mediaInfoExpansionMessageIds = [];
+        $mediaInfoContiguousHeadSegments = 0;
+        $mediaInfoTailContiguous = true;
+        $mediaInfoFileSizeBytes = 0;
         $archiveCandidates = [];
         $bookFileCount = 0;
         $duplicateMessageIdCount = 0;
@@ -111,6 +115,18 @@ final readonly class AdditionalWorkPlanner
                         0,
                         count($tailCandidates) - $initialTailCount,
                     );
+                    $mediaInfoExpansionMessageIds = $this->extractExpansionSegments(
+                        $segments,
+                        count($mediaInfoMessageIds),
+                    );
+                    $segmentNumbers = $this->segmentNumbers($file);
+                    $mediaInfoContiguousHeadSegments = $this->contiguousHeadSegmentCount($segments, $segmentNumbers);
+                    $mediaInfoTailContiguous = $this->tailIsContiguous(
+                        $segmentNumbers,
+                        min($this->config->mp4TailMaxSegments, count($segments)),
+                        (int) ($file['partstotal'] ?? 0),
+                    );
+                    $mediaInfoFileSizeBytes = max((int) ($file['size'] ?? 0), 0);
                 }
             } catch (\ErrorException $e) {
                 Log::debug($e->getTraceAsString());
@@ -148,6 +164,10 @@ final readonly class AdditionalWorkPlanner
             mediaInfoMessageIds: $mediaInfoMessageIds,
             mediaInfoTailMessageIds: $mediaInfoTailMessageIds,
             mediaInfoTailExpansionMessageIds: $mediaInfoTailExpansionMessageIds,
+            mediaInfoExpansionMessageIds: $mediaInfoExpansionMessageIds,
+            mediaInfoContiguousHeadSegments: $mediaInfoContiguousHeadSegments,
+            mediaInfoTailContiguous: $mediaInfoTailContiguous,
+            mediaInfoFileSizeBytes: $mediaInfoFileSizeBytes,
             archiveCandidates: $archiveCandidates,
             unknownPayloadCandidates: $unknownPayloadCandidates,
             bookFileCount: $bookFileCount,
@@ -234,6 +254,109 @@ final readonly class AdditionalWorkPlanner
         }
 
         return $messageIds;
+    }
+
+    /**
+     * Head segments after the fixed initial window, in posted order. These are
+     * the dynamic segment budget's top-up pool; the fixed window itself is
+     * untouched so toggled-off roots keep today's selection byte-for-byte.
+     *
+     * @param  array<int|string, mixed>  $segments
+     * @return list<string>
+     */
+    private function extractExpansionSegments(array $segments, int $initialWindowCount): array
+    {
+        $messageIds = [];
+        $seen = [];
+
+        foreach (array_slice(array_values($segments), max($initialWindowCount, 0)) as $segment) {
+            $messageId = (string) $segment;
+            if ($messageId === '' || isset($seen[$messageId])) {
+                continue;
+            }
+
+            $seen[$messageId] = true;
+            $messageIds[] = $messageId;
+        }
+
+        return $messageIds;
+    }
+
+    /**
+     * @param  array<int|string, mixed>  $file
+     * @return list<int>|null Per-segment NZB numbering, or null when it is absent or unreliable.
+     */
+    private function segmentNumbers(array $file): ?array
+    {
+        $rawNumbers = is_array($file['segmentNumbers'] ?? null) ? array_values($file['segmentNumbers']) : [];
+        $segmentCount = is_array($file['segments'] ?? null) ? count($file['segments']) : 0;
+        if ($rawNumbers === [] || count($rawNumbers) !== $segmentCount) {
+            return null;
+        }
+
+        $numbers = [];
+        foreach ($rawNumbers as $number) {
+            $number = (int) $number;
+            if ($number <= 0) {
+                return null;
+            }
+            $numbers[] = $number;
+        }
+
+        return $numbers;
+    }
+
+    /**
+     * How many leading segments are provably gap-free from segment number 1.
+     * Unknown numbering counts every segment: the contiguity gate may only
+     * skip fetches that are provably pointless.
+     *
+     * @param  array<int|string, mixed>  $segments
+     * @param  list<int>|null  $segmentNumbers
+     */
+    private function contiguousHeadSegmentCount(array $segments, ?array $segmentNumbers): int
+    {
+        if ($segmentNumbers === null) {
+            return count($segments);
+        }
+
+        $contiguous = 0;
+        foreach ($segmentNumbers as $index => $number) {
+            if ($number !== $index + 1) {
+                break;
+            }
+            $contiguous++;
+        }
+
+        return $contiguous;
+    }
+
+    /**
+     * Whether the tail window an MP4 moov splice would fetch is provably
+     * complete: consecutive numbering within the window, and — when the
+     * subject declares a total — a last segment that actually reaches it.
+     *
+     * @param  list<int>|null  $segmentNumbers
+     */
+    private function tailIsContiguous(?array $segmentNumbers, int $tailWindowCount, int $declaredTotal): bool
+    {
+        if ($segmentNumbers === null || $tailWindowCount <= 0) {
+            return true;
+        }
+
+        $tailNumbers = array_slice($segmentNumbers, -$tailWindowCount);
+        foreach ($tailNumbers as $index => $number) {
+            if ($index > 0 && $number !== $tailNumbers[$index - 1] + 1) {
+                return false;
+            }
+        }
+
+        $lastNumber = $tailNumbers === [] ? 0 : $tailNumbers[count($tailNumbers) - 1];
+        if ($declaredTotal >= count($segmentNumbers) && $declaredTotal > 0 && $lastNumber !== $declaredTotal) {
+            return false;
+        }
+
+        return true;
     }
 
     /**

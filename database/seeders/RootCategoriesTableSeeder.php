@@ -18,6 +18,7 @@ class RootCategoriesTableSeeder extends Seeder
                     'title' => 'Other',
                     'status' => 1,
                     'generate_previews' => 1,
+                    'dynamic_preview_budget' => 0,
                     'discard_executables' => 0,
                 ],
                 1 => [
@@ -25,6 +26,7 @@ class RootCategoriesTableSeeder extends Seeder
                     'title' => 'Console',
                     'status' => 1,
                     'generate_previews' => 1,
+                    'dynamic_preview_budget' => 0,
                     'discard_executables' => 0,
                 ],
                 2 => [
@@ -32,6 +34,7 @@ class RootCategoriesTableSeeder extends Seeder
                     'title' => 'Movies',
                     'status' => 1,
                     'generate_previews' => 1,
+                    'dynamic_preview_budget' => 0,
                     'discard_executables' => 1,
                 ],
                 3 => [
@@ -39,6 +42,7 @@ class RootCategoriesTableSeeder extends Seeder
                     'title' => 'Audio',
                     'status' => 1,
                     'generate_previews' => 1,
+                    'dynamic_preview_budget' => 0,
                     'discard_executables' => 1,
                 ],
                 4 => [
@@ -46,6 +50,7 @@ class RootCategoriesTableSeeder extends Seeder
                     'title' => 'PC',
                     'status' => 1,
                     'generate_previews' => 1,
+                    'dynamic_preview_budget' => 0,
                     'discard_executables' => 0,
                 ],
                 5 => [
@@ -53,6 +58,7 @@ class RootCategoriesTableSeeder extends Seeder
                     'title' => 'TV',
                     'status' => 1,
                     'generate_previews' => 1,
+                    'dynamic_preview_budget' => 0,
                     'discard_executables' => 1,
                 ],
                 6 => [
@@ -60,6 +66,7 @@ class RootCategoriesTableSeeder extends Seeder
                     'title' => 'XXX',
                     'status' => 1,
                     'generate_previews' => 1,
+                    'dynamic_preview_budget' => 1,
                     'discard_executables' => 1,
                 ],
                 7 => [
@@ -67,6 +74,7 @@ class RootCategoriesTableSeeder extends Seeder
                     'title' => 'Books',
                     'status' => 1,
                     'generate_previews' => 1,
+                    'dynamic_preview_budget' => 0,
                     'discard_executables' => 1,
                 ],
             ]
