@@ -12,6 +12,7 @@ use App\Models\RootCategory;
 use App\Models\Settings;
 use App\Models\SignupStat;
 use App\Services\NNTP\NntpProviderPool;
+use App\Services\Releases\ClipGenerationPolicy;
 use App\Services\Releases\DynamicPreviewBudgetPolicy;
 use App\Support\RepairSettingRules;
 use App\Support\SizeUnit;
@@ -63,6 +64,8 @@ class AdminSiteController extends BasePageController
                 unset($data['generate_previews']);
                 $dynamicBudgetToggles = (array) ($data['dynamic_preview_budget'] ?? []);
                 unset($data['dynamic_preview_budget']);
+                $clipToggles = (array) ($data['generate_clips'] ?? []);
+                unset($data['generate_clips']);
 
                 foreach (RootCategory::query()->get() as $rootCategory) {
                     $updates = [];
@@ -83,6 +86,13 @@ class AdminSiteController extends BasePageController
                         $dynamicBudgetEnabled = ! empty($dynamicBudgetToggles[$rootCategory->id]);
                         if ($rootCategory->dynamic_preview_budget !== $dynamicBudgetEnabled) {
                             $updates['dynamic_preview_budget'] = $dynamicBudgetEnabled;
+                        }
+                    }
+
+                    if (in_array((int) $rootCategory->id, ClipGenerationPolicy::ELIGIBLE_ROOT_IDS, true)) {
+                        $clipsEnabled = ! empty($clipToggles[$rootCategory->id]);
+                        if ($rootCategory->generate_clips !== $clipsEnabled) {
+                            $updates['generate_clips'] = $clipsEnabled;
                         }
                     }
 
@@ -121,6 +131,7 @@ class AdminSiteController extends BasePageController
             'discardRoots' => $rootCategories,
             'previewRoots' => $rootCategories,
             'dynamicBudgetRoots' => $rootCategories->whereIn('id', DynamicPreviewBudgetPolicy::ELIGIBLE_ROOT_IDS)->values(),
+            'clipRoots' => $rootCategories->whereIn('id', ClipGenerationPolicy::ELIGIBLE_ROOT_IDS)->values(),
             'yesno' => [
                 'ids' => [1, 0],
                 'names' => ['Yes', 'No'],

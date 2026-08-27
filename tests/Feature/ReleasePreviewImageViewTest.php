@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Models\Category;
 use App\Models\Release;
 use App\Models\ReleaseAudioTag;
+use App\Models\ReleaseVideoClip;
 use stdClass;
 use Tests\TestCase;
 
@@ -121,6 +122,118 @@ class ReleasePreviewImageViewTest extends TestCase
         $this->assertStringContainsString('/covers/audiosample/spectrogram-only-guid_spectrum.png', $html);
         $this->assertStringContainsString('data-image-title="Spectrogram"', $html);
         $this->assertStringNotContainsString('data-audio-url=', $html);
+    }
+
+    public function test_release_with_a_clip_renders_the_movie_camera_chip_with_video_data(): void
+    {
+        file_put_contents($this->coversRoot.'/preview/clip-guid_thumb.jpg', 'jpg');
+
+        $html = $this->renderResults($this->release([
+            'guid' => 'clip-guid',
+            'categories_id' => Category::XXX_XVID,
+            'haspreview' => 1,
+            'has_video_preview' => 1,
+            'video_preview_mime' => 'video/mp4',
+        ]));
+
+        $this->assertStringContainsString('class="preview-badge', $html);
+        $this->assertStringContainsString('data-video-url="'.route('preview.video', 'clip-guid').'"', $html);
+        $this->assertStringContainsString('data-video-type="video/mp4"', $html);
+        $this->assertStringContainsString('fas fa-video', $html);
+        $this->assertStringContainsString('/covers/preview/clip-guid_thumb.jpg', $html);
+    }
+
+    public function test_release_with_only_a_legacy_ogv_sample_still_gets_the_video_chip(): void
+    {
+        $html = $this->renderResults($this->release([
+            'guid' => 'legacy-guid',
+            'categories_id' => Category::MOVIE_HD,
+            'haspreview' => 0,
+            'has_video_preview' => 1,
+            'video_preview_mime' => 'video/ogg',
+        ]));
+
+        $this->assertStringContainsString('class="preview-badge', $html);
+        $this->assertStringContainsString('data-video-url="'.route('preview.video', 'legacy-guid').'"', $html);
+        $this->assertStringContainsString('data-video-type="video/ogg"', $html);
+        $this->assertStringContainsString('fas fa-video', $html);
+    }
+
+    public function test_release_without_video_data_keeps_the_image_only_chip(): void
+    {
+        file_put_contents($this->coversRoot.'/preview/plain-guid_thumb.jpg', 'jpg');
+
+        $html = $this->renderResults($this->release([
+            'guid' => 'plain-guid',
+            'categories_id' => Category::MOVIE_HD,
+            'haspreview' => 1,
+        ]));
+
+        $this->assertStringNotContainsString('data-video-url=', $html);
+        $this->assertStringContainsString('fas fa-image', $html);
+    }
+
+    public function test_movies_release_row_renders_the_video_chip(): void
+    {
+        $html = view('movies.partials.release-item', [
+            'release' => $this->release([
+                'guid' => 'movie-row-guid',
+                'haspreview' => 1,
+                'has_video_preview' => 1,
+                'video_preview_mime' => 'video/mp4',
+                'postdate' => null,
+                'adddate' => null,
+                'size' => 0,
+            ]),
+        ])->render();
+
+        $this->assertStringContainsString('class="preview-badge', $html);
+        $this->assertStringContainsString('data-video-url="'.route('preview.video', 'movie-row-guid').'"', $html);
+        $this->assertStringContainsString('data-video-type="video/mp4"', $html);
+        $this->assertStringContainsString('fas fa-video', $html);
+    }
+
+    public function test_details_renders_the_video_chip_beside_the_preview_images(): void
+    {
+        file_put_contents($this->coversRoot.'/preview/details-guid_thumb.jpg', 'jpg');
+
+        $release = Release::factory()->make([
+            'guid' => 'details-guid',
+            'categories_id' => Category::MOVIE_HD,
+            'haspreview' => 1,
+            'jpgstatus' => 0,
+            'videostatus' => 1,
+        ]);
+        $release->setRelation('audioTags', null);
+        $release->setRelation('videoClip', new ReleaseVideoClip([
+            'extension' => 'mp4',
+            'mime' => 'video/mp4',
+        ]));
+
+        $html = view('details.partials.preview-images', ['release' => $release])->render();
+
+        $this->assertStringContainsString('class="preview-badge', $html);
+        $this->assertStringContainsString('data-video-url="'.route('preview.video', 'details-guid').'"', $html);
+        $this->assertStringContainsString('data-video-type="video/mp4"', $html);
+        $this->assertStringContainsString('fas fa-video', $html);
+    }
+
+    public function test_details_video_chip_uses_the_legacy_mime_without_a_clip_row(): void
+    {
+        $release = Release::factory()->make([
+            'guid' => 'details-legacy-guid',
+            'categories_id' => Category::MOVIE_HD,
+            'haspreview' => 0,
+            'jpgstatus' => 0,
+            'videostatus' => 1,
+        ]);
+        $release->setRelation('audioTags', null);
+        $release->setRelation('videoClip', null);
+
+        $html = view('details.partials.preview-images', ['release' => $release])->render();
+
+        $this->assertStringContainsString('data-video-url="'.route('preview.video', 'details-legacy-guid').'"', $html);
+        $this->assertStringContainsString('data-video-type="video/ogg"', $html);
     }
 
     public function test_audio_release_does_not_render_a_duplicate_preview_image_on_details(): void

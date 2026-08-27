@@ -6,6 +6,7 @@ namespace App\Services\AdditionalProcessing;
 
 use App\Enums\ImageAssetProfile;
 use App\Models\Release;
+use App\Models\ReleaseVideoClip;
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
@@ -13,6 +14,7 @@ use App\Services\AudioProcessing\AudioReleaseProcessor;
 use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\ReleaseExtraService;
 use App\Services\ReleaseImageService;
+use App\Services\Releases\ClipGenerationPolicy;
 use FFMpeg\Coordinate\Dimension;
 use FFMpeg\Coordinate\TimeCode;
 use FFMpeg\FFMpeg;
@@ -45,6 +47,9 @@ class MediaExtractionService
         private readonly VideoFrameExtractor $videoFrameExtractor,
         ?ReleaseSearchSyncCoordinator $searchSyncCoordinator = null,
         ?MediaInfoRefinementService $mediaInfoRefinement = null,
+        private readonly ClipGenerationPolicy $clipPolicy = new ClipGenerationPolicy,
+        private readonly VideoClipEncoder $clipEncoder = new VideoClipEncoder,
+        private readonly ClipDiskGuard $clipDiskGuard = new ClipDiskGuard,
     ) {
         $this->searchSyncCoordinator = $searchSyncCoordinator
             ?? new ReleaseSearchSyncCoordinator(
@@ -114,14 +119,96 @@ class MediaExtractionService
     }
 
     /**
-     * Create a video sample clip.
+     * Store the release's single video artifact: a full-resolution stream-copy
+     * Clip when the root category allows it and the source is browser-safe,
+     * otherwise the downscaled transcoded sample.
      */
-    public function getVideo(string $fileLocation, string $tmpPath, string $guid): bool
+    public function getVideo(string $fileLocation, string $tmpPath, string $guid, ?int $categoriesId = null): bool
     {
         if (! $this->config->processVideo || ! File::isFile($fileLocation)) {
             return false;
         }
 
+        if ($this->shouldAttemptClip($categoriesId) && $this->storeClip($fileLocation, $tmpPath, $guid)) {
+            return true;
+        }
+
+        return $this->storeTranscodedSample($fileLocation, $tmpPath, $guid);
+    }
+
+    /**
+     * The Clip is opt-in per root category and disk-guarded: below 10% free
+     * on the covers volume the pipeline falls back to the small transcode.
+     */
+    private function shouldAttemptClip(?int $categoriesId): bool
+    {
+        return $categoriesId !== null
+            && $this->clipPolicy->enabledForCategory($categoriesId)
+            && $this->clipDiskGuard->allows($this->releaseImage->vidSavePath);
+    }
+
+    private function storeClip(string $fileLocation, string $tmpPath, string $guid): bool
+    {
+        $clip = $this->clipEncoder->encode(
+            $fileLocation,
+            $tmpPath,
+            $this->ffmpegBinaryPath(),
+            $this->config->timeoutSeconds > 0 ? $this->config->timeoutSeconds : 60,
+        );
+        if ($clip === null) {
+            return false;
+        }
+
+        if (! $this->storeGeneratedMedia($clip->path, $this->releaseImage->vidSavePath.$guid.'.'.$clip->extension)) {
+            return false;
+        }
+
+        $this->removeSiblingVideoArtifacts($guid, $clip->extension);
+
+        $releaseId = Release::query()->where('guid', $guid)->value('id');
+        if ($releaseId !== null) {
+            ReleaseVideoClip::query()->updateOrCreate(
+                ['releases_id' => (int) $releaseId],
+                [
+                    'extension' => $clip->extension,
+                    'mime' => $clip->mime,
+                    'duration_seconds' => $clip->durationSeconds,
+                    'bytes' => $clip->bytes,
+                ],
+            );
+        }
+
+        Release::query()->where('guid', $guid)->update(['videostatus' => 1]);
+
+        return true;
+    }
+
+    /**
+     * A release has one video artifact slot: whichever container was just
+     * stored, any other container left over from an earlier run is stale.
+     */
+    private function removeSiblingVideoArtifacts(string $guid, string $keepExtension): void
+    {
+        foreach (array_keys(ReleaseVideoClip::VIDEO_MIME_TYPES) as $extension) {
+            if ($extension !== $keepExtension) {
+                File::delete($this->releaseImage->vidSavePath.$guid.'.'.$extension);
+            }
+        }
+    }
+
+    private function ffmpegBinaryPath(): string
+    {
+        return is_string($this->config->ffmpegPath) && $this->config->ffmpegPath !== ''
+            ? $this->config->ffmpegPath
+            : 'ffmpeg';
+    }
+
+    /**
+     * Create the legacy downscaled transcoded sample video. Protected so
+     * tests can observe the fallback without running ffmpeg.
+     */
+    protected function storeTranscodedSample(string $fileLocation, string $tmpPath, string $guid): bool
+    {
         $fileName = $tmpPath.'zzzz'.$guid.'.ogv';
         $newMethod = false;
 
@@ -188,6 +275,13 @@ class MediaExtractionService
         if (! $this->storeGeneratedMedia($fileName, $this->releaseImage->vidSavePath.$guid.'.ogv')) {
             return false;
         }
+
+        // The transcode reclaims the single artifact slot: any Clip from an
+        // earlier run — file and metadata row — is stale.
+        $this->removeSiblingVideoArtifacts($guid, 'ogv');
+        ReleaseVideoClip::query()
+            ->whereIn('releases_id', Release::query()->where('guid', $guid)->select('id'))
+            ->delete();
 
         Release::query()->where('guid', $guid)->update(['videostatus' => 1]);
 
@@ -266,7 +360,7 @@ class MediaExtractionService
 
         // Only get video if sampleMessageIDs count is less than 2
         if (! $context->foundVideo && count($context->sampleMessageIDs) < 2) {
-            $result['video'] = $this->getVideo($fileLocation, $tmpPath, $context->release->guid);
+            $result['video'] = $this->getVideo($fileLocation, $tmpPath, $context->release->guid, (int) $context->release->categories_id);
             if ($result['video']) {
                 $context->foundVideo = true;
             }

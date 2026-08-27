@@ -300,7 +300,24 @@ class MovieControllerTest extends TestCase
             $table->unsignedBigInteger('size')->default(0);
             $table->integer('passwordstatus')->default(0);
             $table->integer('haspreview')->default(0);
+            $table->integer('videostatus')->default(0);
             $table->string('imdbid')->nullable();
+        });
+
+        Schema::create('release_audio_tags', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id')->primary();
+            $table->string('audio_format', 50)->nullable();
+            $table->unsignedTinyInteger('has_preview')->default(0);
+            $table->string('preview_extension', 8)->nullable();
+            $table->string('preview_mime', 32)->nullable();
+            $table->unsignedSmallInteger('preview_seconds')->nullable();
+            $table->unsignedTinyInteger('has_spectrogram')->default(0);
+        });
+
+        Schema::create('release_video_clips', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id')->primary();
+            $table->string('extension', 8);
+            $table->string('mime', 32);
         });
     }
 

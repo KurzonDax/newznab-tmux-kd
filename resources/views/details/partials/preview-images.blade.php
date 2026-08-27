@@ -11,9 +11,13 @@
                 $sampleImageUrl = $hasSampleImage
                     ? getImageAssetUrl('sample', $release->guid . '_thumb', asset('assets/images/no-cover.png'))
                     : null;
+                $hasVideoPreview = (int) ($release->videostatus ?? 0) === 1 && ! $isAudioRelease;
+                $videoPreviewMime = $hasVideoPreview
+                    ? ($release->videoClip?->clipMimeType() ?? \App\Models\ReleaseVideoClip::VIDEO_MIME_TYPES['ogv'])
+                    : null;
             @endphp
 
-            @if($hasPreviewImage || $hasSampleImage)
+            @if($hasPreviewImage || $hasSampleImage || $hasVideoPreview)
                 <div class="border-b border-gray-200 dark:border-gray-700 pb-4">
                     <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-3 flex items-center">
                         <i class="fas fa-images mr-2 text-primary-600"></i>
@@ -21,8 +25,23 @@
                             Preview & Sample Images
                         @elseif($hasPreviewImage)
                             Preview Image
-                        @else
+                        @elseif($hasSampleImage)
                             Sample Image
+                        @else
+                            Video Preview
+                        @endif
+                        @if($hasVideoPreview)
+                            <button type="button"
+                                    class="preview-badge ml-3 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 hover:bg-primary-200 dark:hover:bg-primary-800 transition cursor-pointer"
+                                    data-guid="{{ $release->guid }}"
+                                    @if($hasPreviewImage)
+                                        data-image-url="{{ $previewImageUrl }}"
+                                    @endif
+                                    data-video-url="{{ route('preview.video', $release->guid) }}"
+                                    data-video-type="{{ $videoPreviewMime }}"
+                                    title="Watch video preview">
+                                <i class="fas fa-video mr-1"></i> Preview
+                            </button>
                         @endif
                     </h3>
                     <div class="grid grid-cols-2 md:grid-cols-3 gap-4">

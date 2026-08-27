@@ -245,6 +245,17 @@ class Release extends Model
     }
 
     /**
+     * Metadata for the stream-copy Clip stored as this release's video
+     * artifact; absent for legacy downscaled transcodes.
+     *
+     * @return HasOne<ReleaseVideoClip, $this>
+     */
+    public function videoClip(): HasOne
+    {
+        return $this->hasOne(ReleaseVideoClip::class, 'releases_id');
+    }
+
+    /**
      * @return BelongsTo<TvEpisode, $this>
      */
     public function episode(): BelongsTo

@@ -135,6 +135,23 @@
                         </div>
 
                         <div>
+                            <span class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                <i class="fas fa-clapperboard mr-1"></i>Full-Resolution Clips per Root Category
+                            </span>
+                            <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                                @foreach ($clipRoots ?? [] as $clipRoot)
+                                    <label class="flex items-center">
+                                        <input type="checkbox" name="generate_clips[{{ $clipRoot->id }}]" value="1"
+                                               @checked($clipRoot->generate_clips)
+                                               class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700">
+                                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">{{ $clipRoot->title }}</span>
+                                    </label>
+                                @endforeach
+                            </div>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">For checked roots, browser-safe sources (H.264/AAC, VP8/VP9 with Vorbis/Opus) store a full-resolution stream-copy Clip of the downloaded window as the release's video artifact instead of the downscaled sample. Other sources, unchecked roots, and a covers volume below 10% free space keep the small transcode. Default: XXX only.</p>
+                        </div>
+
+                        <div>
                             <label for="segmentstodownload" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                                 <i class="fas fa-download mr-1"></i>Number of Segments to Download
                             </label>

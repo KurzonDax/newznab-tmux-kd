@@ -308,7 +308,7 @@ class ReleaseFileManager
             $updateRows = ['haspreview' => 1];
         }
 
-        if (File::isFile($this->releaseImage->vidSavePath.$context->release->guid.'.ogv')) {
+        if ($this->releaseImage->videoArtifactPath($context->release->guid) !== null) {
             $updateRows['videostatus'] = 1;
         }
 

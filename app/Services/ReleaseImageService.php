@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Enums\ImageAssetProfile;
+use App\Models\ReleaseVideoClip;
 use App\Support\Data\ImageProcessingResult;
 use Closure;
 use GuzzleHttp\Psr7\Uri;
@@ -196,10 +197,32 @@ class ReleaseImageService
         return $this->outputFormat() === 'webp' ? 'webp' : 'jpg';
     }
 
+    /**
+     * The release's stored video artifact — Clip or legacy transcode — or
+     * null when none exists. One artifact slot: first match wins.
+     */
+    public function videoArtifactPath(string $guid): ?string
+    {
+        foreach (array_keys(ReleaseVideoClip::VIDEO_MIME_TYPES) as $extension) {
+            $path = $this->vidSavePath.$guid.'.'.$extension;
+            if (File::isFile($path)) {
+                return $path;
+            }
+        }
+
+        return null;
+    }
+
     /** Delete all generated assets for a release, including legacy images. */
     public function delete(string $guid): void
     {
-        $files = [$this->vidSavePath.$guid.'.ogv'];
+        // The video artifact slot: the stream-copy Clip containers plus the
+        // legacy transcode. The Clip's metadata row goes with the release row
+        // via its FK cascade.
+        $files = [];
+        foreach (array_keys(ReleaseVideoClip::VIDEO_MIME_TYPES) as $extension) {
+            $files[] = $this->vidSavePath.$guid.'.'.$extension;
+        }
 
         // Audio artifacts are matched by glob rather than named: the preview
         // clip's container follows the source codec, the spectrogram is a
