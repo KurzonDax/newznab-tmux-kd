@@ -77,11 +77,9 @@
 
                 <!-- Media control: only rendered when a playable video artifact exists -->
                 <div x-show="videoUrl && !videoPlaying" class="mt-4 flex justify-center">
-                    <button type="button"
-                            @click="playVideo()"
-                            class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition">
-                        <i class="fas fa-play mr-2"></i> Play video preview
-                    </button>
+                    <x-button type="button" icon="fas fa-play" @click="playVideo()">
+                        Play video preview
+                    </x-button>
                 </div>
             </div>
             <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
