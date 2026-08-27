@@ -173,10 +173,7 @@ class TvdbPipe extends AbstractTvProviderPipe
             }
         }
 
-        if ($episode === false) {
-            // Distributor renumbering: the claimed S/E cannot exist, but the episode title can still identify it.
-            $episode = $tvdb->getByEpisodeTitle($videoId, (string) ($parsedInfo['episode_title'] ?? ''));
-        }
+        $episode = $this->resolveEpisodeByTitle($tvdb, $videoId, $parsedInfo, $episode);
 
         if ($episode !== false && is_numeric($episode) && $episode > 0) {
             // Success!
@@ -276,10 +273,7 @@ class TvdbPipe extends AbstractTvProviderPipe
         // Try to find episode in local DB
         $episode = $tvdb->getBySeasonEp($videoId, $seriesNo, $episodeNo, $parsedInfo['airdate'] ?? '');
 
-        if ($episode === false) {
-            // Distributor renumbering: the claimed S/E cannot exist, but the episode title can still identify it.
-            $episode = $tvdb->getByEpisodeTitle($videoId, (string) ($parsedInfo['episode_title'] ?? ''));
-        }
+        $episode = $this->resolveEpisodeByTitle($tvdb, $videoId, $parsedInfo, $episode);
 
         if ($episode !== false && is_numeric($episode) && $episode > 0) {
             $tvdb->setVideoIdFound($videoId, $context->releaseId, $episode);

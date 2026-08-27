@@ -488,9 +488,26 @@ abstract class BaseVideoProvider
             return 0.0;
         }
 
+        // Multi-part episodes differ only in their part number, which similar_text barely notices.
+        // Confirm rather than guess: the two sides must agree on the part they name, or on naming none.
+        if ($this->episodeTitlePartNumber($normalizedReleaseTitle)
+            !== $this->episodeTitlePartNumber($normalizedCandidateTitle)) {
+            return 0.0;
+        }
+
         similar_text($normalizedReleaseTitle, $normalizedCandidateTitle, $similarity);
 
         return $similarity;
+    }
+
+    /**
+     * Trailing part number of an already-normalized episode title, or null when it names none.
+     */
+    private function episodeTitlePartNumber(string $normalizedTitle): ?int
+    {
+        return preg_match('/ (\d{1,2})$/u', $normalizedTitle, $matches) === 1
+            ? (int) $matches[1]
+            : null;
     }
 
     private function normalizeEpisodeTitle(string $title): string
@@ -507,7 +524,7 @@ abstract class BaseVideoProvider
     private function normalizePartNotation(string $normalizedTitle): string
     {
         return (string) preg_replace_callback(
-            '/\b(?:part|pt) (\d{1,2}|iv|i{1,3}|v)$/',
+            '/\b(?:part|pt) (\d{1,2}|iv|i{1,3}|v)$/u',
             static fn (array $matches): string => (string) (ctype_digit($matches[1])
                 ? (int) $matches[1]
                 : self::PART_ROMAN_NUMERALS[$matches[1]]),

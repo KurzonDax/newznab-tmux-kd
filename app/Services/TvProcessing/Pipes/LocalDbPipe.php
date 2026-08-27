@@ -99,11 +99,7 @@ class LocalDbPipe extends AbstractTvProviderPipe
                 (int) ($parsedInfo['episode'] ?? 0),
                 $parsedInfo['airdate'] ?? ''
             );
-        }
-
-        if ($episodeId === false) {
-            // Distributor renumbering: the claimed S/E cannot exist, but the episode title can still identify it.
-            $episodeId = $localDb->getByEpisodeTitle($videoId, (string) ($parsedInfo['episode_title'] ?? ''));
+            $episodeId = $this->resolveEpisodeByTitle($localDb, $videoId, $parsedInfo, $episodeId);
         }
 
         if ($episodeId !== false && $episodeId > 0) {

@@ -127,6 +127,30 @@ final class EpisodeTitleFallbackWithinBoundShowTest extends TestCase
     }
 
     #[Test]
+    public function a_part_number_the_bound_show_does_not_hold_binds_nothing(): void
+    {
+        $soleVideoId = $this->createVideo('The Tick', '1994-09-10');
+        $solePartId = $this->createEpisode($soleVideoId, 1, 3, 'The Tick vs. Dinosaur Neil (1)');
+
+        $provider = new LocalDbProvider;
+
+        $this->assertFalse($provider->getByEpisodeTitle($soleVideoId, 'The Tick vs Dinosaur Neil Part 2'));
+        $this->assertSame($solePartId, $provider->getByEpisodeTitle($soleVideoId, 'The Tick vs Dinosaur Neil Pt. I'));
+    }
+
+    #[Test]
+    public function two_equally_good_episodes_bind_nothing(): void
+    {
+        $twinVideoId = $this->createVideo('Invader ZIM', '2001-03-30');
+        $this->createEpisode($twinVideoId, 1, 5, 'Dark Harvest');
+        $this->createEpisode($twinVideoId, 3, 2, 'Dark Harvest');
+
+        $provider = new LocalDbProvider;
+
+        $this->assertFalse($provider->getByEpisodeTitle($twinVideoId, 'Dark Harvest'));
+    }
+
+    #[Test]
     public function an_ambiguous_title_segment_binds_nothing(): void
     {
         $result = $this->processThroughLocalDb(
