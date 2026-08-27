@@ -60,7 +60,19 @@ The single still image the indexer captures (via ffmpeg) from a video file found
 _Avoid_: "thumbnail" in UI copy — thumbnails are the small rendering of any image, not this artifact.
 
 **Generated Sample Video**:
-The short video clip the indexer cuts (via ffmpeg) from a video file found inside a release. Paired with the Generated Preview under Preview Generation.
+The short video clip the indexer stores from a video file found inside a release. Paired with the Generated Preview under Preview Generation. One per release, in one of two forms: a downscaled transcode (the legacy path) or a Clip. A Clip takes over the slot — the two forms never coexist for one release.
+
+**Clip**:
+The full-resolution, stream-copied (no transcode) form of the Generated Sample Video, covering the whole downloaded head window. Produced only where Clip storage is enabled for the release's root category (a Movies/TV/XXX toggle, default XXX only) and the source codecs are browser-playable without transcoding; otherwise the downscaled transcode is stored instead. Lives and dies with its release, and is never generated while the storage volume is under the free-disk guard (10%).
+_Avoid_: "trailer" — a Clip is cut from the release's own footage; "sample video" in UI copy where the full-res/downscaled distinction matters.
+
+**Dynamic segment budget**:
+Sizing the fetched head of a release's main video file by target duration instead of a fixed segment count: a fixed-size initial window is probed for bitrate, then topped up to reach a target duration (default 30s) under a hard byte ceiling (default 300 MB, 0 = unlimited). Enabled per root category (Movies/TV/XXX toggles, default XXX only); every other root keeps the fixed count. For a bare non-faststart MP4 the budget runs only after a successful moov splice. Top-up fetches are skipped early, with a distinct outcome reason, when the needed segment ranges have gaps.
+_Avoid_: treating the target duration as a guarantee — the ceiling, segment gaps, or undecodable data may leave less.
+
+**Preview chip**:
+The badge on release rows, cover cards, and the details page that opens the preview modal. The modal shows the Generated Preview image; when a playable Generated Sample Video exists, the chip also carries a movie-camera icon and the modal offers a media control that plays the video in the space the image occupied. One mechanism on every surface — listing pages are the primary one, details is not privileged.
+_Avoid_: surfacing video playback only on the details page.
 
 **Extracted Sample Image**:
 An image that already exists inside a release's archives (or as its own article) and is saved out as-is. Never produced by ffmpeg and never affected by Preview Generation controls.
