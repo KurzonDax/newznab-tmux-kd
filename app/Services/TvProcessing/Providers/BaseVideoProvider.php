@@ -40,7 +40,12 @@ use Illuminate\Support\Facades\Cache;
  */
 abstract class BaseVideoProvider
 {
-    private const EPISODE_TITLE_SIMILARITY_THRESHOLD = 85.0;
+    protected const EPISODE_TITLE_SIMILARITY_THRESHOLD = 85.0;
+
+    /**
+     * @var array<string, int> Roman numerals accepted in episode-title part notation.
+     */
+    private const PART_ROMAN_NUMERALS = ['i' => 1, 'ii' => 2, 'iii' => 3, 'iv' => 4, 'v' => 5];
 
     private const MAX_PREMIERE_YEARS_BEFORE_RELEASE = 5;
 
@@ -472,7 +477,10 @@ abstract class BaseVideoProvider
         return [$matchQualityByVideoId, $preferredSiblingByVideoId];
     }
 
-    private function episodeTitleSimilarity(string $releaseTitle, string $candidateTitle): float
+    /**
+     * Compare a release's episode-title segment against a stored episode title.
+     */
+    protected function episodeTitleSimilarity(string $releaseTitle, string $candidateTitle): float
     {
         $normalizedReleaseTitle = $this->normalizeEpisodeTitle($releaseTitle);
         $normalizedCandidateTitle = $this->normalizeEpisodeTitle($candidateTitle);
@@ -488,8 +496,23 @@ abstract class BaseVideoProvider
     private function normalizeEpisodeTitle(string $title): string
     {
         $normalized = preg_replace('/[^\pL\pN]+/u', ' ', mb_strtolower($title));
+        $normalized = preg_replace('/\s+/', ' ', trim($normalized ?? '')) ?? '';
 
-        return preg_replace('/\s+/', ' ', trim($normalized ?? '')) ?? '';
+        return $this->normalizePartNotation($normalized);
+    }
+
+    /**
+     * Reduce trailing part notation to a bare number so "Part 2", "Pt. II" and "(2)" compare equal.
+     */
+    private function normalizePartNotation(string $normalizedTitle): string
+    {
+        return (string) preg_replace_callback(
+            '/\b(?:part|pt) (\d{1,2}|iv|i{1,3}|v)$/',
+            static fn (array $matches): string => (string) (ctype_digit($matches[1])
+                ? (int) $matches[1]
+                : self::PART_ROMAN_NUMERALS[$matches[1]]),
+            $normalizedTitle,
+        );
     }
 
     /**

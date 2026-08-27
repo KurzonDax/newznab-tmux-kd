@@ -439,6 +439,50 @@ abstract class AbstractTvProvider extends BaseVideoProvider
     }
 
     /**
+     * Retrieves the Episode ID for a bound show by matching the release's episode-title
+     * segment against that show's stored episode titles.
+     *
+     * This is the fallback for distributor renumbering, where the claimed season/episode
+     * can never exist in the provider layout but the episode title still identifies the
+     * episode. It confirms rather than guesses: the best similarity must clear the
+     * threshold and must be held by exactly one episode, otherwise nothing is bound.
+     *
+     * Returns the Episode ID or false when no unique match is available.
+     *
+     * @return int|false
+     */
+    public function getByEpisodeTitle(int|string $id, string $episodeTitle): bool|int
+    {
+        $videoId = (int) $id;
+        if ($videoId <= 0 || trim($episodeTitle) === '') {
+            return false;
+        }
+
+        /** @var array<int, float> $similarityByEpisodeId */
+        $similarityByEpisodeId = [];
+
+        foreach (TvEpisode::query()->where('videos_id', $videoId)->get(['id', 'title']) as $candidateEpisode) {
+            $similarityByEpisodeId[(int) $candidateEpisode->id] = $this->episodeTitleSimilarity(
+                $episodeTitle,
+                (string) $candidateEpisode->title,
+            );
+        }
+
+        if ($similarityByEpisodeId === []) {
+            return false;
+        }
+
+        $bestSimilarity = max($similarityByEpisodeId);
+        if ($bestSimilarity < self::EPISODE_TITLE_SIMILARITY_THRESHOLD) {
+            return false;
+        }
+
+        $bestMatches = array_keys($similarityByEpisodeId, $bestSimilarity, true);
+
+        return count($bestMatches) === 1 ? (int) $bestMatches[0] : false;
+    }
+
+    /**
      * Returns (true) if episodes for a given Video ID exist or don't (false).
      */
     public function countEpsByVideoID(int $videoId): bool

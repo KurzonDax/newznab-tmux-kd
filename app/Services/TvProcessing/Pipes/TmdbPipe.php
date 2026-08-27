@@ -161,6 +161,11 @@ class TmdbPipe extends AbstractTvProviderPipe
             }
         }
 
+        if ($episode === false) {
+            // Distributor renumbering: the claimed S/E cannot exist, but the episode title can still identify it.
+            $episode = $tmdb->getByEpisodeTitle($videoId, (string) ($parsedInfo['episode_title'] ?? ''));
+        }
+
         if ($episode !== false && is_numeric($episode) && $episode > 0) {
             // Success!
             $tmdb->setVideoIdFound($videoId, $context->releaseId, $episode);
@@ -238,6 +243,11 @@ class TmdbPipe extends AbstractTvProviderPipe
 
         // Try to find episode in local DB
         $episode = $tmdb->getBySeasonEp($videoId, $seriesNo, $episodeNo, $parsedInfo['airdate'] ?? '');
+
+        if ($episode === false) {
+            // Distributor renumbering: the claimed S/E cannot exist, but the episode title can still identify it.
+            $episode = $tmdb->getByEpisodeTitle($videoId, (string) ($parsedInfo['episode_title'] ?? ''));
+        }
 
         if ($episode !== false && is_numeric($episode) && $episode > 0) {
             $tmdb->setVideoIdFound($videoId, $context->releaseId, $episode);
