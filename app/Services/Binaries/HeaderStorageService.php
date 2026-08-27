@@ -14,7 +14,8 @@ use App\Support\SqlError;
  */
 final class HeaderStorageService
 {
-    private const int LOCK_RETRY_MAX = 5;
+    /** Bounded attempts per chunk: transient locks and silent id-resolution races both use it. */
+    private const int CHUNK_RETRY_MAX = 5;
 
     private CollectionHandler $collectionHandler;
 
@@ -24,8 +25,13 @@ final class HeaderStorageService
 
     private BinariesConfig $config;
 
-    /** @var array<int, int|string> Article numbers that failed to insert */
-    private array $failedInserts = [];
+    private HeaderStorageReport $report;
+
+    /** @var list<int|string> Article numbers the current chunk attempt could not store */
+    private array $attemptFailedNumbers = [];
+
+    /** @var array<int, HeaderFailureReason> Why each header of the current attempt could not be placed */
+    private array $attemptFailures = [];
 
     private ?\Throwable $lastStorageException = null;
 
@@ -42,6 +48,7 @@ final class HeaderStorageService
             $this->config->sqlChunkSize,
             true
         );
+        $this->report = HeaderStorageReport::empty();
     }
 
     /**
@@ -50,15 +57,15 @@ final class HeaderStorageService
      * @param  array<int, array<string, mixed>>  $headers  Parsed headers with 'matches' already populated
      * @param  array<string, mixed>  $groupMySQL  Group info from database
      * @param  bool  $addToPartRepair  Whether to track failed inserts
-     * @return array<int, int|string> Article numbers that failed to insert
+     * @return HeaderStorageReport Article numbers needing part repair, plus why they got there
      */
-    public function store(array $headers, array $groupMySQL, bool $addToPartRepair = true): array
+    public function store(array $headers, array $groupMySQL, bool $addToPartRepair = true): HeaderStorageReport
     {
-        if (empty($headers)) {
-            return [];
-        }
+        $this->report = HeaderStorageReport::empty();
 
-        $this->failedInserts = [];
+        if (empty($headers)) {
+            return $this->report;
+        }
 
         // Header and SQL chunking are configured independently, but both are
         // clamped by BinariesConfig so generated statements remain bounded.
@@ -73,7 +80,7 @@ final class HeaderStorageService
             unset($chunk);
         }
 
-        return array_values(array_unique($this->failedInserts));
+        return $this->report;
     }
 
     /**
@@ -86,19 +93,62 @@ final class HeaderStorageService
     {
         $attempt = 0;
         do {
-            $failedInsertCount = \count($this->failedInserts);
             if ($this->storeChunkAttempt($headers, $groupMySQL, $addToPartRepair)) {
+                $this->report = $this->report->withStoredChunk($this->attemptFailedNumbers, $attempt > 0);
+
                 return;
             }
 
             $attempt++;
-            if ($attempt >= self::LOCK_RETRY_MAX || ! $this->isTransientLockError($this->lastStorageException)) {
+            if ($attempt >= self::CHUNK_RETRY_MAX || ! $this->isRetryableChunkFailure()) {
+                $this->report = $this->report->withRolledBackChunk(
+                    $this->attemptFailedNumbers,
+                    $this->countAttemptFailures(static fn (HeaderFailureReason $reason): bool => $reason->isTransientRace()),
+                    $this->countAttemptFailures(static fn (HeaderFailureReason $reason): bool => ! $reason->isTransientRace()),
+                );
+
                 return;
             }
 
-            $this->failedInserts = array_slice($this->failedInserts, 0, $failedInsertCount);
             usleep((min(500, 20 * $attempt) + random_int(0, 25)) * 1000);
         } while (true);
+    }
+
+    /**
+     * A rolled-back chunk is worth another attempt when the failure is timing, not data.
+     *
+     * Transient lock errors were always retried. The dominant failure in production is
+     * silent instead: a concurrent scan of the same cross-posted upload commits the
+     * collection (or binary) row after this transaction's REPEATABLE READ snapshot was
+     * taken, so the insert-or-ignore lands on the peer row but the resolving SELECT
+     * cannot see it. No exception is raised. A fresh transaction takes a fresh snapshot,
+     * so attempt two resolves it. Headers rejected on their own merits are never retried.
+     */
+    private function isRetryableChunkFailure(): bool
+    {
+        if ($this->isTransientLockError($this->lastStorageException)) {
+            return true;
+        }
+
+        if ($this->lastStorageException !== null || $this->attemptFailures === []) {
+            return false;
+        }
+
+        foreach ($this->attemptFailures as $reason) {
+            if (! $reason->isTransientRace()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  callable(HeaderFailureReason): bool  $predicate
+     */
+    private function countAttemptFailures(callable $predicate): int
+    {
+        return \count(array_filter($this->attemptFailures, $predicate));
     }
 
     /**
@@ -108,6 +158,8 @@ final class HeaderStorageService
     private function storeChunkAttempt(array $headers, array $groupMySQL, bool $addToPartRepair): bool
     {
         $this->lastStorageException = null;
+        $this->attemptFailedNumbers = [];
+        $this->attemptFailures = [];
         $this->collectionHandler->reset();
         $this->binaryHandler->reset();
         $this->partHandler->reset();
@@ -128,12 +180,13 @@ final class HeaderStorageService
 
         $transaction->begin();
 
-        $this->processHeaderChunk($headers, $groupMySQL, $transaction, $addToPartRepair);
+        $this->processHeaderChunk($headers, $groupMySQL, $transaction);
 
         // Flush remaining parts
         if ($this->partHandler->hasPending()) {
             if (! $this->partHandler->flush()) {
                 $transaction->markError();
+                $this->attemptFailures[] = HeaderFailureReason::RejectedPart;
             }
         }
 
@@ -160,20 +213,16 @@ final class HeaderStorageService
                 ?? $this->binaryHandler->getLastException()
                 ?? $this->collectionHandler->getLastException();
             if ($addToPartRepair) {
-                $this->failedInserts = array_merge(
-                    $this->failedInserts,
+                $this->attemptFailedNumbers = array_values(array_unique(array_merge(
                     $chunkNumbers,
                     $this->partHandler->getFailedNumbers()
-                );
+                )));
             }
 
             return false;
         }
 
-        $this->failedInserts = array_merge(
-            $this->failedInserts,
-            $this->partHandler->getFailedNumbers()
-        );
+        $this->attemptFailedNumbers = $this->partHandler->getFailedNumbers();
 
         return true;
     }
@@ -187,7 +236,7 @@ final class HeaderStorageService
      * @param  array<int, array<string, mixed>>  $headers
      * @param  array<string, mixed>  $groupMySQL
      */
-    private function processHeaderChunk(array $headers, array $groupMySQL, HeaderStorageTransaction $transaction, bool $addToPartRepair): void
+    private function processHeaderChunk(array $headers, array $groupMySQL, HeaderStorageTransaction $transaction): void
     {
         $totalFilesByIndex = [];
         $fileNumbersByIndex = [];
@@ -209,7 +258,7 @@ final class HeaderStorageService
         $binaryRecords = [];
         foreach ($headers as $index => $header) {
             if (! isset($collectionIds[$index])) {
-                $this->markHeaderFailed($header, $transaction, $addToPartRepair);
+                $this->markHeaderFailed($transaction, HeaderFailureReason::UnresolvedCollection);
 
                 continue;
             }
@@ -226,13 +275,13 @@ final class HeaderStorageService
         foreach ($binaryRecords as $index => $record) {
             $header = $record['header'];
             if (! isset($binaryIds[$index])) {
-                $this->markHeaderFailed($header, $transaction, $addToPartRepair);
+                $this->markHeaderFailed($transaction, HeaderFailureReason::UnresolvedBinary);
 
                 continue;
             }
 
             if (! $this->partHandler->addPart($binaryIds[$index], $header)) {
-                $this->markHeaderFailed($header, $transaction, $addToPartRepair);
+                $this->markHeaderFailed($transaction, HeaderFailureReason::RejectedPart);
             }
         }
     }
@@ -248,13 +297,10 @@ final class HeaderStorageService
         return [(int) $fileCount[1], (int) $fileCount[3]];
     }
 
-    /** @param  array<string, mixed>  $header */
-    private function markHeaderFailed(array $header, HeaderStorageTransaction $transaction, bool $addToPartRepair): void
+    private function markHeaderFailed(HeaderStorageTransaction $transaction, HeaderFailureReason $reason): void
     {
         $transaction->markError();
-        if ($addToPartRepair && isset($header['Number']) && (\is_int($header['Number']) || \is_string($header['Number']))) {
-            $this->failedInserts[] = $header['Number'];
-        }
+        $this->attemptFailures[] = $reason;
     }
 
     /**

@@ -107,7 +107,7 @@ class TestBinariesHarness extends BinariesService
         }
 
         // Normal path: process and insert.
-        $failedInserts = $this->testHeaderStorage->store($parsedHeaders, $group, $enablePartRepair);
+        $failedInserts = $this->testHeaderStorage->store($parsedHeaders, $group, $enablePartRepair)->uniqueFailedNumbers();
 
         if ($enablePartRepair && ! empty($failedInserts)) {
             $this->testMissedPartHandler->addMissingParts($failedInserts, $group['id']);
