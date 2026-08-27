@@ -172,6 +172,8 @@ class ReleaseFinalizePreviewPolicyTest extends TestCase
             ->with('/nonexistent/img/', 'guid-1_thumb')->andReturn($thumbExists);
         $releaseImage->shouldReceive('imageExists')
             ->with('/nonexistent/jpg/', 'guid-1_thumb')->andReturn(false);
+        $releaseImage->shouldReceive('videoArtifactPath')
+            ->with('guid-1')->andReturn(null);
 
         $synchronized = [];
 

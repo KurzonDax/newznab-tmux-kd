@@ -243,6 +243,176 @@ test("hover and viewport prefetch ignore an audio-only preview URL", () => {
   assert.deepEqual(createdImageUrls, []);
 });
 
+function fakeVideoPlayer(state) {
+  return {
+    attributes: {},
+    pause() {
+      state.pauseCount += 1;
+    },
+    setAttribute(attribute, value) {
+      this.attributes[attribute] = value;
+    },
+    removeAttribute(attribute) {
+      delete this.attributes[attribute];
+      state.removedVideoAttributes.push(attribute);
+    },
+    querySelector(selector) {
+      assert.equal(selector, "source");
+
+      return {
+        setAttribute(attribute, value) {
+          state.sourceAttributes[attribute] = value;
+        },
+        removeAttribute(attribute) {
+          delete state.sourceAttributes[attribute];
+          state.removedSourceAttributes.push(attribute);
+        },
+      };
+    },
+    load() {
+      state.loadCount += 1;
+    },
+    play() {
+      state.playCount += 1;
+    },
+  };
+}
+
+test("show accepts a video payload and play swaps the image for the video stream", () => {
+  const state = {
+    pauseCount: 0,
+    loadCount: 0,
+    playCount: 0,
+    sourceAttributes: {},
+    removedVideoAttributes: [],
+    removedSourceAttributes: [],
+  };
+  const component = previewModal();
+  component.$refs = { videoPlayer: fakeVideoPlayer(state) };
+
+  component.show(
+    "clip-guid",
+    "preview",
+    "/covers/preview/clip-guid_thumb.webp",
+    "Preview Image",
+    undefined,
+    { url: "/preview/video/clip-guid", type: "video/mp4" },
+  );
+
+  assert.equal(component.videoUrl, "/preview/video/clip-guid");
+  assert.equal(component.videoType, "video/mp4");
+  assert.equal(component.videoPlaying, false);
+  assert.equal(component.imageUrl, "/covers/preview/clip-guid_thumb.webp");
+  assert.equal(
+    component.$refs.videoPlayer.attributes.src,
+    undefined,
+    "No src — so no bytes fetched — until play is pressed.",
+  );
+
+  component.playVideo();
+
+  assert.equal(component.videoPlaying, true);
+  assert.equal(
+    component.$refs.videoPlayer.attributes.src,
+    "/preview/video/clip-guid",
+  );
+  assert.equal(state.sourceAttributes.src, "/preview/video/clip-guid");
+  assert.equal(state.sourceAttributes.type, "video/mp4");
+  assert.equal(state.playCount, 1);
+});
+
+test("close tears the video stream down", () => {
+  const state = {
+    pauseCount: 0,
+    loadCount: 0,
+    playCount: 0,
+    sourceAttributes: {},
+    removedVideoAttributes: [],
+    removedSourceAttributes: [],
+  };
+  const component = previewModal();
+  component.$refs = { videoPlayer: fakeVideoPlayer(state) };
+
+  component.show("clip-guid", "preview", "", "Preview Image", undefined, {
+    url: "/preview/video/clip-guid",
+    type: "video/mp4",
+  });
+  component.playVideo();
+  state.pauseCount = 0;
+  state.removedVideoAttributes.length = 0;
+  state.removedSourceAttributes.length = 0;
+
+  component.close();
+
+  assert.equal(state.pauseCount, 1);
+  assert.ok(state.removedVideoAttributes.includes("src"));
+  assert.ok(state.removedSourceAttributes.includes("src"));
+  assert.equal(component.videoPlaying, false);
+  assert.equal(component.videoUrl, "");
+  assert.equal(component.videoType, "");
+});
+
+test("preview chip passes its video data to the browse modal", () => {
+  let clickHandler;
+  const preview = {
+    dataset: {
+      guid: "clip-guid",
+      imageUrl: "/covers/preview/clip-guid_thumb.webp",
+      imageTitle: "Preview Image",
+      videoUrl: "/preview/video/clip-guid",
+      videoType: "video/mp4",
+    },
+  };
+
+  globalThis.window = {};
+  globalThis.document = {
+    addEventListener(type, handler) {
+      if (type === "click") clickHandler = handler;
+    },
+    querySelectorAll() {
+      return [];
+    },
+  };
+
+  const component = previewModal();
+  component.init();
+  clickHandler({
+    preventDefault() {},
+    target: {
+      closest(selector) {
+        return selector === ".preview-badge" ? preview : null;
+      },
+    },
+  });
+
+  assert.equal(component.videoUrl, "/preview/video/clip-guid");
+  assert.equal(component.videoType, "video/mp4");
+  assert.equal(component.imageUrl, "/covers/preview/clip-guid_thumb.webp");
+  assert.equal(component.open, true);
+});
+
+test("hover and viewport prefetch ignore a video-only chip with no image", () => {
+  const createdImageUrls = [];
+  const preview = {
+    classList: {
+      contains() {
+        return false;
+      },
+    },
+    dataset: {
+      guid: "video-only-guid",
+      imageUrl: "",
+      videoUrl: "/preview/video/video-only-guid",
+    },
+  };
+
+  const environment = installPrefetchEnvironment(preview, createdImageUrls);
+  environment.hover();
+  environment.intersect();
+
+  assert.deepEqual(createdImageUrls, []);
+});
+
 test("image-only badges keep conventional hover and viewport prefetch", () => {
   const createdImageUrls = [];
   const preview = {

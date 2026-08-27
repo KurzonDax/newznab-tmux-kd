@@ -19,6 +19,7 @@ class RootCategoriesTableSeeder extends Seeder
                     'status' => 1,
                     'generate_previews' => 1,
                     'dynamic_preview_budget' => 0,
+                    'generate_clips' => 0,
                     'discard_executables' => 0,
                 ],
                 1 => [
@@ -27,6 +28,7 @@ class RootCategoriesTableSeeder extends Seeder
                     'status' => 1,
                     'generate_previews' => 1,
                     'dynamic_preview_budget' => 0,
+                    'generate_clips' => 0,
                     'discard_executables' => 0,
                 ],
                 2 => [
@@ -35,6 +37,7 @@ class RootCategoriesTableSeeder extends Seeder
                     'status' => 1,
                     'generate_previews' => 1,
                     'dynamic_preview_budget' => 0,
+                    'generate_clips' => 0,
                     'discard_executables' => 1,
                 ],
                 3 => [
@@ -43,6 +46,7 @@ class RootCategoriesTableSeeder extends Seeder
                     'status' => 1,
                     'generate_previews' => 1,
                     'dynamic_preview_budget' => 0,
+                    'generate_clips' => 0,
                     'discard_executables' => 1,
                 ],
                 4 => [
@@ -51,6 +55,7 @@ class RootCategoriesTableSeeder extends Seeder
                     'status' => 1,
                     'generate_previews' => 1,
                     'dynamic_preview_budget' => 0,
+                    'generate_clips' => 0,
                     'discard_executables' => 0,
                 ],
                 5 => [
@@ -59,6 +64,7 @@ class RootCategoriesTableSeeder extends Seeder
                     'status' => 1,
                     'generate_previews' => 1,
                     'dynamic_preview_budget' => 0,
+                    'generate_clips' => 0,
                     'discard_executables' => 1,
                 ],
                 6 => [
@@ -67,6 +73,7 @@ class RootCategoriesTableSeeder extends Seeder
                     'status' => 1,
                     'generate_previews' => 1,
                     'dynamic_preview_budget' => 1,
+                    'generate_clips' => 1,
                     'discard_executables' => 1,
                 ],
                 7 => [
@@ -75,6 +82,7 @@ class RootCategoriesTableSeeder extends Seeder
                     'status' => 1,
                     'generate_previews' => 1,
                     'dynamic_preview_budget' => 0,
+                    'generate_clips' => 0,
                     'discard_executables' => 1,
                 ],
             ]

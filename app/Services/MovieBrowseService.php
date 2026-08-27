@@ -8,6 +8,7 @@ use App\Facades\Search;
 use App\Models\Category;
 use App\Models\MovieInfo;
 use App\Services\Releases\ReleaseBrowseService;
+use App\Services\Releases\ReleasePreviewDataLoader;
 use App\Support\MovieSearchQuery;
 use App\Support\YearRange;
 use Illuminate\Support\Facades\Cache;
@@ -20,9 +21,30 @@ class MovieBrowseService
 {
     protected string $showPasswords;
 
-    public function __construct()
-    {
+    public function __construct(
+        private readonly ReleasePreviewDataLoader $previewDataLoader = new ReleasePreviewDataLoader,
+    ) {
         $this->showPasswords = app(ReleaseBrowseService::class)->showPasswords();
+    }
+
+    /**
+     * Add preview data to the release rows attached to a page of movies.
+     * Runs on every return path — cached pages store bare rows.
+     *
+     * @param  iterable<int, object>  $movies
+     */
+    private function loadPreviewDataForMovies(iterable $movies): void
+    {
+        $rows = [];
+        foreach ($movies as $movie) {
+            foreach (($movie->releases ?? []) as $release) {
+                $rows[] = $release;
+            }
+        }
+
+        if ($rows !== []) {
+            $this->previewDataLoader->load($rows);
+        }
     }
 
     /**
@@ -99,6 +121,10 @@ class MovieBrowseService
 
         $cached = Cache::get($cacheKey);
         if ($cached !== null) {
+            if (is_iterable($cached)) {
+                $this->loadPreviewDataForMovies($cached);
+            }
+
             return $cached;
         }
 
@@ -205,6 +231,8 @@ class MovieBrowseService
 
         Cache::put($cacheKey, $movies, $expiresAt);
 
+        $this->loadPreviewDataForMovies($movies);
+
         return $movies;
     }
 
@@ -226,7 +254,10 @@ class MovieBrowseService
             .$whereExcluded.' '
             .'ORDER BY r.postdate DESC';
 
-        return DB::select($sql);
+        $releases = DB::select($sql);
+        $this->previewDataLoader->load($releases);
+
+        return $releases;
     }
 
     /**

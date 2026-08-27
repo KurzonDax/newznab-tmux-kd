@@ -15,7 +15,11 @@ function prefetchImage(guid, type, resolvedUrl) {
 
 function imagePrefetchPayload(element) {
   const imageUrl = element.dataset.imageUrl;
-  if (!imageUrl && element.classList.contains("audio-preview-badge")) {
+  if (
+    !imageUrl &&
+    (element.classList.contains("audio-preview-badge") ||
+      element.dataset.videoUrl)
+  ) {
     return null;
   }
 
@@ -36,20 +40,28 @@ export function previewModal() {
     audioUrl: "",
     audioType: "",
     audioMeta: "",
+    videoUrl: "",
+    videoType: "",
+    videoPlaying: false,
 
-    show(guid, type, resolvedUrl, title, audio) {
+    show(guid, type, resolvedUrl, title, audio, video) {
       this.releaseAudio();
+      this.releaseVideo();
 
       type = type || "preview";
       this.title =
         title || (type === "sample" ? "Sample Image" : "Preview Image");
       const hasAudioPreview = Boolean(audio?.url);
+      const hasVideoPreview = Boolean(video?.url);
       const newUrl =
-        resolvedUrl || (hasAudioPreview ? "" : buildImageUrl(guid, type));
+        resolvedUrl ||
+        (hasAudioPreview || hasVideoPreview ? "" : buildImageUrl(guid, type));
 
       this.audioUrl = audio?.url || "";
       this.audioType = audio?.type || "";
       this.audioMeta = audio?.meta || "";
+      this.videoUrl = video?.url || "";
+      this.videoType = video?.type || "";
 
       if (this.imageUrl === newUrl) {
         this.open = true;
@@ -72,7 +84,39 @@ export function previewModal() {
 
     close() {
       this.releaseAudio();
+      this.releaseVideo();
       this.open = false;
+    },
+
+    // No bytes are fetched until play is pressed: the <video> element has no
+    // src until this runs, and it replaces the image in the same space.
+    playVideo() {
+      this.videoPlaying = true;
+      const player = this.$refs?.videoPlayer;
+      if (player) {
+        const source = player.querySelector("source");
+        if (source) {
+          source.setAttribute("src", this.videoUrl);
+          source.setAttribute("type", this.videoType);
+        }
+        player.setAttribute("src", this.videoUrl);
+        player.load();
+        player.play?.();
+      }
+    },
+
+    releaseVideo() {
+      const player = this.$refs?.videoPlayer;
+      if (player) {
+        player.pause();
+        player.removeAttribute("src");
+        player.querySelector("source")?.removeAttribute("src");
+        player.load();
+      }
+
+      this.videoPlaying = false;
+      this.videoUrl = "";
+      this.videoType = "";
     },
 
     releaseAudio() {
@@ -116,6 +160,12 @@ export function previewModal() {
                   url: preview.dataset.audioUrl,
                   type: preview.dataset.audioType,
                   meta: preview.dataset.audioMeta,
+                }
+              : undefined,
+            preview.dataset.videoUrl
+              ? {
+                  url: preview.dataset.videoUrl,
+                  type: preview.dataset.videoType,
                 }
               : undefined,
           );

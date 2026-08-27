@@ -673,11 +673,17 @@ final class PosterIdentityControllerTest extends TestCase
             $table->boolean('haspreview')->default(false);
             $table->boolean('jpgstatus')->default(false);
             $table->boolean('nfostatus')->default(false);
+            $table->integer('videostatus')->default(0);
             $table->index(['fromname', 'postdate'], 'ix_releases_fromname_postdate');
         });
         Schema::create('release_audio_tags', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id')->primary();
             $table->unsignedTinyInteger('has_spectrogram')->default(0);
+        });
+        Schema::create('release_video_clips', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id')->primary();
+            $table->string('extension', 8);
+            $table->string('mime', 32);
         });
         Schema::create('binaryblacklist', function (Blueprint $table): void {
             $table->increments('id');

@@ -566,7 +566,7 @@ class ReleaseProcessor
                     $context->markFound('sample');
                     $this->output->echoSampleCreated();
                 }
-                if (! $context->foundVideo && $this->mediaService->getVideo($fileLocation, $context->tmpPath, $context->release->guid)) {
+                if (! $context->foundVideo && $this->mediaService->getVideo($fileLocation, $context->tmpPath, $context->release->guid, (int) $context->release->categories_id)) {
                     $context->markFound('video');
                     $this->output->echoVideoCreated();
                 }
@@ -628,7 +628,7 @@ class ReleaseProcessor
                     $context->markFound('sample');
                     $this->output->echoSampleCreated();
                 }
-                if (! $context->foundVideo && $this->mediaService->getVideo($fileLocation, $context->tmpPath, $context->release->guid)) {
+                if (! $context->foundVideo && $this->mediaService->getVideo($fileLocation, $context->tmpPath, $context->release->guid, (int) $context->release->categories_id)) {
                     $context->markFound('video');
                     $this->output->echoVideoCreated();
                 }
@@ -957,7 +957,7 @@ class ReleaseProcessor
                 $context->markFound('sample');
                 $this->output->echoSampleCreated();
             }
-            if (! $context->foundVideo && $this->mediaService->getVideo($fileLocation, $context->tmpPath, $context->release->guid)) {
+            if (! $context->foundVideo && $this->mediaService->getVideo($fileLocation, $context->tmpPath, $context->release->guid, (int) $context->release->categories_id)) {
                 $context->markFound('video');
                 $this->output->echoVideoCreated();
             }

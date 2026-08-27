@@ -28,6 +28,23 @@ class ReleasePreviewDataLoaderTest extends TestCase
             $table->unsignedTinyInteger('has_spectrogram')->default(0);
             $table->timestamps();
         });
+
+        Schema::dropIfExists('release_video_clips');
+        Schema::create('release_video_clips', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->unsignedInteger('releases_id')->unique();
+            $table->string('extension', 8);
+            $table->string('mime', 32);
+            $table->unsignedSmallInteger('duration_seconds')->nullable();
+            $table->unsignedBigInteger('bytes')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::dropIfExists('releases');
+        Schema::create('releases', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->integer('videostatus')->default(0);
+        });
     }
 
     public function test_it_populates_preview_fields_for_many_rows_in_one_query(): void
@@ -82,5 +99,41 @@ class ReleasePreviewDataLoaderTest extends TestCase
         $this->assertNull($withoutTags->audio_preview_mime);
         $this->assertNull($withoutTags->audio_preview_meta);
         $this->assertFalse($withoutTags->has_spectrogram);
+
+        $this->assertFalse($playable->has_video_preview);
+        $this->assertNull($playable->video_preview_mime);
+    }
+
+    public function test_it_reports_clips_and_legacy_transcodes_as_the_one_video_artifact(): void
+    {
+        DB::table('releases')->insert([
+            ['id' => 10, 'videostatus' => 1],
+            ['id' => 20, 'videostatus' => 1],
+            ['id' => 30, 'videostatus' => 0],
+        ]);
+        DB::table('release_video_clips')->insert([
+            [
+                'releases_id' => 10,
+                'extension' => 'mp4',
+                'mime' => 'video/mp4',
+                'duration_seconds' => 30,
+                'bytes' => 12345,
+            ],
+        ]);
+
+        $withClip = (object) ['id' => 10];
+        $legacyTranscode = (object) ['id' => 20];
+        $withoutVideo = (object) ['id' => 30];
+
+        (new ReleasePreviewDataLoader)->load([$withClip, $legacyTranscode, $withoutVideo]);
+
+        $this->assertTrue($withClip->has_video_preview);
+        $this->assertSame('video/mp4', $withClip->video_preview_mime);
+
+        $this->assertTrue($legacyTranscode->has_video_preview, 'A legacy OGV sample is still the video artifact.');
+        $this->assertSame('video/ogg', $legacyTranscode->video_preview_mime);
+
+        $this->assertFalse($withoutVideo->has_video_preview);
+        $this->assertNull($withoutVideo->video_preview_mime);
     }
 }

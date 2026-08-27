@@ -253,6 +253,52 @@ class AdminSiteControllerTest extends TestCase
         $this->assertEquals(0, $dynamicBudgetRoots->firstWhere('id', 2000)->dynamic_preview_budget);
     }
 
+    public function test_submit_updates_clip_toggles_only_for_eligible_roots(): void
+    {
+        $request = Request::create('/admin/site-edit', 'POST', [
+            'action' => 'submit',
+            'generate_clips' => [
+                '5000' => '1',
+                // XXX (6000) unchecked: Clips must turn off for it.
+                // Console (1000) is not an eligible root: the checkbox is ignored.
+                '1000' => '1',
+            ],
+        ]);
+
+        $response = app(AdminSiteController::class)->edit($request);
+
+        $this->assertTrue($response->isRedirect());
+
+        $toggles = DB::table('root_categories')->pluck('generate_clips', 'id');
+        $this->assertEquals(1, $toggles[5000], 'Checking TV enables Clips for it.');
+        $this->assertEquals(0, $toggles[2000]);
+        $this->assertEquals(0, $toggles[6000], 'Unchecking XXX disables its default-on Clips.');
+        $this->assertEquals(0, $toggles[1000], 'Ineligible roots never flip, whatever is posted.');
+
+        $this->assertNull(
+            DB::table('settings')->where('name', 'generate_clips')->value('value'),
+            'The checkbox array must not leak into the settings table.'
+        );
+    }
+
+    public function test_view_exposes_only_eligible_clip_roots(): void
+    {
+        $request = Request::create('/admin/site-edit', 'GET');
+
+        $response = app(AdminSiteController::class)->edit($request);
+
+        $this->assertInstanceOf(View::class, $response);
+
+        $clipRoots = $response->getData()['clipRoots'];
+        $this->assertSame(
+            [2000, 5000, 6000],
+            $clipRoots->pluck('id')->map(fn ($id) => (int) $id)->all(),
+            'Only the Movies, TV, and XXX roots are surfaced.'
+        );
+        $this->assertEquals(1, $clipRoots->firstWhere('id', 6000)->generate_clips);
+        $this->assertEquals(0, $clipRoots->firstWhere('id', 2000)->generate_clips);
+    }
+
     public function test_view_exposes_preview_roots_with_current_state(): void
     {
         DB::table('root_categories')->where('id', 4000)->update(['generate_previews' => 0]);
@@ -425,16 +471,17 @@ class AdminSiteControllerTest extends TestCase
             $table->boolean('discard_executables')->default(false);
             $table->boolean('generate_previews')->default(true);
             $table->boolean('dynamic_preview_budget')->default(false);
+            $table->boolean('generate_clips')->default(false);
             $table->timestamps();
         });
 
         DB::table('root_categories')->insert([
-            ['id' => 1, 'title' => 'Other', 'discard_executables' => 0, 'dynamic_preview_budget' => 0],
-            ['id' => 1000, 'title' => 'Console', 'discard_executables' => 0, 'dynamic_preview_budget' => 0],
-            ['id' => 2000, 'title' => 'Movies', 'discard_executables' => 1, 'dynamic_preview_budget' => 0],
-            ['id' => 4000, 'title' => 'PC', 'discard_executables' => 0, 'dynamic_preview_budget' => 0],
-            ['id' => 5000, 'title' => 'TV', 'discard_executables' => 1, 'dynamic_preview_budget' => 0],
-            ['id' => 6000, 'title' => 'XXX', 'discard_executables' => 1, 'dynamic_preview_budget' => 1],
+            ['id' => 1, 'title' => 'Other', 'discard_executables' => 0, 'dynamic_preview_budget' => 0, 'generate_clips' => 0],
+            ['id' => 1000, 'title' => 'Console', 'discard_executables' => 0, 'dynamic_preview_budget' => 0, 'generate_clips' => 0],
+            ['id' => 2000, 'title' => 'Movies', 'discard_executables' => 1, 'dynamic_preview_budget' => 0, 'generate_clips' => 0],
+            ['id' => 4000, 'title' => 'PC', 'discard_executables' => 0, 'dynamic_preview_budget' => 0, 'generate_clips' => 0],
+            ['id' => 5000, 'title' => 'TV', 'discard_executables' => 1, 'dynamic_preview_budget' => 0, 'generate_clips' => 0],
+            ['id' => 6000, 'title' => 'XXX', 'discard_executables' => 1, 'dynamic_preview_budget' => 1, 'generate_clips' => 1],
         ]);
     }
 

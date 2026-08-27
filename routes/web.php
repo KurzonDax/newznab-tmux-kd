@@ -91,6 +91,7 @@ use App\Http\Controllers\SearchSuggestController;
 use App\Http\Controllers\SeriesController;
 use App\Http\Controllers\StatusPageController;
 use App\Http\Controllers\TermsController;
+use App\Http\Controllers\VideoPreviewController;
 use App\Http\Middleware\NoCacheForAuthenticatedUsers;
 use Spatie\LaravelPasskeys\Http\Controllers\GeneratePasskeyAuthenticationOptionsController;
 
@@ -109,6 +110,14 @@ Route::get('/preview/audio/{guid}', [AudioPreviewController::class, 'show'])
     ->middleware(['auth', 'isVerified'])
     ->withoutMiddleware(NoCacheForAuthenticatedUsers::class)
     ->name('preview.audio');
+
+// The video artifact — stream-copy Clip or legacy transcoded sample — is
+// release content like the audio clip above: same gate, same private cache
+// carve-out so a <video> element can seek without refetching.
+Route::get('/preview/video/{guid}', [VideoPreviewController::class, 'show'])
+    ->middleware(['auth', 'isVerified'])
+    ->withoutMiddleware(NoCacheForAuthenticatedUsers::class)
+    ->name('preview.video');
 
 // Auth::routes();
 

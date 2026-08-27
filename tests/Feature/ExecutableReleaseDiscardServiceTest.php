@@ -285,6 +285,7 @@ class ExecutableReleaseDiscardServiceTest extends TestCase
             $table->boolean('discard_executables')->default(false);
             $table->boolean('generate_previews')->default(true);
             $table->boolean('dynamic_preview_budget')->default(false);
+            $table->boolean('generate_clips')->default(false);
         });
 
         Schema::create('categories', function (Blueprint $table): void {

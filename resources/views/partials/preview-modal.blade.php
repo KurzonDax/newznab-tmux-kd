@@ -41,19 +41,19 @@
                 <x-audio-preview-player dynamic class="mb-4" />
 
                 <!-- Loading state -->
-                <div x-show="imageUrl && !imageLoaded && !imageError" class="flex items-center justify-center py-8">
+                <div x-show="imageUrl && !imageLoaded && !imageError && !videoPlaying" class="flex items-center justify-center py-8">
                     <i class="fas fa-spinner fa-spin text-2xl mr-2 text-purple-600 dark:text-purple-400"></i>
                     <span class="text-gray-600 dark:text-gray-400">Loading image...</span>
                 </div>
 
                 <!-- Error state -->
-                <div x-show="imageUrl && imageError" class="text-center py-8">
+                <div x-show="imageUrl && imageError && !videoPlaying" class="text-center py-8">
                     <i class="fas fa-image text-3xl text-gray-400 dark:text-gray-500"></i>
                     <p class="text-gray-500 dark:text-gray-400 mt-2" x-text="errorMessage()">Image not available</p>
                 </div>
 
                 <!-- Image -->
-                <div x-show="imageUrl && imageLoaded && !imageError" class="flex justify-center">
+                <div x-show="imageUrl && imageLoaded && !imageError && !videoPlaying" class="flex justify-center">
                     <img :src="imageUrl"
                          :alt="title"
                          x-on:error="onImageError()"
@@ -61,6 +61,27 @@
                          decoding="async"
                          fetchpriority="high"
                          class="max-w-full max-h-[80vh] rounded-lg shadow-lg">
+                </div>
+
+                <!-- Video: replaces the image in the same space once play is
+                     pressed; no src until then, so no bytes are fetched. -->
+                <div x-show="videoPlaying" class="flex justify-center">
+                    <video x-ref="videoPlayer"
+                           controls
+                           preload="none"
+                           class="max-w-full max-h-[80vh] rounded-lg shadow-lg">
+                        <source>
+                        Your browser does not support playing this video preview.
+                    </video>
+                </div>
+
+                <!-- Media control: only rendered when a playable video artifact exists -->
+                <div x-show="videoUrl && !videoPlaying" class="mt-4 flex justify-center">
+                    <button type="button"
+                            @click="playVideo()"
+                            class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium bg-primary-600 hover:bg-primary-700 text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition">
+                        <i class="fas fa-play mr-2"></i> Play video preview
+                    </button>
                 </div>
             </div>
             <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
