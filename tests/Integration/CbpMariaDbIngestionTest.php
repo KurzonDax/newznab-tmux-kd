@@ -137,7 +137,7 @@ final class CbpMariaDbIngestionTest extends TestCase
         $headers = [$this->header(1001, 1, 125), $this->header(1002, 2, 175)];
 
         for ($attempt = 0; $attempt < 3; $attempt++) {
-            $this->assertSame([], $service->store($headers, ['id' => 1, 'name' => 'alt.binaries.test']));
+            $this->assertSame([], $service->store($headers, ['id' => 1, 'name' => 'alt.binaries.test'])->uniqueFailedNumbers());
         }
 
         $binary = DB::table('binaries')->first();
