@@ -126,6 +126,7 @@ class NntmuxCreateESIndexes extends Command
                     'groups_id' => ['type' => 'integer'],
                     'nzbstatus' => ['type' => 'integer'],
                     'haspreview' => ['type' => 'integer'],
+                    'completion' => ['type' => 'float'],
                     'tmdbid' => ['type' => 'integer'],
                     'traktid' => ['type' => 'integer'],
                     'tvdb' => ['type' => 'integer'],

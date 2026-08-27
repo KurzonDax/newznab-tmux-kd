@@ -2870,6 +2870,11 @@ class ManticoreSearchDriver implements SearchDriverInterface
             $query->filter('size', 'gte', $minSize);
         }
 
+        $minCompletion = (int) ($criteria['min_completion'] ?? 0);
+        if ($minCompletion > 0) {
+            $query->filter('completion', 'gte', $minCompletion);
+        }
+
         $maxSize = (int) ($criteria['max_size'] ?? 0);
         if ($maxSize > 0) {
             $query->filter('size', 'lte', $maxSize);

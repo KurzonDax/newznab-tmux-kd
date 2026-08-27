@@ -5,6 +5,7 @@
     'showTopPagination' => false,
     'showBottomPagination' => true,
     'showSort' => true,
+    'showCompletionFilter' => true,
 ])
 
 @php
@@ -57,6 +58,10 @@
                 @isset($toolbarRight)
                     {{ $toolbarRight }}
                 @endisset
+
+                @if($showCompletionFilter)
+                    <x-completion-filter />
+                @endif
 
                 @if($showSort)
                     <x-sort-dropdown />

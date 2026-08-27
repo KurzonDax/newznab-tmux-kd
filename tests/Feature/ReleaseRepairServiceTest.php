@@ -329,7 +329,7 @@ class ReleaseRepairServiceTest extends TestCase
     }
 
     #[Test]
-    public function stored_only_recovery_changes_do_not_sync_the_search_index(): void
+    public function a_completion_only_recovery_change_still_syncs_the_search_index(): void
     {
         $release = $this->releaseWithNzb(1, completion: 40.0, segments: [1 => 1, 3 => 3]);
         DB::table('releases')->where('id', 1)->update([
@@ -346,7 +346,11 @@ class ReleaseRepairServiceTest extends TestCase
 
         $this->assertSame(100.0, $result->completionAfter);
         $this->assertFalse($result->requeuedForAdditionalProcessing);
-        Search::shouldNotHaveReceived('updateRelease');
+
+        // Completion is an indexed attribute now that the browse toolbar filters
+        // on it, so repairing a release from 40% to 100% has to reach the index
+        // even when nothing else about the release changed.
+        Search::shouldHaveReceived('updateRelease')->once()->with(1);
     }
 
     #[Test]

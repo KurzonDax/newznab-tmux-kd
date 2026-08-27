@@ -147,6 +147,7 @@
                                             <i class="fas fa-file-alt mr-1"></i> NFO
                                         </button>
                                     @endif
+                                    <x-release-completion-chips :release="$result" />
                                 </div>
                                 <div class="text-xs text-gray-500 dark:text-gray-400 mt-1 flex flex-wrap gap-2">
                                     @if($result->group_name)
@@ -272,6 +273,7 @@
                                 <i class="fas fa-exclamation-triangle mr-1"></i> Failed ({{ $result->failed_count }})
                             </span>
                         @endif
+                        <x-release-completion-chips :release="$result" />
                     </div>
                     <div class="flex flex-wrap items-center gap-2 mt-2 text-sm text-gray-600 dark:text-gray-400">
                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-100 dark:bg-primary-900/50 text-primary-800 dark:text-primary-200">

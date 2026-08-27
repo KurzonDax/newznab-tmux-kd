@@ -46,7 +46,7 @@
     @endif
 
     @if($results->count() > 0)
-        <x-release-results-panel :results="$results" :show-thumbs="true" date-field="adddate" :show-top-pagination="true" />
+        <x-release-results-panel :results="$results" :show-thumbs="true" date-field="adddate" :show-top-pagination="true" :show-completion-filter="false" />
     @else
         <x-empty-state
             icon="fas fa-user-slash"

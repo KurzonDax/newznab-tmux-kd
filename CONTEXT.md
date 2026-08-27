@@ -74,6 +74,14 @@ _Avoid_: treating the target duration as a guarantee — the ceiling, segment ga
 The badge on release rows, cover cards, and the details page that opens the preview modal. The modal shows the Generated Preview image; when a playable Generated Sample Video exists, the chip also carries a movie-camera icon and the modal offers a media control that plays the video in the space the image occupied. One mechanism on every surface — listing pages are the primary one, details is not privileged.
 _Avoid_: surfacing video playback only on the details page.
 
+**Completion chip**:
+The always-on badge on release rows showing `releases.completion` — the share of the release's articles the indexer has seen — floored to an integer so a release short of complete never reads "100%". Green at 95% and above, yellow from 80% to just under 95%, red below 80%. A release with completion `0` was never measured and shows no chip at all. Cover tiles carry it only when the release is below 100%, so complete tiles stay clean art.
+_Avoid_: reading `0` as an empty release; rounding the percent up.
+
+**Repair-state chip**:
+The badge beside the Completion chip on a release that is measured but below 100%, saying whether recovery still has attempts left. "Repair Attempt(s) Pending" until *both* the segment-repair and header-rescan machines reach a final outcome — the same conjunction the deletion sweep's safe-to-delete invariant uses — and "Repair Attempts Complete" once they have. Yellow while pending, gray once complete; no other colors.
+_Avoid_: calling a release unrecoverable because one machine finished; treating a successful repair as an exhausted attempt.
+
 **Extracted Sample Image**:
 An image that already exists inside a release's archives (or as its own article) and is saved out as-is. Never produced by ffmpeg and never affected by Preview Generation controls.
 _Avoid_: plain "sample" when the generated/extracted distinction matters.

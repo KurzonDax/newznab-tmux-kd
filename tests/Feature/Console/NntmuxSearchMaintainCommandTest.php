@@ -157,6 +157,9 @@ final class NntmuxSearchMaintainCommandTest extends SearchConsoleCommandTestCase
             $table->string('guid');
             $table->string('name');
             $table->string('searchname');
+            $table->float('completion')->default(0);
+            $table->string('repair_outcome')->nullable();
+            $table->string('rescan_outcome')->nullable();
             $table->string('fromname');
             $table->unsignedBigInteger('categories_id');
             $table->unsignedBigInteger('groups_id');

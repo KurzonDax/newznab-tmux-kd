@@ -57,6 +57,7 @@ class ReleaseObserver
             'nfostatus',
             'haspreview',
             'jpgstatus',
+            'completion',
             'comments',
             'postdate',
             'adddate',

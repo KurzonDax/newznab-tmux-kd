@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Models\Category;
 use App\Models\Settings;
 use App\Models\User;
+use App\Support\ReleaseCompletion;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -153,6 +154,17 @@ class BasePageController extends Controller
     protected function paginationOffset(int $page, int $perPage): int
     {
         return ($page - 1) * $perPage;
+    }
+
+    /**
+     * The minimum-completion threshold the browse/search toolbar asked for.
+     *
+     * Anything outside the offered menu falls back to "All releases", so a
+     * hand-edited URL cannot invent a threshold the UI cannot show back.
+     */
+    protected function resolveMinCompletion(Request $request): int
+    {
+        return ReleaseCompletion::normalizeThreshold($request->input(ReleaseCompletion::REQUEST_KEY));
     }
 
     /**
