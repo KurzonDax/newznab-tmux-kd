@@ -12,6 +12,7 @@ use App\Models\RootCategory;
 use App\Models\Settings;
 use App\Models\SignupStat;
 use App\Services\NNTP\NntpProviderPool;
+use App\Services\Releases\DynamicPreviewBudgetPolicy;
 use App\Support\RepairSettingRules;
 use App\Support\SizeUnit;
 use Illuminate\Http\RedirectResponse;
@@ -60,6 +61,8 @@ class AdminSiteController extends BasePageController
                 unset($data['discard_executables']);
                 $previewToggles = (array) ($data['generate_previews'] ?? []);
                 unset($data['generate_previews']);
+                $dynamicBudgetToggles = (array) ($data['dynamic_preview_budget'] ?? []);
+                unset($data['dynamic_preview_budget']);
 
                 foreach (RootCategory::query()->get() as $rootCategory) {
                     $updates = [];
@@ -72,6 +75,15 @@ class AdminSiteController extends BasePageController
                     $previewsEnabled = ! empty($previewToggles[$rootCategory->id]);
                     if ($rootCategory->generate_previews !== $previewsEnabled) {
                         $updates['generate_previews'] = $previewsEnabled;
+                    }
+
+                    // Only Movies/TV/XXX are surfaced in the form; ineligible
+                    // roots never flip, so their absent checkboxes stay off.
+                    if (in_array((int) $rootCategory->id, DynamicPreviewBudgetPolicy::ELIGIBLE_ROOT_IDS, true)) {
+                        $dynamicBudgetEnabled = ! empty($dynamicBudgetToggles[$rootCategory->id]);
+                        if ($rootCategory->dynamic_preview_budget !== $dynamicBudgetEnabled) {
+                            $updates['dynamic_preview_budget'] = $dynamicBudgetEnabled;
+                        }
                     }
 
                     if ($updates !== []) {
@@ -108,6 +120,7 @@ class AdminSiteController extends BasePageController
             'sizeUnits' => SizeUnit::UNITS,
             'discardRoots' => $rootCategories,
             'previewRoots' => $rootCategories,
+            'dynamicBudgetRoots' => $rootCategories->whereIn('id', DynamicPreviewBudgetPolicy::ELIGIBLE_ROOT_IDS)->values(),
             'yesno' => [
                 'ids' => [1, 0],
                 'names' => ['Yes', 'No'],

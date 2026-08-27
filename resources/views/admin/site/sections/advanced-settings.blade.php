@@ -118,6 +118,23 @@
                         </div>
 
                         <div>
+                            <span class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                <i class="fas fa-gauge-high mr-1"></i>Dynamic Segment Budget per Root Category
+                            </span>
+                            <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                                @foreach ($dynamicBudgetRoots ?? [] as $dynamicBudgetRoot)
+                                    <label class="flex items-center">
+                                        <input type="checkbox" name="dynamic_preview_budget[{{ $dynamicBudgetRoot->id }}]" value="1"
+                                               @checked($dynamicBudgetRoot->dynamic_preview_budget)
+                                               class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700">
+                                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">{{ $dynamicBudgetRoot->title }}</span>
+                                    </label>
+                                @endforeach
+                            </div>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">For checked roots the main video file's fetched head is sized by bitrate to reach the Preview Target Duration (see Advanced &rarr; Postprocessing), under the Preview Fetch Ceiling — high-bitrate files download more segments, low-bitrate files fewer. Unchecked roots (and every other root) keep the fixed Number of Segments to Download below. Default: XXX only.</p>
+                        </div>
+
+                        <div>
                             <label for="segmentstodownload" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                                 <i class="fas fa-download mr-1"></i>Number of Segments to Download
                             </label>

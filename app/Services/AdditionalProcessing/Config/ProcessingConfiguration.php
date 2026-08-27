@@ -69,6 +69,14 @@ final readonly class ProcessingConfiguration
 
     public int $mp4TailMaxSegments;
 
+    public int $previewTargetSeconds;
+
+    /**
+     * Hard ceiling on the total bytes fetched for one main video file under
+     * the dynamic segment budget. 0 means unlimited.
+     */
+    public int $previewMaxFetchBytes;
+
     public string $tmpUnrarPath;
 
     public bool $debugMode;
@@ -139,6 +147,10 @@ final readonly class ProcessingConfiguration
         $this->payloadSniffSmallSegmentLimit = max((int) config('nntmux_settings.payload_sniff_small_segment_limit'), 1);
         $this->mp4TailFetch = (bool) config('nntmux_settings.mp4_tail_fetch');
         $this->mp4TailMaxSegments = max((int) config('nntmux_settings.mp4_tail_max_segments'), 1);
+        $this->previewTargetSeconds = max(0, (int) (Settings::settingValue('preview_target_seconds') ?: 30));
+        $previewMaxFetchMb = Settings::settingValue('preview_max_fetch_mb');
+        $previewMaxFetchMb = ($previewMaxFetchMb === '' || $previewMaxFetchMb === null) ? 300 : max(0, (int) $previewMaxFetchMb);
+        $this->previewMaxFetchBytes = $previewMaxFetchMb * 1024 * 1024;
         $this->tmpUnrarPath = config('nntmux.tmp_unrar_path');
         $this->debugMode = (bool) config('app.debug');
         $this->searchDriver = config('search.default', 'manticore');

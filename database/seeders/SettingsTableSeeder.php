@@ -785,6 +785,14 @@ class SettingsTableSeeder extends Seeder
                 'name' => 'audio_max_archive_mb',
                 'value' => '1024',
             ],
+            274 => [
+                'name' => 'preview_target_seconds',
+                'value' => '30',
+            ],
+            275 => [
+                'name' => 'preview_max_fetch_mb',
+                'value' => '300',
+            ],
         ]);
     }
 }

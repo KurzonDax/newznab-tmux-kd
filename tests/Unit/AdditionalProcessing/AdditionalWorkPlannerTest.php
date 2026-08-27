@@ -55,6 +55,110 @@ class AdditionalWorkPlannerTest extends TestCase
     }
 
     #[Test]
+    public function it_plans_the_dynamic_budget_expansion_window_with_contiguity_metadata(): void
+    {
+        $planner = new AdditionalWorkPlanner($this->makeConfig([
+            'processMediaInfo' => true,
+            'segmentsToDownload' => 2,
+            'mp4TailMaxSegments' => 3,
+        ]));
+
+        $plan = $planner->plan([[
+            'title' => 'release.main.mkv" yEnc',
+            'segments' => ['<s1>', '<s2>', '<s3>', '<s4>', '<s5>', '<s6>', '<s7>', '<s8>'],
+            'segmentNumbers' => [1, 2, 3, 4, 5, 6, 7, 8],
+            'size' => 8000,
+            'partstotal' => '8',
+        ]], 'alt.binaries.test');
+
+        $this->assertSame(['<s1>', '<s2>'], $plan->mediaInfoMessageIds);
+        $this->assertSame(['<s3>', '<s4>', '<s5>', '<s6>', '<s7>', '<s8>'], $plan->mediaInfoExpansionMessageIds);
+        $this->assertSame(8, $plan->mediaInfoContiguousHeadSegments);
+        $this->assertTrue($plan->mediaInfoTailContiguous);
+        $this->assertSame(8000, $plan->mediaInfoFileSizeBytes);
+    }
+
+    #[Test]
+    public function it_limits_the_contiguous_head_to_the_first_numbering_gap(): void
+    {
+        $planner = new AdditionalWorkPlanner($this->makeConfig([
+            'processMediaInfo' => true,
+            'segmentsToDownload' => 2,
+            'mp4TailMaxSegments' => 3,
+        ]));
+
+        $plan = $planner->plan([[
+            'title' => 'release.main.mkv" yEnc',
+            'segments' => ['<s1>', '<s2>', '<s3>', '<s5>', '<s6>', '<s7>', '<s8>', '<s9>'],
+            'segmentNumbers' => [1, 2, 3, 5, 6, 7, 8, 9],
+            'size' => 9000,
+            'partstotal' => '9',
+        ]], 'alt.binaries.test');
+
+        $this->assertSame(3, $plan->mediaInfoContiguousHeadSegments);
+        $this->assertTrue($plan->mediaInfoTailContiguous, 'The last three segments are consecutive and reach the declared total.');
+    }
+
+    #[Test]
+    public function it_flags_a_tail_window_that_never_reaches_the_declared_total(): void
+    {
+        $planner = new AdditionalWorkPlanner($this->makeConfig([
+            'processMediaInfo' => true,
+            'segmentsToDownload' => 2,
+            'mp4TailMaxSegments' => 3,
+        ]));
+
+        $plan = $planner->plan([[
+            'title' => 'release.main.mp4" yEnc',
+            'segments' => ['<s1>', '<s2>', '<s3>', '<s4>', '<s5>', '<s6>'],
+            'segmentNumbers' => [1, 2, 3, 4, 5, 6],
+            'size' => 6000,
+            'partstotal' => '8',
+        ]], 'alt.binaries.test');
+
+        $this->assertFalse($plan->mediaInfoTailContiguous, 'The post is truncated: the real end of the file was never posted.');
+    }
+
+    #[Test]
+    public function it_flags_a_tail_window_with_internal_gaps(): void
+    {
+        $planner = new AdditionalWorkPlanner($this->makeConfig([
+            'processMediaInfo' => true,
+            'segmentsToDownload' => 2,
+            'mp4TailMaxSegments' => 3,
+        ]));
+
+        $plan = $planner->plan([[
+            'title' => 'release.main.mp4" yEnc',
+            'segments' => ['<s1>', '<s2>', '<s3>', '<s4>', '<s6>', '<s8>'],
+            'segmentNumbers' => [1, 2, 3, 4, 6, 8],
+            'size' => 6000,
+            'partstotal' => '8',
+        ]], 'alt.binaries.test');
+
+        $this->assertFalse($plan->mediaInfoTailContiguous);
+    }
+
+    #[Test]
+    public function it_treats_missing_segment_numbering_as_contiguous(): void
+    {
+        $planner = new AdditionalWorkPlanner($this->makeConfig([
+            'processMediaInfo' => true,
+            'segmentsToDownload' => 2,
+        ]));
+
+        $plan = $planner->plan([[
+            'title' => 'release.main.mkv" yEnc',
+            'segments' => ['<s1>', '<s2>', '<s3>', '<s4>'],
+            'size' => 4000,
+        ]], 'alt.binaries.test');
+
+        $this->assertSame(4, $plan->mediaInfoContiguousHeadSegments, 'The gate may only skip provably pointless fetches.');
+        $this->assertTrue($plan->mediaInfoTailContiguous);
+        $this->assertSame(['<s3>', '<s4>'], $plan->mediaInfoExpansionMessageIds);
+    }
+
+    #[Test]
     public function it_reports_book_floods_and_releases_without_supported_candidates(): void
     {
         $planner = new AdditionalWorkPlanner($this->makeConfig());

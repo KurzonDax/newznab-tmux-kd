@@ -12,6 +12,8 @@ final readonly class AdditionalWorkPlan
      * @param  list<string>  $mediaInfoMessageIds
      * @param  list<string>  $mediaInfoTailMessageIds
      * @param  list<string>  $mediaInfoTailExpansionMessageIds
+     * @param  list<string>  $mediaInfoExpansionMessageIds  Head segments after the fixed initial window, in posted order — the dynamic segment budget's top-up pool.
+     * @param  int  $mediaInfoContiguousHeadSegments  Leading segments verified gap-free from segment number 1; when numbering is unavailable every segment counts (the gate can only skip provably pointless fetches).
      * @param  list<ArchiveCandidate>  $archiveCandidates
      * @param  list<UnknownPayloadCandidate>  $unknownPayloadCandidates
      * @param  list<string>  $unsupportedReasons
@@ -22,6 +24,10 @@ final readonly class AdditionalWorkPlan
         public array $mediaInfoMessageIds = [],
         public array $mediaInfoTailMessageIds = [],
         public array $mediaInfoTailExpansionMessageIds = [],
+        public array $mediaInfoExpansionMessageIds = [],
+        public int $mediaInfoContiguousHeadSegments = 0,
+        public bool $mediaInfoTailContiguous = true,
+        public int $mediaInfoFileSizeBytes = 0,
         public array $archiveCandidates = [],
         public array $unknownPayloadCandidates = [],
         public int $bookFileCount = 0,

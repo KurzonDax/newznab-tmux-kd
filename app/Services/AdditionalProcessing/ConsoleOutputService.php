@@ -113,6 +113,16 @@ class ConsoleOutputService
         $this->echo('(moov-)', 'warningOver');
     }
 
+    public function echoDynamicTopUpFetched(int $bytes): void
+    {
+        $this->echo('(budget+ '.human_filesize($bytes, 1).')', 'primaryOver');
+    }
+
+    public function echoSegmentGapSkip(): void
+    {
+        $this->echo('(gap!)', 'warningOver');
+    }
+
     public function echoJpgDownload(): void
     {
         $this->echo('(jB)', 'primaryOver');

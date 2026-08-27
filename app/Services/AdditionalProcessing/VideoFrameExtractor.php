@@ -12,6 +12,14 @@ use Throwable;
 class VideoFrameExtractor
 {
     /**
+     * Luma standard deviation below which a decoded frame is considered flat
+     * (near-black, near-white, or otherwise near-uniform) and rejected so the
+     * next strategy runs. Real scenes sit well above this; fades, logos, and
+     * lead-ins sit below it.
+     */
+    private const float FLAT_FRAME_LUMA_STDDEV = 8.0;
+
+    /**
      * @var Closure(list<string>, int): string
      */
     private readonly Closure $commandRunner;
@@ -84,7 +92,7 @@ class VideoFrameExtractor
                 continue;
             }
 
-            if ($this->isValidJpeg($framePath)) {
+            if ($this->isUsableFrame($framePath)) {
                 return true;
             }
         }
@@ -108,16 +116,16 @@ class VideoFrameExtractor
             $videoPath,
         ];
 
-        $commands = [
-            [...$base, '-vf', 'select=gt(scene\,0.30)', '-frames:v', '1', '-q:v', '2', $framePath],
-            [...$base, '-vf', 'thumbnail=30', '-frames:v', '1', '-q:v', '2', $framePath],
-        ];
-
+        // Near-end seek first: the last fully decodable frame of the fetched
+        // window is past the logos and fade-ins that scene/thumbnail select.
+        $commands = [];
         $nearEnd = $this->representativeTimestamp($duration);
         if ($nearEnd > 0) {
             $commands[] = [...$base, '-ss', number_format($nearEnd, 3, '.', ''), '-frames:v', '1', '-q:v', '2', $framePath];
         }
 
+        $commands[] = [...$base, '-vf', 'select=gt(scene\,0.30)', '-frames:v', '1', '-q:v', '2', $framePath];
+        $commands[] = [...$base, '-vf', 'thumbnail=30', '-frames:v', '1', '-q:v', '2', $framePath];
         $commands[] = [...$base, '-ss', '0.000', '-frames:v', '1', '-q:v', '2', $framePath];
 
         return $commands;
@@ -135,7 +143,12 @@ class VideoFrameExtractor
         return $this->config->timeoutSeconds > 0 ? $this->config->timeoutSeconds : 60;
     }
 
-    private function isValidJpeg(string $framePath): bool
+    /**
+     * A frame is usable when it decodes as a JPEG and is not flat: a frame
+     * that decodes but is near-black, near-white, or otherwise near-uniform
+     * is rejected so the next strategy runs.
+     */
+    private function isUsableFrame(string $framePath): bool
     {
         if (! is_file($framePath) || filesize($framePath) < 4) {
             return false;
@@ -157,7 +170,37 @@ class VideoFrameExtractor
             return false;
         }
 
-        return true;
+        return ! $this->isFlatImage($image);
+    }
+
+    private function isFlatImage(\GdImage $image): bool
+    {
+        $width = imagesx($image);
+        $height = imagesy($image);
+
+        // Sample at most a 64x64 grid so large frames stay cheap.
+        $stepX = max(1, intdiv($width, 64));
+        $stepY = max(1, intdiv($height, 64));
+        $sum = 0.0;
+        $sumSquares = 0.0;
+        $count = 0;
+
+        for ($y = 0; $y < $height; $y += $stepY) {
+            for ($x = 0; $x < $width; $x += $stepX) {
+                $rgb = imagecolorat($image, $x, $y);
+                $luma = 0.299 * (($rgb >> 16) & 0xFF)
+                    + 0.587 * (($rgb >> 8) & 0xFF)
+                    + 0.114 * ($rgb & 0xFF);
+                $sum += $luma;
+                $sumSquares += $luma * $luma;
+                $count++;
+            }
+        }
+
+        $mean = $sum / $count;
+        $variance = max(($sumSquares / $count) - ($mean * $mean), 0.0);
+
+        return sqrt($variance) < self::FLAT_FRAME_LUMA_STDDEV;
     }
 
     /**

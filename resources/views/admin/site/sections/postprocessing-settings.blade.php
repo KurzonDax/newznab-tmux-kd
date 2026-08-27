@@ -90,6 +90,28 @@
                         </div>
 
                         <div>
+                            <label for="preview_target_seconds" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                <i class="fas fa-stopwatch mr-1"></i>Preview Target Duration
+                            </label>
+                            <div class="flex gap-2">
+                                <x-input class="flex-1" id="preview_target_seconds" name="preview_target_seconds" value="{{ $site['preview_target_seconds'] ?? '30' }}" />
+                                <span class="surface-panel-alt px-3 py-2 rounded-md">seconds</span>
+                            </div>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Seconds of the main video file the dynamic segment budget aims to fetch for roots with the budget enabled (see Advanced Settings). The ceiling below wins over this target. Default: 30.</p>
+                        </div>
+
+                        <div>
+                            <label for="preview_max_fetch_mb" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                <i class="fas fa-hard-drive mr-1"></i>Preview Fetch Ceiling
+                            </label>
+                            <div class="flex gap-2">
+                                <x-input class="flex-1" id="preview_max_fetch_mb" name="preview_max_fetch_mb" value="{{ $site['preview_max_fetch_mb'] ?? '300' }}" />
+                                <span class="surface-panel-alt px-3 py-2 rounded-md">MB</span>
+                            </div>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Hard cap on the total bytes fetched for one main video file under the dynamic segment budget, whatever the bitrate says the target needs. Set to 0 for unlimited. Default: 300 MB.</p>
+                        </div>
+
+                        <div>
                             <label for="audio_preview_seconds" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                                 <i class="fas fa-stopwatch mr-1"></i>Audio Preview Length
                             </label>

@@ -264,6 +264,16 @@ class ReleaseProcessingContext
         }
     }
 
+    /**
+     * The contiguity gate found gaps in a needed segment range, so a top-up
+     * or tail fetch was skipped. A distinct reason so incomplete releases are
+     * cheap to identify and release-repair can consume the signal later.
+     */
+    public function recordSegmentGapSkip(): void
+    {
+        $this->runtimeUnsupportedReasons[] = 'segment-gaps';
+    }
+
     public function recordMp4TailFetch(int $bytes): void
     {
         $this->mp4TailMetrics = $this->mp4TailMetrics->recordFetch($bytes);

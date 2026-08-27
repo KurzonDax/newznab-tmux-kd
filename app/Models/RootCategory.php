@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property int $status
  * @property bool $discard_executables
  * @property bool $generate_previews
+ * @property bool $dynamic_preview_budget
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Collection|Category[] $categories
@@ -43,6 +44,7 @@ class RootCategory extends Model
         return [
             'discard_executables' => 'boolean',
             'generate_previews' => 'boolean',
+            'dynamic_preview_budget' => 'boolean',
         ];
     }
 

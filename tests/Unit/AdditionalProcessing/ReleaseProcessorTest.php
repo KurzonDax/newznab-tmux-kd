@@ -6,8 +6,11 @@ use App\Enums\NzbParseFailure;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\AdditionalWorkPlanner;
 use App\Services\AdditionalProcessing\ArchiveExtractionService;
+use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\ConsoleOutputService;
 use App\Services\AdditionalProcessing\DTO\DownloadMetrics;
+use App\Services\AdditionalProcessing\DTO\ReleaseProcessingResult;
+use App\Services\AdditionalProcessing\DTO\VideoHeadProbeResult;
 use App\Services\AdditionalProcessing\Enums\DownloadKind;
 use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
 use App\Services\AdditionalProcessing\Enums\ProcessingStage;
@@ -20,7 +23,9 @@ use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
 use App\Services\AdditionalProcessing\UsenetDownloadService;
+use App\Services\AdditionalProcessing\VideoHeadProbe;
 use App\Services\NNTP\NNTPService;
+use App\Services\Releases\DynamicPreviewBudgetPolicy;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\TempWorkspaceService;
@@ -163,6 +168,7 @@ class ReleaseProcessorTest extends TestCase
             $searchSyncCoordinator,
             $persistenceMetrics,
             previewPolicy: $this->stubPreviewPolicy(),
+            dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
         );
 
         $context = $this->makeContext();
@@ -219,6 +225,7 @@ class ReleaseProcessorTest extends TestCase
                 ->shouldReceive('setProcessTitle')->once()->andReturnNull()
                 ->getMock(),
             previewPolicy: $this->stubPreviewPolicy(),
+            dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
         );
 
         $context = $this->makeContext();
@@ -266,6 +273,7 @@ class ReleaseProcessorTest extends TestCase
             $tempWorkspace,
             $output,
             previewPolicy: $this->stubPreviewPolicy(),
+            dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
         );
 
         $context = $this->makeContext();
@@ -311,6 +319,7 @@ class ReleaseProcessorTest extends TestCase
             $tempWorkspace,
             $output,
             previewPolicy: $this->stubPreviewPolicy(),
+            dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
         );
 
         $context = $this->makeContext();
@@ -384,6 +393,7 @@ class ReleaseProcessorTest extends TestCase
             $this->successfulTempWorkspace(),
             $this->passwordOutput(),
             previewPolicy: $this->stubPreviewPolicy(),
+            dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
         );
 
         $context = $this->makeContext();
@@ -431,6 +441,7 @@ class ReleaseProcessorTest extends TestCase
             $this->successfulTempWorkspace(),
             $output,
             previewPolicy: $this->stubPreviewPolicy(),
+            dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
         );
 
         $context = $this->makeContext();
@@ -519,6 +530,7 @@ class ReleaseProcessorTest extends TestCase
             $this->successfulTempWorkspace(),
             $output,
             previewPolicy: $this->stubPreviewPolicy(),
+            dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
         );
 
         $context = $this->makeContext();
@@ -639,6 +651,7 @@ class ReleaseProcessorTest extends TestCase
             $tempWorkspace,
             $output,
             previewPolicy: $this->stubPreviewPolicy(),
+            dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
         );
 
         $context = $this->makeContext();
@@ -738,6 +751,7 @@ class ReleaseProcessorTest extends TestCase
             $this->successfulTempWorkspace(),
             $output,
             previewPolicy: $this->stubPreviewPolicy(),
+            dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
         );
 
         $context = $this->makeContext();
@@ -806,6 +820,7 @@ class ReleaseProcessorTest extends TestCase
             $tempWorkspace,
             $output,
             previewPolicy: $this->stubPreviewPolicy(),
+            dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
         );
 
         $context = $this->makeContext();
@@ -881,6 +896,172 @@ class ReleaseProcessorTest extends TestCase
     }
 
     #[Test]
+    public function the_dynamic_budget_tops_up_the_head_to_the_target_duration(): void
+    {
+        // 300 total bytes / 30s = 10 B/s; 30s target = 300 bytes; the 100-byte
+        // head (50 bytes/segment) needs 4 more segments.
+        [, $downloadCalls, $mediaCalls] = $this->processDynamicBudgetCandidate(
+            $this->tenSegmentMkvFile(sizeBytes: 300),
+            str_repeat('h', 100),
+            [$this->successfulDownload('TOPUP-DATA')],
+            probeResult: new VideoHeadProbeResult(durationSeconds: 30.0),
+        );
+
+        $this->assertSame(
+            [DownloadKind::MediaInfo, DownloadKind::MediaInfoTopUp],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+        $this->assertSame(['<s3>', '<s4>', '<s5>', '<s6>'], $downloadCalls->calls[1]['messageIds']);
+        $this->assertSame(str_repeat('h', 100).'TOPUP-DATA', $mediaCalls->mediaInfoFiles[0]['data']);
+    }
+
+    #[Test]
+    public function a_higher_bitrate_raises_the_top_up_until_the_ceiling_caps_it(): void
+    {
+        // 450 bytes / 30s = 15 B/s -> 450 target bytes -> 7 more segments.
+        [, $downloadCalls] = $this->processDynamicBudgetCandidate(
+            $this->tenSegmentMkvFile(sizeBytes: 450),
+            str_repeat('h', 100),
+            [$this->successfulDownload('TOPUP-DATA')],
+            probeResult: new VideoHeadProbeResult(durationSeconds: 30.0),
+        );
+        $this->assertCount(7, $downloadCalls->calls[1]['messageIds']);
+
+        // Same bitrate under a 250-byte ceiling: 150 bytes remain after the
+        // 100-byte head, so only 3 whole segments fit.
+        [, $cappedCalls] = $this->processDynamicBudgetCandidate(
+            $this->tenSegmentMkvFile(sizeBytes: 450),
+            str_repeat('h', 100),
+            [$this->successfulDownload('TOPUP-DATA')],
+            ['previewMaxFetchBytes' => 250],
+            probeResult: new VideoHeadProbeResult(durationSeconds: 30.0),
+        );
+        $this->assertSame(['<s3>', '<s4>', '<s5>'], $cappedCalls->calls[1]['messageIds']);
+    }
+
+    #[Test]
+    public function a_zero_ceiling_means_unlimited(): void
+    {
+        // 600 bytes / 30s -> 10 more segments wanted; only 8 expansion
+        // segments exist, and the 0 ceiling never caps them.
+        [, $downloadCalls] = $this->processDynamicBudgetCandidate(
+            $this->tenSegmentMkvFile(sizeBytes: 600),
+            str_repeat('h', 100),
+            [$this->successfulDownload('TOPUP-DATA')],
+            ['previewMaxFetchBytes' => 0],
+            probeResult: new VideoHeadProbeResult(durationSeconds: 30.0),
+        );
+
+        $this->assertCount(8, $downloadCalls->calls[1]['messageIds']);
+    }
+
+    #[Test]
+    public function an_undeterminable_bitrate_keeps_the_fixed_count_behavior(): void
+    {
+        [, $downloadCalls] = $this->processDynamicBudgetCandidate(
+            $this->tenSegmentMkvFile(sizeBytes: 300),
+            str_repeat('h', 100),
+            probeResult: null,
+        );
+
+        $this->assertSame([DownloadKind::MediaInfo], array_column($downloadCalls->calls, 'kind'));
+    }
+
+    #[Test]
+    public function a_disabled_root_toggle_never_tops_up(): void
+    {
+        [, $downloadCalls] = $this->processDynamicBudgetCandidate(
+            $this->tenSegmentMkvFile(sizeBytes: 300),
+            str_repeat('h', 100),
+            probeResult: new VideoHeadProbeResult(durationSeconds: 30.0),
+            budgetEnabled: false,
+        );
+
+        $this->assertSame([DownloadKind::MediaInfo], array_column($downloadCalls->calls, 'kind'));
+    }
+
+    #[Test]
+    public function a_gap_inside_the_needed_head_range_skips_the_top_up_with_a_distinct_reason(): void
+    {
+        $file = $this->tenSegmentMkvFile(sizeBytes: 300);
+        // Segment 6 is missing: the head is only contiguous through 5
+        // segments, and the needed range (2 head + 4 top-up) reaches 6.
+        $file['segmentNumbers'] = [1, 2, 3, 4, 5, 7, 8, 9, 10, 11];
+        $file['partstotal'] = '11';
+
+        [, $downloadCalls, , $result] = $this->processDynamicBudgetCandidate(
+            $file,
+            str_repeat('h', 100),
+            probeResult: new VideoHeadProbeResult(durationSeconds: 30.0),
+        );
+
+        $this->assertSame([DownloadKind::MediaInfo], array_column($downloadCalls->calls, 'kind'));
+        $this->assertContains('segment-gaps', $result->unsupportedReasons);
+    }
+
+    #[Test]
+    public function a_bare_mp4_only_tops_up_after_a_successful_moov_splice(): void
+    {
+        $head = $this->mp4Atom('ftyp', 'isom0000').pack('N', 4096).'mdat'.str_repeat('v', 48);
+        $tail = 'tail-prefix'.$this->validMoovAtom();
+
+        [, $downloadCalls, $mediaCalls] = $this->processDynamicBudgetCandidate(
+            $this->tenSegmentMp4File(sizeBytes: 400),
+            $head,
+            [$this->successfulDownload($tail), $this->successfulDownload('TOPUP-DATA')],
+            probeResult: new VideoHeadProbeResult(durationSeconds: 30.0),
+        );
+
+        $this->assertSame(
+            [DownloadKind::MediaInfo, DownloadKind::MediaInfoTail, DownloadKind::MediaInfoTopUp],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+        $this->assertStringEndsWith('media.mp4', $mediaCalls->mediaInfoFiles[0]['path']);
+        $this->assertStringEndsWith($this->validMoovAtom(), $mediaCalls->mediaInfoFiles[0]['data']);
+        $this->assertStringContainsString('TOPUP-DATA', $mediaCalls->mediaInfoFiles[0]['data']);
+    }
+
+    #[Test]
+    public function a_failed_moov_splice_means_no_top_up(): void
+    {
+        $head = $this->mp4Atom('ftyp', 'isom0000').pack('N', 4096).'mdat'.str_repeat('v', 48);
+
+        [, $downloadCalls, $mediaCalls] = $this->processDynamicBudgetCandidate(
+            $this->tenSegmentMp4File(sizeBytes: 400),
+            $head,
+            [$this->failedDownload()],
+            probeResult: new VideoHeadProbeResult(durationSeconds: 30.0),
+        );
+
+        $this->assertSame(
+            [DownloadKind::MediaInfo, DownloadKind::MediaInfoTail],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+        $this->assertSame($head, $mediaCalls->mediaInfoFiles[0]['data']);
+    }
+
+    #[Test]
+    public function a_gapped_mp4_tail_window_spends_no_tail_fetches_and_records_the_reason(): void
+    {
+        $head = $this->mp4Atom('ftyp', 'isom0000').pack('N', 4096).'mdat'.str_repeat('v', 48);
+        $file = $this->tenSegmentMp4File(sizeBytes: 400);
+        // The post is truncated: the declared total (12) is never reached, so
+        // the moov at the real end of the file was never posted.
+        $file['partstotal'] = '12';
+
+        [, $downloadCalls, $mediaCalls, $result] = $this->processDynamicBudgetCandidate(
+            $file,
+            $head,
+            probeResult: null,
+            budgetEnabled: false,
+        );
+
+        $this->assertSame([DownloadKind::MediaInfo], array_column($downloadCalls->calls, 'kind'));
+        $this->assertContains('segment-gaps', $result->unsupportedReasons);
+        $this->assertStringEndsWith('media.avi', $mediaCalls->mediaInfoFiles[0]['path']);
+    }
+
+    #[Test]
     public function it_skips_sample_downloads_and_ffmpeg_when_the_root_category_disables_preview_generation(): void
     {
         $config = $this->makeConfig([
@@ -927,6 +1108,7 @@ class ReleaseProcessorTest extends TestCase
             $tempWorkspace,
             $output,
             previewPolicy: $this->stubPreviewPolicy(enabled: false),
+            dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
         );
 
         $context = $this->makeContext();
@@ -961,6 +1143,7 @@ class ReleaseProcessorTest extends TestCase
             $tempWorkspace ?? Mockery::mock(TempWorkspaceService::class),
             $output ?? Mockery::mock(ConsoleOutputService::class),
             previewPolicy: $this->stubPreviewPolicy(),
+            dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
         );
     }
 
@@ -1028,6 +1211,7 @@ class ReleaseProcessorTest extends TestCase
             $this->successfulTempWorkspace(),
             new ConsoleOutputService,
             previewPolicy: $this->stubPreviewPolicy(),
+            dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
         );
 
         $context = $this->makeContext();
@@ -1035,6 +1219,101 @@ class ReleaseProcessorTest extends TestCase
         $processor->process($context, $this->mainTempPath);
 
         return [$context, $downloadCalls, $mediaCalls];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function tenSegmentMkvFile(int $sizeBytes): array
+    {
+        return [
+            'title' => 'feature.mkv" yEnc',
+            'segments' => ['<s1>', '<s2>', '<s3>', '<s4>', '<s5>', '<s6>', '<s7>', '<s8>', '<s9>', '<s10>'],
+            'segmentNumbers' => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            'size' => $sizeBytes,
+            'partstotal' => '10',
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function tenSegmentMp4File(int $sizeBytes): array
+    {
+        return ['title' => 'feature.mp4" yEnc'] + $this->tenSegmentMkvFile($sizeBytes);
+    }
+
+    /**
+     * @param  array<string, mixed>  $file
+     * @param  list<array{success: bool, data: string|null, groupUnavailable: bool, error: string|null}>  $responses  Download responses after the head download.
+     * @param  array<string, mixed>  $configOverrides
+     * @return array{ReleaseProcessingContext, RecordingMp4DownloadCalls, RecordingMediaExtractionCalls, ReleaseProcessingResult}
+     */
+    private function processDynamicBudgetCandidate(
+        array $file,
+        string $head,
+        array $responses = [],
+        array $configOverrides = [],
+        ?VideoHeadProbeResult $probeResult = null,
+        bool $budgetEnabled = true,
+    ): array {
+        File::ensureDirectoryExists($this->releaseTempPath);
+        $config = $this->makeConfig(array_merge([
+            'processMediaInfo' => true,
+            'processThumbnails' => true,
+            'mp4TailFetch' => true,
+            'segmentsToDownload' => 2,
+            'mp4TailMaxSegments' => 4,
+        ], $configOverrides));
+        $nzbParser = Mockery::mock(NzbContentParser::class);
+        $nzbParser->shouldReceive('parseNzb')->once()->andReturn([
+            'error' => null,
+            'contents' => [$file],
+        ]);
+
+        $downloadCalls = new RecordingMp4DownloadCalls([$this->successfulDownload($head), ...$responses]);
+        $downloadService = Mockery::mock(UsenetDownloadService::class);
+        $downloadService->shouldReceive('beginReleaseScope')->once()->andReturnNull();
+        $downloadService->shouldReceive('finishReleaseScope')->once()->andReturn(new DownloadMetrics);
+        $downloadService->shouldReceive('download')
+            ->times(1 + count($responses))
+            ->andReturnUsing($downloadCalls->download(...));
+        $downloadService->shouldReceive('meetsMinimumSize')
+            ->zeroOrMoreTimes()
+            ->andReturnUsing($downloadCalls->meetsMinimumSize(...));
+        $mediaCalls = new RecordingMediaExtractionCalls;
+        $mediaService = Mockery::mock(MediaExtractionService::class);
+        $mediaService->shouldReceive('getMediaInfo')
+            ->once()
+            ->andReturnUsing($mediaCalls->recordMediaInfo(...));
+        $mediaService->shouldReceive('getSample')
+            ->once()
+            ->andReturnUsing($mediaCalls->recordSample(...));
+        $releaseManager = Mockery::mock(ReleaseFileManager::class);
+        $releaseManager->shouldReceive('processReleaseNameFromNzbContents')->once()->andReturnFalse();
+        $releaseManager->shouldReceive('finalizeRelease')->once()->andReturnNull();
+
+        $processor = new ReleaseProcessor(
+            $config,
+            $nzbParser,
+            new AdditionalWorkPlanner($config),
+            Mockery::mock(ArchiveExtractionService::class),
+            $mediaService,
+            $downloadService,
+            $releaseManager,
+            Mockery::mock(ReleaseFilesArchiveFallback::class),
+            $this->successfulTempWorkspace(),
+            new ConsoleOutputService,
+            previewPolicy: $this->stubPreviewPolicy(),
+            dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy($budgetEnabled),
+            headProbe: new StubVideoHeadProbe($probeResult),
+        );
+
+        $context = $this->makeContext();
+        $context->release->nfostatus = 1;
+        $result = $processor->process($context, $this->mainTempPath);
+
+        return [$context, $downloadCalls, $mediaCalls, $result];
     }
 
     /**
@@ -1102,6 +1381,23 @@ class ReleaseProcessorTest extends TestCase
         };
     }
 
+    /**
+     * DB-free policy double: the real service resolves the leaf category's
+     * root toggle from the database, which unit tests do not have.
+     */
+    private function stubDynamicBudgetPolicy(bool $enabled = false): DynamicPreviewBudgetPolicy
+    {
+        return new class($enabled) extends DynamicPreviewBudgetPolicy
+        {
+            public function __construct(private readonly bool $enabled) {}
+
+            public function enabledForCategory(int $categoriesId): bool
+            {
+                return $this->enabled;
+            }
+        };
+    }
+
     private function compressedNzbParser(): NzbContentParser
     {
         $parser = Mockery::mock(NzbContentParser::class);
@@ -1142,6 +1438,19 @@ class ReleaseProcessorTest extends TestCase
             ->shouldReceive('setProcessTitle')->once()->andReturnNull()
             ->shouldReceive('echoCompressedDownload')->once()->andReturnNull()
             ->getMock();
+    }
+}
+
+final class StubVideoHeadProbe extends VideoHeadProbe
+{
+    public function __construct(private readonly ?VideoHeadProbeResult $result)
+    {
+        parent::__construct(static fn (): string => '');
+    }
+
+    public function probe(string $videoPath, ProcessingConfiguration $config): ?VideoHeadProbeResult
+    {
+        return $this->result;
     }
 }
 
