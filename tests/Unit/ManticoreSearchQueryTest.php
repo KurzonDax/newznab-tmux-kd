@@ -123,6 +123,41 @@ class ManticoreSearchQueryTest extends TestCase
     }
 
     #[Test]
+    #[DataProvider('midWordParenQueriesProvider')]
+    public function it_escapes_mid_word_parentheses(string $input, string $expected): void
+    {
+        $result = ManticoreSearchDriver::prepareUserSearchQuery($input);
+        $this->assertSame($expected, $result);
+    }
+
+    /** @return array<string, array{string, string}> */
+    public static function midWordParenQueriesProvider(): array
+    {
+        return [
+            'catalogue number in release title' => [
+                'VA-ALTER_EG0-(DRSS1522)-WEB-2026-PTC',
+                'VA\-ALTER_EG0\-\(DRSS1522\)\-WEB\-2026\-PTC',
+            ],
+            'fully parenthesized token stays grouping' => ['(DRSS1522)', '(DRSS1522)'],
+            'paren glued to word becomes literal and balanced' => ['(foo)bar', '\(foo\)bar'],
+            'unbalanced mid-word paren' => ['foo(bar', 'foo\(bar'],
+            'parens inside quoted phrase' => ['"foo (bar)"', '"foo \(bar\)"'],
+        ];
+    }
+
+    #[Test]
+    public function it_produces_a_parseable_searchname_query_for_titles_with_parentheses(): void
+    {
+        $reflection = new ReflectionClass(ManticoreSearchDriver::class);
+        $method = $reflection->getMethod('scopeReleaseSearchQuery');
+
+        $raw = 'VA-ALTER_EG0-(DRSS1522)-WEB-2026-PTC';
+        $query = $method->invoke(null, $raw, ManticoreSearchDriver::prepareUserSearchQuery($raw), '@searchname');
+
+        $this->assertSame('@searchname (VA\-ALTER_EG0\-\(DRSS1522\)\-WEB\-2026\-PTC)', $query);
+    }
+
+    #[Test]
     #[DataProvider('edgeCaseQueriesProvider')]
     public function it_handles_edge_cases(string $input, string $expected): void
     {

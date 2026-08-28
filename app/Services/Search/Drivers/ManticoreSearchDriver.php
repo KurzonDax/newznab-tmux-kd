@@ -765,6 +765,10 @@ class ManticoreSearchDriver implements SearchDriverInterface
      *
      * Characters that are not useful as user operators are still escaped:
      * \, @, ~, &, /, $, =, ', [, ]
+     *
+     * Grouping parens are only preserved at token edges; parens inside a word
+     * (and inside quoted phrases) are escaped as literal text, since release
+     * titles like VA-Title-(DRSS1522)-WEB would otherwise break the parser.
      */
     public static function prepareUserSearchQuery(string $query): string
     {
@@ -828,8 +832,8 @@ class ManticoreSearchDriver implements SearchDriverInterface
             if (str_starts_with($token, '"') && str_ends_with($token, '"') && strlen($token) > 1) {
                 $inner = substr($token, 1, -1);
                 $inner = str_replace($escapeFrom, $escapeTo, $inner);
-                // Escape ! and - inside phrases (they're literal text, not operators)
-                $inner = str_replace(['!', '-'], ['\!', '\-'], $inner);
+                // Escape !, -, and parens inside phrases (they're literal text, not operators)
+                $inner = str_replace(['!', '-', '(', ')'], ['\!', '\-', '\(', '\)'], $inner);
                 $processed[] = $leadingParens.$negation.'"'.$inner.'"'.$trailingParens;
 
                 continue;
@@ -853,6 +857,18 @@ class ManticoreSearchDriver implements SearchDriverInterface
             // Escape ! and - that appear INSIDE a word (not at the start as operators)
             // e.g., "spider-man" → "spider\-man", but "-circus" keeps the leading -
             $token = str_replace(['!', '-'], ['\!', '\-'], $token);
+
+            // Parens INSIDE a word are literal text (e.g. the catalogue number in
+            // VA-Title-(DRSS1522)-WEB); unescaped they break the Manticore query
+            // parser. Fold any peeled edge parens back in so a token like
+            // "(foo)bar" stays balanced as fully-literal text instead of leaving
+            // an unclosed group operator.
+            if (str_contains($token, '(') || str_contains($token, ')')) {
+                $token = $leadingParens.$token.$trailingParens;
+                $leadingParens = '';
+                $trailingParens = '';
+                $token = str_replace(['(', ')'], ['\(', '\)'], $token);
+            }
 
             if ($token !== '' || $wildcardPrefix !== '' || $wildcardSuffix !== '') {
                 $processed[] = $leadingParens.$negation.$wildcardPrefix.$token.$wildcardSuffix.$trailingParens;
