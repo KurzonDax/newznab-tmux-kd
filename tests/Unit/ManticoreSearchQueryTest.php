@@ -99,6 +99,9 @@ class ManticoreSearchQueryTest extends TestCase
         return [
             'basic grouping' => ['(cats | dogs)', '(cats | dogs)'],
             'grouping with negation' => ['(cats | dogs) -birds', '(cats | dogs) -birds'],
+            'negated group with -' => ['-(cats | dogs)', '-(cats | dogs)'],
+            'negated group with !' => ['!(cats | dogs)', '!(cats | dogs)'],
+            'negated group with mid-word paren stays balanced' => ['-(foo)bar', '-\(foo\)bar'],
         ];
     }
 

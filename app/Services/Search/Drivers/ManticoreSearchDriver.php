@@ -800,6 +800,16 @@ class ManticoreSearchDriver implements SearchDriverInterface
                 continue;
             }
 
+            // Detect negation applied to a group: -(foo bar) / !(foo bar). The
+            // operator must be captured before edge-paren peeling, or the
+            // group's opening paren would read as a mid-word literal below and
+            // leave the closing paren of a later token unbalanced.
+            $groupNegation = '';
+            if (strlen($token) > 2 && ($token[0] === '!' || $token[0] === '-') && $token[1] === '(') {
+                $groupNegation = $token[0];
+                $token = substr($token, 1);
+            }
+
             // Extract leading/trailing parentheses for grouping: (word) or ((word))
             $leadingParens = '';
             $trailingParens = '';
@@ -815,7 +825,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
             if ($token === '') {
                 // Only parens, no word content
                 if ($leadingParens !== '' || $trailingParens !== '') {
-                    $processed[] = $leadingParens.$trailingParens;
+                    $processed[] = $groupNegation.$leadingParens.$trailingParens;
                 }
 
                 continue;
@@ -834,7 +844,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
                 $inner = str_replace($escapeFrom, $escapeTo, $inner);
                 // Escape !, -, and parens inside phrases (they're literal text, not operators)
                 $inner = str_replace(['!', '-', '(', ')'], ['\!', '\-', '\(', '\)'], $inner);
-                $processed[] = $leadingParens.$negation.'"'.$inner.'"'.$trailingParens;
+                $processed[] = $groupNegation.$leadingParens.$negation.'"'.$inner.'"'.$trailingParens;
 
                 continue;
             }
@@ -871,7 +881,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
             }
 
             if ($token !== '' || $wildcardPrefix !== '' || $wildcardSuffix !== '') {
-                $processed[] = $leadingParens.$negation.$wildcardPrefix.$token.$wildcardSuffix.$trailingParens;
+                $processed[] = $groupNegation.$leadingParens.$negation.$wildcardPrefix.$token.$wildcardSuffix.$trailingParens;
             }
         }
 
