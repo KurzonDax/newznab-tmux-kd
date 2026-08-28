@@ -5,8 +5,15 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Http\Controllers\CoverController;
+use App\Models\User;
 use GdImage;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Schema;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Tests\TestCase;
 
@@ -19,7 +26,23 @@ class CoverControllerTest extends TestCase
     {
         parent::setUp();
 
-        config(['app.key' => 'base64:'.base64_encode(random_bytes(32))]);
+        config([
+            'database.default' => 'sqlite',
+            'database.connections.sqlite.database' => ':memory:',
+            'app.key' => 'base64:'.base64_encode(random_bytes(32)),
+        ]);
+        DB::purge();
+        DB::reconnect();
+
+        Schema::create('users', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->string('username')->default('');
+            $table->string('email')->default('');
+            $table->string('password')->default('');
+            $table->timestamp('email_verified_at')->nullable();
+            $table->rememberToken();
+            $table->timestamps();
+        });
     }
 
     protected function tearDown(): void
@@ -34,7 +57,7 @@ class CoverControllerTest extends TestCase
         $name = 'fallback-'.uniqid();
         $this->createImage(storage_path('covers/preview/'.$name.'.jpg'), 'jpg');
 
-        $response = (new CoverController)->show('preview', $name.'.webp');
+        $response = $this->show('preview', $name.'.webp');
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame('image/jpeg', $response->headers->get('Content-Type'));
@@ -45,7 +68,7 @@ class CoverControllerTest extends TestCase
         $name = 'fallback-'.uniqid();
         $this->createImage(storage_path('covers/sample/'.$name.'.webp'), 'webp');
 
-        $response = (new CoverController)->show('sample', $name.'.jpg');
+        $response = $this->show('sample', $name.'.jpg');
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame('image/webp', $response->headers->get('Content-Type'));
@@ -57,7 +80,7 @@ class CoverControllerTest extends TestCase
         $path = public_path('covers/movies/'.$name.'-cover.jpg');
         $this->createImage($path, 'jpg');
 
-        $response = (new CoverController)->show('movies', $name.'-cover.webp');
+        $response = $this->show('movies', $name.'-cover.webp');
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame('image/jpeg', $response->headers->get('Content-Type'));
@@ -70,7 +93,7 @@ class CoverControllerTest extends TestCase
         $id = (string) random_int(8000000, 8999999);
         $this->createImage(storage_path('covers/tvshows/'.$id.'.webp'), 'webp');
 
-        $response = (new CoverController)->show('tvshows', $id.'.webp');
+        $response = $this->show('tvshows', $id.'.webp');
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame('image/webp', $response->headers->get('Content-Type'));
@@ -84,7 +107,7 @@ class CoverControllerTest extends TestCase
     {
         $this->expectException(NotFoundHttpException::class);
 
-        (new CoverController)->show('preview', '../.env.webp');
+        $this->show('preview', '../.env.webp');
     }
 
     public function test_a_bare_sample_request_prefers_the_full_size_copy_over_the_thumb(): void
@@ -93,7 +116,7 @@ class CoverControllerTest extends TestCase
         $this->createImage(storage_path('covers/sample/'.$guid.'.webp'), 'webp', 1200, 600);
         $this->createImage(storage_path('covers/sample/'.$guid.'_thumb.webp'), 'webp', 20, 10);
 
-        $response = (new CoverController)->show('sample', $guid.'.webp');
+        $response = $this->show('sample', $guid.'.webp');
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame(
@@ -107,12 +130,96 @@ class CoverControllerTest extends TestCase
         $guid = 'guid'.uniqid();
         $this->createImage(storage_path('covers/preview/'.$guid.'_thumb.webp'), 'webp');
 
-        $response = (new CoverController)->show('preview', $guid.'.webp');
+        $response = $this->show('preview', $guid.'.webp');
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame(
             storage_path('covers/preview/'.$guid.'_thumb.webp'),
             $response->getFile()->getPathname(),
+        );
+    }
+
+    public function test_covers_carry_a_short_revalidating_freshness_window(): void
+    {
+        $name = 'cache-'.uniqid();
+        $this->createImage(storage_path('covers/preview/'.$name.'.webp'), 'webp');
+
+        $response = $this->show('preview', $name.'.webp');
+
+        // Release imagery is regenerable in place behind a permanent URL: the
+        // short window keeps thumb-heavy pages cheap, must-revalidate stops
+        // reuse of a stale copy past it. Directives serialise alphabetically.
+        $this->assertSame('max-age=300, must-revalidate, public', $response->headers->get('Cache-Control'));
+        $this->assertNotNull($response->headers->get('Last-Modified'));
+    }
+
+    public function test_an_unchanged_cover_answers_a_conditional_get_with_304(): void
+    {
+        $name = 'cache-'.uniqid();
+        $path = storage_path('covers/preview/'.$name.'.webp');
+        $this->createImage($path, 'webp');
+        $mtime = time() - 3600;
+        touch($path, $mtime);
+
+        $response = $this->show('preview', $name.'.webp', ifModifiedSince: $mtime);
+
+        $this->assertSame(304, $response->getStatusCode());
+    }
+
+    public function test_a_regenerated_cover_answers_a_stale_conditional_get_with_the_new_bytes(): void
+    {
+        $name = 'cache-'.uniqid();
+        $path = storage_path('covers/preview/'.$name.'.webp');
+        $this->createImage($path, 'webp');
+        $mtime = time() - 3600;
+        touch($path, $mtime);
+
+        $response = $this->get(route('covers.show', ['type' => 'preview', 'filename' => $name.'.webp']), [
+            'If-Modified-Since' => gmdate('D, d M Y H:i:s \G\M\T', $mtime - 86400),
+        ]);
+
+        $response->assertOk();
+        $this->assertSame(file_get_contents($path), $response->streamedContent());
+    }
+
+    public function test_the_served_cover_headers_survive_the_authenticated_middleware_stack(): void
+    {
+        $name = 'cache-'.uniqid();
+        $this->createImage(storage_path('covers/preview/'.$name.'.webp'), 'webp');
+
+        // The blanket authenticated no-store must not clobber the covers'
+        // revalidating window: it would forbid the 304 economy on the pages
+        // that show the most thumbs.
+        $response = $this->actingAs($this->verifiedUser())
+            ->get(route('covers.show', ['type' => 'preview', 'filename' => $name.'.webp']));
+
+        $response->assertOk();
+        $this->assertSame('max-age=300, must-revalidate, public', $response->headers->get('Cache-Control'));
+        $this->assertNotNull($response->headers->get('Last-Modified'));
+    }
+
+    private function verifiedUser(): User
+    {
+        $user = new User;
+        $user->id = 1;
+        $user->username = 'tester';
+        $user->email = 'tester@example.test';
+        $user->email_verified_at = now();
+        $user->exists = true;
+
+        return $user;
+    }
+
+    private function show(string $type, string $filename, ?int $ifModifiedSince = null): Response|BinaryFileResponse
+    {
+        $server = $ifModifiedSince === null
+            ? []
+            : ['HTTP_IF_MODIFIED_SINCE' => gmdate('D, d M Y H:i:s \G\M\T', $ifModifiedSince)];
+
+        return (new CoverController)->show(
+            Request::create('/covers/'.$type.'/'.$filename, 'GET', server: $server),
+            $type,
+            $filename,
         );
     }
 

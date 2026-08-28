@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -19,8 +20,7 @@ class CoverController extends Controller
     /** @var list<string> */
     private const array NUMERIC_ID_TYPES = ['anime', 'book', 'console', 'games', 'music', 'tvshows'];
 
-    /** @return BinaryFileResponse|Response */
-    public function show(string $type, string $filename)
+    public function show(Request $request, string $type, string $filename): BinaryFileResponse|Response
     {
         if (! in_array($type, self::VALID_TYPES, true) || ! $this->isValidFilename($filename)) {
             abort(404);
@@ -40,10 +40,18 @@ class CoverController extends Controller
             abort(404);
         }
 
-        return response()->file($filePath, [
+        // Release imagery is regenerable in place behind a permanent URL: the
+        // short freshness window keeps thumb-heavy pages cheap while a rewrite
+        // shows up within five minutes, and must-revalidate stops a cache from
+        // reusing a stale copy past it. An unchanged image revalidates to a
+        // 304 against the Last-Modified the file response derives from disk.
+        $response = response()->file($filePath, [
             'Content-Type' => $contentType,
-            'Cache-Control' => 'public, max-age=31536000',
+            'Cache-Control' => 'public, max-age=300, must-revalidate',
         ]);
+        $response->isNotModified($request);
+
+        return $response;
     }
 
     private function resolveImagePath(string $type, string $filename): ?string

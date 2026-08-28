@@ -61,9 +61,40 @@ class VideoPreviewControllerTest extends TestCase
         $response->assertOk();
         $this->assertSame('video/mp4', $response->headers->get('Content-Type'));
         $this->assertSame('bytes', $response->headers->get('Accept-Ranges'));
-        // Symfony re-serialises cache directives alphabetically.
-        $this->assertSame('max-age=86400, private', $response->headers->get('Cache-Control'));
+        // The Clip is regenerable in place behind this permanent URL, so every
+        // reuse must revalidate; private because it is auth-gated. Symfony
+        // re-serialises cache directives alphabetically.
+        $this->assertSame('no-cache, private', $response->headers->get('Cache-Control'));
+        $this->assertNotNull($response->headers->get('Last-Modified'));
         $this->assertStringStartsWith('inline', (string) $response->headers->get('Content-Disposition'));
+    }
+
+    public function test_an_unchanged_clip_answers_a_conditional_get_with_304(): void
+    {
+        $this->seedVideo('abc123', 'mp4', 'video/mp4', str_repeat('v', 512));
+        $mtime = time() - 3600;
+        touch($this->coversRoot.'/video/abc123.mp4', $mtime);
+
+        $this->actingAs($this->verifiedUser())
+            ->get(route('preview.video', 'abc123'), [
+                'If-Modified-Since' => gmdate('D, d M Y H:i:s \G\M\T', $mtime),
+            ])
+            ->assertStatus(304);
+    }
+
+    public function test_a_regenerated_clip_answers_a_stale_conditional_get_with_the_new_bytes(): void
+    {
+        $this->seedVideo('abc123', 'mp4', 'video/mp4', str_repeat('n', 64));
+        $mtime = time() - 3600;
+        touch($this->coversRoot.'/video/abc123.mp4', $mtime);
+
+        $response = $this->actingAs($this->verifiedUser())
+            ->get(route('preview.video', 'abc123'), [
+                'If-Modified-Since' => gmdate('D, d M Y H:i:s \G\M\T', $mtime - 86400),
+            ]);
+
+        $response->assertOk();
+        $this->assertSame(str_repeat('n', 64), $response->streamedContent());
     }
 
     public function test_it_serves_a_webm_clip(): void

@@ -95,10 +95,15 @@ use App\Http\Controllers\VideoPreviewController;
 use App\Http\Middleware\NoCacheForAuthenticatedUsers;
 use Spatie\LaravelPasskeys\Http\Controllers\GeneratePasskeyAuthenticationOptionsController;
 
-// Serve cover images from storage - Must be public (no auth required)
+// Serve cover images from storage - Must be public (no auth required).
+// Covers are identical for every user and regenerable in place behind
+// permanent URLs: the blanket no-store applied to authenticated pages would
+// clobber the controller's short revalidating freshness window and forbid
+// the 304 economy it relies on, exactly on the thumb-heaviest pages.
 Route::get('/covers/{type}/{filename}', [CoverController::class, 'show'])
     ->where('type', 'anime|audio|audiosample|book|console|games|movies|music|preview|sample|tvrage|video|tvshows')
     ->where('filename', '.*')
+    ->withoutMiddleware(NoCacheForAuthenticatedUsers::class)
     ->name('covers.show');
 
 // Audio preview clips sit next to the covers they belong with, but they are

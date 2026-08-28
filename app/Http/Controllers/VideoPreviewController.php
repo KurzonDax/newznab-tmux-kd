@@ -55,11 +55,18 @@ class VideoPreviewController extends Controller
 
         // public: false, or the constructor overwrites the private cache directive
         // below -- the artifact is gated behind auth and must not enter a shared cache.
+        // no-cache, not a freshness lifetime: the artifact is regenerable in
+        // place behind this permanent URL, so every reuse must revalidate
+        // against the Last-Modified the constructor derives from the file.
         $response = new BinaryFileResponse($path, 200, [
             'Content-Type' => $mimeType,
-            'Cache-Control' => 'private, max-age=86400',
+            'Cache-Control' => 'no-cache, private',
         ], public: false);
         $response->setContentDisposition(ResponseHeaderBag::DISPOSITION_INLINE, $guid.'.'.$extension);
+
+        // Answers the revalidation no-cache demands: an unchanged artifact
+        // costs a 304, a regenerated one streams its new bytes.
+        $response->isNotModified($request);
 
         // Sets Accept-Ranges and turns a Range request into a 206 with the right
         // Content-Range; Laravel prepares the response again on the way out,
