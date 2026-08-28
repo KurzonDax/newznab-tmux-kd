@@ -1085,10 +1085,7 @@ class ReleaseProcessor
         int $fetchedBytes,
     ): void {
         $queue = $anchor->expansionMessageIds;
-        $nextParts = array_values(array_filter(
-            $context->workPlan?->orderedArchiveCandidates() ?? [],
-            static fn (ArchiveCandidate $candidate): bool => $candidate->sourceIndex > $anchor->sourceIndex,
-        ));
+        $nextParts = $context->workPlan?->archivePartsAfter($anchor) ?? [];
         $partsUsed = 1;
         $currentVolume = 1;
         $currentVolumePath = $firstVolumePath;
@@ -1111,18 +1108,25 @@ class ReleaseProcessor
                 }
                 $part = array_shift($nextParts);
                 $partSegments = [...$part->messageIds, ...$part->expansionMessageIds];
-                if (count($partSegments) > $part->contiguousHeadSegments) {
-                    // The next volume has a numbering gap: bytes past it can
+                $usableSegments = array_slice($partSegments, 0, max($part->contiguousHeadSegments, 0));
+                if (min($segmentsWanted, count($partSegments)) > count($usableSegments)) {
+                    // A numbering gap sits inside the range this part would
+                    // need to contribute (#290 semantics): bytes past it can
                     // never be contiguous, so keep what extraction yielded.
                     $context->recordSegmentGapSkip();
                     $this->output->echoSegmentGapSkip();
                     break;
                 }
+                if (count($usableSegments) < count($partSegments)) {
+                    // A gap after the needed range: this part's contiguous
+                    // head is still usable, but nothing beyond it can be.
+                    $nextParts = [];
+                }
                 $partsUsed++;
                 $currentVolume++;
                 $currentVolumePath = $this->previewArchiveVolumePath($context->tmpPath, $currentVolume);
                 File::put($currentVolumePath, '');
-                $queue = $partSegments;
+                $queue = $usableSegments;
 
                 continue;
             }

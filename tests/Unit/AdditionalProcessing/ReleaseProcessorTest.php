@@ -1267,6 +1267,49 @@ class ReleaseProcessorTest extends TestCase
     }
 
     #[Test]
+    public function a_gap_past_the_needed_range_still_uses_the_next_parts_contiguous_head(): void
+    {
+        // movie.mkv is 900 bytes at 30s = 30 B/s -> 900 bytes needed. part02
+        // has a numbering gap only after its 4-segment contiguous head, and
+        // the needed range fits inside that head - so the head is fetched,
+        // while part03 is never touched: nothing past part02's gap can be
+        // contiguous with it.
+        [$downloadCalls, $result] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>', '<p1s5>', '<p1s6>']],
+                [
+                    'title' => 'release.part02.rar',
+                    'segments' => ['<p2s1>', '<p2s2>', '<p2s3>', '<p2s4>', '<p2s6>', '<p2s8>'],
+                    'segmentNumbers' => [1, 2, 3, 4, 6, 8],
+                    'partstotal' => '8',
+                ],
+                ['title' => 'release.part03.rar', 'segments' => ['<p3s1>', '<p3s2>', '<p3s3>']],
+            ],
+            initialData: str_repeat('a', 300),
+            responses: [
+                $this->successfulDownload(str_repeat('b', 300)),
+                $this->successfulDownload(str_repeat('c', 300)),
+                $this->successfulDownload(str_repeat('d', 100)),
+            ],
+            extractSizes: [300, 600, 700, 800],
+            videoEntrySize: 900,
+        );
+
+        $this->assertSame(
+            [
+                DownloadKind::Compressed,
+                DownloadKind::CompressedTopUp,
+                DownloadKind::CompressedTopUp,
+                DownloadKind::CompressedTopUp,
+            ],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+        $this->assertSame(['<p2s1>', '<p2s2>', '<p2s3>'], $downloadCalls->calls[2]['messageIds']);
+        $this->assertSame(['<p2s4>'], $downloadCalls->calls[3]['messageIds']);
+        $this->assertNotContains('segment-gaps', $result->unsupportedReasons);
+    }
+
+    #[Test]
     public function an_unknown_bitrate_keeps_the_fixed_compressed_fetch(): void
     {
         [$downloadCalls] = $this->processCompressedTopUpCandidate(
@@ -1743,8 +1786,9 @@ class ReleaseProcessorTest extends TestCase
     /**
      * Drive one release whose NZB holds RAR parts through the compressed path,
      * scripting what each partial extraction yields. The archive lists a
-     * single movie.mkv of 1200 bytes; with the default 30s probe duration and
-     * the 30s target, the top-up aims for 1200 fragment bytes.
+     * single movie.mkv of $videoEntrySize bytes; with the default 1200 bytes,
+     * 30s probe duration and 30s target, the top-up aims for 1200 fragment
+     * bytes.
      *
      * @param  list<array<string, mixed>>  $nzbFiles
      * @param  list<array{success: bool, data: string|null, groupUnavailable: bool, error: string|null}>  $responses  Download responses after the initial compressed fetch.
@@ -1760,6 +1804,7 @@ class ReleaseProcessorTest extends TestCase
         array $configOverrides = [],
         ?VideoHeadProbeResult $probeResult = new VideoHeadProbeResult(durationSeconds: 30.0),
         bool $budgetEnabled = true,
+        int $videoEntrySize = 1200,
     ): array {
         File::ensureDirectoryExists($this->releaseTempPath);
         $config = $this->makeConfig(array_merge([
@@ -1786,7 +1831,7 @@ class ReleaseProcessorTest extends TestCase
         $archiveService = Mockery::mock(ArchiveExtractionService::class);
         $archiveService->shouldReceive('processCompressedData')->once()->andReturn([
             'success' => true,
-            'files' => [['name' => 'movie.mkv', 'size' => 1200]],
+            'files' => [['name' => 'movie.mkv', 'size' => $videoEntrySize]],
             'hasPassword' => false,
             'passwordStatus' => ReleaseBrowseService::PASSWD_NONE,
             'archiveMarker' => 'r',
@@ -1794,7 +1839,7 @@ class ReleaseProcessorTest extends TestCase
         ]);
         $archiveService->shouldReceive('listArchiveContents')
             ->zeroOrMoreTimes()
-            ->andReturn(['files' => [['name' => 'movie.mkv', 'size' => 1200]], 'hasPassword' => false]);
+            ->andReturn(['files' => [['name' => 'movie.mkv', 'size' => $videoEntrySize]], 'hasPassword' => false]);
         $archiveService->shouldReceive('extractSpecificFileToPath')
             ->times(count($extractSizes))
             ->andReturnUsing(function () use (&$extractIndex, $extractSizes, $fragmentPath): string {
