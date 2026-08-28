@@ -15,8 +15,8 @@ use Throwable;
  *
  * Only browser-safe stream combinations are remuxed — H.264 with AAC or no
  * audio into MP4, VP8/VP9 with Vorbis/Opus or no audio into WebM. Anything
- * else returns null and the caller falls back to the downscaled transcode;
- * this class never transcodes to reach browser safety.
+ * else returns null and the caller stores no video artifact; this class
+ * never transcodes to reach browser safety.
  */
 class VideoClipEncoder
 {

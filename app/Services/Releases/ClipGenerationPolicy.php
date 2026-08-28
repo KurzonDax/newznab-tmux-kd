@@ -11,10 +11,10 @@ use App\Models\RootCategory;
  * Per-root-category Clip policy (see CONTEXT.md).
  *
  * When enabled for a release's root and the source streams are browser-safe,
- * the video artifact is a full-resolution stream-copy Clip instead of the
- * downscaled transcode. Only the Movies, TV, and XXX roots are eligible, and
- * the toggle defaults to off: unknown or rootless categories always fall back
- * to the transcode. Follows {@see DynamicPreviewBudgetPolicy}.
+ * the video artifact is a full-resolution stream-copy Clip; otherwise no
+ * video artifact is stored (Clip-or-nothing). Only the Movies, TV, and XXX
+ * roots are eligible, and the toggle defaults to off: unknown or rootless
+ * categories never store a Clip. Follows {@see DynamicPreviewBudgetPolicy}.
  */
 class ClipGenerationPolicy
 {

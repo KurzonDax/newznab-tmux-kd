@@ -60,14 +60,14 @@ The single still image the indexer captures (via ffmpeg) from a video file found
 _Avoid_: "thumbnail" in UI copy — thumbnails are the small rendering of any image, not this artifact.
 
 **Generated Sample Video**:
-The short video clip the indexer stores from a video file found inside a release. Paired with the Generated Preview under Preview Generation. One per release, in one of two forms: a downscaled transcode (the legacy path) or a Clip. A Clip takes over the slot — the two forms never coexist for one release.
+The short video clip the indexer stores from a video file found inside a release. Paired with the Generated Preview under Preview Generation. One per release, in one of two forms: a Clip (the only form still produced) or a legacy downscaled transcode left behind by the retired pre-Clip path (still served, never newly created). A Clip takes over the slot — the two forms never coexist for one release.
 
 **Clip**:
-The full-resolution, stream-copied (no transcode) form of the Generated Sample Video, covering the whole downloaded head window. Produced only where Clip storage is enabled for the release's root category (a Movies/TV/XXX toggle, default XXX only) and the source codecs are browser-playable without transcoding; otherwise the downscaled transcode is stored instead. Lives and dies with its release, and is never generated while the covers volume is under the Free-disk guard.
+The full-resolution, stream-copied (no transcode) form of the Generated Sample Video, covering the whole downloaded head window. Produced only where Clip storage is enabled for the release's root category (a Movies/TV/XXX toggle, default XXX only) and the source codecs are browser-playable without transcoding; otherwise no video artifact is stored at all (Clip-or-nothing). Lives and dies with its release, and is never generated while the covers volume is under the Free-disk guard.
 _Avoid_: "trailer" — a Clip is cut from the release's own footage; "sample video" in UI copy where the full-res/downscaled distinction matters.
 
 **Free-disk guard**:
-The gate that halts disk-hungry artifact production while the volume holding covers storage is below a threshold share of free space (default 10%). Each producer declares its own response: Clips degrade to the small transcode, while sample/preview imagery is skipped entirely and recorded as an Imagery disk skip. A guard that cannot read the disk refuses, on the principle that producing large artifacts is the wrong response to not knowing how full the disk is.
+The gate that halts disk-hungry artifact production while the volume holding covers storage is below a threshold share of free space (default 10%). Each producer declares its own response: a guarded Clip is simply not produced (no video artifact is stored), while sample/preview imagery is skipped entirely and recorded as an Imagery disk skip. A guard that cannot read the disk refuses, on the principle that producing large artifacts is the wrong response to not knowing how full the disk is.
 _Avoid_: treating a guard skip as an error — it is policy working as intended.
 
 **Imagery disk skip**:
