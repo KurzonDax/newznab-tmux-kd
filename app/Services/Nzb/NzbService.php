@@ -12,6 +12,7 @@ use App\Services\Binaries\BinariesConfig;
 use App\Services\CollectionCleanupService;
 use App\Services\Releases\CollectionCompletionMeasurer;
 use App\Support\Data\NzbCreationResult;
+use App\Support\Data\NzbReplaceResult;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -641,39 +642,69 @@ class NzbService
      * Same temp-then-rename dance as {@see self::createNzbForRelease()}: a reader that opens the
      * file mid-write must never see a half-written NZB, and a crash must leave the old one intact.
      *
-     * @return bool False when there is no NZB to replace, or the write could not be completed.
+     * Each failure mode carries its own reason so callers can log why the
+     * replace failed instead of a bare false.
      */
-    public function replaceNzbContents(string $releaseGuid, string $nzbXml): bool
+    public function replaceNzbContents(string $releaseGuid, string $nzbXml): NzbReplaceResult
     {
         $path = $this->nzbPath($releaseGuid);
 
         if ($path === false) {
-            return false;
+            return NzbReplaceResult::missingNzb("No stored NZB was found for release {$releaseGuid}.");
         }
 
         $temporaryPath = $this->temporaryNzbPath($path);
+        error_clear_last();
         $gz = $this->openGzipFile($temporaryPath);
 
         if ($gz === false) {
-            return false;
+            return NzbReplaceResult::tempFileOpenFailure(
+                "Failed to open temporary NZB file for writing: {$temporaryPath}".$this->lastFilesystemErrorSuffix()
+            );
         }
 
-        $written = gzwrite($gz, $nzbXml);
+        $written = $this->writeGzipContents($gz, $nzbXml);
         $closed = gzclose($gz);
 
         if ($written === false || $written !== \strlen($nzbXml) || ! $closed) {
             File::delete($temporaryPath);
 
-            return false;
+            return NzbReplaceResult::writeFailure(sprintf(
+                'Failed to write temporary NZB file %s: wrote %s of %d bytes%s.',
+                $temporaryPath,
+                $written === false ? 'none' : (string) $written,
+                \strlen($nzbXml),
+                $closed ? '' : ', and closing the gzip stream failed'
+            ));
         }
 
+        error_clear_last();
         if (! $this->finalizeNzbFile($temporaryPath, $path)) {
             File::delete($temporaryPath);
 
-            return false;
+            return NzbReplaceResult::renameFailure(
+                "Failed to move temporary NZB into place: {$temporaryPath} -> {$path}".$this->lastFilesystemErrorSuffix()
+            );
         }
 
-        return true;
+        return NzbReplaceResult::success();
+    }
+
+    /**
+     * Seam for tests to force the gzip-write failure mode.
+     *
+     * @param  resource  $gz
+     */
+    protected function writeGzipContents(mixed $gz, string $contents): int|false
+    {
+        return gzwrite($gz, $contents);
+    }
+
+    private function lastFilesystemErrorSuffix(): string
+    {
+        $error = error_get_last();
+
+        return $error === null ? '' : ' ('.$error['message'].')';
     }
 
     /**

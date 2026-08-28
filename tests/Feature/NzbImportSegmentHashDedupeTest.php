@@ -12,6 +12,7 @@ use App\Services\Nzb\NzbImportService;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseRepair\RescanWindowResolver;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 class NzbImportSegmentHashDedupeTest extends TestCase
@@ -218,6 +219,56 @@ class NzbImportSegmentHashDedupeTest extends TestCase
         $this->assertSame(
             2,
             DB::table('releases')->whereNotNull('collectionhash')->distinct()->count('collectionhash')
+        );
+    }
+
+    public function test_a_deferred_absorb_records_the_import_as_an_ordinary_duplicate(): void
+    {
+        $files = [
+            ['subject' => '[1/2] Deferred.Import.Release.part01.rar yEnc (1/4)', 'segments' => ['d1-1@example.com', 'd1-2@example.com']],
+            ['subject' => '[2/2] Deferred.Import.Release.part02.rar yEnc (1/4)', 'segments' => ['d2-1@example.com', 'd2-2@example.com', 'd2-3@example.com', 'd2-4@example.com']],
+        ];
+        $this->assertSame(NzbImportStatus::Inserted, $this->scan($this->makeNzb($files)));
+
+        // The lagging-anchor state: the release row exists but its stored NZB
+        // does not, and a better copy of the same upload arrives.
+        DB::table('releases')->update(['nzbstatus' => NzbService::NZB_NONE, 'completion' => 10.0]);
+
+        $status = $this->scan($this->makeNzb($files));
+
+        $this->assertSame(NzbImportStatus::Duplicate, $status);
+        $this->assertSame(1, DB::table('releases')->count());
+        $this->assertSame(
+            10.0,
+            (float) DB::table('releases')->value('completion'),
+            'A deferred absorb must leave the anchor untouched.'
+        );
+    }
+
+    public function test_a_failed_absorb_records_the_import_as_an_ordinary_duplicate_with_the_reason(): void
+    {
+        $files = [
+            ['subject' => '[1/2] Failing.Import.Release.part01.rar yEnc (1/4)', 'segments' => ['f1-1@example.com', 'f1-2@example.com']],
+            ['subject' => '[2/2] Failing.Import.Release.part02.rar yEnc (1/4)', 'segments' => ['f2-1@example.com', 'f2-2@example.com', 'f2-3@example.com', 'f2-4@example.com']],
+        ];
+        $this->assertSame(NzbImportStatus::Inserted, $this->scan($this->makeNzb($files)));
+
+        // nzbstatus says NZB_ADDED but no stored file exists in this harness:
+        // the absorb is attempted and fails on the missing NZB.
+        DB::table('releases')->update(['completion' => 10.0]);
+        Log::spy();
+
+        $status = $this->scan($this->makeNzb($files));
+
+        $this->assertSame(NzbImportStatus::Duplicate, $status);
+        $this->assertSame(
+            10.0,
+            (float) DB::table('releases')->value('completion'),
+            'A failed absorb must leave the anchor untouched.'
+        );
+        Log::shouldHaveReceived('warning')->once()->withArgs(
+            static fn (string $message, array $context): bool => str_contains($message, 'absorb failed')
+                && str_contains((string) ($context['reason'] ?? ''), 'No stored NZB')
         );
     }
 

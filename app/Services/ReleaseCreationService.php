@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Enums\CollectionFileCheckStatus;
+use App\Enums\DuplicateAbsorbOutcome;
 use App\Models\Category;
 use App\Models\Collection;
 use App\Models\Predb;
@@ -200,13 +201,15 @@ class ReleaseCreationService
                 $absorbed = false;
                 if ($this->releaseDuplicateAbsorber->supportsReason($dupeReason)) {
                     try {
-                        $absorbed = $this->releaseDuplicateAbsorber->absorbCollection(
+                        $absorbResult = $this->releaseDuplicateAbsorber->absorbCollection(
                             $dupeCheck,
                             $collection,
                             ($completionSignals[(int) $collection->id] ?? null)?->percentage() ?? 0.0,
                         );
                     } catch (\Throwable $exception) {
-                        Log::error('A better duplicate collection could not be absorbed; preserving it for retry.', [
+                        // Backstop for errors outside the absorber's outcome
+                        // contract (e.g. the attempt-counter write failing).
+                        Log::error('A better duplicate collection hit an unexpected error while absorbing; preserving it for retry.', [
                             'matched_release_id' => $dupeCheck->id,
                             'collection_id' => $collection->id,
                             'exception' => $exception,
@@ -214,6 +217,43 @@ class ReleaseCreationService
 
                         continue;
                     }
+
+                    if ($absorbResult->outcome === DuplicateAbsorbOutcome::Deferred) {
+                        // Expected state while the anchor's NZB creation
+                        // catches up: preserve the collection silently and let
+                        // a later cycle absorb it.
+                        Log::debug('Duplicate absorb deferred: the anchor has no stored NZB yet.', [
+                            'matched_release_id' => $dupeCheck->id,
+                            'collection_id' => $collection->id,
+                        ]);
+
+                        continue;
+                    }
+
+                    if ($absorbResult->outcome === DuplicateAbsorbOutcome::Failed) {
+                        if ($absorbResult->attempts < ReleaseDuplicateAbsorber::MAX_ABSORB_ATTEMPTS) {
+                            Log::error('A better duplicate collection could not be absorbed; preserving it for retry.', [
+                                'matched_release_id' => $dupeCheck->id,
+                                'collection_id' => $collection->id,
+                                'reason' => $absorbResult->reason,
+                                'attempts' => $absorbResult->attempts,
+                            ]);
+
+                            continue;
+                        }
+
+                        // The backstop: a collection whose absorb keeps
+                        // failing settles as an ordinary duplicate instead of
+                        // retrying every cycle forever.
+                        Log::warning('A better duplicate collection kept failing to absorb; settling it as an ordinary duplicate.', [
+                            'matched_release_id' => $dupeCheck->id,
+                            'collection_id' => $collection->id,
+                            'reason' => $absorbResult->reason,
+                            'attempts' => $absorbResult->attempts,
+                        ]);
+                    }
+
+                    $absorbed = $absorbResult->wasAbsorbed();
                 }
 
                 Log::info('Release import skipped as duplicate', [

@@ -128,14 +128,15 @@ final class ReleaseRepairService
         $rewritten = false;
 
         if (! $options->dryRun) {
-            $rewritten = $this->nzb->replaceNzbContents((string) $release->guid, $document->toXml());
+            $replaced = $this->nzb->replaceNzbContents((string) $release->guid, $document->toXml());
+            $rewritten = $replaced->success;
 
             if (! $rewritten) {
                 // We know what to write and could not write it. That is our problem, not the
                 // release's: leave its state alone so the next invocation tries again.
                 return $this->skip($release, ReleaseRepairResult::notAttempted(
                     $completionBefore,
-                    'Repaired NZB could not be written back to disk.',
+                    'Repaired NZB could not be written back to disk: '.$replaced->reason,
                 ));
             }
         }

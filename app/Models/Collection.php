@@ -23,6 +23,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property bool $filecheck
  * @property int $filesize
  * @property int|null $releases_id
+ * @property int $absorb_attempts Attempted-and-failed duplicate absorbs recorded against this preserved collection
  * @property string $noise
  * @property string|null $udate Computed Unix timestamp from raw query
  * @property string|null $gname Computed group name from join

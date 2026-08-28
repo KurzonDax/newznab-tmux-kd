@@ -263,12 +263,13 @@ final class MissingFileRescanService
         $added = $document->addFiles($recovered, $envelope);
         $completionAfter = $document->measure($declared)->percentage();
 
-        if (! $this->nzb->replaceNzbContents((string) $release->guid, $document->toXml())) {
+        $replaced = $this->nzb->replaceNzbContents((string) $release->guid, $document->toXml());
+        if (! $replaced->success) {
             // We know what to write and could not write it. That is our problem, not the
             // release's: leave its state alone so the next invocation tries again.
             return $this->skip($release, MissingFileRescanResult::notAttempted(
                 $completionBefore,
-                'Re-scanned NZB could not be written back to disk.',
+                'Re-scanned NZB could not be written back to disk: '.$replaced->reason,
             ));
         }
 
