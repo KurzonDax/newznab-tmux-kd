@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Enums\ImagerySkipArtifact;
 use App\Models\Release;
 use App\Models\ReleaseImageryDiskSkip;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
@@ -95,7 +96,7 @@ class RequeueImageryDiskSkips extends Command
             ->whereIn('releases_id', $releaseIds)
             ->get()
             ->flatMap(static fn (ReleaseImageryDiskSkip $skip): array => $skip->artifacts())
-            ->countBy(static fn ($artifact): string => $artifact->value)
+            ->countBy(static fn (ImagerySkipArtifact $artifact): string => $artifact->value)
             ->sortKeys();
 
         foreach ($counts as $artifact => $count) {

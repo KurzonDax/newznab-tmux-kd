@@ -374,27 +374,25 @@ class ReleaseFileManager
     }
 
     /**
-     * Record -- or clear -- this release's Imagery disk skip ledger row.
+     * Record this release's Imagery disk skip ledger row.
      *
      * The row is the durable half of ADR 0013: the release itself settles as
      * processed so the workers stop re-claiming it during a squeeze, and the
      * ledger is what `releases:requeue-imagery-disk-skips` reads once space is
-     * reclaimed. A run that was allowed to produce imagery clears any row left
-     * by an earlier squeeze, so a requeued release does not linger on a list of
-     * outstanding work it has already been given.
+     * reclaimed. Rows are cleared by that command alone -- an ordinary finalize
+     * writes nothing, because adding a DELETE to every release's transaction to
+     * catch the rare release re-pended by some other tool would cost far more
+     * than the wasted reprocess it saves. A row that yields nothing on requeue
+     * is the accepted cost the ADR already names.
      */
     private function recordImageryDiskSkip(ReleaseProcessingContext $context): void
     {
-        $releaseId = (int) $context->release->id;
-
         if ($context->imagerySkippedByDiskGuard === []) {
-            ReleaseImageryDiskSkip::query()->where('releases_id', $releaseId)->delete();
-
             return;
         }
 
         ReleaseImageryDiskSkip::query()->updateOrCreate(
-            ['releases_id' => $releaseId],
+            ['releases_id' => (int) $context->release->id],
             ['suppressed' => ImagerySkipArtifact::toList($context->imagerySkippedByDiskGuard)],
         );
     }

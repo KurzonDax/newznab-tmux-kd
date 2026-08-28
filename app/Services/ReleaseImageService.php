@@ -140,6 +140,13 @@ class ReleaseImageService
 
         $source = $this->readLocalBytes($sourcePath, $this->extractedMaxSourceBytes());
         if (! $source['success']) {
+            Log::debug('Refusing extracted imagery before decoding it.', [
+                'destination' => $destinationDirectory,
+                'guid' => $guid,
+                'ceiling' => $this->extractedMaxSourceBytes(),
+                'reason' => $source['reason'],
+            ]);
+
             return ImageProcessingResult::failure($source['reason']);
         }
 
@@ -150,6 +157,7 @@ class ReleaseImageService
                 ImageRendition::fromProfile($guid.'_thumb', $thumbProfile),
                 ImageRendition::fromProfile($guid, ImageAssetProfile::FullSize),
             ],
+            $this->extractedMaxSourceBytes(),
             $this->extractedMaxSourcePixels(),
         );
 
@@ -437,8 +445,8 @@ class ReleaseImageService
             $contents,
             $destinationDirectory,
             [new ImageRendition($imgName, $maxWidth, $maxHeight)],
-            $this->maxSourcePixels(),
             $this->maxSourceBytes(),
+            $this->maxSourcePixels(),
         )[0];
     }
 
@@ -451,6 +459,10 @@ class ReleaseImageService
      * Headers this build cannot parse fall through to the post-decode check,
      * which is where they were checked before the sniff existed.
      *
+     * Both ceilings are the caller's to state: extracted imagery and remote
+     * artwork deliberately apply different ones, and a default here would
+     * silently hand one of them the other's policy.
+     *
      * @param  list<ImageRendition>  $renditions
      * @return list<ImageProcessingResult> Parallel to $renditions.
      */
@@ -458,8 +470,8 @@ class ReleaseImageService
         string $contents,
         string $destinationDirectory,
         array $renditions,
+        int $maxSourceBytes,
         int $maxSourcePixels,
-        ?int $maxSourceBytes = null,
     ): array {
         foreach ($renditions as $rendition) {
             if (! $this->isValidBasename($rendition->basename)) {
@@ -467,7 +479,6 @@ class ReleaseImageService
             }
         }
 
-        $maxSourceBytes ??= $this->extractedMaxSourceBytes();
         if ($contents === '' || strlen($contents) > $maxSourceBytes) {
             return $this->failEach($renditions, 'Image source size is invalid or exceeds the configured limit.');
         }
@@ -550,6 +561,8 @@ class ReleaseImageService
                 return ImageProcessingResult::failure('Processed image validation failed.');
             }
 
+            // Silenced: a blocked destination is reported through the result
+            // and logged by the caller, so the raw warning adds only noise.
             if (! @rename($temporaryPath, $destinationPath)) {
                 return ImageProcessingResult::failure('Unable to atomically publish the processed image.');
             }

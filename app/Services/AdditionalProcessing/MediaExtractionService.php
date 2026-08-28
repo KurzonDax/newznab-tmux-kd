@@ -145,7 +145,7 @@ class MediaExtractionService
     {
         return $categoriesId !== null
             && $this->clipPolicy->enabledForCategory($categoriesId)
-            && $this->freeDiskGuard->allows();
+            && $this->freeDiskGuard->allows($this->releaseImage->vidSavePath);
     }
 
     private function storeClip(string $fileLocation, string $tmpPath, string $guid): bool

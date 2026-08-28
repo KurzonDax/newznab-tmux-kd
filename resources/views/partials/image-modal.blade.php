@@ -46,16 +46,7 @@
                              decoding="async"
                              class="max-w-full max-h-[85vh] rounded-lg shadow-lg">
 
-                        <!-- Fullscreen view: offered only where a Full-size copy exists -->
-                        <button type="button"
-                                x-show="fullUrl"
-                                x-cloak
-                                @click="enterFullscreen()"
-                                class="absolute bottom-2 right-2 inline-flex items-center justify-center h-9 w-9 rounded-md bg-gray-900/70 text-white hover:bg-gray-900/90 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                                title="View full size"
-                                aria-label="View full size">
-                            <i class="fas fa-expand"></i>
-                        </button>
+                        <x-image-fullscreen-control />
                     </div>
                 </div>
             </div>
@@ -70,28 +61,5 @@
         </div>
     </div>
 
-    <!-- Fullscreen view: the Full-size copy fitted entirely inside the viewport -->
-    <div x-show="fullscreen"
-         x-cloak
-         class="fixed inset-0 z-20 flex items-center justify-center bg-gray-950/95 p-4"
-         @click.self="exitFullscreen()"
-         x-transition:enter="transition ease-out duration-200"
-         x-transition:enter-start="opacity-0"
-         x-transition:enter-end="opacity-100"
-         x-transition:leave="transition ease-in duration-150"
-         x-transition:leave-start="opacity-100"
-         x-transition:leave-end="opacity-0">
-        <img :src="fullUrl"
-             :alt="imageTitle"
-             decoding="async"
-             class="max-w-full max-h-full object-contain">
-
-        <button type="button"
-                @click="exitFullscreen()"
-                class="absolute top-4 right-4 inline-flex items-center justify-center h-10 w-10 rounded-md bg-gray-900/70 text-white hover:bg-gray-900/90 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                title="Exit full size"
-                aria-label="Exit full size">
-            <i class="fas fa-compress text-lg"></i>
-        </button>
-    </div>
+    <x-image-fullscreen-layer title-property="imageTitle" />
 </div>

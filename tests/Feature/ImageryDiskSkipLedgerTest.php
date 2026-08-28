@@ -136,8 +136,21 @@ class ImageryDiskSkipLedgerTest extends TestCase
         $this->assertSame('preview', DB::table('release_imagery_disk_skips')->where('releases_id', 1)->value('suppressed'));
     }
 
-    public function test_a_run_that_was_allowed_to_produce_imagery_clears_an_earlier_row(): void
+    public function test_an_ordinary_finalize_writes_no_ledger_row(): void
     {
+        DB::table('releases')->insert(['id' => 1, 'guid' => 'guid-1', 'categories_id' => 6010]);
+
+        $this->makeManager()->finalizeRelease($this->makeContext(), false);
+
+        $this->assertSame(0, DB::table('release_imagery_disk_skips')->count());
+    }
+
+    public function test_the_requeue_command_owns_row_deletion_not_the_pipeline(): void
+    {
+        // Rows are cleared by the recovery command alone: adding a DELETE to
+        // every release's finalize transaction to catch the rare release
+        // re-pended by another tool would cost more than the wasted reprocess
+        // it saves, and ADR 0013 already accepts rows that yield nothing.
         DB::table('releases')->insert(['id' => 1, 'guid' => 'guid-1', 'categories_id' => 6010]);
         DB::table('release_imagery_disk_skips')->insert([
             'releases_id' => 1,
@@ -146,7 +159,11 @@ class ImageryDiskSkipLedgerTest extends TestCase
 
         $this->makeManager()->finalizeRelease($this->makeContext(), false);
 
-        $this->assertSame(0, DB::table('release_imagery_disk_skips')->where('releases_id', 1)->count());
+        $this->assertSame(1, DB::table('release_imagery_disk_skips')->where('releases_id', 1)->count());
+
+        $this->artisan('releases:requeue-imagery-disk-skips', ['--apply' => true])->assertExitCode(0);
+
+        $this->assertSame(0, DB::table('release_imagery_disk_skips')->count());
     }
 
     public function test_the_requeue_command_reports_without_changing_anything_by_default(): void

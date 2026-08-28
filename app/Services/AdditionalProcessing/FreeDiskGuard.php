@@ -40,19 +40,20 @@ class FreeDiskGuard
     }
 
     /**
-     * Whether the covers volume has room to grow. Unreadable disk metrics
-     * refuse: producing large artifacts is the wrong response to not knowing
-     * how full the disk is.
+     * Whether the volume holding $directory has room to grow. Each producer
+     * passes its own destination, so a split mount is measured where the bytes
+     * would actually land. Unreadable disk metrics refuse: producing large
+     * artifacts is the wrong response to not knowing how full the disk is.
      */
-    public function allows(): bool
+    public function allows(string $directory): bool
     {
-        $directory = $this->measurableCoversPath();
-        if ($directory === null) {
+        $measurable = $this->measurablePath($directory);
+        if ($measurable === null) {
             return false;
         }
 
-        $free = ($this->freeSpace)($directory);
-        $total = ($this->totalSpace)($directory);
+        $free = ($this->freeSpace)($measurable);
+        $total = ($this->totalSpace)($measurable);
 
         if ($free === false || $total === false || $total <= 0) {
             return false;
@@ -62,17 +63,14 @@ class FreeDiskGuard
     }
 
     /**
-     * The nearest existing ancestor of the covers root. Free space is a
-     * property of the volume, not the directory, and the covers subdirectories
-     * are created lazily by their producers -- measuring a path that does not
-     * exist yet would refuse every artifact on a fresh install.
+     * The nearest existing ancestor of $directory. Free space is a property of
+     * the volume, not the directory, and the covers subdirectories are created
+     * lazily by their producers -- measuring a path that does not exist yet
+     * would refuse every artifact on a fresh install.
      */
-    private function measurableCoversPath(): ?string
+    private function measurablePath(string $directory): ?string
     {
-        $configured = config('nntmux_settings.covers_path', storage_path('covers'));
-        $path = is_string($configured) && $configured !== ''
-            ? rtrim($configured, '/\\')
-            : storage_path('covers');
+        $path = rtrim($directory, '/\\');
 
         while ($path !== '') {
             if (is_dir($path)) {

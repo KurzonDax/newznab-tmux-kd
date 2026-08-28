@@ -18,6 +18,7 @@ use App\Services\AdditionalProcessing\Enums\ProcessingStage;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ProcessingMetrics;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
+use App\Services\ReleaseImageService;
 use App\Services\Releases\DynamicPreviewBudgetPolicy;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
@@ -53,6 +54,7 @@ class ReleaseProcessor
         private readonly DynamicPreviewBudgetPolicy $dynamicBudgetPolicy = new DynamicPreviewBudgetPolicy,
         private readonly VideoHeadProbe $headProbe = new VideoHeadProbe,
         private readonly FreeDiskGuard $freeDiskGuard = new FreeDiskGuard,
+        private readonly ReleaseImageService $releaseImage = new ReleaseImageService,
     ) {}
 
     public function process(ReleaseProcessingContext $context, string $mainTmpPath): ReleaseProcessingResult
@@ -363,7 +365,11 @@ class ReleaseProcessor
 
         // Nothing to suppress means nothing to guard: do not stat the disk for
         // a release that was never going to be given imagery.
-        return $suppressed === [] || $this->freeDiskGuard->allows() ? [] : $suppressed;
+        if ($suppressed === [] || $this->freeDiskGuard->allows($this->releaseImage->jpgSavePath)) {
+            return [];
+        }
+
+        return $suppressed;
     }
 
     private function processingTimeoutResult(

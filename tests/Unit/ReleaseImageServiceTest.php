@@ -10,6 +10,8 @@ use GdImage;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Image;
+use Illuminate\Support\Facades\Log;
+use Mockery;
 use Tests\TestCase;
 
 class ReleaseImageServiceTest extends TestCase
@@ -298,10 +300,13 @@ class ReleaseImageServiceTest extends TestCase
         $this->assertFileDoesNotExist($this->temporaryDirectory.'bomb01.webp');
     }
 
-    public function test_extracted_imagery_is_refused_above_the_hard_byte_ceiling(): void
+    public function test_extracted_imagery_is_refused_and_logged_above_the_hard_byte_ceiling(): void
     {
         $source = $this->createPng('heavy.png', 200, 100);
         config(['image.extracted_max_source_bytes' => 4]);
+        Log::shouldReceive('debug')
+            ->once()
+            ->with('Refusing extracted imagery before decoding it.', Mockery::type('array'));
 
         $result = (new ReleaseImageService)->saveExtractedImage(
             'heavy1',
