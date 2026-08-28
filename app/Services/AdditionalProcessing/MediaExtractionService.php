@@ -15,13 +15,6 @@ use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\ReleaseExtraService;
 use App\Services\ReleaseImageService;
 use App\Services\Releases\ClipGenerationPolicy;
-use FFMpeg\Coordinate\Dimension;
-use FFMpeg\Coordinate\TimeCode;
-use FFMpeg\FFMpeg;
-use FFMpeg\FFProbe;
-use FFMpeg\Filters\Video\ResizeFilter;
-use FFMpeg\Format\Video\Ogg;
-use FFMpeg\Media\Video;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Mhor\MediaInfo\MediaInfo;
@@ -60,32 +53,6 @@ class MediaExtractionService
     }
 
     /**
-     * Get video time code for sample extraction.
-     */
-    public function getVideoTime(string $videoLocation): string
-    {
-        try {
-            $duration = $this->videoFrameExtractor->probeDecodableDuration($videoLocation);
-            if ($duration === null) {
-                return '';
-            }
-        } catch (\Throwable $e) {
-            if ($this->config->debugMode) {
-                Log::debug($e->getMessage());
-            }
-
-            return '';
-        }
-
-        $timestamp = $this->videoFrameExtractor->representativeTimestamp($duration);
-        $hours = (int) floor($timestamp / 3600);
-        $minutes = (int) floor(fmod($timestamp, 3600) / 60);
-        $seconds = fmod($timestamp, 60);
-
-        return sprintf('%02d:%02d:%06.3f', $hours, $minutes, $seconds);
-    }
-
-    /**
      * Extract a sample image from a video file.
      */
     public function getSample(string $fileLocation, string $tmpPath, string $guid): bool
@@ -120,8 +87,9 @@ class MediaExtractionService
 
     /**
      * Store the release's single video artifact: a full-resolution stream-copy
-     * Clip when the root category allows it and the source is browser-safe,
-     * otherwise the downscaled transcoded sample.
+     * Clip when the root category allows it, disk headroom exists, and the
+     * source is browser-safe. Clip-or-nothing: when the Clip declines, no
+     * video artifact is stored and false is returned.
      */
     public function getVideo(string $fileLocation, string $tmpPath, string $guid, ?int $categoriesId = null): bool
     {
@@ -129,17 +97,13 @@ class MediaExtractionService
             return false;
         }
 
-        if ($this->shouldAttemptClip($categoriesId) && $this->storeClip($fileLocation, $tmpPath, $guid)) {
-            return true;
-        }
-
-        return $this->storeTranscodedSample($fileLocation, $tmpPath, $guid);
+        return $this->shouldAttemptClip($categoriesId) && $this->storeClip($fileLocation, $tmpPath, $guid);
     }
 
     /**
      * The Clip is opt-in per root category and disk-guarded: under the
-     * Free-disk guard's threshold the pipeline falls back to the small
-     * transcode rather than growing the covers volume.
+     * Free-disk guard's threshold no video artifact is stored rather than
+     * growing the covers volume.
      */
     private function shouldAttemptClip(?int $categoriesId): bool
     {
@@ -202,91 +166,6 @@ class MediaExtractionService
         return is_string($this->config->ffmpegPath) && $this->config->ffmpegPath !== ''
             ? $this->config->ffmpegPath
             : 'ffmpeg';
-    }
-
-    /**
-     * Create the legacy downscaled transcoded sample video. Protected so
-     * tests can observe the fallback without running ffmpeg.
-     */
-    protected function storeTranscodedSample(string $fileLocation, string $tmpPath, string $guid): bool
-    {
-        $fileName = $tmpPath.'zzzz'.$guid.'.ogv';
-        $newMethod = false;
-
-        // Try to get sample from end of video if duration is short
-        if ($this->config->ffmpegDuration < 60) {
-            $time = $this->getVideoTime($fileLocation);
-            if ($time !== '' && preg_match('/(\d{2}).(\d{2})/', $time, $numbers)) {
-                $newMethod = true;
-                if ($numbers[1] <= $this->config->ffmpegDuration) {
-                    $lowestLength = '00:00:00.00';
-                } else {
-                    $lowestLength = ($numbers[1] - $this->config->ffmpegDuration);
-                    $end = '.'.$numbers[2];
-                    $lowestLength = match (strlen((string) $lowestLength)) {
-                        1 => '00:00:0'.$lowestLength.$end,
-                        2 => '00:00:'.$lowestLength.$end,
-                        default => '00:00:60.00',
-                    };
-                }
-
-                try {
-                    if ($this->ffprobe()->isValid($fileLocation)) {
-                        /** @var Video $video */
-                        $video = $this->ffmpeg()->open($fileLocation);
-                        $clip = $video->clip(
-                            TimeCode::fromString($lowestLength),
-                            TimeCode::fromSeconds($this->config->ffmpegDuration)
-                        );
-                        $format = new Ogg;
-                        $format->setAudioCodec('libvorbis');
-                        $clip->filters()->resize(new Dimension(320, -1), ResizeFilter::RESIZEMODE_SCALE_HEIGHT);
-                        $clip->save($format, $fileName);
-                    }
-                } catch (\Throwable $e) {
-                    if ($this->config->debugMode) {
-                        Log::error($e->getTraceAsString());
-                    }
-                }
-            }
-        }
-
-        // Fallback: use start of video
-        if (! $newMethod) {
-            try {
-                if ($this->ffprobe()->isValid($fileLocation)) {
-                    /** @var Video $video */
-                    $video = $this->ffmpeg()->open($fileLocation);
-                    $clip = $video->clip(
-                        TimeCode::fromSeconds(0),
-                        TimeCode::fromSeconds($this->config->ffmpegDuration)
-                    );
-                    $format = new Ogg;
-                    $format->setAudioCodec('libvorbis');
-                    $clip->filters()->resize(new Dimension(320, -1), ResizeFilter::RESIZEMODE_SCALE_HEIGHT);
-                    $clip->save($format, $fileName);
-                }
-            } catch (\Throwable $e) {
-                if ($this->config->debugMode) {
-                    Log::error($e->getTraceAsString());
-                }
-            }
-        }
-
-        if (! $this->storeGeneratedMedia($fileName, $this->releaseImage->vidSavePath.$guid.'.ogv')) {
-            return false;
-        }
-
-        // The transcode reclaims the single artifact slot: any Clip from an
-        // earlier run — file and metadata row — is stale.
-        $this->removeSiblingVideoArtifacts($guid, 'ogv');
-        ReleaseVideoClip::query()
-            ->whereIn('releases_id', Release::query()->where('guid', $guid)->select('id'))
-            ->delete();
-
-        Release::query()->where('guid', $guid)->update(['videostatus' => 1]);
-
-        return true;
     }
 
     /**
@@ -434,16 +313,6 @@ class MediaExtractionService
         @chmod($destinationPath, 0764);
 
         return true;
-    }
-
-    private function ffmpeg(): FFMpeg
-    {
-        return $this->mediaTools()->ffmpeg();
-    }
-
-    private function ffprobe(): FFProbe
-    {
-        return $this->mediaTools()->ffprobe();
     }
 
     private function mediaInfo(): MediaInfo
