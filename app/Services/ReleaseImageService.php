@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Enums\ImageAssetProfile;
 use App\Models\ReleaseVideoClip;
 use App\Support\Data\ImageProcessingResult;
+use App\Support\Data\ImageRendition;
 use Closure;
 use GuzzleHttp\Psr7\Uri;
 use GuzzleHttp\Psr7\UriResolver;
@@ -111,6 +112,69 @@ class ReleaseImageService
 
             return ImageProcessingResult::failure('Unable to read the local image source.');
         }
+    }
+
+    /**
+     * Store imagery extracted from a release as two files: the display thumb
+     * at $thumbProfile's bounds, plus the Full-size copy beside it under the
+     * bare guid (ADR 0012).
+     *
+     * The source is decoded once and encoded twice. Ceilings here are the
+     * extracted-imagery ones, which are far higher than the remote-fetch
+     * limits: an oversized source is downscaled, not refused, and only a
+     * source over the hard ceiling is turned away.
+     *
+     * The thumb is the artifact the pipeline reports on -- a Full-size copy
+     * that fails to encode is logged and skipped, leaving a release that looks
+     * exactly like one processed before this feature shipped.
+     */
+    public function saveExtractedImage(
+        string $guid,
+        string $sourcePath,
+        string $destinationDirectory,
+        ImageAssetProfile $thumbProfile,
+    ): ImageProcessingResult {
+        if (! $this->isValidBasename($guid)) {
+            return ImageProcessingResult::failure('Image basename is invalid.');
+        }
+
+        $source = $this->readLocalBytes($sourcePath, $this->extractedMaxSourceBytes());
+        if (! $source['success']) {
+            return ImageProcessingResult::failure($source['reason']);
+        }
+
+        $results = $this->processRenditions(
+            $source['contents'],
+            $destinationDirectory,
+            [
+                ImageRendition::fromProfile($guid.'_thumb', $thumbProfile),
+                ImageRendition::fromProfile($guid, ImageAssetProfile::FullSize),
+            ],
+            $this->extractedMaxSourcePixels(),
+        );
+
+        if (! $results[0]->success) {
+            // The thumb is what the pipeline reports on: a Full-size copy with
+            // no thumb beside it would be an unreachable file, since nothing
+            // marks the release as having imagery.
+            if ($results[1]->path !== null) {
+                File::delete($results[1]->path);
+            }
+
+            return $results[0];
+        }
+
+        // A refusal both renditions share was already logged once, with the
+        // reason, by the decode path.
+        if (! $results[1]->success) {
+            Log::debug('Unable to store the full-size copy of extracted imagery.', [
+                'destination' => $destinationDirectory,
+                'guid' => $guid,
+                'reason' => $results[1]->failureReason,
+            ]);
+        }
+
+        return $results[0];
     }
 
     public function saveUploadedImage(
@@ -230,9 +294,13 @@ class ReleaseImageService
         // old fixed-name Vorbis clip.
         $files = [...$files, ...$this->audioArtifactsFor($guid)];
 
+        // Two files per release since ADR 0012: the display thumb and the
+        // Full-size copy stored beside it under the bare guid.
         foreach (['webp', 'jpg', 'jpeg'] as $extension) {
             $files[] = $this->imgSavePath.$guid.'_thumb.'.$extension;
+            $files[] = $this->imgSavePath.$guid.'.'.$extension;
             $files[] = $this->jpgSavePath.$guid.'_thumb.'.$extension;
+            $files[] = $this->jpgSavePath.$guid.'.'.$extension;
         }
 
         File::delete($files);
@@ -265,14 +333,14 @@ class ReleaseImageService
     }
 
     /** @return array{success: bool, contents: string, reason: string} */
-    private function readLocalBytes(string $path): array
+    private function readLocalBytes(string $path, ?int $maxBytes = null): array
     {
         if (! File::isFile($path) || ! File::isReadable($path)) {
             return ['success' => false, 'contents' => '', 'reason' => 'Image source is not a readable local file.'];
         }
 
         $size = File::size($path);
-        if ($size === false || $size <= 0 || $size > $this->maxSourceBytes()) {
+        if ($size === false || $size <= 0 || $size > ($maxBytes ?? $this->maxSourceBytes())) {
             return ['success' => false, 'contents' => '', 'reason' => 'Image source size is invalid or exceeds the configured limit.'];
         }
 
@@ -365,34 +433,110 @@ class ReleaseImageService
         ?int $maxWidth,
         ?int $maxHeight,
     ): ImageProcessingResult {
-        if (! $this->isValidBasename($imgName)) {
-            return ImageProcessingResult::failure('Image basename is invalid.');
+        return $this->processRenditions(
+            $contents,
+            $destinationDirectory,
+            [new ImageRendition($imgName, $maxWidth, $maxHeight)],
+            $this->maxSourcePixels(),
+            $this->maxSourceBytes(),
+        )[0];
+    }
+
+    /**
+     * Decode one source and write every rendition of it.
+     *
+     * Dimensions are read from the file header before anything is decoded:
+     * a kilobyte-sized file can claim gigapixel dimensions, and the ceiling is
+     * worth nothing if it is only checked once the bomb is already in memory.
+     * Headers this build cannot parse fall through to the post-decode check,
+     * which is where they were checked before the sniff existed.
+     *
+     * @param  list<ImageRendition>  $renditions
+     * @return list<ImageProcessingResult> Parallel to $renditions.
+     */
+    private function processRenditions(
+        string $contents,
+        string $destinationDirectory,
+        array $renditions,
+        int $maxSourcePixels,
+        ?int $maxSourceBytes = null,
+    ): array {
+        foreach ($renditions as $rendition) {
+            if (! $this->isValidBasename($rendition->basename)) {
+                return $this->failEach($renditions, 'Image basename is invalid.');
+            }
         }
 
-        if ($contents === '' || strlen($contents) > $this->maxSourceBytes()) {
-            return ImageProcessingResult::failure('Image source size is invalid or exceeds the configured limit.');
+        $maxSourceBytes ??= $this->extractedMaxSourceBytes();
+        if ($contents === '' || strlen($contents) > $maxSourceBytes) {
+            return $this->failEach($renditions, 'Image source size is invalid or exceeds the configured limit.');
         }
 
+        $header = @getimagesizefromstring($contents);
+        $width = is_array($header) ? (int) $header[0] : 0;
+        $height = is_array($header) ? (int) $header[1] : 0;
+
+        if ($width > 0 && $height > 0 && ($width * $height) > $maxSourcePixels) {
+            Log::debug('Refusing an image whose header exceeds the configured pixel ceiling.', [
+                'destination' => $destinationDirectory,
+                'width' => $width,
+                'height' => $height,
+                'ceiling' => $maxSourcePixels,
+            ]);
+
+            return $this->failEach($renditions, 'Image dimensions exceed the configured ceiling.');
+        }
+
+        try {
+            $source = Image::fromBytes($contents);
+
+            if ($width <= 0 || $height <= 0) {
+                $width = $source->width();
+                $height = $source->height();
+            }
+
+            if ($width <= 0 || $height <= 0 || ($width * $height) > $maxSourcePixels) {
+                return $this->failEach($renditions, 'Decoded image dimensions exceed the configured limit.');
+            }
+
+            $source = $source->orient();
+        } catch (Throwable $e) {
+            Log::debug('Unable to decode image.', [
+                'destination' => $destinationDirectory,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $this->failEach($renditions, 'Unable to decode or process the image.');
+        }
+
+        $results = [];
+        foreach ($renditions as $rendition) {
+            $results[] = $this->writeRendition($source, $rendition, $destinationDirectory, $width, $height);
+        }
+
+        return $results;
+    }
+
+    private function writeRendition(
+        LaravelImage $source,
+        ImageRendition $rendition,
+        string $destinationDirectory,
+        int $width,
+        int $height,
+    ): ImageProcessingResult {
         $temporaryPath = null;
 
         try {
-            $image = Image::fromBytes($contents);
-            $width = $image->width();
-            $height = $image->height();
-
-            if ($width <= 0 || $height <= 0 || ($width * $height) > $this->maxSourcePixels()) {
-                return ImageProcessingResult::failure('Decoded image dimensions exceed the configured limit.');
-            }
-
-            $image = $image->orient();
-            $image = $this->resizeDown($image, $width, $height, $maxWidth, $maxHeight);
-            $encoded = $this->encode($image);
+            $encoded = $this->encode(
+                $this->resizeDown($source, $width, $height, $rendition->maxWidth, $rendition->maxHeight),
+                $rendition->quality,
+            );
 
             File::ensureDirectoryExists($destinationDirectory, 0775, true);
             $directory = rtrim($destinationDirectory, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR;
             $extension = $this->outputExtension();
-            $destinationPath = $directory.$imgName.'.'.$extension;
-            $temporaryPath = $directory.'.'.$imgName.'.'.bin2hex(random_bytes(8)).'.tmp.'.$extension;
+            $destinationPath = $directory.$rendition->basename.'.'.$extension;
+            $temporaryPath = $directory.'.'.$rendition->basename.'.'.bin2hex(random_bytes(8)).'.tmp.'.$extension;
 
             if (File::put($temporaryPath, $encoded) === false) {
                 return ImageProcessingResult::failure('Unable to write the processed image.');
@@ -406,7 +550,7 @@ class ReleaseImageService
                 return ImageProcessingResult::failure('Processed image validation failed.');
             }
 
-            if (! rename($temporaryPath, $destinationPath)) {
+            if (! @rename($temporaryPath, $destinationPath)) {
                 return ImageProcessingResult::failure('Unable to atomically publish the processed image.');
             }
             $temporaryPath = null;
@@ -421,7 +565,7 @@ class ReleaseImageService
         } catch (Throwable $e) {
             Log::debug('Unable to process image.', [
                 'destination' => $destinationDirectory,
-                'name' => $imgName,
+                'name' => $rendition->basename,
                 'error' => $e->getMessage(),
             ]);
 
@@ -431,6 +575,18 @@ class ReleaseImageService
                 File::delete($temporaryPath);
             }
         }
+    }
+
+    /**
+     * @param  list<ImageRendition>  $renditions
+     * @return list<ImageProcessingResult>
+     */
+    private function failEach(array $renditions, string $reason): array
+    {
+        return array_map(
+            static fn (ImageRendition $rendition): ImageProcessingResult => ImageProcessingResult::failure($reason),
+            $renditions,
+        );
     }
 
     private function resizeDown(
@@ -455,9 +611,9 @@ class ReleaseImageService
         return $image;
     }
 
-    private function encode(LaravelImage $image): string
+    private function encode(LaravelImage $image, ?int $quality = null): string
     {
-        $quality = max(1, min(100, (int) config('image.output_quality', 82)));
+        $quality = max(1, min(100, $quality ?? (int) config('image.output_quality', 82)));
 
         return match ($this->outputFormat()) {
             'webp' => $image->toWebp()->quality($quality)->toBytes(),
@@ -480,6 +636,22 @@ class ReleaseImageService
     private function maxSourcePixels(): int
     {
         return max(1, (int) config('image.max_source_pixels', 40_000_000));
+    }
+
+    /**
+     * The hard ceilings for imagery extracted from a release. Unlike the
+     * remote-fetch limits above these are not rejection lines for ordinary
+     * sources -- everything under them is downscaled into the Full-size box
+     * (ADR 0012). They exist to keep a decompression bomb out of memory.
+     */
+    private function extractedMaxSourceBytes(): int
+    {
+        return max(1, (int) config('image.extracted_max_source_bytes', 100 * 1024 * 1024));
+    }
+
+    private function extractedMaxSourcePixels(): int
+    {
+        return max(1, (int) config('image.extracted_max_source_pixels', 120_000_000));
     }
 
     private function isValidBasename(string $basename): bool

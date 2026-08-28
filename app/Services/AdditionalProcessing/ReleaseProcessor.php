@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\AdditionalProcessing;
 
+use App\Enums\ImagerySkipArtifact;
 use App\Enums\NzbParseFailure;
 use App\Models\UsenetGroup;
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
@@ -51,6 +52,7 @@ class ReleaseProcessor
         private readonly Mp4MoovSplicer $mp4MoovSplicer = new Mp4MoovSplicer,
         private readonly DynamicPreviewBudgetPolicy $dynamicBudgetPolicy = new DynamicPreviewBudgetPolicy,
         private readonly VideoHeadProbe $headProbe = new VideoHeadProbe,
+        private readonly FreeDiskGuard $freeDiskGuard = new FreeDiskGuard,
     ) {}
 
     public function process(ReleaseProcessingContext $context, string $mainTmpPath): ReleaseProcessingResult
@@ -311,11 +313,18 @@ class ReleaseProcessor
             ->generationEnabledForCategory((int) $context->release->categories_id);
         $context->previewGenerationSkippedByPolicy = ! $previewGenerationAllowed;
 
+        // Free-disk guard (ADR 0013): during a squeeze on the covers volume no
+        // imagery is produced at all, and the artifacts this release would
+        // otherwise have been given are recorded so an operator can requeue it
+        // once space is reclaimed. The Clip keeps its own softer response.
+        $context->imagerySkippedByDiskGuard = $this->suppressedImagery($previewGenerationAllowed);
+        $imageryAllowed = $context->imagerySkippedByDiskGuard === [];
+
         $context->initializeFromConfig(
             $this->config->processVideo && $previewGenerationAllowed,
             $this->config->processMediaInfo,
-            $this->config->processJPGSample,
-            $this->config->processThumbnails && $previewGenerationAllowed
+            $this->config->processJPGSample && $imageryAllowed,
+            $this->config->processThumbnails && $previewGenerationAllowed && $imageryAllowed
         );
 
         $context->passwordStatus = ReleaseBrowseService::PASSWD_NONE;
@@ -332,6 +341,29 @@ class ReleaseProcessor
         $context->releaseHasNoNFO = (int) $context->release->nfostatus !== 1;
         $context->resetMessageIDs();
         $context->resetCounters();
+    }
+
+    /**
+     * The imagery this release would have been given, when the Free-disk guard
+     * refuses; an empty list whenever the guard allows, imagery is switched off
+     * site-wide, or the root category has Preview Generation disabled. Nothing
+     * to suppress means nothing to record and nothing to requeue.
+     *
+     * @return list<ImagerySkipArtifact>
+     */
+    private function suppressedImagery(bool $previewGenerationAllowed): array
+    {
+        $suppressed = [];
+        if ($this->config->processJPGSample) {
+            $suppressed[] = ImagerySkipArtifact::Sample;
+        }
+        if ($this->config->processThumbnails && $previewGenerationAllowed) {
+            $suppressed[] = ImagerySkipArtifact::Preview;
+        }
+
+        // Nothing to suppress means nothing to guard: do not stat the disk for
+        // a release that was never going to be given imagery.
+        return $suppressed === [] || $this->freeDiskGuard->allows() ? [] : $suppressed;
     }
 
     private function processingTimeoutResult(
@@ -375,15 +407,17 @@ class ReleaseProcessor
     private function createdArtifacts(ReleaseProcessingContext $context, bool $releaseNeededNfo): bool
     {
         // Policy-skipped previews pre-mark foundVideo/foundSample; they must
-        // not count as created artifacts.
+        // not count as created artifacts. A Free-disk guard skip pre-marks the
+        // two imagery flags for the same reason and needs the same exclusion.
         $previewGenerationAllowed = ! $context->previewGenerationSkippedByPolicy;
+        $imageryAttempted = $context->imagerySkippedByDiskGuard === [];
 
         return $context->releaseFilesChanged
             || $context->foundPAR2Info
             || ($releaseNeededNfo && ! $context->releaseHasNoNFO)
             || ($this->config->processVideo && $previewGenerationAllowed && $context->foundVideo)
-            || ($this->config->processThumbnails && $previewGenerationAllowed && $context->foundSample)
-            || ($this->config->processJPGSample && $context->foundJPGSample)
+            || ($this->config->processThumbnails && $previewGenerationAllowed && $imageryAttempted && $context->foundSample)
+            || ($this->config->processJPGSample && $imageryAttempted && $context->foundJPGSample)
             || ($this->config->processMediaInfo && $context->foundMediaInfo);
     }
 

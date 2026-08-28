@@ -87,10 +87,39 @@ class CoverControllerTest extends TestCase
         (new CoverController)->show('preview', '../.env.webp');
     }
 
-    private function createImage(string $path, string $format): void
+    public function test_a_bare_sample_request_prefers_the_full_size_copy_over_the_thumb(): void
+    {
+        $guid = 'guid'.uniqid();
+        $this->createImage(storage_path('covers/sample/'.$guid.'.webp'), 'webp', 1200, 600);
+        $this->createImage(storage_path('covers/sample/'.$guid.'_thumb.webp'), 'webp', 20, 10);
+
+        $response = (new CoverController)->show('sample', $guid.'.webp');
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame(
+            storage_path('covers/sample/'.$guid.'.webp'),
+            $response->getFile()->getPathname(),
+        );
+    }
+
+    public function test_a_bare_preview_request_falls_back_to_the_thumb_for_the_back_catalog(): void
+    {
+        $guid = 'guid'.uniqid();
+        $this->createImage(storage_path('covers/preview/'.$guid.'_thumb.webp'), 'webp');
+
+        $response = (new CoverController)->show('preview', $guid.'.webp');
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame(
+            storage_path('covers/preview/'.$guid.'_thumb.webp'),
+            $response->getFile()->getPathname(),
+        );
+    }
+
+    private function createImage(string $path, string $format, int $width = 20, int $height = 10): void
     {
         File::ensureDirectoryExists(dirname($path));
-        $image = imagecreatetruecolor(20, 10);
+        $image = imagecreatetruecolor($width, $height);
         $this->assertInstanceOf(GdImage::class, $image);
         imagefill($image, 0, 0, imagecolorallocate($image, 20, 40, 60));
 

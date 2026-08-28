@@ -259,6 +259,17 @@ class Release extends Model
     }
 
     /**
+     * The Imagery disk skip recorded when the Free-disk guard suppressed this
+     * release's sample/preview imagery; absent for every other release.
+     *
+     * @return HasOne<ReleaseImageryDiskSkip, $this>
+     */
+    public function imageryDiskSkip(): HasOne
+    {
+        return $this->hasOne(ReleaseImageryDiskSkip::class, 'releases_id');
+    }
+
+    /**
      * @return BelongsTo<TvEpisode, $this>
      */
     public function episode(): BelongsTo

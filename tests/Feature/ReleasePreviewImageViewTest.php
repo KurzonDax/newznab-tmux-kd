@@ -22,6 +22,7 @@ class ReleasePreviewImageViewTest extends TestCase
         $this->coversRoot = $this->makeTempDirectory('nntmux-covers');
         mkdir($this->coversRoot.'/audiosample', 0775, true);
         mkdir($this->coversRoot.'/preview', 0775, true);
+        mkdir($this->coversRoot.'/sample', 0775, true);
         config(['nntmux_settings.covers_path' => $this->coversRoot]);
     }
 
@@ -249,6 +250,83 @@ class ReleasePreviewImageViewTest extends TestCase
 
         $this->assertStringNotContainsString('data-image-title="Preview Image"', $html);
         $this->assertStringNotContainsString('/covers/preview/audio-guid_thumb', $html);
+    }
+
+    public function test_details_offers_the_fullscreen_view_when_a_full_size_copy_exists(): void
+    {
+        file_put_contents($this->coversRoot.'/preview/full-guid_thumb.webp', 'webp');
+        file_put_contents($this->coversRoot.'/preview/full-guid.webp', 'webp');
+        file_put_contents($this->coversRoot.'/sample/full-guid_thumb.webp', 'webp');
+        file_put_contents($this->coversRoot.'/sample/full-guid.webp', 'webp');
+
+        $release = Release::factory()->make([
+            'guid' => 'full-guid',
+            'categories_id' => Category::MOVIE_HD,
+            'haspreview' => 1,
+            'jpgstatus' => 1,
+            'videostatus' => 0,
+        ]);
+        $release->setRelation('audioTags', null);
+        $release->setRelation('videoClip', null);
+
+        $html = view('details.partials.preview-images', ['release' => $release])->render();
+
+        $this->assertStringContainsString('data-full-url="'.url('/covers/preview/full-guid.webp').'"', $html);
+        $this->assertStringContainsString('data-full-url="'.url('/covers/sample/full-guid.webp').'"', $html);
+    }
+
+    public function test_details_withholds_the_fullscreen_view_for_the_back_catalog(): void
+    {
+        file_put_contents($this->coversRoot.'/preview/thumb-only-guid_thumb.webp', 'webp');
+        file_put_contents($this->coversRoot.'/sample/thumb-only-guid_thumb.webp', 'webp');
+
+        $release = Release::factory()->make([
+            'guid' => 'thumb-only-guid',
+            'categories_id' => Category::MOVIE_HD,
+            'haspreview' => 1,
+            'jpgstatus' => 1,
+            'videostatus' => 0,
+        ]);
+        $release->setRelation('audioTags', null);
+        $release->setRelation('videoClip', null);
+
+        $html = view('details.partials.preview-images', ['release' => $release])->render();
+
+        $this->assertStringContainsString('data-image-title="Preview Image"', $html);
+        $this->assertStringContainsString('data-image-title="Sample Image"', $html);
+        $this->assertStringNotContainsString('data-full-url', $html);
+    }
+
+    public function test_a_browse_row_offers_the_fullscreen_view_when_a_full_size_copy_exists(): void
+    {
+        file_put_contents($this->coversRoot.'/preview/row-full-guid_thumb.webp', 'webp');
+        file_put_contents($this->coversRoot.'/preview/row-full-guid.webp', 'webp');
+        file_put_contents($this->coversRoot.'/sample/row-full-guid_thumb.webp', 'webp');
+        file_put_contents($this->coversRoot.'/sample/row-full-guid.webp', 'webp');
+
+        $html = $this->renderResults($this->release([
+            'guid' => 'row-full-guid',
+            'haspreview' => 1,
+            'jpgstatus' => 1,
+        ]));
+
+        $this->assertStringContainsString('data-full-url="'.url('/covers/preview/row-full-guid.webp').'"', $html);
+        $this->assertStringContainsString('data-full-url="'.url('/covers/sample/row-full-guid.webp').'"', $html);
+    }
+
+    public function test_a_browse_row_withholds_the_fullscreen_view_for_the_back_catalog(): void
+    {
+        file_put_contents($this->coversRoot.'/preview/row-thumb-guid_thumb.webp', 'webp');
+        file_put_contents($this->coversRoot.'/sample/row-thumb-guid_thumb.webp', 'webp');
+
+        $html = $this->renderResults($this->release([
+            'guid' => 'row-thumb-guid',
+            'haspreview' => 1,
+            'jpgstatus' => 1,
+        ]));
+
+        $this->assertStringContainsString('class="sample-badge', $html);
+        $this->assertStringNotContainsString('data-full-url', $html);
     }
 
     private function renderResults(object $release): string

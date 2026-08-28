@@ -9,6 +9,7 @@ use App\Services\ReleaseImageService;
 use GdImage;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Image;
 use Tests\TestCase;
 
 class ReleaseImageServiceTest extends TestCase
@@ -25,6 +26,11 @@ class ReleaseImageServiceTest extends TestCase
             'image.output_quality' => 82,
             'image.max_source_bytes' => 20 * 1024 * 1024,
             'image.max_source_pixels' => 40_000_000,
+            'image.full_max_width' => 1920,
+            'image.full_max_height' => 1920,
+            'image.full_output_quality' => 90,
+            'image.extracted_max_source_bytes' => 100 * 1024 * 1024,
+            'image.extracted_max_source_pixels' => 120_000_000,
         ]);
 
         $this->temporaryDirectory = sys_get_temp_dir().DIRECTORY_SEPARATOR.'release-image-'.uniqid('', true).DIRECTORY_SEPARATOR;
@@ -189,6 +195,214 @@ class ReleaseImageServiceTest extends TestCase
         foreach ($files as $file) {
             $this->assertFileDoesNotExist($file);
         }
+    }
+
+    public function test_extracted_imagery_writes_a_thumb_and_a_full_size_copy(): void
+    {
+        $source = $this->createPng('sample.png', 2600, 1300);
+
+        $result = (new ReleaseImageService)->saveExtractedImage(
+            'abc123',
+            $source,
+            $this->temporaryDirectory,
+            ImageAssetProfile::Sample,
+        );
+
+        $this->assertTrue($result->success);
+        $this->assertSame($this->temporaryDirectory.'abc123_thumb.webp', $result->path);
+        $this->assertImageDimensions($this->temporaryDirectory.'abc123_thumb.webp', 650, 325);
+        $this->assertImageDimensions($this->temporaryDirectory.'abc123.webp', 1920, 960);
+    }
+
+    public function test_the_full_size_copy_is_never_upscaled_past_the_source(): void
+    {
+        $source = $this->createPng('small-sample.png', 300, 150);
+
+        $result = (new ReleaseImageService)->saveExtractedImage(
+            'small1',
+            $source,
+            $this->temporaryDirectory,
+            ImageAssetProfile::Preview,
+        );
+
+        $this->assertTrue($result->success);
+        $this->assertImageDimensions($this->temporaryDirectory.'small1_thumb.webp', 300, 150);
+        $this->assertImageDimensions($this->temporaryDirectory.'small1.webp', 300, 150);
+    }
+
+    public function test_the_full_size_box_and_quality_are_configurable(): void
+    {
+        config([
+            'image.full_max_width' => 800,
+            'image.full_max_height' => 800,
+            'image.full_output_quality' => 40,
+        ]);
+        $source = $this->createPhotographicPng('configurable.png', 2000, 2000);
+
+        $lowQuality = (new ReleaseImageService)->saveExtractedImage(
+            'lowq01',
+            $source,
+            $this->temporaryDirectory,
+            ImageAssetProfile::Sample,
+        );
+
+        $this->assertTrue($lowQuality->success);
+        $this->assertImageDimensions($this->temporaryDirectory.'lowq01.webp', 800, 800);
+        $lowQualityBytes = File::size($this->temporaryDirectory.'lowq01.webp');
+
+        config(['image.full_output_quality' => 95]);
+        $highQuality = (new ReleaseImageService)->saveExtractedImage(
+            'highq1',
+            $source,
+            $this->temporaryDirectory,
+            ImageAssetProfile::Sample,
+        );
+
+        $this->assertTrue($highQuality->success);
+        $this->assertGreaterThan($lowQualityBytes, File::size($this->temporaryDirectory.'highq1.webp'));
+    }
+
+    public function test_extracted_imagery_accepts_sources_the_remote_limits_would_reject(): void
+    {
+        config([
+            'image.max_source_bytes' => 64,
+            'image.max_source_pixels' => 1000,
+        ]);
+        $source = $this->createPng('oversized.png', 3000, 1500);
+
+        $result = (new ReleaseImageService)->saveExtractedImage(
+            'big001',
+            $source,
+            $this->temporaryDirectory,
+            ImageAssetProfile::Sample,
+        );
+
+        $this->assertTrue($result->success);
+        $this->assertImageDimensions($this->temporaryDirectory.'big001.webp', 1920, 960);
+    }
+
+    public function test_extracted_imagery_is_refused_above_the_hard_pixel_ceiling(): void
+    {
+        config(['image.extracted_max_source_pixels' => 1_000]);
+        $source = $this->createPng('bomb.png', 2000, 1000);
+
+        $result = (new ReleaseImageService)->saveExtractedImage(
+            'bomb01',
+            $source,
+            $this->temporaryDirectory,
+            ImageAssetProfile::Sample,
+        );
+
+        $this->assertFalse($result->success);
+        $this->assertFileDoesNotExist($this->temporaryDirectory.'bomb01_thumb.webp');
+        $this->assertFileDoesNotExist($this->temporaryDirectory.'bomb01.webp');
+    }
+
+    public function test_extracted_imagery_is_refused_above_the_hard_byte_ceiling(): void
+    {
+        $source = $this->createPng('heavy.png', 200, 100);
+        config(['image.extracted_max_source_bytes' => 4]);
+
+        $result = (new ReleaseImageService)->saveExtractedImage(
+            'heavy1',
+            $source,
+            $this->temporaryDirectory,
+            ImageAssetProfile::Sample,
+        );
+
+        $this->assertFalse($result->success);
+        $this->assertFileDoesNotExist($this->temporaryDirectory.'heavy1_thumb.webp');
+    }
+
+    public function test_an_oversized_header_is_refused_before_the_image_is_decoded(): void
+    {
+        config(['image.extracted_max_source_pixels' => 1_000]);
+        $source = $this->createPng('sniffed.png', 2000, 1000);
+        Image::shouldReceive('fromBytes')->never();
+
+        $result = (new ReleaseImageService)->saveExtractedImage(
+            'sniff1',
+            $source,
+            $this->temporaryDirectory,
+            ImageAssetProfile::Sample,
+        );
+
+        $this->assertFalse($result->success);
+    }
+
+    public function test_a_failed_full_size_copy_still_leaves_the_display_thumb(): void
+    {
+        $source = $this->createPng('partial.png', 400, 200);
+        $blocker = $this->temporaryDirectory.'partial1.webp';
+        File::makeDirectory($blocker, 0777, true);
+
+        $result = (new ReleaseImageService)->saveExtractedImage(
+            'partial1',
+            $source,
+            $this->temporaryDirectory,
+            ImageAssetProfile::Sample,
+        );
+
+        $this->assertTrue($result->success);
+        $this->assertFileExists($this->temporaryDirectory.'partial1_thumb.webp');
+        $this->assertDirectoryExists($blocker);
+    }
+
+    public function test_a_failed_thumb_leaves_no_orphaned_full_size_copy(): void
+    {
+        $source = $this->createPng('orphan.png', 400, 200);
+        $blocker = $this->temporaryDirectory.'orphan1_thumb.webp';
+        File::makeDirectory($blocker, 0777, true);
+
+        $result = (new ReleaseImageService)->saveExtractedImage(
+            'orphan1',
+            $source,
+            $this->temporaryDirectory,
+            ImageAssetProfile::Sample,
+        );
+
+        $this->assertFalse($result->success);
+        $this->assertFileDoesNotExist($this->temporaryDirectory.'orphan1.webp');
+    }
+
+    public function test_delete_removes_the_full_size_copies_beside_the_thumbs(): void
+    {
+        $service = new ReleaseImageService;
+        $guid = 'delete'.uniqid();
+        $files = [
+            $service->imgSavePath.$guid.'_thumb.webp',
+            $service->imgSavePath.$guid.'.webp',
+            $service->jpgSavePath.$guid.'_thumb.webp',
+            $service->jpgSavePath.$guid.'.jpg',
+        ];
+        foreach ($files as $file) {
+            File::ensureDirectoryExists(dirname($file));
+            File::put($file, 'image');
+        }
+
+        $service->delete($guid);
+
+        foreach ($files as $file) {
+            $this->assertFileDoesNotExist($file);
+        }
+    }
+
+    private function createPhotographicPng(string $filename, int $width, int $height): string
+    {
+        $path = $this->temporaryDirectory.$filename;
+        $image = imagecreatetruecolor($width, $height);
+
+        $this->assertInstanceOf(GdImage::class, $image);
+
+        for ($x = 0; $x < $width; $x += 3) {
+            for ($y = 0; $y < $height; $y += 3) {
+                $color = imagecolorallocate($image, ($x * 7) % 256, ($y * 13) % 256, ($x * $y) % 256);
+                imagefilledrectangle($image, $x, $y, $x + 2, $y + 2, $color);
+            }
+        }
+        imagepng($image, $path);
+
+        return $path;
     }
 
     private function createPng(string $filename, int $width, int $height): string

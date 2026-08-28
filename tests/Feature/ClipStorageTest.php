@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Models\ReleaseVideoClip;
-use App\Services\AdditionalProcessing\ClipDiskGuard;
+use App\Services\AdditionalProcessing\FreeDiskGuard;
 use App\Services\AdditionalProcessing\MediaExtractionService;
 use App\Services\AdditionalProcessing\VideoClipEncoder;
 use App\Services\AdditionalProcessing\VideoFrameExtractor;
@@ -202,7 +202,7 @@ class ClipStorageTest extends TestCase
             new VideoFrameExtractor($config),
             clipPolicy: new StubClipGenerationPolicy($clipEnabled),
             clipEncoder: new VideoClipEncoder($encoderRunner),
-            clipDiskGuard: new ClipDiskGuard(
+            freeDiskGuard: new FreeDiskGuard(
                 static fn (string $path): float => $diskHasRoom ? 500.0 : 50.0,
                 static fn (string $path): float => 1000.0,
             ),

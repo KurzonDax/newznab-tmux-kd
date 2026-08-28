@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\AdditionalProcessing;
 
+use App\Enums\ImagerySkipArtifact;
 use App\Facades\Search;
 use App\Models\Category;
 use App\Models\MediaInfo as MediaInfoModel;
@@ -11,6 +12,7 @@ use App\Models\ParHash;
 use App\Models\Predb;
 use App\Models\Release;
 use App\Models\ReleaseFile;
+use App\Models\ReleaseImageryDiskSkip;
 use App\Models\Settings;
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
@@ -347,6 +349,8 @@ class ReleaseFileManager
 
             $releaseFilesCount = ReleaseFile::whereReleasesId($context->release->id)->count('releases_id') ?? 0;
 
+            $this->recordImageryDiskSkip($context);
+
             if (! $context->releaseHasPassword && $context->nzbHasCompressedFile && $releaseFilesCount === 0) {
                 Release::query()->where('id', $context->release->id)->update($updateRows);
             } else {
@@ -367,6 +371,32 @@ class ReleaseFileManager
         $context->releaseFilesChanged = $context->releaseFilesChanged || $insertedReleaseFiles > 0;
 
         $this->searchSyncCoordinator->request((int) $context->release->id);
+    }
+
+    /**
+     * Record -- or clear -- this release's Imagery disk skip ledger row.
+     *
+     * The row is the durable half of ADR 0013: the release itself settles as
+     * processed so the workers stop re-claiming it during a squeeze, and the
+     * ledger is what `releases:requeue-imagery-disk-skips` reads once space is
+     * reclaimed. A run that was allowed to produce imagery clears any row left
+     * by an earlier squeeze, so a requeued release does not linger on a list of
+     * outstanding work it has already been given.
+     */
+    private function recordImageryDiskSkip(ReleaseProcessingContext $context): void
+    {
+        $releaseId = (int) $context->release->id;
+
+        if ($context->imagerySkippedByDiskGuard === []) {
+            ReleaseImageryDiskSkip::query()->where('releases_id', $releaseId)->delete();
+
+            return;
+        }
+
+        ReleaseImageryDiskSkip::query()->updateOrCreate(
+            ['releases_id' => $releaseId],
+            ['suppressed' => ImagerySkipArtifact::toList($context->imagerySkippedByDiskGuard)],
+        );
     }
 
     /**

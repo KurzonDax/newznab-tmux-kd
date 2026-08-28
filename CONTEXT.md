@@ -63,8 +63,16 @@ _Avoid_: "thumbnail" in UI copy — thumbnails are the small rendering of any im
 The short video clip the indexer stores from a video file found inside a release. Paired with the Generated Preview under Preview Generation. One per release, in one of two forms: a downscaled transcode (the legacy path) or a Clip. A Clip takes over the slot — the two forms never coexist for one release.
 
 **Clip**:
-The full-resolution, stream-copied (no transcode) form of the Generated Sample Video, covering the whole downloaded head window. Produced only where Clip storage is enabled for the release's root category (a Movies/TV/XXX toggle, default XXX only) and the source codecs are browser-playable without transcoding; otherwise the downscaled transcode is stored instead. Lives and dies with its release, and is never generated while the storage volume is under the free-disk guard (10%).
+The full-resolution, stream-copied (no transcode) form of the Generated Sample Video, covering the whole downloaded head window. Produced only where Clip storage is enabled for the release's root category (a Movies/TV/XXX toggle, default XXX only) and the source codecs are browser-playable without transcoding; otherwise the downscaled transcode is stored instead. Lives and dies with its release, and is never generated while the covers volume is under the Free-disk guard.
 _Avoid_: "trailer" — a Clip is cut from the release's own footage; "sample video" in UI copy where the full-res/downscaled distinction matters.
+
+**Free-disk guard**:
+The gate that halts disk-hungry artifact production while the volume holding covers storage is below a threshold share of free space (default 10%). Each producer declares its own response: Clips degrade to the small transcode, while sample/preview imagery is skipped entirely and recorded as an Imagery disk skip. A guard that cannot read the disk refuses, on the principle that producing large artifacts is the wrong response to not knowing how full the disk is.
+_Avoid_: treating a guard skip as an error — it is policy working as intended.
+
+**Imagery disk skip**:
+The recorded fact that a release's imagery work was suppressed by the Free-disk guard, kept until an operator requeues the release after reclaiming space. The record means "suppressed", not "imagery existed" — the requeued run determines what the release actually yields.
+_Avoid_: reading a skip record as proof the release contained a sample.
 
 **Dynamic segment budget**:
 Sizing the fetched head of a release's main video file by target duration instead of a fixed segment count: a fixed-size initial window is probed for bitrate, then topped up to reach a target duration (default 30s) under a hard byte ceiling (default 300 MB, 0 = unlimited). Enabled per root category (Movies/TV/XXX toggles, default XXX only); every other root keeps the fixed count. For a bare non-faststart MP4 the budget runs only after a successful moov splice. Top-up fetches are skipped early, with a distinct outcome reason, when the needed segment ranges have gaps.
@@ -83,8 +91,16 @@ The badge beside the Completion chip on a release that is measured but below 100
 _Avoid_: calling a release unrecoverable because one machine finished; treating a successful repair as an exhausted attempt.
 
 **Extracted Sample Image**:
-An image that already exists inside a release's archives (or as its own article) and is saved out as-is. Never produced by ffmpeg and never affected by Preview Generation controls.
-_Avoid_: plain "sample" when the generated/extracted distinction matters.
+An image found inside a release's archives (or posted as its own article) and saved out by the indexer as a display thumb plus a Full-size copy. Never produced by ffmpeg and never affected by Preview Generation controls.
+_Avoid_: plain "sample" when the generated/extracted distinction matters; "saved as-is" — the stored copies are always re-encoded, never the poster's bytes.
+
+**Full-size copy**:
+The larger stored rendering of a release's Extracted Sample Image or Generated Preview: capped to a desktop-viewport box, aspect-preserved, never upscaled, stored beside the small display thumb. Exists only for releases processed after the feature shipped — the back catalog is deliberately never regenerated.
+_Avoid_: "original" — it is re-encoded and possibly downscaled, never the poster's verbatim bytes.
+
+**Fullscreen view**:
+The second stage of the image modal: the Full-size copy presented to fit entirely inside the viewport, entered from a small corner control on the modal image and exited back to the modal it came from. Offered only where a Full-size copy exists, so the control never promises more pixels than it can deliver.
+_Avoid_: "open in new tab" — that affordance was considered and scrapped.
 
 **Obfuscated-name routing**:
 An opt-in per-group setting (a toggle plus a default *root* category) that sends releases whose names look obfuscated or gibberish — but are **not** true MD5/SHA hashes — to the default root's *Other* subcategory (e.g. XXX/Other) instead of Other/Hashed. Off and unset for every group by default; never pre-populated. The routed root is a floor, not a lock: content pipes and Mediainfo refinement may still refine the subcategory, and audio-only content is refiled under Audio. Editable per group and via Edit Selected.

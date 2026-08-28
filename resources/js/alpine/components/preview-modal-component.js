@@ -43,10 +43,16 @@ export function previewModal() {
     videoUrl: "",
     videoType: "",
     videoPlaying: false,
+    fullUrl: "",
+    fullscreen: false,
 
-    show(guid, type, resolvedUrl, title, audio, video) {
+    show(guid, type, resolvedUrl, title, audio, video, fullUrl) {
       this.releaseAudio();
       this.releaseVideo();
+      this.fullscreen = false;
+      // Offered only where a Full-size copy is on disk (ADR 0012); the trigger
+      // omits the attribute entirely for the back catalog.
+      this.fullUrl = fullUrl || "";
 
       type = type || "preview";
       this.title =
@@ -85,7 +91,27 @@ export function previewModal() {
     close() {
       this.releaseAudio();
       this.releaseVideo();
+      this.fullscreen = false;
       this.open = false;
+    },
+
+    enterFullscreen() {
+      if (this.fullUrl) {
+        this.fullscreen = true;
+      }
+    },
+
+    exitFullscreen() {
+      this.fullscreen = false;
+    },
+
+    /** Escape and backdrop clicks step back one layer at a time. */
+    stepBack() {
+      if (this.fullscreen) {
+        this.exitFullscreen();
+        return;
+      }
+      this.close();
     },
 
     // No bytes are fetched until play is pressed: the <video> element has no
@@ -168,13 +194,22 @@ export function previewModal() {
                   type: preview.dataset.videoType,
                 }
               : undefined,
+            preview.dataset.fullUrl,
           );
           return;
         }
         const sample = e.target.closest(".sample-badge");
         if (sample) {
           e.preventDefault();
-          self.show(sample.dataset.guid, "sample", sample.dataset.imageUrl);
+          self.show(
+            sample.dataset.guid,
+            "sample",
+            sample.dataset.imageUrl,
+            undefined,
+            undefined,
+            undefined,
+            sample.dataset.fullUrl,
+          );
           return;
         }
         if (e.target.closest("[data-close-preview-modal]")) {
@@ -203,7 +238,7 @@ export function previewModal() {
       });
 
       document.addEventListener("keydown", function (e) {
-        if (e.key === "Escape" && self.open) self.close();
+        if (e.key === "Escape" && self.open) self.stepBack();
       });
 
       // Prefetch images for badges visible in the viewport during idle time

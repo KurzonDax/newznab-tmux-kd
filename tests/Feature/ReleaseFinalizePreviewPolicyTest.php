@@ -72,6 +72,14 @@ class ReleaseFinalizePreviewPolicyTest extends TestCase
             ['id' => 6010, 'root_categories_id' => 6000],
         ]);
 
+        Schema::create('release_imagery_disk_skips', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->unsignedInteger('releases_id');
+            $table->string('suppressed', 32);
+            $table->timestamps();
+            $table->unique('releases_id');
+        });
+
         Schema::create('release_files', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
             $table->string('name');

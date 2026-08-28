@@ -15,6 +15,7 @@ use App\Services\AdditionalProcessing\ConsoleOutputService;
 use App\Services\AdditionalProcessing\DTO\DownloadMetrics;
 use App\Services\AdditionalProcessing\Enums\DownloadKind;
 use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
+use App\Services\AdditionalProcessing\FreeDiskGuard;
 use App\Services\AdditionalProcessing\MediaExtractionService;
 use App\Services\AdditionalProcessing\NzbContentParser;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
@@ -500,6 +501,11 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
             $searchSync,
             $persistenceMetrics,
             previewPolicy: new AlwaysEnabledPreviewPolicy,
+            // Pinned open: the default guard measures the real covers volume.
+            freeDiskGuard: new FreeDiskGuard(
+                static fn (string $path): float => 900.0,
+                static fn (string $path): float => 1000.0,
+            ),
         );
 
         $result = $processor->process(new ReleaseProcessingContext(Release::query()->findOrFail(1)), $tmpPath);
@@ -609,6 +615,11 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
             $searchSync,
             $persistenceMetrics,
             previewPolicy: new AlwaysEnabledPreviewPolicy,
+            // Pinned open: the default guard measures the real covers volume.
+            freeDiskGuard: new FreeDiskGuard(
+                static fn (string $path): float => 900.0,
+                static fn (string $path): float => 1000.0,
+            ),
         );
 
         $result = $processor->process(
@@ -1126,6 +1137,14 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
             $table->boolean('isrenamed')->default(false);
             $table->timestamp('additional_pp_claimed_at')->nullable();
             $table->string('additional_pp_claim_token', 64)->nullable();
+        });
+
+        Schema::create('release_imagery_disk_skips', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->unsignedInteger('releases_id');
+            $table->string('suppressed', 32);
+            $table->timestamps();
+            $table->unique('releases_id');
         });
 
         Schema::create('release_files', function (Blueprint $table): void {
