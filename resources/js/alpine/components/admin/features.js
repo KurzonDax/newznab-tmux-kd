@@ -1,5 +1,5 @@
 /**
- * Admin feature components: TinyMCE, user edit, verify modal, scroll sync, etc.
+ * Admin feature components: user edit, verify modal, scroll sync, etc.
  */
 import Alpine from '@alpinejs/csp';
 
@@ -7,77 +7,6 @@ function escapeHtml(text) {
     const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
     return String(text).replace(/[&<>"']/g, m => map[m]);
 }
-
-// TinyMCE editor (loads from CDN, remains imperative)
-Alpine.data('tinyMceEditor', () => ({
-    init() {
-        if (!document.getElementById('body') && !document.querySelector('.tinymce-editor')) return;
-        this._loadAndInit();
-    },
-
-    _loadAndInit() {
-        if (typeof tinymce !== 'undefined') { this._doInit(); return; }
-        const body = document.getElementById('body');
-        const editors = document.querySelectorAll('.tinymce-editor');
-        let apiKey = 'no-api-key';
-        const meta = document.querySelector('meta[name="tinymce-api-key"]');
-        if (meta) { apiKey = meta.content; }
-        else if (window.NNTmuxConfig?.tinymceApiKey) apiKey = window.NNTmuxConfig.tinymceApiKey;
-        else if (body?.dataset.tinymceApiKey) apiKey = body.dataset.tinymceApiKey;
-        else { for (let e of editors) { if (e.dataset.tinymceApiKey) { apiKey = e.dataset.tinymceApiKey; break; } } }
-
-        const script = document.createElement('script');
-        script.src = 'https://cdn.tiny.cloud/1/' + apiKey + '/tinymce/8/tinymce.min.js';
-        script.referrerPolicy = 'origin';
-        // Add CSP nonce for Content Security Policy compliance
-        const nonceMeta = document.querySelector('meta[name="csp-nonce"]');
-        if (nonceMeta) {
-            script.nonce = nonceMeta.content;
-        }
-        script.onload = () => this._doInit();
-        script.onerror = () => {
-            document.querySelectorAll('#body, .tinymce-editor').forEach(ta => {
-                if (ta.parentElement) {
-                    const err = document.createElement('div');
-                    err.className = 'mt-2 p-3 bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 text-red-800 dark:text-red-200 rounded';
-                    err.innerHTML = '<i class="fas fa-exclamation-triangle mr-2"></i>TinyMCE editor failed to load.';
-                    ta.parentElement.insertBefore(err, ta.nextSibling);
-                }
-            });
-        };
-        document.head.appendChild(script);
-    },
-
-    _doInit() {
-        const dark = document.documentElement.classList.contains('dark');
-        tinymce.init({
-            selector: '#body, .tinymce-editor', height: 500, menubar: true,
-            skin: dark ? 'oxide-dark' : 'oxide', content_css: dark ? 'dark' : 'default',
-            plugins: ['advlist','autolink','lists','link','image','charmap','preview','anchor','searchreplace','visualblocks','code','fullscreen','insertdatetime','media','table','help','wordcount','emoticons'],
-            toolbar: 'undo redo | blocks fontfamily fontsize | bold italic underline strikethrough | forecolor backcolor | alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | link image media table emoticons | removeformat code fullscreen | help',
-            toolbar_mode: 'sliding', content_style: 'body { font-family: Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.6; }',
-            branding: false, promotion: false, resize: true, statusbar: true, valid_elements: '*[*]', extended_valid_elements: '*[*]',
-            setup: function(editor) { editor.on('change blur keyup submit', function() { editor.save(); }); }
-        });
-
-        // Watch dark mode changes to reinit TinyMCE
-        new MutationObserver(() => {
-            if (!tinymce.editors.length) return;
-            const contents = {};
-            tinymce.editors.forEach(e => { contents[e.id] = e.getContent(); });
-            tinymce.remove();
-            const d = document.documentElement.classList.contains('dark');
-            tinymce.init({
-                selector: '#body, .tinymce-editor', height: 500, menubar: true,
-                skin: d ? 'oxide-dark' : 'oxide', content_css: d ? 'dark' : 'default',
-                plugins: ['advlist','autolink','lists','link','image','charmap','preview','anchor','searchreplace','visualblocks','code','fullscreen','insertdatetime','media','table','help','wordcount','emoticons'],
-                toolbar: 'undo redo | blocks fontfamily fontsize | bold italic underline strikethrough | forecolor backcolor | alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | link image media table emoticons | removeformat code fullscreen | help',
-                toolbar_mode: 'sliding', branding: false, promotion: false, valid_elements: '*[*]', extended_valid_elements: '*[*]',
-                setup: function(editor) { editor.on('change blur keyup submit', function() { editor.save(); }); }
-            }).then(eds => { eds.forEach(e => { if (contents[e.id]) e.setContent(contents[e.id]); }); });
-        }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    }
-}));
 
 // User Edit datetime picker
 Alpine.data('adminUserEdit', () => ({

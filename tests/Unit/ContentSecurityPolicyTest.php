@@ -46,6 +46,20 @@ class ContentSecurityPolicyTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_csp_header_contains_no_legacy_editor_hosts(): void
+    {
+        $response = (new ContentSecurityPolicy)->handle(
+            Request::create('/admin'),
+            static fn (): Response => new Response,
+        );
+
+        $csp = (string) $response->headers->get('Content-Security-Policy');
+
+        $this->assertNotSame('', $csp);
+        // Covers both retired editor CDN hosts (cdn + telemetry).
+        $this->assertStringNotContainsStringIgnoringCase('tiny', $csp);
+    }
+
     public function test_horizon_inline_assets_receive_the_csp_nonce(): void
     {
         $response = (new ContentSecurityPolicy)->handle(

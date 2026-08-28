@@ -2,7 +2,7 @@
 
 @section('content')
 
-<div class="space-y-6" x-data="tinyMceEditor">
+<div class="space-y-6" x-data="richTextEditor">
     <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
         <!-- Header -->
         <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
