@@ -793,6 +793,14 @@ class SettingsTableSeeder extends Seeder
                 'name' => 'preview_max_fetch_mb',
                 'value' => '300',
             ],
+            276 => [
+                'name' => 'preview_max_rar_parts',
+                'value' => '6',
+            ],
+            277 => [
+                'name' => 'clip_minimum_seconds',
+                'value' => '5',
+            ],
         ]);
     }
 }

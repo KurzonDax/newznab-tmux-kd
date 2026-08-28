@@ -156,6 +156,56 @@ class ClipStorageTest extends TestCase
         $this->assertNoVideoArtifacts($releaseId);
     }
 
+    public function test_a_clip_below_the_duration_floor_is_discarded_entirely(): void
+    {
+        $releaseId = $this->seedRelease('clip-guid');
+        $service = $this->makeService(
+            clipEnabled: true,
+            diskHasRoom: true,
+            encoderRunner: $this->safeH264Runner(duration: '00:00:03.00'),
+        );
+
+        $this->assertFalse($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010));
+
+        $this->assertNoVideoArtifacts($releaseId);
+        $this->assertSame(
+            [],
+            glob($this->tmpPath.'clip_*') ?: [],
+            'The floored encode is deleted, not left in the workspace.',
+        );
+    }
+
+    public function test_a_floor_of_zero_stores_however_short_a_clip(): void
+    {
+        $releaseId = $this->seedRelease('clip-guid');
+        $service = $this->makeService(
+            clipEnabled: true,
+            diskHasRoom: true,
+            encoderRunner: $this->safeH264Runner(duration: '00:00:03.00'),
+            clipMinimumSeconds: 0,
+        );
+
+        $this->assertTrue($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010));
+
+        $this->assertFileExists($this->coversRoot.'/video/clip-guid.mp4');
+        $this->assertSame(3, ReleaseVideoClip::query()->where('releases_id', $releaseId)->value('duration_seconds'));
+    }
+
+    public function test_an_unreadable_duration_is_not_floored(): void
+    {
+        $releaseId = $this->seedRelease('clip-guid');
+        $service = $this->makeService(
+            clipEnabled: true,
+            diskHasRoom: true,
+            encoderRunner: $this->safeH264Runner(duration: null),
+        );
+
+        $this->assertTrue($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010));
+
+        $this->assertFileExists($this->coversRoot.'/video/clip-guid.mp4');
+        $this->assertNull(ReleaseVideoClip::query()->where('releases_id', $releaseId)->value('duration_seconds'));
+    }
+
     public function test_a_declined_clip_logs_no_error_trace_even_in_debug_mode(): void
     {
         $releaseId = $this->seedRelease('clip-guid');
@@ -214,12 +264,18 @@ class ClipStorageTest extends TestCase
     /**
      * @param  callable(list<string>, int): string  $encoderRunner
      */
-    private function makeService(bool $clipEnabled, bool $diskHasRoom, callable $encoderRunner, bool $debugMode = false): MediaExtractionService
-    {
+    private function makeService(
+        bool $clipEnabled,
+        bool $diskHasRoom,
+        callable $encoderRunner,
+        bool $debugMode = false,
+        int $clipMinimumSeconds = 5,
+    ): MediaExtractionService {
         $config = $this->makeConfig([
             'processVideo' => true,
             'ffmpegPath' => '/usr/bin/ffmpeg',
             'debugMode' => $debugMode,
+            'clipMinimumSeconds' => $clipMinimumSeconds,
         ]);
 
         return new MediaExtractionService(
@@ -237,11 +293,12 @@ class ClipStorageTest extends TestCase
     }
 
     /**
+     * @param  string|null  $duration  What the post-remux duration probe reports; null for an unreadable duration.
      * @return callable(list<string>, int): string
      */
-    private function safeH264Runner(): callable
+    private function safeH264Runner(?string $duration = '00:00:30.20'): callable
     {
-        return static function (array $command, int $timeout): string {
+        return static function (array $command, int $timeout) use ($duration): string {
             if (in_array('copy', $command, true)) {
                 file_put_contents(end($command), 'remuxed clip bytes');
 
@@ -252,7 +309,9 @@ class ClipStorageTest extends TestCase
                 return "Stream #0:0(und): Video: h264 (High)\n  Stream #0:1(und): Audio: aac (LC)";
             }
 
-            return 'Duration: 00:00:30.20, start: 0.000000, bitrate: 5000 kb/s';
+            return $duration === null
+                ? 'Input #0, mov,mp4, from clip: no duration line'
+                : 'Duration: '.$duration.', start: 0.000000, bitrate: 5000 kb/s';
         };
     }
 }

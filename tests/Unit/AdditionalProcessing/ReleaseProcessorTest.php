@@ -1079,6 +1079,210 @@ class ReleaseProcessorTest extends TestCase
     }
 
     #[Test]
+    public function the_compressed_budget_fetches_sequential_parts_until_the_target_is_covered(): void
+    {
+        // movie.mkv is 1200 bytes at 30s declared duration = 40 B/s; the 30s
+        // target needs 1200 bytes. The 300-byte head fetch (100 bytes/segment)
+        // extracts 300, the anchor's 3 expansion segments extract to 600, and
+        // part02's 6 segments reach 1200. part03 is never touched.
+        [$downloadCalls, $result, $fragmentPath] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>', '<p1s5>', '<p1s6>']],
+                ['title' => 'release.part02.rar', 'segments' => ['<p2s1>', '<p2s2>', '<p2s3>', '<p2s4>', '<p2s5>', '<p2s6>']],
+                ['title' => 'release.part03.rar', 'segments' => ['<p3s1>', '<p3s2>', '<p3s3>', '<p3s4>', '<p3s5>', '<p3s6>']],
+            ],
+            initialData: str_repeat('a', 300),
+            responses: [
+                $this->successfulDownload(str_repeat('b', 300)),
+                $this->successfulDownload(str_repeat('c', 600)),
+            ],
+            extractSizes: [300, 600, 1200],
+        );
+
+        $this->assertSame(
+            [DownloadKind::Compressed, DownloadKind::CompressedTopUp, DownloadKind::CompressedTopUp],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+        $this->assertSame(['<p1s4>', '<p1s5>', '<p1s6>'], $downloadCalls->calls[1]['messageIds']);
+        $this->assertSame(
+            ['<p2s1>', '<p2s2>', '<p2s3>', '<p2s4>', '<p2s5>', '<p2s6>'],
+            $downloadCalls->calls[2]['messageIds'],
+        );
+        $this->assertSame(1200, filesize($fragmentPath), 'The extended fragment is what the extracted-files sweep will clip.');
+        $this->assertSame(
+            [],
+            glob($this->releaseTempPath.'preview-archive.part*.rar') ?: [],
+            'Working volume files must not survive into the extracted-files sweep.',
+        );
+    }
+
+    #[Test]
+    public function the_compressed_budget_stops_at_the_byte_ceiling(): void
+    {
+        // A 500-byte ceiling minus the 300-byte head leaves room for exactly
+        // two whole 100-byte segments; after they arrive no further segment fits.
+        [$downloadCalls] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>', '<p1s5>', '<p1s6>']],
+                ['title' => 'release.part02.rar', 'segments' => ['<p2s1>', '<p2s2>', '<p2s3>']],
+            ],
+            initialData: str_repeat('a', 300),
+            responses: [$this->successfulDownload(str_repeat('b', 200))],
+            extractSizes: [300, 500],
+            configOverrides: ['previewMaxFetchBytes' => 500],
+        );
+
+        $this->assertSame(
+            [DownloadKind::Compressed, DownloadKind::CompressedTopUp],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+        $this->assertSame(['<p1s4>', '<p1s5>'], $downloadCalls->calls[1]['messageIds']);
+    }
+
+    #[Test]
+    public function the_compressed_budget_stops_at_the_part_ceiling(): void
+    {
+        [$downloadCalls] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>', '<p1s5>', '<p1s6>']],
+                ['title' => 'release.part02.rar', 'segments' => ['<p2s1>', '<p2s2>', '<p2s3>']],
+            ],
+            initialData: str_repeat('a', 300),
+            responses: [$this->successfulDownload(str_repeat('b', 300))],
+            extractSizes: [300, 600],
+            configOverrides: ['previewMaxRarParts' => 1],
+        );
+
+        $this->assertSame(
+            [DownloadKind::Compressed, DownloadKind::CompressedTopUp],
+            array_column($downloadCalls->calls, 'kind'),
+            'With the part ceiling at 1 the anchor part is exhausted and part02 is never fetched.',
+        );
+    }
+
+    #[Test]
+    public function the_compressed_budget_stops_when_no_further_part_exists(): void
+    {
+        [$downloadCalls] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>', '<p1s5>', '<p1s6>']],
+            ],
+            initialData: str_repeat('a', 300),
+            responses: [$this->successfulDownload(str_repeat('b', 300))],
+            extractSizes: [300, 600],
+        );
+
+        $this->assertSame(
+            [DownloadKind::Compressed, DownloadKind::CompressedTopUp],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+    }
+
+    #[Test]
+    public function the_compressed_budget_stops_when_extraction_stops_progressing(): void
+    {
+        // A compressed-mode archive: appended bytes extract nothing further.
+        [$downloadCalls] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>', '<p1s5>', '<p1s6>']],
+                ['title' => 'release.part02.rar', 'segments' => ['<p2s1>', '<p2s2>', '<p2s3>']],
+            ],
+            initialData: str_repeat('a', 300),
+            responses: [$this->successfulDownload(str_repeat('b', 300))],
+            extractSizes: [300, 300],
+        );
+
+        $this->assertSame(
+            [DownloadKind::Compressed, DownloadKind::CompressedTopUp],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+    }
+
+    #[Test]
+    public function a_disabled_root_toggle_keeps_the_single_fixed_compressed_fetch(): void
+    {
+        [$downloadCalls] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>', '<p1s5>', '<p1s6>']],
+                ['title' => 'release.part02.rar', 'segments' => ['<p2s1>', '<p2s2>', '<p2s3>']],
+            ],
+            initialData: str_repeat('a', 300),
+            responses: [],
+            extractSizes: [],
+            budgetEnabled: false,
+        );
+
+        $this->assertSame([DownloadKind::Compressed], array_column($downloadCalls->calls, 'kind'));
+    }
+
+    #[Test]
+    public function a_gap_in_the_anchor_part_skips_the_compressed_top_up_with_a_distinct_reason(): void
+    {
+        // Segments 5-7 of part01 are missing: the head is contiguous through 4
+        // segments and the needed range (3 fetched + 3 expansion) reaches 6.
+        [$downloadCalls, $result] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                [
+                    'title' => 'release.part01.rar',
+                    'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>', '<p1s8>', '<p1s9>'],
+                    'segmentNumbers' => [1, 2, 3, 4, 8, 9],
+                    'partstotal' => '9',
+                ],
+            ],
+            initialData: str_repeat('a', 300),
+            responses: [],
+            extractSizes: [300],
+        );
+
+        $this->assertSame([DownloadKind::Compressed], array_column($downloadCalls->calls, 'kind'));
+        $this->assertContains('segment-gaps', $result->unsupportedReasons);
+    }
+
+    #[Test]
+    public function a_gap_in_the_next_part_stops_the_compressed_top_up_before_fetching_it(): void
+    {
+        // part02 is missing its third segment: bytes past the hole can never
+        // be contiguous, so the top-up keeps the anchor's yield and stops.
+        [$downloadCalls, $result] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>', '<p1s5>', '<p1s6>']],
+                [
+                    'title' => 'release.part02.rar',
+                    'segments' => ['<p2s1>', '<p2s2>', '<p2s4>', '<p2s5>'],
+                    'segmentNumbers' => [1, 2, 4, 5],
+                    'partstotal' => '5',
+                ],
+            ],
+            initialData: str_repeat('a', 300),
+            responses: [$this->successfulDownload(str_repeat('b', 300))],
+            extractSizes: [300, 600],
+        );
+
+        $this->assertSame(
+            [DownloadKind::Compressed, DownloadKind::CompressedTopUp],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+        $this->assertSame(['<p1s4>', '<p1s5>', '<p1s6>'], $downloadCalls->calls[1]['messageIds']);
+        $this->assertContains('segment-gaps', $result->unsupportedReasons);
+    }
+
+    #[Test]
+    public function an_unknown_bitrate_keeps_the_fixed_compressed_fetch(): void
+    {
+        [$downloadCalls] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>']],
+            ],
+            initialData: str_repeat('a', 300),
+            responses: [],
+            extractSizes: [300],
+            probeResult: null,
+        );
+
+        $this->assertSame([DownloadKind::Compressed], array_column($downloadCalls->calls, 'kind'));
+    }
+
+    #[Test]
     public function it_skips_sample_downloads_and_ffmpeg_when_the_root_category_disables_preview_generation(): void
     {
         $config = $this->makeConfig([
@@ -1534,6 +1738,111 @@ class ReleaseProcessorTest extends TestCase
         $result = $processor->process($context, $this->mainTempPath);
 
         return [$context, $downloadCalls, $mediaCalls, $result];
+    }
+
+    /**
+     * Drive one release whose NZB holds RAR parts through the compressed path,
+     * scripting what each partial extraction yields. The archive lists a
+     * single movie.mkv of 1200 bytes; with the default 30s probe duration and
+     * the 30s target, the top-up aims for 1200 fragment bytes.
+     *
+     * @param  list<array<string, mixed>>  $nzbFiles
+     * @param  list<array{success: bool, data: string|null, groupUnavailable: bool, error: string|null}>  $responses  Download responses after the initial compressed fetch.
+     * @param  list<int>  $extractSizes  Fragment bytes on disk after each extraction, the initial extraction first.
+     * @param  array<string, mixed>  $configOverrides
+     * @return array{RecordingMp4DownloadCalls, ReleaseProcessingResult, string}
+     */
+    private function processCompressedTopUpCandidate(
+        array $nzbFiles,
+        string $initialData,
+        array $responses,
+        array $extractSizes,
+        array $configOverrides = [],
+        ?VideoHeadProbeResult $probeResult = new VideoHeadProbeResult(durationSeconds: 30.0),
+        bool $budgetEnabled = true,
+    ): array {
+        File::ensureDirectoryExists($this->releaseTempPath);
+        $config = $this->makeConfig(array_merge([
+            'processVideo' => true,
+            'maximumRarSegments' => 3,
+        ], $configOverrides));
+
+        $nzbParser = Mockery::mock(NzbContentParser::class);
+        $nzbParser->shouldReceive('parseNzb')->once()->andReturn([
+            'error' => null,
+            'contents' => $nzbFiles,
+        ]);
+
+        $downloadCalls = new RecordingMp4DownloadCalls([$this->successfulDownload($initialData), ...$responses]);
+        $downloadService = Mockery::mock(UsenetDownloadService::class);
+        $downloadService->shouldReceive('beginReleaseScope')->once()->andReturnNull();
+        $downloadService->shouldReceive('finishReleaseScope')->once()->andReturn(new DownloadMetrics);
+        $downloadService->shouldReceive('download')
+            ->times(1 + count($responses))
+            ->andReturnUsing($downloadCalls->download(...));
+
+        $fragmentPath = $this->releaseTempPath.'unrar/movie.mkv';
+        $extractIndex = 0;
+        $archiveService = Mockery::mock(ArchiveExtractionService::class);
+        $archiveService->shouldReceive('processCompressedData')->once()->andReturn([
+            'success' => true,
+            'files' => [['name' => 'movie.mkv', 'size' => 1200]],
+            'hasPassword' => false,
+            'passwordStatus' => ReleaseBrowseService::PASSWD_NONE,
+            'archiveMarker' => 'r',
+            'dataSummary' => [],
+        ]);
+        $archiveService->shouldReceive('listArchiveContents')
+            ->zeroOrMoreTimes()
+            ->andReturn(['files' => [['name' => 'movie.mkv', 'size' => 1200]], 'hasPassword' => false]);
+        $archiveService->shouldReceive('extractSpecificFileToPath')
+            ->times(count($extractSizes))
+            ->andReturnUsing(function () use (&$extractIndex, $extractSizes, $fragmentPath): string {
+                File::ensureDirectoryExists(dirname($fragmentPath));
+                file_put_contents($fragmentPath, str_repeat('x', $extractSizes[$extractIndex]));
+                $extractIndex++;
+
+                return $fragmentPath;
+            });
+
+        $releaseManager = Mockery::mock(ReleaseFileManager::class);
+        $releaseManager->shouldReceive('processReleaseNameFromNzbContents')->once()->andReturnFalse();
+        $releaseManager->shouldReceive('addFileInfo')
+            ->zeroOrMoreTimes()
+            ->andReturnUsing(static function (array $file, ReleaseProcessingContext $context): bool {
+                $context->totalFileInfo++;
+
+                return true;
+            });
+        $releaseManager->shouldReceive('finalizeRelease')->once()->andReturnNull();
+
+        $tempWorkspace = Mockery::mock(TempWorkspaceService::class);
+        $tempWorkspace->shouldReceive('createReleaseTempFolder')->once()->andReturn($this->releaseTempPath);
+        $tempWorkspace->shouldReceive('clearDirectory')->once()->with($this->releaseTempPath, false)->andReturnNull();
+        $tempWorkspace->shouldReceive('listFiles')->zeroOrMoreTimes()->andReturn([]);
+
+        $processor = new ReleaseProcessor(
+            $config,
+            $nzbParser,
+            new AdditionalWorkPlanner($config),
+            $archiveService,
+            Mockery::mock(MediaExtractionService::class),
+            $downloadService,
+            $releaseManager,
+            Mockery::mock(ReleaseFilesArchiveFallback::class),
+            $tempWorkspace,
+            new ConsoleOutputService,
+            previewPolicy: $this->stubPreviewPolicy(),
+            dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy($budgetEnabled),
+            freeDiskGuard: $this->permissiveDiskGuard(),
+            headProbe: new StubVideoHeadProbe($probeResult),
+        );
+
+        $context = $this->makeContext();
+        $context->release->nfostatus = 1;
+        $result = $processor->process($context, $this->mainTempPath);
+
+        return [$downloadCalls, $result, $fragmentPath];
     }
 
     /**

@@ -13,5 +13,6 @@ enum DownloadKind: string
     case Audio = 'audio';
     case Jpg = 'jpg';
     case Compressed = 'compressed';
+    case CompressedTopUp = 'compressed-top-up';
     case PayloadSniff = 'payload-sniff';
 }

@@ -77,6 +77,19 @@ final readonly class ProcessingConfiguration
      */
     public int $previewMaxFetchBytes;
 
+    /**
+     * Archive parts the compressed dynamic budget may touch while extending
+     * a video fragment toward the target duration, the initially fetched
+     * part included.
+     */
+    public int $previewMaxRarParts;
+
+    /**
+     * Shortest Clip worth storing, in seconds; a shorter encode is discarded
+     * and the release keeps no video artifact. 0 disables the floor.
+     */
+    public int $clipMinimumSeconds;
+
     public string $tmpUnrarPath;
 
     public bool $debugMode;
@@ -155,6 +168,12 @@ final readonly class ProcessingConfiguration
         $previewMaxFetchMb = Settings::settingValue('preview_max_fetch_mb');
         $previewMaxFetchMb = ($previewMaxFetchMb === '' || $previewMaxFetchMb === null) ? 300 : max(0, (int) $previewMaxFetchMb);
         $this->previewMaxFetchBytes = $previewMaxFetchMb * 1024 * 1024;
+        $this->previewMaxRarParts = max(1, (int) (Settings::settingValue('preview_max_rar_parts') ?: 6));
+        $clipMinimumSeconds = Settings::settingValue('clip_minimum_seconds');
+        // An explicit '0' is a legitimate "store however short a Clip".
+        $this->clipMinimumSeconds = ($clipMinimumSeconds === '' || $clipMinimumSeconds === null)
+            ? 5
+            : max(0, (int) $clipMinimumSeconds);
         $this->tmpUnrarPath = config('nntmux.tmp_unrar_path');
         $this->debugMode = (bool) config('app.debug');
         $this->searchDriver = config('search.default', 'manticore');

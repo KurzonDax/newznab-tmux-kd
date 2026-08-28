@@ -124,6 +124,18 @@ class MediaExtractionService
             return false;
         }
 
+        // Duration floor: a starved extraction degrades to "no video preview"
+        // rather than a seconds-long tease behind the play chip. An unreadable
+        // duration is not "below the floor" and stores normally.
+        if ($this->config->clipMinimumSeconds > 0
+            && $clip->durationSeconds !== null
+            && $clip->durationSeconds < $this->config->clipMinimumSeconds
+        ) {
+            File::delete($clip->path);
+
+            return false;
+        }
+
         if (! $this->storeGeneratedMedia($clip->path, $this->releaseImage->vidSavePath.$guid.'.'.$clip->extension)) {
             return false;
         }

@@ -48,6 +48,8 @@ trait CreatesProcessingConfiguration
             'mp4TailMaxSegments' => 60,
             'previewTargetSeconds' => 30,
             'previewMaxFetchBytes' => 314572800,
+            'previewMaxRarParts' => 6,
+            'clipMinimumSeconds' => 5,
             'tmpUnrarPath' => sys_get_temp_dir().'/',
             'debugMode' => false,
             'searchEnabled' => false,

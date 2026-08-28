@@ -112,6 +112,25 @@
                         </div>
 
                         <div>
+                            <label for="preview_max_rar_parts" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                <i class="fas fa-file-archive mr-1"></i>Preview Archive Parts Downloaded
+                            </label>
+                            <x-input id="preview_max_rar_parts" name="preview_max_rar_parts" value="{{ $site['preview_max_rar_parts'] ?? '6' }}" />
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Archive parts the dynamic segment budget may fetch while extending a video found inside a RAR set toward the target duration, the first part included. Fetching stops as soon as the target is covered, so this is a ceiling, not a target. Default: 6.</p>
+                        </div>
+
+                        <div>
+                            <label for="clip_minimum_seconds" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                <i class="fas fa-hourglass-start mr-1"></i>Minimum Clip Duration
+                            </label>
+                            <div class="flex gap-2">
+                                <x-input class="flex-1" id="clip_minimum_seconds" name="clip_minimum_seconds" value="{{ $site['clip_minimum_seconds'] ?? '5' }}" />
+                                <span class="surface-panel-alt px-3 py-2 rounded-md">seconds</span>
+                            </div>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Shortest video clip worth storing. A shorter encode is discarded and the release keeps its preview image but shows no play chip. Set to 0 to store however short a clip. Default: 5.</p>
+                        </div>
+
+                        <div>
                             <label for="audio_preview_seconds" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                                 <i class="fas fa-stopwatch mr-1"></i>Audio Preview Length
                             </label>

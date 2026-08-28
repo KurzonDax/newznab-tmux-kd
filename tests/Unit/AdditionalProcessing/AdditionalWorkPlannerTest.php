@@ -55,6 +55,54 @@ class AdditionalWorkPlannerTest extends TestCase
     }
 
     #[Test]
+    public function it_plans_archive_candidates_with_expansion_segments_and_contiguity_metadata(): void
+    {
+        $planner = new AdditionalWorkPlanner($this->makeConfig([
+            'maximumRarSegments' => 2,
+        ]));
+
+        $plan = $planner->plan([
+            [
+                'title' => 'release.part01.rar',
+                'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>'],
+                'segmentNumbers' => [1, 2, 3, 4],
+                'partstotal' => '4',
+            ],
+            [
+                'title' => 'release.part02.rar',
+                'segments' => ['<p2s1>', '<p2s2>', '<p2s4>'],
+                'segmentNumbers' => [1, 2, 4],
+                'partstotal' => '4',
+            ],
+        ], 'alt.binaries.test');
+
+        $first = $plan->archiveCandidates[0];
+        $this->assertSame(['<p1s1>', '<p1s2>'], $first->messageIds);
+        $this->assertSame(['<p1s3>', '<p1s4>'], $first->expansionMessageIds);
+        $this->assertSame(4, $first->contiguousHeadSegments);
+
+        // Segment 3 is missing from the second part: only the first two
+        // segments are provably gap-free.
+        $second = $plan->archiveCandidates[1];
+        $this->assertSame(['<p2s4>'], $second->expansionMessageIds);
+        $this->assertSame(2, $second->contiguousHeadSegments);
+    }
+
+    #[Test]
+    public function archive_candidates_without_numbering_count_every_segment_as_contiguous(): void
+    {
+        $planner = new AdditionalWorkPlanner($this->makeConfig([
+            'maximumRarSegments' => 2,
+        ]));
+
+        $plan = $planner->plan([
+            ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>']],
+        ], 'alt.binaries.test');
+
+        $this->assertSame(3, $plan->archiveCandidates[0]->contiguousHeadSegments);
+    }
+
+    #[Test]
     public function it_plans_the_dynamic_budget_expansion_window_with_contiguity_metadata(): void
     {
         $planner = new AdditionalWorkPlanner($this->makeConfig([
