@@ -70,20 +70,35 @@ final class ReleaseNameNormalizer
 
     public static function normalize(string $name): string
     {
-        $normalized = trim($name);
-
-        $normalized = (string) preg_replace(self::YENC_SUFFIX_REGEX, '', $normalized);
-        $normalized = (string) preg_replace(self::SIZE_SUFFIX_REGEX, '', trim($normalized));
-        $normalized = self::stripLeadingDecoration(trim($normalized));
-
-        if (preg_match(self::WRAPPING_QUOTES_REGEX, $normalized, $hit) === 1) {
-            $normalized = trim($hit[1]);
-        }
+        $normalized = self::unwrapSubject($name);
 
         $normalized = (string) preg_replace(self::VOLUME_SUFFIX_REGEX, '', $normalized);
         $normalized = (string) preg_replace(self::ARCHIVE_OR_NFO_SUFFIX_REGEX, '', $normalized);
 
         return trim($normalized);
+    }
+
+    /**
+     * The subject-unwrap phase alone: poster decoration off the outside of the
+     * name, case preserved, the filename kept whole.
+     *
+     * Shared by {@see self::normalize()} and the display formatter, which must
+     * keep (and uppercase) a real trailing extension the archive-identity
+     * strips in normalize() would remove.
+     */
+    public static function unwrapSubject(string $name): string
+    {
+        $unwrapped = trim($name);
+
+        $unwrapped = (string) preg_replace(self::YENC_SUFFIX_REGEX, '', $unwrapped);
+        $unwrapped = (string) preg_replace(self::SIZE_SUFFIX_REGEX, '', trim($unwrapped));
+        $unwrapped = self::stripLeadingDecoration(trim($unwrapped));
+
+        if (preg_match(self::WRAPPING_QUOTES_REGEX, $unwrapped, $hit) === 1) {
+            $unwrapped = trim($hit[1]);
+        }
+
+        return trim($unwrapped);
     }
 
     /**

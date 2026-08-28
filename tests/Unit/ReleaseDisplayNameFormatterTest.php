@@ -51,6 +51,24 @@ class ReleaseDisplayNameFormatterTest extends TestCase
             'collapses runs of whitespace' => ['Some   Release  Name', 'Some Release Name'],
             'empty name' => ['', ''],
             'short trailing word is not an extension' => ['nubiles.lilit.red', 'nubiles lilit red'],
+            'poster decoration and wrapping quotes are unwrapped' => [
+                '- "Estella.Bathory.Watch.Estella.Bathory.very.hot.british.bbw.fucked.by.2.blacks.720p.SpankBang.com.mp4"',
+                'Estella Bathory Watch Estella Bathory very hot british bbw fucked by 2 blacks 720p SpankBang com MP4',
+            ],
+            'counter decoration and yenc marker are unwrapped' => [
+                '[10/88] - "Show.S01E02.1080p.mkv" yEnc',
+                'Show S01E02 1080p MKV',
+            ],
+            'stacked counters unwrap fully' => ['[1/8] - [01/17] - "Name.mp4"', 'Name MP4'],
+            'trailing size annotation is stripped' => ['- "Name.mp4" - 288,96 MB', 'Name MP4'],
+            'a real title outside the quotes is not unwrapped' => [
+                'Title - [1/3] - "Title.rar"',
+                'Title - [1/3] - "Title rar"',
+            ],
+            'protected spans stay verbatim after the unwrap' => [
+                '- "porndudecasting.26.08.21.sadie.schafer.2160p.mp4"',
+                'porndudecasting 26.08.21 sadie schafer 2160p MP4',
+            ],
         ];
     }
 

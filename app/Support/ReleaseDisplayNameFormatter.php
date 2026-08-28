@@ -59,10 +59,15 @@ final class ReleaseDisplayNameFormatter
 
     /**
      * Format a searchname for display. Deterministic, pure, and idempotent.
+     *
+     * A searchname can still carry raw-subject decoration (a leading ' - ',
+     * multipart counters, wrapping quotes, a trailing size annotation), which
+     * would defeat the extension rule and survive into the display. The shared
+     * subject unwrap runs first; already-clean names pass through it verbatim.
      */
     public static function format(string $searchName): string
     {
-        $name = trim($searchName);
+        $name = ReleaseNameNormalizer::unwrapSubject($searchName);
         if ($name === '') {
             return '';
         }
