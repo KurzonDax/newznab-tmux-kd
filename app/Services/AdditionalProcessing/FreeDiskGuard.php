@@ -10,8 +10,9 @@ use Closure;
 /**
  * The Free-disk guard (see CONTEXT.md and ADR 0013): one threshold shared by
  * every disk-hungry producer writing to the covers volume. Each producer
- * decides its own response -- Clips degrade to the small transcode, release
- * imagery is skipped entirely and recorded on the Imagery disk skip ledger.
+ * decides its own response -- a guarded Clip is skipped (no video artifact is
+ * stored), release imagery is skipped entirely and recorded on the Imagery
+ * disk skip ledger.
  *
  * Measures the same way the status-probe disk machinery does ({@see DiskProbe}).
  */

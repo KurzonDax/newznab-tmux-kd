@@ -14,6 +14,7 @@ use App\Services\ReleaseImageService;
 use App\Services\Releases\ClipGenerationPolicy;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
 use Tests\TestCase;
@@ -21,8 +22,8 @@ use Tests\Unit\AdditionalProcessing\CreatesProcessingConfiguration;
 
 /**
  * Backend branching for the Clip (see CONTEXT.md): stream-copy storage when
- * the toggle, codec safety, and disk headroom all allow it; the existing
- * transcode path in every other case; artifact deletion.
+ * the toggle, codec safety, and disk headroom all allow it; no video artifact
+ * at all in every other case (Clip-or-nothing); artifact deletion.
  */
 class ClipStorageTest extends TestCase
 {
@@ -78,7 +79,6 @@ class ClipStorageTest extends TestCase
 
         $this->assertTrue($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010));
 
-        $this->assertSame([], $service->transcodeCalls, 'The downscaled transcode must not be produced.');
         $this->assertFileExists($this->coversRoot.'/video/clip-guid.mp4');
         $this->assertSame('remuxed clip bytes', file_get_contents($this->coversRoot.'/video/clip-guid.mp4'));
 
@@ -92,9 +92,9 @@ class ClipStorageTest extends TestCase
         $this->assertSame(1, (int) DB::table('releases')->where('id', $releaseId)->value('videostatus'));
     }
 
-    public function test_the_toggle_off_falls_back_to_the_transcode_without_probing(): void
+    public function test_the_toggle_off_stores_no_artifact_without_probing(): void
     {
-        $this->seedRelease('clip-guid');
+        $releaseId = $this->seedRelease('clip-guid');
         $encoderCommands = 0;
         $service = $this->makeService(
             clipEnabled: false,
@@ -106,31 +106,29 @@ class ClipStorageTest extends TestCase
             },
         );
 
-        $service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010);
+        $this->assertFalse($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010));
 
-        $this->assertSame(['clip-guid'], $service->transcodeCalls);
         $this->assertSame(0, $encoderCommands, 'With the toggle off no ffmpeg probe runs.');
-        $this->assertSame(0, ReleaseVideoClip::query()->count());
+        $this->assertNoVideoArtifacts($releaseId);
     }
 
-    public function test_a_non_browser_safe_source_falls_back_to_the_transcode(): void
+    public function test_a_non_browser_safe_source_stores_no_artifact(): void
     {
-        $this->seedRelease('clip-guid');
+        $releaseId = $this->seedRelease('clip-guid');
         $service = $this->makeService(
             clipEnabled: true,
             diskHasRoom: true,
             encoderRunner: static fn (array $command, int $timeout): string => "Stream #0:0: Video: hevc (Main)\n  Stream #0:1: Audio: aac (LC)",
         );
 
-        $service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010);
+        $this->assertFalse($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010));
 
-        $this->assertSame(['clip-guid'], $service->transcodeCalls);
-        $this->assertSame(0, ReleaseVideoClip::query()->count());
+        $this->assertNoVideoArtifacts($releaseId);
     }
 
-    public function test_low_disk_falls_back_to_the_transcode_without_probing(): void
+    public function test_low_disk_stores_no_artifact_without_probing(): void
     {
-        $this->seedRelease('clip-guid');
+        $releaseId = $this->seedRelease('clip-guid');
         $encoderCommands = 0;
         $service = $this->makeService(
             clipEnabled: true,
@@ -142,20 +140,37 @@ class ClipStorageTest extends TestCase
             },
         );
 
-        $service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010);
+        $this->assertFalse($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010));
 
-        $this->assertSame(['clip-guid'], $service->transcodeCalls);
         $this->assertSame(0, $encoderCommands);
+        $this->assertNoVideoArtifacts($releaseId);
     }
 
-    public function test_a_null_category_falls_back_to_the_transcode(): void
+    public function test_a_null_category_stores_no_artifact(): void
     {
-        $this->seedRelease('clip-guid');
+        $releaseId = $this->seedRelease('clip-guid');
         $service = $this->makeService(clipEnabled: true, diskHasRoom: true, encoderRunner: $this->safeH264Runner());
 
-        $service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid');
+        $this->assertFalse($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid'));
 
-        $this->assertSame(['clip-guid'], $service->transcodeCalls);
+        $this->assertNoVideoArtifacts($releaseId);
+    }
+
+    public function test_a_declined_clip_logs_no_error_trace_even_in_debug_mode(): void
+    {
+        $releaseId = $this->seedRelease('clip-guid');
+        Log::spy();
+        $service = $this->makeService(
+            clipEnabled: true,
+            diskHasRoom: true,
+            encoderRunner: static fn (array $command, int $timeout): string => "Stream #0:0: Video: hevc (Main)\n  Stream #0:1: Audio: aac (LC)",
+            debugMode: true,
+        );
+
+        $this->assertFalse($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010));
+
+        Log::shouldNotHaveReceived('error');
+        $this->assertNoVideoArtifacts($releaseId);
     }
 
     public function test_deleting_release_assets_removes_the_clip_file_and_the_cascade_removes_the_row(): void
@@ -186,16 +201,28 @@ class ClipStorageTest extends TestCase
     }
 
     /**
+     * The declined case stores nothing: no file in the video store, no
+     * metadata row, and videostatus untouched.
+     */
+    private function assertNoVideoArtifacts(int $releaseId): void
+    {
+        $this->assertSame([], glob($this->coversRoot.'/video/*') ?: []);
+        $this->assertSame(0, ReleaseVideoClip::query()->count());
+        $this->assertSame(0, (int) DB::table('releases')->where('id', $releaseId)->value('videostatus'));
+    }
+
+    /**
      * @param  callable(list<string>, int): string  $encoderRunner
      */
-    private function makeService(bool $clipEnabled, bool $diskHasRoom, callable $encoderRunner): RecordingMediaExtractionService
+    private function makeService(bool $clipEnabled, bool $diskHasRoom, callable $encoderRunner, bool $debugMode = false): MediaExtractionService
     {
         $config = $this->makeConfig([
             'processVideo' => true,
             'ffmpegPath' => '/usr/bin/ffmpeg',
+            'debugMode' => $debugMode,
         ]);
 
-        return new RecordingMediaExtractionService(
+        return new MediaExtractionService(
             $config,
             new ReleaseImageService,
             Mockery::mock(ReleaseExtraService::class),
@@ -227,21 +254,6 @@ class ClipStorageTest extends TestCase
 
             return 'Duration: 00:00:30.20, start: 0.000000, bitrate: 5000 kb/s';
         };
-    }
-}
-
-final class RecordingMediaExtractionService extends MediaExtractionService
-{
-    /**
-     * @var list<string>
-     */
-    public array $transcodeCalls = [];
-
-    protected function storeTranscodedSample(string $fileLocation, string $tmpPath, string $guid): bool
-    {
-        $this->transcodeCalls[] = $guid;
-
-        return false;
     }
 }
 
