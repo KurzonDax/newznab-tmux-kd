@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Nzb;
 
+use App\Enums\DuplicateAbsorbOutcome;
 use App\Enums\NzbImportStatus;
 use App\Models\Category;
 use App\Models\Predb;
@@ -652,13 +653,24 @@ class NzbImportService
                     throw new \RuntimeException('The incoming duplicate NZB could not be serialized.');
                 }
 
-                $absorbed = $this->releaseDuplicateAbsorber->absorbXml(
+                $absorbResult = $this->releaseDuplicateAbsorber->absorbXml(
                     $dupeCheck,
                     $nzbXml,
                     (int) $nzbDetails['totalSize'],
                     (int) $nzbDetails['declaredFiles'],
                     (float) $nzbDetails['completion'],
                 );
+                $absorbed = $absorbResult->wasAbsorbed();
+
+                // A deferred or failed absorb still records the import as an
+                // ordinary duplicate; the run never aborts over it. There is
+                // no preserved collection here, so nothing is retried.
+                if ($absorbResult->outcome === DuplicateAbsorbOutcome::Failed) {
+                    Log::warning('NZB import duplicate absorb failed; recording the import as an ordinary duplicate.', [
+                        'matched_release_id' => $dupeCheck->id,
+                        'reason' => $absorbResult->reason,
+                    ]);
+                }
             }
 
             Log::info('NZB import skipped as duplicate', [

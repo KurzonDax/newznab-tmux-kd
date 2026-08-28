@@ -117,6 +117,20 @@ _Avoid_: floor, default root — a force is an explicit lock.
 One release associated with more than one Usenet group. Its primary group is whichever association ingestion encountered first, but group policy considers every association so scan order does not hide a Forced root.
 _Avoid_: duplicate release — the cross-post associations belong to one release identity.
 
+**Anchor**:
+The already-existing release an incoming duplicate is matched against. The anchor keeps its identity and history no matter how the duplicate is handled; at most its evidence is upgraded in place.
+_Avoid_: "original" — the anchor is merely whichever copy arrived first, not a better one.
+
+**Duplicate absorption**:
+Upgrading an anchor in place from a more complete incoming copy of the same upload: the incoming copy's article evidence replaces the anchor's, and the incoming copy is then discarded as a duplicate. Only a strictly more complete copy absorbs; an equal or worse one is an ordinary duplicate.
+
+**Deferred absorb**:
+A duplicate absorption postponed because the anchor's NZB has not been written yet — absorption rewrites that stored NZB, so until it exists there is nothing to rewrite. The incoming copy is preserved untouched and absorbs on a later cycle once the NZB lands. Expected state while NZB creation catches up, and never counted against the Absorb attempt cap.
+_Avoid_: treating a deferral as a failure — nothing was attempted.
+
+**Absorb attempt cap**:
+The bound on absorbs that were actually attempted and failed for one preserved incoming copy. At the cap the copy settles as an ordinary duplicate instead of retrying forever — a backstop for genuine storage failures, not the expected path.
+
 **Mediainfo refinement**:
 Moving a release out of a root's *Other* subcategory once post-processing has recorded what its media actually is. Video evidence (resolution, container, codec) refines within the same root; audio-only evidence (an audio track and no video track) refiles a Routed floor under Audio but never crosses a Forced root. It only ever acts on a `<root>/Other` release — a specific subcategory chosen from the name is never overridden — and only for the Movies, TV, XXX and Audio roots.
 _Avoid_: "recategorize from mediainfo" — the mediainfo never re-runs name categorization; it refines or refiles the current result.

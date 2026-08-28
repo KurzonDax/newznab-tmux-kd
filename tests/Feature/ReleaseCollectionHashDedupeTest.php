@@ -12,6 +12,7 @@ use App\Services\Releases\ReleaseDuplicateAbsorber;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 class ReleaseCollectionHashDedupeTest extends TestCase
@@ -217,6 +218,88 @@ class ReleaseCollectionHashDedupeTest extends TestCase
         }
     }
 
+    public function test_a_better_duplicate_with_a_lagging_anchor_nzb_is_preserved_for_a_later_cycle(): void
+    {
+        Log::spy();
+        $this->seedAnchorRelease('hash-anchor-defer', completion: 10.0, nzbstatus: 0, searchname: 'Deferred.Absorb.Release', size: 1000);
+        $this->insertCollection(100, 'hash-defer', '"Deferred.Absorb.Release.part001.rar" yEnc', declaredfiles: 1);
+
+        $result = $this->service()->createReleases(null, 10, false);
+
+        $this->assertSame(['added' => 0, 'dupes' => 0], $result);
+        $this->assertSame(1, DB::table('releases')->count());
+        $this->assertSame(1, DB::table('collections')->count(), 'The deferred collection must be preserved.');
+        $this->assertSame(0, (int) DB::table('collections')->where('id', 100)->value('absorb_attempts'));
+        $this->assertSame(10.0, (float) DB::table('releases')->value('completion'));
+        Log::shouldNotHaveReceived('error');
+        Log::shouldNotHaveReceived('warning');
+    }
+
+    public function test_a_failed_absorb_below_the_cap_preserves_the_collection_and_logs_the_reason(): void
+    {
+        Log::spy();
+        config(['nntmux_settings.path_to_nzbs' => $this->makeTempDirectory('absorb-nzbs').DIRECTORY_SEPARATOR]);
+        // NZB_ADDED per the row, but the file itself is gone: an attempted
+        // absorb that fails on the missing stored NZB.
+        $this->seedAnchorRelease('hash-anchor-fail', completion: 10.0, nzbstatus: 1, searchname: 'Failing.Absorb.Release', size: 1000);
+        $this->insertCollection(100, 'hash-fail', '"Failing.Absorb.Release.part001.rar" yEnc', declaredfiles: 1);
+
+        $result = $this->service()->createReleases(null, 10, false);
+
+        $this->assertSame(['added' => 0, 'dupes' => 0], $result);
+        $this->assertSame(1, DB::table('collections')->count(), 'A failed absorb below the cap preserves the collection.');
+        $this->assertSame(1, (int) DB::table('collections')->where('id', 100)->value('absorb_attempts'));
+        Log::shouldHaveReceived('error')->once()->withArgs(
+            static fn (string $message, array $context): bool => str_contains($message, 'preserving it for retry')
+                && str_contains((string) ($context['reason'] ?? ''), 'No stored NZB')
+                && ($context['attempts'] ?? null) === 1
+        );
+        Log::shouldNotHaveReceived('warning');
+    }
+
+    public function test_a_persistently_failing_absorb_settles_as_an_ordinary_duplicate_at_the_cap(): void
+    {
+        Log::spy();
+        config(['nntmux_settings.path_to_nzbs' => $this->makeTempDirectory('absorb-nzbs').DIRECTORY_SEPARATOR]);
+        $this->seedAnchorRelease('hash-anchor-settle', completion: 10.0, nzbstatus: 1, searchname: 'Settling.Absorb.Release', size: 1000);
+        $this->insertCollection(
+            100,
+            'hash-settle',
+            '"Settling.Absorb.Release.part001.rar" yEnc',
+            declaredfiles: 1,
+            absorbAttempts: ReleaseDuplicateAbsorber::MAX_ABSORB_ATTEMPTS - 1,
+        );
+
+        $result = $this->service()->createReleases(null, 10, false);
+
+        $this->assertSame(['added' => 0, 'dupes' => 1], $result);
+        $this->assertSame(1, DB::table('releases')->count());
+        $this->assertSame(0, DB::table('collections')->count(), 'The settled collection takes the ordinary duplicate cleanup.');
+        Log::shouldHaveReceived('warning')->once()->withArgs(
+            static fn (string $message, array $context): bool => str_contains($message, 'settling it as an ordinary duplicate')
+                && str_contains((string) ($context['reason'] ?? ''), 'No stored NZB')
+                && ($context['attempts'] ?? null) === ReleaseDuplicateAbsorber::MAX_ABSORB_ATTEMPTS
+        );
+        Log::shouldNotHaveReceived('error');
+    }
+
+    public function test_absorb_attempts_migration_adds_the_counter_column(): void
+    {
+        DB::statement('ALTER TABLE collections RENAME TO collections_backup');
+        DB::statement('CREATE TABLE collections (id INTEGER PRIMARY KEY, releases_id INTEGER NULL)');
+
+        try {
+            $migration = require base_path('database/migrations/2026_08_28_150000_add_absorb_attempts_to_collections_table.php');
+            $migration->up();
+
+            DB::table('collections')->insert(['id' => 1, 'releases_id' => null]);
+            $this->assertSame(0, (int) DB::table('collections')->where('id', 1)->value('absorb_attempts'));
+        } finally {
+            DB::statement('DROP TABLE collections');
+            DB::statement('ALTER TABLE collections_backup RENAME TO collections');
+        }
+    }
+
     public function test_migration_adds_nullable_unique_collectionhash_on_sqlite(): void
     {
         DB::statement('CREATE TABLE migration_probe_releases (id INTEGER PRIMARY KEY, guid VARCHAR(40))');
@@ -266,7 +349,41 @@ class ReleaseCollectionHashDedupeTest extends TestCase
         );
     }
 
-    private function insertCollection(int $id, string $hash, string $subject, int $filesize = 1000, int $groupsId = 1): void
+    /**
+     * An existing release the incoming collection matches via the duplicate
+     * finder: same searchname, size inside the dedupe band. Only those finder
+     * reasons engage the absorber.
+     */
+    private function seedAnchorRelease(string $hash, float $completion, int $nzbstatus, string $searchname, int $size): void
+    {
+        DB::table('releases')->insert([
+            'id' => 1,
+            'name' => 'anchor-original-subject',
+            'searchname' => $searchname,
+            'searchname_normalized' => $searchname,
+            'totalpart' => 1,
+            'groups_id' => 1,
+            'adddate' => now()->format('Y-m-d H:i:s'),
+            'guid' => str_repeat('a', 36),
+            'leftguid' => 'a',
+            'postdate' => now()->format('Y-m-d H:i:s'),
+            'fromname' => 'poster@example.com',
+            'size' => $size,
+            'passwordstatus' => 0,
+            'haspreview' => -1,
+            'categories_id' => 1,
+            'nfostatus' => -1,
+            'nzbstatus' => $nzbstatus,
+            'completion' => $completion,
+            'isrenamed' => 1,
+            'iscategorized' => 1,
+            'predb_id' => 0,
+            'source' => null,
+            'collectionhash' => $hash,
+        ]);
+    }
+
+    private function insertCollection(int $id, string $hash, string $subject, int $filesize = 1000, int $groupsId = 1, int $declaredfiles = 0, int $absorbAttempts = 0): void
     {
         DB::table('collections')->insert([
             'id' => $id,
@@ -284,6 +401,8 @@ class ReleaseCollectionHashDedupeTest extends TestCase
             'collection_regexes_id' => 0,
             'releases_id' => null,
             'noise' => '',
+            'declaredfiles' => $declaredfiles,
+            'absorb_attempts' => $absorbAttempts,
         ]);
         DB::table('binaries')->insert([
             'id' => $id * 10,
@@ -362,6 +481,7 @@ class ReleaseCollectionHashDedupeTest extends TestCase
             groups_id INTEGER,
             totalfiles INTEGER,
             declaredfiles INT NOT NULL DEFAULT 0,
+            absorb_attempts INT NOT NULL DEFAULT 0,
             firstarticle INT NULL,
             lastarticle INT NULL,
             filesize INTEGER,
