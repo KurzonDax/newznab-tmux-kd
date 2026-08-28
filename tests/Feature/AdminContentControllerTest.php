@@ -127,6 +127,21 @@ class AdminContentControllerTest extends TestCase
         $response->assertDontSee('name="title" required', false);
     }
 
+    public function test_content_form_mounts_the_rich_text_editor(): void
+    {
+        $admin = $this->createUserWithRole('Admin');
+        /** @var Authenticatable $authenticatedAdmin */
+        $authenticatedAdmin = $admin;
+
+        $response = $this->actingAs($authenticatedAdmin)->get(route('admin.content-add', ['action' => 'add']));
+
+        $response->assertOk();
+        $response->assertSee('x-data="richTextEditor"', false);
+        // No trace of the retired CDN editor: api-key meta/data attributes,
+        // its Alpine component, or its CDN script URLs.
+        $response->assertDontSee('tiny', false);
+    }
+
     public function test_edit_form_marks_title_as_optional(): void
     {
         $admin = $this->createUserWithRole('Admin');

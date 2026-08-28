@@ -16,9 +16,6 @@
     <!-- Dark Mode - Set via meta tag for CSP compliance -->
     <meta name="theme-preference" content="{{ $userTheme }}">
 
-    <!-- TinyMCE API Key -->
-    <meta name="tinymce-api-key" content="{{ config('tinymce.api_key', 'no-api-key') }}">
-
     <!-- CSP Nonce for dynamic script loading -->
     <meta name="csp-nonce" content="{{ csp_nonce() }}">
 

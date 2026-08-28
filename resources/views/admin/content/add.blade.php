@@ -5,7 +5,7 @@
     $contentId = old('id', data_get($content, 'id', ''));
     $isEditing = filled($contentId);
 @endphp
-<div class="space-y-6" x-data="tinyMceEditor">
+<div class="space-y-6" x-data="richTextEditor">
     <x-admin.card>
         <!-- Header -->
         <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -66,7 +66,6 @@
                     <textarea id="body"
                               name="body"
                               rows="15"
-                              data-tinymce-api-key="{{ config('tinymce.api_key', 'no-api-key') }}"
                               class="w-full px-3 py-2 border {{ $errors->has('body') ? 'border-red-500' : 'border-gray-300 dark:border-gray-600' }} rounded-md focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-gray-100">{{ old('body', is_string(data_get($content, 'body')) ? trim((string) data_get($content, 'body'), '\'"') : '') }}</textarea>
                     <p class="mt-1 text-sm text-gray-500">Use the rich text editor to format your content</p>
                     @error('body')
