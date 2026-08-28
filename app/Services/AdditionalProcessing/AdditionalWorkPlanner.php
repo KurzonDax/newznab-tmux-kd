@@ -61,6 +61,14 @@ final readonly class AdditionalWorkPlanner
                             messageIds: $archiveMessageIds,
                             likelyFirstVolume: $this->isLikelyFirstVolume($title),
                             sourceIndex: $sourceIndex,
+                            expansionMessageIds: $this->extractExpansionSegments(
+                                $segments,
+                                $this->config->maximumRarSegments,
+                            ),
+                            contiguousHeadSegments: $this->contiguousHeadSegmentCount(
+                                $segments,
+                                $this->segmentNumbers($file),
+                            ),
                         );
                     }
                 }

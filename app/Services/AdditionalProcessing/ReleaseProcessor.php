@@ -914,6 +914,7 @@ class ReleaseProcessor
         }
 
         $failed = $downloaded = 0;
+        $topUpSpent = false;
 
         foreach ($archiveCandidates as $archiveCandidate) {
             if ($downloaded >= $this->config->maximumRarSegments
@@ -955,6 +956,9 @@ class ReleaseProcessor
                     $reverse,
                     $archiveCandidate->title,
                 );
+                if (! $reverse && ! $topUpSpent) {
+                    $topUpSpent = $this->compressedDynamicTopUp($context, $archiveCandidate, $result['data']);
+                }
                 if ($processed) {
                     break;
                 }
@@ -963,6 +967,241 @@ class ReleaseProcessor
                 $this->output->echoCompressedFailure($failed);
             }
         }
+    }
+
+    /**
+     * Dynamic segment budget for archive-wrapped video (see CONTEXT.md):
+     * after the fixed head fetch of an archive part has been extracted, probe
+     * the partial video fragment for bitrate and keep fetching further
+     * archive segments — the rest of this part, then subsequent parts in
+     * posted order — re-extracting after each fetch until the fragment covers
+     * the target duration or a bound hits: the byte ceiling, the part
+     * ceiling, no next part, or extraction that stops progressing (a
+     * compressed-mode archive a partial fetch cannot extend).
+     *
+     * @return bool Whether this candidate carried a video entry and the budget was spent on it; false leaves later candidates free to try.
+     */
+    private function compressedDynamicTopUp(
+        ReleaseProcessingContext $context,
+        ArchiveCandidate $anchor,
+        string $initialData,
+    ): bool {
+        $plan = $context->workPlan;
+        if ($plan === null
+            || $context->foundVideo
+            || $context->releaseHasPassword
+            || $context->groupUnavailable
+            || $this->config->previewTargetSeconds <= 0
+            || ! $this->dynamicBudgetPolicy->enabledForCategory((int) $context->release->categories_id)
+        ) {
+            return false;
+        }
+
+        $videoEntry = $this->leadingArchiveVideoEntry($initialData);
+        if ($videoEntry === null) {
+            return false;
+        }
+
+        $perSegmentBytes = $anchor->messageIds === []
+            ? 0
+            : intdiv(strlen($initialData), count($anchor->messageIds));
+        if ($perSegmentBytes <= 0) {
+            return true;
+        }
+
+        $firstVolumePath = $this->previewArchiveVolumePath($context->tmpPath, 1);
+
+        try {
+            File::put($firstVolumePath, $initialData);
+
+            $fragmentPath = $this->extractPreviewFragment($firstVolumePath, $videoEntry['name'], $context);
+            if ($fragmentPath === null) {
+                return true;
+            }
+
+            $fragmentBytes = (int) File::size($fragmentPath);
+            $bytesPerSecond = $this->headProbe
+                ->probe($fragmentPath, $this->config)
+                ?->bytesPerSecond($videoEntry['size']);
+            if ($bytesPerSecond === null || $bytesPerSecond <= 0) {
+                // Unknown bitrate: keep the fixed-fetch behavior rather than guess.
+                return true;
+            }
+
+            $neededBytes = (int) ceil($bytesPerSecond * $this->config->previewTargetSeconds);
+            if ($fragmentBytes >= $neededBytes) {
+                return true;
+            }
+
+            // Contiguity gate: a numbering gap inside the range this part
+            // would contribute makes every fetch provably pointless — the
+            // archive stream stops extending at the first missing byte.
+            $anchorSegmentsNeeded = min(
+                (int) ceil(($neededBytes - $fragmentBytes) / $perSegmentBytes),
+                count($anchor->expansionMessageIds),
+            );
+            if (count($anchor->messageIds) + $anchorSegmentsNeeded > $anchor->contiguousHeadSegments) {
+                $context->recordSegmentGapSkip();
+                $this->output->echoSegmentGapSkip();
+
+                return true;
+            }
+
+            $this->fetchCompressedTopUp(
+                $context,
+                $anchor,
+                $videoEntry['name'],
+                $firstVolumePath,
+                $perSegmentBytes,
+                $neededBytes,
+                $fragmentBytes,
+                strlen($initialData),
+            );
+        } finally {
+            // The working volume files must not survive into the
+            // extracted-files sweep, which would treat them as freshly
+            // extracted nested archives.
+            foreach (File::glob($context->tmpPath.'preview-archive.part*.rar') as $volumePath) {
+                File::delete($volumePath);
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * The fetch loop of the compressed dynamic budget; every bound that stops
+     * it leaves the longest fragment extraction could produce on disk for the
+     * extracted-files sweep to clip.
+     */
+    private function fetchCompressedTopUp(
+        ReleaseProcessingContext $context,
+        ArchiveCandidate $anchor,
+        string $videoEntryName,
+        string $firstVolumePath,
+        int $perSegmentBytes,
+        int $neededBytes,
+        int $fragmentBytes,
+        int $fetchedBytes,
+    ): void {
+        $queue = $anchor->expansionMessageIds;
+        $nextParts = $context->workPlan?->archivePartsAfter($anchor) ?? [];
+        $partsUsed = 1;
+        $currentVolume = 1;
+        $currentVolumePath = $firstVolumePath;
+
+        while ($fragmentBytes < $neededBytes) {
+            $segmentsWanted = (int) ceil(($neededBytes - $fragmentBytes) / $perSegmentBytes);
+            if ($this->config->previewMaxFetchBytes > 0) {
+                $segmentsWanted = min(
+                    $segmentsWanted,
+                    intdiv(max($this->config->previewMaxFetchBytes - $fetchedBytes, 0), $perSegmentBytes),
+                );
+                if ($segmentsWanted <= 0) {
+                    break;
+                }
+            }
+
+            if ($queue === []) {
+                if ($nextParts === [] || $partsUsed >= $this->config->previewMaxRarParts) {
+                    break;
+                }
+                $part = array_shift($nextParts);
+                $partSegments = [...$part->messageIds, ...$part->expansionMessageIds];
+                $usableSegments = array_slice($partSegments, 0, max($part->contiguousHeadSegments, 0));
+                if (min($segmentsWanted, count($partSegments)) > count($usableSegments)) {
+                    // A numbering gap sits inside the range this part would
+                    // need to contribute (#290 semantics): bytes past it can
+                    // never be contiguous, so keep what extraction yielded.
+                    $context->recordSegmentGapSkip();
+                    $this->output->echoSegmentGapSkip();
+                    break;
+                }
+                if (count($usableSegments) < count($partSegments)) {
+                    // A gap after the needed range: this part's contiguous
+                    // head is still usable, but nothing beyond it can be.
+                    $nextParts = [];
+                }
+                $partsUsed++;
+                $currentVolume++;
+                $currentVolumePath = $this->previewArchiveVolumePath($context->tmpPath, $currentVolume);
+                File::put($currentVolumePath, '');
+                $queue = $usableSegments;
+
+                continue;
+            }
+
+            $batch = array_splice($queue, 0, min($segmentsWanted, count($queue)));
+            $download = $this->downloadService->download(
+                DownloadKind::CompressedTopUp,
+                $batch,
+                $context->releaseGroupName,
+                $context->release->id,
+                $anchor->title,
+            );
+            if ($download['groupUnavailable']) {
+                $context->groupUnavailable = true;
+                $this->output->echoGroupUnavailable();
+                break;
+            }
+            if (! $download['success'] || ! is_string($download['data'])) {
+                break;
+            }
+
+            File::append($currentVolumePath, $download['data']);
+            $fetchedBytes += strlen($download['data']);
+            $this->output->echoDynamicTopUpFetched(strlen($download['data']));
+
+            $grownPath = $this->extractPreviewFragment($firstVolumePath, $videoEntryName, $context);
+            $grownBytes = $grownPath === null ? 0 : (int) File::size($grownPath);
+            if ($grownBytes <= $fragmentBytes) {
+                break;
+            }
+            $fragmentBytes = $grownBytes;
+        }
+    }
+
+    /**
+     * Re-extract the leading video entry from the working volume set into the
+     * extraction directory, replacing the previous fragment. Returns the
+     * fragment's path, or null when extraction produced nothing.
+     */
+    private function extractPreviewFragment(
+        string $firstVolumePath,
+        string $videoEntryName,
+        ReleaseProcessingContext $context,
+    ): ?string {
+        $fragmentPath = $this->archiveService->extractSpecificFileToPath(
+            $firstVolumePath,
+            $videoEntryName,
+            $context->tmpPath.'unrar/',
+            keepBroken: true,
+        );
+
+        return $fragmentPath !== null && File::isFile($fragmentPath) ? $fragmentPath : null;
+    }
+
+    /**
+     * The first video file the fetched archive head lists, or null when the
+     * data is not a listable archive or holds no video.
+     *
+     * @return array{name: string, size: int}|null
+     */
+    private function leadingArchiveVideoEntry(string $compressedData): ?array
+    {
+        foreach ($this->archiveService->listArchiveContents($compressedData)['files'] as $file) {
+            $name = (string) ($file['name'] ?? '');
+            if ($name !== '' && PostedFileClassifier::matchesTerminalExtension($name, $this->config->videoFileRegex)) {
+                return ['name' => $name, 'size' => max((int) ($file['size'] ?? 0), 0)];
+            }
+        }
+
+        return null;
+    }
+
+    private function previewArchiveVolumePath(string $tmpPath, int $volume): string
+    {
+        return $tmpPath.'preview-archive.part'.sprintf('%03d', $volume).'.rar';
     }
 
     private function processCompressedData(

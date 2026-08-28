@@ -65,6 +65,20 @@ final readonly class AdditionalWorkPlan
     }
 
     /**
+     * The archive parts posted after the given one, in posted order — the
+     * volumes the compressed dynamic budget may extend into.
+     *
+     * @return list<ArchiveCandidate>
+     */
+    public function archivePartsAfter(ArchiveCandidate $anchor): array
+    {
+        return array_values(array_filter(
+            $this->archiveCandidates,
+            static fn (ArchiveCandidate $candidate): bool => $candidate->sourceIndex > $anchor->sourceIndex,
+        ));
+    }
+
+    /**
      * Return a stable priority view without changing the legacy processing order.
      *
      * @return list<ArchiveCandidate>
