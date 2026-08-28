@@ -20,8 +20,7 @@ class CoverController extends Controller
     /** @var list<string> */
     private const array NUMERIC_ID_TYPES = ['anime', 'book', 'console', 'games', 'music', 'tvshows'];
 
-    /** @return BinaryFileResponse|Response */
-    public function show(Request $request, string $type, string $filename)
+    public function show(Request $request, string $type, string $filename): BinaryFileResponse|Response
     {
         if (! in_array($type, self::VALID_TYPES, true) || ! $this->isValidFilename($filename)) {
             abort(404);

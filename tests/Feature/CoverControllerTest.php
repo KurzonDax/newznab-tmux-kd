@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Http\Controllers\CoverController;
+use App\Models\User;
 use GdImage;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Schema;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Tests\TestCase;
@@ -22,7 +26,23 @@ class CoverControllerTest extends TestCase
     {
         parent::setUp();
 
-        config(['app.key' => 'base64:'.base64_encode(random_bytes(32))]);
+        config([
+            'database.default' => 'sqlite',
+            'database.connections.sqlite.database' => ':memory:',
+            'app.key' => 'base64:'.base64_encode(random_bytes(32)),
+        ]);
+        DB::purge();
+        DB::reconnect();
+
+        Schema::create('users', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->string('username')->default('');
+            $table->string('email')->default('');
+            $table->string('password')->default('');
+            $table->timestamp('email_verified_at')->nullable();
+            $table->rememberToken();
+            $table->timestamps();
+        });
     }
 
     protected function tearDown(): void
@@ -146,7 +166,7 @@ class CoverControllerTest extends TestCase
         $this->assertSame(304, $response->getStatusCode());
     }
 
-    public function test_a_regenerated_cover_answers_a_stale_conditional_get_with_a_full_response(): void
+    public function test_a_regenerated_cover_answers_a_stale_conditional_get_with_the_new_bytes(): void
     {
         $name = 'cache-'.uniqid();
         $path = storage_path('covers/preview/'.$name.'.webp');
@@ -154,9 +174,40 @@ class CoverControllerTest extends TestCase
         $mtime = time() - 3600;
         touch($path, $mtime);
 
-        $response = $this->show('preview', $name.'.webp', ifModifiedSince: $mtime - 86400);
+        $response = $this->get(route('covers.show', ['type' => 'preview', 'filename' => $name.'.webp']), [
+            'If-Modified-Since' => gmdate('D, d M Y H:i:s \G\M\T', $mtime - 86400),
+        ]);
 
-        $this->assertSame(200, $response->getStatusCode());
+        $response->assertOk();
+        $this->assertSame(file_get_contents($path), $response->streamedContent());
+    }
+
+    public function test_the_served_cover_headers_survive_the_authenticated_middleware_stack(): void
+    {
+        $name = 'cache-'.uniqid();
+        $this->createImage(storage_path('covers/preview/'.$name.'.webp'), 'webp');
+
+        // The blanket authenticated no-store must not clobber the covers'
+        // revalidating window: it would forbid the 304 economy on the pages
+        // that show the most thumbs.
+        $response = $this->actingAs($this->verifiedUser())
+            ->get(route('covers.show', ['type' => 'preview', 'filename' => $name.'.webp']));
+
+        $response->assertOk();
+        $this->assertSame('max-age=300, must-revalidate, public', $response->headers->get('Cache-Control'));
+        $this->assertNotNull($response->headers->get('Last-Modified'));
+    }
+
+    private function verifiedUser(): User
+    {
+        $user = new User;
+        $user->id = 1;
+        $user->username = 'tester';
+        $user->email = 'tester@example.test';
+        $user->email_verified_at = now();
+        $user->exists = true;
+
+        return $user;
     }
 
     private function show(string $type, string $filename, ?int $ifModifiedSince = null): Response|BinaryFileResponse
