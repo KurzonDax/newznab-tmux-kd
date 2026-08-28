@@ -765,6 +765,10 @@ class ManticoreSearchDriver implements SearchDriverInterface
      *
      * Characters that are not useful as user operators are still escaped:
      * \, @, ~, &, /, $, =, ', [, ]
+     *
+     * Grouping parens are only preserved at token edges; parens inside a word
+     * (and inside quoted phrases) are escaped as literal text, since release
+     * titles like VA-Title-(DRSS1522)-WEB would otherwise break the parser.
      */
     public static function prepareUserSearchQuery(string $query): string
     {
@@ -796,6 +800,16 @@ class ManticoreSearchDriver implements SearchDriverInterface
                 continue;
             }
 
+            // Detect negation applied to a group: -(foo bar) / !(foo bar). The
+            // operator must be captured before edge-paren peeling, or the
+            // group's opening paren would read as a mid-word literal below and
+            // leave the closing paren of a later token unbalanced.
+            $groupNegation = '';
+            if (strlen($token) > 2 && ($token[0] === '!' || $token[0] === '-') && $token[1] === '(') {
+                $groupNegation = $token[0];
+                $token = substr($token, 1);
+            }
+
             // Extract leading/trailing parentheses for grouping: (word) or ((word))
             $leadingParens = '';
             $trailingParens = '';
@@ -811,7 +825,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
             if ($token === '') {
                 // Only parens, no word content
                 if ($leadingParens !== '' || $trailingParens !== '') {
-                    $processed[] = $leadingParens.$trailingParens;
+                    $processed[] = $groupNegation.$leadingParens.$trailingParens;
                 }
 
                 continue;
@@ -828,9 +842,9 @@ class ManticoreSearchDriver implements SearchDriverInterface
             if (str_starts_with($token, '"') && str_ends_with($token, '"') && strlen($token) > 1) {
                 $inner = substr($token, 1, -1);
                 $inner = str_replace($escapeFrom, $escapeTo, $inner);
-                // Escape ! and - inside phrases (they're literal text, not operators)
-                $inner = str_replace(['!', '-'], ['\!', '\-'], $inner);
-                $processed[] = $leadingParens.$negation.'"'.$inner.'"'.$trailingParens;
+                // Escape !, -, and parens inside phrases (they're literal text, not operators)
+                $inner = str_replace(['!', '-', '(', ')'], ['\!', '\-', '\(', '\)'], $inner);
+                $processed[] = $groupNegation.$leadingParens.$negation.'"'.$inner.'"'.$trailingParens;
 
                 continue;
             }
@@ -854,8 +868,20 @@ class ManticoreSearchDriver implements SearchDriverInterface
             // e.g., "spider-man" → "spider\-man", but "-circus" keeps the leading -
             $token = str_replace(['!', '-'], ['\!', '\-'], $token);
 
+            // Parens INSIDE a word are literal text (e.g. the catalogue number in
+            // VA-Title-(DRSS1522)-WEB); unescaped they break the Manticore query
+            // parser. Fold any peeled edge parens back in so a token like
+            // "(foo)bar" stays balanced as fully-literal text instead of leaving
+            // an unclosed group operator.
+            if (str_contains($token, '(') || str_contains($token, ')')) {
+                $token = $leadingParens.$token.$trailingParens;
+                $leadingParens = '';
+                $trailingParens = '';
+                $token = str_replace(['(', ')'], ['\(', '\)'], $token);
+            }
+
             if ($token !== '' || $wildcardPrefix !== '' || $wildcardSuffix !== '') {
-                $processed[] = $leadingParens.$negation.$wildcardPrefix.$token.$wildcardSuffix.$trailingParens;
+                $processed[] = $groupNegation.$leadingParens.$negation.$wildcardPrefix.$token.$wildcardSuffix.$trailingParens;
             }
         }
 
