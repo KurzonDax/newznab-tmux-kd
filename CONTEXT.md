@@ -203,3 +203,30 @@ _Avoid_: plain "poster" in code and docs (collides with Poster art); "uploader";
 **Poster art**:
 The portrait artwork image for a movie or series (TMDB/TVDB/fanart.tv poster), as opposed to the Series banner. Never refers to the person who posted a release.
 _Avoid_: plain "poster" when a reader could take it to mean the Poster identity.
+
+**Music identity**:
+The accepted MusicBrainz-backed identity of an audio release, always at an explicit scope: a **Recording** (one performance/mix that may appear on many albums), a **Release group** (the album concept across all its editions), or a **Release edition** (one exact country/date/label/catalog configuration). Identification may honestly stop at a broader scope — a known album with an unresolved edition is a complete answer. See ADR 0014.
+_Avoid_: "album match" with no scope; treating MusicBrainz IDs of different entity types as interchangeable.
+
+**Track evidence**:
+One observation about one audio artifact in a posting — filename, position, tags, duration, identifier, fingerprint — before any MusicBrainz meaning is attached to it.
+_Avoid_: bare "track" — qualify as track evidence, MusicBrainz release track, or recording; most matching mistakes come from collapsing those layers.
+
+**Evidence revision**:
+The immutable snapshot of everything observed about one release at one collection time, with completeness flags so absent data is never scored as a contradiction. Re-observation — or lazy synthesis from already-stored rows for the back catalog — creates a new revision; nothing ever edits an old one.
+_Avoid_: "updating" evidence.
+
+**Identification decision**:
+The explained outcome of resolving one evidence revision under one algorithm version: an accepted Music identity at some scope, needs review, unresolved, conflicted, or a retryable provider error. Carries a deterministic ranking score, its reasons, and the runner-up margin. A new algorithm version produces a new decision; it never rewrites the previous one.
+_Avoid_: reading the score as a probability; recording a provider failure as a no-match.
+
+**Shadow mode**:
+Running music resolution and persisting Identification decisions while applying no projection — no rename, no search text, no compatibility row. The default state until thresholds are calibrated against the labeled corpus.
+
+**Music identity projection**:
+A reversible, recorded application of an accepted Identification decision to the release: the canonical rename, internal search-index text, or the `musicinfo` compatibility row. Each stores a before/after diff, and a reversal restores a field only while it still holds the projected value, so a later human correction is never overwritten.
+_Avoid_: letting the resolver touch a release directly — resolution decides, projections apply.
+
+**Rename gate**:
+The strictest projection gate: a verified-band decision with sufficient runner-up margin, no hard contradiction, no PreDB/Trusted/manual name protection, and the MusicBrainz release artist credit (Various Artists for compilations — never the sampled track's performer). When it passes, the canonical rename is the required projection, not an operator preference; when it fails, keeping the current name is the correct outcome, not a shortfall.
+_Avoid_: treating renaming as a deployment option; renaming from one track's performer.
