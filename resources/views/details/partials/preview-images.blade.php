@@ -11,6 +11,10 @@
                 $sampleImageUrl = $hasSampleImage
                     ? getImageAssetUrl('sample', $release->guid . '_thumb', asset('assets/images/no-cover.png'))
                     : null;
+                // The Fullscreen view is offered only where a Full-size copy is
+                // on disk (ADR 0012): the back catalog kept only its thumb.
+                $previewFullUrl = $hasPreviewImage ? getImageAssetUrl('preview', $release->guid) : null;
+                $sampleFullUrl = $hasSampleImage ? getImageAssetUrl('sample', $release->guid) : null;
                 $hasVideoPreview = (int) ($release->videostatus ?? 0) === 1 && ! $isAudioRelease;
                 $videoPreviewMime = $hasVideoPreview
                     ? ($release->videoClip?->clipMimeType() ?? \App\Models\ReleaseVideoClip::VIDEO_MIME_TYPES['ogv'])
@@ -48,7 +52,7 @@
                         @if($hasPreviewImage)
                             <!-- Preview image -->
                             <div>
-                                <div class="block cursor-pointer image-modal-trigger" data-image-url="{{ $previewImageUrl }}" data-image-title="Preview Image">
+                                <div class="block cursor-pointer image-modal-trigger" data-image-url="{{ $previewImageUrl }}" data-image-title="Preview Image" @if($previewFullUrl) data-full-url="{{ $previewFullUrl }}" @endif>
                                     <img src="{{ $previewImageUrl }}"
                                          alt="Preview"
                                          class="detail-gallery-image w-full h-auto rounded-lg"
@@ -61,7 +65,7 @@
                         @if($hasSampleImage)
                             <!-- Sample image -->
                             <div>
-                                <div class="block cursor-pointer image-modal-trigger" data-image-url="{{ $sampleImageUrl }}" data-image-title="Sample Image">
+                                <div class="block cursor-pointer image-modal-trigger" data-image-url="{{ $sampleImageUrl }}" data-image-title="Sample Image" @if($sampleFullUrl) data-full-url="{{ $sampleFullUrl }}" @endif>
                                     <img src="{{ $sampleImageUrl }}"
                                          alt="Sample"
                                          class="detail-gallery-image w-full h-auto rounded-lg"

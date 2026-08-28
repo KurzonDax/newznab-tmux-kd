@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\AdditionalProcessing\State;
 
+use App\Enums\ImagerySkipArtifact;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\DTO\AdditionalWorkPlan;
 use App\Services\AdditionalProcessing\DTO\DownloadedArchive;
@@ -53,6 +54,14 @@ class ReleaseProcessingContext
     // it disabled (ADR 0004); finalization records the skipped-by-policy
     // haspreview sentinel instead of 0.
     public bool $previewGenerationSkippedByPolicy = false;
+
+    // The Free-disk guard suppressed this release's imagery entirely (ADR
+    // 0013): no sample-article downloads, no ffmpeg frame, no files. The
+    // artifacts that would otherwise have been attempted are recorded on the
+    // Imagery disk skip ledger at finalization, and `haspreview` settles as a
+    // plain 0 -- the skip deliberately has no sentinel of its own.
+    /** @var list<ImagerySkipArtifact> */
+    public array $imagerySkippedByDiskGuard = [];
 
     // NFO state
     public bool $releaseHasNoNFO = false;
@@ -201,6 +210,7 @@ class ReleaseProcessingContext
         $this->releaseHasPassword = false;
         $this->releaseDiscarded = false;
         $this->previewGenerationSkippedByPolicy = false;
+        $this->imagerySkippedByDiskGuard = [];
         $this->nzbHasCompressedFile = false;
         $this->groupUnavailable = false;
         $this->workPlan = null;

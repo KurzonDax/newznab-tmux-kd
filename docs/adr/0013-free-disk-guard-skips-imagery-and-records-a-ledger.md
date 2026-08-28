@@ -1,0 +1,14 @@
+# The free-disk guard skips release imagery entirely and records each skip in a ledger table
+
+Storing Full-size copies (ADR 0012) turns imagery into the covers volume's main growth driver, and the volume already had one guard: `ClipDiskGuard` refuses to produce a Clip below 10% free, degrading to the small transcode. Imagery needed the same protection, but with a different response and a recovery path.
+
+We decided the Free-disk guard becomes a shared mechanism with one env-configurable threshold (default 10% free, also adopted by the Clip path). Below it, post-processing skips a release's sample/preview imagery work **entirely** — no sample-article downloads, no ffmpeg, no thumb, no Full-size copy — settles the release as processed so the pending queries do not re-claim it in a loop, and records a row in a small dedicated ledger table (release, what was suppressed, when). A recovery command modeled on `releases:requeue-missing-video-previews` (`--dry-run` default, `--apply` re-pends via `ReleaseClaimant::rependValues()`) returns exactly the recorded releases to the pipeline once space is reclaimed. Admin-uploaded images are exempt: a human fixing a cover is not pipeline growth.
+
+Deliberate choices a future reader may be tempted to "fix":
+
+- **Skip everything, not degrade to thumb-only.** The Clip precedent degrades gracefully, and a thumbs-still-written variant was offered; the maintainer chose the categorical skip: during a squeeze nothing should grow, and the ledger + requeue command makes the temporary blank recoverable rather than permanent. Do not "improve" this into a degrade path.
+- **A ledger table, not another `haspreview` sentinel.** ADR 0004's `-2` sentinel will make a `-3` look natural. It isn't: a disk skip is a stage-level fact spanning both artifacts, `jpgstatus` has no sentinel family and both columns feed browse surfaces and the search index, the requeue unit needs a timestamp, and rows cascade away with their release. The sentinel earns its keep in ADR 0004 by driving live pipeline semantics; the ledger is operator bookkeeping.
+- **The release still settles as processed.** Leaving it pending would have the workers re-claiming and re-skipping it every cycle for the duration of the squeeze. Durability lives in the ledger, not in pending state.
+- **The guard runs at the start of the imagery stage, so the ledger is optimistic.** Skipping before downloading means we usually cannot know whether the release truly contained a sample; a row means "suppressed", and the requeued run — not the ledger — determines what the release yields. Rows that yield nothing on requeue are the accepted cost of not burning bandwidth during a squeeze.
+
+Settled in a grilling session on 2026-08-28 (issue #294). See `CONTEXT.md` for **Free-disk guard** and **Imagery disk skip**.

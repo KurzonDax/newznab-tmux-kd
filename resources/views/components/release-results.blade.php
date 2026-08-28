@@ -54,6 +54,14 @@
                         ? ($hasSpectrogram ? getImageAssetUrl('audiosample', $result->guid . '_spectrum', null, [], ['png']) : null)
                         : ($hasGeneratedPreview ? getImageAssetUrl('preview', $result->guid . '_thumb') : null);
                     $previewImageTitle = $hasAudioPreview ? 'Audio Preview' : ($isAudioRelease ? 'Spectrogram' : 'Preview Image');
+                    // The Fullscreen view is offered only where a Full-size copy is
+                    // on disk (ADR 0012): the back catalog and spectrograms have none.
+                    $previewFullUrl = ! $isAudioRelease && $hasGeneratedPreview
+                        ? getImageAssetUrl('preview', $result->guid)
+                        : null;
+                    $sampleFullUrl = isset($result->jpgstatus) && $result->jpgstatus == 1
+                        ? getImageAssetUrl('sample', $result->guid)
+                        : null;
                     $showPreviewBadge = $isAudioRelease
                         ? ($hasAudioPreview || ($hasGeneratedPreview && $hasSpectrogram && $previewImageUrl !== null))
                         : ($hasGeneratedPreview || $hasVideoPreview);
@@ -102,6 +110,9 @@
                                                 data-guid="{{ $result->guid }}"
                                                 data-image-url="{{ $previewImageUrl }}"
                                                 data-image-title="{{ $previewImageTitle }}"
+                                                @if($previewFullUrl)
+                                                    data-full-url="{{ $previewFullUrl }}"
+                                                @endif
                                                 @if($hasAudioPreview)
                                                     data-audio-url="{{ route('preview.audio', $result->guid) }}"
                                                     data-audio-type="{{ $audioPreviewMime }}"
@@ -120,6 +131,9 @@
                                                 class="sample-badge inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 hover:bg-green-200 dark:hover:bg-green-800 transition cursor-pointer"
                                                 data-guid="{{ $result->guid }}"
                                                 data-image-url="{{ getImageAssetUrl('sample', $result->guid . '_thumb') }}"
+                                                @if($sampleFullUrl)
+                                                    data-full-url="{{ $sampleFullUrl }}"
+                                                @endif
                                                 title="View sample image">
                                             <i class="fas fa-images mr-1"></i> Sample
                                         </button>

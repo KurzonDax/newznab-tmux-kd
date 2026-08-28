@@ -49,7 +49,7 @@ class MediaExtractionService
         ?MediaInfoRefinementService $mediaInfoRefinement = null,
         private readonly ClipGenerationPolicy $clipPolicy = new ClipGenerationPolicy,
         private readonly VideoClipEncoder $clipEncoder = new VideoClipEncoder,
-        private readonly ClipDiskGuard $clipDiskGuard = new ClipDiskGuard,
+        private readonly FreeDiskGuard $freeDiskGuard = new FreeDiskGuard,
     ) {
         $this->searchSyncCoordinator = $searchSyncCoordinator
             ?? new ReleaseSearchSyncCoordinator(
@@ -101,8 +101,8 @@ class MediaExtractionService
                 return false;
             }
 
-            return $this->releaseImage->saveLocalImage(
-                $guid.'_thumb',
+            return $this->releaseImage->saveExtractedImage(
+                $guid,
                 $fileName,
                 $this->releaseImage->imgSavePath,
                 ImageAssetProfile::Preview,
@@ -137,14 +137,15 @@ class MediaExtractionService
     }
 
     /**
-     * The Clip is opt-in per root category and disk-guarded: below 10% free
-     * on the covers volume the pipeline falls back to the small transcode.
+     * The Clip is opt-in per root category and disk-guarded: under the
+     * Free-disk guard's threshold the pipeline falls back to the small
+     * transcode rather than growing the covers volume.
      */
     private function shouldAttemptClip(?int $categoriesId): bool
     {
         return $categoriesId !== null
             && $this->clipPolicy->enabledForCategory($categoriesId)
-            && $this->clipDiskGuard->allows($this->releaseImage->vidSavePath);
+            && $this->freeDiskGuard->allows($this->releaseImage->vidSavePath);
     }
 
     private function storeClip(string $fileLocation, string $tmpPath, string $guid): bool
@@ -319,8 +320,8 @@ class MediaExtractionService
      */
     public function getJPGSample(string $fileLocation, string $guid): bool
     {
-        $saved = $this->releaseImage->saveLocalImage(
-            $guid.'_thumb',
+        $saved = $this->releaseImage->saveExtractedImage(
+            $guid,
             $fileLocation,
             $this->releaseImage->jpgSavePath,
             ImageAssetProfile::Sample,

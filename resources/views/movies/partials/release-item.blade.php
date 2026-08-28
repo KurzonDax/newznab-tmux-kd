@@ -41,6 +41,9 @@
                     @php
                         $releaseHasImage = ($release->haspreview ?? 0) == 1;
                         $releaseHasVideo = (bool) ($release->has_video_preview ?? false);
+                        // The Fullscreen view is offered only where a Full-size copy is
+                        // on disk (ADR 0012); the back catalog kept only its thumb.
+                        $releaseFullUrl = $releaseHasImage ? getImageAssetUrl('preview', $release->guid) : null;
                     @endphp
                     @if($releaseHasImage || $releaseHasVideo)
                         <button type="button"
@@ -48,6 +51,9 @@
                                 data-guid="{{ $release->guid }}"
                                 @if($releaseHasImage)
                                     data-image-url="{{ getImageAssetUrl('preview', $release->guid . '_thumb') }}"
+                                    @if($releaseFullUrl)
+                                        data-full-url="{{ $releaseFullUrl }}"
+                                    @endif
                                 @endif
                                 @if($releaseHasVideo)
                                     data-video-url="{{ route('preview.video', $release->guid) }}"

@@ -24,5 +24,8 @@ return [
     'timeout_path' => env('TIMEOUT_PATH', '/usr/bin/timeout'),
     'magic_file_path' => env('MAGIC_FILE_PATH', '/usr/share/misc/magic'),
     'covers_path' => env('COVERS_PATH', storage_path('covers')),
+    // Free-disk guard: the share of the covers volume that must stay free
+    // before disk-hungry artifacts (Clips, release imagery) are produced.
+    'covers_minimum_free_fraction' => (float) env('COVERS_MINIMUM_FREE_FRACTION', 0.10),
     'add_par2' => env('ADD_PAR2', false),
 ];

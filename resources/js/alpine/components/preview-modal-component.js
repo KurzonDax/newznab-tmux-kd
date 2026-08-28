@@ -1,3 +1,5 @@
+import { fullscreenStage } from "./fullscreen-stage.js";
+
 const prefetchedUrls = new Set();
 
 function buildImageUrl(guid, type) {
@@ -32,6 +34,8 @@ function imagePrefetchPayload(element) {
 
 export function previewModal() {
   return {
+    ...fullscreenStage(),
+
     open: false,
     title: "Preview Image",
     imageUrl: "",
@@ -44,9 +48,12 @@ export function previewModal() {
     videoType: "",
     videoPlaying: false,
 
-    show(guid, type, resolvedUrl, title, audio, video) {
+    show(guid, type, resolvedUrl, title, audio, video, fullUrl) {
       this.releaseAudio();
       this.releaseVideo();
+      // Offered only where a Full-size copy is on disk (ADR 0012); the trigger
+      // omits the attribute entirely for the back catalog.
+      this.resetFullscreen(fullUrl);
 
       type = type || "preview";
       this.title =
@@ -85,6 +92,7 @@ export function previewModal() {
     close() {
       this.releaseAudio();
       this.releaseVideo();
+      this.fullscreen = false;
       this.open = false;
     },
 
@@ -168,13 +176,22 @@ export function previewModal() {
                   type: preview.dataset.videoType,
                 }
               : undefined,
+            preview.dataset.fullUrl,
           );
           return;
         }
         const sample = e.target.closest(".sample-badge");
         if (sample) {
           e.preventDefault();
-          self.show(sample.dataset.guid, "sample", sample.dataset.imageUrl);
+          self.show(
+            sample.dataset.guid,
+            "sample",
+            sample.dataset.imageUrl,
+            undefined,
+            undefined,
+            undefined,
+            sample.dataset.fullUrl,
+          );
           return;
         }
         if (e.target.closest("[data-close-preview-modal]")) {
@@ -203,7 +220,7 @@ export function previewModal() {
       });
 
       document.addEventListener("keydown", function (e) {
-        if (e.key === "Escape" && self.open) self.close();
+        if (e.key === "Escape" && self.open) self.stepBack();
       });
 
       // Prefetch images for badges visible in the viewport during idle time

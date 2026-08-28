@@ -40,10 +40,14 @@
 
                 <!-- Image -->
                 <div class="flex justify-center">
-                    <img :src="imageUrl"
-                         :alt="imageTitle"
-                         decoding="async"
-                         class="max-w-full max-h-[85vh] rounded-lg shadow-lg">
+                    <div class="relative inline-block">
+                        <img :src="imageUrl"
+                             :alt="imageTitle"
+                             decoding="async"
+                             class="max-w-full max-h-[85vh] rounded-lg shadow-lg">
+
+                        <x-image-fullscreen-control />
+                    </div>
                 </div>
             </div>
             <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
@@ -56,5 +60,6 @@
             </div>
         </div>
     </div>
-</div>
 
+    <x-image-fullscreen-layer title-property="imageTitle" />
+</div>

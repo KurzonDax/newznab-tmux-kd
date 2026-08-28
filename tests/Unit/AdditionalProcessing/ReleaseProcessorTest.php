@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\AdditionalProcessing;
 
+use App\Enums\ImagerySkipArtifact;
 use App\Enums\NzbParseFailure;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\AdditionalWorkPlanner;
@@ -14,6 +15,7 @@ use App\Services\AdditionalProcessing\DTO\VideoHeadProbeResult;
 use App\Services\AdditionalProcessing\Enums\DownloadKind;
 use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
 use App\Services\AdditionalProcessing\Enums\ProcessingStage;
+use App\Services\AdditionalProcessing\FreeDiskGuard;
 use App\Services\AdditionalProcessing\MediaExtractionService;
 use App\Services\AdditionalProcessing\NzbContentParser;
 use App\Services\AdditionalProcessing\ReleaseFileManager;
@@ -169,6 +171,7 @@ class ReleaseProcessorTest extends TestCase
             $persistenceMetrics,
             previewPolicy: $this->stubPreviewPolicy(),
             dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
+            freeDiskGuard: $this->permissiveDiskGuard(),
         );
 
         $context = $this->makeContext();
@@ -226,6 +229,7 @@ class ReleaseProcessorTest extends TestCase
                 ->getMock(),
             previewPolicy: $this->stubPreviewPolicy(),
             dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
+            freeDiskGuard: $this->permissiveDiskGuard(),
         );
 
         $context = $this->makeContext();
@@ -274,6 +278,7 @@ class ReleaseProcessorTest extends TestCase
             $output,
             previewPolicy: $this->stubPreviewPolicy(),
             dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
+            freeDiskGuard: $this->permissiveDiskGuard(),
         );
 
         $context = $this->makeContext();
@@ -320,6 +325,7 @@ class ReleaseProcessorTest extends TestCase
             $output,
             previewPolicy: $this->stubPreviewPolicy(),
             dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
+            freeDiskGuard: $this->permissiveDiskGuard(),
         );
 
         $context = $this->makeContext();
@@ -394,6 +400,7 @@ class ReleaseProcessorTest extends TestCase
             $this->passwordOutput(),
             previewPolicy: $this->stubPreviewPolicy(),
             dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
+            freeDiskGuard: $this->permissiveDiskGuard(),
         );
 
         $context = $this->makeContext();
@@ -442,6 +449,7 @@ class ReleaseProcessorTest extends TestCase
             $output,
             previewPolicy: $this->stubPreviewPolicy(),
             dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
+            freeDiskGuard: $this->permissiveDiskGuard(),
         );
 
         $context = $this->makeContext();
@@ -531,6 +539,7 @@ class ReleaseProcessorTest extends TestCase
             $output,
             previewPolicy: $this->stubPreviewPolicy(),
             dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
+            freeDiskGuard: $this->permissiveDiskGuard(),
         );
 
         $context = $this->makeContext();
@@ -652,6 +661,7 @@ class ReleaseProcessorTest extends TestCase
             $output,
             previewPolicy: $this->stubPreviewPolicy(),
             dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
+            freeDiskGuard: $this->permissiveDiskGuard(),
         );
 
         $context = $this->makeContext();
@@ -752,6 +762,7 @@ class ReleaseProcessorTest extends TestCase
             $output,
             previewPolicy: $this->stubPreviewPolicy(),
             dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
+            freeDiskGuard: $this->permissiveDiskGuard(),
         );
 
         $context = $this->makeContext();
@@ -821,6 +832,7 @@ class ReleaseProcessorTest extends TestCase
             $output,
             previewPolicy: $this->stubPreviewPolicy(),
             dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
+            freeDiskGuard: $this->permissiveDiskGuard(),
         );
 
         $context = $this->makeContext();
@@ -1114,6 +1126,7 @@ class ReleaseProcessorTest extends TestCase
             $output,
             previewPolicy: $this->stubPreviewPolicy(enabled: false),
             dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
+            freeDiskGuard: $this->permissiveDiskGuard(),
         );
 
         $context = $this->makeContext();
@@ -1126,6 +1139,205 @@ class ReleaseProcessorTest extends TestCase
         $this->assertTrue($finalizedContext->foundVideo, 'Pre-marked so the video pipeline never runs.');
         $this->assertSame(ProcessingOutcome::NoUsefulArtifacts, $result->outcome);
         $this->assertFalse($result->artifactsCreated, 'Pre-marked flags must not count as created artifacts.');
+    }
+
+    #[Test]
+    public function it_skips_all_imagery_work_when_the_free_disk_guard_refuses(): void
+    {
+        $config = $this->makeConfig([
+            'processThumbnails' => true,
+            'processJPGSample' => true,
+        ]);
+
+        $nzbParser = Mockery::mock(NzbContentParser::class);
+        $nzbParser->shouldReceive('parseNzb')->once()->andReturn([
+            'error' => null,
+            'contents' => [
+                ['title' => 'movie.sample.mkv" yEnc', 'segments' => ['sample-message-id']],
+                ['title' => 'movie.jpg" yEnc', 'segments' => ['jpg-message-id']],
+            ],
+        ]);
+
+        // No download() expectation: any sample or JPG article fetch would fail
+        // the test as an unexpected mock call.
+        $downloadService = $this->scopedDownloadService();
+
+        $releaseManager = Mockery::mock(ReleaseFileManager::class);
+        $releaseManager->shouldReceive('processReleaseNameFromNzbContents')->once()->andReturnFalse();
+        $finalizedContext = null;
+        $releaseManager->shouldReceive('finalizeRelease')
+            ->once()
+            ->andReturnUsing(static function (ReleaseProcessingContext $context) use (&$finalizedContext): void {
+                $finalizedContext = $context;
+            });
+
+        $tempWorkspace = Mockery::mock(TempWorkspaceService::class);
+        $tempWorkspace->shouldReceive('createReleaseTempFolder')->once()->andReturn($this->releaseTempPath);
+        $tempWorkspace->shouldReceive('clearDirectory')->once()->with($this->releaseTempPath, false)->andReturnNull();
+
+        $output = Mockery::mock(ConsoleOutputService::class);
+        $output->shouldReceive('echoReleaseStart')->once();
+        $output->shouldReceive('setProcessTitle')->once();
+
+        $processor = new ReleaseProcessor(
+            $config,
+            $nzbParser,
+            new AdditionalWorkPlanner($config),
+            Mockery::mock(ArchiveExtractionService::class),
+            Mockery::mock(MediaExtractionService::class),
+            $downloadService,
+            $releaseManager,
+            Mockery::mock(ReleaseFilesArchiveFallback::class),
+            $tempWorkspace,
+            $output,
+            previewPolicy: $this->stubPreviewPolicy(),
+            dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
+            freeDiskGuard: $this->refusingDiskGuard(),
+        );
+
+        $context = $this->makeContext();
+        $context->release->nfostatus = 1;
+        $result = $processor->process($context, $this->mainTempPath);
+
+        $this->assertNotNull($finalizedContext);
+        $this->assertSame(
+            [ImagerySkipArtifact::Sample, ImagerySkipArtifact::Preview],
+            $finalizedContext->imagerySkippedByDiskGuard,
+        );
+        $this->assertTrue($finalizedContext->foundJPGSample, 'Pre-marked so no JPG article is fetched.');
+        $this->assertTrue($finalizedContext->foundSample, 'Pre-marked so no ffmpeg frame is produced.');
+        $this->assertFalse(
+            $finalizedContext->previewGenerationSkippedByPolicy,
+            'A disk skip must not be confused with the per-root policy skip and its sentinel.',
+        );
+        $this->assertFalse($result->artifactsCreated);
+    }
+
+    #[Test]
+    public function a_disk_squeeze_records_only_the_imagery_the_release_would_have_been_given(): void
+    {
+        $config = $this->makeConfig([
+            'processThumbnails' => true,
+            'processJPGSample' => false,
+        ]);
+
+        $nzbParser = Mockery::mock(NzbContentParser::class);
+        $nzbParser->shouldReceive('parseNzb')->once()->andReturn([
+            'error' => null,
+            'contents' => [['title' => 'movie.sample.mkv" yEnc', 'segments' => ['sample-message-id']]],
+        ]);
+
+        $releaseManager = Mockery::mock(ReleaseFileManager::class);
+        $releaseManager->shouldReceive('processReleaseNameFromNzbContents')->once()->andReturnFalse();
+        $finalizedContext = null;
+        $releaseManager->shouldReceive('finalizeRelease')
+            ->once()
+            ->andReturnUsing(static function (ReleaseProcessingContext $context) use (&$finalizedContext): void {
+                $finalizedContext = $context;
+            });
+
+        $tempWorkspace = Mockery::mock(TempWorkspaceService::class);
+        $tempWorkspace->shouldReceive('createReleaseTempFolder')->once()->andReturn($this->releaseTempPath);
+        $tempWorkspace->shouldReceive('clearDirectory')->once()->with($this->releaseTempPath, false)->andReturnNull();
+
+        $output = Mockery::mock(ConsoleOutputService::class);
+        $output->shouldReceive('echoReleaseStart')->once();
+        $output->shouldReceive('setProcessTitle')->once();
+
+        $processor = new ReleaseProcessor(
+            $config,
+            $nzbParser,
+            new AdditionalWorkPlanner($config),
+            Mockery::mock(ArchiveExtractionService::class),
+            Mockery::mock(MediaExtractionService::class),
+            $this->scopedDownloadService(),
+            $releaseManager,
+            Mockery::mock(ReleaseFilesArchiveFallback::class),
+            $tempWorkspace,
+            $output,
+            previewPolicy: $this->stubPreviewPolicy(),
+            dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
+            freeDiskGuard: $this->refusingDiskGuard(),
+        );
+
+        $context = $this->makeContext();
+        $context->release->nfostatus = 1;
+        $processor->process($context, $this->mainTempPath);
+
+        $this->assertNotNull($finalizedContext);
+        $this->assertSame([ImagerySkipArtifact::Preview], $finalizedContext->imagerySkippedByDiskGuard);
+    }
+
+    #[Test]
+    public function a_disk_squeeze_records_nothing_for_a_release_that_was_never_owed_imagery(): void
+    {
+        $config = $this->makeConfig();
+
+        $nzbParser = Mockery::mock(NzbContentParser::class);
+        $nzbParser->shouldReceive('parseNzb')->once()->andReturn([
+            'error' => null,
+            'contents' => [['title' => 'movie.mkv" yEnc', 'segments' => ['message-id']]],
+        ]);
+
+        $releaseManager = Mockery::mock(ReleaseFileManager::class);
+        $releaseManager->shouldReceive('processReleaseNameFromNzbContents')->once()->andReturnFalse();
+        $finalizedContext = null;
+        $releaseManager->shouldReceive('finalizeRelease')
+            ->once()
+            ->andReturnUsing(static function (ReleaseProcessingContext $context) use (&$finalizedContext): void {
+                $finalizedContext = $context;
+            });
+
+        $tempWorkspace = Mockery::mock(TempWorkspaceService::class);
+        $tempWorkspace->shouldReceive('createReleaseTempFolder')->once()->andReturn($this->releaseTempPath);
+        $tempWorkspace->shouldReceive('clearDirectory')->once()->with($this->releaseTempPath, false)->andReturnNull();
+
+        $output = Mockery::mock(ConsoleOutputService::class);
+        $output->shouldReceive('echoReleaseStart')->once();
+        $output->shouldReceive('setProcessTitle')->once();
+
+        $processor = new ReleaseProcessor(
+            $config,
+            $nzbParser,
+            new AdditionalWorkPlanner($config),
+            Mockery::mock(ArchiveExtractionService::class),
+            Mockery::mock(MediaExtractionService::class),
+            $this->scopedDownloadService(),
+            $releaseManager,
+            Mockery::mock(ReleaseFilesArchiveFallback::class),
+            $tempWorkspace,
+            $output,
+            previewPolicy: $this->stubPreviewPolicy(),
+            dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
+            freeDiskGuard: $this->refusingDiskGuard(),
+        );
+
+        $context = $this->makeContext();
+        $context->release->nfostatus = 1;
+        $processor->process($context, $this->mainTempPath);
+
+        $this->assertNotNull($finalizedContext);
+        $this->assertSame([], $finalizedContext->imagerySkippedByDiskGuard);
+    }
+
+    private function refusingDiskGuard(): FreeDiskGuard
+    {
+        return new FreeDiskGuard(
+            static fn (string $path): float => 50.0,
+            static fn (string $path): float => 1000.0,
+        );
+    }
+
+    /**
+     * The Free-disk guard measures the real covers volume; pin it open so a
+     * nearly-full disk under the test run cannot suppress imagery mid-assertion.
+     */
+    private function permissiveDiskGuard(): FreeDiskGuard
+    {
+        return new FreeDiskGuard(
+            static fn (string $path): float => 900.0,
+            static fn (string $path): float => 1000.0,
+        );
     }
 
     private function makeProcessor(
@@ -1149,6 +1361,7 @@ class ReleaseProcessorTest extends TestCase
             $output ?? Mockery::mock(ConsoleOutputService::class),
             previewPolicy: $this->stubPreviewPolicy(),
             dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
+            freeDiskGuard: $this->permissiveDiskGuard(),
         );
     }
 
@@ -1217,6 +1430,7 @@ class ReleaseProcessorTest extends TestCase
             new ConsoleOutputService,
             previewPolicy: $this->stubPreviewPolicy(),
             dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy(),
+            freeDiskGuard: $this->permissiveDiskGuard(),
         );
 
         $context = $this->makeContext();
@@ -1311,6 +1525,7 @@ class ReleaseProcessorTest extends TestCase
             new ConsoleOutputService,
             previewPolicy: $this->stubPreviewPolicy(),
             dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy($budgetEnabled),
+            freeDiskGuard: $this->permissiveDiskGuard(),
             headProbe: new StubVideoHeadProbe($probeResult),
         );
 

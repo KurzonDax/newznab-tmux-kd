@@ -53,8 +53,12 @@ class CoverController extends Controller
         $requestedExtension = strtolower($pathInfo['extension']);
         $basenames = [$basename];
 
+        // Release imagery is stored twice (ADR 0012): the Full-size copy under
+        // the bare guid and the display thumb beside it. A bare request wants
+        // the larger file, and falls back to the thumb for the back catalog,
+        // which only ever had one.
         if (in_array($type, ['preview', 'sample'], true) && ! str_ends_with($basename, '_thumb')) {
-            array_unshift($basenames, $basename.'_thumb');
+            $basenames[] = $basename.'_thumb';
         }
 
         if ($type === 'anime' && preg_match('/^(\d+)-cover$/', $basename, $matches) === 1) {

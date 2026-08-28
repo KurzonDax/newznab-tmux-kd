@@ -54,13 +54,17 @@
 
                 <!-- Image -->
                 <div x-show="imageUrl && imageLoaded && !imageError && !videoPlaying" class="flex justify-center">
-                    <img :src="imageUrl"
-                         :alt="title"
-                         x-on:error="onImageError()"
-                         @load="onImageLoad()"
-                         decoding="async"
-                         fetchpriority="high"
-                         class="max-w-full max-h-[80vh] rounded-lg shadow-lg">
+                    <div class="relative inline-block">
+                        <img :src="imageUrl"
+                             :alt="title"
+                             x-on:error="onImageError()"
+                             @load="onImageLoad()"
+                             decoding="async"
+                             fetchpriority="high"
+                             class="max-w-full max-h-[80vh] rounded-lg shadow-lg">
+
+                        <x-image-fullscreen-control />
+                    </div>
                 </div>
 
                 <!-- Video: replaces the image in the same space once play is
@@ -92,4 +96,6 @@
             </div>
         </div>
     </div>
+
+    <x-image-fullscreen-layer title-property="title" />
 </div>
