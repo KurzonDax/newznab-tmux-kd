@@ -45,7 +45,8 @@ This project is a fork of [newznab plus](https://github.com/anth0/nnplus) and [n
 - Node.js 18+ and npm for frontend assets
 - nginx or Apache web server
 - Optional: tmux (for multi-threaded processing)
-- Optional: unrar, 7zip, ffmpeg, mediainfo (for post-processing)
+- Optional: unrar, 7zip, ffmpeg, mediainfo, wavpack (for post-processing)
+- `wavpack` is required for previews of 32-bit float WavPack releases; on Ubuntu/Debian, install it with `sudo apt install wavpack` (provides `wvunpack`)
 
 ### Recommended Hardware
 

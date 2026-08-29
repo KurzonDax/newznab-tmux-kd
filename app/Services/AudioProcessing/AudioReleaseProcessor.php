@@ -13,6 +13,7 @@ use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AudioProcessing\DTO\AudioProcessingResult;
 use App\Services\AudioProcessing\Enums\AudioSourceKind;
+use App\Services\AudioProcessing\Exceptions\WavPackDecoderUnavailable;
 use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\ReleaseExtraService;
 use App\Services\Releases\PreviewGenerationPolicy;
@@ -123,7 +124,17 @@ final class AudioReleaseProcessor
                 return $this->finishSkippedByPolicy($release, $tagsRecorded);
             }
 
-            $preview = $this->encoder->encode($fetched->path, $guid, $tmpPath);
+            try {
+                $preview = $this->encoder->encode($fetched->path, $guid, $tmpPath);
+            } catch (WavPackDecoderUnavailable $exception) {
+                return $this->finish(
+                    $release,
+                    false,
+                    $tagsRecorded,
+                    ProcessingOutcome::NoUsefulArtifacts,
+                    $exception->getMessage(),
+                );
+            }
             if ($preview === null) {
                 return $this->finish($release, false, $tagsRecorded, ProcessingOutcome::NoUsefulArtifacts, 'ffmpeg produced no preview clip.');
             }

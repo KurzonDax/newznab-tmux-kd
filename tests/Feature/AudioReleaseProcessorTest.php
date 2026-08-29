@@ -436,6 +436,23 @@ class AudioReleaseProcessorTest extends TestCase
         $this->assertNull($row->additional_pp_claim_token);
     }
 
+    public function test_a_bare_wavpack_decode_failure_reports_the_missing_fallback_tool(): void
+    {
+        $release = $this->makeRelease();
+        $processor = $this->makeProcessor(
+            $this->taggedContainer(),
+            expectsPreview: false,
+            nzbContents: [['title' => '01-track.wv', 'segments' => ['<wv-1>']]],
+            wavPackFallbackAvailable: false,
+        );
+
+        $result = $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(ProcessingOutcome::NoUsefulArtifacts, $result->outcome);
+        $this->assertSame('WavPack file requires wvunpack, which is not installed.', $result->reason);
+        $this->assertSame(0, (int) DB::table('releases')->where('id', $release->id)->value('haspreview'));
+    }
+
     public function test_an_encrypted_archive_head_settles_passworded_without_an_extra_download(): void
     {
         $release = $this->makeRelease();
@@ -511,6 +528,7 @@ class AudioReleaseProcessorTest extends TestCase
         ?array $nzbContents = null,
         ?int $maxArchiveBytes = null,
         ?bool $archivePassworded = null,
+        bool $wavPackFallbackAvailable = true,
     ): AudioReleaseProcessor {
         $config = $this->config($maxArchiveBytes);
 
@@ -540,7 +558,12 @@ class AudioReleaseProcessorTest extends TestCase
         $tools = new MediaTools;
         (new ReflectionProperty(MediaTools::class, 'mediaInfo'))->setValue($tools, $mediaInfo);
 
-        $encoder = new AudioPreviewEncoder($config, $this->encoderTools());
+        $encoder = new AudioPreviewEncoder(
+            $config,
+            $wavPackFallbackAvailable
+                ? $this->encoderTools()
+                : $this->encoderTools(codec: 'wavpack', commandFails: true, wavPackFallbackAvailable: false),
+        );
 
         $archiveService = Mockery::mock(ArchiveExtractionService::class);
         if ($archivePassworded !== null) {
@@ -589,11 +612,17 @@ class AudioReleaseProcessorTest extends TestCase
      * covered where the binary exists; what matters here is that the processor
      * records it.
      */
-    private function encoderTools(): MediaTools
-    {
+    private function encoderTools(
+        string $codec = 'mp3',
+        bool $commandFails = false,
+        bool $wavPackFallbackAvailable = true,
+    ): MediaTools {
         $driver = Mockery::mock(FFMpegDriver::class);
-        $driver->shouldReceive('command')->andReturnUsing(function (array $command): string {
+        $driver->shouldReceive('command')->andReturnUsing(function (array $command) use ($commandFails): string {
             $this->encoderCommands[] = array_values(array_map('strval', $command));
+            if ($commandFails) {
+                throw new \RuntimeException('Forced ffmpeg WavPack decode failure.');
+            }
             file_put_contents((string) end($command), str_repeat('p', 4096));
 
             return '';
@@ -604,7 +633,7 @@ class AudioReleaseProcessorTest extends TestCase
 
         $ffprobe = Mockery::mock(FFProbe::class);
         $ffprobe->shouldReceive('streams')->andReturn(
-            new StreamCollection([new Stream(['codec_type' => 'audio', 'codec_name' => 'mp3'])])
+            new StreamCollection([new Stream(['codec_type' => 'audio', 'codec_name' => $codec])])
         );
         // A full-length source, so the clip is the configured 30 seconds.
         $ffprobe->shouldReceive('format')->andReturn(new Format(['duration' => '300.0']));
@@ -612,6 +641,9 @@ class AudioReleaseProcessorTest extends TestCase
         $tools = new MediaTools;
         (new ReflectionProperty(MediaTools::class, 'ffmpeg'))->setValue($tools, $ffmpeg);
         (new ReflectionProperty(MediaTools::class, 'ffprobe'))->setValue($tools, $ffprobe);
+        if (! $wavPackFallbackAvailable) {
+            (new ReflectionProperty(MediaTools::class, 'wvunpackPath'))->setValue($tools, false);
+        }
 
         return $tools;
     }

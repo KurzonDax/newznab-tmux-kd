@@ -13,6 +13,7 @@ use App\Services\AdditionalProcessing\UsenetDownloadService;
 use App\Services\AudioProcessing\DTO\AudioFetchResult;
 use App\Services\AudioProcessing\DTO\AudioSource;
 use App\Services\AudioProcessing\Enums\AudioSourceKind;
+use App\Services\AudioProcessing\Exceptions\WavPackDecoderUnavailable;
 use Closure;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
@@ -195,10 +196,20 @@ final class AudioFetcher
                     }
 
                     $isComplete = $declaredSize > 0 && File::size($path) >= $declaredSize;
-                    $hasPreviewWindow = $isComplete || $this->decodableLengthProbe->demuxedSeconds($path)
-                        >= $this->config->previewStartSeconds
-                            + $this->config->previewSeconds
-                            + self::PARTIAL_MARGIN_SECONDS;
+                    $requiredSeconds = $this->config->previewStartSeconds
+                        + $this->config->previewSeconds
+                        + self::PARTIAL_MARGIN_SECONDS;
+
+                    try {
+                        $hasPreviewWindow = $isComplete || $this->decodableLengthProbe->demuxedSeconds(
+                            $path,
+                            $requiredSeconds,
+                        ) >= $requiredSeconds;
+                    } catch (WavPackDecoderUnavailable $exception) {
+                        File::delete($path);
+
+                        return AudioFetchResult::failed($exception->getMessage());
+                    }
 
                     if (! $hasPreviewWindow) {
                         File::delete($path);

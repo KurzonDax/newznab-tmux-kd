@@ -20,6 +20,7 @@ use App\Services\AudioProcessing\AudioReleaseProcessor;
 use App\Services\AudioProcessing\AudioSourceSelector;
 use App\Services\AudioProcessing\AudioTagRenamer;
 use App\Services\AudioProcessing\Contracts\AudioProcessingOrchestratorInterface;
+use App\Services\AudioProcessing\WavPackDecoder;
 use App\Services\Categorization\CategorizationService;
 use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\NameFixing\ReleaseUpdateService;
@@ -49,8 +50,13 @@ class AudioProcessingServiceProvider extends ServiceProvider
 
         $this->app->singleton(AudioSourceSelector::class, fn (): AudioSourceSelector => new AudioSourceSelector);
 
+        $this->app->singleton(WavPackDecoder::class, fn ($app): WavPackDecoder => new WavPackDecoder(
+            $app->make(MediaTools::class),
+        ));
+
         $this->app->singleton(AudioDecodableLengthProbe::class, fn ($app): AudioDecodableLengthProbe => new AudioDecodableLengthProbe(
             $app->make(MediaTools::class),
+            $app->make(WavPackDecoder::class),
         ));
 
         $this->app->singleton(AudioFetcher::class, fn ($app): AudioFetcher => new AudioFetcher(
@@ -64,6 +70,7 @@ class AudioProcessingServiceProvider extends ServiceProvider
         $this->app->singleton(AudioPreviewEncoder::class, fn ($app): AudioPreviewEncoder => new AudioPreviewEncoder(
             $app->make(AudioProcessingConfiguration::class),
             $app->make(MediaTools::class),
+            $app->make(WavPackDecoder::class),
         ));
 
         $this->app->singleton(AudioTagRenamer::class, fn ($app): AudioTagRenamer => new AudioTagRenamer(

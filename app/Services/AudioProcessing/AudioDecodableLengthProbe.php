@@ -15,9 +15,46 @@ use App\Services\AdditionalProcessing\MediaTools;
  */
 class AudioDecodableLengthProbe
 {
-    public function __construct(private readonly MediaTools $mediaTools) {}
+    private readonly WavPackDecoder $wavPackDecoder;
 
-    public function demuxedSeconds(string $path): float
+    public function __construct(
+        private readonly MediaTools $mediaTools,
+        ?WavPackDecoder $wavPackDecoder = null,
+    ) {
+        $this->wavPackDecoder = $wavPackDecoder ?? new WavPackDecoder($mediaTools);
+    }
+
+    public function demuxedSeconds(string $path, float $minimumExpectedSeconds = 0.0): float
+    {
+        $ffmpegSeconds = $this->ffmpegDemuxedSeconds($path);
+        if (! $this->wavPackDecoder->supports($path)
+            || ($ffmpegSeconds > 0.0 && $ffmpegSeconds >= $minimumExpectedSeconds)
+        ) {
+            return $ffmpegSeconds;
+        }
+
+        $temporaryPath = tempnam(dirname($path), 'wavpack-');
+        if ($temporaryPath === false) {
+            return $ffmpegSeconds;
+        }
+
+        unlink($temporaryPath);
+        $decodedPath = $temporaryPath.'.wav';
+
+        try {
+            if (! $this->wavPackDecoder->decode($path, $decodedPath)) {
+                return $ffmpegSeconds;
+            }
+
+            return $this->ffmpegDemuxedSeconds($decodedPath);
+        } finally {
+            if (is_file($decodedPath)) {
+                unlink($decodedPath);
+            }
+        }
+    }
+
+    private function ffmpegDemuxedSeconds(string $path): float
     {
         try {
             $output = $this->mediaTools->ffprobe()->getFFProbeDriver()->command([

@@ -19,6 +19,8 @@ use Illuminate\Support\Facades\Log;
  */
 final class AudioPreviewEncoder
 {
+    private readonly WavPackDecoder $wavPackDecoder;
+
     /**
      * Source codecs a browser plays, mapped to the container the copy is written
      * into. Anything absent here is transcoded.
@@ -52,7 +54,10 @@ final class AudioPreviewEncoder
     public function __construct(
         private readonly AudioProcessingConfiguration $config,
         private readonly MediaTools $mediaTools,
-    ) {}
+        ?WavPackDecoder $wavPackDecoder = null,
+    ) {
+        $this->wavPackDecoder = $wavPackDecoder ?? new WavPackDecoder($mediaTools);
+    }
 
     /**
      * Encode the clip for one release and move it into the covers tree.
@@ -71,10 +76,21 @@ final class AudioPreviewEncoder
 
         $workingPath = $tmpPath.$guid.'.'.$container;
         $seconds = $this->cut($sourcePath, $workingPath, $container, $streamCopied);
+        $decodedPath = null;
+
+        if ($seconds === null && $this->wavPackDecoder->supports($sourcePath)) {
+            $decodedPath = $this->decodedWavPath($guid, $tmpPath);
+            if ($this->wavPackDecoder->decode($sourcePath, $decodedPath)) {
+                $seconds = $this->cut($decodedPath, $workingPath, $container, $streamCopied);
+            }
+        }
 
         if ($seconds === null) {
             if (File::isFile($workingPath)) {
                 File::delete($workingPath);
+            }
+            if ($decodedPath !== null && File::isFile($decodedPath)) {
+                File::delete($decodedPath);
             }
 
             return null;
@@ -83,7 +99,15 @@ final class AudioPreviewEncoder
         $bytes = (int) File::size($workingPath);
 
         if (! $this->store($workingPath, $this->config->savePath.$guid.'.'.$container)) {
+            if ($decodedPath !== null && File::isFile($decodedPath)) {
+                File::delete($decodedPath);
+            }
+
             return null;
+        }
+
+        if (! $this->config->spectrogram && $decodedPath !== null && File::isFile($decodedPath)) {
+            File::delete($decodedPath);
         }
 
         return new AudioPreviewResult(
@@ -107,13 +131,22 @@ final class AudioPreviewEncoder
         }
 
         $workingPath = $tmpPath.$guid.'_spectrum.png';
+        $decodedPath = $this->decodedWavPath($guid, $tmpPath);
+        $renderSourcePath = File::isFile($decodedPath) ? $decodedPath : $sourcePath;
+        $rendered = $this->renderSpectrogramToPath($renderSourcePath, $workingPath);
 
-        $rendered = $this->run([
-            '-y',
-            '-i', $sourcePath,
-            '-lavfi', 'showspectrumpic=s=1024x256:legend=1:color=intensity',
-            $workingPath,
-        ]) && $this->isNonEmpty($workingPath);
+        if (! $rendered
+            && $renderSourcePath === $sourcePath
+            && $this->wavPackDecoder->supports($sourcePath)
+            && $this->wavPackDecoder->available()
+            && $this->wavPackDecoder->decode($sourcePath, $decodedPath)
+        ) {
+            $rendered = $this->renderSpectrogramToPath($decodedPath, $workingPath);
+        }
+
+        if (File::isFile($decodedPath)) {
+            File::delete($decodedPath);
+        }
 
         if (! $rendered) {
             if (File::isFile($workingPath)) {
@@ -124,6 +157,16 @@ final class AudioPreviewEncoder
         }
 
         return $this->store($workingPath, $this->config->savePath.$guid.'_spectrum.png');
+    }
+
+    private function renderSpectrogramToPath(string $sourcePath, string $workingPath): bool
+    {
+        return $this->run([
+            '-y',
+            '-i', $sourcePath,
+            '-lavfi', 'showspectrumpic=s=1024x256:legend=1:color=intensity',
+            $workingPath,
+        ]) && $this->isNonEmpty($workingPath);
     }
 
     /**
@@ -238,6 +281,11 @@ final class AudioPreviewEncoder
     private function isNonEmpty(string $path): bool
     {
         return File::isFile($path) && (int) File::size($path) > 0;
+    }
+
+    private function decodedWavPath(string $guid, string $tmpPath): string
+    {
+        return $tmpPath.$guid.'_wavpack.wav';
     }
 
     private function store(string $from, string $to): bool
