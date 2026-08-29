@@ -108,6 +108,7 @@
                                         <button type="button"
                                                 class="preview-badge {{ $hasAudioPreview ? 'audio-preview-badge' : '' }} inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 hover:bg-primary-200 dark:hover:bg-primary-800 transition cursor-pointer"
                                                 data-guid="{{ $result->guid }}"
+                                                data-release-display-name="{{ release_display_name($result) }}"
                                                 data-image-url="{{ $previewImageUrl }}"
                                                 data-image-title="{{ $previewImageTitle }}"
                                                 @if($previewFullUrl)
@@ -130,6 +131,7 @@
                                         <button type="button"
                                                 class="sample-badge inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 hover:bg-green-200 dark:hover:bg-green-800 transition cursor-pointer"
                                                 data-guid="{{ $result->guid }}"
+                                                data-release-display-name="{{ release_display_name($result) }}"
                                                 data-image-url="{{ getImageAssetUrl('sample', $result->guid . '_thumb') }}"
                                                 @if($sampleFullUrl)
                                                     data-full-url="{{ $sampleFullUrl }}"

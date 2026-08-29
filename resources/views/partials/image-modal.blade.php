@@ -29,11 +29,21 @@
                  x-transition:leave-start="opacity-100 scale-100"
                  x-transition:leave-end="opacity-0 scale-95">
             <div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100" id="image-modal-title" x-text="imageTitle">
-                        Image Preview
-                    </h3>
-                    <button type="button" class="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300" @click="close()">
+                <div class="flex items-start justify-between gap-4 mb-4">
+                    <div class="min-w-0 flex-1">
+                        <template x-if="hasReleaseName()">
+                            <div>
+                                <h3 class="line-clamp-2 wrap-break-word text-lg font-medium text-gray-900 dark:text-gray-100" id="image-modal-title" x-text="releaseName" :title="releaseName"></h3>
+                                <p class="text-xs text-gray-500 dark:text-gray-400" x-text="imageTitle"></p>
+                            </div>
+                        </template>
+                        <template x-if="hasNoReleaseName()">
+                            <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100" id="image-modal-title" x-text="imageTitle">
+                                Image Preview
+                            </h3>
+                        </template>
+                    </div>
+                    <button type="button" class="shrink-0 text-gray-400 hover:text-gray-500 dark:hover:text-gray-300" @click="close()">
                         <i class="fas fa-times text-xl"></i>
                     </button>
                 </div>

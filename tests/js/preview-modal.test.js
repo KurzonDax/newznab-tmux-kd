@@ -120,6 +120,38 @@ test("reopening the same failed image preserves its error state", () => {
   assert.equal(component.open, true);
 });
 
+test("reopening the same image updates and clears the release name", () => {
+  const component = previewModal();
+  const imageUrl = "/covers/preview/shared_thumb.webp";
+
+  component.show(
+    "first-guid",
+    "preview",
+    imageUrl,
+    "Preview Image",
+    undefined,
+    undefined,
+    undefined,
+    "First Release 2026.08.29 H.264 MKV",
+  );
+  component.show(
+    "second-guid",
+    "preview",
+    imageUrl,
+    "Preview Image",
+    undefined,
+    undefined,
+    undefined,
+    "Second Release v1.2.3 DDP5.1 MKV",
+  );
+
+  assert.equal(component.releaseName, "Second Release v1.2.3 DDP5.1 MKV");
+
+  component.show("legacy-guid", "preview", imageUrl, "Preview Image");
+
+  assert.equal(component.releaseName, "");
+});
+
 test("close and opening another preview stop and release the audio element", () => {
   let pauseCount = 0;
   const removedAudioAttributes = [];
@@ -173,6 +205,7 @@ test("preview chip passes its audio and image data to the browse modal", () => {
   const preview = {
     dataset: {
       guid: "audio-guid",
+      releaseDisplayName: "Readable Audio Release FLAC",
       imageUrl: "/covers/audiosample/audio-guid_spectrum.png",
       imageTitle: "Audio Preview",
       audioUrl: "/preview/audio/audio-guid",
@@ -203,6 +236,7 @@ test("preview chip passes its audio and image data to the browse modal", () => {
   });
 
   assert.equal(component.title, "Audio Preview");
+  assert.equal(component.releaseName, "Readable Audio Release FLAC");
   assert.equal(component.audioUrl, "/preview/audio/audio-guid");
   assert.equal(component.audioType, "audio/mpeg");
   assert.equal(component.audioMeta, "30s · MP3 · stream copy");
