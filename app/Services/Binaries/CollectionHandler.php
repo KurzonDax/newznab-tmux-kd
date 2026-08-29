@@ -82,7 +82,7 @@ final class CollectionHandler
             $groupName
         );
 
-        $collectionKey = $collMatch['name'].$totalFiles;
+        $collectionKey = $this->collectionKey($collMatch, $totalFiles);
 
         // Return cached ID if already processed this batch
         if (isset($this->collectionIds[$collectionKey])) {
@@ -118,6 +118,9 @@ final class CollectionHandler
             );
 
             if ($collectionId > 0) {
+                if (($collMatch['append_total_files'] ?? true) === false) {
+                    $this->promoteDeclaredTotalFiles($collectionId, $totalFiles);
+                }
                 $this->collectionIds[$collectionKey] = $collectionId;
                 $this->insertCollectionGroups([
                     $collectionKey => array_fill_keys(
@@ -165,7 +168,8 @@ final class CollectionHandler
                 $groupName
             );
 
-            $collectionKey = $collMatch['name'].$totalFiles;
+            $appendTotalFiles = ($collMatch['append_total_files'] ?? true) !== false;
+            $collectionKey = $this->collectionKey($collMatch, $totalFiles);
             $groupNames = $this->xrefService->extractGroupNames($header['Xref'] ?? '');
             if ($groupNames === []) {
                 $groupNames = [$groupName];
@@ -182,6 +186,10 @@ final class CollectionHandler
 
             $indexByCollectionKey[$collectionKey][] = $index;
             if (isset($pending[$collectionKey])) {
+                if (! $appendTotalFiles && $totalFiles > $pending[$collectionKey]['totalfiles']) {
+                    $pending[$collectionKey]['totalfiles'] = $totalFiles;
+                }
+
                 continue;
             }
 
@@ -205,6 +213,7 @@ final class CollectionHandler
                 'collectionhash' => $collectionHash,
                 'collection_regexes_id' => (int) $collMatch['id'],
                 'noise' => $batchNoise,
+                'append_total_files' => $appendTotalFiles,
             ];
         }
 
@@ -224,6 +233,10 @@ final class CollectionHandler
                     continue;
                 }
 
+                if ($row['append_total_files'] === false) {
+                    $this->promoteDeclaredTotalFiles($collectionId, (int) $row['totalfiles']);
+                }
+
                 $this->collectionIds[$collectionKey] = $collectionId;
                 foreach ($indexByCollectionKey[$collectionKey] ?? [] as $index) {
                     $resolved[$index] = $collectionId;
@@ -238,6 +251,33 @@ final class CollectionHandler
         }
 
         return $resolved;
+    }
+
+    /**
+     * @param  array{id: int, name: string, append_total_files?: bool}  $collectionMatch
+     */
+    private function collectionKey(array $collectionMatch, int $totalFiles): string
+    {
+        $totalFilesSuffix = ($collectionMatch['append_total_files'] ?? true) === false
+            ? ''
+            : (string) $totalFiles;
+
+        return $collectionMatch['name'].$totalFilesSuffix;
+    }
+
+    private function promoteDeclaredTotalFiles(int $collectionId, int $totalFiles): void
+    {
+        if ($totalFiles <= 1) {
+            return;
+        }
+
+        DB::table('collections')
+            ->where('id', $collectionId)
+            ->where('declaredfiles', '<', $totalFiles)
+            ->update([
+                'totalfiles' => $totalFiles,
+                'declaredfiles' => $totalFiles,
+            ]);
     }
 
     /**

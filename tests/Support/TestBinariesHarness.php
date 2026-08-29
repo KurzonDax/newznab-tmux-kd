@@ -21,7 +21,7 @@ class TestBinariesHarness extends BinariesService
 
     private MissedPartHandler $testMissedPartHandler;
 
-    public function __construct()
+    public function __construct(int $headerChunkSize = 500)
     {
         // Create a minimal config that doesn't require database access
         $config = new BinariesConfig(
@@ -33,6 +33,7 @@ class TestBinariesHarness extends BinariesService
             newGroupDaysToScan: 3,
             partRepairLimit: 15000,
             partRepairMaxTries: 3,
+            headerChunkSize: $headerChunkSize,
             sqlChunkSize: 500,
             echoCli: false
         );
