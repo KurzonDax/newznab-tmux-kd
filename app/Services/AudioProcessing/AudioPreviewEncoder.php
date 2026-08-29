@@ -99,6 +99,10 @@ final class AudioPreviewEncoder
         $bytes = (int) File::size($workingPath);
 
         if (! $this->store($workingPath, $this->config->savePath.$guid.'.'.$container)) {
+            if ($decodedPath !== null && File::isFile($decodedPath)) {
+                File::delete($decodedPath);
+            }
+
             return null;
         }
 

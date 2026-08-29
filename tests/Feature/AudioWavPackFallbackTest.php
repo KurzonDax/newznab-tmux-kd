@@ -120,36 +120,7 @@ class AudioWavPackFallbackTest extends TestCase
             $contents = (string) file_get_contents($source);
             file_put_contents($source, substr($contents, 0, (int) floor(strlen($contents) * 0.75)));
         }
-        $ffmpegDriver = Mockery::mock(FFMpegDriver::class);
-        $ffmpegDriver->shouldReceive('command')->andReturnUsing(function (array $command): string {
-            $inputIndex = array_search('-i', $command, true);
-            $inputPath = is_int($inputIndex) ? (string) ($command[$inputIndex + 1] ?? '') : '';
-            if (str_ends_with($inputPath, '.wv')) {
-                throw new RuntimeException('Forced ffmpeg-only decode failure.');
-            }
-
-            $this->runFfmpeg($command);
-
-            return '';
-        });
-
-        $ffmpeg = Mockery::mock(FFMpeg::class);
-        $ffmpeg->shouldReceive('getFFMpegDriver')->andReturn($ffmpegDriver);
-        $ffprobe = Mockery::mock(FFProbe::class);
-        $ffprobe->shouldReceive('streams')->andReturn(
-            new StreamCollection([new Stream(['codec_type' => 'audio', 'codec_name' => 'wavpack'])])
-        );
-        $ffprobe->shouldReceive('format')->andReturn(new Format(['duration' => '2.0']));
-
-        $tools = new MediaTools;
-        (new ReflectionProperty(MediaTools::class, 'ffmpeg'))->setValue($tools, $ffmpeg);
-        (new ReflectionProperty(MediaTools::class, 'ffprobe'))->setValue($tools, $ffprobe);
-
-        $encoder = new AudioPreviewEncoder(
-            $this->configuration(),
-            $tools,
-            new WavPackDecoder($tools),
-        );
+        $encoder = $this->encoderWithForcedWavPackFallback();
         $result = $encoder->encode($source, 'float32', $this->tmpPath);
 
         $this->assertNotNull($result);
@@ -158,6 +129,29 @@ class AudioWavPackFallbackTest extends TestCase
         $this->assertFileExists($this->savePath.'float32.flac');
         $this->assertTrue($encoder->renderSpectrogram($source, 'float32', $this->tmpPath));
         $this->assertFileExists($this->savePath.'float32_spectrum.png');
+        $this->assertFileDoesNotExist($this->tmpPath.'float32_wavpack.wav');
+    }
+
+    #[Test]
+    public function a_decoded_wav_is_removed_when_the_preview_cannot_be_stored(): void
+    {
+        $source = $this->copyFixture();
+        $blockedSavePath = $this->tmpPath.'not-a-directory';
+        file_put_contents($blockedSavePath, 'blocked');
+
+        $encoder = $this->encoderWithForcedWavPackFallback(
+            $this->configuration($blockedSavePath.'/'),
+        );
+
+        set_error_handler(static function (int $severity, string $message, string $file, int $line): never {
+            throw new \ErrorException($message, 0, $severity, $file, $line);
+        });
+        try {
+            $this->assertNull($encoder->encode($source, 'float32', $this->tmpPath));
+        } finally {
+            restore_error_handler();
+        }
+
         $this->assertFileDoesNotExist($this->tmpPath.'float32_wavpack.wav');
     }
 
@@ -204,7 +198,7 @@ class AudioWavPackFallbackTest extends TestCase
         $this->assertSame(0, $status, 'ffmpeg could not process the decoded WAV fallback.');
     }
 
-    private function configuration(): AudioProcessingConfiguration
+    private function configuration(?string $savePath = null): AudioProcessingConfiguration
     {
         $reflection = new ReflectionClass(AudioProcessingConfiguration::class);
         /** @var AudioProcessingConfiguration $config */
@@ -214,7 +208,7 @@ class AudioWavPackFallbackTest extends TestCase
             'previewSeconds' => 2,
             'previewStartSeconds' => 0,
             'spectrogram' => true,
-            'savePath' => $this->savePath,
+            'savePath' => $savePath ?? $this->savePath,
             'debugMode' => false,
         ] as $property => $value) {
             (new ReflectionProperty(AudioProcessingConfiguration::class, $property))->setValue($config, $value);
@@ -232,6 +226,41 @@ class AudioWavPackFallbackTest extends TestCase
         (new ReflectionProperty(MediaTools::class, 'ffprobe'))->setValue($tools, $ffprobe);
 
         return $tools;
+    }
+
+    private function encoderWithForcedWavPackFallback(
+        ?AudioProcessingConfiguration $configuration = null,
+    ): AudioPreviewEncoder {
+        $ffmpegDriver = Mockery::mock(FFMpegDriver::class);
+        $ffmpegDriver->shouldReceive('command')->andReturnUsing(function (array $command): string {
+            $inputIndex = array_search('-i', $command, true);
+            $inputPath = is_int($inputIndex) ? (string) ($command[$inputIndex + 1] ?? '') : '';
+            if (str_ends_with($inputPath, '.wv')) {
+                throw new RuntimeException('Forced ffmpeg-only decode failure.');
+            }
+
+            $this->runFfmpeg($command);
+
+            return '';
+        });
+
+        $ffmpeg = Mockery::mock(FFMpeg::class);
+        $ffmpeg->shouldReceive('getFFMpegDriver')->andReturn($ffmpegDriver);
+        $ffprobe = Mockery::mock(FFProbe::class);
+        $ffprobe->shouldReceive('streams')->andReturn(
+            new StreamCollection([new Stream(['codec_type' => 'audio', 'codec_name' => 'wavpack'])])
+        );
+        $ffprobe->shouldReceive('format')->andReturn(new Format(['duration' => '2.0']));
+
+        $tools = new MediaTools;
+        (new ReflectionProperty(MediaTools::class, 'ffmpeg'))->setValue($tools, $ffmpeg);
+        (new ReflectionProperty(MediaTools::class, 'ffprobe'))->setValue($tools, $ffprobe);
+
+        return new AudioPreviewEncoder(
+            $configuration ?? $this->configuration(),
+            $tools,
+            new WavPackDecoder($tools),
+        );
     }
 
     private static function binary(string $name): ?string
