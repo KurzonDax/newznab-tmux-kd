@@ -14,6 +14,8 @@ use App\Services\AudioProcessing\AudioProcessingConfiguration;
 use App\Services\AudioProcessing\DTO\AudioFetchResult;
 use App\Services\AudioProcessing\DTO\AudioSource;
 use App\Services\AudioProcessing\Enums\AudioSourceKind;
+use FFMpeg\Driver\FFProbeDriver;
+use FFMpeg\FFProbe;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Facade;
@@ -203,6 +205,26 @@ class AudioFetcherArchiveTest extends TestCase
     }
 
     #[Test]
+    public function a_float_wavpack_partial_reports_the_missing_fallback_instead_of_exhausting_volumes(): void
+    {
+        $archive = $this->archiveWithTrack(
+            declaredSize: 100,
+            extractedBodies: ['partial'],
+            name: '01-track.wv',
+        );
+
+        $result = $this->fetch(
+            $archive,
+            volumes: 1,
+            lengthProbe: $this->unavailableWavPackLengthProbe(),
+        );
+
+        $this->assertFalse($result->succeeded());
+        $this->assertSame('WavPack file requires wvunpack, which is not installed.', $result->reason);
+        $this->assertNoArchivePartsRemain();
+    }
+
+    #[Test]
     public function the_first_declared_size_for_an_entry_wins_when_later_listings_disagree(): void
     {
         $archive = Mockery::mock(ArchiveExtractionService::class);
@@ -360,19 +382,22 @@ class AudioFetcherArchiveTest extends TestCase
     /**
      * @param  list<string>  $extractedBodies
      */
-    private function archiveWithTrack(int $declaredSize, array $extractedBodies): ArchiveExtractionService
-    {
+    private function archiveWithTrack(
+        int $declaredSize,
+        array $extractedBodies,
+        string $name = '01-track.flac',
+    ): ArchiveExtractionService {
         $extractionCount = 0;
         $archive = Mockery::mock(ArchiveExtractionService::class);
         $archive->shouldReceive('listArchiveContentsAtPath')->times(count($extractedBodies))->andReturn([
-            'files' => [['name' => '01-track.flac', 'size' => $declaredSize]],
+            'files' => [['name' => $name, 'size' => $declaredSize]],
             'hasPassword' => false,
         ]);
         $archive->shouldReceive('extractSpecificFileToPath')
             ->times(count($extractedBodies))
-            ->with($this->partPath(1), '01-track.flac', $this->tmpPath, true)
-            ->andReturnUsing(function () use (&$extractedBodies, &$extractionCount): string {
-                $path = $this->tmpPath.'01-track.flac';
+            ->with($this->partPath(1), $name, $this->tmpPath, true)
+            ->andReturnUsing(function () use (&$extractedBodies, &$extractionCount, $name): string {
+                $path = $this->tmpPath.$name;
                 if ($extractionCount > 0) {
                     $this->assertFileDoesNotExist($path, 'A rejected partial must be deleted before retrying extraction.');
                 }
@@ -383,6 +408,20 @@ class AudioFetcherArchiveTest extends TestCase
             });
 
         return $archive;
+    }
+
+    private function unavailableWavPackLengthProbe(): AudioDecodableLengthProbe
+    {
+        $driver = Mockery::mock(FFProbeDriver::class);
+        $driver->shouldReceive('command')->once()->andReturn("0.0\n2.5\n");
+        $ffprobe = Mockery::mock(FFProbe::class);
+        $ffprobe->shouldReceive('getFFProbeDriver')->andReturn($driver);
+
+        $tools = new MediaTools;
+        (new ReflectionProperty(MediaTools::class, 'ffprobe'))->setValue($tools, $ffprobe);
+        (new ReflectionProperty(MediaTools::class, 'wvunpackPath'))->setValue($tools, false);
+
+        return new AudioDecodableLengthProbe($tools);
     }
 
     /**

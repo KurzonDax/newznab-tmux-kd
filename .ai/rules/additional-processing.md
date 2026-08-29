@@ -19,3 +19,6 @@ When the audio worker's article-1 probe finds video, or no audio stream, it writ
 
 ## Audio settlement preserves archive password evidence
 When the audio path already fetches an archive head and its listing reports encryption, settle `passwordstatus` as `ReleaseBrowseService::PASSWD_RAR`; direct audio and unencrypted archives settle as `PASSWD_NONE`. Do not add NNTP fetches, deep archive inspection, or general-path deferral solely to determine this verdict.
+
+## Float WavPack previews use the reference decoder fallback
+When ffmpeg cannot demux a .wv source, or a partial archive head yields less than the required preview window, decode it with wvunpack -b to a temporary WAV and feed that WAV through the existing length, clip, and spectrogram paths. The -b blind-decode flag is required for truncated archive extractions; if wvunpack is unavailable, surface the distinct dependency failure instead of the archive-volume or generic ffmpeg reason.
