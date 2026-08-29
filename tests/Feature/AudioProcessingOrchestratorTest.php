@@ -17,6 +17,7 @@ use App\Services\AudioProcessing\AudioProcessingOrchestrator;
 use App\Services\AudioProcessing\AudioReleaseProcessor;
 use App\Services\AudioProcessing\AudioSourceSelector;
 use App\Services\AudioProcessing\AudioTagRenamer;
+use App\Services\AudioProcessing\DTO\AudioProcessingResult;
 use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\ReleaseExtraService;
 use App\Services\Releases\PreviewGenerationPolicy;
@@ -77,24 +78,43 @@ class AudioProcessingOrchestratorTest extends TestCase
         $this->seedRelease(2);
 
         $parser = Mockery::mock(NzbContentParser::class);
-        $parser->shouldReceive('parseNzb')->twice()->andReturn([
-            'contents' => [],
-            'error' => 'The NZB could not be decoded.',
-        ]);
+        $parser->shouldReceive('parseNzb')->twice()->andReturnUsing(static function (): array {
+            usleep(1000);
+
+            return [
+                'contents' => [],
+                'error' => 'The NZB could not be decoded.',
+            ];
+        });
         $processor = $this->processor($parser);
         $orchestrator = new AudioProcessingOrchestrator(
             $this->config(),
             $processor,
             new TempWorkspaceService,
         );
+        $settledResults = [];
 
+        ob_start();
         try {
-            $results = $orchestrator->start('a', 'worker-1');
+            $batchResult = $orchestrator->start(
+                'a',
+                'worker-1',
+                '',
+                static function (AudioProcessingResult $result) use (&$settledResults): void {
+                    $settledResults[] = $result;
+                },
+            );
         } finally {
+            $directOutput = ob_get_clean();
             $orchestrator->finish();
         }
 
+        $results = $batchResult->results;
         $this->assertCount(2, $results);
+        $this->assertSame('', $directOutput);
+        $this->assertSame($results, $settledResults);
+        $this->assertGreaterThan(0.0, $results[0]->elapsedSeconds);
+        $this->assertGreaterThan(0.0, $results[1]->elapsedSeconds);
         Log::shouldHaveReceived('debug')
             ->twice()
             ->with(

@@ -7,7 +7,10 @@ namespace App\Console\Commands;
 use App\Models\Settings;
 use App\Services\AdditionalProcessing\AdditionalProcessingOrchestrator;
 use App\Services\AdditionalProcessing\DTO\AdditionalBatchResult;
-use App\Services\AudioProcessing\AudioProcessingOrchestrator;
+use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
+use App\Services\AudioProcessing\Contracts\AudioProcessingOrchestratorInterface;
+use App\Services\AudioProcessing\DTO\AudioProcessingBatchResult;
+use App\Services\AudioProcessing\DTO\AudioProcessingResult;
 use App\Services\NfoService;
 use App\Services\NNTP\NNTPService;
 use App\Services\PostProcessService;
@@ -39,7 +42,7 @@ class PostProcessGuid extends Command
     public function __construct(
         private readonly PostProcessService $postProcessService,
         private readonly AdditionalProcessingOrchestrator $additionalProcessor,
-        private readonly AudioProcessingOrchestrator $audioProcessor
+        private readonly AudioProcessingOrchestratorInterface $audioProcessor
     ) {
         parent::__construct();
     }
@@ -121,10 +124,56 @@ class PostProcessGuid extends Command
     private function processAudio(string $guid): void
     {
         try {
-            $this->audioProcessor->start($guid, bin2hex(random_bytes(16)));
+            $batchResult = $this->audioProcessor->start(
+                $guid,
+                bin2hex(random_bytes(16)),
+                '',
+                function (AudioProcessingResult $result): void {
+                    $this->writeAudioReleaseProgress($result);
+                },
+            );
+            $this->writeAudioBatchSummary($guid, $batchResult);
         } finally {
             $this->audioProcessor->finish();
         }
+    }
+
+    private function writeAudioReleaseProgress(AudioProcessingResult $result): void
+    {
+        $shortGuid = $result->guid !== '' ? substr($result->guid, 0, 12) : '?';
+        $normalizedReason = preg_replace('/\s+/', ' ', trim($result->reason)) ?? trim($result->reason);
+        $reason = $normalizedReason !== '' ? '; reason='.$normalizedReason : '';
+
+        $this->line(sprintf(
+            'Audio release #%d %s: %s%s; elapsed=%.3fs',
+            $result->releaseId,
+            $shortGuid,
+            $this->audioOutcomeLabel($result->outcome),
+            $reason,
+            max(0.0, $result->elapsedSeconds),
+        ));
+    }
+
+    private function audioOutcomeLabel(ProcessingOutcome $outcome): string
+    {
+        return match ($outcome) {
+            ProcessingOutcome::DeclinedToVideoPath => 'declined-to-video',
+            ProcessingOutcome::Failed => 'error',
+            default => $outcome->value,
+        };
+    }
+
+    private function writeAudioBatchSummary(string $guid, AudioProcessingBatchResult $batchResult): void
+    {
+        $this->line(sprintf(
+            'Audio batch %s finished: picked=%d previews=%d declined=%d outcomes=%s reasons=%s',
+            $guid,
+            $batchResult->pickedCount(),
+            $batchResult->previewCount(),
+            $batchResult->declinedCount(),
+            json_encode($batchResult->outcomeCounts(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE),
+            json_encode($batchResult->reasonCounts(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE),
+        ));
     }
 
     private function writeAdditionalProfile(string $guid, int $batch, AdditionalBatchResult $result): void

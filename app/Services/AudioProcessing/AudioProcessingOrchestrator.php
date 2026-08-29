@@ -7,6 +7,8 @@ namespace App\Services\AudioProcessing;
 use App\Models\UsenetGroup;
 use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
+use App\Services\AudioProcessing\Contracts\AudioProcessingOrchestratorInterface;
+use App\Services\AudioProcessing\DTO\AudioProcessingBatchResult;
 use App\Services\AudioProcessing\DTO\AudioProcessingResult;
 use App\Services\TempWorkspaceService;
 use Illuminate\Support\Facades\Log;
@@ -19,7 +21,7 @@ use Illuminate\Support\Facades\Log;
  * worker, same per-release try/catch so one poison release cannot stall a whole
  * GUID bucket, same temp workspace that is cleared on the way in and out.
  */
-final class AudioProcessingOrchestrator
+final class AudioProcessingOrchestrator implements AudioProcessingOrchestratorInterface
 {
     private string $mainTmpPath = '';
 
@@ -35,14 +37,18 @@ final class AudioProcessingOrchestrator
     ) {}
 
     /**
-     * @return list<AudioProcessingResult>
+     * @param  null|callable(AudioProcessingResult): void  $onReleaseSettled
      */
-    public function start(string $guidChar = '', string $workerToken = '', string $groupID = ''): array
-    {
+    public function start(
+        string $guidChar = '',
+        string $workerToken = '',
+        string $groupID = '',
+        ?callable $onReleaseSettled = null,
+    ): AudioProcessingBatchResult {
         $this->finish();
 
         if (! $this->setupTempPath($guidChar, $groupID, $workerToken)) {
-            return [];
+            return AudioProcessingBatchResult::empty();
         }
 
         $this->claimToken = bin2hex(random_bytes(16));
@@ -71,6 +77,8 @@ final class AudioProcessingOrchestrator
         $results = [];
 
         foreach ($releases as $release) {
+            $startedAt = hrtime(true);
+
             try {
                 $result = $this->processor->process(
                     $release,
@@ -101,7 +109,11 @@ final class AudioProcessingOrchestrator
                 }
             }
 
+            $result = $result->withElapsedSeconds($this->elapsedSecondsSince($startedAt));
             $results[] = $result;
+            if ($onReleaseSettled !== null) {
+                $onReleaseSettled($result);
+            }
             if ($this->config->debugMode) {
                 Log::debug('Audio release settled', [
                     'release_id' => $result->releaseId,
@@ -111,30 +123,25 @@ final class AudioProcessingOrchestrator
             }
         }
 
-        if ($results !== []) {
+        $batchResult = new AudioProcessingBatchResult($results);
+
+        if ($batchResult->pickedCount() > 0) {
             Log::info('Audio postprocessing run finished', [
                 'guid_char' => $guidChar,
-                'picked' => count($results),
-                'previews' => count(array_filter($results, static fn (AudioProcessingResult $r): bool => $r->previewCreated)),
-                'declined' => count(array_filter(
-                    $results,
-                    static fn (AudioProcessingResult $r): bool => $r->outcome === ProcessingOutcome::DeclinedToVideoPath,
-                )),
-                'outcomes' => array_count_values(array_map(
-                    static fn (AudioProcessingResult $r): string => $r->outcome->value,
-                    $results,
-                )),
-                'reasons' => array_count_values(array_map(
-                    static fn (AudioProcessingResult $r): string => $r->reason,
-                    array_filter(
-                        $results,
-                        static fn (AudioProcessingResult $r): bool => $r->outcome !== ProcessingOutcome::Completed,
-                    ),
-                )),
+                'picked' => $batchResult->pickedCount(),
+                'previews' => $batchResult->previewCount(),
+                'declined' => $batchResult->declinedCount(),
+                'outcomes' => $batchResult->outcomeCounts(),
+                'reasons' => $batchResult->reasonCounts(),
             ]);
         }
 
-        return $results;
+        return $batchResult;
+    }
+
+    private function elapsedSecondsSince(int $startedAtNanoseconds): float
+    {
+        return (hrtime(true) - $startedAtNanoseconds) / 1_000_000_000;
     }
 
     public function finish(): void
