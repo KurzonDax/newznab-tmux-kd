@@ -88,7 +88,7 @@ class CollectionsCleaningService
      *
      * @param  string  $subject  The raw subject line to clean
      * @param  string  $groupName  The newsgroup name (optional, used for context-specific cleaning)
-     * @return array<string, mixed> Returns ['id' => regex_id, 'name' => cleaned_name]
+     * @return array{id: int, name: string, append_total_files?: bool}
      *
      * @throws \Exception
      */
@@ -115,7 +115,7 @@ class CollectionsCleaningService
      *
      * If no regexes matched on collectionsCleaner, this method applies generic cleaning patterns.
      *
-     * @return array<string, mixed> Returns ['id' => match_type, 'name' => cleaned_name]
+     * @return array{id: int, name: string, append_total_files?: bool}
      */
     protected function generic(): array
     {
@@ -139,10 +139,35 @@ class CollectionsCleaningService
     /**
      * Clean non-music group subjects.
      *
-     * @return array<string, mixed> Returns ['id' => match_type, 'name' => cleaned_name]
+     * @return array{id: int, name: string, append_total_files?: bool}
      */
     protected function cleanGenericSubject(): array
     {
+        if (preg_match(
+            '/^(?<prefix>[^\s\[\]"]+)\s+\[\d{1,5}\/\d{1,5}\]\s+-\s+"[^"]+"\s+yEnc(?:\s+\(\d+\/\d+\))?(?:\s+\d+)?\s*$/i',
+            $this->subject,
+            $prefixTokenMatch,
+        )) {
+            return [
+                'id' => self::REGEX_GENERIC_MATCH,
+                'name' => $prefixTokenMatch['prefix'],
+            ];
+        }
+
+        $appendTotalFiles = preg_match(
+            '/^(?:\[\d{1,5}\/\d{1,5}\]\s+-\s+)?"[^"]+\.tar\.zst(?:\.vol\d+\+\d+\.par2|\.par2)?"\s+yEnc(?:\s+\(\d+\/\d+\))?(?:\s+\d+)?\s*$/i',
+            $this->subject,
+        ) !== 1;
+
+        $subject = preg_replace(
+            [
+                '/(\.vol\d+\+\d+)?\.par2(?=")/i',
+                '/(\byEnc(?:\s+\(\d+\/\d+\))?)\s+\d+\s*$/i',
+            ],
+            ['', '$1'],
+            $this->subject,
+        );
+
         // Remove common patterns:
         // - File/part count indicators
         // - File extensions
@@ -159,18 +184,22 @@ class CollectionsCleaningService
             '/(-? [a-z0-9]+-?|\(?\d{4}\)?([_-])[a-z0-9]+)\.jpg"?| [a-z0-9]+\.mu3"?|((\d{1,3})?\.part(\d{1,5})?|\d{1,5} ?|sample|- Partie \d+)?\.(7z|\d{3}(?=([\s"]))|avi|diz|docx?|epub|idx|iso|jpg|m3u|m4a|mds|mkv|mobi|mp4|nfo|nzb|par(\s?2|")|pdf|rar|rev|rtf|r\d\d|sfv|srs|srr|sub|txt|vol.+(par2)|xls|zip|z{2,3})"?|(\s|(\d{2,3})?-)\d{2,3}\.mp3|\d{2,3}\.pdf|\.part\d{1,4}\./i',
             // Cached extension patterns
             '/'.$this->e0.'/i',
-        ], ' ', $this->subject);
+        ], ' ', $subject);
+
+        $cleanSubject = $this->normalizeString($cleanSubject);
+        $cleanSubject = preg_replace('/^-\s+/', '', $cleanSubject) ?? $cleanSubject;
 
         return [
             'id' => self::REGEX_GENERIC_MATCH,
-            'name' => $this->normalizeString($cleanSubject),
+            'name' => $cleanSubject,
+            'append_total_files' => $appendTotalFiles,
         ];
     }
 
     /**
      * Clean music group subjects with generic patterns.
      *
-     * @return array<string, mixed> Returns ['id' => match_type, 'name' => cleaned_name]
+     * @return array{id: int, name: string, append_total_files?: bool}
      */
     protected function cleanMusicSubject(): array
     {

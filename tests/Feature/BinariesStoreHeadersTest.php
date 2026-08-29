@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\CollectionFileCheckStatus;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\TestBinariesHarness;
 use Tests\TestCase;
@@ -14,6 +15,11 @@ class BinariesStoreHeadersTest extends TestCase
         config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => ':memory:']);
         DB::purge();
         DB::reconnect();
+        $this->registerSqliteFunction(
+            'regexp',
+            static fn (?string $pattern, ?string $value): int => preg_match('/'.$pattern.'/i', (string) $value) === 1 ? 1 : 0,
+            2,
+        );
 
         // Minimal tables.
         DB::statement('CREATE TABLE settings (
@@ -123,6 +129,39 @@ class BinariesStoreHeadersTest extends TestCase
                 3 => $totalParts,
             ],
         ];
+    }
+
+    public function test_named_set_headers_form_one_collection_with_declared_total(): void
+    {
+        $harness = new TestBinariesHarness(headerChunkSize: 1);
+        $subjects = [
+            '"1787977202_nicovideo_jp_watch_sm23010895.tar.zst.par2" yEnc (1/1) 760',
+            '[1/4] - "1787977202_nicovideo_jp_watch_sm23010895.tar.zst" yEnc (13/17) 11643018',
+            '[2/4] - "1787977202_nicovideo_jp_watch_sm23010895.tar.zst.vol00+01.par2" yEnc (1/2) 800828',
+        ];
+        $headers = [];
+
+        foreach ($subjects as $index => $subject) {
+            $articleNumber = 5001 + $index;
+            $headers[] = [
+                'Number' => $articleNumber,
+                'Subject' => $subject,
+                'From' => 'poster@example.com',
+                'Date' => time(),
+                'Bytes' => 100,
+                'Message-ID' => '<msg'.$articleNumber.'@example.com>',
+                'Xref' => 'news.example.com alt.binaries.boneless:'.$articleNumber,
+            ];
+        }
+
+        $harness->publicStoreHeaders($headers);
+
+        $collection = DB::table('collections')->sole();
+        $this->assertSame(1, DB::table('collections')->count());
+        $this->assertSame(4, (int) $collection->totalfiles);
+        $this->assertSame(4, (int) $collection->declaredfiles);
+        $this->assertSame(CollectionFileCheckStatus::Default->value, (int) $collection->filecheck);
+        $this->assertSame(3, DB::table('binaries')->count());
     }
 
     public function test_duplicate_collection_and_binary_reuse(): void
