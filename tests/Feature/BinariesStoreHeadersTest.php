@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Enums\CollectionFileCheckStatus;
+use Database\Seeders\CollectionRegexesTableSeeder;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\TestBinariesHarness;
 use Tests\TestCase;
@@ -106,7 +108,8 @@ class BinariesStoreHeadersTest extends TestCase
             group_regex VARCHAR(255),
             regex VARCHAR(255),
             status INT DEFAULT 1,
-            ordinal INT DEFAULT 0
+            ordinal INT DEFAULT 0,
+            description VARCHAR(1000) DEFAULT ""
         )');
     }
 
@@ -133,11 +136,16 @@ class BinariesStoreHeadersTest extends TestCase
 
     public function test_named_set_headers_form_one_collection_with_declared_total(): void
     {
+        $this->seed(CollectionRegexesTableSeeder::class);
+        Cache::flush();
+
         $harness = new TestBinariesHarness(headerChunkSize: 1);
         $subjects = [
             '"1787977202_nicovideo_jp_watch_sm23010895.tar.zst.par2" yEnc (1/1) 760',
-            '[1/4] - "1787977202_nicovideo_jp_watch_sm23010895.tar.zst" yEnc (13/17) 11643018',
-            '[2/4] - "1787977202_nicovideo_jp_watch_sm23010895.tar.zst.vol00+01.par2" yEnc (1/2) 800828',
+            '[1/4] - "1787977202_nicovideo_jp_watch_sm23010895.tar.zst" yEnc (1/1) 11643018',
+            '[2/4] - "1787977202_nicovideo_jp_watch_sm23010895.tar.zst.vol00+01.par2" yEnc (1/1) 800828',
+            '[3/4] - "1787977202_nicovideo_jp_watch_sm23010895.tar.zst.vol01+02.par2" yEnc (1/1) 1601656',
+            '[4/4] - "1787977202_nicovideo_jp_watch_sm23010895.tar.zst.vol03+04.par2" yEnc (1/1) 3203312',
         ];
         $headers = [];
 
@@ -154,14 +162,24 @@ class BinariesStoreHeadersTest extends TestCase
             ];
         }
 
-        $harness->publicStoreHeaders($headers);
+        $harness->simulateScan($headers, ['id' => 1, 'name' => 'alt.binaries.boneless']);
 
-        $collection = DB::table('collections')->sole();
-        $this->assertSame(1, DB::table('collections')->count());
-        $this->assertSame(4, (int) $collection->totalfiles);
-        $this->assertSame(4, (int) $collection->declaredfiles);
-        $this->assertSame(CollectionFileCheckStatus::Default->value, (int) $collection->filecheck);
-        $this->assertSame(3, DB::table('binaries')->count());
+        $declaredCollection = DB::table('collections')->where('collection_regexes_id', 113)->sole();
+        $barePar2Collection = DB::table('collections')->where('collection_regexes_id', 111)->sole();
+
+        $this->assertSame(2, DB::table('collections')->count());
+        $this->assertSame(4, (int) $declaredCollection->totalfiles);
+        $this->assertSame(4, (int) $declaredCollection->declaredfiles);
+        $this->assertSame(CollectionFileCheckStatus::Sized->value, (int) $declaredCollection->filecheck);
+        $this->assertSame(
+            4,
+            DB::table('binaries')->where('collections_id', $declaredCollection->id)->count(),
+        );
+        $this->assertSame(0, (int) $barePar2Collection->totalfiles);
+        $this->assertSame(
+            1,
+            DB::table('binaries')->where('collections_id', $barePar2Collection->id)->count(),
+        );
     }
 
     public function test_duplicate_collection_and_binary_reuse(): void

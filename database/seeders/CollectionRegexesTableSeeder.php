@@ -866,7 +866,7 @@ class CollectionRegexesTableSeeder extends Seeder
             106 => [
                 'id' => 107,
                 'group_regex' => '^alt\\.binaries\\.boneless$',
-                'regex' => '/^[-a-zA-Z0-9 ]+ \\[\\d+(?P<match0>\\/\\d+\\] - "(.+?))([\-_](proof|sample|thumbs?))*(\\.part\\d*(\\.rar)?|\\.rar|\\.7z)?(\\d{1,3}\\.rev"|\\.vol\\d+\\+\\d+\\.par2"|\\.[A-Za-z0-9]{2,4}"|")[\-_\\s]{0,3}yEnc$/ui',
+                'regex' => '/^(?P<match0>[-a-zA-Z0-9 ]+) \\[\\d+(?P<match1>\\/\\d+)\\] - ".+?"[\-_\\s]{0,3}yEnc$/ui',
                 'status' => 1,
                 'description' => '//Lutheria - FC Twente TV Special - Ze wilde op voetbal [16/49] - "Lutheria - FC Twente TV Special - Ze wilde op voetbal.part16.rar" yEnc ::: // panter - [001/101] - "74518-The Hunters (2011).par2" yEnc',
                 'ordinal' => 60,
@@ -898,7 +898,7 @@ class CollectionRegexesTableSeeder extends Seeder
             110 => [
                 'id' => 111,
                 'group_regex' => '^alt\\.binaries\\.boneless$',
-                'regex' => '/^"(?P<match0>.+?)([\-_](proof|sample|thumbs?))*(\\.part\\d*(\\.rar)?|\\.rar|\\.7z)?(\\d{1,3}\\.rev"|\\.vol\\d+\\+\\d+\\.par2"|\\.[A-Za-z0-9]{2,4}"|")[\-_\\s]{0,3}yEnc$/ui',
+                'regex' => '/^"(?P<match0>.+?)(?:\\.tar\\.zst(?:\\.vol\\d+\\+\\d+\\.par2|\\.par2)?|([\-_](proof|sample|thumbs?))*(\\.part\\d*(\\.rar)?|\\.rar|\\.7z)?(?:\\d{1,3}\\.rev|\\.vol\\d+\\+\\d+\\.par2|\\.[A-Za-z0-9]{2,4})?)"[\-_\\s]{0,3}yEnc$/ui',
                 'status' => 1,
                 'description' => '//"par.4kW9beE.1.vol122+21.par2" yEnc',
                 'ordinal' => 80,
@@ -914,7 +914,7 @@ class CollectionRegexesTableSeeder extends Seeder
             112 => [
                 'id' => 113,
                 'group_regex' => '^alt\\.binaries\\.boneless$',
-                'regex' => '/^\\[\\d+(?P<match0>\\/\\d+\\] - "(.+?))([\-_](proof|sample|thumbs?))*(\\.part\\d*(\\.rar)?|\\.rar|\\.7z)?(\\d{1,3}\\.rev"|\\.vol\\d+\\+\\d+\\.par2"|\\.[A-Za-z0-9]{2,4}"|")[\-_\\s]{0,3}yEnc$/ui',
+                'regex' => '/^\\[\\d+\\/\\d+\\] - "(?P<match0>.+?)(?:\\.tar\\.zst(?:\\.vol\\d+\\+\\d+\\.par2|\\.par2)?|([\-_](proof|sample|thumbs?))*(\\.part\\d*(\\.rar)?|\\.rar|\\.7z)?(?:\\d{1,3}\\.rev|\\.vol\\d+\\+\\d+\\.par2|\\.[A-Za-z0-9]{2,4})?)"[\-_\\s]{0,3}yEnc$/ui',
                 'status' => 1,
                 'description' => '//[010/101] - "Bf56a8aR-20743f8D-Vf7a11fD-d7c6c0.part09.rar" yEnc ::: //[1/9] - "fdbvgdfbdfb.part.par2" yEnc',
                 'ordinal' => 90,
