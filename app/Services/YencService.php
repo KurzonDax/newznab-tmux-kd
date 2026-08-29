@@ -186,7 +186,7 @@ class YencService
             $encoded = preg_replace('/(^=yBegin.*\r\n)/im', '', $input[1], 1) ?? '';
             $encoded = preg_replace('/(^=yPart.*\r\n)/im', '', $encoded, 1) ?? '';
             $encoded = preg_replace('/(^=yEnd.*)/im', '', $encoded, 1) ?? '';
-            $encoded = str_replace(["\r\n", "\r", "\n"], '', trim($encoded));
+            $encoded = str_replace(["\r\n", "\r", "\n"], '', $encoded);
 
             // Use the fast decode method
             $text = $this->fastDecode($encoded);

@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Facades\Yenc;
 use App\Services\YencService;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -159,6 +160,50 @@ class YencServiceTest extends TestCase
 
         $this->assertSame('Hello', $result->data);
         $this->assertFalse($result->crcFailed);
+    }
+
+    public function test_decode_with_crc_status_accepts_a_part_checksum_with_omitted_leading_zeroes(): void
+    {
+        $encodedPayload = pack('H*', '9d92999c9e578d9c8d579093a29e9f9c8f575e5b5c');
+        $article = "=ybegin part=1 line=128 size=21 name=short-crc.bin\r\n"
+            .$encodedPayload."\r\n"
+            .'=yend size=21 pcrc32=a146d7';
+
+        $result = $this->yencService->decodeWithCrcStatus($article);
+
+        $this->assertSame('short-crc-fixture-412', $result->data);
+        $this->assertFalse($result->crcFailed);
+    }
+
+    #[DataProvider('encodedBoundaryByteProvider')]
+    public function test_decode_with_crc_status_preserves_encoded_boundary_bytes(
+        string $encodedPayload,
+        string $expectedData,
+        string $expectedCrc,
+    ): void {
+        $article = "=ybegin part=1 line=128 size=2 name=boundary.bin\r\n"
+            .$encodedPayload."\r\n"
+            .'=yend size=2 pcrc32='.$expectedCrc;
+
+        $result = $this->yencService->decodeWithCrcStatus($article);
+
+        $this->assertSame($expectedData, $result->data);
+        $this->assertFalse($result->crcFailed);
+    }
+
+    /**
+     * @return iterable<string, array{string, string, string}>
+     */
+    public static function encodedBoundaryByteProvider(): iterable
+    {
+        yield 'leading space' => ["\x20\x80", "\xF6V", '8137a005'];
+        yield 'trailing space' => ["\x80\x20", "V\xF6", 'f9e6bf04'];
+        yield 'leading tab' => ["\x09\x80", "\xDFV", 'c5713fee'];
+        yield 'trailing tab' => ["\x80\x09", "V\xDF", 'bb542768'];
+        yield 'leading null' => ["\x00\x80", "\xD6V", '14b384a7'];
+        yield 'trailing null' => ["\x80\x00", "V\xD6", 'c2889fcc'];
+        yield 'leading vertical tab' => ["\x0B\x80", "\xE1V", '84b42493'];
+        yield 'trailing vertical tab' => ["\x80\x0B", "V\xE1", '7a353ac3'];
     }
 
     public function test_is_yenc_encoded_returns_true_for_yenc(): void
