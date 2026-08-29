@@ -5,17 +5,21 @@ declare(strict_types=1);
 namespace Tests\Unit\AudioProcessing;
 
 use App\Models\Release;
+use App\Models\ReleaseFile;
 use App\Services\AdditionalProcessing\ArchiveExtractionService;
+use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\MediaTools;
 use App\Services\AdditionalProcessing\UsenetDownloadService;
 use App\Services\AudioProcessing\AudioDecodableLengthProbe;
 use App\Services\AudioProcessing\AudioFetcher;
+use App\Services\AudioProcessing\AudioPreviewEncoder;
 use App\Services\AudioProcessing\AudioProcessingConfiguration;
 use App\Services\AudioProcessing\DTO\AudioFetchResult;
 use App\Services\AudioProcessing\DTO\AudioSource;
 use App\Services\AudioProcessing\Enums\AudioSourceKind;
 use FFMpeg\Driver\FFProbeDriver;
 use FFMpeg\FFProbe;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Facade;
@@ -316,6 +320,266 @@ class AudioFetcherArchiveTest extends TestCase
     }
 
     #[Test]
+    public function it_seeks_to_a_stored_audio_header_and_carves_a_real_multivolume_flac(): void
+    {
+        $result = $this->fetcher(
+            $this->realArchiveService(),
+            maxRarParts: 4,
+            downloadData: fn (array $messageIds): string => $this->fixtureVolume($messageIds[0]),
+        )->fetch(
+            $this->releaseWithKnownAudio('01-track.flac'),
+            $this->archiveSource(array_map(
+                static fn (int $volume): array => ['<store-'.$volume.'>'],
+                range(1, 6),
+            )),
+            $this->tmpPath,
+            'alt.binaries.sounds.lossless',
+            static function (): void {},
+        );
+
+        $this->assertTrue($result->succeeded(), $result->reason);
+        $this->assertSame([
+            ['<store-1>'],
+            ['<store-4>'],
+            ['<store-5>'],
+            ['<store-6>'],
+        ], $this->downloads);
+        $this->assertSame('fLaC', file_get_contents((string) $result->path, false, null, 0, 4));
+        $preview = (new AudioPreviewEncoder($this->previewConfig(), new MediaTools))->encode(
+            (string) $result->path,
+            'carved-audio',
+            $this->tmpPath,
+        );
+        $this->assertNotNull($preview);
+        $this->assertSame('flac', $preview->extension);
+        $this->assertFileExists($this->tmpPath.'carved-audio.flac');
+        $this->assertNoArchivePartsRemain();
+    }
+
+    #[Test]
+    public function it_reports_when_a_known_stored_audio_header_is_beyond_the_fetched_volume_budget(): void
+    {
+        $result = $this->fetcher(
+            $this->realArchiveService(),
+            maxRarParts: 1,
+            downloadData: fn (array $messageIds): string => $this->fixtureVolume($messageIds[0]),
+        )->fetch(
+            $this->releaseWithKnownAudio('01-track.flac'),
+            $this->archiveSource(array_map(
+                static fn (int $volume): array => ['<store-'.$volume.'>'],
+                range(1, 6),
+            )),
+            $this->tmpPath,
+            'alt.binaries.sounds.lossless',
+            static function (): void {},
+        );
+
+        $this->assertFalse($result->succeeded());
+        $this->assertSame([
+            ['<store-1>'],
+        ], $this->downloads);
+        $this->assertSame(
+            'Release metadata identifies 01-track.flac, but its stored data starts beyond the 1 fetched volume budget.',
+            $result->reason,
+        );
+        $this->assertNoArchivePartsRemain();
+    }
+
+    #[Test]
+    public function a_compressed_multivolume_archive_keeps_the_sequential_extraction_path(): void
+    {
+        $result = $this->fetcher(
+            $this->realArchiveService(externalUnrar: true),
+            maxRarParts: 4,
+            downloadData: fn (array $messageIds): string => $this->fixtureVolume($messageIds[0]),
+        )->fetch(
+            $this->releaseWithKnownAudio('01-track.flac'),
+            $this->archiveSource(array_map(
+                static fn (int $volume): array => ['<compressed-'.$volume.'>'],
+                range(1, 4),
+            )),
+            $this->tmpPath,
+            'alt.binaries.sounds.lossless',
+            static function (): void {},
+        );
+
+        $this->assertTrue($result->succeeded(), $result->reason);
+        $this->assertSame([
+            ['<compressed-1>'],
+            ['<compressed-2>'],
+            ['<compressed-3>'],
+            ['<compressed-4>'],
+        ], $this->downloads);
+        $this->assertSame('fLaC', file_get_contents((string) $result->path, false, null, 0, 4));
+        $this->assertNoArchivePartsRemain();
+    }
+
+    #[Test]
+    public function it_backfills_skipped_volumes_when_a_later_audio_entry_is_compressed(): void
+    {
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $storedArtwork = [[
+            'name' => '00-artwork.png',
+            'size' => 29,
+            'compressed' => 0,
+            'range' => '0-3',
+            'split_after' => 1,
+        ]];
+        $archive->shouldReceive('listArchiveContentsAtPath')->once()->with($this->partPath(1))->andReturn([
+            'files' => $storedArtwork,
+            'hasPassword' => false,
+        ]);
+        $archive->shouldReceive('listArchiveContentsAtPath')->twice()->with($this->partPath(4))->andReturn([
+            'files' => [['name' => '01-track.flac', 'size' => 8, 'compressed' => 1]],
+            'hasPassword' => false,
+        ]);
+        $archive->shouldReceive('listArchiveContentsAtPath')->once()->with($this->partPath(2))->andReturn([
+            'files' => $storedArtwork,
+            'hasPassword' => false,
+        ]);
+        $archive->shouldReceive('listArchiveContentsAtPath')->once()->with($this->partPath(3))->andReturn([
+            'files' => $storedArtwork,
+            'hasPassword' => false,
+        ]);
+        $archive->shouldReceive('extractSpecificFileToPath')
+            ->once()
+            ->with($this->partPath(1), '01-track.flac', $this->tmpPath, true)
+            ->andReturnUsing(function (): string {
+                $path = $this->tmpPath.'01-track.flac';
+                file_put_contents($path, 'abcdefgh');
+
+                return $path;
+            });
+        $archive->shouldNotReceive('carveStoredFileChunkToPath');
+
+        $result = $this->fetcher($archive, maxRarParts: 4)->fetch(
+            $this->releaseWithKnownAudio('01-track.flac', 8),
+            $this->archiveSource([
+                ['<vol-1>'],
+                ['<vol-2>'],
+                ['<vol-3>'],
+                array_map(static fn (int $segment): string => '<vol-4-'.$segment.'>', range(1, 65)),
+                ['<vol-5>'],
+            ]),
+            $this->tmpPath,
+            'alt.binaries.sounds.lossless',
+            static function (): void {},
+        );
+
+        $this->assertTrue($result->succeeded(), $result->reason);
+        $this->assertSame([1, 64, 1, 1, 1], array_map('count', $this->downloads));
+        $this->assertSame(['<vol-4-65>'], $this->downloads[2]);
+        $this->assertSame(['<vol-2>'], $this->downloads[3]);
+        $this->assertSame(['<vol-3>'], $this->downloads[4]);
+        $this->assertNoArchivePartsRemain();
+    }
+
+    #[Test]
+    public function a_known_audio_filename_does_not_claim_archive_evidence_when_downloads_fail(): void
+    {
+        $downloadService = Mockery::mock(UsenetDownloadService::class);
+        $downloadService->shouldReceive('download')->once()->andReturn([
+            'success' => false,
+            'data' => false,
+        ]);
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldNotReceive('listArchiveContentsAtPath');
+
+        $result = $this->fetch(
+            $archive,
+            volumes: 1,
+            maxRarParts: 1,
+            downloadService: $downloadService,
+            release: $this->releaseWithKnownAudio('01-track.flac', 8),
+        );
+
+        $this->assertFalse($result->succeeded());
+        $this->assertSame('No usable audio file was found within 1 fetched archive volume(s).', $result->reason);
+        $this->assertNoArchivePartsRemain();
+    }
+
+    #[Test]
+    public function an_adjacent_computed_store_target_reports_when_the_fetched_cap_is_exhausted(): void
+    {
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldReceive('listArchiveContentsAtPath')->once()->andReturn([
+            'files' => [[
+                'name' => '00-artwork.png',
+                'size' => 4,
+                'compressed' => 0,
+                'range' => '0-3',
+                'split_after' => 1,
+            ]],
+            'hasPassword' => false,
+        ]);
+
+        $result = $this->fetch(
+            $archive,
+            volumes: 2,
+            maxRarParts: 1,
+            release: $this->releaseWithKnownAudio('01-track.flac', 8),
+        );
+
+        $this->assertSame(
+            'Release metadata identifies 01-track.flac, but its stored data starts beyond the 1 fetched volume budget.',
+            $result->reason,
+        );
+        $this->assertNoArchivePartsRemain();
+    }
+
+    #[Test]
+    public function source_exhaustion_does_not_claim_that_the_fetched_volume_cap_was_exhausted(): void
+    {
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldReceive('listArchiveContentsAtPath')->once()->andReturn([
+            'files' => [[
+                'name' => '00-artwork.png',
+                'size' => 29,
+                'compressed' => 0,
+                'range' => '0-3',
+                'split_after' => 1,
+            ]],
+            'hasPassword' => false,
+        ]);
+
+        $result = $this->fetch(
+            $archive,
+            volumes: 1,
+            maxRarParts: 6,
+            release: $this->releaseWithKnownAudio('01-track.flac', 8),
+        );
+
+        $this->assertSame('No usable audio file was found within 1 fetched archive volume(s).', $result->reason);
+        $this->assertNoArchivePartsRemain();
+    }
+
+    #[Test]
+    public function it_reports_a_distinct_reason_when_a_stored_audio_payload_cannot_be_carved(): void
+    {
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldReceive('listArchiveContentsAtPath')->once()->andReturn([
+            'files' => [[
+                'name' => '01-track.flac',
+                'size' => 8,
+                'compressed' => 0,
+                'range' => '0-7',
+            ]],
+            'hasPassword' => false,
+        ]);
+        $archive->shouldReceive('carveStoredFileChunkToPath')->once()->andReturn(false);
+        $archive->shouldNotReceive('extractSpecificFileToPath');
+
+        $result = $this->fetch($archive, volumes: 1);
+
+        $this->assertFalse($result->succeeded());
+        $this->assertSame(
+            'The stored audio entry 01-track.flac was found, but its payload could not be carved.',
+            $result->reason,
+        );
+        $this->assertNoArchivePartsRemain();
+    }
+
+    #[Test]
     public function probe_declines_still_remove_every_archive_part(): void
     {
         $container = new MediaInfoContainer;
@@ -359,6 +623,8 @@ class AudioFetcherArchiveTest extends TestCase
         int $maxRarParts = 6,
         ?AudioDecodableLengthProbe $lengthProbe = null,
         ?MediaInfoContainer $mediaContainer = null,
+        ?UsenetDownloadService $downloadService = null,
+        ?Release $release = null,
     ): AudioFetchResult {
         $parts = [];
         foreach (range(1, $volumes) as $volume) {
@@ -370,8 +636,9 @@ class AudioFetcherArchiveTest extends TestCase
             maxRarParts: $maxRarParts,
             lengthProbe: $lengthProbe,
             mediaContainer: $mediaContainer,
+            downloadService: $downloadService,
         )->fetch(
-            $this->release(),
+            $release ?? $this->release(),
             $this->archiveSource($parts),
             $this->tmpPath,
             'alt.binaries.sounds.lossless',
@@ -489,6 +756,25 @@ class AudioFetcherArchiveTest extends TestCase
         return $config;
     }
 
+    private function previewConfig(): AudioProcessingConfiguration
+    {
+        $reflection = new ReflectionClass(AudioProcessingConfiguration::class);
+        /** @var AudioProcessingConfiguration $config */
+        $config = $reflection->newInstanceWithoutConstructor();
+
+        foreach ([
+            'previewSeconds' => 30,
+            'previewStartSeconds' => 10,
+            'spectrogram' => false,
+            'savePath' => $this->tmpPath,
+            'debugMode' => false,
+        ] as $property => $value) {
+            (new ReflectionProperty(AudioProcessingConfiguration::class, $property))->setValue($config, $value);
+        }
+
+        return $config;
+    }
+
     /**
      * @param  list<list<string>>  $parts
      */
@@ -510,6 +796,33 @@ class AudioFetcherArchiveTest extends TestCase
         return $container;
     }
 
+    private function realArchiveService(bool $externalUnrar = false): ArchiveExtractionService
+    {
+        $reflection = new ReflectionClass(ProcessingConfiguration::class);
+        /** @var ProcessingConfiguration $config */
+        $config = $reflection->newInstanceWithoutConstructor();
+        (new ReflectionProperty(ProcessingConfiguration::class, 'unrarPath'))->setValue(
+            $config,
+            $externalUnrar ? '/usr/bin/unrar' : false,
+        );
+        (new ReflectionProperty(ProcessingConfiguration::class, 'unzipPath'))->setValue($config, false);
+        (new ReflectionProperty(ProcessingConfiguration::class, 'timeoutPath'))->setValue($config, false);
+        (new ReflectionProperty(ProcessingConfiguration::class, 'timeoutSeconds'))->setValue($config, 0);
+        (new ReflectionProperty(ProcessingConfiguration::class, 'debugMode'))->setValue($config, false);
+
+        return new ArchiveExtractionService($config);
+    }
+
+    private function fixtureVolume(string $messageId): string
+    {
+        preg_match('/<(store|compressed)-(\d+)>/', $messageId, $matches);
+        $path = $matches[1] === 'store'
+            ? dirname(__DIR__, 2).'/Fixtures/Audio/rar-seek/store-seek.part'.$matches[2].'.rar'
+            : dirname(__DIR__, 2).'/Fixtures/Audio/rar-compressed/compressed.part'.$matches[2].'.rar';
+
+        return (string) file_get_contents($path);
+    }
+
     private function partPath(int $volume): string
     {
         return $this->tmpPath.'audio-archive.part'.sprintf('%03d', $volume).'.rar';
@@ -525,6 +838,17 @@ class AudioFetcherArchiveTest extends TestCase
         $release = new Release;
         $release->id = 42;
         $release->guid = 'audio-guid';
+
+        return $release;
+    }
+
+    private function releaseWithKnownAudio(string $name, int $size = 0): Release
+    {
+        $release = $this->release();
+        $releaseFile = new ReleaseFile;
+        $releaseFile->name = $name;
+        $releaseFile->size = $size;
+        $release->setRelation('file', new Collection([$releaseFile]));
 
         return $release;
     }
