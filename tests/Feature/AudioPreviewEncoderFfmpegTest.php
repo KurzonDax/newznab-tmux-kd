@@ -187,6 +187,7 @@ class AudioPreviewEncoderFfmpegTest extends TestCase
         $release = new Release;
         $release->id = 42;
         $release->guid = 'dsd-guid';
+        $release->completion = 100;
 
         $fetched = $fetcher->fetch(
             $release,
@@ -289,6 +290,7 @@ class AudioPreviewEncoderFfmpegTest extends TestCase
             'segmentsToDownload' => 12,
             'maxRarParts' => 6,
             'maxArchiveBytes' => null,
+            'minimumCompletionPercent' => 95,
             'previewSeconds' => $previewSeconds,
             'previewStartSeconds' => $previewStartSeconds,
             'spectrogram' => true,

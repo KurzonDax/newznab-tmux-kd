@@ -786,18 +786,22 @@ class SettingsTableSeeder extends Seeder
                 'value' => '1024',
             ],
             274 => [
+                'name' => 'audio_min_completion_percent',
+                'value' => '95',
+            ],
+            275 => [
                 'name' => 'preview_target_seconds',
                 'value' => '30',
             ],
-            275 => [
+            276 => [
                 'name' => 'preview_max_fetch_mb',
                 'value' => '300',
             ],
-            276 => [
+            277 => [
                 'name' => 'preview_max_rar_parts',
                 'value' => '6',
             ],
-            277 => [
+            278 => [
                 'name' => 'clip_minimum_seconds',
                 'value' => '5',
             ],

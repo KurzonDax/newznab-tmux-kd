@@ -66,6 +66,7 @@ final class AudioProcessingOrchestrator implements AudioProcessingOrchestratorIn
                 'fromname',
                 'proc_pp',
                 'size',
+                'completion',
                 'groups_id',
                 'categories_id',
                 'predb_id',

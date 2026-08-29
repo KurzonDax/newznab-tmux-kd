@@ -9,6 +9,7 @@ use App\Facades\Search;
 use App\Models\Category;
 use App\Models\Release;
 use App\Models\ReleaseAudioTag;
+use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
 use App\Services\AdditionalProcessing\ArchiveExtractionService;
 use App\Services\AdditionalProcessing\AudioTagExtractor;
 use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
@@ -87,6 +88,7 @@ class AudioReleaseProcessorTest extends TestCase
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('guid');
+            $table->char('leftguid', 1)->default('a');
             $table->string('name')->default('');
             $table->string('searchname')->default('');
             $table->string('searchname_normalized')->nullable();
@@ -110,6 +112,10 @@ class AudioReleaseProcessorTest extends TestCase
             $table->boolean('is_trusted_name')->default(false);
             $table->integer('haspreview')->default(-1);
             $table->integer('passwordstatus')->default(-1);
+            $table->integer('nzbstatus')->default(1);
+            $table->unsignedBigInteger('size')->default(5 * 1024 * 1024);
+            $table->double('completion')->default(100);
+            $table->dateTime('postdate')->nullable();
             $table->unsignedInteger('pp_timeout_count')->default(0);
             $table->timestamp('additional_pp_claimed_at')->nullable();
             $table->string('additional_pp_claim_token', 64)->nullable();
@@ -502,6 +508,101 @@ class AudioReleaseProcessorTest extends TestCase
         );
     }
 
+    public function test_an_incomplete_release_fails_before_downloading_any_audio_articles(): void
+    {
+        $release = $this->makeRelease(['completion' => 7]);
+        $processor = $this->makeProcessor(
+            $this->taggedContainer(),
+            expectsPreview: false,
+            expectsExtraXml: false,
+            nzbContents: [['title' => 'Album.part01.rar', 'segments' => ['<rar-1>']]],
+        );
+
+        $result = $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(ProcessingOutcome::NoUsefulArtifacts, $result->outcome);
+        $this->assertSame('Source is only 7% complete.', $result->reason);
+        $this->assertSame([], $this->downloads);
+    }
+
+    public function test_disabling_the_completion_threshold_preserves_audio_fetching(): void
+    {
+        $release = $this->makeRelease(['completion' => 7]);
+        $processor = $this->makeProcessor(
+            $this->taggedContainer(),
+            minimumCompletionPercent: 0,
+        );
+
+        $result = $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(ProcessingOutcome::Completed, $result->outcome);
+        $this->assertSame([['<seg-1>'], ['<seg-2>', '<seg-3>']], $this->downloads);
+    }
+
+    public function test_an_archive_starting_on_a_later_volume_fails_after_one_download(): void
+    {
+        $release = $this->makeRelease();
+        $processor = $this->makeProcessor(
+            $this->taggedContainer(),
+            expectsPreview: false,
+            expectsExtraXml: false,
+            nzbContents: [
+                ['title' => 'Album.part08.rar', 'segments' => ['<rar-8>']],
+                ['title' => 'Album.part09.rar', 'segments' => ['<rar-9>']],
+            ],
+            archiveListings: [[
+                'files' => [['name' => 'track.flac', 'size' => 100]],
+                'hasPassword' => false,
+                'isFirstVolume' => false,
+            ]],
+        );
+
+        $result = $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(ProcessingOutcome::NoUsefulArtifacts, $result->outcome);
+        $this->assertSame(
+            'Archive set starts mid-volume; the first volume is not in this release.',
+            $result->reason,
+        );
+        $this->assertSame([['<rar-8>']], $this->downloads);
+    }
+
+    public function test_a_video_only_archive_declines_to_the_general_path_after_two_listed_volumes(): void
+    {
+        $release = $this->makeRelease();
+        $processor = $this->makeProcessor(
+            $this->taggedContainer(),
+            expectsPreview: false,
+            expectsExtraXml: false,
+            nzbContents: [
+                ['title' => 'Album.part01.rar', 'segments' => ['<rar-1>']],
+                ['title' => 'Album.part02.rar', 'segments' => ['<rar-2>']],
+                ['title' => 'Album.part03.rar', 'segments' => ['<rar-3>']],
+            ],
+            archiveListings: [
+                ['files' => [['name' => 'release.nfo', 'size' => 12]], 'hasPassword' => false],
+                ['files' => [['name' => 'feature.mkv', 'size' => 500]], 'hasPassword' => false],
+            ],
+        );
+
+        $result = $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(ProcessingOutcome::DeclinedToVideoPath, $result->outcome);
+        $this->assertSame('The archive holds no audio files (found: mkv, nfo).', $result->reason);
+        $this->assertSame([['<rar-1>'], ['<rar-2>']], $this->downloads);
+        $this->assertSame(
+            AudioRouting::DECLINED_TOKEN,
+            DB::table('releases')->where('id', $release->id)->value('additional_pp_claim_token'),
+        );
+        $this->assertSame(
+            [$release->id],
+            AdditionalCandidateQuery::baseBuilder(minSizeBytes: 0, maxSizeBytes: 0)
+                ->pluck('r.id')
+                ->map(static fn (mixed $id): int => (int) $id)
+                ->all(),
+        );
+    }
+
     /**
      * @param  array<string, mixed>  $attributes
      */
@@ -529,8 +630,10 @@ class AudioReleaseProcessorTest extends TestCase
         ?int $maxArchiveBytes = null,
         ?bool $archivePassworded = null,
         bool $wavPackFallbackAvailable = true,
+        float $minimumCompletionPercent = 95,
+        ?array $archiveListings = null,
     ): AudioReleaseProcessor {
-        $config = $this->config($maxArchiveBytes);
+        $config = $this->config($maxArchiveBytes, $minimumCompletionPercent);
 
         $nzbParser = Mockery::mock(NzbContentParser::class);
         $nzbParser->shouldReceive('parseNzb')->andReturn([
@@ -566,7 +669,11 @@ class AudioReleaseProcessorTest extends TestCase
         );
 
         $archiveService = Mockery::mock(ArchiveExtractionService::class);
-        if ($archivePassworded !== null) {
+        if ($archiveListings !== null) {
+            $archiveService->shouldReceive('listArchiveContentsAtPath')
+                ->times(count($archiveListings))
+                ->andReturn(...$archiveListings);
+        } elseif ($archivePassworded !== null) {
             $archiveService->shouldReceive('listArchiveContentsAtPath')->once()->andReturn([
                 'hasPassword' => $archivePassworded,
                 'files' => [],
@@ -665,8 +772,10 @@ class AudioReleaseProcessorTest extends TestCase
         );
     }
 
-    private function config(?int $maxArchiveBytes = null): AudioProcessingConfiguration
-    {
+    private function config(
+        ?int $maxArchiveBytes = null,
+        float $minimumCompletionPercent = 95,
+    ): AudioProcessingConfiguration {
         $reflection = new ReflectionClass(AudioProcessingConfiguration::class);
         /** @var AudioProcessingConfiguration $config */
         $config = $reflection->newInstanceWithoutConstructor();
@@ -675,6 +784,7 @@ class AudioReleaseProcessorTest extends TestCase
             'segmentsToDownload' => 12,
             'maxRarParts' => 6,
             'maxArchiveBytes' => $maxArchiveBytes,
+            'minimumCompletionPercent' => $minimumCompletionPercent,
             'previewSeconds' => 30,
             'previewStartSeconds' => 10,
             'spectrogram' => true,

@@ -76,14 +76,19 @@ class AudioProcessingOrchestratorTest extends TestCase
         ]);
         $this->seedRelease(1);
         $this->seedRelease(2);
+        $this->seedRelease(3);
 
         $parser = Mockery::mock(NzbContentParser::class);
-        $parser->shouldReceive('parseNzb')->twice()->andReturnUsing(static function (): array {
+        $calls = 0;
+        $parser->shouldReceive('parseNzb')->times(3)->andReturnUsing(static function () use (&$calls): array {
             usleep(1000);
+            $calls++;
 
             return [
                 'contents' => [],
-                'error' => 'The NZB could not be decoded.',
+                'error' => $calls <= 2
+                    ? 'Source is only 7% complete.'
+                    : 'Archive set starts mid-volume; the first volume is not in this release.',
             ];
         });
         $processor = $this->processor($parser);
@@ -110,25 +115,32 @@ class AudioProcessingOrchestratorTest extends TestCase
         }
 
         $results = $batchResult->results;
-        $this->assertCount(2, $results);
+        $this->assertCount(3, $results);
         $this->assertSame('', $directOutput);
         $this->assertSame($results, $settledResults);
         $this->assertGreaterThan(0.0, $results[0]->elapsedSeconds);
         $this->assertGreaterThan(0.0, $results[1]->elapsedSeconds);
+        $this->assertGreaterThan(0.0, $results[2]->elapsedSeconds);
         Log::shouldHaveReceived('debug')
-            ->twice()
+            ->times(3)
             ->with(
                 'Audio release settled',
-                Mockery::on(static fn (array $context): bool => in_array($context['release_id'] ?? null, [1, 2], true)
+                Mockery::on(static fn (array $context): bool => in_array($context['release_id'] ?? null, [1, 2, 3], true)
                     && ($context['outcome'] ?? null) === 'failed'
-                    && ($context['reason'] ?? null) === 'The NZB could not be decoded.'),
+                    && in_array($context['reason'] ?? null, [
+                        'Source is only 7% complete.',
+                        'Archive set starts mid-volume; the first volume is not in this release.',
+                    ], true)),
             );
         Log::shouldHaveReceived('info')
             ->once()
             ->with(
                 'Audio postprocessing run finished',
-                Mockery::on(static fn (array $context): bool => ($context['outcomes'] ?? null) === ['failed' => 2]
-                    && ($context['reasons'] ?? null) === ['The NZB could not be decoded.' => 2]),
+                Mockery::on(static fn (array $context): bool => ($context['outcomes'] ?? null) === ['failed' => 3]
+                    && ($context['reasons'] ?? null) === [
+                        'Source is only 7% complete.' => 2,
+                        'Archive set starts mid-volume; the first volume is not in this release.' => 1,
+                    ]),
             );
     }
 
@@ -149,6 +161,7 @@ class AudioProcessingOrchestratorTest extends TestCase
             $table->string('fromname')->nullable();
             $table->integer('proc_pp')->default(0);
             $table->unsignedBigInteger('size')->default(0);
+            $table->double('completion')->default(100);
             $table->unsignedInteger('groups_id')->default(0);
             $table->unsignedInteger('categories_id');
             $table->unsignedInteger('predb_id')->default(0);
@@ -178,6 +191,7 @@ class AudioProcessingOrchestratorTest extends TestCase
             'fromname' => 'poster@example.test',
             'proc_pp' => 0,
             'size' => 5 * 1024 * 1024,
+            'completion' => 100,
             'groups_id' => 1,
             'categories_id' => Category::MUSIC_LOSSLESS,
             'predb_id' => 0,
