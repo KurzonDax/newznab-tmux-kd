@@ -41,6 +41,8 @@ final class AudioFetcher
 
     private const int PARTIAL_MARGIN_SECONDS = 2;
 
+    private const int NON_AUDIO_LISTING_VOLUME_LIMIT = 2;
+
     public function __construct(
         private readonly AudioProcessingConfiguration $config,
         private readonly UsenetDownloadService $downloadService,
@@ -63,6 +65,11 @@ final class AudioFetcher
         string $groupName,
         Closure $onProbe,
     ): AudioFetchResult {
+        $incompleteReason = $this->incompleteSourceReason($release);
+        if ($incompleteReason !== null) {
+            return AudioFetchResult::failed($incompleteReason);
+        }
+
         return match ($source->kind) {
             AudioSourceKind::BareFile => $this->fetchBareFile($release, $source, $tmpPath, $groupName, $onProbe),
             AudioSourceKind::Archive => $this->fetchFromArchive($release, $source, $tmpPath, $groupName, $onProbe),
@@ -145,6 +152,7 @@ final class AudioFetcher
         $sequentialFallback = false;
         $sequentialFallbackThroughIndex = -1;
         $compressedBackfillRequired = false;
+        $nonAudioListingVolumes = 0;
 
         /** @var array<int, true> $completedVolumeIndexes */
         $completedVolumeIndexes = [];
@@ -196,6 +204,12 @@ final class AudioFetcher
                         );
                     }
 
+                    if ($fetchedVolumes === 1 && ($listing['isFirstVolume'] ?? null) === false) {
+                        return AudioFetchResult::failed(
+                            'Archive set starts mid-volume; the first volume is not in this release.'
+                        );
+                    }
+
                     $currentFiles = array_values($listing['files']);
                     foreach ($currentFiles as $file) {
                         $name = (string) ($file['name'] ?? '');
@@ -244,6 +258,16 @@ final class AudioFetcher
                 }
 
                 $completedVolumeIndexes[$volumeIndex] = true;
+
+                if ($knownAudioFile === null
+                    && $currentFiles !== []
+                    && $this->firstAudioEntry(array_values($listedFiles), $knownAudioFile) === null
+                ) {
+                    $nonAudioListingVolumes++;
+                    if ($nonAudioListingVolumes >= self::NON_AUDIO_LISTING_VOLUME_LIMIT) {
+                        return $this->noAudioArchiveResult(array_values($listedFiles));
+                    }
+                }
 
                 if ($firstVolumeBytes === null && File::isFile($archivePath)) {
                     $firstVolumeBytes = max(1, File::size($archivePath));
@@ -356,6 +380,14 @@ final class AudioFetcher
                 );
             }
 
+            if ($volumeIndex >= count($volumes)
+                && $knownAudioFile === null
+                && $listedFiles !== []
+                && $this->firstAudioEntry(array_values($listedFiles)) === null
+            ) {
+                return $this->noAudioArchiveResult(array_values($listedFiles));
+            }
+
             return AudioFetchResult::failed(
                 'No usable audio file was found within '.$fetchedVolumes.' fetched archive volume(s).'
             );
@@ -370,6 +402,53 @@ final class AudioFetcher
                 }
             }
         }
+    }
+
+    private function incompleteSourceReason(Release $release): ?string
+    {
+        $completion = (float) ($release->completion ?? 0);
+        if ($completion <= 0.0
+            || $this->config->minimumCompletionPercent === 0.0
+            || $completion >= $this->config->minimumCompletionPercent
+        ) {
+            return null;
+        }
+
+        $formattedCompletion = rtrim(rtrim(number_format($completion, 2, '.', ''), '0'), '.');
+
+        return 'Source is only '.$formattedCompletion.'% complete.';
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $files
+     */
+    private function noAudioArchiveResult(array $files): AudioFetchResult
+    {
+        $extensions = [];
+        $containsVideo = false;
+
+        foreach ($files as $file) {
+            $name = (string) ($file['name'] ?? '');
+            $extension = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+            if ($extension !== '') {
+                $extensions[$extension] = true;
+            }
+            if (PostedFileClassifier::matchesTerminalExtension(
+                $name,
+                PostedFileClassifier::VIDEO_FILE_REGEX,
+            )) {
+                $containsVideo = true;
+            }
+        }
+
+        $found = array_keys($extensions);
+        sort($found);
+        $found = $found === [] ? ['unknown'] : $found;
+        $reason = 'The archive holds no audio files (found: '.implode(', ', $found).').';
+
+        return $containsVideo
+            ? AudioFetchResult::declined($reason)
+            : AudioFetchResult::failed($reason);
     }
 
     /**

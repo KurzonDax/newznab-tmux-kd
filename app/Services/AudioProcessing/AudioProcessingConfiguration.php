@@ -43,6 +43,9 @@ final readonly class AudioProcessingConfiguration
     /** Bytes fetched into one archive before giving up; null means unlimited. */
     public ?int $maxArchiveBytes;
 
+    /** Releases below this source completion percentage are skipped; zero disables the gate. */
+    public float $minimumCompletionPercent;
+
     public int $previewSeconds;
 
     public int $previewStartSeconds;
@@ -71,6 +74,11 @@ final readonly class AudioProcessingConfiguration
         $maxArchiveMb = Settings::settingValue('audio_max_archive_mb');
         $maxArchiveMb = ($maxArchiveMb === '' || $maxArchiveMb === null) ? 1024 : max(0, (int) $maxArchiveMb);
         $this->maxArchiveBytes = $maxArchiveMb === 0 ? null : $maxArchiveMb * 1024 * 1024;
+        $minimumCompletionPercent = Settings::settingValue('audio_min_completion_percent');
+        $minimumCompletionPercent = ($minimumCompletionPercent === '' || $minimumCompletionPercent === null)
+            ? 95.0
+            : (float) $minimumCompletionPercent;
+        $this->minimumCompletionPercent = min(100.0, max(0.0, $minimumCompletionPercent));
         $this->previewSeconds = max(1, (int) (Settings::settingValue('audio_preview_seconds') ?: 30));
         // An explicit '0' is a legitimate "clip from the very start".
         $this->previewStartSeconds = max(0, (int) Settings::settingValue('audio_preview_start_seconds'));

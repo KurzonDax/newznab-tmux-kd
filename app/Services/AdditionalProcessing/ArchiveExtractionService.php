@@ -10,6 +10,7 @@ use App\Services\Releases\ReleaseBrowseService;
 use Closure;
 use dariusiii\rarinfo\ArchiveInfo;
 use dariusiii\rarinfo\Par2Info;
+use dariusiii\rarinfo\RarInfo;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 
@@ -157,12 +158,12 @@ class ArchiveExtractionService
      * {@see self::processCompressedData()}'s side effects on disk and on the
      * processing context.
      *
-     * @return array{files: list<array<string, mixed>>, hasPassword: bool}
+     * @return array{files: list<array<string, mixed>>, hasPassword: bool, isFirstVolume: bool|null}
      */
     public function listArchiveContents(string $compressedData): array
     {
         if (! $this->archiveInfo->setData($compressedData, true) || $this->archiveInfo->error !== '') {
-            return ['files' => [], 'hasPassword' => false];
+            return ['files' => [], 'hasPassword' => false, 'isFirstVolume' => null];
         }
 
         return $this->loadedArchiveContents();
@@ -171,23 +172,23 @@ class ArchiveExtractionService
     /**
      * Inspect an archive directly from disk without copying it into a PHP string.
      *
-     * @return array{files: list<array<string, mixed>>, hasPassword: bool}
+     * @return array{files: list<array<string, mixed>>, hasPassword: bool, isFirstVolume: bool|null}
      */
     public function listArchiveContentsAtPath(string $archivePath): array
     {
         if (! $this->archiveInfo->open($archivePath, true) || $this->archiveInfo->error !== '') {
-            return ['files' => [], 'hasPassword' => false];
+            return ['files' => [], 'hasPassword' => false, 'isFirstVolume' => null];
         }
 
         return $this->loadedArchiveContents();
     }
 
     /**
-     * @return array{files: list<array<string, mixed>>, hasPassword: bool}
+     * @return array{files: list<array<string, mixed>>, hasPassword: bool, isFirstVolume: bool|null}
      */
     private function loadedArchiveContents(): array
     {
-        $empty = ['files' => [], 'hasPassword' => false];
+        $empty = ['files' => [], 'hasPassword' => false, 'isFirstVolume' => null];
 
         try {
             $summary = $this->archiveInfo->getSummary(true);
@@ -202,7 +203,11 @@ class ArchiveExtractionService
         if (! empty($this->archiveInfo->isEncrypted)
             || (isset($summary['is_encrypted']) && (int) $summary['is_encrypted'] !== 0)
         ) {
-            return ['files' => [], 'hasPassword' => true];
+            return [
+                'files' => [],
+                'hasPassword' => true,
+                'isFirstVolume' => $this->rarFirstVolume(),
+            ];
         }
 
         $files = $this->archiveInfo->getArchiveFileList();
@@ -210,7 +215,51 @@ class ArchiveExtractionService
         return [
             'files' => is_array($files) ? array_values($files) : [],
             'hasPassword' => false,
+            'isFirstVolume' => $this->rarFirstVolume(),
         ];
+    }
+
+    private function rarFirstVolume(): ?bool
+    {
+        $reader = $this->archiveInfo->getReader();
+        if (! $reader instanceof RarInfo) {
+            return null;
+        }
+
+        $blocks = $reader->getBlocks(false);
+        if (! is_array($blocks)) {
+            return null;
+        }
+
+        foreach ($blocks as $block) {
+            if (($block['head_type'] ?? null) === RarInfo::BLOCK_MAIN) {
+                $flags = (int) ($block['head_flags'] ?? 0);
+
+                return ($flags & RarInfo::MAIN_VOLUME) === 0
+                    || ($flags & RarInfo::MAIN_FIRSTVOLUME) !== 0;
+            }
+
+            if (($block['head_type'] ?? null) === RarInfo::R50_BLOCK_MAIN) {
+                $flags = (int) ($block['flags'] ?? 0);
+                if (($flags & RarInfo::R50_MAIN_VOLUME) === 0) {
+                    return true;
+                }
+
+                if (array_key_exists('vol_number', $block)) {
+                    return (int) $block['vol_number'] === 0;
+                }
+
+                foreach ($blocks as $candidate) {
+                    if (($candidate['head_type'] ?? null) === RarInfo::R50_BLOCK_FILE) {
+                        return ! (bool) ($candidate['split_before'] ?? false);
+                    }
+                }
+
+                return null;
+            }
+        }
+
+        return null;
     }
 
     /**

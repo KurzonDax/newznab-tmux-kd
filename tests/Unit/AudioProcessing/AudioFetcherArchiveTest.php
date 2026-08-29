@@ -302,6 +302,176 @@ class AudioFetcherArchiveTest extends TestCase
     }
 
     #[Test]
+    public function incomplete_sources_fail_before_any_article_is_downloaded(): void
+    {
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldNotReceive('listArchiveContentsAtPath');
+
+        $result = $this->fetch(
+            $archive,
+            volumes: 3,
+            release: $this->release(completion: 7),
+        );
+
+        $this->assertSame('Source is only 7% complete.', $result->reason);
+        $this->assertSame([], $this->downloads);
+    }
+
+    #[Test]
+    public function an_unmeasured_zero_completion_source_remains_fetchable(): void
+    {
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldReceive('listArchiveContentsAtPath')->once()->andReturn([
+            'files' => [],
+            'hasPassword' => false,
+        ]);
+
+        $result = $this->fetch(
+            $archive,
+            volumes: 1,
+            maxRarParts: 1,
+            release: $this->release(completion: 0),
+        );
+
+        $this->assertSame('No usable audio file was found within 1 fetched archive volume(s).', $result->reason);
+        $this->assertSame([['<vol-1>']], $this->downloads);
+    }
+
+    #[Test]
+    public function a_zero_completion_threshold_preserves_archive_fetching(): void
+    {
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldReceive('listArchiveContentsAtPath')->once()->andReturn([
+            'files' => [],
+            'hasPassword' => false,
+        ]);
+
+        $result = $this->fetch(
+            $archive,
+            volumes: 1,
+            maxRarParts: 1,
+            release: $this->release(completion: 7),
+            minimumCompletionPercent: 0,
+        );
+
+        $this->assertSame('No usable audio file was found within 1 fetched archive volume(s).', $result->reason);
+        $this->assertSame([['<vol-1>']], $this->downloads);
+    }
+
+    #[Test]
+    public function a_later_rar_volume_fails_after_its_header_is_listed(): void
+    {
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldReceive('listArchiveContentsAtPath')->once()->andReturn([
+            'files' => [['name' => 'track.flac', 'size' => 100]],
+            'hasPassword' => false,
+            'isFirstVolume' => false,
+        ]);
+        $archive->shouldNotReceive('extractSpecificFileToPath');
+
+        $result = $this->fetch($archive, volumes: 3);
+
+        $this->assertSame(
+            'Archive set starts mid-volume; the first volume is not in this release.',
+            $result->reason,
+        );
+        $this->assertSame([['<vol-1>']], $this->downloads);
+    }
+
+    #[Test]
+    public function two_listed_video_only_volumes_decline_without_fetching_the_rest(): void
+    {
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldReceive('listArchiveContentsAtPath')->twice()->andReturn(
+            ['files' => [['name' => 'sample.nfo', 'size' => 12]], 'hasPassword' => false],
+            [
+                'files' => [['name' => 'feature.m2ts', 'size' => 500, 'split_after' => true]],
+                'hasPassword' => false,
+            ],
+        );
+
+        $result = $this->fetch($archive, volumes: 5);
+
+        $this->assertTrue($result->declined);
+        $this->assertSame('The archive holds no audio files (found: m2ts, nfo).', $result->reason);
+        $this->assertSame([['<vol-1>'], ['<vol-2>']], $this->downloads);
+    }
+
+    #[Test]
+    public function two_listed_non_audio_volumes_fail_with_the_extensions_found(): void
+    {
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldReceive('listArchiveContentsAtPath')->twice()->andReturn(
+            ['files' => [['name' => 'installer.exe', 'size' => 12]], 'hasPassword' => false],
+            ['files' => [['name' => 'readme.txt', 'size' => 20]], 'hasPassword' => false],
+        );
+
+        $result = $this->fetch($archive, volumes: 5);
+
+        $this->assertFalse($result->declined);
+        $this->assertSame('The archive holds no audio files (found: exe, txt).', $result->reason);
+        $this->assertSame([['<vol-1>'], ['<vol-2>']], $this->downloads);
+    }
+
+    #[Test]
+    public function a_single_volume_non_audio_archive_reports_its_contents_at_source_exhaustion(): void
+    {
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldReceive('listArchiveContentsAtPath')->once()->andReturn([
+            'files' => [['name' => 'installer.exe', 'size' => 12]],
+            'hasPassword' => false,
+        ]);
+
+        $result = $this->fetch($archive, volumes: 1);
+
+        $this->assertSame('The archive holds no audio files (found: exe).', $result->reason);
+        $this->assertSame([['<vol-1>']], $this->downloads);
+    }
+
+    #[Test]
+    public function a_non_audio_listing_does_not_claim_source_exhaustion_when_the_part_cap_stops_fetching(): void
+    {
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldReceive('listArchiveContentsAtPath')->once()->andReturn([
+            'files' => [['name' => 'installer.exe', 'size' => 12]],
+            'hasPassword' => false,
+        ]);
+
+        $result = $this->fetch($archive, volumes: 5, maxRarParts: 1);
+
+        $this->assertSame('No usable audio file was found within 1 fetched archive volume(s).', $result->reason);
+        $this->assertSame([['<vol-1>']], $this->downloads);
+    }
+
+    #[Test]
+    public function known_audio_metadata_prevents_support_files_from_triggering_the_no_audio_cutoff(): void
+    {
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldReceive('listArchiveContentsAtPath')->andReturn(
+            ['files' => [['name' => 'release.nfo', 'size' => 12]], 'hasPassword' => false],
+            ['files' => [['name' => 'cover.jpg', 'size' => 20]], 'hasPassword' => false],
+            ['files' => [['name' => 'track.flac', 'size' => 8]], 'hasPassword' => false],
+        );
+        $archive->shouldReceive('extractSpecificFileToPath')
+            ->once()
+            ->andReturnUsing(function (): string {
+                $path = $this->tmpPath.'track.flac';
+                file_put_contents($path, 'abcdefgh');
+
+                return $path;
+            });
+
+        $result = $this->fetch(
+            $archive,
+            volumes: 3,
+            release: $this->releaseWithKnownAudio('track.flac', 8),
+        );
+
+        $this->assertTrue($result->succeeded(), $result->reason);
+        $this->assertSame([['<vol-1>'], ['<vol-2>'], ['<vol-3>']], $this->downloads);
+    }
+
+    #[Test]
     public function it_enforces_the_total_archive_byte_ceiling_before_appending_a_chunk(): void
     {
         $listedContents = [];
@@ -656,6 +826,7 @@ class AudioFetcherArchiveTest extends TestCase
         ?MediaInfoContainer $mediaContainer = null,
         ?UsenetDownloadService $downloadService = null,
         ?Release $release = null,
+        float $minimumCompletionPercent = 95,
     ): AudioFetchResult {
         $parts = [];
         foreach (range(1, $volumes) as $volume) {
@@ -668,6 +839,7 @@ class AudioFetcherArchiveTest extends TestCase
             lengthProbe: $lengthProbe,
             mediaContainer: $mediaContainer,
             downloadService: $downloadService,
+            minimumCompletionPercent: $minimumCompletionPercent,
         )->fetch(
             $release ?? $this->release(),
             $this->archiveSource($parts),
@@ -733,6 +905,7 @@ class AudioFetcherArchiveTest extends TestCase
         ?AudioDecodableLengthProbe $lengthProbe = null,
         ?MediaInfoContainer $mediaContainer = null,
         ?UsenetDownloadService $downloadService = null,
+        float $minimumCompletionPercent = 95,
     ): AudioFetcher {
         if ($downloadService === null) {
             $downloadService = Mockery::mock(UsenetDownloadService::class);
@@ -759,7 +932,7 @@ class AudioFetcherArchiveTest extends TestCase
         $lengthProbe ??= Mockery::mock(AudioDecodableLengthProbe::class)->shouldIgnoreMissing(0.0);
 
         return new AudioFetcher(
-            $this->config($maxRarParts, $maxArchiveBytes),
+            $this->config($maxRarParts, $maxArchiveBytes, $minimumCompletionPercent),
             $downloadService,
             $archive,
             $tools,
@@ -767,8 +940,11 @@ class AudioFetcherArchiveTest extends TestCase
         );
     }
 
-    private function config(int $maxRarParts, ?int $maxArchiveBytes): AudioProcessingConfiguration
-    {
+    private function config(
+        int $maxRarParts,
+        ?int $maxArchiveBytes,
+        float $minimumCompletionPercent = 95,
+    ): AudioProcessingConfiguration {
         $reflection = new ReflectionClass(AudioProcessingConfiguration::class);
         /** @var AudioProcessingConfiguration $config */
         $config = $reflection->newInstanceWithoutConstructor();
@@ -777,6 +953,7 @@ class AudioFetcherArchiveTest extends TestCase
             'segmentsToDownload' => 12,
             'maxRarParts' => $maxRarParts,
             'maxArchiveBytes' => $maxArchiveBytes,
+            'minimumCompletionPercent' => $minimumCompletionPercent,
             'previewSeconds' => 30,
             'previewStartSeconds' => 10,
             'debugMode' => false,
@@ -864,11 +1041,12 @@ class AudioFetcherArchiveTest extends TestCase
         $this->assertSame([], glob($this->tmpPath.'audio-archive.part*.rar') ?: []);
     }
 
-    private function release(): Release
+    private function release(float $completion = 100): Release
     {
         $release = new Release;
         $release->id = 42;
         $release->guid = 'audio-guid';
+        $release->completion = $completion;
 
         return $release;
     }

@@ -6,6 +6,7 @@ namespace App\Services\AdditionalProcessing\Config;
 
 use App\Models\Settings;
 use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
+use App\Services\AdditionalProcessing\PostedFileClassifier;
 
 /**
  * Configuration DTO for additional post-processing.
@@ -184,7 +185,7 @@ final readonly class ProcessingConfiguration
         // Regex patterns
         $this->ignoreBookRegex = '/\\b(epub|lit|mobi|pdf|sipdf|html)\\b.*\\.rar(?!.{20,})/i';
         $this->supportFileRegex = '\\.(?:vol\\d{1,3}\\+\\d{1,3}|par2|srs|sfv|nzb)';
-        $this->videoFileRegex = '\\.(AVI|F4V|IFO|M1V|M2V|M4V|MKV|MOV|MP4|MPEG|MPG|MPGV|MPV|OGV|QT|RM|RMVB|TS|VOB|WMV)';
+        $this->videoFileRegex = PostedFileClassifier::VIDEO_FILE_REGEX;
     }
 
     /**

@@ -41,6 +41,21 @@ class ArchiveExtractionServicePathTest extends TestCase
         $this->assertSame('00-group.nfo', $fragment['files'][0]['name'] ?? null);
     }
 
+    public function test_it_reports_whether_a_rar_header_belongs_to_the_first_volume(): void
+    {
+        $service = new ArchiveExtractionService($this->config());
+
+        $first = $service->listArchiveContentsAtPath(
+            base_path('tests/Fixtures/Audio/rar-seek/store-seek.part1.rar')
+        );
+        $later = $service->listArchiveContentsAtPath(
+            base_path('tests/Fixtures/Audio/rar-seek/store-seek.part2.rar')
+        );
+
+        $this->assertTrue($first['isFirstVolume']);
+        $this->assertFalse($later['isFirstVolume']);
+    }
+
     public function test_it_extracts_a_store_mode_file_to_the_destination_without_an_external_tool(): void
     {
         $destination = $this->makeTempDirectory('audio-archive-extraction');

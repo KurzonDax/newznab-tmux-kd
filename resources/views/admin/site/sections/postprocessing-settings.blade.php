@@ -90,6 +90,17 @@
                         </div>
 
                         <div>
+                            <label for="audio_min_completion_percent" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                <i class="fas fa-chart-pie mr-1"></i>Minimum Audio Source Completion
+                            </label>
+                            <div class="flex gap-2">
+                                <x-input class="flex-1" id="audio_min_completion_percent" name="audio_min_completion_percent" value="{{ $site['audio_min_completion_percent'] ?? '95' }}" />
+                                <span class="surface-panel-alt px-3 py-2 rounded-md">%</span>
+                            </div>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Releases below this measured completion are skipped before any audio articles are fetched. Set to 0 to disable. Default: 95%.</p>
+                        </div>
+
+                        <div>
                             <label for="preview_target_seconds" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                                 <i class="fas fa-stopwatch mr-1"></i>Preview Target Duration
                             </label>

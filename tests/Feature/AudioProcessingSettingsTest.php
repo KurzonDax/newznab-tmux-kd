@@ -24,6 +24,7 @@ class AudioProcessingSettingsTest extends TestCase
         'audio_segments_to_download',
         'audio_max_rar_parts',
         'audio_max_archive_mb',
+        'audio_min_completion_percent',
         'audio_preview_seconds',
         'audio_preview_start_seconds',
         'audio_spectrogram',
@@ -52,6 +53,7 @@ class AudioProcessingSettingsTest extends TestCase
 
         $this->migration()->up();
         $this->ceilingMigration()->up();
+        $this->completionMigration()->up();
 
         foreach (self::AUDIO_SETTINGS as $name) {
             $this->assertDatabaseHas('settings', ['name' => $name]);
@@ -72,6 +74,8 @@ class AudioProcessingSettingsTest extends TestCase
     {
         $this->migration()->up();
         $this->ceilingMigration()->up();
+        $this->completionMigration()->up();
+        $this->completionMigration()->down();
         $this->ceilingMigration()->down();
         $this->migration()->down();
 
@@ -96,6 +100,7 @@ class AudioProcessingSettingsTest extends TestCase
     {
         $this->migration()->up();
         $this->ceilingMigration()->up();
+        $this->completionMigration()->up();
 
         // What AdminSiteController::edit() does with the submitted form.
         Settings::settingsUpdate([
@@ -103,6 +108,7 @@ class AudioProcessingSettingsTest extends TestCase
             'audio_segments_to_download' => '20',
             'audio_max_rar_parts' => '3',
             'audio_max_archive_mb' => '512',
+            'audio_min_completion_percent' => '90',
             'audio_preview_seconds' => '45',
             'audio_preview_start_seconds' => '0',
             'audio_spectrogram' => '0',
@@ -113,6 +119,7 @@ class AudioProcessingSettingsTest extends TestCase
             'audio_segments_to_download' => '20',
             'audio_max_rar_parts' => '3',
             'audio_max_archive_mb' => '512',
+            'audio_min_completion_percent' => '90',
             'audio_preview_seconds' => '45',
             'audio_preview_start_seconds' => '0',
             'audio_spectrogram' => '0',
@@ -157,6 +164,16 @@ class AudioProcessingSettingsTest extends TestCase
         $this->assertSame('2048', DB::table('settings')->where('name', 'audio_max_archive_mb')->value('value'));
     }
 
+    public function test_audio_minimum_completion_defaults_to_95_and_zero_disables_it(): void
+    {
+        $this->completionMigration()->up();
+
+        $this->assertSame(95.0, (new AudioProcessingConfiguration)->minimumCompletionPercent);
+
+        DB::table('settings')->where('name', 'audio_min_completion_percent')->update(['value' => '0']);
+        $this->assertSame(0.0, (new AudioProcessingConfiguration)->minimumCompletionPercent);
+    }
+
     private function migration(): object
     {
         return require database_path('migrations/2026_08_21_140000_add_audio_postprocessing_settings.php');
@@ -165,5 +182,10 @@ class AudioProcessingSettingsTest extends TestCase
     private function ceilingMigration(): object
     {
         return require database_path('migrations/2026_08_22_080000_add_audio_archive_fetch_ceiling_setting.php');
+    }
+
+    private function completionMigration(): object
+    {
+        return require database_path('migrations/2026_08_29_170512_add_audio_min_completion_percent_setting.php');
     }
 }

@@ -6,6 +6,8 @@ namespace App\Services\AdditionalProcessing;
 
 final class PostedFileClassifier
 {
+    public const string VIDEO_FILE_REGEX = '\\.(AVI|F4V|IFO|M1V|M2TS|M2V|M4V|MKV|MOV|MP4|MPEG|MPG|MPGV|MPV|MTS|OGV|QT|RM|RMVB|TS|VOB|WMV)';
+
     private const string ARCHIVE_PATTERN = '/(\.(part\d+|[rz]\d+|rar|0+|0*10?|zipr\d{2,3}|zipx?)("|\s*\.rar)*($|[ ")]|-])|"[a-f0-9]{32}\.[1-9]\d{1,2}".*\(\d+\/\d{2,}\)$)/i';
 
     public static function containsArchiveCandidate(string $subject): bool
