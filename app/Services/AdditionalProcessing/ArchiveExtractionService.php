@@ -523,6 +523,62 @@ class ArchiveExtractionService
     }
 
     /**
+     * Append one store-mode RAR file chunk to a standalone destination.
+     *
+     * RarInfo supplies the exact payload range for the local file header in the
+     * current volume. Reading that range directly avoids requiring the missing
+     * volumes that precede a seeked store-mode entry.
+     *
+     * @param  array<string, mixed>  $entry
+     */
+    public function carveStoredFileChunkToPath(
+        string $archivePath,
+        array $entry,
+        string $destinationPath,
+        bool $append,
+    ): bool {
+        if ((int) ($entry['compressed'] ?? 1) !== 0) {
+            return false;
+        }
+
+        $range = (string) ($entry['range'] ?? '');
+        if (preg_match('/^(\d+)-(\d+)$/', $range, $matches) !== 1) {
+            return false;
+        }
+
+        $start = (int) $matches[1];
+        $end = (int) $matches[2];
+        $length = $end - $start + 1;
+        if ($length < 1 || ! File::isFile($archivePath) || $end >= File::size($archivePath)) {
+            return false;
+        }
+
+        File::ensureDirectoryExists(dirname($destinationPath));
+        $source = fopen($archivePath, 'rb');
+        if ($source === false) {
+            return false;
+        }
+
+        $destination = fopen($destinationPath, $append ? 'ab' : 'wb');
+        if ($destination === false) {
+            fclose($source);
+
+            return false;
+        }
+
+        try {
+            if (fseek($source, $start) !== 0) {
+                return false;
+            }
+
+            return stream_copy_to_stream($source, $destination, $length) === $length;
+        } finally {
+            fclose($source);
+            fclose($destination);
+        }
+    }
+
+    /**
      * @param  Closure(string): string  $commandBuilder
      */
     private function extractFileAtPathViaExternalTool(

@@ -17,6 +17,7 @@ use App\Services\AudioProcessing\Exceptions\WavPackDecoderUnavailable;
 use Closure;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Mhor\MediaInfo\Container\MediaInfoContainer;
 
 /**
@@ -131,16 +132,41 @@ final class AudioFetcher
         Closure $onProbe,
     ): AudioFetchResult {
         $archiveBytes = 0;
-        $volumes = array_slice($source->parts, 0, $this->config->maxRarParts);
+        $volumes = $source->parts;
         $firstArchivePath = $this->archiveVolumePath($tmpPath, 1);
+        $knownAudioFile = $this->knownAudioFile($release);
+        $fetchedVolumes = 0;
+        $volumeIndex = 0;
+        $firstVolumeBytes = null;
+        $carvedPath = null;
+        $carvedName = null;
+        $keepCarvedPath = false;
+        $seekTargetBeyondBudget = false;
+        $sequentialFallback = false;
+        $sequentialFallbackThroughIndex = -1;
+        $compressedBackfillRequired = false;
+
+        /** @var array<int, true> $completedVolumeIndexes */
+        $completedVolumeIndexes = [];
+
+        /** @var array<string, array{bytes: int, volume: int}> $storeProgress */
+        $storeProgress = [];
 
         /** @var array<string, array<string, mixed>> $listedFiles */
         $listedFiles = [];
 
         try {
-            foreach ($volumes as $volumeIndex => $volume) {
+            while ($volumeIndex < count($volumes) && $fetchedVolumes < $this->config->maxRarParts) {
+                $volume = $volumes[$volumeIndex];
                 $archivePath = $this->archiveVolumePath($tmpPath, $volumeIndex + 1);
                 File::put($archivePath, '');
+                $fetchedVolumes++;
+                if ($sequentialFallback) {
+                    $sequentialFallbackThroughIndex = max($sequentialFallbackThroughIndex, $volumeIndex);
+                }
+
+                /** @var list<array<string, mixed>> $currentFiles */
+                $currentFiles = [];
 
                 foreach (array_chunk($volume, self::ARCHIVE_FETCH_CHUNK_SEGMENTS) as $chunk) {
                     $data = $this->download($chunk, $groupName, $release, $source->title);
@@ -170,73 +196,382 @@ final class AudioFetcher
                         );
                     }
 
-                    foreach ($listing['files'] as $file) {
+                    $currentFiles = array_values($listing['files']);
+                    foreach ($currentFiles as $file) {
                         $name = (string) ($file['name'] ?? '');
                         if ($name !== '' && ! array_key_exists($name, $listedFiles)) {
                             $listedFiles[$name] = $file;
                         }
                     }
 
-                    $entry = $this->firstAudioEntry(array_values($listedFiles));
+                    $entry = $this->enrichAudioEntry(
+                        $this->firstAudioEntry(array_values($listedFiles), $knownAudioFile),
+                        $knownAudioFile,
+                    );
                     if ($entry === null) {
                         continue;
                     }
 
-                    $name = (string) $entry['name'];
-                    $declaredSize = (int) ($entry['size'] ?? 0);
-                    $path = $this->archiveService->extractSpecificFileToPath(
+                    if ($this->isCarvableStoredEntry($entry)) {
+                        continue;
+                    }
+
+                    if ((int) ($entry['compressed'] ?? 0) === 1) {
+                        $sequentialFallback = true;
+                        $sequentialFallbackThroughIndex = max($sequentialFallbackThroughIndex, $volumeIndex);
+                        $missingVolumeIndex = $this->firstMissingVolumeIndex(
+                            $completedVolumeIndexes,
+                            $sequentialFallbackThroughIndex,
+                        );
+                        if ($missingVolumeIndex !== null && $missingVolumeIndex !== $volumeIndex) {
+                            $compressedBackfillRequired = true;
+                        }
+
+                        if ($compressedBackfillRequired) {
+                            continue;
+                        }
+                    }
+
+                    $result = $this->extractListedAudioEntry(
+                        $entry,
                         $firstArchivePath,
-                        $name,
                         $tmpPath,
-                        keepBroken: true,
+                        $onProbe,
                     );
-
-                    if ($path === null || ! File::isFile($path)) {
-                        continue;
+                    if ($result !== null) {
+                        return $result;
                     }
-
-                    $isComplete = $declaredSize > 0 && File::size($path) >= $declaredSize;
-                    $requiredSeconds = $this->config->previewStartSeconds
-                        + $this->config->previewSeconds
-                        + self::PARTIAL_MARGIN_SECONDS;
-
-                    try {
-                        $hasPreviewWindow = $isComplete || $this->decodableLengthProbe->demuxedSeconds(
-                            $path,
-                            $requiredSeconds,
-                        ) >= $requiredSeconds;
-                    } catch (WavPackDecoderUnavailable $exception) {
-                        File::delete($path);
-
-                        return AudioFetchResult::failed($exception->getMessage());
-                    }
-
-                    if (! $hasPreviewWindow) {
-                        File::delete($path);
-
-                        continue;
-                    }
-
-                    $extension = strtolower(pathinfo($name, PATHINFO_EXTENSION)) ?: 'audio';
-                    $probe = $this->probe($path, basename($name), $extension, $onProbe);
-                    if ($probe instanceof AudioFetchResult) {
-                        File::delete($path);
-
-                        return $probe;
-                    }
-
-                    return AudioFetchResult::fetched($path, $extension, $probe);
                 }
+
+                $completedVolumeIndexes[$volumeIndex] = true;
+
+                if ($firstVolumeBytes === null && File::isFile($archivePath)) {
+                    $firstVolumeBytes = max(1, File::size($archivePath));
+                }
+
+                if ($sequentialFallback) {
+                    $missingVolumeIndex = $this->firstMissingVolumeIndex(
+                        $completedVolumeIndexes,
+                        $sequentialFallbackThroughIndex,
+                    );
+                    if ($missingVolumeIndex !== null) {
+                        $volumeIndex = $missingVolumeIndex;
+
+                        continue;
+                    }
+
+                    if ($compressedBackfillRequired) {
+                        $entry = $this->enrichAudioEntry(
+                            $this->firstAudioEntry(array_values($listedFiles), $knownAudioFile),
+                            $knownAudioFile,
+                        );
+                        $result = $entry === null ? null : $this->extractListedAudioEntry(
+                            $entry,
+                            $firstArchivePath,
+                            $tmpPath,
+                            $onProbe,
+                        );
+                        if ($result !== null) {
+                            return $result;
+                        }
+                    }
+
+                    $volumeIndex = $sequentialFallbackThroughIndex + 1;
+
+                    continue;
+                }
+
+                $currentAudioEntry = $carvedName === null
+                    ? $this->firstAudioEntry($currentFiles, $knownAudioFile)
+                    : $this->entryNamed($currentFiles, $carvedName);
+                $currentAudioEntry = $this->enrichAudioEntry($currentAudioEntry, $knownAudioFile);
+
+                if ($currentAudioEntry !== null && $this->isCarvableStoredEntry($currentAudioEntry)) {
+                    $name = (string) $currentAudioEntry['name'];
+                    $carvedPath ??= $tmpPath.basename($name);
+                    $append = $carvedName !== null;
+                    $carvedName ??= $name;
+
+                    if (! $this->archiveService->carveStoredFileChunkToPath(
+                        $archivePath,
+                        $currentAudioEntry,
+                        $carvedPath,
+                        $append,
+                    )) {
+                        if (File::isFile($carvedPath)) {
+                            File::delete($carvedPath);
+                        }
+
+                        return AudioFetchResult::failed(
+                            'The stored audio entry '.basename($name).' was found, but its payload could not be carved.'
+                        );
+                    }
+
+                    $result = $this->usableAudioResult(
+                        $carvedPath,
+                        $currentAudioEntry,
+                        $onProbe,
+                        deleteWhenTooShort: false,
+                    );
+                    if ($result !== null) {
+                        $keepCarvedPath = $result->succeeded();
+
+                        return $result;
+                    }
+
+                    $volumeIndex++;
+
+                    continue;
+                }
+
+                $seekDecision = $this->nextArchiveVolumeIndex(
+                    $currentFiles,
+                    $volumeIndex,
+                    $firstVolumeBytes ?? 1,
+                    $storeProgress,
+                );
+                if ($knownAudioFile !== null
+                    && $seekDecision['storeSeekComputed']
+                    && $fetchedVolumes >= $this->config->maxRarParts
+                ) {
+                    $seekTargetBeyondBudget = true;
+                }
+                $volumeIndex = $seekDecision['index'];
             }
 
-            return AudioFetchResult::failed('No usable audio file was found within '.count($volumes).' archive volume(s).');
+            if ($carvedPath !== null) {
+                File::delete($carvedPath);
+
+                return AudioFetchResult::failed(
+                    'The stored audio entry '.basename((string) $carvedName)
+                    .' was found, but it could not be carved into a usable preview within '
+                    .$fetchedVolumes.' fetched archive volume(s).'
+                );
+            }
+
+            if ($seekTargetBeyondBudget && $knownAudioFile !== null) {
+                return AudioFetchResult::failed(
+                    'Release metadata identifies '.basename($knownAudioFile['name'])
+                    .', but its stored data starts beyond the '.$fetchedVolumes.' fetched volume budget.'
+                );
+            }
+
+            return AudioFetchResult::failed(
+                'No usable audio file was found within '.$fetchedVolumes.' fetched archive volume(s).'
+            );
         } finally {
+            if (! $keepCarvedPath && $carvedPath !== null && File::isFile($carvedPath)) {
+                File::delete($carvedPath);
+            }
+
             foreach (File::glob($tmpPath.'audio-archive.part*.rar') as $archivePartPath) {
                 if (File::isFile($archivePartPath)) {
                     File::delete($archivePartPath);
                 }
             }
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     * @param  Closure(MediaInfoContainer, string, string): void  $onProbe
+     */
+    private function usableAudioResult(
+        string $path,
+        array $entry,
+        Closure $onProbe,
+        bool $deleteWhenTooShort = true,
+    ): ?AudioFetchResult {
+        if (! File::isFile($path)) {
+            return null;
+        }
+
+        $name = (string) ($entry['name'] ?? basename($path));
+        $declaredSize = (int) ($entry['size'] ?? 0);
+        $isComplete = $declaredSize > 0 && File::size($path) >= $declaredSize;
+        $requiredSeconds = $this->config->previewStartSeconds
+            + $this->config->previewSeconds
+            + self::PARTIAL_MARGIN_SECONDS;
+
+        try {
+            $hasPreviewWindow = $isComplete || $this->decodableLengthProbe->demuxedSeconds(
+                $path,
+                $requiredSeconds,
+            ) >= $requiredSeconds;
+        } catch (WavPackDecoderUnavailable $exception) {
+            File::delete($path);
+
+            return AudioFetchResult::failed($exception->getMessage());
+        }
+
+        if (! $hasPreviewWindow) {
+            if ($deleteWhenTooShort) {
+                File::delete($path);
+            }
+
+            return null;
+        }
+
+        $extension = strtolower(pathinfo($name, PATHINFO_EXTENSION)) ?: 'audio';
+        $probe = $this->probe($path, basename($name), $extension, $onProbe);
+        if ($probe instanceof AudioFetchResult) {
+            File::delete($path);
+
+            return $probe;
+        }
+
+        return AudioFetchResult::fetched($path, $extension, $probe);
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     * @param  Closure(MediaInfoContainer, string, string): void  $onProbe
+     */
+    private function extractListedAudioEntry(
+        array $entry,
+        string $firstArchivePath,
+        string $tmpPath,
+        Closure $onProbe,
+    ): ?AudioFetchResult {
+        $path = $this->archiveService->extractSpecificFileToPath(
+            $firstArchivePath,
+            (string) $entry['name'],
+            $tmpPath,
+            keepBroken: true,
+        );
+
+        return $path === null ? null : $this->usableAudioResult($path, $entry, $onProbe);
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     */
+    private function isCarvableStoredEntry(array $entry): bool
+    {
+        return (int) ($entry['compressed'] ?? 1) === 0
+            && preg_match('/^\d+-\d+$/', (string) ($entry['range'] ?? '')) === 1;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $files
+     * @param  array<string, array{bytes: int, volume: int}>  $storeProgress
+     * @return array{index: int, storeSeekComputed: bool}
+     */
+    private function nextArchiveVolumeIndex(
+        array $files,
+        int $currentVolumeIndex,
+        int $volumeBytes,
+        array &$storeProgress,
+    ): array {
+        foreach ($files as $file) {
+            if ((int) ($file['compressed'] ?? 0) === 1) {
+                return ['index' => $currentVolumeIndex + 1, 'storeSeekComputed' => false];
+            }
+        }
+
+        $entry = $files === [] ? null : $files[array_key_last($files)];
+        if ($entry === null || ! $this->isCarvableStoredEntry($entry) || empty($entry['split_after'])) {
+            return ['index' => $currentVolumeIndex + 1, 'storeSeekComputed' => false];
+        }
+
+        $name = (string) ($entry['name'] ?? '');
+        $declaredSize = (int) ($entry['size'] ?? 0);
+        if ($name === '' || $declaredSize < 1) {
+            return ['index' => $currentVolumeIndex + 1, 'storeSeekComputed' => false];
+        }
+
+        preg_match('/^(\d+)-(\d+)$/', (string) $entry['range'], $matches);
+        $chunkBytes = (int) $matches[2] - (int) $matches[1] + 1;
+        $progress = $storeProgress[$name] ?? ['bytes' => 0, 'volume' => $currentVolumeIndex];
+        $skippedVolumes = max(0, $currentVolumeIndex - $progress['volume'] - 1);
+        $progress['bytes'] += ($skippedVolumes * $volumeBytes) + $chunkBytes;
+        $progress['volume'] = $currentVolumeIndex;
+        $storeProgress[$name] = $progress;
+
+        $remainingBytes = max(0, $declaredSize - $progress['bytes']);
+        $volumesToAdvance = max(1, intdiv($remainingBytes + $volumeBytes - 1, $volumeBytes));
+
+        return [
+            'index' => $currentVolumeIndex + $volumesToAdvance,
+            'storeSeekComputed' => true,
+        ];
+    }
+
+    /**
+     * @param  array<int, true>  $downloadedVolumeIndexes
+     */
+    private function firstMissingVolumeIndex(array $downloadedVolumeIndexes, int $throughIndex): ?int
+    {
+        for ($volumeIndex = 0; $volumeIndex <= $throughIndex; $volumeIndex++) {
+            if (! isset($downloadedVolumeIndexes[$volumeIndex])) {
+                return $volumeIndex;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $files
+     * @return array<string, mixed>|null
+     */
+    private function entryNamed(array $files, string $name): ?array
+    {
+        foreach ($files as $file) {
+            if ((string) ($file['name'] ?? '') === $name) {
+                return $file;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{name: string, size: int}|null
+     */
+    private function knownAudioFile(Release $release): ?array
+    {
+        if (! $release->relationLoaded('file')
+            && (! $release->exists || ! Schema::hasTable('release_files'))
+        ) {
+            return null;
+        }
+
+        $files = $release->relationLoaded('file')
+            ? $release->getRelation('file')
+            : $release->file()->get(['name', 'size']);
+
+        foreach ($files as $file) {
+            $name = (string) $file->name;
+            if (PostedFileClassifier::matchesTerminalExtension($name, AudioProcessingConfiguration::AUDIO_FILE_REGEX)) {
+                return [
+                    'name' => $name,
+                    'size' => (int) $file->size,
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $entry
+     * @param  array{name: string, size: int}|null  $knownAudioFile
+     * @return array<string, mixed>|null
+     */
+    private function enrichAudioEntry(?array $entry, ?array $knownAudioFile): ?array
+    {
+        if ($entry === null || $knownAudioFile === null || $knownAudioFile['size'] < 1) {
+            return $entry;
+        }
+
+        if (strcasecmp(basename((string) ($entry['name'] ?? '')), basename($knownAudioFile['name'])) === 0
+            && (int) ($entry['size'] ?? 0) < 1
+        ) {
+            $entry['size'] = $knownAudioFile['size'];
+        }
+
+        return $entry;
     }
 
     private function archiveVolumePath(string $tmpPath, int $volume): string
@@ -283,10 +618,22 @@ final class AudioFetcher
 
     /**
      * @param  list<array<string, mixed>>  $files
+     * @param  array{name: string, size: int}|null  $knownAudioFile
      * @return array<string, mixed>|null
      */
-    private function firstAudioEntry(array $files): ?array
+    private function firstAudioEntry(array $files, ?array $knownAudioFile = null): ?array
     {
+        if ($knownAudioFile !== null) {
+            foreach ($files as $file) {
+                if (strcasecmp(
+                    basename((string) ($file['name'] ?? '')),
+                    basename($knownAudioFile['name']),
+                ) === 0) {
+                    return $file;
+                }
+            }
+        }
+
         foreach ($files as $file) {
             $name = (string) ($file['name'] ?? '');
             if ($name === '') {
