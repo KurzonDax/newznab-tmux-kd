@@ -27,7 +27,7 @@
 
                     @if($spectrogramUrl)
                         <div class="mt-4">
-                            <div class="block cursor-pointer image-modal-trigger" data-image-url="{{ $spectrogramUrl }}" data-image-title="Spectrogram">
+                            <div class="block cursor-pointer image-modal-trigger" data-release-display-name="{{ release_display_name($release) }}" data-image-url="{{ $spectrogramUrl }}" data-image-title="Spectrogram">
                                 <img src="{{ $spectrogramUrl }}"
                                      alt="Spectrogram of the audio preview"
                                      class="w-full max-w-full h-auto rounded-lg"

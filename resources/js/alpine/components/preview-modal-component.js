@@ -38,6 +38,7 @@ export function previewModal() {
 
     open: false,
     title: "Preview Image",
+    releaseName: "",
     imageUrl: "",
     imageError: false,
     imageLoaded: false,
@@ -48,7 +49,7 @@ export function previewModal() {
     videoType: "",
     videoPlaying: false,
 
-    show(guid, type, resolvedUrl, title, audio, video, fullUrl) {
+    show(guid, type, resolvedUrl, title, audio, video, fullUrl, releaseName) {
       this.releaseAudio();
       this.releaseVideo();
       // Offered only where a Full-size copy is on disk (ADR 0012); the trigger
@@ -58,6 +59,7 @@ export function previewModal() {
       type = type || "preview";
       this.title =
         title || (type === "sample" ? "Sample Image" : "Preview Image");
+      this.releaseName = releaseName || "";
       const hasAudioPreview = Boolean(audio?.url);
       const hasVideoPreview = Boolean(video?.url);
       const newUrl =
@@ -145,6 +147,14 @@ export function previewModal() {
       return this.title.replace(" Image", "") + " image not available";
     },
 
+    hasReleaseName() {
+      return this.releaseName !== "";
+    },
+
+    hasNoReleaseName() {
+      return !this.hasReleaseName();
+    },
+
     init() {
       const self = this;
       window.showPreviewImage = function (guid, type) {
@@ -177,6 +187,7 @@ export function previewModal() {
                 }
               : undefined,
             preview.dataset.fullUrl,
+            preview.dataset.releaseDisplayName,
           );
           return;
         }
@@ -191,6 +202,7 @@ export function previewModal() {
             undefined,
             undefined,
             sample.dataset.fullUrl,
+            sample.dataset.releaseDisplayName,
           );
           return;
         }

@@ -38,6 +38,7 @@
                             <button type="button"
                                     class="preview-badge ml-3 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 hover:bg-primary-200 dark:hover:bg-primary-800 transition cursor-pointer"
                                     data-guid="{{ $release->guid }}"
+                                    data-release-display-name="{{ release_display_name($release) }}"
                                     @if($hasPreviewImage)
                                         data-image-url="{{ $previewImageUrl }}"
                                     @endif
@@ -52,7 +53,7 @@
                         @if($hasPreviewImage)
                             <!-- Preview image -->
                             <div>
-                                <div class="block cursor-pointer image-modal-trigger" data-image-url="{{ $previewImageUrl }}" data-image-title="Preview Image" @if($previewFullUrl) data-full-url="{{ $previewFullUrl }}" @endif>
+                                <div class="block cursor-pointer image-modal-trigger" data-release-display-name="{{ release_display_name($release) }}" data-image-url="{{ $previewImageUrl }}" data-image-title="Preview Image" @if($previewFullUrl) data-full-url="{{ $previewFullUrl }}" @endif>
                                     <img src="{{ $previewImageUrl }}"
                                          alt="Preview"
                                          class="detail-gallery-image w-full h-auto rounded-lg"
@@ -65,7 +66,7 @@
                         @if($hasSampleImage)
                             <!-- Sample image -->
                             <div>
-                                <div class="block cursor-pointer image-modal-trigger" data-image-url="{{ $sampleImageUrl }}" data-image-title="Sample Image" @if($sampleFullUrl) data-full-url="{{ $sampleFullUrl }}" @endif>
+                                <div class="block cursor-pointer image-modal-trigger" data-release-display-name="{{ release_display_name($release) }}" data-image-url="{{ $sampleImageUrl }}" data-image-title="Sample Image" @if($sampleFullUrl) data-full-url="{{ $sampleFullUrl }}" @endif>
                                     <img src="{{ $sampleImageUrl }}"
                                          alt="Sample"
                                          class="detail-gallery-image w-full h-auto rounded-lg"

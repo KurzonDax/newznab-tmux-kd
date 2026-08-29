@@ -50,6 +50,20 @@ class ReleasePreviewImageViewTest extends TestCase
         $this->assertStringNotContainsString('/covers/preview/audio-guid_thumb', $html);
     }
 
+    public function test_browse_preview_triggers_carry_the_full_display_name(): void
+    {
+        $displayName = 'Readable Release 2026.08.29 v1.2.3 DDP5.1 H.264 With A Deliberately Long Untruncated Ending MKV';
+        $html = $this->renderResults($this->release([
+            'display_name' => $displayName,
+            'searchname' => 'Wrong.Source.Name.That.Must.Not.Be.Used.mkv',
+            'haspreview' => 1,
+            'jpgstatus' => 1,
+        ]));
+
+        $this->assertSame(2, substr_count($html, 'data-release-display-name="'.$displayName.'"'));
+        $this->assertStringNotContainsString('data-release-display-name="Wrong.Source.Name', $html);
+    }
+
     public function test_playable_audio_release_without_a_spectrogram_still_has_a_preview_chip(): void
     {
         $html = $this->renderResults($this->release([
@@ -219,6 +233,33 @@ class ReleasePreviewImageViewTest extends TestCase
         $this->assertStringContainsString('fas fa-video', $html);
     }
 
+    public function test_details_preview_triggers_carry_the_full_display_name(): void
+    {
+        file_put_contents($this->coversRoot.'/preview/details-name-guid_thumb.webp', 'webp');
+        file_put_contents($this->coversRoot.'/sample/details-name-guid_thumb.webp', 'webp');
+
+        $displayName = 'Readable Details Release 2026.08.29 v1.2.3 DDP5.1 H.264 Full Name MKV';
+        $release = Release::factory()->make([
+            'guid' => 'details-name-guid',
+            'display_name' => $displayName,
+            'searchname' => 'Wrong.Details.Source.Name.mkv',
+            'categories_id' => Category::MOVIE_HD,
+            'haspreview' => 1,
+            'jpgstatus' => 1,
+            'videostatus' => 1,
+        ]);
+        $release->setRelation('audioTags', null);
+        $release->setRelation('videoClip', new ReleaseVideoClip([
+            'extension' => 'mp4',
+            'mime' => 'video/mp4',
+        ]));
+
+        $html = view('details.partials.preview-images', ['release' => $release])->render();
+
+        $this->assertSame(3, substr_count($html, 'data-release-display-name="'.$displayName.'"'));
+        $this->assertStringNotContainsString('data-release-display-name="Wrong.Details.Source', $html);
+    }
+
     public function test_details_video_chip_uses_the_legacy_mime_without_a_clip_row(): void
     {
         $release = Release::factory()->make([
@@ -342,6 +383,7 @@ class ReleasePreviewImageViewTest extends TestCase
         return (object) ($attributes + [
             'id' => 1,
             'guid' => 'release-guid',
+            'display_name' => null,
             'searchname' => 'Release.Name',
             'categories_id' => Category::MOVIE_HD,
             'haspreview' => 0,

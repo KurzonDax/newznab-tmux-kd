@@ -108,6 +108,22 @@ class DetailsAudioPreviewViewTest extends TestCase
         $this->assertStringContainsString('image-modal-trigger', $html);
     }
 
+    public function test_the_spectrogram_trigger_carries_the_full_display_name(): void
+    {
+        file_put_contents($this->coversRoot.'/audiosample/abc123_spectrum.png', 'png');
+
+        $displayName = 'Readable Audio Release 2026.08.29 v1.2.3 DDP5.1 Full Untruncated Name FLAC';
+        $html = $this->renderPartial($this->tag([
+            'has_preview' => 1,
+            'preview_extension' => 'flac',
+            'preview_mime' => 'audio/flac',
+            'has_spectrogram' => 1,
+        ]), $displayName);
+
+        $this->assertStringContainsString('data-release-display-name="'.$displayName.'"', $html);
+        $this->assertStringNotContainsString('data-release-display-name="Wrong.Audio.Source', $html);
+    }
+
     public function test_it_renders_nothing_without_a_preview(): void
     {
         $html = $this->renderPartial($this->tag(['has_preview' => 0]));
@@ -145,9 +161,13 @@ class DetailsAudioPreviewViewTest extends TestCase
         ]);
     }
 
-    private function renderPartial(?ReleaseAudioTag $tag): string
+    private function renderPartial(?ReleaseAudioTag $tag, ?string $displayName = null): string
     {
-        $release = new Release(['guid' => 'abc123']);
+        $release = new Release([
+            'guid' => 'abc123',
+            'display_name' => $displayName,
+            'searchname' => 'Wrong.Audio.Source.Name.flac',
+        ]);
         $release->setRelation('audioTags', $tag);
 
         return view('details.partials.audio-preview', ['release' => $release])->render();
