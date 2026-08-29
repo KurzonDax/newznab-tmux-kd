@@ -37,11 +37,17 @@ use Mhor\MediaInfo\Container\MediaInfoContainer;
  */
 final class AudioFetcher
 {
+    private const string CRC_FAILURE_REASON = 'Source articles failed CRC verification.';
+
     private const int ARCHIVE_FETCH_CHUNK_SEGMENTS = 64;
 
     private const int PARTIAL_MARGIN_SECONDS = 2;
 
     private const int NON_AUDIO_LISTING_VOLUME_LIMIT = 2;
+
+    private int $crcFailures = 0;
+
+    private bool $sourceDamaged = false;
 
     public function __construct(
         private readonly AudioProcessingConfiguration $config,
@@ -65,15 +71,19 @@ final class AudioFetcher
         string $groupName,
         Closure $onProbe,
     ): AudioFetchResult {
+        $this->crcFailures = 0;
+        $this->sourceDamaged = false;
         $incompleteReason = $this->incompleteSourceReason($release);
         if ($incompleteReason !== null) {
             return AudioFetchResult::failed($incompleteReason);
         }
 
-        return match ($source->kind) {
+        $result = match ($source->kind) {
             AudioSourceKind::BareFile => $this->fetchBareFile($release, $source, $tmpPath, $groupName, $onProbe),
             AudioSourceKind::Archive => $this->fetchFromArchive($release, $source, $tmpPath, $groupName, $onProbe),
         };
+
+        return $result->withCrcFailures($this->crcFailures);
     }
 
     /**
@@ -96,7 +106,11 @@ final class AudioFetcher
 
         $head = $this->download([$segments[0]], $groupName, $release, $source->title);
         if ($head === null) {
-            return AudioFetchResult::failed('The first article of the audio file could not be downloaded.');
+            return AudioFetchResult::failed(
+                $this->sourceDamaged
+                    ? self::CRC_FAILURE_REASON
+                    : 'The first article of the audio file could not be downloaded.'
+            );
         }
 
         File::put($path, $head);
@@ -115,6 +129,10 @@ final class AudioFetcher
             $body = $this->download($rest, $groupName, $release, $source->title);
             if ($body !== null) {
                 File::append($path, $body);
+            } elseif ($this->sourceDamaged) {
+                File::delete($path);
+
+                return AudioFetchResult::failed(self::CRC_FAILURE_REASON);
             }
         }
 
@@ -179,6 +197,10 @@ final class AudioFetcher
                 foreach (array_chunk($volume, self::ARCHIVE_FETCH_CHUNK_SEGMENTS) as $chunk) {
                     $data = $this->download($chunk, $groupName, $release, $source->title);
                     if ($data === null) {
+                        if ($this->sourceDamaged) {
+                            return AudioFetchResult::failed(self::CRC_FAILURE_REASON);
+                        }
+
                         continue;
                     }
 
@@ -389,6 +411,9 @@ final class AudioFetcher
             }
 
             return AudioFetchResult::failed(
+                $this->sourceDamaged
+                    ? self::CRC_FAILURE_REASON
+                    :
                 'No usable audio file was found within '.$fetchedVolumes.' fetched archive volume(s).'
             );
         } finally {
@@ -739,6 +764,9 @@ final class AudioFetcher
             (int) $release->id,
             $title,
         );
+
+        $this->crcFailures += (int) ($result['crcFailures'] ?? 0);
+        $this->sourceDamaged = $this->sourceDamaged || (bool) ($result['crcFailed'] ?? false);
 
         return $result['success'] && is_string($result['data']) && $result['data'] !== ''
             ? $result['data']

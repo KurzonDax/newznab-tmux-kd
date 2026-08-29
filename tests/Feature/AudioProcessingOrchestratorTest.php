@@ -137,6 +137,7 @@ class AudioProcessingOrchestratorTest extends TestCase
             ->with(
                 'Audio postprocessing run finished',
                 Mockery::on(static fn (array $context): bool => ($context['outcomes'] ?? null) === ['failed' => 3]
+                    && ($context['crc_failures'] ?? null) === 0
                     && ($context['reasons'] ?? null) === [
                         'Source is only 7% complete.' => 2,
                         'Archive set starts mid-volume; the first volume is not in this release.' => 1,

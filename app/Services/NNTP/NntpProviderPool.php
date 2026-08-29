@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\NNTP;
 
 use App\Services\NNTP\Contracts\ProviderClient;
+use App\Services\NNTP\DTO\ArticleDownloadResult;
 use Closure;
 use DariusIII\NetNntp\Error;
 use DariusIII\NetNntp\Error as NntpError;
@@ -201,29 +202,54 @@ class NntpProviderPool
      */
     public function fetchArticleBodies(array $messageIds, ?ProviderClient $callerClient = null): mixed
     {
+        return $this->fetchArticleBodiesWithCrcStatus($messageIds, $callerClient)->data;
+    }
+
+    /**
+     * Concatenate article bodies while carrying CRC failures across provider failover.
+     *
+     * @param  list<mixed>  $messageIds
+     */
+    public function fetchArticleBodiesWithCrcStatus(
+        array $messageIds,
+        ?ProviderClient $callerClient = null,
+    ): ArticleDownloadResult {
         $body = '';
         $messageSize = 0;
         $loops = 0;
+        $crcFailedMessageIds = [];
 
         foreach ($messageIds as $messageId) {
             if ((++$loops * $messageSize) >= self::MAX_CONCATENATED_BYTES) {
-                return $body;
+                break;
             }
 
-            $part = $this->fetchArticleBody((string) $messageId, callerClient: $callerClient);
+            $part = $this->fetchArticleBodyWithCrcStatus((string) $messageId, $callerClient);
+            $crcFailedMessageIds = $this->mergeCrcFailedMessageIds(
+                $crcFailedMessageIds,
+                $part->crcFailedMessageIds,
+            );
 
-            if (NNTPService::isError($part)) {
-                return $body !== '' ? $body : $part;
+            if ($part->damaged) {
+                return new ArticleDownloadResult($body, $crcFailedMessageIds, true);
             }
 
-            $body .= $part;
+            if (NNTPService::isError($part->data)) {
+                return new ArticleDownloadResult($body !== '' ? $body : $part->data, $crcFailedMessageIds);
+            }
+
+            if (! is_string($part->data)) {
+                return new ArticleDownloadResult($body, $crcFailedMessageIds);
+            }
+
+            $body .= $part->data;
 
             if ($messageSize === 0) {
-                $messageSize = \strlen($part);
+                $messageSize = \strlen($part->data);
             }
         }
 
-        return $body;
+        return new ArticleDownloadResult($body, $crcFailedMessageIds);
     }
 
     /**
@@ -235,23 +261,73 @@ class NntpProviderPool
      */
     public function fetchArticleBody(string $messageId, ?ProviderClient $callerClient = null): mixed
     {
+        return $this->fetchArticleBodyWithCrcStatus($messageId, $callerClient)->data;
+    }
+
+    /**
+     * Fetch one article, retrying a CRC-damaged provider copy on later providers.
+     */
+    public function fetchArticleBodyWithCrcStatus(
+        string $messageId,
+        ?ProviderClient $callerClient = null,
+    ): ArticleDownloadResult {
         $lastError = null;
+        $lastDamagedData = null;
+        $crcFailedMessageIds = [];
 
         foreach ($this->availableProviders() as $provider) {
-            $body = $this->attempt($provider, 'BODY', $messageId,
-                static fn (ProviderClient $client): mixed => $client->fetchArticleBody($messageId),
-                $callerClient);
+            $result = $this->attempt(
+                $provider,
+                'BODY',
+                $messageId,
+                static function (ProviderClient $client) use ($messageId): mixed {
+                    if (method_exists($client, 'fetchArticleBodyWithCrcStatus')) {
+                        return $client->fetchArticleBodyWithCrcStatus($messageId);
+                    }
 
-            if (\is_string($body) && $body !== '') {
-                return $body;
+                    $body = $client->fetchArticleBody($messageId);
+
+                    return NNTPService::isError($body) ? $body : new ArticleDownloadResult($body);
+                },
+                $callerClient,
+            );
+
+            if ($result instanceof ArticleDownloadResult) {
+                $crcFailedMessageIds = $this->mergeCrcFailedMessageIds(
+                    $crcFailedMessageIds,
+                    $result->crcFailedMessageIds,
+                );
+                if ($result->damaged) {
+                    $lastDamagedData = $result->data;
+
+                    continue;
+                }
+
+                if (is_string($result->data) && $result->data !== '') {
+                    return new ArticleDownloadResult($result->data, $crcFailedMessageIds);
+                }
             }
 
-            if (NNTPService::isError($body)) {
-                $lastError = $body;
+            if (NNTPService::isError($result)) {
+                $lastError = $result;
             }
         }
 
-        return $lastError ?? $this->noProviderError($messageId);
+        if ($crcFailedMessageIds !== []) {
+            return new ArticleDownloadResult($lastDamagedData, $crcFailedMessageIds, true);
+        }
+
+        return new ArticleDownloadResult($lastError ?? $this->noProviderError($messageId));
+    }
+
+    /**
+     * @param  list<string>  $current
+     * @param  list<string>  $additional
+     * @return list<string>
+     */
+    private function mergeCrcFailedMessageIds(array $current, array $additional): array
+    {
+        return array_values(array_unique([...$current, ...$additional]));
     }
 
     /**

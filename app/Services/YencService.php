@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Services\DTO\YencDecodeResult;
 use RuntimeException;
 
 /**
@@ -163,7 +164,24 @@ class YencService
      */
     public function decodeIgnore(string &$text): string
     {
+        $result = $this->decodeWithCrcStatus($text);
+        $text = $result->data;
+
+        return $text;
+    }
+
+    /**
+     * Decode yEnc while reporting a trailer CRC mismatch to integrity-aware callers.
+     */
+    public function decodeWithCrcStatus(string &$text): YencDecodeResult
+    {
         if (preg_match('/^(=yBegin.*=yEnd[^$]*)$/ims', $text, $input)) {
+            $expectedCrc = null;
+            $checksumName = preg_match('/^=yEnd[^\r\n]*\bpcrc32=/im', $input[1]) ? 'pcrc32' : 'crc32';
+            if (preg_match('/^=yEnd[^\r\n]*\b'.$checksumName.'=([0-9a-fA-F]+)/im', $input[1], $trailer)) {
+                $expectedCrc = strtolower(str_pad($trailer[1], 8, '0', STR_PAD_LEFT));
+            }
+
             // Extract the encoded data, removing headers and line breaks
             $encoded = preg_replace('/(^=yBegin.*\r\n)/im', '', $input[1], 1) ?? '';
             $encoded = preg_replace('/(^=yPart.*\r\n)/im', '', $encoded, 1) ?? '';
@@ -172,9 +190,14 @@ class YencService
 
             // Use the fast decode method
             $text = $this->fastDecode($encoded);
+
+            return new YencDecodeResult(
+                data: $text,
+                crcFailed: $expectedCrc !== null && ! hash_equals($expectedCrc, hash('crc32b', $text)),
+            );
         }
 
-        return $text;
+        return new YencDecodeResult($text);
     }
 
     /**

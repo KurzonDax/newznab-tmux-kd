@@ -19,6 +19,7 @@ final readonly class AudioProcessingResult
         public bool $tagsRecorded = false,
         public string $reason = '',
         public float $elapsedSeconds = 0.0,
+        public int $crcFailures = 0,
     ) {}
 
     public function withElapsedSeconds(float $elapsedSeconds): self
@@ -31,6 +32,7 @@ final readonly class AudioProcessingResult
             tagsRecorded: $this->tagsRecorded,
             reason: $this->reason,
             elapsedSeconds: $elapsedSeconds,
+            crcFailures: $this->crcFailures,
         );
     }
 }

@@ -6,6 +6,7 @@ namespace App\Services\NNTP;
 
 use App\Models\Settings;
 use App\Services\NNTP\Contracts\ProviderClient;
+use App\Services\NNTP\DTO\ArticleDownloadResult;
 use App\Services\Tmux\Tmux;
 use App\Services\YencService;
 use DariusIII\NetNntp\Client as NntpClient;
@@ -625,13 +626,21 @@ class NNTPService extends NntpClient implements ProviderClient
      */
     public function getMessagesByMessageID(mixed $identifiers): mixed
     {
+        return $this->getMessagesByMessageIDWithCrcStatus($identifiers)->data;
+    }
+
+    /**
+     * Download message-ID article bodies while retaining yEnc CRC verification failures.
+     */
+    public function getMessagesByMessageIDWithCrcStatus(mixed $identifiers): ArticleDownloadResult
+    {
         $ids = is_array($identifiers) ? $identifiers : [$identifiers];
 
         if (! $this->_poolFailoverEnabled) {
-            return $this->concatenateFromOwnProvider($ids);
+            return $this->concatenateFromOwnProviderWithCrcStatus($ids);
         }
 
-        return $this->pool()->fetchArticleBodies($ids, $this);
+        return $this->pool()->fetchArticleBodiesWithCrcStatus($ids, $this);
     }
 
     /**
@@ -646,12 +655,22 @@ class NNTPService extends NntpClient implements ProviderClient
      */
     public function fetchArticleBody(string $messageId): mixed
     {
+        $result = $this->fetchArticleBodyWithCrcStatus($messageId);
+
+        return $result instanceof ArticleDownloadResult ? $result->data : $result;
+    }
+
+    /**
+     * Fetch one article from this provider with its yEnc CRC status.
+     */
+    public function fetchArticleBodyWithCrcStatus(string $messageId): mixed
+    {
         $connected = $this->_checkConnection(false);
         if ($connected !== true) {
             return $connected;
         }
 
-        return $this->_getMessageByMessageID($messageId);
+        return $this->_getMessageByMessageIDWithCrcStatus($messageId);
     }
 
     /**
@@ -723,37 +742,52 @@ class NNTPService extends NntpClient implements ProviderClient
     }
 
     /**
-     * Concatenate bodies from this client's provider alone, for pool-owned clients.
-     *
      * @param  list<mixed>  $ids
      *
      * @throws \Exception
      */
-    private function concatenateFromOwnProvider(array $ids): mixed
+    private function concatenateFromOwnProviderWithCrcStatus(array $ids): ArticleDownloadResult
     {
         $body = '';
         $messageSize = 0;
         $loops = 0;
+        $crcFailedMessageIds = [];
 
         foreach ($ids as $id) {
             if ((++$loops * $messageSize) >= self::MAX_CONCATENATED_BYTES) {
-                return $body;
+                break;
             }
 
-            $message = $this->fetchArticleBody((string) $id);
+            $message = $this->fetchArticleBodyWithCrcStatus((string) $id);
 
             if (self::isError($message)) {
-                return $body !== '' ? $body : $message;
+                return new ArticleDownloadResult($body !== '' ? $body : $message, $crcFailedMessageIds);
             }
 
-            $body .= $message;
+            if (! $message instanceof ArticleDownloadResult) {
+                return new ArticleDownloadResult($body);
+            }
+
+            $crcFailedMessageIds = array_values(array_unique([
+                ...$crcFailedMessageIds,
+                ...$message->crcFailedMessageIds,
+            ]));
+            if ($message->damaged) {
+                return new ArticleDownloadResult($body, $crcFailedMessageIds, true);
+            }
+
+            if (! is_string($message->data)) {
+                return new ArticleDownloadResult($body, $crcFailedMessageIds);
+            }
+
+            $body .= $message->data;
 
             if ($messageSize === 0) {
-                $messageSize = \strlen($message);
+                $messageSize = \strlen($message->data);
             }
         }
 
-        return $body;
+        return new ArticleDownloadResult($body, $crcFailedMessageIds);
     }
 
     private function pool(): NntpProviderPool
@@ -771,6 +805,16 @@ class NNTPService extends NntpClient implements ProviderClient
      * @throws \Exception
      */
     protected function _getMessageByMessageID(mixed $identifier): mixed
+    {
+        $result = $this->_getMessageByMessageIDWithCrcStatus($identifier);
+
+        return $result instanceof ArticleDownloadResult ? $result->data : $result;
+    }
+
+    /**
+     * @throws \Exception
+     */
+    protected function _getMessageByMessageIDWithCrcStatus(mixed $identifier): mixed
     {
         // If numeric we cannot safely fetch without group context – delegate to existing path via error.
         if (is_numeric($identifier)) {
@@ -796,8 +840,13 @@ class NNTPService extends NntpClient implements ProviderClient
             }
             if ($line === ".\r\n") {
                 $body = implode('', $bodyParts);
+                $decoded = $this->_yencService->decodeWithCrcStatus($body);
 
-                return $this->_yencService->decodeIgnore($body);
+                return new ArticleDownloadResult(
+                    data: $decoded->data,
+                    crcFailedMessageIds: $decoded->crcFailed ? [(string) $identifier] : [],
+                    damaged: $decoded->crcFailed,
+                );
             }
             if ($line[0] === '.' && isset($line[1]) && $line[1] === '.') {
                 $line = substr($line, 1);

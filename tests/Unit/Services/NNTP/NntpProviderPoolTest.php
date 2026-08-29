@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Tests\Unit\Services\NNTP;
 
 use App\Services\NNTP\Contracts\ProviderClient;
+use App\Services\NNTP\DTO\ArticleDownloadResult;
 use App\Services\NNTP\NntpProvider;
 use App\Services\NNTP\NntpProviderPool;
 use App\Services\NNTP\NNTPService;
 use App\Services\NNTP\ProviderCircuitBreaker;
 use DariusIII\NetNntp\Error as NntpError;
+use Mockery;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -53,6 +55,33 @@ final class NntpProviderPoolTest extends TestCase
 
         $this->assertSame('FROM-ONE', $pool->fetchArticleBody('<a>'));
         $this->assertSame('B-TWO', $pool->fetchArticleBody('<b>'), 'Missing on provider 1 must be served by provider 2.');
+    }
+
+    #[Test]
+    public function crc_aware_fetching_retries_a_damaged_provider_copy_and_keeps_the_failure_count(): void
+    {
+        $firstProvider = $this->provider(1, 'one');
+        $secondProvider = $this->provider(2, 'two');
+        $first = Mockery::mock(NNTPService::class);
+        $first->shouldReceive('provider')->andReturn($firstProvider);
+        $first->shouldReceive('fetchArticleBodyWithCrcStatus')->once()->with('<a>')->andReturn(
+            new ArticleDownloadResult('DAMAGED', ['<a>'], true),
+        );
+        $second = Mockery::mock(NNTPService::class);
+        $second->shouldReceive('provider')->andReturn($secondProvider);
+        $second->shouldReceive('fetchArticleBodyWithCrcStatus')->once()->with('<a>')->andReturn(
+            new ArticleDownloadResult('CLEAN'),
+        );
+        $pool = $this->pool(
+            [$firstProvider, $secondProvider],
+            ['one' => $first, 'two' => $second],
+        );
+
+        $result = $pool->fetchArticleBodyWithCrcStatus('<a>');
+
+        $this->assertSame('CLEAN', $result->data);
+        $this->assertSame(['<a>'], $result->crcFailedMessageIds);
+        $this->assertFalse($result->damaged);
     }
 
     #[Test]

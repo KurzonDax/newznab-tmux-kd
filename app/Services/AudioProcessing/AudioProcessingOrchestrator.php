@@ -132,6 +132,7 @@ final class AudioProcessingOrchestrator implements AudioProcessingOrchestratorIn
                 'picked' => $batchResult->pickedCount(),
                 'previews' => $batchResult->previewCount(),
                 'declined' => $batchResult->declinedCount(),
+                'crc_failures' => $batchResult->crcFailureCount(),
                 'outcomes' => $batchResult->outcomeCounts(),
                 'reasons' => $batchResult->reasonCounts(),
             ]);
