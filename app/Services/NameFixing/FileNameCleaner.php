@@ -84,7 +84,29 @@ class FileNameCleaner
 
     private const YEAR_SIGNAL = '/\b(19|20)\d{2}\b/';
 
+    private const RESOLUTION_EVIDENCE_TOKEN = '360p|480p|540p|576p|720p|1080[pi]?|2160p|4k|uhd';
+
+    private const SOURCE_EVIDENCE_TOKEN = 'ntsc|pal|dvd(?:r|rip|5|9)?|webrip|web[ ._-]?dl|bluray|blu[ ._-]?ray|bdrip|brrip|hdtv|pdtv|dsr|tvrip|satrip|dthrip|hdrip|remux|ts|cam|r5';
+
+    private const CODEC_EVIDENCE_TOKEN = 'xvid|divx|x264|x265|hevc|h[ .]?264|h[ .]?265|avc|av1';
+
+    private const LANGUAGE_EVIDENCE_TOKEN = 'danish|deutsch|dutch|flemish|french|german|hebrew|italian|ita|norwegian|spanish|swedish|swesub|nl[ ._-]?sub|multi|dual';
+
     private const QUALITY_SOURCE_SIGNAL = '/\b(480p|720p|1080p|2160p|4k|ntsc|pal|dvd(?:r|rip)?|webrip|web[ .-]?dl|bluray|bdrip|hdtv|hdrip|xvid|x264|x265|hevc|h\.?264|ts|cam|r5|proper|repack)\b/i';
+
+    private const MAX_PERSISTED_SEARCH_NAME_LENGTH = 255;
+
+    /**
+     * Evidence groups where an incoming token supersedes outgoing evidence.
+     *
+     * @var array<string, string>
+     */
+    private const EVIDENCE_TOKEN_PATTERNS = [
+        'resolution' => '/\b(?:'.self::RESOLUTION_EVIDENCE_TOKEN.')\b/i',
+        'source' => '/\b(?:'.self::SOURCE_EVIDENCE_TOKEN.')\b/i',
+        'codec' => '/\b(?:'.self::CODEC_EVIDENCE_TOKEN.')\b/i',
+        'language' => '/\b(?:'.self::LANGUAGE_EVIDENCE_TOKEN.')\b/i',
+    ];
 
     private const TV_SIGNAL = '/\bS\d{1,2}(?:[Eex]\d{1,3})?\b/i';
 
@@ -295,6 +317,98 @@ class FileNameCleaner
             && ! $replacement['quality_source']
             && ! $replacement['tv']
             && $replacement['tokens'] < $current['tokens'];
+    }
+
+    /**
+     * Preserve bounded categorization evidence that a replacement name omits.
+     */
+    public function preserveEvidenceTokens(string $replacement, string ...$outgoingNames): string
+    {
+        $preservedTokens = [];
+
+        foreach (self::EVIDENCE_TOKEN_PATTERNS as $evidenceGroup => $pattern) {
+            $replacementTokens = $this->matchingEvidenceTokens($pattern, $replacement);
+
+            if ($evidenceGroup !== 'language') {
+                if ($replacementTokens !== []) {
+                    continue;
+                }
+
+                foreach ($outgoingNames as $outgoingName) {
+                    $outgoingTokens = $this->matchingEvidenceTokens($pattern, $outgoingName);
+                    if ($outgoingTokens === []) {
+                        continue;
+                    }
+
+                    $preservedTokens[] = $outgoingTokens[0];
+
+                    break;
+                }
+
+                continue;
+            }
+
+            $knownTokens = [];
+            foreach ($replacementTokens as $replacementToken) {
+                $knownTokens[$this->normalizeEvidenceToken($replacementToken)] = true;
+            }
+
+            foreach ($outgoingNames as $outgoingName) {
+                foreach ($this->matchingEvidenceTokens($pattern, $outgoingName) as $outgoingToken) {
+                    $normalizedToken = $this->normalizeEvidenceToken($outgoingToken);
+                    if (isset($knownTokens[$normalizedToken])) {
+                        continue;
+                    }
+
+                    $knownTokens[$normalizedToken] = true;
+                    $preservedTokens[] = $outgoingToken;
+                }
+            }
+        }
+
+        if ($preservedTokens === []) {
+            return $replacement;
+        }
+
+        $trimmedReplacement = rtrim($replacement);
+        $maxEvidenceLength = self::MAX_PERSISTED_SEARCH_NAME_LENGTH - ($trimmedReplacement === '' ? 0 : 1);
+        $boundedTokens = [];
+        $evidenceLength = 0;
+
+        foreach ($preservedTokens as $preservedToken) {
+            $separatorLength = $boundedTokens === [] ? 0 : 1;
+            $candidateLength = $evidenceLength + $separatorLength + mb_strlen($preservedToken);
+            if ($candidateLength > $maxEvidenceLength) {
+                continue;
+            }
+
+            $boundedTokens[] = $preservedToken;
+            $evidenceLength = $candidateLength;
+        }
+
+        $evidenceSuffix = implode(' ', $boundedTokens);
+        $separatorLength = $trimmedReplacement === '' || $evidenceSuffix === '' ? 0 : 1;
+        $replacementLength = self::MAX_PERSISTED_SEARCH_NAME_LENGTH - $separatorLength - mb_strlen($evidenceSuffix);
+        $boundedReplacement = rtrim(mb_substr($trimmedReplacement, 0, $replacementLength));
+
+        return implode(' ', array_filter([$boundedReplacement, $evidenceSuffix], static fn (string $part): bool => $part !== ''));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function matchingEvidenceTokens(string $pattern, string $name): array
+    {
+        if (preg_match_all($pattern, $name, $matches) < 1) {
+            return [];
+        }
+
+        return $matches[0];
+    }
+
+    private function normalizeEvidenceToken(string $token): string
+    {
+        return strtolower((string) preg_replace('/[ ._-]+/', '', $token));
     }
 
     /**

@@ -100,4 +100,69 @@ class FileNameCleanerTest extends TestCase
             Category::MOVIE_HD
         ));
     }
+
+    public function test_preserving_evidence_keeps_distinct_tokens_from_the_same_group(): void
+    {
+        $cleaner = new FileNameCleaner;
+
+        $this->assertSame(
+            'Show S01E01 1080p WEB-DL x264 GERMAN FRENCH',
+            $cleaner->preserveEvidenceTokens(
+                'Show S01E01',
+                'Show.S01E01.1080p.WEB-DL.x264.GERMAN.FRENCH',
+            ),
+        );
+    }
+
+    public function test_preserving_evidence_keeps_the_persisted_name_within_255_characters(): void
+    {
+        $cleaner = new FileNameCleaner;
+
+        $result = $cleaner->preserveEvidenceTokens(
+            str_repeat('A', 250),
+            'Show.S01E01.1080p.WEB-DL',
+        );
+
+        $this->assertLessThanOrEqual(255, mb_strlen($result));
+        $this->assertStringEndsWith(' 1080p WEB-DL', $result);
+    }
+
+    public function test_preserving_evidence_merges_languages_but_uses_the_highest_priority_technical_source(): void
+    {
+        $cleaner = new FileNameCleaner;
+
+        $this->assertSame(
+            'Show S01E01 GERMAN 1080p WEB-DL x264 FRENCH SPANISH',
+            $cleaner->preserveEvidenceTokens(
+                'Show S01E01 GERMAN',
+                'Show.S01E01.1080p.WEB-DL.x264.FRENCH',
+                'Show.S01E01.720p.HDTV.x265.SPANISH',
+            ),
+        );
+    }
+
+    public function test_preserving_evidence_bounds_an_exhaustive_evidence_suffix(): void
+    {
+        $cleaner = new FileNameCleaner;
+        $allEvidence = implode('.', [
+            '360p', '480p', '540p', '576p', '720p', '1080p', '1080i', '2160p', '4k', 'uhd',
+            'ntsc', 'pal', 'dvdrip', 'webrip', 'web-dl', 'bluray', 'blu-ray', 'bdrip', 'brrip',
+            'hdtv', 'pdtv', 'dsr', 'tvrip', 'satrip', 'dthrip', 'hdrip', 'remux', 'ts', 'cam', 'r5',
+            'xvid', 'divx', 'x264', 'x265', 'hevc', 'h.264', 'h.265', 'avc', 'av1',
+            'danish', 'deutsch', 'dutch', 'flemish', 'french', 'german', 'hebrew', 'italian', 'ita',
+            'norwegian', 'spanish', 'swedish', 'swesub', 'nl-sub', 'multi', 'dual',
+        ]);
+
+        $result = $cleaner->preserveEvidenceTokens('Show S01E01', $allEvidence);
+
+        $this->assertLessThanOrEqual(255, mb_strlen($result));
+        $this->assertStringContainsString(' 360p ntsc xvid ', $result);
+    }
+
+    public function test_preservation_vocabulary_does_not_expand_candidate_plausibility(): void
+    {
+        $cleaner = new FileNameCleaner;
+
+        $this->assertFalse($cleaner->isPlausibleReleaseTitle('Documentary Collection AV1'));
+    }
 }
