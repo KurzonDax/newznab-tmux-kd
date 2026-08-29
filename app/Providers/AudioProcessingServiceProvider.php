@@ -19,6 +19,7 @@ use App\Services\AudioProcessing\AudioProcessingOrchestrator;
 use App\Services\AudioProcessing\AudioReleaseProcessor;
 use App\Services\AudioProcessing\AudioSourceSelector;
 use App\Services\AudioProcessing\AudioTagRenamer;
+use App\Services\AudioProcessing\Contracts\AudioProcessingOrchestratorInterface;
 use App\Services\Categorization\CategorizationService;
 use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\NameFixing\ReleaseUpdateService;
@@ -90,5 +91,10 @@ class AudioProcessingServiceProvider extends ServiceProvider
             $app->make(AudioReleaseProcessor::class),
             $app->make(TempWorkspaceService::class),
         ));
+
+        $this->app->singleton(
+            AudioProcessingOrchestratorInterface::class,
+            fn ($app): AudioProcessingOrchestratorInterface => $app->make(AudioProcessingOrchestrator::class),
+        );
     }
 }
