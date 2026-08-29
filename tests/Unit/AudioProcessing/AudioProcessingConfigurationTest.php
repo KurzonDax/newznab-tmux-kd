@@ -39,6 +39,7 @@ class AudioProcessingConfigurationTest extends TestCase
             // Added with the dedicated audio path: WV alone accounts for 52 inner
             // files in alt.binaries.sounds.lossless.
             ['song.wv'], ['song.m4a'], ['song.oga'], ['song.opus'], ['song.tta'],
+            ['song.dsf'], ['song.dff'],
         ];
     }
 

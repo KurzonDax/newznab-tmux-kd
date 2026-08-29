@@ -4,9 +4,15 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Models\Release;
+use App\Services\AdditionalProcessing\ArchiveExtractionService;
 use App\Services\AdditionalProcessing\MediaTools;
+use App\Services\AdditionalProcessing\UsenetDownloadService;
+use App\Services\AudioProcessing\AudioDecodableLengthProbe;
+use App\Services\AudioProcessing\AudioFetcher;
 use App\Services\AudioProcessing\AudioPreviewEncoder;
 use App\Services\AudioProcessing\AudioProcessingConfiguration;
+use App\Services\AudioProcessing\AudioSourceSelector;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Facade;
@@ -23,8 +29,8 @@ use ReflectionProperty;
  * absent. It sits in the Feature suite rather than tests/Integration so that it
  * runs wherever ffmpeg happens to be installed, instead of nowhere.
  *
- * Fixtures are generated on the fly rather than committed -- a few seconds of a
- * sine wave is all the encoder needs to have an opinion about.
+ * Most fixtures are generated on the fly. The compact DSD fixture is committed
+ * because ffmpeg can decode DSF but cannot mux or encode one for the test.
  */
 class AudioPreviewEncoderFfmpegTest extends TestCase
 {
@@ -148,6 +154,98 @@ class AudioPreviewEncoderFfmpegTest extends TestCase
         $this->assertSame("\x89PNG", substr((string) file_get_contents($spectrogram), 0, 4));
     }
 
+    #[Test]
+    public function a_mocked_dsd_download_produces_a_flac_preview_and_spectrogram(): void
+    {
+        $fixture = dirname(__DIR__).'/Fixtures/Audio/dsd-tone.dsf';
+        $this->assertFileExists($fixture);
+
+        $source = (new AudioSourceSelector)->select([
+            ['title' => '"'.basename($fixture).'" yEnc', 'segments' => ['<dsd-1>']],
+        ]);
+        $this->assertNotNull($source);
+
+        $downloadService = Mockery::mock(UsenetDownloadService::class);
+        $downloadService->shouldReceive('download')->once()->andReturn([
+            'success' => true,
+            'data' => file_get_contents($fixture),
+            'groupUnavailable' => false,
+            'error' => null,
+        ]);
+        $archiveService = Mockery::mock(ArchiveExtractionService::class);
+        $archiveService->shouldNotReceive('listArchiveContentsAtPath');
+        $archiveService->shouldNotReceive('extractSpecificFileToPath');
+        $mediaTools = new MediaTools;
+        $config = $this->config(previewSeconds: 1, previewStartSeconds: 0);
+        $fetcher = new AudioFetcher(
+            $config,
+            $downloadService,
+            $archiveService,
+            $mediaTools,
+            new AudioDecodableLengthProbe($mediaTools),
+        );
+        $release = new Release;
+        $release->id = 42;
+        $release->guid = 'dsd-guid';
+
+        $fetched = $fetcher->fetch(
+            $release,
+            $source,
+            $this->tmpPath,
+            'alt.binaries.sounds.lossless',
+            static function (): void {},
+        );
+
+        $this->assertTrue($fetched->succeeded());
+        $this->assertSame('dsf', $fetched->extension);
+        $result = (new AudioPreviewEncoder($config, $mediaTools))->encode(
+            (string) $fetched->path,
+            'dsd-guid',
+            $this->tmpPath,
+        );
+        $this->assertNotNull($result);
+        $this->assertSame('flac', $result->extension);
+        $this->assertFalse($result->streamCopied);
+        $this->assertSame('flac', $this->probe($this->savePath.'dsd-guid.flac', 'stream=codec_name'));
+
+        $this->assertTrue(
+            (new AudioPreviewEncoder($config, $mediaTools))->renderSpectrogram(
+                (string) $fetched->path,
+                'dsd-guid',
+                $this->tmpPath,
+            ),
+        );
+        $spectrogram = $this->savePath.'dsd-guid_spectrum.png';
+        $this->assertGreaterThan(0, filesize($spectrogram));
+        $this->assertSame("\x89PNG", substr((string) file_get_contents($spectrogram), 0, 4));
+    }
+
+    #[Test]
+    public function a_complete_dsd_fixture_has_a_sane_demuxed_length(): void
+    {
+        $seconds = (new AudioDecodableLengthProbe(new MediaTools))->demuxedSeconds(
+            dirname(__DIR__).'/Fixtures/Audio/dsd-tone.dsf',
+        );
+
+        $this->assertGreaterThan(1.0, $seconds);
+        $this->assertLessThan(1.3, $seconds);
+    }
+
+    #[Test]
+    public function a_truncated_dsd_fixture_stays_below_the_preview_window_threshold(): void
+    {
+        $fixture = dirname(__DIR__).'/Fixtures/Audio/dsd-tone.dsf';
+        $fixtureBytes = file_get_contents($fixture);
+        $this->assertIsString($fixtureBytes);
+        $truncatedPath = $this->tmpPath.'truncated.dsf';
+        file_put_contents($truncatedPath, substr($fixtureBytes, 0, intdiv(strlen($fixtureBytes), 2)));
+
+        $seconds = (new AudioDecodableLengthProbe(new MediaTools))->demuxedSeconds($truncatedPath);
+
+        $this->assertGreaterThanOrEqual(0.0, $seconds);
+        $this->assertLessThan(1.0, $seconds);
+    }
+
     /**
      * @param  list<string>  $extraArguments
      */
@@ -178,13 +276,21 @@ class AudioPreviewEncoderFfmpegTest extends TestCase
 
     private function encoder(): AudioPreviewEncoder
     {
+        return new AudioPreviewEncoder($this->config(), new MediaTools);
+    }
+
+    private function config(int $previewSeconds = 30, int $previewStartSeconds = 10): AudioProcessingConfiguration
+    {
         $reflection = new ReflectionClass(AudioProcessingConfiguration::class);
         /** @var AudioProcessingConfiguration $config */
         $config = $reflection->newInstanceWithoutConstructor();
 
         foreach ([
-            'previewSeconds' => 30,
-            'previewStartSeconds' => 10,
+            'segmentsToDownload' => 12,
+            'maxRarParts' => 6,
+            'maxArchiveBytes' => null,
+            'previewSeconds' => $previewSeconds,
+            'previewStartSeconds' => $previewStartSeconds,
             'spectrogram' => true,
             'savePath' => $this->savePath,
             'debugMode' => false,
@@ -192,7 +298,7 @@ class AudioPreviewEncoderFfmpegTest extends TestCase
             (new ReflectionProperty(AudioProcessingConfiguration::class, $property))->setValue($config, $value);
         }
 
-        return new AudioPreviewEncoder($config, new MediaTools);
+        return $config;
     }
 
     private static function binary(string $name): ?string

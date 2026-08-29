@@ -22,10 +22,10 @@ final readonly class AudioProcessingConfiguration
      * Extensions that identify a standalone audio file worth previewing.
      *
      * Deliberately excludes AC3/DTS/MKA/MKS: those are posted as side-files of
-     * video releases, not as music. WV, M4A, OGA, OPUS and TTA are here because
-     * they are what the lossless groups actually post.
+     * video releases, not as music. DFF/DSF, WV, M4A, OGA, OPUS and TTA are
+     * here because they are what the lossless groups actually post.
      */
-    public const string AUDIO_FILE_REGEX = '\\.(AAC|AIFF|APE|ASF|FLAC|M4A|MP2|MP3|OGA|OGG|OGM|OPUS|RA|TTA|W64|WAV|WMA|WV)';
+    public const string AUDIO_FILE_REGEX = '\\.(AAC|AIFF|APE|ASF|DFF|DSF|FLAC|M4A|MP2|MP3|OGA|OGG|OGM|OPUS|RA|TTA|W64|WAV|WMA|WV)';
 
     /** Side-car files that are never a preview source, whatever else is in the NZB. */
     public const string IGNORED_FILE_REGEX = '\\.(CUE|M3U|M3U8|LOG|JPE?G|PNG|NFO|SFV|PAR2|TXT|DIZ)';

@@ -39,6 +39,22 @@ class AudioSourceSelectorTest extends TestCase
     }
 
     #[Test]
+    public function the_dsd_fixture_is_selected_as_bare_audio(): void
+    {
+        $fixture = dirname(__DIR__, 2).'/Fixtures/Audio/dsd-tone.dsf';
+        $this->assertFileExists($fixture);
+
+        $source = $this->selector()->select([
+            ['title' => '"'.basename($fixture).'" yEnc', 'segments' => ['<dsd-1>']],
+        ]);
+
+        $this->assertNotNull($source);
+        $this->assertSame(AudioSourceKind::BareFile, $source->kind);
+        $this->assertSame('DSF', $source->extension);
+        $this->assertSame([['<dsd-1>']], $source->parts);
+    }
+
+    #[Test]
     public function side_car_files_are_never_a_source(): void
     {
         $source = $this->selector()->select([

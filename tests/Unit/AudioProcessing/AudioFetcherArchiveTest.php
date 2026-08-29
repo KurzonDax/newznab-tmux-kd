@@ -153,6 +153,37 @@ class AudioFetcherArchiveTest extends TestCase
     }
 
     #[Test]
+    public function it_selects_the_dsd_fixture_from_an_archive_listing(): void
+    {
+        $fixture = dirname(__DIR__, 2).'/Fixtures/Audio/dsd-tone.dsf';
+        $this->assertFileExists($fixture);
+        $name = basename($fixture);
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldReceive('listArchiveContentsAtPath')->once()->andReturn([
+            'files' => [
+                ['name' => 'cover.jpg', 'size' => 100],
+                ['name' => $name, 'size' => filesize($fixture)],
+            ],
+            'hasPassword' => false,
+        ]);
+        $archive->shouldReceive('extractSpecificFileToPath')
+            ->once()
+            ->with($this->partPath(1), $name, $this->tmpPath, true)
+            ->andReturnUsing(function () use ($fixture, $name): string {
+                $path = $this->tmpPath.$name;
+                copy($fixture, $path);
+
+                return $path;
+            });
+
+        $result = $this->fetch($archive, volumes: 1);
+
+        $this->assertTrue($result->succeeded());
+        $this->assertSame('dsf', $result->extension);
+        $this->assertNoArchivePartsRemain();
+    }
+
+    #[Test]
     public function it_accepts_a_long_enough_partial_extraction_without_fetching_another_volume(): void
     {
         $archive = $this->archiveWithTrack(declaredSize: 100, extractedBodies: ['partial']);
