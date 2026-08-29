@@ -28,7 +28,7 @@ class UsenetDownloadService
     private bool $releaseScopeActive = false;
 
     /**
-     * @var array<string, array{success: bool, data: string|null, groupUnavailable: bool, error: string|null}>
+     * @var array<string, array{success: bool, data: string|null, groupUnavailable: bool, error: string|null, crcFailures: int, crcFailed: bool}>
      */
     private array $releaseCache = [];
 
@@ -43,6 +43,8 @@ class UsenetDownloadService
     private int $bytesDownloaded = 0;
 
     private int $bytesReused = 0;
+
+    private int $crcFailures = 0;
 
     public function __construct(
         private readonly ProcessingConfiguration $config,
@@ -65,6 +67,7 @@ class UsenetDownloadService
             cacheHits: $this->cacheHits,
             bytesDownloaded: $this->bytesDownloaded,
             bytesReused: $this->bytesReused,
+            crcFailures: $this->crcFailures,
         );
 
         $this->clearReleaseScope();
@@ -78,7 +81,7 @@ class UsenetDownloadService
      * @param  array<int|string, mixed>|string  $messageIDs  Single or array of message IDs
      * @param  string  $groupName  Group name for logging
      * @param  int|null  $releaseId  Release ID for logging
-     * @return array{success: bool, data: string|null, groupUnavailable: bool, error: string|null}
+     * @return array{success: bool, data: string|null, groupUnavailable: bool, error: string|null, crcFailures: int, crcFailed: bool}
      *
      * @throws Exception
      */
@@ -92,6 +95,8 @@ class UsenetDownloadService
             'data' => null,
             'groupUnavailable' => false,
             'error' => null,
+            'crcFailures' => 0,
+            'crcFailed' => false,
         ];
 
         if (empty($messageIDs)) {
@@ -114,7 +119,27 @@ class UsenetDownloadService
             ]);
         }
 
-        $binary = $this->nntp->getMessagesByMessageID($messageIDs);
+        $download = $this->nntp->getMessagesByMessageIDWithCrcStatus($messageIDs);
+        $binary = $download->data;
+        $result['crcFailures'] = $download->crcFailureCount();
+        $result['crcFailed'] = $download->damaged;
+        if ($this->releaseScopeActive) {
+            $this->crcFailures += $result['crcFailures'];
+        }
+
+        foreach ($download->crcFailedMessageIds as $messageId) {
+            Log::debug('yEnc article failed CRC verification', [
+                'release_id' => $releaseId,
+                'message_id' => $messageId,
+                'group' => $groupName,
+            ]);
+        }
+
+        if ($download->damaged) {
+            $result['error'] = 'Source articles failed CRC verification.';
+
+            return $result;
+        }
 
         // Handle non-string or empty response as failure
         if (! is_string($binary) || $binary === '') {
@@ -162,7 +187,7 @@ class UsenetDownloadService
      * Download content for a specific processing step.
      *
      * @param  array<int|string, mixed>|string  $messageIDs
-     * @return array{success: bool, data: string|null, groupUnavailable: bool, error: string|null}
+     * @return array{success: bool, data: string|null, groupUnavailable: bool, error: string|null, crcFailures: int, crcFailed: bool}
      */
     public function download(
         DownloadKind $kind,
@@ -238,7 +263,7 @@ class UsenetDownloadService
     }
 
     /**
-     * @param  array{success: bool, data: string|null, groupUnavailable: bool, error: string|null}  $result
+     * @param  array{success: bool, data: string|null, groupUnavailable: bool, error: string|null, crcFailures: int, crcFailed: bool}  $result
      */
     private function rememberSuccessfulDownload(string $cacheKey, array $result, int $byteSize): void
     {
@@ -263,6 +288,7 @@ class UsenetDownloadService
         $this->cacheHits = 0;
         $this->bytesDownloaded = 0;
         $this->bytesReused = 0;
+        $this->crcFailures = 0;
     }
 
     /**

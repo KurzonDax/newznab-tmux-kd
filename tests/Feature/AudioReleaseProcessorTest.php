@@ -567,6 +567,58 @@ class AudioReleaseProcessorTest extends TestCase
         $this->assertSame([['<rar-8>']], $this->downloads);
     }
 
+    public function test_an_archive_with_a_crc_failed_article_reports_the_distinct_source_damage_reason(): void
+    {
+        $release = $this->makeRelease();
+        $segments = array_map(static fn (int $segment): string => '<damaged-'.$segment.'>', range(1, 65));
+        $processor = $this->makeProcessor(
+            $this->taggedContainer(),
+            expectsPreview: false,
+            expectsExtraXml: false,
+            nzbContents: [['title' => 'Album.part01.rar', 'segments' => $segments]],
+            downloadResult: [
+                'success' => false,
+                'data' => null,
+                'groupUnavailable' => false,
+                'error' => 'Source articles failed CRC verification.',
+                'crcFailures' => 1,
+                'crcFailed' => true,
+            ],
+        );
+
+        $result = $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(ProcessingOutcome::NoUsefulArtifacts, $result->outcome);
+        $this->assertSame('Source articles failed CRC verification.', $result->reason);
+        $this->assertSame(1, $result->crcFailures);
+        $this->assertSame([array_slice($segments, 0, 64)], $this->downloads);
+    }
+
+    public function test_a_crc_failure_recovered_by_provider_fallback_does_not_label_clean_bytes_damaged(): void
+    {
+        $release = $this->makeRelease();
+        $processor = $this->makeProcessor(
+            $this->taggedContainer(),
+            expectsPreview: false,
+            expectsExtraXml: false,
+            nzbContents: [['title' => 'Album.part01.rar', 'segments' => ['<recovered>']]],
+            archivePassworded: false,
+            downloadResult: [
+                'success' => true,
+                'data' => str_repeat('x', 2048),
+                'groupUnavailable' => false,
+                'error' => null,
+                'crcFailures' => 1,
+                'crcFailed' => false,
+            ],
+        );
+
+        $result = $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame('No usable audio file was found within 1 fetched archive volume(s).', $result->reason);
+        $this->assertSame(1, $result->crcFailures);
+    }
+
     public function test_a_video_only_archive_declines_to_the_general_path_after_two_listed_volumes(): void
     {
         $release = $this->makeRelease();
@@ -632,6 +684,7 @@ class AudioReleaseProcessorTest extends TestCase
         bool $wavPackFallbackAvailable = true,
         float $minimumCompletionPercent = 95,
         ?array $archiveListings = null,
+        ?array $downloadResult = null,
     ): AudioReleaseProcessor {
         $config = $this->config($maxArchiveBytes, $minimumCompletionPercent);
 
@@ -646,13 +699,20 @@ class AudioReleaseProcessorTest extends TestCase
 
         $downloadService = Mockery::mock(UsenetDownloadService::class);
         $downloadService->shouldReceive('download')->andReturnUsing(
-            function (mixed $kind, array $messageIds): array {
+            function (mixed $kind, array $messageIds) use ($downloadResult): array {
                 $this->downloads[] = array_values($messageIds);
                 $this->timeoutCountsAtDownload[] = (int) DB::table('releases')
                     ->where('id', 1)
                     ->value('pp_timeout_count');
 
-                return ['success' => true, 'data' => str_repeat('x', 2048), 'groupUnavailable' => false, 'error' => null];
+                return $downloadResult ?? [
+                    'success' => true,
+                    'data' => str_repeat('x', 2048),
+                    'groupUnavailable' => false,
+                    'error' => null,
+                    'crcFailures' => 0,
+                    'crcFailed' => false,
+                ];
             }
         );
 

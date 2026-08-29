@@ -33,6 +33,8 @@ use Mhor\MediaInfo\Container\MediaInfoContainer;
  */
 final class AudioReleaseProcessor
 {
+    private int $crcFailures = 0;
+
     public function __construct(
         private readonly NzbContentParser $nzbParser,
         private readonly AudioSourceSelector $sourceSelector,
@@ -48,6 +50,7 @@ final class AudioReleaseProcessor
 
     public function process(Release $release, string $tmpPath, string $groupName): AudioProcessingResult
     {
+        $this->crcFailures = 0;
         $releaseId = (int) $release->id;
         $guid = (string) $release->guid;
         $tagsRecorded = false;
@@ -83,6 +86,7 @@ final class AudioReleaseProcessor
                 $tagsRecorded = $this->recordTags($release, $container, $sourceFilename, $extension);
             },
         );
+        $this->crcFailures = $fetched->crcFailures;
 
         if ($fetched->declined) {
             if (! AudioCandidateQuery::declineToVideoPath($releaseId)) {
@@ -99,6 +103,7 @@ final class AudioReleaseProcessor
                 outcome: ProcessingOutcome::DeclinedToVideoPath,
                 tagsRecorded: $tagsRecorded,
                 reason: $fetched->reason,
+                crcFailures: $this->crcFailures,
             );
         }
 
@@ -297,6 +302,7 @@ final class AudioReleaseProcessor
             previewCreated: $previewCreated,
             tagsRecorded: $tagsRecorded,
             reason: $reason,
+            crcFailures: $this->crcFailures,
         );
     }
 }

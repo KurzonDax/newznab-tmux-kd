@@ -106,6 +106,61 @@ class YencServiceTest extends TestCase
         $this->assertEquals($originalData, $decoded);
     }
 
+    public function test_decode_with_crc_status_accepts_a_valid_trailer_checksum(): void
+    {
+        $article = "=ybegin line=128 size=5 name=hello.txt\r\nr\x8f\x96\x96\x99\r\n=yend size=5 crc32=f7d18982";
+
+        $result = $this->yencService->decodeWithCrcStatus($article);
+
+        $this->assertSame('Hello', $result->data);
+        $this->assertFalse($result->crcFailed);
+    }
+
+    public function test_decode_with_crc_status_flags_a_payload_that_disagrees_with_its_trailer_checksum(): void
+    {
+        $article = "=ybegin line=128 size=5 name=hello.txt\r\nr\x8f\x96\x96\x98\r\n=yend size=5 crc32=f7d18982";
+
+        $result = $this->yencService->decodeWithCrcStatus($article);
+
+        $this->assertSame('Helln', $result->data);
+        $this->assertTrue($result->crcFailed);
+    }
+
+    public function test_decode_with_crc_status_accepts_an_article_without_a_trailer_checksum(): void
+    {
+        $article = "=ybegin line=128 size=5 name=hello.txt\r\nr\x8f\x96\x96\x99\r\n=yend size=5";
+
+        $result = $this->yencService->decodeWithCrcStatus($article);
+
+        $this->assertSame('Hello', $result->data);
+        $this->assertFalse($result->crcFailed);
+    }
+
+    public function test_decode_with_crc_status_uses_the_part_checksum_for_multipart_articles(): void
+    {
+        $article = "=ybegin part=1 line=128 size=10 name=hello.txt\r\n"
+            ."=ypart begin=1 end=5\r\n"
+            ."r\x8f\x96\x96\x99\r\n"
+            .'=yend size=5 pcrc32=f7d18982 crc32=00000000';
+
+        $result = $this->yencService->decodeWithCrcStatus($article);
+
+        $this->assertSame('Hello', $result->data);
+        $this->assertFalse($result->crcFailed);
+    }
+
+    public function test_decode_with_crc_status_uses_a_legacy_multipart_trailer_checksum_without_ypart(): void
+    {
+        $article = "=ybegin part=1 line=128 size=10 name=hello.txt\r\n"
+            ."r\x8f\x96\x96\x99\r\n"
+            .'=yend size=5 part=1 pcrc32=f7d18982 crc32=00000000';
+
+        $result = $this->yencService->decodeWithCrcStatus($article);
+
+        $this->assertSame('Hello', $result->data);
+        $this->assertFalse($result->crcFailed);
+    }
+
     public function test_is_yenc_encoded_returns_true_for_yenc(): void
     {
         $encoded = $this->yencService->encode('test', 'test.txt');

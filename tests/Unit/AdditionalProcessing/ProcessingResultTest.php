@@ -30,7 +30,7 @@ class ProcessingResultTest extends TestCase
                     releaseFilesAdded: 3,
                     elapsedSeconds: 0.5,
                     stageDurations: ['nzb-parsing' => 0.2, 'finalization' => 0.1],
-                    downloadMetrics: new DownloadMetrics(2, 1, 1, 100, 100),
+                    downloadMetrics: new DownloadMetrics(2, 1, 1, 100, 100, crcFailures: 2),
                     persistenceMetrics: new PersistenceMetrics(8, 12.5, 2, 1),
                     duplicateMessageIdCount: 1,
                     payloadSniffMetrics: new PayloadSniffMetrics(2, ['rar' => 1, 'unknown' => 1]),
@@ -42,7 +42,7 @@ class ProcessingResultTest extends TestCase
                     ProcessingOutcome::Passworded,
                     elapsedSeconds: 0.75,
                     stageDurations: ['nzb-parsing' => 0.3],
-                    downloadMetrics: new DownloadMetrics(1, 1, 0, 50, 0),
+                    downloadMetrics: new DownloadMetrics(1, 1, 0, 50, 0, crcFailures: 1),
                     persistenceMetrics: new PersistenceMetrics(5, 7.5, 1, 1),
                     unsupportedReasons: ['book-flood'],
                     payloadSniffMetrics: new PayloadSniffMetrics(1, ['text' => 1]),
@@ -76,7 +76,7 @@ class ProcessingResultTest extends TestCase
         $this->assertSame(1, $batch->artifactsCreatedCount());
         $this->assertSame(50.0, $batch->artifactYieldPercent());
         $this->assertSame(3, $batch->releaseFilesAdded());
-        $this->assertEquals(new DownloadMetrics(3, 2, 1, 150, 100), $batch->downloadMetrics());
+        $this->assertEquals(new DownloadMetrics(3, 2, 1, 150, 100, crcFailures: 3), $batch->downloadMetrics());
         $this->assertEquals(new PersistenceMetrics(13, 20.0, 3, 2), $batch->persistenceMetrics());
         $this->assertSame(1, $batch->duplicateMessageIdCount());
         $this->assertSame(['book-flood' => 1], $batch->unsupportedReasonCounts());

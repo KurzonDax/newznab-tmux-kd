@@ -308,6 +308,7 @@ class AdditionalProcessingOrchestrator
             'download_requests' => $downloadMetrics->logicalRequests,
             'nntp_requests' => $downloadMetrics->networkRequests,
             'download_cache_hits' => $downloadMetrics->cacheHits,
+            'crc_failures' => $downloadMetrics->crcFailures,
             'nntp_bytes' => $downloadMetrics->bytesDownloaded,
             'reused_bytes' => $downloadMetrics->bytesReused,
             'database_statements' => $persistenceMetrics->databaseStatements,

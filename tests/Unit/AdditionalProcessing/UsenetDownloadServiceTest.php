@@ -4,10 +4,12 @@ namespace Tests\Unit\AdditionalProcessing;
 
 use App\Services\AdditionalProcessing\Enums\DownloadKind;
 use App\Services\AdditionalProcessing\UsenetDownloadService;
+use App\Services\NNTP\DTO\ArticleDownloadResult;
 use App\Services\NNTP\NNTPService;
+use Illuminate\Support\Facades\Log;
 use Mockery;
 use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
 
 class UsenetDownloadServiceTest extends TestCase
 {
@@ -23,10 +25,10 @@ class UsenetDownloadServiceTest extends TestCase
     public function it_downloads_binary_payloads_through_the_enum_driven_api(): void
     {
         $nntp = Mockery::mock(NNTPService::class);
-        $nntp->shouldReceive('getMessagesByMessageID')
+        $nntp->shouldReceive('getMessagesByMessageIDWithCrcStatus')
             ->once()
             ->with(['<abc>'])
-            ->andReturn('BINARY-DATA');
+            ->andReturn(new ArticleDownloadResult('BINARY-DATA'));
 
         $service = new UsenetDownloadService($this->makeConfig(), $nntp);
 
@@ -34,6 +36,41 @@ class UsenetDownloadServiceTest extends TestCase
 
         $this->assertTrue($result['success']);
         $this->assertSame('BINARY-DATA', $result['data']);
+    }
+
+    #[Test]
+    public function it_surfaces_crc_failed_articles_and_counts_them_in_release_metrics(): void
+    {
+        Log::spy();
+        $nntp = Mockery::mock(NNTPService::class);
+        $nntp->shouldReceive('getMessagesByMessageIDWithCrcStatus')
+            ->once()
+            ->with(['<damaged>'])
+            ->andReturn(new ArticleDownloadResult(
+                data: 'CORRUPT-DATA',
+                crcFailedMessageIds: ['<damaged>'],
+                damaged: true,
+            ));
+
+        $service = new UsenetDownloadService($this->makeConfig(), $nntp);
+        $service->beginReleaseScope();
+
+        $result = $service->download(DownloadKind::Audio, ['<damaged>'], 'alt.binaries', 55, 'archive.rar');
+        $metrics = $service->finishReleaseScope();
+
+        $this->assertFalse($result['success']);
+        $this->assertSame(1, $result['crcFailures']);
+        $this->assertTrue($result['crcFailed']);
+        $this->assertSame('Source articles failed CRC verification.', $result['error']);
+        $this->assertSame(1, $metrics->crcFailures);
+        Log::shouldHaveReceived('debug')->once()->with(
+            'yEnc article failed CRC verification',
+            [
+                'release_id' => 55,
+                'message_id' => '<damaged>',
+                'group' => 'alt.binaries',
+            ],
+        );
     }
 
     #[Test]
@@ -48,10 +85,10 @@ class UsenetDownloadServiceTest extends TestCase
         };
 
         $nntp = Mockery::mock(NNTPService::class);
-        $nntp->shouldReceive('getMessagesByMessageID')
+        $nntp->shouldReceive('getMessagesByMessageIDWithCrcStatus')
             ->once()
             ->with(['<missing>'])
-            ->andReturn($error);
+            ->andReturn(new ArticleDownloadResult($error));
 
         $service = new UsenetDownloadService($this->makeConfig(), $nntp);
 
@@ -66,10 +103,10 @@ class UsenetDownloadServiceTest extends TestCase
     public function it_reuses_exact_successful_requests_only_within_the_current_release(): void
     {
         $nntp = Mockery::mock(NNTPService::class);
-        $nntp->shouldReceive('getMessagesByMessageID')
+        $nntp->shouldReceive('getMessagesByMessageIDWithCrcStatus')
             ->twice()
             ->with(['<shared>'])
-            ->andReturn('SHARED-DATA');
+            ->andReturn(new ArticleDownloadResult('SHARED-DATA'));
 
         $service = new UsenetDownloadService($this->makeConfig(), $nntp);
         $service->beginReleaseScope();
@@ -98,10 +135,10 @@ class UsenetDownloadServiceTest extends TestCase
     public function it_does_not_cache_failed_downloads(): void
     {
         $nntp = Mockery::mock(NNTPService::class);
-        $nntp->shouldReceive('getMessagesByMessageID')
+        $nntp->shouldReceive('getMessagesByMessageIDWithCrcStatus')
             ->twice()
             ->with(['<missing>'])
-            ->andReturn('');
+            ->andReturn(new ArticleDownloadResult(''));
 
         $service = new UsenetDownloadService($this->makeConfig(), $nntp);
         $service->beginReleaseScope();
@@ -118,10 +155,10 @@ class UsenetDownloadServiceTest extends TestCase
     public function it_does_not_reuse_successful_downloads_outside_a_release_scope(): void
     {
         $nntp = Mockery::mock(NNTPService::class);
-        $nntp->shouldReceive('getMessagesByMessageID')
+        $nntp->shouldReceive('getMessagesByMessageIDWithCrcStatus')
             ->twice()
             ->with(['<shared>'])
-            ->andReturn('SHARED-DATA');
+            ->andReturn(new ArticleDownloadResult('SHARED-DATA'));
 
         $service = new UsenetDownloadService($this->makeConfig(), $nntp);
 
@@ -136,10 +173,10 @@ class UsenetDownloadServiceTest extends TestCase
     public function it_retries_an_exact_request_after_a_partial_provider_failure(): void
     {
         $nntp = Mockery::mock(NNTPService::class);
-        $nntp->shouldReceive('getMessagesByMessageID')
+        $nntp->shouldReceive('getMessagesByMessageIDWithCrcStatus')
             ->twice()
             ->with(['<retry>'])
-            ->andReturn('', 'RECOVERED-DATA');
+            ->andReturn(new ArticleDownloadResult(''), new ArticleDownloadResult('RECOVERED-DATA'));
 
         $service = new UsenetDownloadService($this->makeConfig(), $nntp);
         $service->beginReleaseScope();

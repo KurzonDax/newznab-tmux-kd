@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Facades;
 
+use App\Services\DTO\YencDecodeResult;
 use App\Services\YencService;
 use Illuminate\Support\Facades\Facade;
 
@@ -12,6 +13,7 @@ use Illuminate\Support\Facades\Facade;
  *
  * @method static string|false decode(string &$text, bool $ignore = false)
  * @method static string decodeIgnore(string &$text)
+ * @method static YencDecodeResult decodeWithCrcStatus(string &$text)
  * @method static bool enabled()
  * @method static bool isYencEncoded(string $text)
  * @method static string encode(string $data, string $filename, int $lineLength = 128, bool $includeCrc32 = true)

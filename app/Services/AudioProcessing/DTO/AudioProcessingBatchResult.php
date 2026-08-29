@@ -39,6 +39,14 @@ final readonly class AudioProcessingBatchResult
         ));
     }
 
+    public function crcFailureCount(): int
+    {
+        return array_sum(array_map(
+            static fn (AudioProcessingResult $result): int => $result->crcFailures,
+            $this->results,
+        ));
+    }
+
     /**
      * @return array<string, int>
      */

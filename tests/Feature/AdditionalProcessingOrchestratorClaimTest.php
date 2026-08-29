@@ -129,6 +129,7 @@ class AdditionalProcessingOrchestratorClaimTest extends TestCase
                     && array_key_exists('download_requests', $context)
                     && array_key_exists('nntp_requests', $context)
                     && array_key_exists('download_cache_hits', $context)
+                    && array_key_exists('crc_failures', $context)
                     && array_key_exists('database_statements', $context)
                     && array_key_exists('database_milliseconds', $context)
                     && array_key_exists('search_sync_requests', $context)
