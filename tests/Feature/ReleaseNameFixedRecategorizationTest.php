@@ -278,6 +278,86 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
         $this->assertSame(1, (int) $release->isrenamed);
     }
 
+    public function test_prettifying_a_tv_title_preserves_hd_evidence_during_recategorization(): void
+    {
+        Search::shouldReceive('updateRelease')->twice();
+
+        $group = UsenetGroup::query()->create([
+            'name' => 'alt.binaries.hdtv',
+            'active' => 1,
+            'backfill' => 0,
+        ]);
+        $release = Release::factory()->create([
+            'name' => '[1/25] - "True.Evil.the.Making.of.a.Nazi.S01E02.Werner.Von.Braun.1080p.par2" yEnc',
+            'searchname' => 'True.Evil.the.Making.of.a.Nazi.S01E02.Werner.Von.Braun.1080p',
+            'fromname' => 'poster@example.com',
+            'groups_id' => $group->id,
+            'categories_id' => Category::TV_HD,
+            'iscategorized' => 1,
+            'isrenamed' => 0,
+            'guid' => str_repeat('u', 40),
+            'leftguid' => 'u',
+            'size' => 1,
+            'postdate' => now(),
+            'adddate' => now(),
+        ]);
+
+        app(ReleaseUpdateService::class)->updateRelease(
+            $release->fresh(),
+            'True Evil: The Making Of A Nazi S01E02 Werner von Braun',
+            'nfoCheck: Title Match',
+            true,
+            'NFO, ',
+            true,
+            false,
+        );
+
+        $release->refresh();
+
+        $this->assertStringEndsWith(' 1080p', $release->searchname);
+        $this->assertSame(Category::TV_HD, (int) $release->categories_id);
+    }
+
+    public function test_rename_preserves_missing_evidence_from_the_original_subject(): void
+    {
+        Search::shouldReceive('updateRelease')->twice();
+
+        $group = UsenetGroup::query()->create([
+            'name' => 'alt.binaries.hdtv',
+            'active' => 1,
+            'backfill' => 0,
+        ]);
+        $release = Release::factory()->create([
+            'name' => '[1/25] - "True.Evil.S01E02.1080p.WEB-DL.x264.GERMAN.par2" yEnc',
+            'searchname' => 'True.Evil.S01E02',
+            'fromname' => 'poster@example.com',
+            'groups_id' => $group->id,
+            'categories_id' => Category::TV_OTHER,
+            'iscategorized' => 1,
+            'isrenamed' => 0,
+            'guid' => str_repeat('v', 40),
+            'leftguid' => 'v',
+            'size' => 1,
+            'postdate' => now(),
+            'adddate' => now(),
+        ]);
+
+        app(ReleaseUpdateService::class)->updateRelease(
+            $release->fresh(),
+            'True Evil: The Making Of A Nazi S01E02 Werner von Braun',
+            'nfoCheck: Title Match',
+            true,
+            'NFO, ',
+            true,
+            false,
+        );
+
+        $release->refresh();
+
+        $this->assertStringEndsWith(' 1080p WEB-DL x264 GERMAN', $release->searchname);
+        $this->assertSame(Category::TV_WEBDL, (int) $release->categories_id);
+    }
+
     public function test_renaming_a_release_in_a_forced_root_group_keeps_it_in_that_root(): void
     {
         Search::shouldReceive('updateRelease')->twice();

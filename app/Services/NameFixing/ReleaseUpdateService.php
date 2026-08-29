@@ -365,6 +365,11 @@ class ReleaseUpdateService
     ): void {
         $releaseId = (int) ($release->releases_id ?? $release->id);
         $trustedDonorName = $this->sourceTrustPolicy($type, $method, $preId)['trusted_donor'];
+        $newTitle = $this->fileNameCleaner->preserveEvidenceTokens(
+            $newTitle,
+            (string) $release->searchname,
+            (string) ($release->name ?? ''),
+        );
 
         DB::transaction(function () use ($release, $releaseId, $newTitle, $type, $nameStatus, $preId, $trustedDonorName, $imdbId, $categoryOverride, $preserveBookInfo): void {
             if ($nameStatus === true) {
