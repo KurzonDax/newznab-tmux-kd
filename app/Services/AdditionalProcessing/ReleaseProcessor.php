@@ -24,6 +24,7 @@ use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\TempWorkspaceService;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Stateless release processor for additional post-processing.
@@ -53,6 +54,7 @@ class ReleaseProcessor
         private readonly Mp4MoovSplicer $mp4MoovSplicer = new Mp4MoovSplicer,
         private readonly DynamicPreviewBudgetPolicy $dynamicBudgetPolicy = new DynamicPreviewBudgetPolicy,
         private readonly VideoHeadProbe $headProbe = new VideoHeadProbe,
+        private readonly VideoDecodableLengthProbe $decodableLengthProbe = new VideoDecodableLengthProbe,
         private readonly FreeDiskGuard $freeDiskGuard = new FreeDiskGuard,
         private readonly ReleaseImageService $releaseImage = new ReleaseImageService,
     ) {}
@@ -957,7 +959,12 @@ class ReleaseProcessor
                     $archiveCandidate->title,
                 );
                 if (! $reverse && ! $topUpSpent) {
-                    $topUpSpent = $this->compressedDynamicTopUp($context, $archiveCandidate, $result['data']);
+                    $topUpSpent = $this->compressedDynamicTopUp(
+                        $context,
+                        $archiveCandidate,
+                        $result['data'],
+                        $triedCompressedMids,
+                    );
                 }
                 if ($processed) {
                     break;
@@ -979,12 +986,15 @@ class ReleaseProcessor
      * ceiling, no next part, or extraction that stops progressing (a
      * compressed-mode archive a partial fetch cannot extend).
      *
+     *
+     * @param  list<string>  $triedCompressedMids
      * @return bool Whether this candidate carried a video entry and the budget was spent on it; false leaves later candidates free to try.
      */
     private function compressedDynamicTopUp(
         ReleaseProcessingContext $context,
         ArchiveCandidate $anchor,
         string $initialData,
+        array $triedCompressedMids,
     ): bool {
         $plan = $context->workPlan;
         if ($plan === null
@@ -1016,20 +1026,31 @@ class ReleaseProcessor
 
             $fragmentPath = $this->extractPreviewFragment($firstVolumePath, $videoEntry['name'], $context);
             if ($fragmentPath === null) {
+                $this->logCompressedExtractionFailed($context, 'initial extraction produced no fragment');
+
                 return true;
             }
 
             $fragmentBytes = (int) File::size($fragmentPath);
+            $decodableSeconds = $this->decodableLengthProbe->demuxedSeconds($fragmentPath, $this->config);
+            if ($decodableSeconds === null) {
+                $this->logCompressedProbeFailed($context, $fragmentPath, 'duration unavailable');
+
+                return true;
+            }
+            if ($decodableSeconds >= $this->config->previewTargetSeconds) {
+                $this->logCompressedTargetMet($context, $decodableSeconds);
+
+                return true;
+            }
+
             $bytesPerSecond = $this->headProbe
                 ->probe($fragmentPath, $this->config)
                 ?->bytesPerSecond($videoEntry['size']);
             if ($bytesPerSecond === null || $bytesPerSecond <= 0) {
                 // Unknown bitrate: keep the fixed-fetch behavior rather than guess.
-                return true;
-            }
+                $this->logCompressedProbeFailed($context, $fragmentPath, 'bitrate unavailable');
 
-            $neededBytes = (int) ceil($bytesPerSecond * $this->config->previewTargetSeconds);
-            if ($fragmentBytes >= $neededBytes) {
                 return true;
             }
 
@@ -1037,7 +1058,7 @@ class ReleaseProcessor
             // would contribute makes every fetch provably pointless — the
             // archive stream stops extending at the first missing byte.
             $anchorSegmentsNeeded = min(
-                (int) ceil(($neededBytes - $fragmentBytes) / $perSegmentBytes),
+                $this->segmentsForRemainingDuration($decodableSeconds, $bytesPerSecond, $perSegmentBytes),
                 count($anchor->expansionMessageIds),
             );
             if (count($anchor->messageIds) + $anchorSegmentsNeeded > $anchor->contiguousHeadSegments) {
@@ -1053,9 +1074,11 @@ class ReleaseProcessor
                 $videoEntry['name'],
                 $firstVolumePath,
                 $perSegmentBytes,
-                $neededBytes,
+                $bytesPerSecond,
+                $decodableSeconds,
                 $fragmentBytes,
                 strlen($initialData),
+                $triedCompressedMids,
             );
         } finally {
             // The working volume files must not survive into the
@@ -1073,6 +1096,8 @@ class ReleaseProcessor
      * The fetch loop of the compressed dynamic budget; every bound that stops
      * it leaves the longest fragment extraction could produce on disk for the
      * extracted-files sweep to clip.
+     *
+     * @param  list<string>  $alreadyFetchedMessageIds
      */
     private function fetchCompressedTopUp(
         ReleaseProcessingContext $context,
@@ -1080,18 +1105,25 @@ class ReleaseProcessor
         string $videoEntryName,
         string $firstVolumePath,
         int $perSegmentBytes,
-        int $neededBytes,
+        float $bytesPerSecond,
+        float $decodableSeconds,
         int $fragmentBytes,
         int $fetchedBytes,
+        array $alreadyFetchedMessageIds,
     ): void {
-        $queue = $anchor->expansionMessageIds;
+        $fetchedMessageIds = array_fill_keys($alreadyFetchedMessageIds, true);
+        $queue = $this->unfetchedMessageIds($anchor->expansionMessageIds, $fetchedMessageIds);
         $nextParts = $context->workPlan?->archivePartsAfter($anchor) ?? [];
         $partsUsed = 1;
         $currentVolume = 1;
         $currentVolumePath = $firstVolumePath;
 
-        while ($fragmentBytes < $neededBytes) {
-            $segmentsWanted = (int) ceil(($neededBytes - $fragmentBytes) / $perSegmentBytes);
+        while ($decodableSeconds < $this->config->previewTargetSeconds) {
+            $segmentsWanted = $this->segmentsForRemainingDuration(
+                $decodableSeconds,
+                $bytesPerSecond,
+                $perSegmentBytes,
+            );
             if ($this->config->previewMaxFetchBytes > 0) {
                 $segmentsWanted = min(
                     $segmentsWanted,
@@ -1107,8 +1139,12 @@ class ReleaseProcessor
                     break;
                 }
                 $part = array_shift($nextParts);
-                $partSegments = [...$part->messageIds, ...$part->expansionMessageIds];
-                $usableSegments = array_slice($partSegments, 0, max($part->contiguousHeadSegments, 0));
+                $allPartSegments = [...$part->messageIds, ...$part->expansionMessageIds];
+                $partSegments = $this->unfetchedMessageIds($allPartSegments, $fetchedMessageIds);
+                $usableSegments = $this->unfetchedMessageIds(
+                    array_slice($allPartSegments, 0, max($part->contiguousHeadSegments, 0)),
+                    $fetchedMessageIds,
+                );
                 if (min($segmentsWanted, count($partSegments)) > count($usableSegments)) {
                     // A numbering gap sits inside the range this part would
                     // need to contribute (#290 semantics): bytes past it can
@@ -1132,6 +1168,9 @@ class ReleaseProcessor
             }
 
             $batch = array_splice($queue, 0, min($segmentsWanted, count($queue)));
+            foreach ($batch as $messageId) {
+                $fetchedMessageIds[$messageId] = true;
+            }
             $download = $this->downloadService->download(
                 DownloadKind::CompressedTopUp,
                 $batch,
@@ -1153,12 +1192,93 @@ class ReleaseProcessor
             $this->output->echoDynamicTopUpFetched(strlen($download['data']));
 
             $grownPath = $this->extractPreviewFragment($firstVolumePath, $videoEntryName, $context);
-            $grownBytes = $grownPath === null ? 0 : (int) File::size($grownPath);
+            if ($grownPath === null) {
+                $this->logCompressedExtractionFailed($context, 'top-up extraction produced no fragment');
+                break;
+            }
+
+            $grownBytes = (int) File::size($grownPath);
             if ($grownBytes <= $fragmentBytes) {
+                $this->logCompressedExtractionFailed($context, 'top-up extraction made no progress', $grownBytes);
                 break;
             }
             $fragmentBytes = $grownBytes;
+
+            $probedSeconds = $this->decodableLengthProbe->demuxedSeconds($grownPath, $this->config);
+            if ($probedSeconds === null) {
+                $this->logCompressedProbeFailed($context, $grownPath, 'duration unavailable');
+                break;
+            }
+            $decodableSeconds = $probedSeconds;
+            if ($decodableSeconds >= $this->config->previewTargetSeconds) {
+                $this->logCompressedTargetMet($context, $decodableSeconds);
+            }
         }
+    }
+
+    private function segmentsForRemainingDuration(
+        float $decodableSeconds,
+        float $bytesPerSecond,
+        int $perSegmentBytes,
+    ): int {
+        $remainingSeconds = max($this->config->previewTargetSeconds - $decodableSeconds, 0.0);
+
+        return max((int) ceil(($remainingSeconds * $bytesPerSecond) / $perSegmentBytes), 1);
+    }
+
+    /**
+     * @param  list<string>  $messageIds
+     * @param  array<string, true>  $fetchedMessageIds
+     * @return list<string>
+     */
+    private function unfetchedMessageIds(array $messageIds, array $fetchedMessageIds): array
+    {
+        $unfetched = [];
+        foreach ($messageIds as $messageId) {
+            if (! isset($fetchedMessageIds[$messageId])) {
+                $fetchedMessageIds[$messageId] = true;
+                $unfetched[] = $messageId;
+            }
+        }
+
+        return $unfetched;
+    }
+
+    private function logCompressedTargetMet(ReleaseProcessingContext $context, float $decodableSeconds): void
+    {
+        Log::debug('Compressed preview top-up target-met', [
+            'release_id' => $context->release->id,
+            'decodable_seconds' => $decodableSeconds,
+            'target_seconds' => $this->config->previewTargetSeconds,
+        ]);
+    }
+
+    private function logCompressedProbeFailed(
+        ReleaseProcessingContext $context,
+        string $fragmentPath,
+        string $reason,
+    ): void {
+        Log::debug('Compressed preview top-up probe-failed', [
+            'release_id' => $context->release->id,
+            'fragment' => $fragmentPath,
+            'reason' => $reason,
+        ]);
+    }
+
+    private function logCompressedExtractionFailed(
+        ReleaseProcessingContext $context,
+        string $reason,
+        ?int $fragmentBytes = null,
+    ): void {
+        $details = [
+            'release_id' => $context->release->id,
+            'reason' => $reason,
+        ];
+        if ($fragmentBytes !== null) {
+            $details['fragment_bytes'] = $fragmentBytes;
+        }
+
+        Log::debug('Compressed preview top-up extraction-failed', $details);
     }
 
     /**
