@@ -26,6 +26,25 @@ class AudioSourceSelectorTest extends TestCase
     }
 
     #[Test]
+    public function it_keeps_every_audio_filename_and_supported_sidecar_in_posted_order(): void
+    {
+        $source = $this->selector()->select([
+            ['title' => '"release.rar" - "01 - first.flac" yEnc', 'segments' => ['<first-1>', '<first-2>']],
+            ['title' => '"Album.cue" yEnc', 'segments' => ['<cue>']],
+            ['title' => '"02 - second.flac" yEnc', 'segments' => ['<second>']],
+            ['title' => '"Album.m3u8" yEnc', 'segments' => ['<playlist>']],
+            ['title' => '"Album.log" yEnc', 'segments' => ['<log>']],
+        ]);
+
+        $this->assertNotNull($source);
+        $this->assertSame(['01 - first.flac', '02 - second.flac'], array_column($source->nzbAudioFiles, 'filename'));
+        $this->assertSame([1, 3], array_column($source->nzbAudioFiles, 'ordinal'));
+        $this->assertSame([2, 1], array_column($source->nzbAudioFiles, 'segmentCount'));
+        $this->assertSame(['cue', 'playlist', 'eac_log'], array_column($source->sidecars, 'kind'));
+        $this->assertSame([2, 4, 5], array_column($source->sidecars, 'ordinal'));
+    }
+
+    #[Test]
     public function wavpack_and_m4a_are_recognised_as_audio(): void
     {
         foreach (['wv' => 'WV', 'm4a' => 'M4A', 'opus' => 'OPUS', 'tta' => 'TTA', 'oga' => 'OGA'] as $extension => $expected) {
@@ -113,6 +132,7 @@ class AudioSourceSelectorTest extends TestCase
 
         $this->assertNotNull($source);
         $this->assertSame([['<flac-2>']], $source->parts);
+        $this->assertSame([0, 1], array_column($source->nzbAudioFiles, 'segmentCount'));
     }
 
     private function selector(): AudioSourceSelector

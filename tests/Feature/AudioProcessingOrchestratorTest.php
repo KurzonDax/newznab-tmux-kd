@@ -10,6 +10,7 @@ use App\Services\AdditionalProcessing\NzbContentParser;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
+use App\Services\AudioProcessing\AudioEvidenceRecorder;
 use App\Services\AudioProcessing\AudioFetcher;
 use App\Services\AudioProcessing\AudioPreviewEncoder;
 use App\Services\AudioProcessing\AudioProcessingConfiguration;
@@ -234,6 +235,7 @@ class AudioProcessingOrchestratorTest extends TestCase
                 coalesce: false,
             ),
             new PreviewGenerationPolicy,
+            new AudioEvidenceRecorder,
         );
     }
 
