@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace App\Services\AdditionalProcessing;
 
 use App\Enums\ClipGenerationDeclineReason;
+use App\Services\AdditionalProcessing\ClipHardware\ClipHardwareEncoder;
+use App\Services\AdditionalProcessing\ClipHardware\ClipHardwareEncoderRegistry;
 use App\Services\AdditionalProcessing\DTO\VideoClipEncodeResult;
 use Closure;
+use Illuminate\Support\Facades\Log;
+use Symfony\Component\Process\Exception\ProcessFailedException;
 use Symfony\Component\Process\Process;
 use Throwable;
 
@@ -53,6 +57,9 @@ class VideoClipEncoder
     public function __construct(
         ?callable $commandRunner = null,
         private readonly SoftwareClipTranscodeArguments $softwareTranscodeArguments = new SoftwareClipTranscodeArguments,
+        private readonly ClipHardwareEncoderRegistry $hardwareEncoders = new ClipHardwareEncoderRegistry,
+        private readonly string $hardwareBackend = 'off',
+        private readonly string $hardwareDevice = '/dev/dri/renderD128',
     ) {
         $this->commandRunner = $commandRunner === null
             ? Closure::fromCallable([$this, 'runProcess'])
@@ -91,37 +98,70 @@ class VideoClipEncoder
         $container = $streamCopy ? $container : 'mp4';
 
         $outputPath = $tmpPath.'clip_'.uniqid('', true).'.'.$container;
-        $command = [
-            $ffmpegBinary,
-            '-y',
-            '-hide_banner',
-            '-nostdin',
-            '-loglevel',
-            'error',
-            '-i',
-            $sourcePath,
-            '-map',
-            '0:v:0',
-        ];
-        if ($hasAudio) {
-            $command = [...$command, '-map', '0:a:0'];
-        }
-        if ($streamCopy) {
-            $command = [...$command, '-c', 'copy'];
-        } else {
-            $command = [
-                ...$command,
-                ...$this->softwareTranscodeArguments->build(
-                    copyVideo: $streams['video'] === 'h264',
-                    hasAudio: $hasAudio,
-                    targetSeconds: $previewTargetSeconds,
+        $copyVideo = $streams['video'] === 'h264';
+        $hardwareEncoder = ! $streamCopy && ! $copyVideo
+            ? $this->resolveHardwareEncoder($releaseGuid)
+            : null;
+
+        if ($hardwareEncoder !== null) {
+            $hardwareArguments = $hardwareEncoder->build($this->hardwareDevice);
+            $hardwareCommand = $this->buildCommand(
+                $ffmpegBinary,
+                $sourcePath,
+                $outputPath,
+                $hasAudio,
+                $hardwareArguments->inputArguments,
+                $this->hardwareOutputArguments(
+                    $hardwareArguments->outputArguments,
+                    $hasAudio,
+                    $previewTargetSeconds,
                 ),
-            ];
+            );
+
+            try {
+                $processOutput = ($this->commandRunner)($hardwareCommand, $timeoutSeconds);
+                if ($this->isNonEmptyOutput($outputPath)) {
+                    return $this->encodeResult($outputPath, $container, $ffmpegBinary, $timeoutSeconds);
+                }
+
+                $diagnostic = $this->sanitizedProcessOutput($processOutput);
+                $this->logHardwareFailure(
+                    $releaseGuid,
+                    $hardwareEncoder,
+                    'empty_output',
+                    $diagnostic === null ? [] : ['process_output' => $diagnostic],
+                );
+            } catch (Throwable $exception) {
+                $diagnostic = $this->sanitizedExceptionDiagnostic($exception);
+                $this->logHardwareFailure(
+                    $releaseGuid,
+                    $hardwareEncoder,
+                    'process_exception',
+                    $diagnostic === null ? [] : ['exception_message' => $diagnostic],
+                );
+            }
+
+            @unlink($outputPath);
         }
+
+        $outputArguments = $streamCopy
+            ? ['-c', 'copy']
+            : $this->softwareTranscodeArguments->build(
+                copyVideo: $copyVideo,
+                hasAudio: $hasAudio,
+                targetSeconds: $previewTargetSeconds,
+            );
         if ($streamCopy && $container === 'mp4') {
-            $command = [...$command, '-movflags', '+faststart'];
+            $outputArguments = [...$outputArguments, '-movflags', '+faststart'];
         }
-        $command[] = $outputPath;
+        $command = $this->buildCommand(
+            $ffmpegBinary,
+            $sourcePath,
+            $outputPath,
+            $hasAudio,
+            [],
+            $outputArguments,
+        );
 
         try {
             ($this->commandRunner)($command, $timeoutSeconds);
@@ -140,7 +180,7 @@ class VideoClipEncoder
             return null;
         }
 
-        if (! is_file($outputPath) || filesize($outputPath) === 0) {
+        if (! $this->isNonEmptyOutput($outputPath)) {
             @unlink($outputPath);
             $this->logDeclinedEncode(
                 $releaseGuid,
@@ -152,6 +192,130 @@ class VideoClipEncoder
             return null;
         }
 
+        return $this->encodeResult($outputPath, $container, $ffmpegBinary, $timeoutSeconds);
+    }
+
+    private function resolveHardwareEncoder(string $releaseGuid): ?ClipHardwareEncoder
+    {
+        $backend = strtolower(trim($this->hardwareBackend));
+        if ($backend === '' || $backend === 'off') {
+            return null;
+        }
+
+        $encoder = $this->hardwareEncoders->resolve($backend);
+        if ($encoder === null) {
+            Log::debug('Clip hardware acceleration ignored', [
+                'release_guid' => $releaseGuid,
+                'backend' => $backend,
+                'reason' => 'unsupported_backend',
+            ]);
+        }
+
+        return $encoder;
+    }
+
+    /**
+     * @param  array<string, string>  $context
+     */
+    private function logHardwareFailure(
+        string $releaseGuid,
+        ClipHardwareEncoder $encoder,
+        string $reason,
+        array $context = [],
+    ): void {
+        Log::debug('Clip hardware encode failed; retrying with software', [
+            'release_guid' => $releaseGuid,
+            'backend' => $encoder->id(),
+            'reason' => $reason,
+            ...$context,
+        ]);
+    }
+
+    /**
+     * @param  list<string>  $hardwareArguments
+     * @return list<string>
+     */
+    private function hardwareOutputArguments(array $hardwareArguments, bool $hasAudio, int $targetSeconds): array
+    {
+        if ($hasAudio) {
+            $hardwareArguments = [...$hardwareArguments, '-c:a', 'aac', '-b:a', '128k'];
+        }
+
+        if ($targetSeconds > 0) {
+            $hardwareArguments = [...$hardwareArguments, '-t', (string) $targetSeconds];
+        }
+
+        return [...$hardwareArguments, '-movflags', '+faststart'];
+    }
+
+    private function sanitizedProcessOutput(string $output): ?string
+    {
+        $output = preg_replace('/\s+/', ' ', trim($output));
+        if ($output === null || $output === '') {
+            return null;
+        }
+
+        return mb_substr($output, 0, 1000);
+    }
+
+    private function sanitizedExceptionDiagnostic(Throwable $exception): ?string
+    {
+        $diagnostic = $exception->getMessage();
+        if ($exception instanceof ProcessFailedException) {
+            $process = $exception->getProcess();
+            $processOutput = $process->getErrorOutput().$process->getOutput();
+            if (trim($processOutput) !== '') {
+                $diagnostic = $processOutput;
+            }
+        }
+
+        return $this->sanitizedProcessOutput($diagnostic);
+    }
+
+    /**
+     * @param  list<string>  $inputArguments
+     * @param  list<string>  $outputArguments
+     * @return list<string>
+     */
+    private function buildCommand(
+        string $ffmpegBinary,
+        string $sourcePath,
+        string $outputPath,
+        bool $hasAudio,
+        array $inputArguments,
+        array $outputArguments,
+    ): array {
+        $command = [
+            $ffmpegBinary,
+            '-y',
+            '-hide_banner',
+            '-nostdin',
+            '-loglevel',
+            'error',
+            ...$inputArguments,
+            '-i',
+            $sourcePath,
+            '-map',
+            '0:v:0',
+        ];
+        if ($hasAudio) {
+            $command = [...$command, '-map', '0:a:0'];
+        }
+
+        return [...$command, ...$outputArguments, $outputPath];
+    }
+
+    private function isNonEmptyOutput(string $outputPath): bool
+    {
+        return is_file($outputPath) && filesize($outputPath) > 0;
+    }
+
+    private function encodeResult(
+        string $outputPath,
+        string $container,
+        string $ffmpegBinary,
+        int $timeoutSeconds,
+    ): VideoClipEncodeResult {
         return new VideoClipEncodeResult(
             path: $outputPath,
             extension: $container,
@@ -260,6 +424,10 @@ class VideoClipEncoder
         $process = new Process($command);
         $process->setTimeout($timeoutSeconds > 0 ? $timeoutSeconds : 60);
         $process->run();
+
+        if (($command[1] ?? null) === '-y' && ! $process->isSuccessful()) {
+            throw new ProcessFailedException($process);
+        }
 
         return $process->getOutput().$process->getErrorOutput();
     }

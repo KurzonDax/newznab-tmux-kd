@@ -18,6 +18,10 @@ return [
     'multiprocessing_max_child_time' => env('NN_MULTIPROCESSING_MAX_CHILD_TIME', 1800),
     'concurrency_timeout' => env('NN_CONCURRENCY_TIMEOUT'),
     'stream_fork_output' => env('STREAM_FORK_OUTPUT', false),
+    // Hardware video encoder used only for browser-unsafe Clip transcodes: off, vaapi, or qsv.
+    'clip_hwaccel' => env('NNTMUX_CLIP_HWACCEL', 'off'),
+    // DRM render node passed to the selected Clip hardware encoder.
+    'clip_hwaccel_device' => env('NNTMUX_CLIP_HWACCEL_DEVICE', '/dev/dri/renderD128'),
     // How long episode metadata may lag a release before a known-show miss becomes terminal.
     'tv_episode_revisit_window_days' => (int) env('TV_EPISODE_REVISIT_WINDOW_DAYS', 14),
     // Minimum delay between complete provider passes for the same missing episode.

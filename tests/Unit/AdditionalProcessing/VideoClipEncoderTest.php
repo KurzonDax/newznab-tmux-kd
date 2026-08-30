@@ -103,6 +103,202 @@ class VideoClipEncoderTest extends TestCase
         $this->assertContains('+faststart', $transcode);
     }
 
+    public function test_vaapi_transcode_initializes_the_device_and_uploads_frames(): void
+    {
+        $commands = [];
+        $encoder = new VideoClipEncoder(
+            commandRunner: function (array $command, int $timeout) use (&$commands): string {
+                $commands[] = $command;
+                if (str_ends_with((string) end($command), 'source.bin')) {
+                    return "Stream #0:0: Video: mpeg4 (Advanced Simple Profile)\n  Stream #0:1: Audio: mp3, 48000 Hz";
+                }
+
+                if (in_array('h264_vaapi', $command, true)) {
+                    file_put_contents(end($command), 'vaapi clip bytes');
+
+                    return '';
+                }
+
+                return 'Duration: 00:00:17.00, start: 0.000000, bitrate: 2000 kb/s';
+            },
+            hardwareBackend: 'vaapi',
+            hardwareDevice: '/dev/dri/renderD129',
+        );
+
+        $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'vaapi-guid', 17);
+
+        $this->assertNotNull($result);
+        $transcode = $commands[1];
+        $this->assertCommandOption($transcode, '-init_hw_device', 'vaapi=clip_hw:/dev/dri/renderD129');
+        $this->assertCommandOption($transcode, '-filter_hw_device', 'clip_hw');
+        $this->assertCommandOption($transcode, '-vf', 'format=nv12,hwupload');
+        $this->assertCommandOption($transcode, '-c:v', 'h264_vaapi');
+        $this->assertCommandOption($transcode, '-qp', '23');
+        $this->assertCommandOption($transcode, '-c:a', 'aac');
+        $this->assertCommandOption($transcode, '-t', '17');
+    }
+
+    public function test_qsv_transcode_initializes_the_device_and_uploads_frames(): void
+    {
+        $commands = [];
+        $encoder = new VideoClipEncoder(
+            commandRunner: function (array $command, int $timeout) use (&$commands): string {
+                $commands[] = $command;
+                if (str_ends_with((string) end($command), 'source.bin')) {
+                    return 'Stream #0:0: Video: hevc (Main)';
+                }
+
+                if (in_array('h264_qsv', $command, true)) {
+                    file_put_contents(end($command), 'qsv clip bytes');
+
+                    return '';
+                }
+
+                return 'Duration: 00:00:30.00, start: 0.000000, bitrate: 2000 kb/s';
+            },
+            hardwareBackend: 'qsv',
+            hardwareDevice: '/dev/dri/renderD128',
+        );
+
+        $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'qsv-guid');
+
+        $this->assertNotNull($result);
+        $transcode = $commands[1];
+        $this->assertCommandOption($transcode, '-init_hw_device', 'qsv=clip_hw:hw,child_device=/dev/dri/renderD128');
+        $this->assertCommandOption($transcode, '-filter_hw_device', 'clip_hw');
+        $this->assertCommandOption($transcode, '-vf', 'format=nv12,hwupload=extra_hw_frames=64');
+        $this->assertCommandOption($transcode, '-c:v', 'h264_qsv');
+        $this->assertCommandOption($transcode, '-global_quality', '23');
+    }
+
+    public function test_failed_hardware_transcode_retries_with_the_software_encoder(): void
+    {
+        Log::spy();
+        $commands = [];
+        $encoder = new VideoClipEncoder(
+            commandRunner: function (array $command, int $timeout) use (&$commands): string {
+                $commands[] = $command;
+                if (str_ends_with((string) end($command), 'source.bin')) {
+                    return 'Stream #0:0: Video: hevc (Main)';
+                }
+
+                if (in_array('h264_vaapi', $command, true)) {
+                    return 'Device creation failed';
+                }
+
+                if (in_array('libx264', $command, true)) {
+                    file_put_contents(end($command), 'software fallback bytes');
+
+                    return '';
+                }
+
+                return 'Duration: 00:00:30.00, start: 0.000000, bitrate: 2000 kb/s';
+            },
+            hardwareBackend: 'vaapi',
+        );
+
+        $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'fallback-guid');
+
+        $this->assertNotNull($result);
+        $this->assertContains('h264_vaapi', $commands[1]);
+        $this->assertContains('libx264', $commands[2]);
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip hardware encode failed; retrying with software',
+            [
+                'release_guid' => 'fallback-guid',
+                'backend' => 'vaapi',
+                'reason' => 'empty_output',
+                'process_output' => 'Device creation failed',
+            ],
+        );
+    }
+
+    public function test_off_hardware_mode_leaves_the_software_command_unchanged(): void
+    {
+        $commands = [];
+        $encoder = new VideoClipEncoder(
+            commandRunner: function (array $command, int $timeout) use (&$commands): string {
+                $commands[] = $command;
+                if (str_ends_with((string) end($command), 'source.bin')) {
+                    return 'Stream #0:0: Video: hevc (Main)';
+                }
+
+                if (in_array('libx264', $command, true)) {
+                    file_put_contents(end($command), 'software clip bytes');
+                }
+
+                return '';
+            },
+            hardwareBackend: 'off',
+        );
+
+        $this->assertNotNull($encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'off-guid'));
+
+        $this->assertSame(
+            ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p', '-t', '30', '-movflags', '+faststart'],
+            array_slice($commands[1], 10, -1),
+        );
+        $this->assertNotContains('-init_hw_device', $commands[1]);
+    }
+
+    public function test_unknown_hardware_backend_logs_and_uses_software_without_hardware_flags(): void
+    {
+        Log::spy();
+        $commands = [];
+        $encoder = new VideoClipEncoder(
+            commandRunner: function (array $command, int $timeout) use (&$commands): string {
+                $commands[] = $command;
+                if (str_ends_with((string) end($command), 'source.bin')) {
+                    return 'Stream #0:0: Video: hevc (Main)';
+                }
+
+                if (in_array('libx264', $command, true)) {
+                    file_put_contents(end($command), 'software clip bytes');
+                }
+
+                return '';
+            },
+            hardwareBackend: 'cuda',
+        );
+
+        $this->assertNotNull($encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'unknown-guid'));
+        $this->assertContains('libx264', $commands[1]);
+        $this->assertNotContains('-init_hw_device', $commands[1]);
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip hardware acceleration ignored',
+            [
+                'release_guid' => 'unknown-guid',
+                'backend' => 'cuda',
+                'reason' => 'unsupported_backend',
+            ],
+        );
+    }
+
+    public function test_stream_copy_does_not_initialize_hardware_when_acceleration_is_enabled(): void
+    {
+        $commands = [];
+        $encoder = new VideoClipEncoder(
+            commandRunner: function (array $command, int $timeout) use (&$commands): string {
+                $commands[] = $command;
+                if (str_ends_with((string) end($command), 'source.bin')) {
+                    return "Stream #0:0: Video: h264 (High)\n  Stream #0:1: Audio: aac (LC)";
+                }
+
+                if (in_array('copy', $command, true)) {
+                    file_put_contents(end($command), 'copied clip bytes');
+                }
+
+                return '';
+            },
+            hardwareBackend: 'vaapi',
+        );
+
+        $this->assertNotNull($encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'copy-guid'));
+        $this->assertContains('copy', $commands[1]);
+        $this->assertNotContains('-init_hw_device', $commands[1]);
+        $this->assertNotContains('h264_vaapi', $commands[1]);
+    }
+
     public function test_an_unsafe_video_codec_logs_the_codec_when_its_fallback_declines(): void
     {
         Log::spy();
@@ -363,6 +559,93 @@ SHELL);
             \Mockery::on(static fn (array $context): bool => $context['release_guid'] === 'timeout-guid'
                 && $context['reason'] === 'clip_remux_failed'
                 && str_contains((string) $context['exception_message'], 'exceeded the timeout of 1 seconds')),
+        );
+    }
+
+    public function test_a_nonzero_hardware_encode_with_partial_output_retries_in_software(): void
+    {
+        Log::spy();
+        $fakeFfmpeg = $this->tmpPath.'fake-hardware-ffmpeg';
+        file_put_contents($fakeFfmpeg, <<<'SHELL'
+#!/bin/sh
+case "$*" in
+  *"-loglevel error"*"h264_vaapi"*)
+    for output_path do true; done
+    printf 'partial hardware bytes' > "$output_path"
+    printf 'render node permission denied\n' >&2
+    exit 1
+    ;;
+  *"-loglevel error"*"libx264"*)
+    for output_path do true; done
+    printf 'complete software bytes' > "$output_path"
+    ;;
+  *"source.bin"*)
+    printf 'Stream #0:0: Video: hevc (Main)\n' >&2
+    ;;
+  *)
+    printf 'Duration: 00:00:30.00, start: 0.000000\n' >&2
+    ;;
+esac
+SHELL);
+        chmod($fakeFfmpeg, 0777);
+
+        $encoder = new VideoClipEncoder(
+            hardwareBackend: 'vaapi',
+        );
+        $result = $encoder->encode(
+            $this->tmpPath.'source.bin',
+            $this->tmpPath,
+            $fakeFfmpeg,
+            60,
+            'partial-hardware-guid',
+        );
+
+        $this->assertNotNull($result);
+        $this->assertSame('complete software bytes', file_get_contents($result->path));
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip hardware encode failed; retrying with software',
+            \Mockery::on(static fn (array $context): bool => $context['release_guid'] === 'partial-hardware-guid'
+                && $context['backend'] === 'vaapi'
+                && $context['reason'] === 'process_exception'
+                && str_contains((string) $context['exception_message'], 'render node permission denied')),
+        );
+    }
+
+    public function test_hardware_exception_diagnostics_are_capped_before_logging(): void
+    {
+        Log::spy();
+        $encoder = new VideoClipEncoder(
+            commandRunner: function (array $command, int $timeout): string {
+                if (str_ends_with((string) end($command), 'source.bin')) {
+                    return 'Stream #0:0: Video: hevc (Main)';
+                }
+
+                if (in_array('h264_vaapi', $command, true)) {
+                    throw new RuntimeException('driver refused '.str_repeat('x', 1200).'uncapped-tail');
+                }
+
+                if (in_array('libx264', $command, true)) {
+                    file_put_contents(end($command), 'software fallback bytes');
+                }
+
+                return '';
+            },
+            hardwareBackend: 'vaapi',
+        );
+
+        $this->assertNotNull($encoder->encode(
+            $this->tmpPath.'source.bin',
+            $this->tmpPath,
+            'ffmpeg',
+            60,
+            'capped-diagnostic-guid',
+        ));
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip hardware encode failed; retrying with software',
+            \Mockery::on(static fn (array $context): bool => $context['release_guid'] === 'capped-diagnostic-guid'
+                && $context['reason'] === 'process_exception'
+                && strlen((string) $context['exception_message']) === 1000
+                && ! str_contains((string) $context['exception_message'], 'uncapped-tail')),
         );
     }
 

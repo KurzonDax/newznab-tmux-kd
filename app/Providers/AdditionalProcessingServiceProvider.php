@@ -7,6 +7,7 @@ namespace App\Providers;
 use App\Services\AdditionalProcessing\AdditionalProcessingOrchestrator;
 use App\Services\AdditionalProcessing\AdditionalWorkPlanner;
 use App\Services\AdditionalProcessing\ArchiveExtractionService;
+use App\Services\AdditionalProcessing\ClipHardware\ClipHardwareEncoderRegistry;
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\ConsoleOutputService;
 use App\Services\AdditionalProcessing\MediaExtractionService;
@@ -18,6 +19,7 @@ use App\Services\AdditionalProcessing\ReleaseProcessor;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\UsenetDownloadService;
+use App\Services\AdditionalProcessing\VideoClipEncoder;
 use App\Services\AdditionalProcessing\VideoFrameExtractor;
 use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\NameFixing\NameFixingService;
@@ -50,6 +52,14 @@ class AdditionalProcessingServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton(PersistenceMetricsCollector::class);
+        $this->app->singleton(ClipHardwareEncoderRegistry::class);
+        $this->app->bind(VideoClipEncoder::class, function ($app) {
+            return new VideoClipEncoder(
+                hardwareEncoders: $app->make(ClipHardwareEncoderRegistry::class),
+                hardwareBackend: (string) config('nntmux.clip_hwaccel', 'off'),
+                hardwareDevice: (string) config('nntmux.clip_hwaccel_device', '/dev/dri/renderD128'),
+            );
+        });
         $this->app->singleton(ReleaseSearchSyncCoordinator::class, function ($app) {
             return new ReleaseSearchSyncCoordinator(
                 $app->make(PersistenceMetricsCollector::class),
@@ -135,6 +145,7 @@ class AdditionalProcessingServiceProvider extends ServiceProvider
                 new VideoFrameExtractor($app->make(ProcessingConfiguration::class)),
                 $app->make(ReleaseSearchSyncCoordinator::class),
                 $app->make(MediaInfoRefinementService::class),
+                clipEncoder: $app->make(VideoClipEncoder::class),
             );
         });
 
