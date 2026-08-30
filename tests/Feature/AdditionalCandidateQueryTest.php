@@ -202,6 +202,19 @@ class AdditionalCandidateQueryTest extends TestCase
         );
     }
 
+    public function test_claim_allows_a_non_predicate_password_status_reference(): void
+    {
+        DB::table('categories')->insert(['id' => 1]);
+        DB::table('releases')->insert($this->releaseRow(1, 'a'));
+
+        $base = AdditionalCandidateQuery::baseBuilder(guidChar: 'a', includePasswordStatuses: false)
+            ->addSelect('r.passwordstatus');
+
+        $claimed = ReleaseClaimant::claim($base, 'worker-token', 1, ['id']);
+
+        $this->assertSame([1], $claimed->pluck('id')->all());
+    }
+
     public function test_claim_reads_each_pending_password_state_by_equality_and_merges_newest_first(): void
     {
         DB::table('categories')->insert(['id' => 1]);

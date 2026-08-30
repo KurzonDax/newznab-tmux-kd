@@ -11,6 +11,7 @@ use App\Services\AudioProcessing\AudioCandidateQuery;
 use App\Services\AudioProcessing\AudioRouting;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -144,7 +145,7 @@ final class ReleaseClaimant
         array $columns = ['*'],
         array $excludedReleaseIds = [],
     ): EloquentCollection {
-        if (str_contains(strtolower($base->toSql()), 'passwordstatus')) {
+        if (self::hasPasswordStatusPredicate($base->getQuery())) {
             throw new LogicException('Claim base builders must not include a passwordstatus predicate.');
         }
 
@@ -213,6 +214,23 @@ final class ReleaseClaimant
                 ->orderByRaw(self::idOrderExpression($ids))
                 ->get();
         }, 3);
+    }
+
+    private static function hasPasswordStatusPredicate(QueryBuilder $query): bool
+    {
+        foreach ($query->wheres as $where) {
+            $column = $where['column'] ?? null;
+            if (is_string($column) && ($column === 'passwordstatus' || str_ends_with($column, '.passwordstatus'))) {
+                return true;
+            }
+
+            $nestedQuery = $where['query'] ?? null;
+            if ($nestedQuery instanceof QueryBuilder && self::hasPasswordStatusPredicate($nestedQuery)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
