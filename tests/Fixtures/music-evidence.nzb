@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nzb xmlns="http://www.newzbin.com/DTD/2003/nzb">
+  <file poster="poster@example.invalid" date="1788021000" subject='"Disc 1/01 - First Song.flac" yEnc (1/2)'>
+    <groups><group>alt.binaries.music</group></groups>
+    <segments>
+      <segment bytes="1000" number="1">first-1@example.invalid</segment>
+      <segment bytes="1000" number="2">first-2@example.invalid</segment>
+    </segments>
+  </file>
+  <file poster="poster@example.invalid" date="1788021000" subject='"Disc 1/02 - Second Song.flac" yEnc (1/1)'>
+    <groups><group>alt.binaries.music</group></groups>
+    <segments>
+      <segment bytes="1200" number="1">second-1@example.invalid</segment>
+    </segments>
+  </file>
+  <file poster="poster@example.invalid" date="1788021000" subject='"Album.cue" yEnc (1/1)'>
+    <groups><group>alt.binaries.music</group></groups>
+    <segments>
+      <segment bytes="300" number="1">cue-1@example.invalid</segment>
+    </segments>
+  </file>
+  <file poster="poster@example.invalid" date="1788021000" subject='"Stored.Album.part01.rar" yEnc (1/1)'>
+    <groups><group>alt.binaries.music</group></groups>
+    <segments>
+      <segment bytes="5000" number="1">archive-1@example.invalid</segment>
+    </segments>
+  </file>
+  <file poster="poster@example.invalid" date="1788021000" subject='"Disc 2/03 - Partial Song.flac" yEnc (0/1)'>
+    <groups><group>alt.binaries.music</group></groups>
+    <segments></segments>
+  </file>
+</nzb>

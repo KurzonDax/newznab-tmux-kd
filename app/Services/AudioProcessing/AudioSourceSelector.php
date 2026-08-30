@@ -20,6 +20,39 @@ use App\Services\AudioProcessing\Enums\AudioSourceKind;
 final class AudioSourceSelector
 {
     /**
+     * Preserve every stored NZB entry independently of whether it is fetchable.
+     *
+     * @param  list<array<string, mixed>>  $nzbContents
+     * @return list<AudioEvidenceFile>
+     */
+    public function evidenceFiles(array $nzbContents): array
+    {
+        $evidenceFiles = [];
+
+        foreach ($nzbContents as $index => $file) {
+            $title = (string) ($file['title'] ?? '');
+            if ($title === '') {
+                continue;
+            }
+
+            $segments = $this->segments($file);
+            $evidenceFiles[] = new AudioEvidenceFile(
+                ordinal: $index + 1,
+                filename: $this->filename($title),
+                segmentCount: count($segments),
+                kind: $this->evidenceKind($title),
+                facts: array_filter([
+                    'size' => isset($file['size']) ? (int) $file['size'] : null,
+                    'extension' => is_string($file['ext'] ?? null) && $file['ext'] !== '' ? $file['ext'] : null,
+                    'parts_total' => isset($file['partstotal']) ? (int) $file['partstotal'] : null,
+                ], static fn (mixed $value): bool => $value !== null),
+            );
+        }
+
+        return $evidenceFiles;
+    }
+
+    /**
      * @param  list<array<string, mixed>>  $nzbContents  Files as parsed by NzbContentParser.
      */
     public function select(array $nzbContents): ?AudioSource
@@ -29,10 +62,17 @@ final class AudioSourceSelector
         $bareTitle = '';
         $bareExtension = '';
         $bareSegments = [];
-        $nzbAudioFiles = [];
-        $sidecars = [];
+        $evidenceFiles = $this->evidenceFiles($nzbContents);
+        $nzbAudioFiles = array_values(array_filter(
+            $evidenceFiles,
+            static fn (AudioEvidenceFile $file): bool => $file->kind === 'audio',
+        ));
+        $sidecars = array_values(array_filter(
+            $evidenceFiles,
+            static fn (AudioEvidenceFile $file): bool => in_array($file->kind, ['cue', 'playlist', 'eac_log'], true),
+        ));
 
-        foreach ($nzbContents as $index => $file) {
+        foreach ($nzbContents as $file) {
             $title = (string) ($file['title'] ?? '');
             $segments = $this->segments($file);
 
@@ -40,16 +80,8 @@ final class AudioSourceSelector
                 continue;
             }
 
-            $filename = $this->filename($title);
             $sidecarKind = $this->sidecarKind($title);
             if ($sidecarKind !== null) {
-                $sidecars[] = new AudioEvidenceFile(
-                    ordinal: $index + 1,
-                    filename: $filename,
-                    segmentCount: count($segments),
-                    kind: $sidecarKind,
-                );
-
                 continue;
             }
 
@@ -58,13 +90,6 @@ final class AudioSourceSelector
             }
 
             if (PostedFileClassifier::matchesTerminalExtension($title, AudioProcessingConfiguration::AUDIO_FILE_REGEX, $matches)) {
-                $nzbAudioFiles[] = new AudioEvidenceFile(
-                    ordinal: $index + 1,
-                    filename: $filename,
-                    segmentCount: count($segments),
-                    kind: 'audio',
-                );
-
                 if ($bareTitle === '' && $segments !== []) {
                     $bareTitle = $title;
                     $bareExtension = strtoupper((string) ($matches[1] ?? ''));
@@ -107,6 +132,26 @@ final class AudioSourceSelector
             nzbAudioFiles: $nzbAudioFiles,
             sidecars: $sidecars,
         );
+    }
+
+    private function evidenceKind(string $title): string
+    {
+        $sidecar = $this->sidecarKind($title);
+        if ($sidecar !== null) {
+            return $sidecar;
+        }
+
+        if (PostedFileClassifier::matchesTerminalExtension($title, AudioProcessingConfiguration::AUDIO_FILE_REGEX)) {
+            return 'audio';
+        }
+
+        if (PostedFileClassifier::containsArchiveCandidate($title)) {
+            return 'archive';
+        }
+
+        return PostedFileClassifier::matchesTerminalExtension($title, AudioProcessingConfiguration::IGNORED_FILE_REGEX)
+            ? 'ignored'
+            : 'other';
     }
 
     /**
