@@ -71,6 +71,7 @@ class ClipStorageTest extends TestCase
     public function test_a_browser_safe_source_stores_a_stream_copy_clip_and_its_metadata_row(): void
     {
         $releaseId = $this->seedRelease('clip-guid');
+        Log::spy();
         $service = $this->makeService(
             clipEnabled: true,
             diskHasRoom: true,
@@ -90,11 +91,13 @@ class ClipStorageTest extends TestCase
         $this->assertSame(strlen('remuxed clip bytes'), $clip->bytes);
 
         $this->assertSame(1, (int) DB::table('releases')->where('id', $releaseId)->value('videostatus'));
+        Log::shouldNotHaveReceived('debug');
     }
 
     public function test_a_browser_unsafe_source_stores_a_transcoded_clip_and_its_metadata_row(): void
     {
         $releaseId = $this->seedRelease('transcoded-clip-guid');
+        Log::spy();
         $service = $this->makeService(
             clipEnabled: true,
             diskHasRoom: true,
@@ -124,12 +127,14 @@ class ClipStorageTest extends TestCase
         $this->assertSame(24, $clip->duration_seconds);
         $this->assertSame(strlen('transcoded clip bytes'), $clip->bytes);
         $this->assertSame(1, (int) DB::table('releases')->where('id', $releaseId)->value('videostatus'));
+        Log::shouldNotHaveReceived('debug');
     }
 
     public function test_the_toggle_off_stores_no_artifact_without_probing(): void
     {
         $releaseId = $this->seedRelease('clip-guid');
         $encoderCommands = 0;
+        Log::spy();
         $service = $this->makeService(
             clipEnabled: false,
             diskHasRoom: true,
@@ -143,12 +148,20 @@ class ClipStorageTest extends TestCase
         $this->assertFalse($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010));
 
         $this->assertSame(0, $encoderCommands, 'With the toggle off no ffmpeg probe runs.');
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip generation declined',
+            [
+                'release_guid' => 'clip-guid',
+                'reason' => 'clip_policy_disabled',
+            ],
+        );
         $this->assertNoVideoArtifacts($releaseId);
     }
 
     public function test_an_empty_fallback_transcode_stores_no_artifact(): void
     {
         $releaseId = $this->seedRelease('clip-guid');
+        Log::spy();
         $service = $this->makeService(
             clipEnabled: true,
             diskHasRoom: true,
@@ -157,6 +170,39 @@ class ClipStorageTest extends TestCase
 
         $this->assertFalse($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010));
 
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip generation declined',
+            [
+                'release_guid' => 'clip-guid',
+                'reason' => 'clip_unsafe_video_codec',
+                'video_codec' => 'hevc',
+                'failure_reason' => 'clip_empty_output',
+            ],
+        );
+        $this->assertNoVideoArtifacts($releaseId);
+    }
+
+    public function test_a_clip_that_cannot_move_into_the_covers_volume_logs_the_store_failure(): void
+    {
+        $releaseId = $this->seedRelease('clip-guid');
+        Log::spy();
+        $service = $this->makeService(
+            clipEnabled: true,
+            diskHasRoom: true,
+            encoderRunner: $this->safeH264Runner(),
+        );
+        rmdir($this->coversRoot.'/video');
+        file_put_contents($this->coversRoot.'/video', 'blocks the video directory');
+
+        $this->assertFalse($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010));
+
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip generation declined',
+            [
+                'release_guid' => 'clip-guid',
+                'reason' => 'clip_store_failed',
+            ],
+        );
         $this->assertNoVideoArtifacts($releaseId);
     }
 
@@ -164,6 +210,7 @@ class ClipStorageTest extends TestCase
     {
         $releaseId = $this->seedRelease('clip-guid');
         $encoderCommands = 0;
+        Log::spy();
         $service = $this->makeService(
             clipEnabled: true,
             diskHasRoom: false,
@@ -177,22 +224,38 @@ class ClipStorageTest extends TestCase
         $this->assertFalse($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010));
 
         $this->assertSame(0, $encoderCommands);
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip generation declined',
+            [
+                'release_guid' => 'clip-guid',
+                'reason' => 'clip_disk_guarded',
+            ],
+        );
         $this->assertNoVideoArtifacts($releaseId);
     }
 
     public function test_a_null_category_stores_no_artifact(): void
     {
         $releaseId = $this->seedRelease('clip-guid');
+        Log::spy();
         $service = $this->makeService(clipEnabled: true, diskHasRoom: true, encoderRunner: $this->safeH264Runner());
 
         $this->assertFalse($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid'));
 
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip generation declined',
+            [
+                'release_guid' => 'clip-guid',
+                'reason' => 'clip_policy_disabled',
+            ],
+        );
         $this->assertNoVideoArtifacts($releaseId);
     }
 
     public function test_a_clip_below_the_duration_floor_is_discarded_entirely(): void
     {
         $releaseId = $this->seedRelease('clip-guid');
+        Log::spy();
         $service = $this->makeService(
             clipEnabled: true,
             diskHasRoom: true,
@@ -202,6 +265,15 @@ class ClipStorageTest extends TestCase
         $this->assertFalse($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010));
 
         $this->assertNoVideoArtifacts($releaseId);
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip generation declined',
+            [
+                'release_guid' => 'clip-guid',
+                'reason' => 'clip_below_duration_floor',
+                'duration_seconds' => 3,
+                'minimum_seconds' => 5,
+            ],
+        );
         $this->assertSame(
             [],
             glob($this->tmpPath.'clip_*') ?: [],
