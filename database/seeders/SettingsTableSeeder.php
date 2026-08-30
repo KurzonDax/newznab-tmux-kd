@@ -805,6 +805,18 @@ class SettingsTableSeeder extends Seeder
                 'name' => 'clip_minimum_seconds',
                 'value' => '5',
             ],
+            279 => [
+                'name' => 'music_identity_enabled',
+                'value' => '1',
+            ],
+            280 => [
+                'name' => 'music_identity_shadow',
+                'value' => '1',
+            ],
+            281 => [
+                'name' => 'music_identity_workers',
+                'value' => '1',
+            ],
         ]);
     }
 }
