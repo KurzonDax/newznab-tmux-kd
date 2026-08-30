@@ -201,9 +201,7 @@ class NameFixingBatchTest extends TestCase
         );
 
         $updateService = $this->createPartialMock(ReleaseUpdateService::class, ['updateSingleColumn']);
-        $updateService->expects($this->once())
-            ->method('updateSingleColumn')
-            ->with('proc_uid', NameFixingService::PROC_UID_DONE, 60);
+        $updateService->expects($this->never())->method('updateSingleColumn');
 
         $service = $this->serviceWith($database, $updateService);
 
@@ -242,9 +240,7 @@ class NameFixingBatchTest extends TestCase
         });
 
         $updateService = $this->createPartialMock(ReleaseUpdateService::class, ['updateSingleColumn']);
-        $updateService->expects($this->once())
-            ->method('updateSingleColumn')
-            ->with('proc_uid', NameFixingService::PROC_UID_DONE, 70);
+        $updateService->expects($this->never())->method('updateSingleColumn');
 
         $service = $this->serviceWith($database, $updateService);
 

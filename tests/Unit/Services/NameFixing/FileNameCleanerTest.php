@@ -101,6 +101,30 @@ class FileNameCleanerTest extends TestCase
         ));
     }
 
+    public function test_less_informative_guard_rejects_same_signal_name_with_fewer_tokens(): void
+    {
+        $cleaner = new FileNameCleaner;
+
+        $this->assertTrue($cleaner->isLessInformativeThan(
+            'Breaking Bad S03 E06 BluRay - mkvCinemas',
+            'Breaking Bad S03 E06 BluRay 1080p English DTS 5.1 x264 ESub - mkvCinemas',
+        ));
+    }
+
+    public function test_strictly_more_informative_names_must_not_trade_away_existing_signals(): void
+    {
+        $cleaner = new FileNameCleaner;
+
+        $this->assertFalse($cleaner->isStrictlyMoreInformativeThan(
+            'Movie 1080p-GRP',
+            'Movie 2020-GRP',
+        ));
+        $this->assertTrue($cleaner->isStrictlyMoreInformativeThan(
+            'Movie 2020 1080p-GRP',
+            'Movie 2020 1080p',
+        ));
+    }
+
     public function test_preserving_evidence_keeps_distinct_tokens_from_the_same_group(): void
     {
         $cleaner = new FileNameCleaner;
@@ -110,6 +134,32 @@ class FileNameCleanerTest extends TestCase
             $cleaner->preserveEvidenceTokens(
                 'Show S01E01',
                 'Show.S01E01.1080p.WEB-DL.x264.GERMAN.FRENCH',
+            ),
+        );
+    }
+
+    public function test_preserving_evidence_keeps_audio_channels_language_and_subtitle_before_group(): void
+    {
+        $cleaner = new FileNameCleaner;
+
+        $this->assertSame(
+            'Title BluRay 1080p x264 DTS 5.1 English ESub - grp',
+            $cleaner->preserveEvidenceTokens(
+                'Title BluRay - grp',
+                'Title BluRay 1080p English DTS 5.1 x264 ESub - grp',
+            ),
+        );
+    }
+
+    public function test_preserving_evidence_places_tokens_before_a_compact_scene_group_suffix(): void
+    {
+        $cleaner = new FileNameCleaner;
+
+        $this->assertSame(
+            'Title.1080p DTS 5.1-GRP',
+            $cleaner->preserveEvidenceTokens(
+                'Title.1080p-GRP',
+                'Title.1080p.DTS.5.1-GRP',
             ),
         );
     }

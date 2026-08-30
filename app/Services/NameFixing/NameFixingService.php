@@ -506,7 +506,6 @@ class NameFixingService
      */
     public function fixNamesWithMedia(int $time, bool $echo, int $cats, bool $nameStatus, bool $show): void
     {
-        $type = 'UID, ';
         $this->echoStartMessage($time, 'mediainfo Unique_IDs');
 
         if (! $this->startBatch(NameFixingQueryService::SOURCE_UID, $time, $cats, ' unique ids to process.')) {
@@ -518,28 +517,89 @@ class NameFixingService
         foreach ($this->candidateBatches(NameFixingQueryService::SOURCE_UID, $time, $cats) as $releases) {
             $media = $this->queries->groupByReleaseId($this->queries->mediaRows($this->releaseIds($releases)));
             $uids = $this->distinctValues($media, 'uid');
-            $donors = $this->queries->uidDonors($uids);
 
             foreach ($releases as $release) {
-                $this->updateService->reset();
                 $this->updateService->incrementChecked();
+            }
 
-                foreach ($media[(int) $release->releases_id] ?? [] as $row) {
-                    $uid = (string) ($row->uid ?? '');
-                    if ($uid !== '' && $this->applyDonorMatch($release, $donors[$uid] ?? [], 10, 'uidCheck: Unique_ID', $type, $echo, $nameStatus, $show)) {
-                        break;
-                    }
-                }
-
-                if (! $this->updateService->matched) {
-                    $this->markProcessed($echo, $nameStatus, 'proc_uid', (int) $release->releases_id);
-                }
-
-                $this->echoRenamed($show);
+            foreach ($uids as $uid) {
+                $this->evaluateUidGroup($uid, $echo, $nameStatus, $show);
             }
         }
 
         $this->echoFoundCount($echo, ' UID\'s');
+    }
+
+    /**
+     * Elect the richest trusted name in a MediaInfo UID group and propagate it
+     * only to members whose current name is obfuscated or strictly poorer.
+     *
+     * @return list<int> Release IDs renamed by this evaluation
+     */
+    public function evaluateUidGroup(
+        string $uniqueId,
+        bool $persistChanges = true,
+        bool $recordProcessingStatus = true,
+        bool $showProgress = false,
+    ): array {
+        $members = $this->queries->uidGroup($uniqueId);
+        $trustedDonors = $this->queries->uidDonors([$uniqueId])[$uniqueId] ?? [];
+        $trustedDonorIds = array_fill_keys(array_map(
+            static fn (object $donor): int => (int) $donor->releases_id,
+            $trustedDonors,
+        ), true);
+        $elected = null;
+
+        foreach ($members as $member) {
+            $releaseId = (int) $member->releases_id;
+            $searchName = (string) $member->searchname;
+            if (! isset($trustedDonorIds[$releaseId])
+                || ! $this->fileNameCleaner->isReadableReleaseTitle($searchName)) {
+                continue;
+            }
+
+            if ($elected === null
+                || $this->fileNameCleaner->isStrictlyMoreInformativeThan($searchName, (string) $elected->searchname)) {
+                $elected = $member;
+            }
+        }
+
+        $renamedReleaseIds = [];
+        foreach ($members as $member) {
+            $releaseId = (int) $member->releases_id;
+            $this->updateService->reset();
+
+            if ($elected !== null && $releaseId !== (int) $elected->releases_id) {
+                if ($persistChanges
+                    && (int) $elected->predb_id > 0
+                    && strcasecmp((string) $member->searchname, (string) $elected->searchname) === 0) {
+                    $this->updateService->attachPredbId($releaseId, (int) $elected->predb_id);
+                } elseif (! $this->fileNameCleaner->isReadableReleaseTitle((string) $member->searchname)
+                    || $this->fileNameCleaner->isStrictlyMoreInformativeThan(
+                        (string) $elected->searchname,
+                        (string) $member->searchname,
+                    )) {
+                    $this->updateService->updateRelease(
+                        $member,
+                        (string) $elected->searchname,
+                        'uidCheck: Unique_ID group election',
+                        $persistChanges,
+                        'UID, ',
+                        $recordProcessingStatus,
+                        $showProgress,
+                        (int) $elected->predb_id,
+                    );
+                }
+            }
+
+            if ($this->updateService->matched) {
+                $renamedReleaseIds[] = $releaseId;
+            } else {
+                $this->markProcessed($persistChanges, $recordProcessingStatus, 'proc_uid', $releaseId);
+            }
+        }
+
+        return $renamedReleaseIds;
     }
 
     /**
@@ -1000,10 +1060,24 @@ class NameFixingService
         $media = $this->queries->groupByReleaseId($this->queries->mediaRows($releaseIds));
         $hashes = $this->queries->groupByReleaseId($this->queries->hashRows($releaseIds));
         $srrdbFiles = $this->standardBatchSrrdbFiles($releases, $releaseIds);
-        $uidDonors = $this->queries->uidDonors($this->distinctValues($media, 'uid'));
         $crcDonors = $this->queries->crcDonors($this->distinctValues($files, 'crc32'));
         $hashDonors = $this->queries->hashDonors($this->distinctValues($hashes, 'hash'));
         $fixedBefore = $this->updateService->fixed;
+        $uidRenamedReleaseIds = [];
+        $pendingUidMedia = [];
+
+        foreach ($releases as $release) {
+            $releaseId = (int) $release->releases_id;
+            if ((int) $release->proc_uid === self::PROC_UID_NONE && isset($media[$releaseId])) {
+                $pendingUidMedia[$releaseId] = $media[$releaseId];
+            }
+        }
+
+        foreach ($this->distinctValues($pendingUidMedia, 'uid') as $uid) {
+            foreach ($this->evaluateUidGroup($uid, true, true, $show) as $renamedReleaseId) {
+                $uidRenamedReleaseIds[$renamedReleaseId] = true;
+            }
+        }
 
         foreach ($releases as $release) {
             $this->updateService->incrementChecked();
@@ -1020,21 +1094,7 @@ class NameFixingService
                 static fn (object $file): bool => stripos((string) $file->textstring, 'SDPORN') !== false
             ));
 
-            if ((int) $release->proc_uid === self::PROC_UID_NONE) {
-                $this->updateService->reset();
-                foreach ($releaseMedia as $row) {
-                    $uid = (string) ($row->uid ?? '');
-                    if ($uid !== '' && $this->applyDonorMatch($release, $uidDonors[$uid] ?? [], 10, 'uidCheck: Unique_ID', 'UID, ', true, true, $show)) {
-                        break;
-                    }
-                }
-
-                if (! $this->updateService->matched) {
-                    $this->updateService->updateSingleColumn('proc_uid', self::PROC_UID_DONE, $releaseId);
-                }
-            }
-
-            if ($this->updateService->matched) {
+            if (isset($uidRenamedReleaseIds[$releaseId])) {
                 continue;
             }
 

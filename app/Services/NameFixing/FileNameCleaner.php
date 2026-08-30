@@ -90,7 +90,13 @@ class FileNameCleaner
 
     private const CODEC_EVIDENCE_TOKEN = 'xvid|divx|x264|x265|hevc|h[ .]?264|h[ .]?265|avc|av1';
 
-    private const LANGUAGE_EVIDENCE_TOKEN = 'danish|deutsch|dutch|flemish|french|german|hebrew|italian|ita|norwegian|spanish|swedish|swesub|nl[ ._-]?sub|multi|dual';
+    private const AUDIO_CODEC_EVIDENCE_TOKEN = 'aac|ac[ ._-]?3|e[ ._-]?ac[ ._-]?3|ddp(?:[ ._-]?\d(?:[ .]\d)?)?|dts(?:[ ._-]?hd)?(?:[ ._-]?ma)?|truehd|atmos|flac|mp3|opus|vorbis|pcm';
+
+    private const CHANNEL_LAYOUT_EVIDENCE_TOKEN = '(?:1|2|5|7)[ .](?:0|1)|\d[ ._-]?ch';
+
+    private const LANGUAGE_EVIDENCE_TOKEN = 'danish|deutsch|dutch|english|flemish|french|german|hebrew|italian|ita|norwegian|spanish|swedish|swesub|nl[ ._-]?sub|multi|dual';
+
+    private const SUBTITLE_EVIDENCE_TOKEN = 'e[ ._-]?sub|m[ ._-]?subs?';
 
     private const QUALITY_SOURCE_SIGNAL = '/\b(480p|720p|1080p|2160p|4k|ntsc|pal|dvd(?:r|rip)?|webrip|web[ .-]?dl|bluray|bdrip|hdtv|hdrip|xvid|x264|x265|hevc|h\.?264|ts|cam|r5|proper|repack)\b/i';
 
@@ -105,7 +111,10 @@ class FileNameCleaner
         'resolution' => '/\b(?:'.self::RESOLUTION_EVIDENCE_TOKEN.')\b/i',
         'source' => '/\b(?:'.self::SOURCE_EVIDENCE_TOKEN.')\b/i',
         'codec' => '/\b(?:'.self::CODEC_EVIDENCE_TOKEN.')\b/i',
+        'audio_codec' => '/\b(?:'.self::AUDIO_CODEC_EVIDENCE_TOKEN.')\b/i',
+        'channel_layout' => '/\b(?:'.self::CHANNEL_LAYOUT_EVIDENCE_TOKEN.')\b/i',
         'language' => '/\b(?:'.self::LANGUAGE_EVIDENCE_TOKEN.')\b/i',
+        'subtitle' => '/\b(?:'.self::SUBTITLE_EVIDENCE_TOKEN.')\b/i',
     ];
 
     private const TV_SIGNAL = '/\bS\d{1,2}(?:[Eex]\d{1,3})?\b/i';
@@ -307,16 +316,56 @@ class FileNameCleaner
         }
 
         $replacement = $this->informationProfile($candidate);
-        foreach (['year', 'quality_source', 'tv'] as $signal) {
+        foreach (['group_suffix', 'year', 'quality_source', 'tv'] as $signal) {
             if ($current[$signal] && ! $replacement[$signal]) {
                 return true;
             }
         }
 
-        return ! $replacement['year']
-            && ! $replacement['quality_source']
-            && ! $replacement['tv']
-            && $replacement['tokens'] < $current['tokens'];
+        $sameSignals = $replacement['group_suffix'] === $current['group_suffix']
+            && $replacement['year'] === $current['year']
+            && $replacement['quality_source'] === $current['quality_source']
+            && $replacement['tv'] === $current['tv'];
+
+        return $sameSignals && $replacement['tokens'] < $current['tokens'];
+    }
+
+    /**
+     * Determine whether a candidate adds information without losing any
+     * information carried by the current name.
+     */
+    public function isStrictlyMoreInformativeThan(string $candidate, string $currentName): bool
+    {
+        $candidateProfile = $this->informationProfile($candidate);
+        $currentProfile = $this->informationProfile($currentName);
+        $addsSignal = false;
+
+        foreach (['group_suffix', 'year', 'quality_source', 'tv'] as $signal) {
+            if ($currentProfile[$signal] && ! $candidateProfile[$signal]) {
+                return false;
+            }
+
+            $addsSignal = $addsSignal || (! $currentProfile[$signal] && $candidateProfile[$signal]);
+        }
+
+        if ($candidateProfile['tokens'] < $currentProfile['tokens']) {
+            return false;
+        }
+
+        return $addsSignal || $candidateProfile['tokens'] > $currentProfile['tokens'];
+    }
+
+    /**
+     * Determine whether a name is human-readable rather than hashed or
+     * generated gibberish, independently of scene-release signals.
+     */
+    public function isReadableReleaseTitle(string $title): bool
+    {
+        $title = trim($title);
+
+        return $title !== ''
+            && preg_match('/[A-Za-z]{2,}/', $title) === 1
+            && ! $this->looksLikeHashedName($title);
     }
 
     /**
@@ -371,7 +420,15 @@ class FileNameCleaner
         }
 
         $trimmedReplacement = rtrim($replacement);
-        $maxEvidenceLength = self::MAX_PERSISTED_SEARCH_NAME_LENGTH - ($trimmedReplacement === '' ? 0 : 1);
+        $replacementBody = $trimmedReplacement;
+        $groupSuffix = '';
+        if (preg_match('/^(?<body>.+?)(?<suffix>(?:\s+-\s*|[-.])[A-Za-z][A-Za-z0-9]{1,})$/u', $trimmedReplacement, $matches) === 1) {
+            $replacementBody = rtrim($matches['body']);
+            $groupSuffix = $matches['suffix'];
+        }
+
+        $availableLength = self::MAX_PERSISTED_SEARCH_NAME_LENGTH - mb_strlen($groupSuffix);
+        $maxEvidenceLength = $availableLength - ($replacementBody === '' ? 0 : 1);
         $boundedTokens = [];
         $evidenceLength = 0;
 
@@ -387,11 +444,11 @@ class FileNameCleaner
         }
 
         $evidenceSuffix = implode(' ', $boundedTokens);
-        $separatorLength = $trimmedReplacement === '' || $evidenceSuffix === '' ? 0 : 1;
-        $replacementLength = self::MAX_PERSISTED_SEARCH_NAME_LENGTH - $separatorLength - mb_strlen($evidenceSuffix);
-        $boundedReplacement = rtrim(mb_substr($trimmedReplacement, 0, $replacementLength));
+        $separatorLength = $replacementBody === '' || $evidenceSuffix === '' ? 0 : 1;
+        $replacementLength = $availableLength - $separatorLength - mb_strlen($evidenceSuffix);
+        $boundedReplacement = rtrim(mb_substr($replacementBody, 0, $replacementLength));
 
-        return implode(' ', array_filter([$boundedReplacement, $evidenceSuffix], static fn (string $part): bool => $part !== ''));
+        return implode(' ', array_filter([$boundedReplacement, $evidenceSuffix], static fn (string $part): bool => $part !== '')).$groupSuffix;
     }
 
     /**
