@@ -11,7 +11,11 @@ use App\Services\Tmux\TmuxMonitorService;
 use App\Services\TvProcessing\Providers\TraktProvider;
 use App\Services\TvProcessing\TvEpisodeRevisitService;
 use App\Services\TvProcessing\TvProcessingCandidateQuery;
+use App\Services\TvProcessing\TvProcessingPipeline;
+use App\Services\TvProcessing\TvProcessingResult;
 use App\Services\TvProcessor;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -263,6 +267,114 @@ class TvEpisodeRevisitTest extends TestCase
 
         $this->assertSame(1, $finalized);
         $this->assertSame(-6, (int) DB::table('releases')->where('id', 1)->value('tv_episodes_id'));
+    }
+
+    #[Test]
+    public function finalizing_with_no_expired_candidates_does_not_update_releases(): void
+    {
+        $releaseUpdates = [];
+        DB::listen(static function (QueryExecuted $query) use (&$releaseUpdates): void {
+            if (str_starts_with($query->sql, 'update "releases"')) {
+                $releaseUpdates[] = $query->sql;
+            }
+        });
+
+        $this->assertSame(0, (new TvEpisodeRevisitService)->finalizeExpired('', 'a', 1));
+        $this->assertSame([], $releaseUpdates);
+    }
+
+    #[Test]
+    public function expired_candidates_are_finalized_in_bounded_chunks(): void
+    {
+        foreach (range(1, 101) as $releaseId) {
+            $this->insertRelease($releaseId, [
+                'videos_id' => 10,
+                'postdate' => now()->subDays(15),
+            ]);
+        }
+
+        $releaseUpdateCount = 0;
+        DB::listen(static function (QueryExecuted $query) use (&$releaseUpdateCount): void {
+            if (str_starts_with($query->sql, 'update "releases"')) {
+                $releaseUpdateCount++;
+            }
+        });
+
+        $this->assertSame(101, (new TvEpisodeRevisitService)->finalizeExpired('', 'a', 1));
+        $this->assertSame(2, $releaseUpdateCount);
+        $this->assertSame(101, DB::table('releases')->where('tv_episodes_id', -6)->count());
+    }
+
+    #[Test]
+    public function a_candidate_that_matches_after_the_probe_is_not_clobbered(): void
+    {
+        $this->insertRelease(1, [
+            'videos_id' => 10,
+            'postdate' => now()->subDays(15),
+        ]);
+
+        $matchedAfterProbe = false;
+        DB::listen(static function (QueryExecuted $query) use (&$matchedAfterProbe): void {
+            if (! $matchedAfterProbe && str_starts_with($query->sql, 'select "id" from "releases"')) {
+                $matchedAfterProbe = true;
+                DB::table('releases')->where('id', 1)->update(['tv_episodes_id' => 101]);
+            }
+        });
+
+        $this->assertSame(0, (new TvEpisodeRevisitService)->finalizeExpired('', 'a', 1));
+        $this->assertTrue($matchedAfterProbe);
+        $this->assertSame(101, (int) DB::table('releases')->where('id', 1)->value('tv_episodes_id'));
+    }
+
+    #[Test]
+    public function exhausted_deadlock_retries_warn_and_do_not_abort_tv_processing(): void
+    {
+        $this->insertRelease(1, [
+            'videos_id' => 10,
+            'postdate' => now()->subDays(15),
+        ]);
+        Log::spy();
+
+        $deadlockAttempts = 0;
+        DB::listen(static function (QueryExecuted $query) use (&$deadlockAttempts): void {
+            if ($deadlockAttempts >= 3 || ! str_starts_with($query->sql, 'update "releases"')) {
+                return;
+            }
+
+            $deadlockAttempts++;
+            $pdoException = new \PDOException('SQLSTATE[40001]: Serialization failure: 1213 Deadlock found when trying to get lock');
+            $pdoException->errorInfo = ['40001', 1213, 'Deadlock found when trying to get lock'];
+
+            throw new QueryException('mariadb', $query->sql, $query->bindings, $pdoException);
+        });
+
+        $pipeline = new class extends TvProcessingPipeline
+        {
+            public bool $processedRelease = false;
+
+            public function __construct()
+            {
+                parent::__construct([], false);
+            }
+
+            /** @param array<string, mixed>|object $release */
+            public function processRelease(array|object $release, bool $debug = false): array
+            {
+                $this->processedRelease = true;
+
+                return ['status' => TvProcessingResult::STATUS_SKIPPED];
+            }
+        };
+
+        $pipeline->process('', 'a', 1);
+
+        $this->assertSame(3, $deadlockAttempts);
+        $this->assertTrue($pipeline->processedRelease);
+        $this->assertSame(1, $pipeline->getStats()['processed']);
+        Log::shouldHaveReceived('warning')
+            ->once()
+            ->withArgs(static fn (string $message, array $context): bool => str_contains($message, 'TV revisit finalization failed')
+                && $context['exception'] instanceof QueryException);
     }
 
     #[Test]

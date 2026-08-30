@@ -7,10 +7,15 @@ namespace App\Services\TvProcessing;
 use App\Models\Release;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 final class TvEpisodeRevisitService
 {
     public const int NO_MATCH_FOUND = -6;
+
+    private const int FINALIZE_CHUNK_SIZE = 100;
 
     /**
      * Finalize known-show rows whose postdate window has elapsed.
@@ -20,16 +25,45 @@ final class TvEpisodeRevisitService
         string $guidChar = '',
         int|string|null $processTv = null,
     ): int {
-        return TvProcessingCandidateQuery::query($groupId, $guidChar, $processTv)
-            ->where('postdate', '<', TvProcessingCandidateQuery::revisitWindowCutoff())
-            ->where(function (Builder $finalizable): void {
-                $finalizable->where('videos_id', '>', 0)
-                    ->orWhere(function (Builder $ambiguous): void {
-                        $ambiguous->where('videos_id', 0)
-                            ->whereNotNull('tv_episode_lookup_attempted_at');
-                    });
-            })
-            ->update(['tv_episodes_id' => self::NO_MATCH_FOUND]);
+        $finalized = 0;
+
+        try {
+            $query = TvProcessingCandidateQuery::query($groupId, $guidChar, $processTv)
+                ->where('postdate', '<', TvProcessingCandidateQuery::revisitWindowCutoff())
+                ->where(function (Builder $finalizable): void {
+                    $finalizable->where('videos_id', '>', 0)
+                        ->orWhere(function (Builder $ambiguous): void {
+                            $ambiguous->where('videos_id', 0)
+                                ->whereNotNull('tv_episode_lookup_attempted_at');
+                        });
+                });
+
+            $candidateIds = (clone $query)->pluck('id')->all();
+            if ($candidateIds === []) {
+                return 0;
+            }
+
+            foreach (array_chunk($candidateIds, self::FINALIZE_CHUNK_SIZE) as $candidateIdChunk) {
+                $finalized += DB::transaction(
+                    fn (): int => (clone $query)
+                        ->whereKey($candidateIdChunk)
+                        ->update(['tv_episodes_id' => self::NO_MATCH_FOUND]),
+                    3,
+                );
+            }
+
+            return $finalized;
+        } catch (Throwable $exception) {
+            Log::warning('TV revisit finalization failed; processing will continue.', [
+                'group_id' => $groupId,
+                'guid_char' => $guidChar,
+                'process_tv' => $processTv,
+                'finalized' => $finalized,
+                'exception' => $exception,
+            ]);
+
+            return $finalized;
+        }
     }
 
     /**
