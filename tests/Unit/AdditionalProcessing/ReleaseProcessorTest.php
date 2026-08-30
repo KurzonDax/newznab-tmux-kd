@@ -25,6 +25,7 @@ use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
 use App\Services\AdditionalProcessing\UsenetDownloadService;
+use App\Services\AdditionalProcessing\VideoDecodableLengthProbe;
 use App\Services\AdditionalProcessing\VideoHeadProbe;
 use App\Services\NNTP\NNTPService;
 use App\Services\Releases\DynamicPreviewBudgetPolicy;
@@ -33,6 +34,7 @@ use App\Services\Releases\ReleaseBrowseService;
 use App\Services\TempWorkspaceService;
 use dariusiii\rarinfo\Par2Info;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Mockery;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -1117,6 +1119,82 @@ class ReleaseProcessorTest extends TestCase
     }
 
     #[Test]
+    public function a_large_compressed_fragment_with_only_seven_playable_seconds_is_topped_up(): void
+    {
+        [$downloadCalls] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>', '<p1s5>', '<p1s6>']],
+            ],
+            initialData: str_repeat('a', 300),
+            responses: [$this->successfulDownload(str_repeat('b', 300))],
+            extractSizes: [1500, 1800],
+            probeResult: new VideoHeadProbeResult(durationSeconds: 120.0),
+            videoEntrySize: 4800,
+            decodableDurations: [7.0, 35.0],
+        );
+
+        $this->assertSame(
+            [DownloadKind::Compressed, DownloadKind::CompressedTopUp],
+            array_column($downloadCalls->calls, 'kind'),
+            'A metadata-heavy fragment must not satisfy the preview target until its playable duration does.',
+        );
+    }
+
+    #[Test]
+    public function a_compressed_fragment_meeting_the_duration_target_skips_top_up(): void
+    {
+        [$downloadCalls] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>', '<p1s5>', '<p1s6>']],
+            ],
+            initialData: str_repeat('a', 300),
+            responses: [],
+            extractSizes: [300],
+            decodableDurations: [30.0],
+        );
+
+        $this->assertSame([DownloadKind::Compressed], array_column($downloadCalls->calls, 'kind'));
+    }
+
+    #[Test]
+    public function the_compressed_top_up_pool_excludes_already_fetched_message_ids(): void
+    {
+        [$downloadCalls] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s1>', '<p1s4>', '<p1s5>']],
+            ],
+            initialData: str_repeat('a', 300),
+            responses: [$this->successfulDownload(str_repeat('b', 200))],
+            extractSizes: [300, 500],
+            decodableDurations: [7.0, 30.0],
+        );
+
+        $this->assertSame(['<p1s4>', '<p1s5>'], $downloadCalls->calls[1]['messageIds']);
+    }
+
+    #[Test]
+    public function the_compressed_top_up_pool_excludes_message_ids_tried_before_the_video_anchor(): void
+    {
+        [$downloadCalls] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                ['title' => 'earlier.part01.rar', 'segments' => ['<shared>', '<old2>', '<old3>']],
+                ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<shared>', '<p1s5>', '<p1s6>']],
+            ],
+            initialData: str_repeat('a', 300),
+            responses: [
+                $this->successfulDownload(str_repeat('a', 300)),
+                $this->successfulDownload(str_repeat('b', 200)),
+            ],
+            extractSizes: [300, 500],
+            configOverrides: ['maximumRarPasswordChecks' => 2],
+            decodableDurations: [7.0, 30.0],
+            initialResponse: $this->failedDownload(),
+        );
+
+        $this->assertSame(['<p1s5>', '<p1s6>'], $downloadCalls->calls[2]['messageIds']);
+    }
+
+    #[Test]
     public function the_compressed_budget_stops_at_the_byte_ceiling(): void
     {
         // A 500-byte ceiling minus the 300-byte head leaves room for exactly
@@ -1312,6 +1390,8 @@ class ReleaseProcessorTest extends TestCase
     #[Test]
     public function an_unknown_bitrate_keeps_the_fixed_compressed_fetch(): void
     {
+        Log::spy();
+
         [$downloadCalls] = $this->processCompressedTopUpCandidate(
             nzbFiles: [
                 ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>']],
@@ -1323,6 +1403,10 @@ class ReleaseProcessorTest extends TestCase
         );
 
         $this->assertSame([DownloadKind::Compressed], array_column($downloadCalls->calls, 'kind'));
+        Log::shouldHaveReceived('debug')->once()->withArgs(
+            static fn (string $message, array $details): bool => $message === 'Compressed preview top-up probe-failed'
+                && $details['reason'] === 'bitrate unavailable',
+        );
     }
 
     #[Test]
@@ -1793,7 +1877,9 @@ class ReleaseProcessorTest extends TestCase
      * @param  list<array<string, mixed>>  $nzbFiles
      * @param  list<array{success: bool, data: string|null, groupUnavailable: bool, error: string|null}>  $responses  Download responses after the initial compressed fetch.
      * @param  list<int>  $extractSizes  Fragment bytes on disk after each extraction, the initial extraction first.
+     * @param  list<float|null>|null  $decodableDurations  Playable seconds after each extraction; defaults to the same ratio as the declared duration.
      * @param  array<string, mixed>  $configOverrides
+     * @param  array{success: bool, data: string|null, groupUnavailable: bool, error: string|null}|null  $initialResponse
      * @return array{RecordingMp4DownloadCalls, ReleaseProcessingResult, string}
      */
     private function processCompressedTopUpCandidate(
@@ -1805,6 +1891,8 @@ class ReleaseProcessorTest extends TestCase
         ?VideoHeadProbeResult $probeResult = new VideoHeadProbeResult(durationSeconds: 30.0),
         bool $budgetEnabled = true,
         int $videoEntrySize = 1200,
+        ?array $decodableDurations = null,
+        ?array $initialResponse = null,
     ): array {
         File::ensureDirectoryExists($this->releaseTempPath);
         $config = $this->makeConfig(array_merge([
@@ -1818,7 +1906,10 @@ class ReleaseProcessorTest extends TestCase
             'contents' => $nzbFiles,
         ]);
 
-        $downloadCalls = new RecordingMp4DownloadCalls([$this->successfulDownload($initialData), ...$responses]);
+        $downloadCalls = new RecordingMp4DownloadCalls([
+            $initialResponse ?? $this->successfulDownload($initialData),
+            ...$responses,
+        ]);
         $downloadService = Mockery::mock(UsenetDownloadService::class);
         $downloadService->shouldReceive('beginReleaseScope')->once()->andReturnNull();
         $downloadService->shouldReceive('finishReleaseScope')->once()->andReturn(new DownloadMetrics);
@@ -1828,6 +1919,14 @@ class ReleaseProcessorTest extends TestCase
 
         $fragmentPath = $this->releaseTempPath.'unrar/movie.mkv';
         $extractIndex = 0;
+        $declaredDuration = $probeResult?->durationSeconds ?? 30.0;
+        $bytesPerSecond = $videoEntrySize > 0 && $declaredDuration > 0
+            ? $videoEntrySize / $declaredDuration
+            : 1.0;
+        $decodableDurations ??= array_map(
+            static fn (int $size): float => $size / $bytesPerSecond,
+            $extractSizes,
+        );
         $archiveService = Mockery::mock(ArchiveExtractionService::class);
         $archiveService->shouldReceive('processCompressedData')->once()->andReturn([
             'success' => true,
@@ -1881,6 +1980,7 @@ class ReleaseProcessorTest extends TestCase
             dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy($budgetEnabled),
             freeDiskGuard: $this->permissiveDiskGuard(),
             headProbe: new StubVideoHeadProbe($probeResult),
+            decodableLengthProbe: new StubVideoDecodableLengthProbe($decodableDurations),
         );
 
         $context = $this->makeContext();
@@ -2025,6 +2125,17 @@ final class StubVideoHeadProbe extends VideoHeadProbe
     public function probe(string $videoPath, ProcessingConfiguration $config): ?VideoHeadProbeResult
     {
         return $this->result;
+    }
+}
+
+final class StubVideoDecodableLengthProbe extends VideoDecodableLengthProbe
+{
+    /** @param list<float|null> $durations */
+    public function __construct(private array $durations) {}
+
+    public function demuxedSeconds(string $path, ProcessingConfiguration $config): ?float
+    {
+        return array_shift($this->durations);
     }
 }
 
