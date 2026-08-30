@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\AudioProcessing\DTO;
 
 /**
- * One filename observed in the stored NZB without downloading another byte.
+ * One durable filename observation reconstructed without downloading audio.
  */
 final readonly class AudioEvidenceFile
 {
@@ -15,18 +15,19 @@ final readonly class AudioEvidenceFile
     public function __construct(
         public int $ordinal,
         public string $filename,
-        public int $segmentCount,
+        public ?int $segmentCount,
         public string $kind,
         public array $facts = [],
+        public string $source = 'nzb',
     ) {}
 
     /**
-     * @return array{source: string, ordinal: int, filename: string, segment_count: int, kind: string, facts: array<string, mixed>}
+     * @return array{source: string, ordinal: int, filename: string, segment_count: int|null, kind: string, facts: array<string, mixed>}
      */
     public function toArray(): array
     {
         return [
-            'source' => 'nzb',
+            'source' => $this->source,
             'ordinal' => $this->ordinal,
             'filename' => $this->filename,
             'segment_count' => $this->segmentCount,

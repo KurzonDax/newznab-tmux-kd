@@ -7,8 +7,11 @@ namespace App\Services\AudioProcessing;
 use App\Models\Release;
 use App\Models\ReleaseAudioEvidence;
 use App\Services\AdditionalProcessing\PostedFileClassifier;
+use App\Services\AudioProcessing\DTO\AudioEvidenceFile;
 use App\Services\AudioProcessing\DTO\AudioFetchResult;
 use App\Services\AudioProcessing\DTO\AudioSource;
+use App\Services\AudioProcessing\DTO\SynthesizedAudioEvidence;
+use App\Services\AudioProcessing\Enums\AudioSourceKind;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -41,12 +44,11 @@ final class AudioEvidenceRecorder
             $source->sidecars,
         ), $this->archiveSidecars($fetchResult->archiveMembers));
         $archiveManifest = array_values($fetchResult->archiveMembers);
-        $snapshot = $this->releaseSnapshot($release);
         $tracks = $this->tracks($source, $fetchResult, $sampledTags);
         $payload = [
             'schema_version' => self::SCHEMA_VERSION,
             'provenance' => $provenance,
-            'release_snapshot' => $snapshot,
+            'release_snapshot' => $this->releaseSnapshot($release),
             'archive_manifest_complete' => $fetchResult->archiveManifestComplete,
             'source_file_complete' => $fetchResult->sourceFileComplete,
             'source_starts_at_zero' => $fetchResult->sourceStartsAtZero,
@@ -57,6 +59,69 @@ final class AudioEvidenceRecorder
             'sidecar_manifest' => $sidecarManifest,
             'tracks' => $tracks,
         ];
+
+        return $this->persist($release, $payload, $tracks);
+    }
+
+    /**
+     * Append a locally reconstructed revision only when the release has no evidence yet.
+     */
+    public function recordSynthesizedIfMissing(
+        Release $release,
+        SynthesizedAudioEvidence $synthesis,
+    ): ReleaseAudioEvidence {
+        $nzbAudioFiles = array_values(array_filter(
+            $synthesis->nzbManifest,
+            static fn (AudioEvidenceFile $file): bool => $file->kind === 'audio',
+        ));
+        $sampledFilename = is_string($synthesis->sampledTags['source_file'] ?? null)
+            ? $synthesis->sampledTags['source_file']
+            : null;
+        $fetchResult = AudioFetchResult::failed('Synthesized from stored metadata')->withEvidence(
+            archiveMembers: [],
+            archiveManifestComplete: null,
+            onlyOneTrackProbed: $synthesis->sampledTags === null ? null : true,
+            sampledFilename: $sampledFilename,
+        );
+        $source = new AudioSource(
+            kind: AudioSourceKind::BareFile,
+            title: '',
+            extension: '',
+            parts: [],
+            nzbAudioFiles: $nzbAudioFiles,
+        );
+        $tracks = $this->tracks($source, $fetchResult, $synthesis->sampledTags, $synthesis->releaseAudioFiles);
+        $payload = [
+            'schema_version' => self::SCHEMA_VERSION,
+            'provenance' => 'synthesized',
+            'release_snapshot' => $this->releaseSnapshot($release),
+            'archive_manifest_complete' => null,
+            'source_file_complete' => null,
+            'source_starts_at_zero' => null,
+            'whole_duration_reliable' => null,
+            'only_one_track_probed' => $synthesis->sampledTags === null ? null : true,
+            'nzb_manifest' => array_map(
+                static fn (AudioEvidenceFile $file): array => $file->toArray(),
+                $synthesis->nzbManifest,
+            ),
+            'archive_manifest' => $synthesis->releaseFileManifest,
+            'sidecar_manifest' => $synthesis->sidecarManifest,
+            'tracks' => $tracks,
+        ];
+
+        return $this->persist($release, $payload, $tracks, true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @param  list<array<string, mixed>>  $tracks
+     */
+    private function persist(
+        Release $release,
+        array $payload,
+        array $tracks,
+        bool $onlyIfMissing = false,
+    ): ReleaseAudioEvidence {
         $evidenceHash = hash('sha256', json_encode(
             $this->canonicalize($payload),
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION,
@@ -67,6 +132,7 @@ final class AudioEvidenceRecorder
             $payload,
             $tracks,
             $evidenceHash,
+            $onlyIfMissing,
         ): ReleaseAudioEvidence {
             $releaseLock = Release::query()->whereKey($release->id);
             if (DB::getDriverName() !== 'sqlite') {
@@ -77,6 +143,13 @@ final class AudioEvidenceRecorder
             $revisionQuery = ReleaseAudioEvidence::query()
                 ->where('releases_id', $release->id)
                 ->orderByDesc('revision');
+
+            if ($onlyIfMissing) {
+                $existing = (clone $revisionQuery)->first();
+                if ($existing !== null) {
+                    return $existing;
+                }
+            }
 
             $revision = ((int) $revisionQuery->value('revision')) + 1;
             $evidence = ReleaseAudioEvidence::query()->create([
@@ -171,15 +244,29 @@ final class AudioEvidenceRecorder
 
     /**
      * @param  array<string, mixed>|null  $sampledTags
+     * @param  list<AudioEvidenceFile>  $additionalAudioFiles
      * @return list<array<string, mixed>>
      */
-    private function tracks(AudioSource $source, AudioFetchResult $fetchResult, ?array $sampledTags): array
-    {
+    private function tracks(
+        AudioSource $source,
+        AudioFetchResult $fetchResult,
+        ?array $sampledTags,
+        array $additionalAudioFiles = [],
+    ): array {
         $tracks = [];
 
         foreach ($source->nzbAudioFiles as $file) {
             $tracks[] = $this->track(
                 sourceKind: 'nzb',
+                sourceOrdinal: $file->ordinal,
+                filename: $file->filename,
+                segmentCount: $file->segmentCount,
+            );
+        }
+
+        foreach ($additionalAudioFiles as $file) {
+            $tracks[] = $this->track(
+                sourceKind: $file->source,
                 sourceOrdinal: $file->ordinal,
                 filename: $file->filename,
                 segmentCount: $file->segmentCount,
