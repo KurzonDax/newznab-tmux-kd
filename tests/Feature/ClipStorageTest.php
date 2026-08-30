@@ -92,6 +92,40 @@ class ClipStorageTest extends TestCase
         $this->assertSame(1, (int) DB::table('releases')->where('id', $releaseId)->value('videostatus'));
     }
 
+    public function test_a_browser_unsafe_source_stores_a_transcoded_clip_and_its_metadata_row(): void
+    {
+        $releaseId = $this->seedRelease('transcoded-clip-guid');
+        $service = $this->makeService(
+            clipEnabled: true,
+            diskHasRoom: true,
+            encoderRunner: static function (array $command, int $timeout): string {
+                if (in_array('libx264', $command, true)) {
+                    file_put_contents(end($command), 'transcoded clip bytes');
+
+                    return '';
+                }
+
+                if (str_contains((string) end($command), 'source.mkv')) {
+                    return "Stream #0:0: Video: mpeg4 (Advanced Simple Profile)\n  Stream #0:1: Audio: mp3, 48000 Hz";
+                }
+
+                return 'Duration: 00:00:24.00, start: 0.000000, bitrate: 2000 kb/s';
+            },
+            previewTargetSeconds: 24,
+        );
+
+        $this->assertTrue($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'transcoded-clip-guid', 6010));
+
+        $this->assertFileExists($this->coversRoot.'/video/transcoded-clip-guid.mp4');
+        $clip = ReleaseVideoClip::query()->where('releases_id', $releaseId)->first();
+        $this->assertNotNull($clip);
+        $this->assertSame('mp4', $clip->extension);
+        $this->assertSame('video/mp4', $clip->mime);
+        $this->assertSame(24, $clip->duration_seconds);
+        $this->assertSame(strlen('transcoded clip bytes'), $clip->bytes);
+        $this->assertSame(1, (int) DB::table('releases')->where('id', $releaseId)->value('videostatus'));
+    }
+
     public function test_the_toggle_off_stores_no_artifact_without_probing(): void
     {
         $releaseId = $this->seedRelease('clip-guid');
@@ -112,7 +146,7 @@ class ClipStorageTest extends TestCase
         $this->assertNoVideoArtifacts($releaseId);
     }
 
-    public function test_a_non_browser_safe_source_stores_no_artifact(): void
+    public function test_an_empty_fallback_transcode_stores_no_artifact(): void
     {
         $releaseId = $this->seedRelease('clip-guid');
         $service = $this->makeService(
@@ -270,12 +304,14 @@ class ClipStorageTest extends TestCase
         callable $encoderRunner,
         bool $debugMode = false,
         int $clipMinimumSeconds = 5,
+        int $previewTargetSeconds = 30,
     ): MediaExtractionService {
         $config = $this->makeConfig([
             'processVideo' => true,
             'ffmpegPath' => '/usr/bin/ffmpeg',
             'debugMode' => $debugMode,
             'clipMinimumSeconds' => $clipMinimumSeconds,
+            'previewTargetSeconds' => $previewTargetSeconds,
         ]);
 
         return new MediaExtractionService(

@@ -10,13 +10,11 @@ use Symfony\Component\Process\Process;
 use Throwable;
 
 /**
- * Produces the Clip (see CONTEXT.md): a stream-copy (`-c copy`, no transcode)
- * remux of the entire downloaded head window at full resolution.
+ * Produces the Clip (see CONTEXT.md): a browser-safe remux where possible,
+ * otherwise a capped MP4 transcode of the downloaded head window.
  *
- * Only browser-safe stream combinations are remuxed — H.264 with AAC or no
- * audio into MP4, VP8/VP9 with Vorbis/Opus or no audio into WebM. Anything
- * else returns null and the caller stores no video artifact; this class
- * never transcodes to reach browser safety.
+ * H.264 with AAC or no audio remuxes into MP4; VP8/VP9 with Vorbis/Opus or no
+ * audio remuxes into WebM. Other decodable video falls back to H.264/AAC MP4.
  */
 class VideoClipEncoder
 {
@@ -51,33 +49,36 @@ class VideoClipEncoder
     /**
      * @param  (callable(list<string>, int): string)|null  $commandRunner
      */
-    public function __construct(?callable $commandRunner = null)
-    {
+    public function __construct(
+        ?callable $commandRunner = null,
+        private readonly SoftwareClipTranscodeArguments $softwareTranscodeArguments = new SoftwareClipTranscodeArguments,
+    ) {
         $this->commandRunner = $commandRunner === null
             ? Closure::fromCallable([$this, 'runProcess'])
             : Closure::fromCallable($commandRunner);
     }
 
     /**
-     * Remux the source into a browser-safe Clip in $tmpPath, or return null
-     * when the streams are not browser-safe or the remux fails.
+     * Encode the source into a browser-safe Clip in $tmpPath, or return null
+     * when there is no recognizable video stream or the encode fails.
      */
-    public function encode(string $sourcePath, string $tmpPath, string $ffmpegBinary, int $timeoutSeconds): ?VideoClipEncodeResult
-    {
+    public function encode(
+        string $sourcePath,
+        string $tmpPath,
+        string $ffmpegBinary,
+        int $timeoutSeconds,
+        int $previewTargetSeconds = 30,
+    ): ?VideoClipEncodeResult {
         $streams = $this->probeStreams($sourcePath, $ffmpegBinary, $timeoutSeconds);
         if ($streams === null) {
             return null;
         }
 
         $container = self::VIDEO_CODEC_CONTAINERS[$streams['video']] ?? null;
-        if ($container === null) {
-            return null;
-        }
-
         $hasAudio = $streams['audio'] !== null;
-        if ($hasAudio && ! in_array($streams['audio'], self::CONTAINER_AUDIO_CODECS[$container], true)) {
-            return null;
-        }
+        $streamCopy = $container !== null
+            && (! $hasAudio || in_array($streams['audio'], self::CONTAINER_AUDIO_CODECS[$container], true));
+        $container = $streamCopy ? $container : 'mp4';
 
         $outputPath = $tmpPath.'clip_'.uniqid('', true).'.'.$container;
         $command = [
@@ -95,8 +96,19 @@ class VideoClipEncoder
         if ($hasAudio) {
             $command = [...$command, '-map', '0:a:0'];
         }
-        $command = [...$command, '-c', 'copy'];
-        if ($container === 'mp4') {
+        if ($streamCopy) {
+            $command = [...$command, '-c', 'copy'];
+        } else {
+            $command = [
+                ...$command,
+                ...$this->softwareTranscodeArguments->build(
+                    copyVideo: $streams['video'] === 'h264',
+                    hasAudio: $hasAudio,
+                    targetSeconds: $previewTargetSeconds,
+                ),
+            ];
+        }
+        if ($streamCopy && $container === 'mp4') {
             $command = [...$command, '-movflags', '+faststart'];
         }
         $command[] = $outputPath;
@@ -186,11 +198,7 @@ class VideoClipEncoder
     {
         $process = new Process($command);
         $process->setTimeout($timeoutSeconds > 0 ? $timeoutSeconds : 60);
-        try {
-            $process->run();
-        } catch (Throwable) {
-            return $process->getOutput().$process->getErrorOutput();
-        }
+        $process->run();
 
         return $process->getOutput().$process->getErrorOutput();
     }

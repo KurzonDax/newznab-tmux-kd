@@ -12,8 +12,9 @@ use Illuminate\Support\Carbon;
  * Metadata for the Clip stored as a release's video artifact (see CONTEXT.md).
  *
  * One row per release: a release has exactly one video artifact slot. A row
- * exists only for stream-copy Clips — releases whose artifact is the legacy
- * downscaled OGV transcode are identified by `releases.videostatus` alone.
+ * exists for stream-copy and fallback-transcoded Clips — releases whose
+ * artifact is the legacy downscaled OGV transcode are identified by
+ * `releases.videostatus` alone.
  * Kept in its own table because `releases` is deliberately slim; follows the
  * {@see ReleaseAudioTag} precedent.
  *

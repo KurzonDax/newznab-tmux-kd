@@ -63,7 +63,88 @@ class VideoClipEncoderTest extends TestCase
         $this->assertContains('copy', $remux);
         $this->assertContains('+faststart', $remux);
         $this->assertContains('0:a:0', $remux, 'The AAC track is mapped into the MP4.');
+        $this->assertNotContains('-t', $remux, 'Stream-copy clips keep the whole downloaded head window.');
         $this->assertStringEndsWith('.mp4', (string) end($remux));
+    }
+
+    public function test_divx_with_mpeg_audio_transcodes_to_a_capped_h264_aac_mp4(): void
+    {
+        $commands = [];
+        $encoder = new VideoClipEncoder(function (array $command, int $timeout) use (&$commands): string {
+            $commands[] = $command;
+            if (in_array('libx264', $command, true)) {
+                file_put_contents(end($command), 'transcoded clip bytes');
+
+                return '';
+            }
+
+            if (str_ends_with((string) end($command), 'source.bin')) {
+                return "Stream #0:0: Video: mpeg4 (Advanced Simple Profile)\n  Stream #0:1: Audio: mp3, 48000 Hz";
+            }
+
+            return 'Duration: 00:00:17.00, start: 0.000000, bitrate: 2000 kb/s';
+        });
+
+        $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 17);
+
+        $this->assertNotNull($result);
+        $this->assertSame('mp4', $result->extension);
+        $this->assertSame('video/mp4', $result->mime);
+        $this->assertSame(17, $result->durationSeconds);
+
+        $transcode = $commands[1];
+        $this->assertCommandOption($transcode, '-c:v', 'libx264');
+        $this->assertCommandOption($transcode, '-preset', 'veryfast');
+        $this->assertCommandOption($transcode, '-crf', '23');
+        $this->assertCommandOption($transcode, '-c:a', 'aac');
+        $this->assertCommandOption($transcode, '-t', '17');
+        $this->assertContains('+faststart', $transcode);
+    }
+
+    public function test_h264_with_ac3_copies_video_and_only_transcodes_audio(): void
+    {
+        $commands = [];
+        $encoder = new VideoClipEncoder(function (array $command, int $timeout) use (&$commands): string {
+            $commands[] = $command;
+            if (in_array('-c:v', $command, true)) {
+                file_put_contents(end($command), 'mixed clip bytes');
+
+                return '';
+            }
+
+            if (str_ends_with((string) end($command), 'source.bin')) {
+                return "Stream #0:0: Video: h264 (High)\n  Stream #0:1: Audio: ac3, 48000 Hz";
+            }
+
+            return 'Duration: 00:00:12.00, start: 0.000000, bitrate: 3000 kb/s';
+        });
+
+        $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 12);
+
+        $this->assertNotNull($result);
+        $transcode = $commands[1];
+        $this->assertCommandOption($transcode, '-c:v', 'copy');
+        $this->assertCommandOption($transcode, '-c:a', 'aac');
+        $this->assertCommandOption($transcode, '-t', '12');
+        $this->assertNotContains('libx264', $transcode);
+    }
+
+    public function test_a_zero_preview_target_leaves_the_fallback_transcode_uncapped(): void
+    {
+        $commands = [];
+        $encoder = new VideoClipEncoder(function (array $command, int $timeout) use (&$commands): string {
+            $commands[] = $command;
+            if (in_array('libx264', $command, true)) {
+                file_put_contents(end($command), 'uncapped transcode bytes');
+
+                return '';
+            }
+
+            return 'Stream #0:0: Video: hevc (Main)';
+        });
+
+        $this->assertNotNull($encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 0));
+        $this->assertNotContains('-t', $commands[1]);
     }
 
     public function test_vp9_with_opus_remuxes_to_webm_without_faststart(): void
@@ -109,30 +190,17 @@ class VideoClipEncoderTest extends TestCase
         $this->assertNotContains('0:a:0', $commands[1]);
     }
 
-    public function test_browser_unsafe_streams_are_refused_without_running_a_remux(): void
+    public function test_a_source_without_video_is_refused_without_running_an_encode(): void
     {
-        $probeOutputs = [
-            'h265' => "Stream #0:0: Video: hevc (Main)\n  Stream #0:1: Audio: aac (LC)",
-            'mpeg2' => 'Stream #0:0: Video: mpeg2video (Main)',
-            'ac3-audio' => "Stream #0:0: Video: h264 (High)\n  Stream #0:1: Audio: ac3, 48000 Hz",
-            'vorbis-in-mp4' => "Stream #0:0: Video: h264 (High)\n  Stream #0:1: Audio: vorbis",
-            'audio-only' => 'Stream #0:0: Audio: aac (LC)',
-        ];
+        $commandCount = 0;
+        $encoder = new VideoClipEncoder(function (array $command, int $timeout) use (&$commandCount): string {
+            $commandCount++;
 
-        foreach ($probeOutputs as $label => $probeOutput) {
-            $commandCount = 0;
-            $encoder = new VideoClipEncoder(function (array $command, int $timeout) use (&$commandCount, $probeOutput): string {
-                $commandCount++;
+            return 'Stream #0:0: Audio: aac (LC)';
+        });
 
-                return $probeOutput;
-            });
-
-            $this->assertNull(
-                $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60),
-                $label.' must fall back to the transcode path',
-            );
-            $this->assertSame(1, $commandCount, $label.' must only probe, never remux');
-        }
+        $this->assertNull($encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 30));
+        $this->assertSame(1, $commandCount);
     }
 
     public function test_an_empty_remux_output_is_refused(): void
@@ -148,5 +216,40 @@ class VideoClipEncoderTest extends TestCase
         });
 
         $this->assertNull($encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60));
+    }
+
+    public function test_a_timed_out_encode_discards_its_partial_output(): void
+    {
+        $fakeFfmpeg = $this->tmpPath.'fake-ffmpeg';
+        file_put_contents($fakeFfmpeg, <<<'SHELL'
+#!/bin/sh
+case "$*" in
+  *"-loglevel error"*)
+    for output_path do true; done
+    printf 'partial clip bytes' > "$output_path"
+    sleep 2
+    ;;
+  *)
+    printf 'Stream #0:0: Video: h264 (High)\n' >&2
+    ;;
+esac
+SHELL);
+        chmod($fakeFfmpeg, 0777);
+
+        $encoder = new VideoClipEncoder;
+
+        $this->assertNull($encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, $fakeFfmpeg, 1));
+        $this->assertSame([], glob($this->tmpPath.'clip_*') ?: []);
+    }
+
+    /**
+     * @param  list<string>  $command
+     */
+    private function assertCommandOption(array $command, string $option, string $expectedValue): void
+    {
+        $position = array_search($option, $command, true);
+
+        $this->assertIsInt($position, 'Command option '.$option.' was not emitted.');
+        $this->assertSame($expectedValue, $command[$position + 1] ?? null);
     }
 }
