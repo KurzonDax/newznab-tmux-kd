@@ -10,6 +10,7 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use LogicException;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
@@ -175,7 +176,7 @@ class AdditionalCandidateQueryTest extends TestCase
             $this->releaseRow(2, 'a', postdate: '2026-07-12 09:00:00'),
         ]);
 
-        $base = AdditionalCandidateQuery::baseBuilder(guidChar: 'a');
+        $base = AdditionalCandidateQuery::baseBuilder(guidChar: 'a', includePasswordStatuses: false);
         $sql = $base->toSql();
         $bindings = $base->getBindings();
 
@@ -186,6 +187,19 @@ class AdditionalCandidateQueryTest extends TestCase
         ReleaseClaimant::claim($base, 'worker-two', 1, ['id'], [999]);
         $this->assertSame($sql, $base->toSql());
         $this->assertSame($bindings, $base->getBindings());
+    }
+
+    public function test_claim_rejects_a_base_builder_with_a_password_status_predicate(): void
+    {
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('Claim base builders must not include a passwordstatus predicate.');
+
+        ReleaseClaimant::claim(
+            AdditionalCandidateQuery::baseBuilder(guidChar: 'a'),
+            'worker-token',
+            1,
+            ['id'],
+        );
     }
 
     public function test_claim_reads_each_pending_password_state_by_equality_and_merges_newest_first(): void

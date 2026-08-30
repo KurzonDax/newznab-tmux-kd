@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use LogicException;
 use PDO;
 
 /**
@@ -131,7 +132,7 @@ final class ReleaseClaimant
      * Select up to $limit rows from $base with non-locking per-status reads,
      * stamp still-available rows, and return only the token's winners.
      *
-     * @param  Builder<Release>  $base  Predicate-applied, aliased `r`, unordered. It may omit password status.
+     * @param  Builder<Release>  $base  Predicate-applied, aliased `r`, unordered, and without a password status predicate.
      * @param  list<string>  $columns
      * @param  list<int>  $excludedReleaseIds
      * @return EloquentCollection<int, Release>
@@ -143,6 +144,10 @@ final class ReleaseClaimant
         array $columns = ['*'],
         array $excludedReleaseIds = [],
     ): EloquentCollection {
+        if (str_contains(strtolower($base->toSql()), 'passwordstatus')) {
+            throw new LogicException('Claim base builders must not include a passwordstatus predicate.');
+        }
+
         $effectiveLimit = max(1, $limit);
 
         return DB::transaction(function () use ($base, $token, $effectiveLimit, $columns, $excludedReleaseIds): EloquentCollection {
