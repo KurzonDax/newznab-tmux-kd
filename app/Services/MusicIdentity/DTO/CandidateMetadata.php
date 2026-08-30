@@ -18,8 +18,8 @@ namespace App\Services\MusicIdentity\DTO;
  *     sources: list<string>
  * }
  * @phpstan-type MusicLabel array{catalogNumber: string|null, labelId: string|null, labelName: string|null}
- * @phpstan-type MusicTrack array{
- *     trackId: string,
+ * @phpstan-type MusicBrainzReleaseTrack array{
+ *     musicBrainzReleaseTrackId: string,
  *     title: string,
  *     position: int|null,
  *     number: string|null,
@@ -31,9 +31,9 @@ namespace App\Services\MusicIdentity\DTO;
  *     position: int|null,
  *     title: string|null,
  *     format: string|null,
- *     trackCount: int|null,
+ *     releaseTrackCount: int|null,
  *     discIds: list<string>,
- *     tracks: list<MusicTrack>
+ *     releaseTracks: list<MusicBrainzReleaseTrack>
  * }
  * @phpstan-type MusicRelease array{
  *     releaseId: string,
@@ -55,6 +55,14 @@ namespace App\Services\MusicIdentity\DTO;
  *     secondaryTypes: list<string>,
  *     firstReleaseDate: string|null
  * }
+ * @phpstan-type MusicArtist array{
+ *     artistId: string,
+ *     name: string,
+ *     sortName: string,
+ *     disambiguation: string|null,
+ *     type: string|null,
+ *     country: string|null
+ * }
  */
 final readonly class CandidateMetadata
 {
@@ -62,15 +70,17 @@ final readonly class CandidateMetadata
      * @param  list<MusicRecording>  $recordings
      * @param  list<MusicRelease>  $releases
      * @param  list<MusicReleaseGroup>  $releaseGroups
+     * @param  list<MusicArtist>  $artists
      */
     public function __construct(
         public array $recordings,
         public array $releases,
         public array $releaseGroups,
+        public array $artists = [],
     ) {}
 
     public static function empty(): self
     {
-        return new self([], [], []);
+        return new self([], [], [], []);
     }
 }

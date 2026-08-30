@@ -9,6 +9,8 @@ use App\Services\MusicIdentity\DTO\CandidateIdentifiers;
 use App\Services\MusicIdentity\DTO\CandidateMetadata;
 use App\Services\MusicIdentity\DTO\RecordingCandidates;
 use App\Services\MusicIdentity\DTO\RecordingQuery;
+use App\Services\MusicIdentity\DTO\ReleaseCandidates;
+use App\Services\MusicIdentity\DTO\ReleaseQuery;
 use App\Services\MusicIdentity\Exceptions\InvalidMusicBrainzResponse;
 use App\Services\MusicIdentity\Exceptions\MusicBrainzCircuitOpen;
 use App\Services\MusicIdentity\Exceptions\MusicBrainzConfigurationException;
@@ -27,8 +29,10 @@ use Throwable;
  * @phpstan-import-type MusicRecording from CandidateMetadata
  * @phpstan-import-type MusicRelease from CandidateMetadata
  * @phpstan-import-type MusicReleaseGroup from CandidateMetadata
+ * @phpstan-import-type MusicArtist from CandidateMetadata
  * @phpstan-import-type NormalizedCandidateIdentifiers from CandidateIdentifiers
  * @phpstan-import-type NormalizedRecordingQuery from RecordingQuery
+ * @phpstan-import-type NormalizedReleaseQuery from ReleaseQuery
  */
 final class HttpMusicBrainzGateway implements MusicBrainzGateway
 {
@@ -78,6 +82,20 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
                 shape: 'disc',
             );
         }
+        if ($queryValues['discToc'] !== null) {
+            $requests['disc_toc_lookup'] = $this->descriptor(
+                'discid/-',
+                [
+                    'toc' => $queryValues['discToc'],
+                    'media-format' => 'all',
+                    'inc' => self::RELEASE_INCLUDES,
+                    'cdstubs' => 'no',
+                    'fmt' => 'json',
+                ],
+                exact: true,
+                shape: 'disc',
+            );
+        }
 
         $lucene = $this->luceneQuery($queryValues);
         if ($lucene !== null) {
@@ -120,7 +138,7 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
                 continue;
             }
 
-            if ($source === 'disc_id_lookup') {
+            if (in_array($source, ['disc_id_lookup', 'disc_toc_lookup'], true)) {
                 foreach ($this->normalizer->objects($payload, 'releases') as $release) {
                     array_push($recordings, ...$this->normalizer->recordingsFromRelease($release, $source));
                 }
@@ -139,6 +157,40 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
         return new RecordingCandidates($recordings, max($providerTotal, count($recordings)));
     }
 
+    public function releaseCandidatesFor(ReleaseQuery $query): ReleaseCandidates
+    {
+        $endpoint = $this->endpoint();
+        if ($endpoint === null) {
+            return ReleaseCandidates::empty();
+        }
+        $this->assertPublicConfiguration($endpoint);
+
+        $queryValues = $query->normalized();
+        $this->assertIdentifiers($queryValues);
+        $lucene = $this->releaseLuceneQuery($queryValues);
+        if ($lucene === null) {
+            return ReleaseCandidates::empty();
+        }
+
+        $payload = $this->fetchOne($endpoint, $this->descriptor('release', [
+            'query' => $lucene,
+            'limit' => (int) ($queryValues['limit'] ?? config('music-identity.musicbrainz.search_limit', 25)),
+            'offset' => (int) $queryValues['offset'],
+            'fmt' => 'json',
+        ], exact: false, shape: 'release_search'), $this->budget());
+        if ($payload === []) {
+            return ReleaseCandidates::empty();
+        }
+
+        $providerTotal = $this->normalizer->requiredCount($payload, 'release-count');
+        $releases = array_map(
+            fn (array $release): array => $this->normalizer->releaseCandidate($release, 'release_search'),
+            $this->normalizer->objects($payload, 'releases'),
+        );
+
+        return new ReleaseCandidates($releases, max($providerTotal, count($releases)));
+    }
+
     public function hydrate(CandidateIdentifiers $identifiers): CandidateMetadata
     {
         $endpoint = $this->endpoint();
@@ -150,6 +202,14 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
         $ids = $identifiers->normalized();
         $this->assertIdentifiers($ids);
         $requests = [];
+        if ($ids['artistId'] !== null) {
+            $requests['artist'] = $this->descriptor(
+                'artist/'.rawurlencode($ids['artistId']),
+                ['fmt' => 'json'],
+                exact: true,
+                shape: 'artist',
+            );
+        }
         if ($ids['recordingId'] !== null) {
             $requests['recording'] = $this->descriptor(
                 'recording/'.rawurlencode($ids['recordingId']),
@@ -200,11 +260,18 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
         $recordings = [];
         $releases = [];
         $releaseGroups = [];
+        $artists = [];
         $recordingIdsToBrowse = [];
         $releaseGroupIdsToBrowse = [];
 
         foreach ($payloads as $kind => $payload) {
             if ($payload === []) {
+                continue;
+            }
+
+            if ($kind === 'artist') {
+                $artists[] = $this->normalizer->artist($payload);
+
                 continue;
             }
 
@@ -248,21 +315,31 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
             }
         }
 
+        $editionLimit = max(1, (int) config('music-identity.candidate_generation.hydrated_release_edition_limit', 8));
         foreach (array_values(array_unique($recordingIdsToBrowse)) as $recordingId) {
-            foreach ($this->browseReleases($endpoint, 'recording', $recordingId, $budget) as $release) {
+            $remainingEditions = $editionLimit - count($this->uniqueBy($releases, 'releaseId'));
+            if ($remainingEditions <= 0) {
+                break;
+            }
+            foreach ($this->browseReleases($endpoint, 'recording', $recordingId, $budget, $remainingEditions) as $release) {
                 $this->collectRelease($release, $recordings, $releases, $releaseGroups);
             }
         }
         foreach (array_values(array_unique($releaseGroupIdsToBrowse)) as $releaseGroupId) {
-            foreach ($this->browseReleases($endpoint, 'release-group', $releaseGroupId, $budget) as $release) {
+            $remainingEditions = $editionLimit - count($this->uniqueBy($releases, 'releaseId'));
+            if ($remainingEditions <= 0) {
+                break;
+            }
+            foreach ($this->browseReleases($endpoint, 'release-group', $releaseGroupId, $budget, $remainingEditions) as $release) {
                 $this->collectRelease($release, $recordings, $releases, $releaseGroups);
             }
         }
 
         return new CandidateMetadata(
             $this->mergeRecordings($recordings),
-            $this->uniqueBy($releases, 'releaseId'),
+            array_slice($this->uniqueBy($releases, 'releaseId'), 0, $editionLimit),
             $this->uniqueBy($releaseGroups, 'releaseGroupId'),
+            $this->uniqueBy($artists, 'artistId'),
         );
     }
 
@@ -273,6 +350,11 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
     {
         $clauses = [];
         foreach (['title' => 'recording', 'artist' => 'artist', 'releaseTitle' => 'release'] as $key => $field) {
+            if ($query[$key] !== null) {
+                $clauses[] = $this->textClause($field, (string) $query[$key], $query['fuzzy']);
+            }
+        }
+        foreach (['musicBrainzReleaseTrackId' => 'tid', 'artistId' => 'arid'] as $key => $field) {
             if ($query[$key] !== null) {
                 $clauses[] = sprintf('%s:"%s"', $field, $this->escapeLucene((string) $query[$key]));
             }
@@ -291,6 +373,54 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
         return $clauses === [] ? null : implode(' AND ', $clauses);
     }
 
+    /** @param NormalizedReleaseQuery $query */
+    private function releaseLuceneQuery(array $query): ?string
+    {
+        $clauses = [];
+        foreach (['title' => 'release', 'artist' => 'artist'] as $key => $field) {
+            if ($query[$key] !== null) {
+                $clauses[] = $this->textClause($field, (string) $query[$key], $query['fuzzy']);
+            }
+        }
+        if ($query['artistId'] !== null) {
+            $clauses[] = sprintf('arid:"%s"', $this->escapeLucene($query['artistId']));
+        }
+        if ($query['year'] !== null) {
+            $clauses[] = 'date:'.$query['year'];
+        }
+        foreach (['barcode' => 'barcode', 'catalogNumber' => 'catno', 'label' => 'label'] as $key => $field) {
+            if ($query[$key] !== null) {
+                $clauses[] = sprintf('%s:"%s"', $field, $this->escapeLucene((string) $query[$key]));
+            }
+        }
+
+        return $clauses === [] ? null : implode(' AND ', $clauses);
+    }
+
+    private function textClause(string $field, string $value, bool $fuzzy): string
+    {
+        $exact = sprintf('%s:"%s"', $field, $this->escapeLucene($value));
+        if (! $fuzzy) {
+            return $exact;
+        }
+
+        $tokens = preg_split('/\s+/u', $value) ?: [];
+        $tokens = array_values(array_filter(
+            $tokens,
+            static fn (string $token): bool => mb_strlen($token) >= 4,
+        ));
+        if ($tokens === []) {
+            return $exact;
+        }
+
+        $fuzzyClauses = array_map(
+            fn (string $token): string => sprintf('%s:%s~', $field, $this->escapeLucene($token)),
+            $tokens,
+        );
+
+        return sprintf('(%s OR (%s))', $exact, implode(' AND ', $fuzzyClauses));
+    }
+
     private function escapeLucene(string $value): string
     {
         $escaped = preg_replace('/([+\-&|!(){}\[\]^"~*?:\\\\\/])/', '\\\\$1', $value);
@@ -306,11 +436,15 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
         string $linkedEntity,
         string $identifier,
         MusicBrainzRequestBudget $budget,
+        int $maximumResults,
     ): array {
         $offset = 0;
         $total = null;
         $releases = [];
-        $limit = min(100, max(1, (int) config('music-identity.musicbrainz.browse_limit', 100)));
+        $limit = min(
+            $maximumResults,
+            min(100, max(1, (int) config('music-identity.musicbrainz.browse_limit', 100))),
+        );
 
         do {
             $payload = $this->fetchOne($endpoint, $this->descriptor('release', [
@@ -332,16 +466,16 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
                 throw new InvalidMusicBrainzResponse('MusicBrainz browse response offset does not match the requested offset.');
             }
 
-            array_push($releases, ...$page);
+            array_push($releases, ...array_slice($page, 0, $maximumResults - count($releases)));
             $returned = count($page);
             if ($returned === 0) {
                 break;
             }
 
-            // MusicBrainz may stop a release page at 500 tracks, so the fixed
+            // MusicBrainz may stop a release page at 500 release tracks, so the fixed
             // requested limit is not a valid cursor increment.
             $offset += $returned;
-        } while ($offset < $total);
+        } while ($offset < $total && count($releases) < $maximumResults);
 
         return $releases;
     }
@@ -557,6 +691,12 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
         }
 
         try {
+            if ($shape === 'artist') {
+                $this->normalizer->artist($payload);
+
+                return;
+            }
+
             if ($shape === 'recording') {
                 $this->normalizer->recording($payload, 'validation');
 
@@ -609,6 +749,16 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
                 $this->normalizer->requiredCount($payload, 'release-offset');
                 foreach ($this->normalizer->objects($payload, 'releases') as $release) {
                     $this->normalizer->release($release);
+                }
+
+                return;
+            }
+
+            if ($shape === 'release_search') {
+                $this->normalizer->requiredCount($payload, 'release-count');
+                $this->normalizer->requiredCount($payload, 'release-offset');
+                foreach ($this->normalizer->objects($payload, 'releases') as $release) {
+                    $this->normalizer->releaseCandidate($release, 'validation');
                 }
 
                 return;
@@ -782,10 +932,10 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
         );
     }
 
-    /** @param NormalizedCandidateIdentifiers|NormalizedRecordingQuery $identifiers */
+    /** @param NormalizedCandidateIdentifiers|NormalizedRecordingQuery|NormalizedReleaseQuery $identifiers */
     private function assertIdentifiers(array $identifiers): void
     {
-        foreach (['recordingId', 'releaseId', 'releaseGroupId'] as $key) {
+        foreach (['recordingId', 'releaseId', 'releaseGroupId', 'musicBrainzReleaseTrackId', 'artistId'] as $key) {
             $value = $identifiers[$key] ?? null;
             if ($value !== null && preg_match('/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/D', (string) $value) !== 1) {
                 throw new \InvalidArgumentException(sprintf('%s must be a valid MusicBrainz identifier.', $key));

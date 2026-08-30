@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\MusicIdentity\Gateways;
 
 use App\Services\MusicIdentity\DTO\CandidateMetadata;
+use App\Services\MusicIdentity\DTO\ReleaseCandidates;
 use App\Services\MusicIdentity\Exceptions\InvalidMusicBrainzResponse;
 
 /**
@@ -14,9 +15,27 @@ use App\Services\MusicIdentity\Exceptions\InvalidMusicBrainzResponse;
  * @phpstan-import-type MusicRecording from CandidateMetadata
  * @phpstan-import-type MusicRelease from CandidateMetadata
  * @phpstan-import-type MusicReleaseGroup from CandidateMetadata
+ * @phpstan-import-type MusicArtist from CandidateMetadata
+ * @phpstan-import-type ReleaseCandidate from ReleaseCandidates
  */
 final class MusicBrainzNormalizer
 {
+    /**
+     * @param  array<string, mixed>  $raw
+     * @return MusicArtist
+     */
+    public function artist(array $raw): array
+    {
+        return [
+            'artistId' => $this->requiredString($raw, 'id'),
+            'name' => $this->requiredString($raw, 'name'),
+            'sortName' => $this->requiredString($raw, 'sort-name'),
+            'disambiguation' => $this->nullableString($raw['disambiguation'] ?? null, 'artist disambiguation'),
+            'type' => $this->nullableString($raw['type'] ?? null, 'artist type'),
+            'country' => $this->nullableString($raw['country'] ?? null, 'artist country'),
+        ];
+    }
+
     /**
      * @param  array<string, mixed>  $raw
      * @return MusicRecording
@@ -80,18 +99,18 @@ final class MusicBrainzNormalizer
         $media = [];
         foreach ($this->list($raw, 'media') as $medium) {
             $medium = $this->object($medium, 'release medium');
-            $tracks = [];
-            foreach ($this->list($medium, 'tracks') as $track) {
-                $track = $this->object($track, 'release track');
-                $recording = $track['recording'] ?? null;
+            $releaseTracks = [];
+            foreach ($this->list($medium, 'tracks') as $releaseTrack) {
+                $releaseTrack = $this->object($releaseTrack, 'MusicBrainz release track');
+                $recording = $releaseTrack['recording'] ?? null;
                 $recording = $recording === null ? null : $this->object($recording, 'release track recording');
-                $tracks[] = [
-                    'trackId' => $this->requiredString($track, 'id'),
-                    'title' => $this->requiredString($track, 'title'),
-                    'position' => $this->nullableInteger($track['position'] ?? null, 'track position'),
-                    'number' => $this->nullableString($track['number'] ?? null, 'track number'),
-                    'lengthMs' => $this->nullableInteger($track['length'] ?? null, 'track length'),
-                    'artistCredit' => $this->artistCredit($track['artist-credit'] ?? []),
+                $releaseTracks[] = [
+                    'musicBrainzReleaseTrackId' => $this->requiredString($releaseTrack, 'id'),
+                    'title' => $this->requiredString($releaseTrack, 'title'),
+                    'position' => $this->nullableInteger($releaseTrack['position'] ?? null, 'release track position'),
+                    'number' => $this->nullableString($releaseTrack['number'] ?? null, 'release track number'),
+                    'lengthMs' => $this->nullableInteger($releaseTrack['length'] ?? null, 'release track length'),
+                    'artistCredit' => $this->artistCredit($releaseTrack['artist-credit'] ?? []),
                     'recording' => $recording === null ? null : $this->recording(
                         $recording,
                         'release_hydration',
@@ -111,9 +130,9 @@ final class MusicBrainzNormalizer
                 'position' => $this->nullableInteger($medium['position'] ?? null, 'medium position'),
                 'title' => $this->nullableString($medium['title'] ?? null, 'medium title'),
                 'format' => $this->nullableString($medium['format'] ?? null, 'medium format'),
-                'trackCount' => $this->nullableInteger($medium['track-count'] ?? null, 'medium track count'),
+                'releaseTrackCount' => $this->nullableInteger($medium['track-count'] ?? null, 'medium release track count'),
                 'discIds' => $discIds,
-                'tracks' => $tracks,
+                'releaseTracks' => $releaseTracks,
             ];
         }
 
@@ -128,6 +147,24 @@ final class MusicBrainzNormalizer
             'barcode' => $this->nullableString($raw['barcode'] ?? null, 'release barcode'),
             'labels' => $labels,
             'media' => $media,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $raw
+     * @return ReleaseCandidate
+     */
+    public function releaseCandidate(array $raw, string $source): array
+    {
+        $release = $this->release($raw);
+
+        return [
+            'releaseId' => $release['releaseId'],
+            'releaseGroupId' => $release['releaseGroupId'],
+            'title' => $release['title'],
+            'artistCredit' => $release['artistCredit'],
+            'providerScore' => $this->nullableInteger($raw['score'] ?? null, 'release score'),
+            'sources' => [$source],
         ];
     }
 
@@ -161,9 +198,9 @@ final class MusicBrainzNormalizer
 
         foreach ($this->list($release, 'media') as $medium) {
             $medium = $this->object($medium, 'release medium');
-            foreach ($this->list($medium, 'tracks') as $track) {
-                $track = $this->object($track, 'release track');
-                $recording = $this->object($track['recording'] ?? null, 'release track recording');
+            foreach ($this->list($medium, 'tracks') as $releaseTrack) {
+                $releaseTrack = $this->object($releaseTrack, 'MusicBrainz release track');
+                $recording = $this->object($releaseTrack['recording'] ?? null, 'release track recording');
                 $recordings[] = $this->recording($recording, $source, $releaseId, $releaseGroupId);
             }
         }

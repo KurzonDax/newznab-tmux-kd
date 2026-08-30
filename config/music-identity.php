@@ -9,6 +9,14 @@ return [
     'apply_decisions' => false,
     'worker_parallelism_max' => 8,
 
+    'candidate_generation' => [
+        'distinctive_track_evidence_limit' => 4,
+        'exact_identifier_limit' => 12,
+        'provider_result_limit' => 15,
+        'hydration_limit' => 8,
+        'hydrated_release_edition_limit' => 8,
+    ],
+
     'musicbrainz' => [
         // Empty by default: local evidence capture remains active, but no provider calls occur.
         'endpoint_url' => env('MUSICBRAINZ_ENDPOINT_URL'),
