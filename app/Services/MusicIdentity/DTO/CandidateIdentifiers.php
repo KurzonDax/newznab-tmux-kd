@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\MusicIdentity\DTO;
 
+use App\Services\MusicIdentity\Support\MusicIdentityValueNormalizer;
+
 /**
  * @phpstan-type NormalizedCandidateIdentifiers array{
+ *     artistId: string|null,
  *     discId: string|null,
  *     isrc: string|null,
  *     recordingId: string|null,
@@ -21,35 +24,19 @@ final readonly class CandidateIdentifiers
         public ?string $releaseGroupId = null,
         public ?string $isrc = null,
         public ?string $discId = null,
+        public ?string $artistId = null,
     ) {}
 
     /** @return NormalizedCandidateIdentifiers */
     public function normalized(): array
     {
         return [
-            'discId' => $this->text($this->discId),
-            'isrc' => $this->identifier($this->isrc, uppercase: true),
-            'recordingId' => $this->identifier($this->recordingId),
-            'releaseGroupId' => $this->identifier($this->releaseGroupId),
-            'releaseId' => $this->identifier($this->releaseId),
+            'artistId' => MusicIdentityValueNormalizer::identifier($this->artistId),
+            'discId' => MusicIdentityValueNormalizer::text($this->discId),
+            'isrc' => MusicIdentityValueNormalizer::identifier($this->isrc, uppercase: true),
+            'recordingId' => MusicIdentityValueNormalizer::identifier($this->recordingId),
+            'releaseGroupId' => MusicIdentityValueNormalizer::identifier($this->releaseGroupId),
+            'releaseId' => MusicIdentityValueNormalizer::identifier($this->releaseId),
         ];
-    }
-
-    private function identifier(?string $value, bool $uppercase = false): ?string
-    {
-        $value = $this->text($value);
-
-        return $value === null ? null : ($uppercase ? strtoupper($value) : strtolower($value));
-    }
-
-    private function text(?string $value): ?string
-    {
-        if ($value === null) {
-            return null;
-        }
-
-        $value = trim($value);
-
-        return $value === '' ? null : $value;
     }
 }

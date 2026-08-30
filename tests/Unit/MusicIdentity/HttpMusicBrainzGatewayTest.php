@@ -6,6 +6,7 @@ namespace Tests\Unit\MusicIdentity;
 
 use App\Services\MusicIdentity\DTO\CandidateIdentifiers;
 use App\Services\MusicIdentity\DTO\RecordingQuery;
+use App\Services\MusicIdentity\DTO\ReleaseQuery;
 use App\Services\MusicIdentity\Exceptions\InvalidMusicBrainzResponse;
 use App\Services\MusicIdentity\Exceptions\MusicBrainzCircuitOpen;
 use App\Services\MusicIdentity\Exceptions\MusicBrainzConfigurationException;
@@ -27,6 +28,67 @@ final class HttpMusicBrainzGatewayTest extends TestCase
         Cache::flush();
         Http::preventStrayRequests();
         $this->configureGateway();
+    }
+
+    public function test_recording_and_release_searches_use_fielded_normalized_fuzzy_queries(): void
+    {
+        $release = $this->fixture('release-lookup.json');
+        $release['score'] = 98;
+        Http::fake(function (Request $request) use ($release) {
+            if (str_contains($request->url(), '/release?')) {
+                return Http::response([
+                    'release-count' => 1,
+                    'release-offset' => 0,
+                    'releases' => [$release],
+                ]);
+            }
+
+            return Http::response($this->fixture('recording-search.json'));
+        });
+
+        $recordings = $this->gateway()->candidatesFor(new RecordingQuery(
+            title: 'karma police',
+            artist: 'radiohead',
+            durationMs: 264_000,
+            musicBrainzReleaseTrackId: '55555555-5555-4555-8555-555555555555',
+            artistId: '66666666-6666-4666-8666-666666666666',
+            fuzzy: true,
+        ));
+        $releases = $this->gateway()->releaseCandidatesFor(new ReleaseQuery(
+            title: 'ok computer',
+            artist: 'radiohead',
+            artistId: '66666666-6666-4666-8666-666666666666',
+            year: 1997,
+            barcode: '724385522925',
+            catalogNumber: '7243 8 55229 2 5',
+            label: 'Parlophone',
+            fuzzy: true,
+        ));
+
+        $this->assertCount(1, $recordings->recordings);
+        $this->assertCount(1, $releases->releases);
+        $this->assertSame('11111111-1111-4111-8111-111111111111', $releases->releases[0]['releaseId']);
+        $this->assertSame(98, $releases->releases[0]['providerScore']);
+
+        $queries = [];
+        foreach (Http::recorded() as [$request]) {
+            $path = str_contains($request->url(), '/release?') ? 'release' : 'recording';
+            $queries[$path] = $this->queryParameters($request)['query'];
+        }
+
+        $this->assertStringContainsString('recording:"karma police"', $queries['recording']);
+        $this->assertStringContainsString('recording:karma~', $queries['recording']);
+        $this->assertStringContainsString('recording:police~', $queries['recording']);
+        $this->assertStringContainsString('tid:"55555555\\-5555\\-4555\\-8555\\-555555555555"', $queries['recording']);
+        $this->assertStringContainsString('arid:"66666666\\-6666\\-4666\\-8666\\-666666666666"', $queries['recording']);
+        $this->assertStringContainsString('qdur:[129 TO 134]', $queries['recording']);
+
+        $this->assertStringContainsString('release:"ok computer"', $queries['release']);
+        $this->assertStringContainsString('release:computer~', $queries['release']);
+        $this->assertStringContainsString('date:1997', $queries['release']);
+        $this->assertStringContainsString('barcode:"724385522925"', $queries['release']);
+        $this->assertStringContainsString('catno:"7243 8 55229 2 5"', $queries['release']);
+        $this->assertStringContainsString('label:"Parlophone"', $queries['release']);
     }
 
     public function test_it_is_dormant_until_an_endpoint_is_configured(): void
@@ -121,6 +183,26 @@ final class HttpMusicBrainzGatewayTest extends TestCase
         $this->assertSame(['0', '2'], $offsets);
     }
 
+    public function test_hydration_bounds_complete_release_editions_within_one_candidate(): void
+    {
+        config(['music-identity.candidate_generation.hydrated_release_edition_limit' => 2]);
+        Http::fake(function (Request $request) {
+            return str_contains($request->url(), '/recording/'.self::RECORDING_ID)
+                ? Http::response($this->fixture('recording-lookup.json'))
+                : Http::response($this->fixture('release-browse-page-1.json'));
+        });
+
+        $metadata = $this->gateway()->hydrate(new CandidateIdentifiers(recordingId: self::RECORDING_ID));
+
+        $this->assertCount(2, $metadata->releases);
+        $browseRequests = Http::recorded()->filter(
+            static fn (array $recorded): bool => str_contains($recorded[0]->url(), '/release?'),
+        )->values();
+        $this->assertCount(1, $browseRequests);
+        $browseRequest = $browseRequests[0][0];
+        $this->assertSame('2', $this->queryParameters($browseRequest)['limit']);
+    }
+
     public function test_the_observed_isrc_shape_without_embedded_releases_is_supported(): void
     {
         Http::fake(['*' => Http::response($this->fixture('isrc-without-releases.json'))]);
@@ -142,6 +224,48 @@ final class HttpMusicBrainzGatewayTest extends TestCase
         $this->assertCount(2, $result->recordings);
         $this->assertSame('11111111-1111-4111-8111-111111111111', $result->recordings[0]['releaseIds'][0]);
         $this->assertSame(['disc_id_lookup'], $result->recordings[0]['sources']);
+    }
+
+    public function test_disc_toc_results_use_the_toc_lookup_endpoint(): void
+    {
+        Http::fake(['*' => Http::response($this->fixture('discid-lookup.json'))]);
+
+        $result = $this->gateway()->candidatesFor(new RecordingQuery(
+            discToc: '1 12 183150 150 15750 31200',
+        ));
+
+        $this->assertCount(2, $result->recordings);
+        $this->assertSame(['disc_toc_lookup'], $result->recordings[0]['sources']);
+        Http::assertSent(function (Request $request): bool {
+            $query = $this->queryParameters($request);
+
+            return str_contains($request->url(), '/discid/-')
+                && $query['toc'] === '1 12 183150 150 15750 31200'
+                && $query['media-format'] === 'all';
+        });
+    }
+
+    public function test_artist_mbid_lookup_returns_the_canonical_artist_identity(): void
+    {
+        Http::fake(['*' => Http::response([
+            'id' => '77777777-7777-4777-8777-777777777777',
+            'name' => 'Canonical Artist',
+            'sort-name' => 'Artist, Canonical',
+            'disambiguation' => 'merged identity',
+            'type' => 'Person',
+            'country' => 'US',
+        ])]);
+
+        $metadata = $this->gateway()->hydrate(new CandidateIdentifiers(
+            artistId: '66666666-6666-4666-8666-666666666666',
+        ));
+
+        $this->assertSame('77777777-7777-4777-8777-777777777777', $metadata->artists[0]['artistId']);
+        $this->assertSame('Canonical Artist', $metadata->artists[0]['name']);
+        Http::assertSent(fn (Request $request): bool => str_contains(
+            $request->url(),
+            '/artist/66666666-6666-4666-8666-666666666666',
+        ));
     }
 
     public function test_invalid_json_is_rejected_instead_of_leaking_an_untrusted_shape(): void
@@ -206,7 +330,7 @@ final class HttpMusicBrainzGatewayTest extends TestCase
         $this->assertCount(1, $metadata->releases);
         $this->assertCount(1, $metadata->releaseGroups);
         $this->assertSame('XL Recordings', $metadata->releases[0]['labels'][0]['labelName']);
-        $this->assertSame('No Surprises', $metadata->releases[0]['media'][0]['tracks'][0]['recording']['title']);
+        $this->assertSame('No Surprises', $metadata->releases[0]['media'][0]['releaseTracks'][0]['recording']['title']);
         $this->assertArrayNotHasKey('artist-credit', $metadata->releases[0]);
 
         Http::assertSent(function (Request $request): bool {
