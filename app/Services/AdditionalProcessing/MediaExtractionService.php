@@ -87,9 +87,8 @@ class MediaExtractionService
 
     /**
      * Store the release's single video artifact: a full-resolution stream-copy
-     * Clip when the root category allows it, disk headroom exists, and the
-     * source is browser-safe. Clip-or-nothing: when the Clip declines, no
-     * video artifact is stored and false is returned.
+     * Clip where possible, otherwise a capped browser-safe transcode. When the
+     * Clip declines, no video artifact is stored and false is returned.
      */
     public function getVideo(string $fileLocation, string $tmpPath, string $guid, ?int $categoriesId = null): bool
     {
@@ -119,6 +118,7 @@ class MediaExtractionService
             $tmpPath,
             $this->ffmpegBinaryPath(),
             $this->config->timeoutSeconds > 0 ? $this->config->timeoutSeconds : 60,
+            $this->config->previewTargetSeconds,
         );
         if ($clip === null) {
             return false;
