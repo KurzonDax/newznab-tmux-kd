@@ -43,6 +43,7 @@ final class AudioCandidateQuery
         string $guidChar = '',
         ?int $maxSizeBytes = null,
         bool $includeClaimed = false,
+        bool $includePasswordStatuses = true,
     ): Builder {
         ReleaseClaimant::applyPendingPredicates(
             $query,
@@ -51,6 +52,7 @@ final class AudioCandidateQuery
             // No minimum: see the class docblock. The global maximum still applies.
             minSizeBytes: 0,
             maxSizeBytes: $maxSizeBytes ?? AdditionalCandidateQuery::maxSizeBytes(),
+            includePasswordStatuses: $includePasswordStatuses,
         );
 
         if (! $includeClaimed) {
@@ -70,6 +72,7 @@ final class AudioCandidateQuery
         string $guidChar = '',
         ?int $maxSizeBytes = null,
         bool $includeClaimed = false,
+        bool $includePasswordStatuses = true,
     ): Builder {
         return self::applyPredicates(
             Release::query()->from('releases as r'),
@@ -77,6 +80,7 @@ final class AudioCandidateQuery
             $guidChar,
             $maxSizeBytes,
             $includeClaimed,
+            $includePasswordStatuses,
         );
     }
 
@@ -125,7 +129,12 @@ final class AudioCandidateQuery
         array $excludedReleaseIds = [],
     ): EloquentCollection {
         return ReleaseClaimant::claim(
-            self::baseBuilder($groupID, $guidChar, $maxSizeBytes),
+            self::baseBuilder(
+                $groupID,
+                $guidChar,
+                $maxSizeBytes,
+                includePasswordStatuses: false,
+            ),
             $token,
             $limit,
             $columns,

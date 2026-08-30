@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
+use App\Services\AdditionalProcessing\ReleaseClaimant;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -134,6 +136,103 @@ class AdditionalCandidateQueryTest extends TestCase
 
         $third = AdditionalCandidateQuery::claimBatch('a', 10, 'token-three', columns: ['id']);
         $this->assertSame([1], $third->pluck('id')->all());
+    }
+
+    public function test_claim_batch_returns_only_candidates_won_after_a_competing_stamp(): void
+    {
+        DB::table('categories')->insert(['id' => 1]);
+        DB::table('releases')->insert([
+            $this->releaseRow(1, 'a', postdate: '2026-07-12 10:00:00'),
+            $this->releaseRow(2, 'a', postdate: '2026-07-12 09:00:00'),
+        ]);
+
+        $competitorHasStamped = false;
+        DB::listen(function (QueryExecuted $query) use (&$competitorHasStamped): void {
+            if ($competitorHasStamped || ! str_starts_with($query->sql, 'select "r"."id"')) {
+                return;
+            }
+
+            $competitorHasStamped = true;
+            DB::table('releases')->where('id', 1)->update([
+                'additional_pp_claimed_at' => now(),
+                'additional_pp_claim_token' => 'competing-worker',
+            ]);
+        });
+
+        $claimed = AdditionalCandidateQuery::claimBatch('a', 2, 'worker-token', columns: ['id']);
+
+        $this->assertTrue($competitorHasStamped);
+        $this->assertSame([2], $claimed->pluck('id')->all());
+        $this->assertSame('competing-worker', DB::table('releases')->where('id', 1)->value('additional_pp_claim_token'));
+        $this->assertSame('worker-token', DB::table('releases')->where('id', 2)->value('additional_pp_claim_token'));
+    }
+
+    public function test_claim_does_not_mutate_a_reused_base_builder(): void
+    {
+        DB::table('categories')->insert(['id' => 1]);
+        DB::table('releases')->insert([
+            $this->releaseRow(1, 'a', postdate: '2026-07-12 10:00:00'),
+            $this->releaseRow(2, 'a', postdate: '2026-07-12 09:00:00'),
+        ]);
+
+        $base = AdditionalCandidateQuery::baseBuilder(guidChar: 'a');
+        $sql = $base->toSql();
+        $bindings = $base->getBindings();
+
+        ReleaseClaimant::claim($base, 'worker-one', 1, ['id'], [999]);
+        $this->assertSame($sql, $base->toSql());
+        $this->assertSame($bindings, $base->getBindings());
+
+        ReleaseClaimant::claim($base, 'worker-two', 1, ['id'], [999]);
+        $this->assertSame($sql, $base->toSql());
+        $this->assertSame($bindings, $base->getBindings());
+    }
+
+    public function test_claim_reads_each_pending_password_state_by_equality_and_merges_newest_first(): void
+    {
+        DB::table('categories')->insert(['id' => 1]);
+        DB::table('releases')->insert([
+            $this->releaseRow(1, 'a', postdate: '2026-07-12 12:00:00', passwordStatus: 0),
+            $this->releaseRow(2, 'a', postdate: '2026-07-12 11:00:00', passwordStatus: -1),
+            $this->releaseRow(3, 'a', postdate: '2026-07-12 10:00:00', passwordStatus: 0),
+            $this->releaseRow(4, 'a', postdate: '2026-07-12 09:00:00', passwordStatus: -1),
+        ]);
+
+        $candidateQueries = [];
+        DB::listen(static function (QueryExecuted $query) use (&$candidateQueries): void {
+            if (str_starts_with($query->sql, 'select "r"."id", "r"."postdate"')) {
+                $candidateQueries[] = $query->sql;
+            }
+        });
+
+        $claimed = AdditionalCandidateQuery::claimBatch('a', 3, 'worker-token', columns: ['id']);
+
+        $this->assertSame([1, 2, 3], $claimed->pluck('id')->all());
+        $this->assertCount(2, $candidateQueries);
+        foreach ($candidateQueries as $candidateQuery) {
+            $this->assertStringContainsString('"r"."passwordstatus" = ?', $candidateQuery);
+            $this->assertStringNotContainsString('"r"."passwordstatus" in', $candidateQuery);
+        }
+    }
+
+    public function test_claim_excludes_requested_release_ids_before_applying_the_limit(): void
+    {
+        DB::table('categories')->insert(['id' => 1]);
+        DB::table('releases')->insert([
+            $this->releaseRow(1, 'a', postdate: '2026-07-12 12:00:00', passwordStatus: 0),
+            $this->releaseRow(2, 'a', postdate: '2026-07-12 11:00:00', passwordStatus: -1),
+            $this->releaseRow(3, 'a', postdate: '2026-07-12 10:00:00', passwordStatus: 0),
+        ]);
+
+        $claimed = AdditionalCandidateQuery::claimBatch(
+            'a',
+            2,
+            'worker-token',
+            columns: ['id'],
+            excludedReleaseIds: [1],
+        );
+
+        $this->assertSame([2, 3], $claimed->pluck('id')->all());
     }
 
     public function test_password_inspection_enabled_selects_both_pending_sentinels(): void

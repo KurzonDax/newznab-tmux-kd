@@ -94,6 +94,7 @@ final class AdditionalCandidateQuery
         ?int $minSizeBytes = null,
         ?int $maxSizeBytes = null,
         bool $includeClaimed = false,
+        bool $includePasswordStatuses = true,
     ): Builder {
         ReleaseClaimant::applyPendingPredicates(
             $query,
@@ -101,6 +102,7 @@ final class AdditionalCandidateQuery
             $guidChar,
             $minSizeBytes ?? self::minSizeBytes(),
             $maxSizeBytes ?? self::maxSizeBytes(),
+            $includePasswordStatuses,
         );
 
         if (! $includeClaimed) {
@@ -126,10 +128,19 @@ final class AdditionalCandidateQuery
         ?int $minSizeBytes = null,
         ?int $maxSizeBytes = null,
         bool $includeClaimed = false,
+        bool $includePasswordStatuses = true,
     ): Builder {
         $query = Release::query()->from('releases as r');
 
-        return self::applyPredicates($query, $groupID, $guidChar, $minSizeBytes, $maxSizeBytes, $includeClaimed);
+        return self::applyPredicates(
+            $query,
+            $groupID,
+            $guidChar,
+            $minSizeBytes,
+            $maxSizeBytes,
+            $includeClaimed,
+            $includePasswordStatuses,
+        );
     }
 
     /**
@@ -210,7 +221,13 @@ final class AdditionalCandidateQuery
         array $excludedReleaseIds = [],
     ): EloquentCollection {
         return ReleaseClaimant::claim(
-            self::baseBuilder($groupID, $guidChar, $minSizeBytes, $maxSizeBytes),
+            self::baseBuilder(
+                $groupID,
+                $guidChar,
+                $minSizeBytes,
+                $maxSizeBytes,
+                includePasswordStatuses: false,
+            ),
             $token,
             $limit,
             $columns,

@@ -308,6 +308,10 @@ class AudioCandidateQueryTest extends TestCase
 
         $this->assertSame([], $this->audioIds());
         $this->assertSame([1], $this->videoIds());
+        $this->assertSame(
+            [1],
+            AdditionalCandidateQuery::claimBatch('a', 1, 'video-worker', columns: ['id'])->pluck('id')->all(),
+        );
     }
 
     public function test_every_audio_routed_state_is_owned_by_exactly_one_path_or_is_terminal(): void
