@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\AdditionalProcessing;
 
+use Mhor\MediaInfo\Attribute\Duration;
 use Mhor\MediaInfo\Attribute\Mode;
 use Mhor\MediaInfo\Container\MediaInfoContainer;
 
@@ -59,8 +60,28 @@ final class AudioTagExtractor
     private const array MUSICBRAINZ_ALIASES = [
         'musicbrainz_album_id' => ['musicbrainzalbumid', 'musicbrainzreleaseid'],
         'musicbrainz_artist_id' => ['musicbrainzartistid', 'musicbrainzalbumartistid'],
-        'musicbrainz_track_id' => ['musicbrainztrackid', 'musicbrainzreleasetrackid'],
+        'musicbrainz_track_id' => ['musicbrainzreleasetrackid'],
+        'musicbrainz_recording_id' => ['musicbrainzrecordingid', 'musicbrainztrackid'],
         'musicbrainz_release_group_id' => ['musicbrainzreleasegroupid'],
+    ];
+
+    private const array PROJECTION_COLUMNS = [
+        'album',
+        'album_performer',
+        'performer',
+        'track_name',
+        'track_position',
+        'track_position_total',
+        'genre',
+        'recorded_date',
+        'recorded_year',
+        'source_file',
+        'audio_format',
+        'raw_tags',
+        'musicbrainz_album_id',
+        'musicbrainz_artist_id',
+        'musicbrainz_track_id',
+        'musicbrainz_release_group_id',
     ];
 
     private const string UUID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
@@ -73,6 +94,27 @@ final class AudioTagExtractor
      */
     public function extract(MediaInfoContainer $container, string $sourceFile): ?array
     {
+        $evidence = $this->extractEvidence($container, $sourceFile);
+        if ($evidence === null || ($evidence['album'] === null && $evidence['performer'] === null)) {
+            return null;
+        }
+
+        $projection = array_intersect_key($evidence, array_flip(self::PROJECTION_COLUMNS));
+        // release_audio_tags predates the evidence ledger and historically
+        // stores MUSICBRAINZ_TRACKID (a recording MBID) in this column.
+        $projection['musicbrainz_track_id'] ??= $evidence['musicbrainz_recording_id'];
+
+        return $projection;
+    }
+
+    /**
+     * Return the complete local tag observation even when it is too sparse for
+     * the one-row preview projection.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function extractEvidence(MediaInfoContainer $container, string $sourceFile): ?array
+    {
         $general = $container->getGeneral();
         if ($general === null) {
             return null;
@@ -80,13 +122,12 @@ final class AudioTagExtractor
 
         /** @var array<string, mixed> $attributes */
         $attributes = $general->get();
+        $audio = $container->getAudios()[0] ?? null;
+        /** @var array<string, mixed> $audioAttributes */
+        $audioAttributes = $audio?->get() ?? [];
 
         $album = $this->text($attributes['album'] ?? null);
         $performer = $this->text($attributes['performer'] ?? null);
-
-        if ($album === null && $performer === null) {
-            return null;
-        }
 
         $recordedDate = $this->text($attributes['recorded_date'] ?? null);
 
@@ -97,15 +138,26 @@ final class AudioTagExtractor
             'track_name' => $this->text($attributes['track_name'] ?? null),
             'track_position' => $this->position($attributes, ['track_name_position', 'track_position', 'track']),
             'track_position_total' => $this->position($attributes, ['track_name_total', 'track_position_total']),
+            'disc_position' => $this->position($attributes, ['part_position', 'disc_position', 'discnumber', 'disc']),
+            'disc_position_total' => $this->position($attributes, ['part_position_total', 'disc_position_total', 'disctotal']),
             'genre' => $this->text($attributes['genre'] ?? null),
             'recorded_date' => $recordedDate,
             'recorded_year' => $this->year($recordedDate),
             'source_file' => $this->text($sourceFile),
             'audio_format' => $this->text($attributes['format'] ?? null),
+            'container_format' => $this->text($attributes['format'] ?? null),
+            'codec' => $this->text(
+                $audioAttributes['format'] ?? $audioAttributes['codec_id'] ?? $audioAttributes['codec'] ?? null,
+            ),
+            'duration_seconds' => $this->durationSeconds($attributes['duration'] ?? null),
             'raw_tags' => $this->rawTags($attributes),
         ];
 
-        return $this->truncate(array_merge($tags, $this->musicBrainzIds($attributes)));
+        return $this->truncate(array_merge(
+            $tags,
+            $this->musicBrainzIds($attributes),
+            $this->evidenceIdentifiers($attributes),
+        ));
     }
 
     /**
@@ -114,18 +166,7 @@ final class AudioTagExtractor
      */
     private function musicBrainzIds(array $attributes): array
     {
-        $candidates = [];
-        foreach ($attributes as $key => $value) {
-            if (is_array($value) && $this->normalizeKey((string) $key) === 'extra') {
-                foreach ($value as $extraKey => $extraValue) {
-                    $candidates[$this->normalizeKey((string) $extraKey)] ??= $this->text($extraValue);
-                }
-
-                continue;
-            }
-
-            $candidates[$this->normalizeKey((string) $key)] ??= $this->text($value);
-        }
+        $candidates = $this->candidates($attributes);
 
         $identifiers = [];
         foreach (self::MUSICBRAINZ_ALIASES as $column => $aliases) {
@@ -140,6 +181,73 @@ final class AudioTagExtractor
         }
 
         return $identifiers;
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @return array{isrc: string|null, barcode: string|null, catalog_number: string|null, disc_id: string|null}
+     */
+    private function evidenceIdentifiers(array $attributes): array
+    {
+        $candidates = $this->candidates($attributes);
+
+        return [
+            'isrc' => $this->firstCandidate($candidates, ['isrc', 'isrccode']),
+            'barcode' => $this->firstCandidate($candidates, ['barcode', 'upc', 'ean']),
+            'catalog_number' => $this->firstCandidate($candidates, ['catalognumber', 'catalogue', 'catalog']),
+            'disc_id' => $this->firstCandidate($candidates, ['musicbrainzdiscid', 'discid', 'cddbid']),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @return array<string, string|null>
+     */
+    private function candidates(array $attributes): array
+    {
+        $candidates = [];
+        foreach ($attributes as $key => $value) {
+            if (is_array($value) && $this->normalizeKey((string) $key) === 'extra') {
+                foreach ($value as $extraKey => $extraValue) {
+                    $candidates[$this->normalizeKey((string) $extraKey)] ??= $this->text($extraValue);
+                }
+
+                continue;
+            }
+
+            $candidates[$this->normalizeKey((string) $key)] ??= $this->text($value);
+        }
+
+        return $candidates;
+    }
+
+    /**
+     * @param  array<string, string|null>  $candidates
+     * @param  list<string>  $aliases
+     */
+    private function firstCandidate(array $candidates, array $aliases): ?string
+    {
+        foreach ($aliases as $alias) {
+            if (($candidates[$alias] ?? null) !== null) {
+                return $candidates[$alias];
+            }
+        }
+
+        return null;
+    }
+
+    private function durationSeconds(mixed $value): ?float
+    {
+        if ($value instanceof Duration) {
+            return round($value->getMilliseconds() / 1000, 3);
+        }
+
+        $text = $this->text($value);
+        if ($text === null || preg_match('/\d+(?:\.\d+)?/', $text, $match) !== 1) {
+            return null;
+        }
+
+        return round((float) $match[0], 3);
     }
 
     /**

@@ -46,6 +46,7 @@ final class AudioReleaseProcessor
         private readonly MediaInfoRefinementService $mediaInfoRefinement,
         private readonly ReleaseSearchSyncCoordinator $searchSyncCoordinator,
         private readonly PreviewGenerationPolicy $previewPolicy,
+        private readonly AudioEvidenceRecorder $evidenceRecorder,
     ) {}
 
     public function process(Release $release, string $tmpPath, string $groupName): AudioProcessingResult
@@ -54,6 +55,7 @@ final class AudioReleaseProcessor
         $releaseId = (int) $release->id;
         $guid = (string) $release->guid;
         $tagsRecorded = false;
+        $evidenceTags = null;
 
         $parsed = $this->nzbParser->parseNzb($guid);
         if ($parsed['error'] !== null) {
@@ -77,16 +79,26 @@ final class AudioReleaseProcessor
             );
         }
 
+        // Tag-based renaming can mutate the release during the probe callback.
+        // Evidence must retain the source identity that entered this run.
+        $releaseAtCapture = clone $release;
         $fetched = $this->fetcher->fetch(
             $release,
             $source,
             $tmpPath,
             $groupName,
-            function (MediaInfoContainer $container, string $sourceFilename, string $extension) use ($release, &$tagsRecorded): void {
-                $tagsRecorded = $this->recordTags($release, $container, $sourceFilename, $extension);
+            function (MediaInfoContainer $container, string $sourceFilename, string $extension) use ($release, &$tagsRecorded, &$evidenceTags): void {
+                $evidenceTags = $this->tagExtractor->extractEvidence($container, $sourceFilename);
+                $tagsRecorded = $this->recordTags(
+                    $release,
+                    $container,
+                    $extension,
+                    $this->tagExtractor->extract($container, $sourceFilename),
+                );
             },
         );
         $this->crcFailures = $fetched->crcFailures;
+        $this->recordEvidence($releaseAtCapture, $source, $fetched, $evidenceTags);
 
         if ($fetched->declined) {
             if (! AudioCandidateQuery::declineToVideoPath($releaseId)) {
@@ -200,17 +212,18 @@ final class AudioReleaseProcessor
      *
      * Runs before anything past the first article is fetched, so the row exists
      * even for a release the rest of this method gives up on.
+     *
+     * @param  array<string, mixed>|null  $tags
      */
     private function recordTags(
         Release $release,
         MediaInfoContainer $container,
-        string $sourceFilename,
         string $extension,
+        ?array $tags,
     ): bool {
         $releaseId = (int) $release->id;
 
         try {
-            $tags = $this->tagExtractor->extract($container, $sourceFilename);
             if ($tags === null) {
                 return false;
             }
@@ -227,6 +240,28 @@ final class AudioReleaseProcessor
             Log::debug('Audio tag persistence failed for release '.$releaseId.': '.$e->getMessage());
 
             return false;
+        }
+    }
+
+    /**
+     * Evidence is useful even when preview generation later fails. Its ledger
+     * is deliberately best-effort so a local database problem cannot turn a
+     * playable source into a failed audio-processing result.
+     *
+     * @param  array<string, mixed>|null  $sampledTags
+     */
+    private function recordEvidence(
+        Release $release,
+        DTO\AudioSource $source,
+        DTO\AudioFetchResult $fetchResult,
+        ?array $sampledTags,
+    ): void {
+        try {
+            $this->evidenceRecorder->record($release, $source, $fetchResult, $sampledTags);
+        } catch (\Throwable $exception) {
+            Log::debug(
+                'Audio evidence persistence failed for release '.$release->id.': '.$exception->getMessage()
+            );
         }
     }
 

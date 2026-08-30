@@ -12,6 +12,7 @@ use App\Services\AdditionalProcessing\NzbContentParser;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\UsenetDownloadService;
 use App\Services\AudioProcessing\AudioDecodableLengthProbe;
+use App\Services\AudioProcessing\AudioEvidenceRecorder;
 use App\Services\AudioProcessing\AudioFetcher;
 use App\Services\AudioProcessing\AudioPreviewEncoder;
 use App\Services\AudioProcessing\AudioProcessingConfiguration;
@@ -49,6 +50,7 @@ class AudioProcessingServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton(AudioSourceSelector::class, fn (): AudioSourceSelector => new AudioSourceSelector);
+        $this->app->singleton(AudioEvidenceRecorder::class, fn (): AudioEvidenceRecorder => new AudioEvidenceRecorder);
 
         $this->app->singleton(WavPackDecoder::class, fn ($app): WavPackDecoder => new WavPackDecoder(
             $app->make(MediaTools::class),
@@ -91,6 +93,7 @@ class AudioProcessingServiceProvider extends ServiceProvider
             $app->make(MediaInfoRefinementService::class),
             $app->make(ReleaseSearchSyncCoordinator::class),
             $app->make(PreviewGenerationPolicy::class),
+            $app->make(AudioEvidenceRecorder::class),
         ));
 
         $this->app->singleton(AudioProcessingOrchestrator::class, fn ($app): AudioProcessingOrchestrator => new AudioProcessingOrchestrator(

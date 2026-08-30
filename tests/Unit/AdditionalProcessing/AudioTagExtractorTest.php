@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\AdditionalProcessing;
 
 use App\Services\AdditionalProcessing\AudioTagExtractor;
+use Mhor\MediaInfo\Attribute\Duration;
 use Mhor\MediaInfo\Attribute\Mode;
 use Mhor\MediaInfo\Container\MediaInfoContainer;
 use Mhor\MediaInfo\Type\Audio;
@@ -65,6 +66,45 @@ class AudioTagExtractorTest extends TestCase
         ]), 'audiofile.FLAC');
 
         $this->assertNull($tags);
+    }
+
+    #[Test]
+    public function evidence_keeps_sparse_identifiers_and_duration_without_creating_a_projection(): void
+    {
+        $extractor = new AudioTagExtractor;
+        $container = $this->container([
+            'format' => new Mode('MPEG-4', 'MPEG-4'),
+            'duration' => new Duration(241250),
+            'ISRC' => 'USRC17607839',
+            'BARCODE' => '0123456789012',
+            'CATALOGNUMBER' => 'CAT-001',
+            'MusicBrainz Disc Id' => 'disc-like-value',
+            'MusicBrainz Recording Id' => '11111111-1111-4111-8111-111111111111',
+            'MusicBrainz Release Track Id' => '22222222-2222-4222-8222-222222222222',
+        ]);
+        $audio = new Audio;
+        $audio->set('format', new Mode('AAC', 'AAC'));
+        $container->add($audio);
+
+        $this->assertNull($extractor->extract($container, '01-track.flac'));
+
+        $evidence = $extractor->extractEvidence($container, '01-track.flac');
+        $this->assertNotNull($evidence);
+        $this->assertSame(241.25, $evidence['duration_seconds']);
+        $this->assertSame('USRC17607839', $evidence['isrc']);
+        $this->assertSame('0123456789012', $evidence['barcode']);
+        $this->assertSame('CAT-001', $evidence['catalog_number']);
+        $this->assertSame('disc-like-value', $evidence['disc_id']);
+        $this->assertSame('MPEG-4', $evidence['container_format']);
+        $this->assertSame('AAC', $evidence['codec']);
+        $this->assertSame(
+            '11111111-1111-4111-8111-111111111111',
+            $evidence['musicbrainz_recording_id'],
+        );
+        $this->assertSame(
+            '22222222-2222-4222-8222-222222222222',
+            $evidence['musicbrainz_track_id'],
+        );
     }
 
     #[Test]

@@ -8,6 +8,7 @@ use App\Events\ReleaseNameFixed;
 use App\Facades\Search;
 use App\Models\Category;
 use App\Models\Release;
+use App\Models\ReleaseAudioEvidence;
 use App\Models\ReleaseAudioTag;
 use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
 use App\Services\AdditionalProcessing\ArchiveExtractionService;
@@ -19,6 +20,7 @@ use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\UsenetDownloadService;
 use App\Services\AudioProcessing\AudioDecodableLengthProbe;
+use App\Services\AudioProcessing\AudioEvidenceRecorder;
 use App\Services\AudioProcessing\AudioFetcher;
 use App\Services\AudioProcessing\AudioPreviewEncoder;
 use App\Services\AudioProcessing\AudioProcessingConfiguration;
@@ -42,6 +44,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
+use Mhor\MediaInfo\Attribute\Duration;
 use Mhor\MediaInfo\Attribute\Mode;
 use Mhor\MediaInfo\Container\MediaInfoContainer;
 use Mhor\MediaInfo\MediaInfo;
@@ -166,6 +169,9 @@ class AudioReleaseProcessorTest extends TestCase
 
         $migration = require database_path('migrations/2026_08_21_090000_create_release_audio_tags_table.php');
         $migration->up();
+        $evidenceMigrations = glob(database_path('migrations/*_create_release_audio_evidence_tables.php')) ?: [];
+        $this->assertCount(1, $evidenceMigrations);
+        (require $evidenceMigrations[0])->up();
 
         // The search driver is unreachable in tests and the refinement/rename
         // paths sync through it; swap it out rather than log a page of failures.
@@ -189,7 +195,16 @@ class AudioReleaseProcessorTest extends TestCase
     public function test_tags_are_persisted_from_the_probe_article_before_the_rest_is_fetched(): void
     {
         $release = $this->makeRelease();
-        $processor = $this->makeProcessor($this->taggedContainer());
+        $processor = $this->makeProcessor(
+            $this->taggedContainer(),
+            nzbContents: [
+                ['title' => '"01 - track.mp3" yEnc', 'segments' => ['<seg-1>', '<seg-2>', '<seg-3>']],
+                ['title' => '"02 - another track.mp3" yEnc', 'segments' => ['<second-1>', '<second-2>']],
+                ['title' => '"Album.cue" yEnc', 'segments' => ['<cue>']],
+                ['title' => '"Album.m3u" yEnc', 'segments' => ['<playlist>']],
+                ['title' => '"Album.log" yEnc', 'segments' => ['<log>']],
+            ],
+        );
 
         $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
 
@@ -200,6 +215,20 @@ class AudioReleaseProcessorTest extends TestCase
         $this->assertSame('Test Album', $tags->album);
         $this->assertSame('Test Artist', $tags->performer);
         $this->assertSame('MPEG Audio', $tags->audio_format);
+
+        $evidence = ReleaseAudioEvidence::query()->where('releases_id', $release->id)->sole();
+        $this->assertCount(2, $evidence->nzb_manifest);
+        $this->assertSame(['cue', 'playlist', 'eac_log'], array_column($evidence->sidecar_manifest, 'kind'));
+        $this->assertTrue($evidence->source_file_complete);
+        $this->assertTrue($evidence->source_starts_at_zero);
+        $this->assertFalse($evidence->whole_duration_reliable);
+        $this->assertTrue($evidence->only_one_track_probed);
+        $this->assertNull($evidence->archive_manifest_complete);
+        $this->assertSame('USRC17607839', $evidence->tracks()->where('source_ordinal', 1)->value('isrc'));
+        $this->assertSame(
+            '11111111-1111-4111-8111-111111111111',
+            $evidence->tracks()->where('source_ordinal', 1)->value('musicbrainz_recording_id'),
+        );
     }
 
     public function test_a_probe_that_finds_video_declines_without_fetching_anything_else(): void
@@ -272,7 +301,22 @@ class AudioReleaseProcessorTest extends TestCase
             (int) DB::table('releases')->where('id', $release->id)->value('haspreview'),
         );
         $this->assertDatabaseHas('release_audio_tags', ['releases_id' => $release->id, 'album' => 'Test Album']);
+        $this->assertDatabaseHas('release_audio_evidence', ['releases_id' => $release->id, 'revision' => 1]);
         $this->assertSame([], $this->encoderCommands, 'No ffmpeg work may be started for a disabled root.');
+    }
+
+    public function test_an_evidence_persistence_failure_does_not_fail_preview_generation(): void
+    {
+        Schema::dropIfExists('release_audio_evidence_tracks');
+        Schema::dropIfExists('release_audio_evidence');
+        $release = $this->makeRelease();
+
+        $result = $this->makeProcessor($this->taggedContainer())
+            ->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(ProcessingOutcome::Completed, $result->outcome);
+        $this->assertTrue($result->previewCreated);
+        $this->assertFileExists($this->savePath.'audio-guid.mp3');
     }
 
     public function test_an_unidentified_release_is_renamed_from_its_own_tags(): void
@@ -331,6 +375,10 @@ class AudioReleaseProcessorTest extends TestCase
         );
         // The tags are still recorded; only the name is left alone.
         $this->assertDatabaseHas('release_audio_tags', ['releases_id' => $release->id, 'album' => 'Test Album']);
+        $this->assertSame(
+            'Some.Album-GROUP',
+            ReleaseAudioEvidence::query()->where('releases_id', $release->id)->sole()->release_snapshot['searchname'],
+        );
     }
 
     public function test_renaming_is_off_by_default(): void
@@ -457,6 +505,9 @@ class AudioReleaseProcessorTest extends TestCase
         $this->assertSame(ProcessingOutcome::NoUsefulArtifacts, $result->outcome);
         $this->assertSame('WavPack file requires wvunpack, which is not installed.', $result->reason);
         $this->assertSame(0, (int) DB::table('releases')->where('id', $release->id)->value('haspreview'));
+        $this->assertTrue(
+            ReleaseAudioEvidence::query()->where('releases_id', $release->id)->sole()->whole_duration_reliable,
+        );
     }
 
     public function test_an_encrypted_archive_head_settles_passworded_without_an_extra_download(): void
@@ -770,6 +821,7 @@ class AudioReleaseProcessorTest extends TestCase
                 },
             ),
             $previewPolicy,
+            new AudioEvidenceRecorder,
         );
     }
 
@@ -866,6 +918,9 @@ class AudioReleaseProcessorTest extends TestCase
             'album' => 'Test Album',
             'performer' => 'Test Artist',
             'recorded_date' => '2019-04-01',
+            'duration' => new Duration(241250),
+            'ISRC' => 'USRC17607839',
+            'MusicBrainz Recording Id' => '11111111-1111-4111-8111-111111111111',
         ] as $key => $value) {
             $general->set($key, $value);
         }

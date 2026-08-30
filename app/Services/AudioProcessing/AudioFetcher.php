@@ -49,6 +49,15 @@ final class AudioFetcher
 
     private bool $sourceDamaged = false;
 
+    /** @var array<string, array<string, mixed>> */
+    private array $observedArchiveMembers = [];
+
+    private ?bool $archiveManifestComplete = null;
+
+    private int $probedTrackCount = 0;
+
+    private ?string $sampledFilename = null;
+
     public function __construct(
         private readonly AudioProcessingConfiguration $config,
         private readonly UsenetDownloadService $downloadService,
@@ -73,9 +82,18 @@ final class AudioFetcher
     ): AudioFetchResult {
         $this->crcFailures = 0;
         $this->sourceDamaged = false;
+        $this->observedArchiveMembers = [];
+        $this->archiveManifestComplete = $source->kind === AudioSourceKind::Archive ? false : null;
+        $this->probedTrackCount = 0;
+        $this->sampledFilename = null;
         $incompleteReason = $this->incompleteSourceReason($release);
         if ($incompleteReason !== null) {
-            return AudioFetchResult::failed($incompleteReason);
+            return AudioFetchResult::failed($incompleteReason)->withEvidence(
+                [],
+                $this->archiveManifestComplete,
+                null,
+                null,
+            );
         }
 
         $result = match ($source->kind) {
@@ -83,11 +101,20 @@ final class AudioFetcher
             AudioSourceKind::Archive => $this->fetchFromArchive($release, $source, $tmpPath, $groupName, $onProbe),
         };
 
-        return $result->withCrcFailures($this->crcFailures);
+        return $result
+            ->withEvidence(
+                array_values($this->observedArchiveMembers),
+                $this->archiveManifestComplete,
+                $this->probedTrackCount === 0 ? null : $this->probedTrackCount === 1,
+                $this->sampledFilename,
+            )
+            ->withCrcFailures($this->crcFailures);
     }
 
     /**
      * @param  Closure(MediaInfoContainer, string, string): void  $onProbe
+     *
+     * @phpstan-impure
      */
     private function fetchBareFile(
         Release $release,
@@ -125,6 +152,7 @@ final class AudioFetcher
         // Articles 2..n, contiguous and in one request: the clip is taken from
         // whatever this leaves on disk, however short that turns out to be.
         $rest = array_slice($segments, 1, max(0, $this->config->segmentsToDownload - 1));
+        $sourceFileComplete = count($segments) <= $this->config->segmentsToDownload;
         if ($rest !== []) {
             $body = $this->download($rest, $groupName, $release, $source->title);
             if ($body !== null) {
@@ -133,10 +161,22 @@ final class AudioFetcher
                 File::delete($path);
 
                 return AudioFetchResult::failed(self::CRC_FAILURE_REASON);
+            } else {
+                $sourceFileComplete = false;
             }
         }
 
-        return AudioFetchResult::fetched($path, $extension, $probe);
+        return AudioFetchResult::fetched(
+            $path,
+            $extension,
+            $probe,
+            sampledFilename: basename($source->title),
+            sourceFileComplete: $sourceFileComplete,
+            sourceStartsAtZero: true,
+            // MediaInfo ran against article one before the remaining segments
+            // were appended, so only a one-article source has a whole duration.
+            wholeDurationReliable: $sourceFileComplete && count($segments) === 1,
+        );
     }
 
     /**
@@ -148,6 +188,8 @@ final class AudioFetcher
      * counting parts would either stop short or fetch far more than needed.
      *
      * @param  Closure(MediaInfoContainer, string, string): void  $onProbe
+     *
+     * @phpstan-impure
      */
     private function fetchFromArchive(
         Release $release,
@@ -175,6 +217,9 @@ final class AudioFetcher
         /** @var array<int, true> $completedVolumeIndexes */
         $completedVolumeIndexes = [];
 
+        /** @var array<int, true> $fullyDownloadedVolumeIndexes */
+        $fullyDownloadedVolumeIndexes = [];
+
         /** @var array<string, array{bytes: int, volume: int}> $storeProgress */
         $storeProgress = [];
 
@@ -194,9 +239,12 @@ final class AudioFetcher
                 /** @var list<array<string, mixed>> $currentFiles */
                 $currentFiles = [];
 
-                foreach (array_chunk($volume, self::ARCHIVE_FETCH_CHUNK_SEGMENTS) as $chunk) {
+                $chunks = array_chunk($volume, self::ARCHIVE_FETCH_CHUNK_SEGMENTS);
+                $volumeDownloadComplete = true;
+                foreach ($chunks as $chunkIndex => $chunk) {
                     $data = $this->download($chunk, $groupName, $release, $source->title);
                     if ($data === null) {
+                        $volumeDownloadComplete = false;
                         if ($this->sourceDamaged) {
                             return AudioFetchResult::failed(self::CRC_FAILURE_REASON);
                         }
@@ -235,9 +283,18 @@ final class AudioFetcher
                     $currentFiles = array_values($listing['files']);
                     foreach ($currentFiles as $file) {
                         $name = (string) ($file['name'] ?? '');
+                        if ($name !== '') {
+                            $this->observedArchiveMembers[$name] = $file;
+                        }
                         if ($name !== '' && ! array_key_exists($name, $listedFiles)) {
                             $listedFiles[$name] = $file;
                         }
+                    }
+
+                    $listingConclusive = $currentFiles !== [] || ($listing['isFirstVolume'] ?? null) !== null;
+                    if ($chunkIndex === array_key_last($chunks) && $volumeDownloadComplete && $listingConclusive) {
+                        $fullyDownloadedVolumeIndexes[$volumeIndex] = true;
+                        $this->archiveManifestComplete = count($fullyDownloadedVolumeIndexes) === count($volumes);
                     }
 
                     $entry = $this->enrichAudioEntry(
@@ -492,16 +549,20 @@ final class AudioFetcher
 
         $name = (string) ($entry['name'] ?? basename($path));
         $declaredSize = (int) ($entry['size'] ?? 0);
-        $isComplete = $declaredSize > 0 && File::size($path) >= $declaredSize;
+        $sourceStartsAtZero = ! (bool) ($entry['split_before'] ?? false);
+        $isComplete = $sourceStartsAtZero && $declaredSize > 0 && File::size($path) >= $declaredSize;
+        $decodedDurationSeconds = null;
         $requiredSeconds = $this->config->previewStartSeconds
             + $this->config->previewSeconds
             + self::PARTIAL_MARGIN_SECONDS;
 
         try {
-            $hasPreviewWindow = $isComplete || $this->decodableLengthProbe->demuxedSeconds(
-                $path,
-                $requiredSeconds,
-            ) >= $requiredSeconds;
+            if ($isComplete) {
+                $hasPreviewWindow = true;
+            } else {
+                $decodedDurationSeconds = $this->decodableLengthProbe->demuxedSeconds($path, $requiredSeconds);
+                $hasPreviewWindow = $decodedDurationSeconds >= $requiredSeconds;
+            }
         } catch (WavPackDecoderUnavailable $exception) {
             File::delete($path);
 
@@ -524,7 +585,16 @@ final class AudioFetcher
             return $probe;
         }
 
-        return AudioFetchResult::fetched($path, $extension, $probe);
+        return AudioFetchResult::fetched(
+            $path,
+            $extension,
+            $probe,
+            sampledFilename: $name,
+            sourceFileComplete: $isComplete,
+            sourceStartsAtZero: $sourceStartsAtZero,
+            wholeDurationReliable: $isComplete,
+            decodedDurationSeconds: $decodedDurationSeconds,
+        );
     }
 
     /**
@@ -706,6 +776,9 @@ final class AudioFetcher
 
             return AudioFetchResult::failed('MediaInfo could not read the fetched audio.');
         }
+
+        $this->probedTrackCount++;
+        $this->sampledFilename = $sourceFilename;
 
         if ($container->getVideos() !== []) {
             return AudioFetchResult::declined('The probed file carries a video stream.');

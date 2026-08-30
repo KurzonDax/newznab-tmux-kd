@@ -102,6 +102,7 @@ class AudioFetcherArchiveTest extends TestCase
         );
 
         $this->assertFalse($result->succeeded());
+        $this->assertFalse($result->archiveManifestComplete);
         $this->assertSame([64, 1, 64, 1], array_map('count', $this->downloads));
         $this->assertSame([
             'audio-archive.part001.rar',
@@ -132,12 +133,12 @@ class AudioFetcherArchiveTest extends TestCase
             'hasPassword' => false,
         ]);
         $archive->shouldReceive('listArchiveContentsAtPath')->once()->with($this->partPath(2))->andReturn([
-            'files' => [['name' => '01-track.flac', 'size' => 8]],
+            'files' => [['name' => 'CD2/01-track.flac', 'size' => 8]],
             'hasPassword' => false,
         ]);
         $archive->shouldReceive('extractSpecificFileToPath')
             ->once()
-            ->with($this->partPath(1), '01-track.flac', $this->tmpPath, true)
+            ->with($this->partPath(1), 'CD2/01-track.flac', $this->tmpPath, true)
             ->andReturnUsing(function (): string {
                 $path = $this->tmpPath.'01-track.flac';
                 file_put_contents($path, 'abcdefgh');
@@ -149,6 +150,13 @@ class AudioFetcherArchiveTest extends TestCase
 
         $this->assertTrue($result->succeeded());
         $this->assertSame([['<vol-1>'], ['<vol-2>']], $this->downloads);
+        $this->assertSame(['00-group.nfo', 'CD2/01-track.flac'], array_column($result->archiveMembers, 'name'));
+        $this->assertFalse($result->archiveManifestComplete);
+        $this->assertTrue($result->sourceFileComplete);
+        $this->assertTrue($result->sourceStartsAtZero);
+        $this->assertTrue($result->wholeDurationReliable);
+        $this->assertTrue($result->onlyOneTrackProbed);
+        $this->assertSame('CD2/01-track.flac', $result->sampledFilename);
         $this->assertNoArchivePartsRemain();
     }
 
@@ -180,6 +188,7 @@ class AudioFetcherArchiveTest extends TestCase
 
         $this->assertTrue($result->succeeded());
         $this->assertSame('dsf', $result->extension);
+        $this->assertTrue($result->archiveManifestComplete);
         $this->assertNoArchivePartsRemain();
     }
 
@@ -194,6 +203,9 @@ class AudioFetcherArchiveTest extends TestCase
 
         $this->assertTrue($result->succeeded());
         $this->assertSame([['<vol-1>']], $this->downloads);
+        $this->assertFalse($result->sourceFileComplete);
+        $this->assertFalse($result->wholeDurationReliable);
+        $this->assertSame(45.0, $result->decodedDurationSeconds);
         $this->assertNoArchivePartsRemain();
     }
 

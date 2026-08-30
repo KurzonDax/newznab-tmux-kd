@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\AudioProcessing;
 
 use App\Services\AdditionalProcessing\PostedFileClassifier;
+use App\Services\AudioProcessing\DTO\AudioEvidenceFile;
 use App\Services\AudioProcessing\DTO\AudioSource;
 use App\Services\AudioProcessing\Enums\AudioSourceKind;
 
@@ -13,9 +14,8 @@ use App\Services\AudioProcessing\Enums\AudioSourceKind;
  *
  * A posted audio file always wins over an archive: it can be fetched head-first
  * and clipped from a fraction of the release, where an archive has to be pulled
- * a whole volume at a time before it can even be opened. A CD-image rip -- one
- * big .flac/.wv/.ape next to a .cue -- is just a large audio file here; the cue
- * sheet is ignored along with the rest of the side-cars.
+ * a whole volume at a time before it can even be opened. Selection still scans
+ * the complete NZB so the evidence seam retains every audio name and sidecar.
  */
 final class AudioSourceSelector
 {
@@ -26,12 +26,30 @@ final class AudioSourceSelector
     {
         $archiveParts = [];
         $archiveTitle = '';
+        $bareTitle = '';
+        $bareExtension = '';
+        $bareSegments = [];
+        $nzbAudioFiles = [];
+        $sidecars = [];
 
-        foreach ($nzbContents as $file) {
+        foreach ($nzbContents as $index => $file) {
             $title = (string) ($file['title'] ?? '');
             $segments = $this->segments($file);
 
-            if ($title === '' || $segments === []) {
+            if ($title === '') {
+                continue;
+            }
+
+            $filename = $this->filename($title);
+            $sidecarKind = $this->sidecarKind($title);
+            if ($sidecarKind !== null) {
+                $sidecars[] = new AudioEvidenceFile(
+                    ordinal: $index + 1,
+                    filename: $filename,
+                    segmentCount: count($segments),
+                    kind: $sidecarKind,
+                );
+
                 continue;
             }
 
@@ -40,20 +58,39 @@ final class AudioSourceSelector
             }
 
             if (PostedFileClassifier::matchesTerminalExtension($title, AudioProcessingConfiguration::AUDIO_FILE_REGEX, $matches)) {
-                return new AudioSource(
-                    kind: AudioSourceKind::BareFile,
-                    title: $title,
-                    extension: strtoupper((string) ($matches[1] ?? '')),
-                    parts: [$segments],
+                $nzbAudioFiles[] = new AudioEvidenceFile(
+                    ordinal: $index + 1,
+                    filename: $filename,
+                    segmentCount: count($segments),
+                    kind: 'audio',
                 );
+
+                if ($bareTitle === '' && $segments !== []) {
+                    $bareTitle = $title;
+                    $bareExtension = strtoupper((string) ($matches[1] ?? ''));
+                    $bareSegments = $segments;
+                }
+
+                continue;
             }
 
-            if (PostedFileClassifier::containsArchiveCandidate($title)) {
+            if ($segments !== [] && PostedFileClassifier::containsArchiveCandidate($title)) {
                 if ($archiveTitle === '') {
                     $archiveTitle = $title;
                 }
                 $archiveParts[] = $segments;
             }
+        }
+
+        if ($bareTitle !== '') {
+            return new AudioSource(
+                kind: AudioSourceKind::BareFile,
+                title: $bareTitle,
+                extension: $bareExtension,
+                parts: [$bareSegments],
+                nzbAudioFiles: $nzbAudioFiles,
+                sidecars: $sidecars,
+            );
         }
 
         if ($archiveParts === []) {
@@ -67,6 +104,8 @@ final class AudioSourceSelector
             title: $archiveTitle,
             extension: '',
             parts: $archiveParts,
+            nzbAudioFiles: $nzbAudioFiles,
+            sidecars: $sidecars,
         );
     }
 
@@ -90,5 +129,24 @@ final class AudioSourceSelector
         }
 
         return $messageIds;
+    }
+
+    private function filename(string $title): string
+    {
+        if (preg_match_all('/"([^"]+)"/', $title, $matches) > 0) {
+            return trim((string) $matches[1][array_key_last($matches[1])]);
+        }
+
+        return trim((string) preg_replace('/\s+yEnc(?:\s.*)?$/i', '', $title), " \t\n\r\0\x0B\"");
+    }
+
+    private function sidecarKind(string $title): ?string
+    {
+        return match (true) {
+            PostedFileClassifier::matchesTerminalExtension($title, '\\.CUE') => 'cue',
+            PostedFileClassifier::matchesTerminalExtension($title, '\\.(M3U|M3U8|PLS)') => 'playlist',
+            PostedFileClassifier::matchesTerminalExtension($title, '\\.LOG') => 'eac_log',
+            default => null,
+        };
     }
 }
