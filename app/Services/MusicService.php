@@ -368,73 +368,70 @@ class MusicService
     }
 
     /**
-     * Update or create music info from external data.
+     * Update or create music info from an already-established identity.
      *
-     * @param  array<string, mixed>  $amazdata
+     * Name-based provider lookup is intentionally disabled. The title argument remains for
+     * compatibility with existing callers and is not used to establish identity.
+     *
+     * @param  array<string, mixed>  $amazdata  Explicit identity data from a trusted source
      *
      * @throws \Exception
      */
     public function updateMusicInfo(string $title, string $year, ?array $amazdata = null): int|false
     {
-        $ri = new ReleaseImageService;
-
-        $mus = [];
-        if ($amazdata !== null) {
-            $mus = $amazdata;
-        } elseif ($title !== '') {
-            $mus = $this->fetchItunesMusicProperties($title);
-        }
-
-        if ($mus === false) {
+        if ($amazdata === null) {
             return false;
         }
 
-        $check = MusicInfo::query()->where('asin', $mus['asin'])->first(['id']);
+        $releaseImageService = new ReleaseImageService;
+        $musicData = $amazdata;
+
+        $check = MusicInfo::query()->where('asin', $musicData['asin'])->first(['id']);
 
         if ($check === null) {
             $musicId = MusicInfo::query()->insertGetId([
-                'title' => $mus['title'],
-                'asin' => $mus['asin'],
-                'url' => $mus['url'],
-                'salesrank' => $mus['salesrank'],
-                'artist' => $mus['artist'],
-                'publisher' => $mus['publisher'],
-                'releasedate' => $mus['releasedate'],
-                'review' => $mus['review'],
+                'title' => $musicData['title'],
+                'asin' => $musicData['asin'],
+                'url' => $musicData['url'],
+                'salesrank' => $musicData['salesrank'],
+                'artist' => $musicData['artist'],
+                'publisher' => $musicData['publisher'],
+                'releasedate' => $musicData['releasedate'],
+                'review' => $musicData['review'],
                 'year' => $year,
-                'genres_id' => (int) $mus['musicgenres_id'] === -1 ? null : $mus['musicgenres_id'],
-                'tracks' => $mus['tracks'],
+                'genres_id' => (int) $musicData['musicgenres_id'] === -1 ? null : $musicData['musicgenres_id'],
+                'tracks' => $musicData['tracks'],
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
-            $mus['cover'] = (int) $ri->saveRemoteImage(
+            $musicData['cover'] = (int) $releaseImageService->saveRemoteImage(
                 (string) $musicId,
-                $mus['coverurl'],
+                $musicData['coverurl'],
                 $this->imgSavePath,
                 ImageAssetProfile::MetadataCover,
             )->success;
-            MusicInfo::query()->where('id', $musicId)->update(['cover' => $mus['cover']]);
+            MusicInfo::query()->where('id', $musicId)->update(['cover' => $musicData['cover']]);
         } else {
             $musicId = $check['id'];
-            $mus['cover'] = (int) $ri->saveRemoteImage(
+            $musicData['cover'] = (int) $releaseImageService->saveRemoteImage(
                 (string) $musicId,
-                $mus['coverurl'],
+                $musicData['coverurl'],
                 $this->imgSavePath,
                 ImageAssetProfile::MetadataCover,
             )->success;
             MusicInfo::query()->where('id', $musicId)->update([
-                'title' => $mus['title'],
-                'asin' => $mus['asin'],
-                'url' => $mus['url'],
-                'salesrank' => $mus['salesrank'],
-                'artist' => $mus['artist'],
-                'publisher' => $mus['publisher'],
-                'releasedate' => $mus['releasedate'],
-                'review' => $mus['review'],
+                'title' => $musicData['title'],
+                'asin' => $musicData['asin'],
+                'url' => $musicData['url'],
+                'salesrank' => $musicData['salesrank'],
+                'artist' => $musicData['artist'],
+                'publisher' => $musicData['publisher'],
+                'releasedate' => $musicData['releasedate'],
+                'review' => $musicData['review'],
                 'year' => $year,
-                'genres_id' => (int) $mus['musicgenres_id'] === -1 ? null : $mus['musicgenres_id'],
-                'tracks' => $mus['tracks'],
-                'cover' => $mus['cover'],
+                'genres_id' => (int) $musicData['musicgenres_id'] === -1 ? null : $musicData['musicgenres_id'],
+                'tracks' => $musicData['tracks'],
+                'cover' => $musicData['cover'],
             ]);
         }
 
@@ -442,26 +439,26 @@ class MusicService
             if ($this->echooutput) {
                 cli()->header(
                     PHP_EOL.'Added/updated album: '.PHP_EOL.
-                    '   Artist: '.$mus['artist'].PHP_EOL.
-                    '   Title:  '.$mus['title'].PHP_EOL.
+                    '   Artist: '.$musicData['artist'].PHP_EOL.
+                    '   Title:  '.$musicData['title'].PHP_EOL.
                     '   Year:   '.$year
                 );
             }
-            $mus['cover'] = (int) $ri->saveRemoteImage(
+            $musicData['cover'] = (int) $releaseImageService->saveRemoteImage(
                 (string) $musicId,
-                $mus['coverurl'],
+                $musicData['coverurl'],
                 $this->imgSavePath,
                 ImageAssetProfile::MetadataCover,
             )->success;
         } elseif ($this->echooutput) {
-            if ($mus['artist'] === '') {
+            if ($musicData['artist'] === '') {
                 $artist = '';
             } else {
-                $artist = 'Artist: '.$mus['artist'].', Album: ';
+                $artist = 'Artist: '.$musicData['artist'].', Album: ';
             }
 
             cli()->headerOver(
-                'Nothing to update: '.$artist.$mus['title'].' ('.$year.')'
+                'Nothing to update: '.$artist.$musicData['title'].' ('.$year.')'
             );
         }
 
@@ -469,9 +466,10 @@ class MusicService
     }
 
     /**
-     * Process music releases and lookup metadata.
+     * Classify legacy music candidates without performing identity lookup.
      *
-     * @throws \Exception
+     * Parseable releases remain pending for the successor identity worker. The local flag is
+     * retained for command compatibility while automatic provider lookup is disabled.
      */
     public function processMusicReleases(
         bool $local = false,
@@ -486,48 +484,16 @@ class MusicService
 
         if (! empty($res)) {
             foreach ($res as $arr) {
-                $startTime = now();
-                $usedAmazon = false;
                 $album = $this->parseArtist($arr->searchname);
 
                 if ($album !== false) {
-                    $newname = $album['name'].' ('.$album['year'].')';
-
                     if ($this->echooutput) {
-                        cli()->info('Looking up: '.$newname);
+                        cli()->info('Identity lookup deferred: '.$album['name'].' ('.$album['year'].')');
                     }
-
-                    // Do a local lookup first
-                    $musicCheck = $this->getMusicInfoByName('', $album['name']);
-
-                    if ($musicCheck === null && \in_array($album['name'].$album['year'], $this->failCache, true)) {
-                        // Lookup recently failed, no point trying again
-                        if ($this->echooutput) {
-                            cli()->headerOver('Cached previous failure. Skipping.');
-                        }
-                        $albumId = -2;
-                    } elseif ($musicCheck === null && $local === false) {
-                        $albumId = $this->updateMusicInfo($album['name'], $album['year']);
-                        $usedAmazon = true;
-                        if ($albumId === false) {
-                            $albumId = -2;
-                            $this->failCache[] = $album['name'].$album['year'];
-                        }
-                    } else {
-                        $albumId = $musicCheck['id'];
-                    }
-                    Release::query()->where('id', $arr->id)->update(['musicinfo_id' => $albumId]);
                 } else {
                     // No album found.
                     Release::query()->where('id', $arr->id)->update(['musicinfo_id' => -2]);
                     echo '.';
-                }
-
-                // Sleep to not flood the API.
-                $sleeptime = $this->sleeptime / 1000;
-                $diff = now()->diffInSeconds($startTime, true);
-                if ($sleeptime - $diff > 0 && $usedAmazon === true) {
-                    sleep((int) ($sleeptime - $diff));
                 }
             }
 
