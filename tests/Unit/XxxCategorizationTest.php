@@ -174,6 +174,13 @@ class XxxCategorizationTest extends TestCase
             'standalone cum without a video marker' => ['(Porn Video) Rough Sex Cum In Pussy Compilation Erotic Porn'],
             'deepthroating substring' => ['SomeSite.24.03.02.Performer.Deepthroating.Practice.480p'],
             'hookup hotshot studio' => ['HookupHotshot - 2020 Flashback Highlight Compilation'],
+            'ambiguous studio with xxx tag and adult release group' => ['Deeper.Kenzie.Anne.XXX.1080p.MP4-WRB'],
+            'ambiguous studio with adult release group' => ['Deeper.Kenzie.Anne.1080p.MP4-WRB'],
+            'ambiguous studio with date and performer shape' => ['Deeper.24.01.15.Performer.Name.1080p.mp4'],
+            'ambiguous studio with independent explicit marker' => ['Private.OnlyFans.Model.1080p.mp4'],
+            'vixen with adult keyword' => ['Vixen.Performer.Hardcore.1080p.mp4'],
+            'blacked with adult keyword' => ['Blacked.Performer.Anal.2160p.mp4'],
+            'unambiguous studio without corroboration' => ['Brazzers.Performer.Name.1080p.mp4'],
         ];
     }
 
@@ -205,6 +212,13 @@ class XxxCategorizationTest extends TestCase
             'private eyes episode' => ['Private.Eyes.S01E01.1080p.WEB-DL-GROUP'],
             'bang bang film' => ['Bang.Bang.2014.1080p.BluRay.x264-GROUP'],
             'babes in toyland' => ['Babes.In.Toyland.1986.720p.WEB-DL'],
+            'toy story film' => ['Toy.Story.1995.1080p.BluRay.x264-GROUP'],
+            'casting title word' => ['Casting.2023.1080p.WEB-DL.x264-GROUP'],
+            'couch title word' => ['The.Couch.2024.1080p.WEB-DL.x264-GROUP'],
+            'compilation title word' => ['The.Compilation.2022.1080p.WEB-DL.x264-GROUP'],
+            'ambiguous words do not corroborate each other' => ['Casting.Couch.2024.1080p.WEB-DL.x264-GROUP'],
+            'bound title word' => ['Bound.1996.1080p.BluRay.x264-GROUP'],
+            'kink documentary title' => ['Kink.2013.1080p.WEB-DL.x264-GROUP'],
             'cumulative windows update' => ['Cumulative.Update.Windows.11.KB5043080'],
             'circumstance movie' => ['Circumstance.2011.1080p.WEB-DL'],
             'document substring' => ['Document.Everything.2023.720p'],
@@ -222,6 +236,50 @@ class XxxCategorizationTest extends TestCase
             Category::rootCategoryFor($categoryId),
             "'{$releaseName}' resolved to {$categoryId} via {$passable->bestResult->matchedBy}"
         );
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function ambiguousStudioTvReleaseProvider(): array
+    {
+        return [
+            'yu-gi-oh episode 11 full name' => ["Yu-Gi-Oh!.5D's.S02E11.Digging.Deeper.Part.1.1080p.WEBRip.10bit.EAC3.2.0.x265-iVy"],
+            'yu-gi-oh episode 11 truncated search name' => ["Yu-Gi-Oh!.5D's.S02E11.Digging.Deeper.Part.1.1080p.WEBRip.x265"],
+            'yu-gi-oh episode 12' => ["Yu-Gi-Oh!.5D's.S02E12.Digging.Deeper.Part.2.1080p.WEBRip.10bit.EAC3.2.0.X265-IVy"],
+            'yu-gi-oh episode 12 truncated search name' => ["Yu-Gi-Oh!.5D's.S02E12.Digging.Deeper.Part.2.1080p.WEBRip.x265"],
+            'yu-gi-oh episode 13' => ["Yu-Gi-Oh!.5D's.S02E13.Digging.Deeper.Part.3.1080p.WEBRip.10bit.EAC3.2.0.X265-IVy"],
+            'yu-gi-oh episode 13 truncated search name' => ["Yu-Gi-Oh!.5D's.S02E13.Digging.Deeper.Part.3.1080p.WEBRip.x265"],
+            'private lessons episode title' => ['Show.Name.S01E05.Private.Lessons.1080p.WEB-DL.x264-GROUP'],
+        ];
+    }
+
+    #[DataProvider('ambiguousStudioTvReleaseProvider')]
+    public function test_uncorroborated_ambiguous_studio_words_remain_tv(string $releaseName): void
+    {
+        $context = new ReleaseContext(releaseName: $releaseName, groupId: 0, groupName: 'alt.binaries.multimedia');
+        $passable = $this->runPipeline($releaseName, 'alt.binaries.multimedia');
+
+        $this->assertFalse($context->hasAdultMarkers(), "Adult markers detected for: {$releaseName}");
+        $this->assertSame(
+            Category::TV_ROOT,
+            Category::rootCategoryFor($passable->bestResult->categoryId),
+            "'{$releaseName}' resolved to {$passable->bestResult->categoryId} via {$passable->bestResult->matchedBy}"
+        );
+    }
+
+    public function test_ambiguous_studio_is_corroborated_by_an_adult_newsgroup(): void
+    {
+        $releaseName = 'Vixen.Performer.Name.1080p.mp4';
+        $context = new ReleaseContext(
+            releaseName: $releaseName,
+            groupId: 0,
+            groupName: 'alt.binaries.multimedia.erotica.amateur',
+        );
+        $passable = $this->runPipeline($releaseName, $context->groupName);
+
+        $this->assertTrue($context->hasAdultMarkers());
+        $this->assertSame(Category::XXX_ROOT, Category::rootCategoryFor($passable->bestResult->categoryId));
     }
 
     /**
