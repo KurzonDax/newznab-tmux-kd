@@ -10,7 +10,6 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use LogicException;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
@@ -168,7 +167,7 @@ class AdditionalCandidateQueryTest extends TestCase
         $this->assertSame('worker-token', DB::table('releases')->where('id', 2)->value('additional_pp_claim_token'));
     }
 
-    public function test_claim_does_not_mutate_a_reused_base_builder(): void
+    public function test_claim_reuses_its_encapsulated_base_without_accumulating_clauses(): void
     {
         DB::table('categories')->insert(['id' => 1]);
         DB::table('releases')->insert([
@@ -176,43 +175,19 @@ class AdditionalCandidateQueryTest extends TestCase
             $this->releaseRow(2, 'a', postdate: '2026-07-12 09:00:00'),
         ]);
 
-        $base = AdditionalCandidateQuery::baseBuilder(guidChar: 'a', includePasswordStatuses: false);
-        $sql = $base->toSql();
-        $bindings = $base->getBindings();
+        $candidateQueries = [];
+        DB::listen(static function (QueryExecuted $query) use (&$candidateQueries): void {
+            if (str_starts_with($query->sql, 'select "r"."id", "r"."postdate"')) {
+                $candidateQueries[] = $query->sql;
+            }
+        });
 
-        ReleaseClaimant::claim($base, 'worker-one', 1, ['id'], [999]);
-        $this->assertSame($sql, $base->toSql());
-        $this->assertSame($bindings, $base->getBindings());
+        $claimant = ReleaseClaimant::forAdditionalClaim(guidChar: 'a');
+        $claimant->claim('worker-one', 1, ['id'], [999]);
+        $claimant->claim('worker-two', 1, ['id'], [999]);
 
-        ReleaseClaimant::claim($base, 'worker-two', 1, ['id'], [999]);
-        $this->assertSame($sql, $base->toSql());
-        $this->assertSame($bindings, $base->getBindings());
-    }
-
-    public function test_claim_rejects_a_base_builder_with_a_password_status_predicate(): void
-    {
-        $this->expectException(LogicException::class);
-        $this->expectExceptionMessage('Claim base builders must not include a passwordstatus predicate.');
-
-        ReleaseClaimant::claim(
-            AdditionalCandidateQuery::baseBuilder(guidChar: 'a'),
-            'worker-token',
-            1,
-            ['id'],
-        );
-    }
-
-    public function test_claim_allows_a_non_predicate_password_status_reference(): void
-    {
-        DB::table('categories')->insert(['id' => 1]);
-        DB::table('releases')->insert($this->releaseRow(1, 'a'));
-
-        $base = AdditionalCandidateQuery::baseBuilder(guidChar: 'a', includePasswordStatuses: false)
-            ->addSelect('r.passwordstatus');
-
-        $claimed = ReleaseClaimant::claim($base, 'worker-token', 1, ['id']);
-
-        $this->assertSame([1], $claimed->pluck('id')->all());
+        $this->assertCount(4, $candidateQueries);
+        $this->assertSame(array_slice($candidateQueries, 0, 2), array_slice($candidateQueries, 2, 2));
     }
 
     public function test_claim_reads_each_pending_password_state_by_equality_and_merges_newest_first(): void

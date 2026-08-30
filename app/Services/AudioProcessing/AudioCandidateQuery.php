@@ -128,18 +128,8 @@ final class AudioCandidateQuery
         array $columns = ['*'],
         array $excludedReleaseIds = [],
     ): EloquentCollection {
-        return ReleaseClaimant::claim(
-            self::baseBuilder(
-                $groupID,
-                $guidChar,
-                $maxSizeBytes,
-                includePasswordStatuses: false,
-            ),
-            $token,
-            $limit,
-            $columns,
-            $excludedReleaseIds,
-        );
+        return ReleaseClaimant::forAudioClaim($groupID, $guidChar, $maxSizeBytes)
+            ->claim($token, $limit, $columns, $excludedReleaseIds);
     }
 
     /**

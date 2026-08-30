@@ -220,19 +220,8 @@ final class AdditionalCandidateQuery
         array $columns = ['*'],
         array $excludedReleaseIds = [],
     ): EloquentCollection {
-        return ReleaseClaimant::claim(
-            self::baseBuilder(
-                $groupID,
-                $guidChar,
-                $minSizeBytes,
-                $maxSizeBytes,
-                includePasswordStatuses: false,
-            ),
-            $token,
-            $limit,
-            $columns,
-            $excludedReleaseIds,
-        );
+        return ReleaseClaimant::forAdditionalClaim($groupID, $guidChar, $minSizeBytes, $maxSizeBytes)
+            ->claim($token, $limit, $columns, $excludedReleaseIds);
     }
 
     public static function clearClaim(int $releaseId, ?string $token = null): void

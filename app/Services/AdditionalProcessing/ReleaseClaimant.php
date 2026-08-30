@@ -11,11 +11,9 @@ use App\Services\AudioProcessing\AudioCandidateQuery;
 use App\Services\AudioProcessing\AudioRouting;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
-use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use LogicException;
 use PDO;
 
 /**
@@ -55,6 +53,39 @@ final class ReleaseClaimant
     private static ?PDO $supportsClaimsPdo = null;
 
     private static ?string $supportsClaimsDatabase = null;
+
+    /**
+     * @param  Builder<Release>  $base
+     */
+    private function __construct(private readonly Builder $base) {}
+
+    public static function forAdditionalClaim(
+        int|string $groupID = '',
+        string $guidChar = '',
+        ?int $minSizeBytes = null,
+        ?int $maxSizeBytes = null,
+    ): self {
+        return new self(AdditionalCandidateQuery::baseBuilder(
+            $groupID,
+            $guidChar,
+            $minSizeBytes,
+            $maxSizeBytes,
+            includePasswordStatuses: false,
+        ));
+    }
+
+    public static function forAudioClaim(
+        int|string $groupID = '',
+        string $guidChar = '',
+        ?int $maxSizeBytes = null,
+    ): self {
+        return new self(AudioCandidateQuery::baseBuilder(
+            $groupID,
+            $guidChar,
+            $maxSizeBytes,
+            includePasswordStatuses: false,
+        ));
+    }
 
     /**
      * The predicates that make a release pending for *either* path: waiting on a
@@ -133,30 +164,24 @@ final class ReleaseClaimant
      * Select up to $limit rows from $base with non-locking per-status reads,
      * stamp still-available rows, and return only the token's winners.
      *
-     * @param  Builder<Release>  $base  Predicate-applied, aliased `r`, unordered, and without a password status predicate.
      * @param  list<string>  $columns
      * @param  list<int>  $excludedReleaseIds
      * @return EloquentCollection<int, Release>
      */
-    public static function claim(
-        Builder $base,
+    public function claim(
         string $token,
         int $limit,
         array $columns = ['*'],
         array $excludedReleaseIds = [],
     ): EloquentCollection {
-        if (self::hasPasswordStatusPredicate($base->getQuery())) {
-            throw new LogicException('Claim base builders must not include a passwordstatus predicate.');
-        }
-
         $effectiveLimit = max(1, $limit);
 
-        return DB::transaction(function () use ($base, $token, $effectiveLimit, $columns, $excludedReleaseIds): EloquentCollection {
+        return DB::transaction(function () use ($token, $effectiveLimit, $columns, $excludedReleaseIds): EloquentCollection {
             $supportsClaims = self::supportsClaims();
             $candidates = collect();
 
             foreach (self::PENDING_PASSWORD_STATUSES as $passwordStatus) {
-                $query = (clone $base)
+                $query = (clone $this->base)
                     ->select(['r.id', 'r.postdate'])
                     ->where('r.passwordstatus', $passwordStatus)
                     ->orderByDesc('r.postdate')
@@ -214,23 +239,6 @@ final class ReleaseClaimant
                 ->orderByRaw(self::idOrderExpression($ids))
                 ->get();
         }, 3);
-    }
-
-    private static function hasPasswordStatusPredicate(QueryBuilder $query): bool
-    {
-        foreach ($query->wheres as $where) {
-            $column = $where['column'] ?? null;
-            if (is_string($column) && ($column === 'passwordstatus' || str_ends_with($column, '.passwordstatus'))) {
-                return true;
-            }
-
-            $nestedQuery = $where['query'] ?? null;
-            if ($nestedQuery instanceof QueryBuilder && self::hasPasswordStatusPredicate($nestedQuery)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /**
