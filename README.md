@@ -25,6 +25,7 @@ This project is a fork of [newznab plus](https://github.com/anth0/nnplus) and [n
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Configuration](#configuration)
+- [Operations Guides](#operations-guides)
 - [Database Setup](#database-setup)
 - [Search Engines](#search-engines)
 - [Console Commands](#console-commands)
@@ -163,6 +164,13 @@ REDIS_PORT=6379
 ```
 
 For high-volume processing, consider using [Laravel Horizon](https://github.com/NNTmux/newznab-tmux/wiki/Laravel-Horizon).
+
+## Operations Guides
+
+- [Hardware-accelerated clip encoding](docs/hardware-acceleration.md)
+- [Backups](docs/backups.md)
+- [ManticoreSearch upgrades](docs/manticore-28-upgrade.md)
+- [Release-table optimization](docs/releases-table-optimization.md)
 
 ## Database Setup
 
