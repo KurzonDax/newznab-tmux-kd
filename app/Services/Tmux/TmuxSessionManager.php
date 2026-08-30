@@ -76,7 +76,7 @@ class TmuxSessionManager
             $this->sessionName,
             '-n',
             $windowName,
-            'true',
+            'sh',
         );
 
         $result = Process::timeout(30)->run($arguments);
@@ -90,6 +90,27 @@ class TmuxSessionManager
         $paneId = trim($result->output());
         if (! preg_match('/^%[0-9]+$/', $paneId)) {
             $this->lastError = "Tmux returned an invalid pane ID: '{$paneId}'.";
+
+            return null;
+        }
+
+        $serverOptionsResult = Process::timeout(10)->run([
+            'tmux',
+            'set-option',
+            '-g',
+            'remain-on-exit',
+            'on',
+            ';',
+            'respawn-pane',
+            '-k',
+            '-t',
+            $paneId,
+            'true',
+        ]);
+
+        if (! $serverOptionsResult->successful()) {
+            $this->lastError = trim($serverOptionsResult->errorOutput());
+            Process::timeout(30)->run(['tmux', 'kill-session', '-t', $this->sessionName]);
 
             return null;
         }
