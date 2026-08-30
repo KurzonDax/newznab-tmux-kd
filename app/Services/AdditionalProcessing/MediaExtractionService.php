@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\AdditionalProcessing;
 
+use App\Enums\ClipGenerationDeclineReason;
 use App\Enums\ImageAssetProfile;
 use App\Models\Release;
 use App\Models\ReleaseVideoClip;
@@ -96,7 +97,7 @@ class MediaExtractionService
             return false;
         }
 
-        return $this->shouldAttemptClip($categoriesId) && $this->storeClip($fileLocation, $tmpPath, $guid);
+        return $this->shouldAttemptClip($categoriesId, $guid) && $this->storeClip($fileLocation, $tmpPath, $guid);
     }
 
     /**
@@ -104,11 +105,21 @@ class MediaExtractionService
      * Free-disk guard's threshold no video artifact is stored rather than
      * growing the covers volume.
      */
-    private function shouldAttemptClip(?int $categoriesId): bool
+    private function shouldAttemptClip(?int $categoriesId, string $guid): bool
     {
-        return $categoriesId !== null
-            && $this->clipPolicy->enabledForCategory($categoriesId)
-            && $this->freeDiskGuard->allows($this->releaseImage->vidSavePath);
+        if ($categoriesId === null || ! $this->clipPolicy->enabledForCategory($categoriesId)) {
+            ClipGenerationLog::declined($guid, ClipGenerationDeclineReason::PolicyDisabled);
+
+            return false;
+        }
+
+        if (! $this->freeDiskGuard->allows($this->releaseImage->vidSavePath)) {
+            ClipGenerationLog::declined($guid, ClipGenerationDeclineReason::DiskGuarded);
+
+            return false;
+        }
+
+        return true;
     }
 
     private function storeClip(string $fileLocation, string $tmpPath, string $guid): bool
@@ -118,6 +129,7 @@ class MediaExtractionService
             $tmpPath,
             $this->ffmpegBinaryPath(),
             $this->config->timeoutSeconds > 0 ? $this->config->timeoutSeconds : 60,
+            $guid,
             $this->config->previewTargetSeconds,
         );
         if ($clip === null) {
@@ -132,11 +144,17 @@ class MediaExtractionService
             && $clip->durationSeconds < $this->config->clipMinimumSeconds
         ) {
             File::delete($clip->path);
+            ClipGenerationLog::declined($guid, ClipGenerationDeclineReason::BelowDurationFloor, [
+                'duration_seconds' => $clip->durationSeconds,
+                'minimum_seconds' => $this->config->clipMinimumSeconds,
+            ]);
 
             return false;
         }
 
         if (! $this->storeGeneratedMedia($clip->path, $this->releaseImage->vidSavePath.$guid.'.'.$clip->extension)) {
+            ClipGenerationLog::declined($guid, ClipGenerationDeclineReason::StoreFailed);
+
             return false;
         }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\AdditionalProcessing;
 
+use App\Enums\ClipGenerationDeclineReason;
 use App\Services\AdditionalProcessing\DTO\VideoClipEncodeResult;
 use Closure;
 use Symfony\Component\Process\Process;
@@ -67,17 +68,26 @@ class VideoClipEncoder
         string $tmpPath,
         string $ffmpegBinary,
         int $timeoutSeconds,
+        string $releaseGuid,
         int $previewTargetSeconds = 30,
     ): ?VideoClipEncodeResult {
         $streams = $this->probeStreams($sourcePath, $ffmpegBinary, $timeoutSeconds);
         if ($streams === null) {
+            ClipGenerationLog::declined($releaseGuid, ClipGenerationDeclineReason::ProbeFailed);
+
             return null;
         }
 
         $container = self::VIDEO_CODEC_CONTAINERS[$streams['video']] ?? null;
+        $unsafeVideoCodec = $container === null ? $streams['video'] : null;
         $hasAudio = $streams['audio'] !== null;
+        $unsafeAudioCodec = $container !== null
+            && $hasAudio
+            && ! in_array($streams['audio'], self::CONTAINER_AUDIO_CODECS[$container], true)
+                ? $streams['audio']
+                : null;
         $streamCopy = $container !== null
-            && (! $hasAudio || in_array($streams['audio'], self::CONTAINER_AUDIO_CODECS[$container], true));
+            && $unsafeAudioCodec === null;
         $container = $streamCopy ? $container : 'mp4';
 
         $outputPath = $tmpPath.'clip_'.uniqid('', true).'.'.$container;
@@ -115,14 +125,29 @@ class VideoClipEncoder
 
         try {
             ($this->commandRunner)($command, $timeoutSeconds);
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
             @unlink($outputPath);
+            $this->logDeclinedEncode(
+                $releaseGuid,
+                $unsafeVideoCodec,
+                $unsafeAudioCodec,
+                ClipGenerationDeclineReason::RemuxFailed,
+                [
+                    'exception_message' => $exception->getMessage(),
+                ],
+            );
 
             return null;
         }
 
         if (! is_file($outputPath) || filesize($outputPath) === 0) {
             @unlink($outputPath);
+            $this->logDeclinedEncode(
+                $releaseGuid,
+                $unsafeVideoCodec,
+                $unsafeAudioCodec,
+                ClipGenerationDeclineReason::EmptyOutput,
+            );
 
             return null;
         }
@@ -134,6 +159,42 @@ class VideoClipEncoder
             durationSeconds: $this->probeDurationSeconds($outputPath, $ffmpegBinary, $timeoutSeconds),
             bytes: (int) filesize($outputPath),
         );
+    }
+
+    /**
+     * An unsafe codec is the causal decline when its fallback cannot produce a
+     * Clip; otherwise report the mechanical failure of the stream-copy path.
+     *
+     * @param  array<string, int|string>  $context
+     */
+    private function logDeclinedEncode(
+        string $releaseGuid,
+        ?string $unsafeVideoCodec,
+        ?string $unsafeAudioCodec,
+        ClipGenerationDeclineReason $safeStreamReason,
+        array $context = [],
+    ): void {
+        if ($unsafeVideoCodec !== null) {
+            ClipGenerationLog::declined($releaseGuid, ClipGenerationDeclineReason::UnsafeVideoCodec, [
+                'video_codec' => $unsafeVideoCodec,
+                'failure_reason' => $safeStreamReason->value,
+                ...$context,
+            ]);
+
+            return;
+        }
+
+        if ($unsafeAudioCodec !== null) {
+            ClipGenerationLog::declined($releaseGuid, ClipGenerationDeclineReason::UnsafeAudioCodec, [
+                'audio_codec' => $unsafeAudioCodec,
+                'failure_reason' => $safeStreamReason->value,
+                ...$context,
+            ]);
+
+            return;
+        }
+
+        ClipGenerationLog::declined($releaseGuid, $safeStreamReason, $context);
     }
 
     /**

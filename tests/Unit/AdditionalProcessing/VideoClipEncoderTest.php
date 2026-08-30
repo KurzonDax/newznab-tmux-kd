@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Tests\Unit\AdditionalProcessing;
 
 use App\Services\AdditionalProcessing\VideoClipEncoder;
-use PHPUnit\Framework\TestCase;
+use Illuminate\Support\Facades\Log;
+use RuntimeException;
+use Tests\TestCase;
 
 class VideoClipEncoderTest extends TestCase
 {
@@ -50,7 +52,7 @@ class VideoClipEncoderTest extends TestCase
             return 'Duration: 00:00:30.20, start: 0.000000, bitrate: 5000 kb/s';
         });
 
-        $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, '/usr/bin/ffmpeg', 60);
+        $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, '/usr/bin/ffmpeg', 60, 'test-guid');
 
         $this->assertNotNull($result);
         $this->assertSame('mp4', $result->extension);
@@ -85,7 +87,7 @@ class VideoClipEncoderTest extends TestCase
             return 'Duration: 00:00:17.00, start: 0.000000, bitrate: 2000 kb/s';
         });
 
-        $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 17);
+        $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'test-guid', 17);
 
         $this->assertNotNull($result);
         $this->assertSame('mp4', $result->extension);
@@ -99,6 +101,32 @@ class VideoClipEncoderTest extends TestCase
         $this->assertCommandOption($transcode, '-c:a', 'aac');
         $this->assertCommandOption($transcode, '-t', '17');
         $this->assertContains('+faststart', $transcode);
+    }
+
+    public function test_an_unsafe_video_codec_logs_the_codec_when_its_fallback_declines(): void
+    {
+        Log::spy();
+        $encoder = new VideoClipEncoder(function (array $command, int $timeout): string {
+            if (str_ends_with((string) end($command), 'source.bin')) {
+                return "Stream #0:0: Video: hevc (Main)\n  Stream #0:1: Audio: aac (LC)";
+            }
+
+            throw new RuntimeException('fallback decode failed');
+        });
+
+        $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'unsafe-video-guid');
+
+        $this->assertNull($result);
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip generation declined',
+            [
+                'release_guid' => 'unsafe-video-guid',
+                'reason' => 'clip_unsafe_video_codec',
+                'video_codec' => 'hevc',
+                'failure_reason' => 'clip_remux_failed',
+                'exception_message' => 'fallback decode failed',
+            ],
+        );
     }
 
     public function test_h264_with_ac3_copies_video_and_only_transcodes_audio(): void
@@ -119,7 +147,7 @@ class VideoClipEncoderTest extends TestCase
             return 'Duration: 00:00:12.00, start: 0.000000, bitrate: 3000 kb/s';
         });
 
-        $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 12);
+        $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'test-guid', 12);
 
         $this->assertNotNull($result);
         $transcode = $commands[1];
@@ -127,6 +155,32 @@ class VideoClipEncoderTest extends TestCase
         $this->assertCommandOption($transcode, '-c:a', 'aac');
         $this->assertCommandOption($transcode, '-t', '12');
         $this->assertNotContains('libx264', $transcode);
+    }
+
+    public function test_an_unsafe_audio_codec_logs_the_codec_when_its_fallback_declines(): void
+    {
+        Log::spy();
+        $encoder = new VideoClipEncoder(function (array $command, int $timeout): string {
+            if (str_ends_with((string) end($command), 'source.bin')) {
+                return "Stream #0:0: Video: h264 (High)\n  Stream #0:1: Audio: ac3, 48000 Hz";
+            }
+
+            throw new RuntimeException('audio fallback failed');
+        });
+
+        $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'unsafe-audio-guid');
+
+        $this->assertNull($result);
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip generation declined',
+            [
+                'release_guid' => 'unsafe-audio-guid',
+                'reason' => 'clip_unsafe_audio_codec',
+                'audio_codec' => 'ac3',
+                'failure_reason' => 'clip_remux_failed',
+                'exception_message' => 'audio fallback failed',
+            ],
+        );
     }
 
     public function test_a_zero_preview_target_leaves_the_fallback_transcode_uncapped(): void
@@ -143,7 +197,7 @@ class VideoClipEncoderTest extends TestCase
             return 'Stream #0:0: Video: hevc (Main)';
         });
 
-        $this->assertNotNull($encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 0));
+        $this->assertNotNull($encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'test-guid', 0));
         $this->assertNotContains('-t', $commands[1]);
     }
 
@@ -161,7 +215,7 @@ class VideoClipEncoderTest extends TestCase
             return "Stream #0:0: Video: vp9 (Profile 0)\n  Stream #0:1: Audio: opus, 48000 Hz";
         });
 
-        $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60);
+        $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'test-guid');
 
         $this->assertNotNull($result);
         $this->assertSame('webm', $result->extension);
@@ -183,7 +237,7 @@ class VideoClipEncoderTest extends TestCase
             return 'Stream #0:0: Video: h264 (Main)';
         });
 
-        $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60);
+        $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'test-guid');
 
         $this->assertNotNull($result);
         $this->assertSame('mp4', $result->extension);
@@ -193,18 +247,50 @@ class VideoClipEncoderTest extends TestCase
     public function test_a_source_without_video_is_refused_without_running_an_encode(): void
     {
         $commandCount = 0;
+        Log::spy();
         $encoder = new VideoClipEncoder(function (array $command, int $timeout) use (&$commandCount): string {
             $commandCount++;
 
             return 'Stream #0:0: Audio: aac (LC)';
         });
 
-        $this->assertNull($encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 30));
+        $this->assertNull($encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'probe-failure-guid'));
         $this->assertSame(1, $commandCount);
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip generation declined',
+            [
+                'release_guid' => 'probe-failure-guid',
+                'reason' => 'clip_probe_failed',
+            ],
+        );
+    }
+
+    public function test_a_probe_exception_logs_probe_failed(): void
+    {
+        Log::spy();
+        $encoder = new VideoClipEncoder(
+            static fn (array $command, int $timeout): never => throw new RuntimeException('probe process failed'),
+        );
+
+        $this->assertNull($encoder->encode(
+            $this->tmpPath.'source.bin',
+            $this->tmpPath,
+            'ffmpeg',
+            60,
+            'probe-exception-guid',
+        ));
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip generation declined',
+            [
+                'release_guid' => 'probe-exception-guid',
+                'reason' => 'clip_probe_failed',
+            ],
+        );
     }
 
     public function test_an_empty_remux_output_is_refused(): void
     {
+        Log::spy();
         $encoder = new VideoClipEncoder(function (array $command, int $timeout): string {
             if (in_array('copy', $command, true)) {
                 file_put_contents(end($command), '');
@@ -215,11 +301,43 @@ class VideoClipEncoderTest extends TestCase
             return 'Stream #0:0: Video: h264 (High)';
         });
 
-        $this->assertNull($encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60));
+        $this->assertNull($encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'empty-output-guid'));
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip generation declined',
+            [
+                'release_guid' => 'empty-output-guid',
+                'reason' => 'clip_empty_output',
+            ],
+        );
+    }
+
+    public function test_a_remux_exception_logs_the_failure_message(): void
+    {
+        Log::spy();
+        $encoder = new VideoClipEncoder(function (array $command, int $timeout): string {
+            if (str_ends_with((string) end($command), 'source.bin')) {
+                return 'Stream #0:0: Video: h264 (High)';
+            }
+
+            throw new RuntimeException('ffmpeg timed out after 60 seconds');
+        });
+
+        $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'remux-failure-guid');
+
+        $this->assertNull($result);
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip generation declined',
+            [
+                'release_guid' => 'remux-failure-guid',
+                'reason' => 'clip_remux_failed',
+                'exception_message' => 'ffmpeg timed out after 60 seconds',
+            ],
+        );
     }
 
     public function test_a_timed_out_encode_discards_its_partial_output(): void
     {
+        Log::spy();
         $fakeFfmpeg = $this->tmpPath.'fake-ffmpeg';
         file_put_contents($fakeFfmpeg, <<<'SHELL'
 #!/bin/sh
@@ -238,8 +356,14 @@ SHELL);
 
         $encoder = new VideoClipEncoder;
 
-        $this->assertNull($encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, $fakeFfmpeg, 1));
+        $this->assertNull($encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, $fakeFfmpeg, 1, 'timeout-guid'));
         $this->assertSame([], glob($this->tmpPath.'clip_*') ?: []);
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip generation declined',
+            \Mockery::on(static fn (array $context): bool => $context['release_guid'] === 'timeout-guid'
+                && $context['reason'] === 'clip_remux_failed'
+                && str_contains((string) $context['exception_message'], 'exceeded the timeout of 1 seconds')),
+        );
     }
 
     /**
