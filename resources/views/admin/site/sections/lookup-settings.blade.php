@@ -88,6 +88,36 @@
                         </div>
 
                         <div>
+                            <x-label for="music_identity_enabled">
+                                <i class="fas fa-fingerprint mr-1"></i>Music Identity Resolution
+                            </x-label>
+                            <x-select id="music_identity_enabled" name="music_identity_enabled">
+                                <option value="1" @selected(($site['music_identity_enabled'] ?? '1') == 1)>Enabled when an endpoint is configured</option>
+                                <option value="0" @selected(($site['music_identity_enabled'] ?? '1') == 0)>Disabled</option>
+                            </x-select>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Uses immutable local audio evidence to resolve MusicBrainz identities. No provider requests are made until MUSICBRAINZ_ENDPOINT_URL is configured.</p>
+                        </div>
+
+                        <div>
+                            <x-label for="music_identity_shadow">
+                                <i class="fas fa-eye mr-1"></i>Music Identity Shadow Mode
+                            </x-label>
+                            <x-select id="music_identity_shadow" name="music_identity_shadow">
+                                <option value="1" @selected(($site['music_identity_shadow'] ?? '1') == 1)>Shadow only</option>
+                                <option value="0" @selected(($site['music_identity_shadow'] ?? '1') == 0)>Allow configured projections</option>
+                            </x-select>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Shadow mode records decisions for calibration without changing release metadata or names. Default: on.</p>
+                        </div>
+
+                        <div>
+                            <x-label for="music_identity_workers">
+                                <i class="fas fa-layer-group mr-1"></i>Music Identity Workers
+                            </x-label>
+                            <x-input type="number" min="1" max="8" id="music_identity_workers" name="music_identity_workers" :value="$site['music_identity_workers'] ?? '1'" />
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Maximum resolver workers. Gateway request concurrency and public MusicBrainz etiquette remain independently bounded. Default: 1.</p>
+                        </div>
+
+                        <div>
                             <label for="lookupgames" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                                 <i class="fas fa-gamepad mr-1"></i>Lookup Games
                             </label>

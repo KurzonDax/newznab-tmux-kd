@@ -1,0 +1,45 @@
+{
+  "id": "11111111-1111-4111-8111-111111111111",
+  "title": "OK Computer",
+  "status": "Official",
+  "date": "1997-06-16",
+  "country": "GB",
+  "barcode": "724385522923",
+  "artist-credit": [{"name": "Radiohead", "artist": {"id": "a74b1b7f-71a5-4011-9441-d0b5e4122711", "name": "Radiohead"}}],
+  "release-group": {
+    "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "title": "OK Computer",
+    "primary-type": "Album",
+    "secondary-types": [],
+    "first-release-date": "1997-05-21",
+    "artist-credit": [{"name": "Radiohead"}]
+  },
+  "label-info": [
+    {"catalog-number": "NODATA 02", "label": {"id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "name": "XL Recordings"}}
+  ],
+  "media": [
+    {
+      "position": 1,
+      "format": "CD",
+      "track-count": 1,
+      "discs": [{"id": "I5l9cCSFccLKFEKS.7wqSZAorPU-"}],
+      "tracks": [
+        {
+          "id": "44444444-4444-4444-8444-444444444444",
+          "title": "No Surprises",
+          "position": 1,
+          "number": "1",
+          "length": 229000,
+          "artist-credit": [{"name": "Radiohead"}],
+          "recording": {
+            "id": "6e615e70-7f67-4f38-9f95-9dfbd579a2b3",
+            "title": "No Surprises",
+            "length": 229000,
+            "artist-credit": [{"name": "Radiohead"}],
+            "isrcs": ["GBAYE9701372"]
+          }
+        }
+      ]
+    }
+  ]
+}
