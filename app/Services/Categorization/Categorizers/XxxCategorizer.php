@@ -15,11 +15,9 @@ class XxxCategorizer extends AbstractCategorizer
 {
     protected int $priority = 10; // High priority - should run early
 
-    // Known adult studios/sites - comprehensive list
-    protected const KNOWN_STUDIOS = 'Brazzers|NaughtyAmerica|RealityKings|Bangbros|BangBros18|TeenFidelity|PornPros|SexArt|WowGirls|Vixen|Blacked|Tushy|Deeper|Bellesa|Defloration|MetArt|MetArtX|TheLifeErotic|VivThomas|JoyMii|Nubiles|NubileFilms|Anilos|FamilyStrokes|X-Art|Babes|Twistys|WetAndPuffy|WowPorn|MomsTeachSex|Mofos|BangBus|Passion-HD|EvilAngel|DorcelClub|Private|Hustler|CherryPimps|PureTaboo|Lady[._ -]?Lyne|TeamSkeet|GirlsWay|SweetSinner|NewSensations|Digital[._ -]?Playground|Wicked|Penthouse|Playboy|Kink|HardX|ArchAngel|JulesJordan|ManuelFerrara|LesbianX|AllAnal|DarkX|Elegant[._ -]?Angel|ZeroTolerance|Score|PornFidelity|Kelly[._ -]?Madison|DDF[._ -]?Network|21Sextury|21Naturals|Colette|SexMex|Bang|SpankBang|PornWorld|LegalPorno|AnalVids|GonzoXXX|RoccoSiffredi|Fake[._ -]?Hub|FakeAgent|FakeTaxi|FakeHostel|PublicAgent|StrandedTeens|Property[._ -]?Sex|Dane[._ -]?Jones|Lets[._ -]?Doe[._ -]?It|Office[._ -]?Obsession|SexyHub|Massage[._ -]?Rooms|Fitness[._ -]?Rooms|Female[._ -]?Agent|MissaX|All[._ -]?Girl[._ -]?Massage|Fantasy[._ -]?Massage|Nurumassage|Soapymassage|Reality[._ -]?Junkies|Perv[._ -]?Mom|Bad[._ -]?Milfs|Milf[._ -]?Body|Step[._ -]?Siblings|Sis[._ -]?Loves[._ -]?Me|Brother[._ -]??Crush|Dad[._ -]?Crush|Mom[._ -]?Knows[._ -]?Best|Bratty[._ -]?Sis|My[._ -]?Family[._ -]?Pies|Family[._ -]?Therapy|Nubiles[._ -]?Porn|Step[._ -]?Fantasy|Caught[._ -]?Fapping|She[._ -]?Will[._ -]?Cheat|Dirty[._ -]?Wives[._ -]?Club|Big[._ -]?Tits[._ -]?Round[._ -]?Asses|Ass[._ -]?Parade|Monsters[._ -]?Of[._ -]?Cock|Brown[._ -]?Bunnies|Teens[._ -]?Love[._ -]?Huge[._ -]?Cocks|Ass[._ -]?Masterpiece|Bang[._ -]?Casting|Holed|Tiny4K|Lubed|POVD|Exotic4K|CastingCouch[._ -]?X|Casting[._ -]?Couch|Creampie[._ -]?Angels|Digital[._ -]?Desire|Femjoy|Hegre|Joymii|Met[._ -]?Art|MPL[._ -]?Studios|Rylsky[._ -]?Art|Showy[._ -]?Beauty|Stunning18|Photodromm|Watch4Beauty|Wow[._ -]?Girls|Yonitale|Mommys[._ -]?Boy|AllOver30|MyFirst|10musume|Caribbeancom|Heyzo|Pacopacomama|1Pondo|TokyoHot|Mommy[._ -]?Blows[._ -]?Best|Milfs[._ -]?Like[._ -]?It[._ -]?Big|Mommy[._ -]?Got[._ -]?Boobs|My[._ -]?Friends[._ -]?Hot[._ -]?Mom|Seduced[._ -]?By[._ -]?A[._ -]?Cougar|Hot[._ -]?Mom[._ -]?Next[._ -]?Door|ClubSweethearts|HookupHotshot';
+    protected const KNOWN_STUDIOS = ReleaseContext::UNAMBIGUOUS_ADULT_STUDIOS.'|'.ReleaseContext::AMBIGUOUS_ADULT_TERMS;
 
-    // Adult keywords
-    protected const ADULT_KEYWORDS = 'Anal|Ass|BBW|BDSM|Blow|Boob|Bukkake|Casting|Couch|Cock|Compilation|Creampie|Cum|Dick|Dildo|Facial|Fetish|Fuck|Gang|Hardcore|Homemade|Horny|Interracial|Lesbian|MILF|Masturbat|Nympho|Oral|Orgasm|Penetrat|Pornstar|POV|Pussy|Riding|Seduct|Sex|Shaved|Slut|Squirt|Suck|Swallow|Threesome|Tits|Titty|Toy|Virgin|Whore';
+    protected const ADULT_KEYWORDS = ReleaseContext::ADULT_KEYWORDS;
 
     // VR sites
     protected const VR_SITES = 'SexBabesVR|LittleCapriceVR|VRoomed|VRMagic|TonightsGirlfriend|NaughtyAmericaVR|BaDoinkVR|WankzVR|VRBangers|StripzVR|RealJamVR|TmwVRnet|MilfVR|KinkVR|CzechVR(?:Fetish)?|HoloGirlsVR|WetVR|XSinsVR|VRCosplayX|BIBIVR|SLR|SexLikeReal|CutiesVR|18VR|PornCornVR|DarkRoomVR|JackAndJillVR|PasstroughVR|JUVR|KIWVR|KAVR|NKKVR|VRSPy|BadoinkVR|SinsVR|FuckPassVR|CRVR|CatalinaCruzVR|StockingsVR|VirtualRealPorn|VRHush|VRConk|SwallowBay';
@@ -51,7 +49,7 @@ class XxxCategorizer extends AbstractCategorizer
         }
 
         // Check if it looks like adult content
-        if (! $this->looksLikeXxx($name)) {
+        if (! $this->looksLikeXxx($context)) {
             return $this->noMatch();
         }
 
@@ -120,41 +118,11 @@ class XxxCategorizer extends AbstractCategorizer
     /**
      * Check if release name looks like adult content.
      */
-    protected function looksLikeXxx(string $name): bool
+    protected function looksLikeXxx(ReleaseContext $context): bool
     {
-        // Check for XXX marker
-        if (preg_match('/\bXXX\b/i', $name)) {
-            return true;
-        }
+        $name = $context->releaseName;
 
-        // Unambiguous trigger words never need a video marker to qualify
-        if (ReleaseContext::hasHardAdultTrigger($name)) {
-            return true;
-        }
-
-        // Check for known studios/sites
-        if (preg_match('/\b('.self::KNOWN_STUDIOS.')\b/i', $name, $matches)) {
-            $matchedStudio = $matches[1];
-
-            // If the studio name appears at the start, check if it's actually a movie release pattern
-            // Movie pattern: Title.Year.Resolution.Source (e.g., Wicked.2024.1080p.WEB-DL)
-            // Adult pattern: Studio.Date.Performer (e.g., Wicked.24.01.15.Performer.Name)
-            if (preg_match('/^'.preg_quote($matchedStudio, '/').'[.\-_ ]/i', $name)) {
-                // Check if this looks like a movie release: Studio.Year.Resolution or Studio.Title.Year
-                // Movie releases typically have: 4-digit year followed by resolution/source markers
-                if (preg_match('/^'.preg_quote($matchedStudio, '/').'[.\-_ ](?:[A-Za-z]+[.\-_ ])*(?:19|20)\d{2}[.\-_ ](?:720p|1080p|2160p|4K|UHD)/i', $name) &&
-                    preg_match('/\b(WEB-?DL|WEBRip|BluRay|BDRip|HDRip|HDTV|DVDRip|Remux|PROPER|REPACK|HC|KORSUB)\b/i', $name) &&
-                    ! preg_match('/\b('.self::ADULT_KEYWORDS.')\b/i', $name)) {
-                    // This looks like a movie release (Title.Year.Resolution.Source), not adult content
-                    return false;
-                }
-
-                // Adult studio releases typically use date patterns: Studio.YY.MM.DD or Studio.YYYY.MM.DD
-                if (preg_match('/^'.preg_quote($matchedStudio, '/').'[.\-_ ](19|20)?\d{2}[.\-_ ]\d{2}[.\-_ ]\d{2}[.\-_ ]/i', $name)) {
-                    return true;
-                }
-            }
-
+        if ($context->hasAdultMarkers()) {
             return true;
         }
 
@@ -175,13 +143,8 @@ class XxxCategorizer extends AbstractCategorizer
         }
 
         // Check for adult content indicators combined with video markers
-        if (preg_match('/\b('.self::ADULT_KEYWORDS.')\b/i', $name) &&
+        if (ReleaseContext::hasIndependentAdultKeyword($name) &&
             preg_match('/\b(720p|1080p|2160p|4k|mp4|mkv|avi|wmv)\b/i', $name)) {
-            return true;
-        }
-
-        // Check for JAV/AV marker (common in Japanese adult releases)
-        if (preg_match('/\b(AV|JAV)\b/', $name) && preg_match('/\b('.self::KNOWN_STUDIOS.')\b/i', $name)) {
             return true;
         }
 
