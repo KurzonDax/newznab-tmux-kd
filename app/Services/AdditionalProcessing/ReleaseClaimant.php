@@ -45,6 +45,9 @@ final class ReleaseClaimant
 
     public const string CLAIM_TOKEN_COLUMN = 'additional_pp_claim_token';
 
+    /** @var list<int> */
+    private const array PENDING_PASSWORD_STATUSES = [-1, 0];
+
     private static ?bool $supportsClaims = null;
 
     private static ?PDO $supportsClaimsPdo = null;
@@ -52,10 +55,44 @@ final class ReleaseClaimant
     private static ?string $supportsClaimsDatabase = null;
 
     /**
+     * @param  Builder<Release>  $base
+     */
+    private function __construct(private readonly Builder $base) {}
+
+    public static function forAdditionalClaim(
+        int|string $groupID = '',
+        string $guidChar = '',
+        ?int $minSizeBytes = null,
+        ?int $maxSizeBytes = null,
+    ): self {
+        return new self(AdditionalCandidateQuery::baseBuilder(
+            $groupID,
+            $guidChar,
+            $minSizeBytes,
+            $maxSizeBytes,
+            includePasswordStatuses: false,
+        ));
+    }
+
+    public static function forAudioClaim(
+        int|string $groupID = '',
+        string $guidChar = '',
+        ?int $maxSizeBytes = null,
+    ): self {
+        return new self(AudioCandidateQuery::baseBuilder(
+            $groupID,
+            $guidChar,
+            $maxSizeBytes,
+            includePasswordStatuses: false,
+        ));
+    }
+
+    /**
      * The predicates that make a release pending for *either* path: waiting on a
      * password verdict, owed a preview, and holding a usable NZB.
      *
      * @param  Builder<Release>  $query  Aliased `r`.
+     * @param  bool  $includePasswordStatuses  Claim selection disables this so each index dive can add one equality.
      * @return Builder<Release>
      */
     public static function applyPendingPredicates(
@@ -64,9 +101,13 @@ final class ReleaseClaimant
         string $guidChar = '',
         int $minSizeBytes = 0,
         int $maxSizeBytes = 0,
+        bool $includePasswordStatuses = true,
     ): Builder {
+        if ($includePasswordStatuses) {
+            $query->whereIn('r.passwordstatus', self::PENDING_PASSWORD_STATUSES);
+        }
+
         $query
-            ->whereIn('r.passwordstatus', [-1, 0])
             ->where('r.haspreview', -1)
             ->where('r.nzbstatus', 1);
 
@@ -120,16 +161,14 @@ final class ReleaseClaimant
     }
 
     /**
-     * Select up to $limit rows from $base, stamp the claim columns, and return
-     * the rows in the order they were selected.
+     * Select up to $limit rows from $base with non-locking per-status reads,
+     * stamp still-available rows, and return only the token's winners.
      *
-     * @param  Builder<Release>  $base  Predicate-applied, aliased `r`, unordered.
      * @param  list<string>  $columns
      * @param  list<int>  $excludedReleaseIds
      * @return EloquentCollection<int, Release>
      */
-    public static function claim(
-        Builder $base,
+    public function claim(
         string $token,
         int $limit,
         array $columns = ['*'],
@@ -137,24 +176,35 @@ final class ReleaseClaimant
     ): EloquentCollection {
         $effectiveLimit = max(1, $limit);
 
-        return DB::transaction(function () use ($base, $token, $effectiveLimit, $columns, $excludedReleaseIds): EloquentCollection {
+        return DB::transaction(function () use ($token, $effectiveLimit, $columns, $excludedReleaseIds): EloquentCollection {
             $supportsClaims = self::supportsClaims();
-            $query = $base
-                ->select('r.id')
-                ->orderByDesc('r.postdate')
-                ->orderBy('r.id')
-                ->limit($effectiveLimit);
+            $candidates = collect();
 
-            if ($excludedReleaseIds !== []) {
-                $query->whereNotIn('r.id', $excludedReleaseIds);
+            foreach (self::PENDING_PASSWORD_STATUSES as $passwordStatus) {
+                $query = (clone $this->base)
+                    ->select(['r.id', 'r.postdate'])
+                    ->where('r.passwordstatus', $passwordStatus)
+                    ->orderByDesc('r.postdate')
+                    ->orderBy('r.id')
+                    ->limit($effectiveLimit);
+
+                if ($excludedReleaseIds !== []) {
+                    $query->whereNotIn('r.id', $excludedReleaseIds);
+                }
+
+                $candidates->push(...$query->get());
             }
 
-            if (DB::getDriverName() !== 'sqlite') {
-                $query->lockForUpdate();
-            }
+            $ids = $candidates
+                ->sort(static function (Release $left, Release $right): int {
+                    $postdateComparison = strcmp((string) ($right->postdate ?? ''), (string) ($left->postdate ?? ''));
 
-            $ids = $query
-                ->pluck('r.id')
+                    return $postdateComparison !== 0
+                        ? $postdateComparison
+                        : (int) $left->id <=> (int) $right->id;
+                })
+                ->take($effectiveLimit)
+                ->pluck('id')
                 ->map(static fn (mixed $id): int => (int) $id)
                 ->all();
 
@@ -163,16 +213,28 @@ final class ReleaseClaimant
             }
 
             if ($supportsClaims) {
+                $stampIds = $ids;
+                sort($stampIds, SORT_NUMERIC);
+
                 Release::query()
-                    ->whereIn('id', $ids)
+                    ->whereIn('id', $stampIds)
+                    ->where(function (Builder $claimQuery): void {
+                        $claimQuery
+                            ->whereNull(self::CLAIMED_AT_COLUMN)
+                            ->orWhere(self::CLAIMED_AT_COLUMN, '<', self::claimStaleBefore());
+                    })
                     ->update([
                         self::CLAIMED_AT_COLUMN => now(),
                         self::CLAIM_TOKEN_COLUMN => $token,
                     ]);
             }
 
-            return Release::query()
-                ->whereIn('id', $ids)
+            $winners = Release::query()->whereIn('id', $ids);
+            if ($supportsClaims) {
+                $winners->where(self::CLAIM_TOKEN_COLUMN, $token);
+            }
+
+            return $winners
                 ->select(self::selectableColumns($columns, $supportsClaims))
                 ->orderByRaw(self::idOrderExpression($ids))
                 ->get();

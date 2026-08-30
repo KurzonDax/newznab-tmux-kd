@@ -9,7 +9,6 @@ use Dotenv\Dotenv;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\DB;
-use PDO;
 use PHPUnit\Framework\Attributes\Test;
 use RuntimeException;
 use Tests\TestCase;
@@ -83,10 +82,9 @@ final class AdditionalCandidateQueryMariaDbTest extends TestCase
     }
 
     #[Test]
-    public function current_indexes_bound_examined_rows_for_realistic_claim_and_backlog_plans(): void
+    public function current_indexes_bound_examined_rows_for_per_status_claim_and_backlog_plans(): void
     {
         $releasesTable = $this->tableName('releases');
-        $categoriesTable = $this->tableName('categories');
 
         DB::statement(<<<SQL
             INSERT INTO `{$releasesTable}` (
@@ -109,20 +107,22 @@ final class AdditionalCandidateQueryMariaDbTest extends TestCase
 
         DB::statement("ANALYZE TABLE `{$releasesTable}`");
 
-        $claimPlan = $this->analyze(<<<SQL
-            SELECT r.id
-            FROM `{$releasesTable}` r
-            WHERE r.passwordstatus = -1
-              AND r.haspreview = -1
-              AND r.nzbstatus = 1
-              AND r.size > 1048576
-              AND r.size < 107374182400
-              AND r.leftguid = 'a'
-              AND (r.additional_pp_claimed_at IS NULL OR r.additional_pp_claimed_at < DATE_SUB(NOW(), INTERVAL 300 SECOND))
-            ORDER BY r.postdate DESC, r.id ASC
-            LIMIT 25
-            FOR UPDATE
-            SQL);
+        $claimPlans = [];
+        foreach ([-1, 0] as $passwordStatus) {
+            $claimPlans[] = $this->analyze(<<<SQL
+                SELECT r.id, r.postdate
+                FROM `{$releasesTable}` r
+                WHERE r.passwordstatus = {$passwordStatus}
+                  AND r.haspreview = -1
+                  AND r.nzbstatus = 1
+                  AND r.size > 1048576
+                  AND r.size < 107374182400
+                  AND r.leftguid = 'a'
+                  AND (r.additional_pp_claimed_at IS NULL OR r.additional_pp_claimed_at < DATE_SUB(NOW(), INTERVAL 300 SECOND))
+                ORDER BY r.postdate DESC, r.id ASC
+                LIMIT 25
+                SQL);
+        }
         $bucketPlan = $this->analyze(<<<SQL
             SELECT r.leftguid, COUNT(*) AS total_count,
                    SUM(CASE WHEN r.additional_pp_claimed_at IS NULL OR r.additional_pp_claimed_at < DATE_SUB(NOW(), INTERVAL 300 SECOND) THEN 1 ELSE 0 END) AS available_count
@@ -146,8 +146,11 @@ final class AdditionalCandidateQueryMariaDbTest extends TestCase
               AND r.size < 107374182400
             SQL);
 
-        $this->assertStringContainsString('ix_releases_add_pp_claim_queue', $claimPlan);
-        $this->assertLessThan(5_000, $this->examinedRowsFor($claimPlan, 'r'));
+        $this->assertStringContainsString('ix_releases_add_pp_claim_queue', $claimPlans[0]);
+        $this->assertStringNotContainsString('filesort', $claimPlans[0]);
+        foreach ($claimPlans as $claimPlan) {
+            $this->assertLessThan(5_000, $this->examinedRowsFor($claimPlan, 'r'));
+        }
         $this->assertLessThanOrEqual(2_000, $this->examinedRowsFor($bucketPlan, 'r'));
         $this->assertLessThanOrEqual(2_000, $this->examinedRowsFor($backlogPlan, 'r'));
     }
@@ -183,26 +186,13 @@ final class AdditionalCandidateQueryMariaDbTest extends TestCase
             range(1, 20),
         ));
 
-        DB::beginTransaction();
-        $firstWorkerIds = AdditionalCandidateQuery::baseBuilder(guidChar: 'a')
-            ->select('r.id')
-            ->orderByDesc('r.postdate')
-            ->orderBy('r.id')
-            ->limit(5)
-            ->lockForUpdate()
-            ->pluck('r.id')
-            ->map(static fn (mixed $id): int => (int) $id)
-            ->all();
-
         $sockets = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
         if ($sockets === false) {
-            DB::rollBack();
             throw new RuntimeException('Unable to create an IPC socket pair.');
         }
 
         $pid = pcntl_fork();
         if ($pid === -1) {
-            DB::rollBack();
             throw new RuntimeException('Unable to fork the competing claim worker.');
         }
 
@@ -210,29 +200,16 @@ final class AdditionalCandidateQueryMariaDbTest extends TestCase
             fclose($sockets[0]);
 
             try {
-                $connection = $this->createMariaDbConnection();
-                $connection->beginTransaction();
-                $releasesTable = $this->tableName('releases');
-                $categoriesTable = $this->tableName('categories');
-                $claimedIds = array_map(
-                    static fn (mixed $id): int => (int) $id,
-                    $connection->query(<<<SQL
-                        SELECT r.id
-                        FROM `{$releasesTable}` r
-                        WHERE r.passwordstatus = -1
-                          AND r.haspreview = -1
-                          AND r.nzbstatus = 1
-                          AND r.leftguid = 'a'
-                          AND (r.additional_pp_claimed_at IS NULL OR r.additional_pp_claimed_at < DATE_SUB(NOW(), INTERVAL 300 SECOND))
-                        ORDER BY r.postdate DESC, r.id ASC
-                        LIMIT 5
-                        FOR UPDATE
-                        SQL)->fetchAll(PDO::FETCH_COLUMN),
-                );
-                $placeholders = implode(',', array_fill(0, count($claimedIds), '?'));
-                $update = $connection->prepare("UPDATE `{$releasesTable}` SET additional_pp_claimed_at = ?, additional_pp_claim_token = ? WHERE id IN ({$placeholders})");
-                $update->execute([now()->format('Y-m-d H:i:s'), 'worker-two', ...$claimedIds]);
-                $connection->commit();
+                DB::purge();
+                DB::reconnect();
+                fwrite($sockets[1], "ready\n");
+                fgets($sockets[1]);
+
+                $claimedIds = AdditionalCandidateQuery::claimBatch('a', 5, 'worker-two', columns: ['id'])
+                    ->pluck('id')
+                    ->map(static fn (mixed $id): int => (int) $id)
+                    ->all();
+
                 fwrite($sockets[1], json_encode(['ids' => $claimedIds], JSON_THROW_ON_ERROR));
                 fclose($sockets[1]);
                 exit(0);
@@ -244,12 +221,13 @@ final class AdditionalCandidateQueryMariaDbTest extends TestCase
         }
 
         fclose($sockets[1]);
-        usleep(200_000);
-        DB::table('releases')->whereIn('id', $firstWorkerIds)->update([
-            'additional_pp_claimed_at' => now(),
-            'additional_pp_claim_token' => 'worker-one',
-        ]);
-        DB::commit();
+        $this->assertSame("ready\n", fgets($sockets[0]));
+        fwrite($sockets[0], "claim\n");
+
+        $firstWorkerIds = AdditionalCandidateQuery::claimBatch('a', 5, 'worker-one', columns: ['id'])
+            ->pluck('id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->all();
 
         $childPayload = stream_get_contents($sockets[0]);
         fclose($sockets[0]);
@@ -261,9 +239,18 @@ final class AdditionalCandidateQueryMariaDbTest extends TestCase
         $childResult = json_decode($childPayload, true, flags: JSON_THROW_ON_ERROR);
 
         $this->assertArrayNotHasKey('error', $childResult, $childResult['error'] ?? 'Competing worker failed.');
-        $this->assertSame([1, 2, 3, 4, 5], $firstWorkerIds);
-        $this->assertSame([6, 7, 8, 9, 10], $childResult['ids'] ?? []);
-        $this->assertSame([], array_intersect($firstWorkerIds, $childResult['ids'] ?? []));
+        $secondWorkerIds = $childResult['ids'] ?? [];
+        $this->assertSame([], array_intersect($firstWorkerIds, $secondWorkerIds));
+        $this->assertGreaterThanOrEqual(5, count($firstWorkerIds) + count($secondWorkerIds));
+        $this->assertLessThanOrEqual(10, count($firstWorkerIds) + count($secondWorkerIds));
+        $this->assertSame(
+            array_fill(0, count($firstWorkerIds), 'worker-one'),
+            DB::table('releases')->whereIn('id', $firstWorkerIds)->orderBy('id')->pluck('additional_pp_claim_token')->all(),
+        );
+        $this->assertSame(
+            array_fill(0, count($secondWorkerIds), 'worker-two'),
+            DB::table('releases')->whereIn('id', $secondWorkerIds)->orderBy('id')->pluck('additional_pp_claim_token')->all(),
+        );
         $this->assertTrue(pcntl_wifexited($status));
         $this->assertSame(0, pcntl_wexitstatus($status));
     }
@@ -366,22 +353,6 @@ final class AdditionalCandidateQueryMariaDbTest extends TestCase
     private function tableName(string $table): string
     {
         return $this->tablePrefix.$table;
-    }
-
-    private function createMariaDbConnection(): PDO
-    {
-        $host = (string) ($_ENV['DB_HOST'] ?? 'mariadb');
-        $port = (string) ($_ENV['DB_PORT'] ?? '3306');
-        $database = (string) ($_ENV['DB_DATABASE'] ?? 'nntmux');
-        $username = (string) ($_ENV['DB_USERNAME'] ?? 'nntmux');
-        $password = (string) ($_ENV['DB_PASSWORD'] ?? '');
-
-        return new PDO(
-            "mysql:host={$host};port={$port};dbname={$database};charset=utf8mb4",
-            $username,
-            $password,
-            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
-        );
     }
 
     private function setEnvironmentValue(string $key, ?string $value): void
