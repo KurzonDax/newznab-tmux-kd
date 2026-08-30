@@ -7,12 +7,15 @@ namespace Tests\Feature;
 use App\Events\ReleaseNameFixed;
 use App\Facades\Search;
 use App\Models\Category;
+use App\Models\MediaInfo as MediaInfoRecord;
 use App\Services\NameFixing\NameFixingService;
 use App\Services\NameFixing\ReleaseUpdateService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
+use Mhor\MediaInfo\Container\MediaInfoContainer;
+use Mhor\MediaInfo\Type\General;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
@@ -58,6 +61,148 @@ class TrustedDonorNameFixingTest extends TestCase
         $this->assertTrustedDonorRenamesTarget('uid');
     }
 
+    public function test_uid_group_election_preserves_richer_name_and_upgrades_stub(): void
+    {
+        $richerName = 'Breaking Bad S03 E06 BluRay 1080p English DTS 5.1 x264 ESub - mkvCinemas';
+        $stubName = 'Breaking Bad S03 E06 BluRay - mkvCinemas';
+        $this->insertRelease(1, $stubName, Category::MOVIE_OTHER, trusted: true);
+        $this->insertRelease(2, $richerName, Category::MOVIE_OTHER, trusted: true);
+        DB::table('media_infos')->insert([
+            ['releases_id' => 1, 'unique_id' => 'breaking-bad-s03e06'],
+            ['releases_id' => 2, 'unique_id' => 'breaking-bad-s03e06'],
+        ]);
+
+        Search::shouldReceive('updateRelease')->once()->with(1);
+        app(NameFixingService::class)->fixNamesWithMedia(2, true, 2, true, false);
+
+        $this->assertSame(
+            [1 => $richerName, 2 => $richerName],
+            DB::table('releases')->orderBy('id')->pluck('searchname', 'id')->all(),
+        );
+    }
+
+    public function test_uid_group_keeps_incumbent_when_readable_names_have_incomparable_information(): void
+    {
+        $incumbentName = 'Movie.2020-GRP';
+        $challengerName = 'Movie.1080p-GRP';
+        $this->insertRelease(1, $incumbentName, Category::MOVIE_HD, trusted: true);
+        $this->insertRelease(2, $challengerName, Category::MOVIE_HD, trusted: true);
+        DB::table('media_infos')->insert([
+            ['releases_id' => 1, 'unique_id' => 'incomparable-uid'],
+            ['releases_id' => 2, 'unique_id' => 'incomparable-uid'],
+        ]);
+
+        Search::shouldReceive('updateRelease')->never();
+        app(NameFixingService::class)->fixNamesWithMedia(2, true, 2, true, false);
+
+        $this->assertSame(
+            [1 => $incumbentName, 2 => $challengerName],
+            DB::table('releases')->orderBy('id')->pluck('searchname', 'id')->all(),
+        );
+    }
+
+    public function test_uid_group_does_not_downgrade_a_readable_name_based_on_its_category(): void
+    {
+        $richerName = 'Readable.Movie.2020.1080p-GROUP';
+        $poorerName = 'Readable.Movie.1080p-GROUP';
+        $this->insertRelease(1, $richerName, Category::OTHER_HASHED, trusted: true);
+        $this->insertRelease(2, $poorerName, Category::MOVIE_HD, trusted: true);
+        DB::table('media_infos')->insert([
+            ['releases_id' => 1, 'unique_id' => 'misc-category-uid'],
+            ['releases_id' => 2, 'unique_id' => 'misc-category-uid'],
+        ]);
+
+        Search::shouldReceive('updateRelease')->once()->with(2);
+        app(NameFixingService::class)->fixNamesWithMedia(2, true, 2, true, false);
+
+        $this->assertSame(
+            [1 => $richerName, 2 => $richerName],
+            DB::table('releases')->orderBy('id')->pluck('searchname', 'id')->all(),
+        );
+    }
+
+    public function test_uid_group_propagates_to_poorer_members_with_different_release_totals(): void
+    {
+        $richerName = 'Movie.2020.1080p-GROUP';
+        $this->insertRelease(1, $richerName, Category::MOVIE_HD, trusted: true);
+        $this->insertRelease(2, '5da7b5393d4f4445ac4db1ee8e95f567');
+        DB::table('releases')->where('id', 2)->update(['size' => 2_000_000]);
+        DB::table('media_infos')->insert([
+            ['releases_id' => 1, 'unique_id' => 'different-package-size-uid'],
+            ['releases_id' => 2, 'unique_id' => 'different-package-size-uid'],
+        ]);
+
+        Search::shouldReceive('updateRelease')->once()->with(2);
+        app(NameFixingService::class)->fixNamesWithMedia(2, true, 2, true, false);
+
+        $this->assertSame($richerName, DB::table('releases')->where('id', 2)->value('searchname'));
+    }
+
+    public function test_uid_group_elects_a_trusted_readable_title_without_scene_signals(): void
+    {
+        $readableName = 'The Meaning of Life Documentary';
+        $this->insertRelease(1, $readableName, Category::OTHER_MISC, trusted: true);
+        $this->insertRelease(2, '5da7b5393d4f4445ac4db1ee8e95f567');
+        DB::table('media_infos')->insert([
+            ['releases_id' => 1, 'unique_id' => 'plain-readable-uid'],
+            ['releases_id' => 2, 'unique_id' => 'plain-readable-uid'],
+        ]);
+
+        Search::shouldReceive('updateRelease')->once()->with(2);
+        app(NameFixingService::class)->fixNamesWithMedia(2, true, 2, true, false);
+
+        $this->assertSame($readableName, DB::table('releases')->where('id', 2)->value('searchname'));
+    }
+
+    public function test_uid_group_dry_run_does_not_rename_or_consume_members(): void
+    {
+        $stubName = 'Breaking Bad S03 E06 BluRay - mkvCinemas';
+        $richerName = 'Breaking Bad S03 E06 BluRay 1080p English DTS 5.1 x264 ESub - mkvCinemas';
+        $this->insertRelease(1, $stubName, Category::MOVIE_OTHER, trusted: true);
+        $this->insertRelease(2, $richerName, Category::MOVIE_OTHER, trusted: true);
+        DB::table('media_infos')->insert([
+            ['releases_id' => 1, 'unique_id' => 'dry-run-uid'],
+            ['releases_id' => 2, 'unique_id' => 'dry-run-uid'],
+        ]);
+
+        Search::shouldReceive('updateRelease')->never();
+        app(NameFixingService::class)->fixNamesWithMedia(2, false, 2, true, false);
+
+        $this->assertSame(
+            [1 => [$stubName, 0], 2 => [$richerName, 0]],
+            DB::table('releases')->orderBy('id')->get()->mapWithKeys(
+                static fn (object $release): array => [
+                    (int) $release->id => [(string) $release->searchname, (int) $release->proc_uid],
+                ],
+            )->all(),
+        );
+    }
+
+    public function test_late_uid_donor_rearms_a_previously_processed_obfuscated_member(): void
+    {
+        $canonicalName = 'Late.Arrival.Series.S02E04.1080p.WEB-DL.DDP5.1.H.264-GROUP';
+        $this->insertRelease(1, '6e4f6e56f38e480985f6d22f9e2ad52e');
+        DB::table('releases')->where('id', 1)->update(['proc_uid' => 1]);
+        DB::table('media_infos')->insert([
+            'releases_id' => 1,
+            'unique_id' => 'late-arrival-uid',
+        ]);
+        $this->insertRelease(2, $canonicalName, Category::MOVIE_HD, trusted: true);
+
+        $general = new General;
+        $general->set('unique_id', 'late-arrival-uid');
+        $mediaInfo = new MediaInfoContainer;
+        $mediaInfo->setGeneral($general);
+
+        Search::shouldReceive('updateRelease')->once()->with(1);
+        MediaInfoRecord::addData(2, $mediaInfo);
+
+        $this->assertSame(
+            [1 => $canonicalName, 2 => $canonicalName],
+            DB::table('releases')->orderBy('id')->pluck('searchname', 'id')->all(),
+        );
+    }
+
     public function test_par2_hash_match_renames_from_trusted_donor_without_predb(): void
     {
         $this->assertTrustedDonorRenamesTarget('hash');
@@ -89,6 +234,25 @@ class TrustedDonorNameFixingTest extends TestCase
         $this->assertSame(0, (int) DB::table('releases')->where('id', 1)->value('is_trusted_name'));
     }
 
+    public function test_uid_group_does_not_trust_a_poster_identity_without_name_evidence(): void
+    {
+        $this->insertRelease(1, 'Unverified.Release.2026.1080p-GROUP', Category::MOVIE_OTHER);
+        DB::table('releases')->where('id', 1)->update(['fromname' => 'nonscene@Ef.net (EF)']);
+        $this->insertRelease(2, '5da7b5393d4f4445ac4db1ee8e95f567');
+        DB::table('media_infos')->insert([
+            ['releases_id' => 1, 'unique_id' => 'untrusted-poster-uid'],
+            ['releases_id' => 2, 'unique_id' => 'untrusted-poster-uid'],
+        ]);
+
+        Search::shouldReceive('updateRelease')->never();
+        app(NameFixingService::class)->fixNamesWithMedia(2, true, 2, true, false);
+
+        $this->assertSame(
+            '5da7b5393d4f4445ac4db1ee8e95f567',
+            DB::table('releases')->where('id', 2)->value('searchname'),
+        );
+    }
+
     public function test_predb_donor_still_attaches_predb_when_names_already_match(): void
     {
         $this->insertRelease(1, 'Canonical.Release.2026.1080p-GROUP', Category::MOVIE_HD, predbId: 77);
@@ -107,6 +271,32 @@ class TrustedDonorNameFixingTest extends TestCase
         Event::assertDispatched(
             ReleaseNameFixed::class,
             fn (ReleaseNameFixed $event): bool => $event->releaseId === 2,
+        );
+    }
+
+    public function test_same_name_uid_group_member_inherits_elected_predb_identity(): void
+    {
+        $canonicalName = 'Canonical.Release.2026.1080p-GROUP';
+        $this->insertRelease(1, $canonicalName, Category::MOVIE_OTHER, trusted: true, predbId: 77);
+        $this->insertRelease(2, $canonicalName, Category::MOVIE_OTHER);
+        DB::table('media_infos')->insert([
+            ['releases_id' => 1, 'unique_id' => 'same-name-predb-uid'],
+            ['releases_id' => 2, 'unique_id' => 'same-name-predb-uid'],
+        ]);
+
+        Search::shouldReceive('updateRelease')->once()->with(2);
+        app(NameFixingService::class)->fixNamesWithMedia(2, true, 2, true, false);
+
+        $this->assertSame(
+            [$canonicalName, 77, 1, 1],
+            (static function (object $release): array {
+                return [
+                    (string) $release->searchname,
+                    (int) $release->predb_id,
+                    (int) $release->isrenamed,
+                    (int) $release->is_trusted_name,
+                ];
+            })(DB::table('releases')->where('id', 2)->firstOrFail()),
         );
     }
 
@@ -185,6 +375,7 @@ class TrustedDonorNameFixingTest extends TestCase
             'crc' => $service->fixNamesWithCrc(2, true, 2, true, false),
             'uid' => $service->fixNamesWithMedia(2, true, 2, true, false),
             'hash' => $service->fixNamesWithParHash(2, true, 2, true, false),
+            default => throw new \InvalidArgumentException("Unsupported source [{$source}]."),
         };
 
         $target = DB::table('releases')->where('id', 2)->first();
@@ -263,10 +454,12 @@ class TrustedDonorNameFixingTest extends TestCase
         });
 
         Schema::create('media_infos', function (Blueprint $table): void {
+            $table->id();
             $table->unsignedInteger('releases_id');
             $table->string('unique_id')->nullable();
             $table->string('movie_name')->nullable();
             $table->string('file_name')->nullable();
+            $table->timestamps();
         });
 
         Schema::create('par_hashes', function (Blueprint $table): void {

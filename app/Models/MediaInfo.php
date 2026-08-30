@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Services\NameFixing\NameFixingService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Mhor\MediaInfo\Container\MediaInfoContainer;
@@ -32,7 +33,7 @@ class MediaInfo extends Model
             $mediaUniqueId = null;
         }
 
-        self::insertOrIgnore([
+        $inserted = self::insertOrIgnore([
             'releases_id' => $id,
             'movie_name' => $mediainfoArray->get('movie_name') ?? null,
             'file_name' => $mediainfoArray->get('file_name') ?? null,
@@ -40,5 +41,9 @@ class MediaInfo extends Model
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+
+        if ($inserted > 0 && is_string($mediaUniqueId) && $mediaUniqueId !== '') {
+            app(NameFixingService::class)->evaluateUidGroup($mediaUniqueId);
+        }
     }
 }

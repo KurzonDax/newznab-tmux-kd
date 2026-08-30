@@ -87,6 +87,7 @@ class StandardNameSweepAdmissionTest extends TestCase
     public function ready_evidence_is_admitted_while_password_inspection_is_pending(): void
     {
         $this->insertRelease(1, ['passwordstatus' => -1, 'proc_uid' => 0]);
+        $this->insertMediaInfo(1);
 
         $this->assertSame([1], $this->candidateIds());
     }
@@ -146,6 +147,18 @@ class StandardNameSweepAdmissionTest extends TestCase
         $this->insertRelease(2, ['proc_media_movie' => 0]);
 
         $this->assertSame([], $this->candidateIds());
+    }
+
+    #[Test]
+    public function uid_source_is_not_admitted_before_a_unique_id_exists(): void
+    {
+        $this->insertRelease(1, ['proc_uid' => 0]);
+
+        $this->assertSame([], $this->candidateIds());
+
+        $this->insertMediaInfo(1);
+
+        $this->assertSame([1], $this->candidateIds());
     }
 
     #[Test]
@@ -212,7 +225,7 @@ class StandardNameSweepAdmissionTest extends TestCase
         $this->insertRelease(1, $overrides);
         $fileName = $column === 'proc_xxx' ? 'Some.SDPORN.Release-GRP.rar' : 'Some.Release-GRP.rar';
         $this->insertReleaseFile(1, $fileName, 'A1B2C3D4');
-        if ($column === 'proc_media_movie') {
+        if (in_array($column, ['proc_uid', 'proc_media_movie'], true)) {
             $this->insertMediaInfo(1);
         }
 
@@ -301,6 +314,7 @@ class StandardNameSweepAdmissionTest extends TestCase
     public function the_fix_names_pane_gate_is_the_sweeps_own_count(): void
     {
         $this->insertRelease(1, ['proc_uid' => 0]);
+        $this->insertMediaInfo(1);
         $this->insertRelease(2, ['categories_id' => Category::MOVIE_HD, 'proc_crc32' => 0]);
         $this->insertRelease(3, ['nfostatus' => 1]);
 
@@ -383,6 +397,7 @@ class StandardNameSweepAdmissionTest extends TestCase
         DB::table('media_infos')->insert([
             'releases_id' => $releaseId,
             'movie_name' => "Movie.Name.{$releaseId}.2026-GROUP",
+            'unique_id' => "uid-{$releaseId}",
         ]);
     }
 
@@ -432,7 +447,8 @@ class StandardNameSweepAdmissionTest extends TestCase
         DB::statement('CREATE TABLE media_infos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             releases_id INTEGER NOT NULL,
-            movie_name VARCHAR(255)
+            movie_name VARCHAR(255),
+            unique_id VARCHAR(255)
         )');
     }
 }

@@ -186,7 +186,7 @@ final class NameFixingQueryService
             '(r.nfostatus = 1 AND r.proc_nfo = 0)',
             'r.proc_files = 0',
             '(r.proc_xxx = 0 AND '.self::SOURCE_EXISTS[self::SOURCE_XXX].')',
-            'r.proc_uid = 0',
+            '(r.proc_uid = 0 AND '.self::SOURCE_EXISTS[self::SOURCE_UID].')',
             '(r.proc_media_movie = 0 AND '.self::SOURCE_EXISTS[self::SOURCE_MEDIA_MOVIE].')',
             '(r.nzbstatus = 1 AND r.proc_par2 = 0)',
             'r.proc_srr = 0',
@@ -295,18 +295,38 @@ final class NameFixingQueryService
         }
 
         $placeholders = $this->placeholders(count($uniqueIds));
-        $bindings = array_merge($uniqueIds, ['nonscene@Ef.net (EF)']);
         $rows = $this->database->select(
             "SELECT mi.unique_id AS match_key, r.id AS releases_id, r.size AS relsize,
                     r.searchname, r.fromname, r.predb_id
              FROM media_infos mi
              INNER JOIN releases r ON r.id = mi.releases_id
              WHERE mi.unique_id IN ({$placeholders})
-             AND (".self::TRUSTED_DONOR_PREDICATE.' OR r.fromname = ?)',
-            $bindings
+             AND ".self::TRUSTED_DONOR_PREDICATE,
+            $uniqueIds
         );
 
         return $this->groupByKey($rows, 'match_key');
+    }
+
+    /**
+     * @return list<object>
+     */
+    public function uidGroup(string $uniqueId): array
+    {
+        if ($uniqueId === '') {
+            return [];
+        }
+
+        return $this->database->select(
+            'SELECT r.id AS releases_id, r.name, r.searchname, r.fromname,
+                    r.groups_id, r.categories_id, r.size AS relsize, r.predb_id,
+                    r.proc_uid
+             FROM media_infos mi
+             INNER JOIN releases r ON r.id = mi.releases_id
+             WHERE mi.unique_id = ?
+             ORDER BY r.id ASC',
+            [$uniqueId],
+        );
     }
 
     /**

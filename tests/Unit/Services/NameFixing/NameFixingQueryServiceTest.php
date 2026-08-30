@@ -83,9 +83,10 @@ class NameFixingQueryServiceTest extends TestCase
             ->with(
                 $this->callback(static fn (string $sql): bool => str_contains($sql, 'FROM media_infos mi')
                     && str_contains($sql, 'mi.unique_id IN (?,?)')
+                    && ! str_contains($sql, 'r.fromname = ?')
                     && ! str_contains($sql, 'release_unique')
                     && ! str_contains($sql, 'UNION ALL')),
-                ['first-uid', 'second-uid', 'nonscene@Ef.net (EF)']
+                ['first-uid', 'second-uid']
             )
             ->willReturn([]);
 
