@@ -48,11 +48,11 @@ return new class extends Migration
                 'release_music_identity_version',
             );
             $table->index(['state', 'next_attempt_at'], 'release_music_identity_retry');
-            $table->foreign('releases_id')->references('id')->on('releases')
+            $table->foreign('releases_id', 'FK_rmi_releases')->references('id')->on('releases')
                 ->onDelete('cascade')->onUpdate('cascade');
-            $table->foreign('release_audio_evidence_id')->references('id')->on('release_audio_evidence')
+            $table->foreign('release_audio_evidence_id', 'FK_rmi_rae')->references('id')->on('release_audio_evidence')
                 ->onDelete('cascade')->onUpdate('cascade');
-            $table->foreign('supersedes_id')->references('id')->on('release_music_identifications')
+            $table->foreign('supersedes_id', 'FK_rmi_supersedes')->references('id')->on('release_music_identifications')
                 ->restrictOnDelete()->cascadeOnUpdate();
         });
 
@@ -73,7 +73,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->unique(['release_music_identification_id', 'rank'], 'release_music_candidate_rank');
-            $table->foreign('release_music_identification_id')->references('id')->on('release_music_identifications')
+            $table->foreign('release_music_identification_id', 'FK_rmca_rmi')->references('id')->on('release_music_identifications')
                 ->onDelete('cascade')->onUpdate('cascade');
         });
     }
