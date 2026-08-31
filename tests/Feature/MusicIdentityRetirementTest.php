@@ -69,7 +69,7 @@ final class MusicIdentityRetirementTest extends TestCase
         $this->assertSame(0, $service->identityAttachmentAttempts);
     }
 
-    public function test_retryable_unresolved_release_is_distinct_from_genuine_no_match(): void
+    public function test_compatibility_worker_never_writes_legacy_no_match_sentinels(): void
     {
         $retryableReleaseId = $this->createRelease('Artist - Album 2018 FLAC');
         $noMatchReleaseId = $this->createRelease('unparseable-release-without-a-year');
@@ -77,7 +77,7 @@ final class MusicIdentityRetirementTest extends TestCase
         (new MusicIdentityWorkerTestDouble)->processMusicReleases(false, lookupMode: 1);
 
         $this->assertNull(DB::table('releases')->where('id', $retryableReleaseId)->value('musicinfo_id'));
-        $this->assertSame(-2, DB::table('releases')->where('id', $noMatchReleaseId)->value('musicinfo_id'));
+        $this->assertNull(DB::table('releases')->where('id', $noMatchReleaseId)->value('musicinfo_id'));
     }
 
     public function test_update_music_info_does_not_implicitly_search_itunes_by_name(): void

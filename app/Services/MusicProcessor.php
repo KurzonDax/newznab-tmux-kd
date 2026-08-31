@@ -4,23 +4,19 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use App\Models\Settings;
+use App\Services\MusicIdentity\ResolveReleaseMusicIdentity;
 
 class MusicProcessor
 {
-    /** @phpstan-ignore property.onlyWritten */
-    private bool $echooutput;
+    private readonly ResolveReleaseMusicIdentity $identityWorker;
 
-    public function __construct(bool $echooutput)
+    public function __construct(?ResolveReleaseMusicIdentity $identityWorker = null)
     {
-        $this->echooutput = $echooutput;
+        $this->identityWorker = $identityWorker ?? app(ResolveReleaseMusicIdentity::class);
     }
 
     public function process(string $groupID = '', string $guidChar = ''): void
     {
-        $lookupMode = (int) Settings::settingValue('lookupmusic');
-        if ($lookupMode !== 0) {
-            (new MusicService)->processMusicReleases(false, $groupID, $guidChar, $lookupMode);
-        }
+        $this->identityWorker->process($groupID, $guidChar);
     }
 }

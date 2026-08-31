@@ -12,7 +12,7 @@ use App\Models\Genre;
 use App\Models\MusicInfo;
 use App\Models\Release;
 use App\Models\Settings;
-use App\Services\MetadataProcessing\MusicProcessingCandidateQuery;
+use App\Services\MusicIdentity\ResolveReleaseMusicIdentity;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Support\MetadataSearchLookup;
 use Illuminate\Support\Facades\Cache;
@@ -466,10 +466,7 @@ class MusicService
     }
 
     /**
-     * Classify legacy music candidates without performing identity lookup.
-     *
-     * Parseable releases remain pending for the successor identity worker. The local flag is
-     * retained for command compatibility while automatic provider lookup is disabled.
+     * Compatibility entry point for callers that have not moved to the identity worker yet.
      */
     public function processMusicReleases(
         bool $local = false,
@@ -477,32 +474,7 @@ class MusicService
         string $guidChar = '',
         ?int $lookupMode = null,
     ): void {
-        $res = MusicProcessingCandidateQuery::query($groupID, $guidChar, $lookupMode)
-            ->orderByDesc('postdate')
-            ->limit($this->musicqty)
-            ->get(['searchname', 'id']);
-
-        if (! empty($res)) {
-            foreach ($res as $arr) {
-                $album = $this->parseArtist($arr->searchname);
-
-                if ($album !== false) {
-                    if ($this->echooutput) {
-                        cli()->info('Identity lookup deferred: '.$album['name'].' ('.$album['year'].')');
-                    }
-                } else {
-                    // No album found.
-                    Release::query()->where('id', $arr->id)->update(['musicinfo_id' => -2]);
-                    echo '.';
-                }
-            }
-
-            if ($this->echooutput) {
-                echo PHP_EOL;
-            }
-        } elseif ($this->echooutput) {
-            cli()->header('No music releases to process.');
-        }
+        app(ResolveReleaseMusicIdentity::class)->process($groupID, $guidChar);
     }
 
     /**

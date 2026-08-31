@@ -15,10 +15,8 @@ use App\Services\MetadataProcessing\BookProcessingCandidateQuery;
 use App\Services\MetadataProcessing\ConsoleProcessingCandidateQuery;
 use App\Services\MetadataProcessing\GameProcessingCandidateQuery;
 use App\Services\MetadataProcessing\MovieProcessingCandidateQuery;
-use App\Services\MetadataProcessing\MusicProcessingCandidateQuery;
 use App\Services\MetadataProcessing\NfoProcessingCandidateQuery;
 use App\Services\MovieService;
-use App\Services\MusicService;
 use App\Services\NfoService;
 use App\Services\Runners\PostProcessRunner;
 use App\Services\Tmux\TmuxMonitorService;
@@ -71,27 +69,6 @@ class MetadataProcessingCandidateQueryTest extends TestCase
     {
         $this->tearDownIsolatedDatabase();
         parent::tearDown();
-    }
-
-    public function test_music_renamed_only_mode_agrees_at_worker_runner_and_monitor_seams(): void
-    {
-        $this->insertRelease(1, Category::MUSIC_MP3, 'a', false);
-        $this->insertRelease(2, Category::MUSIC_LOSSLESS, 'b', true);
-        $this->insertRelease(3, Category::MUSIC_AUDIOBOOK, 'c', true);
-
-        $this->assertSame([2], MusicProcessingCandidateQuery::query()->pluck('id')->all());
-
-        $runner = $this->capturingRunner();
-        $runner->processMusic();
-
-        $this->assertCount(1, $runner->capturedCommands);
-        $this->assertStringContainsString('artisan postprocess:guid music b', $runner->capturedCommands[0]);
-
-        $monitor = new TmuxMonitorService;
-        $monitor->initializeMonitor();
-        $statistics = $monitor->collectStatistics();
-
-        $this->assertSame(1, (int) $statistics['counts']['now']['processmusic']);
     }
 
     public function test_audiobook_and_wrapper_backlogs_agree_at_worker_runner_and_monitor_seams(): void
@@ -303,7 +280,6 @@ class MetadataProcessingCandidateQueryTest extends TestCase
             'console' => [ConsoleProcessingCandidateQuery::class, 'lookupgames', 'processConsoles', 'postprocess:guid console', 'processconsole', [1, 2], [Category::GAME_ROOT, Category::GAME_OTHER], [Category::GAME_ROOT - 1, Category::GAME_OTHER + 1]],
             'PC games' => [GameProcessingCandidateQuery::class, 'lookupgames', 'processGames', 'postprocess:guid games', 'processgames', [1, 2], [Category::PC_GAMES], [Category::PC_GAMES - 1, Category::PC_GAMES + 1]],
             'movies' => [MovieProcessingCandidateQuery::class, 'lookupimdb', 'processMovies', 'postprocess:guid movie', 'processmovies', [1, 2], [Category::MOVIE_ROOT, Category::MOVIE_OTHER], [Category::MOVIE_ROOT - 1, Category::MOVIE_OTHER + 1]],
-            'music' => [MusicProcessingCandidateQuery::class, 'lookupmusic', 'processMusic', 'postprocess:guid music', 'processmusic', [1, 2], [Category::MUSIC_MP3, Category::MUSIC_LOSSLESS, Category::MUSIC_OTHER], [Category::MUSIC_AUDIOBOOK]],
             'NFO' => [NfoProcessingCandidateQuery::class, 'lookupnfo', 'processNfo', 'postprocess:guid nfo', 'processnfo', [1], [Category::OTHER_MISC], []],
             'TV' => [TvProcessingCandidateQuery::class, 'lookuptv', 'processTv', 'postprocess:tv-pipeline', 'processtv', [1, 2], [Category::TV_ROOT, Category::TV_OTHER], [Category::TV_ROOT - 1, Category::TV_ANIME, Category::TV_OTHER + 1]],
         ];
@@ -337,7 +313,6 @@ class MetadataProcessingCandidateQueryTest extends TestCase
             'console' => [ConsoleService::class, ConsoleProcessingCandidateQuery::class],
             'PC games' => [GamesService::class, GameProcessingCandidateQuery::class],
             'movies' => [MovieService::class, MovieProcessingCandidateQuery::class],
-            'music' => [MusicService::class, MusicProcessingCandidateQuery::class],
             'NFO' => [NfoService::class, NfoProcessingCandidateQuery::class],
             'TV' => [TvEpisodeRevisitService::class, TvProcessingCandidateQuery::class],
         ];

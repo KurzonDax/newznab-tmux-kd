@@ -15,8 +15,8 @@ use App\Services\MetadataProcessing\BookProcessingCandidateQuery;
 use App\Services\MetadataProcessing\ConsoleProcessingCandidateQuery;
 use App\Services\MetadataProcessing\GameProcessingCandidateQuery;
 use App\Services\MetadataProcessing\MovieProcessingCandidateQuery;
-use App\Services\MetadataProcessing\MusicProcessingCandidateQuery;
 use App\Services\MetadataProcessing\NfoProcessingCandidateQuery;
+use App\Services\MusicIdentity\ResolveReleaseMusicIdentity;
 use App\Services\NameFixing\NameFixingQueryService;
 use App\Services\TvProcessing\TvProcessingCandidateQuery;
 use Illuminate\Support\Facades\DB;
@@ -269,9 +269,7 @@ class TmuxMonitorService
             'processtv' => fn (): int => TvProcessingCandidateQuery::count(
                 lookupMode: (int) ($settings['processtvrage'] ?? 0),
             ),
-            'processmusic' => fn (): int => MusicProcessingCandidateQuery::query(
-                lookupMode: (int) ($settings['processmusic'] ?? 0),
-            )->count(),
+            'processmusic' => fn (): int => app(ResolveReleaseMusicIdentity::class)->eligibleCount(),
             'processbooks' => fn (): int => BookProcessingCandidateQuery::query(
                 lookupMode: (int) ($settings['processbooks'] ?? 0),
             )->count(),

@@ -25,7 +25,7 @@ class PostProcessGuid extends Command
      * @var string
      */
     protected $signature = 'postprocess:guid
-                            {type : Type: additional, audio, nfo, movie, tv, anime, books, music, console, or games}
+                            {type : Type: additional, audio, nfo, movie, tv, anime, books, mus/music, console, or games}
                             {guid : First character of release guid (a-f, 0-9)}
                             {renamed? : For movie/tv: process renamed only (optional)}
                             {--worker : Drain multiple additional-processing batches}
@@ -71,11 +71,11 @@ class PostProcessGuid extends Command
                 'tv' => $this->postProcessService->processTv('', $guid, $renamed),
                 'anime' => $this->postProcessService->processAnime('', $guid),
                 'books' => $this->postProcessService->processBooks('', $guid),
-                'music' => $this->postProcessService->processMusic('', $guid),
+                'mus', 'music' => $this->postProcessService->processMusic('', $guid),
                 'console' => $this->postProcessService->processConsoles('', $guid),
                 'games' => $this->postProcessService->processGames('', $guid),
                 default => throw new \InvalidArgumentException(
-                    'Invalid type. Must be: additional, audio, nfo, movie, tv, anime, books, music, console, or games.'
+                    'Invalid type. Must be: additional, audio, nfo, movie, tv, anime, books, mus/music, console, or games.'
                 ),
             };
 

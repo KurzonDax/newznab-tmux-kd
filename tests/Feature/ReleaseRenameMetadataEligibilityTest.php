@@ -12,7 +12,6 @@ use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\MetadataProcessing\AnimeProcessingCandidateQuery;
 use App\Services\MetadataProcessing\BookProcessingCandidateQuery;
 use App\Services\MetadataProcessing\ConsoleProcessingCandidateQuery;
-use App\Services\MetadataProcessing\MusicProcessingCandidateQuery;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\Runners\PostProcessRunner;
 use Illuminate\Database\Schema\Blueprint;
@@ -70,10 +69,9 @@ class ReleaseRenameMetadataEligibilityTest extends TestCase
         );
 
         $categories = [
-            1 => Category::MUSIC_MP3,
-            2 => Category::GAME_XBOX360,
-            3 => Category::BOOKS_EBOOK,
-            4 => Category::TV_ANIME,
+            1 => Category::GAME_XBOX360,
+            2 => Category::BOOKS_EBOOK,
+            3 => Category::TV_ANIME,
         ];
 
         foreach ($categories as $releaseId => $categoryId) {
@@ -92,7 +90,7 @@ class ReleaseRenameMetadataEligibilityTest extends TestCase
             );
         }
 
-        $this->assertSame([1, 2, 3, 4], $synchronizedReleaseIds);
+        $this->assertSame([1, 2, 3], $synchronizedReleaseIds);
 
         foreach (DB::table('releases')->orderBy('id')->get() as $release) {
             $this->assertNull($release->musicinfo_id);
@@ -120,18 +118,15 @@ class ReleaseRenameMetadataEligibilityTest extends TestCase
             protected function headerNone(): void {}
         };
 
-        $runner->processMusic();
         $runner->processConsoles();
         $runner->processBooks();
         $runner->processAnime();
 
-        $this->assertCount(4, $runner->capturedCommands);
-        $this->assertStringContainsString('artisan postprocess:guid music 1', $runner->capturedCommands[0]);
-        $this->assertStringContainsString('artisan postprocess:guid console 2', $runner->capturedCommands[1]);
-        $this->assertStringContainsString('artisan postprocess:guid books 3', $runner->capturedCommands[2]);
-        $this->assertStringContainsString('artisan postprocess:guid anime 4', $runner->capturedCommands[3]);
+        $this->assertCount(3, $runner->capturedCommands);
+        $this->assertStringContainsString('artisan postprocess:guid console 1', $runner->capturedCommands[0]);
+        $this->assertStringContainsString('artisan postprocess:guid books 2', $runner->capturedCommands[1]);
+        $this->assertStringContainsString('artisan postprocess:guid anime 3', $runner->capturedCommands[2]);
 
-        $this->assertSame(1, MusicProcessingCandidateQuery::query()->count());
         $this->assertSame(1, ConsoleProcessingCandidateQuery::query()->count());
         $this->assertSame(1, BookProcessingCandidateQuery::query()->count());
         $this->assertSame(1, AnimeProcessingCandidateQuery::query()->count());
