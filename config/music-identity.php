@@ -4,10 +4,19 @@ declare(strict_types=1);
 
 return [
     'algorithm_version' => 'music-identity-v1',
+    'resolver_version' => 'resolver-v1',
+    'normalizer_version' => 'normalizer-v1',
+    'scorer_version' => 'whole-release-v1',
     'policy_version' => 'shadow-v1',
     'application_mode' => 'shadow',
     'apply_decisions' => false,
     'worker_parallelism_max' => 8,
+    'candidate_attempt_limit' => 5,
+
+    'scoring' => [
+        'minimum_album_score' => 92,
+        'minimum_runner_up_margin' => 5,
+    ],
 
     'candidate_generation' => [
         'distinctive_track_evidence_limit' => 4,

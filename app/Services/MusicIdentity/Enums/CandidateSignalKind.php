@@ -14,6 +14,7 @@ enum CandidateSignalKind: string
     case EmbeddedReleaseGroupId = 'embedded_release_group_id';
     case EmbeddedReleaseId = 'embedded_release_id';
     case EmbeddedReleaseTrackId = 'embedded_release_track_id';
+    case Fingerprint = 'fingerprint';
     case Isrc = 'isrc';
     case ReleaseSearch = 'release_search';
     case TrackEvidenceSearch = 'track_evidence_search';

@@ -82,6 +82,8 @@ class NntmuxResetDb extends Command
                     'musicinfo',
                     'release_files',
                     'audio_data',
+                    'release_music_candidate_attempts',
+                    'release_music_identifications',
                     'release_audio_evidence_tracks',
                     'release_audio_evidence',
                     'release_audio_tags',

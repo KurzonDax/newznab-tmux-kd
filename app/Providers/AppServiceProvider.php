@@ -35,12 +35,17 @@ use App\Observers\RootCategoryObserver;
 use App\Observers\SteamAppObserver;
 use App\Observers\UsenetGroupObserver;
 use App\Observers\VideoObserver;
+use App\Services\MusicIdentity\Contracts\CandidateGenerator;
 use App\Services\MusicIdentity\Contracts\MusicBrainzGateway;
 use App\Services\MusicIdentity\Gateways\HttpMusicBrainzGateway;
+use App\Services\MusicIdentity\MusicCandidateGenerator;
+use App\Services\MusicIdentity\MusicIdentityResolver;
+use App\Services\MusicIdentity\Persistence\IdentificationDecisionStore;
 use App\Services\NNTP\NntpProviderPool;
 use App\View\Composers\AdminDataComposer;
 use App\View\Composers\GlobalDataComposer;
 use Illuminate\Auth\Events\Login;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
@@ -104,5 +109,19 @@ class AppServiceProvider extends ServiceProvider
         // connections) survive across the services that share a worker.
         $this->app->singleton(NntpProviderPool::class);
         $this->app->bind(MusicBrainzGateway::class, HttpMusicBrainzGateway::class);
+        $this->app->bind(CandidateGenerator::class, MusicCandidateGenerator::class);
+        $this->app->bind(IdentificationDecisionStore::class, static fn (): IdentificationDecisionStore => new IdentificationDecisionStore(
+            candidateAttemptLimit: (int) config('music-identity.candidate_attempt_limit', 5),
+        ));
+        $this->app->bind(MusicIdentityResolver::class, static fn (Application $app): MusicIdentityResolver => new MusicIdentityResolver(
+            candidateGenerator: $app->make(CandidateGenerator::class),
+            algorithmVersion: (string) config('music-identity.algorithm_version', 'music-identity-v1'),
+            resolverVersion: (string) config('music-identity.resolver_version', 'resolver-v1'),
+            normalizerVersion: (string) config('music-identity.normalizer_version', 'normalizer-v1'),
+            scorerVersion: (string) config('music-identity.scorer_version', 'whole-release-v1'),
+            policyVersion: (string) config('music-identity.policy_version', 'shadow-v1'),
+            minimumAlbumScore: (int) config('music-identity.scoring.minimum_album_score', 92),
+            minimumRunnerUpMargin: (int) config('music-identity.scoring.minimum_runner_up_margin', 5),
+        ));
     }
 }

@@ -26,5 +26,8 @@ final readonly class TrackEvidence
         public ?string $catalogNumber = null,
         public ?string $label = null,
         public ?string $provenanceFamily = null,
+        public ?int $discNumber = null,
+        public ?int $releaseTrackNumber = null,
+        public ?string $fingerprint = null,
     ) {}
 }

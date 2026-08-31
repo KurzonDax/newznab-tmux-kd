@@ -35,6 +35,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  * @property-read Release|null $release
  * @property-read Collection<int, ReleaseAudioEvidenceTrack> $tracks
+ * @property-read Collection<int, ReleaseMusicIdentification> $musicIdentifications
  *
  * @mixin \Eloquent
  */
@@ -80,5 +81,11 @@ class ReleaseAudioEvidence extends Model
     public function tracks(): HasMany
     {
         return $this->hasMany(ReleaseAudioEvidenceTrack::class, 'release_audio_evidence_id');
+    }
+
+    /** @return HasMany<ReleaseMusicIdentification, $this> */
+    public function musicIdentifications(): HasMany
+    {
+        return $this->hasMany(ReleaseMusicIdentification::class, 'release_audio_evidence_id');
     }
 }

@@ -16,10 +16,13 @@ namespace App\Services\MusicIdentity\DTO;
  */
 final readonly class ReleaseCandidates
 {
-    /** @param list<ReleaseCandidate> $releases */
+    /** @param list<ReleaseCandidate> $releases
+     * @param  list<string>  $responseCacheKeys
+     */
     public function __construct(
         public array $releases,
         public int $providerTotal = 0,
+        public array $responseCacheKeys = [],
     ) {}
 
     public static function empty(): self

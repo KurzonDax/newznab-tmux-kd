@@ -117,6 +117,8 @@ final class HttpMusicBrainzGatewayTest extends TestCase
         $this->assertSame('Radiohead', $result->recordings[0]['artistCredit']);
         $this->assertSame(['GBAYE9701372'], $result->recordings[0]['isrcs']);
         $this->assertSame(['recording_lookup'], $result->recordings[0]['sources']);
+        $this->assertCount(1, $result->responseCacheKeys);
+        $this->assertStringStartsWith('musicbrainz:response:', $result->responseCacheKeys[0]);
 
         Http::assertSent(function (Request $request): bool {
             $query = $this->queryParameters($request);
@@ -173,6 +175,7 @@ final class HttpMusicBrainzGatewayTest extends TestCase
             ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222', '33333333-3333-4333-8333-333333333333'],
             array_column($metadata->releases, 'releaseId'),
         );
+        $this->assertCount(3, $metadata->responseCacheKeys);
 
         $offsets = [];
         foreach (Http::recorded() as [$request]) {
@@ -339,7 +342,7 @@ final class HttpMusicBrainzGatewayTest extends TestCase
             }
 
             return $this->queryParameters($request)['inc']
-                === 'recordings+artist-credits+labels+release-groups+media+discids+isrcs+genres+tags+url-rels';
+                === 'recordings+artist-credits+labels+release-groups+media+discids+isrcs+aliases+genres+tags+url-rels';
         });
     }
 

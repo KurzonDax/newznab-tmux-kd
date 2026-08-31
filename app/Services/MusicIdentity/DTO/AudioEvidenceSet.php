@@ -17,6 +17,13 @@ final readonly class AudioEvidenceSet
         public array $trackEvidence,
         public ?bool $trackEvidenceListComplete = null,
         public ?string $albumProvenanceFamily = null,
+        public ?int $mediumCount = null,
+        public ?string $country = null,
+        public ?string $mediaFormat = null,
+        public ?string $releaseStatus = null,
+        public ?string $primaryType = null,
+        /** @var list<string> */
+        public array $secondaryTypes = [],
     ) {}
 
     public function albumProvenanceFamily(): string

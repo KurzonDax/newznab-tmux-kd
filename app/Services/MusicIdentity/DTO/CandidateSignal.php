@@ -8,6 +8,7 @@ use App\Services\MusicIdentity\Enums\CandidateSignalKind;
 
 final readonly class CandidateSignal
 {
+    /** @param list<string> $responseCacheKeys */
     public function __construct(
         public CandidateSignalKind $kind,
         public string $value,
@@ -15,5 +16,6 @@ final readonly class CandidateSignal
         public bool $exact,
         public CandidateIdentity $identity = new CandidateIdentity,
         public ?int $providerScore = null,
+        public array $responseCacheKeys = [],
     ) {}
 }

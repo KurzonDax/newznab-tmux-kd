@@ -147,6 +147,7 @@ final class MusicBrainzNormalizer
             'barcode' => $this->nullableString($raw['barcode'] ?? null, 'release barcode'),
             'labels' => $labels,
             'media' => $media,
+            'aliases' => $this->aliasNames($raw),
         ];
     }
 
@@ -181,7 +182,22 @@ final class MusicBrainzNormalizer
             'primaryType' => $this->nullableString($raw['primary-type'] ?? null, 'release group primary type'),
             'secondaryTypes' => $this->stringList($raw['secondary-types'] ?? [], 'release group secondary types'),
             'firstReleaseDate' => $this->nullableString($raw['first-release-date'] ?? null, 'release group first release date'),
+            'aliases' => $this->aliasNames($raw),
         ];
+    }
+
+    /** @param array<string, mixed> $raw
+     * @return list<string>
+     */
+    private function aliasNames(array $raw): array
+    {
+        $aliases = [];
+        foreach ($this->list($raw, 'aliases') as $alias) {
+            $alias = $this->object($alias, 'alias');
+            $aliases[] = $this->requiredString($alias, 'name');
+        }
+
+        return array_values(array_unique($aliases));
     }
 
     /**
