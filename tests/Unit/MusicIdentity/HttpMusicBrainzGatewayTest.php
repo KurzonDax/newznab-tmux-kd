@@ -37,8 +37,8 @@ final class HttpMusicBrainzGatewayTest extends TestCase
         Http::fake(function (Request $request) use ($release) {
             if (str_contains($request->url(), '/release?')) {
                 return Http::response([
-                    'release-count' => 1,
-                    'release-offset' => 0,
+                    'count' => 42,
+                    'offset' => 0,
                     'releases' => [$release],
                 ]);
             }
@@ -66,7 +66,9 @@ final class HttpMusicBrainzGatewayTest extends TestCase
         ));
 
         $this->assertCount(1, $recordings->recordings);
+        $this->assertSame(774, $recordings->providerTotal);
         $this->assertCount(1, $releases->releases);
+        $this->assertSame(42, $releases->providerTotal);
         $this->assertSame('11111111-1111-4111-8111-111111111111', $releases->releases[0]['releaseId']);
         $this->assertSame(98, $releases->releases[0]['providerScore']);
 
@@ -89,6 +91,101 @@ final class HttpMusicBrainzGatewayTest extends TestCase
         $this->assertStringContainsString('barcode:"724385522925"', $queries['release']);
         $this->assertStringContainsString('catno:"7243 8 55229 2 5"', $queries['release']);
         $this->assertStringContainsString('label:"Parlophone"', $queries['release']);
+    }
+
+    public function test_recording_search_rejects_browse_pagination_fields(): void
+    {
+        $payload = $this->fixture('recording-search.json');
+        unset($payload['count'], $payload['offset']);
+        $payload['recording-count'] = 774;
+        $payload['recording-offset'] = 0;
+        Http::fake(['*' => Http::response($payload)]);
+
+        $this->expectException(InvalidMusicBrainzResponse::class);
+        $this->expectExceptionMessage('MusicBrainz response missing required field "count".');
+
+        $this->gateway()->candidatesFor(new RecordingQuery(title: 'No Surprises'));
+    }
+
+    public function test_release_search_rejects_browse_pagination_fields(): void
+    {
+        Http::fake(['*' => Http::response([
+            'release-count' => 1,
+            'release-offset' => 0,
+            'releases' => [$this->fixture('release-lookup.json')],
+        ])]);
+
+        $this->expectException(InvalidMusicBrainzResponse::class);
+        $this->expectExceptionMessage('MusicBrainz response missing required field "count".');
+
+        $this->gateway()->releaseCandidatesFor(new ReleaseQuery(title: 'OK Computer'));
+    }
+
+    public function test_recording_search_rejects_a_browse_offset_field(): void
+    {
+        $payload = $this->fixture('recording-search.json');
+        unset($payload['offset']);
+        $payload['recording-offset'] = 0;
+        Http::fake(['*' => Http::response($payload)]);
+
+        $this->expectException(InvalidMusicBrainzResponse::class);
+        $this->expectExceptionMessage('MusicBrainz response missing required field "offset".');
+
+        $this->gateway()->candidatesFor(new RecordingQuery(title: 'No Surprises'));
+    }
+
+    public function test_release_search_rejects_a_browse_offset_field(): void
+    {
+        Http::fake(['*' => Http::response([
+            'count' => 1,
+            'release-offset' => 0,
+            'releases' => [$this->fixture('release-lookup.json')],
+        ])]);
+
+        $this->expectException(InvalidMusicBrainzResponse::class);
+        $this->expectExceptionMessage('MusicBrainz response missing required field "offset".');
+
+        $this->gateway()->releaseCandidatesFor(new ReleaseQuery(title: 'OK Computer'));
+    }
+
+    public function test_release_browse_rejects_search_pagination_fields(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/recording/'.self::RECORDING_ID)) {
+                return Http::response($this->fixture('recording-lookup.json'));
+            }
+
+            return Http::response([
+                'count' => 1,
+                'offset' => 0,
+                'releases' => [$this->fixture('release-lookup.json')],
+            ]);
+        });
+
+        $this->expectException(InvalidMusicBrainzResponse::class);
+        $this->expectExceptionMessage('MusicBrainz response missing required field "release-count".');
+
+        $this->gateway()->hydrate(new CandidateIdentifiers(recordingId: self::RECORDING_ID));
+    }
+
+    public function test_release_browse_rejects_a_search_offset_field(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/recording/'.self::RECORDING_ID)) {
+                return Http::response($this->fixture('recording-lookup.json'));
+            }
+
+            return Http::response([
+                'release-count' => 1,
+                'offset' => 0,
+                'releases' => [$this->fixture('release-lookup.json')],
+            ]);
+        });
+
+        $this->expectException(InvalidMusicBrainzResponse::class);
+        $this->expectExceptionMessage('MusicBrainz response missing required field "release-offset".');
+
+        $this->gateway()->hydrate(new CandidateIdentifiers(recordingId: self::RECORDING_ID));
     }
 
     public function test_it_is_dormant_until_an_endpoint_is_configured(): void
