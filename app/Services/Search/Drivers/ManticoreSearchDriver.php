@@ -16,6 +16,7 @@ use App\Models\Video;
 use App\Services\Search\Contracts\SearchDriverInterface;
 use App\Services\Search\DTO\ReleaseSearchQuery;
 use App\Services\Search\DTO\SearchPage;
+use App\Services\Search\ManticoreSearchFailures;
 use App\Services\Search\ReleaseSearchIndexFailures;
 use App\Services\Search\Support\ManticoreClientFactory;
 use App\Services\Search\Support\ManticoreIndexRegistry;
@@ -943,6 +944,76 @@ class ManticoreSearchDriver implements SearchDriverInterface
     }
 
     /**
+     * @param  list<string>  $columns
+     * @param  array<string, mixed>  $searchArray
+     */
+    public static function buildSearchExpression(?string $searchString, array $columns = [], array $searchArray = []): ?string
+    {
+        if ($searchArray !== []) {
+            $terms = [];
+            foreach ($searchArray as $field => $value) {
+                if (empty($value)) {
+                    continue;
+                }
+
+                $rawValue = (string) $value;
+                $preparedValue = self::prepareUserSearchQuery($rawValue);
+                if ($preparedValue !== '') {
+                    $terms[] = [
+                        'field' => (string) $field,
+                        'raw' => $rawValue,
+                        'prepared' => $preparedValue,
+                    ];
+                }
+            }
+
+            if ($terms === []) {
+                return null;
+            }
+
+            $preparedValues = array_unique(array_column($terms, 'prepared'));
+            if (count($terms) > 1 && count($preparedValues) === 1) {
+                $fields = array_column($terms, 'field');
+                $fieldSelector = '@('.implode(',', $fields).')';
+
+                return '@@relaxed '.self::scopeReleaseSearchQuery(
+                    $terms[0]['raw'],
+                    $terms[0]['prepared'],
+                    $fieldSelector,
+                );
+            }
+
+            $scopedTerms = array_map(
+                static fn (array $term): string => self::scopeReleaseSearchQuery(
+                    $term['raw'],
+                    $term['prepared'],
+                    '@'.$term['field'],
+                ),
+                $terms,
+            );
+
+            return '@@relaxed '.implode(' ', $scopedTerms);
+        }
+
+        if (empty($searchString)) {
+            return null;
+        }
+
+        $preparedSearch = self::prepareUserSearchQuery($searchString);
+        if ($preparedSearch === '') {
+            return null;
+        }
+
+        $fieldSelector = match (count($columns)) {
+            0 => '',
+            1 => '@'.$columns[0],
+            default => '@('.implode(',', $columns).')',
+        };
+
+        return '@@relaxed '.self::scopeReleaseSearchQuery($searchString, $preparedSearch, $fieldSelector);
+    }
+
+    /**
      * Check if a search query contains negation operators (! or - prefix on words).
      *
      * Used to prevent fuzzy fallback from reversing the user's negation intent.
@@ -1476,50 +1547,13 @@ class ManticoreSearchDriver implements SearchDriverInterface
             return $cached;
         }
 
-        // Build query string once so we can retry if needed
-        // Use prepareUserSearchQuery() to preserve search operators (!, -, "", |, *)
-        $searchExpr = null;
-        if (! empty($searchArray)) {
-            $terms = [];
-            foreach ($searchArray as $key => $value) {
-                if (! empty($value)) {
-                    $rawValue = (string) $value;
-                    $preparedValue = self::prepareUserSearchQuery($rawValue);
-                    if (! empty($preparedValue)) {
-                        $terms[] = '@@relaxed '.self::scopeReleaseSearchQuery($rawValue, $preparedValue, '@'.$key);
-                    }
-                }
-            }
-            if (! empty($terms)) {
-                $searchExpr = implode(' ', $terms);
-            } else {
-                if (config('app.debug')) {
-                    Log::debug('ManticoreSearch::searchIndexes no terms after escaping searchArray');
-                }
-
-                return [];
-            }
-        } elseif (! empty($searchString)) {
-            $preparedSearch = self::prepareUserSearchQuery($searchString);
-            if (empty($preparedSearch)) {
-                if (config('app.debug')) {
-                    Log::debug('ManticoreSearch::searchIndexes preparedSearch is empty');
-                }
-
-                return [];
+        $columns = array_map(static fn (mixed $value): string => (string) $value, array_values($column));
+        $searchExpr = self::buildSearchExpression($searchString, $columns, $searchArray);
+        if ($searchExpr === null) {
+            if (config('app.debug')) {
+                Log::debug('ManticoreSearch::searchIndexes no terms after escaping');
             }
 
-            $searchColumns = '';
-            if (! empty($column)) {
-                if (count($column) > 1) {
-                    $searchColumns = '@('.implode(',', $column).')';
-                } else {
-                    $searchColumns = '@'.$column[0]; // @phpstan-ignore offsetAccess.notFound
-                }
-            }
-
-            $searchExpr = '@@relaxed '.self::scopeReleaseSearchQuery($searchString, $preparedSearch, $searchColumns);
-        } else {
             return [];
         }
 
@@ -1568,33 +1602,27 @@ class ManticoreSearchDriver implements SearchDriverInterface
                         'index' => $rt_index,
                     ]);
                 } catch (ResponseException $e2) {
-                    Log::error('ManticoreSearch searchIndexes ResponseException after retry: '.$e2->getMessage(), [
-                        'index' => $rt_index,
-                        'search' => $searchString,
-                    ]);
+                    $this->reportSearchFailure(
+                        'response_after_sort_retry',
+                        $rt_index,
+                        $searchString,
+                        $searchArray,
+                        $e2->getMessage(),
+                    );
 
                     return [];
                 }
             } else {
-                Log::error('ManticoreSearch searchIndexes ResponseException: '.$e->getMessage(), [
-                    'index' => $rt_index,
-                    'search' => $searchString,
-                ]);
+                $this->reportSearchFailure('response', $rt_index, $searchString, $searchArray, $e->getMessage());
 
                 return [];
             }
         } catch (RuntimeException $e) {
-            Log::error('ManticoreSearch searchIndexes RuntimeException: '.$e->getMessage(), [
-                'index' => $rt_index,
-                'search' => $searchString,
-            ]);
+            $this->reportSearchFailure('runtime', $rt_index, $searchString, $searchArray, $e->getMessage());
 
             return [];
         } catch (\Throwable $e) {
-            Log::error('ManticoreSearch searchIndexes unexpected error: '.$e->getMessage(), [
-                'index' => $rt_index,
-                'search' => $searchString,
-            ]);
+            $this->reportSearchFailure('unexpected', $rt_index, $searchString, $searchArray, $e->getMessage());
 
             return [];
         }
@@ -1618,6 +1646,58 @@ class ManticoreSearchDriver implements SearchDriverInterface
         }
 
         return $result;
+    }
+
+    /**
+     * @param  array<string, mixed>  $searchArray
+     */
+    private function reportSearchFailure(
+        string $failureType,
+        string $index,
+        ?string $searchString,
+        array $searchArray,
+        string $error,
+    ): void {
+        if ($this->isDuplicateSearch($index, $searchArray)) {
+            ManticoreSearchFailures::record(
+                $failureType,
+                $index,
+                (string) $searchArray['name'],
+                $error,
+            );
+
+            return;
+        }
+
+        $failureLabel = match ($failureType) {
+            'response_after_sort_retry' => 'ResponseException after retry',
+            'response' => 'ResponseException',
+            'runtime' => 'RuntimeException',
+            default => 'unexpected error',
+        };
+
+        Log::error("ManticoreSearch searchIndexes {$failureLabel}: {$error}", [
+            'index' => $index,
+            'search' => $searchString,
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $searchArray
+     */
+    private function isDuplicateSearch(string $index, array $searchArray): bool
+    {
+        if ($index !== $this->getReleasesIndex()
+            || count($searchArray) !== 2
+            || ! array_key_exists('name', $searchArray)
+            || ! array_key_exists('searchname', $searchArray)) {
+            return false;
+        }
+
+        $name = self::prepareUserSearchQuery((string) $searchArray['name']);
+        $searchName = self::prepareUserSearchQuery((string) $searchArray['searchname']);
+
+        return $name !== '' && $name === $searchName;
     }
 
     private function normalizeSearchLimit(int $limit): int
