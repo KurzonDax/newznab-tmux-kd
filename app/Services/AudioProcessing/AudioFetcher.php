@@ -213,6 +213,7 @@ final class AudioFetcher
         $sequentialFallbackThroughIndex = -1;
         $compressedBackfillRequired = false;
         $nonAudioListingVolumes = 0;
+        $fetchedSegments = 0;
 
         /** @var array<int, true> $completedVolumeIndexes */
         $completedVolumeIndexes = [];
@@ -226,6 +227,9 @@ final class AudioFetcher
         /** @var array<string, array<string, mixed>> $listedFiles */
         $listedFiles = [];
 
+        /** @var array<string, array{fragmentBytes: int, decodableSeconds: float}> $extractionProgress */
+        $extractionProgress = [];
+
         try {
             while ($volumeIndex < count($volumes) && $fetchedVolumes < $this->config->maxRarParts) {
                 $volume = $volumes[$volumeIndex];
@@ -238,6 +242,9 @@ final class AudioFetcher
 
                 /** @var list<array<string, mixed>> $currentFiles */
                 $currentFiles = [];
+                $activeEntry = null;
+                $currentVolumeListed = false;
+                $listingConclusive = false;
 
                 $chunks = array_chunk($volume, self::ARCHIVE_FETCH_CHUNK_SEGMENTS);
                 $volumeDownloadComplete = true;
@@ -256,60 +263,98 @@ final class AudioFetcher
                     if ($this->config->maxArchiveBytes !== null
                         && $archiveBytes + $chunkBytes > $this->config->maxArchiveBytes
                     ) {
-                        $ceilingMb = max(1, (int) ceil($this->config->maxArchiveBytes / 1024 / 1024));
-
-                        return AudioFetchResult::failed(
-                            'The archive exceeded the '.$ceilingMb.' MB fetch ceiling before a whole audio file was found.'
-                        );
+                        return AudioFetchResult::failed($this->archiveCeilingReason());
                     }
 
                     File::append($archivePath, $data);
                     $archiveBytes += $chunkBytes;
-                    $listing = $this->archiveService->listArchiveContentsAtPath($archivePath);
+                    $fetchedSegments += count($chunk);
+                    if (! $currentVolumeListed || $activeEntry === null) {
+                        $listing = $this->archiveService->listArchiveContentsAtPath($archivePath);
+                        $currentVolumeListed = true;
 
-                    if ($listing['hasPassword']) {
-                        return AudioFetchResult::failed(
-                            'The archive is password protected.',
-                            archivePassworded: true,
-                        );
-                    }
-
-                    if ($fetchedVolumes === 1 && ($listing['isFirstVolume'] ?? null) === false) {
-                        return AudioFetchResult::failed(
-                            'Archive set starts mid-volume; the first volume is not in this release.'
-                        );
-                    }
-
-                    $currentFiles = array_values($listing['files']);
-                    foreach ($currentFiles as $file) {
-                        $name = (string) ($file['name'] ?? '');
-                        if ($name !== '') {
-                            $this->observedArchiveMembers[$name] = $file;
+                        if ($listing['hasPassword']) {
+                            return AudioFetchResult::failed(
+                                'The archive is password protected.',
+                                archivePassworded: true,
+                            );
                         }
-                        if ($name !== '' && ! array_key_exists($name, $listedFiles)) {
-                            $listedFiles[$name] = $file;
+
+                        if ($fetchedVolumes === 1 && ($listing['isFirstVolume'] ?? null) === false) {
+                            return AudioFetchResult::failed(
+                                'Archive set starts mid-volume; the first volume is not in this release.'
+                            );
                         }
+
+                        $currentFiles = array_values($listing['files']);
+                        foreach ($currentFiles as $file) {
+                            $name = (string) ($file['name'] ?? '');
+                            if ($name !== '') {
+                                $this->observedArchiveMembers[$name] = $file;
+                            }
+                            if ($name !== '' && ! array_key_exists($name, $listedFiles)) {
+                                $listedFiles[$name] = $file;
+                            }
+                        }
+
+                        $listingConclusive = $currentFiles !== [] || ($listing['isFirstVolume'] ?? null) !== null;
                     }
 
-                    $listingConclusive = $currentFiles !== [] || ($listing['isFirstVolume'] ?? null) !== null;
                     if ($chunkIndex === array_key_last($chunks) && $volumeDownloadComplete && $listingConclusive) {
                         $fullyDownloadedVolumeIndexes[$volumeIndex] = true;
                         $this->archiveManifestComplete = count($fullyDownloadedVolumeIndexes) === count($volumes);
                     }
 
-                    $entry = $this->enrichAudioEntry(
+                    $entry = $activeEntry ?? $this->enrichAudioEntry(
                         $this->firstAudioEntry(array_values($listedFiles), $knownAudioFile),
                         $knownAudioFile,
                     );
                     if ($entry === null) {
+                        $this->logArchiveChunkDiagnostics(
+                            $release,
+                            $fetchedSegments,
+                            $chunkBytes,
+                            count($listedFiles),
+                            0,
+                            0.0,
+                        );
+
                         continue;
                     }
 
                     if ($this->isCarvableStoredEntry($entry)) {
+                        $this->logArchiveChunkDiagnostics(
+                            $release,
+                            $fetchedSegments,
+                            $chunkBytes,
+                            count($listedFiles),
+                            0,
+                            0.0,
+                        );
+
                         continue;
                     }
 
+                    $activeEntry = $entry;
+
                     if ((int) ($entry['compressed'] ?? 0) === 1) {
+                        if ($this->compressedEntryExceedsArchiveCeiling(
+                            $entry,
+                            $archiveBytes,
+                            (int) File::size($archivePath),
+                        )) {
+                            $this->logArchiveChunkDiagnostics(
+                                $release,
+                                $fetchedSegments,
+                                $chunkBytes,
+                                count($listedFiles),
+                                0,
+                                0.0,
+                            );
+
+                            return AudioFetchResult::failed($this->archiveCeilingReason());
+                        }
+
                         $sequentialFallback = true;
                         $sequentialFallbackThroughIndex = max($sequentialFallbackThroughIndex, $volumeIndex);
                         $missingVolumeIndex = $this->firstMissingVolumeIndex(
@@ -321,19 +366,52 @@ final class AudioFetcher
                         }
 
                         if ($compressedBackfillRequired) {
+                            $this->logArchiveChunkDiagnostics(
+                                $release,
+                                $fetchedSegments,
+                                $chunkBytes,
+                                count($listedFiles),
+                                0,
+                                0.0,
+                            );
+
                             continue;
                         }
                     }
 
-                    $result = $this->extractListedAudioEntry(
+                    $inspection = $this->extractListedAudioEntry(
                         $entry,
                         $firstArchivePath,
                         $tmpPath,
                         $onProbe,
                     );
-                    if ($result !== null) {
-                        return $result;
+                    $this->logArchiveChunkDiagnostics(
+                        $release,
+                        $fetchedSegments,
+                        $chunkBytes,
+                        count($listedFiles),
+                        $inspection['fragmentBytes'],
+                        $inspection['decodableSeconds'],
+                    );
+                    if ($inspection['result'] !== null) {
+                        return $inspection['result'];
                     }
+
+                    $entryName = (string) $entry['name'];
+                    $previousProgress = $extractionProgress[$entryName] ?? null;
+                    if ($previousProgress !== null
+                        && ($inspection['fragmentBytes'] <= $previousProgress['fragmentBytes']
+                            || $inspection['decodableSeconds'] <= $previousProgress['decodableSeconds'])
+                    ) {
+                        return AudioFetchResult::failed(
+                            'Archive extraction stopped progressing after '.$fetchedSegments.' fetched segments.'
+                        );
+                    }
+
+                    $extractionProgress[$entryName] = [
+                        'fragmentBytes' => $inspection['fragmentBytes'],
+                        'decodableSeconds' => $inspection['decodableSeconds'],
+                    ];
                 }
 
                 $completedVolumeIndexes[$volumeIndex] = true;
@@ -368,12 +446,14 @@ final class AudioFetcher
                             $this->firstAudioEntry(array_values($listedFiles), $knownAudioFile),
                             $knownAudioFile,
                         );
-                        $result = $entry === null ? null : $this->extractListedAudioEntry(
-                            $entry,
-                            $firstArchivePath,
-                            $tmpPath,
-                            $onProbe,
-                        );
+                        $result = $entry === null
+                            ? null
+                            : $this->extractListedAudioEntry(
+                                $entry,
+                                $firstArchivePath,
+                                $tmpPath,
+                                $onProbe,
+                            )['result'];
                         if ($result !== null) {
                             return $result;
                         }
@@ -501,6 +581,57 @@ final class AudioFetcher
         return 'Source is only '.$formattedCompletion.'% complete.';
     }
 
+    private function archiveCeilingReason(): string
+    {
+        $ceilingMb = max(1, (int) ceil((int) $this->config->maxArchiveBytes / 1024 / 1024));
+
+        return 'The archive exceeded the '.$ceilingMb.' MB fetch ceiling before a whole audio file was found.';
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     */
+    private function compressedEntryExceedsArchiveCeiling(
+        array $entry,
+        int $archiveBytes,
+        int $currentVolumeBytes,
+    ): bool {
+        if ($this->config->maxArchiveBytes === null) {
+            return false;
+        }
+
+        $entryEndOffset = (int) ($entry['next_offset'] ?? 0);
+        if ($entryEndOffset <= 0) {
+            return false;
+        }
+
+        $bytesBeforeCurrentVolume = max(0, $archiveBytes - $currentVolumeBytes);
+
+        return $bytesBeforeCurrentVolume + $entryEndOffset > $this->config->maxArchiveBytes;
+    }
+
+    private function logArchiveChunkDiagnostics(
+        Release $release,
+        int $fetchedSegments,
+        int $chunkBytes,
+        int $listingEntryCount,
+        int $fragmentBytes,
+        float $decodableSeconds,
+    ): void {
+        if (! $this->config->debugMode) {
+            return;
+        }
+
+        Log::debug('Audio archive chunk inspected', [
+            'release_id' => $release->id,
+            'segments_fetched' => $fetchedSegments,
+            'bytes_appended' => $chunkBytes,
+            'listing_entry_count' => $listingEntryCount,
+            'fragment_bytes' => $fragmentBytes,
+            'decodable_seconds' => $decodableSeconds,
+        ]);
+    }
+
     /**
      * @param  list<array<string, mixed>>  $files
      */
@@ -543,15 +674,30 @@ final class AudioFetcher
         Closure $onProbe,
         bool $deleteWhenTooShort = true,
     ): ?AudioFetchResult {
+        return $this->inspectUsableAudioResult($path, $entry, $onProbe, $deleteWhenTooShort)['result'];
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     * @param  Closure(MediaInfoContainer, string, string): void  $onProbe
+     * @return array{result: ?AudioFetchResult, fragmentBytes: int, decodableSeconds: float}
+     */
+    private function inspectUsableAudioResult(
+        string $path,
+        array $entry,
+        Closure $onProbe,
+        bool $deleteWhenTooShort = true,
+    ): array {
         if (! File::isFile($path)) {
-            return null;
+            return ['result' => null, 'fragmentBytes' => 0, 'decodableSeconds' => 0.0];
         }
 
         $name = (string) ($entry['name'] ?? basename($path));
         $declaredSize = (int) ($entry['size'] ?? 0);
+        $fragmentBytes = (int) File::size($path);
         $sourceStartsAtZero = ! (bool) ($entry['split_before'] ?? false);
-        $isComplete = $sourceStartsAtZero && $declaredSize > 0 && File::size($path) >= $declaredSize;
-        $decodedDurationSeconds = null;
+        $isComplete = $sourceStartsAtZero && $declaredSize > 0 && $fragmentBytes >= $declaredSize;
+        $decodedDurationSeconds = 0.0;
         $requiredSeconds = $this->config->previewStartSeconds
             + $this->config->previewSeconds
             + self::PARTIAL_MARGIN_SECONDS;
@@ -566,7 +712,11 @@ final class AudioFetcher
         } catch (WavPackDecoderUnavailable $exception) {
             File::delete($path);
 
-            return AudioFetchResult::failed($exception->getMessage());
+            return [
+                'result' => AudioFetchResult::failed($exception->getMessage()),
+                'fragmentBytes' => $fragmentBytes,
+                'decodableSeconds' => $decodedDurationSeconds,
+            ];
         }
 
         if (! $hasPreviewWindow) {
@@ -574,7 +724,11 @@ final class AudioFetcher
                 File::delete($path);
             }
 
-            return null;
+            return [
+                'result' => null,
+                'fragmentBytes' => $fragmentBytes,
+                'decodableSeconds' => $decodedDurationSeconds,
+            ];
         }
 
         $extension = strtolower(pathinfo($name, PATHINFO_EXTENSION)) ?: 'audio';
@@ -582,31 +736,40 @@ final class AudioFetcher
         if ($probe instanceof AudioFetchResult) {
             File::delete($path);
 
-            return $probe;
+            return [
+                'result' => $probe,
+                'fragmentBytes' => $fragmentBytes,
+                'decodableSeconds' => $decodedDurationSeconds,
+            ];
         }
 
-        return AudioFetchResult::fetched(
-            $path,
-            $extension,
-            $probe,
-            sampledFilename: $name,
-            sourceFileComplete: $isComplete,
-            sourceStartsAtZero: $sourceStartsAtZero,
-            wholeDurationReliable: $isComplete,
-            decodedDurationSeconds: $decodedDurationSeconds,
-        );
+        return [
+            'result' => AudioFetchResult::fetched(
+                $path,
+                $extension,
+                $probe,
+                sampledFilename: $name,
+                sourceFileComplete: $isComplete,
+                sourceStartsAtZero: $sourceStartsAtZero,
+                wholeDurationReliable: $isComplete,
+                decodedDurationSeconds: $isComplete ? null : $decodedDurationSeconds,
+            ),
+            'fragmentBytes' => $fragmentBytes,
+            'decodableSeconds' => $decodedDurationSeconds,
+        ];
     }
 
     /**
      * @param  array<string, mixed>  $entry
      * @param  Closure(MediaInfoContainer, string, string): void  $onProbe
+     * @return array{result: ?AudioFetchResult, fragmentBytes: int, decodableSeconds: float}
      */
     private function extractListedAudioEntry(
         array $entry,
         string $firstArchivePath,
         string $tmpPath,
         Closure $onProbe,
-    ): ?AudioFetchResult {
+    ): array {
         $path = $this->archiveService->extractSpecificFileToPath(
             $firstArchivePath,
             (string) $entry['name'],
@@ -614,7 +777,9 @@ final class AudioFetcher
             keepBroken: true,
         );
 
-        return $path === null ? null : $this->usableAudioResult($path, $entry, $onProbe);
+        return $path === null
+            ? ['result' => null, 'fragmentBytes' => 0, 'decodableSeconds' => 0.0]
+            : $this->inspectUsableAudioResult($path, $entry, $onProbe);
     }
 
     /**

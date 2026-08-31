@@ -252,6 +252,113 @@ class AudioFetcherArchiveTest extends TestCase
     }
 
     #[Test]
+    public function extraction_that_stops_gaining_decodable_audio_settles_before_another_chunk_is_fetched(): void
+    {
+        $extractedBodies = ['first fragment', 'larger second fragment'];
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldReceive('listArchiveContentsAtPath')->andReturn([
+            'files' => [['name' => '01-track.flac', 'size' => 10_000, 'compressed' => 1]],
+            'hasPassword' => false,
+        ]);
+        $archive->shouldReceive('extractSpecificFileToPath')
+            ->twice()
+            ->andReturnUsing(function () use (&$extractedBodies): string {
+                $path = $this->tmpPath.'01-track.flac';
+                file_put_contents($path, array_shift($extractedBodies));
+
+                return $path;
+            });
+        $lengthProbe = Mockery::mock(AudioDecodableLengthProbe::class);
+        $lengthProbe->shouldReceive('demuxedSeconds')->twice()->andReturn(5.0, 5.0);
+
+        $result = $this->fetcher($archive, lengthProbe: $lengthProbe)->fetch(
+            $this->release(),
+            $this->archiveSource([
+                array_map(static fn (int $segment): string => '<vol-1-'.$segment.'>', range(1, 129)),
+            ]),
+            $this->tmpPath,
+            'alt.binaries.sounds.lossless',
+            static function (): void {},
+        );
+
+        $this->assertFalse($result->succeeded());
+        $this->assertSame(
+            'Archive extraction stopped progressing after 128 fetched segments.',
+            $result->reason,
+        );
+        $this->assertSame([64, 64], array_map('count', $this->downloads));
+        $this->assertNoArchivePartsRemain();
+    }
+
+    #[Test]
+    public function each_chunk_logs_progress_while_a_known_entry_reuses_its_listing(): void
+    {
+        $diagnostics = [];
+        $logger = Mockery::mock();
+        $logger->shouldReceive('debug')
+            ->twice()
+            ->with('Audio archive chunk inspected', Mockery::type('array'))
+            ->andReturnUsing(function (string $message, array $context) use (&$diagnostics): void {
+                $diagnostics[] = $context;
+            });
+        Log::swap($logger);
+
+        $extractedBodies = ['first', 'longer second'];
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldReceive('listArchiveContentsAtPath')->once()->andReturn([
+            'files' => [['name' => '01-track.flac', 'size' => 10_000, 'compressed' => 1]],
+            'hasPassword' => false,
+        ]);
+        $archive->shouldReceive('extractSpecificFileToPath')
+            ->twice()
+            ->andReturnUsing(function () use (&$extractedBodies): string {
+                $path = $this->tmpPath.'01-track.flac';
+                file_put_contents($path, array_shift($extractedBodies));
+
+                return $path;
+            });
+        $lengthProbe = Mockery::mock(AudioDecodableLengthProbe::class);
+        $lengthProbe->shouldReceive('demuxedSeconds')->twice()->andReturn(5.0, 42.0);
+
+        $result = $this->fetcher(
+            $archive,
+            downloadData: static fn (array $messageIds): string => str_repeat('x', count($messageIds)),
+            lengthProbe: $lengthProbe,
+            debugMode: true,
+        )->fetch(
+            $this->release(),
+            $this->archiveSource([
+                array_map(static fn (int $segment): string => '<vol-1-'.$segment.'>', range(1, 129)),
+            ]),
+            $this->tmpPath,
+            'alt.binaries.sounds.lossless',
+            static function (): void {},
+        );
+
+        $this->assertTrue($result->succeeded());
+        $this->assertSame([64, 64], array_map('count', $this->downloads));
+        $this->assertSame([
+            [
+                'release_id' => 42,
+                'segments_fetched' => 64,
+                'bytes_appended' => 64,
+                'listing_entry_count' => 1,
+                'fragment_bytes' => 5,
+                'decodable_seconds' => 5.0,
+            ],
+            [
+                'release_id' => 42,
+                'segments_fetched' => 128,
+                'bytes_appended' => 64,
+                'listing_entry_count' => 1,
+                'fragment_bytes' => 13,
+                'decodable_seconds' => 42.0,
+            ],
+        ], $diagnostics);
+        $this->assertNoArchivePartsRemain();
+    }
+
+    #[Test]
     public function a_float_wavpack_partial_reports_the_missing_fallback_instead_of_exhausting_volumes(): void
     {
         $archive = $this->archiveWithTrack(
@@ -516,6 +623,45 @@ class AudioFetcherArchiveTest extends TestCase
     }
 
     #[Test]
+    public function a_compressed_entry_that_cannot_fit_the_byte_budget_settles_from_its_header(): void
+    {
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldReceive('listArchiveContentsAtPath')->once()->andReturn([
+            'files' => [[
+                'name' => '01-track.flac',
+                'size' => 100,
+                'compressed' => 1,
+                'range' => '5-5',
+                'next_offset' => 20,
+            ]],
+            'hasPassword' => false,
+        ]);
+        $archive->shouldNotReceive('extractSpecificFileToPath');
+
+        $result = $this->fetcher(
+            $archive,
+            downloadData: static fn (): string => '123456',
+            maxArchiveBytes: 10,
+        )->fetch(
+            $this->release(),
+            $this->archiveSource([
+                array_map(static fn (int $segment): string => '<vol-1-'.$segment.'>', range(1, 129)),
+            ]),
+            $this->tmpPath,
+            'alt.binaries.sounds.lossless',
+            static function (): void {},
+        );
+
+        $this->assertFalse($result->succeeded());
+        $this->assertSame(
+            'The archive exceeded the 1 MB fetch ceiling before a whole audio file was found.',
+            $result->reason,
+        );
+        $this->assertSame([64], array_map('count', $this->downloads));
+        $this->assertNoArchivePartsRemain();
+    }
+
+    #[Test]
     public function it_stops_at_the_configured_volume_ceiling(): void
     {
         $archive = Mockery::mock(ArchiveExtractionService::class);
@@ -642,7 +788,7 @@ class AudioFetcherArchiveTest extends TestCase
             'files' => $storedArtwork,
             'hasPassword' => false,
         ]);
-        $archive->shouldReceive('listArchiveContentsAtPath')->twice()->with($this->partPath(4))->andReturn([
+        $archive->shouldReceive('listArchiveContentsAtPath')->once()->with($this->partPath(4))->andReturn([
             'files' => [['name' => '01-track.flac', 'size' => 8, 'compressed' => 1]],
             'hasPassword' => false,
         ]);
@@ -918,6 +1064,7 @@ class AudioFetcherArchiveTest extends TestCase
         ?MediaInfoContainer $mediaContainer = null,
         ?UsenetDownloadService $downloadService = null,
         float $minimumCompletionPercent = 95,
+        bool $debugMode = false,
     ): AudioFetcher {
         if ($downloadService === null) {
             $downloadService = Mockery::mock(UsenetDownloadService::class);
@@ -944,7 +1091,7 @@ class AudioFetcherArchiveTest extends TestCase
         $lengthProbe ??= Mockery::mock(AudioDecodableLengthProbe::class)->shouldIgnoreMissing(0.0);
 
         return new AudioFetcher(
-            $this->config($maxRarParts, $maxArchiveBytes, $minimumCompletionPercent),
+            $this->config($maxRarParts, $maxArchiveBytes, $minimumCompletionPercent, $debugMode),
             $downloadService,
             $archive,
             $tools,
@@ -956,6 +1103,7 @@ class AudioFetcherArchiveTest extends TestCase
         int $maxRarParts,
         ?int $maxArchiveBytes,
         float $minimumCompletionPercent = 95,
+        bool $debugMode = false,
     ): AudioProcessingConfiguration {
         $reflection = new ReflectionClass(AudioProcessingConfiguration::class);
         /** @var AudioProcessingConfiguration $config */
@@ -968,7 +1116,7 @@ class AudioFetcherArchiveTest extends TestCase
             'minimumCompletionPercent' => $minimumCompletionPercent,
             'previewSeconds' => 30,
             'previewStartSeconds' => 10,
-            'debugMode' => false,
+            'debugMode' => $debugMode,
         ] as $property => $value) {
             (new ReflectionProperty(AudioProcessingConfiguration::class, $property))->setValue($config, $value);
         }
