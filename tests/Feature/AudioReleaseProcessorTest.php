@@ -288,6 +288,27 @@ class AudioReleaseProcessorTest extends TestCase
         $this->assertTrue($tags->has_spectrogram);
     }
 
+    public function test_a_short_source_records_the_full_emitted_clip_length(): void
+    {
+        $release = $this->makeRelease();
+        $processor = $this->makeProcessor($this->taggedContainer(), encoderSourceSeconds: 13.0);
+
+        $result = $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(ProcessingOutcome::Completed, $result->outcome);
+        $this->assertSame(
+            13,
+            ReleaseAudioTag::query()->where('releases_id', $release->id)->sole()->preview_seconds,
+        );
+        $command = $this->encoderCommands[0];
+        $offsetIndex = array_search('-ss', $command, true);
+        $lengthIndex = array_search('-t', $command, true);
+        $this->assertIsInt($offsetIndex);
+        $this->assertIsInt($lengthIndex);
+        $this->assertSame('0', $command[$offsetIndex + 1]);
+        $this->assertSame('13', $command[$lengthIndex + 1]);
+    }
+
     public function test_a_root_with_preview_generation_disabled_keeps_the_tags_and_skips_the_encode(): void
     {
         $release = $this->makeRelease();
@@ -736,6 +757,7 @@ class AudioReleaseProcessorTest extends TestCase
         float $minimumCompletionPercent = 95,
         ?array $archiveListings = null,
         ?array $downloadResult = null,
+        float $encoderSourceSeconds = 300.0,
     ): AudioReleaseProcessor {
         $config = $this->config($maxArchiveBytes, $minimumCompletionPercent);
 
@@ -775,8 +797,13 @@ class AudioReleaseProcessorTest extends TestCase
         $encoder = new AudioPreviewEncoder(
             $config,
             $wavPackFallbackAvailable
-                ? $this->encoderTools()
-                : $this->encoderTools(codec: 'wavpack', commandFails: true, wavPackFallbackAvailable: false),
+                ? $this->encoderTools(sourceSeconds: $encoderSourceSeconds)
+                : $this->encoderTools(
+                    codec: 'wavpack',
+                    commandFails: true,
+                    wavPackFallbackAvailable: false,
+                    sourceSeconds: $encoderSourceSeconds,
+                ),
         );
 
         $archiveService = Mockery::mock(ArchiveExtractionService::class);
@@ -835,6 +862,7 @@ class AudioReleaseProcessorTest extends TestCase
         string $codec = 'mp3',
         bool $commandFails = false,
         bool $wavPackFallbackAvailable = true,
+        float $sourceSeconds = 300.0,
     ): MediaTools {
         $driver = Mockery::mock(FFMpegDriver::class);
         $driver->shouldReceive('command')->andReturnUsing(function (array $command) use ($commandFails): string {
@@ -854,8 +882,7 @@ class AudioReleaseProcessorTest extends TestCase
         $ffprobe->shouldReceive('streams')->andReturn(
             new StreamCollection([new Stream(['codec_type' => 'audio', 'codec_name' => $codec])])
         );
-        // A full-length source, so the clip is the configured 30 seconds.
-        $ffprobe->shouldReceive('format')->andReturn(new Format(['duration' => '300.0']));
+        $ffprobe->shouldReceive('format')->andReturn(new Format(['duration' => (string) $sourceSeconds]));
 
         $tools = new MediaTools;
         (new ReflectionProperty(MediaTools::class, 'ffmpeg'))->setValue($tools, $ffmpeg);

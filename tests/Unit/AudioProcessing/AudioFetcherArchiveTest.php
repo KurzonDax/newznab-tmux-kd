@@ -210,17 +210,140 @@ class AudioFetcherArchiveTest extends TestCase
     }
 
     #[Test]
-    public function it_rejects_a_short_partial_then_accepts_a_complete_extraction_without_probing_it(): void
+    public function it_rejects_a_short_partial_then_accepts_a_complete_extraction(): void
     {
         $archive = $this->archiveWithTrack(declaredSize: 8, extractedBodies: ['abc', 'abcdefgh']);
         $lengthProbe = Mockery::mock(AudioDecodableLengthProbe::class);
-        $lengthProbe->shouldReceive('demuxedSeconds')->once()->andReturn(20.0);
+        $lengthProbe->shouldReceive('demuxedSeconds')->twice()->andReturn(20.0);
 
-        $result = $this->fetch($archive, volumes: 3, lengthProbe: $lengthProbe);
+        $result = $this->fetch($archive, volumes: 2, lengthProbe: $lengthProbe);
 
         $this->assertTrue($result->succeeded());
         $this->assertSame('abcdefgh', file_get_contents((string) $result->path));
         $this->assertSame([['<vol-1>'], ['<vol-2>']], $this->downloads);
+        $this->assertNoArchivePartsRemain();
+    }
+
+    #[Test]
+    public function a_short_first_track_advances_to_a_long_second_track(): void
+    {
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldReceive('listArchiveContentsAtPath')->once()->andReturn([
+            'files' => [
+                ['name' => '01-intro.flac', 'size' => 8],
+                ['name' => '02-song.flac', 'size' => 8],
+            ],
+            'hasPassword' => false,
+        ]);
+        $archive->shouldReceive('extractSpecificFileToPath')
+            ->twice()
+            ->andReturnUsing(function (string $archivePath, string $name): string {
+                $path = $this->tmpPath.$name;
+                file_put_contents($path, 'abcdefgh');
+
+                return $path;
+            });
+        $lengthProbe = Mockery::mock(AudioDecodableLengthProbe::class);
+        $lengthProbe->shouldReceive('demuxedSeconds')->twice()->andReturn(13.0, 42.0);
+        $probedFilenames = [];
+
+        $result = $this->fetcher($archive, lengthProbe: $lengthProbe)->fetch(
+            $this->release(),
+            $this->archiveSource([['<vol-1>']]),
+            $this->tmpPath,
+            'alt.binaries.sounds.lossless',
+            static function (
+                MediaInfoContainer $container,
+                string $sourceFilename,
+            ) use (&$probedFilenames): void {
+                $probedFilenames[] = $sourceFilename;
+            },
+        );
+
+        $this->assertTrue($result->succeeded(), $result->reason);
+        $this->assertSame('02-song.flac', $result->sampledFilename);
+        $this->assertSame(42.0, $result->decodedDurationSeconds);
+        $this->assertFalse($result->onlyOneTrackProbed);
+        $this->assertSame(['01-intro.flac'], $probedFilenames, 'Tags remain sourced from the first probed entry.');
+        $this->assertFileDoesNotExist($this->tmpPath.'01-intro.flac');
+        $this->assertNoArchivePartsRemain();
+    }
+
+    #[Test]
+    public function two_short_tracks_choose_the_longer_first_track(): void
+    {
+        $archive = $this->archiveWithNamedTracks(['01-intro.flac', '02-applause.flac']);
+        $lengthProbe = Mockery::mock(AudioDecodableLengthProbe::class);
+        $lengthProbe->shouldReceive('demuxedSeconds')->twice()->andReturn(20.0, 10.0);
+        $probedFilenames = [];
+
+        $result = $this->fetcher($archive, lengthProbe: $lengthProbe)->fetch(
+            $this->release(),
+            $this->archiveSource([['<vol-1>']]),
+            $this->tmpPath,
+            'alt.binaries.sounds.lossless',
+            static function (
+                MediaInfoContainer $container,
+                string $sourceFilename,
+            ) use (&$probedFilenames): void {
+                $probedFilenames[] = $sourceFilename;
+            },
+        );
+
+        $this->assertTrue($result->succeeded(), $result->reason);
+        $this->assertSame('01-intro.flac', $result->sampledFilename);
+        $this->assertSame(20.0, $result->decodedDurationSeconds);
+        $this->assertFalse($result->onlyOneTrackProbed);
+        $this->assertSame(['01-intro.flac'], $probedFilenames);
+        $this->assertFileDoesNotExist($this->tmpPath.'02-applause.flac');
+        $this->assertNoArchivePartsRemain();
+    }
+
+    #[Test]
+    public function a_single_short_track_is_previewed_at_full_length(): void
+    {
+        $archive = $this->archiveWithNamedTracks(['01-intro.flac']);
+        $lengthProbe = Mockery::mock(AudioDecodableLengthProbe::class);
+        $lengthProbe->shouldReceive('demuxedSeconds')->once()->andReturn(13.0);
+
+        $result = $this->fetch($archive, volumes: 1, lengthProbe: $lengthProbe);
+
+        $this->assertTrue($result->succeeded(), $result->reason);
+        $this->assertSame('01-intro.flac', $result->sampledFilename);
+        $this->assertSame(13.0, $result->decodedDurationSeconds);
+        $this->assertTrue($result->onlyOneTrackProbed);
+        $this->assertNoArchivePartsRemain();
+    }
+
+    #[Test]
+    public function a_short_stored_entry_advances_to_the_next_stored_audio_entry(): void
+    {
+        $files = [
+            ['name' => '01-intro.flac', 'size' => 8, 'compressed' => 0, 'range' => '0-7'],
+            ['name' => '02-song.flac', 'size' => 8, 'compressed' => 0, 'range' => '8-15'],
+        ];
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldReceive('listArchiveContentsAtPath')->once()->andReturn([
+            'files' => $files,
+            'hasPassword' => false,
+        ]);
+        $archive->shouldReceive('carveStoredFileChunkToPath')
+            ->twice()
+            ->andReturnUsing(function (string $archivePath, array $entry, string $outputPath): bool {
+                file_put_contents($outputPath, 'abcdefgh');
+
+                return true;
+            });
+        $lengthProbe = Mockery::mock(AudioDecodableLengthProbe::class);
+        $lengthProbe->shouldReceive('demuxedSeconds')->twice()->andReturn(13.0, 42.0);
+
+        $result = $this->fetch($archive, volumes: 1, lengthProbe: $lengthProbe);
+
+        $this->assertTrue($result->succeeded(), $result->reason);
+        $this->assertSame('02-song.flac', $result->sampledFilename);
+        $this->assertSame(42.0, $result->decodedDurationSeconds);
+        $this->assertFalse($result->onlyOneTrackProbed);
+        $this->assertFileDoesNotExist($this->tmpPath.'01-intro.flac');
         $this->assertNoArchivePartsRemain();
     }
 
@@ -1137,6 +1260,31 @@ class AudioFetcherArchiveTest extends TestCase
                 }
                 file_put_contents($path, array_shift($extractedBodies));
                 $extractionCount++;
+
+                return $path;
+            });
+
+        return $archive;
+    }
+
+    /**
+     * @param  list<string>  $names
+     */
+    private function archiveWithNamedTracks(array $names): ArchiveExtractionService
+    {
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldReceive('listArchiveContentsAtPath')->once()->andReturn([
+            'files' => array_map(
+                static fn (string $name): array => ['name' => $name, 'size' => 8],
+                $names,
+            ),
+            'hasPassword' => false,
+        ]);
+        $archive->shouldReceive('extractSpecificFileToPath')
+            ->times(count($names))
+            ->andReturnUsing(function (string $archivePath, string $name): string {
+                $path = $this->tmpPath.$name;
+                file_put_contents($path, 'abcdefgh');
 
                 return $path;
             });

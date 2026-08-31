@@ -116,17 +116,17 @@ class AudioPreviewEncoderFfmpegTest extends TestCase
     }
 
     #[Test]
-    public function a_source_shorter_than_the_window_is_clipped_to_what_exists(): void
+    public function a_source_shorter_than_the_target_is_clipped_at_full_length(): void
     {
         $source = $this->sine('flac', 20);
 
         $result = $this->encoder()->encode($source, 'abc123', $this->tmpPath);
 
         $this->assertNotNull($result);
-        $this->assertSame(10, $result->seconds);
+        $this->assertSame(20, $result->seconds);
         $this->assertGreaterThan(0, $result->bytes);
         $this->assertEqualsWithDelta(
-            10.0,
+            20.0,
             (float) $this->probe($this->savePath.'abc123.flac', 'format=duration'),
             0.5,
         );
