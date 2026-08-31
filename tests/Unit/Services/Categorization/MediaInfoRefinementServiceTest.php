@@ -37,9 +37,13 @@ class MediaInfoRefinementServiceTest extends TestCase
         yield 'tv SD by positive dimensions' => [Category::TV_OTHER, ['videowidth' => 640, 'videoheight' => 480], Category::TV_SD, 'video_sd'];
         yield 'xxx HD maps to x264' => [Category::XXX_OTHER, ['videoheight' => 720], Category::XXX_X264, 'video_hd'];
         yield 'xxx SD' => [Category::XXX_OTHER, ['videowidth' => 640], Category::XXX_SD, 'video_sd'];
-        yield 'music with video' => [Category::MUSIC_OTHER, ['videowidth' => 640], Category::MUSIC_VIDEO, 'video_music'];
+        yield 'music with video and no duration' => [Category::MUSIC_OTHER, ['videowidth' => 640], Category::MUSIC_VIDEO, 'video_music'];
+        yield 'music with short HD video' => [Category::MUSIC_OTHER, ['videowidth' => 1920, 'videoheight' => 1080, 'videoduration' => '00h:04m:00s'], Category::MUSIC_VIDEO, 'video_music'];
     }
 
+    /**
+     * @param  array<string, mixed>  $video
+     */
     #[Test]
     #[DataProvider('videoMappings')]
     public function it_maps_video_media_info(int $currentCategoryId, array $video, int $expectedCategoryId, string $expectedRule): void
@@ -49,6 +53,18 @@ class MediaInfoRefinementServiceTest extends TestCase
         self::assertNotNull($decision);
         self::assertSame($expectedCategoryId, $decision->categoryId);
         self::assertSame($expectedRule, $decision->rule);
+    }
+
+    #[Test]
+    public function feature_length_hd_video_does_not_promote_other_music_to_music_video(): void
+    {
+        $decision = (new MediaInfoRefinementService)->decisionFor(
+            Category::MUSIC_OTHER,
+            ['videowidth' => 1920, 'videoheight' => 1080, 'videoduration' => '01h:05m:00s'],
+            ['audioformat' => 'AC-3'],
+        );
+
+        self::assertNull($decision);
     }
 
     /**
