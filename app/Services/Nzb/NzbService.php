@@ -243,6 +243,8 @@ class NzbService
                     $release->getAttribute(NzbCreationCandidateQuery::CLAIM_TOKEN_COLUMN),
                 )->update($this->successfulReleaseUpdateValues($completion));
 
+                // This finalization always flips nzbstatus from pending to added,
+                // so zero affected rows means the ownership predicate no longer matched.
                 if ($affected !== 1) {
                     return false;
                 }

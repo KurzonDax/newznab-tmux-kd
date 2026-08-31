@@ -88,13 +88,13 @@ final class NzbCreationClaimPlanMariaDbTest extends TestCase
             SELECT id FROM `{$releases}`
             WHERE nzbstatus = 0 AND groups_id = 7
               AND (nzb_creation_claimed_at IS NULL OR nzb_creation_claimed_at < DATE_SUB(NOW(), INTERVAL 300 SECOND))
-            ORDER BY postdate DESC, id ASC LIMIT 100
+            ORDER BY postdate ASC, id DESC LIMIT 100
             SQL);
         $globalPlan = $this->explain(<<<SQL
             SELECT id FROM `{$releases}`
             WHERE nzbstatus = 0
               AND (nzb_creation_claimed_at IS NULL OR nzb_creation_claimed_at < DATE_SUB(NOW(), INTERVAL 300 SECOND))
-            ORDER BY postdate DESC, id ASC LIMIT 100
+            ORDER BY postdate ASC, id DESC LIMIT 100
             SQL);
 
         $this->assertStringContainsString('ix_releases_nzb_creation_group_queue', $groupPlan);
@@ -118,8 +118,8 @@ final class NzbCreationClaimPlanMariaDbTest extends TestCase
         $first = NzbCreationCandidateQuery::claimBatch(1, 5, 'worker-one', ['id', 'categories_id']);
         $second = NzbCreationCandidateQuery::claimBatch(1, 5, 'worker-two', ['id', 'categories_id']);
 
-        $this->assertSame([1, 2, 3, 4, 5], $first->pluck('id')->all());
-        $this->assertSame([6, 7, 8, 9, 10], $second->pluck('id')->all());
+        $this->assertSame([10, 9, 8, 7, 6], $first->pluck('id')->all());
+        $this->assertSame([5, 4, 3, 2, 1], $second->pluck('id')->all());
         $this->assertSame([], array_intersect($first->pluck('id')->all(), $second->pluck('id')->all()));
     }
 

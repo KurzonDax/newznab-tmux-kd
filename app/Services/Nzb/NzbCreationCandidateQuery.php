@@ -57,8 +57,8 @@ final class NzbCreationCandidateQuery
             $supportsClaims = self::supportsClaims();
             $query = self::baseBuilder($groupID)
                 ->select('r.id')
-                ->orderByDesc('r.postdate')
-                ->orderBy('r.id')
+                ->orderBy('r.postdate')
+                ->orderByDesc('r.id')
                 ->limit($effectiveLimit);
 
             $ids = $query
@@ -148,9 +148,11 @@ final class NzbCreationCandidateQuery
             return self::ownedPendingBuilder($releaseId, null)->exists();
         }
 
-        return self::ownedPendingBuilder($releaseId, $token)->update([
+        $affected = self::ownedPendingBuilder($releaseId, $token)->update([
             self::CLAIMED_AT_COLUMN => now(),
-        ]) === 1;
+        ]);
+
+        return $affected === 1 || self::ownedPendingBuilder($releaseId, $token)->exists();
     }
 
     public static function supportsClaims(): bool

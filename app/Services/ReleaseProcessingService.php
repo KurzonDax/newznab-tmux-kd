@@ -695,6 +695,7 @@ final class ReleaseProcessingService
         $nzbCount = 0;
         $retryCount = 0;
         $deletedCount = 0;
+        $claimLostCount = 0;
         $claimToken = bin2hex(random_bytes(16));
         $limit = max(1, $this->settings->releaseCreationLimit);
         $total = min(NzbCreationCandidateQuery::baseBuilder($groupID)->count(), $limit);
@@ -718,6 +719,8 @@ final class ReleaseProcessingService
 
                 try {
                     if (! NzbCreationCandidateQuery::refreshClaim((int) $release->id, $claimToken)) {
+                        $claimLostCount++;
+
                         continue;
                     }
 
@@ -729,13 +732,17 @@ final class ReleaseProcessingService
 
                     if ($result->success) {
                         $nzbCount++;
-                    } elseif (! $result->isClaimLost()) {
+                    } elseif ($result->isClaimLost()) {
+                        $claimLostCount++;
+                    } else {
                         $failureDisposition = $this->handleFailedNzbCreation($release, $result, $claimToken);
                         if ($failureDisposition === NzbCreationFailureDisposition::Deleted) {
                             $deletedCount++;
                         } elseif ($failureDisposition === NzbCreationFailureDisposition::Retry) {
                             $keepClaimUntilLeaseExpires = true;
                             $retryCount++;
+                        } elseif ($failureDisposition === NzbCreationFailureDisposition::ClaimLost) {
+                            $claimLostCount++;
                         }
                     }
                 } finally {
@@ -749,6 +756,7 @@ final class ReleaseProcessingService
         }
 
         $this->outputStat('NZBs created', $nzbCount);
+        $this->outputStat('NZB claims lost', $claimLostCount);
         $this->outputStat('NZB creation retries', $retryCount);
         $this->outputStat('NZB creation failures deleted', $deletedCount);
         $this->outputElapsedTime($startTime);

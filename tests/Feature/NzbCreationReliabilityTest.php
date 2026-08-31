@@ -22,6 +22,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Psr\Log\AbstractLogger;
+use Symfony\Component\Console\Output\BufferedOutput;
+use Termwind\Termwind;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
@@ -72,7 +74,7 @@ class NzbCreationReliabilityTest extends TestCase
 
         $claimed = NzbCreationCandidateQuery::claimBatch(null, 10, 'token-one', ['id']);
 
-        $this->assertSame([2, 3], $claimed->pluck('id')->all());
+        $this->assertSame([3, 2], $claimed->pluck('id')->all());
         $this->assertSame('token-one', DB::table('releases')->where('id', 2)->value('nzb_creation_claim_token'));
         $this->assertSame('claimed', DB::table('releases')->where('id', 1)->value('nzb_creation_claim_token'));
     }
@@ -121,6 +123,62 @@ class NzbCreationReliabilityTest extends TestCase
             '2026-07-13 12:00:00',
             '2026-07-13 12:02:00',
         ], $nzb->observedClaimTimes);
+    }
+
+    public function test_same_second_no_op_refresh_still_processes_the_owned_release(): void
+    {
+        Carbon::setTestNow('2026-07-13 12:00:00');
+        $this->insertRelease(1, 'a');
+        $nzb = new LeaseObservingNzbService;
+        $service = (new ReleaseProcessingService(
+            nzb: $nzb,
+            releaseManagement: new DatabaseOnlyReleaseManagementService,
+            collectionCleanupService: app(CollectionCleanupService::class),
+        ))->setEchoCLI(false);
+
+        DB::statement('PRAGMA count_changes = ON');
+        try {
+            $this->assertSame(1, $service->createNZBs(null));
+        } finally {
+            DB::statement('PRAGMA count_changes = OFF');
+        }
+
+        $this->assertSame(['2026-07-13 12:00:00'], $nzb->observedClaimTimes);
+    }
+
+    public function test_lost_claim_is_reported_in_creation_output(): void
+    {
+        $this->insertRelease(1, 'a');
+        $claimWasStolen = false;
+        DB::listen(function (QueryExecuted $query) use (&$claimWasStolen): void {
+            if ($claimWasStolen || ! str_contains($query->sql, 'CASE id')) {
+                return;
+            }
+
+            $claimWasStolen = true;
+            DB::table('releases')->where('id', 1)->update([
+                'nzb_creation_claimed_at' => now(),
+                'nzb_creation_claim_token' => 'worker-two',
+            ]);
+        });
+        $service = (new ReleaseProcessingService(
+            nzb: new LeaseObservingNzbService,
+            releaseManagement: new DatabaseOnlyReleaseManagementService,
+            collectionCleanupService: app(CollectionCleanupService::class),
+        ))->setEchoCLI(true);
+        $consoleOutput = new BufferedOutput;
+        Termwind::renderUsing($consoleOutput);
+
+        ob_start();
+        try {
+            $this->assertSame(0, $service->createNZBs(null));
+        } finally {
+            ob_end_clean();
+            Termwind::renderUsing(null);
+        }
+
+        $this->assertTrue($claimWasStolen);
+        $this->assertStringContainsString('NZB claims lost: 1', $consoleOutput->fetch());
     }
 
     public function test_lease_refresh_cannot_extend_a_reclaimed_token(): void

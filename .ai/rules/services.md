@@ -10,3 +10,6 @@ All automated release deletion sweeps must apply ReleaseDeletionProtection durin
 
 ## TV processing admission has one shared predicate
 Use App\Services\TvProcessing\TvProcessingCandidateQuery for TV provider selection, runner work gates, and tmux pending counts. Episode-revisit pacing and expiry live in that query; duplicating the SQL in a consumer causes worker/monitor drift.
+
+## Claim heartbeats distinguish matched from changed rows
+Database update() reports affected/changed rows, so a same-value heartbeat may return 0 while the worker still owns the row. For ownership-preserving updates that can be no-ops, accept one changed row or recheck the exact pending/token predicate with exists(). Treat zero as lost only when the update necessarily changes state, such as nzbstatus pending to added.
