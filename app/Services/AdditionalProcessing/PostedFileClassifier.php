@@ -8,6 +8,8 @@ final class PostedFileClassifier
 {
     public const string VIDEO_FILE_REGEX = '\\.(AVI|F4V|IFO|M1V|M2TS|M2V|M4V|MKV|MOV|MP4|MPEG|MPG|MPGV|MPV|MTS|OGV|QT|RM|RMVB|TS|VOB|WMV)';
 
+    public const string AUDIO_ARCHIVE_SUPPORT_FILE_REGEX = '\\.(?:JPE?G|PNG|GIF|BMP|NFO|SFV|TXT|MD5|M3U|CUE|LOG|PDF|URL|DIZ)';
+
     private const string ARCHIVE_PATTERN = '/(\.(part\d+|[rz]\d+|rar|0+|0*10?|zipr\d{2,3}|zipx?)("|\s*\.rar)*($|[ ")]|-])|"[a-f0-9]{32}\.[1-9]\d{1,2}".*\(\d+\/\d{2,}\)$)/i';
 
     public static function containsArchiveCandidate(string $subject): bool

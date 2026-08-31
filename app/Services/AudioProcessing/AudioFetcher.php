@@ -263,6 +263,14 @@ final class AudioFetcher
                     if ($this->config->maxArchiveBytes !== null
                         && $archiveBytes + $chunkBytes > $this->config->maxArchiveBytes
                     ) {
+                        if ($knownAudioFile === null
+                            && $listedFiles !== []
+                            && $this->firstAudioEntry(array_values($listedFiles)) === null
+                            && $this->onlyAudioArchiveSupportFiles(array_values($listedFiles))
+                        ) {
+                            return $this->noAudioArchiveResult(array_values($listedFiles));
+                        }
+
                         return AudioFetchResult::failed($this->archiveCeilingReason());
                     }
 
@@ -416,18 +424,28 @@ final class AudioFetcher
 
                 $completedVolumeIndexes[$volumeIndex] = true;
 
+                if ($firstVolumeBytes === null && File::isFile($archivePath)) {
+                    $firstVolumeBytes = max(1, File::size($archivePath));
+                }
+
                 if ($knownAudioFile === null
                     && $currentFiles !== []
                     && $this->firstAudioEntry(array_values($listedFiles), $knownAudioFile) === null
                 ) {
+                    if ($this->archiveFilesContainVideo($currentFiles)) {
+                        return $this->noAudioArchiveResult(array_values($listedFiles));
+                    }
+
+                    if ($this->onlyAudioArchiveSupportFiles($currentFiles)) {
+                        $volumeIndex++;
+
+                        continue;
+                    }
+
                     $nonAudioListingVolumes++;
                     if ($nonAudioListingVolumes >= self::NON_AUDIO_LISTING_VOLUME_LIMIT) {
                         return $this->noAudioArchiveResult(array_values($listedFiles));
                     }
-                }
-
-                if ($firstVolumeBytes === null && File::isFile($archivePath)) {
-                    $firstVolumeBytes = max(1, File::size($archivePath));
                 }
 
                 if ($sequentialFallback) {
@@ -539,10 +557,11 @@ final class AudioFetcher
                 );
             }
 
-            if ($volumeIndex >= count($volumes)
-                && $knownAudioFile === null
+            if ($knownAudioFile === null
                 && $listedFiles !== []
                 && $this->firstAudioEntry(array_values($listedFiles)) === null
+                && ($volumeIndex >= count($volumes)
+                    || $this->onlyAudioArchiveSupportFiles(array_values($listedFiles)))
             ) {
                 return $this->noAudioArchiveResult(array_values($listedFiles));
             }
@@ -662,6 +681,40 @@ final class AudioFetcher
         return $containsVideo
             ? AudioFetchResult::declined($reason)
             : AudioFetchResult::failed($reason);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $files
+     */
+    private function onlyAudioArchiveSupportFiles(array $files): bool
+    {
+        foreach ($files as $file) {
+            if (! PostedFileClassifier::matchesTerminalExtension(
+                (string) ($file['name'] ?? ''),
+                PostedFileClassifier::AUDIO_ARCHIVE_SUPPORT_FILE_REGEX,
+            )) {
+                return false;
+            }
+        }
+
+        return $files !== [];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $files
+     */
+    private function archiveFilesContainVideo(array $files): bool
+    {
+        foreach ($files as $file) {
+            if (PostedFileClassifier::matchesTerminalExtension(
+                (string) ($file['name'] ?? ''),
+                PostedFileClassifier::VIDEO_FILE_REGEX,
+            )) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
