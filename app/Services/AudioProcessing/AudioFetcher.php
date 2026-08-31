@@ -1092,6 +1092,21 @@ final class AudioFetcher
             keepBroken: true,
         );
 
+        if ($path !== null) {
+            $entryPath = $this->audioEntryPath($tmpPath, (string) $entry['name']);
+            if ($path !== $entryPath) {
+                if (File::isFile($entryPath)) {
+                    File::delete($entryPath);
+                }
+                if (! File::move($path, $entryPath)) {
+                    File::delete($path);
+
+                    return ['result' => null, 'fragmentBytes' => 0, 'decodableSeconds' => 0.0];
+                }
+                $path = $entryPath;
+            }
+        }
+
         return $path === null
             ? ['result' => null, 'fragmentBytes' => 0, 'decodableSeconds' => 0.0]
             : $this->inspectUsableAudioResult($path, $entry, $onProbe);

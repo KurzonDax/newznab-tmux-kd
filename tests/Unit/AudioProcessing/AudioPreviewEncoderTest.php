@@ -137,6 +137,39 @@ class AudioPreviewEncoderTest extends TestCase
     }
 
     #[Test]
+    public function a_fractional_source_duration_does_not_overstate_the_available_window(): void
+    {
+        $result = $this->encoder('mp3', sourceSeconds: 39.6)->encode($this->sourceFile(), 'abc123', $this->tmpPath);
+
+        $this->assertNotNull($result);
+        $this->assertSame(30, $result->seconds);
+        $this->assertContainsSubsequence(['-ss', '9.6'], $this->commands[0]);
+        $this->assertContainsSubsequence(['-t', '30'], $this->commands[0]);
+    }
+
+    #[Test]
+    public function a_fractional_short_source_is_clipped_at_its_exact_full_length(): void
+    {
+        $result = $this->encoder('mp3', sourceSeconds: 13.9)->encode($this->sourceFile(), 'abc123', $this->tmpPath);
+
+        $this->assertNotNull($result);
+        $this->assertSame(13, $result->seconds);
+        $this->assertContainsSubsequence(['-ss', '0'], $this->commands[0]);
+        $this->assertContainsSubsequence(['-t', '13.9'], $this->commands[0]);
+    }
+
+    #[Test]
+    public function a_subsecond_source_is_not_overstated_to_one_second(): void
+    {
+        $result = $this->encoder('mp3', sourceSeconds: 0.6)->encode($this->sourceFile(), 'abc123', $this->tmpPath);
+
+        $this->assertNotNull($result);
+        $this->assertSame(0, $result->seconds);
+        $this->assertContainsSubsequence(['-ss', '0'], $this->commands[0]);
+        $this->assertContainsSubsequence(['-t', '0.6'], $this->commands[0]);
+    }
+
+    #[Test]
     public function a_13_second_source_is_clipped_at_full_length_from_the_start(): void
     {
         $result = $this->encoder('mp3', sourceSeconds: 13.0)->encode($this->sourceFile(), 'abc123', $this->tmpPath);

@@ -181,19 +181,19 @@ final class AudioPreviewEncoder
      * possible. A source shorter than the target is clipped from the start at
      * its full length.
      *
-     * @return int|null The clip's length in whole seconds, or null if ffmpeg
-     *                  produced nothing.
+     * @return int|null The clip's completed whole seconds, or null if ffmpeg
+     *                  produced nothing. Ffmpeg still receives the exact
+     *                  fractional window so a short source is not truncated.
      */
     private function cut(string $sourcePath, string $outputPath, string $container, bool $streamCopy): ?int
     {
         $sourceSeconds = $this->probeDuration($sourcePath);
-        $offset = $this->config->previewStartSeconds;
-        $length = $this->config->previewSeconds;
+        $offset = (float) $this->config->previewStartSeconds;
+        $length = (float) $this->config->previewSeconds;
 
         if ($sourceSeconds > 0.0) {
-            $wholeSourceSeconds = max(1, (int) round($sourceSeconds));
-            $length = min($length, $wholeSourceSeconds);
-            $offset = min($offset, max(0, $wholeSourceSeconds - $length));
+            $length = min($length, $sourceSeconds);
+            $offset = min($offset, max(0.0, $sourceSeconds - $length));
         }
 
         if (File::isFile($outputPath)) {
@@ -221,7 +221,7 @@ final class AudioPreviewEncoder
             return null;
         }
 
-        return $length;
+        return (int) floor($length);
     }
 
     /**
