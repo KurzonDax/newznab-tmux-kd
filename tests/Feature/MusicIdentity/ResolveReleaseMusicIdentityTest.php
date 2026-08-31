@@ -25,8 +25,10 @@ use App\Services\MusicIdentity\Persistence\MusicIdentityLeaseManager;
 use App\Services\MusicIdentity\Persistence\MusicIdentitySynthesisLeaseManager;
 use App\Services\MusicIdentity\ResolveReleaseMusicIdentity;
 use App\Services\Runners\PostProcessRunner;
+use Illuminate\Database\Connectors\SQLiteConnector;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Database\SQLiteConnection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -51,6 +53,16 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
             'music-identity.retry.initial_seconds' => 60,
             'music-identity.retry.maximum_seconds' => 120,
         ]);
+        DB::extend('sqlite', static function (array $config): SQLiteConnection {
+            $pdo = (new SQLiteConnector)->connect($config);
+
+            return new ChangedRowsSQLiteConnection(
+                $pdo,
+                (string) $config['database'],
+                (string) ($config['prefix'] ?? ''),
+                $config,
+            );
+        });
         DB::purge();
         DB::reconnect();
 
@@ -217,6 +229,60 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
         $this->assertNotNull($recovered);
         $this->assertSame($first->id, $recovered->id);
         $this->assertSame('worker-b', $recovered->lease_token);
+    }
+
+    #[Test]
+    public function leases_renew_in_the_same_frozen_second_when_new_or_reacquired(): void
+    {
+        Carbon::setTestNow('2026-08-30 12:00:00');
+        $release = $this->release();
+        $evidence = $this->evidence($release);
+        $leases = new MusicIdentityLeaseManager;
+
+        $created = $leases->acquire($evidence, 'worker-a');
+
+        $this->assertNotNull($created);
+        $this->assertTrue($leases->renew($created->id, 'worker-a'));
+
+        Carbon::setTestNow('2026-08-30 12:05:01');
+        $reacquired = $leases->acquire($evidence, 'worker-b');
+
+        $this->assertNotNull($reacquired);
+        $this->assertSame($created->id, $reacquired->id);
+        $this->assertTrue($leases->renew($reacquired->id, 'worker-b'));
+    }
+
+    #[Test]
+    public function leases_cannot_be_renewed_with_the_wrong_token_or_after_expiry(): void
+    {
+        Carbon::setTestNow('2026-08-30 12:00:00');
+        $release = $this->release();
+        $evidence = $this->evidence($release);
+        $leases = new MusicIdentityLeaseManager;
+        $lease = $leases->acquire($evidence, 'worker-a');
+
+        $this->assertNotNull($lease);
+        $this->assertFalse($leases->renew($lease->id, 'worker-b'));
+
+        Carbon::setTestNow('2026-08-30 12:05:01');
+
+        $this->assertFalse($leases->renew($lease->id, 'worker-a'));
+    }
+
+    #[Test]
+    public function same_second_renewal_allows_resolution_to_proceed(): void
+    {
+        Carbon::setTestNow('2026-08-30 12:00:00');
+        $release = $this->release();
+        $this->evidence($release);
+
+        $identification = $this->worker(new EmptyCandidateGenerator)
+            ->resolveRelease($release, 'worker-a');
+
+        $this->assertNotNull($identification);
+        $this->assertSame(IdentificationStatus::Unresolved, $identification->state);
+        $this->assertSame(1, $identification->attempt_count);
+        Log::shouldNotHaveReceived('notice');
     }
 
     #[Test]
@@ -415,5 +481,27 @@ final readonly class FailingCandidateGenerator implements CandidateGenerator
     public function generate(AudioEvidenceSet $evidence): CandidatePool
     {
         throw new MusicBrainzGatewayException($this->message);
+    }
+}
+
+final class ChangedRowsSQLiteConnection extends SQLiteConnection
+{
+    /**
+     * Simulate MariaDB reporting zero changed rows for a same-value lease renewal.
+     *
+     * @param  array<int, mixed>  $bindings
+     */
+    public function affectingStatement($query, $bindings = []): int
+    {
+        $affectedRows = parent::affectingStatement($query, $bindings);
+        $normalizedQuery = strtolower((string) $query);
+
+        if (str_starts_with($normalizedQuery, 'update "release_music_identifications" set ')
+            && str_contains($normalizedQuery, '"lease_expires_at" = ?')
+            && substr_count(strstr($normalizedQuery, ' where ', true) ?: '', ' = ?') === 2) {
+            return 0;
+        }
+
+        return $affectedRows;
     }
 }
