@@ -94,6 +94,10 @@ class CategorizeMovieTest extends TestCase
             'mv release group suffix' => ['Tanner.Hall.Forever.1080p.WEB-DL.H.264-MV'],
             'movie audio bitrate' => ['Chess.2006.AsianetMoviesHD.WEB.DL.H264.AAC2.0.192k-DDH'],
             'yearless movie audio bitrate' => ['Snehaveedu.1080p.AsianetMoviesHD.WEB.DL.H264.AAC2.0.192k-DDH'],
+            'keep suffix before year' => ['Castle.Keep.1969'],
+            'space-separated keep suffix before year' => ['Castle Keep 1969'],
+            'deep suffix before year' => ['The.Deep.1977'],
+            'sheep suffix before year' => ['Black.Sheep.2006'],
         ];
     }
 
@@ -107,6 +111,29 @@ class CategorizeMovieTest extends TestCase
         );
 
         $this->assertFalse($passable->bestResult->isSuccessful());
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function genuineEpYearProvider(): array
+    {
+        return [
+            'named EP' => ['Artist.Name-Some.EP.2019-GRP'],
+            'numbered EP' => ['Artist.Name-2.EP.2020-GRP'],
+        ];
+    }
+
+    #[DataProvider('genuineEpYearProvider')]
+    public function test_genuine_ep_year_tokens_stay_in_other_music(string $releaseName): void
+    {
+        $context = new ReleaseContext(releaseName: $releaseName, groupId: 0);
+        $passable = (new MusicPipe)->handle(
+            new CategorizationPassable($context),
+            fn (CategorizationPassable $result): CategorizationPassable => $result,
+        );
+
+        $this->assertSame(Category::MUSIC_OTHER, $passable->bestResult->categoryId);
     }
 
     /**

@@ -241,7 +241,7 @@ class MusicCategorizer extends AbstractCategorizer
 
         // Album/CD patterns
         if (preg_match('/(?:\d)[._ -](?:CD|Albums|LP)[._ -](?:Set|Compilation)|CD[._ -](Collection|Box|SET)|(\d)-?CD[._ -]/i', $name) ||
-            preg_match('/Vinyl[._ -](?:24[._ -]96|2496|Collection|RIP)|WEB[._ -](?:Single|Album)|EP[._ -]\d{4}|\bEP\b.+(?:19|20)\d\d|Live[._ -](?:at|At|@)/i', $name)) {
+            preg_match('/Vinyl[._ -](?:24[._ -]96|2496|Collection|RIP)|WEB[._ -](?:Single|Album)|(?<![a-zA-Z0-9])EP[._ -]\d{4}|\bEP\b.+(?:19|20)\d\d|Live[._ -](?:at|At|@)/i', $name)) {
             if ($categorizeForeign && $this->checkForeign($name)) {
                 return $this->matched(Category::MUSIC_FOREIGN, 0.75, 'music_album_foreign');
             }
