@@ -61,10 +61,6 @@ final class NzbCreationCandidateQuery
                 ->orderBy('r.id')
                 ->limit($effectiveLimit);
 
-            if (DB::getDriverName() !== 'sqlite') {
-                $query->lockForUpdate();
-            }
-
             $ids = $query
                 ->pluck('r.id')
                 ->map(static fn (mixed $id): int => (int) $id)
@@ -75,8 +71,16 @@ final class NzbCreationCandidateQuery
             }
 
             if ($supportsClaims) {
+                $stampIds = $ids;
+                sort($stampIds, SORT_NUMERIC);
+
                 Release::query()
-                    ->whereIn('id', $ids)
+                    ->whereIn('id', $stampIds)
+                    ->where(function (Builder $claimQuery): void {
+                        $claimQuery
+                            ->whereNull(self::CLAIMED_AT_COLUMN)
+                            ->orWhere(self::CLAIMED_AT_COLUMN, '<', now()->subSeconds(self::claimTtlSeconds()));
+                    })
                     ->update([
                         self::CLAIMED_AT_COLUMN => now(),
                         self::CLAIM_TOKEN_COLUMN => $token,
@@ -88,6 +92,10 @@ final class NzbCreationCandidateQuery
                 ->with('category.parent')
                 ->select(self::selectableColumns($columns, $supportsClaims))
                 ->orderByRaw(self::idOrderExpression($ids));
+
+            if ($supportsClaims) {
+                $releaseQuery->where(self::CLAIM_TOKEN_COLUMN, $token);
+            }
 
             if (self::supportsFailureState()) {
                 $releaseQuery->with('nzbCreationFailure');

@@ -88,13 +88,13 @@ final class NzbCreationClaimPlanMariaDbTest extends TestCase
             SELECT id FROM `{$releases}`
             WHERE nzbstatus = 0 AND groups_id = 7
               AND (nzb_creation_claimed_at IS NULL OR nzb_creation_claimed_at < DATE_SUB(NOW(), INTERVAL 300 SECOND))
-            ORDER BY postdate DESC, id ASC LIMIT 100 FOR UPDATE
+            ORDER BY postdate DESC, id ASC LIMIT 100
             SQL);
         $globalPlan = $this->explain(<<<SQL
             SELECT id FROM `{$releases}`
             WHERE nzbstatus = 0
               AND (nzb_creation_claimed_at IS NULL OR nzb_creation_claimed_at < DATE_SUB(NOW(), INTERVAL 300 SECOND))
-            ORDER BY postdate DESC, id ASC LIMIT 100 FOR UPDATE
+            ORDER BY postdate DESC, id ASC LIMIT 100
             SQL);
 
         $this->assertStringContainsString('ix_releases_nzb_creation_group_queue', $groupPlan);

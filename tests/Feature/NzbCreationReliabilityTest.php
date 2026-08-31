@@ -77,6 +77,32 @@ class NzbCreationReliabilityTest extends TestCase
         $this->assertSame('claimed', DB::table('releases')->where('id', 1)->value('nzb_creation_claim_token'));
     }
 
+    public function test_candidate_query_returns_only_rows_won_after_a_competing_stamp(): void
+    {
+        $this->insertRelease(1, 'a', postdate: '2026-07-13 10:00:00');
+        $this->insertRelease(2, 'b', postdate: '2026-07-13 09:00:00');
+
+        $competitorHasStamped = false;
+        DB::listen(function (QueryExecuted $query) use (&$competitorHasStamped): void {
+            if ($competitorHasStamped || ! str_starts_with($query->sql, 'select "r"."id"')) {
+                return;
+            }
+
+            $competitorHasStamped = true;
+            DB::table('releases')->where('id', 1)->update([
+                'nzb_creation_claimed_at' => now(),
+                'nzb_creation_claim_token' => 'competing-worker',
+            ]);
+        });
+
+        $claimed = NzbCreationCandidateQuery::claimBatch(null, 2, 'worker-token', ['id']);
+
+        $this->assertTrue($competitorHasStamped);
+        $this->assertSame([2], $claimed->pluck('id')->all());
+        $this->assertSame('competing-worker', DB::table('releases')->where('id', 1)->value('nzb_creation_claim_token'));
+        $this->assertSame('worker-token', DB::table('releases')->where('id', 2)->value('nzb_creation_claim_token'));
+    }
+
     public function test_each_release_lease_is_refreshed_immediately_before_processing(): void
     {
         Carbon::setTestNow('2026-07-13 12:00:00');
