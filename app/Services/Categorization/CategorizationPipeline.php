@@ -35,6 +35,8 @@ class CategorizationPipeline
 
     protected bool $catWebDL;
 
+    protected bool $forcedRootPcEscape;
+
     protected NzbSplitUnwrapper $nzbSplitUnwrapper;
 
     protected ObfuscatedSubjectExtractor $obfuscatedSubjectExtractor;
@@ -53,6 +55,7 @@ class CategorizationPipeline
 
         $this->categorizeForeign = (bool) Settings::settingValue('categorizeforeign');
         $this->catWebDL = (bool) Settings::settingValue('catwebdl');
+        $this->forcedRootPcEscape = (string) Settings::settingValue('forced_root_pc_escape') === '1';
         $this->nzbSplitUnwrapper = $nzbSplitUnwrapper ?? new NzbSplitUnwrapper;
         $this->obfuscatedSubjectExtractor = $obfuscatedSubjectExtractor ?? new ObfuscatedSubjectExtractor;
     }
@@ -146,9 +149,10 @@ class CategorizationPipeline
      * release creation, renames, `nntmux:recategorize-releases` — gets the same
      * behaviour.
      *
-     * Two results survive: one that already belongs to the forced root (specific
-     * beats generic Other), and a hashed or misc-locked name, which stays on the
-     * existing obfuscated-routing path.
+     * A result already in the forced root survives (specific beats generic
+     * Other), as does a hashed or misc-locked name on the existing obfuscated
+     * path. Operators may also let high-confidence PC matches escape an
+     * unrelated forced root so executable-discard policy follows the PC root.
      */
     protected function applyForcedRootCategory(CategorizationPassable $result): void
     {
@@ -161,13 +165,40 @@ class CategorizationPipeline
             return;
         }
 
+        $organic = $result->bestResult;
+
+        if ($this->forcedRootPcEscape &&
+            Category::rootCategoryFor($organic->categoryId) === Category::PC_ROOT &&
+            $organic->confidence >= 0.85) {
+            $result->bestResult = new CategorizationResult(
+                $organic->categoryId,
+                $organic->confidence,
+                'pc_forced_root_escape',
+                [
+                    'root_category_id' => $rootCategoryId,
+                    'organic_category_id' => $organic->categoryId,
+                    'organic_match' => $organic->matchedBy,
+                ],
+            );
+
+            if ($result->debug) {
+                $result->allResults['GroupForcedRootEscape'] = [
+                    'category_id' => $result->bestResult->categoryId,
+                    'confidence' => $result->bestResult->confidence,
+                    'matched_by' => $result->bestResult->matchedBy,
+                    'bypassed_root_category_id' => $rootCategoryId,
+                    'organic_matched_by' => $organic->matchedBy,
+                ];
+            }
+
+            return;
+        }
+
         $categoryId = Category::otherForRootCategory($rootCategoryId);
 
         if ($categoryId === null) {
             return;
         }
-
-        $organic = $result->bestResult;
 
         $result->bestResult = new CategorizationResult(
             $categoryId,
@@ -210,7 +241,8 @@ class CategorizationPipeline
             'misc_analysis' => $result->miscAnalysis,
         ];
 
-        if ($result->lockedToMisc || $result->bestResult->matchedBy === 'group_only_low_signal') {
+        if ($result->lockedToMisc ||
+            in_array($result->bestResult->matchedBy, ['group_only_low_signal', 'pc_forced_root_escape'], true)) {
             Log::info('categorization.decision', $payload);
         }
 

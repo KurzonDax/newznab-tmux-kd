@@ -817,6 +817,10 @@ class SettingsTableSeeder extends Seeder
                 'name' => 'music_identity_workers',
                 'value' => '1',
             ],
+            282 => [
+                'name' => 'forced_root_pc_escape',
+                'value' => '0',
+            ],
         ]);
     }
 }

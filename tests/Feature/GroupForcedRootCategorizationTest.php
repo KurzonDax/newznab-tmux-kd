@@ -6,7 +6,12 @@ namespace Tests\Feature;
 
 use App\Models\Category;
 use App\Services\Categorization\CategorizationPipeline;
+use App\Services\Categorization\CategorizationResult;
 use App\Services\Categorization\CategorizationService;
+use App\Services\Categorization\Pipes\AbstractCategorizationPipe;
+use App\Services\Categorization\Pipes\CategorizationPassable;
+use App\Services\Categorization\ReleaseContext;
+use Closure;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -37,7 +42,11 @@ class GroupForcedRootCategorizationTest extends TestCase
      */
     protected function bootstrapSettings(): array
     {
-        return ['categorizeforeign' => '0', 'catwebdl' => '1'];
+        return [
+            'categorizeforeign' => '0',
+            'catwebdl' => '1',
+            'forced_root_pc_escape' => '0',
+        ];
     }
 
     protected function setUp(): void
@@ -119,6 +128,137 @@ class GroupForcedRootCategorizationTest extends TestCase
         );
         $this->assertSame(Category::XXX_OTHER, $result['categories_id']);
         $this->assertSame('group_forced_root', $result['debug']['matched_by']);
+    }
+
+    public function test_pc_release_escapes_a_forced_root_when_the_setting_is_enabled(): void
+    {
+        $this->enablePcEscape();
+
+        $result = $this->categorizeWithDebug(
+            self::FORCED_GROUP_ID,
+            'Wondershare PDFelement Professional12 1 26 4340 Multilingual',
+        );
+
+        $this->assertSame(Category::PC_0DAY, $result['categories_id']);
+        $this->assertSame(0.85, $result['debug']['final_confidence']);
+        $this->assertSame('pc_forced_root_escape', $result['debug']['matched_by']);
+        $this->assertSame(
+            [Category::XXX_ROOT, '0day_system'],
+            [
+                $result['debug']['categorizer_details']['root_category_id'],
+                $result['debug']['categorizer_details']['organic_match'],
+            ],
+        );
+    }
+
+    public function test_pc_release_remains_forced_when_the_setting_is_disabled(): void
+    {
+        $result = $this->categorizeWithDebug(
+            self::FORCED_GROUP_ID,
+            'Wondershare PDFelement Professional12 1 26 4340 Multilingual',
+        );
+
+        $this->assertSame(Category::XXX_OTHER, $result['categories_id']);
+        $this->assertSame(0.95, $result['debug']['final_confidence']);
+        $this->assertSame('group_forced_root', $result['debug']['matched_by']);
+        $this->assertSame(
+            [Category::XXX_ROOT, Category::PC_0DAY, '0day_system'],
+            [
+                $result['debug']['categorizer_details']['root_category_id'],
+                $result['debug']['categorizer_details']['organic_category_id'],
+                $result['debug']['categorizer_details']['organic_match'],
+            ],
+        );
+    }
+
+    public function test_pc_release_remains_forced_when_the_setting_is_absent(): void
+    {
+        DB::table('settings')->where('name', 'forced_root_pc_escape')->delete();
+
+        $result = $this->categorizeWithDebug(
+            self::FORCED_GROUP_ID,
+            'Wondershare PDFelement Professional12 1 26 4340 Multilingual',
+        );
+
+        $this->assertSame(Category::XXX_OTHER, $result['categories_id']);
+        $this->assertSame('group_forced_root', $result['debug']['matched_by']);
+    }
+
+    public function test_non_pc_release_remains_forced_when_the_escape_is_enabled(): void
+    {
+        $this->enablePcEscape();
+
+        $result = $this->categorizeWithDebug(self::FORCED_GROUP_ID, 'The.Matrix.1999.1080p.BluRay.x264');
+
+        $this->assertSame(Category::XXX_OTHER, $result['categories_id']);
+        $this->assertSame('group_forced_root', $result['debug']['matched_by']);
+    }
+
+    public function test_low_confidence_pc_release_remains_forced_when_the_escape_is_enabled(): void
+    {
+        $this->enablePcEscape();
+
+        $lowConfidencePcPipe = new class extends AbstractCategorizationPipe
+        {
+            public function getName(): string
+            {
+                return 'LowConfidencePc';
+            }
+
+            protected function categorize(ReleaseContext $context): CategorizationResult
+            {
+                return new CategorizationResult(Category::PC_0DAY, 0.84, 'low_confidence_pc');
+            }
+        };
+
+        $result = (new CategorizationPipeline([$lowConfidencePcPipe]))
+            ->categorize(self::FORCED_GROUP_ID, 'Generic.Release', debug: true);
+
+        $this->assertSame(Category::XXX_OTHER, $result['categories_id']);
+        $this->assertSame('group_forced_root', $result['debug']['matched_by']);
+    }
+
+    public function test_hashed_and_misc_locked_names_do_not_escape_when_the_setting_is_enabled(): void
+    {
+        $this->enablePcEscape();
+
+        $hashed = $this->categorizeWithDebug(self::FORCED_GROUP_ID, 'd41d8cd98f00b204e9800998ecf8427e');
+        $lockedMiscPipe = new class extends AbstractCategorizationPipe
+        {
+            public function getName(): string
+            {
+                return 'LockedMisc';
+            }
+
+            public function handle(CategorizationPassable $passable, Closure $next): CategorizationPassable
+            {
+                $passable->bestResult = new CategorizationResult(Category::OTHER_MISC, 0.9, 'obfuscated_pattern');
+                $passable->lockToMisc();
+
+                return $next($passable);
+            }
+
+            protected function categorize(ReleaseContext $context): CategorizationResult
+            {
+                return CategorizationResult::noMatch();
+            }
+        };
+        $misc = (new CategorizationPipeline([$lockedMiscPipe]))
+            ->categorize(self::FORCED_GROUP_ID, 'Locked.Misc.Release', debug: true);
+
+        $this->assertSame(Category::OTHER_HASHED, $hashed['categories_id']);
+        $this->assertSame(Category::OTHER_MISC, $misc['categories_id']);
+        $this->assertTrue($misc['debug']['locked_to_misc']);
+    }
+
+    public function test_release_already_in_the_forced_root_is_unchanged_when_the_escape_is_enabled(): void
+    {
+        $this->enablePcEscape();
+
+        $result = $this->categorizeWithDebug(self::FORCED_GROUP_ID, 'Brazzers.24.01.01.Name.XXX.1080p.MP4-XXX');
+
+        $this->assertSame(Category::XXX_CLIPHD, $result['categories_id']);
+        $this->assertSame('clip_hd_studio_date', $result['debug']['matched_by']);
     }
 
     public function test_a_more_specific_category_in_the_forced_root_is_kept(): void
@@ -242,6 +382,11 @@ class GroupForcedRootCategorizationTest extends TestCase
     private function categorizeWithDebug(int $groupId, string $releaseName): array
     {
         return CategorizationPipeline::createDefault()->categorize($groupId, $releaseName, '', true);
+    }
+
+    private function enablePcEscape(): void
+    {
+        DB::table('settings')->where('name', 'forced_root_pc_escape')->update(['value' => '1']);
     }
 
     private function createSchema(): void

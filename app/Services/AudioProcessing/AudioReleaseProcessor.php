@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\AudioProcessing;
 
+use App\Models\Category;
 use App\Models\Release;
 use App\Models\ReleaseAudioTag;
 use App\Services\AdditionalProcessing\AudioTagExtractor;
@@ -57,6 +58,14 @@ final class AudioReleaseProcessor
         $tagsRecorded = false;
         $evidenceTags = null;
 
+        if (Category::rootCategoryFor((int) $release->categories_id) === Category::PC_ROOT) {
+            return $this->declineToVideoPath(
+                $release,
+                $tagsRecorded,
+                'PC-root releases belong to the general post-processing path.',
+            );
+        }
+
         $parsed = $this->nzbParser->parseNzb($guid);
         if ($parsed['error'] !== null) {
             return $this->finish($release, false, $tagsRecorded, ProcessingOutcome::Failed, (string) $parsed['error']);
@@ -101,22 +110,7 @@ final class AudioReleaseProcessor
         $this->recordEvidence($releaseAtCapture, $source, $fetched, $evidenceTags);
 
         if ($fetched->declined) {
-            if (! AudioCandidateQuery::declineToVideoPath($releaseId)) {
-                // Nowhere to record the hand-off, so settle the release instead:
-                // leaving it pending would have it re-probed every cycle forever.
-                return $this->finish($release, false, $tagsRecorded, ProcessingOutcome::NoUsefulArtifacts, $fetched->reason);
-            }
-
-            $this->searchSyncCoordinator->request($releaseId);
-
-            return new AudioProcessingResult(
-                releaseId: $releaseId,
-                guid: $guid,
-                outcome: ProcessingOutcome::DeclinedToVideoPath,
-                tagsRecorded: $tagsRecorded,
-                reason: $fetched->reason,
-                crcFailures: $this->crcFailures,
-            );
+            return $this->declineToVideoPath($release, $tagsRecorded, $fetched->reason);
         }
 
         if (! $fetched->succeeded() || $fetched->path === null) {
@@ -309,6 +303,37 @@ final class AudioReleaseProcessor
             ProcessingOutcome::NoUsefulArtifacts,
             'Preview generation is disabled for this release\'s root category.',
             ReleaseBrowseService::PASSWD_NONE,
+        );
+    }
+
+    private function declineToVideoPath(
+        Release $release,
+        bool $tagsRecorded,
+        string $reason,
+    ): AudioProcessingResult {
+        $releaseId = (int) $release->id;
+
+        if (! AudioCandidateQuery::declineToVideoPath($releaseId)) {
+            // Nowhere to record the hand-off, so settle the release instead:
+            // leaving it pending would have it re-probed every cycle forever.
+            return $this->finish(
+                $release,
+                false,
+                $tagsRecorded,
+                ProcessingOutcome::NoUsefulArtifacts,
+                $reason,
+            );
+        }
+
+        $this->searchSyncCoordinator->request($releaseId);
+
+        return new AudioProcessingResult(
+            releaseId: $releaseId,
+            guid: (string) $release->guid,
+            outcome: ProcessingOutcome::DeclinedToVideoPath,
+            tagsRecorded: $tagsRecorded,
+            reason: $reason,
+            crcFailures: $this->crcFailures,
         );
     }
 
