@@ -146,7 +146,7 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
                 continue;
             }
 
-            $providerTotal = max($providerTotal, $this->normalizer->requiredCount($payload, 'recording-count'));
+            $providerTotal = max($providerTotal, $this->normalizer->requiredCount($payload, 'count'));
             foreach ($this->normalizer->objects($payload, 'recordings') as $rawRecording) {
                 $recordings[] = $this->normalizer->recording($rawRecording, $source);
             }
@@ -187,7 +187,7 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
             return ReleaseCandidates::empty();
         }
 
-        $providerTotal = $this->normalizer->requiredCount($payload, 'release-count');
+        $providerTotal = $this->normalizer->requiredCount($payload, 'count');
         $releases = array_map(
             fn (array $release): array => $this->normalizer->releaseCandidate($release, 'release_search'),
             $this->normalizer->objects($payload, 'releases'),
@@ -744,8 +744,8 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
             }
 
             if ($shape === 'recording_search') {
-                $this->normalizer->requiredCount($payload, 'recording-count');
-                $this->normalizer->requiredCount($payload, 'recording-offset');
+                $this->normalizer->requiredCount($payload, 'count');
+                $this->normalizer->requiredCount($payload, 'offset');
                 foreach ($this->normalizer->objects($payload, 'recordings') as $recording) {
                     $this->normalizer->recording($recording, 'validation');
                 }
@@ -776,8 +776,8 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
             }
 
             if ($shape === 'release_search') {
-                $this->normalizer->requiredCount($payload, 'release-count');
-                $this->normalizer->requiredCount($payload, 'release-offset');
+                $this->normalizer->requiredCount($payload, 'count');
+                $this->normalizer->requiredCount($payload, 'offset');
                 foreach ($this->normalizer->objects($payload, 'releases') as $release) {
                     $this->normalizer->releaseCandidate($release, 'validation');
                 }

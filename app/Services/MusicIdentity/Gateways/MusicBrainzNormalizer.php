@@ -241,7 +241,11 @@ final class MusicBrainzNormalizer
     /** @param array<string, mixed> $payload */
     public function requiredCount(array $payload, string $key): int
     {
-        $value = $payload[$key] ?? null;
+        if (! array_key_exists($key, $payload)) {
+            throw new InvalidMusicBrainzResponse(sprintf('MusicBrainz response missing required field "%s".', $key));
+        }
+
+        $value = $payload[$key];
         if (! is_int($value) && ! (is_string($value) && ctype_digit($value))) {
             throw new InvalidMusicBrainzResponse(sprintf('MusicBrainz response field "%s" must be an integer.', $key));
         }
