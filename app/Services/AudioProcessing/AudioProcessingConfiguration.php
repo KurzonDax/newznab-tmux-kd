@@ -30,6 +30,9 @@ final readonly class AudioProcessingConfiguration
     /** Side-car files that are never a preview source, whatever else is in the NZB. */
     public const string IGNORED_FILE_REGEX = '\\.(CUE|M3U|M3U8|LOG|JPE?G|PNG|NFO|SFV|PAR2|TXT|DIZ)';
 
+    /** Image and text side-cars that may precede audio in a multi-volume archive. */
+    public const string ARCHIVE_SUPPORT_FILE_REGEX = '\\.(?:JPE?G|PNG|GIF|BMP|NFO|SFV|TXT|MD5|M3U|CUE|LOG|PDF|URL|DIZ)';
+
     public bool $echoCLI;
 
     public bool $debugMode;

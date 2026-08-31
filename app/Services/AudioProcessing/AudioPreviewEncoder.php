@@ -176,24 +176,24 @@ final class AudioPreviewEncoder
      * keeps the operation to one invocation and lets the result continue to
      * report the requested window without a second output probe.
      *
-     * A source shorter than the offset is clipped from the very start; a source
-     * shorter than the window yields a shorter clip. Neither is a failure.
+     * When the source cannot fit both the preferred offset and the target
+     * length, the offset shrinks first so the clip retains as much audio as
+     * possible. A source shorter than the target is clipped from the start at
+     * its full length.
      *
-     * @return int|null The clip's length in whole seconds, or null if ffmpeg
-     *                  produced nothing.
+     * @return int|null The clip's completed whole seconds, or null if ffmpeg
+     *                  produced nothing. Ffmpeg still receives the exact
+     *                  fractional window so a short source is not truncated.
      */
     private function cut(string $sourcePath, string $outputPath, string $container, bool $streamCopy): ?int
     {
         $sourceSeconds = $this->probeDuration($sourcePath);
-        $offset = $this->config->previewStartSeconds;
-        $length = $this->config->previewSeconds;
+        $offset = (float) $this->config->previewStartSeconds;
+        $length = (float) $this->config->previewSeconds;
 
         if ($sourceSeconds > 0.0) {
-            if ((float) $offset >= $sourceSeconds) {
-                $offset = 0;
-            }
-
-            $length = max(1, (int) min($length, (int) round($sourceSeconds - $offset)));
+            $length = min($length, $sourceSeconds);
+            $offset = min($offset, max(0.0, $sourceSeconds - $length));
         }
 
         if (File::isFile($outputPath)) {
@@ -221,7 +221,7 @@ final class AudioPreviewEncoder
             return null;
         }
 
-        return $length;
+        return (int) floor($length);
     }
 
     /**
