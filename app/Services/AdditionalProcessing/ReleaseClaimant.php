@@ -216,6 +216,8 @@ final class ReleaseClaimant
                 $stampIds = $ids;
                 sort($stampIds, SORT_NUMERIC);
 
+                // The affected-row count is deliberately ignored. Ownership is
+                // established by the token-filtered winners query below.
                 Release::query()
                     ->whereIn('id', $stampIds)
                     ->where(function (Builder $claimQuery): void {
