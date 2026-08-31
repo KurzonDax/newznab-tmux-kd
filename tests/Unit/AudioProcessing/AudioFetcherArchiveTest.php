@@ -414,6 +414,87 @@ class AudioFetcherArchiveTest extends TestCase
     }
 
     #[Test]
+    public function stored_audio_stops_fetching_when_the_first_chunk_has_the_preview_window(): void
+    {
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldReceive('listArchiveContentsAtPath')->andReturn([
+            'files' => [[
+                'name' => '01-track.flac',
+                'size' => 8,
+                'compressed' => 0,
+                'range' => '0-7',
+            ]],
+            'hasPassword' => false,
+        ]);
+        $archive->shouldReceive('carveStoredFileChunkToPath')->andReturnUsing(
+            function (string $archivePath, array $entry, string $outputPath): bool {
+                file_put_contents($outputPath, 'complete');
+
+                return true;
+            },
+        );
+        $lengthProbe = Mockery::mock(AudioDecodableLengthProbe::class);
+        $lengthProbe->shouldReceive('demuxedSeconds')->once()->andReturn(45.0);
+
+        $result = $this->fetcher($archive, lengthProbe: $lengthProbe)->fetch(
+            $this->release(),
+            $this->archiveSource([
+                array_map(static fn (int $segment): string => '<vol-1-'.$segment.'>', range(1, 129)),
+            ]),
+            $this->tmpPath,
+            'alt.binaries.sounds.lossless',
+            static function (): void {},
+        );
+
+        $this->assertTrue($result->succeeded(), $result->reason);
+        $this->assertSame([64], array_map('count', $this->downloads));
+        $this->assertNoArchivePartsRemain();
+    }
+
+    #[Test]
+    public function stored_audio_with_stalled_duration_settles_after_the_second_chunk(): void
+    {
+        $carvedBodies = ['partial!', 'a larger partial fragment'];
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldReceive('listArchiveContentsAtPath')->andReturn([
+            'files' => [[
+                'name' => '01-track.flac',
+                'size' => 100,
+                'compressed' => 0,
+                'range' => '0-7',
+            ]],
+            'hasPassword' => false,
+        ]);
+        $archive->shouldReceive('carveStoredFileChunkToPath')->andReturnUsing(
+            function (string $archivePath, array $entry, string $outputPath) use (&$carvedBodies): bool {
+                file_put_contents($outputPath, array_shift($carvedBodies));
+
+                return true;
+            },
+        );
+        $lengthProbe = Mockery::mock(AudioDecodableLengthProbe::class);
+        $lengthProbe->shouldReceive('demuxedSeconds')->twice()->andReturn(5.0);
+
+        $result = $this->fetcher($archive, lengthProbe: $lengthProbe)->fetch(
+            $this->release(),
+            $this->archiveSource([
+                array_map(static fn (int $segment): string => '<vol-1-'.$segment.'>', range(1, 129)),
+            ]),
+            $this->tmpPath,
+            'alt.binaries.sounds.lossless',
+            static function (): void {},
+        );
+
+        $this->assertFalse($result->succeeded());
+        $this->assertSame(
+            'Archive extraction stopped progressing after 128 fetched segments.',
+            $result->reason,
+        );
+        $this->assertSame([64, 64], array_map('count', $this->downloads));
+        $this->assertNoArchivePartsRemain();
+    }
+
+    #[Test]
     public function each_chunk_logs_progress_while_a_known_entry_reuses_its_listing(): void
     {
         $diagnostics = [];

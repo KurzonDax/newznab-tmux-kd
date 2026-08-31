@@ -18,6 +18,7 @@ use Closure;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Mhor\MediaInfo\Attribute\Duration;
 use Mhor\MediaInfo\Container\MediaInfoContainer;
 
 /**
@@ -207,6 +208,9 @@ final class AudioFetcher
         $firstVolumeBytes = null;
         $carvedPath = null;
         $carvedName = null;
+        $carvedVolumeIndex = null;
+        $carvedVolumeStartBytes = 0;
+        $carveAttemptedVolumeIndex = null;
         $keepCarvedPath = false;
         $seekTargetBeyondBudget = false;
         $sequentialFallback = false;
@@ -227,7 +231,7 @@ final class AudioFetcher
         /** @var array<string, array<string, mixed>> $listedFiles */
         $listedFiles = [];
 
-        /** @var array<string, array{fragmentBytes: int, decodableSeconds: float}> $extractionProgress */
+        /** @var array<string, array{fragmentBytes: int, decodableSeconds: float, volume: int}> $extractionProgress */
         $extractionProgress = [];
 
         /** @var array<string, true> $excludedAudioEntries */
@@ -321,11 +325,13 @@ final class AudioFetcher
 
                     while (true) {
                         $entry = $activeEntry ?? $this->enrichAudioEntry(
-                            $this->firstAudioEntry(
-                                array_values($listedFiles),
-                                $knownAudioFile,
-                                $excludedAudioEntries,
-                            ),
+                            $carvedName === null
+                                ? $this->firstAudioEntry(
+                                    array_values($listedFiles),
+                                    $knownAudioFile,
+                                    $excludedAudioEntries,
+                                )
+                                : $this->entryNamed($currentFiles, $carvedName),
                             $knownAudioFile,
                         );
                         if ($entry === null) {
@@ -342,14 +348,116 @@ final class AudioFetcher
                         }
 
                         if ($this->isCarvableStoredEntry($entry)) {
+                            $entryName = (string) $entry['name'];
+                            $candidatePath = $carvedPath ?? $this->audioEntryPath($tmpPath, $entryName);
+                            $volumeChunkPath = $this->audioEntryPath(
+                                $tmpPath,
+                                'volume-'.$volumeIndex.'/'.$entryName,
+                            );
+                            $volumeStartBytes = $carvedVolumeIndex === $volumeIndex
+                                ? $carvedVolumeStartBytes
+                                : (File::isFile($candidatePath) ? (int) File::size($candidatePath) : 0);
+                            $carveAttemptedVolumeIndex = $volumeIndex;
+                            $carved = $this->archiveService->carveStoredFileChunkToPath(
+                                $archivePath,
+                                $entry,
+                                $volumeChunkPath,
+                                false,
+                            );
+                            if (! $carved || ! $this->replaceStoredVolumeChunk(
+                                $candidatePath,
+                                $volumeChunkPath,
+                                $volumeStartBytes,
+                            )) {
+                                if (File::isFile($volumeChunkPath)) {
+                                    File::delete($volumeChunkPath);
+                                }
+                                $this->logArchiveChunkDiagnostics(
+                                    $release,
+                                    $fetchedSegments,
+                                    $chunkBytes,
+                                    count($listedFiles),
+                                    0,
+                                    0.0,
+                                );
+
+                                break;
+                            }
+                            File::delete($volumeChunkPath);
+                            $carvedPath = $candidatePath;
+                            $carvedName ??= $entryName;
+                            $carvedVolumeIndex = $volumeIndex;
+                            $carvedVolumeStartBytes = $volumeStartBytes;
+
+                            $inspection = $this->inspectUsableAudioResult(
+                                $carvedPath,
+                                $entry,
+                                $onProbe,
+                                deleteWhenTooShort: false,
+                            );
                             $this->logArchiveChunkDiagnostics(
                                 $release,
                                 $fetchedSegments,
                                 $chunkBytes,
                                 count($listedFiles),
-                                0,
-                                0.0,
+                                $inspection['fragmentBytes'],
+                                $inspection['decodableSeconds'],
                             );
+
+                            if ($inspection['result'] !== null) {
+                                $shortDuration = $this->shortCompleteAudioDuration($inspection['result']);
+                                if ($shortDuration !== null) {
+                                    $shortAudioCandidates[] = [
+                                        'result' => $inspection['result'],
+                                        'duration' => $shortDuration,
+                                    ];
+                                    $excludedAudioEntries[$this->audioEntryKey($entryName)] = true;
+                                    unset($extractionProgress[$entryName]);
+                                    $activeEntry = null;
+                                    $carvedPath = null;
+                                    $carvedName = null;
+                                    $carvedVolumeIndex = null;
+                                    $carvedVolumeStartBytes = 0;
+
+                                    if (count($shortAudioCandidates) === 2) {
+                                        return $this->takeLongestShortAudioCandidate($shortAudioCandidates);
+                                    }
+
+                                    continue;
+                                }
+
+                                if ($shortAudioCandidates !== [] && ! $inspection['result']->succeeded()) {
+                                    return $this->takeLongestShortAudioCandidate($shortAudioCandidates);
+                                }
+
+                                $this->deleteShortAudioCandidates($shortAudioCandidates);
+                                $keepCarvedPath = $inspection['result']->succeeded();
+
+                                return $inspection['result'];
+                            }
+
+                            $previousProgress = $extractionProgress[$entryName] ?? null;
+                            if ($this->extractionStoppedProgressing(
+                                $previousProgress,
+                                $inspection['fragmentBytes'],
+                                $inspection['decodableSeconds'],
+                                $volumeIndex,
+                                allowByteOnlyAcrossVolumes: true,
+                            )) {
+                                if ($shortAudioCandidates !== []) {
+                                    return $this->takeLongestShortAudioCandidate($shortAudioCandidates);
+                                }
+
+                                return AudioFetchResult::failed(
+                                    'Archive extraction stopped progressing after '.$fetchedSegments.' fetched segments.'
+                                );
+                            }
+
+                            $extractionProgress[$entryName] = [
+                                'fragmentBytes' => $inspection['fragmentBytes'],
+                                'decodableSeconds' => $inspection['decodableSeconds'],
+                                'volume' => $volumeIndex,
+                            ];
 
                             break;
                         }
@@ -413,10 +521,11 @@ final class AudioFetcher
                             $inspection['decodableSeconds'],
                         );
                         if ($inspection['result'] !== null) {
-                            if ($this->isShortCompleteAudioCandidate($inspection['result'])) {
+                            $shortDuration = $this->shortCompleteAudioDuration($inspection['result']);
+                            if ($shortDuration !== null) {
                                 $shortAudioCandidates[] = [
                                     'result' => $inspection['result'],
-                                    'duration' => $inspection['decodableSeconds'],
+                                    'duration' => $shortDuration,
                                 ];
                                 $excludedAudioEntries[$this->audioEntryKey((string) $entry['name'])] = true;
                                 unset($extractionProgress[(string) $entry['name']]);
@@ -440,10 +549,12 @@ final class AudioFetcher
 
                         $entryName = (string) $entry['name'];
                         $previousProgress = $extractionProgress[$entryName] ?? null;
-                        if ($previousProgress !== null
-                            && ($inspection['fragmentBytes'] <= $previousProgress['fragmentBytes']
-                                || $inspection['decodableSeconds'] <= $previousProgress['decodableSeconds'])
-                        ) {
+                        if ($this->extractionStoppedProgressing(
+                            $previousProgress,
+                            $inspection['fragmentBytes'],
+                            $inspection['decodableSeconds'],
+                            $volumeIndex,
+                        )) {
                             if ($shortAudioCandidates !== []) {
                                 return $this->takeLongestShortAudioCandidate($shortAudioCandidates);
                             }
@@ -456,6 +567,7 @@ final class AudioFetcher
                         $extractionProgress[$entryName] = [
                             'fragmentBytes' => $inspection['fragmentBytes'],
                             'decodableSeconds' => $inspection['decodableSeconds'],
+                            'volume' => $volumeIndex,
                         ];
 
                         break;
@@ -523,10 +635,11 @@ final class AudioFetcher
                                 break;
                             }
 
-                            if ($this->isShortCompleteAudioCandidate($inspection['result'])) {
+                            $shortDuration = $this->shortCompleteAudioDuration($inspection['result']);
+                            if ($shortDuration !== null) {
                                 $shortAudioCandidates[] = [
                                     'result' => $inspection['result'],
-                                    'duration' => $inspection['decodableSeconds'],
+                                    'duration' => $shortDuration,
                                 ];
                                 $excludedAudioEntries[$this->audioEntryKey((string) $entry['name'])] = true;
 
@@ -558,10 +671,32 @@ final class AudioFetcher
                 $currentAudioEntry = $this->enrichAudioEntry($currentAudioEntry, $knownAudioFile);
 
                 while ($currentAudioEntry !== null && $this->isCarvableStoredEntry($currentAudioEntry)) {
+                    if ($carvedVolumeIndex === $volumeIndex) {
+                        $volumeIndex++;
+
+                        continue 2;
+                    }
+
                     $name = (string) $currentAudioEntry['name'];
-                    $carvedPath ??= $tmpPath.basename($name);
+                    if ($carveAttemptedVolumeIndex === $volumeIndex) {
+                        if ($shortAudioCandidates !== []) {
+                            $carvedPath = null;
+                            $carvedName = null;
+                            $carvedVolumeIndex = null;
+                            $carvedVolumeStartBytes = 0;
+
+                            return $this->takeLongestShortAudioCandidate($shortAudioCandidates);
+                        }
+
+                        return AudioFetchResult::failed(
+                            'The stored audio entry '.basename($name).' was found, but its payload could not be carved.'
+                        );
+                    }
+
+                    $carvedPath ??= $this->audioEntryPath($tmpPath, $name);
                     $append = $carvedName !== null;
                     $carvedName ??= $name;
+                    $carveAttemptedVolumeIndex = $volumeIndex;
 
                     if (! $this->archiveService->carveStoredFileChunkToPath(
                         $archivePath,
@@ -576,6 +711,8 @@ final class AudioFetcher
                         if ($shortAudioCandidates !== []) {
                             $carvedPath = null;
                             $carvedName = null;
+                            $carvedVolumeIndex = null;
+                            $carvedVolumeStartBytes = 0;
 
                             return $this->takeLongestShortAudioCandidate($shortAudioCandidates);
                         }
@@ -585,6 +722,8 @@ final class AudioFetcher
                         );
                     }
 
+                    $carvedVolumeIndex = $volumeIndex;
+
                     $inspection = $this->inspectUsableAudioResult(
                         $carvedPath,
                         $currentAudioEntry,
@@ -592,14 +731,17 @@ final class AudioFetcher
                         deleteWhenTooShort: false,
                     );
                     if ($inspection['result'] !== null) {
-                        if ($this->isShortCompleteAudioCandidate($inspection['result'])) {
+                        $shortDuration = $this->shortCompleteAudioDuration($inspection['result']);
+                        if ($shortDuration !== null) {
                             $shortAudioCandidates[] = [
                                 'result' => $inspection['result'],
-                                'duration' => $inspection['decodableSeconds'],
+                                'duration' => $shortDuration,
                             ];
                             $excludedAudioEntries[$this->audioEntryKey($name)] = true;
                             $carvedPath = null;
                             $carvedName = null;
+                            $carvedVolumeIndex = null;
+                            $carvedVolumeStartBytes = 0;
 
                             if (count($shortAudioCandidates) === 2) {
                                 return $this->takeLongestShortAudioCandidate($shortAudioCandidates);
@@ -623,6 +765,8 @@ final class AudioFetcher
                             }
                             $carvedPath = null;
                             $carvedName = null;
+                            $carvedVolumeIndex = null;
+                            $carvedVolumeStartBytes = 0;
 
                             return $this->takeLongestShortAudioCandidate($shortAudioCandidates);
                         }
@@ -937,18 +1081,98 @@ final class AudioFetcher
             : $this->inspectUsableAudioResult($path, $entry, $onProbe);
     }
 
-    private function isShortCompleteAudioCandidate(AudioFetchResult $result): bool
+    private function shortCompleteAudioDuration(AudioFetchResult $result): ?float
     {
-        return $result->succeeded()
-            && $result->sourceFileComplete === true
-            && $result->decodedDurationSeconds !== null
-            && $result->decodedDurationSeconds > 0.0
-            && $result->decodedDurationSeconds < $this->config->previewSeconds;
+        if (! $result->succeeded() || $result->sourceFileComplete !== true) {
+            return null;
+        }
+
+        $metadataDuration = $result->mediaInfo?->getGeneral()?->get()['duration'] ?? null;
+        $duration = $metadataDuration instanceof Duration
+            ? $metadataDuration->getMilliseconds() / 1000
+            : $result->decodedDurationSeconds;
+
+        return $duration !== null
+            && $duration > 0.0
+            && $duration < $this->config->previewSeconds
+                ? $duration
+                : null;
+    }
+
+    /**
+     * Store-mode entries may remain undecodable until a later split volume. In
+     * that case, byte growth across a volume boundary is real progress; within
+     * one growing volume, either a byte or duration stall is terminal.
+     *
+     * @param  array{fragmentBytes: int, decodableSeconds: float, volume: int}|null  $previousProgress
+     */
+    private function extractionStoppedProgressing(
+        ?array $previousProgress,
+        int $fragmentBytes,
+        float $decodableSeconds,
+        int $volumeIndex,
+        bool $allowByteOnlyAcrossVolumes = false,
+    ): bool {
+        if ($previousProgress === null) {
+            return false;
+        }
+
+        return $fragmentBytes <= $previousProgress['fragmentBytes']
+            || ($decodableSeconds <= $previousProgress['decodableSeconds']
+                && (! $allowByteOnlyAcrossVolumes || $previousProgress['volume'] === $volumeIndex));
+    }
+
+    private function replaceStoredVolumeChunk(
+        string $destinationPath,
+        string $volumeChunkPath,
+        int $volumeStartBytes,
+    ): bool {
+        if (! File::isFile($volumeChunkPath)
+            || ($volumeStartBytes > 0 && ! File::isFile($destinationPath))
+        ) {
+            return false;
+        }
+
+        File::ensureDirectoryExists(dirname($destinationPath));
+        $destination = fopen($destinationPath, 'c+b');
+        $chunk = fopen($volumeChunkPath, 'rb');
+        if ($destination === false || $chunk === false) {
+            if (is_resource($destination)) {
+                fclose($destination);
+            }
+            if (is_resource($chunk)) {
+                fclose($chunk);
+            }
+
+            return false;
+        }
+
+        try {
+            if (! ftruncate($destination, $volumeStartBytes)
+                || fseek($destination, 0, SEEK_END) !== 0
+            ) {
+                return false;
+            }
+
+            $chunkBytes = (int) File::size($volumeChunkPath);
+
+            return stream_copy_to_stream($chunk, $destination) === $chunkBytes;
+        } finally {
+            fclose($destination);
+            fclose($chunk);
+        }
     }
 
     private function audioEntryKey(string $name): string
     {
         return strtolower($name);
+    }
+
+    private function audioEntryPath(string $tmpPath, string $name): string
+    {
+        $extension = strtolower(pathinfo($name, PATHINFO_EXTENSION)) ?: 'audio';
+
+        return $tmpPath.'audio-entry-'.hash('sha256', $name).'.'.$extension;
     }
 
     /**
