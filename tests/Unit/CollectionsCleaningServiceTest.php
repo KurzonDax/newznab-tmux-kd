@@ -6,10 +6,143 @@ namespace Tests\Unit;
 
 use App\Services\CollectionsCleaningService;
 use App\Services\RegexService;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class CollectionsCleaningServiceTest extends TestCase
 {
+    public function test_dutch_vd_counters_share_one_non_music_collection_name(): void
+    {
+        $first = $this->cleaner()->collectionsCleaner(
+            'Purple Yoda Posts: The Complete Les Claypool Discography.part16.rar <17 vd 34> yEnc',
+            'alt.binaries.boneless',
+        );
+        $second = $this->cleaner()->collectionsCleaner(
+            'Purple Yoda Posts: The Complete Les Claypool Discography.part17.rar <18 vd 34> yEnc',
+            'alt.binaries.boneless',
+        );
+
+        $this->assertSame($first['name'], $second['name']);
+        $this->assertStringNotContainsString('vd 34', $first['name']);
+    }
+
+    public function test_dutch_vd_counters_share_one_music_collection_name(): void
+    {
+        $first = $this->cleaner()->collectionsCleaner(
+            'Purple Yoda Posts: The Complete Les Claypool Discography.part16.rar <17 vd 34> yEnc',
+            'alt.binaries.sounds.lossless',
+        );
+        $second = $this->cleaner()->collectionsCleaner(
+            'Purple Yoda Posts: The Complete Les Claypool Discography.part17.rar <18 vd 34> yEnc',
+            'alt.binaries.sounds.lossless',
+        );
+
+        $this->assertSame($first['name'], $second['name']);
+        $this->assertStringNotContainsString('vd 34', $first['name']);
+    }
+
+    public function test_dutch_van_counters_share_one_collection_name(): void
+    {
+        $first = $this->cleaner()->collectionsCleaner(
+            'Foo.part01.rar <1 van 20> yEnc',
+            'alt.binaries.boneless',
+        );
+        $second = $this->cleaner()->collectionsCleaner(
+            'Foo.part02.rar <2 van 20> yEnc',
+            'alt.binaries.boneless',
+        );
+
+        $this->assertSame($first['name'], $second['name']);
+        $this->assertStringNotContainsString('van 20', $first['name']);
+    }
+
+    public function test_dutch_counters_are_case_insensitive_and_accept_underscore_separators(): void
+    {
+        $first = $this->cleaner()->collectionsCleaner(
+            'Foo.part01.rar <1_VD_20> yEnc',
+            'alt.binaries.boneless',
+        );
+        $second = $this->cleaner()->collectionsCleaner(
+            'Foo.part02.rar <2_vd_20> yEnc',
+            'alt.binaries.boneless',
+        );
+
+        $this->assertSame($first['name'], $second['name']);
+        $this->assertStringNotContainsString('VD_20', $first['name']);
+    }
+
+    #[DataProvider('cleanerPathGroups')]
+    public function test_dutch_counter_at_end_of_subject_is_removed(string $groupName): void
+    {
+        $first = $this->cleaner()->collectionsCleaner('Foo.part01.rar 1 vd 20', $groupName);
+        $second = $this->cleaner()->collectionsCleaner('Foo.part02.rar 2 vd 20', $groupName);
+
+        $this->assertSame($first['name'], $second['name']);
+        $this->assertStringNotContainsString('vd 20', $first['name']);
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function cleanerPathGroups(): array
+    {
+        return [
+            'generic cleaner' => ['alt.binaries.boneless'],
+            'music cleaner' => ['alt.binaries.sounds.lossless'],
+        ];
+    }
+
+    #[DataProvider('conventionalCounterSubjects')]
+    public function test_conventional_counter_subjects_keep_their_existing_cleaned_names(
+        string $subject,
+        string $expectedName,
+    ): void {
+        $cleaned = $this->cleaner()->collectionsCleaner($subject, 'alt.binaries.tv');
+
+        $this->assertSame($expectedName, $cleaned['name']);
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function conventionalCounterSubjects(): array
+    {
+        return [
+            'bracketed counter with quoted filename' => [
+                '[02/80] - "The.West.Wing.S06E02.1080p.BluRay.x264.mkv.part01.rar" yEnc',
+                'The.West.Wing.S06E02.1080p.BluRay.x yEnc',
+            ],
+            'parenthesized counter' => ['My Release (01/20) yEnc', 'My Release yEnc'],
+            'of counter' => ['My Release 01 of 20 yEnc', 'My Release yEnc'],
+        ];
+    }
+
+    #[DataProvider('legitimateTitleSubjects')]
+    public function test_non_counter_words_and_angle_brackets_remain_in_titles(
+        string $subject,
+        string $expectedName,
+    ): void {
+        $cleaned = $this->cleaner()->collectionsCleaner($subject, 'alt.binaries.tv');
+
+        $this->assertSame($expectedName, $cleaned['name']);
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function legitimateTitleSubjects(): array
+    {
+        return [
+            'angle-bracketed text' => [
+                'Archive <Group Name>.part01.rar yEnc',
+                'Archive <Group Name> yEnc',
+            ],
+            'of in title' => ['Best of Queen [01/34] yEnc', 'Best of Queen yEnc'],
+            'vd in title' => ['Best vd Collection [01/34] yEnc', 'Best vd Collection yEnc'],
+            'van in title' => ['Best van Halen [01/34] yEnc', 'Best van Halen yEnc'],
+        ];
+    }
+
     public function test_named_set_files_share_one_cleaned_name(): void
     {
         $subjects = [
