@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\MusicIdentity;
 
+use App\Services\MusicIdentity\Contracts\CandidateGenerator;
 use App\Services\MusicIdentity\Contracts\MusicBrainzGateway;
 use App\Services\MusicIdentity\DTO\AudioEvidenceSet;
 use App\Services\MusicIdentity\DTO\CandidateHypothesis;
@@ -23,7 +24,7 @@ use App\Services\MusicIdentity\Matching\CandidateTextNormalizer;
 use App\Services\MusicIdentity\Matching\DistinctiveTrackEvidenceSelector;
 use App\Services\MusicIdentity\Support\MusicIdentityValueNormalizer;
 
-final class MusicCandidateGenerator
+final class MusicCandidateGenerator implements CandidateGenerator
 {
     private readonly CandidateTextNormalizer $normalizer;
 
@@ -157,9 +158,16 @@ final class MusicCandidateGenerator
             'metadata' => $metadata,
             'signals' => [],
         ];
-        if ($accumulators[$key]['identity']->releaseGroupId === null && $identity->releaseGroupId !== null) {
-            $accumulators[$key]['identity'] = $identity;
-        }
+        $currentIdentity = $accumulators[$key]['identity'];
+        $releaseId = $currentIdentity->releaseId ?? $identity->releaseId;
+        $releaseGroupId = $currentIdentity->releaseGroupId ?? $identity->releaseGroupId;
+        $accumulators[$key]['identity'] = new CandidateIdentity(
+            recordingId: $releaseId === null && $releaseGroupId === null
+                ? $currentIdentity->recordingId ?? $identity->recordingId
+                : null,
+            releaseId: $releaseId,
+            releaseGroupId: $releaseGroupId,
+        );
         $accumulators[$key]['metadata'] ??= $metadata;
         $accumulators[$key]['signals'][] = $signal;
     }
@@ -378,6 +386,7 @@ final class MusicCandidateGenerator
                         releaseGroupId: $release['releaseGroupId'],
                     ),
                     providerScore: $release['providerScore'],
+                    responseCacheKeys: $matches->responseCacheKeys,
                 ),
             );
         }
@@ -408,6 +417,7 @@ final class MusicCandidateGenerator
                         exact: $exact,
                         identity: new CandidateIdentity(recordingId: (string) $recording['recordingId']),
                         providerScore: $recording['providerScore'],
+                        responseCacheKeys: $matches->responseCacheKeys,
                     ),
                 );
 
@@ -419,6 +429,7 @@ final class MusicCandidateGenerator
                 $this->accumulate(
                     $accumulators,
                     new CandidateIdentity(
+                        recordingId: (string) $recording['recordingId'],
                         releaseId: $releaseId,
                         releaseGroupId: $releaseGroupId,
                     ),
@@ -433,6 +444,7 @@ final class MusicCandidateGenerator
                             releaseGroupId: $releaseGroupId,
                         ),
                         providerScore: $recording['providerScore'],
+                        responseCacheKeys: $matches->responseCacheKeys,
                     ),
                 );
             }
@@ -440,7 +452,10 @@ final class MusicCandidateGenerator
             foreach ($releaseGroupIds as $releaseGroupId) {
                 $this->accumulate(
                     $accumulators,
-                    new CandidateIdentity(releaseGroupId: $releaseGroupId),
+                    new CandidateIdentity(
+                        recordingId: (string) $recording['recordingId'],
+                        releaseGroupId: $releaseGroupId,
+                    ),
                     new CandidateSignal(
                         kind: $signalKind,
                         value: $signalValue,
@@ -451,6 +466,7 @@ final class MusicCandidateGenerator
                             releaseGroupId: $releaseGroupId,
                         ),
                         providerScore: $recording['providerScore'],
+                        responseCacheKeys: $matches->responseCacheKeys,
                     ),
                 );
             }

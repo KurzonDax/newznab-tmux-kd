@@ -45,7 +45,8 @@ namespace App\Services\MusicIdentity\DTO;
  *     country: string|null,
  *     barcode: string|null,
  *     labels: list<MusicLabel>,
- *     media: list<MusicMedium>
+ *     media: list<MusicMedium>,
+ *     aliases?: list<string>
  * }
  * @phpstan-type MusicReleaseGroup array{
  *     releaseGroupId: string,
@@ -53,7 +54,8 @@ namespace App\Services\MusicIdentity\DTO;
  *     artistCredit: string|null,
  *     primaryType: string|null,
  *     secondaryTypes: list<string>,
- *     firstReleaseDate: string|null
+ *     firstReleaseDate: string|null,
+ *     aliases?: list<string>
  * }
  * @phpstan-type MusicArtist array{
  *     artistId: string,
@@ -71,12 +73,14 @@ final readonly class CandidateMetadata
      * @param  list<MusicRelease>  $releases
      * @param  list<MusicReleaseGroup>  $releaseGroups
      * @param  list<MusicArtist>  $artists
+     * @param  list<string>  $responseCacheKeys
      */
     public function __construct(
         public array $recordings,
         public array $releases,
         public array $releaseGroups,
         public array $artists = [],
+        public array $responseCacheKeys = [],
     ) {}
 
     public static function empty(): self

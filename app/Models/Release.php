@@ -247,6 +247,12 @@ class Release extends Model
         return $this->hasOne(ReleaseAudioTag::class, 'releases_id');
     }
 
+    /** @return HasMany<ReleaseMusicIdentification, $this> */
+    public function musicIdentifications(): HasMany
+    {
+        return $this->hasMany(ReleaseMusicIdentification::class, 'releases_id');
+    }
+
     /**
      * Metadata for the stream-copy Clip stored as this release's video
      * artifact; absent for legacy downscaled transcodes.

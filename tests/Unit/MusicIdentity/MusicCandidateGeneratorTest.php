@@ -15,6 +15,7 @@ use App\Services\MusicIdentity\DTO\ReleaseQuery;
 use App\Services\MusicIdentity\DTO\TrackEvidence;
 use App\Services\MusicIdentity\Matching\CandidateTextNormalizer;
 use App\Services\MusicIdentity\Matching\DistinctiveTrackEvidenceSelector;
+use App\Services\MusicIdentity\Matching\WholeReleaseAlignmentScorer;
 use App\Services\MusicIdentity\MusicCandidateGenerator;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -437,11 +438,15 @@ final class MusicCandidateGeneratorTest extends TestCase
 
         $this->assertCount(2, $pool->candidates);
         $candidate = $pool->candidates[0];
+        $this->assertNull($candidate->identity->recordingId);
         $this->assertSame(CandidateGeneratorGatewayFake::RELEASE_ID, $candidate->identity->releaseId);
         $this->assertSame(CandidateGeneratorGatewayFake::RELEASE_GROUP_ID, $candidate->identity->releaseGroupId);
         $this->assertSame(2, $candidate->distinctRecordingSupport());
         $this->assertSame(1, $candidate->independentEvidenceSupport());
         $this->assertSame('Mercy', $candidate->metadata->releases[0]['title']);
+        $summary = (new WholeReleaseAlignmentScorer)->score($evidence, $candidate)->summary;
+        $this->assertNull($summary->identity->recordingId);
+        $this->assertNotSame([], $summary->responseCacheKeys);
 
         $this->assertSame(['calypso gene', 'glue traps'], array_map(
             static fn (RecordingQuery $query): ?string => $query->normalized()['title'],
@@ -546,7 +551,7 @@ final class CandidateGeneratorGatewayFake implements MusicBrainzGateway
             'releaseGroupIds' => [self::RELEASE_GROUP_ID],
             'providerScore' => 100,
             'sources' => ['recording_search'],
-        ]], 1);
+        ]], 1, ['musicbrainz:response:recording-search']);
     }
 
     public function hydrate(CandidateIdentifiers $identifiers): CandidateMetadata
@@ -586,6 +591,7 @@ final class CandidateGeneratorGatewayFake implements MusicBrainzGateway
                 'secondaryTypes' => [],
                 'firstReleaseDate' => '2025-11-07',
             ]],
+            responseCacheKeys: ['musicbrainz:response:hydration'],
         );
     }
 

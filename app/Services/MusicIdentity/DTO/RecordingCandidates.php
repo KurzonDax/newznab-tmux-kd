@@ -12,10 +12,12 @@ final readonly class RecordingCandidates
      * keys and nested list wrappers never cross this boundary.
      *
      * @param  list<MusicRecording>  $recordings
+     * @param  list<string>  $responseCacheKeys
      */
     public function __construct(
         public array $recordings,
         public int $providerTotal = 0,
+        public array $responseCacheKeys = [],
     ) {}
 
     public static function empty(): self

@@ -38,9 +38,9 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
 {
     private const string RECORDING_INCLUDES = 'artist-credits+isrcs+releases+release-groups';
 
-    private const string RELEASE_INCLUDES = 'recordings+artist-credits+labels+release-groups+media+discids+isrcs+genres+tags+url-rels';
+    private const string RELEASE_INCLUDES = 'recordings+artist-credits+labels+release-groups+media+discids+isrcs+aliases+genres+tags+url-rels';
 
-    private const string RELEASE_GROUP_INCLUDES = 'artist-credits+releases+genres+tags+url-rels';
+    private const string RELEASE_GROUP_INCLUDES = 'artist-credits+releases+aliases+genres+tags+url-rels';
 
     public function __construct(
         private readonly MusicBrainzNormalizer $normalizer,
@@ -154,7 +154,11 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
 
         $recordings = $this->mergeRecordings($recordings);
 
-        return new RecordingCandidates($recordings, max($providerTotal, count($recordings)));
+        return new RecordingCandidates(
+            $recordings,
+            max($providerTotal, count($recordings)),
+            $this->responseCacheKeys($endpoint, $requests),
+        );
     }
 
     public function releaseCandidatesFor(ReleaseQuery $query): ReleaseCandidates
@@ -172,12 +176,13 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
             return ReleaseCandidates::empty();
         }
 
-        $payload = $this->fetchOne($endpoint, $this->descriptor('release', [
+        $request = $this->descriptor('release', [
             'query' => $lucene,
             'limit' => (int) ($queryValues['limit'] ?? config('music-identity.musicbrainz.search_limit', 25)),
             'offset' => (int) $queryValues['offset'],
             'fmt' => 'json',
-        ], exact: false, shape: 'release_search'), $this->budget());
+        ], exact: false, shape: 'release_search');
+        $payload = $this->fetchOne($endpoint, $request, $this->budget());
         if ($payload === []) {
             return ReleaseCandidates::empty();
         }
@@ -188,7 +193,11 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
             $this->normalizer->objects($payload, 'releases'),
         );
 
-        return new ReleaseCandidates($releases, max($providerTotal, count($releases)));
+        return new ReleaseCandidates(
+            $releases,
+            max($providerTotal, count($releases)),
+            [$this->cacheKey($endpoint, $request)],
+        );
     }
 
     public function hydrate(CandidateIdentifiers $identifiers): CandidateMetadata
@@ -263,6 +272,7 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
         $artists = [];
         $recordingIdsToBrowse = [];
         $releaseGroupIdsToBrowse = [];
+        $responseCacheKeys = $this->responseCacheKeys($endpoint, $requests);
 
         foreach ($payloads as $kind => $payload) {
             if ($payload === []) {
@@ -321,7 +331,9 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
             if ($remainingEditions <= 0) {
                 break;
             }
-            foreach ($this->browseReleases($endpoint, 'recording', $recordingId, $budget, $remainingEditions) as $release) {
+            $browseResult = $this->browseReleases($endpoint, 'recording', $recordingId, $budget, $remainingEditions);
+            array_push($responseCacheKeys, ...$browseResult['responseCacheKeys']);
+            foreach ($browseResult['releases'] as $release) {
                 $this->collectRelease($release, $recordings, $releases, $releaseGroups);
             }
         }
@@ -330,7 +342,9 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
             if ($remainingEditions <= 0) {
                 break;
             }
-            foreach ($this->browseReleases($endpoint, 'release-group', $releaseGroupId, $budget, $remainingEditions) as $release) {
+            $browseResult = $this->browseReleases($endpoint, 'release-group', $releaseGroupId, $budget, $remainingEditions);
+            array_push($responseCacheKeys, ...$browseResult['responseCacheKeys']);
+            foreach ($browseResult['releases'] as $release) {
                 $this->collectRelease($release, $recordings, $releases, $releaseGroups);
             }
         }
@@ -340,6 +354,7 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
             array_slice($this->uniqueBy($releases, 'releaseId'), 0, $editionLimit),
             $this->uniqueBy($releaseGroups, 'releaseGroupId'),
             $this->uniqueBy($artists, 'artistId'),
+            array_values(array_unique($responseCacheKeys)),
         );
     }
 
@@ -429,7 +444,7 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
     }
 
     /**
-     * @return list<array<string, mixed>>
+     * @return array{releases: list<array<string, mixed>>, responseCacheKeys: list<string>}
      */
     private function browseReleases(
         string $endpoint,
@@ -441,19 +456,22 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
         $offset = 0;
         $total = null;
         $releases = [];
+        $responseCacheKeys = [];
         $limit = min(
             $maximumResults,
             min(100, max(1, (int) config('music-identity.musicbrainz.browse_limit', 100))),
         );
 
         do {
-            $payload = $this->fetchOne($endpoint, $this->descriptor('release', [
+            $request = $this->descriptor('release', [
                 $linkedEntity => $identifier,
                 'inc' => self::RELEASE_INCLUDES,
                 'limit' => $limit,
                 'offset' => $offset,
                 'fmt' => 'json',
-            ], exact: true, shape: 'release_browse'), $budget);
+            ], exact: true, shape: 'release_browse');
+            $responseCacheKeys[] = $this->cacheKey($endpoint, $request);
+            $payload = $this->fetchOne($endpoint, $request, $budget);
 
             if ($payload === []) {
                 break;
@@ -477,7 +495,10 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
             $offset += $returned;
         } while ($offset < $total && count($releases) < $maximumResults);
 
-        return $releases;
+        return [
+            'releases' => $releases,
+            'responseCacheKeys' => $responseCacheKeys,
+        ];
     }
 
     /**
@@ -847,6 +868,18 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
         ];
 
         return 'musicbrainz:response:'.hash('sha256', (string) json_encode($normalized, JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * @param  array<string, array{path: string, query: array<string, int|string>, exact: bool, shape: string}>  $requests
+     * @return list<string>
+     */
+    private function responseCacheKeys(string $endpoint, array $requests): array
+    {
+        return array_values(array_map(
+            fn (array $request): string => $this->cacheKey($endpoint, $request),
+            $requests,
+        ));
     }
 
     private function assertCircuitClosed(string $endpoint): void
