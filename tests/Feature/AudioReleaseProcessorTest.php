@@ -151,10 +151,14 @@ class AudioReleaseProcessorTest extends TestCase
             $table->unsignedInteger('root_categories_id')->nullable();
         });
 
-        DB::table('root_categories')->insert([['id' => Category::MUSIC_ROOT, 'generate_previews' => 1]]);
+        DB::table('root_categories')->insert([
+            ['id' => Category::MUSIC_ROOT, 'generate_previews' => 1],
+            ['id' => Category::PC_ROOT, 'generate_previews' => 1],
+        ]);
         DB::table('categories')->insert([
             ['id' => Category::MUSIC_MP3, 'root_categories_id' => Category::MUSIC_ROOT],
             ['id' => Category::MUSIC_OTHER, 'root_categories_id' => Category::MUSIC_ROOT],
+            ['id' => Category::PC_0DAY, 'root_categories_id' => Category::PC_ROOT],
         ]);
 
         Schema::create('usenet_groups', function (Blueprint $table): void {
@@ -247,6 +251,43 @@ class AudioReleaseProcessorTest extends TestCase
         // haspreview stays pending: the video path still owes this release a run.
         $this->assertSame(-1, (int) $row->haspreview);
         $this->assertDatabaseMissing('release_audio_tags', ['releases_id' => $release->id]);
+    }
+
+    public function test_pc_root_release_is_declined_before_nzb_or_nntp_work_and_the_additional_path_accepts_it(): void
+    {
+        DB::table('usenet_groups')->where('id', 1)->update([
+            'forced_root_categories_id' => Category::MUSIC_ROOT,
+        ]);
+        $release = $this->makeRelease([
+            'categories_id' => Category::PC_0DAY,
+            'additional_pp_claimed_at' => now(),
+            'additional_pp_claim_token' => 'audio-worker',
+        ]);
+        $processor = $this->makeProcessor(
+            $this->taggedContainer(),
+            expectsPreview: false,
+            expectsExtraXml: false,
+            expectsNzbParse: false,
+        );
+
+        $result = $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(ProcessingOutcome::DeclinedToVideoPath, $result->outcome);
+        $this->assertSame([], $this->downloads, 'PC releases must be handed off before any NNTP download.');
+        $this->assertSame('PC-root releases belong to the general post-processing path.', $result->reason);
+
+        $row = DB::table('releases')->where('id', $release->id)->first();
+        $this->assertSame(AudioRouting::DECLINED_TOKEN, $row->additional_pp_claim_token);
+        $this->assertNull($row->additional_pp_claimed_at);
+        $this->assertSame(-1, (int) $row->haspreview);
+        $this->assertSame([$release->id], $this->synchronized);
+        $this->assertSame(
+            [$release->id],
+            AdditionalCandidateQuery::baseBuilder(minSizeBytes: 0, maxSizeBytes: 0)
+                ->pluck('r.id')
+                ->map(static fn (mixed $id): int => (int) $id)
+                ->all(),
+        );
     }
 
     public function test_a_probe_without_any_audio_stream_also_declines(): void
@@ -758,17 +799,22 @@ class AudioReleaseProcessorTest extends TestCase
         ?array $archiveListings = null,
         ?array $downloadResult = null,
         float $encoderSourceSeconds = 300.0,
+        bool $expectsNzbParse = true,
     ): AudioReleaseProcessor {
         $config = $this->config($maxArchiveBytes, $minimumCompletionPercent);
 
         $nzbParser = Mockery::mock(NzbContentParser::class);
-        $nzbParser->shouldReceive('parseNzb')->andReturn([
-            'contents' => $nzbContents ?? [
-                ['title' => '"cover.jpg" yEnc', 'segments' => ['<jpg>']],
-                ['title' => '"01 - track.mp3" yEnc', 'segments' => ['<seg-1>', '<seg-2>', '<seg-3>']],
-            ],
-            'error' => null,
-        ]);
+        if ($expectsNzbParse) {
+            $nzbParser->shouldReceive('parseNzb')->andReturn([
+                'contents' => $nzbContents ?? [
+                    ['title' => '"cover.jpg" yEnc', 'segments' => ['<jpg>']],
+                    ['title' => '"01 - track.mp3" yEnc', 'segments' => ['<seg-1>', '<seg-2>', '<seg-3>']],
+                ],
+                'error' => null,
+            ]);
+        } else {
+            $nzbParser->shouldNotReceive('parseNzb');
+        }
 
         $downloadService = Mockery::mock(UsenetDownloadService::class);
         $downloadService->shouldReceive('download')->andReturnUsing(

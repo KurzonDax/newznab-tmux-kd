@@ -374,6 +374,44 @@ class AdminSiteControllerTest extends TestCase
         $this->assertNull($this->settingValue('descriptive_title_rename'));
     }
 
+    public function test_forced_root_pc_escape_setting_renders_and_round_trips(): void
+    {
+        $response = app(AdminSiteController::class)->edit(Request::create('/admin/site-edit', 'GET'));
+
+        $this->assertInstanceOf(View::class, $response);
+        $rendered = $response->render();
+        $this->assertStringContainsString('Recategorize PC Releases Out Of Forced Categories', $rendered);
+        $this->assertStringContainsString('name="forced_root_pc_escape"', $rendered);
+        $this->assertStringContainsString('malware', $rendered);
+        $this->assertStringContainsString('Discard Releases Containing Executables', $rendered);
+
+        $submitted = app(AdminSiteController::class)->edit(Request::create('/admin/site-edit', 'POST', [
+            'action' => 'submit',
+            'forced_root_pc_escape' => '1',
+        ]));
+
+        $this->assertTrue($submitted->isRedirect());
+        $this->assertSame('1', $this->settingValue('forced_root_pc_escape'));
+    }
+
+    public function test_forced_root_pc_escape_defaults_off_for_fresh_and_existing_installs(): void
+    {
+        (new SettingsTableSeeder)->run();
+        $this->assertSame('0', $this->settingValue('forced_root_pc_escape'));
+
+        DB::table('settings')->where('name', 'forced_root_pc_escape')->delete();
+        $migration = require database_path('migrations/2026_08_31_145035_add_forced_root_pc_escape_setting.php');
+        $migration->up();
+        $this->assertSame('0', $this->settingValue('forced_root_pc_escape'));
+
+        DB::table('settings')->where('name', 'forced_root_pc_escape')->update(['value' => '1']);
+        $migration->up();
+        $this->assertSame('1', $this->settingValue('forced_root_pc_escape'));
+
+        $migration->down();
+        $this->assertNull($this->settingValue('forced_root_pc_escape'));
+    }
+
     public function test_repair_and_rescan_tunables_round_trip_through_the_form(): void
     {
         $response = app(AdminSiteController::class)->edit(Request::create('/admin/site-edit', 'GET'));
@@ -500,6 +538,7 @@ class AdminSiteControllerTest extends TestCase
             ['name' => 'maxsizetoprocessnfo', 'value' => '107374182400'],
             ['name' => 'discard_executable_extensions', 'value' => 'dll|exe|msi|scr|com|bat|cmd|pif'],
             ['name' => 'descriptive_title_rename', 'value' => '1'],
+            ['name' => 'forced_root_pc_escape', 'value' => '0'],
             ['name' => 'repair_retry_after_hours', 'value' => '72'],
             ['name' => 'repair_floor_completion', 'value' => '10'],
             ['name' => 'repair_stat_sample_per_file', 'value' => '2'],

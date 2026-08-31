@@ -217,5 +217,17 @@
                             </div>
                             <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Releases in checked root categories are <strong>permanently deleted</strong> (database rows, NZB file, images, search index) when they are found to contain an executable file. Unlike the Inner File Black List above, which only hides releases as passworded, a discard is irreversible.</p>
                         </div>
+
+                        <div>
+                            <x-label for="forced_root_pc_escape">
+                                <i class="fas fa-shield-alt mr-1"></i>Recategorize PC Releases Out Of Forced Categories
+                            </x-label>
+                            <x-select id="forced_root_pc_escape" name="forced_root_pc_escape">
+                                @foreach ($yesno['ids'] as $index => $yesnoId)
+                                    <option value="{{ $yesnoId }}" @selected((int) ($site['forced_root_pc_escape'] ?? 0) === $yesnoId)>{{ $yesno['names'][$index] }}</option>
+                                @endforeach
+                            </x-select>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">When enabled, releases in forced-root groups whose names categorize as PC software or games with at least 0.85 confidence keep their PC category instead of the forced root. Such releases frequently carry malware and should remain visible as what they are. Escaped releases follow the PC root's <strong>Discard Releases Containing Executables</strong> toggle; disguised software that does not categorize as PC remains in the forced root and follows that root's discard toggle.</p>
+                        </div>
                     </div>
                 </div>
