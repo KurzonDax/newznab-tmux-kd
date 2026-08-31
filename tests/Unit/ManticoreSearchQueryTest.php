@@ -161,6 +161,66 @@ class ManticoreSearchQueryTest extends TestCase
     }
 
     #[Test]
+    public function it_builds_one_multi_field_query_for_a_parenthesized_duplicate_name(): void
+    {
+        $name = 'Rdo-Hypnotic_(Edit)-SINGLE-WEB-2025-XTC_iNT';
+
+        $query = ManticoreSearchDriver::buildSearchExpression(
+            null,
+            [],
+            ['name' => $name, 'searchname' => $name],
+        );
+
+        $this->assertSame(
+            '@@relaxed @(name,searchname) (Rdo\-Hypnotic_\(Edit\)\-SINGLE\-WEB\-2025\-XTC_iNT)',
+            $query,
+        );
+    }
+
+    #[Test]
+    public function it_builds_one_multi_field_query_for_a_plain_duplicate_name(): void
+    {
+        $name = 'Rdo Hypnotic Edit';
+
+        $query = ManticoreSearchDriver::buildSearchExpression(
+            null,
+            [],
+            ['name' => $name, 'searchname' => $name],
+        );
+
+        $this->assertSame('@@relaxed @(name,searchname) (Rdo Hypnotic Edit)', $query);
+    }
+
+    #[Test]
+    public function it_combines_fields_when_raw_values_prepare_to_the_same_query(): void
+    {
+        $query = ManticoreSearchDriver::buildSearchExpression(
+            null,
+            [],
+            ['name' => 'Rdo Hypnotic Edit', 'searchname' => ' Rdo Hypnotic Edit '],
+        );
+
+        $this->assertSame('@@relaxed @(name,searchname) (Rdo Hypnotic Edit)', $query);
+    }
+
+    #[Test]
+    public function it_builds_a_single_field_query_with_manticore_special_characters_escaped(): void
+    {
+        $name = 'Rdo-Hypnotic_(Edit)@2025';
+
+        $query = ManticoreSearchDriver::buildSearchExpression(
+            null,
+            [],
+            ['searchname' => $name],
+        );
+
+        $this->assertSame(
+            '@@relaxed @searchname (Rdo\-Hypnotic_\(Edit\)\@2025)',
+            $query,
+        );
+    }
+
+    #[Test]
     #[DataProvider('edgeCaseQueriesProvider')]
     public function it_handles_edge_cases(string $input, string $expected): void
     {
