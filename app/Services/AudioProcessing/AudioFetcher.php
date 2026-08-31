@@ -952,15 +952,31 @@ final class AudioFetcher
     private function onlyAudioArchiveSupportFiles(array $files): bool
     {
         foreach ($files as $file) {
+            if ($this->isArchiveDirectoryEntry($file)) {
+                continue;
+            }
+
             if (! PostedFileClassifier::matchesTerminalExtension(
                 (string) ($file['name'] ?? ''),
-                PostedFileClassifier::AUDIO_ARCHIVE_SUPPORT_FILE_REGEX,
+                AudioProcessingConfiguration::ARCHIVE_SUPPORT_FILE_REGEX,
             )) {
                 return false;
             }
         }
 
         return $files !== [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     */
+    private function isArchiveDirectoryEntry(array $entry): bool
+    {
+        $name = str_replace('\\', '/', (string) ($entry['name'] ?? ''));
+
+        return str_ends_with($name, '/')
+            || (bool) ($entry['is_dir'] ?? false)
+            || (bool) ($entry['is_directory'] ?? false);
     }
 
     /**

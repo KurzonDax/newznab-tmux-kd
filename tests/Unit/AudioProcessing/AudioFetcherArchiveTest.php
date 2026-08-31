@@ -766,6 +766,43 @@ class AudioFetcherArchiveTest extends TestCase
     }
 
     #[Test]
+    public function artwork_directories_do_not_count_toward_the_non_audio_cutoff(): void
+    {
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldReceive('listArchiveContentsAtPath')->andReturn(
+            [
+                'files' => [
+                    ['name' => 'Scans/', 'size' => 0],
+                    ['name' => 'Scans/front.jpg', 'size' => 12],
+                ],
+                'hasPassword' => false,
+            ],
+            [
+                'files' => [
+                    ['name' => 'Booklet/', 'size' => 0, 'is_dir' => true],
+                    ['name' => 'Booklet/back.png', 'size' => 12],
+                ],
+                'hasPassword' => false,
+            ],
+            ['files' => [['name' => '01-track.flac', 'size' => 8]], 'hasPassword' => false],
+        );
+        $archive->shouldReceive('extractSpecificFileToPath')->once()->andReturnUsing(function (): string {
+            $path = $this->tmpPath.'01-track.flac';
+            file_put_contents($path, 'complete');
+
+            return $path;
+        });
+        $lengthProbe = Mockery::mock(AudioDecodableLengthProbe::class);
+        $lengthProbe->shouldReceive('demuxedSeconds')->once()->andReturn(45.0);
+
+        $result = $this->fetch($archive, volumes: 3, lengthProbe: $lengthProbe);
+
+        $this->assertTrue($result->succeeded(), $result->reason);
+        $this->assertSame([['<vol-1>'], ['<vol-2>'], ['<vol-3>']], $this->downloads);
+        $this->assertNoArchivePartsRemain();
+    }
+
+    #[Test]
     public function audio_after_artwork_is_not_accepted_until_the_full_preview_window_decodes(): void
     {
         $archive = Mockery::mock(ArchiveExtractionService::class);
