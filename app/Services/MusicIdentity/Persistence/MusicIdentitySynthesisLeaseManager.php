@@ -54,6 +54,9 @@ final readonly class MusicIdentitySynthesisLeaseManager
         }, 3);
     }
 
+    /**
+     * A matching failure always changes the lease token and attempt count, so affected rows are reliable.
+     */
     public function fail(
         int $releaseId,
         string $workerToken,

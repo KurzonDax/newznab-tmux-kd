@@ -70,15 +70,18 @@ final class MusicIdentityLeaseManager
     /** @phpstan-impure */
     public function renew(int $identificationId, string $workerToken): bool
     {
-        return ReleaseMusicIdentification::query()
+        $heldLease = ReleaseMusicIdentification::query()
             ->whereKey($identificationId)
             ->where('lease_token', $workerToken)
             ->where(function (Builder $leaseQuery): void {
                 $leaseQuery
                     ->whereNull('lease_expires_at')
                     ->orWhere('lease_expires_at', '>', now());
-            })
-            ->update(['lease_expires_at' => $this->leaseExpiry()]) === 1;
+            });
+
+        $heldLease->update(['lease_expires_at' => $this->leaseExpiry()]);
+
+        return $heldLease->exists();
     }
 
     /** @return array<string, mixed> */
