@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\MusicIdentity;
 
+use App\Models\ReleaseAudioEvidence;
 use App\Models\ReleaseMusicIdentification;
 use App\Services\MusicIdentity\DTO\AudioEvidenceSet;
 use App\Services\MusicIdentity\DTO\CandidateIdentity;
@@ -12,9 +13,12 @@ use App\Services\MusicIdentity\DTO\DecisionReason;
 use App\Services\MusicIdentity\DTO\IdentificationDecision;
 use App\Services\MusicIdentity\Enums\IdentificationBand;
 use App\Services\MusicIdentity\Enums\IdentificationStatus;
+use App\Services\MusicIdentity\Exceptions\LostMusicIdentityLease;
 use App\Services\MusicIdentity\Persistence\IdentificationDecisionStore;
+use App\Services\MusicIdentity\Persistence\MusicIdentityLeaseManager;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
@@ -134,6 +138,34 @@ final class IdentificationDecisionStoreTest extends TestCase
         $this->assertNull($second->next_attempt_at);
         $this->assertNotNull($second->decided_at);
         $this->assertCount(1, $second->candidateAttempts);
+    }
+
+    #[Test]
+    public function an_expired_lease_cannot_persist_a_pending_decision(): void
+    {
+        Carbon::setTestNow('2026-08-30 12:00:00');
+        config([
+            'music-identity.algorithm_version' => 'music-identity-v1',
+            'music-identity.lease_seconds' => 60,
+        ]);
+        $evidenceRecord = ReleaseAudioEvidence::query()->findOrFail(20);
+        $lease = (new MusicIdentityLeaseManager)->acquire($evidenceRecord, 'worker-a');
+        $this->assertNotNull($lease);
+        Carbon::setTestNow(now()->addSeconds(61));
+
+        try {
+            (new IdentificationDecisionStore)->persist(
+                10,
+                $this->evidence(),
+                $this->decision('music-identity-v1'),
+                leaseToken: 'worker-a',
+            );
+            $this->fail('An expired worker lease unexpectedly persisted a decision.');
+        } catch (LostMusicIdentityLease) {
+            $this->addToAssertionCount(1);
+        } finally {
+            Carbon::setTestNow();
+        }
     }
 
     #[Test]

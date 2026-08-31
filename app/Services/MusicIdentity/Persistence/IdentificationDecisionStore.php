@@ -11,6 +11,7 @@ use App\Services\MusicIdentity\DTO\CandidateSummary;
 use App\Services\MusicIdentity\DTO\IdentificationDecision;
 use App\Services\MusicIdentity\Enums\AcceptedIdentityScope;
 use App\Services\MusicIdentity\Enums\IdentificationStatus;
+use App\Services\MusicIdentity\Exceptions\LostMusicIdentityLease;
 use DateTimeInterface;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -24,8 +25,9 @@ final readonly class IdentificationDecisionStore
         AudioEvidenceSet $evidence,
         IdentificationDecision $decision,
         ?DateTimeInterface $nextAttemptAt = null,
+        ?string $leaseToken = null,
     ): ReleaseMusicIdentification {
-        return DB::transaction(function () use ($releaseId, $evidence, $decision, $nextAttemptAt): ReleaseMusicIdentification {
+        return DB::transaction(function () use ($releaseId, $evidence, $decision, $nextAttemptAt, $leaseToken): ReleaseMusicIdentification {
             $evidenceRecord = ReleaseAudioEvidence::query()->lockForUpdate()->findOrFail($evidence->evidenceId);
             if ($evidenceRecord->releases_id !== $releaseId || ! hash_equals($evidenceRecord->evidence_hash, $evidence->evidenceHash)) {
                 throw new InvalidArgumentException('The audio evidence does not belong to the requested release and evidence hash.');
@@ -39,7 +41,7 @@ final readonly class IdentificationDecisionStore
                 ->first();
 
             if ($existing !== null) {
-                return $this->completeExistingAttempt($existing, $decision, $nextAttemptAt);
+                return $this->completeExistingAttempt($existing, $decision, $nextAttemptAt, $leaseToken);
             }
 
             $supersedesId = ReleaseMusicIdentification::query()
@@ -58,7 +60,7 @@ final readonly class IdentificationDecisionStore
             ]);
 
             if (! $identification->wasRecentlyCreated) {
-                return $this->completeExistingAttempt($identification, $decision, $nextAttemptAt);
+                return $this->completeExistingAttempt($identification, $decision, $nextAttemptAt, $leaseToken);
             }
 
             $this->persistCandidates($identification, $decision);
@@ -71,9 +73,17 @@ final readonly class IdentificationDecisionStore
         ReleaseMusicIdentification $identification,
         IdentificationDecision $decision,
         ?DateTimeInterface $nextAttemptAt,
+        ?string $leaseToken,
     ): ReleaseMusicIdentification {
-        if ($identification->state !== IdentificationStatus::RetryableError) {
+        if ($identification->state->isTerminal()) {
             return $identification;
+        }
+        if ($leaseToken !== null
+            && ($identification->lease_token === null
+                || ! hash_equals($identification->lease_token, $leaseToken)
+                || $identification->lease_expires_at === null
+                || ! $identification->lease_expires_at->isFuture())) {
+            throw new LostMusicIdentityLease('The music identity work lease belongs to another worker.');
         }
 
         $identification->fill($this->decisionAttributes(

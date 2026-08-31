@@ -13,8 +13,8 @@ use App\Services\MetadataProcessing\BookProcessingCandidateQuery;
 use App\Services\MetadataProcessing\ConsoleProcessingCandidateQuery;
 use App\Services\MetadataProcessing\GameProcessingCandidateQuery;
 use App\Services\MetadataProcessing\MovieProcessingCandidateQuery;
-use App\Services\MetadataProcessing\MusicProcessingCandidateQuery;
 use App\Services\MetadataProcessing\NfoProcessingCandidateQuery;
+use App\Services\MusicIdentity\ResolveReleaseMusicIdentity;
 use App\Services\TempWorkspaceService;
 use App\Services\TvProcessing\TvProcessingCandidateQuery;
 use Illuminate\Support\Facades\Concurrency;
@@ -164,22 +164,6 @@ class PostProcessRunner extends BaseRunner
         $bucketExpr = $this->guidBucketExpression();
 
         return BookProcessingCandidateQuery::query(lookupMode: $lookupMode)
-            ->selectRaw($bucketExpr.' AS id')
-            ->distinct()
-            ->limit(16)
-            ->toBase()
-            ->get()
-            ->all();
-    }
-
-    /**
-     * @return array<int, object{id: string}>
-     */
-    private function getMusicBuckets(int $lookupMode): array
-    {
-        $bucketExpr = $this->guidBucketExpression();
-
-        return MusicProcessingCandidateQuery::query(lookupMode: $lookupMode)
             ->selectRaw($bucketExpr.' AS id')
             ->distinct()
             ->limit(16)
@@ -599,22 +583,20 @@ class PostProcessRunner extends BaseRunner
 
     public function processMusic(): void
     {
-        $lookupMode = (int) Settings::settingValue('lookupmusic');
-        if ($lookupMode <= 0) {
+        $identityWorker = app(ResolveReleaseMusicIdentity::class);
+        $queue = $identityWorker->eligibleBuckets();
+        if ($queue === []) {
             $this->headerNone();
 
             return;
         }
 
-        if (! MusicProcessingCandidateQuery::query(lookupMode: $lookupMode)->exists()) {
-            $this->headerNone();
-
-            return;
-        }
-
-        $queue = $this->getMusicBuckets($lookupMode);
-        $maxProcesses = (int) Settings::settingValue('postthreadsamazon');
-        $this->runPostProcess($queue, $maxProcesses, 'music', 'music postprocessing');
+        $this->runPostProcess(
+            $queue,
+            $identityWorker->workerParallelism(),
+            'music',
+            'music identity postprocessing',
+        );
     }
 
     public function processConsoles(): void
@@ -669,13 +651,6 @@ class PostProcessRunner extends BaseRunner
             }
         }
 
-        $musicLookupMode = (int) Settings::settingValue('lookupmusic');
-        if ($musicLookupMode > 0) {
-            foreach ($this->getMusicBuckets($musicLookupMode) as $row) {
-                $tasks[] = (object) ['type' => 'music', 'id' => (string) $row->id];
-            }
-        }
-
         $gameLookupMode = (int) Settings::settingValue('lookupgames');
         if ($gameLookupMode > 0) {
             foreach ($this->getConsoleBuckets($gameLookupMode) as $row) {
@@ -687,6 +662,7 @@ class PostProcessRunner extends BaseRunner
             }
         }
 
-        $this->runPostProcessMixed($tasks, $maxProcesses, 'amazon (books+music+console+games)');
+        $this->runPostProcessMixed($tasks, $maxProcesses, 'amazon (books+console+games)');
+        $this->processMusic();
     }
 }

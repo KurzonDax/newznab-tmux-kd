@@ -80,7 +80,7 @@ final class PostProcessService
         $this->tvProcessor = $tvProcessor ?? new TvProcessor($this->echoOutput);
         $this->nfoProcessor = $nfoProcessor ?? new NfoProcessor($this->nfo);
         $this->moviesProcessor = $moviesProcessor ?? new MoviesProcessor($this->echoOutput);
-        $this->musicProcessor = $musicProcessor ?? new MusicProcessor($this->echoOutput);
+        $this->musicProcessor = $musicProcessor ?? new MusicProcessor;
         $this->booksProcessor = $booksProcessor ?? new BooksProcessor($this->echoOutput);
         $this->consolesProcessor = $consolesProcessor ?? new ConsolesProcessor($this->echoOutput);
         $this->gamesProcessor = $gamesProcessor ?? new GamesProcessor($this->echoOutput);

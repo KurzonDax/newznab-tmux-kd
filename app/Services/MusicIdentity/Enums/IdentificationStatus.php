@@ -6,6 +6,7 @@ namespace App\Services\MusicIdentity\Enums;
 
 enum IdentificationStatus: string
 {
+    case Pending = 'pending';
     case AcceptedEdition = 'accepted_edition';
     case AcceptedReleaseGroup = 'accepted_release_group';
     case AcceptedRecording = 'accepted_recording';
@@ -13,4 +14,9 @@ enum IdentificationStatus: string
     case Unresolved = 'unresolved';
     case Conflicted = 'conflicted';
     case RetryableError = 'retryable_error';
+
+    public function isTerminal(): bool
+    {
+        return ! in_array($this, [self::Pending, self::RetryableError], true);
+    }
 }

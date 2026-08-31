@@ -11,7 +11,14 @@ return [
     'application_mode' => 'shadow',
     'apply_decisions' => false,
     'worker_parallelism_max' => 8,
+    'worker_batch_size' => 25,
+    'lease_seconds' => 300,
     'candidate_attempt_limit' => 5,
+
+    'retry' => [
+        'initial_seconds' => 60,
+        'maximum_seconds' => 3_600,
+    ],
 
     'scoring' => [
         'minimum_album_score' => 92,
