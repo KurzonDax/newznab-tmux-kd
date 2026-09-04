@@ -40,7 +40,7 @@ final readonly class BinariesConfig
     public static function fromSettings(): self
     {
         return new self(
-            messageBuffer: self::getSettingInt('maxmssgs', 20000),
+            messageBuffer: self::getPositiveSettingInt('maxmssgs', 20000),
             compressedHeaders: (bool) config('nntmux_nntp.compressed_headers'),
             partRepair: self::getSettingInt('partrepair', 1) === 1,
             newGroupScanByDays: self::getSettingInt('newgroupscanmethod', 0) === 1,
@@ -59,5 +59,27 @@ final readonly class BinariesConfig
     private static function getSettingInt(string $key, int $default): int
     {
         return (int) Settings::settingValueOr($key, $default);
+    }
+
+    /**
+     * Read a setting that only means something as a positive number, substituting the
+     * coded default for anything below 1.
+     *
+     * The message buffer is a chunk width, and the admin field that writes it is an
+     * unvalidated text input. Stored as 0 it left both chunk walks standing still: the
+     * header-update article-range loop recomputed an identical window every pass, and the
+     * backfill walk stepped back to exactly where it started. Any positive width works, so
+     * a hostile value falls back to the coded default.
+     *
+     * Clamping here covers both walks, since backfill takes the buffer off the binaries
+     * service's config rather than reading the setting again; the tmux binaries runner
+     * keeps its own warned substitution for the fan-out math it does before any config
+     * exists, and this lands on the same value.
+     */
+    private static function getPositiveSettingInt(string $key, int $default): int
+    {
+        $value = self::getSettingInt($key, $default);
+
+        return $value >= 1 ? $value : $default;
     }
 }
