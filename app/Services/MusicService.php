@@ -35,8 +35,6 @@ class MusicService
 
     public int $musicqty;
 
-    public int $sleeptime;
-
     public string $imgSavePath;
 
     /**
@@ -54,7 +52,6 @@ class MusicService
         $this->privkey = Settings::settingValue('amazonprivkey');
         $this->asstag = Settings::settingValue('amazonassociatetag');
         $this->musicqty = (int) Settings::settingValueOr('maxmusicprocessed', 150);
-        $this->sleeptime = (int) Settings::settingValueOr('amazonsleep', 1000);
         $this->imgSavePath = config('nntmux_settings.covers_path').'/music/';
         $this->failCache = [];
     }

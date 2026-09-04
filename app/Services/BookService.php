@@ -20,6 +20,7 @@ use App\Services\Releases\ReleaseBrowseService;
 use App\Support\BookIsbn;
 use App\Support\BookMatchScorer;
 use App\Support\Data\BookParseResult;
+use App\Support\LookupThrottle;
 use App\Support\MetadataSearchLookup;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
@@ -452,9 +453,11 @@ class BookService
                 cli()->header('Processing '.$res->count().' book release(s) for categories id '.$categoryID);
             }
 
+            $throttle = new LookupThrottle($this->sleeptime);
+
             foreach ($res as $arr) {
                 $bookId = -2;
-                $startTime = now()->timestamp;
+                $throttle->openWindow();
                 $usedExternalApi = false;
                 // audiobooks are also books and should be handled in an identical manor, even though it falls under a music category
                 if ($arr['categories_id'] === (int) Category::MUSIC_AUDIOBOOK) {
@@ -502,9 +505,8 @@ class BookService
                     }
                 }
                 // Sleep to avoid flooding external book metadata providers.
-                $diff = floor((now()->timestamp - $startTime) * 1000000);
-                if ($this->sleeptime * 1000 - $diff > 0 && $usedExternalApi === true) {
-                    usleep((int) ($this->sleeptime * 1000 - $diff));
+                if ($usedExternalApi === true) {
+                    $throttle->waitOutWindow();
                 }
             }
         } elseif ($this->echooutput) {
