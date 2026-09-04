@@ -697,7 +697,7 @@ final class ReleaseProcessingService
         $deletedCount = 0;
         $claimLostCount = 0;
         $claimToken = bin2hex(random_bytes(16));
-        $limit = max(1, $this->settings->releaseCreationLimit);
+        $limit = $this->settings->releaseCreationLimit;
         $total = min(NzbCreationCandidateQuery::baseBuilder($groupID)->count(), $limit);
 
         if ($total > 0) {

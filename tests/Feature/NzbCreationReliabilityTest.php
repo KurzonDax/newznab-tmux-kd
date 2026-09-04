@@ -639,6 +639,24 @@ class NzbCreationReliabilityTest extends TestCase
         ))->setEchoCLI(false);
     }
 
+    public function test_a_positive_limit_still_bounds_the_nzb_batch(): void
+    {
+        DB::table('settings')->where('name', 'maxnzbsprocessed')->update(['value' => '2']);
+        $this->insertRelease(1, 'a', postdate: '2026-07-13 10:00:00');
+        $this->insertRelease(2, 'b', postdate: '2026-07-13 09:00:00');
+        $this->insertRelease(3, 'c', postdate: '2026-07-13 08:00:00');
+        $nzb = new AlwaysWritingNzbService;
+        $service = (new ReleaseProcessingService(
+            nzb: $nzb,
+            releaseManagement: new DatabaseOnlyReleaseManagementService,
+            collectionCleanupService: app(CollectionCleanupService::class),
+        ))->setEchoCLI(false);
+
+        $this->assertSame(2, $service->getReleaseCreationLimit());
+        $this->assertSame(2, $service->createNZBs(null));
+        $this->assertSame([3, 2], $nzb->written);
+    }
+
     private function insertRelease(
         int $id,
         string $leftguid,
@@ -935,6 +953,27 @@ class ReclaimedDuringTransientFailureNzbService extends NzbService
         ]);
 
         return NzbCreationResult::transient('The old worker lost its claim during I/O.');
+    }
+}
+
+/**
+ * Reports every release as written, so a test can measure the batch the limit let through.
+ */
+class AlwaysWritingNzbService extends NzbService
+{
+    /** @var list<int> */
+    public array $written = [];
+
+    public function __construct()
+    {
+        parent::__construct(app(CollectionCleanupService::class));
+    }
+
+    public function createNzbForRelease(Release $release): NzbCreationResult
+    {
+        $this->written[] = (int) $release->id;
+
+        return NzbCreationResult::success('/unused', []);
     }
 }
 

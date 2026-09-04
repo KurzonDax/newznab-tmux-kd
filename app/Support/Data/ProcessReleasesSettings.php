@@ -18,10 +18,16 @@ use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 #[TypeScript]
 final class ProcessReleasesSettings extends Data
 {
+    /**
+     * Batch size the release-creation loop falls back to when the stored
+     * `maxnzbsprocessed` says nothing usable.
+     */
+    private const DEFAULT_RELEASE_CREATION_LIMIT = 1000;
+
     public function __construct(
         public int $collectionDelayTime = 2,
         public int $crossPostTime = 2,
-        public int $releaseCreationLimit = 1000,
+        public int $releaseCreationLimit = self::DEFAULT_RELEASE_CREATION_LIMIT,
         public int $completion = 0,
         public int $collectionTimeout = 48,
         public int $maxSizeToFormRelease = 0,
@@ -37,6 +43,14 @@ final class ProcessReleasesSettings extends Data
         // Clamp completion to a sane upper bound (legacy `min(100, …)`).
         if ($this->completion > 100) {
             $this->completion = 100;
+        }
+
+        // The creation loop iterates while an iteration fills its batch, so a
+        // non-positive limit makes `0 >= 0` true forever against a drained queue.
+        // Resolve to the coded default rather than 1: a one-release-per-iteration
+        // crawl is no more the operator's intent than an endless spin.
+        if ($this->releaseCreationLimit < 1) {
+            $this->releaseCreationLimit = self::DEFAULT_RELEASE_CREATION_LIMIT;
         }
     }
 
@@ -55,7 +69,7 @@ final class ProcessReleasesSettings extends Data
         return new self(
             collectionDelayTime: $getInt('delaytime', 2),
             crossPostTime: $getInt('crossposttime', 2),
-            releaseCreationLimit: $getInt('maxnzbsprocessed', 1000),
+            releaseCreationLimit: $getInt('maxnzbsprocessed', self::DEFAULT_RELEASE_CREATION_LIMIT),
             completion: $getInt('completionpercent', 0),
             collectionTimeout: $getInt('collection_timeout', 48),
             maxSizeToFormRelease: $getInt('maxsizetoformrelease', 0),
