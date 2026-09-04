@@ -849,12 +849,16 @@ class NfoService
      * Process exhausted releases that have NFO files in release_files
      * with non-zero size. Attempts archive-based extraction via unrar.
      * On failure, sets nfostatus to NFO_FAILED_ARCHIVE (-10) to prevent further retries.
+     *
+     * The window stops one status below the main pass's retry floor, so a release reaches
+     * this pass only once the main pass has decremented it past its final retry. Sharing the
+     * floor would let an archive miss write the terminal status while a main retry was still due.
      */
     private function processFailedReleasesViaArchive(NNTPService $nntp, string $groupID, string $guidChar): int
     {
         $query = Release::query()
             ->where('nzbstatus', 1)
-            ->whereBetween('nfostatus', [self::NFO_FAILED_ARCHIVE + 1, $this->getMaxRetries()])
+            ->whereBetween('nfostatus', [self::NFO_FAILED_ARCHIVE + 1, $this->getMaxRetries() - 1])
             ->whereExists(function ($sub) {
                 $sub->select(DB::raw(1))
                     ->from('release_files')
