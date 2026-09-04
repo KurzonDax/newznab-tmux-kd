@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use App\Models\Settings;
 use App\Services\Binaries\BinariesConfig;
 use App\Support\DatabaseClock;
+use App\Support\SettingNumber;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -31,6 +31,12 @@ class CollectionCleanupService
      */
     private const LOCK_DRIVER_CODES = [1213, 1205];
 
+    /**
+     * Hours of collection retention applied when the stored setting says nothing
+     * usable. Matches the seeded `partretentionhours` value.
+     */
+    private const DEFAULT_PART_RETENTION_HOURS = 72;
+
     private ?bool $cascadeDeleteReady = null;
 
     private readonly BinariesConfig $binariesConfig;
@@ -50,21 +56,20 @@ class CollectionCleanupService
     {
         $startTime = now()->toImmutable();
         $deletedCount = 0;
+        $retentionHours = $this->effectiveRetentionHours();
 
         if ($echoCLI) {
             echo cli()->header('Process Releases -> Delete finished collections.'.PHP_EOL).
                 cli()->primary(sprintf(
                     'Deleting collections/binaries/parts older than %d hours.',
-                    Settings::settingValue('partretentionhours')
+                    $retentionHours
                 ), true);
         }
 
         // Batch-delete old collections using select-then-delete so we can
         // explicitly remove parts/binaries/collections even when FK cascades
         // are not present in the runtime schema.
-        $cutoff = DatabaseClock::cutoff(
-            now()->subHours(Settings::settingValue('partretentionhours'))
-        );
+        $cutoff = DatabaseClock::cutoff(now()->subHours($retentionHours));
         $batchDeleted = 0;
         do {
             $ids = DB::table('collections')
@@ -141,6 +146,23 @@ class CollectionCleanupService
         }
 
         return $deletedCount;
+    }
+
+    /**
+     * Hours of retention this sweep actually applies.
+     *
+     * The setting is free text: the row can be missing on an install that predates the
+     * seeder, blank because the admin field was cleared, or zero/negative/non-numeric
+     * because somebody typed into the wrong box. Unguarded, those put the cutoff at *now* --
+     * deleting every collection still being assembled, however slowly it posts -- or threw
+     * out of `subHours('')` and took the cleanup step down with it. Only a positive number
+     * of hours is honored; everything else is the seeded default.
+     */
+    private function effectiveRetentionHours(): int
+    {
+        $hours = SettingNumber::int('partretentionhours', self::DEFAULT_PART_RETENTION_HOURS);
+
+        return $hours >= 1 ? $hours : self::DEFAULT_PART_RETENTION_HOURS;
     }
 
     /**

@@ -37,7 +37,6 @@ final class ProcessReleasesSettings extends Data
         public bool $deletePasswordedRelease = false,
         public int $miscOtherRetentionHours = 0,
         public int $miscHashedRetentionHours = 0,
-        public int $partRetentionHours = 24,
         public ?string $lastRunTime = null,
     ) {
         // Clamp completion to a sane upper bound (legacy `min(100, …)`).
@@ -79,7 +78,6 @@ final class ProcessReleasesSettings extends Data
             deletePasswordedRelease: ((int) ($dbSettings['deletepasswordedrelease'] ?? 0)) === 1,
             miscOtherRetentionHours: $getInt('miscotherretentionhours', 0),
             miscHashedRetentionHours: $getInt('mischashedretentionhours', 0),
-            partRetentionHours: $getInt('partretentionhours', 24),
             lastRunTime: ! empty($dbSettings['last_run_time']) ? (string) $dbSettings['last_run_time'] : null,
         );
     }

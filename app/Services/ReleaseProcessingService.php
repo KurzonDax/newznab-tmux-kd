@@ -135,8 +135,7 @@ final class ReleaseProcessingService
             'delaytime', 'crossposttime', 'maxnzbsprocessed', 'completionpercent',
             'collection_timeout', 'maxsizetoformrelease', 'minsizetoformrelease',
             'minfilestoformrelease', 'releaseretentiondays', 'deletepasswordedrelease',
-            'miscotherretentionhours', 'mischashedretentionhours', 'partretentionhours',
-            'last_run_time',
+            'miscotherretentionhours', 'mischashedretentionhours', 'last_run_time',
         ];
 
         $dbSettings = [];

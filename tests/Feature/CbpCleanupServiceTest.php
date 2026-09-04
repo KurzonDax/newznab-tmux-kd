@@ -16,6 +16,9 @@ use App\Services\Releases\ReleaseDuplicateFinder;
 use App\Support\ReleaseNameNormalizer;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\Console\Output\BufferedOutput;
+use Termwind\Termwind;
 use Tests\TestCase;
 
 class CbpCleanupServiceTest extends TestCase
@@ -787,6 +790,106 @@ class CbpCleanupServiceTest extends TestCase
             'predb_id' => 0,
             'source' => null,
         ]);
+    }
+
+    /**
+     * A retention cutoff derived from an unusable setting used to land on "now" -- deleting
+     * every collection still being assembled -- or, for a blanked row, to throw out of
+     * `subHours('')`. Anything that is not a positive number of hours resolves to the
+     * seeded default instead.
+     *
+     * The ages straddle the default by an hour in each direction, so a cutoff that is off
+     * by more than that fails here.
+     *
+     * @param  string|null  $stored  the stored value, or null for a row that never existed
+     */
+    #[DataProvider('unusableRetentionSettings')]
+    public function test_an_unusable_retention_setting_falls_back_to_the_seeded_default(?string $stored): void
+    {
+        $this->storeRetentionHours($stored);
+        $this->insertCollectionTree(
+            300,
+            now()->subHours(71)->format('Y-m-d H:i:s'),
+            CollectionFileCheckStatus::Default->value,
+            1
+        );
+        $this->insertCollectionTree(
+            301,
+            now()->subHours(73)->format('Y-m-d H:i:s'),
+            CollectionFileCheckStatus::Default->value,
+            1
+        );
+
+        app(CollectionCleanupService::class)->deleteFinishedAndOrphans(false);
+
+        $this->assertSame([300], DB::table('collections')->orderBy('id')->pluck('id')->all());
+    }
+
+    /**
+     * @return array<string, array{string|null}>
+     */
+    public static function unusableRetentionSettings(): array
+    {
+        return [
+            'missing row' => [null],
+            'blanked in the admin form' => [''],
+            'stored zero' => ['0'],
+            'stored negative' => ['-12'],
+            'non-numeric' => ['never'],
+        ];
+    }
+
+    public function test_a_stored_positive_retention_setting_is_honored(): void
+    {
+        $this->storeRetentionHours('12');
+        $this->insertCollectionTree(
+            310,
+            now()->subHours(11)->format('Y-m-d H:i:s'),
+            CollectionFileCheckStatus::Default->value,
+            1
+        );
+        $this->insertCollectionTree(
+            311,
+            now()->subHours(13)->format('Y-m-d H:i:s'),
+            CollectionFileCheckStatus::Default->value,
+            1
+        );
+
+        app(CollectionCleanupService::class)->deleteFinishedAndOrphans(false);
+
+        $this->assertSame([310], DB::table('collections')->orderBy('id')->pluck('id')->all());
+    }
+
+    public function test_the_cleanup_message_reports_the_retention_actually_used(): void
+    {
+        $this->storeRetentionHours('');
+        $consoleOutput = new BufferedOutput;
+        Termwind::renderUsing($consoleOutput);
+
+        ob_start();
+        try {
+            app(CollectionCleanupService::class)->deleteFinishedAndOrphans(true);
+        } finally {
+            ob_end_clean();
+            Termwind::renderUsing(null);
+        }
+
+        $this->assertStringContainsString(
+            'older than 72 hours',
+            $consoleOutput->fetch()
+        );
+    }
+
+    /**
+     * @param  string|null  $value  the stored value, or null to leave the row missing
+     */
+    private function storeRetentionHours(?string $value): void
+    {
+        DB::table('settings')->where('name', 'partretentionhours')->delete();
+
+        if ($value !== null) {
+            DB::table('settings')->insert(['name' => 'partretentionhours', 'value' => $value]);
+        }
     }
 
     private function seedSettings(): void
