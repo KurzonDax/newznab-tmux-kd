@@ -123,23 +123,12 @@ class Tmux
     public function getListOfPanes(mixed $constants): array
     {
         $panes = ['zero' => '', 'one' => '', 'two' => ''];
-        switch ($constants['sequential']) {
-            case 0:
-            case 1:
-                $panes_win_1 = shell_exec("echo `tmux list-panes -t {$constants['tmux_session']}:0 -F '#{pane_title}'`");
-                $panes['zero'] = str_replace("\n", '', explode(' ', $panes_win_1));
-                $panes_win_2 = shell_exec("echo `tmux list-panes -t {$constants['tmux_session']}:1 -F '#{pane_title}'`");
-                $panes['one'] = str_replace("\n", '', explode(' ', $panes_win_2));
-                $panes_win_3 = shell_exec("echo `tmux list-panes -t {$constants['tmux_session']}:2 -F '#{pane_title}'`");
-                $panes['two'] = str_replace("\n", '', explode(' ', $panes_win_3));
-                break;
-            case 2:
-                $panes_win_1 = shell_exec("echo `tmux list-panes -t {$constants['tmux_session']}:0 -F '#{pane_title}'`");
-                $panes['zero'] = str_replace("\n", '', explode(' ', $panes_win_1));
-                $panes_win_2 = shell_exec("echo `tmux list-panes -t {$constants['tmux_session']}:1 -F '#{pane_title}'`");
-                $panes['one'] = str_replace("\n", '', explode(' ', $panes_win_2));
-                break;
-        }
+        $panes_win_1 = shell_exec("echo `tmux list-panes -t {$constants['tmux_session']}:0 -F '#{pane_title}'`");
+        $panes['zero'] = str_replace("\n", '', explode(' ', $panes_win_1));
+        $panes_win_2 = shell_exec("echo `tmux list-panes -t {$constants['tmux_session']}:1 -F '#{pane_title}'`");
+        $panes['one'] = str_replace("\n", '', explode(' ', $panes_win_2));
+        $panes_win_3 = shell_exec("echo `tmux list-panes -t {$constants['tmux_session']}:2 -F '#{pane_title}'`");
+        $panes['two'] = str_replace("\n", '', explode(' ', $panes_win_3));
 
         return $panes;
     }
@@ -181,7 +170,6 @@ class Tmux
             'post' => 'post',
             'releases' => 'releases_run',
             'fix_names' => 'fix_names',
-            'seq_timer' => 'seq_timer',
             'bins_timer' => 'bins_timer',
             'back_timer' => 'back_timer',
             'rel_timer' => 'rel_timer',

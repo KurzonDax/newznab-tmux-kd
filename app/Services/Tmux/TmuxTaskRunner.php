@@ -13,6 +13,13 @@ use Symfony\Component\Process\ExecutableFinder;
  */
 class TmuxTaskRunner
 {
+    /**
+     * Process priority every pane command runs at when the `niceness` setting
+     * holds no value. Matches what the seeder plants on a fresh install, so a
+     * blanked admin field behaves exactly like one that was never touched.
+     */
+    public const int DEFAULT_NICENESS = 19;
+
     /** Default for the `fix_names_timeout` setting when the row is missing. */
     public const int DEFAULT_FIX_NAMES_TIMEOUT = 1200;
 
@@ -36,21 +43,18 @@ class TmuxTaskRunner
     }
 
     /**
-     * Get niceness value from settings or config with sensible default
+     * Process priority for every pane command.
+     *
+     * The admin `niceness` setting is the only tuning surface. A missing row
+     * reads as null and a blanked field as an empty string; both fall back to
+     * the canonical default. A stored `0` is a real value and is honored.
      */
     protected function getNiceness(): int
     {
-        // Try to get from settings first
         $niceness = Settings::settingValue('niceness');
 
-        // If empty string or null, try config
-        if (empty($niceness) && $niceness !== 0 && $niceness !== '0') {
-            $niceness = config('nntmux.niceness');
-        }
-
-        // If still empty, use system default
-        if (empty($niceness) && $niceness !== 0 && $niceness !== '0') {
-            $niceness = 10; // Standard nice default
+        if ($niceness === null || $niceness === '') {
+            return self::DEFAULT_NICENESS;
         }
 
         return (int) $niceness;
@@ -279,14 +283,20 @@ class TmuxTaskRunner
             return false;
         }
 
-        // Calculate sleep time (progressive if enabled)
+        // Calculate sleep time (progressive if enabled). intdiv() keeps this an
+        // int: floor() returns a float, which buildSleepCommand()'s int
+        // parameter rejects under strict_types the moment the branch engages.
         $baseSleep = (int) ($config['settings']['back_timer'] ?? 600);
         $collections = (int) ($config['counts']['now']['collections_table'] ?? 0);
         $progressive = (int) ($config['settings']['progressive'] ?? 0);
 
-        $sleep = ($progressive === 1 && floor($collections / 500) > $baseSleep)
-            ? floor($collections / 500)
-            : $baseSleep;
+        $sleep = $baseSleep;
+        if ($progressive === 1) {
+            $progressiveSleep = intdiv(max(0, $collections), 500);
+            if ($progressiveSleep > $baseSleep) {
+                $sleep = $progressiveSleep;
+            }
+        }
 
         $niceness = $this->getNiceness();
         $command = "nice -n{$niceness} ".PHP_BINARY." artisan {$artisanCommand}";
@@ -348,15 +358,16 @@ class TmuxTaskRunner
     /**
      * Run main task (varies by sequential mode)
      *
+     * Anything other than basic sequential -- including a legacy hand-set 2 --
+     * takes the full-mode path, which is the layout the engine builds for it.
+     *
      * @param  array<string, mixed>  $runVar
      */
     protected function runMainTask(int $sequential, array $runVar): bool
     {
         return match ($sequential) {
-            0 => $this->runMainNonSequential($runVar),
             1 => $this->runMainBasic($runVar),
-            2 => $this->runMainSequential($runVar),
-            default => false,
+            default => $this->runMainNonSequential($runVar),
         };
     }
 
@@ -384,24 +395,6 @@ class TmuxTaskRunner
     protected function runMainBasic(array $runVar): bool
     {
         return $this->runReleasesUpdate($runVar);
-    }
-
-    /**
-     * Run main full sequential task
-     *
-     * @param  array<string, mixed>  $runVar
-     */
-    protected function runMainSequential(array $runVar): bool
-    {
-        // Full sequential mode - runs group:update-all for each group
-        $pane = $this->paneManager->paneForRole(TmuxPaneRole::Sequential, '0.1');
-
-        $niceness = $this->getNiceness();
-        $artisan = base_path('artisan');
-        $command = "nice -n{$niceness} php {$artisan} group:update-all";
-        $command = $this->buildCommand($command, ['log_pane' => 'sequential']);
-
-        return $this->paneManager->respawnPane($pane, $command);
     }
 
     /**
@@ -651,7 +644,7 @@ class TmuxTaskRunner
         $hasWork = (int) ($runVar['counts']['now']['work_available'] ?? $runVar['counts']['now']['work'] ?? 0) > 0;
         $hasNfo = (int) ($runVar['counts']['now']['processnfo'] ?? 0) > 0;
 
-        $niceness = Settings::settingValue('niceness') ?? 2;
+        $niceness = $this->getNiceness();
         $log = $this->getLogFile('post_additional');
         $sleep = (int) ($runVar['settings']['post_timer'] ?? 300);
 
@@ -816,8 +809,7 @@ class TmuxTaskRunner
     protected function runAmazonTask(array $runVar): bool
     {
         $enabled = (int) ($runVar['settings']['post_amazon'] ?? 0);
-        $legacyPane = (int) ($runVar['constants']['sequential'] ?? 0) === 2 ? '1.1' : '2.2';
-        $pane = $this->paneManager->paneForRole(TmuxPaneRole::PostMetadata, $legacyPane);
+        $pane = $this->paneManager->paneForRole(TmuxPaneRole::PostMetadata, '2.2');
 
         if ($enabled !== 1) {
             return $this->disablePane($pane, 'Post-process Metadata', 'disabled in settings');
@@ -837,7 +829,7 @@ class TmuxTaskRunner
             return $this->disablePane($pane, 'Post-process Metadata', 'no music/books/games or audio previews to process');
         }
 
-        $niceness = Settings::settingValue('niceness') ?? 2;
+        $niceness = $this->getNiceness();
         $log = $this->getLogFile('post_amazon');
         $artisan = PHP_BINARY.' artisan';
         $sleep = (int) ($runVar['settings']['post_timer_amazon'] ?? 300);

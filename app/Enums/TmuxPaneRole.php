@@ -10,7 +10,6 @@ enum TmuxPaneRole: string
     case Binaries = 'binaries';
     case Backfill = 'backfill';
     case Releases = 'releases';
-    case Sequential = 'sequential';
     case FixNames = 'fix_names';
     case RemoveCrap = 'remove_crap';
     case PostAdditional = 'post_additional';

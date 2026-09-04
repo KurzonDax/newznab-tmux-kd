@@ -65,8 +65,8 @@
                             <x-input id="tmux_session" name="tmux_session" type="text" value="{{ $site['tmux_session'] ?? 'nntmux' }}" class="w-full" />
                         </x-form.group>
 
-                        <x-form.group label="Process Niceness" for="niceness" help="Process priority. Lower values = higher priority. Range: -20 (highest) to 19 (lowest). Default: 10.">
-                            <x-input id="niceness" name="niceness" type="number" min="-20" max="19" value="{{ $site['niceness'] ?? 10 }}" class="w-full" />
+                        <x-form.group label="Process Niceness" for="niceness" help="Process priority. Lower values = higher priority. Range: -20 (highest) to 19 (lowest). Default: 19.">
+                            <x-input id="niceness" name="niceness" type="number" min="-20" max="19" value="{{ $site['niceness'] ?? 19 }}" class="w-full" />
                         </x-form.group>
                     </div>
                 </div>
@@ -83,13 +83,6 @@
                                     </option>
                                 @endforeach
                             </x-select>
-                        </x-form.group>
-
-                        <x-form.group label="Sequential Sleep Timer" for="seq_timer">
-                            <div class="flex gap-2">
-                                <x-input id="seq_timer" name="seq_timer" type="number" value="{{ $site['seq_timer'] ?? 60 }}" class="flex-1" />
-                                <span class="px-3 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-sm">seconds</span>
-                            </div>
                         </x-form.group>
 
                         <div class="bg-yellow-50 dark:bg-gray-800 border border-yellow-300 dark:border-gray-600 rounded p-3">
