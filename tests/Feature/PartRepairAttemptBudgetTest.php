@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Services\Binaries\BinariesConfig;
+use App\Services\Binaries\BinariesService;
 use App\Services\Binaries\MissedPartHandler;
+use App\Services\NNTP\NNTPService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -37,6 +39,7 @@ class PartRepairAttemptBudgetTest extends TestCase
             $table->unsignedBigInteger('numberid');
             $table->unsignedInteger('groups_id');
             $table->unsignedInteger('attempts')->default(0);
+            $table->timestamps();
             $table->unique(['numberid', 'groups_id']);
         });
     }
@@ -92,6 +95,47 @@ class PartRepairAttemptBudgetTest extends TestCase
         $this->assertCount(2, $handler->getMissingParts(7));
     }
 
+    public function test_a_failed_download_ages_a_part_once_per_repair_pass(): void
+    {
+        $handler = new MissedPartHandler(partRepairLimit: 10, partRepairMaxTries: 3);
+        $handler->addMissingParts([100], 7);
+        $service = $this->repairService($handler, null);
+        $group = ['id' => 7, 'name' => 'alt.test'];
+
+        $service->partRepair($group);
+        $this->assertSame(1, (int) DB::table('missed_parts')->where('numberid', 100)->value('attempts'));
+
+        $service->partRepair($group);
+        $this->assertSame(2, (int) DB::table('missed_parts')->where('numberid', 100)->value('attempts'));
+
+        $service->partRepair($group);
+        $this->assertFalse(DB::table('missed_parts')->where('numberid', 100)->exists());
+    }
+
+    public function test_a_downloaded_range_that_does_not_repair_the_part_ages_it_once(): void
+    {
+        $handler = new MissedPartHandler(partRepairLimit: 10, partRepairMaxTries: 3);
+        $handler->addMissingParts([100], 7);
+
+        $this->repairService($handler, [])->partRepair(['id' => 7, 'name' => 'alt.test']);
+
+        $this->assertSame(1, (int) DB::table('missed_parts')->where('numberid', 100)->value('attempts'));
+    }
+
+    public function test_a_repaired_part_is_removed_without_being_aged(): void
+    {
+        $handler = new MissedPartHandler(partRepairLimit: 10, partRepairMaxTries: 3);
+        $handler->addMissingParts([100], 7);
+
+        $this->repairService($handler, [[
+            'Number' => '100',
+            'Subject' => 'Usenet Index Post',
+            'Date' => '4 Sep 2026 12:00:00 GMT',
+        ]])->partRepair(['id' => 7, 'name' => 'alt.test']);
+
+        $this->assertFalse(DB::table('missed_parts')->where('numberid', 100)->exists());
+    }
+
     private function handlerFromSettings(): MissedPartHandler
     {
         $config = BinariesConfig::fromSettings();
@@ -99,8 +143,35 @@ class PartRepairAttemptBudgetTest extends TestCase
         return new MissedPartHandler($config->partRepairLimit, $config->partRepairMaxTries, $config->sqlChunkSize);
     }
 
+    /**
+     * @param  array<int, array<string, mixed>>|null  $headers
+     */
+    private function repairService(MissedPartHandler $handler, ?array $headers): BinariesService
+    {
+        return new BinariesService(
+            config: new BinariesConfig(partRepairMaxTries: 3, echoCli: false),
+            missedPartHandler: $handler,
+            nntp: new PartRepairNntpStub($headers),
+        );
+    }
+
     private function storeMaxTries(string $value): void
     {
         DB::table('settings')->updateOrInsert(['name' => 'partrepairmaxtries'], ['value' => $value]);
     }
+}
+
+final class PartRepairNntpStub extends NNTPService
+{
+    /**
+     * @param  array<int, array<string, mixed>>|null  $headers
+     */
+    public function __construct(private readonly ?array $headers) {}
+
+    public function getOverview(mixed $range = null, bool $names = true, bool $forceNames = true): mixed
+    {
+        return $this->headers;
+    }
+
+    public function __destruct() {}
 }

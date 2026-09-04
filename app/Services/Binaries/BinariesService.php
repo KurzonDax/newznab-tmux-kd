@@ -295,10 +295,6 @@ class BinariesService
         // Download headers from NNTP
         $headers = $this->downloadHeaders($partRepair);
         if ($headers === null) {
-            if ($partRepair) {
-                $this->missedPartHandler->incrementRangeAttempts($groupMySQL['id'], $first, $last);
-            }
-
             return $returnArray;
         }
 

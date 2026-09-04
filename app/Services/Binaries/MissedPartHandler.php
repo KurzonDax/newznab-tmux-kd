@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Binaries;
 
-use App\Models\MissedPart;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -164,24 +163,6 @@ final class MissedPartHandler
             ->where('groups_id', $groupId)
             ->where('numberid', '<=', $maxNumberId)
             ->increment('attempts');
-    }
-
-    /**
-     * Increment attempts for specific article range (part repair NNTP failures).
-     */
-    public function incrementRangeAttempts(int $groupId, int $first, int $last): void
-    {
-        if ($first === $last) {
-            MissedPart::query()
-                ->where('groups_id', $groupId)
-                ->where('numberid', $first)
-                ->increment('attempts');
-        } else {
-            MissedPart::query()
-                ->where('groups_id', $groupId)
-                ->whereIn('numberid', range($first, $last))
-                ->increment('attempts');
-        }
     }
 
     /**

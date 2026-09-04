@@ -157,23 +157,4 @@ class MissedPartHandlerTest extends TestCase
         $handler->cleanupExhaustedParts(1);
         $this->assertSame([10], DB::table('missed_parts')->where('groups_id', 1)->pluck('numberid')->all());
     }
-
-    public function test_increment_range_attempts_handles_single_and_multi_article_ranges(): void
-    {
-        $handler = new MissedPartHandler(partRepairLimit: 10, partRepairMaxTries: 3);
-        DB::table('missed_parts')->insert([
-            ['numberid' => 10, 'groups_id' => 1, 'attempts' => 0],
-            ['numberid' => 11, 'groups_id' => 1, 'attempts' => 0],
-            ['numberid' => 12, 'groups_id' => 1, 'attempts' => 0],
-            ['numberid' => 12, 'groups_id' => 2, 'attempts' => 0],
-        ]);
-
-        $handler->incrementRangeAttempts(1, 10, 10);
-        $handler->incrementRangeAttempts(1, 11, 12);
-
-        $this->assertSame(1, (int) DB::table('missed_parts')->where(['groups_id' => 1, 'numberid' => 10])->value('attempts'));
-        $this->assertSame(1, (int) DB::table('missed_parts')->where(['groups_id' => 1, 'numberid' => 11])->value('attempts'));
-        $this->assertSame(1, (int) DB::table('missed_parts')->where(['groups_id' => 1, 'numberid' => 12])->value('attempts'));
-        $this->assertSame(0, (int) DB::table('missed_parts')->where(['groups_id' => 2, 'numberid' => 12])->value('attempts'));
-    }
 }
