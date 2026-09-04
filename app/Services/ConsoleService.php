@@ -14,6 +14,7 @@ use App\Models\Release;
 use App\Models\Settings;
 use App\Services\IGDB\Exceptions\IgdbHttpException;
 use App\Services\MetadataProcessing\ConsoleProcessingCandidateQuery;
+use App\Support\LookupThrottle;
 use App\Support\MetadataSearchLookup;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
@@ -505,8 +506,10 @@ class ConsoleService
                 cli()->header('Processing '.$releaseCount.' console release(s).');
             }
 
+            $throttle = new LookupThrottle($this->lookupThrottleMs);
+
             foreach ($res as $arr) {
-                $startTime = now()->timestamp;
+                $startTime = $throttle->mark();
                 $usedExternalLookup = false;
                 $gameId = self::CONS_NTFND;
                 $gameInfo = $this->parseTitle($arr['searchname']);
@@ -546,9 +549,8 @@ class ConsoleService
                 Release::query()->where('id', $arr['id'])->update(['consoleinfo_id' => $gameId]);
 
                 // Throttle external lookups using the legacy amazonsleep setting.
-                $diff = floor((now()->timestamp - $startTime) * 1000000);
-                if ($this->lookupThrottleMs * 1000 - $diff > 0 && $usedExternalLookup === true) {
-                    usleep((int) ($this->lookupThrottleMs * 1000 - $diff));
+                if ($usedExternalLookup === true) {
+                    $throttle->sleepSince($startTime);
                 }
             }
         } elseif ($this->echoOutput) {
