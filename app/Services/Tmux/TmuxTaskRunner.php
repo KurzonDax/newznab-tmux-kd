@@ -283,14 +283,20 @@ class TmuxTaskRunner
             return false;
         }
 
-        // Calculate sleep time (progressive if enabled)
+        // Calculate sleep time (progressive if enabled). intdiv() keeps this an
+        // int: floor() returns a float, which buildSleepCommand()'s int
+        // parameter rejects under strict_types the moment the branch engages.
         $baseSleep = (int) ($config['settings']['back_timer'] ?? 600);
         $collections = (int) ($config['counts']['now']['collections_table'] ?? 0);
         $progressive = (int) ($config['settings']['progressive'] ?? 0);
 
-        $sleep = ($progressive === 1 && floor($collections / 500) > $baseSleep)
-            ? floor($collections / 500)
-            : $baseSleep;
+        $sleep = $baseSleep;
+        if ($progressive === 1) {
+            $progressiveSleep = intdiv(max(0, $collections), 500);
+            if ($progressiveSleep > $baseSleep) {
+                $sleep = $progressiveSleep;
+            }
+        }
 
         $niceness = $this->getNiceness();
         $command = "nice -n{$niceness} ".PHP_BINARY." artisan {$artisanCommand}";

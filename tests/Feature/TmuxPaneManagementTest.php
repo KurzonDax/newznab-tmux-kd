@@ -389,6 +389,51 @@ SH;
         });
     }
 
+    #[DataProvider('progressiveBackfillSleepProvider')]
+    public function test_backfill_sleep_stays_an_integer_number_of_seconds(
+        int $progressive,
+        int $collections,
+        int $expectedSleep,
+    ): void {
+        Process::fake(function (PendingProcess $process) {
+            if (is_array($process->command) && in_array('list-panes', $process->command, true)) {
+                return Process::result("%9\tbackfill\n");
+            }
+
+            return Process::result();
+        });
+
+        $runner = new TmuxTaskRunner('test-session');
+
+        $this->assertTrue($runner->runBackfill([
+            'settings' => ['backfill' => 1, 'back_timer' => 30, 'progressive' => $progressive],
+            'killswitch' => ['coll' => false, 'pp' => false],
+            'counts' => ['now' => ['collections_table' => $collections]],
+        ]));
+
+        $this->assertMatchesRegularExpression(
+            '/(?:showsleep\.php|sleep) '.$expectedSleep.'(?:\D|$)/',
+            $this->respawnedCommand(),
+        );
+    }
+
+    /**
+     * The divisor is 500 collections per second of sleep, so a backlog of
+     * 1,000,000 is what reaches the brief's worked sleep of 2000 seconds; its
+     * stated backlog of 100,000 yields 200. The formula is the fixed point.
+     *
+     * @return array<string, array{int, int, int}>
+     */
+    public static function progressiveBackfillSleepProvider(): array
+    {
+        return [
+            'progressive off keeps the base timer' => [0, 100000, 30],
+            'progressive below the threshold keeps the base timer' => [1, 1000, 30],
+            'progressive engages with a large backlog' => [1, 1000000, 2000],
+            'progressive rounds down to whole seconds' => [1, 100499, 200],
+        ];
+    }
+
     public function test_backfill_mode_zero_disables_the_pane_and_legacy_mode_four_is_not_runnable(): void
     {
         Process::fake(function (PendingProcess $process) {
