@@ -584,10 +584,6 @@ class SettingsTableSeeder extends Seeder
                 'name' => 'running',
                 'value' => '0',
             ],
-            218 => [
-                'name' => 'seq_timer',
-                'value' => '30',
-            ],
             219 => [
                 'name' => 'sequential',
                 'value' => '0',
@@ -627,7 +623,7 @@ class SettingsTableSeeder extends Seeder
             ],
             231 => [
                 'name' => 'vnstat_args',
-                'value' => 'NULL',
+                'value' => '',
             ],
             233 => [
                 'name' => 'trailers_display',

@@ -70,7 +70,8 @@ Multi-pane terminal orchestrator at `app/Services/Tmux/`. Components: `TmuxSessi
 **Sequential Modes** (`Settings::settingValue('sequential')`):
 - Mode 0: Full (3 windows, parallel panes)
 - Mode 1: Basic (reduced)
-- Mode 2: Stripped (minimal)
+
+Any other stored value -- including a legacy `2` -- runs as full mode.
 
 **Commands**: `tmux:start`, `tmux:stop`, `tmux:attach`, `tmux:monitor`, `tmux:health-check`
 
