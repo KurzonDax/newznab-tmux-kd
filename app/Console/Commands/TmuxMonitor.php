@@ -31,13 +31,13 @@ class TmuxMonitor extends Command
      */
     protected $description = 'Monitor and manage tmux processing panes (modernized)';
 
-    private TmuxSessionManager $sessionManager;
+    protected TmuxSessionManager $sessionManager;
 
-    private TmuxMonitorService $monitor;
+    protected TmuxMonitorService $monitor;
 
-    private TmuxTaskRunner $taskRunner;
+    protected TmuxTaskRunner $taskRunner;
 
-    private TmuxOutput $tmuxOutput;
+    protected TmuxOutput $tmuxOutput;
 
     /**
      * Execute the console command.
@@ -56,10 +56,7 @@ class TmuxMonitor extends Command
                 ?? Settings::settingValue('tmux_session')
                 ?? config('tmux.session.default_name', 'nntmux');
 
-            $this->sessionManager = new TmuxSessionManager($sessionName);
-            $this->monitor = new TmuxMonitorService;
-            $this->taskRunner = new TmuxTaskRunner($sessionName);
-            $this->tmuxOutput = new TmuxOutput;
+            $this->bootMonitorServices($sessionName);
 
             // Verify session exists
             if (! $this->sessionManager->sessionExists()) {
@@ -73,38 +70,36 @@ class TmuxMonitor extends Command
             $this->info("📊 Monitoring session: {$sessionName}");
 
             // Initialize monitor
-            $runVar = $this->monitor->initializeMonitor();
+            $this->monitor->initializeMonitor();
 
             // Main monitoring loop
             $iteration = 0;
             while ($this->monitor->shouldContinue()) {
                 $iteration++;
 
-                // Collect statistics
-                $runVar = $this->monitor->collectStatistics();
-
-                // Update display
-                $this->tmuxOutput->updateMonitorPane($runVar);
-
-                // Run pane tasks if tmux is running
-                if ((int) ($runVar['settings']['is_running'] ?? 0) === 1) {
-                    $this->runPaneTasks($runVar);
-                } else {
-                    if ($iteration % 60 === 0) { // Log every 10 minutes
-                        $this->info('⏸️  Tmux is not running. Waiting...');
-                    }
+                try {
+                    $this->runMonitorIteration($iteration);
+                } catch (\Throwable $e) {
+                    // A programming error in one pane task must not take the
+                    // whole monitor down: log it and let the next pass retry.
+                    $this->error('⚠️  Monitor pass failed: '.$e->getMessage());
+                    logger()->error('Tmux monitor pass error', [
+                        'iteration' => $iteration,
+                        'message' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
+                    ]);
                 }
 
                 // Increment iteration and sleep
                 $this->monitor->incrementIteration();
-                sleep(max(1, (int) config('tmux.monitor.delay', 10)));
+                $this->pauseBetweenIterations();
             }
 
             $this->info('🛑 Monitor stopped by exit flag');
 
             return Command::SUCCESS;
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $this->error('❌ Monitor failed: '.$e->getMessage());
             logger()->error('Tmux monitor error', [
                 'message' => $e->getMessage(),
@@ -113,6 +108,45 @@ class TmuxMonitor extends Command
 
             return Command::FAILURE;
         }
+    }
+
+    /**
+     * Build the services the monitor loop drives.
+     */
+    protected function bootMonitorServices(string $sessionName): void
+    {
+        $this->sessionManager = new TmuxSessionManager($sessionName);
+        $this->monitor = new TmuxMonitorService;
+        $this->taskRunner = new TmuxTaskRunner($sessionName);
+        $this->tmuxOutput = new TmuxOutput;
+    }
+
+    /**
+     * One monitoring pass: refresh statistics, redraw the monitor pane, and
+     * dispatch the pane tasks. Anything it throws is contained by the loop.
+     */
+    protected function runMonitorIteration(int $iteration): void
+    {
+        // Collect statistics
+        $runVar = $this->monitor->collectStatistics();
+
+        // Update display
+        $this->tmuxOutput->updateMonitorPane($runVar);
+
+        // Run pane tasks if tmux is running
+        if ((int) ($runVar['settings']['is_running'] ?? 0) === 1) {
+            $this->runPaneTasks($runVar);
+        } elseif ($iteration % 60 === 0) { // Log every 10 minutes
+            $this->info('⏸️  Tmux is not running. Waiting...');
+        }
+    }
+
+    /**
+     * Wait out the configured delay before the next monitoring pass.
+     */
+    protected function pauseBetweenIterations(): void
+    {
+        sleep(max(1, (int) config('tmux.monitor.delay', 10)));
     }
 
     /**
@@ -155,10 +189,7 @@ class TmuxMonitor extends Command
         $this->runIRCScraper($runVar);
 
         // Run main tasks based on sequential mode
-        if ($sequential === 2) {
-            // Stripped mode - only essential tasks
-            $this->runSequentialTasks($runVar);
-        } elseif ($sequential === 1) {
+        if ($sequential === 1) {
             // Basic sequential mode
             $this->runBasicTasks($runVar);
         } else {
@@ -214,30 +245,12 @@ class TmuxMonitor extends Command
     }
 
     /**
-     * Run stripped sequential tasks
-     *
-     * @param  array<string, mixed>  $runVar
-     */
-    private function runSequentialTasks(array $runVar): void
-    {
-        // Minimal tasks for complete sequential mode
-        // Tasks are handled by the sequential script itself
-    }
-
-    /**
      * Run post-processing tasks (common to most modes)
      *
      * @param  array<string, mixed>  $runVar
      */
     private function runPostProcessingTasks(array $runVar): void
     {
-        $sequential = (int) ($runVar['constants']['sequential'] ?? 0);
-
-        if ($sequential === 2) {
-            // Skip post-processing in complete sequential mode
-            return;
-        }
-
         // Run utility tasks (window 1)
         $this->taskRunner->runPaneTask('fixnames', [], $runVar);
         $this->taskRunner->runPaneTask('removecrap', [], $runVar);

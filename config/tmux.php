@@ -131,7 +131,6 @@ return [
     ],
 
     'performance' => [
-        'niceness' => env('TMUX_NICENESS', 2),
         'timeout' => env('TMUX_TIMEOUT', 300),
     ],
 ];
