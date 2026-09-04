@@ -10,3 +10,4 @@ Before planning or editing, find the row whose globs match the file's path and r
 | ** | .ai/rules/general.md |
 | app/Services/NameFixing/** | .ai/rules/name-fixing.md |
 | app/Services/** | .ai/rules/services.md |
+| app/** | .ai/rules/settings-values.md |

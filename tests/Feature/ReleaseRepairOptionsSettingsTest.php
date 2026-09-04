@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Models\Settings;
+use App\Services\Binaries\BinariesConfig;
 use App\Services\ReleaseRepair\MissingFileRescanOptions;
 use App\Services\ReleaseRepair\ReleaseRepairOptions;
 use Illuminate\Support\Facades\DB;
@@ -139,6 +140,48 @@ class ReleaseRepairOptionsSettingsTest extends TestCase
     }
 
     #[Test]
+    public function a_zero_message_batch_uses_the_coded_default_at_both_boundaries(): void
+    {
+        $this->setSettings(['maxmssgs' => '0']);
+
+        $this->assertSame(20000, BinariesConfig::fromSettings()->messageBuffer);
+        $this->assertSame(20000, MissingFileRescanOptions::fromSettings()->overviewBatchSize);
+    }
+
+    #[Test]
+    public function a_missing_message_batch_uses_the_coded_default_at_both_boundaries(): void
+    {
+        DB::table('settings')->where('name', 'maxmssgs')->delete();
+        Settings::forgetCachedSettings();
+
+        $this->assertSame(20000, BinariesConfig::fromSettings()->messageBuffer);
+        $this->assertSame(20000, MissingFileRescanOptions::fromSettings()->overviewBatchSize);
+    }
+
+    #[Test]
+    public function a_negative_message_batch_uses_the_coded_default(): void
+    {
+        $this->setSettings(['maxmssgs' => '-5']);
+
+        $this->assertSame(20000, MissingFileRescanOptions::fromSettings()->overviewBatchSize);
+    }
+
+    #[Test]
+    public function a_small_positive_message_batch_passes_through(): void
+    {
+        $this->setSettings(['maxmssgs' => '1']);
+
+        $this->assertSame(1, MissingFileRescanOptions::fromSettings()->overviewBatchSize);
+    }
+
+    #[Test]
+    public function direct_construction_normalizes_a_non_positive_message_batch(): void
+    {
+        $this->assertSame(20000, new MissingFileRescanOptions(overviewBatchSize: 0)->overviewBatchSize);
+        $this->assertSame(20000, new MissingFileRescanOptions(overviewBatchSize: -5)->overviewBatchSize);
+    }
+
+    #[Test]
     public function a_re_scan_cli_flag_beats_the_setting_for_that_run_only(): void
     {
         $this->setSettings(['rescan_window_minutes' => '45', 'rescan_limit' => '25']);
@@ -153,13 +196,18 @@ class ReleaseRepairOptionsSettingsTest extends TestCase
     #[Test]
     public function a_missing_or_unusable_re_scan_row_falls_back_to_the_constant(): void
     {
-        $this->setSettings(['rescan_window_minutes' => '', 'rescan_max_articles_per_release' => 'lots']);
+        $this->setSettings([
+            'rescan_window_minutes' => '',
+            'rescan_max_articles_per_release' => 'lots',
+            'maxmssgs' => '',
+        ]);
 
         $options = MissingFileRescanOptions::fromSettings();
 
         $this->assertSame(MissingFileRescanOptions::DEFAULT_WINDOW_MINUTES, $options->windowMinutes);
         $this->assertSame(MissingFileRescanOptions::DEFAULT_MAX_ARTICLES_PER_RELEASE, $options->maxArticlesPerRelease);
         $this->assertSame(MissingFileRescanOptions::DEFAULT_MAX_ARTICLES_PER_RUN, $options->maxArticlesPerRun);
+        $this->assertSame(MissingFileRescanOptions::DEFAULT_OVERVIEW_BATCH, $options->overviewBatchSize);
         $this->assertSame(MissingFileRescanOptions::DEFAULT_LIMIT, MissingFileRescanOptions::limitFromSettings());
     }
 

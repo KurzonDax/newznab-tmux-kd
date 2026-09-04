@@ -322,6 +322,58 @@ SH;
         ];
     }
 
+    #[DataProvider('redisFallbackArgumentProvider')]
+    public function test_redis_monitoring_uses_the_php_fallback_without_real_arguments(string $redisArgs): void
+    {
+        $this->seedMonitoringSettings([
+            'redis' => '1',
+            'redis_args' => $redisArgs,
+        ]);
+
+        $respawned = $this->buildLayoutCapturingRespawns();
+
+        $this->onlyCommandContaining($respawned, 'redis:monitor');
+        $this->assertSame([], array_values(array_filter(
+            $respawned,
+            static fn (string $command): bool => str_contains($command, 'redis-cli'),
+        )));
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function redisFallbackArgumentProvider(): array
+    {
+        return [
+            'legacy sentinel' => ['NULL'],
+            'blank' => [''],
+            'whitespace only' => ['   '],
+        ];
+    }
+
+    public function test_ordinary_redis_arguments_run_through_watch_as_separate_tokens(): void
+    {
+        $shims = $this->makeTempDirectory('nntmux-redis-monitoring-shims');
+        config([
+            'database.redis.default.host' => 'redis.internal',
+            'database.redis.default.port' => 6380,
+        ]);
+        $this->seedMonitoringSettings([
+            'redis' => '1',
+            'redis_args' => 'info clients',
+        ]);
+
+        $respawned = $this->buildLayoutCapturingRespawns();
+
+        $this->writeShim($shims, 'watch', 'for argument in "$@"; do command="$argument"; done; exec sh -c "$command"');
+        $this->writeShim($shims, 'redis-cli', 'for argument in "$@"; do printf \'%s\\n\' "$argument"; done');
+
+        $this->assertSame(
+            ['-h', 'redis.internal', '-p', '6380', 'info', 'clients'],
+            $this->runThroughShims($this->onlyCommandContaining($respawned, 'redis-cli'), $shims),
+        );
+    }
+
     public function test_hostile_monitoring_arguments_cannot_escape_the_pane_command(): void
     {
         $shims = $this->makeTempDirectory('nntmux-monitoring-shims');
@@ -332,15 +384,18 @@ SH;
             'vnstat_args' => "'; touch {$sentinel} #",
             'tcptrack' => '1',
             'tcptrack_args' => "\$(touch {$sentinel})",
+            'redis' => '1',
+            'redis_args' => "'; touch {$sentinel}; \$(touch {$sentinel}); `touch {$sentinel}`; true && touch {$sentinel} #",
         ]);
 
         $respawned = $this->buildLayoutCapturingRespawns();
 
         // `watch` runs its argument through a shell, so the shim stands in for
         // it and hands the inner command to one as well.
-        $this->writeShim($shims, 'watch', 'exec sh -c "$2"');
+        $this->writeShim($shims, 'watch', 'for argument in "$@"; do command="$argument"; done; exec sh -c "$command"');
         $this->writeShim($shims, 'vnstat', 'for argument in "$@"; do printf \'%s\\n\' "$argument"; done');
         $this->writeShim($shims, 'tcptrack', 'for argument in "$@"; do printf \'%s\\n\' "$argument"; done');
+        $this->writeShim($shims, 'redis-cli', 'for argument in "$@"; do printf \'%s\\n\' "$argument"; done');
 
         $this->assertSame(
             ["';", 'touch', $sentinel, '#'],
@@ -349,6 +404,27 @@ SH;
         $this->assertSame(
             ['$(touch', $sentinel.')'],
             $this->runThroughShims($this->onlyCommandContaining($respawned, 'tcptrack'), $shims),
+        );
+        $this->assertSame(
+            [
+                '-h',
+                '127.0.0.1',
+                '-p',
+                '6379',
+                "';",
+                'touch',
+                $sentinel.';',
+                '$(touch',
+                $sentinel.');',
+                '`touch',
+                $sentinel.'`;',
+                'true',
+                '&&',
+                'touch',
+                $sentinel,
+                '#',
+            ],
+            $this->runThroughShims($this->onlyCommandContaining($respawned, 'redis-cli'), $shims),
         );
         $this->assertFileDoesNotExist($sentinel, 'the hostile arguments never reached a shell as code');
     }

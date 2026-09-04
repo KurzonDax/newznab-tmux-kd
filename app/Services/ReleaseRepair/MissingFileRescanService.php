@@ -332,7 +332,7 @@ final class MissingFileRescanService
     ): array {
         $matched = [];
         $linesFetched = 0;
-        $batch = max(1, $options->overviewBatchSize);
+        $batch = $options->overviewBatchSize;
         $windowReadCompletely = true;
 
         for ($start = $window->first; $start <= $window->last; $start += $batch) {

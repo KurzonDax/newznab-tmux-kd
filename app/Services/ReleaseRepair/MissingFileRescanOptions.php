@@ -41,15 +41,21 @@ final readonly class MissingFileRescanOptions
     /** Articles per XOVER command, matching the header scan's own batching. */
     public const int DEFAULT_OVERVIEW_BATCH = 20000;
 
+    public int $overviewBatchSize;
+
     public function __construct(
         public float $targetCompletion = ReleaseRepairOptions::DEFAULT_TARGET_COMPLETION,
         public int $retryAfterHours = ReleaseRepairOptions::RETRY_AFTER_HOURS,
         public int $windowMinutes = self::DEFAULT_WINDOW_MINUTES,
         public int $maxArticlesPerRelease = self::DEFAULT_MAX_ARTICLES_PER_RELEASE,
         public int $maxArticlesPerRun = self::DEFAULT_MAX_ARTICLES_PER_RUN,
-        public int $overviewBatchSize = self::DEFAULT_OVERVIEW_BATCH,
+        int $overviewBatchSize = self::DEFAULT_OVERVIEW_BATCH,
         public bool $dryRun = false,
-    ) {}
+    ) {
+        $this->overviewBatchSize = $overviewBatchSize >= 1
+            ? $overviewBatchSize
+            : self::DEFAULT_OVERVIEW_BATCH;
+    }
 
     /**
      * Build a run's options from site settings, with per-run overrides winning where given.
@@ -69,7 +75,7 @@ final readonly class MissingFileRescanOptions
                 ?? SettingNumber::int('rescan_max_articles_per_release', self::DEFAULT_MAX_ARTICLES_PER_RELEASE),
             maxArticlesPerRun: $maxArticlesPerRun
                 ?? SettingNumber::int('rescan_max_articles_per_run', self::DEFAULT_MAX_ARTICLES_PER_RUN),
-            overviewBatchSize: max(1, SettingNumber::int('maxmssgs', self::DEFAULT_OVERVIEW_BATCH)),
+            overviewBatchSize: SettingNumber::int('maxmssgs', self::DEFAULT_OVERVIEW_BATCH),
             dryRun: $dryRun,
         );
     }
