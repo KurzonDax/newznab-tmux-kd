@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Services\Backfill\BackfillConfig;
 use App\Services\Backfill\BackfillService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Support\MalformedSafeBackfillDates;
 use Tests\TestCase;
 
 class BackfillEligibilityTest extends TestCase
@@ -19,6 +22,7 @@ class BackfillEligibilityTest extends TestCase
         parent::setUp();
 
         Carbon::setTestNow('2026-08-17 12:00:00');
+        config(['nntmux.echocli' => false]);
 
         Schema::dropIfExists('short_groups');
         Schema::dropIfExists('usenet_groups');
@@ -88,6 +92,85 @@ class BackfillEligibilityTest extends TestCase
         $this->assertCount(1, $groups);
         $this->assertSame('eligible', $groups[0]->name);
         $this->assertSame('2026-07-01', $groups[0]->targetDate);
+    }
+
+    public function test_safe_date_mode_measures_against_the_start_of_the_configured_day(): void
+    {
+        $this->setSetting('backfill_days', '2');
+        $this->addGroup('same-day-morning', firstRecord: 1_000, firstRecordPostdate: '2026-07-01 06:00:00', backfillTarget: 1, serverFirst: 100);
+
+        $groups = (new BackfillService)->eligibleGroups();
+
+        $this->assertCount(
+            1,
+            $groups,
+            'The cutoff must be the configured date at 00:00:00, not that date at whatever time the pass runs.'
+        );
+        $this->assertSame('2026-07-01', $groups[0]->targetDate);
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function malformedSafeBackfillDateProvider(): array
+    {
+        return MalformedSafeBackfillDates::cases();
+    }
+
+    #[DataProvider('malformedSafeBackfillDateProvider')]
+    public function test_a_malformed_safe_backfill_date_makes_no_group_eligible_and_warns(string $stored): void
+    {
+        Log::spy();
+        $this->setSetting('backfill_days', '2');
+        $this->setSetting('safebackfilldate', $stored);
+        $this->addGroup('eligible', firstRecord: 1_000, firstRecordPostdate: '2026-08-12', backfillTarget: 1, serverFirst: 100);
+
+        $groups = (new BackfillService)->eligibleGroups();
+
+        $this->assertSame([], $groups);
+        Log::shouldHaveReceived('warning')->withArgs(function (string $message) use ($stored): bool {
+            return str_contains($message, 'safebackfilldate') && str_contains($message, $stored);
+        })->atLeast()->once();
+    }
+
+    public function test_a_falsy_stored_safe_backfill_date_fails_closed_rather_than_taking_the_coded_default(): void
+    {
+        Log::spy();
+        $this->setSetting('backfill_days', '2');
+        $this->setSetting('safebackfilldate', '0');
+        $this->addGroup('eligible', firstRecord: 1_000, firstRecordPostdate: '2026-08-12', backfillTarget: 1, serverFirst: 100);
+
+        // A stored 0 is a value somebody typed, not an empty row, so it must not resolve to
+        // the coded default -- that is the earliest stop date there is, and quietly using it
+        // would schedule maximal backfill.
+        $groups = (new BackfillService(config: new BackfillConfig))->eligibleGroups();
+
+        $this->assertSame([], $groups);
+        Log::shouldHaveReceived('warning')->withArgs(
+            static fn (string $message): bool => str_contains($message, 'safebackfilldate')
+        )->atLeast()->once();
+    }
+
+    public function test_the_per_group_status_path_tolerates_a_malformed_safe_backfill_date(): void
+    {
+        Log::spy();
+        $this->setSetting('backfill_days', '2');
+        $this->setSetting('safebackfilldate', '14-08-2012');
+        $this->addGroup('eligible', firstRecord: 1_000, firstRecordPostdate: '2026-08-12', backfillTarget: 1, serverFirst: 100);
+
+        $this->assertNull((new BackfillService)->groupWork('eligible'));
+    }
+
+    public function test_a_malformed_safe_backfill_date_does_not_affect_the_other_modes(): void
+    {
+        $this->setSetting('safebackfilldate', 'sometime last year');
+        $this->addGroup('eligible', firstRecord: 1_000, firstRecordPostdate: '2026-08-12', backfillTarget: 30, serverFirst: 100);
+
+        $groups = (new BackfillService)->eligibleGroups();
+
+        $this->assertCount(1, $groups);
+        $this->assertSame('2026-07-18', $groups[0]->targetDate);
+        $this->assertNotNull((new BackfillService)->groupWork('eligible'));
     }
 
     public function test_group_work_returns_header_status_after_the_group_reaches_its_target(): void

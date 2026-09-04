@@ -16,6 +16,7 @@ use Illuminate\View\View;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionClass;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\MalformedSafeBackfillDates;
 use Tests\TestCase;
 
 class AdminSiteControllerTest extends TestCase
@@ -538,6 +539,55 @@ class AdminSiteControllerTest extends TestCase
         );
     }
 
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function invalidSafeBackfillDateProvider(): array
+    {
+        return MalformedSafeBackfillDates::cases();
+    }
+
+    #[DataProvider('invalidSafeBackfillDateProvider')]
+    public function test_a_safe_backfill_date_that_is_not_a_real_calendar_date_is_rejected(string $date): void
+    {
+        $response = app(AdminSiteController::class)->edit(Request::create('/admin/site-edit', 'POST', [
+            'action' => 'submit',
+            'safebackfilldate' => $date,
+            'descriptive_title_rename' => '0',
+        ]));
+
+        $this->assertTrue($response->isRedirect());
+        $this->assertTrue(session('errors')->has('safebackfilldate'));
+        $this->assertSame('2012-08-14', $this->settingValue('safebackfilldate'));
+        $this->assertSame(
+            '1',
+            $this->settingValue('descriptive_title_rename'),
+            'A rejected form must not half-save the fields that were valid.'
+        );
+    }
+
+    public function test_a_safe_backfill_date_saves_when_it_is_a_real_yyyy_mm_dd_date_or_is_cleared(): void
+    {
+        $saved = app(AdminSiteController::class)->edit(Request::create('/admin/site-edit', 'POST', [
+            'action' => 'submit',
+            'safebackfilldate' => '2020-02-29',
+        ]));
+
+        $this->assertTrue($saved->isRedirect());
+        $this->assertSame('2020-02-29', $this->settingValue('safebackfilldate'));
+
+        app(AdminSiteController::class)->edit(Request::create('/admin/site-edit', 'POST', [
+            'action' => 'submit',
+            'safebackfilldate' => '',
+        ]));
+
+        $this->assertSame(
+            '',
+            $this->settingValue('safebackfilldate'),
+            'Clearing the field is allowed; the service resolves a blank value to its coded default.'
+        );
+    }
+
     public function test_the_nzb_storage_depth_help_text_describes_the_fallback_instead_of_a_reorg_script(): void
     {
         $response = app(AdminSiteController::class)->edit(Request::create('/admin/site-edit', 'GET'));
@@ -615,6 +665,7 @@ class AdminSiteControllerTest extends TestCase
             ['name' => 'rescan_window_minutes', 'value' => '30'],
             ['name' => 'rescan_limit', 'value' => '100'],
             ['name' => 'nzbsplitlevel', 'value' => '4'],
+            ['name' => 'safebackfilldate', 'value' => '2012-08-14'],
         ], ['name'], ['value']);
     }
 
