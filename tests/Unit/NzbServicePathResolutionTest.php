@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use App\Services\Nzb\NzbService;
+use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionClass;
 use Tests\TestCase;
 
@@ -193,6 +194,141 @@ final class NzbServicePathResolutionTest extends TestCase
             umask($previousUmask);
             $this->deleteDirectory($tempDir);
         }
+    }
+
+    public function test_a_stored_split_level_of_zero_reads_back_the_file_the_write_path_stored_flat(): void
+    {
+        $basePath = $this->makeTempDirectory('nzb-flat-storage').'/';
+        $guid = '4aabfe07-daff-4d28-9d1d-d2a4ab7b6511';
+
+        $service = $this->makeServiceWithoutConstructor();
+        $this->applyStorageState($service, 0, $basePath, [$basePath]);
+
+        $writtenPath = $service->buildNzbPath($guid, $service->getNzbSplitLevel(), true).$guid.'.nzb.gz';
+        file_put_contents($writtenPath, 'test');
+
+        $this->assertSame($basePath.$guid.'.nzb.gz', $writtenPath, 'A stored 0 must write flat.');
+        $this->assertSame($writtenPath, $service->nzbPath($guid), 'A stored 0 must read flat.');
+    }
+
+    public function test_a_file_stored_at_the_previous_split_level_is_still_found_after_the_level_changes(): void
+    {
+        $basePath = $this->makeTempDirectory('nzb-level-change').'/';
+        $guid = '4aabfe07-daff-4d28-9d1d-d2a4ab7b6511';
+        $storedFile = $basePath.'4/a/a/b/'.$guid.'.nzb.gz';
+        mkdir(dirname($storedFile), 0777, true);
+        file_put_contents($storedFile, 'test');
+
+        foreach ([0, 1, 2, 6] as $newLevel) {
+            $service = $this->makeServiceWithoutConstructor();
+            $this->applyStorageState($service, $newLevel, $basePath, [$basePath]);
+
+            $this->assertSame(
+                $storedFile,
+                $service->nzbPath($guid),
+                "A level-4 file must survive the level changing to {$newLevel}."
+            );
+        }
+    }
+
+    public function test_a_flat_file_is_found_after_the_level_changes_away_from_zero(): void
+    {
+        $basePath = $this->makeTempDirectory('nzb-flat-to-deep').'/';
+        $guid = '4aabfe07-daff-4d28-9d1d-d2a4ab7b6511';
+        $storedFile = $basePath.$guid.'.nzb.gz';
+        file_put_contents($storedFile, 'test');
+
+        $service = $this->makeServiceWithoutConstructor();
+        $this->applyStorageState($service, 4, $basePath, [$basePath]);
+
+        $this->assertSame($storedFile, $service->nzbPath($guid));
+    }
+
+    public function test_the_depth_fallback_searches_every_candidate_base_path(): void
+    {
+        $tempDir = $this->makeTempDirectory('nzb-fallback-candidates');
+        $guid = '4aabfe07-daff-4d28-9d1d-d2a4ab7b6511';
+        $configuredPath = $tempDir.'/foreign-app/storage/nzb/';
+        $runtimePath = $tempDir.'/runtime-app/storage/nzb/';
+        $storedFile = $runtimePath.'4/'.$guid.'.nzb.gz';
+        mkdir(dirname($storedFile), 0777, true);
+        file_put_contents($storedFile, 'test');
+
+        $service = $this->makeServiceWithoutConstructor();
+        $this->applyStorageState($service, 4, $configuredPath, [$configuredPath, $runtimePath]);
+
+        $this->assertSame($storedFile, $service->nzbPath($guid));
+    }
+
+    public function test_a_release_with_no_stored_file_at_any_depth_still_reports_missing(): void
+    {
+        $basePath = $this->makeTempDirectory('nzb-truly-missing').'/';
+        $guid = '4aabfe07-daff-4d28-9d1d-d2a4ab7b6511';
+        $otherGuid = '9bbcfe07-daff-4d28-9d1d-d2a4ab7b6512';
+        $decoyFile = $basePath.'9/b/b/'.$otherGuid.'.nzb.gz';
+        mkdir(dirname($decoyFile), 0777, true);
+        file_put_contents($decoyFile, 'test');
+
+        $service = $this->makeServiceWithoutConstructor();
+        $this->applyStorageState($service, 4, $basePath, [$basePath]);
+
+        $this->assertFalse($service->nzbPath($guid));
+    }
+
+    public function test_the_configured_depth_is_preferred_when_the_same_guid_exists_at_two_depths(): void
+    {
+        $basePath = $this->makeTempDirectory('nzb-two-depths').'/';
+        $guid = '4aabfe07-daff-4d28-9d1d-d2a4ab7b6511';
+        $configuredDepthFile = $basePath.'4/a/a/b/'.$guid.'.nzb.gz';
+        $staleFile = $basePath.$guid.'.nzb.gz';
+        mkdir(dirname($configuredDepthFile), 0777, true);
+        file_put_contents($configuredDepthFile, 'current');
+        file_put_contents($staleFile, 'stale');
+
+        $service = $this->makeServiceWithoutConstructor();
+        $this->applyStorageState($service, 4, $basePath, [$basePath]);
+
+        $this->assertSame($configuredDepthFile, $service->nzbPath($guid));
+    }
+
+    /**
+     * @return array<string, array{0: mixed, 1: int}>
+     */
+    public static function splitLevelSettingProvider(): array
+    {
+        return [
+            'missing row' => [null, NzbService::DEFAULT_SPLIT_LEVEL],
+            'blank row' => ['', NzbService::DEFAULT_SPLIT_LEVEL],
+            'whitespace row' => ['  ', NzbService::DEFAULT_SPLIT_LEVEL],
+            'non-numeric row' => ['four', NzbService::DEFAULT_SPLIT_LEVEL],
+            'explicit zero' => [0, 0],
+            'explicit zero as string' => ['0', 0],
+            'explicit level' => [3, 3],
+            'above the cap' => [40, NzbService::MAX_SPLIT_LEVEL],
+            'negative' => [-2, 0],
+        ];
+    }
+
+    #[DataProvider('splitLevelSettingProvider')]
+    public function test_split_level_resolution_from_the_stored_setting(mixed $stored, int $expected): void
+    {
+        $this->assertSame($expected, NzbService::resolveSplitLevel($stored));
+    }
+
+    /**
+     * @param  list<string>  $candidatePaths
+     */
+    private function applyStorageState(NzbService $service, int $splitLevel, string $primaryPath, array $candidatePaths): void
+    {
+        \Closure::bind(
+            function (int $splitLevel, string $primaryPath, array $paths): void {
+                $this->nzbSplitLevel = $splitLevel;
+                $this->siteNzbPath = $primaryPath;
+                $this->siteNzbPaths = $paths;
+            },
+            $service,
+            NzbService::class
+        )($splitLevel, $primaryPath, $candidatePaths);
     }
 
     private function makeServiceWithoutConstructor(): NzbService
