@@ -86,7 +86,10 @@ class NzbService
         try {
             $configuredSplitLevel = Settings::settingValue('nzbsplitlevel');
         } catch (QueryException $e) {
-            // Table doesn't exist yet (e.g., during migrations or tests)
+            // Settings::settingValue() already swallows a missing settings table, so this
+            // covers the rest: an unreachable or half-migrated database during console boot,
+            // which builds commands whose service constructors read settings. Treat it as
+            // unset rather than crashing the command list.
             $configuredSplitLevel = null;
         }
         $this->nzbSplitLevel = self::resolveSplitLevel($configuredSplitLevel);
@@ -169,7 +172,7 @@ class NzbService
         $gz = null;
 
         try {
-            $path = ($this->buildNzbPath($release->guid, $this->nzbSplitLevel, true).$release->guid.'.nzb.gz');
+            $path = $this->nzbFileIn($this->buildNzbPath($release->guid, $this->nzbSplitLevel, true), $release->guid);
             $tempPath = $this->temporaryNzbPath($path);
             $gz = $this->openGzipFile($tempPath);
 
@@ -494,6 +497,14 @@ class NzbService
     }
 
     /**
+     * Name the stored NZB file inside an already-built storage directory.
+     */
+    protected function nzbFileIn(string $directory, string $releaseGuid): string
+    {
+        return $directory.$releaseGuid.'.nzb.gz';
+    }
+
+    /**
      * Retrieve path + filename of the NZB to be stored.
      *
      * @param  string  $releaseGuid  The guid of the release.
@@ -507,7 +518,7 @@ class NzbService
             $levelsToSplit = $this->nzbSplitLevel;
         }
 
-        return $this->buildNzbPath($releaseGuid, $levelsToSplit, $createIfNotExist).$releaseGuid.'.nzb.gz';
+        return $this->nzbFileIn($this->buildNzbPath($releaseGuid, $levelsToSplit, $createIfNotExist), $releaseGuid);
     }
 
     /**
@@ -515,6 +526,12 @@ class NzbService
      *
      * A blank or missing row means "unset" and resolves to the coded default; only an
      * explicitly stored number selects a depth, and 0 legitimately selects flat storage.
+     *
+     * An out-of-range number is clamped rather than replaced by the default, because
+     * {@see self::buildNzbPath()} already clamps the same way when it fans out: a level
+     * of 40 writes 32 deep and a negative level writes flat. Reads have to mirror what
+     * writes actually did, so a hand-edited row cannot desynchronise the two halves.
+     * The admin form rejects those values outright, so this only covers direct edits.
      */
     public static function resolveSplitLevel(mixed $value): int
     {
@@ -539,7 +556,7 @@ class NzbService
     public function nzbPath(string $releaseGuid): bool|string
     {
         foreach ($this->siteNzbPaths as $basePath) {
-            $nzbFile = $this->buildNzbPathAtBasePath($basePath, $releaseGuid, $this->nzbSplitLevel).$releaseGuid.'.nzb.gz';
+            $nzbFile = $this->nzbFileIn($this->buildNzbPathAtBasePath($basePath, $releaseGuid, $this->nzbSplitLevel), $releaseGuid);
             if (is_file($nzbFile)) {
                 return $nzbFile;
             }
@@ -582,7 +599,7 @@ class NzbService
                 continue;
             }
 
-            $nzbFile = $path.$releaseGuid.'.nzb.gz';
+            $nzbFile = $this->nzbFileIn($path, $releaseGuid);
             if (is_file($nzbFile)) {
                 return $nzbFile;
             }

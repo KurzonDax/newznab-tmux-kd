@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Services\Nzb\NzbService;
+use Database\Seeders\SettingsTableSeeder;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
@@ -58,25 +59,44 @@ final class NzbSplitLevelResolutionTest extends TestCase
         $this->assertSame($writtenPath, $service->nzbPath($guid));
     }
 
-    public function test_a_blank_row_resolves_to_the_seeded_default(): void
+    public function test_the_coded_default_matches_the_value_a_fresh_install_is_seeded_with(): void
+    {
+        (new SettingsTableSeeder)->run();
+
+        $this->assertSame(
+            (string) NzbService::DEFAULT_SPLIT_LEVEL,
+            (string) DB::table('settings')->where('name', 'nzbsplitlevel')->value('value'),
+            'An unset row must resolve to the depth a fresh install would have used.'
+        );
+    }
+
+    public function test_a_blank_row_writes_and_reads_at_the_default_depth(): void
     {
         $this->storeSplitLevel('');
 
-        $this->assertSame(NzbService::DEFAULT_SPLIT_LEVEL, app(NzbService::class)->getNzbSplitLevel());
-        $this->assertSame(4, NzbService::DEFAULT_SPLIT_LEVEL, 'The coded default must match database/seeders/SettingsTableSeeder.php.');
+        $this->assertUnsetRowUsesTheDefaultDepth();
     }
 
-    public function test_a_cleared_row_stored_as_null_resolves_to_the_default(): void
+    public function test_a_cleared_row_stored_as_null_writes_and_reads_at_the_default_depth(): void
     {
         $this->storeSplitLevel(null);
 
-        $this->assertSame(NzbService::DEFAULT_SPLIT_LEVEL, app(NzbService::class)->getNzbSplitLevel());
+        $this->assertUnsetRowUsesTheDefaultDepth();
     }
 
-    public function test_a_missing_row_resolves_to_the_default(): void
+    public function test_a_missing_row_writes_and_reads_at_the_default_depth(): void
     {
         DB::table('settings')->where('name', 'nzbsplitlevel')->delete();
 
+        $this->assertUnsetRowUsesTheDefaultDepth();
+    }
+
+    /**
+     * An "unset" split level must resolve to the coded default on both halves of storage:
+     * the write fans out four levels deep, and the read finds it there.
+     */
+    private function assertUnsetRowUsesTheDefaultDepth(): void
+    {
         $service = app(NzbService::class);
         $guid = '4aabfe07-daff-4d28-9d1d-d2a4ab7b6511';
 
