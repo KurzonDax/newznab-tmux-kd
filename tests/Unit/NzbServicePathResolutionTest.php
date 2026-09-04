@@ -275,7 +275,12 @@ final class NzbServicePathResolutionTest extends TestCase
         $this->assertFalse($service->nzbPath($guid));
     }
 
-    public function test_the_configured_depth_is_preferred_when_the_same_guid_exists_at_two_depths(): void
+    /**
+     * The depth fallback skips the configured depth, so it can only ever answer with the
+     * stale flat copy. Getting the configured-depth file back therefore proves the first
+     * check answered and the fallback never ran -- the happy path is unchanged.
+     */
+    public function test_a_file_at_the_configured_depth_is_answered_by_the_first_check(): void
     {
         $basePath = $this->makeTempDirectory('nzb-two-depths').'/';
         $guid = '4aabfe07-daff-4d28-9d1d-d2a4ab7b6511';
@@ -288,7 +293,11 @@ final class NzbServicePathResolutionTest extends TestCase
         $service = $this->makeServiceWithoutConstructor();
         $this->applyStorageState($service, 4, $basePath, [$basePath]);
 
-        $this->assertSame($configuredDepthFile, $service->nzbPath($guid));
+        $this->assertSame(
+            $configuredDepthFile,
+            $service->nzbPath($guid),
+            'A hit at the configured depth must win before any fallback probing happens.'
+        );
     }
 
     /**

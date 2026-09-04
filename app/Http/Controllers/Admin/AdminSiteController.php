@@ -12,9 +12,9 @@ use App\Models\RootCategory;
 use App\Models\Settings;
 use App\Models\SignupStat;
 use App\Services\NNTP\NntpProviderPool;
-use App\Services\Nzb\NzbService;
 use App\Services\Releases\ClipGenerationPolicy;
 use App\Services\Releases\DynamicPreviewBudgetPolicy;
+use App\Support\NzbSettingRules;
 use App\Support\RepairSettingRules;
 use App\Support\SizeUnit;
 use Illuminate\Http\RedirectResponse;
@@ -42,19 +42,12 @@ class AdminSiteController extends BasePageController
             case 'submit':
                 $data = $request->all();
 
-                // The repair and re-scan budgets are the only settings here a scheduled job
-                // reads as a bound; a negative one misbehaves rather than merely looking wrong.
-                // The NZB split level joins them because it names a directory depth: 0 is the
-                // legal "store flat" depth and the write path fans out at most
-                // NzbService::MAX_SPLIT_LEVEL GUID characters, so anything outside that range
-                // cannot address a path any release was ever written to. A blank value is left
-                // alone here and resolves to the coded default when the service reads it.
-                $validator = Validator::make($data, RepairSettingRules::rules() + [
-                    'nzbsplitlevel' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:'.NzbService::MAX_SPLIT_LEVEL],
-                ]);
-                $validator->setAttributeNames(RepairSettingRules::attributes() + [
-                    'nzbsplitlevel' => 'NZB storage depth',
-                ]);
+                // Most of this form is free-text by long-standing design. The exceptions are
+                // the settings something downstream reads as a bound rather than a preference:
+                // the repair and re-scan budgets, and the NZB storage depth. Each rule set
+                // documents why its own fields cannot be left unchecked.
+                $validator = Validator::make($data, [...RepairSettingRules::rules(), ...NzbSettingRules::rules()]);
+                $validator->setAttributeNames([...RepairSettingRules::attributes(), ...NzbSettingRules::attributes()]);
 
                 if ($validator->fails()) {
                     return redirect()->to('admin/site-edit')->withErrors($validator)->withInput();
