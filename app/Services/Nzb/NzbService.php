@@ -31,6 +31,20 @@ class NzbService
 
     public const NZB_ADDED = 1; // Release had an NZB file created.
 
+    /**
+     * Split level used when the setting is blank, missing, or unreadable.
+     *
+     * Matches the value seeded by SettingsTableSeeder, so a cleared field behaves
+     * exactly like a fresh install rather than silently selecting flat storage.
+     */
+    public const int DEFAULT_SPLIT_LEVEL = 4;
+
+    /**
+     * Deepest fan-out the write path can ever produce, and therefore the deepest
+     * the read path has to probe.
+     */
+    public const int MAX_SPLIT_LEVEL = 32;
+
     protected const NZB_DTD_NAME = 'nzb';
 
     protected const NZB_DTD_PUBLIC = '-//newzBin//DTD NZB 1.1//EN';
@@ -70,12 +84,12 @@ class NzbService
     ) {
         $this->binariesConfig = $binariesConfig ?? BinariesConfig::fromSettings();
         try {
-            $nzbSplitLevel = (int) Settings::settingValue('nzbsplitlevel');
+            $configuredSplitLevel = Settings::settingValue('nzbsplitlevel');
         } catch (QueryException $e) {
             // Table doesn't exist yet (e.g., during migrations or tests)
-            $nzbSplitLevel = 1;
+            $configuredSplitLevel = null;
         }
-        $this->nzbSplitLevel = $nzbSplitLevel;
+        $this->nzbSplitLevel = self::resolveSplitLevel($configuredSplitLevel);
         $this->siteNzbPaths = $this->buildCandidateNzbBasePaths((string) config('nntmux_settings.path_to_nzbs'));
         $this->siteNzbPath = $this->selectPreferredNzbBasePath($this->siteNzbPaths);
         $this->nzbCommentString = sprintf(
@@ -450,7 +464,7 @@ class NzbService
             File::chmod($nzbPath, 02775);
         }
 
-        for ($i = 0; $i < $levelsToSplit && $i < 32; $i++) {
+        for ($i = 0; $i < $levelsToSplit && $i < self::MAX_SPLIT_LEVEL; $i++) {
             $nzbPath .= $releaseGuid[$i].'/';
 
             if ($createIfNotExist && ! File::isDirectory($nzbPath)) {
@@ -472,7 +486,7 @@ class NzbService
     {
         $nzbPath = '';
 
-        for ($i = 0; $i < $levelsToSplit && $i < 32; $i++) {
+        for ($i = 0; $i < $levelsToSplit && $i < self::MAX_SPLIT_LEVEL; $i++) {
             $nzbPath .= $releaseGuid[$i].'/';
         }
 
@@ -497,7 +511,26 @@ class NzbService
     }
 
     /**
+     * Resolve the stored `nzbsplitlevel` into the fan-out depth the service uses.
+     *
+     * A blank or missing row means "unset" and resolves to the coded default; only an
+     * explicitly stored number selects a depth, and 0 legitimately selects flat storage.
+     */
+    public static function resolveSplitLevel(mixed $value): int
+    {
+        if (! is_numeric($value)) {
+            return self::DEFAULT_SPLIT_LEVEL;
+        }
+
+        return max(0, min(self::MAX_SPLIT_LEVEL, (int) $value));
+    }
+
+    /**
      * Determine if an NZB exists, returning the path+filename, if not return false.
+     *
+     * The configured depth is checked first across every candidate storage root. On a
+     * miss the other depths the write path could have produced are probed too, so a
+     * change to `nzbsplitlevel` on a live install cannot orphan already-stored files.
      *
      * @param  string  $releaseGuid  The guid of the release.
      * @return false|string On success: (string) Path+file name of the nzb.
@@ -505,18 +538,57 @@ class NzbService
      */
     public function nzbPath(string $releaseGuid): bool|string
     {
-        $levelsToSplit = $this->nzbSplitLevel === 0 ? 1 : $this->nzbSplitLevel;
-
         foreach ($this->siteNzbPaths as $basePath) {
-            $nzbFile = $this->buildNzbPathAtBasePath($basePath, $releaseGuid, $levelsToSplit).$releaseGuid.'.nzb.gz';
+            $nzbFile = $this->buildNzbPathAtBasePath($basePath, $releaseGuid, $this->nzbSplitLevel).$releaseGuid.'.nzb.gz';
             if (is_file($nzbFile)) {
                 return $nzbFile;
             }
         }
 
-        $nzbFile = $this->getNzbPath($releaseGuid);
+        foreach ($this->siteNzbPaths as $basePath) {
+            $nzbFile = $this->findNzbAtOtherSplitLevels($basePath, $releaseGuid);
+            if ($nzbFile !== false) {
+                return $nzbFile;
+            }
+        }
 
-        return is_file($nzbFile) ? $nzbFile : false;
+        return false;
+    }
+
+    /**
+     * Probe every split depth other than the configured one under a single storage root.
+     *
+     * Walking the GUID directory chain downwards lets a miss stop at the first depth that
+     * does not exist on disk, so an absent file costs a handful of stats rather than one
+     * per possible depth.
+     *
+     * @return false|string The path+filename of the NZB, or false when no depth holds it.
+     */
+    protected function findNzbAtOtherSplitLevels(string $basePath, string $releaseGuid): false|string
+    {
+        $deepestLevel = min(self::MAX_SPLIT_LEVEL, strlen($releaseGuid));
+        $path = $basePath;
+
+        for ($level = 0; $level <= $deepestLevel; $level++) {
+            if ($level > 0) {
+                $path .= $releaseGuid[$level - 1].'/';
+            }
+
+            if (! is_dir($path)) {
+                return false;
+            }
+
+            if ($level === $this->nzbSplitLevel) {
+                continue;
+            }
+
+            $nzbFile = $path.$releaseGuid.'.nzb.gz';
+            if (is_file($nzbFile)) {
+                return $nzbFile;
+            }
+        }
+
+        return false;
     }
 
     /**
