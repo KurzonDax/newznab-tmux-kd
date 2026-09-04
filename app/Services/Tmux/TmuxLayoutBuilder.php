@@ -312,16 +312,19 @@ class TmuxLayoutBuilder
 
         // redis monitoring
         if ((int) Settings::settingValue('redis') === 1) {
-            $redisArgs = Settings::settingValue('redis_args') ?? '';
+            $redisArguments = $this->escapedMonitoringArguments(Settings::settingValue('redis_args'));
             $refreshInterval = 30;
 
             $pane = $this->createWindowPane($windowIndex, $this->getPaneDisplayName('redis'), TmuxPaneRole::Redis, $this->getPaneDisplayName('redis'));
 
             // Check if custom args provided for simple redis-cli output
-            if (! empty($redisArgs) && $redisArgs !== 'NULL' && $this->commandExists('redis-cli')) {
+            if ($redisArguments !== '' && $this->commandExists('redis-cli')) {
                 $redisHost = config('database.redis.default.host', '127.0.0.1');
                 $redisPort = config('database.redis.default.port', 6379);
-                $this->requireSuccess($this->paneManager->respawnPane($pane, "watch -n{$refreshInterval} -c 'redis-cli -h {$redisHost} -p {$redisPort} {$redisArgs}'"), 'respawn Redis pane');
+                $redisCommand = 'redis-cli -h '.escapeshellarg((string) $redisHost)
+                    .' -p '.escapeshellarg((string) $redisPort)
+                    .' '.$redisArguments;
+                $this->requireSuccess($this->paneManager->respawnPane($pane, "watch -n{$refreshInterval} -c ".escapeshellarg($redisCommand)), 'respawn Redis pane');
             } else {
                 // Use PHP-based Redis monitor service
                 $redisHost = config('database.redis.default.host', '127.0.0.1');
@@ -367,11 +370,20 @@ class TmuxLayoutBuilder
      */
     protected function monitoringCommand(string $tool, string $argumentSetting): string
     {
-        $stored = Settings::settingValue($argumentSetting);
+        $arguments = $this->escapedMonitoringArguments(Settings::settingValue($argumentSetting));
+
+        return $arguments === '' ? $tool : $tool.' '.$arguments;
+    }
+
+    /**
+     * Normalize and shell-escape one monitoring tool's space-separated arguments.
+     */
+    protected function escapedMonitoringArguments(mixed $stored): string
+    {
         $stored = $stored === null ? '' : trim((string) $stored);
 
         if ($stored === '' || $stored === 'NULL') {
-            return $tool;
+            return '';
         }
 
         $arguments = array_map(
@@ -379,7 +391,7 @@ class TmuxLayoutBuilder
             preg_split('/\s+/', $stored) ?: [],
         );
 
-        return $tool.' '.implode(' ', $arguments);
+        return implode(' ', $arguments);
     }
 
     public function lastError(): ?string

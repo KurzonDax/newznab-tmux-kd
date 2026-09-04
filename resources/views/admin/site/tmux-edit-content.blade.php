@@ -531,7 +531,7 @@
                             </x-form.group>
                         </div>
 
-                        <x-form.group label="Redis Args" for="redis_args" help="Custom redis-cli arguments (e.g., 'info' or 'info clients'). Leave empty for default stats+memory display.">
+                        <x-form.group label="Redis Args" for="redis_args" help="Custom space-separated redis-cli arguments (e.g., 'info' or 'info clients'). Leave empty for default stats+memory display.">
                             <x-input id="redis_args" name="redis_args" type="text" value="{{ $site['redis_args'] ?? '' }}" class="w-full" placeholder="e.g., info clients" />
                         </x-form.group>
 
