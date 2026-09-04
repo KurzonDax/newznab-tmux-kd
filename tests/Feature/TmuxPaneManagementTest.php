@@ -9,8 +9,11 @@ use App\Services\Tmux\TmuxLayoutBuilder;
 use App\Services\Tmux\TmuxPaneManager;
 use App\Services\Tmux\TmuxSessionManager;
 use App\Services\Tmux\TmuxTaskRunner;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Process\PendingProcess;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Symfony\Component\Process\ExecutableFinder;
@@ -663,6 +666,93 @@ SH;
         $this->assertMatchesRegularExpression('/fix-names 7 timed out after 1s, moving on\n.*next-step/s', $process->getOutput());
         $this->assertSame(1, substr_count((string) file_get_contents($log), 'timed out after 1s'));
         $this->assertStringNotContainsString('next-step', (string) file_get_contents($log), 'only the step itself is logged');
+    }
+
+    #[DataProvider('nicenessSettingProvider')]
+    public function test_every_pane_command_takes_its_priority_from_the_shared_helper(?string $stored, int $expected): void
+    {
+        $this->seedNicenessSetting($stored);
+
+        $respawned = [];
+        Process::fake(function (PendingProcess $process) use (&$respawned) {
+            if (! is_array($process->command)) {
+                return Process::result();
+            }
+
+            if (in_array('list-panes', $process->command, true)) {
+                return Process::result("%1\tpost_additional\n%2\tpost_metadata\n%3\tpost_tv\n");
+            }
+
+            if (in_array('respawn-pane', $process->command, true)) {
+                $respawned[] = (string) end($process->command);
+            }
+
+            return Process::result();
+        });
+
+        $runner = new TmuxTaskRunner('test-session');
+        $runVar = [
+            'settings' => [
+                'post' => 1,
+                'post_amazon' => 1,
+                'post_non' => 1,
+                'processtvrage' => 1,
+            ],
+            'counts' => ['now' => [
+                'work_available' => 5,
+                'processmusic' => 5,
+                'processtv' => 5,
+            ]],
+        ];
+
+        // The first two panes are the ones that used to read the setting directly.
+        foreach (['ppadditional', 'amazon', 'tv'] as $task) {
+            $this->assertTrue($runner->runPaneTask($task, [], $runVar), "{$task} pane ran");
+        }
+
+        $this->assertCount(3, $respawned);
+        foreach ($respawned as $command) {
+            $this->assertStringNotContainsString('nice -n ', $command, 'nice never runs without a priority');
+            $this->assertMatchesRegularExpression('/nice -n-?\d/', $command);
+
+            preg_match_all('/nice -n(-?\d+)/', $command, $matches);
+            $this->assertSame(
+                array_fill(0, count($matches[1]), (string) $expected),
+                $matches[1],
+                "every nice invocation in [{$command}] uses the resolved priority",
+            );
+        }
+    }
+
+    /**
+     * @return array<string, array{?string, int}>
+     */
+    public static function nicenessSettingProvider(): array
+    {
+        return [
+            'missing row falls back to the default' => [null, TmuxTaskRunner::DEFAULT_NICENESS],
+            'blanked admin field falls back to the default' => ['', TmuxTaskRunner::DEFAULT_NICENESS],
+            'stored value is used' => ['5', 5],
+            'a stored zero is a real value' => ['0', 0],
+            'a stored negative value is used' => ['-5', -5],
+        ];
+    }
+
+    /**
+     * Give the task runner a settings table holding (or deliberately missing)
+     * the niceness row. Every other setting it reads stays absent, which is the
+     * state a fresh install's tmux pane sees before the seeder runs.
+     */
+    private function seedNicenessSetting(?string $value): void
+    {
+        Schema::create('settings', function (Blueprint $table): void {
+            $table->string('name')->primary();
+            $table->text('value')->nullable();
+        });
+
+        if ($value !== null) {
+            DB::table('settings')->insert(['name' => 'niceness', 'value' => $value]);
+        }
     }
 
     private function fakeFixNamesPane(): void

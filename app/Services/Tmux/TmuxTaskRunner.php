@@ -13,6 +13,13 @@ use Symfony\Component\Process\ExecutableFinder;
  */
 class TmuxTaskRunner
 {
+    /**
+     * Process priority every pane command runs at when the `niceness` setting
+     * holds no value. Matches what the seeder plants on a fresh install, so a
+     * blanked admin field behaves exactly like one that was never touched.
+     */
+    public const int DEFAULT_NICENESS = 19;
+
     /** Default for the `fix_names_timeout` setting when the row is missing. */
     public const int DEFAULT_FIX_NAMES_TIMEOUT = 1200;
 
@@ -36,21 +43,18 @@ class TmuxTaskRunner
     }
 
     /**
-     * Get niceness value from settings or config with sensible default
+     * Process priority for every pane command.
+     *
+     * The admin `niceness` setting is the only tuning surface. A missing row
+     * reads as null and a blanked field as an empty string; both fall back to
+     * the canonical default. A stored `0` is a real value and is honored.
      */
     protected function getNiceness(): int
     {
-        // Try to get from settings first
         $niceness = Settings::settingValue('niceness');
 
-        // If empty string or null, try config
-        if (empty($niceness) && $niceness !== 0 && $niceness !== '0') {
-            $niceness = config('nntmux.niceness');
-        }
-
-        // If still empty, use system default
-        if (empty($niceness) && $niceness !== 0 && $niceness !== '0') {
-            $niceness = 10; // Standard nice default
+        if ($niceness === null || $niceness === '') {
+            return self::DEFAULT_NICENESS;
         }
 
         return (int) $niceness;
@@ -634,7 +638,7 @@ class TmuxTaskRunner
         $hasWork = (int) ($runVar['counts']['now']['work_available'] ?? $runVar['counts']['now']['work'] ?? 0) > 0;
         $hasNfo = (int) ($runVar['counts']['now']['processnfo'] ?? 0) > 0;
 
-        $niceness = Settings::settingValue('niceness') ?? 2;
+        $niceness = $this->getNiceness();
         $log = $this->getLogFile('post_additional');
         $sleep = (int) ($runVar['settings']['post_timer'] ?? 300);
 
@@ -819,7 +823,7 @@ class TmuxTaskRunner
             return $this->disablePane($pane, 'Post-process Metadata', 'no music/books/games or audio previews to process');
         }
 
-        $niceness = Settings::settingValue('niceness') ?? 2;
+        $niceness = $this->getNiceness();
         $log = $this->getLogFile('post_amazon');
         $artisan = PHP_BINARY.' artisan';
         $sleep = (int) ($runVar['settings']['post_timer_amazon'] ?? 300);
