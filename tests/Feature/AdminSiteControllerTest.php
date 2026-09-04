@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
+use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionClass;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
@@ -484,6 +485,71 @@ class AdminSiteControllerTest extends TestCase
         $this->assertNull($this->settingValue('repair_limit'));
     }
 
+    public function test_the_nzb_storage_depth_accepts_flat_storage_and_a_cleared_field(): void
+    {
+        $submitted = app(AdminSiteController::class)->edit(Request::create('/admin/site-edit', 'POST', [
+            'action' => 'submit',
+            'nzbsplitlevel' => '0',
+        ]));
+
+        $this->assertTrue($submitted->isRedirect());
+        $this->assertSame('0', $this->settingValue('nzbsplitlevel'), 'Flat storage is a legal depth.');
+
+        app(AdminSiteController::class)->edit(Request::create('/admin/site-edit', 'POST', [
+            'action' => 'submit',
+            'nzbsplitlevel' => '',
+        ]));
+
+        $this->assertSame(
+            '',
+            $this->settingValue('nzbsplitlevel'),
+            'Clearing the field is allowed; the service resolves a blank value to its coded default.'
+        );
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function invalidNzbStorageDepthProvider(): array
+    {
+        return [
+            'not a number' => ['four'],
+            'not an integer' => ['2.5'],
+            'negative' => ['-1'],
+            'deeper than the guid fan-out cap' => ['33'],
+        ];
+    }
+
+    #[DataProvider('invalidNzbStorageDepthProvider')]
+    public function test_an_out_of_range_nzb_storage_depth_is_rejected_and_leaves_every_setting_alone(string $depth): void
+    {
+        $response = app(AdminSiteController::class)->edit(Request::create('/admin/site-edit', 'POST', [
+            'action' => 'submit',
+            'nzbsplitlevel' => $depth,
+            'descriptive_title_rename' => '0',
+        ]));
+
+        $this->assertTrue($response->isRedirect());
+        $this->assertSame('4', $this->settingValue('nzbsplitlevel'));
+        $this->assertSame(
+            '1',
+            $this->settingValue('descriptive_title_rename'),
+            'A rejected form must not half-save the fields that were valid.'
+        );
+    }
+
+    public function test_the_nzb_storage_depth_help_text_describes_the_fallback_instead_of_a_reorg_script(): void
+    {
+        $response = app(AdminSiteController::class)->edit(Request::create('/admin/site-edit', 'GET'));
+
+        $this->assertInstanceOf(View::class, $response);
+        $rendered = $response->render();
+
+        $this->assertStringContainsString('name="nzbsplitlevel"', $rendered);
+        $this->assertStringNotContainsString('nzb-reorg', $rendered);
+        $this->assertStringContainsString('lookups fall back to the other depths', $rendered);
+    }
+
     private function settingValue(string $name): ?string
     {
         $value = DB::table('settings')->where('name', $name)->value('value');
@@ -548,6 +614,7 @@ class AdminSiteControllerTest extends TestCase
             ['name' => 'rescan_max_articles_per_run', 'value' => '5000000'],
             ['name' => 'rescan_window_minutes', 'value' => '30'],
             ['name' => 'rescan_limit', 'value' => '100'],
+            ['name' => 'nzbsplitlevel', 'value' => '4'],
         ], ['name'], ['value']);
     }
 
