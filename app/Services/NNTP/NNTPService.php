@@ -22,6 +22,12 @@ use DariusIII\NetNntp\Protocol\ResponseCode;
  */
 class NNTPService extends NntpClient implements ProviderClient
 {
+    private const int CONNECT_RETRY_INITIAL_DELAY_MICROSECONDS = 250_000;
+
+    private const int CONNECT_RETRY_DELAY_MULTIPLIER = 2;
+
+    private const int CONNECT_RETRY_MAX_DELAY_MICROSECONDS = 5_000_000;
+
     /**
      * Guard against a concatenated body growing past what PHP can hold: measure one body,
      * multiply by the loop count, and bail before 1.7GB. Without this it is a fatal error.
@@ -225,7 +231,7 @@ class NNTPService extends NntpClient implements ProviderClient
 
         $this->doQuit();
 
-        $ret = $connected = $cError = $aError = false;
+        $ret = $connected = $cError = false;
 
         $sslEnabled = $provider->ssl;
         $this->_currentServer = $provider->host;
@@ -239,6 +245,7 @@ class NNTPService extends NntpClient implements ProviderClient
 
         // Try to connect until we run out of attempts.
         $attemptsLeft = $this->_nntpRetries;
+        $retryDelay = self::CONNECT_RETRY_INITIAL_DELAY_MICROSECONDS;
         while (true) {
             $attemptsLeft--;
 
@@ -261,6 +268,12 @@ class NNTPService extends NntpClient implements ProviderClient
 
             // If error, try to connect again.
             if ($cErr && $attemptsLeft > 0) {
+                $this->sleepBeforeRetry($retryDelay);
+                $retryDelay = min(
+                    $retryDelay * self::CONNECT_RETRY_DELAY_MULTIPLIER,
+                    self::CONNECT_RETRY_MAX_DELAY_MICROSECONDS,
+                );
+
                 continue;
             }
 
@@ -282,24 +295,14 @@ class NNTPService extends NntpClient implements ProviderClient
                 // Check if there was an error authenticating.
                 $aErr = self::isError($ret2);
 
-                if ($aErr && ! $aError) {
-                    $aError = $ret2->getMessage();
-                }
-
-                // If error, try to authenticate again.
-                if ($aErr && $attemptsLeft > 0) {
-                    continue;
-                }
-
-                // Out of attempts and still not authenticated.
-                if ($aErr && $attemptsLeft <= 0) {
+                if ($aErr) {
                     return $this->errorResponse(
                         'Cannot authenticate to NNTP provider '.
                         $provider->label().
                         $enc.
                         ' - '.
                         $userName.
-                        ' ('.$aError.')'
+                        ' ('.$ret2->getMessage().')'
                     );
                 }
             }
@@ -311,6 +314,14 @@ class NNTPService extends NntpClient implements ProviderClient
 
             return true;
         }
+    }
+
+    /**
+     * Pause before another connection attempt. Overridable so tests do not wait in real time.
+     */
+    protected function sleepBeforeRetry(int $microseconds): void
+    {
+        usleep($microseconds);
     }
 
     /**

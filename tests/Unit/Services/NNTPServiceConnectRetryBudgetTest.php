@@ -90,6 +90,10 @@ final class NNTPServiceConnectRetryBudgetTest extends TestCase
         $result = $client->doConnect();
 
         $this->assertSame(10, $client->connectAttempts);
+        $this->assertSame(
+            [250000, 500000, 1000000, 2000000, 4000000, 5000000, 5000000, 5000000, 5000000],
+            $client->retryDelays,
+        );
         $this->assertNntpError($result, 'Cannot connect to NNTP provider');
     }
 
@@ -110,7 +114,7 @@ final class NNTPServiceConnectRetryBudgetTest extends TestCase
     }
 
     #[Test]
-    public function authentication_failure_is_bounded_by_the_same_budget(): void
+    public function authentication_failure_returns_after_one_attempt_without_sleeping(): void
     {
         $this->storeRetries('3');
 
@@ -120,7 +124,8 @@ final class NNTPServiceConnectRetryBudgetTest extends TestCase
         $result = $client->doConnect();
 
         $this->assertSame(1, $client->connectAttempts, 'A live socket is not reopened between authentication attempts.');
-        $this->assertSame(3, $client->authenticateAttempts);
+        $this->assertSame(1, $client->authenticateAttempts);
+        $this->assertSame([], $client->retryDelays);
         $this->assertNntpError($result, 'Cannot authenticate to NNTP provider');
     }
 
@@ -153,12 +158,15 @@ final class NNTPServiceConnectRetryBudgetTest extends TestCase
     }
 
     #[Test]
-    public function the_admin_help_text_describes_attempts_rather_than_a_five_second_retry(): void
+    public function the_admin_help_text_describes_connection_backoff_and_authentication_failure(): void
     {
         $helpText = $this->nntpRetriesHelpText();
 
-        $this->assertStringNotContainsString('5 seconds', $helpText);
-        $this->assertStringContainsString('attempt', $helpText);
+        $this->assertStringNotContainsString('no pause', $helpText);
+        $this->assertStringContainsString('connection attempts', $helpText);
+        $this->assertStringContainsString('250 milliseconds', $helpText);
+        $this->assertStringContainsString('5 seconds', $helpText);
+        $this->assertMatchesRegularExpression('/authentication.*without retry/i', $helpText);
         $this->assertMatchesRegularExpression('/below 1|less than 1/i', $helpText, 'The field accepts any text, so the help must say what a 0 does.');
     }
 
@@ -203,6 +211,9 @@ final class UnreachableProviderClient extends NNTPService
     public int $connectAttempts = 0;
 
     public int $authenticateAttempts = 0;
+
+    /** @var list<int> */
+    public array $retryDelays = [];
 
     /**
      * Turns a non-terminating loop into a failed test rather than a hung suite. Well above
@@ -253,6 +264,11 @@ final class UnreachableProviderClient extends NNTPService
     public function doQuit(bool $force = false): mixed
     {
         return true;
+    }
+
+    protected function sleepBeforeRetry(int $microseconds): void
+    {
+        $this->retryDelays[] = $microseconds;
     }
 
     public function _isConnected(): bool
