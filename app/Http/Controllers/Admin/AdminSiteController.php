@@ -14,6 +14,7 @@ use App\Models\SignupStat;
 use App\Services\NNTP\NntpProviderPool;
 use App\Services\Releases\ClipGenerationPolicy;
 use App\Services\Releases\DynamicPreviewBudgetPolicy;
+use App\Support\BackfillSettingRules;
 use App\Support\NzbSettingRules;
 use App\Support\RepairSettingRules;
 use App\Support\SizeUnit;
@@ -44,10 +45,18 @@ class AdminSiteController extends BasePageController
 
                 // Most of this form is free-text by long-standing design. The exceptions are
                 // the settings something downstream reads as a bound rather than a preference:
-                // the repair and re-scan budgets, and the NZB storage depth. Each rule set
-                // documents why its own fields cannot be left unchecked.
-                $validator = Validator::make($data, [...RepairSettingRules::rules(), ...NzbSettingRules::rules()]);
-                $validator->setAttributeNames([...RepairSettingRules::attributes(), ...NzbSettingRules::attributes()]);
+                // the repair and re-scan budgets, the NZB storage depth, and the safe backfill
+                // date. Each rule set documents why its own fields cannot be left unchecked.
+                $validator = Validator::make($data, [
+                    ...RepairSettingRules::rules(),
+                    ...NzbSettingRules::rules(),
+                    ...BackfillSettingRules::rules(),
+                ]);
+                $validator->setAttributeNames([
+                    ...RepairSettingRules::attributes(),
+                    ...NzbSettingRules::attributes(),
+                    ...BackfillSettingRules::attributes(),
+                ]);
 
                 if ($validator->fails()) {
                     return redirect()->to('admin/site-edit')->withErrors($validator)->withInput();
