@@ -423,6 +423,8 @@ final class ReleaseProcessingService
     {
         $lastId = 0;
         $cutoff = DatabaseClock::cutoff(now()->subHours($this->settings->collectionDelayTime));
+        $hasLastSeenAt = Schema::hasColumn('collections', 'last_seen_at');
+        $staleClock = $this->collectionActivityClockSql($hasLastSeenAt);
         $statuses = [
             CollectionFileCheckStatus::Default->value,
             CollectionFileCheckStatus::CompleteCollection->value,
@@ -435,15 +437,15 @@ final class ReleaseProcessingService
         do {
             $query = Collection::query()
                 ->where('id', '>', $lastId)
-                ->where(function ($query) use ($cutoff, $statuses): void {
+                ->where(function ($query) use ($cutoff, $hasLastSeenAt, $staleClock, $statuses): void {
                     $query->where('filecheck', CollectionFileCheckStatus::CompleteParts->value);
-                    if (Schema::hasColumn('collections', 'last_seen_at')) {
-                        $query->orWhere(function ($stale) use ($cutoff, $statuses): void {
+                    if ($hasLastSeenAt) {
+                        $query->orWhere(function ($stale) use ($cutoff, $staleClock, $statuses): void {
                             $stale->whereIn('filecheck', array_values(array_diff(
                                 $statuses,
                                 [CollectionFileCheckStatus::CompleteParts->value]
                             )))->whereRaw(
-                                'COALESCE(last_seen_at, dateadded, added) < '.$cutoff['sql'],
+                                $staleClock.' < '.$cutoff['sql'],
                                 $cutoff['bindings']
                             );
                         });
@@ -472,16 +474,19 @@ final class ReleaseProcessingService
      */
     private function reconcileCollectionIds(array $collectionIds, array $statuses): void
     {
+        $hasLastSeenAt = Schema::hasColumn('collections', 'last_seen_at');
+
         if (DB::getDriverName() === 'sqlite') {
-            $this->reconcileCollectionIdsSqlite($collectionIds, $statuses);
+            $this->reconcileCollectionIdsSqlite($collectionIds, $statuses, $hasLastSeenAt);
 
             return;
         }
 
         $idPlaceholders = implode(',', array_fill(0, \count($collectionIds), '?'));
         $statusPlaceholders = implode(',', array_fill(0, \count($statuses), '?'));
+        $staleClock = $this->collectionActivityClockSql($hasLastSeenAt, 'c');
 
-        DB::transaction(function () use ($collectionIds, $idPlaceholders, $statuses, $statusPlaceholders): void {
+        DB::transaction(function () use ($collectionIds, $idPlaceholders, $staleClock, $statuses, $statusPlaceholders): void {
             DB::update(
                 "UPDATE binaries b
                  LEFT JOIN (
@@ -509,14 +514,14 @@ final class ReleaseProcessingService
                      -- written once at insert, and it is the only thing left that can tell a
                      -- stale-promoted release it is short of files.
                      c.totalfiles = CASE
-                        WHEN c.dateadded < DATE_SUB(NOW(), INTERVAL ? HOUR)
+                        WHEN {$staleClock} < DATE_SUB(NOW(), INTERVAL ? HOUR)
                          AND c.filecheck IN (0, 1, 10)
                         THEN COALESCE(a.currentfiles, 0) ELSE c.totalfiles END,
                      c.filecheck = CASE
                         WHEN c.totalfiles > 0
                          AND COALESCE(a.currentfiles, 0) IN (c.totalfiles, c.totalfiles + 1)
                          AND COALESCE(a.completefiles, 0) >= c.totalfiles THEN ?
-                        WHEN c.dateadded < DATE_SUB(NOW(), INTERVAL ? HOUR)
+                        WHEN {$staleClock} < DATE_SUB(NOW(), INTERVAL ? HOUR)
                          AND c.filecheck IN (0, 1, 10) THEN ?
                         ELSE c.filecheck END
                  WHERE c.id IN ({$idPlaceholders}) AND c.filecheck IN ({$statusPlaceholders})",
@@ -537,9 +542,15 @@ final class ReleaseProcessingService
      * @param  list<int>  $collectionIds
      * @param  list<int>  $statuses
      */
-    private function reconcileCollectionIdsSqlite(array $collectionIds, array $statuses): void
-    {
-        DB::transaction(function () use ($collectionIds, $statuses): void {
+    private function reconcileCollectionIdsSqlite(
+        array $collectionIds,
+        array $statuses,
+        bool $hasLastSeenAt,
+    ): void {
+        $cutoff = DatabaseClock::cutoff(now()->subHours($this->settings->collectionDelayTime));
+        $staleClock = $this->collectionActivityClockSql($hasLastSeenAt);
+
+        DB::transaction(function () use ($collectionIds, $cutoff, $staleClock, $statuses): void {
             foreach ($collectionIds as $collectionId) {
                 $binaryIds = DB::table('binaries')->where('collections_id', $collectionId)->pluck('id')->all();
                 foreach ($binaryIds as $binaryId) {
@@ -564,10 +575,9 @@ final class ReleaseProcessingService
                      FROM binaries WHERE collections_id = ?',
                     [$collectionId]
                 );
-                $cutoff = DatabaseClock::cutoff(now()->subHours($this->settings->collectionDelayTime));
                 $stale = DB::table('collections')
                     ->where('id', $collectionId)
-                    ->whereRaw('dateadded < '.$cutoff['sql'], $cutoff['bindings'])
+                    ->whereRaw($staleClock.' < '.$cutoff['sql'], $cutoff['bindings'])
                     ->exists()
                     && \in_array((int) $collection->filecheck, [0, 1, 10], true);
                 $totalFiles = $stale ? (int) $aggregate->currentfiles : (int) $collection->totalfiles;
@@ -1110,6 +1120,15 @@ final class ReleaseProcessingService
         $groupInfo = UsenetGroup::getByName($groupID);
 
         return $groupInfo !== null ? (int) $groupInfo['id'] : null;
+    }
+
+    private function collectionActivityClockSql(bool $hasLastSeenAt, ?string $tableAlias = null): string
+    {
+        $prefix = $tableAlias === null ? '' : $tableAlias.'.';
+
+        return $hasLastSeenAt
+            ? "COALESCE({$prefix}last_seen_at, {$prefix}dateadded, {$prefix}added)"
+            : $prefix.'dateadded';
     }
 
     /**
