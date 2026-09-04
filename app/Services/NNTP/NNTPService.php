@@ -266,7 +266,7 @@ class NNTPService extends NntpClient implements ProviderClient
 
             // Out of attempts and still not connected.
             if ($attemptsLeft <= 0 && ! $connected) {
-                return $this->connectionFailed(
+                return $this->errorResponse(
                     'Cannot connect to NNTP provider '.
                     $provider->label().
                     $enc.
@@ -293,7 +293,7 @@ class NNTPService extends NntpClient implements ProviderClient
 
                 // Out of attempts and still not authenticated.
                 if ($aErr && $attemptsLeft <= 0) {
-                    return $this->connectionFailed(
+                    return $this->errorResponse(
                         'Cannot authenticate to NNTP provider '.
                         $provider->label().
                         $enc.
@@ -314,17 +314,16 @@ class NNTPService extends NntpClient implements ProviderClient
     }
 
     /**
-     * Report a connection attempt that ran out of budget: the operator sees it on the console,
-     * the caller gets the error value back.
+     * Report an NNTP failure to the operator and return the matching error value to the caller.
      *
      * cli()->error() returns void, so it cannot be folded into the throwError() argument --
      * doing so passed null to a string parameter and raised a TypeError under strict types.
      */
-    private function connectionFailed(string $message): NntpError
+    private function errorResponse(string $message, ?int $code = null): NntpError
     {
         cli()->error($message);
 
-        return $this->throwError($message);
+        return $this->throwError($message, $code);
     }
 
     /**
@@ -572,7 +571,7 @@ class NNTPService extends NntpClient implements ProviderClient
         if (! \is_array($identifiers) && ! \is_string($identifiers) && ! is_numeric($identifiers)) {
             $message = 'Wrong Identifier type, array, int or string accepted. This type of var was passed: '.gettype($identifiers);
 
-            return $this->throwError(cli()->error($message));
+            return $this->errorResponse($message);
         }
 
         $wanted = \is_array($identifiers) ? $identifiers : [$identifiers];
@@ -1036,8 +1035,9 @@ class NNTPService extends NntpClient implements ProviderClient
                         return $deComp; // @phpstan-ignore return.type
                     }
                     $message = 'Decompression of OVER headers failed.';
+                    $error = $this->errorResponse($message, 1000);
 
-                    return $this->throwError(cli()->error($message), 1000);
+                    return $error;
                 }
                 // The buffer was not empty, so we know this was not the real ending, so reset $possibleTerm.
                 $possibleTerm = false;
@@ -1055,8 +1055,9 @@ class NNTPService extends NntpClient implements ProviderClient
                 // If we got nothing again, return error.
                 if (empty($buffer)) {
                     $message = 'Error fetching data from usenet server while downloading OVER headers.';
+                    $error = $this->errorResponse($message, 1000);
 
-                    return $this->throwError(cli()->error($message), 1000);
+                    return $error;
                 }
             }
 
@@ -1072,8 +1073,9 @@ class NNTPService extends NntpClient implements ProviderClient
         }
 
         $message = 'Unspecified error while downloading OVER headers.';
+        $error = $this->errorResponse($message, 1000);
 
-        return $this->throwError(cli()->error($message), 1000);
+        return $error;
     }
 
     /**
