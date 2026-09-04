@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
- * amazonsleep throttles the external metadata lookups books, music and console releases make.
+ * amazonsleep throttles the external metadata lookups book and console releases make.
  * It has never had a settings row, so settingsUpdate() -- an UPDATE, never an INSERT -- could
  * not create one from the admin form: the field was permanently unmanageable. The row has to
  * exist both on a fresh install (seeder) and on one upgraded in place (migration).
