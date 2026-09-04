@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Enums\NzbParseFailure;
+use App\Services\MetadataProcessing\NfoProcessingCandidateQuery;
 use App\Services\NfoService;
 use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbContentsService;
@@ -88,26 +89,210 @@ class NfoProcessingReliabilityTest extends TestCase
     public function the_archive_fallback_uses_the_configured_retry_band(): void
     {
         DB::table('settings')->where('name', 'maxnforetries')->update(['value' => '3']);
-        DB::table('settings')->where('name', 'maxsizetoprocessnfo')->update(['value' => '500']);
+        DB::table('settings')->where('name', 'lookupnfo')->update(['value' => '0']);
         Cache::flush();
 
         $this->insertRelease(3, nzbStatus: 1, nfoStatus: -4);
-        $this->insertRelease(4, nzbStatus: 1, nfoStatus: -7);
-        $this->insertRelease(5, nzbStatus: 1, nfoStatus: NfoService::NFO_FAILED_ARCHIVE);
-        $this->insertRelease(6, nzbStatus: 0, nfoStatus: -4);
+        $this->insertRelease(4, nzbStatus: 1, nfoStatus: -5);
+        $this->insertRelease(5, nzbStatus: 1, nfoStatus: -7);
+        $this->insertRelease(6, nzbStatus: 1, nfoStatus: NfoService::NFO_FAILED_ARCHIVE);
+        $this->insertRelease(7, nzbStatus: 0, nfoStatus: -5);
         DB::table('release_files')->insert([
             ['releases_id' => 3, 'name' => 'release.nfo', 'size' => 1_000],
             ['releases_id' => 4, 'name' => 'release.nfo', 'size' => 1_000],
             ['releases_id' => 5, 'name' => 'release.nfo', 'size' => 1_000],
             ['releases_id' => 6, 'name' => 'release.nfo', 'size' => 1_000],
+            ['releases_id' => 7, 'name' => 'release.nfo', 'size' => 1_000],
         ]);
 
         $service = new RecordingArchiveNfoService;
         $service->processNfoFiles(Mockery::mock(NNTPService::class));
 
-        $this->assertEqualsCanonicalizing([3, 4], $service->archiveReleaseIds);
-        $this->assertSame(NfoService::NFO_FAILED_ARCHIVE, DB::table('releases')->where('id', 3)->value('nfostatus'));
+        $this->assertEqualsCanonicalizing([4, 5], $service->archiveReleaseIds);
+        $this->assertSame(-4, DB::table('releases')->where('id', 3)->value('nfostatus'));
         $this->assertSame(NfoService::NFO_FAILED_ARCHIVE, DB::table('releases')->where('id', 4)->value('nfostatus'));
+        $this->assertSame(NfoService::NFO_FAILED_ARCHIVE, DB::table('releases')->where('id', 5)->value('nfostatus'));
+        $this->assertSame(NfoService::NFO_FAILED_ARCHIVE, DB::table('releases')->where('id', 6)->value('nfostatus'));
+        $this->assertSame(-5, DB::table('releases')->where('id', 7)->value('nfostatus'));
+    }
+
+    #[Test]
+    public function a_release_with_a_main_retry_left_survives_the_archive_pass_in_the_same_run(): void
+    {
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.test']);
+        DB::table('settings')->where('name', 'maxnforetries')->update(['value' => '3']);
+        Cache::flush();
+
+        // -3 sits inside the main window; one failed attempt drops it to the retry floor (-4),
+        // which the archive pass must leave alone until a later run spends that last retry.
+        $this->insertRelease(1, nzbStatus: 1, nfoStatus: -3);
+        DB::table('release_files')->insert(['releases_id' => 1, 'name' => 'release.nfo', 'size' => 1_000]);
+
+        $this->app->instance(NzbContentsService::class, $this->failingContentsService());
+
+        $service = new RecordingArchiveNfoService;
+        $service->processNfoFiles(Mockery::mock(NNTPService::class));
+
+        $this->assertSame([], $service->archiveReleaseIds);
+        $this->assertSame(-4, DB::table('releases')->where('id', 1)->value('nfostatus'));
+    }
+
+    #[Test]
+    public function a_release_the_main_pass_exhausts_reaches_the_archive_pass_in_the_same_run(): void
+    {
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.test']);
+        DB::table('settings')->where('name', 'maxnforetries')->update(['value' => '3']);
+        Cache::flush();
+
+        // -4 is the last main retry. Spending it in this run drops the release past the floor,
+        // so the archive pass — which queries after the main loop — picks it up immediately.
+        $this->insertRelease(1, nzbStatus: 1, nfoStatus: -4);
+        DB::table('release_files')->insert(['releases_id' => 1, 'name' => 'release.nfo', 'size' => 1_000]);
+
+        $this->app->instance(NzbContentsService::class, $this->failingContentsService());
+
+        $service = new RecordingArchiveNfoService;
+        $service->processNfoFiles(Mockery::mock(NNTPService::class));
+
+        $this->assertSame([1], $service->archiveReleaseIds);
+        $this->assertSame([-5], $service->archiveReleaseStatuses);
+        $this->assertSame(NfoService::NFO_FAILED_ARCHIVE, DB::table('releases')->where('id', 1)->value('nfostatus'));
+    }
+
+    #[Test]
+    public function the_main_pass_keeps_the_retry_floor_the_archive_pass_gives_up(): void
+    {
+        $this->assertSame([-4, -3, -2, -1], $this->mainPassStatuses(3));
+        $this->assertSame([-9, -8, -7, -6, -5], $this->archivePassStatuses(3));
+    }
+
+    #[Test]
+    public function the_clamped_retry_floor_leaves_only_the_failed_status_to_the_archive_pass(): void
+    {
+        foreach ([7, 8, 12] as $retries) {
+            $this->assertSame(
+                [-8, -7, -6, -5, -4, -3, -2, -1],
+                $this->mainPassStatuses($retries),
+                'Main pass window for maxnforetries='.$retries,
+            );
+            $this->assertSame(
+                [NfoService::NFO_FAILED],
+                $this->archivePassStatuses($retries),
+                'Archive pass window for maxnforetries='.$retries,
+            );
+        }
+    }
+
+    #[Test]
+    public function raising_the_retry_setting_cannot_desynchronise_the_two_windows(): void
+    {
+        // Run once at 3 retries so any cache the archive pass keeps is warm and holds floor -4.
+        $this->seedStatusLadder(3, mainPassEnabled: false);
+        (new RecordingArchiveNfoService)->processNfoFiles(Mockery::mock(NNTPService::class));
+
+        // Raise the budget the way an admin save does, without clearing any cache.
+        DB::table('settings')->where('name', 'maxnforetries')->update(['value' => '5']);
+        $this->seedStatusLadderRows();
+
+        $service = new RecordingArchiveNfoService;
+        $service->processNfoFiles(Mockery::mock(NNTPService::class));
+
+        // The main pass reads the setting uncached, so its floor is already -6. An archive pass
+        // still holding the old floor would reclaim -6 and -5 and fail them terminally.
+        $this->assertEqualsCanonicalizing([-9, -8, -7], $service->archiveReleaseStatuses);
+    }
+
+    #[Test]
+    public function the_retry_windows_partition_every_status_for_every_setting(): void
+    {
+        foreach ([-5, -1, ...range(0, 10)] as $retries) {
+            $mainStatuses = $this->mainPassStatuses($retries);
+            $archiveStatuses = $this->archivePassStatuses($retries);
+
+            $this->assertSame(
+                [],
+                array_values(array_intersect($mainStatuses, $archiveStatuses)),
+                'Statuses claimed by both passes for maxnforetries='.$retries,
+            );
+
+            $union = array_merge($mainStatuses, $archiveStatuses);
+            sort($union);
+
+            $this->assertSame(
+                range(NfoService::NFO_FAILED, NfoService::NFO_UNPROC),
+                $union,
+                'Statuses covered by maxnforetries='.$retries,
+            );
+        }
+    }
+
+    /**
+     * Statuses the main retry pass admits, lowest first.
+     *
+     * @return list<int>
+     */
+    private function mainPassStatuses(int $retries): array
+    {
+        $this->seedStatusLadder($retries, mainPassEnabled: true);
+
+        return NfoProcessingCandidateQuery::query()
+            ->pluck('nfostatus')
+            ->map(fn (mixed $status): int => (int) $status)
+            ->sort()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Statuses the archive pass admits, lowest first. The main pass is switched off by a
+     * size filter no seeded release passes, so only the archive pass selects anything.
+     *
+     * @return list<int>
+     */
+    private function archivePassStatuses(int $retries): array
+    {
+        $this->seedStatusLadder($retries, mainPassEnabled: false);
+
+        $service = new RecordingArchiveNfoService;
+        $service->processNfoFiles(Mockery::mock(NNTPService::class));
+
+        return collect($service->archiveReleaseStatuses)
+            ->sort()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Seed one archive-eligible release per retry status, with release N sitting at status -N.
+     *
+     * The main pass is switched off through `lookupnfo`, the setting that actually gates it, so
+     * the archive pass is observed alone without distorting any of its own selection inputs.
+     */
+    private function seedStatusLadder(int $retries, bool $mainPassEnabled): void
+    {
+        DB::table('settings')->where('name', 'maxnforetries')->update(['value' => (string) $retries]);
+        DB::table('settings')->where('name', 'lookupnfo')->update(['value' => $mainPassEnabled ? '1' : '0']);
+        Cache::flush();
+
+        $this->seedStatusLadderRows();
+    }
+
+    /**
+     * One archive-eligible release per retry status, with release N sitting at status -N.
+     */
+    private function seedStatusLadderRows(): void
+    {
+        DB::table('release_files')->delete();
+        DB::table('releases')->delete();
+
+        foreach (range(1, 10) as $id) {
+            $this->insertRelease($id, nzbStatus: 1, nfoStatus: -$id);
+            DB::table('release_files')->insert([
+                'releases_id' => $id,
+                'name' => 'release.nfo',
+                'size' => 1_000,
+            ]);
+        }
     }
 
     #[Test]
@@ -192,6 +377,19 @@ class NfoProcessingReliabilityTest extends TestCase
         $this->assertSame(NfoService::NFO_NONFO, DB::table('releases')->where('id', 7)->value('nfostatus'));
     }
 
+    /**
+     * A main pass whose NZB lookup always misses, spending one retry per release.
+     */
+    private function failingContentsService(): NzbContentsService
+    {
+        $contents = Mockery::mock(NzbContentsService::class);
+        $contents->shouldReceive('setNntp')->once();
+        $contents->shouldReceive('setNfo')->once();
+        $contents->shouldReceive('getNfoFromNzb')->once()->andReturn(NzbParseFailure::Missing);
+
+        return $contents;
+    }
+
     private function contentsService(?NzbService $nzbService = null): NzbContentsService
     {
         return new NzbContentsService(
@@ -272,9 +470,13 @@ class RecordingArchiveNfoService extends NfoService
     /** @var list<int> */
     public array $archiveReleaseIds = [];
 
+    /** @var list<int> The nfostatus each release carried when it was handed to this pass. */
+    public array $archiveReleaseStatuses = [];
+
     public function attemptNfoFromArchive(string $guid, int $releaseId, NNTPService $nntp): string|false
     {
         $this->archiveReleaseIds[] = $releaseId;
+        $this->archiveReleaseStatuses[] = (int) DB::table('releases')->where('id', $releaseId)->value('nfostatus');
 
         return false;
     }
