@@ -155,10 +155,7 @@ class TmuxMonitor extends Command
         $this->runIRCScraper($runVar);
 
         // Run main tasks based on sequential mode
-        if ($sequential === 2) {
-            // Stripped mode - only essential tasks
-            $this->runSequentialTasks($runVar);
-        } elseif ($sequential === 1) {
+        if ($sequential === 1) {
             // Basic sequential mode
             $this->runBasicTasks($runVar);
         } else {
@@ -214,30 +211,12 @@ class TmuxMonitor extends Command
     }
 
     /**
-     * Run stripped sequential tasks
-     *
-     * @param  array<string, mixed>  $runVar
-     */
-    private function runSequentialTasks(array $runVar): void
-    {
-        // Minimal tasks for complete sequential mode
-        // Tasks are handled by the sequential script itself
-    }
-
-    /**
      * Run post-processing tasks (common to most modes)
      *
      * @param  array<string, mixed>  $runVar
      */
     private function runPostProcessingTasks(array $runVar): void
     {
-        $sequential = (int) ($runVar['constants']['sequential'] ?? 0);
-
-        if ($sequential === 2) {
-            // Skip post-processing in complete sequential mode
-            return;
-        }
-
         // Run utility tasks (window 1)
         $this->taskRunner->runPaneTask('fixnames', [], $runVar);
         $this->taskRunner->runPaneTask('removecrap', [], $runVar);

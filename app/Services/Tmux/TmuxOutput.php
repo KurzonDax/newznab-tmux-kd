@@ -189,7 +189,7 @@ class TmuxOutput extends Tmux
             number_format((int) ($this->runVar['counts']['now']['missed_parts_table'] ?? 0))
         );
 
-        if (((int) $this->runVar['settings']['post'] === 1 || (int) $this->runVar['settings']['post'] === 3) && (int) $this->runVar['constants']['sequential'] !== 2) {
+        if ((int) $this->runVar['settings']['post'] === 1 || (int) $this->runVar['settings']['post'] === 3) {
             $buffer .= sprintf(
                 $this->tmpMasks[1],
                 'Postprocess:',

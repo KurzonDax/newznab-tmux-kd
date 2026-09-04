@@ -39,7 +39,6 @@ class TmuxLayoutBuilder
         'update_binaries' => ' Binaries',
         'backfill' => '󰑓 Backfill',
         'update_releases' => ' Releases',
-        'sequential' => '󰒿 Sequential',
 
         // Utilities
         'fixReleaseNames' => '󰯃 Fix Names',
@@ -88,7 +87,6 @@ class TmuxLayoutBuilder
         try {
             match ($sequentialMode) {
                 1 => $this->buildBasicLayout(),
-                2 => $this->buildStrippedLayout(),
                 default => $this->buildFullLayout(),
             };
 
@@ -233,41 +231,6 @@ class TmuxLayoutBuilder
         );
 
         // Window 3: IRC Scraper
-        $this->createIRCScraperWindow();
-
-        $this->createOptionalWindows();
-
-    }
-
-    /**
-     * Build stripped sequential layout (mode 2)
-     */
-    protected function buildStrippedLayout(): void
-    {
-        // Window 0: Monitor + Sequential
-        $monitor = $this->createSessionPane(TmuxPaneRole::Monitor, $this->getPaneDisplayName('Monitor'));
-        $this->splitHorizontal(
-            $monitor,
-            67,
-            TmuxPaneRole::Sequential,
-            $this->getPaneDisplayName('sequential'),
-        );
-
-        // Window 1: Metadata postprocessing
-        $fixNames = $this->createWindowPane(
-            1,
-            ' Utils',
-            TmuxPaneRole::FixNames,
-            $this->getPaneDisplayName('fixReleaseNames'),
-        );
-        $this->splitHorizontal(
-            $fixNames,
-            50,
-            TmuxPaneRole::PostMetadata,
-            $this->getPaneDisplayName('postprocessing_amazon'),
-        );
-
-        // Window 2: IRC Scraper
         $this->createIRCScraperWindow();
 
         $this->createOptionalWindows();

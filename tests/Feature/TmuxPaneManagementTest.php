@@ -202,16 +202,75 @@ SH;
                     'irc_scraper',
                 ],
             ],
-            'stripped' => [
+            'a legacy stripped value falls back to full' => [
                 2,
                 [
                     'monitor',
-                    'sequential',
+                    'binaries',
+                    'backfill',
+                    'releases',
                     'fix_names',
+                    'remove_crap',
+                    'post_additional',
+                    'post_movies',
+                    'post_tv',
                     'post_metadata',
                     'irc_scraper',
                 ],
             ],
+        ];
+    }
+
+    #[DataProvider('mainTaskSequentialModeProvider')]
+    public function test_main_task_dispatch_treats_any_non_basic_mode_as_full(int $sequential, bool $expectBinaries): void
+    {
+        $respawned = [];
+        Process::fake(function (PendingProcess $process) use (&$respawned) {
+            if (! is_array($process->command)) {
+                return Process::result();
+            }
+
+            if (in_array('list-panes', $process->command, true)) {
+                return Process::result("%1\tbinaries\n%2\tbackfill\n%3\treleases\n");
+            }
+
+            if (in_array('respawn-pane', $process->command, true)) {
+                $respawned[] = (string) end($process->command);
+            }
+
+            return Process::result();
+        });
+
+        $runner = new TmuxTaskRunner('test-session');
+
+        $this->assertTrue($runner->runPaneTask('main', [], [
+            'constants' => ['sequential' => $sequential],
+            'settings' => ['binaries_run' => 1, 'backfill' => 1, 'releases_run' => 1, 'progressive' => 0],
+            'killswitch' => ['coll' => false, 'pp' => false],
+            'counts' => ['now' => ['collections_table' => 0]],
+        ]));
+
+        $contains = static fn (string $needle): bool => count(array_filter(
+            $respawned,
+            static fn (string $command): bool => str_contains($command, $needle),
+        )) > 0;
+
+        $this->assertSame($expectBinaries, $contains('multiprocessing:safe binaries'));
+        $this->assertSame($expectBinaries, $contains('multiprocessing:backfill'));
+        $this->assertTrue($contains('multiprocessing:releases'), 'releases run in every mode');
+        $this->assertFalse($contains('group:update-all'), 'the retired sequential task is gone');
+    }
+
+    /**
+     * @return array<string, array{int, bool}>
+     */
+    public static function mainTaskSequentialModeProvider(): array
+    {
+        return [
+            'full' => [0, true],
+            'basic' => [1, false],
+            'legacy stripped' => [2, true],
+            'unknown' => [7, true],
         ];
     }
 

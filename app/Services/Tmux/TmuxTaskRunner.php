@@ -348,15 +348,16 @@ class TmuxTaskRunner
     /**
      * Run main task (varies by sequential mode)
      *
+     * Anything other than basic sequential -- including a legacy hand-set 2 --
+     * takes the full-mode path, which is the layout the engine builds for it.
+     *
      * @param  array<string, mixed>  $runVar
      */
     protected function runMainTask(int $sequential, array $runVar): bool
     {
         return match ($sequential) {
-            0 => $this->runMainNonSequential($runVar),
             1 => $this->runMainBasic($runVar),
-            2 => $this->runMainSequential($runVar),
-            default => false,
+            default => $this->runMainNonSequential($runVar),
         };
     }
 
@@ -384,24 +385,6 @@ class TmuxTaskRunner
     protected function runMainBasic(array $runVar): bool
     {
         return $this->runReleasesUpdate($runVar);
-    }
-
-    /**
-     * Run main full sequential task
-     *
-     * @param  array<string, mixed>  $runVar
-     */
-    protected function runMainSequential(array $runVar): bool
-    {
-        // Full sequential mode - runs group:update-all for each group
-        $pane = $this->paneManager->paneForRole(TmuxPaneRole::Sequential, '0.1');
-
-        $niceness = $this->getNiceness();
-        $artisan = base_path('artisan');
-        $command = "nice -n{$niceness} php {$artisan} group:update-all";
-        $command = $this->buildCommand($command, ['log_pane' => 'sequential']);
-
-        return $this->paneManager->respawnPane($pane, $command);
     }
 
     /**
@@ -816,8 +799,7 @@ class TmuxTaskRunner
     protected function runAmazonTask(array $runVar): bool
     {
         $enabled = (int) ($runVar['settings']['post_amazon'] ?? 0);
-        $legacyPane = (int) ($runVar['constants']['sequential'] ?? 0) === 2 ? '1.1' : '2.2';
-        $pane = $this->paneManager->paneForRole(TmuxPaneRole::PostMetadata, $legacyPane);
+        $pane = $this->paneManager->paneForRole(TmuxPaneRole::PostMetadata, '2.2');
 
         if ($enabled !== 1) {
             return $this->disablePane($pane, 'Post-process Metadata', 'disabled in settings');

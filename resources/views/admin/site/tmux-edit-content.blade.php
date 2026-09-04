@@ -85,13 +85,6 @@
                             </x-select>
                         </x-form.group>
 
-                        <x-form.group label="Sequential Sleep Timer" for="seq_timer">
-                            <div class="flex gap-2">
-                                <x-input id="seq_timer" name="seq_timer" type="number" value="{{ $site['seq_timer'] ?? 60 }}" class="flex-1" />
-                                <span class="px-3 py-2 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-sm">seconds</span>
-                            </div>
-                        </x-form.group>
-
                         <div class="bg-yellow-50 dark:bg-gray-800 border border-yellow-300 dark:border-gray-600 rounded p-3">
                             <p class="text-sm text-yellow-700 dark:text-gray-400"><i class="fas fa-exclamation-triangle mr-2"></i>Sequential mode is not recommended as it's not tested enough.</p>
                         </div>
