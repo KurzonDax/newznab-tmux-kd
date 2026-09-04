@@ -60,7 +60,7 @@ class NNTPService extends NntpClient implements ProviderClient
     protected bool $_postingAllowed = false;
 
     /**
-     * How many times should we try to reconnect to the NNTP server?
+     * Maximum number of connection attempts doConnect() may make. Never below 1.
      */
     protected int $_nntpRetries;
 
@@ -120,7 +120,9 @@ class NNTPService extends NntpClient implements ProviderClient
         $this->_echo = config('nntmux.echocli');
         $this->_tmux = $tmux ?? new Tmux;
         $this->_yencService = $yencService ?? app(YencService::class);
-        $this->_nntpRetries = (int) Settings::settingValueOr('nntpretries', 1);
+        // Free-text admin field: a stored 0 or a negative would leave the connect loop with no
+        // attempt to spend, so the budget floors at one.
+        $this->_nntpRetries = max(1, (int) Settings::settingValueOr('nntpretries', 1));
 
         $this->initializeConfig();
     }
@@ -193,6 +195,10 @@ class NNTPService extends NntpClient implements ProviderClient
     /**
      * Connect this client to its provider.
      *
+     * Bounded by $_nntpRetries connection attempts. The budget is floored at one, both
+     * exhaustion guards trip at or below zero, and every path out of the retry loop returns,
+     * so an unreachable provider yields an error rather than reconnecting forever.
+     *
      * @param  bool  $compression  Should we attempt to enable XFeature Gzip compression on this connection?
      * @return mixed On success = (bool)   Did we successfully connect to the usenet?
      *
@@ -231,11 +237,10 @@ class NNTPService extends NntpClient implements ProviderClient
         $enc = ($sslEnabled ? ' (ssl)' : ' (non-ssl)');
         $sslEnabled = ($sslEnabled ? 'tls' : false);
 
-        // Try to connect until we run of out tries.
-        $retries = $this->_nntpRetries;
+        // Try to connect until we run out of attempts.
+        $attemptsLeft = $this->_nntpRetries;
         while (true) {
-            $retries--;
-            $authenticated = false;
+            $attemptsLeft--;
 
             // If we are not connected, try to connect.
             if (! $connected) {
@@ -255,82 +260,71 @@ class NNTPService extends NntpClient implements ProviderClient
             }
 
             // If error, try to connect again.
-            if ($cErr && $retries > 0) {
+            if ($cErr && $attemptsLeft > 0) {
                 continue;
             }
 
-            // If we have no more retries and could not connect, return an error.
-            if ($retries === 0 && ! $connected) {
-                $message =
+            // Out of attempts and still not connected.
+            if ($attemptsLeft <= 0 && ! $connected) {
+                return $this->connectionFailed(
                     'Cannot connect to NNTP provider '.
                     $provider->label().
                     $enc.
                     ': '.
-                    $cError;
-
-                return $this->throwError(cli()->error($message));
+                    $cError
+                );
             }
 
-            // If we are connected, try to authenticate.
-            if ($connected) {
-                // If the username is empty it probably means the server does not require a username.
-                if ($userName === '') {
-                    $authenticated = true;
+            // We are connected. An empty username probably means the server does not require one.
+            if ($userName !== '') {
+                $ret2 = $this->authenticate($userName, $password);
 
-                    // Try to authenticate to usenet.
-                } else {
-                    $ret2 = $this->authenticate($userName, $password);
+                // Check if there was an error authenticating.
+                $aErr = self::isError($ret2);
 
-                    // Check if there was an error authenticating.
-                    $aErr = self::isError($ret2);
-
-                    // If there was no error, then we are authenticated.
-                    if (! $aErr) {
-                        $authenticated = true;
-                    } elseif (! $aError) {
-                        $aError = $ret2->getMessage();
-                    }
-
-                    // If error, try to authenticate again.
-                    if ($aErr && $retries > 0) {
-                        continue;
-                    }
-
-                    // If we ran out of retries, return an error.
-                    if ($retries === 0 && ! $authenticated) {
-                        $message =
-                            'Cannot authenticate to NNTP provider '.
-                            $provider->label().
-                            $enc.
-                            ' - '.
-                            $userName.
-                            ' ('.$aError.')';
-
-                        return $this->throwError(cli()->error($message));
-                    }
-                }
-            }
-            // If we are connected and authenticated, try enabling compression if we have it enabled.
-            if ($connected && $authenticated) {
-                // Check if we should use compression on the connection.
-                if (! $compression || ! $this->_configCompressedHeaders) {
-                    $this->_compressionSupported = false;
+                if ($aErr && ! $aError) {
+                    $aError = $ret2->getMessage();
                 }
 
-                return true;
-            }
-            // If we reached this point and have not connected after all retries, break out of the loop.
-            if ($retries === 0) {
-                break;
+                // If error, try to authenticate again.
+                if ($aErr && $attemptsLeft > 0) {
+                    continue;
+                }
+
+                // Out of attempts and still not authenticated.
+                if ($aErr && $attemptsLeft <= 0) {
+                    return $this->connectionFailed(
+                        'Cannot authenticate to NNTP provider '.
+                        $provider->label().
+                        $enc.
+                        ' - '.
+                        $userName.
+                        ' ('.$aError.')'
+                    );
+                }
             }
 
-            // Sleep .4 seconds between retries.
-            usleep(400000);
+            // Connected and authenticated. Check if we should use compression on the connection.
+            if (! $compression || ! $this->_configCompressedHeaders) {
+                $this->_compressionSupported = false;
+            }
+
+            return true;
         }
-        // If we somehow got out of the loop, return an error.
-        $message = 'Unable to connect to NNTP provider '.$provider->label().$enc;
+    }
 
-        return $this->throwError(cli()->error($message));
+    /**
+     * Report a connection attempt that ran out of budget: the operator sees it on the console,
+     * the caller gets the error value back.
+     *
+     * cli()->error() returns void, so it cannot be folded into the throwError() argument --
+     * doing so passed null to a string parameter and raised a TypeError under strict types.
+     */
+    private function connectionFailed(string $message): NntpError
+    {
+        cli()->error($message);
+
+        return $this->throwError($message);
     }
 
     /**
