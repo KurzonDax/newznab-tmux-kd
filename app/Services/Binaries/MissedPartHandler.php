@@ -54,17 +54,10 @@ final class MissedPartHandler
     private function addMissingPartsSqlite(array $numbers, int $groupId): void
     {
         foreach (array_chunk(array_unique($numbers), $this->chunkSize) as $chunk) {
-            $placeholders = [];
-            $bindings = [];
-
-            foreach ($chunk as $number) {
-                $placeholders[] = '(?, ?, 1)';
-                $bindings[] = $number;
-                $bindings[] = $groupId;
-            }
+            [$values, $bindings] = $this->valuesForNewQueueEntries($chunk, $groupId);
 
             DB::statement(
-                'INSERT INTO missed_parts (numberid, groups_id, attempts) VALUES '.implode(',', $placeholders).' ON CONFLICT(numberid, groups_id) DO UPDATE SET attempts = attempts + 1',
+                'INSERT INTO missed_parts (numberid, groups_id, attempts) VALUES '.$values.' ON CONFLICT(numberid, groups_id) DO UPDATE SET attempts = attempts + 1',
                 $bindings
             );
         }
@@ -76,20 +69,41 @@ final class MissedPartHandler
     private function addMissingPartsMysql(array $numbers, int $groupId): void
     {
         foreach (array_chunk(array_unique($numbers), $this->chunkSize) as $chunk) {
-            $placeholders = [];
-            $bindings = [];
-
-            foreach ($chunk as $number) {
-                $placeholders[] = '(?, ?, 1)';
-                $bindings[] = $number;
-                $bindings[] = $groupId;
-            }
+            [$values, $bindings] = $this->valuesForNewQueueEntries($chunk, $groupId);
 
             DB::insert(
-                'INSERT INTO missed_parts (numberid, groups_id, attempts) VALUES '.implode(',', $placeholders).' ON DUPLICATE KEY UPDATE attempts = attempts + 1',
+                'INSERT INTO missed_parts (numberid, groups_id, attempts) VALUES '.$values.' ON DUPLICATE KEY UPDATE attempts = attempts + 1',
                 $bindings
             );
         }
+    }
+
+    /**
+     * Build the VALUES tuples and bindings both insert paths share, so the entry baseline
+     * cannot drift between database drivers.
+     *
+     * `attempts` counts completed repair attempts, so a part enters the queue at zero:
+     * getMissingParts() offers rows below the configured maximum and
+     * cleanupExhaustedParts() deletes rows that reached it, so entering at one spent a
+     * try nobody made -- a stored maximum of 3 delivered two real attempts, and a stored
+     * 1 delivered none at all. Re-detection still bumps the counter, so the relative
+     * aging of queued parts is unchanged; the whole scale simply shifts down by one.
+     *
+     * @param  array<int, int|string>  $numbers
+     * @return array{string, list<int|string>}
+     */
+    private function valuesForNewQueueEntries(array $numbers, int $groupId): array
+    {
+        $placeholders = [];
+        $bindings = [];
+
+        foreach ($numbers as $number) {
+            $placeholders[] = '(?, ?, 0)';
+            $bindings[] = $number;
+            $bindings[] = $groupId;
+        }
+
+        return [implode(',', $placeholders), $bindings];
     }
 
     /**
