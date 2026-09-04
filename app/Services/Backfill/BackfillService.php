@@ -9,9 +9,11 @@ use App\Models\UsenetGroup;
 use App\Services\Binaries\BinariesService;
 use App\Services\NameFixing\PredbSearchLifecycle;
 use App\Services\NNTP\NNTPService;
+use Carbon\Exceptions\InvalidFormatException;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
@@ -25,6 +27,9 @@ use RuntimeException;
 final class BackfillService
 {
     private const DEFAULT_ARTICLE_COUNT = 20000;
+
+    /** `backfill_days` value that measures every group against one shared calendar date. */
+    private const SHARED_STOP_DATE_MODE = 2;
 
     private BackfillConfig $config;
 
@@ -55,7 +60,7 @@ final class BackfillService
     {
         $backfillDays = (int) Settings::settingValue('backfill_days');
         $backfillOrder = (int) Settings::settingValue('backfill_order');
-        $safeBackfillDate = (string) (Settings::settingValue('safebackfilldate') ?: $this->config->safeBackFillDate);
+        $sharedStopDate = $this->resolveSharedStopDate($backfillDays);
 
         $rows = $this->groupWorkQuery()
             ->where('g.backfill', 1)
@@ -66,7 +71,13 @@ final class BackfillService
 
         $groups = [];
         foreach ($rows as $row) {
-            $target = $this->targetForGroup($backfillDays, (int) $row->backfill_target, $safeBackfillDate);
+            $target = $this->targetForGroup($backfillDays, (int) $row->backfill_target, $sharedStopDate);
+
+            // An unusable shared stop date leaves nothing eligible; see resolveSharedStopDate().
+            if ($target === null) {
+                continue;
+            }
+
             $firstRecordPostdate = Carbon::parse((string) $row->first_record_postdate);
 
             if ($firstRecordPostdate->lessThanOrEqualTo($target)) {
@@ -108,8 +119,15 @@ final class BackfillService
         }
 
         $backfillDays = (int) Settings::settingValue('backfill_days');
-        $safeBackfillDate = (string) (Settings::settingValue('safebackfilldate') ?: $this->config->safeBackFillDate);
-        $target = $this->targetForGroup($backfillDays, (int) $row->backfill_target, $safeBackfillDate);
+        $target = $this->targetForGroup(
+            $backfillDays,
+            (int) $row->backfill_target,
+            $this->resolveSharedStopDate($backfillDays),
+        );
+
+        if ($target === null) {
+            return null;
+        }
 
         return $this->workFromRow((array) $row, $target);
     }
@@ -134,11 +152,67 @@ final class BackfillService
             ]);
     }
 
-    private function targetForGroup(int $backfillDays, int $backfillTarget, string $safeBackfillDate): Carbon
+    /**
+     * Resolve the date a single group is measured against.
+     *
+     * Null only ever means "shared-stop-date mode with an unusable setting", which is the
+     * caller's cue to treat the group as ineligible rather than to pick another target.
+     */
+    private function targetForGroup(int $backfillDays, int $backfillTarget, ?Carbon $sharedStopDate): ?Carbon
     {
-        return $backfillDays === 2
-            ? Carbon::createFromFormat('Y-m-d', $safeBackfillDate)
+        return $backfillDays === self::SHARED_STOP_DATE_MODE
+            ? $sharedStopDate?->copy()
             : now()->subDays($backfillTarget);
+    }
+
+    /**
+     * Resolve the stop date every group shares, when this pass has a usable one at all.
+     *
+     * Null therefore covers both "this mode measures against per-group day counts instead"
+     * and "mode 2, but the configured date is unusable"; targetForGroup() is what tells the
+     * two apart, and only the second warns.
+     *
+     * A missing or blank row still resolves to the coded default, through the same helper the
+     * rest of the settings use, so a stored 0 stays a value somebody typed rather than a
+     * falsy stand-in for an empty row. A stored value that is not a real `YYYY-MM-DD` date is
+     * a configuration error rather than something to reinterpret:
+     * the coded default is the earliest stop date there is, so quietly substituting it for a
+     * typo would schedule maximal backfill instead of stopping. Parse failure therefore fails
+     * closed -- no group is eligible -- and every pass warns until the setting is corrected.
+     *
+     * A valid date resolves to the start of that day, so the cutoff is deterministic rather
+     * than "that date at whatever time the pass happens to run", and matches what the admin
+     * form displays.
+     */
+    private function resolveSharedStopDate(int $backfillDays): ?Carbon
+    {
+        if ($backfillDays !== self::SHARED_STOP_DATE_MODE) {
+            return null;
+        }
+
+        $stored = (string) Settings::settingValueOr('safebackfilldate', $this->config->safeBackFillDate);
+        $parsed = null;
+
+        try {
+            $parsed = Carbon::createFromFormat('!Y-m-d', $stored);
+        } catch (InvalidFormatException) {
+            // Reported as a configuration error below.
+        }
+
+        if (! $parsed instanceof Carbon || $parsed->format('Y-m-d') !== $stored) {
+            $message = sprintf(
+                'Backfill setting safebackfilldate is not a valid YYYY-MM-DD date ("%s"); '
+                .'no group is eligible for backfill until it is corrected.',
+                $stored,
+            );
+
+            Log::warning($message);
+            $this->log($message, 'warning');
+
+            return null;
+        }
+
+        return $parsed->startOfDay();
     }
 
     /**
