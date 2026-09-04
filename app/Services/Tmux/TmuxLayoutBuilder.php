@@ -39,7 +39,6 @@ class TmuxLayoutBuilder
         'update_binaries' => ' Binaries',
         'backfill' => '󰑓 Backfill',
         'update_releases' => ' Releases',
-        'sequential' => '󰒿 Sequential',
 
         // Utilities
         'fixReleaseNames' => '󰯃 Fix Names',
@@ -88,7 +87,6 @@ class TmuxLayoutBuilder
         try {
             match ($sequentialMode) {
                 1 => $this->buildBasicLayout(),
-                2 => $this->buildStrippedLayout(),
                 default => $this->buildFullLayout(),
             };
 
@@ -240,41 +238,6 @@ class TmuxLayoutBuilder
     }
 
     /**
-     * Build stripped sequential layout (mode 2)
-     */
-    protected function buildStrippedLayout(): void
-    {
-        // Window 0: Monitor + Sequential
-        $monitor = $this->createSessionPane(TmuxPaneRole::Monitor, $this->getPaneDisplayName('Monitor'));
-        $this->splitHorizontal(
-            $monitor,
-            67,
-            TmuxPaneRole::Sequential,
-            $this->getPaneDisplayName('sequential'),
-        );
-
-        // Window 1: Metadata postprocessing
-        $fixNames = $this->createWindowPane(
-            1,
-            ' Utils',
-            TmuxPaneRole::FixNames,
-            $this->getPaneDisplayName('fixReleaseNames'),
-        );
-        $this->splitHorizontal(
-            $fixNames,
-            50,
-            TmuxPaneRole::PostMetadata,
-            $this->getPaneDisplayName('postprocessing_amazon'),
-        );
-
-        // Window 2: IRC Scraper
-        $this->createIRCScraperWindow();
-
-        $this->createOptionalWindows();
-
-    }
-
-    /**
      * Create IRC scraper window
      */
     protected function createIRCScraperWindow(): void
@@ -320,17 +283,16 @@ class TmuxLayoutBuilder
 
         // vnstat
         if ((int) Settings::settingValue('vnstat') === 1 && $this->commandExists('vnstat')) {
-            $vnstatArgs = Settings::settingValue('vnstat_args') ?? '';
+            $vnstat = $this->monitoringCommand('vnstat', 'vnstat_args');
             $pane = $this->createWindowPane($windowIndex, $this->getPaneDisplayName('vnstat'), TmuxPaneRole::Vnstat, $this->getPaneDisplayName('vnstat'));
-            $this->requireSuccess($this->paneManager->respawnPane($pane, "watch -n10 'vnstat {$vnstatArgs}'"), 'respawn vnstat pane');
+            $this->requireSuccess($this->paneManager->respawnPane($pane, 'watch -n10 '.escapeshellarg($vnstat)), 'respawn vnstat pane');
             $windowIndex++;
         }
 
         // tcptrack
         if ((int) Settings::settingValue('tcptrack') === 1 && $this->commandExists('tcptrack')) {
-            $tcptrackArgs = Settings::settingValue('tcptrack_args') ?? '';
             $pane = $this->createWindowPane($windowIndex, $this->getPaneDisplayName('tcptrack'), TmuxPaneRole::Tcptrack, $this->getPaneDisplayName('tcptrack'));
-            $this->requireSuccess($this->paneManager->respawnPane($pane, "tcptrack {$tcptrackArgs}"), 'respawn tcptrack pane');
+            $this->requireSuccess($this->paneManager->respawnPane($pane, $this->monitoringCommand('tcptrack', 'tcptrack_args')), 'respawn tcptrack pane');
             $windowIndex++;
         }
 
@@ -387,6 +349,37 @@ class TmuxLayoutBuilder
             $pane = $this->createWindowPane($windowIndex, $this->getPaneDisplayName('bash'), TmuxPaneRole::Console, $this->getPaneDisplayName('bash'));
             $this->requireSuccess($this->paneManager->respawnPane($pane, 'bash -i'), 'respawn console pane');
         }
+    }
+
+    /**
+     * A monitoring tool's pane command with its operator-entered arguments.
+     *
+     * A stored 'NULL' is the legacy sentinel for "no arguments" -- the Redis
+     * window has always read it that way, and the seeder planted it as the
+     * vnstat default -- so it and a blank value both run the tool bare. Real
+     * arguments are split on whitespace and escaped token by token: escaping
+     * the string whole would hand the tool one argument instead of several,
+     * and leaving it raw lets a stored quote or metacharacter rewrite the
+     * command the pane runs. Whitespace is the only separator, so an argument
+     * quoted to carry a space arrives as several -- neither field takes one
+     * (interface names have no spaces, and a tcptrack filter is already
+     * whitespace-separated tokens).
+     */
+    protected function monitoringCommand(string $tool, string $argumentSetting): string
+    {
+        $stored = Settings::settingValue($argumentSetting);
+        $stored = $stored === null ? '' : trim((string) $stored);
+
+        if ($stored === '' || $stored === 'NULL') {
+            return $tool;
+        }
+
+        $arguments = array_map(
+            escapeshellarg(...),
+            preg_split('/\s+/', $stored) ?: [],
+        );
+
+        return $tool.' '.implode(' ', $arguments);
     }
 
     public function lastError(): ?string
