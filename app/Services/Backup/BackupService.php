@@ -153,7 +153,7 @@ class BackupService
         }
 
         if (filter_var(Settings::settingValue('backup_offsite_after'), FILTER_VALIDATE_BOOL)
-            && trim((string) Settings::settingValue('backup_offsite_path')) !== '') {
+            && trim((string) Settings::settingValueOr('backup_offsite_path', '')) !== '') {
             try {
                 $this->offsite->copy(null, null, false, $deadline);
             } catch (\Throwable $e) {

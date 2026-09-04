@@ -58,8 +58,8 @@ class ConsoleService
         $this->imageService = $imageService ?? new ReleaseImageService;
         $this->igdbService = $igdbService ?? new IGDBService;
 
-        $this->gameQty = (Settings::settingValue('maxgamesprocessed') !== '') ? (int) Settings::settingValue('maxgamesprocessed') : 150;
-        $this->lookupThrottleMs = (Settings::settingValue('amazonsleep') !== '') ? (int) Settings::settingValue('amazonsleep') : 1000;
+        $this->gameQty = (int) Settings::settingValueOr('maxgamesprocessed', 150);
+        $this->lookupThrottleMs = (int) Settings::settingValueOr('amazonsleep', 1000);
         $this->imgSavePath = config('nntmux_settings.covers_path').'/console/';
         $this->failCache = [];
     }

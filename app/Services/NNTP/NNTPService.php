@@ -120,7 +120,7 @@ class NNTPService extends NntpClient implements ProviderClient
         $this->_echo = config('nntmux.echocli');
         $this->_tmux = $tmux ?? new Tmux;
         $this->_yencService = $yencService ?? app(YencService::class);
-        $this->_nntpRetries = Settings::settingValue('nntpretries') !== '' ? (int) Settings::settingValue('nntpretries') : 0 + 1;
+        $this->_nntpRetries = (int) Settings::settingValueOr('nntpretries', 1);
 
         $this->initializeConfig();
     }

@@ -61,8 +61,8 @@ class BookService
     ) {
         $this->echooutput = config('nntmux.echocli');
 
-        $this->bookqty = Settings::settingValue('maxbooksprocessed') !== '' ? (int) Settings::settingValue('maxbooksprocessed') : 300;
-        $this->sleeptime = Settings::settingValue('amazonsleep') !== '' ? (int) Settings::settingValue('amazonsleep') : 1000;
+        $this->bookqty = (int) Settings::settingValueOr('maxbooksprocessed', 300);
+        $this->sleeptime = (int) Settings::settingValueOr('amazonsleep', 1000);
         $this->imgSavePath = storage_path('covers/book/');
 
         $this->parsedIsbn = null;

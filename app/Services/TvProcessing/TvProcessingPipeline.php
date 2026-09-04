@@ -52,9 +52,7 @@ class TvProcessingPipeline
         $this->pipes = collect($pipes)
             ->sortBy(fn (AbstractTvProviderPipe $p) => $p->getPriority());
 
-        $this->tvqty = Settings::settingValue('maxrageprocessed') !== ''
-            ? (int) Settings::settingValue('maxrageprocessed')
-            : 75;
+        $this->tvqty = (int) Settings::settingValueOr('maxrageprocessed', 75);
 
         $this->echoOutput = $echoOutput;
     }

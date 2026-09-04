@@ -95,14 +95,14 @@ class MovieService
             $this->omdbApi = new OMDbAPI($this->omdbapikey);
         }
 
-        $this->lookuplanguage = Settings::settingValue('imdblanguage') !== '' ? (string) Settings::settingValue('imdblanguage') : 'en';
+        $this->lookuplanguage = (string) Settings::settingValueOr('imdblanguage', 'en');
         $cacheDir = storage_path('framework/cache/imdb_cache');
         if (! File::isDirectory($cacheDir)) {
             File::makeDirectory($cacheDir, 0777, false, true);
         }
 
         $this->imdburl = (int) Settings::settingValue('imdburl') !== 0;
-        $this->movieqty = Settings::settingValue('maximdbprocessed') !== '' ? (int) Settings::settingValue('maximdbprocessed') : 100;
+        $this->movieqty = (int) Settings::settingValueOr('maximdbprocessed', 100);
         $this->showPasswords = app(ReleaseBrowseService::class)->showPasswords();
 
         $this->echooutput = config('nntmux.echocli');

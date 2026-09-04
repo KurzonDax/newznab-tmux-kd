@@ -86,7 +86,7 @@ class GamesService
         $this->titleParser = $titleParser ?? new GamesTitleParser;
         $this->imageService = $imageService ?? new ReleaseImageService;
 
-        $this->gameQty = Settings::settingValue('maxgamesprocessed') !== '' ? (int) Settings::settingValue('maxgamesprocessed') : 150;
+        $this->gameQty = (int) Settings::settingValueOr('maxgamesprocessed', 150);
         $this->imgSavePath = config('nntmux_settings.covers_path').'/games/';
         $this->matchPercentage = 60;
         $this->maxHitRequest = false;

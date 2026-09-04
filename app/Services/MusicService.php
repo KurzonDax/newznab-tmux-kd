@@ -53,8 +53,8 @@ class MusicService
         $this->pubkey = Settings::settingValue('amazonpubkey');
         $this->privkey = Settings::settingValue('amazonprivkey');
         $this->asstag = Settings::settingValue('amazonassociatetag');
-        $this->musicqty = Settings::settingValue('maxmusicprocessed') !== '' ? (int) Settings::settingValue('maxmusicprocessed') : 150;
-        $this->sleeptime = Settings::settingValue('amazonsleep') !== '' ? (int) Settings::settingValue('amazonsleep') : 1000;
+        $this->musicqty = (int) Settings::settingValueOr('maxmusicprocessed', 150);
+        $this->sleeptime = (int) Settings::settingValueOr('amazonsleep', 1000);
         $this->imgSavePath = config('nntmux_settings.covers_path').'/music/';
         $this->failCache = [];
     }

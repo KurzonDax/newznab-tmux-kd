@@ -821,6 +821,10 @@ class SettingsTableSeeder extends Seeder
                 'name' => 'forced_root_pc_escape',
                 'value' => '0',
             ],
+            283 => [
+                'name' => 'amazonsleep',
+                'value' => '1000',
+            ],
         ]);
     }
 }
