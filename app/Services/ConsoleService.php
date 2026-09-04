@@ -509,7 +509,7 @@ class ConsoleService
             $throttle = new LookupThrottle($this->lookupThrottleMs);
 
             foreach ($res as $arr) {
-                $startTime = $throttle->mark();
+                $throttle->openWindow();
                 $usedExternalLookup = false;
                 $gameId = self::CONS_NTFND;
                 $gameInfo = $this->parseTitle($arr['searchname']);
@@ -550,7 +550,7 @@ class ConsoleService
 
                 // Throttle external lookups using the legacy amazonsleep setting.
                 if ($usedExternalLookup === true) {
-                    $throttle->sleepSince($startTime);
+                    $throttle->waitOutWindow();
                 }
             }
         } elseif ($this->echoOutput) {

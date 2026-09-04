@@ -8,8 +8,14 @@ use App\Facades\Search;
 use App\Models\Category;
 use App\Services\BookService;
 use App\Services\ConsoleService;
+use App\Services\GoogleBooksService;
 use App\Services\IGDBService;
+use App\Services\IsbnDbService;
+use App\Services\ItunesService;
+use App\Services\NameFixing\ReleaseUpdateService;
+use App\Services\OpenLibraryService;
 use App\Services\ReleaseImageService;
+use App\Support\BookMatchScorer;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -105,8 +111,69 @@ class MetadataLookupThrottleTest extends TestCase
 
         // Two 250ms windows, each already 150ms spent on the lookup itself. Measuring the
         // lookup in whole seconds would add a full window on top of every one of them.
-        $this->assertGreaterThanOrEqual(0.45, $elapsed);
+        $this->assertGreaterThanOrEqual(0.49, $elapsed);
         $this->assertLessThan(0.75, $elapsed);
+    }
+
+    public function test_the_book_pass_paces_each_external_lookup_within_a_sub_second_window(): void
+    {
+        $this->storeSetting('amazonsleep', '250');
+        $this->insertRelease(1, 'Clean Code Robert Martin EPUB', Category::BOOKS_EBOOK);
+        $this->insertRelease(2, 'Atomic Habits James Clear EPUB', Category::BOOKS_EBOOK);
+
+        Search::shouldReceive('isAvailable')->andReturnTrue();
+        Search::shouldReceive('searchSecondary')->andReturn(['id' => []]);
+
+        $isbnDb = Mockery::mock(IsbnDbService::class);
+        $isbnDb->shouldReceive('isConfigured')->andReturnTrue();
+        $isbnDb->shouldReceive('searchBooks')->twice()->andReturnUsing(static function (): array {
+            usleep(150_000); // A lookup that spends most of the window talking to ISBNdb.
+
+            return [];
+        });
+
+        $service = new BookService(
+            $isbnDb,
+            $this->emptyProvider(GoogleBooksService::class, 'searchBooks'),
+            $this->emptyProvider(OpenLibraryService::class, 'searchBooks'),
+            $this->itunesFindingNothing(),
+            new BookMatchScorer,
+            Mockery::mock(ReleaseImageService::class),
+            $this->releaseUpdateServiceIgnoringRenames(),
+        );
+
+        $elapsed = $this->timeOf(static fn () => $service->processBookReleases());
+
+        $this->assertGreaterThanOrEqual(0.49, $elapsed);
+        $this->assertLessThan(0.75, $elapsed);
+    }
+
+    /**
+     * @param  class-string  $provider
+     */
+    private function emptyProvider(string $provider, string $method): object
+    {
+        $mock = Mockery::mock($provider);
+        $mock->shouldReceive($method)->andReturn([]);
+
+        return $mock;
+    }
+
+    private function itunesFindingNothing(): ItunesService
+    {
+        $itunes = Mockery::mock(ItunesService::class);
+        $itunes->shouldReceive('findEbooks')->andReturn([]);
+        $itunes->shouldReceive('lastRequestFailed')->andReturnFalse();
+
+        return $itunes;
+    }
+
+    private function releaseUpdateServiceIgnoringRenames(): ReleaseUpdateService
+    {
+        $releaseUpdates = Mockery::mock(ReleaseUpdateService::class);
+        $releaseUpdates->shouldReceive('renameFromBookMetadata')->andReturnNull();
+
+        return $releaseUpdates;
     }
 
     /**

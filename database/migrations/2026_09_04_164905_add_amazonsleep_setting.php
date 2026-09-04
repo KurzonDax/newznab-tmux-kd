@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\DB;
 return new class extends Migration
 {
     /**
-     * amazonsleep throttles external metadata lookups (books, music, console). It has never
+     * amazonsleep throttles external metadata lookups (books, console). It has never
      * been seeded, and Settings::settingsUpdate() only UPDATEs, so the admin form could never
      * create the row. Add it at the value its consumers already fall back to.
      */

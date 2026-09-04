@@ -457,7 +457,7 @@ class BookService
 
             foreach ($res as $arr) {
                 $bookId = -2;
-                $startTime = $throttle->mark();
+                $throttle->openWindow();
                 $usedExternalApi = false;
                 // audiobooks are also books and should be handled in an identical manor, even though it falls under a music category
                 if ($arr['categories_id'] === (int) Category::MUSIC_AUDIOBOOK) {
@@ -506,7 +506,7 @@ class BookService
                 }
                 // Sleep to avoid flooding external book metadata providers.
                 if ($usedExternalApi === true) {
-                    $throttle->sleepSince($startTime);
+                    $throttle->waitOutWindow();
                 }
             }
         } elseif ($this->echooutput) {
