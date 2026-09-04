@@ -24,6 +24,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Services\Api\ApiCapabilitiesService;
 use App\Support\SettingNumber;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
@@ -246,8 +247,8 @@ class Settings extends Model
         Cache::forget('site_settings');
         Cache::forget('site_settings_array');
         Cache::forget('site_settings_converted');
-        Cache::forget('api_v1_server_menu');
-        Cache::forget('api_v2_capabilities');
+        Cache::forget(ApiCapabilitiesService::V1_CACHE_KEY);
+        Cache::forget(ApiCapabilitiesService::V2_CACHE_KEY);
 
         self::$settingsCollection = null;
     }
