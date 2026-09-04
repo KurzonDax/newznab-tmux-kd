@@ -17,12 +17,29 @@ use Illuminate\Support\Facades\Schema;
 
 final readonly class ApiCapabilitiesService
 {
+    /**
+     * Cache key for the v1 capabilities payload.
+     *
+     * @see self::V2_CACHE_KEY for why these keys are constants.
+     */
+    public const V1_CACHE_KEY = 'api_v1_server_menu';
+
+    /**
+     * Cache key for the v2 capabilities payload. The `_cursor_v1` suffix marks the payload
+     * revision -- bump it when a deployed payload has to be abandoned rather than expired.
+     *
+     * Both keys are declared here because {@see Settings::forgetCachedSettings()} clears them
+     * on every settings save: when the suffix drifted from that invalidator's copy of the
+     * string, v2 served stale settings data for the full TTL. One declaration, two readers.
+     */
+    public const V2_CACHE_KEY = 'api_v2_capabilities_cursor_v1';
+
     public function __construct(private RegistrationStatusService $registrationStatus) {}
 
     /** @return array<string, mixed> */
     public function v1(bool $includeCatalogs): array
     {
-        $data = Cache::remember('api_v1_server_menu', 600, static fn (): array => [
+        $data = Cache::remember(self::V1_CACHE_KEY, 600, static fn (): array => [
             'server' => [
                 'title' => config('app.name'),
                 'strapline' => Settings::settingValue('strapline'),
@@ -54,7 +71,7 @@ final readonly class ApiCapabilitiesService
     /** @return array<string, mixed> */
     public function v2(): array
     {
-        $data = Cache::remember('api_v2_capabilities_cursor_v1', 600, function (): array {
+        $data = Cache::remember(self::V2_CACHE_KEY, 600, function (): array {
             return [
                 'server' => [
                     'title' => config('app.name'),
