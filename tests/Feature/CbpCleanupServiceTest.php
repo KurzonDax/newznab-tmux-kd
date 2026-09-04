@@ -119,15 +119,94 @@ class CbpCleanupServiceTest extends TestCase
             110,
             $this->databaseTimestamp('-3 hours'),
             CollectionFileCheckStatus::Default->value,
-            0
+            0,
+            dateAdded: $this->databaseTimestamp('-30 minutes'),
         );
 
         app(ReleaseProcessingService::class)->setEchoCLI(false)->processIncompleteCollections(1);
 
-        $this->assertSame(
-            CollectionFileCheckStatus::CompleteParts->value,
-            (int) DB::table('collections')->where('id', 110)->value('filecheck')
+        $collection = DB::table('collections')->find(110);
+
+        $this->assertNotNull($collection);
+        $this->assertSame(CollectionFileCheckStatus::CompleteParts->value, (int) $collection->filecheck);
+        $this->assertSame(1, (int) $collection->totalfiles);
+    }
+
+    public function test_collection_seen_within_delay_is_not_promoted_when_dateadded_is_old(): void
+    {
+        $this->insertCollectionTree(
+            111,
+            now()->subMinutes(30)->format('Y-m-d H:i:s'),
+            CollectionFileCheckStatus::Default->value,
+            0,
+            dateAdded: now()->subHours(3)->format('Y-m-d H:i:s'),
         );
+
+        app(ReleaseProcessingService::class)->setEchoCLI(false)->processIncompleteCollections(1);
+
+        $collection = DB::table('collections')->find(111);
+
+        $this->assertNotNull($collection);
+        $this->assertSame(CollectionFileCheckStatus::Default->value, (int) $collection->filecheck);
+        $this->assertSame(0, (int) $collection->totalfiles);
+    }
+
+    public function test_collection_without_last_seen_at_promotes_on_dateadded(): void
+    {
+        $this->insertCollectionTree(
+            112,
+            now()->subMinutes(30)->format('Y-m-d H:i:s'),
+            CollectionFileCheckStatus::Default->value,
+            0,
+            dateAdded: now()->subHours(3)->format('Y-m-d H:i:s'),
+        );
+        DB::table('collections')->where('id', 112)->update(['last_seen_at' => null]);
+
+        app(ReleaseProcessingService::class)->setEchoCLI(false)->processIncompleteCollections(1);
+
+        $collection = DB::table('collections')->find(112);
+
+        $this->assertNotNull($collection);
+        $this->assertSame(CollectionFileCheckStatus::CompleteParts->value, (int) $collection->filecheck);
+        $this->assertSame(1, (int) $collection->totalfiles);
+    }
+
+    public function test_declared_file_count_still_promotes_complete_binaries(): void
+    {
+        $this->insertCollectionTree(
+            113,
+            now()->subHours(3)->format('Y-m-d H:i:s'),
+            CollectionFileCheckStatus::TempComplete->value,
+            1,
+            dateAdded: now()->subMinutes(30)->format('Y-m-d H:i:s'),
+        );
+
+        app(ReleaseProcessingService::class)->setEchoCLI(false)->processIncompleteCollections(1);
+
+        $collection = DB::table('collections')->find(113);
+
+        $this->assertNotNull($collection);
+        $this->assertSame(CollectionFileCheckStatus::CompleteParts->value, (int) $collection->filecheck);
+        $this->assertSame(1, (int) $collection->totalfiles);
+    }
+
+    public function test_collection_promotion_falls_back_to_dateadded_when_last_seen_column_is_absent(): void
+    {
+        DB::statement('ALTER TABLE collections DROP COLUMN last_seen_at');
+        $this->insertCollectionTree(
+            114,
+            now()->subHours(3)->format('Y-m-d H:i:s'),
+            CollectionFileCheckStatus::Default->value,
+            0,
+        );
+
+        app(ReleaseProcessingService::class)->setEchoCLI(false)->processIncompleteCollections(1);
+
+        $collection = DB::table('collections')->find(114);
+
+        $this->assertNotNull($collection);
+        $this->assertSame(CollectionFileCheckStatus::CompleteParts->value, (int) $collection->filecheck);
+        $this->assertSame(1, (int) $collection->totalfiles);
     }
 
     public function test_non_utc_database_clock_deletes_collection_after_retention(): void
@@ -1047,16 +1126,20 @@ class CbpCleanupServiceTest extends TestCase
         return (string) $row->timestamp;
     }
 
-    private function insertCollectionTree(int $id, string $timestamp, int $fileCheck, int $totalFiles): void
-    {
-        DB::table('collections')->insert([
+    private function insertCollectionTree(
+        int $id,
+        string $activityTimestamp,
+        int $fileCheck,
+        int $totalFiles,
+        ?string $dateAdded = null,
+    ): void {
+        $collection = [
             'id' => $id,
             'subject' => "Database.Clock.{$id}",
             'fromname' => 'poster@example.com',
-            'date' => $timestamp,
-            'dateadded' => $timestamp,
-            'added' => $timestamp,
-            'last_seen_at' => $timestamp,
+            'date' => $activityTimestamp,
+            'dateadded' => $dateAdded ?? $activityTimestamp,
+            'added' => $activityTimestamp,
             'xref' => "alt.test:{$id}",
             'groups_id' => 1,
             'totalfiles' => $totalFiles,
@@ -1066,7 +1149,11 @@ class CbpCleanupServiceTest extends TestCase
             'collection_regexes_id' => 0,
             'releases_id' => null,
             'noise' => '',
-        ]);
+        ];
+        if (DB::getSchemaBuilder()->hasColumn('collections', 'last_seen_at')) {
+            $collection['last_seen_at'] = $activityTimestamp;
+        }
+        DB::table('collections')->insert($collection);
         DB::table('binaries')->insert([
             'id' => $id * 10,
             'name' => "Database.Clock.{$id}.par2",

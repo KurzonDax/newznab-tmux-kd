@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Tests\Integration;
 
+use App\Enums\CollectionFileCheckStatus;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\Binaries\CollectionHandler;
 use App\Services\Binaries\HeaderStorageService;
 use App\Services\CollectionsCleaningService;
+use App\Services\ReleaseProcessingService;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -50,17 +52,20 @@ final class CbpMariaDbIngestionTest extends TestCase
             $this->markTestSkipped('MariaDB/MySQL integration test.');
         }
 
-        foreach (['cbp_optimization_checkpoints', 'cbp_binary_map', 'parts_cbp_new', 'parts_cbp_pre_optimize'] as $table) {
+        foreach (['cbp_optimization_checkpoints', 'cbp_binary_map', 'parts_cbp_new', 'parts_cbp_pre_optimize', 'settings'] as $table) {
             DB::statement("DROP TABLE IF EXISTS {$table}");
         }
+        DB::statement('CREATE TABLE settings (name VARCHAR(255) PRIMARY KEY, value TEXT NULL) ENGINE=InnoDB');
         DB::statement('CREATE TABLE usenet_groups (id INT UNSIGNED PRIMARY KEY, name VARCHAR(255) NOT NULL) ENGINE=InnoDB');
         DB::statement('CREATE TABLE collection_regexes (id INT PRIMARY KEY, group_regex VARCHAR(255), regex VARCHAR(255), status TINYINT DEFAULT 1, ordinal INT DEFAULT 0) ENGINE=InnoDB');
         DB::statement('CREATE TABLE collections (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
             subject VARCHAR(255) NOT NULL, fromname VARCHAR(255) NOT NULL, date DATETIME NULL,
             xref VARCHAR(2000) NOT NULL DEFAULT \'\', groups_id INT UNSIGNED NOT NULL,
-            totalfiles INT UNSIGNED NOT NULL DEFAULT 0, collectionhash BINARY(20) NOT NULL,
+            totalfiles INT UNSIGNED NOT NULL DEFAULT 0, declaredfiles INT UNSIGNED NOT NULL DEFAULT 0,
+            collectionhash BINARY(20) NOT NULL,
             collection_regexes_id INT NOT NULL DEFAULT 0, dateadded DATETIME NULL,
+            added DATETIME NULL, releases_id INT UNSIGNED NULL,
             last_seen_at DATETIME NULL, filecheck TINYINT NOT NULL DEFAULT 0,
             filesize BIGINT UNSIGNED NOT NULL DEFAULT 0, noise CHAR(32) NOT NULL DEFAULT \'\',
             UNIQUE KEY ix_collection_collectionhash (collectionhash),
@@ -89,13 +94,17 @@ final class CbpMariaDbIngestionTest extends TestCase
             CONSTRAINT fk_test_parts FOREIGN KEY (binaries_id) REFERENCES binaries(id) ON DELETE CASCADE
         ) ENGINE=InnoDB');
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.test']);
+        DB::table('settings')->insert([
+            ['name' => 'delaytime', 'value' => '2'],
+            ['name' => 'collection_timeout', 'value' => '48'],
+        ]);
     }
 
     protected function tearDown(): void
     {
         if (\in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
             DB::statement('SET FOREIGN_KEY_CHECKS=0');
-            foreach (['parts', 'parts_cbp_new', 'parts_cbp_pre_optimize', 'cbp_binary_map', 'cbp_optimization_checkpoints', 'binaries', 'collection_groups', 'collections', 'collection_regexes', 'usenet_groups'] as $table) {
+            foreach (['parts', 'parts_cbp_new', 'parts_cbp_pre_optimize', 'cbp_binary_map', 'cbp_optimization_checkpoints', 'binaries', 'collection_groups', 'collections', 'collection_regexes', 'usenet_groups', 'settings'] as $table) {
                 DB::statement("DROP TABLE IF EXISTS {$table}");
             }
             DB::statement('SET FOREIGN_KEY_CHECKS=1');
@@ -179,6 +188,70 @@ final class CbpMariaDbIngestionTest extends TestCase
         $this->assertSame(1, DB::table('binaries')->count());
         $this->assertSame(2, DB::table('parts')->count());
         $this->assertSame(300, (int) DB::table('binaries')->value('partsize'));
+    }
+
+    public function test_collection_promotion_uses_the_quiet_clock(): void
+    {
+        $this->insertCollectionTree(10, now()->subMinutes(30), now()->subHours(3), 0);
+        $this->insertCollectionTree(11, now()->subHours(3), now()->subMinutes(30), 0);
+        $this->insertCollectionTree(12, now()->subHours(3), null, 0);
+        $this->insertCollectionTree(
+            13,
+            now()->subMinutes(30),
+            now()->subHours(3),
+            1,
+            CollectionFileCheckStatus::TempComplete,
+        );
+
+        app(ReleaseProcessingService::class)->setEchoCLI(false)->processIncompleteCollections(1);
+
+        $collections = DB::table('collections')->whereIn('id', [10, 11, 12, 13])->get()->keyBy('id');
+
+        $this->assertSame(CollectionFileCheckStatus::CompleteParts->value, (int) $collections[10]->filecheck);
+        $this->assertSame(1, (int) $collections[10]->totalfiles);
+        $this->assertSame(CollectionFileCheckStatus::Default->value, (int) $collections[11]->filecheck);
+        $this->assertSame(0, (int) $collections[11]->totalfiles);
+        $this->assertSame(CollectionFileCheckStatus::CompleteParts->value, (int) $collections[12]->filecheck);
+        $this->assertSame(1, (int) $collections[12]->totalfiles);
+        $this->assertSame(CollectionFileCheckStatus::CompleteParts->value, (int) $collections[13]->filecheck);
+        $this->assertSame(1, (int) $collections[13]->totalfiles);
+    }
+
+    private function insertCollectionTree(
+        int $id,
+        \DateTimeInterface $dateAdded,
+        ?\DateTimeInterface $lastSeenAt,
+        int $totalFiles,
+        CollectionFileCheckStatus $fileCheck = CollectionFileCheckStatus::Default,
+    ): void {
+        DB::table('collections')->insert([
+            'id' => $id,
+            'subject' => "Quiet.Clock.{$id}",
+            'fromname' => 'poster@example.test',
+            'date' => $dateAdded,
+            'xref' => "alt.binaries.test:{$id}",
+            'groups_id' => 1,
+            'totalfiles' => $totalFiles,
+            'collectionhash' => hash('sha1', "quiet-clock-{$id}", true),
+            'dateadded' => $dateAdded,
+            'added' => $dateAdded,
+            'last_seen_at' => $lastSeenAt,
+            'filecheck' => $fileCheck->value,
+        ]);
+        DB::table('binaries')->insert([
+            'id' => $id,
+            'binaryhash' => hash('md5', "quiet-clock-{$id}", true),
+            'name' => "Quiet.Clock.{$id}.par2",
+            'collections_id' => $id,
+            'totalparts' => 1,
+        ]);
+        DB::table('parts')->insert([
+            'binaries_id' => $id,
+            'messageid' => "<quiet-clock-{$id}@example.test>",
+            'number' => $id,
+            'partnumber' => 1,
+            'size' => 10,
+        ]);
     }
 
     private function restoreLegacyStorageShape(): void
