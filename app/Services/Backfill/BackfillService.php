@@ -9,9 +9,11 @@ use App\Models\UsenetGroup;
 use App\Services\Binaries\BinariesService;
 use App\Services\NameFixing\PredbSearchLifecycle;
 use App\Services\NNTP\NNTPService;
+use Carbon\Exceptions\InvalidFormatException;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
@@ -25,6 +27,9 @@ use RuntimeException;
 final class BackfillService
 {
     private const DEFAULT_ARTICLE_COUNT = 20000;
+
+    /** `backfill_days` value that measures every group against one shared calendar date. */
+    private const SHARED_STOP_DATE_MODE = 2;
 
     private BackfillConfig $config;
 
@@ -55,7 +60,7 @@ final class BackfillService
     {
         $backfillDays = (int) Settings::settingValue('backfill_days');
         $backfillOrder = (int) Settings::settingValue('backfill_order');
-        $safeBackfillDate = (string) (Settings::settingValue('safebackfilldate') ?: $this->config->safeBackFillDate);
+        $sharedStopDate = $this->resolveSharedStopDate($backfillDays);
 
         $rows = $this->groupWorkQuery()
             ->where('g.backfill', 1)
@@ -66,7 +71,13 @@ final class BackfillService
 
         $groups = [];
         foreach ($rows as $row) {
-            $target = $this->targetForGroup($backfillDays, (int) $row->backfill_target, $safeBackfillDate);
+            $target = $this->targetForGroup($backfillDays, (int) $row->backfill_target, $sharedStopDate);
+
+            // An unusable shared stop date leaves nothing eligible; see resolveSharedStopDate().
+            if ($target === null) {
+                continue;
+            }
+
             $firstRecordPostdate = Carbon::parse((string) $row->first_record_postdate);
 
             if ($firstRecordPostdate->lessThanOrEqualTo($target)) {
@@ -108,8 +119,15 @@ final class BackfillService
         }
 
         $backfillDays = (int) Settings::settingValue('backfill_days');
-        $safeBackfillDate = (string) (Settings::settingValue('safebackfilldate') ?: $this->config->safeBackFillDate);
-        $target = $this->targetForGroup($backfillDays, (int) $row->backfill_target, $safeBackfillDate);
+        $target = $this->targetForGroup(
+            $backfillDays,
+            (int) $row->backfill_target,
+            $this->resolveSharedStopDate($backfillDays),
+        );
+
+        if ($target === null) {
+            return null;
+        }
 
         return $this->workFromRow((array) $row, $target);
     }
@@ -134,11 +152,67 @@ final class BackfillService
             ]);
     }
 
-    private function targetForGroup(int $backfillDays, int $backfillTarget, string $safeBackfillDate): Carbon
+    /**
+     * Resolve the date a single group is measured against.
+     *
+     * Null only ever means "shared-stop-date mode with an unusable setting", which is the
+     * caller's cue to treat the group as ineligible rather than to pick another target.
+     */
+    private function targetForGroup(int $backfillDays, int $backfillTarget, ?Carbon $sharedStopDate): ?Carbon
     {
-        return $backfillDays === 2
-            ? Carbon::createFromFormat('Y-m-d', $safeBackfillDate)
+        return $backfillDays === self::SHARED_STOP_DATE_MODE
+            ? $sharedStopDate?->copy()
             : now()->subDays($backfillTarget);
+    }
+
+    /**
+     * Resolve the stop date every group shares, when this pass has a usable one at all.
+     *
+     * Null therefore covers both "this mode measures against per-group day counts instead"
+     * and "mode 2, but the configured date is unusable"; targetForGroup() is what tells the
+     * two apart, and only the second warns.
+     *
+     * A missing or blank row still resolves to the coded default, through the same helper the
+     * rest of the settings use, so a stored 0 stays a value somebody typed rather than a
+     * falsy stand-in for an empty row. A stored value that is not a real `YYYY-MM-DD` date is
+     * a configuration error rather than something to reinterpret:
+     * the coded default is the earliest stop date there is, so quietly substituting it for a
+     * typo would schedule maximal backfill instead of stopping. Parse failure therefore fails
+     * closed -- no group is eligible -- and every pass warns until the setting is corrected.
+     *
+     * A valid date resolves to the start of that day, so the cutoff is deterministic rather
+     * than "that date at whatever time the pass happens to run", and matches what the admin
+     * form displays.
+     */
+    private function resolveSharedStopDate(int $backfillDays): ?Carbon
+    {
+        if ($backfillDays !== self::SHARED_STOP_DATE_MODE) {
+            return null;
+        }
+
+        $stored = (string) Settings::settingValueOr('safebackfilldate', $this->config->safeBackFillDate);
+        $parsed = null;
+
+        try {
+            $parsed = Carbon::createFromFormat('!Y-m-d', $stored);
+        } catch (InvalidFormatException) {
+            // Reported as a configuration error below.
+        }
+
+        if (! $parsed instanceof Carbon || $parsed->format('Y-m-d') !== $stored) {
+            $message = sprintf(
+                'Backfill setting safebackfilldate is not a valid YYYY-MM-DD date ("%s"); '
+                .'no group is eligible for backfill until it is corrected.',
+                $stored,
+            );
+
+            Log::warning($message);
+            $this->log($message, 'warning');
+
+            return null;
+        }
+
+        return $parsed->startOfDay();
     }
 
     /**
@@ -159,12 +233,12 @@ final class BackfillService
      * Backfill all groups or a specific group.
      *
      * @param  string  $groupName  Optional specific group to backfill
-     * @param  int|string  $articles  Number of articles to backfill, or empty for date-based
+     * @param  int|string|null  $articles  Number of articles to backfill, or empty for date-based
      * @param  string  $type  Backfill type filter
      *
      * @throws \Throwable
      */
-    public function backfillAllGroups(string $groupName = '', int|string $articles = '', string $type = ''): void
+    public function backfillAllGroups(string $groupName = '', int|string|null $articles = '', string $type = ''): void
     {
         $groups = $this->getGroupsToBackfill($groupName, $type);
 
@@ -177,7 +251,6 @@ final class BackfillService
         $groupCount = \count($groups);
         $this->logBackfillStart($groupCount);
 
-        $articles = $this->normalizeArticleCount($articles);
         $startTime = now();
 
         foreach ($groups as $index => $group) {
@@ -193,12 +266,13 @@ final class BackfillService
      *
      * @param  array<string, mixed>  $groupArr  Group data array
      * @param  int  $remainingGroups  Number of groups remaining after this one
-     * @param  int|string  $articles  Number of articles to backfill, or empty for date-based
+     * @param  int|string|null  $articles  Number of articles to backfill, or empty for date-based
      *
      * @throws \Throwable
      */
-    public function backfillGroup(array $groupArr, int $remainingGroups, int|string $articles = ''): void
+    public function backfillGroup(array $groupArr, int $remainingGroups, int|string|null $articles = ''): void
     {
+        $articles = $this->normalizeArticleCount($articles);
         $startTime = now();
         $this->binaries->logIndexerStart();
 
@@ -240,11 +314,24 @@ final class BackfillService
     }
 
     /**
-     * Normalize article count parameter.
+     * Normalize the requested article count.
+     *
+     * An empty string is the one way to ask for date-based backfill; every other input is an
+     * article-mode request, and a request for no articles is misconfiguration rather than an
+     * instruction to do nothing. A stored `backfill_qty` of 0, a missing settings row (cast to
+     * 0 by the tmux runner, forwarded raw as null by the console command), a negative value and
+     * a non-numeric value therefore all resolve to the same coded default. Without this, a
+     * zero-article target lands on the group's own first record, which the achievability check
+     * reads as "history exhausted" -- and with auto-disable on that switches backfill off for
+     * every group the pass touches. Pausing backfill is what the tmux switches are for.
      */
-    private function normalizeArticleCount(int|string $articles): int|string
+    private function normalizeArticleCount(int|string|null $articles): int|string
     {
-        if ($articles !== '' && ! is_numeric($articles)) {
+        if ($articles === '') {
+            return '';
+        }
+
+        if ($articles === null || ! is_numeric($articles) || (int) $articles <= 0) {
             return self::DEFAULT_ARTICLE_COUNT;
         }
 
@@ -282,9 +369,9 @@ final class BackfillService
     {
         $data = $this->nntp->selectGroup($groupName);
 
-        if ($this->nntp->isError($data)) {
+        if (NNTPService::isError($data)) {
             $data = $this->nntp->dataError($this->nntp, $groupName);
-            if ($this->nntp->isError($data)) {
+            if (NNTPService::isError($data)) {
                 throw new RuntimeException("Unable to select Usenet group {$groupName}.");
             }
         }
