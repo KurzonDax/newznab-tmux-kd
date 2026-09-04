@@ -623,7 +623,7 @@ class SettingsTableSeeder extends Seeder
             ],
             231 => [
                 'name' => 'vnstat_args',
-                'value' => 'NULL',
+                'value' => '',
             ],
             233 => [
                 'name' => 'trailers_display',

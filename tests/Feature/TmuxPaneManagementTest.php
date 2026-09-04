@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Symfony\Component\Process\ExecutableFinder;
+use Symfony\Component\Process\Process as SymfonyProcess;
 use Tests\TestCase;
 
 class TmuxPaneManagementTest extends TestCase
@@ -275,6 +276,184 @@ SH;
             'legacy stripped' => [2, true],
             'unknown' => [7, true],
         ];
+    }
+
+    #[DataProvider('monitoringArgumentProvider')]
+    public function test_monitoring_panes_filter_the_legacy_sentinel_and_escape_real_arguments(
+        ?string $vnstatArgs,
+        ?string $tcptrackArgs,
+        string $expectedVnstat,
+        string $expectedTcptrack,
+    ): void {
+        $this->seedMonitoringSettings([
+            'vnstat' => '1',
+            'vnstat_args' => $vnstatArgs,
+            'tcptrack' => '1',
+            'tcptrack_args' => $tcptrackArgs,
+        ]);
+
+        $respawned = $this->buildLayoutCapturingRespawns();
+
+        $this->assertContains($expectedVnstat, $respawned);
+        $this->assertContains($expectedTcptrack, $respawned);
+    }
+
+    /**
+     * @return array<string, array{?string, ?string, string, string}>
+     */
+    public static function monitoringArgumentProvider(): array
+    {
+        return [
+            'the seeded legacy sentinel runs the tools bare' => [
+                'NULL', 'NULL', "watch -n10 'vnstat'", 'tcptrack',
+            ],
+            'a blank value runs the tools bare' => [
+                '', '', "watch -n10 'vnstat'", 'tcptrack',
+            ],
+            'a missing row runs the tools bare' => [
+                null, null, "watch -n10 'vnstat'", 'tcptrack',
+            ],
+            'real arguments are passed through' => [
+                '-i eth0',
+                '-i eth0 port 443',
+                "watch -n10 'vnstat '\''-i'\'' '\''eth0'\'''",
+                "tcptrack '-i' 'eth0' 'port' '443'",
+            ],
+        ];
+    }
+
+    public function test_hostile_monitoring_arguments_cannot_escape_the_pane_command(): void
+    {
+        $shims = $this->makeTempDirectory('nntmux-monitoring-shims');
+        $sentinel = $shims.'/pwned';
+
+        $this->seedMonitoringSettings([
+            'vnstat' => '1',
+            'vnstat_args' => "'; touch {$sentinel} #",
+            'tcptrack' => '1',
+            'tcptrack_args' => "\$(touch {$sentinel})",
+        ]);
+
+        $respawned = $this->buildLayoutCapturingRespawns();
+
+        // `watch` runs its argument through a shell, so the shim stands in for
+        // it and hands the inner command to one as well.
+        $this->writeShim($shims, 'watch', 'exec sh -c "$2"');
+        $this->writeShim($shims, 'vnstat', 'for argument in "$@"; do printf \'%s\\n\' "$argument"; done');
+        $this->writeShim($shims, 'tcptrack', 'for argument in "$@"; do printf \'%s\\n\' "$argument"; done');
+
+        $this->assertSame(
+            ["';", 'touch', $sentinel, '#'],
+            $this->runThroughShims($this->onlyCommandContaining($respawned, 'vnstat'), $shims),
+        );
+        $this->assertSame(
+            ['$(touch', $sentinel.')'],
+            $this->runThroughShims($this->onlyCommandContaining($respawned, 'tcptrack'), $shims),
+        );
+        $this->assertFileDoesNotExist($sentinel, 'the hostile arguments never reached a shell as code');
+    }
+
+    private function writeShim(string $directory, string $name, string $body): void
+    {
+        $path = $directory.'/'.$name;
+        file_put_contents($path, "#!/bin/sh\n".$body."\n");
+        chmod($path, 0755);
+    }
+
+    /**
+     * Run a generated pane command for real, with the monitoring tools shimmed
+     * onto PATH, and return the arguments the tool was handed.
+     *
+     * @return list<string>
+     */
+    private function runThroughShims(string $command, string $shims): array
+    {
+        $process = SymfonyProcess::fromShellCommandline($command, null, ['PATH' => $shims.':'.getenv('PATH')]);
+        $process->setTimeout(10);
+        $process->run();
+
+        $this->assertTrue($process->isSuccessful(), $process->getErrorOutput());
+
+        return array_values(array_filter(explode("\n", $process->getOutput()), static fn (string $line): bool => $line !== ''));
+    }
+
+    /**
+     * Build a full layout against a fake tmux and return every command a pane
+     * was respawned with.
+     *
+     * @return list<string>
+     */
+    private function buildLayoutCapturingRespawns(): array
+    {
+        $nextPaneId = 1;
+        $respawned = [];
+
+        Process::fake(function (PendingProcess $process) use (&$nextPaneId, &$respawned) {
+            $command = $process->command;
+            if (! is_array($command)) {
+                return Process::result();
+            }
+
+            if (in_array('which', $command, true)) {
+                return Process::result('/usr/bin/'.end($command));
+            }
+
+            if (in_array('has-session', $command, true)) {
+                return Process::result('', '', 1);
+            }
+
+            if (in_array('new-session', $command, true)
+                || in_array('new-window', $command, true)
+                || in_array('split-window', $command, true)) {
+                return Process::result('%'.$nextPaneId++."\n");
+            }
+
+            if (in_array('respawn-pane', $command, true)) {
+                $respawned[] = (string) end($command);
+            }
+
+            return Process::result();
+        });
+
+        $layoutBuilder = new TmuxLayoutBuilder(new TmuxSessionManager('test-session'));
+
+        $this->assertTrue($layoutBuilder->buildLayout(0), (string) $layoutBuilder->lastError());
+
+        return $respawned;
+    }
+
+    /**
+     * @param  array<string, string|null>  $settings
+     */
+    private function seedMonitoringSettings(array $settings): void
+    {
+        Schema::create('settings', function (Blueprint $table): void {
+            $table->string('name')->primary();
+            $table->text('value')->nullable();
+        });
+
+        foreach ($settings as $name => $value) {
+            if ($value === null) {
+                continue;
+            }
+
+            DB::table('settings')->insert(['name' => $name, 'value' => $value]);
+        }
+    }
+
+    /**
+     * @param  list<string>  $commands
+     */
+    private function onlyCommandContaining(array $commands, string $needle): string
+    {
+        $matches = array_values(array_filter(
+            $commands,
+            static fn (string $command): bool => str_contains($command, $needle),
+        ));
+
+        $this->assertCount(1, $matches, "exactly one pane command mentions {$needle}");
+
+        return $matches[0];
     }
 
     public function test_partial_layout_is_removed_after_a_split_failure(): void
@@ -702,7 +881,7 @@ SH;
         $chain = $runner->boundedStep('fix-names 7', 'sleep 30', 1, $log).'; echo next-step';
 
         $started = microtime(true);
-        $process = \Symfony\Component\Process\Process::fromShellCommandline($chain);
+        $process = SymfonyProcess::fromShellCommandline($chain);
         $process->setTimeout(20);
         $process->run();
         $elapsed = microtime(true) - $started;
