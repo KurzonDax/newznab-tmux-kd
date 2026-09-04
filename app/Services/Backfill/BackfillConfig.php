@@ -36,15 +36,11 @@ final readonly class BackfillConfig
 
     private static function getSettingString(string $key, string $default): string
     {
-        $value = Settings::settingValue($key);
-
-        return $value !== '' ? (string) $value : $default;
+        return (string) Settings::settingValueOr($key, $default);
     }
 
     private static function getSettingInt(string $key, int $default): int
     {
-        $value = Settings::settingValue($key);
-
-        return $value !== '' ? (int) $value : $default;
+        return (int) Settings::settingValueOr($key, $default);
     }
 }

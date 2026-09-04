@@ -25,6 +25,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Services\Api\ApiCapabilitiesService;
+use App\Support\SettingNumber;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Cache;
@@ -166,6 +167,26 @@ class Settings extends Model
 
         // Apply the same conversion logic as the accessor
         return self::convertValue($value);
+    }
+
+    /**
+     * Read a setting, falling back to the coded default when the row says nothing.
+     *
+     * settingValue() reports "no row" as null and "row cleared in the admin form" as an
+     * empty string, but a consumer wants the same coded default for both: an install that
+     * predates a setting must behave like one where the field was never filled in, not like
+     * one where somebody typed 0. Casting is left to the caller so a stored value resolves
+     * exactly as it does when read through settingValue() directly.
+     *
+     * Use this where a stored value must keep resolving exactly as it always has. Where a
+     * non-numeric row should fall back rather than cast to 0, reach for
+     * {@see SettingNumber} instead: it rejects anything non-numeric.
+     */
+    public static function settingValueOr(mixed $setting, mixed $default): mixed
+    {
+        $value = self::settingValue($setting);
+
+        return ($value === null || $value === '') ? $default : $value;
     }
 
     /**

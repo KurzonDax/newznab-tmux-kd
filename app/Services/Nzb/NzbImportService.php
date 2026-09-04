@@ -97,7 +97,7 @@ class NzbImportService
         $this->parserService = app(NzbParserService::class);
         $this->releaseManagement = $releaseManagement ?? app(ReleaseManagementService::class);
         $this->releaseImage = $releaseImage ?? new ReleaseImageService;
-        $this->crossPostt = Settings::settingValue('crossposttime') !== '' ? Settings::settingValue('crossposttime') : 2;
+        $this->crossPostt = Settings::settingValueOr('crossposttime', 2);
 
         // Set properties from options
         $this->browser = isset($options['Browser']) ? (bool) $options['Browser'] : false;

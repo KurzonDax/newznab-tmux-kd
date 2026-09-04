@@ -58,8 +58,6 @@ final readonly class BinariesConfig
 
     private static function getSettingInt(string $key, int $default): int
     {
-        $value = Settings::settingValue($key);
-
-        return $value !== '' ? (int) $value : $default;
+        return (int) Settings::settingValueOr($key, $default);
     }
 }

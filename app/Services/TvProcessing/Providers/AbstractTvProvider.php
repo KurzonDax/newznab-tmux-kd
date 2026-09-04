@@ -82,7 +82,7 @@ abstract class AbstractTvProvider extends BaseVideoProvider
         parent::__construct();
         $this->catWhere = 'categories_id BETWEEN '.Category::TV_ROOT.' AND '.Category::TV_OTHER.' AND categories_id != '.Category::TV_ANIME;
         try {
-            $this->tvqty = Settings::settingValue('maxrageprocessed') !== '' ? (int) Settings::settingValue('maxrageprocessed') : 75;
+            $this->tvqty = (int) Settings::settingValueOr('maxrageprocessed', 75);
         } catch (QueryException $e) {
             // Table doesn't exist yet (e.g., during migrations or tests)
             $this->tvqty = 75;

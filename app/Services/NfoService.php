@@ -164,11 +164,10 @@ class NfoService
     private function getNzbs(): int
     {
         if ($this->nzbs === null) {
-            $this->nzbs = (int) $this->rememberNfoSetting('nfo_maxnfoprocessed', function () {
-                $value = Settings::settingValue('maxnfoprocessed');
-
-                return $value !== '' ? (int) $value : 100;
-            });
+            $this->nzbs = (int) $this->rememberNfoSetting(
+                'nfo_maxnfoprocessed',
+                fn (): int => (int) Settings::settingValueOr('maxnfoprocessed', 100)
+            );
         }
 
         return $this->nzbs;
