@@ -159,12 +159,12 @@ final class BackfillService
      * Backfill all groups or a specific group.
      *
      * @param  string  $groupName  Optional specific group to backfill
-     * @param  int|string  $articles  Number of articles to backfill, or empty for date-based
+     * @param  int|string|null  $articles  Number of articles to backfill, or empty for date-based
      * @param  string  $type  Backfill type filter
      *
      * @throws \Throwable
      */
-    public function backfillAllGroups(string $groupName = '', int|string $articles = '', string $type = ''): void
+    public function backfillAllGroups(string $groupName = '', int|string|null $articles = '', string $type = ''): void
     {
         $groups = $this->getGroupsToBackfill($groupName, $type);
 
@@ -177,7 +177,6 @@ final class BackfillService
         $groupCount = \count($groups);
         $this->logBackfillStart($groupCount);
 
-        $articles = $this->normalizeArticleCount($articles);
         $startTime = now();
 
         foreach ($groups as $index => $group) {
@@ -193,12 +192,13 @@ final class BackfillService
      *
      * @param  array<string, mixed>  $groupArr  Group data array
      * @param  int  $remainingGroups  Number of groups remaining after this one
-     * @param  int|string  $articles  Number of articles to backfill, or empty for date-based
+     * @param  int|string|null  $articles  Number of articles to backfill, or empty for date-based
      *
      * @throws \Throwable
      */
-    public function backfillGroup(array $groupArr, int $remainingGroups, int|string $articles = ''): void
+    public function backfillGroup(array $groupArr, int $remainingGroups, int|string|null $articles = ''): void
     {
+        $articles = $this->normalizeArticleCount($articles);
         $startTime = now();
         $this->binaries->logIndexerStart();
 
@@ -240,11 +240,24 @@ final class BackfillService
     }
 
     /**
-     * Normalize article count parameter.
+     * Normalize the requested article count.
+     *
+     * An empty string is the one way to ask for date-based backfill; every other input is an
+     * article-mode request, and a request for no articles is misconfiguration rather than an
+     * instruction to do nothing. A stored `backfill_qty` of 0, a missing settings row (cast to
+     * 0 by the tmux runner, forwarded raw as null by the console command), a negative value and
+     * a non-numeric value therefore all resolve to the same coded default. Without this, a
+     * zero-article target lands on the group's own first record, which the achievability check
+     * reads as "history exhausted" -- and with auto-disable on that switches backfill off for
+     * every group the pass touches. Pausing backfill is what the tmux switches are for.
      */
-    private function normalizeArticleCount(int|string $articles): int|string
+    private function normalizeArticleCount(int|string|null $articles): int|string
     {
-        if ($articles !== '' && ! is_numeric($articles)) {
+        if ($articles === '') {
+            return '';
+        }
+
+        if ($articles === null || ! is_numeric($articles) || (int) $articles <= 0) {
             return self::DEFAULT_ARTICLE_COUNT;
         }
 
@@ -282,9 +295,9 @@ final class BackfillService
     {
         $data = $this->nntp->selectGroup($groupName);
 
-        if ($this->nntp->isError($data)) {
+        if (NNTPService::isError($data)) {
             $data = $this->nntp->dataError($this->nntp, $groupName);
-            if ($this->nntp->isError($data)) {
+            if (NNTPService::isError($data)) {
                 throw new RuntimeException("Unable to select Usenet group {$groupName}.");
             }
         }
