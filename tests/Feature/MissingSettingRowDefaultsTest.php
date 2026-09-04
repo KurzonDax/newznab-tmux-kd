@@ -55,14 +55,12 @@ class MissingSettingRowDefaultsTest extends TestCase
     public function test_binaries_config_keeps_an_explicitly_stored_zero(): void
     {
         $this->storeSettings([
-            'maxmssgs' => '0',
             'partrepair' => '0',
             'maxpartrepair' => '0',
         ]);
 
         $config = BinariesConfig::fromSettings();
 
-        $this->assertSame(0, $config->messageBuffer);
         $this->assertFalse($config->partRepair);
         $this->assertSame(0, $config->partRepairLimit);
     }

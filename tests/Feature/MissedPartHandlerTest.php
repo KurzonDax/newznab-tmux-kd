@@ -35,9 +35,88 @@ class MissedPartHandlerTest extends TestCase
         $handler->addMissingParts([101], 8);
 
         $this->assertSame(4, DB::table('missed_parts')->where('groups_id', 7)->count());
-        $this->assertSame(1, (int) DB::table('missed_parts')->where(['groups_id' => 7, 'numberid' => 100])->value('attempts'));
-        $this->assertSame(2, (int) DB::table('missed_parts')->where(['groups_id' => 7, 'numberid' => 101])->value('attempts'));
-        $this->assertSame(1, (int) DB::table('missed_parts')->where(['groups_id' => 8, 'numberid' => 101])->value('attempts'));
+        $this->assertSame(0, (int) DB::table('missed_parts')->where(['groups_id' => 7, 'numberid' => 100])->value('attempts'));
+        $this->assertSame(1, (int) DB::table('missed_parts')->where(['groups_id' => 7, 'numberid' => 101])->value('attempts'));
+        $this->assertSame(0, (int) DB::table('missed_parts')->where(['groups_id' => 8, 'numberid' => 101])->value('attempts'));
+    }
+
+    /**
+     * The MySQL path cannot run against the SQLite test connection, so pin the statement
+     * it builds: the entry baseline and the re-detection bump have to match the SQLite
+     * path exactly, or the two drivers give a group a different number of repair tries.
+     */
+    public function test_the_mysql_insert_path_queues_parts_with_the_same_zero_baseline(): void
+    {
+        $statement = null;
+        $parameters = null;
+
+        DB::shouldReceive('getDriverName')->andReturn('mysql');
+        DB::shouldReceive('insert')->once()->andReturnUsing(
+            function (string $sql, array $bindings) use (&$statement, &$parameters): bool {
+                $statement = $sql;
+                $parameters = $bindings;
+
+                return true;
+            }
+        );
+
+        (new MissedPartHandler(partRepairLimit: 10, partRepairMaxTries: 3))->addMissingParts([100, 101], 7);
+
+        $this->assertStringContainsString('VALUES (?, ?, 0),(?, ?, 0)', $statement);
+        $this->assertStringContainsString('ON DUPLICATE KEY UPDATE attempts = attempts + 1', $statement);
+        $this->assertSame([100, 7, 101, 7], $parameters);
+    }
+
+    /**
+     * `attempts` counts completed repair attempts, so a stored maximum of N has to buy
+     * exactly N of them. Entering the queue at 1 used to spend a try nobody made.
+     */
+    public function test_a_part_that_keeps_failing_is_offered_for_repair_exactly_the_configured_number_of_times(): void
+    {
+        $handler = new MissedPartHandler(partRepairLimit: 10, partRepairMaxTries: 3);
+        $handler->addMissingParts([100], 7);
+
+        $this->assertSame(3, $this->countFailingRepairAttempts($handler, 7));
+        $this->assertFalse(DB::table('missed_parts')->where('groups_id', 7)->exists());
+    }
+
+    /**
+     * A maximum of 1 used to record the part and then discard it on the next cleanup pass
+     * without ever offering it, which made 2 the smallest value that repaired anything.
+     */
+    public function test_a_maximum_of_one_still_buys_a_single_repair_attempt(): void
+    {
+        $handler = new MissedPartHandler(partRepairLimit: 10, partRepairMaxTries: 1);
+        $handler->addMissingParts([100], 7);
+
+        $this->assertSame(1, $this->countFailingRepairAttempts($handler, 7));
+        $this->assertFalse(DB::table('missed_parts')->where('groups_id', 7)->exists());
+    }
+
+    /**
+     * Run the repair cycle -- offer, fail, age, clean up -- until the group's queue is
+     * empty, and report how many times the part was actually offered for repair.
+     */
+    private function countFailingRepairAttempts(MissedPartHandler $handler, int $groupId): int
+    {
+        $offers = 0;
+
+        for ($pass = 0; $pass < 10; $pass++) {
+            $parts = $handler->getMissingParts($groupId);
+
+            if ($parts !== []) {
+                $offers++;
+                $handler->incrementAttempts($groupId, (int) $parts[count($parts) - 1]->numberid);
+            }
+
+            $handler->cleanupExhaustedParts($groupId);
+
+            if (! DB::table('missed_parts')->where('groups_id', $groupId)->exists()) {
+                return $offers;
+            }
+        }
+
+        $this->fail('the missed part never left the repair queue');
     }
 
     public function test_get_missing_parts_applies_attempt_limit_order_and_repair_limit(): void
