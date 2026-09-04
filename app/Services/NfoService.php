@@ -117,8 +117,6 @@ class NfoService
     /**
      * Lazily loaded from settings + cache when NFO processing runs.
      */
-    private ?int $maxRetries = null;
-
     /**
      * @var string Temporary path for processing files.
      */
@@ -173,17 +171,18 @@ class NfoService
         return $this->nzbs;
     }
 
-    private function getMaxRetries(): int
+    /**
+     * The lowest nfostatus the main retry pass still owns: -(maxnforetries + 1), floored at -8.
+     *
+     * Both passes derive their window from this one read, so they cannot disagree about where
+     * the main pass stops and the archive pass starts. Reading it through a cache on one side
+     * only would let the two drift apart after a settings change and re-open the overlap.
+     */
+    private static function retryFloor(): int
     {
-        if ($this->maxRetries === null) {
-            $maxRetries = (int) $this->rememberNfoSetting('nfo_maxnforetries', function () {
-                return (int) Settings::settingValue('maxnforetries');
-            });
-            $computed = $maxRetries >= 0 ? -($maxRetries + 1) : self::NFO_UNPROC;
-            $this->maxRetries = max($computed, -8);
-        }
+        $configured = (int) Settings::settingValue('maxnforetries');
 
-        return $this->maxRetries;
+        return max($configured >= 0 ? -($configured + 1) : self::NFO_UNPROC, -8);
     }
 
     /**
@@ -858,7 +857,7 @@ class NfoService
     {
         $query = Release::query()
             ->where('nzbstatus', 1)
-            ->whereBetween('nfostatus', [self::NFO_FAILED_ARCHIVE + 1, $this->getMaxRetries() - 1])
+            ->whereBetween('nfostatus', [self::NFO_FAILED_ARCHIVE + 1, self::retryFloor() - 1])
             ->whereExists(function ($sub) {
                 $sub->select(DB::raw(1))
                     ->from('release_files')
@@ -889,7 +888,7 @@ class NfoService
         }
 
         if ($this->echo) {
-            cli()->primary(PHP_EOL.'Attempting archive-based NFO extraction for '.$releases->count().' NFO_FAILED release(s).');
+            cli()->primary(PHP_EOL.'Attempting archive-based NFO extraction for '.$releases->count().' retry-exhausted release(s).');
         }
 
         $processed = 0;
@@ -953,12 +952,10 @@ class NfoService
     {
         $maxSize = (int) Settings::settingValue('maxsizetoprocessnfo');
         $minSize = (int) Settings::settingValue('minsizetoprocessnfo');
-        $dummy = (int) Settings::settingValue('maxnforetries');
-        $maxRetries = ($dummy >= 0 ? -($dummy + 1) : self::NFO_UNPROC);
 
         return sprintf(
             'AND r.nzbstatus = 1 AND r.nfostatus BETWEEN %d AND %d %s %s',
-            ($maxRetries < -8 ? -8 : $maxRetries),
+            self::retryFloor(),
             self::NFO_UNPROC,
             ($maxSize > 0 ? ('AND r.size < '.$maxSize) : ''),
             ($minSize > 0 ? ('AND r.size > '.$minSize) : '')
@@ -1710,8 +1707,6 @@ class NfoService
     public function clearSettingsCache(): void
     {
         Cache::forget('nfo_maxnfoprocessed');
-        Cache::forget('nfo_maxnforetries');
         $this->nzbs = null;
-        $this->maxRetries = null;
     }
 }
