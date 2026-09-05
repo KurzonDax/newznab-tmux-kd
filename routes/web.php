@@ -306,6 +306,10 @@ Route::middleware(['role:Admin', '2fa'])->prefix('admin')->group(function () {
     Route::delete('registrations/periods/{period}', [AdminRegistrationController::class, 'destroyPeriod'])->name('admin.registrations.periods.destroy');
     // Settings hub. The section and card slugs are resolved against the settings registry,
     // so an unregistered pair 404s rather than rendering an empty form.
+    Route::get('settings', [AdminSettingsController::class, 'index'])->name('admin.settings.index');
+    Route::get('settings/{section}', [AdminSettingsController::class, 'show'])
+        ->where('section', '[a-z0-9-]+')
+        ->name('admin.settings.section');
     Route::post('settings/{section}/{card}', [AdminSettingsController::class, 'update'])
         ->where(['section' => '[a-z0-9-]+', 'card' => '[a-z0-9-]+'])
         ->name('admin.settings.update');

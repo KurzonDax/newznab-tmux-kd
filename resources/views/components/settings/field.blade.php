@@ -35,7 +35,7 @@
     $size = $type === SettingType::Size ? SizeUnit::fromBytes(is_array($current) ? 0 : $current) : null;
 @endphp
 
-<div class="space-y-1" data-setting="{{ $key }}">
+<div id="setting-{{ $key }}" class="scroll-mt-24 space-y-1" data-setting="{{ $key }}">
     <x-label :for="$key">
         @if($definition->icon)
             <i class="{{ $definition->icon }} mr-1" aria-hidden="true"></i>
@@ -118,7 +118,9 @@
         <p class="text-sm text-gray-500 dark:text-gray-400">{!! $definition->help !!}</p>
     @endif
 
-    @error($key)
-        <p class="text-sm text-red-600 dark:text-red-400"><i class="fas fa-exclamation-circle mr-1" aria-hidden="true"></i>{{ $message }}</p>
-    @enderror
+    {{-- isset(): the hub views are also rendered directly in tests, outside the session-error middleware. --}}
+    @php($fieldError = isset($errors) ? $errors->first($key) : '')
+    @if($fieldError !== '')
+        <p class="text-sm text-red-600 dark:text-red-400"><i class="fas fa-exclamation-circle mr-1" aria-hidden="true"></i>{{ $fieldError }}</p>
+    @endif
 </div>

@@ -56,6 +56,14 @@ enum SettingType: string
     }
 
     /**
+     * Whether the control needs the full width of a card rather than half of a two-up grid.
+     */
+    public function spansFullWidth(): bool
+    {
+        return in_array($this, [self::Textarea, self::CheckboxSet, self::RootToggles], true);
+    }
+
+    /**
      * The rules applied when a definition does not state its own.
      *
      * @return list<string>

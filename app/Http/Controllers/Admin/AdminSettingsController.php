@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\BasePageController;
+use App\Models\RootCategory;
 use App\Services\Settings\SettingsCardUpdater;
+use App\Support\Settings\PipelineStage;
 use App\Support\Settings\SettingsRegistry;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
+use Illuminate\View\View;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
@@ -26,6 +29,49 @@ class AdminSettingsController extends BasePageController
         private readonly SettingsCardUpdater $updater,
     ) {
         parent::__construct();
+    }
+
+    /**
+     * The hub has no page of its own; it opens on its first section.
+     */
+    public function index(): RedirectResponse
+    {
+        $section = $this->registry->defaultSectionId();
+
+        if ($section === null) {
+            throw new NotFoundHttpException('No settings sections are registered.');
+        }
+
+        return redirect()->to($this->sectionUrl($section));
+    }
+
+    /**
+     * One page of the hub, plus the sidebar every page shares.
+     */
+    public function show(Request $request, string $section): View
+    {
+        $current = $this->registry->section($section);
+
+        if ($current === null) {
+            throw new NotFoundHttpException('Unknown settings section ['.$section.'].');
+        }
+
+        $this->setAdminPrefs();
+
+        $query = trim((string) $request->query('q', ''));
+
+        $this->viewData = array_merge($this->viewData, [
+            'title' => $current->title,
+            'meta_title' => $current->title.' Settings',
+            'section' => $current,
+            'sections' => $this->registry->sections(),
+            'stages' => PipelineStage::strip(),
+            'roots' => RootCategory::query()->orderBy('id')->get(),
+            'searchQuery' => $query,
+            'searchResults' => $this->registry->search($query),
+        ]);
+
+        return view('admin.settings.section', $this->viewData);
     }
 
     /**

@@ -23,7 +23,10 @@ class SettingsRegistry
      *
      * @var list<class-string<SettingsSectionProvider>>
      */
-    public const array SECTION_PROVIDERS = [];
+    public const array SECTION_PROVIDERS = [
+        Sections\WebsiteSection::class,
+        Sections\EngineSection::class,
+    ];
 
     /** @var array<string, SettingSection>|null */
     private ?array $sections = null;
