@@ -60,6 +60,10 @@
         </div>
 
         <!-- Music List Table -->
+        @php
+            $musicSearchQuery = ! empty($lastSearch) ? ['musicsearch' => $lastSearch] : [];
+        @endphp
+
         @if(!empty($musicList) && count($musicList) > 0)
             <x-admin.data-table>
                 <x-slot:head>
@@ -118,6 +122,8 @@
                             </tr>
                         @endforeach
             </x-admin.data-table>
+
+            <x-admin.pagination :paginator="$musicList->appends($musicSearchQuery)" />
         @else
             <div class="px-6 py-12 text-center">
                 <i class="fas fa-music text-gray-400 text-5xl mb-4"></i>

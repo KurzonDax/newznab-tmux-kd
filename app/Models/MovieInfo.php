@@ -7,6 +7,7 @@ namespace App\Models;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -86,7 +87,8 @@ class MovieInfo extends Model
     public static function getAll(string $search = ''): mixed
     {
         $expiresAt = now()->addMinutes(config('nntmux.cache_expiry_medium'));
-        $movie = Cache::get(md5($search));
+        $cacheKey = self::listingCacheKey($search, Paginator::resolveCurrentPage());
+        $movie = Cache::get($cacheKey);
         if ($movie !== null) {
             return $movie;
         }
@@ -100,8 +102,22 @@ class MovieInfo extends Model
         }
 
         $movie = $sql->paginate(config('nntmux.items_per_page'));
-        Cache::put(md5($search), $movie, $expiresAt);
+        Cache::put($cacheKey, $movie, $expiresAt);
 
         return $movie;
+    }
+
+    /**
+     * Cache key for one page of the admin movie listing.
+     *
+     * The page number is part of the key because a paginator resolves its page at
+     * construction: keyed on the search term alone, the first page fetched is replayed for
+     * every later one until the entry expires. The prefix keeps the entry out of the global
+     * keyspace, where a bare md5() of the search term collides with any other caller that
+     * hashes the same string.
+     */
+    private static function listingCacheKey(string $search, int $page): string
+    {
+        return 'movieinfo.listing.'.md5($search).'.page.'.$page;
     }
 }

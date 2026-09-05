@@ -15,6 +15,7 @@ use App\Models\Settings;
 use App\Services\MusicIdentity\ResolveReleaseMusicIdentity;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Support\MetadataSearchLookup;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
@@ -51,6 +52,38 @@ class MusicService
         $this->asstag = Settings::settingValue('amazonassociatetag');
         $this->imgSavePath = config('nntmux_settings.covers_path').'/music/';
         $this->failCache = [];
+    }
+
+    /**
+     * One page of the admin music listing, newest first, optionally filtered by a search term.
+     *
+     * Rows come back as plain objects rather than MusicInfo models on purpose: the listing view
+     * reads `$music->genre`, which on a model resolves the genre *relation* and fails on echo.
+     *
+     * The `LIKE` fallback matches artist as well as title so it agrees with the secondary index,
+     * whose music documents are full-text searched over both fields.
+     */
+    public function getRange(?string $search = null): LengthAwarePaginator // @phpstan-ignore missingType.generics
+    {
+        $query = DB::table('musicinfo');
+
+        if (! empty($search)) {
+            if (Search::isAvailable()) {
+                $ids = Search::searchSecondary(SecondarySearchIndex::Music, $search, 3000)['id'];
+                if ($ids === []) {
+                    return $query->whereRaw('1 = 0')->paginate(config('nntmux.items_per_page'));
+                }
+                $query->whereIn('id', $ids);
+            } else {
+                $query->where(function ($builder) use ($search): void {
+                    $builder->where('title', 'like', '%'.$search.'%')
+                        ->orWhere('artist', 'like', '%'.$search.'%');
+                });
+            }
+        }
+
+        return $query->orderByDesc('created_at')
+            ->paginate(config('nntmux.items_per_page'));
     }
 
     /**

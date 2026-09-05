@@ -20,16 +20,8 @@ class AdminMusicController extends BasePageController
     {
         $meta_title = $title = 'Music List';
 
-        // Get search parameter
-        $search = $this->scalarInput($request, 'musicsearch');
-
-        if (! empty($search)) {
-            $musicList = getRange('musicinfo');
-            $lastSearch = $search;
-        } else {
-            $musicList = getRange('musicinfo');
-            $lastSearch = '';
-        }
+        $lastSearch = $this->scalarInput($request, 'musicsearch');
+        $musicList = (new MusicService)->getRange($lastSearch);
 
         return view('admin.music.index', compact('title', 'meta_title', 'musicList', 'lastSearch'));
     }

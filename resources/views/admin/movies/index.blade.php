@@ -31,6 +31,10 @@
             </form>
         </x-admin.search-bar>
 
+        @php
+            $movieSearchQuery = ! empty($lastSearch) ? ['moviesearch' => $lastSearch] : [];
+        @endphp
+
         @if(!empty($movielist) && count($movielist) > 0)
             <x-admin.data-table>
                 <x-slot:head>
@@ -96,6 +100,8 @@
                     </tr>
                 @endforeach
             </x-admin.data-table>
+
+            <x-admin.pagination :paginator="$movielist->appends($movieSearchQuery)" />
         @else
             <x-empty-state
                 icon="fas fa-film"
