@@ -40,7 +40,7 @@ class AdminMusicController extends BasePageController
         $action = $request->input('action') ?? 'view';
 
         if ($request->has('id')) {
-            $id = (int) $request->input('id');
+            $id = $this->integerInput($request, 'id');
             $mus = $music->getMusicInfo($id);
 
             if (! $mus) {
@@ -57,15 +57,12 @@ class AdminMusicController extends BasePageController
                     }
 
                     $cover = (int) $imageService->imageExists($coverDirectory, (string) $id);
-                    $salesrankInput = $request->input('salesrank');
-                    $salesrank = (empty($salesrankInput) || ! ctype_digit((string) $salesrankInput)) ? null : (int) $salesrankInput;
-                    $releasedateInput = $request->input('releasedate');
-                    $releasedate = (empty($releasedateInput) || ! strtotime($releasedateInput))
-                        ? $mus->releasedate
+                    $salesrank = $this->nullableIntegerInput($request, 'salesrank');
+                    $genreId = $this->nullableIntegerInput($request, 'genre');
+                    $releasedateInput = $this->scalarInput($request, 'releasedate');
+                    $releasedate = ($releasedateInput === '' || ! strtotime($releasedateInput))
+                        ? $this->storedAttribute($mus, 'releasedate')
                         : Carbon::parse($releasedateInput)->toDateTimeString();
-
-                    $genreInput = $request->input('genre');
-                    $genreId = ! empty($genreInput) ? (int) $genreInput : null;
 
                     $music->update(
                         $id,
