@@ -43,7 +43,6 @@ use App\Http\Controllers\Admin\AdminSettingsController;
 use App\Http\Controllers\Admin\AdminShowsController;
 use App\Http\Controllers\Admin\AdminSiteController;
 use App\Http\Controllers\Admin\AdminStatusController;
-use App\Http\Controllers\Admin\AdminTmuxController;
 use App\Http\Controllers\Admin\AdminUserController;
 use App\Http\Controllers\Admin\AdminUserRoleHistoryController;
 use App\Http\Controllers\Admin\DeletedUsersController;
@@ -313,7 +312,12 @@ Route::middleware(['role:Admin', '2fa'])->prefix('admin')->group(function () {
     Route::post('settings/{section}/{card}', [AdminSettingsController::class, 'update'])
         ->where(['section' => '[a-z0-9-]+', 'card' => '[a-z0-9-]+'])
         ->name('admin.settings.update');
-    Route::match(['GET', 'POST'], 'site-edit', [AdminSiteController::class, 'edit'])->name('admin.site-edit');
+    // Retired by the settings hub. Permanent so a bookmarked form stops coming back, and
+    // pointed at the index rather than a slug so the registry keeps deciding where the hub
+    // opens. permanentRedirect() registers every verb, so a POST reaches the redirect rather
+    // than 405ing -- though a form left open long enough for its CSRF token to expire is
+    // rejected at the middleware first, as it would have been before.
+    Route::permanentRedirect('site-edit', '/admin/settings');
     Route::post('site/expire-logins', [AdminLoginSessionController::class, 'expireAll'])->name('admin.login-sessions.expire-all');
     Route::get('status/create', [AdminStatusController::class, 'create'])->name('admin.status.create');
     Route::post('status', [AdminStatusController::class, 'store'])->name('admin.status.store');
@@ -354,8 +358,7 @@ Route::middleware(['role:Admin', '2fa'])->prefix('admin')->group(function () {
     Route::get('collection_regexes-list', [AdminCollectionRegexesController::class, 'index'])->name('admin.collection_regexes-list');
     Route::match(['GET', 'POST'], 'collection_regexes-edit', [AdminCollectionRegexesController::class, 'edit'])->name('admin.collection_regexes-edit');
     Route::post('ajax', [AdminAjaxController::class, 'ajaxAction'])->name('admin.ajax');
-    Route::get('tmux-edit', [AdminTmuxController::class, 'edit'])->name('admin.tmux-edit');
-    Route::post('tmux-edit', [AdminTmuxController::class, 'update'])->name('admin.tmux-update');
+    Route::permanentRedirect('tmux-edit', '/admin/settings');
     Route::get('backups', [AdminBackupsController::class, 'index'])->name('admin.backups.index');
     Route::post('backups', [AdminBackupsController::class, 'update'])->name('admin.backups.update');
     Route::post('backups/run/{kind}', [AdminBackupsController::class, 'run'])

@@ -33,8 +33,6 @@ class MusicService
 
     public ?string $asstag;
 
-    public int $musicqty;
-
     public string $imgSavePath;
 
     /**
@@ -51,7 +49,6 @@ class MusicService
         $this->pubkey = Settings::settingValue('amazonpubkey');
         $this->privkey = Settings::settingValue('amazonprivkey');
         $this->asstag = Settings::settingValue('amazonassociatetag');
-        $this->musicqty = (int) Settings::settingValueOr('maxmusicprocessed', 150);
         $this->imgSavePath = config('nntmux_settings.covers_path').'/music/';
         $this->failCache = [];
     }

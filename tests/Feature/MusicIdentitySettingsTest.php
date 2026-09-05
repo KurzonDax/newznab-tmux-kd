@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Services\MusicIdentity\MusicIdentityConfiguration;
+use App\Support\Settings\SettingsRegistry;
 use Database\Seeders\SettingsTableSeeder;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -13,10 +14,17 @@ use Tests\TestCase;
 
 final class MusicIdentitySettingsTest extends TestCase
 {
-    /** @var array<string, string> */
+    /**
+     * The runtime controls the feature still has.
+     *
+     * `music_identity_shadow` was one of these until #443: its value reached a property nobody
+     * read, while the real shadow switch is `music-identity.application_mode` in config. The
+     * migration below still creates the row on an upgrade path, and a later migration drops it.
+     *
+     * @var array<string, string>
+     */
     private const array SETTINGS = [
         'music_identity_enabled' => '1',
-        'music_identity_shadow' => '1',
         'music_identity_workers' => '1',
     ];
 
@@ -73,7 +81,7 @@ final class MusicIdentitySettingsTest extends TestCase
 
         $this->migration()->down();
 
-        foreach (array_keys(self::SETTINGS) as $name) {
+        foreach ([...array_keys(self::SETTINGS), 'music_identity_shadow'] as $name) {
             $this->assertNull($this->settingValue($name));
         }
         $this->assertDatabaseMissing('service_statuses', ['slug' => 'musicbrainz']);
@@ -82,14 +90,16 @@ final class MusicIdentitySettingsTest extends TestCase
     public function test_fresh_install_and_admin_surfaces_include_every_runtime_control(): void
     {
         $seeder = file_get_contents(database_path('seeders/SettingsTableSeeder.php'));
-        $form = file_get_contents(resource_path('views/admin/site/sections/lookup-settings.blade.php'));
+        $registry = app(SettingsRegistry::class);
 
         $this->assertIsString($seeder);
-        $this->assertIsString($form);
         foreach (array_keys(self::SETTINGS) as $name) {
             $this->assertStringContainsString("'name' => '".$name."'", $seeder);
-            $this->assertStringContainsString('name="'.$name.'"', $form);
+            $this->assertSame('music', $registry->locate($name)?->card->id, $name.' must stay editable from the hub.');
         }
+
+        $this->assertStringNotContainsString("'name' => 'music_identity_shadow'", $seeder);
+        $this->assertFalse($registry->has('music_identity_shadow'), 'The retired shadow switch must not come back.');
 
         (new SettingsTableSeeder)->run();
         foreach (self::SETTINGS as $name => $default) {
@@ -109,7 +119,6 @@ final class MusicIdentitySettingsTest extends TestCase
         $configuration = new MusicIdentityConfiguration;
 
         $this->assertTrue($configuration->enabled);
-        $this->assertTrue($configuration->shadowMode);
         $this->assertSame(8, $configuration->workerParallelism);
         $this->assertFalse($configuration->active());
 

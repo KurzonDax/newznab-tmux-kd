@@ -32,8 +32,8 @@ snapshot_live_caches() {
 snapshot_live_caches "$before_snapshot"
 
 "$repository_root/sail" artisan test --compact \
-    tests/Feature/AdminTmuxSettingsControllerTest.php \
-    tests/Unit/Http/Requests/Admin/UpdateTmuxSettingsRequestTest.php
+    tests/Feature/Settings/SettingsWorkerBoundsTest.php \
+    tests/Feature/Settings/SettingsHubPagesTest.php
 
 snapshot_live_caches "$after_snapshot"
 
@@ -57,9 +57,9 @@ fi
 
 http_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
     --cookie "$PERMISSION_TEST_ADMIN_COOKIE_FILE" \
-    "${PERMISSION_TEST_BASE_URL%/}/admin/tmux-edit")"
+    "${PERMISSION_TEST_BASE_URL%/}/admin/settings/engine")"
 [[ "$http_status" == 200 ]] || {
-    echo "FAIL: authenticated served /admin/tmux-edit returned HTTP $http_status, expected 200" >&2
+    echo "FAIL: authenticated served /admin/settings/engine returned HTTP $http_status, expected 200" >&2
     exit 1
 }
-echo 'Authenticated served /admin/tmux-edit returned HTTP 200 after the focused tests.'
+echo 'Authenticated served /admin/settings/engine returned HTTP 200 after the focused tests.'

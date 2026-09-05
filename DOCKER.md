@@ -71,25 +71,27 @@ assets with `make npm-build`; do not run host-side `npm run build`.
 The following rollout does not rebuild the database, remove application data,
 or restart background processing:
 
-1. Run `make fix-permissions`. This normalizes tracked source (including
-   `UpdateTmuxSettingsRequest.php`), `public/build`, `.env`, dependencies, live
-   compiled views, storage, and bootstrap caches. Run it a second time if you
-   want to confirm the idempotent `corrected 0 path(s)` result.
+1. Run `make fix-permissions`. This normalizes tracked source, `public/build`,
+   `.env`, dependencies, live compiled views, storage, and bootstrap caches. Run
+   it a second time if you want to confirm the idempotent `corrected 0 path(s)`
+   result.
 2. Run `make check-permissions`. This verifies `.env` remains owner/application-
    group `0640`, live views are group-writable/setgid, and PHP-FPM can read the
    source, Composer autoloader, manifest, assets, and compiled views.
 3. Using the deployed base URL and an authenticated administrator cookie, verify
    `curl -f "$APP_URL/login"`, `curl -f "$APP_URL/status"`, and
-   `curl -f -b admin.cookies "$APP_URL/admin/tmux-edit"` all return HTTP 200.
+   `curl -f -b admin.cookies "$APP_URL/admin/settings/engine"` all return HTTP
+   200. (`/admin/tmux-edit` was retired in #443 and now answers 301, which
+   `curl -f` does not treat as a failure, so it is no longer a useful probe.)
 4. Inspect `public/build/manifest.json` and run `curl -f "$APP_URL/<asset>"`
    for every referenced JavaScript and CSS `file`/`css` entry.
 5. Snapshot metadata and hashes beneath `storage/framework/views` and
    `bootstrap/cache`, then run `PERMISSION_TEST_BASE_URL="$APP_URL"
    PERMISSION_TEST_ADMIN_COOKIE_FILE=admin.cookies make
-   test-focused-isolation`. It runs the issue #19 tests through Sail, compares
-   content and nanosecond-resolution metadata, and repeats the authenticated
-   served `/admin/tmux-edit` request after the tests. The snapshots must match
-   and the request must return HTTP 200.
+   test-focused-isolation`. It runs the focused settings-hub tests through Sail,
+   compares content and nanosecond-resolution metadata, and repeats the
+   authenticated served `/admin/settings/engine` request after the tests. The
+   snapshots must match and the request must return HTTP 200.
 
 If a compiled Blade file cannot be repaired, it is safe to clear only compiled
 views with `make artisan cmd="view:clear"`, immediately rerun `make

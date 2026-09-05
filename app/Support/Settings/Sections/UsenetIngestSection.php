@@ -39,7 +39,7 @@ final class UsenetIngestSection implements SettingsSectionProvider
                         new SettingDefinition(
                             key: 'nntpretries',
                             label: 'Connection attempts',
-                            help: 'Attempts made against a provider, counting the first. Failures back off from 250&nbsp;ms, doubling to 5&nbsp;seconds; an authentication rejection returns at once without retrying. <strong>0 or blank falls back to 1 attempt.</strong> Default 10.',
+                            help: 'How many connection attempts are made against a provider, counting the first. Failed connections back off from 250 milliseconds, doubling up to 5 seconds between attempts; an authentication rejection returns immediately without retry. <strong>Anything below 1, including 0 or blank, counts as a single attempt.</strong> Default 10.',
                             type: SettingType::Int,
                             unit: 'attempts',
                             rules: ['required', 'integer', 'min:0'],

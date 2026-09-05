@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Models\Settings;
 use App\Services\AudioProcessing\AudioProcessingConfiguration;
+use App\Support\Settings\SettingsRegistry;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -102,7 +103,7 @@ class AudioProcessingSettingsTest extends TestCase
         $this->ceilingMigration()->up();
         $this->completionMigration()->up();
 
-        // What AdminSiteController::edit() does with the submitted form.
+        // What the settings hub's Audio previews card writes.
         Settings::settingsUpdate([
             'postthreadsaudio' => '4',
             'audio_segments_to_download' => '20',
@@ -128,20 +129,18 @@ class AudioProcessingSettingsTest extends TestCase
         }
     }
 
-    public function test_the_admin_form_exposes_the_audio_settings_and_drops_the_retired_one(): void
+    public function test_the_settings_hub_exposes_the_audio_settings_and_drops_the_retired_one(): void
     {
-        $postProcessing = file_get_contents(
-            resource_path('views/admin/site/sections/postprocessing-settings.blade.php')
-        );
-        $lookup = file_get_contents(resource_path('views/admin/site/sections/lookup-settings.blade.php'));
-
-        $this->assertIsString($postProcessing);
-        $this->assertIsString($lookup);
+        $registry = app(SettingsRegistry::class);
 
         foreach (self::AUDIO_SETTINGS as $name) {
-            $this->assertStringContainsString('name="'.$name.'"', $postProcessing, $name.' should be editable');
+            $location = $registry->locate($name);
+
+            $this->assertNotNull($location, $name.' should be editable');
+            $this->assertSame('audio', $location->card->id, $name.' belongs on the Audio previews card');
         }
-        $this->assertStringNotContainsString('saveaudiopreview', $lookup);
+
+        $this->assertFalse($registry->has('saveaudiopreview'), 'The retired switch must not come back.');
     }
 
     public function test_audio_archive_megabytes_are_converted_to_bytes_and_zero_is_unlimited(): void

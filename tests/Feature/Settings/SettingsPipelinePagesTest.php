@@ -140,6 +140,15 @@ class SettingsPipelinePagesTest extends TestCase
         $this->assertStringContainsString('categories add a third minimum of their own', $rendered);
     }
 
+    public function test_the_storage_depth_help_describes_the_fallback_rather_than_a_reorg_script(): void
+    {
+        $rendered = $this->renderSection('release-formation');
+
+        $this->assertStringContainsString('name="nzbsplitlevel"', $rendered);
+        $this->assertStringNotContainsString('nzb-reorg', $rendered);
+        $this->assertStringContainsString('lookups fall back through the other depths', $rendered);
+    }
+
     public function test_the_retention_card_does_not_claim_one_meaning_for_zero(): void
     {
         $rendered = $this->renderSection('release-formation');

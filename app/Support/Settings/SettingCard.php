@@ -16,6 +16,10 @@ final readonly class SettingCard
 {
     /**
      * @param  list<SettingDefinition>  $settings
+     * @param  string|null  $asideView  Blade view rendered as a sibling after the card's form,
+     *                                  for an action that belongs beside these settings but is
+     *                                  not one of them. It cannot go inside the form: it posts
+     *                                  somewhere else, and forms do not nest.
      */
     public function __construct(
         public string $id,
@@ -23,6 +27,7 @@ final readonly class SettingCard
         public ?string $description,
         public array $settings,
         public ?string $icon = null,
+        public ?string $asideView = null,
     ) {}
 
     public function definition(string $key): ?SettingDefinition

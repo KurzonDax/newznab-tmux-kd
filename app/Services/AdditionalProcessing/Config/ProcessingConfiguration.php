@@ -44,8 +44,6 @@ final readonly class ProcessingConfiguration
 
     public int $minSizeBytes;
 
-    public int $ffmpegDuration;
-
     public bool $addPAR2Files;
 
     public bool $processVideo;
@@ -141,7 +139,6 @@ final readonly class ProcessingConfiguration
         // fetch.
         $this->maxSizeBytes = AdditionalCandidateQuery::maxSizeBytes();
         $this->minSizeBytes = AdditionalCandidateQuery::minSizeBytes();
-        $this->ffmpegDuration = (int) (Settings::settingValue('ffmpeg_duration') ?: 5);
         $this->addPAR2Files = (bool) config('nntmux_settings.add_par2');
         $this->ffmpegPath = config('nntmux_settings.ffmpeg_path') ?: false;
         $this->mediaInfoPath = config('nntmux_settings.mediainfo_path') ?: false;

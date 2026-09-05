@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Models\Settings;
 use App\Services\BookService;
+use App\Support\Settings\SettingsRegistry;
 use Database\Seeders\SettingsTableSeeder;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -84,21 +85,19 @@ class AmazonSleepSettingTest extends TestCase
     {
         $this->migration()->up();
 
-        // What AdminSiteController::edit() does with the submitted form.
+        // What the settings hub's Service etiquette card writes.
         Settings::settingsUpdate(['amazonsleep' => '250']);
 
         $this->assertSame('250', $this->storedValue());
         $this->assertSame(250, (new BookService)->sleeptime);
     }
 
-    public function test_the_admin_form_exposes_the_setting(): void
+    public function test_the_settings_hub_exposes_the_setting(): void
     {
-        $postProcessing = file_get_contents(
-            resource_path('views/admin/site/sections/postprocessing-settings.blade.php')
-        );
+        $location = app(SettingsRegistry::class)->locate('amazonsleep');
 
-        $this->assertIsString($postProcessing);
-        $this->assertStringContainsString('name="amazonsleep"', $postProcessing);
+        $this->assertNotNull($location, 'amazonsleep must stay editable from the hub.');
+        $this->assertSame('metadata-lookups', $location->section->id);
     }
 
     private function storedValue(): ?string
