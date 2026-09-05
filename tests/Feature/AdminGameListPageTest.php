@@ -5,10 +5,8 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Facades\Search;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
@@ -132,21 +130,6 @@ class AdminGameListPageTest extends TestCase
         $this->assertSame($seededDate, $this->cellFor($content, 'Only Game', self::RELEASE_DATE_COLUMN_INDEX));
     }
 
-    /**
-     * The rendered contents of one cell in the row for a given game.
-     */
-    private function cellFor(string $html, string $title, int $columnIndex): string
-    {
-        $rowPattern = '/<tr[^>]*>(?:(?!<\/tr>).)*'.preg_quote($title, '/').'.*?<\/tr>/s';
-
-        $this->assertMatchesRegularExpression($rowPattern, $html, 'No row was rendered for '.$title.'.');
-
-        preg_match($rowPattern, $html, $row);
-        preg_match_all('/<td[^>]*>(.*?)<\/td>/s', $row[0], $cells);
-
-        return trim(strip_tags($cells[1][$columnIndex] ?? ''));
-    }
-
     public function test_game_list_renders_the_empty_state_without_a_paginator(): void
     {
         $response = $this->actingAs($this->admin())->get(route('admin.game-list'));
@@ -185,29 +168,8 @@ class AdminGameListPageTest extends TestCase
 
     private function createGameSchema(): void
     {
-        Schema::create('genres', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->string('title');
-            $table->integer('type')->nullable();
-            $table->boolean('disabled')->default(false);
-        });
-
-        Schema::create('gamesinfo', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->string('title');
-            $table->string('asin', 128)->nullable();
-            $table->string('url', 1000)->nullable();
-            $table->string('publisher')->nullable();
-            $table->integer('genres_id')->nullable();
-            $table->string('esrb')->nullable();
-            $table->dateTime('releasedate')->nullable();
-            $table->string('review', 3000)->nullable();
-            $table->boolean('cover')->default(false);
-            $table->boolean('backdrop')->default(false);
-            $table->string('trailer', 1000)->default('');
-            $table->string('classused', 10)->default('steam');
-            $table->timestamps();
-        });
+        $this->createGenresTable();
+        $this->createGamesInfoTable();
 
         DB::table('genres')->insert([
             'id' => 1,

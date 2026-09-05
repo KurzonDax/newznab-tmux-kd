@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\Settings;
 use App\Models\User;
 use App\Support\ReleaseCompletion;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -193,6 +194,34 @@ class BasePageController extends Controller
         $value = $this->scalarInput($request, $key, (string) $default);
 
         return preg_match('/^-?\d+$/', $value) === 1 ? (int) $value : $default;
+    }
+
+    /**
+     * An optional integer from the request: absent, blank or non-numeric all read as null.
+     *
+     * Request input is always a string, so a raw `$request->input()` handed to a typed `?int`
+     * service parameter is a TypeError under `declare(strict_types=1)`.
+     */
+    protected function nullableIntegerInput(Request $request, string $key): ?int
+    {
+        $value = $this->scalarInput($request, $key);
+
+        return preg_match('/^\d+$/', $value) === 1 ? (int) $value : null;
+    }
+
+    /**
+     * A model attribute as it is stored, read past any cast.
+     *
+     * A form that leaves a field alone has to write the stored value back. Reading it through
+     * the model would hand back the cast value instead: GamesInfo casts `releasedate` to a
+     * date, which truncates the time, so a submission that touched nothing would still rewrite
+     * a stored 13:45:00 to 00:00:00.
+     */
+    protected function storedAttribute(Model $model, string $key): ?string
+    {
+        $stored = $model->getRawOriginal($key);
+
+        return $stored === null ? null : (string) $stored;
     }
 
     /**

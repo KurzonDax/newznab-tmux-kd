@@ -53,7 +53,7 @@ class AdminConsoleController extends BasePageController
         $action = $request->input('action', 'view');
 
         if ($request->has('id')) {
-            $id = $request->input('id');
+            $id = $this->integerInput($request, 'id');
             $con = $this->consoleService->getConsoleInfo($id);
 
             if (! $con) {
@@ -69,10 +69,12 @@ class AdminConsoleController extends BasePageController
                     }
 
                     $hasCover = (int) $this->imageService->imageExists($coverDirectory, (string) $id);
-                    $salesrank = (empty($request->input('salesrank')) || ! ctype_digit($request->input('salesrank'))) ? null : $request->input('salesrank');
-                    $releasedate = (empty($request->input('releasedate')) || ! strtotime($request->input('releasedate')))
-                        ? $con['releasedate']
-                        : Carbon::parse($request->input('releasedate'))->timestamp;
+                    $salesrank = $this->nullableIntegerInput($request, 'salesrank');
+                    $genreId = $this->nullableIntegerInput($request, 'genre');
+                    $releasedateInput = $this->scalarInput($request, 'releasedate');
+                    $releasedate = ($releasedateInput === '' || ! strtotime($releasedateInput))
+                        ? $this->storedAttribute($con, 'releasedate')
+                        : Carbon::parse($releasedateInput)->toDateTimeString();
 
                     $this->consoleService->update(
                         $id,
@@ -85,7 +87,7 @@ class AdminConsoleController extends BasePageController
                         $releasedate,
                         $request->input('esrb'),
                         $hasCover,
-                        $request->input('genre')
+                        $genreId
                     );
 
                     return redirect()->route('admin.console-list')->with('success', 'Console game updated successfully');

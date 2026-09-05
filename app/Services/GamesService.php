@@ -417,12 +417,16 @@ class GamesService
         ?string $asin,
         ?string $url,
         ?string $publisher,
-        mixed $releaseDate,
+        ?string $releaseDate,
         ?string $esrb,
         int $cover,
         ?string $trailerUrl,
         ?int $genreID
     ): void {
+        // gamesinfo.trailer is NOT NULL, and a blank form field arrives as null through
+        // ConvertEmptyStringsToNull.
+        $trailerUrl ??= '';
+
         GamesInfo::query()
             ->where('id', $id)
             ->update([

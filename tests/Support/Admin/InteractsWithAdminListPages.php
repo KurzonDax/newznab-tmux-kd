@@ -106,6 +106,77 @@ trait InteractsWithAdminListPages
         return $user->fresh();
     }
 
+    /**
+     * The rendered contents of one cell in the row carrying a given piece of text.
+     *
+     * Admin list cells are asserted by column position rather than with `assertSee()`, because
+     * a wrongly rendered cell can still contain the text a bare `assertSee()` looks for -- an
+     * Eloquent model echoes as JSON, which carries its own field values (#449).
+     */
+    protected function cellFor(string $html, string $rowText, int $columnIndex): string
+    {
+        $rowPattern = '/<tr[^>]*>(?:(?!<\/tr>).)*'.preg_quote($rowText, '/').'.*?<\/tr>/s';
+
+        $this->assertMatchesRegularExpression($rowPattern, $html, 'No row was rendered for '.$rowText.'.');
+
+        preg_match($rowPattern, $html, $row);
+        preg_match_all('/<td[^>]*>(.*?)<\/td>/s', $row[0], $cells);
+
+        return trim(strip_tags($cells[1][$columnIndex] ?? ''));
+    }
+
+    protected function createGenresTable(): void
+    {
+        Schema::create('genres', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->string('title');
+            $table->integer('type')->nullable();
+            $table->boolean('disabled')->default(false);
+        });
+    }
+
+    protected function createConsoleInfoTable(): void
+    {
+        Schema::create('consoleinfo', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->string('title');
+            $table->string('asin', 128)->nullable();
+            $table->string('url', 1000)->nullable();
+            $table->unsignedInteger('salesrank')->nullable();
+            $table->string('platform')->nullable();
+            $table->string('publisher')->nullable();
+            $table->integer('genres_id')->nullable();
+            $table->string('esrb')->nullable();
+            $table->dateTime('releasedate')->nullable();
+            $table->string('review', 3000)->nullable();
+            $table->boolean('cover')->default(false);
+            $table->timestamps();
+        });
+    }
+
+    /**
+     * Mirrors the production column set, including `trailer` being NOT NULL.
+     */
+    protected function createGamesInfoTable(): void
+    {
+        Schema::create('gamesinfo', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->string('title');
+            $table->string('asin', 128)->nullable();
+            $table->string('url', 1000)->nullable();
+            $table->string('publisher')->nullable();
+            $table->integer('genres_id')->nullable();
+            $table->string('esrb')->nullable();
+            $table->dateTime('releasedate')->nullable();
+            $table->string('review', 3000)->nullable();
+            $table->boolean('cover')->default(false);
+            $table->boolean('backdrop')->default(false);
+            $table->string('trailer', 1000)->default('');
+            $table->string('classused', 10)->default('steam');
+            $table->timestamps();
+        });
+    }
+
     protected function resetGlobalComposerState(): void
     {
         $reflection = new ReflectionClass(GlobalDataComposer::class);
