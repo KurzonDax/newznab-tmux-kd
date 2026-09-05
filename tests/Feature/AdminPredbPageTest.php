@@ -36,6 +36,11 @@ class AdminPredbPageTest extends TestCase
     use IsolatedSqliteDatabase;
 
     /**
+     * Position of the size column in a PreDB row: title, category, size.
+     */
+    private const SIZE_COLUMN_INDEX = 2;
+
+    /**
      * @return array<string, string>
      */
     protected function bootstrapSettings(): array
@@ -73,6 +78,7 @@ class AdminPredbPageTest extends TestCase
     protected function tearDown(): void
     {
         Cache::flush();
+        Paginator::currentPageResolver(static fn (): int => 1);
         $this->tearDownIsolatedDatabase();
         parent::tearDown();
     }
@@ -115,10 +121,9 @@ class AdminPredbPageTest extends TestCase
         $response = $this->actingAs($this->admin())->get(route('admin.predb'));
 
         $response->assertOk();
-        $response->assertSee('Sizeless.Release-GROUP');
-        $response->assertSee('Zero.Release-GROUP');
-        $response->assertSee('—');
         $response->assertDontSee('0B');
+        $this->assertSame('—', $this->sizeCellFor((string) $response->getContent(), 'Sizeless.Release-GROUP'));
+        $this->assertSame('—', $this->sizeCellFor((string) $response->getContent(), 'Zero.Release-GROUP'));
     }
 
     public function test_predb_list_links_a_matched_release(): void
@@ -262,6 +267,25 @@ class AdminPredbPageTest extends TestCase
             Cache::has(md5('')),
             'The PreDB listing must not cache under a bare md5() of the search term.'
         );
+    }
+
+    /**
+     * The rendered contents of one row's size cell.
+     *
+     * Asserted through the cell rather than the whole page: the row renders an unconditional
+     * em-dash in its category, files and release columns too, so a bare assertSee('—') would
+     * pass whatever the size column did.
+     */
+    private function sizeCellFor(string $html, string $title): string
+    {
+        $rowPattern = '/<tr[^>]*>(?:(?!<\/tr>).)*'.preg_quote($title, '/').'.*?<\/tr>/s';
+
+        $this->assertMatchesRegularExpression($rowPattern, $html, 'No row was rendered for '.$title.'.');
+
+        preg_match($rowPattern, $html, $row);
+        preg_match_all('/<td[^>]*>(.*?)<\/td>/s', $row[0], $cells);
+
+        return trim(strip_tags($cells[1][self::SIZE_COLUMN_INDEX] ?? ''));
     }
 
     private function withCurrentPage(int $page): void
