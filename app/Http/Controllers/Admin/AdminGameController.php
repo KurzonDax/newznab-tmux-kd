@@ -49,7 +49,7 @@ class AdminGameController extends BasePageController
         $action = $request->input('action') ?? 'view';
 
         if ($request->has('id')) {
-            $id = $request->input('id');
+            $id = $this->integerInput($request, 'id');
             $game = $games->getGamesInfoById($id);
 
             if (! $game) {
@@ -66,9 +66,11 @@ class AdminGameController extends BasePageController
                     }
 
                     $cover = (int) $imageService->imageExists($coverDirectory, (string) $id);
-                    $releasedate = (empty($request->input('releasedate')) || ! strtotime($request->input('releasedate')))
-                        ? $game['releasedate']
-                        : Carbon::parse($request->input('releasedate'))->timestamp;
+                    $genreId = $this->nullableIntegerInput($request, 'genre');
+                    $releasedateInput = $this->scalarInput($request, 'releasedate');
+                    $releasedate = ($releasedateInput === '' || ! strtotime($releasedateInput))
+                        ? $this->storedAttribute($game, 'releasedate')
+                        : Carbon::parse($releasedateInput)->toDateTimeString();
 
                     $games->update(
                         $id,
@@ -80,7 +82,7 @@ class AdminGameController extends BasePageController
                         $request->input('esrb'),
                         $cover,
                         $request->input('trailerurl'),
-                        $request->input('genre')
+                        $genreId
                     );
 
                     return redirect()->route('admin.game-list')->with('success', 'Game updated successfully');
