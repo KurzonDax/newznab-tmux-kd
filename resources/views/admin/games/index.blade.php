@@ -60,6 +60,10 @@
         </div>
 
         <!-- Game List Table -->
+        @php
+            $gameSearchQuery = ! empty($lastSearch) ? ['gamesearch' => $lastSearch] : [];
+        @endphp
+
         @if(!empty($gamelist) && count($gamelist) > 0)
             <x-admin.data-table>
                 <x-slot:head>
@@ -87,17 +91,13 @@
                                     {{ $game['publisher'] ?? 'N/A' }}
                                 </td>
                                 <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
-                                    {{ $game['genre'] ?? 'N/A' }}
+                                    {{ $game['genretitle'] ?? 'N/A' }}
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                     {{ $game['esrb'] ?? 'N/A' }}
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                                    @if(!empty($game['releasedate']))
-                                        {{ date('Y-m-d', $game['releasedate']) }}
-                                    @else
-                                        N/A
-                                    @endif
+                                    {{ $game['releasedate']?->format('Y-m-d') ?? 'N/A' }}
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm">
                                     @if(!empty($game['cover']) && $game['cover'] == 1)
@@ -118,6 +118,8 @@
                             </tr>
                         @endforeach
             </x-admin.data-table>
+
+            <x-admin.pagination :paginator="$gamelist->appends($gameSearchQuery)" />
         @else
             @php
                 $gamesEmptyMessage = ! empty($lastSearch) ? 'No games found matching "'.$lastSearch.'".' : 'No games found in the database.';
