@@ -28,6 +28,9 @@ class SettingsRegistry
         Sections\EngineSection::class,
         Sections\UsenetIngestSection::class,
         Sections\ReleaseFormationSection::class,
+        Sections\PostProcessingSection::class,
+        Sections\MetadataLookupsSection::class,
+        Sections\NamingHygieneSection::class,
     ];
 
     /** @var array<string, SettingSection>|null */
