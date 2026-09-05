@@ -17,7 +17,6 @@ services:
 
   mariadb:
     image: mariadb:11.4
-    profiles: [integration]
     environment:
       MARIADB_DATABASE: cbp_integration
       MARIADB_USER: sail
