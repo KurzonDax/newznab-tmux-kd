@@ -71,7 +71,9 @@ class AdminUserRoleHistoryController extends BasePageController
         $page = $this->resolvePage($request);
         $perPage = config('nntmux.items_per_page', 50);
 
-        $results = $query->paginate($perPage, ['*'], 'page', $page);
+        // Without the query string the links come out as a bare ?page=N and silently drop
+        // every active filter. The page key is excluded, so it cannot accumulate.
+        $results = $query->paginate($perPage, ['*'], 'page', $page)->withQueryString();
 
         $this->viewData = array_merge($this->viewData, [
             'title' => $title,
