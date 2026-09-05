@@ -26,6 +26,8 @@ class SettingsRegistry
     public const array SECTION_PROVIDERS = [
         Sections\WebsiteSection::class,
         Sections\EngineSection::class,
+        Sections\UsenetIngestSection::class,
+        Sections\ReleaseFormationSection::class,
     ];
 
     /** @var array<string, SettingSection>|null */
