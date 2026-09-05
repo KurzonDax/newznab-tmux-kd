@@ -52,6 +52,21 @@ class CategorizePcGameTest extends TestCase
     }
 
     /**
+     * Real release names that carry a parenthesised architecture token.
+     *
+     * @return array<string, array{0: string}>
+     */
+    public static function realParenthesisedArchitectureNameProvider(): array
+    {
+        return [
+            'wondershare filmora' => ['Wondershare_Filmora_v15.5.3.19727_(x64)_Multilingual.part3.rar'],
+            'pdf-xchange editor' => ['PDF-XChange_Editor_Plus_11.0_(x64)_Multilingual.nzb'],
+            'sketchup pro' => ['SketchUp.Pro.2025.v25.0.634(x64)Multilingual.part22.rar'],
+            'pixologic zbrush' => ['Pixologic.Zbrush.2025.2.2(x64)Multilingual.part02.rar'],
+        ];
+    }
+
+    /**
      * @return array<string, array{0: string}>
      */
     public static function nonPcNameProvider(): array
@@ -194,6 +209,16 @@ class CategorizePcGameTest extends TestCase
         $result = $this->categorizeName($name);
 
         $this->assertNull($result, "Did not expect any PC match for: $name");
+    }
+
+    #[DataProvider('realParenthesisedArchitectureNameProvider')]
+    public function test_real_parenthesised_architecture_names_stay_in_pc_0day(string $name): void
+    {
+        $result = $this->categorizeName($name);
+
+        $this->assertNotNull($result, "Expected a PC match for: $name");
+        $this->assertSame(Category::PC_0DAY, $result->categoryId, "Expected PC_0DAY for: $name");
+        $this->assertSame('0day_system', $result->matchedBy, "Expected the system-token branch to cover: $name");
     }
 
     /**
