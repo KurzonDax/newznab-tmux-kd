@@ -57,6 +57,35 @@ class ReleaseRemoverService
 
     private const string TYPE_PAR2ONLY = 'par2only';
 
+    /**
+     * Every crap class the sweep accepts, in the order the admin picker lists them.
+     *
+     * The admin form and the removal handlers have to offer the same set: a class the picker
+     * omits can never be scheduled, and a token the picker offers that the service does not
+     * know fails the pass with "Wrong type". Publishing the list is what keeps the two from
+     * drifting, which they had.
+     *
+     * @var list<string>
+     */
+    public const array TYPES = [
+        self::TYPE_BLACKLIST,
+        self::TYPE_BLFILES,
+        self::TYPE_CODEC,
+        self::TYPE_EXECUTABLE,
+        self::TYPE_GIBBERISH,
+        self::TYPE_HASHED,
+        self::TYPE_INSTALLBIN,
+        self::TYPE_NZB,
+        self::TYPE_PAR2ONLY,
+        self::TYPE_PASSWORDED,
+        self::TYPE_PASSWORDURL,
+        self::TYPE_SAMPLE,
+        self::TYPE_SCR,
+        self::TYPE_SHORT,
+        self::TYPE_SIZE,
+        self::TYPE_WMV_ALL,
+    ];
+
     protected string $blacklistID = '';
 
     protected string $crapTime = '';
@@ -259,28 +288,16 @@ class ReleaseRemoverService
     }
 
     /**
-     * Execute all removal types (excluding passwordurl and wmv_all).
+     * Execute every removal type.
+     *
+     * "All" used to mean all-but-two: passwordurl and wmv_all were left out with no rationale
+     * anywhere in the code, inherited from upstream. Both handlers are cheaper than classes
+     * already in the set, and "All" is bounded to a 2-hour window by its caller, so the
+     * exclusion cost an operator two classes they had asked for. It now means what it says.
      */
     private function executeAllRemovals(): bool
     {
-        $defaultTypes = [
-            self::TYPE_BLACKLIST,
-            self::TYPE_BLFILES,
-            self::TYPE_EXECUTABLE,
-            self::TYPE_GIBBERISH,
-            self::TYPE_HASHED,
-            self::TYPE_INSTALLBIN,
-            self::TYPE_PASSWORDED,
-            self::TYPE_SAMPLE,
-            self::TYPE_SCR,
-            self::TYPE_SHORT,
-            self::TYPE_SIZE,
-            self::TYPE_NZB,
-            self::TYPE_CODEC,
-            self::TYPE_PAR2ONLY,
-        ];
-
-        foreach ($defaultTypes as $removalType) {
+        foreach (self::TYPES as $removalType) {
             $this->removalHandlers[$removalType]();
         }
 

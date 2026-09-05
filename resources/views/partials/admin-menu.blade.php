@@ -305,14 +305,18 @@
             <i class="fas fa-chevron-down text-sm transform transition-transform" :class="open ? 'rotate-180' : ''"></i>
         </button>
         <div x-show="open" x-cloak class="mt-2 ml-6 space-y-1">
+            {{-- The hub replaces Site Settings and Tmux; both stay linked until the cutover. --}}
+            <a href="{{ route('admin.settings.index') }}" class="block py-2 px-3 text-gray-400 dark:text-gray-500 hover:text-white dark:hover:text-white hover:bg-white/10 dark:hover:bg-white/5 rounded transition">
+                <i class="fas fa-sliders mr-2 text-primary-400"></i>Settings
+            </a>
             <a href="{{ url('/admin/site-edit') }}" class="block py-2 px-3 text-gray-400 dark:text-gray-500 hover:text-white dark:hover:text-white hover:bg-white/10 dark:hover:bg-white/5 rounded transition">
-                <i class="fas fa-sliders-h mr-2 text-primary-400"></i>Site Settings
+                <i class="fas fa-sliders-h mr-2 text-primary-400"></i>Site Settings (legacy)
             </a>
             <a href="{{ route('admin.registrations.index') }}" class="block py-2 px-3 text-gray-400 dark:text-gray-500 hover:text-white dark:hover:text-white hover:bg-white/10 dark:hover:bg-white/5 rounded transition">
                 <i class="fas fa-user-plus mr-2 text-emerald-400"></i>Registrations
             </a>
             <a href="{{ url('/admin/tmux-edit') }}" class="block py-2 px-3 text-gray-400 dark:text-gray-500 hover:text-white dark:hover:text-white hover:bg-white/10 dark:hover:bg-white/5 rounded transition">
-                <i class="fas fa-terminal mr-2 text-green-400"></i>Tmux
+                <i class="fas fa-terminal mr-2 text-green-400"></i>Tmux (legacy)
             </a>
             <a href="{{ route('admin.backups.index') }}" class="block py-2 px-3 text-gray-400 dark:text-gray-500 hover:text-white dark:hover:text-white hover:bg-white/10 dark:hover:bg-white/5 rounded transition">
                 <i class="fas fa-database mr-2 text-primary-400"></i>Backups

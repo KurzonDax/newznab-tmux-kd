@@ -39,6 +39,7 @@ use App\Http\Controllers\Admin\AdminReleaseNamingRegexesController;
 use App\Http\Controllers\Admin\AdminReleaseReportController;
 use App\Http\Controllers\Admin\AdminReleasesController;
 use App\Http\Controllers\Admin\AdminRoleController;
+use App\Http\Controllers\Admin\AdminSettingsController;
 use App\Http\Controllers\Admin\AdminShowsController;
 use App\Http\Controllers\Admin\AdminSiteController;
 use App\Http\Controllers\Admin\AdminStatusController;
@@ -303,6 +304,15 @@ Route::middleware(['role:Admin', '2fa'])->prefix('admin')->group(function () {
     Route::put('registrations/periods/{period}', [AdminRegistrationController::class, 'updatePeriod'])->name('admin.registrations.periods.update');
     Route::post('registrations/periods/{period}/toggle', [AdminRegistrationController::class, 'togglePeriod'])->name('admin.registrations.periods.toggle');
     Route::delete('registrations/periods/{period}', [AdminRegistrationController::class, 'destroyPeriod'])->name('admin.registrations.periods.destroy');
+    // Settings hub. The section and card slugs are resolved against the settings registry,
+    // so an unregistered pair 404s rather than rendering an empty form.
+    Route::get('settings', [AdminSettingsController::class, 'index'])->name('admin.settings.index');
+    Route::get('settings/{section}', [AdminSettingsController::class, 'show'])
+        ->where('section', '[a-z0-9-]+')
+        ->name('admin.settings.section');
+    Route::post('settings/{section}/{card}', [AdminSettingsController::class, 'update'])
+        ->where(['section' => '[a-z0-9-]+', 'card' => '[a-z0-9-]+'])
+        ->name('admin.settings.update');
     Route::match(['GET', 'POST'], 'site-edit', [AdminSiteController::class, 'edit'])->name('admin.site-edit');
     Route::post('site/expire-logins', [AdminLoginSessionController::class, 'expireAll'])->name('admin.login-sessions.expire-all');
     Route::get('status/create', [AdminStatusController::class, 'create'])->name('admin.status.create');

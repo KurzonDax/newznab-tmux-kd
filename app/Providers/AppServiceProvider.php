@@ -42,6 +42,7 @@ use App\Services\MusicIdentity\MusicCandidateGenerator;
 use App\Services\MusicIdentity\MusicIdentityResolver;
 use App\Services\MusicIdentity\Persistence\IdentificationDecisionStore;
 use App\Services\NNTP\NntpProviderPool;
+use App\Support\Settings\SettingsRegistry;
 use App\View\Composers\AdminDataComposer;
 use App\View\Composers\GlobalDataComposer;
 use Illuminate\Auth\Events\Login;
@@ -108,6 +109,9 @@ class AppServiceProvider extends ServiceProvider
         // One pool per process so its circuit-breaker state (and its per-provider
         // connections) survive across the services that share a worker.
         $this->app->singleton(NntpProviderPool::class);
+        // The settings hub builds its whole tree from the registry on every render and every
+        // save; one instance per request keeps that to a single build.
+        $this->app->singleton(SettingsRegistry::class);
         $this->app->bind(MusicBrainzGateway::class, HttpMusicBrainzGateway::class);
         $this->app->bind(CandidateGenerator::class, MusicCandidateGenerator::class);
         $this->app->bind(IdentificationDecisionStore::class, static fn (): IdentificationDecisionStore => new IdentificationDecisionStore(

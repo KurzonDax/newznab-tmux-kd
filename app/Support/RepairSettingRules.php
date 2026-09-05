@@ -46,6 +46,16 @@ final class RepairSettingRules
     }
 
     /**
+     * The rules for one field, for callers that describe a single setting rather than a form.
+     *
+     * @return list<string>
+     */
+    public static function rulesFor(string $field): array
+    {
+        return self::rules()[$field] ?? [];
+    }
+
+    /**
      * @return array<string, string>
      */
     public static function attributes(): array

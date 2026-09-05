@@ -29,6 +29,7 @@ use App\Support\SettingNumber;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Settings - model for settings table.
@@ -228,6 +229,29 @@ class Settings extends Model
         }
 
         return $value;
+    }
+
+    /**
+     * Write settings, creating any row that does not exist yet.
+     *
+     * {@see self::settingsUpdate()} silently drops a key with no row, which is right for the
+     * legacy forms -- they post every field of a fixed form, so a missing row means the key is
+     * not one this install has. The settings hub posts a whitelisted card instead, and every
+     * key it can send is one the registry vouches for, so a missing row there means the install
+     * predates the setting and the admin's value should create it.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public static function settingsUpsert(array $data = []): void
+    {
+        foreach ($data as $key => $value) {
+            DB::table((new self)->getTable())->updateOrInsert(
+                ['name' => $key],
+                ['value' => \is_array($value) ? implode(', ', $value) : $value],
+            );
+        }
+
+        self::forgetCachedSettings();
     }
 
     /**
