@@ -46,6 +46,7 @@ class MessageBufferClampTest extends TestCase
             $table->string('name')->unique();
             $table->unsignedBigInteger('first_record')->default(0);
             $table->dateTime('first_record_postdate')->nullable();
+            $table->dateTime('backfill_settled_at')->nullable();
             $table->dateTime('last_updated')->nullable();
         });
 
@@ -183,7 +184,7 @@ class MessageBufferClampTest extends TestCase
         );
 
         $walk = new ReflectionMethod(BackfillService::class, 'processBackfillChunks');
-        $walk->invoke($backfill, ['id' => 1, 'name' => 'alt.binaries.test', 'first_record' => 100001], 40001, 0, 'a.b.test');
+        $walk->invoke($backfill, ['id' => 1, 'name' => 'alt.binaries.test', 'first_record' => 100001, 'backfill_target' => 30], 40001, 0, 'a.b.test', 1);
 
         DB::table('usenet_groups')->truncate();
 

@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Model;
 /**
  * App\Models\Collection.
  *
+ * @property string|null $last_seen_head_postdate
+ * @property string|null $last_seen_tail_postdate
  * @property int $id
  * @property string $subject
  * @property string $fromname

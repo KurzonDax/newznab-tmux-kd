@@ -74,6 +74,7 @@ class CollectionCleanupService
         do {
             $ids = DB::table('collections')
                 ->whereRaw('dateadded < '.$cutoff['sql'], $cutoff['bindings'])
+                ->whereNotIn('filecheck', [0, 1, 10, 15, 16])
                 ->orderBy('id')
                 ->limit($this->sqlChunkSize())
                 ->pluck('id')

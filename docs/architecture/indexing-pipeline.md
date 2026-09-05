@@ -204,9 +204,9 @@ The per-group sequence:
    (`partcheck = 1` when `currentparts >= totalparts`), and binaries are the
    authority for the collection's `filesize` and completeness. A collection
    is promoted to `filecheck = 2` when every expected file is present and
-   complete. Collections older than the `delaytime` setting (hours) are
-   *force-completed* with whatever files they have — this is the "stop
-   waiting for parts that will never arrive" valve.
+   complete. After every contributing ingestion frontier has moved
+   `delaytime` hours of posting time beyond the last part, collections are
+   *force-completed* with whatever files they hold (see Collection clocks).
 2. **`processCollectionSizes()`** — promotes `2 → 3` (sizes were already
    aggregated in step 1).
 3. **`deleteUnwantedCollections()`** — drops sized collections that fail
@@ -408,9 +408,43 @@ by naming groups e.g. `(?<name1>…)`, `(?<name2>…)`.
 - Binaries and releases stages are decoupled by the database: header
   ingestion only writes CBP rows; release processing only reads them. They
   can (and do) run concurrently for different groups.
-- `delaytime` (default 2 h) is the deliberate lag between "first part seen"
-  and "give up waiting for stragglers", trading completeness against
-  latency.
+- `delaytime` (default 2 h) measures posting-time silence after the last
+  part, using the group's ingestion frontiers. Catch-up advances this
+  wait at ingestion speed; downtime does not advance it.
+
+### Collection clocks
+
+Ingestion writes `last_seen_at` alongside monotone collection stamps:
+`last_seen_head_postdate` is the forward chunk's newest posting date;
+`last_seen_tail_postdate` is the backfill chunk's oldest posting date.
+Part repair stamps the current group head, because repaired articles lie
+inside the scanned range. Promotion and stuck deletion share one quiet
+predicate with thresholds `delaytime` and `collection_timeout`: every
+stamped direction must have moved that many posting hours away from its
+stamp. Collections with a real complete file count can form immediately.
+
+An active frontier that stops moving freezes its collections indefinitely.
+Operators can hand a direction back to wall-clock silence by disabling
+`active` or `backfill`; a tail that reached its configured date or
+server history limit also uses wall time (`backfill_settled_at`, cleared on the next rewind). Legacy rows
+with both stamps NULL retain the wall-clock activity rule, including the
+database-session timezone. Finishing an article-count batch alone does not
+settle the tail. The migration does not seed existing rows.
+
+`partretentionhours` excludes in-flight statuses 0, 1, 10, 15 and 16;
+only the stuck sweep expires them. Engine startup never rewrites collection
+timestamps. The monitor's Collection Age remains informational wall age.
+Cross-posted collections use only their primary `groups_id` frontier; a
+stamp from a group further ahead conservatively extends that wait.
+
+Parallel forward chunks publish their requested ranges under a group-row
+lock. A completed range beyond a gap waits in
+`usenet_group_ingested_ranges`; filling the gap coalesces those ranges into
+the head. Empty successful ranges advance the article number without
+changing the posting date. Overlapping retries are safe. A new group starts
+at its configured scan window. Failed downloads or storage chunks publish
+no range, so the next pass retries the gap. A permanently failing range
+visibly stalls the head instead of silently skipping articles.
 
 ## Key files quick reference
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Enums\HeaderScanDirection;
 use App\Models\Settings;
 use App\Models\UsenetGroup;
 use App\Services\Binaries\BinariesService;
@@ -62,20 +63,24 @@ class GetArticleRange extends Command
                 return self::FAILURE;
             }
 
-            $binaries = new BinariesService;
+            $binaries = app(BinariesService::class);
             $binaries->setNntp($nntp);
             $return = $binaries->scan(
                 $groupMySQL,
                 $firstArticle,
                 $lastArticle,
+                $mode === 'backfill' ? HeaderScanDirection::Tail : HeaderScanDirection::Head,
                 ((int) Settings::settingValue('safepartrepair') === 1 ? 'update' : 'backfill')
             );
 
-            if (empty($return)) {
+            if ($binaries->lastScanWasRejected()) {
+                return self::FAILURE;
+            }
+            if (empty($return) && $mode === 'backfill') {
                 return self::SUCCESS;
             }
 
-            $this->updateGroupRecords($mode, $groupMySQL, $return);
+            $this->updateGroupRecords($mode, $groupMySQL, $return, $firstArticle, $lastArticle);
 
             return self::SUCCESS;
         } catch (\Throwable $e) {
@@ -92,21 +97,13 @@ class GetArticleRange extends Command
      * @param  array<string, mixed>  $groupMySQL
      * @param  array<string, mixed>  $return
      */
-    private function updateGroupRecords(string $mode, array $groupMySQL, array $return): void
+    private function updateGroupRecords(string $mode, array $groupMySQL, array $return, int $first, int $last): void
     {
         switch ($mode) {
             case 'binaries':
-                if ($return['lastArticleNumber'] <= $groupMySQL['last_record']) {
-                    return;
-                }
-                $unixTime = is_numeric($return['lastArticleDate'])
-                    ? $return['lastArticleDate']
-                    : strtotime($return['lastArticleDate']);
-                UsenetGroup::advanceLastRecord(
-                    (int) $groupMySQL['id'],
-                    (int) $return['lastArticleNumber'],
-                    (int) $unixTime
-                );
+                $date = $return['lastArticleDate'] ?? null;
+                $unixTime = $date === null ? null : (is_numeric($date) ? (int) $date : (int) strtotime($date));
+                UsenetGroup::advanceLastRecordContiguously((int) $groupMySQL['id'], $first, $last, $unixTime);
 
                 return;
 
@@ -136,7 +133,7 @@ class GetArticleRange extends Command
      */
     private function getNntp(): NNTPService
     {
-        $nntp = new NNTPService;
+        $nntp = app(NNTPService::class);
 
         $connectResult = $nntp->doConnect();
 

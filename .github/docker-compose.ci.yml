@@ -14,3 +14,17 @@ services:
       WWWUSER: '${WWWUSER}'
     volumes:
       - '..:/var/www/html'
+
+  mariadb:
+    image: mariadb:11.4
+    profiles: [integration]
+    environment:
+      MARIADB_DATABASE: cbp_integration
+      MARIADB_USER: sail
+      MARIADB_PASSWORD: password
+      MARIADB_ROOT_PASSWORD: password
+    healthcheck:
+      test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+      interval: 2s
+      timeout: 5s
+      retries: 30

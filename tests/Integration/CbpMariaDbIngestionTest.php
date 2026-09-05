@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tests\Integration;
 
 use App\Enums\CollectionFileCheckStatus;
+use App\Enums\HeaderScanDirection;
+use App\Models\UsenetGroup;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\Binaries\CollectionHandler;
 use App\Services\Binaries\HeaderStorageService;
@@ -13,10 +15,13 @@ use App\Services\ReleaseProcessingService;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\CollectionFrontierAssertions;
 use Tests\TestCase;
 
 final class CbpMariaDbIngestionTest extends TestCase
 {
+    use CollectionFrontierAssertions;
+
     /**
      * @var array<string, string|false>
      */
@@ -56,7 +61,8 @@ final class CbpMariaDbIngestionTest extends TestCase
             DB::statement("DROP TABLE IF EXISTS {$table}");
         }
         DB::statement('CREATE TABLE settings (name VARCHAR(255) PRIMARY KEY, value TEXT NULL) ENGINE=InnoDB');
-        DB::statement('CREATE TABLE usenet_groups (id INT UNSIGNED PRIMARY KEY, name VARCHAR(255) NOT NULL) ENGINE=InnoDB');
+        DB::statement('CREATE TABLE usenet_groups (id INT UNSIGNED PRIMARY KEY, first_record BIGINT DEFAULT 0, last_record BIGINT DEFAULT 0, last_updated DATETIME NULL, name VARCHAR(255) NOT NULL, active TINYINT DEFAULT 1, backfill TINYINT DEFAULT 1, last_record_postdate DATETIME NULL, first_record_postdate DATETIME NULL, backfill_settled_at DATETIME NULL) ENGINE=InnoDB');
+        (require database_path('migrations/2026_09_05_213352_create_usenet_group_ingested_ranges_table.php'))->up();
         DB::statement('CREATE TABLE collection_regexes (id INT PRIMARY KEY, group_regex VARCHAR(255), regex VARCHAR(255), status TINYINT DEFAULT 1, ordinal INT DEFAULT 0) ENGINE=InnoDB');
         DB::statement('CREATE TABLE collections (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -66,7 +72,7 @@ final class CbpMariaDbIngestionTest extends TestCase
             collectionhash BINARY(20) NOT NULL,
             collection_regexes_id INT NOT NULL DEFAULT 0, dateadded DATETIME NULL,
             added DATETIME NULL, releases_id INT UNSIGNED NULL,
-            last_seen_at DATETIME NULL, filecheck TINYINT NOT NULL DEFAULT 0,
+            last_seen_at DATETIME NULL, last_seen_head_postdate DATETIME NULL, last_seen_tail_postdate DATETIME NULL, filecheck TINYINT NOT NULL DEFAULT 0,
             filesize BIGINT UNSIGNED NOT NULL DEFAULT 0, noise CHAR(32) NOT NULL DEFAULT \'\',
             UNIQUE KEY ix_collection_collectionhash (collectionhash),
             KEY ix_collections_group_filecheck_seen_id (groups_id, filecheck, last_seen_at, id)
@@ -104,7 +110,7 @@ final class CbpMariaDbIngestionTest extends TestCase
     {
         if (\in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
             DB::statement('SET FOREIGN_KEY_CHECKS=0');
-            foreach (['parts', 'parts_cbp_new', 'parts_cbp_pre_optimize', 'cbp_binary_map', 'cbp_optimization_checkpoints', 'binaries', 'collection_groups', 'collections', 'collection_regexes', 'usenet_groups', 'settings'] as $table) {
+            foreach (['parts', 'parts_cbp_new', 'parts_cbp_pre_optimize', 'cbp_binary_map', 'cbp_optimization_checkpoints', 'binaries', 'collection_groups', 'collections', 'collection_regexes', 'usenet_group_ingested_ranges', 'usenet_groups', 'settings'] as $table) {
                 DB::statement("DROP TABLE IF EXISTS {$table}");
             }
             DB::statement('SET FOREIGN_KEY_CHECKS=1');
@@ -188,6 +194,45 @@ final class CbpMariaDbIngestionTest extends TestCase
         $this->assertSame(1, DB::table('binaries')->count());
         $this->assertSame(2, DB::table('parts')->count());
         $this->assertSame(300, (int) DB::table('binaries')->value('partsize'));
+    }
+
+    public function test_ingestion_stamps_are_monotone_and_repair_uses_current_head(): void
+    {
+        $storage = new HeaderStorageService;
+        $header = $this->header(8001, 1, 100);
+        $header['Date'] = '2026-08-01 12:00:00';
+        $group = ['id' => 1, 'name' => 'alt.binaries.test', 'last_record_postdate' => '2026-08-02 12:00:00'];
+        $storage->store([$header], $group, direction: HeaderScanDirection::Head);
+        $this->assertSame('2026-08-01 12:00:00', DB::table('collections')->value('last_seen_head_postdate'));
+        $header['Date'] = '2026-08-01 10:00:00';
+        $storage->store([$header], $group, direction: HeaderScanDirection::Head);
+        $this->assertSame('2026-08-01 12:00:00', DB::table('collections')->value('last_seen_head_postdate'));
+        $header['Date'] = '2026-08-01 13:00:00';
+        $storage->store([$header], $group, direction: HeaderScanDirection::Head);
+        $this->assertSame('2026-08-01 13:00:00', DB::table('collections')->value('last_seen_head_postdate'));
+        $header['Date'] = '2026-08-01 10:00:00';
+        $storage->store([$header], $group, direction: HeaderScanDirection::Tail);
+        $header['Date'] = '2026-08-01 11:00:00';
+        $storage->store([$header], $group, direction: HeaderScanDirection::Tail);
+        $this->assertSame('2026-08-01 10:00:00', DB::table('collections')->value('last_seen_tail_postdate'));
+        $storage->store([$header], $group, direction: HeaderScanDirection::Repair);
+        $this->assertSame('2026-08-02 12:00:00', DB::table('collections')->value('last_seen_head_postdate'));
+        $this->assertNotNull(DB::table('collections')->value('last_seen_at'));
+    }
+
+    public function test_head_waits_for_missing_chunk_then_coalesces_completed_ranges(): void
+    {
+        DB::table('usenet_groups')->where('id', 1)->update(['last_record' => 1000]);
+        UsenetGroup::advanceLastRecordContiguously(1, 1101, 1200, (int) strtotime('2026-08-17 12:00:00'));
+        $this->assertSame(1000, (int) DB::table('usenet_groups')->value('last_record'));
+        $this->assertDatabaseHas('usenet_group_ingested_ranges', ['first_record' => 1101, 'last_record' => 1200]);
+
+        UsenetGroup::advanceLastRecordContiguously(1, 1001, 1100, (int) strtotime('2026-08-17 11:00:00'));
+        $this->assertDatabaseHas('usenet_groups', ['id' => 1, 'last_record' => 1200, 'last_record_postdate' => '2026-08-17 12:00:00']);
+        $this->assertSame(0, DB::table('usenet_group_ingested_ranges')->count());
+
+        UsenetGroup::advanceLastRecordContiguously(1, 1201, 1300, null);
+        $this->assertDatabaseHas('usenet_groups', ['id' => 1, 'last_record' => 1300, 'last_record_postdate' => '2026-08-17 12:00:00']);
     }
 
     public function test_collection_promotion_uses_the_quiet_clock(): void

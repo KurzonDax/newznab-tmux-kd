@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Enums\HeaderScanDirection;
 use App\Models\Settings;
 use App\Services\Backfill\BackfillConfig;
 use App\Services\Backfill\BackfillService;
@@ -33,6 +34,10 @@ class BackfillArticleQuantityTest extends TestCase
     /** @var list<array{first: int, last: int}> */
     private array $scanWindows = [];
 
+    private bool $rejectScan = false;
+
+    private bool $reachDateTarget = false;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -44,6 +49,7 @@ class BackfillArticleQuantityTest extends TestCase
             $table->string('name')->unique();
             $table->unsignedBigInteger('first_record')->nullable();
             $table->dateTime('first_record_postdate')->nullable();
+            $table->dateTime('backfill_settled_at')->nullable();
             $table->unsignedInteger('backfill_target')->default(30);
             $table->boolean('backfill')->default(true);
             $table->dateTime('last_updated')->nullable();
@@ -123,6 +129,44 @@ class BackfillArticleQuantityTest extends TestCase
         $this->assertCount(1, $this->scanWindows);
     }
 
+    public function test_failed_backfill_does_not_rewind_or_settle_the_tail(): void
+    {
+        $this->addGroup();
+        $this->rejectScan = true;
+        $this->makeService()->backfillGroup($this->groupRow(), 0, '500');
+        $this->assertDatabaseHas('usenet_groups', ['id' => 1, 'first_record' => self::GROUP_FIRST_RECORD, 'backfill_settled_at' => null]);
+    }
+
+    public function test_shared_stop_date_controls_settlement_in_article_mode(): void
+    {
+        $this->addGroup();
+        $this->reachDateTarget = true;
+        DB::table('settings')->insert([
+            ['name' => 'backfill_days', 'value' => '2'],
+            ['name' => 'safebackfilldate', 'value' => now()->subDays(60)->toDateString()],
+        ]);
+        $this->makeService()->backfillGroup($this->groupRow(), 0, '500');
+        $this->assertNull(DB::table('usenet_groups')->value('backfill_settled_at'));
+        DB::table('settings')->where('name', 'safebackfilldate')->update(['value' => now()->subDays(10)->toDateString()]);
+        $this->makeService()->backfillGroup($this->groupRow(), 0, '500');
+        $this->assertNotNull(DB::table('usenet_groups')->value('backfill_settled_at'));
+    }
+
+    public function test_exhausting_only_the_article_budget_leaves_the_tail_unsettled(): void
+    {
+        $this->addGroup();
+        $this->makeService()->backfillGroup($this->groupRow(), 0, '500');
+        $this->assertDatabaseHas('usenet_groups', ['id' => 1, 'first_record' => 99500, 'backfill_settled_at' => null]);
+    }
+
+    public function test_reaching_the_backfill_target_marks_the_tail_settled(): void
+    {
+        $this->addGroup();
+        $this->reachDateTarget = true;
+        $this->makeService()->backfillGroup($this->groupRow(), 0, '500');
+        $this->assertNotNull(DB::table('usenet_groups')->value('backfill_settled_at'));
+    }
+
     public function test_a_stored_positive_article_request_passes_through_unchanged(): void
     {
         $this->addGroup();
@@ -167,6 +211,7 @@ class BackfillArticleQuantityTest extends TestCase
 
         $this->assertSame(1, (int) DB::table('usenet_groups')->where('name', 'alt.test')->value('backfill'));
         $this->assertSame([], $this->scanWindows);
+        $this->assertNotNull(DB::table('usenet_groups')->value('backfill_settled_at'));
     }
 
     private function makeService(bool $disableBackfillGroup = false): BackfillService
@@ -194,11 +239,13 @@ class BackfillArticleQuantityTest extends TestCase
     {
         $binaries = Mockery::mock(BinariesService::class);
         $binaries->shouldReceive('logIndexerStart')->andReturnNull();
+        $binaries->shouldReceive('lastScanWasRejected')->andReturnUsing(fn (): bool => $this->rejectScan);
         $binaries->shouldReceive('getMessageBuffer')->andReturn(20_000);
         $binaries->shouldReceive('daytopost')->andReturn('90000');
-        $binaries->shouldReceive('postdate')->andReturn(1_600_000_000);
+        $binaries->shouldReceive('postdate')->andReturnUsing(fn (): int => now()->subDays($this->reachDateTarget ? 31 : 1)->timestamp);
         $binaries->shouldReceive('scan')->andReturnUsing(
-            function (array $groupArr, int $first, int $last, string $type): array {
+            function (array $groupArr, int $first, int $last, HeaderScanDirection $direction, string $type): array {
+                $this->assertSame(HeaderScanDirection::Tail, $direction);
                 $this->scanWindows[] = ['first' => $first, 'last' => $last];
 
                 return [];

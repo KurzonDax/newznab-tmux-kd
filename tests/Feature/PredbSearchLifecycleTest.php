@@ -43,6 +43,7 @@ class PredbSearchLifecycleTest extends TestCase
             $table->string('name');
             $table->unsignedBigInteger('first_record');
             $table->dateTime('first_record_postdate');
+            $table->dateTime('backfill_settled_at')->nullable();
             $table->dateTime('last_updated')->nullable();
         });
     }

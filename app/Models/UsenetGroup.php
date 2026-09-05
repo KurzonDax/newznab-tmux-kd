@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\DB;
 /**
  * App\Models\Group.
  *
+ * @property string|null $backfill_settled_at
  * @property int $id
  * @property string $name
  * @property int $backfill_target
@@ -132,6 +133,7 @@ class UsenetGroup extends Model
         return self::query()->whereKey($id)->update([
             'first_record_postdate' => self::dateTimeFromTimestamp($firstRecordTimestamp),
             'first_record' => $firstRecord,
+            'backfill_settled_at' => null,
             'last_updated' => now(),
         ]);
     }
@@ -148,6 +150,50 @@ class UsenetGroup extends Model
             ]);
     }
 
+    /**
+     * Publish only covered article ranges. Retries may overlap a range already
+     * committed by a peer; coverage, rather than completion order, moves the head.
+     */
+    public static function advanceLastRecordContiguously(int $id, int $first, int $last, ?int $lastPostdate): int
+    {
+        return DB::transaction(function () use ($id, $first, $last, $lastPostdate): int {
+            $group = self::query()->whereKey($id)->lockForUpdate()->first();
+            if ($group === null || $last <= $group->last_record || $last < $first) {
+                return 0;
+            }
+
+            $postdate = $lastPostdate === null ? null : self::dateTimeFromTimestamp($lastPostdate)->format('Y-m-d H:i:s');
+            if ($group->last_record !== 0 && $first > $group->last_record + 1) {
+                DB::table('usenet_group_ingested_ranges')->insertOrIgnore([
+                    'usenet_groups_id' => $id, 'first_record' => $first,
+                    'last_record' => $last, 'last_record_postdate' => $postdate,
+                ]);
+
+                return 0;
+            }
+
+            $frontier = $last;
+            $postdate ??= $group->last_record_postdate;
+            while ($range = DB::table('usenet_group_ingested_ranges')
+                ->where('usenet_groups_id', $id)
+                ->where('first_record', '<=', $frontier + 1)
+                ->orderBy('first_record')->lockForUpdate()->first()) {
+                if ((int) $range->last_record > $frontier) {
+                    $frontier = (int) $range->last_record;
+                    $postdate = $range->last_record_postdate ?? $postdate;
+                }
+                DB::table('usenet_group_ingested_ranges')->where('usenet_groups_id', $id)
+                    ->where('first_record', $range->first_record)->delete();
+            }
+
+            return self::query()->whereKey($id)->update([
+                'last_record' => $frontier,
+                'last_record_postdate' => $postdate,
+                'last_updated' => now(),
+            ]);
+        }, 5);
+    }
+
     public static function rewindFirstRecord(int $id, int $firstRecord, int $firstRecordTimestamp): int
     {
         return self::query()
@@ -156,6 +202,7 @@ class UsenetGroup extends Model
             ->update([
                 'first_record_postdate' => self::dateTimeFromTimestamp($firstRecordTimestamp),
                 'first_record' => $firstRecord,
+                'backfill_settled_at' => null,
                 'last_updated' => now(),
             ]);
     }
@@ -171,6 +218,7 @@ class UsenetGroup extends Model
             ->update([
                 'first_record_postdate' => self::dateTimeFromTimestamp($firstRecordTimestamp),
                 'first_record' => $firstRecord,
+                'backfill_settled_at' => null,
                 'last_updated' => now(),
             ]);
     }

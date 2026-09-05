@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Console\Commands\TmuxMonitor;
 use App\Enums\TmuxPaneRole;
 use App\Services\Tmux\TmuxLayoutBuilder;
 use App\Services\Tmux\TmuxPaneManager;
 use App\Services\Tmux\TmuxSessionManager;
 use App\Services\Tmux\TmuxTaskRunner;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +29,36 @@ class TmuxPaneManagementTest extends TestCase
         parent::setUp();
 
         Process::preventStrayProcesses();
+    }
+
+    public function test_engine_start_does_not_rewrite_collection_timestamps(): void
+    {
+        $this->seedMonitoringSettings(['delaytime' => '2', 'sequential' => '0']);
+        Schema::create('collections', function (Blueprint $table): void {
+            $table->id();
+            $table->dateTime('dateadded');
+        });
+        DB::table('collections')->insert(['id' => 1, 'dateadded' => '2026-01-01 00:00:00']);
+        $updates = [];
+        DB::listen(function (QueryExecuted $query) use (&$updates): void {
+            if (str_starts_with(strtolower($query->sql), 'update') && str_contains($query->sql, 'collections')) {
+                $updates[] = $query->sql;
+            }
+        });
+        Process::fake(function (PendingProcess $process) {
+            if (is_string($process->command) && str_contains($process->command, 'which tmux')) {
+                return Process::result('/usr/bin/tmux');
+            }
+
+            // Stop at layout creation, after the historical restart reset.
+            return Process::result('', '', 1);
+        });
+
+        $this->artisan('tmux:start', ['--session' => 'test-no-reset'])->assertFailed();
+
+        $this->assertSame([], $updates);
+        $this->assertDatabaseHas('collections', ['id' => 1, 'dateadded' => '2026-01-01 00:00:00']);
+        $this->assertFalse((new TmuxMonitor)->getDefinition()->hasOption('reset-collections'));
     }
 
     public function test_roles_resolve_to_stable_pane_ids(): void

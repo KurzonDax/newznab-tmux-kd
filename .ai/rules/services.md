@@ -13,3 +13,6 @@ Use App\Services\TvProcessing\TvProcessingCandidateQuery for TV provider selecti
 
 ## Claim heartbeats distinguish matched from changed rows
 Database update() reports affected/changed rows, so a same-value heartbeat may return 0 while the worker still owns the row. For ownership-preserving updates that can be no-ops, accept one changed row or recheck the exact pending/token predicate with exists(). Treat zero as lost only when the update necessarily changes state, such as nzbstatus pending to added.
+
+## Collection clocks follow ingestion frontiers
+Collection promotion and stuck deletion share a quiet predicate comparing collection head/tail stamps to usenet_groups frontiers. NOW() belongs only in the legacy or disabled/settled-frontier fallback; frozen active frontiers keep collections waiting. Only ingestion writes last_seen_at and last_seen_*_postdate; dateadded stays at insertion time. Retention excludes in-flight collections. Forward pointers advance only through contiguous successfully ingested ranges.

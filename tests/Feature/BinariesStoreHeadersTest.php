@@ -3,9 +3,16 @@
 namespace Tests\Feature;
 
 use App\Enums\CollectionFileCheckStatus;
+use App\Enums\HeaderScanDirection;
+use App\Services\Binaries\BinariesConfig;
+use App\Services\Binaries\BinariesService;
+use App\Services\Binaries\HeaderParser;
+use App\Services\NNTP\NNTPService;
 use Database\Seeders\CollectionRegexesTableSeeder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Support\NeverBlacklistedService;
 use Tests\Support\TestBinariesHarness;
 use Tests\TestCase;
 
@@ -61,6 +68,8 @@ class BinariesStoreHeadersTest extends TestCase
             collection_regexes_id INT,
             dateadded DATETIME NULL,
             last_seen_at DATETIME NULL,
+            last_seen_head_postdate DATETIME NULL,
+            last_seen_tail_postdate DATETIME NULL,
             filecheck INT DEFAULT 0,
             filesize INT DEFAULT 0,
             noise VARCHAR(64) DEFAULT ""
@@ -132,6 +141,67 @@ class BinariesStoreHeadersTest extends TestCase
                 3 => $totalParts,
             ],
         ];
+    }
+
+    #[DataProvider('rangeDirections')]
+    public function test_range_command_stamps_direction_from_mode(string $mode, int $safePartRepair): void
+    {
+        DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name TEXT, first_record INTEGER, last_record INTEGER,
+            first_record_postdate DATETIME, last_record_postdate DATETIME, backfill_settled_at DATETIME, last_updated DATETIME)');
+        DB::table('usenet_groups')->insert([
+            'id' => 1, 'name' => 'alt.test', 'first_record' => 9000, 'last_record' => 8000,
+            'first_record_postdate' => '2026-08-01 00:00:00', 'last_record_postdate' => '2026-08-01 00:00:00',
+        ]);
+        (require database_path('migrations/2026_09_05_213352_create_usenet_group_ingested_ranges_table.php'))->up();
+        DB::table('settings')->insert(['name' => 'safepartrepair', 'value' => (string) $safePartRepair]);
+        $header = $this->makeHeader(8001, 1, 2);
+        $header['Number'] = '8001';
+        $header['Subject'] = 'Example.File.Name yEnc (1/2)';
+        $header['Date'] = '2026-08-01 12:00:00';
+        $nntp = \Mockery::mock(NNTPService::class);
+        $nntp->shouldReceive('doConnect')->andReturn(true);
+        $nntp->shouldReceive('selectGroup')->andReturn(['group' => 'alt.test', 'first' => 1, 'last' => 10000]);
+        $nntp->shouldReceive('getXOVER')->with('8001-8001')->andReturn([$header]);
+        $this->app->instance(NNTPService::class, $nntp);
+        $this->app->instance(BinariesService::class, new BinariesService(
+            config: new BinariesConfig(echoCli: false),
+            headerParser: new HeaderParser(new NeverBlacklistedService),
+        ));
+
+        $this->artisan('articles:get-range', ['mode' => $mode, 'group' => 'alt.test', 'first' => 8001, 'last' => 8001])->assertSuccessful();
+
+        $column = $mode === 'binaries' ? 'last_seen_head_postdate' : 'last_seen_tail_postdate';
+        $this->assertSame('2026-08-01 12:00:00', DB::table('collections')->value($column));
+    }
+
+    /** @return array<string, array{string, int}> */
+    public static function rangeDirections(): array
+    {
+        return ['head safe' => ['binaries', 1], 'head unsafe' => ['binaries', 0], 'tail safe' => ['backfill', 1], 'tail unsafe' => ['backfill', 0]];
+    }
+
+    public function test_ingestion_stamps_are_monotone_and_repair_uses_current_head(): void
+    {
+        $harness = new TestBinariesHarness;
+        $header = $this->makeHeader(8001, 1, 2, 100);
+        $header['Date'] = '2026-08-01 12:00:00';
+        $group = ['id' => 1, 'name' => 'alt.test', 'last_record_postdate' => '2026-08-02 12:00:00'];
+        $harness->simulateScan([$header], $group, direction: HeaderScanDirection::Head);
+        $this->assertSame('2026-08-01 12:00:00', DB::table('collections')->value('last_seen_head_postdate'));
+        $header['Date'] = '2026-08-01 10:00:00';
+        $harness->simulateScan([$header], $group, direction: HeaderScanDirection::Head);
+        $this->assertSame('2026-08-01 12:00:00', DB::table('collections')->value('last_seen_head_postdate'));
+        $header['Date'] = '2026-08-01 13:00:00';
+        $harness->simulateScan([$header], $group, direction: HeaderScanDirection::Head);
+        $this->assertSame('2026-08-01 13:00:00', DB::table('collections')->value('last_seen_head_postdate'));
+        $header['Date'] = '2026-08-01 10:00:00';
+        $harness->simulateScan([$header], $group, direction: HeaderScanDirection::Tail);
+        $header['Date'] = '2026-08-01 11:00:00';
+        $harness->simulateScan([$header], $group, direction: HeaderScanDirection::Tail);
+        $this->assertSame('2026-08-01 10:00:00', DB::table('collections')->value('last_seen_tail_postdate'));
+        $harness->simulateScan([$header], $group, direction: HeaderScanDirection::Repair);
+        $this->assertSame('2026-08-02 12:00:00', DB::table('collections')->value('last_seen_head_postdate'));
+        $this->assertNotNull(DB::table('collections')->value('last_seen_at'));
     }
 
     public function test_named_set_headers_form_one_collection_with_declared_total(): void

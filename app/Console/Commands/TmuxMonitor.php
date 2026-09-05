@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Models\Collection;
 use App\Models\Settings;
 use App\Services\Tmux\TmuxMonitorService;
 use App\Services\Tmux\TmuxOutput;
 use App\Services\Tmux\TmuxSessionManager;
 use App\Services\Tmux\TmuxTaskRunner;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 
 class TmuxMonitor extends Command
 {
@@ -21,8 +19,7 @@ class TmuxMonitor extends Command
      * @var string
      */
     protected $signature = 'tmux:monitor
-                            {--session= : Tmux session name}
-                            {--reset-collections : Reset old collections before starting}';
+                            {--session= : Tmux session name}';
 
     /**
      * The console command description.
@@ -46,11 +43,6 @@ class TmuxMonitor extends Command
     {
 
         try {
-            // Reset old collections if requested
-            if ($this->option('reset-collections')) {
-                $this->resetOldCollections();
-            }
-
             // Initialize services
             $sessionName = $this->option('session')
                 ?? Settings::settingValue('tmux_session')
@@ -147,33 +139,6 @@ class TmuxMonitor extends Command
     protected function pauseBetweenIterations(): void
     {
         sleep(max(1, (int) config('tmux.monitor.delay', 10)));
-    }
-
-    /**
-     * Reset old collections based on delay time
-     */
-    private function resetOldCollections(): void
-    {
-        $delayTime = (int) (Settings::settingValue('delaytime') ?? 2);
-
-        cli()->header('Resetting expired collections...');
-
-        try {
-            DB::transaction(function () use ($delayTime) {
-                $count = Collection::query()
-                    ->where('dateadded', '<', now()->subHours($delayTime))
-                    ->update(['dateadded' => now()]);
-
-                if ($count > 0) {
-                    $this->info("✅ Reset {$count} collections");
-                } else {
-                    $this->info('✅ No collections needed resetting');
-                }
-            }, 10);
-
-        } catch (\Exception $e) {
-            $this->error('Failed to reset collections: '.$e->getMessage());
-        }
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Binaries;
 
+use App\Enums\HeaderScanDirection;
 use App\Support\SqlError;
 
 /**
@@ -59,7 +60,7 @@ final class HeaderStorageService
      * @param  bool  $addToPartRepair  Whether to track failed inserts
      * @return HeaderStorageReport Article numbers needing part repair, plus why they got there
      */
-    public function store(array $headers, array $groupMySQL, bool $addToPartRepair = true): HeaderStorageReport
+    public function store(array $headers, array $groupMySQL, bool $addToPartRepair = true, HeaderScanDirection $direction = HeaderScanDirection::Head): HeaderStorageReport
     {
         $this->report = HeaderStorageReport::empty();
 
@@ -76,7 +77,7 @@ final class HeaderStorageService
         $total = \count($headers);
         for ($offset = 0; $offset < $total; $offset += $chunkSize) {
             $chunk = \array_slice($headers, $offset, $chunkSize);
-            $this->storeChunk($chunk, $groupMySQL, $addToPartRepair);
+            $this->storeChunk($chunk, $groupMySQL, $addToPartRepair, $direction);
             unset($chunk);
         }
 
@@ -89,11 +90,11 @@ final class HeaderStorageService
      * @param  array<int, array<string, mixed>>  $headers
      * @param  array<string, mixed>  $groupMySQL
      */
-    private function storeChunk(array $headers, array $groupMySQL, bool $addToPartRepair): void
+    private function storeChunk(array $headers, array $groupMySQL, bool $addToPartRepair, HeaderScanDirection $direction): void
     {
         $attempt = 0;
         do {
-            if ($this->storeChunkAttempt($headers, $groupMySQL, $addToPartRepair)) {
+            if ($this->storeChunkAttempt($headers, $groupMySQL, $addToPartRepair, $direction)) {
                 $this->report = $this->report->withStoredChunk($this->attemptFailedNumbers, $attempt > 0);
 
                 return;
@@ -155,7 +156,7 @@ final class HeaderStorageService
      * @param  array<int, array<string, mixed>>  $headers
      * @param  array<string, mixed>  $groupMySQL
      */
-    private function storeChunkAttempt(array $headers, array $groupMySQL, bool $addToPartRepair): bool
+    private function storeChunkAttempt(array $headers, array $groupMySQL, bool $addToPartRepair, HeaderScanDirection $direction): bool
     {
         $this->lastStorageException = null;
         $this->attemptFailedNumbers = [];
@@ -200,7 +201,9 @@ final class HeaderStorageService
             }
             if (! $transaction->hasErrors() && ! $this->collectionHandler->refreshAggregates(
                 $this->collectionHandler->getAllIds(),
-                $this->config->sqlChunkSize
+                $this->config->sqlChunkSize,
+                $direction,
+                $this->frontierStamp($headers, $groupMySQL, $direction),
             )) {
                 $transaction->markError();
             }
@@ -225,6 +228,31 @@ final class HeaderStorageService
         $this->attemptFailedNumbers = $this->partHandler->getFailedNumbers();
 
         return true;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $headers
+     * @param  array<string, mixed>  $group
+     */
+    private function frontierStamp(array $headers, array $group, HeaderScanDirection $direction): ?string
+    {
+        if ($direction === HeaderScanDirection::Repair) {
+            return $group['last_record_postdate'] ?? null;
+        }
+
+        $timestamps = [];
+        foreach ($headers as $header) {
+            $date = $header['Date'] ?? null;
+            $timestamp = is_numeric($date) ? (int) $date : strtotime((string) $date);
+            if ($timestamp !== false && $timestamp > 0) {
+                $timestamps[] = $timestamp;
+            }
+        }
+        if ($timestamps === []) {
+            return null;
+        }
+
+        return date('Y-m-d H:i:s', $direction === HeaderScanDirection::Tail ? min($timestamps) : max($timestamps));
     }
 
     private function isTransientLockError(?\Throwable $exception): bool

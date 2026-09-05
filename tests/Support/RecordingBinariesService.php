@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Enums\HeaderScanDirection;
 use App\Services\Binaries\BinariesService;
 use ReflectionMethod;
 use RuntimeException;
@@ -35,7 +36,7 @@ final class RecordingBinariesService extends BinariesService
      * @param  array<int, int|string>|null  $missingParts
      * @return array<string, mixed>
      */
-    public function scan(array $groupMySQL, int $first, int $last, string $type = 'update', ?array $missingParts = null): array
+    public function scan(array $groupMySQL, int $first, int $last, HeaderScanDirection $direction, string $type = 'update', ?array $missingParts = null): array
     {
         $this->scannedRanges[] = ['first' => $first, 'last' => $last];
 

@@ -27,9 +27,19 @@ class UsenetGroupArticleRangeTest extends TestCase
             $table->id();
             $table->unsignedBigInteger('first_record');
             $table->dateTime('first_record_postdate')->nullable();
+            $table->dateTime('backfill_settled_at')->nullable();
             $table->unsignedBigInteger('last_record');
             $table->dateTime('last_record_postdate')->nullable();
             $table->dateTime('last_updated')->nullable();
+        });
+
+        Schema::dropIfExists('usenet_group_ingested_ranges');
+        Schema::create('usenet_group_ingested_ranges', function (Blueprint $table): void {
+            $table->unsignedInteger('usenet_groups_id');
+            $table->unsignedBigInteger('first_record');
+            $table->unsignedBigInteger('last_record');
+            $table->dateTime('last_record_postdate')->nullable();
+            $table->primary(['usenet_groups_id', 'first_record']);
         });
 
         DB::table('usenet_groups')->insert([
@@ -45,9 +55,71 @@ class UsenetGroupArticleRangeTest extends TestCase
     protected function tearDown(): void
     {
         Carbon::setTestNow();
+        Schema::dropIfExists('usenet_group_ingested_ranges');
         Schema::dropIfExists('usenet_groups');
 
         parent::tearDown();
+    }
+
+    public function test_overlapping_retries_coalesce_without_moving_the_head_backwards(): void
+    {
+        UsenetGroup::advanceLastRecordContiguously(1, 1101, 1200, (int) strtotime('2026-08-17 12:00:00'));
+        UsenetGroup::advanceLastRecordContiguously(1, 1001, 1150, (int) strtotime('2026-08-17 11:30:00'));
+        UsenetGroup::advanceLastRecordContiguously(1, 1001, 1100, (int) strtotime('2026-08-17 11:00:00'));
+        $this->assertDatabaseHas('usenet_groups', ['id' => 1, 'last_record' => 1200, 'last_record_postdate' => '2026-08-17 12:00:00']);
+        $this->assertSame(0, DB::table('usenet_group_ingested_ranges')->count());
+    }
+
+    public function test_new_group_can_start_at_its_configured_scan_window(): void
+    {
+        DB::table('usenet_groups')->where('id', 1)->update(['last_record' => 0]);
+        UsenetGroup::advanceLastRecordContiguously(1, 5001, 5100, (int) strtotime('2026-08-17 12:00:00'));
+        $this->assertDatabaseHas('usenet_groups', ['id' => 1, 'last_record' => 5100]);
+    }
+
+    public function test_frontier_migration_is_additive_idempotent_and_leaves_legacy_rows_unstamped(): void
+    {
+        Schema::create('collections', function (Blueprint $table): void {
+            $table->id();
+            $table->dateTime('last_seen_at')->nullable();
+        });
+        DB::table('collections')->insert(['id' => 1, 'last_seen_at' => '2026-08-01 12:00:00']);
+        $migration = require database_path('migrations/2026_09_05_212852_add_collection_ingestion_frontiers.php');
+        $migration->up();
+        $migration->up();
+        $this->assertDatabaseHas('collections', [
+            'id' => 1, 'last_seen_at' => '2026-08-01 12:00:00',
+            'last_seen_head_postdate' => null, 'last_seen_tail_postdate' => null,
+        ]);
+        $migration->down();
+        $this->assertFalse(Schema::hasColumn('collections', 'last_seen_head_postdate'));
+        $this->assertFalse(Schema::hasColumn('collections', 'last_seen_tail_postdate'));
+        $this->assertFalse(Schema::hasColumn('usenet_groups', 'backfill_settled_at'));
+    }
+
+    public function test_head_waits_for_missing_chunk_then_coalesces_completed_ranges(): void
+    {
+        UsenetGroup::advanceLastRecordContiguously(1, 1101, 1200, (int) strtotime('2026-08-17 12:00:00'));
+        $this->assertSame(1000, DB::table('usenet_groups')->value('last_record'));
+        $this->assertDatabaseHas('usenet_group_ingested_ranges', ['first_record' => 1101, 'last_record' => 1200]);
+
+        UsenetGroup::advanceLastRecordContiguously(1, 1001, 1100, (int) strtotime('2026-08-17 11:00:00'));
+        $this->assertDatabaseHas('usenet_groups', ['id' => 1, 'last_record' => 1200, 'last_record_postdate' => '2026-08-17 12:00:00']);
+        $this->assertSame(0, DB::table('usenet_group_ingested_ranges')->count());
+
+        UsenetGroup::advanceLastRecordContiguously(1, 1201, 1300, null);
+        $this->assertDatabaseHas('usenet_groups', ['id' => 1, 'last_record' => 1300, 'last_record_postdate' => '2026-08-17 12:00:00']);
+    }
+
+    public function test_every_tail_rewind_clears_the_settled_marker(): void
+    {
+        foreach (['recordBackfillProgress', 'rewindFirstRecord', 'initializeOrRewindFirstRecord'] as $method) {
+            DB::table('usenet_groups')->where('id', 1)->update([
+                'first_record' => 500, 'backfill_settled_at' => '2026-08-17 00:00:00',
+            ]);
+            UsenetGroup::$method(1, 400, (int) strtotime('2026-08-09 08:15:00'));
+            $this->assertNull(DB::table('usenet_groups')->value('backfill_settled_at'));
+        }
     }
 
     public function test_backfill_progress_uses_the_php_clock_for_last_updated(): void

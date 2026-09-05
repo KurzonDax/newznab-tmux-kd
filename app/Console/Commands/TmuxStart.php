@@ -5,13 +5,11 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Enums\TmuxPaneRole;
-use App\Models\Collection;
 use App\Models\Settings;
 use App\Services\Tmux\TmuxLayoutBuilder;
 use App\Services\Tmux\TmuxPaneManager;
 use App\Services\Tmux\TmuxSessionManager;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
 
 class TmuxStart extends Command
@@ -78,10 +76,6 @@ class TmuxStart extends Command
                     sleep(2);
                 }
             }
-
-            // Reset old collections
-            $this->info('🔄 Resetting old collections...');
-            $this->resetOldCollections();
 
             // Get sequential mode
             $sequential = (int) (Settings::settingValue('sequential') ?? 0);
@@ -154,31 +148,6 @@ class TmuxStart extends Command
             ->run('which tmux 2>/dev/null');
 
         return $result->successful() && str_contains($result->output(), 'tmux');
-    }
-
-    /**
-     * Reset old collections
-     */
-    private function resetOldCollections(): void
-    {
-        $delayTime = (int) (Settings::settingValue('delaytime') ?? 2);
-
-        try {
-            DB::transaction(function () use ($delayTime) {
-                $count = Collection::query()
-                    ->where('dateadded', '<', now()->subHours($delayTime))
-                    ->update(['dateadded' => now()]);
-
-                if ($count > 0) {
-                    $this->info("  ✓ Reset {$count} expired collections");
-                } else {
-                    $this->info('  ✓ No collections needed resetting');
-                }
-            }, 10);
-
-        } catch (\Exception $e) {
-            $this->warn('  ⚠ Failed to reset collections: '.$e->getMessage());
-        }
     }
 
     /**
