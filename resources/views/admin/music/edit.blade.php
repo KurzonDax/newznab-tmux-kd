@@ -36,6 +36,8 @@
         @endif
 
         <!-- Edit Music Form -->
+        <x-admin.form-errors />
+
         <form method="POST" action="{{ url('admin/music-edit') }}" enctype="multipart/form-data" class="p-6">
             @csrf
             <input type="hidden" name="id" value="{{ $mus['id'] }}">

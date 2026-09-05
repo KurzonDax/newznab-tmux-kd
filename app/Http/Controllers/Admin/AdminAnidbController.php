@@ -43,22 +43,33 @@ class AdminAnidbController extends BasePageController
 
         switch ($action) {
             case 'submit':
+                $validated = $request->validate([
+                    'anidbid' => ['required', 'integer'],
+                    'title' => ['required', 'string', 'max:255'],
+                    'type' => ['required', 'string', 'max:25'],
+                    'startdate' => ['nullable', 'date'],
+                    'enddate' => ['nullable', 'date'],
+                    'rating' => ['nullable', 'string', 'max:5'],
+                    'related' => ['nullable', 'string', 'max:1024'],
+                    'similar' => ['nullable', 'string', 'max:1024'],
+                    'creators' => ['nullable', 'string', 'max:1024'],
+                    'categories' => ['nullable', 'string', 'max:1024'],
+                    'characters' => ['nullable', 'string', 'max:1024'],
+                ]);
+
                 $anidbService->updateTitle(
-                    $request->input('anidbid'),
-                    $request->input('title'),
-                    $request->input('type'),
-                    $request->input('startdate'),
-                    $request->input('enddate'),
+                    (int) $validated['anidbid'],
+                    $validated['title'],
+                    $validated['type'],
+                    $validated['startdate'] ?? null,
+                    $validated['enddate'] ?? null,
                     $request->input('related'),
                     $request->input('similar'),
                     $request->input('creators'),
                     $request->input('description'),
-                    $request->input('rating'),
+                    $validated['rating'] ?? null,
                     $request->input('categories'),
-                    $request->input('characters'),
-                    $request->input('epnos'),
-                    $request->input('airdates'),
-                    $request->input('episodetitles')
+                    $request->input('characters')
                 );
 
                 return redirect()->route('admin.anidb-list')->with('success', 'AniDB entry updated successfully');

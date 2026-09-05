@@ -103,6 +103,26 @@ class AdminGameEditTest extends TestCase
         $this->assertSame('', (string) DB::table('gamesinfo')->where('id', $id)->value('trailer'));
     }
 
+    /**
+     * gamesinfo.title is NOT NULL and GamesService::update() types it `string`.
+     */
+    public function test_game_edit_rejects_a_blank_title(): void
+    {
+        $id = $this->createGameEntry('2001-01-01 13:45:00');
+
+        $response = $this->actingAs($this->admin())->post(route('admin.game-edit'), [
+            'id' => (string) $id,
+            'action' => 'submit',
+            'title' => '',
+            'genre' => '',
+            'trailerurl' => '',
+            'releasedate' => '',
+        ]);
+
+        $response->assertSessionHasErrors('title');
+        $this->assertSame('Game Under Edit', (string) DB::table('gamesinfo')->where('id', $id)->value('title'));
+    }
+
     private function storedReleaseDate(int $id): string
     {
         $stored = DB::table('gamesinfo')->where('id', $id)->value('releasedate');

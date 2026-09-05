@@ -15,6 +15,11 @@ use Illuminate\Support\Facades\DB;
 class AnidbService
 {
     /**
+     * Which stored title the admin edit form shows, and therefore the one it writes back.
+     */
+    private const TITLE_PREFERENCE = "CASE WHEN lang = 'en' THEN 1 WHEN lang = 'x-jat' THEN 2 ELSE 3 END";
+
+    /**
      * Updates stored AniList entries in the database.
      * Note: AniList doesn't support episodes, so episode-related parameters are ignored.
      */
@@ -22,41 +27,74 @@ class AnidbService
         int $anidbID,
         string $title,
         string $type,
-        string $startdate,
-        string $enddate,
-        string $related,
-        string $similar,
-        string $creators,
-        string $description,
-        string $rating,
-        string $categories,
-        string $characters,
-        string $epnos = '',
-        string $airdates = '',
-        string $episodetitles = ''
+        ?string $startdate = null,
+        ?string $enddate = null,
+        ?string $related = null,
+        ?string $similar = null,
+        ?string $creators = null,
+        ?string $description = null,
+        ?string $rating = null,
+        ?string $categories = null,
+        ?string $characters = null
     ): void {
-        DB::update(
-            sprintf(
-                '
-				UPDATE anidb_titles at
-				INNER JOIN anidb_info ai ON ai.anidbid = at.anidbid
-				SET title = %s, type = %s, startdate = %s, enddate = %s,
-					related = %s, similar = %s, creators = %s, description = %s, rating = %s,
-					categories = %s, characters = %s WHERE anidbid = %d',
-                escapeString($title),
-                escapeString($type),
-                escapeString($startdate),
-                escapeString($enddate),
-                escapeString($related),
-                escapeString($similar),
-                escapeString($creators),
-                escapeString($description),
-                escapeString($rating),
-                escapeString($categories),
-                escapeString($characters),
-                $anidbID
-            )
-        );
+        // The edit form shows one title out of several: anidb_titles holds a row per language
+        // (romaji, English, native), and getAnimeInfo() picks one by the preference below. Only
+        // that row's title may be rewritten -- an update filtered on anidbid alone would collapse
+        // every language onto the English title, or collide on the primary key.
+        //
+        // `type` on the form is the media type, which lives on anidb_info. anidb_titles.type is
+        // a different thing entirely (main/official/synonym) and is left alone.
+        DB::transaction(function () use (
+            $anidbID,
+            $title,
+            $type,
+            $startdate,
+            $enddate,
+            $related,
+            $similar,
+            $creators,
+            $description,
+            $rating,
+            $categories,
+            $characters
+        ): void {
+            $displayed = DB::table('anidb_titles')
+                ->where('anidbid', $anidbID)
+                ->orderByRaw(self::TITLE_PREFERENCE)
+                ->first();
+
+            if ($displayed === null || ! DB::table('anidb_info')->where('anidbid', $anidbID)->exists()) {
+                return;
+            }
+
+            DB::table('anidb_titles')
+                ->where('anidbid', $anidbID)
+                ->where('type', $displayed->type)
+                ->where('lang', $displayed->lang)
+                ->where('title', $displayed->title)
+                ->update(['title' => $title]);
+
+            // startdate and enddate are DATE columns: an empty string is not a valid date and a
+            // strict-mode server rejects it, so a blank field is stored as NULL.
+            $nullable = static fn (?string $value): ?string => $value === null || $value === ''
+                ? null
+                : $value;
+
+            DB::table('anidb_info')
+                ->where('anidbid', $anidbID)
+                ->update([
+                    'type' => $type,
+                    'startdate' => $nullable($startdate),
+                    'enddate' => $nullable($enddate),
+                    'related' => $nullable($related),
+                    'similar' => $nullable($similar),
+                    'creators' => $nullable($creators),
+                    'description' => $nullable($description),
+                    'rating' => $nullable($rating),
+                    'categories' => $nullable($categories),
+                    'characters' => $nullable($characters),
+                ]);
+        });
     }
 
     /**

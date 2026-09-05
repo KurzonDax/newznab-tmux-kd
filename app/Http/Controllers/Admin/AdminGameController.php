@@ -58,6 +58,10 @@ class AdminGameController extends BasePageController
 
             switch ($action) {
                 case 'submit':
+                    $validated = $request->validate([
+                        'title' => ['required', 'string', 'max:255'],
+                    ]);
+
                     $coverDirectory = storage_path('covers/games/');
                     $imageService = app(ReleaseImageService::class);
 
@@ -74,7 +78,7 @@ class AdminGameController extends BasePageController
 
                     $games->update(
                         $id,
-                        $request->input('title'),
+                        $validated['title'],
                         $request->input('asin'),
                         $request->input('url'),
                         $request->input('publisher'),

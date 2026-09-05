@@ -36,6 +36,8 @@
         @endif
 
         <!-- Edit Game Form -->
+        <x-admin.form-errors />
+
         <form method="POST" action="{{ url('admin/game-edit') }}" enctype="multipart/form-data" class="p-6">
             @csrf
             <input type="hidden" name="id" value="{{ $game['id'] }}">

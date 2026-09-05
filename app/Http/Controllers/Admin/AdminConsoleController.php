@@ -62,6 +62,10 @@ class AdminConsoleController extends BasePageController
 
             switch ($action) {
                 case 'submit':
+                    $validated = $request->validate([
+                        'title' => ['required', 'string', 'max:255'],
+                    ]);
+
                     $coverDirectory = storage_path('covers/console/');
 
                     if ($request->hasFile('cover') && $request->file('cover')->isValid()) {
@@ -78,7 +82,7 @@ class AdminConsoleController extends BasePageController
 
                     $this->consoleService->update(
                         $id,
-                        $request->input('title'),
+                        $validated['title'],
                         $request->input('asin'),
                         $request->input('url'),
                         $salesrank,

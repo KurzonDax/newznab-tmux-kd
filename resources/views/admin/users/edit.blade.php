@@ -28,6 +28,8 @@
 
         <!-- User Form -->
         <div class="p-6" x-data="adminUserEdit">
+        <x-admin.form-errors />
+
         <form id="admin-user-edit-form" method="post" action="{{ url('admin/user-edit') }}">
             @csrf
             <input type="hidden" name="action" value="submit">

@@ -38,6 +38,50 @@ class AdminUserControllerTest extends TestCase
         $this->withoutMiddleware(Google2FAMiddleware::class);
     }
 
+    /**
+     * users.username is NOT NULL and User::updateUser() types it `string`, so a blank username
+     * arrived as null through ConvertEmptyStringsToNull. The form's `required` is client-side
+     * only (#458).
+     */
+    public function test_admin_user_edit_rejects_a_blank_username(): void
+    {
+        $admin = $this->createUserWithRole('Admin', false);
+        $editedUser = $this->createUserWithRole('User', true);
+
+        $response = $this->actingAs($admin)->post(route('admin.user-edit'), [
+            'action' => 'submit',
+            'id' => (string) $editedUser->id,
+            'username' => '',
+            'email' => 'kept@example.test',
+            'role' => (string) $editedUser->roles_id,
+        ]);
+
+        $response->assertSessionHasErrors('username');
+        $this->assertSame(
+            $editedUser->username,
+            (string) DB::table('users')->where('id', $editedUser->id)->value('username')
+        );
+    }
+
+    /**
+     * users.username is varchar(50); a longer value would be truncated by the column.
+     */
+    public function test_admin_user_edit_rejects_a_username_longer_than_the_column(): void
+    {
+        $admin = $this->createUserWithRole('Admin', false);
+        $editedUser = $this->createUserWithRole('User', true);
+
+        $response = $this->actingAs($admin)->post(route('admin.user-edit'), [
+            'action' => 'submit',
+            'id' => (string) $editedUser->id,
+            'username' => str_repeat('a', 51),
+            'email' => 'kept@example.test',
+            'role' => (string) $editedUser->roles_id,
+        ]);
+
+        $response->assertSessionHasErrors('username');
+    }
+
     public function test_admin_can_create_user_with_string_role_id(): void
     {
         $admin = $this->createUserWithRole('Admin', false);
