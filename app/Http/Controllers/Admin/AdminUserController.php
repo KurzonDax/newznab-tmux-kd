@@ -96,11 +96,14 @@ class AdminUserController extends BasePageController
         $action = $request->input('action') ?? 'view';
 
         $roleId = null;
+        $username = null;
         if ($action === 'submit') {
             $validated = $request->validate([
                 'role' => ['required', 'integer', 'exists:roles,id'],
+                'username' => ['required', 'string', 'max:50'],
             ]);
             $roleId = (int) $validated['role'];
+            $username = (string) $validated['username'];
         }
 
         // get the user roles
@@ -139,7 +142,7 @@ class AdminUserController extends BasePageController
                             $invites = $role['defaultinvites'];
                         }
                     }
-                    $ret = User::signUp($request->input('username'), $request->input('password'), $request->input('email'), '', $request->input('notes'), $invites, '', true, $roleId, false);
+                    $ret = User::signUp($username ?? '', $request->input('password'), $request->input('email'), '', $request->input('notes'), $invites, '', true, $roleId, false);
                 } else {
                     $editedUser = User::find($request->input('id'));
 
@@ -219,7 +222,7 @@ class AdminUserController extends BasePageController
                     // Use current role to avoid overwriting
                     $ret = User::updateUser(
                         $editedUser->id,
-                        $request->input('username'),
+                        $username ?? $editedUser->username,
                         $request->input('email'),
                         $editedUser->grabs,
                         $editedUser->roles_id, // Use current role, not the request role

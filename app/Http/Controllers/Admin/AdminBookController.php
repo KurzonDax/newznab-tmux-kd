@@ -43,7 +43,7 @@ class AdminBookController extends BasePageController
         $action = $request->input('action') ?? 'view';
 
         if ($request->has('id')) {
-            $id = $request->input('id');
+            $id = $this->integerInput($request, 'id');
             $b = $bookService->getBookInfo($id);
 
             if (! $b) {
@@ -52,6 +52,12 @@ class AdminBookController extends BasePageController
 
             switch ($action) {
                 case 'submit':
+                    $validated = $request->validate([
+                        'title' => ['required', 'string', 'max:255'],
+                        'author' => ['required', 'string', 'max:255'],
+                        'publishdate' => ['nullable', 'date'],
+                    ]);
+
                     $coverDirectory = storage_path('covers/book/');
                     $imageService = app(ReleaseImageService::class);
 
@@ -60,16 +66,17 @@ class AdminBookController extends BasePageController
                     }
 
                     $hasCover = (int) $imageService->imageExists($coverDirectory, (string) $id);
-                    $publishdate = (empty($request->input('publishdate')) || ! strtotime($request->input('publishdate')))
-                        ? ($b['publishdate'] ?? null)
-                        : Carbon::parse($request->input('publishdate'))->timestamp;
+                    $publishdateInput = $this->scalarInput($request, 'publishdate');
+                    $publishdate = ($publishdateInput === '' || ! strtotime($publishdateInput))
+                        ? $this->storedAttribute($b, 'publishdate')
+                        : Carbon::parse($publishdateInput)->toDateTimeString();
 
                     $bookService->update(
                         $id,
-                        $request->input('title'),
+                        $validated['title'],
                         $request->input('asin'),
                         $request->input('url'),
-                        $request->input('author'),
+                        $validated['author'],
                         $request->input('publisher'),
                         $publishdate,
                         $hasCover

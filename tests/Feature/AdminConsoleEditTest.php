@@ -104,6 +104,28 @@ class AdminConsoleEditTest extends TestCase
         $this->assertNull($row->genres_id);
     }
 
+    /**
+     * consoleinfo.title is NOT NULL and ConsoleService::update() types it `string`, so a blank
+     * title arrived as null. The form's `required` is client-side only.
+     */
+    public function test_console_edit_rejects_a_blank_title(): void
+    {
+        $id = $this->createConsoleEntry('2001-01-01 13:45:00');
+
+        $response = $this->actingAs($this->admin())->post(route('admin.console-edit'), [
+            'id' => (string) $id,
+            'action' => 'submit',
+            'title' => '',
+            'platform' => 'PS4',
+            'salesrank' => '',
+            'genre' => '',
+            'releasedate' => '',
+        ]);
+
+        $response->assertSessionHasErrors('title');
+        $this->assertSame('Console Under Edit', (string) DB::table('consoleinfo')->where('id', $id)->value('title'));
+    }
+
     private function storedReleaseDate(int $id): string
     {
         $stored = DB::table('consoleinfo')->where('id', $id)->value('releasedate');

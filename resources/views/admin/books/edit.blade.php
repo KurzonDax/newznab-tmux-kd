@@ -15,6 +15,8 @@
 
         <!-- Edit Form -->
         <div class="p-6">
+            <x-admin.form-errors />
+
             <form method="POST" action="{{ url('admin/book-edit?id=' . $book['id']) }}" enctype="multipart/form-data">
                 @csrf
                 <input type="hidden" name="action" value="submit">

@@ -200,6 +200,57 @@ trait InteractsWithAdminListPages
         });
     }
 
+    /**
+     * Mirrors the production column set, including `title`, `author` and `genre` being NOT NULL.
+     */
+    protected function createBookInfoTable(): void
+    {
+        Schema::create('bookinfo', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->string('title');
+            $table->string('author');
+            $table->string('asin', 128)->nullable();
+            $table->string('url', 1000)->nullable();
+            $table->string('publisher')->nullable();
+            $table->unsignedInteger('salesrank')->nullable();
+            $table->dateTime('publishdate')->nullable();
+            $table->string('genre');
+            $table->boolean('cover')->default(false);
+            $table->timestamps();
+        });
+    }
+
+    /**
+     * The two tables `AnidbService::updateTitle()` joins. `anidb_titles` columns are all NOT
+     * NULL; `anidb_info.startdate` and `enddate` are DATE columns, which reject an empty string.
+     */
+    protected function createAnidbTables(): void
+    {
+        Schema::create('anidb_titles', function (Blueprint $table): void {
+            $table->unsignedInteger('anidbid');
+            $table->string('type', 25);
+            $table->string('lang', 25);
+            $table->string('title');
+            $table->primary(['anidbid', 'type', 'lang', 'title']);
+        });
+
+        Schema::create('anidb_info', function (Blueprint $table): void {
+            $table->unsignedInteger('anidbid')->primary();
+            $table->string('type', 32)->nullable();
+            $table->date('startdate')->nullable();
+            $table->date('enddate')->nullable();
+            $table->string('related', 1024)->nullable();
+            $table->string('similar', 1024)->nullable();
+            $table->string('creators', 1024)->nullable();
+            $table->text('description')->nullable();
+            $table->string('rating', 5)->nullable();
+            $table->string('categories', 1024)->nullable();
+            $table->string('characters', 1024)->nullable();
+            $table->string('picture')->nullable();
+            $table->timestamp('updated')->nullable();
+        });
+    }
+
     protected function resetGlobalComposerState(): void
     {
         $reflection = new ReflectionClass(GlobalDataComposer::class);

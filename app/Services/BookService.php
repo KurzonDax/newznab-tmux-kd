@@ -372,7 +372,7 @@ class BookService
         ?string $url,
         ?string $author,
         ?string $publisher,
-        mixed $publishdate,
+        ?string $publishdate,
         int $cover
     ): bool {
         return BookInfo::query()->where('id', $id)->update([

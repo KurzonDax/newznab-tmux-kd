@@ -17,6 +17,8 @@
 
         <!-- Edit Form -->
         <div class="p-6">
+            <x-admin.form-errors />
+
             <form method="POST" action="{{ url('admin/console-edit?id=' . $con['id']) }}" enctype="multipart/form-data">
                 @csrf
                 <input type="hidden" name="action" value="submit">
