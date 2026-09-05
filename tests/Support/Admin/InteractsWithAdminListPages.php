@@ -177,6 +177,29 @@ trait InteractsWithAdminListPages
         });
     }
 
+    /**
+     * Mirrors the production column set, including `year` being NOT NULL.
+     */
+    protected function createMusicInfoTable(): void
+    {
+        Schema::create('musicinfo', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->string('title');
+            $table->string('asin', 128)->nullable();
+            $table->string('url', 1000)->nullable();
+            $table->unsignedInteger('salesrank')->nullable();
+            $table->string('artist')->nullable();
+            $table->string('publisher')->nullable();
+            $table->dateTime('releasedate')->nullable();
+            $table->string('review', 3000)->nullable();
+            $table->string('year', 4);
+            $table->integer('genres_id')->nullable();
+            $table->string('tracks', 3000)->nullable();
+            $table->boolean('cover')->default(false);
+            $table->timestamps();
+        });
+    }
+
     protected function resetGlobalComposerState(): void
     {
         $reflection = new ReflectionClass(GlobalDataComposer::class);

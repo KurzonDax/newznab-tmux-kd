@@ -379,6 +379,10 @@ class MusicService
         int $cover,
         ?int $genres_id
     ): void {
+        // musicinfo.year is NOT NULL, and a blank form field arrives as null through
+        // ConvertEmptyStringsToNull.
+        $year ??= '';
+
         MusicInfo::query()->where('id', $id)->update([
             'title' => $title,
             'asin' => $asin,
