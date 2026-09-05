@@ -75,6 +75,31 @@ class PcCategorizerBoundaryTest extends TestCase
         $this->assertSame('0day_system', $result['debug']['matched_by']);
     }
 
+    public function test_parenthesised_architecture_token_categorizes_as_pc_0day(): void
+    {
+        $result = $this->categorize('[1/7] - "Steinberg Cubase Elements 11.0.40 (x64).rar" yEnc');
+
+        $this->assertSame(Category::PC_0DAY, $result['categories_id']);
+        $this->assertSame('0day_system', $result['debug']['matched_by']);
+        $this->assertSame(0.85, $result['debug']['final_confidence']);
+    }
+
+    public function test_parenthesised_architecture_token_mid_name_categorizes_as_pc_0day(): void
+    {
+        $result = $this->categorize('Aiarty Video Enhancer 3.0 (x64) Multilingual');
+
+        $this->assertSame(Category::PC_0DAY, $result['categories_id']);
+        $this->assertSame('0day_system', $result['debug']['matched_by']);
+    }
+
+    public function test_parenthesised_linux_stays_out_of_pc(): void
+    {
+        $result = $this->categorize('Jay & The Americans (Posted using Linux) Test [1/27] - "jay.and.the.americans.01.mp3" yEnc');
+
+        $this->assertNotSame(Category::PC_0DAY, $result['categories_id']);
+        $this->assertNotSame('0day_system', $result['debug']['matched_by']);
+    }
+
     /**
      * @return array<string, mixed>
      */

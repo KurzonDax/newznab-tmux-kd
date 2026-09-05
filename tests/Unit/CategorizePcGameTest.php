@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use App\Models\Category;
+use App\Services\Categorization\CategorizationResult;
 use App\Services\Categorization\Categorizers\PcCategorizer;
 use App\Services\Categorization\ReleaseContext;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -21,6 +22,45 @@ class CategorizePcGameTest extends TestCase
             'msix bundle' => ['Adobe Express Photos.Msixbundle'],
             'appx bundle' => ['Microsoft.To.Do.appxbundle'],
             'msi package' => ['Utility Installer.msi'],
+        ];
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function parenthesisedSystemTokenProvider(): array
+    {
+        return [
+            'trailing parenthesised architecture' => ['Steinberg Cubase Elements 11.0.40 (x64)'],
+            'parenthesised architecture mid name' => ['Aiarty Video Enhancer 3.0 (x64) Multilingual'],
+            'fully parenthesised keyword' => ['Some Tool 1.0 (Multilingual)'],
+            'parenthesised keyword mid name' => ['Some Tool (Portable) 2.1'],
+            'architecture token closing a parenthetical' => ['(MAGIX Movie Studio 2025 Platinum-x64) [07/12] - "magix.movie.studio.2025.platinum.part06.rar" yEnc'],
+        ];
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function unparenthesisedSystemTokenProvider(): array
+    {
+        return [
+            'spaced architecture token' => ['Foo x64 Bar'],
+            'dotted portable keyword' => ['Foo.Portable.2.1'],
+            'trailing multilingual keyword' => ['PicPick Professional 7.4 Multilingual.rar'],
+        ];
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function nonPcNameProvider(): array
+    {
+        return [
+            'movie with x264 codec tag' => ['Movie.Title.2024.1080p.BluRay.x264-GRP'],
+            'episode with x264 codec tag' => ['Show.S01E01.720p.HDTV.x264-GRP'],
+            'music album with a parenthesised year' => ['Artist - Album (2024) [FLAC]'],
+            'parenthesised linux in prose' => ['Jay & The Americans (Posted using Linux) Test'],
         ];
     }
 
@@ -125,5 +165,55 @@ class CategorizePcGameTest extends TestCase
         $this->assertTrue($result->isSuccessful(), "Expected PC 0day match for installer package: $name");
         $this->assertSame(Category::PC_0DAY, $result->categoryId, "Expected PC_0DAY for installer package: $name");
         $this->assertSame('0day_msix_installer', $result->matchedBy);
+    }
+
+    #[DataProvider('parenthesisedSystemTokenProvider')]
+    public function test_parenthesised_system_tokens_are_classified_as_pc_0day(string $name): void
+    {
+        $result = $this->categorizeName($name);
+
+        $this->assertNotNull($result, "Expected a PC match for: $name");
+        $this->assertSame(Category::PC_0DAY, $result->categoryId, "Expected PC_0DAY for: $name");
+        $this->assertSame('0day_system', $result->matchedBy);
+        $this->assertSame(0.85, $result->confidence);
+    }
+
+    #[DataProvider('unparenthesisedSystemTokenProvider')]
+    public function test_unparenthesised_system_tokens_are_unchanged(string $name): void
+    {
+        $result = $this->categorizeName($name);
+
+        $this->assertNotNull($result, "Expected a PC match for: $name");
+        $this->assertSame(Category::PC_0DAY, $result->categoryId, "Expected PC_0DAY for: $name");
+        $this->assertSame('0day_system', $result->matchedBy);
+    }
+
+    #[DataProvider('nonPcNameProvider')]
+    public function test_parenthesis_delimiters_do_not_pull_non_pc_names_into_pc(string $name): void
+    {
+        $result = $this->categorizeName($name);
+
+        $this->assertNull($result, "Did not expect any PC match for: $name");
+    }
+
+    /**
+     * Run one name through the categorizer, honouring its own skip gate.
+     */
+    private function categorizeName(string $name): ?CategorizationResult
+    {
+        $context = new ReleaseContext(
+            releaseName: $name,
+            groupId: 0,
+            groupName: '',
+            poster: ''
+        );
+
+        if ($this->categorizer->shouldSkip($context)) {
+            return null;
+        }
+
+        $result = $this->categorizer->categorize($context);
+
+        return $result->isSuccessful() ? $result : null;
     }
 }
