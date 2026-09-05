@@ -7,7 +7,7 @@ namespace App\Support;
 use App\Services\Nzb\NzbService;
 
 /**
- * Validation for the NZB storage tunables on the admin site-edit form.
+ * Validation for the NZB storage tunables on the settings hub.
  *
  * The storage depth names a directory level rather than a display preference: 0 is the
  * legal "store flat" depth, and the write path fans out at most NzbService::MAX_SPLIT_LEVEL

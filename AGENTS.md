@@ -82,8 +82,8 @@ Any other stored value -- including a legacy `2` -- runs as full mode.
 **Audio (`aud`) is a separate path, not a mode of `add`.** `App\Services\AudioProcessing\` owns it: `AudioCandidateQuery` selects music-routed releases with **no minimum size** (`minsizetopostprocess` strands them otherwise), fetches article 1, probes it, and only then pulls the rest of the head. `AudioRouting` is the single predicate deciding which path a release belongs to; `AdditionalCandidateQuery` applies it inverted, so the two partition the pending set exactly. A release the probe finds to be video is handed back by writing `AudioRouting::DECLINED_TOKEN` into `additional_pp_claim_token` — see `.ai/rules/additional-processing.md`.
 
 - **Live tmux output**: set `STREAM_FORK_OUTPUT=true` in `.env` (`config('nntmux.stream_fork_output')`). When false (default), child output is buffered per batch and the pane may look idle until a batch completes.
-- **Parallelism settings** (all default to `1` in `database/seeders/SettingsTableSeeder.php`; raise via Admin UI or DB): `postthreads` (additional), `nfothreads` (NFO when `post=3`), `postthreadsnon` (TV/anime/movies), `postthreadsamazon` (books/music/console/games and `ama` fan-out), `postthreadsaudio` (`aud` fan-out). Raising `nfothreads` or `postthreadsaudio` opens that many parallel NNTP sessions.
-- **Audio tunables** (site settings, Advanced → Post-processing): `audio_segments_to_download` (12), `audio_max_rar_parts` (6), `audio_max_archive_mb` (1024; `0` = unlimited), `audio_preview_seconds` (30), `audio_preview_start_seconds` (10), `audio_spectrogram` (1). `saveaudiopreview` is retired.
+- **Parallelism settings** (all default to `1` in `database/seeders/SettingsTableSeeder.php`; raise from the settings hub or the DB): `postthreads` (additional), `nfothreads` (NFO when `post=3`), `postthreadsnon` (TV/anime/movies), `postthreadsamazon` (books/music/console/games and `ama` fan-out), `postthreadsaudio` (`aud` fan-out). Raising `nfothreads` or `postthreadsaudio` opens that many parallel NNTP sessions.
+- **Audio tunables** (site settings, Settings ▸ Post-Processing ▸ Audio previews): `audio_segments_to_download` (12), `audio_max_rar_parts` (6), `audio_max_archive_mb` (1024; `0` = unlimited), `audio_preview_seconds` (30), `audio_preview_start_seconds` (10), `audio_spectrogram` (1). `saveaudiopreview` is retired.
 - **Batch sizing**: up to 16 distinct first-character GUID buckets per type per cycle (`LIMIT 16` in `PostProcessRunner`); each bucket processes its slice sequentially inside `postprocess:guid`. Additional processing also respects `maxaddprocessed` (default 25) per bucket.
 - **Direct CLI**: `update:postprocess <type>` remains available for single-process runs outside tmux; tmux panes use the multiprocessing command only.
 
@@ -136,6 +136,38 @@ PHPUnit only (no Pest). Create tests: `php artisan make:test --phpunit {name}`
 - Create with `php artisan make:` + `--no-interaction`
 - Docker/Sail convenience targets live in `Makefile`; prefer `make artisan cmd="..."`, `make test filter=TestName`, `make pint`, and `make npm-build` when working inside containers
 - This workspace may have cached routes under `bootstrap/cache/routes-*.php`; after adding/changing routes, refresh with `php artisan route:cache` if a route appears missing
+
+### Admin Settings (the hub)
+
+Every admin-editable setting is declared once in the **settings registry**
+(`app/Support/Settings/`), and the registry is the only whitelist of legitimate setting keys.
+`admin/site-edit` and `admin/tmux-edit` were retired in #443 and 301 to `admin/settings`.
+
+- **Add or change a setting: edit a section provider**, not a Blade file.
+  `app/Support/Settings/Sections/*Section.php` declare the seven pages, in sidebar order:
+  Website, Engine & Monitoring, Usenet Ingest, Release Formation, Post-Processing,
+  Metadata Lookups, Naming & Hygiene. Register a new page in
+  `SettingsRegistry::SECTION_PROVIDERS`.
+- A `SettingDefinition` carries key, label, help, `SettingType`, options, unit, validation
+  rules and (for per-root toggle sets) the eligible root ids. Declared `rules` **replace** the
+  type defaults; the type's guard rules are always applied on top, so a picker can never store
+  an option it does not offer.
+- Where a rules class already exists (`RepairSettingRules`, `NzbSettingRules`,
+  `BackfillSettingRules`), the registry entry takes its rules from it rather than restating
+  them.
+- Saves are per card: `POST admin/settings/{section}/{card}` through
+  `SettingsCardUpdater`, which **rejects an unknown or cross-card key wholesale** and writes
+  nothing, and rejects out-of-range values rather than clamping. Per-root toggle sets
+  (`generate_previews`, `dynamic_preview_budget`, `generate_clips`, `discard_executables`)
+  route to `root_categories`, never to `settings`.
+- `Settings::settingsUpsert()` is the hub's write path and creates a missing row;
+  `Settings::settingsUpdate()` only updates and stays for legacy callers.
+- Tests use `Tests\Support\Settings\InteractsWithSettingsHub` for the schema and the
+  render/save helpers. `currentCardPayload()` builds a card's full payload from stored values
+  so a test can vary one field.
+- An action that belongs beside a card but posts elsewhere goes in `SettingCard::$asideView`
+  (a sibling of the card's form, because forms do not nest) — see the Breach response panel on
+  Website ▸ Sessions & access.
 
 ### Admin Content
 - Admin content ordering is scoped by `contenttype`, not global: Homepage rows only reorder Homepage rows, Useful Links only reorder Useful Links

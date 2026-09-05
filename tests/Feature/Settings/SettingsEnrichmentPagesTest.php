@@ -156,6 +156,57 @@ class SettingsEnrichmentPagesTest extends TestCase
         $this->assertStringContainsString('name="discard_executables[2000]"', $rendered);
     }
 
+    public function test_the_naming_card_renders_and_saves_the_descriptive_title_toggle(): void
+    {
+        DB::table('settings')->where('name', 'descriptive_title_rename')->update(['value' => '0']);
+        Cache::flush();
+
+        $this->assertStringContainsString('Rename from descriptive file names', $this->renderSection('naming-hygiene'));
+
+        $this->saveCard('naming-hygiene', 'fix-names', [
+            'fix_names' => '1',
+            'fixnamethreads' => '1',
+            'fixnamesperrun' => '10',
+            'fix_timer' => '30',
+            'fix_names_timeout' => '1200',
+            'descriptive_title_rename' => '1',
+        ]);
+
+        $this->assertSame('1', $this->storedSettingValue('descriptive_title_rename'));
+    }
+
+    public function test_the_executable_card_renders_and_saves_the_forced_root_escape(): void
+    {
+        $rendered = $this->renderSection('naming-hygiene');
+
+        $this->assertStringContainsString('name="forced_root_pc_escape"', $rendered);
+        $this->assertStringContainsString('Let PC releases escape a forced root', $rendered);
+        $this->assertStringContainsString('malware', $rendered);
+        $this->assertStringContainsString('Executable extensions', $rendered);
+
+        $this->saveCard('naming-hygiene', 'executables', $this->currentCardPayload('naming-hygiene', 'executables', [
+            'forced_root_pc_escape' => '1',
+        ]));
+
+        $this->assertSame('1', $this->storedSettingValue('forced_root_pc_escape'));
+    }
+
+    public function test_the_previews_card_offers_only_the_eligible_roots_for_the_restricted_toggles(): void
+    {
+        $rendered = $this->renderSection('post-processing');
+
+        foreach ([2000, 5000, 6000] as $eligible) {
+            $this->assertStringContainsString('name="dynamic_preview_budget['.$eligible.']"', $rendered);
+            $this->assertStringContainsString('name="generate_clips['.$eligible.']"', $rendered);
+        }
+
+        foreach ([1, 1000, 4000] as $ineligible) {
+            $this->assertStringNotContainsString('name="dynamic_preview_budget['.$ineligible.']"', $rendered);
+            $this->assertStringNotContainsString('name="generate_clips['.$ineligible.']"', $rendered);
+            $this->assertStringContainsString('name="generate_previews['.$ineligible.']"', $rendered, 'Previews are offered for every root.');
+        }
+    }
+
     public function test_the_custom_class_picker_offers_exactly_what_the_sweep_accepts(): void
     {
         $definition = app(SettingsRegistry::class)->definition('fix_crap');

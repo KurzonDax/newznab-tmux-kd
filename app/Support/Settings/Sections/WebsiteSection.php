@@ -144,6 +144,7 @@ final class WebsiteSection implements SettingsSectionProvider
                     title: 'Sessions & access',
                     description: 'Who may be signed in, and from how many places at once. Who is allowed to sign up in the first place lives on <a class="text-primary-700 underline dark:text-primary-300" href="'.route('admin.registrations.index').'">Registrations</a>.',
                     icon: 'fas fa-user-shield',
+                    asideView: 'admin.settings.partials.breach-response',
                     settings: [
                         new SettingDefinition(
                             key: 'single_active_session',

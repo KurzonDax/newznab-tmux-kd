@@ -29,7 +29,7 @@ final class AdminLoginSessionController extends Controller
         ]);
 
         return redirect()
-            ->route('admin.site-edit')
+            ->route('admin.settings.section', ['section' => 'website'])
             ->with('success', 'All web logins have been expired except your current session.');
     }
 

@@ -50,8 +50,6 @@ class MovieService
 
     protected Client $client;
 
-    protected string $lookuplanguage;
-
     public FanartTvService $fanart;
 
     public ?string $fanartapikey;
@@ -95,7 +93,6 @@ class MovieService
             $this->omdbApi = new OMDbAPI($this->omdbapikey);
         }
 
-        $this->lookuplanguage = (string) Settings::settingValueOr('imdblanguage', 'en');
         $cacheDir = storage_path('framework/cache/imdb_cache');
         if (! File::isDirectory($cacheDir)) {
             File::makeDirectory($cacheDir, 0777, false, true);

@@ -19,20 +19,6 @@ class SizeUnit
     public const array UNITS = ['MB', 'GB'];
 
     /**
-     * Site settings whose values are release sizes stored in bytes.
-     *
-     * @var list<string>
-     */
-    public const array SITE_SIZE_SETTINGS = [
-        'minsizetoformrelease',
-        'maxsizetoformrelease',
-        'minsizetopostprocess',
-        'maxsizetopostprocess',
-        'minsizetoprocessnfo',
-        'maxsizetoprocessnfo',
-    ];
-
-    /**
      * Convert a value expressed in the given unit to bytes.
      *
      * Empty and non-positive values map to 0 ("disabled" semantics).

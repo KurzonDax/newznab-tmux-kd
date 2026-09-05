@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Tests\Support\Settings;
 
 use App\Http\Controllers\Admin\AdminSettingsController;
+use App\Support\Settings\SettingsRegistry;
+use App\Support\Settings\SettingType;
+use App\Support\SizeUnit;
 use App\View\Composers\GlobalDataComposer;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\RedirectResponse;
@@ -82,6 +85,67 @@ trait InteractsWithSettingsHub
     protected function renderSection(string $section, array $query = []): string
     {
         return $this->showSection($section, $query)->render();
+    }
+
+    /**
+     * The payload the rendered card would post if the admin changed nothing.
+     *
+     * A card save carries every field the card owns, so a test that wants to vary one value has
+     * to supply the rest. Building them from what is stored keeps such a test about the one
+     * field it is interested in.
+     *
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    protected function currentCardPayload(string $section, string $card, array $overrides = []): array
+    {
+        $settingCard = app(SettingsRegistry::class)->card($section, $card);
+
+        $this->assertNotNull($settingCard, 'Unknown card ['.$section.'/'.$card.'].');
+
+        $payload = [];
+
+        foreach ($settingCard->settings as $definition) {
+            $stored = DB::table('settings')->where('name', $definition->key)->value('value');
+
+            // match without a default: a new SettingType must be taught how it posts rather
+            // than silently falling through to a string cast.
+            match ($definition->type) {
+                SettingType::Size => $this->addSizePayload($payload, $definition->key, $stored),
+                SettingType::CheckboxSet => $payload[$definition->key] = array_values(array_filter(
+                    array_map('trim', explode(',', (string) $stored)),
+                    static fn (string $token): bool => $token !== '',
+                )),
+                // Absence means off, so the current state has to be restated or the save would
+                // silently clear every root the test never mentioned.
+                SettingType::RootToggles => $payload[$definition->key] = DB::table('root_categories')
+                    ->where($definition->key, true)
+                    ->pluck('id')
+                    ->mapWithKeys(static fn ($id): array => [(string) $id => '1'])
+                    ->all(),
+                SettingType::Bool,
+                SettingType::Int,
+                SettingType::Date,
+                SettingType::Enum,
+                SettingType::Text,
+                SettingType::Textarea => $payload[$definition->key] = (string) $stored,
+            };
+        }
+
+        return array_replace($payload, $overrides);
+    }
+
+    /**
+     * A size field posts a value and a unit, so it contributes two form fields.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function addSizePayload(array &$payload, string $key, mixed $stored): void
+    {
+        $size = SizeUnit::fromBytes(is_numeric($stored) ? $stored : 0);
+
+        $payload[$key] = (string) $size['value'];
+        $payload[$key.'_unit'] = $size['unit'];
     }
 
     /**

@@ -63,7 +63,7 @@ final class ExpireAllWebLoginsTest extends TestCase
             ])
             ->post(route('admin.login-sessions.expire-all'));
 
-        $response->assertRedirect(route('admin.site-edit'));
+        $response->assertRedirect(route('admin.settings.section', ['section' => 'website']));
         $response->assertSessionHas('success', 'All web logins have been expired except your current session.');
         $response->assertCookieExpired('2fa_trusted_device');
         $response->assertCookieExpired($this->recallerCookieName());
@@ -131,18 +131,17 @@ final class ExpireAllWebLoginsTest extends TestCase
         $this->assertAuthenticatedAs($admin);
     }
 
-    public function test_admin_can_enable_single_active_session_from_site_settings(): void
+    public function test_admin_can_enable_single_active_session_from_the_settings_hub(): void
     {
         $admin = $this->createUser('Admin', 'admin@example.test', 'admin-token', 'admin-remember');
         $this->withoutMiddleware();
 
         $this->actingAs($admin)
             ->withSession([WebLoginSessionPolicy::SESSION_TOKEN_KEY => 'admin-token'])
-            ->post(route('admin.site-edit'), [
-                'action' => 'submit',
+            ->post(route('admin.settings.update', ['section' => 'website', 'card' => 'sessions']), [
                 'single_active_session' => '1',
             ])
-            ->assertRedirect('admin/site-edit');
+            ->assertRedirect(url('admin/settings/website').'#card-sessions');
 
         $this->assertDatabaseHas('settings', [
             'name' => 'single_active_session',
@@ -191,7 +190,7 @@ final class ExpireAllWebLoginsTest extends TestCase
             $table->text('value')->nullable();
         });
 
-        // The site-edit submit path syncs per-root discard toggles.
+        // The hub's per-root toggle sets are written against this table.
         Schema::create('root_categories', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
             $table->string('title');

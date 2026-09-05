@@ -6,6 +6,7 @@ namespace Tests\Unit\Services;
 
 use App\Services\NNTP\NntpProvider;
 use App\Services\NNTP\NNTPService;
+use App\Support\Settings\SettingsRegistry;
 use DariusIII\NetNntp\Error as NntpError;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\Test;
@@ -182,16 +183,16 @@ final class NNTPServiceConnectRetryBudgetTest extends TestCase
     }
 
     /**
-     * The paragraph the admin sees under the `nntpretries` input.
+     * The help the admin reads under the `nntpretries` input, taken from the settings registry
+     * that renders it rather than from the markup.
      */
     private function nntpRetriesHelpText(): string
     {
-        $view = file_get_contents(resource_path('views/admin/site/sections/connection-settings.blade.php'));
+        $definition = app(SettingsRegistry::class)->definition('nntpretries');
 
-        $this->assertIsString($view);
-        $this->assertSame(1, preg_match('/name="nntpretries".*?<p[^>]*>(.*?)<\/p>/s', $view, $matches));
+        $this->assertNotNull($definition, 'nntpretries must stay on the settings hub.');
 
-        return strip_tags($matches[1]);
+        return strip_tags($definition->help);
     }
 }
 

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Support;
 
 /**
- * Validation for the backfill tunables on the admin site-edit form.
+ * Validation for the backfill tunables on the settings hub.
  *
  * The safe backfill date is the one field on this form whose stored text is parsed with a
  * strict format on the read side. The backfill pass cannot reinterpret a typo -- the coded
@@ -14,7 +14,7 @@ namespace App\Support;
  * notices. Rejecting the bad value here keeps that state hard to reach in the first place.
  *
  * A blank field is left alone: the service reads it as "unset" and resolves it to its coded
- * default. The rest of the form is free-text by long-standing design.
+ * default. The settings registry takes this rule verbatim for the field it renders.
  */
 final class BackfillSettingRules
 {

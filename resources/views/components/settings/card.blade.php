@@ -47,4 +47,10 @@
             </footer>
         </x-panel>
     </form>
+
+    @if($card->asideView)
+        <div class="mt-4">
+            @include($card->asideView)
+        </div>
+    @endif
 </section>

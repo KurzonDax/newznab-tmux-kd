@@ -523,7 +523,7 @@
                 <i class="fas fa-folder text-3xl text-purple-600 mb-2"></i>
                 <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Categories</span>
             </a>
-            <a href="{{ url('/admin/site-edit') }}" class="flex flex-col items-center p-4 bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:bg-gray-800 rounded-lg transition">
+            <a href="{{ route('admin.settings.index') }}" class="flex flex-col items-center p-4 bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:bg-gray-800 rounded-lg transition">
                 <i class="fas fa-cog text-3xl text-orange-600 mb-2"></i>
                 <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Settings</span>
             </a>
