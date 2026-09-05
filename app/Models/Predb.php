@@ -8,6 +8,7 @@ use App\Facades\Search;
 use App\Services\NameFixing\ReleaseUpdateService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -194,7 +195,8 @@ class Predb extends Model
     public static function getAll(string $search = '')
     {
         $expiresAt = now()->addMinutes(config('nntmux.cache_expiry_medium'));
-        $predb = Cache::get(md5($search));
+        $cacheKey = self::listingCacheKey($search, Paginator::resolveCurrentPage());
+        $predb = Cache::get($cacheKey);
         if ($predb !== null) {
             return $predb;
         }
@@ -209,9 +211,23 @@ class Predb extends Model
 
         $predb = $sql->paginate(config('nntmux.items_per_page'));
         $predb->withPath(url('admin/predb'));
-        Cache::put(md5($search), $predb, $expiresAt);
+        Cache::put($cacheKey, $predb, $expiresAt);
 
         return $predb;
+    }
+
+    /**
+     * Cache key for one page of the PreDB listing.
+     *
+     * The page number is part of the key because a paginator resolves its page at
+     * construction: keyed on the search term alone, the first page fetched is replayed for
+     * every later one until the entry expires. The prefix keeps the entry out of the global
+     * keyspace, where a bare md5() of the search term collides with any other caller that
+     * hashes the same string.
+     */
+    private static function listingCacheKey(string $search, int $page): string
+    {
+        return 'predb.listing.'.md5($search).'.page.'.$page;
     }
 
     /**
