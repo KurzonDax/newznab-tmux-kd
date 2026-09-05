@@ -21,6 +21,14 @@ class PcCategorizer extends AbstractCategorizer
     // PC-only keywords (can appear anywhere) - triggers PC_GAMES category
     protected const PC_KEYWORDS = 'PC[ _.-]?GAMES?|\[PC\]|\(PC\)|Steam[._-]?Rip|Retail\s*PC|DRM-?Free';
 
+    // System/architecture tokens; parentheses count as token delimiters for these
+    protected const SYSTEM_TOKENS = '(32|64)bit|converter|i\d86|key(gen|maker)|freebsd|GAMEGUiDE'
+        .'|hpux|irix|multilingual|Patch|Pro v\d{1,3}|portable|regged|software|solaris|template'
+        .'|unix|win2kxp2k3|win64|win(2k|32|64|all|dows|nt(2k)?(xp)?|xp)|win9x(me|nt)?|x(32|64|86)';
+
+    // System tokens common enough in prose that parenthesis delimiters would misfire
+    protected const SYSTEM_TOKENS_STRICT = 'linux';
+
     public function getName(): string
     {
         return 'PC';
@@ -158,12 +166,13 @@ class PcCategorizer extends AbstractCategorizer
         }
 
         // System/architecture indicators
-        if (preg_match('/(?:^|[._ -])((32|64)bit|converter|i\d86|key(gen|maker)|freebsd|GAMEGUiDE|hpux|irix|linux|multilingual|Patch|Pro v\d{1,3}|portable|regged|software|solaris|template|unix|win2kxp2k3|win64|win(2k|32|64|all|dows|nt(2k)?(xp)?|xp)|win9x(me|nt)?|x(32|64|86))(?:[._ -]|$)/i', $name)) {
+        if (preg_match('/(?:^|[._ (-])(?:'.self::SYSTEM_TOKENS.')(?:[._ )-]|$)/i', $name)
+            || preg_match('/(?:^|[._ -])(?:'.self::SYSTEM_TOKENS_STRICT.')(?:[._ -]|$)/i', $name)) {
             return $this->matched(Category::PC_0DAY, 0.85, '0day_system');
         }
 
         // Software vendors and patterns
-        if (preg_match('/\b(Adobe|auto(cad|desk)|-BEAN|Cracked|Cucusoft|CYGNUS|Divx[._ -]Plus|\.(deb|exe)|DIGERATI|FOSI|-FONT|Key(filemaker|gen|maker)|Lynda\.com|lz0|MULTiLANGUAGE|Microsoft\s*(Office|Windows|Server)|MultiOS|-(iNViSiBLE|SPYRAL|SUNiSO|UNION|TE)|v\d{1,3}.*?Pro|[._ -]v\d{1,3}[._ -]|\(x(64|86)\)|Xilisoft)\b/i', $name)) {
+        if (preg_match('/\b(Adobe|auto(cad|desk)|-BEAN|Cracked|Cucusoft|CYGNUS|Divx[._ -]Plus|\.(deb|exe)|DIGERATI|FOSI|-FONT|Key(filemaker|gen|maker)|Lynda\.com|lz0|MULTiLANGUAGE|Microsoft\s*(Office|Windows|Server)|MultiOS|-(iNViSiBLE|SPYRAL|SUNiSO|UNION|TE)|v\d{1,3}.*?Pro|[._ -]v\d{1,3}[._ -]|Xilisoft)\b/i', $name)) {
             return $this->matched(Category::PC_0DAY, 0.85, '0day_software');
         }
 
