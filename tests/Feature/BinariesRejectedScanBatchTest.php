@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Enums\HeaderScanDirection;
+use App\Models\UsenetGroup;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\Binaries\BinariesService;
 use App\Services\Binaries\HeaderParser;
 use App\Services\NNTP\NNTPService;
+use App\Services\Runners\BinariesRunner;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -37,10 +40,14 @@ class BinariesRejectedScanBatchTest extends TestCase
             $table->string('name');
             $table->unsignedBigInteger('first_record')->default(0);
             $table->dateTime('first_record_postdate')->nullable();
+            $table->dateTime('backfill_settled_at')->nullable();
             $table->unsignedBigInteger('last_record')->default(0);
             $table->dateTime('last_record_postdate')->nullable();
             $table->dateTime('last_updated')->nullable();
         });
+
+        Schema::dropIfExists('usenet_group_ingested_ranges');
+        (require database_path('migrations/2026_09_05_213352_create_usenet_group_ingested_ranges_table.php'))->up();
 
         Schema::dropIfExists('missed_parts');
         Schema::create('missed_parts', function (Blueprint $table): void {
@@ -68,6 +75,7 @@ class BinariesRejectedScanBatchTest extends TestCase
     protected function tearDown(): void
     {
         Schema::dropIfExists('missed_parts');
+        Schema::dropIfExists('usenet_group_ingested_ranges');
         Schema::dropIfExists('usenet_groups');
 
         parent::tearDown();
@@ -81,7 +89,7 @@ class BinariesRejectedScanBatchTest extends TestCase
             $this->shiftedHeader('99999999999999999999999 hash'),
         ]);
 
-        $summary = $service->scan($this->group, 500, 502);
+        $summary = $service->scan($this->group, 500, 502, HeaderScanDirection::Head);
 
         $this->assertSame([], $summary, 'A batch with no usable article number yields no scan summary.');
         $this->assertTrue($service->lastScanWasRejected());
@@ -95,7 +103,7 @@ class BinariesRejectedScanBatchTest extends TestCase
         ]);
 
         $group = $this->group;
-        $summary = $service->scan($group, 500, 502);
+        $summary = $service->scan($group, 500, 502, HeaderScanDirection::Head);
         $service->exposedUpdateGroupAfterScan($group, $this->groupNNTP, $summary, 502);
 
         $stored = DB::table('usenet_groups')->find(1);
@@ -105,12 +113,28 @@ class BinariesRejectedScanBatchTest extends TestCase
         $this->assertSame(499, (int) $group['last_record']);
     }
 
+    public function test_failed_chunk_is_requeued_while_a_later_chunk_waits(): void
+    {
+        UsenetGroup::advanceLastRecordContiguously(1, 503, 505, (int) strtotime('2026-08-18 12:00:00'));
+        $service = $this->makeService([$this->shiftedHeader('bad-article-number')]);
+        $group = $this->group;
+        $summary = $service->scan($group, 500, 502, HeaderScanDirection::Head);
+        $service->exposedUpdateGroupAfterScan($group, $this->groupNNTP, $summary, 502);
+        $last = (int) DB::table('usenet_groups')->value('last_record');
+        $this->assertSame(499, $last);
+        $this->assertSame(1, DB::table('usenet_group_ingested_ranges')->count());
+        $queue = (new BinariesRunner)->buildSafeBinariesQueue([
+            (object) ['groupname' => 'alt.binaries.boneless', 'our_last' => $last, 'their_last' => 20510],
+        ], 9, 3);
+        $this->assertContains('get_range  binaries  alt.binaries.boneless  500  502  2', $queue);
+    }
+
     public function test_an_empty_server_response_still_advances_past_the_hole(): void
     {
         $service = $this->makeService([]);
 
         $group = $this->group;
-        $summary = $service->scan($group, 500, 502);
+        $summary = $service->scan($group, 500, 502, HeaderScanDirection::Head);
         $service->exposedUpdateGroupAfterScan($group, $this->groupNNTP, $summary, 502);
 
         $this->assertFalse($service->lastScanWasRejected());
@@ -128,13 +152,13 @@ class BinariesRejectedScanBatchTest extends TestCase
         ]);
 
         $group = $this->group;
-        $summary = $service->scan($group, 500, 502);
+        $summary = $service->scan($group, 500, 502, HeaderScanDirection::Head);
         $service->exposedUpdateGroupAfterScan($group, $this->groupNNTP, $summary, 502);
 
         $this->assertFalse($service->lastScanWasRejected());
         $this->assertSame(500, $summary['firstArticleNumber']);
         $this->assertSame(501, $summary['lastArticleNumber']);
-        $this->assertSame(501, (int) DB::table('usenet_groups')->find(1)->last_record);
+        $this->assertSame(502, (int) DB::table('usenet_groups')->find(1)->last_record);
         $this->assertSame(
             [502],
             DB::table('missed_parts')->pluck('numberid')->map(fn ($number): int => (int) $number)->all(),

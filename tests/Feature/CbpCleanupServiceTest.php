@@ -19,10 +19,13 @@ use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Termwind\Termwind;
+use Tests\Support\CollectionFrontierAssertions;
 use Tests\TestCase;
 
 class CbpCleanupServiceTest extends TestCase
 {
+    use CollectionFrontierAssertions;
+
     private string $originalTimezone;
 
     private string $nzbDirectory;
@@ -110,6 +113,21 @@ class CbpCleanupServiceTest extends TestCase
         $this->assertSame(0, DB::table('parts')->count());
         $this->assertSame(0, DB::table('binaries')->count());
         $this->assertSame(0, DB::table('collections')->count());
+    }
+
+    public function test_frozen_head_does_not_promote_after_wall_clock_delay(): void
+    {
+        $this->insertCollectionTree(109, $this->databaseTimestamp('-6 hours'), 0, 0);
+        DB::table('collections')->where('id', 109)->update([
+            'last_seen_head_postdate' => '2026-08-01 00:00:00',
+        ]);
+        DB::table('usenet_groups')->where('id', 1)->update([
+            'last_record_postdate' => '2026-08-01 00:00:00',
+        ]);
+
+        app(ReleaseProcessingService::class)->setEchoCLI(false)->processIncompleteCollections(1);
+
+        $this->assertDatabaseHas('collections', ['id' => 109, 'filecheck' => 0, 'totalfiles' => 0]);
     }
 
     public function test_non_utc_database_clock_promotes_collection_after_delay(): void
@@ -224,31 +242,32 @@ class CbpCleanupServiceTest extends TestCase
         $this->assertFalse(DB::table('collections')->where('id', 120)->exists());
     }
 
-    public function test_non_utc_stuck_cutoff_honors_last_run_time(): void
+    public function test_non_utc_stuck_sweep_uses_frontier_and_ignores_last_run_time(): void
     {
         $this->useChicagoApplicationClock();
         DB::table('settings')->where('name', 'collection_timeout')->update(['value' => '2']);
-        DB::table('settings')->where('name', 'last_run_time')->update([
-            'value' => now()->subHour()->format('Y-m-d H:i:s'),
-        ]);
-
-        $this->insertCollectionTree(
-            130,
-            $this->databaseTimestamp('-4 hours'),
-            CollectionFileCheckStatus::Default->value,
-            0
-        );
-        $this->insertCollectionTree(
-            131,
-            $this->databaseTimestamp('-150 minutes'),
-            CollectionFileCheckStatus::Default->value,
-            0
-        );
+        DB::table('settings')->where('name', 'last_run_time')->update(['value' => '3015-08-04 15:58:23']);
+        DB::table('usenet_groups')->where('id', 1)->update(['last_record_postdate' => '2026-08-01 12:00:00']);
+        $this->insertCollectionTree(130, $this->databaseTimestamp('-4 hours'), 0, 0);
+        $this->insertCollectionTree(131, $this->databaseTimestamp('-100 hours'), 0, 0);
+        DB::table('collections')->where('id', 130)->update(['last_seen_head_postdate' => '2026-08-01 10:00:00']);
+        DB::table('collections')->where('id', 131)->update(['last_seen_head_postdate' => '2026-08-01 12:00:00']);
 
         app(ReleaseProcessingService::class)->setEchoCLI(false)->processIncompleteCollections(1);
 
-        $this->assertFalse(DB::table('collections')->where('id', 130)->exists());
-        $this->assertTrue(DB::table('collections')->where('id', 131)->exists());
+        $this->assertDatabaseMissing('collections', ['id' => 130]);
+        $this->assertDatabaseHas('collections', ['id' => 131, 'filecheck' => 0]);
+    }
+
+    public function test_retention_leaves_all_in_flight_statuses_to_the_stuck_sweep(): void
+    {
+        foreach ([0, 1, 10, 15, 16, 3, 4] as $status) {
+            $this->insertCollectionTree(200 + $status, $this->databaseTimestamp('-100 hours'), $status, 0);
+        }
+
+        app(CollectionCleanupService::class)->deleteFinishedAndOrphans(false);
+
+        $this->assertSame([0, 1, 10, 15, 16], DB::table('collections')->orderBy('filecheck')->pluck('filecheck')->all());
     }
 
     public function test_inactive_groups_with_sized_collections_keep_their_quality_policy(): void
@@ -889,13 +908,13 @@ class CbpCleanupServiceTest extends TestCase
         $this->insertCollectionTree(
             300,
             now()->subHours(71)->format('Y-m-d H:i:s'),
-            CollectionFileCheckStatus::Default->value,
+            CollectionFileCheckStatus::Sized->value,
             1
         );
         $this->insertCollectionTree(
             301,
             now()->subHours(73)->format('Y-m-d H:i:s'),
-            CollectionFileCheckStatus::Default->value,
+            CollectionFileCheckStatus::Sized->value,
             1
         );
 
@@ -924,13 +943,13 @@ class CbpCleanupServiceTest extends TestCase
         $this->insertCollectionTree(
             310,
             now()->subHours(11)->format('Y-m-d H:i:s'),
-            CollectionFileCheckStatus::Default->value,
+            CollectionFileCheckStatus::Sized->value,
             1
         );
         $this->insertCollectionTree(
             311,
             now()->subHours(13)->format('Y-m-d H:i:s'),
-            CollectionFileCheckStatus::Default->value,
+            CollectionFileCheckStatus::Sized->value,
             1
         );
 
@@ -999,6 +1018,10 @@ class CbpCleanupServiceTest extends TestCase
             id INTEGER PRIMARY KEY,
             name VARCHAR(255),
             active INTEGER NOT NULL DEFAULT 1,
+            backfill INTEGER NOT NULL DEFAULT 1,
+            last_record_postdate DATETIME NULL,
+            first_record_postdate DATETIME NULL,
+            backfill_settled_at DATETIME NULL,
             minsizetoformrelease INTEGER NULL,
             minfilestoformrelease INTEGER NULL
         )');
@@ -1051,6 +1074,8 @@ class CbpCleanupServiceTest extends TestCase
             dateadded DATETIME NULL,
             added DATETIME NULL,
             last_seen_at DATETIME NULL,
+            last_seen_head_postdate DATETIME NULL,
+            last_seen_tail_postdate DATETIME NULL,
             xref TEXT,
             groups_id INTEGER,
             totalfiles INTEGER,

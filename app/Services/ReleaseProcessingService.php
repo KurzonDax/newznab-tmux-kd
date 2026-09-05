@@ -36,7 +36,6 @@ use App\Support\ReleaseSearchIndexSync;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Query\Builder;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -135,7 +134,7 @@ final class ReleaseProcessingService
             'delaytime', 'crossposttime', 'maxnzbsprocessed', 'completionpercent',
             'collection_timeout', 'maxsizetoformrelease', 'minsizetoformrelease',
             'minfilestoformrelease', 'releaseretentiondays', 'deletepasswordedrelease',
-            'miscotherretentionhours', 'mischashedretentionhours', 'last_run_time',
+            'miscotherretentionhours', 'mischashedretentionhours',
         ];
 
         $dbSettings = [];
@@ -422,9 +421,8 @@ final class ReleaseProcessingService
     private function reconcileIncompleteCollections(?int $groupId): void
     {
         $lastId = 0;
-        $cutoff = DatabaseClock::cutoff(now()->subHours($this->settings->collectionDelayTime));
         $hasLastSeenAt = Schema::hasColumn('collections', 'last_seen_at');
-        $staleClock = $this->collectionActivityClockSql($hasLastSeenAt);
+        $quiet = $this->collectionQuietSql($this->settings->collectionDelayTime);
         $statuses = [
             CollectionFileCheckStatus::Default->value,
             CollectionFileCheckStatus::CompleteCollection->value,
@@ -437,16 +435,22 @@ final class ReleaseProcessingService
         do {
             $query = Collection::query()
                 ->where('id', '>', $lastId)
-                ->where(function ($query) use ($cutoff, $hasLastSeenAt, $staleClock, $statuses): void {
+                ->where(function ($query) use ($quiet, $hasLastSeenAt, $statuses): void {
                     $query->where('filecheck', CollectionFileCheckStatus::CompleteParts->value);
+                    $query->orWhere(function ($evidence) use ($statuses): void {
+                        $evidence->whereIn('filecheck', $statuses)->where('totalfiles', '>', 0)
+                            ->whereRaw('EXISTS (SELECT 1 FROM binaries b WHERE b.collections_id = collections.id
+                                GROUP BY b.collections_id HAVING COUNT(*) IN (collections.totalfiles, collections.totalfiles + 1)
+                                AND SUM(CASE WHEN b.partcheck = 1 THEN 1 ELSE 0 END) >= collections.totalfiles)');
+                    });
                     if ($hasLastSeenAt) {
-                        $query->orWhere(function ($stale) use ($cutoff, $staleClock, $statuses): void {
+                        $query->orWhere(function ($stale) use ($quiet, $statuses): void {
                             $stale->whereIn('filecheck', array_values(array_diff(
                                 $statuses,
                                 [CollectionFileCheckStatus::CompleteParts->value]
                             )))->whereRaw(
-                                $staleClock.' < '.$cutoff['sql'],
-                                $cutoff['bindings']
+                                $quiet['sql'],
+                                $quiet['bindings']
                             );
                         });
                     } else {
@@ -474,19 +478,17 @@ final class ReleaseProcessingService
      */
     private function reconcileCollectionIds(array $collectionIds, array $statuses): void
     {
-        $hasLastSeenAt = Schema::hasColumn('collections', 'last_seen_at');
-
         if (DB::getDriverName() === 'sqlite') {
-            $this->reconcileCollectionIdsSqlite($collectionIds, $statuses, $hasLastSeenAt);
+            $this->reconcileCollectionIdsSqlite($collectionIds, $statuses);
 
             return;
         }
 
         $idPlaceholders = implode(',', array_fill(0, \count($collectionIds), '?'));
         $statusPlaceholders = implode(',', array_fill(0, \count($statuses), '?'));
-        $staleClock = $this->collectionActivityClockSql($hasLastSeenAt, 'c');
+        $quiet = $this->collectionQuietSql($this->settings->collectionDelayTime, 'c');
 
-        DB::transaction(function () use ($collectionIds, $idPlaceholders, $staleClock, $statuses, $statusPlaceholders): void {
+        DB::transaction(function () use ($collectionIds, $idPlaceholders, $quiet, $statuses, $statusPlaceholders): void {
             DB::update(
                 "UPDATE binaries b
                  LEFT JOIN (
@@ -514,22 +516,22 @@ final class ReleaseProcessingService
                      -- written once at insert, and it is the only thing left that can tell a
                      -- stale-promoted release it is short of files.
                      c.totalfiles = CASE
-                        WHEN {$staleClock} < DATE_SUB(NOW(), INTERVAL ? HOUR)
+                        WHEN ({$quiet['sql']})
                          AND c.filecheck IN (0, 1, 10)
                         THEN COALESCE(a.currentfiles, 0) ELSE c.totalfiles END,
                      c.filecheck = CASE
                         WHEN c.totalfiles > 0
                          AND COALESCE(a.currentfiles, 0) IN (c.totalfiles, c.totalfiles + 1)
                          AND COALESCE(a.completefiles, 0) >= c.totalfiles THEN ?
-                        WHEN {$staleClock} < DATE_SUB(NOW(), INTERVAL ? HOUR)
+                        WHEN ({$quiet['sql']})
                          AND c.filecheck IN (0, 1, 10) THEN ?
                         ELSE c.filecheck END
                  WHERE c.id IN ({$idPlaceholders}) AND c.filecheck IN ({$statusPlaceholders})",
                 [
                     ...$collectionIds,
-                    $this->settings->collectionDelayTime,
+                    ...$quiet['bindings'],
                     CollectionFileCheckStatus::CompleteParts->value,
-                    $this->settings->collectionDelayTime,
+                    ...$quiet['bindings'],
                     CollectionFileCheckStatus::CompleteParts->value,
                     ...$collectionIds,
                     ...$statuses,
@@ -545,12 +547,10 @@ final class ReleaseProcessingService
     private function reconcileCollectionIdsSqlite(
         array $collectionIds,
         array $statuses,
-        bool $hasLastSeenAt,
     ): void {
-        $cutoff = DatabaseClock::cutoff(now()->subHours($this->settings->collectionDelayTime));
-        $staleClock = $this->collectionActivityClockSql($hasLastSeenAt);
+        $quiet = $this->collectionQuietSql($this->settings->collectionDelayTime);
 
-        DB::transaction(function () use ($collectionIds, $cutoff, $staleClock, $statuses): void {
+        DB::transaction(function () use ($collectionIds, $quiet, $statuses): void {
             foreach ($collectionIds as $collectionId) {
                 $binaryIds = DB::table('binaries')->where('collections_id', $collectionId)->pluck('id')->all();
                 foreach ($binaryIds as $binaryId) {
@@ -577,7 +577,7 @@ final class ReleaseProcessingService
                 );
                 $stale = DB::table('collections')
                     ->where('id', $collectionId)
-                    ->whereRaw($staleClock.' < '.$cutoff['sql'], $cutoff['bindings'])
+                    ->whereRaw($quiet['sql'], $quiet['bindings'])
                     ->exists()
                     && \in_array((int) $collection->filecheck, [0, 1, 10], true);
                 $totalFiles = $stale ? (int) $aggregate->currentfiles : (int) $collection->totalfiles;
@@ -1122,13 +1122,41 @@ final class ReleaseProcessingService
         return $groupInfo !== null ? (int) $groupInfo['id'] : null;
     }
 
-    private function collectionActivityClockSql(bool $hasLastSeenAt, ?string $tableAlias = null): string
+    /** @return array{sql: string, bindings: list<int|string>} */
+    private function collectionQuietSql(int $hours, string $alias = 'collections', string $legacyColumn = 'dateadded'): array
     {
-        $prefix = $tableAlias === null ? '' : $tableAlias.'.';
+        $cutoff = DatabaseClock::cutoff(now()->subHours($hours));
+        $clock = Schema::hasColumn('collections', 'last_seen_at')
+            ? "COALESCE({$alias}.last_seen_at, {$alias}.dateadded, {$alias}.added)"
+            : "{$alias}.{$legacyColumn}";
+        $wall = $clock.' < '.$cutoff['sql'];
+        if (! Schema::hasColumns('collections', ['last_seen_head_postdate', 'last_seen_tail_postdate'])
+            || ! Schema::hasColumn('usenet_groups', 'backfill_settled_at')) {
+            return ['sql' => $wall, 'bindings' => $cutoff['bindings']];
+        }
 
-        return $hasLastSeenAt
-            ? "COALESCE({$prefix}last_seen_at, {$prefix}dateadded, {$prefix}added)"
-            : $prefix.'dateadded';
+        $head = "{$alias}.last_seen_head_postdate";
+        $tail = "{$alias}.last_seen_tail_postdate";
+        $headLimit = DB::getDriverName() === 'sqlite'
+            ? "datetime({$head}, ? || ' hours')"
+            : "DATE_ADD({$head}, INTERVAL ? HOUR)";
+        $tailLimit = DB::getDriverName() === 'sqlite'
+            ? "datetime({$tail}, ? || ' hours')"
+            : "DATE_ADD({$tail}, INTERVAL ? HOUR)";
+
+        return [
+            'sql' => "(({$head} IS NULL AND {$tail} IS NULL AND {$wall})
+                OR (({$head} IS NOT NULL OR {$tail} IS NOT NULL) AND EXISTS (
+                    SELECT 1 FROM usenet_groups g WHERE g.id = {$alias}.groups_id
+                    AND ({$head} IS NULL
+                        OR (g.active = 1 AND g.last_record_postdate >= {$headLimit})
+                        OR (g.active = 0 AND {$wall}))
+                    AND ({$tail} IS NULL
+                        OR (g.backfill = 1 AND g.backfill_settled_at IS NULL AND g.first_record_postdate <= {$tailLimit})
+                        OR ((g.backfill = 0 OR g.backfill_settled_at IS NOT NULL) AND {$wall}))
+                )))",
+            'bindings' => [...$cutoff['bindings'], $hours, ...$cutoff['bindings'], -$hours, ...$cutoff['bindings']],
+        ];
     }
 
     /**
@@ -1136,11 +1164,11 @@ final class ReleaseProcessingService
      */
     private function processStuckCollections(int $groupID): void
     {
-        $cutoff = DatabaseClock::cutoff($this->calculateStuckCollectionsCutoff());
+        $quiet = $this->collectionQuietSql($this->settings->collectionTimeout, legacyColumn: 'added');
         $totalDeleted = 0;
 
         do {
-            $affected = $this->deleteStuckCollectionBatch($groupID, $cutoff);
+            $affected = $this->deleteStuckCollectionBatch($groupID, $quiet);
             $totalDeleted += $affected;
 
             if ($affected < self::BATCH_SIZE) {
@@ -1155,24 +1183,8 @@ final class ReleaseProcessingService
         }
     }
 
-    private function calculateStuckCollectionsCutoff(): Carbon
-    {
-        $lastRun = $this->settings->lastRunTime;
-        $threshold = null;
-
-        if ($lastRun !== null) {
-            try {
-                $threshold = Carbon::createFromFormat('Y-m-d H:i:s', $lastRun);
-            } catch (Throwable) {
-                $threshold = null;
-            }
-        }
-
-        return ($threshold ?? now())->copy()->subHours($this->settings->collectionTimeout);
-    }
-
-    /** @param array{sql: string, bindings: list<int|string>} $cutoff */
-    private function deleteStuckCollectionBatch(int $groupID, array $cutoff): int
+    /** @param array{sql: string, bindings: list<int|string>} $quiet */
+    private function deleteStuckCollectionBatch(int $groupID, array $quiet): int
     {
         $attempt = 0;
         $affected = 0;
@@ -1189,14 +1201,7 @@ final class ReleaseProcessingService
                     ])
                     ->orderBy('id')
                     ->limit(self::BATCH_SIZE);
-                if (Schema::hasColumn('collections', 'last_seen_at')) {
-                    $query->whereRaw(
-                        'COALESCE(last_seen_at, dateadded, added) < '.$cutoff['sql'],
-                        $cutoff['bindings']
-                    );
-                } else {
-                    $query->whereRaw('added < '.$cutoff['sql'], $cutoff['bindings']);
-                }
+                $query->whereRaw($quiet['sql'], $quiet['bindings']);
                 if ($groupID !== 0) {
                     $query->where('groups_id', '=', $groupID);
                 }

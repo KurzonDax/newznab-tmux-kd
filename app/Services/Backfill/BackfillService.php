@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Backfill;
 
+use App\Enums\HeaderScanDirection;
 use App\Models\Settings;
 use App\Models\UsenetGroup;
 use App\Services\Binaries\BinariesService;
@@ -287,12 +288,14 @@ final class BackfillService
         $targetPost = $this->calculateTargetPost($groupArr, $articles, $serverData);
 
         if (! $this->validateTargetPost($groupArr, $targetPost, $serverData, $shortGroupName)) {
+            $this->settleBackfillAtLimit($groupArr, (int) $serverData['first']);
+
             return;
         }
 
         $this->logGroupInfo($groupArr, $serverData, $targetPost, $shortGroupName);
 
-        $this->processBackfillChunks($groupArr, $targetPost, $remainingGroups, $shortGroupName);
+        $this->processBackfillChunks($groupArr, $targetPost, $remainingGroups, $shortGroupName, (int) $serverData['first']);
 
         $this->logGroupComplete($shortGroupName, $startTime);
     }
@@ -428,7 +431,7 @@ final class BackfillService
      *
      * @param  array<string, mixed>  $groupArr
      */
-    private function processBackfillChunks(array $groupArr, int $targetPost, int $remainingGroups, string $shortGroupName): void
+    private function processBackfillChunks(array $groupArr, int $targetPost, int $remainingGroups, string $shortGroupName, int $serverFirst): void
     {
         $messageBuffer = $this->binaries->getMessageBuffer();
         $last = $groupArr['first_record'] - 1;
@@ -438,7 +441,11 @@ final class BackfillService
             $this->logChunkProgress($first, $last, $shortGroupName, $remainingGroups, $targetPost);
 
             flush();
-            $scanResult = $this->binaries->scan($groupArr, $first, $last, $this->config->safePartRepair);
+            $scanResult = $this->binaries->scan($groupArr, $first, $last, HeaderScanDirection::Tail, $this->config->safePartRepair);
+
+            if ($this->binaries->lastScanWasRejected()) {
+                break;
+            }
 
             $this->updateGroupRecord($groupArr, $first, $scanResult);
             $firstArticleDate = $scanResult['firstArticleDate'] ?? null;
@@ -452,6 +459,7 @@ final class BackfillService
             }
 
             if ($first === $targetPost) {
+                $this->settleBackfillAtLimit($groupArr, $serverFirst);
                 break;
             }
 
@@ -459,6 +467,22 @@ final class BackfillService
             $last = $first - 1;
             $first = max($last - $messageBuffer + 1, $targetPost);
         }
+    }
+
+    /** @param array<string, mixed> $group */
+    private function settleBackfillAtLimit(array $group, int $serverFirst): void
+    {
+        $backfillDays = (int) Settings::settingValue('backfill_days');
+        $stopDate = $this->targetForGroup(
+            $backfillDays, (int) $group['backfill_target'], $this->resolveSharedStopDate($backfillDays),
+        );
+        UsenetGroup::query()->whereKey((int) $group['id'])
+            ->where(function ($query) use ($serverFirst, $stopDate): void {
+                $query->where('first_record', '<=', $serverFirst);
+                if ($stopDate !== null) {
+                    $query->orWhere('first_record_postdate', '<=', $stopDate);
+                }
+            })->update(['backfill_settled_at' => now()]);
     }
 
     /**

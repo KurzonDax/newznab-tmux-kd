@@ -2,6 +2,7 @@
 
 namespace Tests\Support;
 
+use App\Enums\HeaderScanDirection;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\Binaries\BinariesService;
 use App\Services\Binaries\HeaderStorageService;
@@ -50,7 +51,7 @@ class TestBinariesHarness extends BinariesService
     }
 
     // Expose protected method for direct testing via new service.
-    public function publicStoreHeaders(array $headers): void
+    public function publicStoreHeaders(array $headers, HeaderScanDirection $direction = HeaderScanDirection::Head): void
     {
         if (empty($this->testGroupMySQL)) {
             $this->testGroupMySQL = ['id' => 1, 'name' => 'alt.test'];
@@ -69,7 +70,7 @@ class TestBinariesHarness extends BinariesService
             }
         }
 
-        $this->testHeaderStorage->store($parsedHeaders, $this->testGroupMySQL, true);
+        $this->testHeaderStorage->store($parsedHeaders, $this->testGroupMySQL, true, $direction);
     }
 
     public function setAddToPartRepair(bool $val): void
@@ -78,7 +79,7 @@ class TestBinariesHarness extends BinariesService
     }
 
     // Simulate scan path minimally to test rollback + part repair queue logic without NNTP.
-    public function simulateScan(array $headers, array $group, bool $enablePartRepair = true): void
+    public function simulateScan(array $headers, array $group, bool $enablePartRepair = true, HeaderScanDirection $direction = HeaderScanDirection::Head): void
     {
         $this->testGroupMySQL = $group;
 
@@ -108,7 +109,7 @@ class TestBinariesHarness extends BinariesService
         }
 
         // Normal path: process and insert.
-        $failedInserts = $this->testHeaderStorage->store($parsedHeaders, $group, $enablePartRepair)->uniqueFailedNumbers();
+        $failedInserts = $this->testHeaderStorage->store($parsedHeaders, $group, $enablePartRepair, $direction)->uniqueFailedNumbers();
 
         if ($enablePartRepair && ! empty($failedInserts)) {
             $this->testMissedPartHandler->addMissingParts($failedInserts, $group['id']);

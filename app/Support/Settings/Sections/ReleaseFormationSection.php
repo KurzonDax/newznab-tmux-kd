@@ -106,7 +106,7 @@ final class ReleaseFormationSection implements SettingsSectionProvider
                         new SettingDefinition(
                             key: 'delaytime',
                             label: 'Quiet period before forming',
-                            help: 'How long a collection whose subject carries no part count must sit with no new parts before it may be released. Below 2 hours it will form releases that are still arriving.',
+                            help: 'Hours of the group&apos;s posting timeline ingested past the collection&apos;s last part before it may be released with the files it holds. Paused ingestion pauses this wait. Below 2 hours it can form releases that are still arriving.',
                             type: SettingType::Int,
                             unit: 'hours',
                             rules: ['required', 'integer', 'min:0'],
@@ -115,7 +115,7 @@ final class ReleaseFormationSection implements SettingsSectionProvider
                         new SettingDefinition(
                             key: 'collection_timeout',
                             label: 'Stuck collection timeout',
-                            help: 'How long a collection that never became ready may sit with no new parts before it is deleted with its binaries and parts. Stuck collections are always deleted, never released. The clock is anchored to the last binaries run, so engine downtime does not age them. Default 48.',
+                            help: 'Hours of the group&apos;s posting timeline ingested past the last part before a stuck collection is deleted with its binaries and parts. Paused ingestion pauses this wait. Default 48.',
                             type: SettingType::Int,
                             unit: 'hours',
                             rules: ['required', 'integer', 'min:1'],
@@ -167,7 +167,7 @@ final class ReleaseFormationSection implements SettingsSectionProvider
                         new SettingDefinition(
                             key: 'partretentionhours',
                             label: 'Incomplete parts retention',
-                            help: 'How long parts and binaries that never joined a release are kept. <strong>0 or blank falls back to 72 hours.</strong>',
+                            help: 'How long leftover collections, binaries and parts are kept after leaving formation. Collections still forming are excluded; their stuck timeout applies. <strong>0 or blank falls back to 72 hours.</strong>',
                             type: SettingType::Int,
                             unit: 'hours',
                             rules: ['required', 'integer', 'min:0'],

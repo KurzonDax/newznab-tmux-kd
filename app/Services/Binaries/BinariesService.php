@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Binaries;
 
+use App\Enums\HeaderScanDirection;
 use App\Models\Settings;
 use App\Models\UsenetGroup;
 use App\Services\NNTP\NNTPService;
@@ -278,7 +279,7 @@ class BinariesService
      * @throws \Exception
      * @throws \Throwable
      */
-    public function scan(array $groupMySQL, int $first, int $last, string $type = 'update', ?array $missingParts = null): array
+    public function scan(array $groupMySQL, int $first, int $last, HeaderScanDirection $direction, string $type = 'update', ?array $missingParts = null): array
     {
         $this->startLoop = Carbon::now();
         $this->groupMySQL = $groupMySQL;
@@ -295,6 +296,8 @@ class BinariesService
         // Download headers from NNTP
         $headers = $this->downloadHeaders($partRepair);
         if ($headers === null) {
+            $this->lastScanRejected = true;
+
             return $returnArray;
         }
 
@@ -366,7 +369,7 @@ class BinariesService
             if ($parseResult['headers'] !== []) {
                 try {
                     $storageReport = $storageReport->merge(
-                        $this->headerStorage->store($parseResult['headers'], $groupMySQL, $addToPartRepair)
+                        $this->headerStorage->store($parseResult['headers'], $groupMySQL, $addToPartRepair, $direction)
                     );
                 } catch (\Throwable $e) {
                     $this->logError('storeHeaders failed: '.$e->getMessage());
@@ -407,6 +410,12 @@ class BinariesService
 
         $this->outputHeaderDuration();
 
+        if ($storageReport->rolledBackChunks > 0) {
+            $this->lastScanRejected = true;
+
+            return [];
+        }
+
         return $returnArray;
     }
 
@@ -442,7 +451,7 @@ class BinariesService
                 echo \chr(random_int(45, 46)).PHP_EOL;
             }
 
-            $this->scan($groupArr, $range['partfrom'], $range['partto'], 'partrepair', $range['partlist']);
+            $this->scan($groupArr, $range['partfrom'], $range['partto'], HeaderScanDirection::Repair, 'partrepair', $range['partlist']);
         }
 
         // Calculate parts repaired
@@ -719,7 +728,11 @@ class BinariesService
             }
 
             // Scan this chunk
-            $scanSummary = $this->scan($groupMySQL, $first, $last);
+            $scanSummary = $this->scan($groupMySQL, $first, $last, HeaderScanDirection::Head);
+
+            if ($this->lastScanRejected) {
+                break;
+            }
 
             // Update group record
             $this->updateGroupAfterScan($groupMySQL, $groupNNTP, $scanSummary, $last);
@@ -775,25 +788,23 @@ class BinariesService
                 : $this->postdate($scanSummary['lastArticleNumber'], $groupNNTP);
             $lastArticleDate = $lastArticleTimestamp !== false ? $lastArticleTimestamp : time();
 
-            if (UsenetGroup::advanceLastRecord(
+            if (UsenetGroup::advanceLastRecordContiguously(
                 (int) $groupMySQL['id'],
-                (int) $scanSummary['lastArticleNumber'],
+                $this->first,
+                $last,
                 $lastArticleDate
             ) > 0) {
-                $groupMySQL['last_record'] = (int) $scanSummary['lastArticleNumber'];
-                $groupMySQL['last_record_postdate'] = $lastArticleDate;
+                $progress = UsenetGroup::query()->findOrFail((int) $groupMySQL['id']);
+                $groupMySQL['last_record'] = $progress->last_record;
+                $groupMySQL['last_record_postdate'] = $progress->last_record_postdate;
             }
         } else {
-            $updated = UsenetGroup::query()
-                ->where('id', $groupMySQL['id'])
-                ->where('last_record', '<', $last)
-                ->update([
-                    'last_record' => $last,
-                    'last_updated' => now(),
-                ]);
+            $updated = UsenetGroup::advanceLastRecordContiguously(
+                (int) $groupMySQL['id'], $this->first, $last, null,
+            );
 
             if ($updated > 0) {
-                $groupMySQL['last_record'] = $last;
+                $groupMySQL['last_record'] = UsenetGroup::query()->findOrFail((int) $groupMySQL['id'])->last_record;
             }
         }
     }

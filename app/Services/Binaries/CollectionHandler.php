@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Services\Binaries;
 
 use App\Enums\CollectionFileCheckStatus;
+use App\Enums\HeaderScanDirection;
 use App\Models\Collection;
 use App\Services\CollectionsCleaningService;
 use App\Services\XrefService;
 use App\Support\SqlError;
 use App\Support\Utf8;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Handles collection record creation and retrieval during header storage.
@@ -641,11 +643,23 @@ final class CollectionHandler
      *
      * @param  list<int>  $collectionIds
      */
-    public function refreshAggregates(array $collectionIds, int $chunkSize = 500): bool
+    public function refreshAggregates(array $collectionIds, int $chunkSize = 500, HeaderScanDirection $direction = HeaderScanDirection::Head, ?string $frontierStamp = null): bool
     {
         $collectionIds = array_values(array_unique(array_map('intval', $collectionIds)));
         if ($collectionIds === []) {
             return true;
+        }
+
+        $stampColumn = $direction === HeaderScanDirection::Tail ? 'last_seen_tail_postdate' : 'last_seen_head_postdate';
+        $stampSql = '';
+        $stampBindings = [];
+        if ($frontierStamp !== null && Schema::hasColumn('collections', $stampColumn)) {
+            $aggregateFunction = $direction === HeaderScanDirection::Tail ? 'LEAST' : 'GREATEST';
+            if (DB::getDriverName() === 'sqlite') {
+                $aggregateFunction = $direction === HeaderScanDirection::Tail ? 'MIN' : 'MAX';
+            }
+            $stampSql = "{$stampColumn} = {$aggregateFunction}(COALESCE({$stampColumn}, ?), ?), ";
+            $stampBindings = [$frontierStamp, $frontierStamp];
         }
 
         $inProgressStatuses = [
@@ -683,8 +697,9 @@ final class CollectionHandler
                         && (int) $aggregate->completefiles >= $totalFiles;
 
                     DB::update(
-                        'UPDATE collections SET filesize = ?, last_seen_at = ?, filecheck = ? WHERE id = ?',
+                        'UPDATE collections SET '.$stampSql.'filesize = ?, last_seen_at = ?, filecheck = ? WHERE id = ?',
                         [
+                            ...$stampBindings,
                             (int) $aggregate->filesize,
                             now()->format('Y-m-d H:i:s'),
                             $ready ? CollectionFileCheckStatus::Sized->value : (int) $collection->filecheck,
@@ -710,7 +725,7 @@ final class CollectionHandler
                          WHERE b.collections_id IN ({$idPlaceholders})
                          GROUP BY b.collections_id
                      ) a ON a.collections_id = c.id
-                     SET c.filesize = a.filesize,
+                     SET {$stampSql}c.filesize = a.filesize,
                          c.last_seen_at = NOW(),
                          c.filecheck = CASE
                              WHEN c.filecheck IN ({$statusPlaceholders})
@@ -718,7 +733,7 @@ final class CollectionHandler
                               AND a.currentfiles IN (c.totalfiles, c.totalfiles + 1)
                               AND a.completefiles >= c.totalfiles
                              THEN ? ELSE c.filecheck END",
-                    [...$chunk, ...$inProgressStatuses, CollectionFileCheckStatus::Sized->value]
+                    [...$chunk, ...$stampBindings, ...$inProgressStatuses, CollectionFileCheckStatus::Sized->value]
                 );
             }
 

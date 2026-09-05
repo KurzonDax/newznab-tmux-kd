@@ -66,6 +66,12 @@ jobs:
         if: steps.scope.outputs.code == 'true'
         run: ./sail test --compact
 
+      - name: Run CBP MariaDB integration tests
+        if: steps.scope.outputs.code == 'true'
+        run: |
+          ./sail up -d --wait mariadb
+          ./sail exec -T -e CBP_INTEGRATION_DB_DATABASE=cbp_integration -e CBP_INTEGRATION_DB_USERNAME=sail -e CBP_INTEGRATION_DB_PASSWORD=password laravel.test php artisan test --compact tests/Integration/CbpMariaDbIngestionTest.php
+
       - name: Run permission and test-isolation regressions
         if: steps.scope.outputs.code == 'true'
         run: make test-permissions

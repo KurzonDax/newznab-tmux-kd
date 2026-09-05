@@ -162,6 +162,11 @@ final class OptimizeCbpStorage extends Command
         if (! Schema::hasColumn('collections', 'last_seen_at')) {
             DB::statement('ALTER TABLE collections ADD last_seen_at DATETIME NULL AFTER dateadded');
         }
+        foreach (['last_seen_head_postdate' => 'last_seen_at', 'last_seen_tail_postdate' => 'last_seen_head_postdate'] as $column => $after) {
+            if (! Schema::hasColumn('collections', $column)) {
+                DB::statement("ALTER TABLE collections ADD {$column} DATETIME NULL AFTER {$after}");
+            }
+        }
         DB::statement(
             'CREATE TABLE IF NOT EXISTS collection_groups (
                 collections_id INT UNSIGNED NOT NULL,
