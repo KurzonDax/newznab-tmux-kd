@@ -192,12 +192,12 @@ final class SrrdbLookupService
             return false;
         }
 
-        if (! is_array($details['files'] ?? null)) {
+        if (! is_array($details['archived-files'] ?? null)) {
             return null;
         }
 
-        $files = $details['files'];
-        foreach ($files as $file) {
+        $archivedFiles = $details['archived-files'];
+        foreach ($archivedFiles as $file) {
             if (! is_array($file)) {
                 continue;
             }

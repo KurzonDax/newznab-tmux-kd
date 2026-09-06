@@ -67,7 +67,13 @@
                                 {{ $pre->category ?? '—' }}
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-200">
-                                {{ $pre->size ? human_filesize($pre->size) : '—' }}
+                                @if(!$pre->size)
+                                    —
+                                @elseif(is_numeric($pre->size))
+                                    {{ human_filesize($pre->size) }}
+                                @else
+                                    {{ $pre->size }}
+                                @endif
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-200">
                                 {{ $pre->files ?? '—' }}
@@ -167,4 +173,3 @@
     @endif
 </div>
 @endsection
-

@@ -101,6 +101,82 @@ class SrrdbNameFixingTest extends TestCase
         $this->assertSame(0, DB::table('predb')->count());
     }
 
+    public function test_outer_file_match_does_not_verify_an_archive_crc(): void
+    {
+        $originalName = 'f9fba2f7697a4ea996423fd2b65b896a';
+        $this->insertRelease(1, $originalName);
+        $this->insertFile(1, 'movie.part01.rar', 900_000, 'AABBCCDD');
+        Http::fake([
+            'api.srrdb.com/v1/search/*' => Http::response($this->searchResponse(), 200),
+            'api.srrdb.com/v1/details/*' => Http::response([
+                'name' => 'Example.Movie.2026.1080p-GROUP',
+                'files' => [[
+                    'name' => 'movie.part01.rar',
+                    'size' => 900_000,
+                    'crc' => 'AABBCCDD',
+                ]],
+                'archived-files' => [[
+                    'name' => 'movie.mkv',
+                    'size' => 900_000,
+                    'crc' => 'DEADBEEF',
+                ]],
+            ], 200),
+        ]);
+        Search::shouldReceive('updateRelease')->never();
+
+        app(NameFixingService::class)->fixNamesWithSrrdb(2, true, 2, true, false);
+
+        $release = DB::table('releases')->where('id', 1)->first();
+        $this->assertSame($originalName, $release->searchname);
+        $this->assertSame(NameFixingService::PROC_SRRDB_AMBIGUOUS, (int) $release->proc_srrdb);
+        $this->assertSame(0, DB::table('predb')->count());
+    }
+
+    public function test_archive_crc_and_size_must_match_the_same_archived_file(): void
+    {
+        $originalName = 'f9fba2f7697a4ea996423fd2b65b896a';
+        $this->insertRelease(1, $originalName);
+        $this->insertFile(1, 'movie.part01.rar', 900_000, 'AABBCCDD');
+        Http::fake([
+            'api.srrdb.com/v1/search/*' => Http::response($this->searchResponse(), 200),
+            'api.srrdb.com/v1/details/*' => Http::response([
+                'name' => 'Example.Movie.2026.1080p-GROUP',
+                'files' => [],
+                'archived-files' => [
+                    ['name' => 'wrong-size.mkv', 'size' => 899_999, 'crc' => 'AABBCCDD'],
+                    ['name' => 'wrong-crc.mkv', 'size' => 900_000, 'crc' => 'DEADBEEF'],
+                ],
+            ], 200),
+        ]);
+        Search::shouldReceive('updateRelease')->never();
+
+        app(NameFixingService::class)->fixNamesWithSrrdb(2, true, 2, true, false);
+
+        $release = DB::table('releases')->where('id', 1)->first();
+        $this->assertSame($originalName, $release->searchname);
+        $this->assertSame(NameFixingService::PROC_SRRDB_AMBIGUOUS, (int) $release->proc_srrdb);
+        $this->assertSame(0, DB::table('predb')->count());
+    }
+
+    public function test_archived_file_with_the_wrong_size_does_not_verify_a_candidate(): void
+    {
+        $originalName = 'f9fba2f7697a4ea996423fd2b65b896a';
+        $this->insertRelease(1, $originalName);
+        $this->insertFile(1, 'movie.part01.rar', 900_000, 'AABBCCDD');
+        Http::fake([
+            'api.srrdb.com/v1/search/*' => Http::response($this->searchResponse(), 200),
+            'api.srrdb.com/v1/details/*' => Http::response($this->detailsResponse('AABBCCDD', 899_999), 200),
+        ]);
+        Search::shouldReceive('updateRelease')->never();
+
+        app(NameFixingService::class)->fixNamesWithSrrdb(2, true, 2, true, false);
+
+        $release = DB::table('releases')->where('id', 1)->first();
+        $this->assertSame($originalName, $release->searchname);
+        $this->assertSame(NameFixingService::PROC_SRRDB_AMBIGUOUS, (int) $release->proc_srrdb);
+        $this->assertSame(0, DB::table('predb')->count());
+    }
+
     public function test_zero_results_are_negatively_cached_for_a_second_release(): void
     {
         Http::fake([
@@ -164,6 +240,31 @@ class SrrdbNameFixingTest extends TestCase
         app(NameFixingService::class)->fixNamesWithSrrdb(2, true, 2, true, false);
 
         $this->assertSame('Example.Movie.2026.1080p-GROUP', DB::table('releases')->where('id', 1)->value('searchname'));
+        Http::assertSentCount(3);
+    }
+
+    public function test_multiple_details_verified_search_results_remain_ambiguous(): void
+    {
+        $search = $this->searchResponse();
+        $search['results'][] = array_merge($search['results'][0], [
+            'release' => 'Also.Correct.Movie.2026.1080p-GROUP',
+        ]);
+        $search['resultsCount'] = 2;
+        $originalName = 'f9fba2f7697a4ea996423fd2b65b896a';
+        $this->insertRelease(1, $originalName);
+        $this->insertFile(1, 'movie.rar', 900_000, 'AABBCCDD');
+        Http::fake([
+            'api.srrdb.com/v1/search/*' => Http::response($search, 200),
+            'api.srrdb.com/v1/details/*' => Http::response($this->detailsResponse('AABBCCDD', 900_000), 200),
+        ]);
+        Search::shouldReceive('updateRelease')->never();
+
+        app(NameFixingService::class)->fixNamesWithSrrdb(2, true, 2, true, false);
+
+        $release = DB::table('releases')->where('id', 1)->first();
+        $this->assertSame($originalName, $release->searchname);
+        $this->assertSame(NameFixingService::PROC_SRRDB_AMBIGUOUS, (int) $release->proc_srrdb);
+        $this->assertSame(0, DB::table('predb')->count());
         Http::assertSentCount(3);
     }
 
@@ -363,6 +464,11 @@ class SrrdbNameFixingTest extends TestCase
         return [
             'name' => 'Example.Movie.2026.1080p-GROUP',
             'files' => [[
+                'name' => 'movie.part01.rar',
+                'size' => 500_000,
+                'crc' => '11111111',
+            ]],
+            'archived-files' => [[
                 'name' => 'movie.mkv',
                 'size' => $size,
                 'crc' => $crc,
