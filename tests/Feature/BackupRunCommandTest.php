@@ -5,13 +5,17 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Mail\BackupFailed;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\DataProvider;
+use RuntimeException;
 use Tests\TestCase;
 
 class BackupRunCommandTest extends TestCase
@@ -121,6 +125,136 @@ class BackupRunCommandTest extends TestCase
         ]);
         Mail::assertSent(BackupFailed::class, fn (BackupFailed $mail): bool => $mail->kind === 'daily'
             && $mail->error === 'Database dump failed: disk write failed');
+    }
+
+    /**
+     * @param  list<string>  $tables
+     */
+    #[DataProvider('crossSchemaBackupModes')]
+    public function test_cross_schema_backup_uses_exact_local_dump_arguments_and_manifest(string $kind, bool $includeWorking, array $tables): void
+    {
+        DB::table('settings')->where('name', 'backup_incl_working')->update(['value' => $includeWorking ? '1' : '0']);
+        config([
+            'database.connections.testing.database' => 'configured_backup_target',
+            'database.connections.testing.host' => 'backup-host.test',
+            'database.connections.testing.port' => 3307,
+            'database.connections.testing.username' => 'backup-test-user',
+            'database.connections.testing.password' => 'backup-test-password',
+        ]);
+        DB::statement("ATTACH DATABASE ':memory:' AS research");
+
+        try {
+            foreach (['articles', 'capture_runs', 'users'] as $table) {
+                Schema::create('research.'.$table, fn (Blueprint $blueprint) => $blueprint->id());
+            }
+            $this->assertContains('research.articles', Schema::getTableListing());
+            $this->fakeSuccessfulDump();
+
+            $this->artisan('backup:run '.$kind)->assertSuccessful();
+
+            Process::assertRanTimes(function (PendingProcess $process) use ($tables): bool {
+                if (! isset($process->environment['BACKUP_OUTPUT'])) {
+                    return false;
+                }
+
+                $this->assertSame(['bash', '-o', 'pipefail', '-c'], array_slice($process->command, 0, 4));
+                $this->assertStringContainsString('"$DB_DATABASE" "$@"', $process->command[4]);
+                $this->assertSame(['backup-dump', ...$tables], array_slice($process->command, 5));
+                $this->assertSame('configured_backup_target', $process->environment['DB_DATABASE']);
+                $this->assertSame('backup-host.test', $process->environment['DB_HOST']);
+                $this->assertSame('3307', $process->environment['DB_PORT']);
+                $this->assertSame('backup-test-user', $process->environment['DB_USERNAME']);
+                $this->assertSame('backup-test-password', $process->environment['MYSQL_PWD']);
+
+                return true;
+            }, 1);
+
+            $manifests = glob($this->backupLocation.'/*/'.$kind.'-*.manifest.json') ?: [];
+            $this->assertCount(1, $manifests);
+            $manifest = json_decode((string) file_get_contents($manifests[0]), true, flags: JSON_THROW_ON_ERROR);
+            $this->assertSame($tables, $manifest['tables']);
+            $this->assertSame($kind === 'full' && $includeWorking ? ['important', 'working'] : ['important'], $manifest['tiers_included']);
+            $this->assertEqualsCanonicalizing(['articles', 'capture_runs', 'users'], Schema::getTableListing(['research'], false));
+        } finally {
+            DB::statement('DETACH DATABASE research');
+        }
+    }
+
+    /**
+     * @return array<string, array{string, bool, list<string>}>
+     */
+    public static function crossSchemaBackupModes(): array
+    {
+        return [
+            'full with working' => ['full', true, ['collections', 'settings', 'users']],
+            'full without working' => ['full', false, ['settings', 'users']],
+            'daily with working' => ['daily', true, ['settings', 'users']],
+            'daily without working' => ['daily', false, ['settings', 'users']],
+        ];
+    }
+
+    #[DataProvider('selectionFailures')]
+    public function test_selection_failure_is_recorded_without_dump_or_pause_and_releases_lock(string $failure, ?string $schema, string $error): void
+    {
+        DB::table('settings')->where('name', 'backup_pause_tmux')->update(['value' => '1']);
+        DB::table('settings')->where('name', 'running')->update(['value' => '1']);
+        config(['nntmux.admin_email' => 'admin@example.test']);
+        Mail::fake();
+        $this->fakeSuccessfulDump();
+
+        $settingsUpdates = [];
+        DB::listen(function (QueryExecuted $query) use (&$settingsUpdates): void {
+            if (str_starts_with(strtolower($query->sql), 'update "settings"')) {
+                $settingsUpdates[] = $query->sql;
+            }
+        });
+
+        $builder = Schema::getFacadeRoot();
+        if ($failure === 'empty selection') {
+            config(['nntmux-backup.throwaway_patterns' => ['/.*/']]);
+        } else {
+            Schema::shouldReceive('getCurrentSchemaName')->once()->andReturn($schema);
+            if ($failure === 'inventory error') {
+                Schema::shouldReceive('getTableListing')->once()->with(['main'], false)->andThrow(new RuntimeException($error));
+            } else {
+                Schema::shouldReceive('getTableListing')->never();
+            }
+        }
+
+        try {
+            $this->artisan('backup:run full')->expectsOutputToContain($error)->assertFailed();
+        } finally {
+            Schema::swap($builder);
+        }
+
+        Process::assertNotRan(fn (PendingProcess $process): bool => isset($process->environment['BACKUP_OUTPUT']));
+        $this->assertSame([], $settingsUpdates);
+        $this->assertSame('1', DB::table('settings')->where('name', 'running')->value('value'));
+        $this->assertSame('', DB::table('settings')->where('name', 'backup_pause_marker')->value('value'));
+        $this->assertSame([], glob($this->backupLocation.'/*') ?: []);
+        $this->assertDatabaseHas('database_backups', ['kind' => 'full', 'status' => 'failed', 'error' => $error]);
+        Mail::assertSent(BackupFailed::class, fn (BackupFailed $mail): bool => $mail->error === $error);
+
+        $lock = Cache::lock('database-backup-run', 60);
+        try {
+            $this->assertTrue($lock->get());
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * @return array<string, array{string, ?string, string}>
+     */
+    public static function selectionFailures(): array
+    {
+        return [
+            'null schema' => ['missing schema', null, 'Unable to determine the database schema for backup.'],
+            'empty schema' => ['missing schema', '', 'Unable to determine the database schema for backup.'],
+            'blank schema' => ['missing schema', " \t\n", 'Unable to determine the database schema for backup.'],
+            'inventory error' => ['inventory error', 'main', 'Inventory unavailable.'],
+            'empty selection' => ['empty selection', 'main', 'No database tables were selected for backup.'],
+        ];
     }
 
     public function test_backup_pause_is_visible_during_dump_and_restores_running_state_afterward(): void

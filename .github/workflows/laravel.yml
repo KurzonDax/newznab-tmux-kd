@@ -72,6 +72,10 @@ jobs:
           ./sail up -d --wait mariadb
           ./sail exec -T -e CBP_INTEGRATION_DB_DATABASE=cbp_integration -e CBP_INTEGRATION_DB_USERNAME=sail -e CBP_INTEGRATION_DB_PASSWORD=password laravel.test php artisan test --compact tests/Integration/CbpMariaDbIngestionTest.php
 
+      - name: Run backup schema MariaDB integration tests
+        if: steps.scope.outputs.code == 'true'
+        run: ./sail exec -T -e BACKUP_INTEGRATION_MARIADB=1 laravel.test php artisan test --compact --fail-on-skipped tests/Integration/BackupSchemaMariaDbTest.php
+
       - name: Run permission and test-isolation regressions
         if: steps.scope.outputs.code == 'true'
         run: make test-permissions
