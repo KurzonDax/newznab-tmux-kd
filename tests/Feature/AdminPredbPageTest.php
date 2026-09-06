@@ -111,10 +111,31 @@ class AdminPredbPageTest extends TestCase
         $response->assertSee('5MB');
     }
 
+    public function test_predb_list_renders_numeric_and_feed_text_sizes(): void
+    {
+        config(['nntmux.items_per_page' => 10]);
+        $this->createPredbEntries([
+            ['title' => 'Gigabyte.Release-GROUP', 'size' => '1073741824'],
+            ['title' => 'Megabyte.Release-GROUP', 'size' => '5242880'],
+            ['title' => 'First.IRC.Release-GROUP', 'size' => '19500MB'],
+            ['title' => 'Second.IRC.Release-GROUP', 'size' => '37000MB'],
+        ]);
+
+        $response = $this->actingAs($this->admin())->get(route('admin.predb'));
+
+        $response->assertOk();
+        $this->assertSame('1GB', $this->sizeCellFor((string) $response->getContent(), 'Gigabyte.Release-GROUP'));
+        $this->assertSame('5MB', $this->sizeCellFor((string) $response->getContent(), 'Megabyte.Release-GROUP'));
+        $this->assertSame('19500MB', $this->sizeCellFor((string) $response->getContent(), 'First.IRC.Release-GROUP'));
+        $this->assertSame('37000MB', $this->sizeCellFor((string) $response->getContent(), 'Second.IRC.Release-GROUP'));
+    }
+
     public function test_predb_list_shows_a_placeholder_when_a_row_has_no_size(): void
     {
+        config(['nntmux.items_per_page' => 10]);
         $this->createPredbEntries([
             ['title' => 'Sizeless.Release-GROUP', 'size' => null],
+            ['title' => 'Empty.Size.Release-GROUP', 'size' => ''],
             ['title' => 'Zero.Release-GROUP', 'size' => '0'],
         ]);
 
@@ -123,7 +144,41 @@ class AdminPredbPageTest extends TestCase
         $response->assertOk();
         $response->assertDontSee('0B');
         $this->assertSame('—', $this->sizeCellFor((string) $response->getContent(), 'Sizeless.Release-GROUP'));
+        $this->assertSame('—', $this->sizeCellFor((string) $response->getContent(), 'Empty.Size.Release-GROUP'));
         $this->assertSame('—', $this->sizeCellFor((string) $response->getContent(), 'Zero.Release-GROUP'));
+    }
+
+    public function test_predb_list_escapes_arbitrary_feed_text_sizes(): void
+    {
+        $this->createPredbEntries([
+            ['title' => 'Unknown.Size.Release-GROUP', 'size' => 'size unavailable'],
+            ['title' => 'Markup.Size.Release-GROUP', 'size' => '<script>alert(1)</script>'],
+        ]);
+
+        $response = $this->actingAs($this->admin())->get(route('admin.predb'));
+
+        $response->assertOk();
+        $response->assertSee('size unavailable');
+        $response->assertSee('&lt;script&gt;alert(1)&lt;/script&gt;', false);
+        $response->assertDontSee('<script>alert(1)</script>', false);
+    }
+
+    public function test_predb_search_result_renders_a_unit_bearing_size(): void
+    {
+        $this->createPredbEntries([
+            ['title' => 'Searched.IRC.Release-GROUP', 'size' => '36500MB'],
+        ]);
+        $predbId = (int) DB::table('predb')->value('id');
+        Search::shouldReceive('searchPredb')
+            ->once()
+            ->with('irc size')
+            ->andReturn([$predbId]);
+
+        $response = $this->actingAs($this->admin())->get(route('admin.predb', ['presearch' => 'irc size']));
+
+        $response->assertOk();
+        $response->assertSee('Searched.IRC.Release-GROUP');
+        $this->assertSame('36500MB', $this->sizeCellFor((string) $response->getContent(), 'Searched.IRC.Release-GROUP'));
     }
 
     public function test_predb_list_links_a_matched_release(): void
