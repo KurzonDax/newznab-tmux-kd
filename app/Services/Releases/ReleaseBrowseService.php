@@ -31,6 +31,7 @@ class ReleaseBrowseService
 
     public function __construct(
         private readonly ReleasePreviewDataLoader $previewDataLoader = new ReleasePreviewDataLoader,
+        private readonly ReleaseMediaInfoAvailabilityLoader $mediaInfoAvailabilityLoader = new ReleaseMediaInfoAvailabilityLoader,
     ) {}
 
     /**
@@ -46,6 +47,7 @@ class ReleaseBrowseService
         $releases = $this->executeBrowseQuery('browse', $page, $cat, $start, $num, $orderBy, $maxAge, $excludedCats, $groupName, $minSize, $searchTerm, $minCompletion);
         if (is_iterable($releases)) {
             $this->previewDataLoader->load($releases);
+            $this->mediaInfoAvailabilityLoader->load($releases);
         }
 
         return $releases;
@@ -126,6 +128,7 @@ class ReleaseBrowseService
             ->withQueryString();
 
         $this->previewDataLoader->load($releases);
+        $this->mediaInfoAvailabilityLoader->load($releases);
 
         return $releases;
     }

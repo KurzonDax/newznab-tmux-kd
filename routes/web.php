@@ -73,6 +73,7 @@ use App\Http\Controllers\FailedReleasesController;
 use App\Http\Controllers\GamesController;
 use App\Http\Controllers\GetNzbController;
 use App\Http\Controllers\InvitationController;
+use App\Http\Controllers\MediaInfoController;
 use App\Http\Controllers\MovieController;
 use App\Http\Controllers\MusicController;
 use App\Http\Controllers\MyMoviesController;
@@ -242,6 +243,9 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
     Route::get('release-report/check', [ReleaseReportController::class, 'checkReported'])->name('release-report.check');
 
     Route::get('api/release/{guid}/filelist', [FileListApiController::class, 'getFileList'])->name('api.filelist');
+    Route::get('release/{release}/mediainfo', [MediaInfoController::class, 'show'])
+        ->middleware(['2fa', 'throttle:60,1'])
+        ->name('release.mediainfo');
     Route::match(['GET', 'POST'], 'ajax_profile', [AjaxController::class, 'profile'])->name('ajax_profile');
     Route::match(['GET', 'POST'], '2fa', [PasswordSecurityController::class, 'show2faForm'])->name('2fa');
     Route::get('2fa/enable', [PasswordSecurityController::class, 'showEnable2faForm'])->name('2fa.enable');

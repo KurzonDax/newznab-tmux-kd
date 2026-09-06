@@ -24,6 +24,11 @@ final class ReleaseIndexProjectionTest extends TestCase
         self::assertStringContainsString('where rf.releases_id = r.id', $sql);
         self::assertStringContainsString('select group_concat(ad.audioformat', $sql);
         self::assertStringContainsString('from release_subtitles rs', $sql);
+        self::assertStringContainsString('from media_info_probes mip', $sql);
+        self::assertStringContainsString('from media_info_tracks mit', $sql);
+        self::assertStringContainsString("nullif(mip.embedded_title, '') is not null", $sql);
+        self::assertStringContainsString("nullif(rat.musicbrainz_track_id, '') is not null", $sql);
+        self::assertStringContainsString('from release_audio_tags rat', $sql);
         self::assertStringContainsString('left join (select "selected_media_info"."releases_id"', $sql);
         self::assertStringContainsString('select min(candidate_media_info.id)', $sql);
         self::assertStringContainsString('left join "video_data" as "vd"', $sql);

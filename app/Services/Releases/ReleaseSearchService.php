@@ -41,6 +41,7 @@ class ReleaseSearchService
 
     public function __construct(
         private readonly ReleasePreviewDataLoader $previewDataLoader = new ReleasePreviewDataLoader,
+        private readonly ReleaseMediaInfoAvailabilityLoader $mediaInfoAvailabilityLoader = new ReleaseMediaInfoAvailabilityLoader,
     ) {}
 
     /**
@@ -1936,6 +1937,7 @@ class ReleaseSearchService
     {
         if (is_iterable($releases)) {
             $this->previewDataLoader->load($releases);
+            $this->mediaInfoAvailabilityLoader->load($releases);
         }
 
         return $releases;
