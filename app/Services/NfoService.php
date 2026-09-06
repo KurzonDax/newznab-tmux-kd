@@ -109,6 +109,8 @@ class NfoService
      */
     protected const SETTINGS_CACHE_TTL = 300;
 
+    private const DEFAULT_MAX_NFO_RETRIES = 5;
+
     /**
      * Lazily loaded from settings + cache when NFO processing runs (see getters).
      */
@@ -180,7 +182,7 @@ class NfoService
      */
     private static function retryFloor(): int
     {
-        $configured = (int) Settings::settingValue('maxnforetries');
+        $configured = (int) Settings::settingValueOr('maxnforetries', self::DEFAULT_MAX_NFO_RETRIES);
 
         return max($configured >= 0 ? -($configured + 1) : self::NFO_UNPROC, -8);
     }
