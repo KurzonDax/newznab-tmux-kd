@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
@@ -166,6 +167,31 @@ class NfoProcessingReliabilityTest extends TestCase
         $this->assertSame([-9, -8, -7, -6, -5], $this->archivePassStatuses(3));
     }
 
+    /**
+     * @param  list<int>  $expectedMainStatuses
+     * @param  list<int>  $expectedArchiveStatuses
+     */
+    #[Test]
+    #[DataProvider('retrySettingValues')]
+    public function retry_windows_honor_defaults_and_explicit_values(int|string|null $retries, array $expectedMainStatuses, array $expectedArchiveStatuses): void
+    {
+        $this->assertSame($expectedMainStatuses, $this->mainPassStatuses($retries));
+        $this->assertSame($expectedArchiveStatuses, $this->archivePassStatuses($retries));
+    }
+
+    /**
+     * @return array<string, array{int|string|null, list<int>, list<int>}>
+     */
+    public static function retrySettingValues(): array
+    {
+        return [
+            'missing row' => [null, [-6, -5, -4, -3, -2, -1], [-9, -8, -7]],
+            'blank row' => ['', [-6, -5, -4, -3, -2, -1], [-9, -8, -7]],
+            'zero retries' => [0, [-1], [-9, -8, -7, -6, -5, -4, -3, -2]],
+            'five retries' => [5, [-6, -5, -4, -3, -2, -1], [-9, -8, -7]],
+        ];
+    }
+
     #[Test]
     public function the_clamped_retry_floor_leaves_only_the_failed_status_to_the_archive_pass(): void
     {
@@ -205,7 +231,7 @@ class NfoProcessingReliabilityTest extends TestCase
     #[Test]
     public function the_retry_windows_partition_every_status_for_every_setting(): void
     {
-        foreach ([-5, -1, ...range(0, 10)] as $retries) {
+        foreach ([null, '', -5, -1, ...range(0, 10)] as $retries) {
             $mainStatuses = $this->mainPassStatuses($retries);
             $archiveStatuses = $this->archivePassStatuses($retries);
 
@@ -231,7 +257,7 @@ class NfoProcessingReliabilityTest extends TestCase
      *
      * @return list<int>
      */
-    private function mainPassStatuses(int $retries): array
+    private function mainPassStatuses(int|string|null $retries): array
     {
         $this->seedStatusLadder($retries, mainPassEnabled: true);
 
@@ -249,7 +275,7 @@ class NfoProcessingReliabilityTest extends TestCase
      *
      * @return list<int>
      */
-    private function archivePassStatuses(int $retries): array
+    private function archivePassStatuses(int|string|null $retries): array
     {
         $this->seedStatusLadder($retries, mainPassEnabled: false);
 
@@ -268,9 +294,13 @@ class NfoProcessingReliabilityTest extends TestCase
      * The main pass is switched off through `lookupnfo`, the setting that actually gates it, so
      * the archive pass is observed alone without distorting any of its own selection inputs.
      */
-    private function seedStatusLadder(int $retries, bool $mainPassEnabled): void
+    private function seedStatusLadder(int|string|null $retries, bool $mainPassEnabled): void
     {
-        DB::table('settings')->where('name', 'maxnforetries')->update(['value' => (string) $retries]);
+        if ($retries === null) {
+            DB::table('settings')->where('name', 'maxnforetries')->delete();
+        } else {
+            DB::table('settings')->updateOrInsert(['name' => 'maxnforetries'], ['value' => (string) $retries]);
+        }
         DB::table('settings')->where('name', 'lookupnfo')->update(['value' => $mainPassEnabled ? '1' : '0']);
         Cache::flush();
 
