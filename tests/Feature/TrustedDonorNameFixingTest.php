@@ -8,6 +8,8 @@ use App\Events\ReleaseNameFixed;
 use App\Facades\Search;
 use App\Models\Category;
 use App\Models\MediaInfo as MediaInfoRecord;
+use App\Models\Release;
+use App\Models\Settings;
 use App\Services\NameFixing\NameFixingService;
 use App\Services\NameFixing\ReleaseUpdateService;
 use Illuminate\Database\Schema\Blueprint;
@@ -60,6 +62,134 @@ class TrustedDonorNameFixingTest extends TestCase
     public function test_media_uid_match_renames_from_trusted_donor_without_predb(): void
     {
         $this->assertTrustedDonorRenamesTarget('uid');
+    }
+
+    #[DataProvider('descriptiveMediaTitles')]
+    public function test_descriptive_media_title_renames_a_hash_without_becoming_a_trusted_donor(string $title): void
+    {
+        $this->insertRelease(1, '5da7b5393d4f4445ac4db1ee8e95f567');
+        DB::table('media_infos')->insert(['releases_id' => 1, 'movie_name' => $title, 'unique_id' => 'descriptive-uid']);
+
+        Search::shouldReceive('updateRelease')->once()->with(1);
+        app(NameFixingService::class)->fixNamesWithMediaMovieName(2, true, 2, true, false);
+
+        $release = Release::query()->findOrFail(1);
+        $this->assertSame(trim($title), $release->searchname);
+        $this->assertSame(0, (int) $release->is_trusted_name);
+        $this->assertSame(0, (int) $release->predb_id);
+        $this->assertSame(1, (int) $release->proc_media_movie);
+
+        $hash = '6f0c31cb66a544c1912a0fc16e3d7b73';
+        $this->insertRelease(2, $hash);
+        DB::table('media_infos')->insert(['releases_id' => 2, 'unique_id' => 'descriptive-uid']);
+        app(NameFixingService::class)->fixNamesWithMedia(2, true, 2, true, false);
+
+        $this->assertSame($hash, Release::query()->findOrFail(2)->searchname);
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function descriptiveMediaTitles(): array
+    {
+        return [
+            'Con Air' => ['Con Air (1997)'],
+            'Identity' => ['Identity (2003)'],
+            'Sharkfest' => ['Sharkfest (2018)'],
+            'Sterling Point' => ['Sterling Point (2026)'],
+            'punctuation' => ['Star Wars: The Mandalorian and Grogu (2026)'],
+            'Unicode' => ['Duchové'],
+            'surrounding whitespace' => ['  Duchové  '],
+        ];
+    }
+
+    public function test_disabling_descriptive_renames_leaves_bare_media_titles_unused(): void
+    {
+        Settings::settingsUpdate(['descriptive_title_rename' => '0']);
+        $hash = '5da7b5393d4f4445ac4db1ee8e95f567';
+        $this->insertRelease(1, $hash);
+        DB::table('media_infos')->insert(['releases_id' => 1, 'movie_name' => 'Con Air (1997)']);
+
+        Search::shouldReceive('updateRelease')->never();
+        app(NameFixingService::class)->fixNamesWithMediaMovieName(2, true, 2, true, false);
+
+        $release = Release::query()->findOrFail(1);
+        $this->assertSame($hash, $release->searchname);
+        $this->assertSame(0, (int) $release->is_trusted_name);
+        $this->assertSame(1, (int) $release->proc_media_movie);
+    }
+
+    #[DataProvider('existingReadableNames')]
+    public function test_descriptive_media_title_does_not_replace_a_readable_name_in_a_misc_category(string $name, int $category): void
+    {
+        $this->insertRelease(1, $name, $category);
+        DB::table('media_infos')->insert(['releases_id' => 1, 'movie_name' => 'Con Air (1997)']);
+
+        Search::shouldReceive('updateRelease')->never();
+        app(NameFixingService::class)->fixNamesWithMediaMovieName(2, true, 2, true, false);
+
+        $this->assertSame($name, Release::query()->findOrFail(1)->searchname);
+    }
+
+    /**
+     * @return array<string, array{string, int}>
+     */
+    public static function existingReadableNames(): array
+    {
+        return [
+            'scene name in hashed' => ['Con.Air.1997.1080p.BluRay.x264-GROUP', Category::OTHER_HASHED],
+            'scene name in misc' => ['Con.Air.1997.1080p.BluRay.x264-GROUP', Category::OTHER_MISC],
+            'readable title' => ['Con Air (1997) Special Edition', Category::OTHER_MISC],
+            'Cyrillic title' => ['Призраки (2021)', Category::OTHER_MISC],
+            'Japanese title' => ['千と千尋の神隠し (2001)', Category::OTHER_HASHED],
+        ];
+    }
+
+    public function test_scene_media_title_keeps_its_existing_trust_with_descriptive_renames_disabled(): void
+    {
+        Settings::settingsUpdate(['descriptive_title_rename' => '0']);
+        $name = 'Con.Air.1997.1080p.BluRay.x264-GROUP';
+        $this->insertRelease(1, '5da7b5393d4f4445ac4db1ee8e95f567');
+        DB::table('media_infos')->insert(['releases_id' => 1, 'movie_name' => $name]);
+
+        Search::shouldReceive('updateRelease')->once()->with(1);
+        app(NameFixingService::class)->fixNamesWithMediaMovieName(2, true, 2, true, false);
+
+        $release = Release::query()->findOrFail(1);
+        $this->assertSame($name, $release->searchname);
+        $this->assertSame(1, (int) $release->is_trusted_name);
+    }
+
+    #[DataProvider('unusableMediaTitles')]
+    public function test_unusable_media_title_leaves_the_obfuscated_release_unchanged(string $title): void
+    {
+        $hash = '5da7b5393d4f4445ac4db1ee8e95f567';
+        $this->insertRelease(1, $hash);
+        DB::table('media_infos')->insert(['releases_id' => 1, 'movie_name' => $title]);
+
+        Search::shouldReceive('updateRelease')->never();
+        app(NameFixingService::class)->fixNamesWithMediaMovieName(2, true, 2, true, false);
+
+        $release = Release::query()->findOrFail(1);
+        $this->assertSame($hash, $release->searchname);
+        $this->assertSame(0, (int) $release->is_trusted_name);
+        $this->assertSame(0, (int) $release->predb_id);
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function unusableMediaTitles(): array
+    {
+        return [
+            'episode number' => ['Episode 3'],
+            'localized episode number' => ['Díl 6'],
+            'media placeholder' => ['media'],
+            'untitled' => ['Untitled'],
+            'empty' => [''],
+            'whitespace' => ['   '],
+            'hash' => ['6f0c31cb66a544c1912a0fc16e3d7b73'],
+        ];
     }
 
     public function test_uid_group_election_preserves_richer_name_and_upgrades_stub(): void
@@ -455,6 +585,7 @@ class TrustedDonorNameFixingTest extends TestCase
             $table->integer('nfostatus')->default(0);
             $table->integer('proc_nfo')->default(0);
             $table->integer('proc_files')->default(0);
+            $table->integer('proc_media_movie')->default(0);
             $table->integer('proc_par2')->default(0);
             $table->integer('proc_uid')->default(0);
             $table->integer('proc_srr')->default(0);

@@ -532,6 +532,25 @@ class FileNameCleaner
         }
 
         $title = trim((string) pathinfo($basename, PATHINFO_FILENAME), " \t\n\r\0\x0B.-_");
+
+        return $this->isDescriptiveTitleText($title);
+    }
+
+    /**
+     * Container titles need no extension, but must identify more than an episode number.
+     */
+    public function isDescriptiveContainerTitle(string $title): bool
+    {
+        $title = trim($title);
+        if (preg_match('/^(?:media|episode|ep|díl|dil|epizoda)(?:[\s._-]*\d+)?$/iu', $title)) {
+            return false;
+        }
+
+        return $this->isDescriptiveTitleText($title);
+    }
+
+    private function isDescriptiveTitleText(string $title): bool
+    {
         if (strlen($title) < 4 || preg_match('/^\d+$/', $title)) {
             return false;
         }

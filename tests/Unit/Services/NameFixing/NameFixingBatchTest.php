@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\NameFixing;
 
+use App\Services\NameFixing\FileNameCleaner;
 use App\Services\NameFixing\FilePrioritizer;
 use App\Services\NameFixing\NameFixingQueryService;
 use App\Services\NameFixing\NameFixingService;
@@ -327,6 +328,8 @@ class NameFixingBatchTest extends TestCase
         $reflection->getProperty('updateService')->setValue($service, $updateService);
         $reflection->getProperty('srrdbLookupService')->setValue($service, new SrrdbLookupService);
         $reflection->getProperty('filePrioritizer')->setValue($service, new FilePrioritizer);
+        $reflection->getProperty('fileNameCleaner')->setValue($service, new FileNameCleaner);
+        $reflection->getProperty('descriptiveTitleRenameEnabled')->setValue($service, true);
 
         return $service;
     }

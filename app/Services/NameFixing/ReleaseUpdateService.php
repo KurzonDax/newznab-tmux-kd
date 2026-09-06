@@ -24,6 +24,8 @@ use InvalidArgumentException;
  */
 class ReleaseUpdateService
 {
+    public const DESCRIPTIVE_MEDIA_TITLE_METHOD = 'MediaInfo: Descriptive title';
+
     /**
      * @var list<string>
      */
@@ -163,7 +165,7 @@ class ReleaseUpdateService
      * @param  bool  $nameStatus  Whether to update status columns
      * @param  bool  $show  Whether to show output
      * @param  int|null  $preId  PreDB ID if matched
-     * @param  bool  $descriptiveTitleCandidate  Whether this came from the guarded video-file fallback
+     * @param  bool  $descriptiveTitleCandidate  Whether this came from a guarded descriptive-title fallback
      *
      * @throws \Exception
      */
@@ -192,10 +194,21 @@ class ReleaseUpdateService
         }
 
         if ($this->relid !== $release->releases_id) {
-            $cleanedName = (new ReleaseCleaningService)->fixerCleaner($name);
+            $descriptiveMediaTitle = $method === self::DESCRIPTIVE_MEDIA_TITLE_METHOD;
+            if ($descriptiveMediaTitle
+                && (! $descriptiveTitleCandidate
+                    || ! $this->fileNameCleaner->isDescriptiveContainerTitle($name)
+                    || $this->fileNameCleaner->isReadableReleaseTitle((string) $release->searchname)
+                    || $this->fileNameCleaner->isDescriptiveContainerTitle((string) $release->searchname))) {
+                $this->done = true;
+
+                return;
+            }
+
+            $cleanedName = $descriptiveMediaTitle ? trim($name) : (new ReleaseCleaningService)->fixerCleaner($name);
             // Normalize and sanity-check candidate for non-trusted sources
             $normalizedName = $this->fileNameCleaner->normalizeCandidateTitle($cleanedName);
-            $newName = $this->fileNameCleaner->formatSearchName($cleanedName, $normalizedName);
+            $newName = $descriptiveMediaTitle ? $cleanedName : $this->fileNameCleaner->formatSearchName($cleanedName, $normalizedName);
 
             // Determine if the source is trusted enough to bypass plausibility checks
             $sourceTrust = $this->sourceTrustPolicy($type, $method, $preId);
@@ -208,7 +221,7 @@ class ReleaseUpdateService
                     : (isset($release->matched_by) ? (string) $release->matched_by : null),
             );
             $acceptedDescriptiveTitle = $descriptiveTitleCandidate
-                && $this->fileNameCleaner->isDescriptiveTitle($name)
+                && ($descriptiveMediaTitle || $this->fileNameCleaner->isDescriptiveTitle($name))
                 && $currentNameObfuscated;
 
             if (! $trustedSource
@@ -243,8 +256,10 @@ class ReleaseUpdateService
                 $this->fixed++;
 
                 // Split on path separator backslash to strip any path
-                $newName = explode('\\', $newName);
-                $newName = preg_replace(['/^[=_.:\s-]+/', '/[=_.:\s-]+$/'], '', $newName[0]);
+                if (! $descriptiveMediaTitle) {
+                    $newName = explode('\\', $newName);
+                    $newName = preg_replace(['/^[=_.:\s-]+/', '/[=_.:\s-]+$/'], '', $newName[0]);
+                }
 
                 $newTitle = substr($newName, 0, 299);
 
@@ -283,6 +298,10 @@ class ReleaseUpdateService
      */
     protected function sourceTrustPolicy(string $type, string $method, int $preId): array
     {
+        if ($method === self::DESCRIPTIVE_MEDIA_TITLE_METHOD) {
+            return ['bypass_plausibility' => false, 'trusted_donor' => false];
+        }
+
         $normalizedMethod = strtolower($method);
         $sharedTrustedMethod = str_contains($normalizedMethod, 'title match')
             || str_contains($normalizedMethod, 'file matched source')
