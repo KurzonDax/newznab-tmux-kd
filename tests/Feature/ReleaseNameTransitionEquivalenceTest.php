@@ -9,11 +9,13 @@ use App\Models\Category;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
+use App\Services\Categorization\CategorizationService;
 use App\Services\NameFixing\ReleaseUpdateService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
+use Mockery;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
@@ -157,5 +159,101 @@ class ReleaseNameTransitionEquivalenceTest extends TestCase
         $this->assertNull($events[2]->categoryOverride);
         $this->assertSame(Category::MUSIC_MP3, $events[3]->categoryOverride);
         $this->assertNull($events[4]->categoryOverride);
+    }
+
+    public function test_output_category_event_and_storage_share_one_finalized_name_in_live_and_dry_runs(): void
+    {
+        config(['nntmux.echocli' => true]);
+        $currentName = 'Original Show S01E01 1080p WEB-DL English AAC 2.0-GROUP';
+        $candidate = 'Show S01E01 1080p WEB-DL-GROUP';
+        $finalizedName = 'Show.S01E01.1080p.WEB-DL AAC 2.0 English-GROUP';
+        DB::table('releases')->insert([
+            'id' => 10,
+            'name' => $currentName,
+            'searchname' => $currentName,
+            'groups_id' => 1,
+            'categories_id' => Category::TV_HD,
+            'fromname' => 'poster@example.test',
+        ]);
+
+        $category = Mockery::mock(CategorizationService::class);
+        $category->shouldReceive('determineCategory')
+            ->twice()
+            ->with(1, $finalizedName, 'poster@example.test', false, [], 10)
+            ->andReturn(['categories_id' => Category::TV_HD]);
+
+        $synchronized = [];
+        $coordinator = new ReleaseSearchSyncCoordinator(
+            new PersistenceMetricsCollector,
+            static function (int $releaseId) use (&$synchronized): void {
+                $synchronized[] = $releaseId;
+            },
+        );
+
+        $live = $this->capturingUpdateService($category, $coordinator);
+        $live->updateRelease(
+            Release::query()->findOrFail(10),
+            $candidate,
+            'file matched source: title match',
+            true,
+            'Filenames, ',
+            true,
+            true,
+        );
+
+        $stored = Release::query()->findOrFail(10);
+        $this->assertSame($finalizedName, $live->reportedName);
+        $this->assertSame($finalizedName, $stored->searchname);
+        $this->assertSame($finalizedName, Event::dispatched(ReleaseNameFixed::class)->last()[0]->newName);
+        $this->assertSame([10], $synchronized);
+
+        DB::table('releases')->where('id', 10)->update([
+            'searchname' => $currentName,
+            'searchname_normalized' => $currentName,
+        ]);
+        $dryRun = $this->capturingUpdateService($category, $coordinator);
+        $dryRun->updateRelease(
+            Release::query()->findOrFail(10),
+            $candidate,
+            'file matched source: title match',
+            false,
+            'Filenames, ',
+            true,
+            true,
+        );
+
+        $this->assertSame($finalizedName, $dryRun->reportedName);
+        $this->assertSame($currentName, Release::query()->findOrFail(10)->searchname);
+        $this->assertSame([10], $synchronized);
+    }
+
+    private function capturingUpdateService(
+        CategorizationService $category,
+        ReleaseSearchSyncCoordinator $coordinator,
+    ): ReleaseUpdateService {
+        return new class($category, $coordinator) extends ReleaseUpdateService
+        {
+            public ?string $reportedName = null;
+
+            public function __construct(
+                CategorizationService $category,
+                ReleaseSearchSyncCoordinator $coordinator,
+            ) {
+                parent::__construct(category: $category, searchSyncCoordinator: $coordinator);
+            }
+
+            /**
+             * @param  array<string, mixed>  $determinedCategory
+             */
+            public function echoReleaseInfo(
+                object $release,
+                string $newName,
+                array $determinedCategory,
+                string $type,
+                string $method,
+            ): void {
+                $this->reportedName = $newName;
+            }
+        };
     }
 }

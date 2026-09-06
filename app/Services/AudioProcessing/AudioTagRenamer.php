@@ -65,11 +65,16 @@ final class AudioTagRenamer
         $newTitle = substr($newName, 0, 255);
         $releaseId = (int) $release->id;
 
-        $this->releaseUpdateService->renameFromAudioTags(
+        $finalizedTitle = $this->releaseUpdateService->renameFromAudioTags(
             $releaseId,
             $newTitle,
             (int) (is_array($newCategory) ? $newCategory['categories_id'] : $newCategory),
         );
+        if ($finalizedTitle === null) {
+            return false;
+        }
+
+        $newTitle = $finalizedTitle;
 
         // The new category may sit under a root with preview generation enabled
         // where the old one did not (ADR 0004 owed regeneration).

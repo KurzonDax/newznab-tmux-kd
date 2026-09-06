@@ -86,7 +86,7 @@ class FileNameCleaner
 
     private const RESOLUTION_EVIDENCE_TOKEN = '360p|480p|540p|576p|720p|1080[pi]?|2160p|4k|uhd';
 
-    private const SOURCE_EVIDENCE_TOKEN = 'ntsc|pal|dvd(?:r|rip|5|9)?|webrip|web[ ._-]?dl|bluray|blu[ ._-]?ray|bdrip|brrip|hdtv|pdtv|dsr|tvrip|satrip|dthrip|hdrip|remux|ts|cam|r5';
+    private const SOURCE_EVIDENCE_TOKEN = 'ntsc|pal|dvd(?:r|rip|5|9)?|web[ ._-]?(?:dl|rip)|bluray|blu[ ._-]?ray|bdrip|brrip|hdtv|pdtv|dsr|tvrip|satrip|dthrip|hdrip|remux|ts|cam|r5';
 
     private const CODEC_EVIDENCE_TOKEN = 'xvid|divx|x264|x265|hevc|h[ .]?264|h[ .]?265|avc|av1';
 
@@ -250,7 +250,9 @@ class FileNameCleaner
             return $normalizedFallback ?? $this->normalizeCandidateTitle($title);
         }
 
-        if (! $this->looksLikeSceneRelease($formatted)) {
+        $sceneGroup = $this->splitSceneGroupSuffix($formatted);
+        if (! $this->looksLikeSceneRelease($formatted)
+            || ($sceneGroup !== null && preg_match('/\s/', $sceneGroup['suffix']) === 1)) {
             return $normalizedFallback ?? $this->normalizeCandidateTitle($title);
         }
 
@@ -422,9 +424,10 @@ class FileNameCleaner
         $trimmedReplacement = rtrim($replacement);
         $replacementBody = $trimmedReplacement;
         $groupSuffix = '';
-        if (preg_match('/^(?<body>.+?)(?<suffix>(?:\s+-\s*|[-.])[A-Za-z][A-Za-z0-9]{1,})$/u', $trimmedReplacement, $matches) === 1) {
-            $replacementBody = rtrim($matches['body']);
-            $groupSuffix = $matches['suffix'];
+        $sceneGroup = $this->splitSceneGroupSuffix($trimmedReplacement);
+        if ($sceneGroup !== null) {
+            $replacementBody = $sceneGroup['body'];
+            $groupSuffix = $sceneGroup['suffix'];
         }
 
         $availableLength = self::MAX_PERSISTED_SEARCH_NAME_LENGTH - mb_strlen($groupSuffix);
@@ -502,7 +505,7 @@ class FileNameCleaner
     private function informationSignals(string $name): array
     {
         return [
-            'group_suffix' => (bool) preg_match('/[-.][A-Za-z0-9]{2,}$/', $name),
+            'group_suffix' => $this->splitSceneGroupSuffix($name) !== null,
             'year' => (bool) preg_match(self::YEAR_SIGNAL, $name),
             'quality_source' => (bool) preg_match(self::QUALITY_SOURCE_SIGNAL, $name),
             'tv' => (bool) preg_match(self::TV_SIGNAL, $name),
@@ -636,10 +639,10 @@ class FileNameCleaner
     {
         $filename = $this->extractNzbSplitName($filename) ?? $filename;
 
-        $baseName = preg_replace('/\.[a-z0-9]{2,4}$/i', '', $filename);
+        $baseName = $this->stripKnownFileExtension($filename);
 
         // Check for group suffix
-        if (! preg_match('/\-[A-Za-z0-9]{2,15}$/', $baseName)) {
+        if ($this->splitSceneGroupSuffix($baseName) === null) {
             return false;
         }
 
@@ -676,6 +679,64 @@ class FileNameCleaner
         }
 
         return false;
+    }
+
+    /**
+     * Split the terminal scene group while excluding hyphens that belong to
+     * technical source tokens from the shared evidence vocabulary.
+     *
+     * @return array{body: string, suffix: string, group: string}|null
+     */
+    private function splitSceneGroupSuffix(string $name): ?array
+    {
+        $trimmedName = rtrim($name);
+        if (preg_match(
+            '/^(?<body>.+?)(?<suffix>(?<delimiter>\s+-\s*|[-.])(?<group>[A-Za-z][A-Za-z0-9]{1,14}))$/u',
+            $trimmedName,
+            $matches,
+        ) !== 1) {
+            return null;
+        }
+
+        $body = rtrim($matches['body']);
+        if ($this->suffixCompletesTechnicalSourceToken($body, $matches['group'])) {
+            return null;
+        }
+
+        return [
+            'body' => $body,
+            'suffix' => $matches['suffix'],
+            'group' => $matches['group'],
+        ];
+    }
+
+    private function suffixCompletesTechnicalSourceToken(string $body, string $suffixToken): bool
+    {
+        if (preg_match('/(?<prefix>[A-Za-z0-9]+)$/', $body, $matches) !== 1) {
+            return false;
+        }
+
+        $technicalToken = $matches['prefix'].'-'.$suffixToken;
+
+        return preg_match('/^(?:'.self::SOURCE_EVIDENCE_TOKEN.')$/i', $technicalToken) === 1;
+    }
+
+    private function stripKnownFileExtension(string $filename): string
+    {
+        $baseName = $filename;
+        foreach ([
+            self::VIDEO_EXTENSIONS,
+            self::AUDIO_EXTENSIONS,
+            self::IMAGE_EXTENSIONS,
+            self::EBOOK_EXTENSIONS,
+            self::GAMEAPP_EXTENSIONS,
+            self::SUBTITLE_EXTENSIONS,
+            ...self::ARCHIVE_PATTERNS,
+        ] as $pattern) {
+            $baseName = preg_replace($pattern, '', $baseName) ?? $baseName;
+        }
+
+        return $baseName;
     }
 
     public function extractNzbSplitName(string $value): ?string
