@@ -22,6 +22,7 @@ use App\Services\AdditionalProcessing\UsenetDownloadService;
 use App\Services\AdditionalProcessing\VideoClipEncoder;
 use App\Services\AdditionalProcessing\VideoFrameExtractor;
 use App\Services\Categorization\MediaInfoRefinementService;
+use App\Services\MediaInfo\Contracts\MediaInfoSnapshotWriter;
 use App\Services\NameFixing\NameFixingService;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\NfoService;
@@ -146,6 +147,7 @@ class AdditionalProcessingServiceProvider extends ServiceProvider
                 $app->make(ReleaseSearchSyncCoordinator::class),
                 $app->make(MediaInfoRefinementService::class),
                 clipEncoder: $app->make(VideoClipEncoder::class),
+                mediaInfoSnapshots: $app->make(MediaInfoSnapshotWriter::class),
             );
         });
 

@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Events\ReleaseNameFixed;
 use App\Facades\Search;
 use App\Models\Category;
+use App\Models\MediaInfoProbe;
 use App\Models\Release;
 use App\Models\ReleaseAudioEvidence;
 use App\Models\ReleaseAudioTag;
@@ -30,6 +31,10 @@ use App\Services\AudioProcessing\AudioSourceSelector;
 use App\Services\AudioProcessing\AudioTagRenamer;
 use App\Services\Categorization\CategorizationService;
 use App\Services\Categorization\MediaInfoRefinementService;
+use App\Services\MediaInfo\Contracts\MediaInfoSnapshotWriter;
+use App\Services\MediaInfo\DTO\MediaInfoProbeContext;
+use App\Services\MediaInfo\Enums\MediaInfoSourceCompleteness;
+use App\Services\MediaInfo\Enums\MediaInfoSourceKind;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\ReleaseExtraService;
 use App\Services\Releases\PreviewGenerationPolicy;
@@ -233,6 +238,75 @@ class AudioReleaseProcessorTest extends TestCase
             '11111111-1111-4111-8111-111111111111',
             $evidence->tracks()->where('source_ordinal', 1)->value('musicbrainz_recording_id'),
         );
+    }
+
+    public function test_audio_processing_captures_the_sampled_file_as_a_complete_snapshot(): void
+    {
+        $release = $this->makeRelease();
+        $headContainer = $this->taggedContainer();
+        $completeContainer = $this->taggedContainer();
+        $completeContainer->getGeneral()?->set('album', 'Complete album metadata');
+        $writer = Mockery::mock(MediaInfoSnapshotWriter::class);
+        $writer->shouldReceive('capture')
+            ->once()
+            ->withArgs(function (int $releaseId, MediaInfoContainer $captured, MediaInfoProbeContext $context) use ($release, $completeContainer): bool {
+                return $releaseId === (int) $release->id
+                    && $captured === $completeContainer
+                    && $context->sourceKind === MediaInfoSourceKind::AudioProcessing
+                    && $context->sourceFilename === '01 - track.mp3'
+                    && $context->sourceCompleteness === MediaInfoSourceCompleteness::Complete;
+            })
+            ->andReturn(new MediaInfoProbe);
+        $processor = $this->makeProcessor(
+            $headContainer,
+            mediaInfoSnapshots: $writer,
+            completeContainer: $completeContainer,
+        );
+
+        $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+    }
+
+    public function test_failed_complete_file_reprobe_keeps_processing_with_partial_head_metadata(): void
+    {
+        $release = $this->makeRelease();
+        $headContainer = $this->taggedContainer();
+        $writer = Mockery::mock(MediaInfoSnapshotWriter::class);
+        $writer->shouldReceive('capture')
+            ->once()
+            ->withArgs(fn (int $releaseId, MediaInfoContainer $captured, MediaInfoProbeContext $context): bool => $releaseId === (int) $release->id
+                && $captured === $headContainer
+                && $context->sourceCompleteness === MediaInfoSourceCompleteness::Partial)
+            ->andReturn(new MediaInfoProbe);
+        $processor = $this->makeProcessor(
+            $headContainer,
+            mediaInfoSnapshots: $writer,
+            completeProbeThrows: true,
+        );
+
+        $result = $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(ProcessingOutcome::Completed, $result->outcome);
+    }
+
+    public function test_audio_probe_that_is_handed_to_video_still_captures_unknown_completeness(): void
+    {
+        $release = $this->makeRelease();
+        $container = $this->videoContainer();
+        $writer = Mockery::mock(MediaInfoSnapshotWriter::class);
+        $writer->shouldReceive('capture')
+            ->once()
+            ->withArgs(fn (int $releaseId, MediaInfoContainer $captured, MediaInfoProbeContext $context): bool => $releaseId === (int) $release->id
+                && $captured === $container
+                && $context->sourceCompleteness === MediaInfoSourceCompleteness::Unknown)
+            ->andReturn(new MediaInfoProbe);
+        $processor = $this->makeProcessor(
+            $container,
+            expectsPreview: false,
+            expectsExtraXml: false,
+            mediaInfoSnapshots: $writer,
+        );
+
+        $processor->process($release, $this->tmpPath, 'alt.binaries.multimedia');
     }
 
     public function test_a_probe_that_finds_video_declines_without_fetching_anything_else(): void
@@ -800,6 +874,9 @@ class AudioReleaseProcessorTest extends TestCase
         ?array $downloadResult = null,
         float $encoderSourceSeconds = 300.0,
         bool $expectsNzbParse = true,
+        ?MediaInfoSnapshotWriter $mediaInfoSnapshots = null,
+        ?MediaInfoContainer $completeContainer = null,
+        bool $completeProbeThrows = false,
     ): AudioReleaseProcessor {
         $config = $this->config($maxArchiveBytes, $minimumCompletionPercent);
 
@@ -836,7 +913,19 @@ class AudioReleaseProcessorTest extends TestCase
         );
 
         $mediaInfo = Mockery::mock(MediaInfo::class);
-        $mediaInfo->shouldReceive('getInfo')->andReturn($container);
+        if ($completeProbeThrows) {
+            $probeCount = 0;
+            $mediaInfo->shouldReceive('getInfo')->andReturnUsing(function () use ($container, &$probeCount): MediaInfoContainer {
+                $probeCount++;
+                if ($probeCount > 1) {
+                    throw new \RuntimeException('Complete-file probe failed.');
+                }
+
+                return $container;
+            });
+        } else {
+            $mediaInfo->shouldReceive('getInfo')->andReturn($container, $completeContainer ?? $container);
+        }
         $tools = new MediaTools;
         (new ReflectionProperty(MediaTools::class, 'mediaInfo'))->setValue($tools, $mediaInfo);
 
@@ -895,6 +984,7 @@ class AudioReleaseProcessorTest extends TestCase
             ),
             $previewPolicy,
             new AudioEvidenceRecorder,
+            $mediaInfoSnapshots,
         );
     }
 

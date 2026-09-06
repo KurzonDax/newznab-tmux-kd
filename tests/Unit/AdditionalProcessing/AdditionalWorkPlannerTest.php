@@ -35,6 +35,7 @@ class AdditionalWorkPlannerTest extends TestCase
         $this->assertSame(['<sample>', '<sample-2>'], $plan->sampleMessageIds);
         $this->assertSame(['<cover>'], $plan->jpgMessageIds);
         $this->assertSame(['<main-video>', '<main-video-2>'], $plan->mediaInfoMessageIds);
+        $this->assertSame('release.main-video.mkv', $plan->mediaInfoSourceFilename);
         $this->assertTrue($plan->hasCompressedFile());
         $this->assertSame(
             ['release.part02.rar', 'release.part01.rar'],

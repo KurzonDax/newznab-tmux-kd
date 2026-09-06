@@ -34,7 +34,7 @@ final class PostedFileClassifier
         ) === 1;
     }
 
-    private static function postedFilename(string $subject): string
+    public static function postedFilename(string $subject): string
     {
         if (preg_match_all('/"([^"]+)"/', $subject, $quotedFilenames) > 0) {
             return (string) end($quotedFilenames[1]);

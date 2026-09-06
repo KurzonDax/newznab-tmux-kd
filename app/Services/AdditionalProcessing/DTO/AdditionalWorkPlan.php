@@ -28,6 +28,7 @@ final readonly class AdditionalWorkPlan
         public int $mediaInfoContiguousHeadSegments = 0,
         public bool $mediaInfoTailContiguous = true,
         public int $mediaInfoFileSizeBytes = 0,
+        public ?string $mediaInfoSourceFilename = null,
         public array $archiveCandidates = [],
         public array $unknownPayloadCandidates = [],
         public int $bookFileCount = 0,

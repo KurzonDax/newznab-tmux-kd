@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\AudioProcessing\DTO;
 
+use App\Services\AdditionalProcessing\PostedFileClassifier;
 use App\Services\AudioProcessing\Enums\AudioSourceKind;
 
 /**
@@ -36,5 +37,10 @@ final readonly class AudioSource
     public function firstPartSegments(): array
     {
         return $this->parts[0] ?? [];
+    }
+
+    public function filename(): string
+    {
+        return PostedFileClassifier::postedFilename($this->title);
     }
 }
