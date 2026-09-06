@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use Mhor\MediaInfo\Container\MediaInfoContainer;
 use Mhor\MediaInfo\Type\General;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
@@ -178,8 +179,13 @@ class TrustedDonorNameFixingTest extends TestCase
         );
     }
 
-    public function test_late_uid_donor_rearms_a_previously_processed_obfuscated_member(): void
-    {
+    #[DataProvider('lateDonorMediaNames')]
+    public function test_late_uid_donor_rearms_a_previously_processed_obfuscated_member(
+        mixed $movieName,
+        mixed $fileName,
+        ?string $expectedMovieName,
+        ?string $expectedFileName,
+    ): void {
         $canonicalName = 'Late.Arrival.Series.S02E04.1080p.WEB-DL.DDP5.1.H.264-GROUP';
         $this->insertRelease(1, '6e4f6e56f38e480985f6d22f9e2ad52e');
         DB::table('releases')->where('id', 1)->update(['proc_uid' => 1]);
@@ -191,16 +197,33 @@ class TrustedDonorNameFixingTest extends TestCase
 
         $general = new General;
         $general->set('unique_id', 'late-arrival-uid');
+        $general->set('movie_name', $movieName);
+        $general->set('file_name', $fileName);
         $mediaInfo = new MediaInfoContainer;
         $mediaInfo->setGeneral($general);
 
         Search::shouldReceive('updateRelease')->once()->with(1);
         MediaInfoRecord::addData(2, $mediaInfo);
 
+        $media = MediaInfoRecord::query()->where('releases_id', 2)->firstOrFail();
+        $this->assertSame('late-arrival-uid', $media->unique_id);
+        $this->assertSame($expectedMovieName, $media->movie_name);
+        $this->assertSame($expectedFileName, $media->file_name);
+
         $this->assertSame(
             [1 => $canonicalName, 2 => $canonicalName],
             DB::table('releases')->orderBy('id')->pluck('searchname', 'id')->all(),
         );
+    }
+
+    /** @return array<string, array{mixed, mixed, ?string, ?string}> */
+    public static function lateDonorMediaNames(): array
+    {
+        return [
+            'no names' => [null, null, null, null],
+            'array names' => [['', 'Episode Title'], ['', 'episode.mkv'], 'Episode Title', 'episode.mkv'],
+            'blank array names' => [['', ' '], ['', "\t"], null, null],
+        ];
     }
 
     public function test_par2_hash_match_renames_from_trusted_donor_without_predb(): void
