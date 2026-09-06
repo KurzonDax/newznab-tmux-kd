@@ -231,6 +231,27 @@ class SettingsHubPagesTest extends TestCase
         $this->assertStringContainsString(':disabled="pristine"', $rendered);
     }
 
+    public function test_every_card_uses_the_shared_semantic_save_footer(): void
+    {
+        $rendered = $this->renderSection('engine');
+        $footers = $this->settingsFooters($rendered);
+
+        $this->assertSame(5, substr_count($footers, '<footer'));
+        $this->assertSame(5, substr_count($footers, 'surface-panel-alt'));
+        $this->assertSame(5, substr_count($footers, 'rounded-b-xl'));
+        $this->assertStringNotContainsString('bg-gray-', $footers);
+    }
+
+    private function settingsFooters(string $rendered): string
+    {
+        preg_match_all('/<footer\b.*?<\/footer>/s', $rendered, $matches);
+
+        return implode("\n", array_filter(
+            $matches[0],
+            static fn (string $footer): bool => str_contains($footer, 'Unsaved changes'),
+        ));
+    }
+
     private function seedSettings(): void
     {
         DB::table('settings')->upsert([
