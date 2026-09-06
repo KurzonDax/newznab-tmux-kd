@@ -6,6 +6,7 @@ namespace Tests\Unit\Services\NameFixing;
 
 use App\Models\Category;
 use App\Services\NameFixing\FileNameCleaner;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class FileNameCleanerTest extends TestCase
@@ -58,6 +59,9 @@ class FileNameCleanerTest extends TestCase
             'Film ;-)/SupergirlPerv.avi',
             '2016-04-16 - Solana A - Before The Party 2.mp4',
             'My Wife Is In Heat.mkv',
+            'Episode 3.mkv',
+            'Díl 6.mkv',
+            'media.mkv',
         ] as $filename) {
             $this->assertTrue($cleaner->isDescriptiveTitle($filename), $filename);
         }
@@ -83,6 +87,33 @@ class FileNameCleanerTest extends TestCase
         ] as $filename) {
             $this->assertFalse($cleaner->isDescriptiveTitle($filename), $filename);
         }
+    }
+
+    #[DataProvider('containerTitles')]
+    public function test_container_titles_are_validated_without_a_filename_extension(string $title, bool $accepted): void
+    {
+        $this->assertSame($accepted, (new FileNameCleaner)->isDescriptiveContainerTitle($title));
+    }
+
+    /**
+     * @return array<string, array{string, bool}>
+     */
+    public static function containerTitles(): array
+    {
+        return [
+            'movie' => ['Con Air (1997)', true],
+            'Unicode' => ['Duchové', true],
+            'punctuation' => ['Star Wars: The Mandalorian and Grogu (2026)', true],
+            'episode number' => ['Episode 3', false],
+            'localized episode number' => ['Díl 6', false],
+            'media placeholder' => ['media', false],
+            'untitled' => ['Untitled', false],
+            'empty' => ['', false],
+            'whitespace' => ['   ', false],
+            'hash' => ['5da7b5393d4f4445ac4db1ee8e95f567', false],
+            'sample' => ['sample', false],
+            'archive structure' => ['VIDEO_TS', false],
+        ];
     }
 
     public function test_current_name_guard_recognizes_obfuscation_evidence(): void

@@ -1538,6 +1538,27 @@ class NameFixingService
         $newName = '';
 
         if (! empty($release->movie_name)) {
+            if (! $this->fileNameCleaner->isPlausibleReleaseTitle(
+                $this->fileNameCleaner->normalizeCandidateTitle($release->movie_name)
+            ) && $this->fileNameCleaner->isDescriptiveContainerTitle($release->movie_name)) {
+                if (! $this->descriptiveTitleRenameEnabled) {
+                    return false;
+                }
+
+                $this->updateService->updateRelease(
+                    $release,
+                    $release->movie_name,
+                    ReleaseUpdateService::DESCRIPTIVE_MEDIA_TITLE_METHOD,
+                    $echo,
+                    $type,
+                    $nameStatus,
+                    $show,
+                    descriptiveTitleCandidate: true,
+                );
+
+                return $this->updateService->matched;
+            }
+
             if (preg_match(ReleaseUpdateService::PREDB_REGEX, $release->movie_name, $hit)) {
                 $newName = $hit[1];
             } elseif (preg_match('/(.+),(\sRMZ\.cr)?$/i', $release->movie_name, $hit)) {

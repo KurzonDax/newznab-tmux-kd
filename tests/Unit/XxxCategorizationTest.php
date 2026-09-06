@@ -181,6 +181,8 @@ class XxxCategorizationTest extends TestCase
             'vixen with adult keyword' => ['Vixen.Performer.Hardcore.1080p.mp4'],
             'blacked with adult keyword' => ['Blacked.Performer.Anal.2160p.mp4'],
             'unambiguous studio without corroboration' => ['Brazzers.Performer.Name.1080p.mp4'],
+            'explicit adult tag with parenthesized episode' => ['XXX - Episode Title (S03E05) 1080p'],
+            'adult studio with parenthesized episode' => ['Brazzers - Episode Title (S03E05) 1080p'],
         ];
     }
 

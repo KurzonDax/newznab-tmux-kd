@@ -35,8 +35,8 @@ class MediaInfo extends Model
 
         $inserted = self::insertOrIgnore([
             'releases_id' => $id,
-            'movie_name' => $mediainfoArray->get('movie_name') ?? null,
-            'file_name' => $mediainfoArray->get('file_name') ?? null,
+            'movie_name' => self::normalizeMediaName($mediainfoArray->get('movie_name')),
+            'file_name' => self::normalizeMediaName($mediainfoArray->get('file_name')),
             'unique_id' => $mediaUniqueId,
             'created_at' => now(),
             'updated_at' => now(),
@@ -45,5 +45,20 @@ class MediaInfo extends Model
         if ($inserted > 0 && is_string($mediaUniqueId) && $mediaUniqueId !== '') {
             app(NameFixingService::class)->evaluateUidGroup($mediaUniqueId);
         }
+    }
+
+    private static function normalizeMediaName(mixed $value): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+
+        foreach ($value as $name) {
+            if (is_string($name) && trim($name) !== '') {
+                return $name;
+            }
+        }
+
+        return null;
     }
 }
