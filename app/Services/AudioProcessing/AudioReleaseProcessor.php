@@ -16,6 +16,10 @@ use App\Services\AudioProcessing\DTO\AudioProcessingResult;
 use App\Services\AudioProcessing\Enums\AudioSourceKind;
 use App\Services\AudioProcessing\Exceptions\WavPackDecoderUnavailable;
 use App\Services\Categorization\MediaInfoRefinementService;
+use App\Services\MediaInfo\Contracts\MediaInfoSnapshotWriter;
+use App\Services\MediaInfo\DTO\MediaInfoProbeContext;
+use App\Services\MediaInfo\Enums\MediaInfoSourceCompleteness;
+use App\Services\MediaInfo\Enums\MediaInfoSourceKind;
 use App\Services\ReleaseExtraService;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
@@ -48,6 +52,7 @@ final class AudioReleaseProcessor
         private readonly ReleaseSearchSyncCoordinator $searchSyncCoordinator,
         private readonly PreviewGenerationPolicy $previewPolicy,
         private readonly AudioEvidenceRecorder $evidenceRecorder,
+        private readonly ?MediaInfoSnapshotWriter $mediaInfoSnapshots = null,
     ) {}
 
     public function process(Release $release, string $tmpPath, string $groupName): AudioProcessingResult
@@ -57,6 +62,8 @@ final class AudioReleaseProcessor
         $guid = (string) $release->guid;
         $tagsRecorded = false;
         $evidenceTags = null;
+        $probedMediaInfo = null;
+        $probedFilename = null;
 
         if (Category::rootCategoryFor((int) $release->categories_id) === Category::PC_ROOT) {
             return $this->declineToVideoPath(
@@ -96,7 +103,12 @@ final class AudioReleaseProcessor
             $source,
             $tmpPath,
             $groupName,
-            function (MediaInfoContainer $container, string $sourceFilename, string $extension) use ($release, &$tagsRecorded, &$evidenceTags): void {
+            function (MediaInfoContainer $container, string $sourceFilename, string $extension) use ($release, &$tagsRecorded, &$evidenceTags, &$probedMediaInfo, &$probedFilename): void {
+                $probedMediaInfo = $container;
+                $probedFilename = $sourceFilename;
+                if ($container->getVideos() !== [] || $container->getAudios() === []) {
+                    return;
+                }
                 $evidenceTags = $this->tagExtractor->extractEvidence($container, $sourceFilename);
                 $tagsRecorded = $this->recordTags(
                     $release,
@@ -107,6 +119,18 @@ final class AudioReleaseProcessor
             },
         );
         $this->crcFailures = $fetched->crcFailures;
+        $capturedMediaInfo = $fetched->succeeded()
+            ? ($fetched->mediaInfo ?? $probedMediaInfo)
+            : $probedMediaInfo;
+        $capturedFilename = $fetched->succeeded()
+            ? ($fetched->sampledFilename ?? $probedFilename)
+            : $probedFilename;
+        $this->captureMediaInfoSnapshot(
+            $releaseId,
+            $capturedMediaInfo,
+            $capturedFilename,
+            $fetched->succeeded() ? $fetched->mediaInfoSourceComplete : null,
+        );
         $this->recordEvidence($releaseAtCapture, $source, $fetched, $evidenceTags);
 
         if ($fetched->declined) {
@@ -159,6 +183,37 @@ final class AudioReleaseProcessor
             return $this->finish($release, true, $tagsRecorded, ProcessingOutcome::Completed);
         } finally {
             File::delete($fetched->path);
+        }
+    }
+
+    private function captureMediaInfoSnapshot(
+        int $releaseId,
+        ?MediaInfoContainer $container,
+        ?string $sourceFilename,
+        ?bool $sourceFileComplete,
+    ): void {
+        if ($this->mediaInfoSnapshots === null || $container === null) {
+            return;
+        }
+
+        $completeness = match ($sourceFileComplete) {
+            true => MediaInfoSourceCompleteness::Complete,
+            false => MediaInfoSourceCompleteness::Partial,
+            null => MediaInfoSourceCompleteness::Unknown,
+        };
+
+        try {
+            $this->mediaInfoSnapshots->capture(
+                $releaseId,
+                $container,
+                new MediaInfoProbeContext(
+                    MediaInfoSourceKind::AudioProcessing,
+                    $sourceFilename,
+                    $completeness,
+                ),
+            );
+        } catch (\Throwable $exception) {
+            Log::debug('MediaInfo snapshot persistence failed for release '.$releaseId.': '.$exception->getMessage());
         }
     }
 

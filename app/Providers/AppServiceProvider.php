@@ -35,6 +35,8 @@ use App\Observers\RootCategoryObserver;
 use App\Observers\SteamAppObserver;
 use App\Observers\UsenetGroupObserver;
 use App\Observers\VideoObserver;
+use App\Services\MediaInfo\Contracts\MediaInfoSnapshotWriter;
+use App\Services\MediaInfo\MediaInfoSnapshotService;
 use App\Services\MusicIdentity\Contracts\CandidateGenerator;
 use App\Services\MusicIdentity\Contracts\MusicBrainzGateway;
 use App\Services\MusicIdentity\Gateways\HttpMusicBrainzGateway;
@@ -114,6 +116,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(SettingsRegistry::class);
         $this->app->bind(MusicBrainzGateway::class, HttpMusicBrainzGateway::class);
         $this->app->bind(CandidateGenerator::class, MusicCandidateGenerator::class);
+        $this->app->bind(MediaInfoSnapshotWriter::class, MediaInfoSnapshotService::class);
         $this->app->bind(IdentificationDecisionStore::class, static fn (): IdentificationDecisionStore => new IdentificationDecisionStore(
             candidateAttemptLimit: (int) config('music-identity.candidate_attempt_limit', 5),
         ));

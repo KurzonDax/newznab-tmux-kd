@@ -38,6 +38,9 @@ enum SettingType: string
     /** Multi-line free text. */
     case Textarea = 'textarea';
 
+    /** Multi-line HTML edited through the bundled rich-text editor. */
+    case RichText = 'rich_text';
+
     /** Many-of-N stored as a comma-separated list. */
     case CheckboxSet = 'checkbox_set';
 
@@ -60,7 +63,7 @@ enum SettingType: string
      */
     public function spansFullWidth(): bool
     {
-        return in_array($this, [self::Textarea, self::CheckboxSet, self::RootToggles], true);
+        return in_array($this, [self::Textarea, self::RichText, self::CheckboxSet, self::RootToggles], true);
     }
 
     /**
@@ -77,7 +80,7 @@ enum SettingType: string
             self::Date => ['nullable', 'date_format:Y-m-d'],
             self::Enum => ['required'],
             self::Text => ['present', 'nullable', 'string'],
-            self::Textarea => ['present', 'nullable', 'string'],
+            self::Textarea, self::RichText => ['present', 'nullable', 'string'],
             self::CheckboxSet, self::RootToggles => ['nullable', 'array'],
         };
     }

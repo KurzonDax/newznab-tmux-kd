@@ -117,7 +117,9 @@ Alpine.data('richTextEditor', () => {
 
     return {
         init() {
-            const targets = document.querySelectorAll(EDITOR_TARGETS);
+            const targets = this.$root.matches(EDITOR_TARGETS)
+                ? [this.$root]
+                : this.$root.querySelectorAll(EDITOR_TARGETS);
             if (!targets.length) return;
             const dark = document.documentElement.classList.contains('dark');
             targets.forEach(el => states.push(makeEditor(el, dark)));

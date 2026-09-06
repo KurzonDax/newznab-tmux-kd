@@ -9,8 +9,8 @@ use Mhor\MediaInfo\Container\MediaInfoContainer;
 /**
  * The outcome of fetching audio for one release.
  *
- * Exactly one of three shapes: fetched (a readable file plus the MediaInfo read
- * off its head), declined (the probe found video, or no audio at all), or
+ * Exactly one of three shapes: fetched (a readable file plus its best available
+ * MediaInfo probe), declined (the probe found video, or no audio at all), or
  * failed (nothing usable, but the release stays on the audio path).
  */
 final readonly class AudioFetchResult
@@ -28,6 +28,7 @@ final readonly class AudioFetchResult
         public ?string $sampledFilename,
         public ?bool $archiveManifestComplete,
         public ?bool $sourceFileComplete,
+        public ?bool $mediaInfoSourceComplete,
         public ?bool $sourceStartsAtZero,
         public ?bool $wholeDurationReliable,
         public ?bool $onlyOneTrackProbed,
@@ -45,6 +46,7 @@ final readonly class AudioFetchResult
         array $archiveMembers = [],
         ?bool $archiveManifestComplete = null,
         ?bool $sourceFileComplete = null,
+        ?bool $mediaInfoSourceComplete = null,
         ?bool $sourceStartsAtZero = null,
         ?bool $wholeDurationReliable = null,
         ?bool $onlyOneTrackProbed = null,
@@ -62,6 +64,7 @@ final readonly class AudioFetchResult
             $sampledFilename,
             $archiveManifestComplete,
             $sourceFileComplete,
+            $mediaInfoSourceComplete,
             $sourceStartsAtZero,
             $wholeDurationReliable,
             $onlyOneTrackProbed,
@@ -71,12 +74,12 @@ final readonly class AudioFetchResult
 
     public static function declined(string $reason): self
     {
-        return new self(null, '', null, true, false, $reason, 0, [], null, null, null, null, null, null, null);
+        return new self(null, '', null, true, false, $reason, 0, [], null, null, null, null, null, null, null, null);
     }
 
     public static function failed(string $reason, bool $archivePassworded = false): self
     {
-        return new self(null, '', null, false, $archivePassworded, $reason, 0, [], null, null, null, null, null, null, null);
+        return new self(null, '', null, false, $archivePassworded, $reason, 0, [], null, null, null, null, null, null, null, null);
     }
 
     public function withCrcFailures(int $crcFailures): self
@@ -93,6 +96,7 @@ final readonly class AudioFetchResult
             $this->sampledFilename,
             $this->archiveManifestComplete,
             $this->sourceFileComplete,
+            $this->mediaInfoSourceComplete,
             $this->sourceStartsAtZero,
             $this->wholeDurationReliable,
             $this->onlyOneTrackProbed,
@@ -121,6 +125,7 @@ final readonly class AudioFetchResult
             $this->sampledFilename ?? $sampledFilename,
             $archiveManifestComplete,
             $this->sourceFileComplete,
+            $this->mediaInfoSourceComplete,
             $this->sourceStartsAtZero,
             $this->wholeDurationReliable,
             $onlyOneTrackProbed,

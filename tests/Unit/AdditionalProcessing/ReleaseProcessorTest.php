@@ -27,6 +27,8 @@ use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
 use App\Services\AdditionalProcessing\UsenetDownloadService;
 use App\Services\AdditionalProcessing\VideoDecodableLengthProbe;
 use App\Services\AdditionalProcessing\VideoHeadProbe;
+use App\Services\MediaInfo\DTO\MediaInfoProbeContext;
+use App\Services\MediaInfo\Enums\MediaInfoSourceCompleteness;
 use App\Services\NNTP\NNTPService;
 use App\Services\Releases\DynamicPreviewBudgetPolicy;
 use App\Services\Releases\PreviewGenerationPolicy;
@@ -635,6 +637,7 @@ class ReleaseProcessorTest extends TestCase
             Mockery::on(static fn (string $path): bool => File::get($path) === "\x1A\x45\xDF\xA3video"),
             Mockery::type(ReleaseProcessingContext::class),
             $tmpPath,
+            Mockery::on(static fn (MediaInfoProbeContext $probe): bool => $probe->sourceCompleteness === MediaInfoSourceCompleteness::Partial),
         )->andReturnUsing(static function (string $path, ReleaseProcessingContext $context): array {
             $context->foundMediaInfo = true;
 

@@ -205,10 +205,7 @@ class ReleaseUpdateService
                 return;
             }
 
-            $cleanedName = $descriptiveMediaTitle ? trim($name) : (new ReleaseCleaningService)->fixerCleaner($name);
-            // Normalize and sanity-check candidate for non-trusted sources
-            $normalizedName = $this->fileNameCleaner->normalizeCandidateTitle($cleanedName);
-            $newName = $descriptiveMediaTitle ? $cleanedName : $this->fileNameCleaner->formatSearchName($cleanedName, $normalizedName);
+            $newTitle = $this->finalizeCandidate($release, $name, $type, $descriptiveMediaTitle);
 
             // Determine if the source is trusted enough to bypass plausibility checks
             $sourceTrust = $this->sourceTrustPolicy($type, $method, $preId);
@@ -226,7 +223,7 @@ class ReleaseUpdateService
 
             if (! $trustedSource
                 && ! $acceptedDescriptiveTitle
-                && ! $this->fileNameCleaner->isPlausibleReleaseTitle($normalizedName)) {
+                && ! $this->fileNameCleaner->isPlausibleReleaseTitle($newTitle)) {
                 // Skip low-quality rename candidates for untrusted sources
                 $this->done = true;
 
@@ -236,32 +233,17 @@ class ReleaseUpdateService
             if (! $trustedSource
                 && ! $acceptedDescriptiveTitle
                 && ! $currentNameObfuscated
-                && $this->fileNameCleaner->isLessInformativeThan($normalizedName, (string) $release->searchname)) {
+                && $this->fileNameCleaner->isLessInformativeThan($newTitle, (string) $release->searchname)) {
                 $this->done = true;
 
                 return;
             }
 
-            if (strtolower($newName) !== strtolower($release->searchname)) {
+            if (strtolower($newTitle) !== strtolower($release->searchname)) {
                 $this->matched = true;
                 $this->relid = (int) $release->releases_id;
 
-                if ($type === 'PAR2, ') {
-                    $newName = ucwords($newName);
-                    if (preg_match('/(.+?)\.[a-z0-9]{2,3}(PAR2)?$/i', $name, $hit)) {
-                        $newName = $hit[1];
-                    }
-                }
-
                 $this->fixed++;
-
-                // Split on path separator backslash to strip any path
-                if (! $descriptiveMediaTitle) {
-                    $newName = explode('\\', $newName);
-                    $newName = preg_replace(['/^[=_.:\s-]+/', '/[=_.:\s-]+$/'], '', $newName[0]);
-                }
-
-                $newTitle = substr($newName, 0, 299);
 
                 $determinedCategory = null;
                 if ($this->echoOutput && $show) {
@@ -289,6 +271,42 @@ class ReleaseUpdateService
             }
         }
         $this->done = true;
+    }
+
+    private function finalizeCandidate(
+        object $release,
+        string $name,
+        string $type,
+        bool $descriptiveMediaTitle,
+    ): string {
+        $cleanedName = $descriptiveMediaTitle ? trim($name) : (new ReleaseCleaningService)->fixerCleaner($name);
+        $normalizedName = $this->fileNameCleaner->normalizeCandidateTitle($cleanedName);
+        $candidate = $descriptiveMediaTitle
+            ? $cleanedName
+            : $this->fileNameCleaner->formatSearchName($cleanedName, $normalizedName);
+
+        if ($type === 'PAR2, ') {
+            $candidate = ucwords($candidate);
+            if (preg_match('/(.+?)\.[a-z0-9]{2,3}(PAR2)?$/i', $name, $hit)) {
+                $candidate = $hit[1];
+            }
+        }
+
+        if (! $descriptiveMediaTitle) {
+            $pathParts = explode('\\', $candidate);
+            $candidate = preg_replace(['/^[=_.:\s-]+/', '/[=_.:\s-]+$/'], '', $pathParts[0]) ?? $pathParts[0];
+        }
+
+        return $this->finalizeEvidencePreservation($release, substr($candidate, 0, 299));
+    }
+
+    private function finalizeEvidencePreservation(object $release, string $candidate): string
+    {
+        return $this->fileNameCleaner->preserveEvidenceTokens(
+            $candidate,
+            (string) $release->searchname,
+            (string) ($release->name ?? ''),
+        );
     }
 
     /**
@@ -384,12 +402,6 @@ class ReleaseUpdateService
     ): void {
         $releaseId = (int) ($release->releases_id ?? $release->id);
         $trustedDonorName = $this->sourceTrustPolicy($type, $method, $preId)['trusted_donor'];
-        $newTitle = $this->fileNameCleaner->preserveEvidenceTokens(
-            $newTitle,
-            (string) $release->searchname,
-            (string) ($release->name ?? ''),
-        );
-
         DB::transaction(function () use ($release, $releaseId, $newTitle, $type, $nameStatus, $preId, $trustedDonorName, $imdbId, $categoryOverride, $preserveBookInfo): void {
             if ($nameStatus === true) {
                 $status = $this->getStatusColumnsForType($type);
@@ -515,7 +527,7 @@ class ReleaseUpdateService
 
         $this->performDatabaseUpdate(
             $release,
-            (string) $release->searchname,
+            $this->finalizeEvidencePreservation($release, (string) $release->searchname),
             'PreDB exact, ',
             'Exact title match',
             true,
@@ -527,16 +539,18 @@ class ReleaseUpdateService
         $this->done = true;
     }
 
-    public function renameFromAudioTags(int $releaseId, string $newTitle, int $categoryId): void
+    public function renameFromAudioTags(int $releaseId, string $newTitle, int $categoryId): ?string
     {
         if ($releaseId === 0 || $newTitle === '') {
-            return;
+            return null;
         }
 
         $release = Release::query()->find($releaseId);
         if ($release === null) {
-            return;
+            return null;
         }
+
+        $newTitle = $this->finalizeEvidencePreservation($release, $newTitle);
 
         $this->performDatabaseUpdate(
             $release,
@@ -548,6 +562,8 @@ class ReleaseUpdateService
             null,
             $categoryId,
         );
+
+        return $newTitle;
     }
 
     public function renameFromBookMetadata(int $releaseId, string $newTitle): void
@@ -563,7 +579,7 @@ class ReleaseUpdateService
 
         $this->performDatabaseUpdate(
             $release,
-            $newTitle,
+            $this->finalizeEvidencePreservation($release, $newTitle),
             'Book title, ',
             'Parsed book metadata',
             true,
@@ -586,7 +602,7 @@ class ReleaseUpdateService
 
         $this->performDatabaseUpdate(
             $release,
-            (string) $release->searchname,
+            $this->finalizeEvidencePreservation($release, (string) $release->searchname),
             'SRRDB, ',
             'Verified archive CRC match',
             true,

@@ -25,6 +25,7 @@ use App\Services\AudioProcessing\Contracts\AudioProcessingOrchestratorInterface;
 use App\Services\AudioProcessing\WavPackDecoder;
 use App\Services\Categorization\CategorizationService;
 use App\Services\Categorization\MediaInfoRefinementService;
+use App\Services\MediaInfo\Contracts\MediaInfoSnapshotWriter;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\ReleaseExtraService;
 use App\Services\Releases\PreviewGenerationPolicy;
@@ -100,6 +101,7 @@ class AudioProcessingServiceProvider extends ServiceProvider
             $app->make(ReleaseSearchSyncCoordinator::class),
             $app->make(PreviewGenerationPolicy::class),
             $app->make(AudioEvidenceRecorder::class),
+            $app->make(MediaInfoSnapshotWriter::class),
         ));
 
         $this->app->singleton(AudioProcessingOrchestrator::class, fn ($app): AudioProcessingOrchestrator => new AudioProcessingOrchestrator(

@@ -221,10 +221,15 @@ final class NntmuxSearchMaintainCommandTest extends SearchConsoleCommandTestCase
         Schema::create('video_data', function (Blueprint $table): void {
             $table->unsignedBigInteger('releases_id');
             $table->string('containerformat')->nullable();
+            $table->string('overallbitrate')->nullable();
+            $table->string('videoduration')->nullable();
             $table->string('videoformat')->nullable();
             $table->string('videocodec')->nullable();
             $table->integer('videowidth')->nullable();
             $table->integer('videoheight')->nullable();
+            $table->string('videoaspect')->nullable();
+            $table->float('videoframerate')->nullable();
+            $table->string('videolibrary')->nullable();
         });
         Schema::create('media_infos', function (Blueprint $table): void {
             $table->id();
@@ -239,13 +244,45 @@ final class NntmuxSearchMaintainCommandTest extends SearchConsoleCommandTestCase
         });
         Schema::create('audio_data', function (Blueprint $table): void {
             $table->unsignedBigInteger('releases_id');
+            $table->unsignedBigInteger('audioid')->nullable();
             $table->string('audioformat')->nullable();
+            $table->string('audiobitrate')->nullable();
             $table->string('audiochannels')->nullable();
+            $table->string('audiosamplerate')->nullable();
             $table->string('audiolanguage')->nullable();
+            $table->string('audiotitle')->nullable();
         });
         Schema::create('release_subtitles', function (Blueprint $table): void {
             $table->unsignedBigInteger('releases_id');
+            $table->unsignedBigInteger('subsid')->nullable();
             $table->string('subslanguage')->nullable();
+        });
+        Schema::create('media_info_probes', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('releases_id');
+            $table->string('embedded_title')->nullable();
+            $table->string('source_filename')->nullable();
+            $table->string('container_format')->nullable();
+            $table->unsignedBigInteger('duration_ms')->nullable();
+            $table->unsignedBigInteger('overall_bitrate_bps')->nullable();
+            $table->json('music_tags')->nullable();
+        });
+        Schema::create('media_info_tracks', function (Blueprint $table): void {
+            $table->unsignedBigInteger('media_info_probe_id');
+        });
+        Schema::create('release_audio_tags', function (Blueprint $table): void {
+            $table->unsignedBigInteger('releases_id');
+            $table->string('album')->nullable();
+            $table->string('performer')->nullable();
+            $table->string('album_performer')->nullable();
+            $table->string('genre')->nullable();
+            $table->string('recorded_date')->nullable();
+            $table->string('track_name')->nullable();
+            $table->unsignedBigInteger('track_position')->nullable();
+            $table->unsignedBigInteger('track_position_total')->nullable();
+            $table->string('musicbrainz_album_id')->nullable();
+            $table->string('musicbrainz_track_id')->nullable();
+            $table->string('audio_format')->nullable();
         });
     }
 }

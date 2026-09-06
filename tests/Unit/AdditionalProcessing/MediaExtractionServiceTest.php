@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 namespace Tests\Unit\AdditionalProcessing;
 
+use App\Models\MediaInfoProbe;
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\MediaExtractionService;
 use App\Services\AdditionalProcessing\MediaTools;
 use App\Services\AdditionalProcessing\VideoFrameExtractor;
+use App\Services\MediaInfo\Contracts\MediaInfoSnapshotWriter;
+use App\Services\MediaInfo\DTO\MediaInfoProbeContext;
+use App\Services\MediaInfo\Enums\MediaInfoSourceCompleteness;
+use App\Services\MediaInfo\Enums\MediaInfoSourceKind;
 use App\Services\ReleaseExtraService;
 use App\Services\ReleaseImageService;
 use Illuminate\Filesystem\Filesystem;
@@ -16,6 +21,7 @@ use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Log;
 use Mhor\MediaInfo\Container\MediaInfoContainer;
 use Mhor\MediaInfo\MediaInfo;
+use Mhor\MediaInfo\Type\Audio;
 use Mockery;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -92,6 +98,42 @@ class MediaExtractionServiceTest extends TestCase
         (new \ReflectionProperty(MediaExtractionService::class, 'mediaTools'))->setValue($service, $tools);
 
         $this->assertFalse($service->getMediaInfo($file, 42));
+    }
+
+    #[Test]
+    public function additional_processing_writes_the_normalized_snapshot_with_supplied_provenance(): void
+    {
+        $config = $this->makeConfig(['processMediaInfo' => true]);
+        $file = $this->tmpPath.'partial-head.mkv';
+        file_put_contents($file, 'partial media');
+        $container = new MediaInfoContainer;
+        $container->add(new Audio);
+        $context = new MediaInfoProbeContext(
+            MediaInfoSourceKind::AdditionalProcessing,
+            'source-name.mkv',
+            MediaInfoSourceCompleteness::Partial,
+        );
+        $writer = Mockery::mock(MediaInfoSnapshotWriter::class);
+        $writer->shouldReceive('capture')->once()->with(42, $container, $context)->andReturn(new MediaInfoProbe);
+        $releaseExtra = Mockery::mock(ReleaseExtraService::class);
+        $releaseExtra->shouldReceive('addFromXml')->once()->with(42, $container);
+        $service = new MediaExtractionService(
+            $config,
+            Mockery::mock(ReleaseImageService::class),
+            $releaseExtra,
+            new VideoFrameExtractor($config),
+            mediaInfoSnapshots: $writer,
+        );
+        $mediaInfo = Mockery::mock(MediaInfo::class);
+        $mediaInfo->shouldReceive('getInfo')->once()->with($file, true)->andReturn($container);
+        $tools = new MediaTools;
+        (new \ReflectionProperty(MediaTools::class, 'mediaInfo'))->setValue($tools, $mediaInfo);
+        (new \ReflectionProperty(MediaExtractionService::class, 'mediaTools'))->setValue($service, $tools);
+
+        $this->assertFalse(
+            $service->getMediaInfo($file, 42, $context),
+            'The isolated unit container has no database for the legacy refinement that follows the snapshot write.',
+        );
     }
 
     private function makeService(ProcessingConfiguration $config): MediaExtractionService

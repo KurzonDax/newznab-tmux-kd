@@ -147,10 +147,11 @@
                                             <i class="fas fa-tv mr-1"></i> View Series
                                         </a>
                                     @endif
-                                    @if(isset($result->reid) && $result->reid != null)
+                                    @if(!empty($result->has_media_info))
                                         <button type="button"
                                                 class="mediainfo-badge inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 dark:bg-primary-900/50 text-primary-800 dark:text-primary-200 hover:bg-primary-200 dark:hover:bg-primary-800 transition cursor-pointer"
                                                 data-release-id="{{ $result->id }}"
+                                                data-release-display-name="{{ release_display_name($result) }}"
                                                 title="View media info">
                                             <i class="fas fa-info-circle mr-1"></i> Media Info
                                         </button>

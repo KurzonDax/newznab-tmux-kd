@@ -18,6 +18,9 @@ use App\Services\AdditionalProcessing\Enums\ProcessingStage;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ProcessingMetrics;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
+use App\Services\MediaInfo\DTO\MediaInfoProbeContext;
+use App\Services\MediaInfo\Enums\MediaInfoSourceCompleteness;
+use App\Services\MediaInfo\Enums\MediaInfoSourceKind;
 use App\Services\ReleaseImageService;
 use App\Services\Releases\DynamicPreviewBudgetPolicy;
 use App\Services\Releases\PreviewGenerationPolicy;
@@ -553,7 +556,12 @@ class ReleaseProcessor
         $path = $context->tmpPath.'sniffed_'.uniqid('', true).'.'.$extension;
         File::put($path, $payload);
         try {
-            $this->mediaService->processVideoFile($path, $context, $context->tmpPath);
+            $this->mediaService->processVideoFile(
+                $path,
+                $context,
+                $context->tmpPath,
+                $this->mediaInfoContext(basename($path), MediaInfoSourceCompleteness::Partial),
+            );
         } finally {
             File::delete($path);
         }
@@ -662,7 +670,14 @@ class ReleaseProcessor
                     }
                 }
 
-                if (! $context->foundMediaInfo && $this->mediaService->getMediaInfo($fileLocation, $context->release->id)) {
+                if (! $context->foundMediaInfo && $this->mediaService->getMediaInfo(
+                    $fileLocation,
+                    $context->release->id,
+                    $this->mediaInfoContext(
+                        $context->workPlan?->mediaInfoSourceFilename,
+                        MediaInfoSourceCompleteness::Partial,
+                    ),
+                )) {
                     $context->markFound('mediaInfo');
                     $this->output->echoMediaInfoAdded();
                 }
@@ -1348,7 +1363,14 @@ class ReleaseProcessor
             $fileLocation = $context->tmpPath.'inline_video_'.uniqid('', true).'.'.$result['standaloneVideoType'];
             File::put($fileLocation, $result['standaloneVideoData']);
 
-            if (! $context->foundMediaInfo && $this->mediaService->getMediaInfo($fileLocation, $context->release->id)) {
+            if (! $context->foundMediaInfo && $this->mediaService->getMediaInfo(
+                $fileLocation,
+                $context->release->id,
+                $this->mediaInfoContext(
+                    PostedFileClassifier::postedFilename($archiveTitle),
+                    MediaInfoSourceCompleteness::Unknown,
+                ),
+            )) {
                 $context->markFound('mediaInfo');
                 $this->output->echoMediaInfoAdded();
             }
@@ -1516,7 +1538,12 @@ class ReleaseProcessor
             if ((! $context->foundSample || ! $context->foundVideo || ! $context->foundMediaInfo)
                 && preg_match('/(.*)'.$this->config->videoFileRegex.'$/i', $filePath) === 1
             ) {
-                $this->mediaService->processVideoFile($filePath, $context, $context->tmpPath);
+                $this->mediaService->processVideoFile(
+                    $filePath,
+                    $context,
+                    $context->tmpPath,
+                    $this->mediaInfoContext(basename($filePath), MediaInfoSourceCompleteness::Complete),
+                );
 
                 continue;
             }
@@ -1535,7 +1562,12 @@ class ReleaseProcessor
             } elseif ((! $context->foundMediaInfo || ! $context->foundSample || ! $context->foundVideo)
                 && preg_match('/Matroska data|MPEG v4|MPEG sequence, v2|\WAVI\W/i', $output) === 1
             ) {
-                $this->mediaService->processVideoFile($filePath, $context, $context->tmpPath);
+                $this->mediaService->processVideoFile(
+                    $filePath,
+                    $context,
+                    $context->tmpPath,
+                    $this->mediaInfoContext(basename($filePath), MediaInfoSourceCompleteness::Complete),
+                );
             } elseif (! $context->foundPAR2Info && stripos($output, 'Parity') === 0) {
                 $this->releaseManager->processPar2File(
                     $filePath,
@@ -1544,5 +1576,16 @@ class ReleaseProcessor
                 );
             }
         }
+    }
+
+    private function mediaInfoContext(
+        ?string $sourceFilename,
+        MediaInfoSourceCompleteness $completeness,
+    ): MediaInfoProbeContext {
+        return new MediaInfoProbeContext(
+            MediaInfoSourceKind::AdditionalProcessing,
+            $sourceFilename,
+            $completeness,
+        );
     }
 }

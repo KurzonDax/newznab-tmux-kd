@@ -87,6 +87,20 @@ class SettingsHubPagesTest extends TestCase
         $this->assertStringContainsString('/admin/settings/website/branding', $rendered);
     }
 
+    public function test_terms_render_as_a_full_width_lazy_loaded_rich_text_editor(): void
+    {
+        $rendered = $this->renderSection('website');
+
+        $this->assertMatchesRegularExpression(
+            '/md:col-span-2[^>]*>\s*<div id="setting-tandc"[^>]*x-data="richTextEditor"/s',
+            $rendered,
+        );
+        $this->assertMatchesRegularExpression(
+            '/<textarea(?=[^>]*id="tandc")(?=[^>]*name="tandc")(?=[^>]*rows="15")(?=[^>]*class="[^"]*rich-text-editor)[^>]*>&lt;p&gt;Terms\.&lt;\/p&gt;<\/textarea>/s',
+            $rendered,
+        );
+    }
+
     public function test_the_engine_page_renders_the_safety_valves_that_used_to_need_sql(): void
     {
         $rendered = $this->renderSection('engine');
@@ -144,6 +158,7 @@ class SettingsHubPagesTest extends TestCase
         $this->assertTrue($response->isRedirect());
         $this->assertSame('Indexing since forever', $this->storedSettingValue('strapline'));
         $this->assertSame('/browse', $this->storedSettingValue('home_link'));
+        $this->assertSame('<p>Terms.</p>', $this->storedSettingValue('tandc'));
     }
 
     public function test_a_picker_card_saves_and_rejects_an_out_of_range_number(): void
@@ -229,6 +244,27 @@ class SettingsHubPagesTest extends TestCase
             'Each card on the engine page is its own gated form.'
         );
         $this->assertStringContainsString(':disabled="pristine"', $rendered);
+    }
+
+    public function test_every_card_uses_the_shared_semantic_save_footer(): void
+    {
+        $rendered = $this->renderSection('engine');
+        $footers = $this->settingsFooters($rendered);
+
+        $this->assertSame(5, substr_count($footers, '<footer'));
+        $this->assertSame(5, substr_count($footers, 'surface-panel-alt'));
+        $this->assertSame(5, substr_count($footers, 'rounded-b-xl'));
+        $this->assertStringNotContainsString('bg-gray-', $footers);
+    }
+
+    private function settingsFooters(string $rendered): string
+    {
+        preg_match_all('/<footer\b.*?<\/footer>/s', $rendered, $matches);
+
+        return implode("\n", array_filter(
+            $matches[0],
+            static fn (string $footer): bool => str_contains($footer, 'Unsaved changes'),
+        ));
     }
 
     private function seedSettings(): void

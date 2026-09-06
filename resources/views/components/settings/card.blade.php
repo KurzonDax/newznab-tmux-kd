@@ -41,7 +41,7 @@
                 @endforeach
             </div>
 
-            <footer class="flex items-center justify-end gap-3 border-t border-gray-200 pt-4 dark:border-gray-700">
+            <footer class="surface-panel-alt -mx-6 -mb-6 flex flex-wrap items-center justify-end gap-3 rounded-b-xl border-t px-6 py-4">
                 <span class="text-xs text-gray-500 dark:text-gray-400" x-show="!pristine" x-cloak>Unsaved changes</span>
                 <x-button type="submit" icon="fas fa-floppy-disk" ::disabled="pristine">Save</x-button>
             </footer>

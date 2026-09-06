@@ -30,6 +30,7 @@ final readonly class AdditionalWorkPlanner
         $mediaInfoContiguousHeadSegments = 0;
         $mediaInfoTailContiguous = true;
         $mediaInfoFileSizeBytes = 0;
+        $mediaInfoSourceFilename = null;
         $archiveCandidates = [];
         $bookFileCount = 0;
         $duplicateMessageIdCount = 0;
@@ -135,6 +136,7 @@ final readonly class AdditionalWorkPlanner
                         (int) ($file['partstotal'] ?? 0),
                     );
                     $mediaInfoFileSizeBytes = max((int) ($file['size'] ?? 0), 0);
+                    $mediaInfoSourceFilename = PostedFileClassifier::postedFilename($title);
                 }
             } catch (\ErrorException $e) {
                 Log::debug($e->getTraceAsString());
@@ -176,6 +178,7 @@ final readonly class AdditionalWorkPlanner
             mediaInfoContiguousHeadSegments: $mediaInfoContiguousHeadSegments,
             mediaInfoTailContiguous: $mediaInfoTailContiguous,
             mediaInfoFileSizeBytes: $mediaInfoFileSizeBytes,
+            mediaInfoSourceFilename: $mediaInfoSourceFilename,
             archiveCandidates: $archiveCandidates,
             unknownPayloadCandidates: $unknownPayloadCandidates,
             bookFileCount: $bookFileCount,

@@ -447,8 +447,8 @@ final class PosterIdentityControllerTest extends TestCase
         $withSpectrogram = $this->release('Audio with spectrogram', $identity, '2026-08-03 12:00:00');
         $withoutSpectrogram = $this->release('Audio without spectrogram', $identity, '2026-08-02 12:00:00');
         DB::table('release_audio_tags')->insert([
-            ['releases_id' => $withSpectrogram->id, 'has_spectrogram' => 1],
-            ['releases_id' => $withoutSpectrogram->id, 'has_spectrogram' => 0],
+            ['releases_id' => $withSpectrogram->id, 'has_spectrogram' => 1, 'genre' => null],
+            ['releases_id' => $withoutSpectrogram->id, 'has_spectrogram' => 0, 'genre' => 'Jazz'],
         ]);
 
         DB::flushQueryLog();
@@ -460,6 +460,9 @@ final class PosterIdentityControllerTest extends TestCase
 
         $this->assertSame([true, false], $rows->map(
             static fn (Release $release): bool => (bool) $release->has_spectrogram,
+        )->all());
+        $this->assertSame([false, true], $rows->map(
+            static fn (Release $release): bool => (bool) $release->has_media_info,
         )->all());
 
         $audioTagQueries = array_filter(
@@ -682,6 +685,21 @@ final class PosterIdentityControllerTest extends TestCase
         });
         Schema::create('release_audio_tags', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id')->primary();
+            $table->string('album')->nullable();
+            $table->string('album_performer')->nullable();
+            $table->string('performer')->nullable();
+            $table->string('genre')->nullable();
+            $table->string('recorded_date')->nullable();
+            $table->string('track_name')->nullable();
+            $table->unsignedSmallInteger('track_position')->nullable();
+            $table->unsignedSmallInteger('track_position_total')->nullable();
+            $table->string('musicbrainz_album_id')->nullable();
+            $table->string('musicbrainz_track_id')->nullable();
+            $table->string('audio_format')->nullable();
+            $table->unsignedTinyInteger('has_preview')->default(0);
+            $table->string('preview_extension')->nullable();
+            $table->string('preview_mime')->nullable();
+            $table->unsignedSmallInteger('preview_seconds')->nullable();
             $table->unsignedTinyInteger('has_spectrogram')->default(0);
         });
         Schema::create('release_video_clips', function (Blueprint $table): void {

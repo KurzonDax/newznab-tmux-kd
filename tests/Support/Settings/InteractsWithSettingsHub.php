@@ -128,7 +128,7 @@ trait InteractsWithSettingsHub
                 SettingType::Date,
                 SettingType::Enum,
                 SettingType::Text,
-                SettingType::Textarea => $payload[$definition->key] = (string) $stored,
+                SettingType::Textarea, SettingType::RichText => $payload[$definition->key] = (string) $stored,
             };
         }
 

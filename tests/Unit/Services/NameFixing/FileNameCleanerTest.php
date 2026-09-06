@@ -142,6 +142,80 @@ class FileNameCleanerTest extends TestCase
         ));
     }
 
+    #[DataProvider('mediaInfoDowngradeNames')]
+    public function test_less_informative_guard_rejects_media_info_titles_ending_in_web_dl(
+        string $currentName,
+        string $candidate,
+    ): void {
+        $cleaner = new FileNameCleaner;
+
+        $this->assertTrue($cleaner->isLessInformativeThan($candidate, $currentName));
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function mediaInfoDowngradeNames(): array
+    {
+        return [
+            'When the Weather Is Fine' => [
+                'When the Weather Is Fine S01E02 1080p NF WEB-DL [(Hindi + Korean) AAC 2.0] H.264 (DEV1L-DTiNS)',
+                'When.the.Weather.Is.Fine.S01E02.1080p.NF.WEB-DL',
+            ],
+            '56 Days' => [
+                '56 Days S01E05 1080p AMZN WEB-DL [(Hindi + Tamil + Telugu) DDP 5.1 + English DDPA 5.1] H.264 (FLUX-D...)',
+                '56.Days.S01E05.1080p.AMZN.WEB-DL',
+            ],
+        ];
+    }
+
+    #[DataProvider('technicalSourceEndings')]
+    public function test_technical_hyphens_do_not_create_scene_groups(string $source): void
+    {
+        $cleaner = new FileNameCleaner;
+        $title = 'Show Name S01E01 1080p '.$source;
+
+        $this->assertSame($title, $cleaner->formatSearchName($title));
+        $this->assertFalse($cleaner->looksLikeSceneRelease($title));
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function technicalSourceEndings(): array
+    {
+        return [
+            'WEB-DL' => ['WEB-DL'],
+            'WEB-RIP' => ['WEB-RIP'],
+            'Blu-Ray' => ['Blu-Ray'],
+        ];
+    }
+
+    public function test_real_group_after_technical_source_remains_scene_formatted(): void
+    {
+        $cleaner = new FileNameCleaner;
+
+        $this->assertTrue($cleaner->looksLikeSceneRelease('Show.S01E01.1080p.WEB-DL-GROUP'));
+        $this->assertSame(
+            'Show.S01E01.1080p.WEB-DL-GROUP',
+            $cleaner->formatSearchName('Show S01E01 1080p WEB-DL-GROUP'),
+        );
+    }
+
+    public function test_dotted_group_suffix_remains_supported(): void
+    {
+        $cleaner = new FileNameCleaner;
+
+        $this->assertTrue($cleaner->looksLikeSceneRelease('Show.S01E01.1080p.WEB-DL.GROUP'));
+        $this->assertSame(
+            'Show.S01E01.1080p.WEB-DL DTS 5.1.GROUP',
+            $cleaner->preserveEvidenceTokens(
+                'Show.S01E01.1080p.WEB-DL.GROUP',
+                'Show.S01E01.1080p.WEB-DL.DTS.5.1.GROUP',
+            ),
+        );
+    }
+
     public function test_strictly_more_informative_names_must_not_trade_away_existing_signals(): void
     {
         $cleaner = new FileNameCleaner;
@@ -193,6 +267,22 @@ class FileNameCleanerTest extends TestCase
                 'Title.1080p.DTS.5.1-GRP',
             ),
         );
+    }
+
+    public function test_preserving_evidence_never_splits_a_terminal_web_dl_token(): void
+    {
+        $cleaner = new FileNameCleaner;
+
+        $result = $cleaner->preserveEvidenceTokens(
+            'When.the.Weather.Is.Fine.S01E02.1080p.NF.WEB-DL',
+            'When the Weather Is Fine S01E02 1080p NF WEB-DL English AAC 2.0 H.264',
+        );
+
+        $this->assertSame(
+            'When.the.Weather.Is.Fine.S01E02.1080p.NF.WEB-DL H.264 AAC 2.0 English',
+            $result,
+        );
+        $this->assertSame($result, $cleaner->preserveEvidenceTokens($result, $result));
     }
 
     public function test_preserving_evidence_keeps_the_persisted_name_within_255_characters(): void

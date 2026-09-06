@@ -36,6 +36,16 @@ final class ReleasePreviewDataLoader
             ->whereIn('releases_id', array_keys($rowsByReleaseId))
             ->get([
                 'releases_id',
+                'album',
+                'album_performer',
+                'performer',
+                'genre',
+                'recorded_date',
+                'track_name',
+                'track_position',
+                'track_position_total',
+                'musicbrainz_album_id',
+                'musicbrainz_track_id',
                 'audio_format',
                 'has_preview',
                 'preview_extension',
@@ -71,6 +81,19 @@ final class ReleasePreviewDataLoader
                     ?? ReleaseVideoClip::VIDEO_MIME_TYPES['ogv'];
             }
             $attributes = [
+                'has_media_info' => $audioTags !== null && collect([
+                    $audioTags->album,
+                    $audioTags->album_performer,
+                    $audioTags->performer,
+                    $audioTags->genre,
+                    $audioTags->recorded_date,
+                    $audioTags->track_name,
+                    $audioTags->track_position,
+                    $audioTags->track_position_total,
+                    $audioTags->musicbrainz_album_id,
+                    $audioTags->musicbrainz_track_id,
+                    $audioTags->audio_format,
+                ])->contains(static fn (mixed $value): bool => $value !== null && $value !== ''),
                 'has_spectrogram' => $audioTags?->has_spectrogram === true,
                 'has_audio_preview' => $audioPreviewMime !== null,
                 'audio_preview_mime' => $audioPreviewMime,

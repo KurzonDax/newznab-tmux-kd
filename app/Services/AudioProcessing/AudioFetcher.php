@@ -143,7 +143,7 @@ final class AudioFetcher
 
         File::put($path, $head);
 
-        $probe = $this->probe($path, basename($source->title), $extension, $onProbe);
+        $probe = $this->probe($path, $source->filename(), $extension, $onProbe);
         if ($probe instanceof AudioFetchResult) {
             File::delete($path);
 
@@ -154,6 +154,7 @@ final class AudioFetcher
         // whatever this leaves on disk, however short that turns out to be.
         $rest = array_slice($segments, 1, max(0, $this->config->segmentsToDownload - 1));
         $sourceFileComplete = count($segments) <= $this->config->segmentsToDownload;
+        $mediaInfoSourceComplete = count($segments) === 1;
         if ($rest !== []) {
             $body = $this->download($rest, $groupName, $release, $source->title);
             if ($body !== null) {
@@ -167,12 +168,21 @@ final class AudioFetcher
             }
         }
 
+        if ($sourceFileComplete && $rest !== []) {
+            $completeProbe = $this->probe($path, $source->filename(), $extension, $onProbe, false);
+            if ($completeProbe instanceof MediaInfoContainer) {
+                $probe = $completeProbe;
+                $mediaInfoSourceComplete = true;
+            }
+        }
+
         return AudioFetchResult::fetched(
             $path,
             $extension,
             $probe,
-            sampledFilename: basename($source->title),
+            sampledFilename: $source->filename(),
             sourceFileComplete: $sourceFileComplete,
+            mediaInfoSourceComplete: $mediaInfoSourceComplete,
             sourceStartsAtZero: true,
             // MediaInfo ran against article one before the remaining segments
             // were appended, so only a one-article source has a whole duration.
@@ -1065,6 +1075,7 @@ final class AudioFetcher
                 $probe,
                 sampledFilename: $name,
                 sourceFileComplete: $isComplete,
+                mediaInfoSourceComplete: $isComplete,
                 sourceStartsAtZero: $sourceStartsAtZero,
                 wholeDurationReliable: $isComplete,
                 decodedDurationSeconds: $decodedDurationSeconds > 0.0 ? $decodedDurationSeconds : null,
@@ -1391,6 +1402,7 @@ final class AudioFetcher
         string $sourceFilename,
         string $extension,
         Closure $onProbe,
+        bool $recordProbe = true,
     ): MediaInfoContainer|AudioFetchResult {
         try {
             $container = $this->mediaTools->mediaInfo()->getInfo($path, false);
@@ -1402,8 +1414,14 @@ final class AudioFetcher
             return AudioFetchResult::failed('MediaInfo could not read the fetched audio.');
         }
 
-        $this->probedTrackCount++;
-        $this->sampledFilename = $sourceFilename;
+        if ($recordProbe) {
+            $this->probedTrackCount++;
+            $this->sampledFilename = $sourceFilename;
+
+            if ($this->probedTrackCount === 1) {
+                $onProbe($container, $sourceFilename, $extension);
+            }
+        }
 
         if ($container->getVideos() !== []) {
             return AudioFetchResult::declined('The probed file carries a video stream.');
@@ -1411,10 +1429,6 @@ final class AudioFetcher
 
         if ($container->getAudios() === []) {
             return AudioFetchResult::declined('The probed file carries no audio stream.');
-        }
-
-        if ($this->probedTrackCount === 1) {
-            $onProbe($container, $sourceFilename, $extension);
         }
 
         return $container;

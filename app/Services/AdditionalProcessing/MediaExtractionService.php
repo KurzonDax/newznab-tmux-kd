@@ -13,11 +13,16 @@ use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
 use App\Services\AudioProcessing\AudioReleaseProcessor;
 use App\Services\Categorization\MediaInfoRefinementService;
+use App\Services\MediaInfo\Contracts\MediaInfoSnapshotWriter;
+use App\Services\MediaInfo\DTO\MediaInfoProbeContext;
+use App\Services\MediaInfo\Enums\MediaInfoSourceCompleteness;
+use App\Services\MediaInfo\Enums\MediaInfoSourceKind;
 use App\Services\ReleaseExtraService;
 use App\Services\ReleaseImageService;
 use App\Services\Releases\ClipGenerationPolicy;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
+use Mhor\MediaInfo\Container\MediaInfoContainer;
 use Mhor\MediaInfo\MediaInfo;
 
 /**
@@ -44,6 +49,7 @@ class MediaExtractionService
         private readonly ClipGenerationPolicy $clipPolicy = new ClipGenerationPolicy,
         private readonly VideoClipEncoder $clipEncoder = new VideoClipEncoder,
         private readonly FreeDiskGuard $freeDiskGuard = new FreeDiskGuard,
+        private readonly ?MediaInfoSnapshotWriter $mediaInfoSnapshots = null,
     ) {
         $this->searchSyncCoordinator = $searchSyncCoordinator
             ?? new ReleaseSearchSyncCoordinator(
@@ -201,8 +207,11 @@ class MediaExtractionService
     /**
      * Extract media info from a video file.
      */
-    public function getMediaInfo(string $fileLocation, int $releaseId): bool
-    {
+    public function getMediaInfo(
+        string $fileLocation,
+        int $releaseId,
+        ?MediaInfoProbeContext $probeContext = null,
+    ): bool {
         if (! $this->config->processMediaInfo || ! File::isFile($fileLocation)) {
             return false;
         }
@@ -214,6 +223,15 @@ class MediaExtractionService
             }
             \App\Models\MediaInfo::addData($releaseId, $xmlArray);
             $this->releaseExtra->addFromXml($releaseId, $xmlArray);
+            $this->captureMediaInfoSnapshot(
+                $releaseId,
+                $xmlArray,
+                $probeContext ?? new MediaInfoProbeContext(
+                    MediaInfoSourceKind::AdditionalProcessing,
+                    basename($fileLocation),
+                    MediaInfoSourceCompleteness::Unknown,
+                ),
+            );
             $this->mediaInfoRefinement->refine($releaseId);
 
             return true;
@@ -221,6 +239,22 @@ class MediaExtractionService
             Log::debug($e->getMessage());
 
             return false;
+        }
+    }
+
+    private function captureMediaInfoSnapshot(
+        int $releaseId,
+        MediaInfoContainer $container,
+        MediaInfoProbeContext $context,
+    ): void {
+        if ($this->mediaInfoSnapshots === null) {
+            return;
+        }
+
+        try {
+            $this->mediaInfoSnapshots->capture($releaseId, $container, $context);
+        } catch (\Throwable $exception) {
+            Log::debug('MediaInfo snapshot persistence failed for release '.$releaseId.': '.$exception->getMessage());
         }
     }
 
@@ -253,7 +287,8 @@ class MediaExtractionService
     public function processVideoFile(
         string $fileLocation,
         ReleaseProcessingContext $context,
-        string $tmpPath
+        string $tmpPath,
+        ?MediaInfoProbeContext $probeContext = null,
     ): array {
         $result = [
             'sample' => false,
@@ -277,7 +312,7 @@ class MediaExtractionService
         }
 
         if (! $context->foundMediaInfo) {
-            $result['mediaInfo'] = $this->getMediaInfo($fileLocation, $context->release->id);
+            $result['mediaInfo'] = $this->getMediaInfo($fileLocation, $context->release->id, $probeContext);
             if ($result['mediaInfo']) {
                 $context->foundMediaInfo = true;
             }

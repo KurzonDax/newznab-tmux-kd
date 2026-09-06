@@ -160,6 +160,40 @@ class TrustedDonorNameFixingTest extends TestCase
         $this->assertSame(1, (int) $release->is_trusted_name);
     }
 
+    #[DataProvider('mediaInfoMovieNameDowngrades')]
+    public function test_media_info_movie_name_does_not_replace_a_richer_readable_name(
+        string $currentName,
+        string $candidate,
+    ): void {
+        $this->insertRelease(1, $currentName, Category::TV_HD, trusted: true);
+        DB::table('media_infos')->insert(['releases_id' => 1, 'movie_name' => $candidate]);
+
+        Search::shouldReceive('updateRelease')->never();
+        app(NameFixingService::class)->fixNamesWithMediaMovieName(2, true, 2, true, false);
+
+        $release = Release::query()->findOrFail(1);
+        $this->assertSame($currentName, $release->searchname);
+        $this->assertSame(1, (int) $release->proc_media_movie);
+        Event::assertNotDispatched(ReleaseNameFixed::class);
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function mediaInfoMovieNameDowngrades(): array
+    {
+        return [
+            'When the Weather Is Fine' => [
+                'When the Weather Is Fine S01E02 1080p NF WEB-DL [(Hindi + Korean) AAC 2.0] H.264 (DEV1L-DTiNS)',
+                'When.the.Weather.Is.Fine.S01E02.1080p.NF.WEB-DL',
+            ],
+            '56 Days' => [
+                '56 Days S01E05 1080p AMZN WEB-DL [(Hindi + Tamil + Telugu) DDP 5.1 + English DDPA 5.1] H.264 (FLUX-D...)',
+                '56.Days.S01E05.1080p.AMZN.WEB-DL',
+            ],
+        ];
+    }
+
     #[DataProvider('unusableMediaTitles')]
     public function test_unusable_media_title_leaves_the_obfuscated_release_unchanged(string $title): void
     {
