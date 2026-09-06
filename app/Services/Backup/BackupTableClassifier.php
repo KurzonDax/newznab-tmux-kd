@@ -6,6 +6,7 @@ namespace App\Services\Backup;
 
 use App\Enums\BackupKind;
 use Illuminate\Support\Facades\Schema;
+use RuntimeException;
 
 class BackupTableClassifier
 {
@@ -21,10 +22,13 @@ class BackupTableClassifier
             $tiers[] = 'working';
         }
 
-        foreach (Schema::getTableListing() as $listedTable) {
-            $table = str_contains($listedTable, '.')
-                ? substr($listedTable, (int) strrpos($listedTable, '.') + 1)
-                : $listedTable;
+        $schema = Schema::getCurrentSchemaName();
+
+        if ($schema === null || trim($schema) === '') {
+            throw new RuntimeException('Unable to determine the database schema for backup.');
+        }
+
+        foreach (Schema::getTableListing(schema: [$schema], schemaQualified: false) as $table) {
             $tier = $this->tierFor($table);
 
             if ($tier === 'throwaway') {
