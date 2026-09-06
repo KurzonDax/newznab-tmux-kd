@@ -72,6 +72,7 @@ class GroupForcedRootCategorizationTest extends TestCase
         return [
             'obvious movie' => ['The.Matrix.1999.1080p.BluRay.x264'],
             'tv episode' => ['Show.Name.S01E01.1080p.WEB-DL-GROUP'],
+            'parenthesized tv episode' => ['Brickleberry - Obamascare (S03E01)'],
             'scene mp3 album' => ['Artist-Album-2020-FLAC'],
             'hookup hotshot compilation' => ['HookupHotshot - 2020 Flashback Highlight Compilation'],
         ];

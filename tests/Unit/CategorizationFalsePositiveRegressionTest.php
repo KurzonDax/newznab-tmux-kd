@@ -32,6 +32,57 @@ use PHPUnit\Framework\TestCase;
  */
 class CategorizationFalsePositiveRegressionTest extends TestCase
 {
+    #[DataProvider('episodeTokenBoundaries')]
+    public function test_season_episode_tokens_require_delimiter_boundaries(string $name, bool $expected): void
+    {
+        $this->assertSame($expected, (new ReleaseContext($name, 0))->hasSeasonEpisodeToken());
+    }
+
+    /**
+     * @return array<string, array{string, bool}>
+     */
+    public static function episodeTokenBoundaries(): array
+    {
+        return [
+            'parenthesized suffix' => ['Show - Episode Title (S03E05)', true],
+            'parenthesized prefix' => ['(S03E05) Show - Episode Title', true],
+            'parenthesized middle' => ['Show (S03E05) Episode Title', true],
+            'multiple episodes' => ['Show (S03E05E06)', true],
+            'separated episode' => ['Show (S03 E05)', true],
+            'lowercase' => ['Show (s03e05)', true],
+            'spaces' => ['Show S03E05 Episode Title', true],
+            'dots' => ['Show.S03E05.Episode.Title', true],
+            'underscores' => ['Show_S03E05_Episode_Title', true],
+            'hyphens' => ['Show-S03E05-Episode-Title', true],
+            'embedded prefix' => ['Show (ModelS03E05)', false],
+            'embedded suffix' => ['Show (S03E05Model)', false],
+            'embedded both' => ['Show (ModelS03E05Version)', false],
+            'too many episode digits' => ['Show (S03E05123)', false],
+            'missing episode number' => ['Show (S03E)', false],
+        ];
+    }
+
+    #[DataProvider('parenthesizedEpisodeQuality')]
+    public function test_parenthesized_episode_names_keep_name_based_quality_selection(string $name, int $category): void
+    {
+        $this->assertSame($category, $this->runPipeline($name, 'alt.binaries.wtfnzb.golf')->bestResult->categoryId);
+    }
+
+    /**
+     * @return array<string, array{string, int}>
+     */
+    public static function parenthesizedEpisodeQuality(): array
+    {
+        return [
+            'no quality' => ['Show - Episode Title (S03E05)', Category::TV_OTHER],
+            'HD' => ['Show - Episode Title (S03E05) 1080p', Category::TV_HD],
+            'web source' => ['Show - Episode Title (S03E05) 1080p WEB-DL', Category::TV_WEBDL],
+            'generic x265 name' => ['Show - Episode Title (S03E05) 1080p x265', Category::TV_HD],
+            'recognized x265 group' => ['Show - Episode Title (S03E05) 1080p x265-MeGusta', Category::TV_X265],
+            'unrelated identifier' => ['Product Reference (ModelS03E05Version)', Category::OTHER_MISC],
+        ];
+    }
+
     private function runPipeline(string $releaseName, string $groupName): CategorizationPassable
     {
         $releaseName = (new NzbSplitUnwrapper)->unwrap($releaseName) ?? $releaseName;

@@ -25,6 +25,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
@@ -57,6 +58,88 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
     {
         $this->tearDownIsolatedDatabase();
         parent::tearDown();
+    }
+
+    #[DataProvider('parenthesizedEpisodeNames')]
+    public function test_parenthesized_episode_names_reach_tv_other_through_categorization(string $name): void
+    {
+        $group = UsenetGroup::query()->create([
+            'name' => 'alt.binaries.wtfnzb.golf',
+            'active' => 1,
+            'backfill' => 0,
+        ]);
+
+        $result = app(CategorizationService::class)->determineCategory($group->id, $name);
+
+        $this->assertSame(Category::TV_OTHER, $result['categories_id']);
+
+        $unparenthesized = str_replace(['(', ')'], '', $name);
+        $this->assertSame(
+            $result['categories_id'],
+            app(CategorizationService::class)->determineCategory($group->id, $unparenthesized)['categories_id'],
+        );
+    }
+
+    public function test_parenthesized_episode_rename_refines_to_tv_x265_from_existing_media_info(): void
+    {
+        $synchronizedCategories = [];
+        Search::shouldReceive('updateRelease')->andReturnUsing(function (int $releaseId) use (&$synchronizedCategories): bool {
+            $synchronizedCategories[] = (int) Release::query()->findOrFail($releaseId)->categories_id;
+
+            return true;
+        });
+        $group = UsenetGroup::query()->create([
+            'name' => 'alt.binaries.wtfnzb.golf',
+            'active' => 1,
+            'backfill' => 0,
+        ]);
+        $release = Release::factory()->create([
+            'name' => '5da7b5393d4f4445ac4db1ee8e95f567',
+            'searchname' => '5da7b5393d4f4445ac4db1ee8e95f567',
+            'groups_id' => $group->id,
+            'categories_id' => Category::OTHER_HASHED,
+            'iscategorized' => 1,
+            'isrenamed' => 0,
+            'guid' => str_repeat('b', 40),
+            'leftguid' => 'b',
+        ]);
+        DB::table('video_data')->insert([
+            'releases_id' => $release->id,
+            'containerformat' => 'Matroska',
+            'videoformat' => 'HEVC',
+            'videocodec' => 'V_MPEGH/ISO/HEVC',
+            'videowidth' => 1920,
+            'videoheight' => 1080,
+        ]);
+        $name = 'Brickleberry - Obamascare (S03E01)';
+
+        app(ReleaseUpdateService::class)->updateRelease(
+            $release->fresh(), $name, 'MediaInfo: Movie Name', true, 'Mediainfo, ', true, false,
+        );
+
+        $release->refresh();
+        $this->assertSame($name, $release->searchname);
+        $this->assertSame(Category::TV_X265, (int) $release->categories_id);
+        $this->assertSame(1, (int) $release->isrenamed);
+        $this->assertSame(1, (int) $release->proc_media_movie);
+        $this->assertNotEmpty($synchronizedCategories);
+        $this->assertSame(Category::TV_X265, end($synchronizedCategories));
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function parenthesizedEpisodeNames(): array
+    {
+        return [
+            'episode 1' => ['Brickleberry - Obamascare (S03E01)'],
+            'episode 2' => ['Brickleberry - In Da Club (S03E02)'],
+            'episode 3' => ['Brickleberry - Miss National Park (S03E03)'],
+            'episode 4' => ["Brickleberry - That Brother's My Father (S03E04)"],
+            'episode 5' => ["Brickleberry - Write 'Em Cowboy (S03E05)"],
+            'episode 6' => ['Brickleberry - Old Wounds (S03E06)'],
+            'episode 7' => ['Brickleberry - Baby Daddy (S03E07)'],
+        ];
     }
 
     public function test_renaming_hashed_release_recategorizes_it_synchronously(): void
