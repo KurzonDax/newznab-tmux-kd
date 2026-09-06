@@ -35,7 +35,7 @@
     $size = $type === SettingType::Size ? SizeUnit::fromBytes(is_array($current) ? 0 : $current) : null;
 @endphp
 
-<div id="setting-{{ $key }}" class="scroll-mt-24 space-y-1" data-setting="{{ $key }}">
+<div id="setting-{{ $key }}" class="scroll-mt-24 space-y-1" data-setting="{{ $key }}" @if($type === SettingType::RichText) x-data="richTextEditor" @endif>
     <x-label :for="$key">
         @if($definition->icon)
             <i class="{{ $definition->icon }} mr-1" aria-hidden="true"></i>
@@ -81,6 +81,10 @@
 
         @case(SettingType::Textarea)
             <x-textarea :id="$key" :name="$key" rows="6" :placeholder="$definition->placeholder">{{ $current }}</x-textarea>
+            @break
+
+        @case(SettingType::RichText)
+            <x-textarea :id="$key" :name="$key" rows="15" class="rich-text-editor w-full max-w-full" :placeholder="$definition->placeholder">{{ $current }}</x-textarea>
             @break
 
         @case(SettingType::CheckboxSet)

@@ -87,6 +87,20 @@ class SettingsHubPagesTest extends TestCase
         $this->assertStringContainsString('/admin/settings/website/branding', $rendered);
     }
 
+    public function test_terms_render_as_a_full_width_lazy_loaded_rich_text_editor(): void
+    {
+        $rendered = $this->renderSection('website');
+
+        $this->assertMatchesRegularExpression(
+            '/md:col-span-2[^>]*>\s*<div id="setting-tandc"[^>]*x-data="richTextEditor"/s',
+            $rendered,
+        );
+        $this->assertMatchesRegularExpression(
+            '/<textarea(?=[^>]*id="tandc")(?=[^>]*name="tandc")(?=[^>]*rows="15")(?=[^>]*class="[^"]*rich-text-editor)[^>]*>&lt;p&gt;Terms\.&lt;\/p&gt;<\/textarea>/s',
+            $rendered,
+        );
+    }
+
     public function test_the_engine_page_renders_the_safety_valves_that_used_to_need_sql(): void
     {
         $rendered = $this->renderSection('engine');
@@ -144,6 +158,7 @@ class SettingsHubPagesTest extends TestCase
         $this->assertTrue($response->isRedirect());
         $this->assertSame('Indexing since forever', $this->storedSettingValue('strapline'));
         $this->assertSame('/browse', $this->storedSettingValue('home_link'));
+        $this->assertSame('<p>Terms.</p>', $this->storedSettingValue('tandc'));
     }
 
     public function test_a_picker_card_saves_and_rejects_an_out_of_range_number(): void

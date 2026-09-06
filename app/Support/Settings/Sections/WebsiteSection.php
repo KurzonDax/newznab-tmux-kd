@@ -88,7 +88,7 @@ final class WebsiteSection implements SettingsSectionProvider
                             key: 'tandc',
                             label: 'Terms and conditions',
                             help: 'The body of the terms page. HTML is allowed.',
-                            type: SettingType::Textarea,
+                            type: SettingType::RichText,
                             icon: 'fas fa-scale-balanced',
                         ),
                     ],
