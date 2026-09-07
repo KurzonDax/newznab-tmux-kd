@@ -1,0 +1,11 @@
+services:
+  laravel.test:
+    image: nntmux-ci/php85
+    pull_policy: never
+    environment:
+      COMPOSER_CACHE_DIR: /ci-cache/composer
+      npm_config_cache: /ci-cache/npm
+    volumes:
+      - '${RUNNER_TEMP:?CI requires RUNNER_TEMP}/nntmux-ci-cache/composer:/ci-cache/composer'
+      - '${RUNNER_TEMP:?CI requires RUNNER_TEMP}/nntmux-ci-cache/npm:/ci-cache/npm'
+      - './php-ci.ini:/etc/php/8.5/cli/conf.d/zz-nntmux-ci.ini:ro'
