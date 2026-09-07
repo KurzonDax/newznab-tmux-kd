@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+php -r '$settings = parse_ini_file($argv[1]); if ($settings["xdebug.mode"] !== "off" || $settings["pcov.enabled"] !== "0") { fwrite(STDERR, "CI instrumentation configuration must preserve literal off and zero\n"); exit(1); }' "$repository_root/.github/php-ci.ini"
 fixture="$(mktemp -d)"
 trap 'rm -rf -- "$fixture"' EXIT
 mkdir "$fixture/bin"
