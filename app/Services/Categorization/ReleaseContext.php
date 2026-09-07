@@ -140,8 +140,19 @@ class ReleaseContext
      */
     public function hasAdultMarkers(): bool
     {
-        if (preg_match(self::HARD_ADULT_MARKER_REGEX, $this->releaseName)
-            || self::hasHardAdultTrigger($this->releaseName)) {
+        $slot = $this->episodeTitleSlot();
+        preg_match_all(self::HARD_ADULT_MARKER_REGEX, $this->releaseName, $matches, PREG_OFFSET_CAPTURE);
+
+        foreach ($matches[0] as [$marker, $offset]) {
+            if (strcasecmp($marker, 'Porn') === 0 && $slot !== null
+                && $offset >= $slot[0] && $offset + strlen($marker) <= $slot[1]) {
+                continue;
+            }
+
+            return true;
+        }
+
+        if (self::hasHardAdultTrigger($this->releaseName)) {
             return true;
         }
 
@@ -176,7 +187,52 @@ class ReleaseContext
             return true;
         }
 
-        return self::hasIndependentAdultKeyword($this->releaseName);
+        return $this->hasIndependentAdultKeywordOutsideEpisodeTitle();
+    }
+
+    /**
+     * @return array{0: int, 1: int}|null
+     */
+    private function episodeTitleSlot(): ?array
+    {
+        if (preg_match(self::SEASON_EPISODE_TOKEN_REGEX, $this->releaseName, $episode, PREG_OFFSET_CAPTURE) !== 1) {
+            return null;
+        }
+
+        $start = $episode[0][1] + strlen($episode[0][0]);
+        if (preg_match('/\b(480p|576p|720p|1080[pi]|2160p|4K)\b/i', $this->releaseName, $resolution, PREG_OFFSET_CAPTURE, $start) !== 1) {
+            return null;
+        }
+
+        $end = $resolution[0][1];
+        if (trim(substr($this->releaseName, $start, $end - $start), '._ -') === '') {
+            return null;
+        }
+
+        return [$start, $end];
+    }
+
+    private function hasIndependentAdultKeywordOutsideEpisodeTitle(): bool
+    {
+        $slot = $this->episodeTitleSlot();
+        if ($slot === null) {
+            return self::hasIndependentAdultKeyword($this->releaseName);
+        }
+
+        $nameWithoutAmbiguousTerms = preg_replace_callback(
+            '/\b(?:'.self::AMBIGUOUS_ADULT_TERMS.')\b/i',
+            static fn (array $match): string => str_repeat(' ', strlen($match[0])),
+            $this->releaseName,
+        ) ?? $this->releaseName;
+
+        preg_match_all('/\b(?:'.self::ADULT_KEYWORDS.')\b/i', $nameWithoutAmbiguousTerms, $matches, PREG_OFFSET_CAPTURE);
+        foreach ($matches[0] as [$keyword, $offset]) {
+            if ($offset < $slot[0] || $offset + strlen($keyword) > $slot[1]) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function hasAmbiguousStudioDatePerformerShape(): bool

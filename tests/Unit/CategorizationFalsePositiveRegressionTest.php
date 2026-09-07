@@ -83,7 +83,7 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
         ];
     }
 
-    private function runPipeline(string $releaseName, string $groupName): CategorizationPassable
+    private function runPipeline(string $releaseName, string $groupName, bool $catWebDL = true): CategorizationPassable
     {
         $releaseName = (new NzbSplitUnwrapper)->unwrap($releaseName) ?? $releaseName;
         $releaseName = (new ObfuscatedSubjectExtractor)->extract($releaseName) ?? $releaseName;
@@ -92,6 +92,7 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
             releaseName: $releaseName,
             groupId: 0,
             groupName: $groupName,
+            catWebDL: $catWebDL,
         );
 
         $passable = new CategorizationPassable($context, debug: true);
@@ -205,7 +206,7 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
     }
 
     /**
-     * @return array<string, array{0: string, 1: string, 2: int}>
+     * @return array<string, array{0: string, 1: string, 2: int, 3?: bool}>
      */
     public static function expectedCategoryProvider(): array
     {
@@ -246,6 +247,12 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
 
             // #61 — a weak adult keyword must not veto a clear TV structure
             'south park anal probe' => ['South.Park.S01E01.Cartman.Gets.an.Anal.Probe.1080p.TrueHD.5.1.AVC.REMUX-FraMeSToR', 'alt.binaries.multimedia', Category::TV_HD],
+            'south park episode title porn' => ['South.Park.S17E02.Informative.Murder.Porn.1080p.BluRay.REMUX.AVC.TrueHD.5.1-EPSiLON', 'alt.binaries.teevee', Category::TV_HD],
+            'friends episode title porn' => ['Friends S04E17 The One with the Free Porn 1080p REMUX AVC 5.1', 'alt.binaries.teevee', Category::TV_HD],
+            'planet sex episode title porn' => ['Planet.Sex.with.Cara.Delevingne.S01E03.Can.Porn.Be.Good.1080p.iP.WEB-DL.AAC.2.0.H.264-NYXIS', 'alt.binaries.teevee', Category::TV_WEBDL],
+            'comfy couch episode title corroboration' => ['The.Big.Comfy.Couch.S07E17.Big.Blow.Hard.576p.AMZN.WEB-DL.DDP2.0.H H.264', 'alt.binaries.teevee', Category::TV_WEBDL],
+            'queenie episode title corroboration' => ['Queenie.S01E03.From.Virgin.to.Vixen.2160p.HULU.WEB-DL.DDP5.1.H.265-PrimeFix', 'alt.binaries.teevee', Category::TV_UHD, false],
+            'queenie episode title with webdl enabled' => ['Queenie.S01E03.From.Virgin.to.Vixen.2160p.HULU.WEB-DL.DDP5.1.H.265-PrimeFix', 'alt.binaries.teevee', Category::TV_WEBDL],
             'teen titans 1080p' => ['Teen.Titans.S02E03.Terra.1080p.BluRay.REMUX.AVC.DTS-HD.MA.2.0-EPSiLON', 'alt.binaries.multimedia', Category::TV_HD],
             'teen titans 720p' => ['Teen.Titans.S02E03.Terra.720p.BluRay-EPSiLON', 'alt.binaries.multimedia', Category::TV_HD],
             'studio name still xxx' => ['Brazzers.24.01.01.Name.XXX.1080p.MP4-XXX', 'alt.binaries.multimedia', Category::XXX_CLIPHD],
@@ -264,9 +271,9 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
     }
 
     #[DataProvider('expectedCategoryProvider')]
-    public function test_release_resolves_to_expected_category(string $name, string $groupName, int $expected): void
+    public function test_release_resolves_to_expected_category(string $name, string $groupName, int $expected, bool $catWebDL = true): void
     {
-        $passable = $this->runPipeline($name, $groupName);
+        $passable = $this->runPipeline($name, $groupName, $catWebDL);
 
         $this->assertFalse($passable->lockedToMisc, "'$name' should not be locked to misc");
         $this->assertSame(
