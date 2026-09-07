@@ -34,6 +34,8 @@ use Illuminate\Support\Facades\Log;
  */
 class ReleaseProcessor
 {
+    private const string NESTED_ARCHIVE_PATTERN = '/.*\.([rz]\d{2,}|rar|zipx?)($|[^a-z0-9])|\.0{0,2}1$/i';
+
     /**
      * @var array<int, string>
      */
@@ -1452,10 +1454,9 @@ class ReleaseProcessor
             }
 
             $foundCompressed = false;
-            $pattern = '/.*\.([rz]\d{2,}|rar|zipx?|0{0,2}1)($|[^a-z0-9])/i';
 
             try {
-                $files = $this->tempWorkspace->listFiles($context->tmpPath, $pattern);
+                $files = $this->tempWorkspace->listFiles($context->tmpPath, self::NESTED_ARCHIVE_PATTERN);
             } catch (\Throwable) {
                 break;
             }

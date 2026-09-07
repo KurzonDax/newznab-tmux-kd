@@ -11,7 +11,7 @@ class ReleaseContext
 {
     private const string STANDALONE_SEASON_TOKEN_REGEX = '/(?:^|[._ -])S\d{1,3}(?=$|[._ -])/i';
 
-    private const string SEASON_EPISODE_TOKEN_REGEX = '/(?:^|[._ ()-])S\d{1,3}[._ -]?(?:E|D(?:isc)?)\d{1,4}(?:[._ -]?E\d{1,4})*(?=$|[._ ()-])/i';
+    private const string SEASON_EPISODE_TOKEN_REGEX = '/(?:^|[._ ()\[\]-])S\d{1,3}[._ -]?(?:E|D(?:isc)?)\d{1,4}(?:[._ -]?E\d{1,4})*(?=$|[._ ()\[\]-])/i';
 
     /** Adult studios whose names are sufficiently distinctive to stand alone. */
     public const string UNAMBIGUOUS_ADULT_STUDIOS = 'Brazzers|NaughtyAmerica|RealityKings|Bangbros|BangBros18|TeenFidelity|PornPros|SexArt|WowGirls|Bellesa|Defloration|MetArt|MetArtX|TheLifeErotic|VivThomas|JoyMii|Nubiles|NubileFilms|Anilos|FamilyStrokes|X-Art|Twistys|WetAndPuffy|WowPorn|MomsTeachSex|Mofos|BangBus|DorcelClub|CherryPimps|PureTaboo|Lady[._ -]?Lyne|TeamSkeet|GirlsWay|Digital[._ -]?Playground|HardX|JulesJordan|ManuelFerrara|LesbianX|AllAnal|DarkX|PornFidelity|Kelly[._ -]?Madison|DDF[._ -]?Network|21Sextury|21Naturals|SexMex|SpankBang|PornWorld|LegalPorno|AnalVids|GonzoXXX|RoccoSiffredi|Fake[._ -]?Hub|FakeAgent|FakeTaxi|FakeHostel|PublicAgent|StrandedTeens|Property[._ -]?Sex|Dane[._ -]?Jones|Lets[._ -]?Doe[._ -]?It|Office[._ -]?Obsession|SexyHub|Massage[._ -]?Rooms|Fitness[._ -]?Rooms|Female[._ -]?Agent|MissaX|All[._ -]?Girl[._ -]?Massage|Fantasy[._ -]?Massage|Nurumassage|Soapymassage|Reality[._ -]?Junkies|Perv[._ -]?Mom|Bad[._ -]?Milfs|Milf[._ -]?Body|Step[._ -]?Siblings|Sis[._ -]?Loves[._ -]?Me|Brother[._ -]??Crush|Dad[._ -]?Crush|Mom[._ -]?Knows[._ -]?Best|Bratty[._ -]?Sis|My[._ -]?Family[._ -]?Pies|Family[._ -]?Therapy|Nubiles[._ -]?Porn|Step[._ -]?Fantasy|Caught[._ -]?Fapping|She[._ -]?Will[._ -]?Cheat|Dirty[._ -]?Wives[._ -]?Club|Big[._ -]?Tits[._ -]?Round[._ -]?Asses|Ass[._ -]?Parade|Monsters[._ -]?Of[._ -]?Cock|Brown[._ -]?Bunnies|Teens[._ -]?Love[._ -]?Huge[._ -]?Cocks|Ass[._ -]?Masterpiece|Tiny4K|POVD|Exotic4K|CastingCouch[._ -]?X|Creampie[._ -]?Angels|Digital[._ -]?Desire|Femjoy|Hegre|Joymii|Met[._ -]?Art|MPL[._ -]?Studios|Rylsky[._ -]?Art|Stunning18|Photodromm|Watch4Beauty|Wow[._ -]?Girls|Yonitale|Mommys[._ -]?Boy|AllOver30|10musume|Caribbeancom|Heyzo|Pacopacomama|1Pondo|TokyoHot|Mommy[._ -]?Blows[._ -]?Best|Milfs[._ -]?Like[._ -]?It[._ -]?Big|Mommy[._ -]?Got[._ -]?Boobs|My[._ -]?Friends[._ -]?Hot[._ -]?Mom|Seduced[._ -]?By[._ -]?A[._ -]?Cougar|Hot[._ -]?Mom[._ -]?Next[._ -]?Door|ClubSweethearts|HookupHotshot';
@@ -140,8 +140,19 @@ class ReleaseContext
      */
     public function hasAdultMarkers(): bool
     {
-        if (preg_match(self::HARD_ADULT_MARKER_REGEX, $this->releaseName)
-            || self::hasHardAdultTrigger($this->releaseName)) {
+        $slot = $this->episodeTitleSlot();
+        preg_match_all(self::HARD_ADULT_MARKER_REGEX, $this->releaseName, $matches, PREG_OFFSET_CAPTURE);
+
+        foreach ($matches[0] as [$marker, $offset]) {
+            if (strcasecmp($marker, 'Porn') === 0 && $slot !== null
+                && $offset >= $slot[0] && $offset + strlen($marker) <= $slot[1]) {
+                continue;
+            }
+
+            return true;
+        }
+
+        if (self::hasHardAdultTrigger($this->releaseName)) {
             return true;
         }
 
@@ -176,7 +187,52 @@ class ReleaseContext
             return true;
         }
 
-        return self::hasIndependentAdultKeyword($this->releaseName);
+        return $this->hasIndependentAdultKeywordOutsideEpisodeTitle();
+    }
+
+    /**
+     * @return array{0: int, 1: int}|null
+     */
+    private function episodeTitleSlot(): ?array
+    {
+        if (preg_match(self::SEASON_EPISODE_TOKEN_REGEX, $this->releaseName, $episode, PREG_OFFSET_CAPTURE) !== 1) {
+            return null;
+        }
+
+        $start = $episode[0][1] + strlen($episode[0][0]);
+        if (preg_match('/\b(480p|576p|720p|1080[pi]|2160p|4K)\b/i', $this->releaseName, $resolution, PREG_OFFSET_CAPTURE, $start) !== 1) {
+            return null;
+        }
+
+        $end = $resolution[0][1];
+        if (trim(substr($this->releaseName, $start, $end - $start), '._ -') === '') {
+            return null;
+        }
+
+        return [$start, $end];
+    }
+
+    private function hasIndependentAdultKeywordOutsideEpisodeTitle(): bool
+    {
+        $slot = $this->episodeTitleSlot();
+        if ($slot === null) {
+            return self::hasIndependentAdultKeyword($this->releaseName);
+        }
+
+        $nameWithoutAmbiguousTerms = preg_replace_callback(
+            '/\b(?:'.self::AMBIGUOUS_ADULT_TERMS.')\b/i',
+            static fn (array $match): string => str_repeat(' ', strlen($match[0])),
+            $this->releaseName,
+        ) ?? $this->releaseName;
+
+        preg_match_all('/\b(?:'.self::ADULT_KEYWORDS.')\b/i', $nameWithoutAmbiguousTerms, $matches, PREG_OFFSET_CAPTURE);
+        foreach ($matches[0] as [$keyword, $offset]) {
+            if ($offset < $slot[0] || $offset + strlen($keyword) > $slot[1]) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function hasAmbiguousStudioDatePerformerShape(): bool

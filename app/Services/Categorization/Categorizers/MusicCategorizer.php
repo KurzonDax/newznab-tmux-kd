@@ -31,7 +31,7 @@ class MusicCategorizer extends AbstractCategorizer
             return true;
         }
         // Skip TV shows (season patterns)
-        if (preg_match('/[._ -]S\d{1,3}[._ -]?(E\d|Complete|Full|1080|720|480|2160|WEB|HDTV|BluRay)/i', $context->releaseName)) {
+        if ($context->hasSeasonEpisodeToken() || preg_match('/[._ -]S\d{1,3}[._ -]?(E\d|Complete|Full|1080|720|480|2160|WEB|HDTV|BluRay)/i', $context->releaseName)) {
             return true;
         }
 
@@ -51,7 +51,7 @@ class MusicCategorizer extends AbstractCategorizer
             return $result;
         }
 
-        if ($result = $this->checkMusicVideo($name, $context->categorizeForeign)) {
+        if ($result = $this->checkMusicVideo($name, $context->categorizeForeign, $context->hasSeasonEpisodeToken())) {
             return $result;
         }
 
@@ -120,7 +120,7 @@ class MusicCategorizer extends AbstractCategorizer
         return null;
     }
 
-    protected function checkMusicVideo(string $name, bool $categorizeForeign): ?CategorizationResult
+    protected function checkMusicVideo(string $name, bool $categorizeForeign, bool $hasSeasonEpisodeToken): ?CategorizationResult
     {
         // Music video indicators
         if (preg_match('/(?:^|[^a-zA-Z0-9])(?:Music\s*Video|Concert|Live\s*Show|Tour|Festival)(?=$|[^a-zA-Z0-9])|(?:^|[. ])(?:MV|MTV)(?=$|[. ])|\b(?:MVID|MVid)\b/i', $name)) {
@@ -137,7 +137,7 @@ class MusicCategorizer extends AbstractCategorizer
         }
 
         // Artist-title pattern with video format
-        if (preg_match('/^[A-Z0-9][A-Za-z0-9\.\s\&\'\(\)\-]+\s+\-\s+[A-Z0-9][A-Za-z0-9\.\s\&\'\(\)\-]+.*?\b(720p|1080[pi]|2160p|Bluray|x264|x265)\b/i', $name)) {
+        if (! $hasSeasonEpisodeToken && preg_match('/^[A-Z0-9][A-Za-z0-9\.\s\&\'\(\)\-]+\s+\-\s+[A-Z0-9][A-Za-z0-9\.\s\&\'\(\)\-]+.*?\b(720p|1080[pi]|2160p|Bluray|x264|x265)\b/i', $name)) {
             if ($categorizeForeign && $this->checkForeign($name)) {
                 return $this->matched(Category::MUSIC_FOREIGN, 0.8, 'music_video_foreign');
             }

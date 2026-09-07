@@ -161,7 +161,7 @@ class XxxCategorizationTest extends TestCase
     /**
      * Adult releases that must never fall through to a non-XXX category (#135).
      *
-     * @return array<string, array{0: string}>
+     * @return array<string, array{0: string, 1?: string}>
      */
     public static function adultReleaseProvider(): array
     {
@@ -182,14 +182,30 @@ class XxxCategorizationTest extends TestCase
             'blacked with adult keyword' => ['Blacked.Performer.Anal.2160p.mp4'],
             'unambiguous studio without corroboration' => ['Brazzers.Performer.Name.1080p.mp4'],
             'explicit adult tag with parenthesized episode' => ['XXX - Episode Title (S03E05) 1080p'],
+            'adult studio episodic name' => ['Brazzers.S01E01.Name.XXX.1080p.MP4-XXX'],
+            'episode title porn with explicit evidence' => ['Brazzers.Exxtra.S01E12.Porn.Star.Games.XXX.1080p.MP4-KTR'],
+            'episode with adult release group' => ['Deeper.S01E03.Performer.Name.1080p.MP4-WRB'],
+            'episode with adult newsgroup' => ['Vixen.S01E01.Performer.Anal.1080p.mp4', 'alt.binaries.erotica'],
+            'porn in show title' => ['Porn.Star.Diaries.S02E03.Some.Title.1080p.WEB-DL'],
+            'porn after resolution' => ['Show.S01E01.Title.1080p.Porn.mp4'],
+            'hard word in episode title' => ['Show.S01E01.Creampie.Surprise.1080p.mp4'],
+            'studio containing porn' => ['WowPorn.S01E01.Title.1080p.mp4'],
+            'episode without resolution' => ['Friends S04E17 The One with the Free Porn'],
+            'prose archive subject' => ['(Porn Video) Step Son Gets Caught By Stepmom S9e6 Erotic Porn.part01.rar'],
+            'studio date without episode' => ['Nubiles.13.11.01.Uliane.Caught.Watching.Porn'],
+            'porn inside and outside episode title' => ['Show.S01E01.Porn.Title.1080p.Porn.mp4'],
+            'resolution before episode only' => ['Show.1080p.S01E01.Porn.Title'],
+            'keyword before episode title' => ['Vixen.Anal.S01E01.Title.1080p.mp4'],
+            'keyword after episode title' => ['Vixen.S01E01.Anal.Title.1080p.Hardcore.mp4'],
+            'hard trigger in episode title' => ['First.Wave.S02E02.Deepthroat.480p.SDTV'],
             'adult studio with parenthesized episode' => ['Brazzers - Episode Title (S03E05) 1080p'],
         ];
     }
 
     #[DataProvider('adultReleaseProvider')]
-    public function test_adult_releases_resolve_to_an_xxx_category(string $releaseName): void
+    public function test_adult_releases_resolve_to_an_xxx_category(string $releaseName, string $groupName = 'alt.binaries.multimedia'): void
     {
-        $passable = $this->runPipeline($releaseName, 'alt.binaries.multimedia');
+        $passable = $this->runPipeline($releaseName, $groupName);
         $categoryId = $passable->bestResult->categoryId;
 
         $this->assertSame(
