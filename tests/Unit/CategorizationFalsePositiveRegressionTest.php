@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use App\Models\Category;
+use App\Services\Categorization\Categorizers\MusicCategorizer;
 use App\Services\Categorization\Pipes\BookPipe;
 use App\Services\Categorization\Pipes\CategorizationPassable;
 use App\Services\Categorization\Pipes\ConsolePipe;
@@ -47,6 +48,12 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
             'parenthesized suffix' => ['Show - Episode Title (S03E05)', true],
             'parenthesized prefix' => ['(S03E05) Show - Episode Title', true],
             'parenthesized middle' => ['Show (S03E05) Episode Title', true],
+            'bracketed middle' => ['Show [S03E05] Title', true],
+            'bracketed prefix' => ['[S03E05] Show', true],
+            'bracketed suffix' => ['Show [S03E05]', true],
+            'bracketed multiple episodes' => ['Show [S03E05E06]', true],
+            'bracketed embedded prefix' => ['Show [ModelS03E05]', false],
+            'bracketed embedded suffix' => ['Show [S03E05Model]', false],
             'multiple episodes' => ['Show (S03E05E06)', true],
             'separated episode' => ['Show (S03 E05)', true],
             'lowercase' => ['Show (s03e05)', true],
@@ -59,6 +66,87 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
             'embedded both' => ['Show (ModelS03E05Version)', false],
             'too many episode digits' => ['Show (S03E05123)', false],
             'missing episode number' => ['Show (S03E)', false],
+        ];
+    }
+
+    #[DataProvider('bracketedEpisodes')]
+    public function test_bracketed_episodes_resolve_to_tv(string $name): void
+    {
+        $result = $this->runPipeline($name, 'alt.binaries.teevee', catWebDL: false, categorizeForeign: false)->bestResult;
+
+        $this->assertSame(Category::TV_HD, $result->categoryId);
+        $this->assertSame(Category::TV_ROOT, Category::rootCategoryFor($result->categoryId));
+        $this->assertStringStartsWith('hd_', $result->matchedBy);
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function bracketedEpisodes(): array
+    {
+        return [
+            'mayday deadly delivery' => ['Mayday - Air Crash Investigation [S21E10] Deadly Delivery [1080p] V3V'],
+            'mayday grounded boeing' => ['Mayday - Air Crash Investigation [S21E04] Grounded Boeing Max 8 REPACK [1080p] V3V'],
+            'bachelor point' => ['CINEFREAK.TOP - Bachelor Point [S05E86] WEB-DL [Bengali] BONGO 1080p'],
+        ];
+    }
+
+    #[DataProvider('musicSkipNames')]
+    public function test_music_skips_episode_tokens_and_season_packs(string $name, bool $expected): void
+    {
+        $this->assertSame($expected, (new MusicCategorizer)->shouldSkip(new ReleaseContext($name, 0)));
+    }
+
+    /**
+     * @return array<string, array{string, bool}>
+     */
+    public static function musicSkipNames(): array
+    {
+        return [
+            'bracketed episode' => ['Mayday - Air Crash Investigation [S21E10] Deadly Delivery [1080p] V3V', true],
+            'season pack' => ['Show.S01.Complete.1080p', true],
+            'music album' => ['Artist - Album (2020) FLAC', false],
+        ];
+    }
+
+    #[DataProvider('episodicMusicVideoNames')]
+    public function test_direct_music_categorization_does_not_use_artist_fallback_for_episodes(string $name): void
+    {
+        $result = (new MusicCategorizer)->categorize(new ReleaseContext($name, 0));
+
+        $this->assertNotContains($result->matchedBy, ['music_video_artist', 'music_video_foreign']);
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function episodicMusicVideoNames(): array
+    {
+        return [
+            'artist episode' => ['Some Artist - Some Title [S01E01] 1080p'],
+            'foreign artist episode' => ['Some Artist - Some Title [S01E01] FRENCH 1080p'],
+        ];
+    }
+
+    #[DataProvider('musicVideoControls')]
+    public function test_direct_music_categorization_preserves_music_video_matches(string $name, int $category, string $matchedBy): void
+    {
+        $result = (new MusicCategorizer)->categorize(new ReleaseContext($name, 0));
+
+        $this->assertSame([$category, $matchedBy], [$result->categoryId, $result->matchedBy]);
+    }
+
+    /**
+     * @return array<string, array{string, int, string}>
+     */
+    public static function musicVideoControls(): array
+    {
+        return [
+            'artist title' => ['Some Artist - Some Title 1080p', Category::MUSIC_VIDEO, 'music_video_artist'],
+            'foreign artist title' => ['Some Artist - Some Title FRENCH 1080p', Category::MUSIC_FOREIGN, 'music_video_foreign'],
+            'coldplay live' => ['Coldplay - Live in Buenos Aires 2018 1080p BluRay x264', Category::MUSIC_VIDEO, 'music_video_artist'],
+            'official video' => ['Artist - Song Title (Official Video) 1080p', Category::MUSIC_VIDEO, 'music_video_artist'],
+            'explicit concert with episode' => ['Some Artist - Concert [S01E01] 1080p', Category::MUSIC_VIDEO, 'music_video'],
         ];
     }
 
@@ -83,7 +171,7 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
         ];
     }
 
-    private function runPipeline(string $releaseName, string $groupName, bool $catWebDL = true): CategorizationPassable
+    private function runPipeline(string $releaseName, string $groupName, bool $catWebDL = true, bool $categorizeForeign = true): CategorizationPassable
     {
         $releaseName = (new NzbSplitUnwrapper)->unwrap($releaseName) ?? $releaseName;
         $releaseName = (new ObfuscatedSubjectExtractor)->extract($releaseName) ?? $releaseName;
@@ -93,6 +181,7 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
             groupId: 0,
             groupName: $groupName,
             catWebDL: $catWebDL,
+            categorizeForeign: $categorizeForeign,
         );
 
         $passable = new CategorizationPassable($context, debug: true);
