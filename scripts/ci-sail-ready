@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The entrypoint remaps sail asynchronously after container creation.
+for ((attempt = 0; attempt < 60; attempt++)); do
+    if ./sail exec -T -u sail laravel.test bash -c '
+        [[ "$(id -u)" == "$WWWUSER" ]] || exit 1
+        for directory in /var/www/html /var/www/html/storage /var/www/html/storage/framework /var/www/html/bootstrap/cache /ci-cache/composer /ci-cache/npm; do
+            [[ -d "$directory" && -w "$directory" ]] || exit 1
+        done
+    '; then
+        echo 'Sail UID and runtime directory readiness verified.'
+        exit 0
+    fi
+    sleep 1
+done
+./sail logs laravel.test >&2
+printf '%s\n' 'Sail identity was not ready within 60 seconds.' >&2
+exit 1

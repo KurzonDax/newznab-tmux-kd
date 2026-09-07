@@ -5,16 +5,20 @@ on:
     branches: [master]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     name: PHP 8.5 via Sail
     env:
       SAIL_FILES: .github/docker-compose.ci.yml
       COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # HEAD^ is the base tip on pull_request merge commits and the previous
           # master tip on squash-merge pushes, so a depth of 2 covers the diff.
@@ -34,28 +38,11 @@ jobs:
             echo 'Code change detected: running the full pipeline.'
           fi
 
-      - name: Copy env file
+      - name: Set up Sail
         if: steps.scope.outputs.code == 'true'
-        run: cp .env.test .env
-
-      - name: Configure Sail identity
-        if: steps.scope.outputs.code == 'true'
-        run: |
-          echo "WWWUSER=$(id -u)" >> "$GITHUB_ENV"
-          echo "WWWGROUP=$(id -g)" >> "$GITHUB_ENV"
-
-      - name: Start Sail
-        if: steps.scope.outputs.code == 'true'
-        run: ./sail up -d --build
-
-      - name: Run composer install
-        if: steps.scope.outputs.code == 'true'
-        run: make composer-install
-
-      - name: Generate app key
-        if: steps.scope.outputs.code == 'true'
-        run: |
-          ./sail artisan key:generate --force
+        uses: ./.github/actions/ci-sail
+        with:
+          npm-cache: 'true'
 
       - name: Audit dependencies (informational, never blocks merge)
         if: steps.scope.outputs.code == 'true'
@@ -87,7 +74,7 @@ jobs:
       - name: Build frontend and run JS tests
         if: steps.scope.outputs.code == 'true'
         run: |
-          make npm-build
+          make npm-build-ci
           ./sail npm run test:js
 
       - name: Verify production permissions

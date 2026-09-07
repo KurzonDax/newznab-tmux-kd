@@ -33,6 +33,13 @@ npm_command="$(make -s -n -C "$repository_root" npm-build)"
     exit 1
 }
 
+ci_npm_command="$(make -s -n -C "$repository_root" npm-build-ci)"
+[[ "$ci_npm_command" == *'npm ci --no-audit --no-fund; npm run build'* && "$ci_npm_command" == *'umask 0022'* && "$ci_npm_command" == *'normalize-build'* ]] || {
+    echo "FAIL: npm-build-ci must use a lockfile install and normalize build permissions" >&2
+    exit 1
+}
+[[ "$ci_npm_command" != *'npm install'* ]] || exit 1
+
 fix_permissions_command="$(make -s -n -C "$repository_root" fix-permissions)"
 [[ "$fix_permissions_command" != *'DEPLOYMENT_OWNER='* && "$fix_permissions_command" != *'APPLICATION_USER='* && "$fix_permissions_command" != *'APPLICATION_GROUP='* ]] || {
     echo "FAIL: fix-permissions overrides the live permission identity: $fix_permissions_command" >&2

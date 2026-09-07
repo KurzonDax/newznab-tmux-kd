@@ -170,6 +170,7 @@ test: ## Run the PHPUnit test suite (usage: make test filter=TestName)
 	@$(SAIL) exec -u sail $(APP_SERVICE) tests/Shell/TestIsolationTest.sh
 .PHONY: test-permissions
 test-permissions: ## Run permission, Sail-wrapper, and test-isolation regressions
+	@$(SAIL) exec -u sail $(APP_SERVICE) tests/Shell/CiSailReadyTest.sh
 	@$(SAIL) exec -u sail $(APP_SERVICE) tests/Shell/RuntimePermissionsTest.sh
 	@$(SAIL) exec -u sail $(APP_SERVICE) tests/Shell/SailWorkflowTest.sh
 	@$(SAIL) exec -u sail $(APP_SERVICE) tests/Shell/TestIsolationTest.sh
@@ -198,6 +199,10 @@ rector-fix: ## Apply Rector refactorings
 .PHONY: npm-build
 npm-build: ## Run npm install and build inside the container
 	@$(SAIL) exec -u sail $(APP_SERVICE) bash -c 'set -e; umask 0022; npm install; npm run build'
+	@$(DOCKER_COMPOSE) exec -u root $(APP_SERVICE) scripts/runtime-permissions.sh normalize-build /var/www/html
+.PHONY: npm-build-ci
+npm-build-ci: ## CI lockfile install, build, and normalize build permissions
+	@$(SAIL) exec -u sail $(APP_SERVICE) bash -c 'set -e; umask 0022; npm ci --no-audit --no-fund; npm run build'
 	@$(DOCKER_COMPOSE) exec -u root $(APP_SERVICE) scripts/runtime-permissions.sh normalize-build /var/www/html
 .PHONY: npm-dev
 npm-dev: ## Start Vite dev server inside the container

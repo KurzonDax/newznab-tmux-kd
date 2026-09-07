@@ -1,0 +1,100 @@
+name: CI Sail setup
+description: Load the CI runtime, wait for Sail identity, and install locked PHP dependencies.
+inputs:
+  npm-cache:
+    description: Restore npm downloads for runtime or maintenance jobs
+    default: 'false'
+  fresh:
+    description: Pull bases and rebuild all layers for daily/manual validation
+    default: 'false'
+  export-build-cache:
+    description: Trusted master maintenance may export BuildKit cache
+    default: 'false'
+outputs:
+  composer-key:
+    description: Composer download key
+    value: ${{ steps.composer.outputs.cache-primary-key }}
+  composer-hit:
+    description: Exact Composer cache hit
+    value: ${{ steps.composer.outputs.cache-hit }}
+  npm-key:
+    description: npm download key
+    value: ${{ steps.npm.outputs.cache-primary-key }}
+  npm-hit:
+    description: Exact npm cache hit
+    value: ${{ steps.npm.outputs.cache-hit }}
+runs:
+  using: composite
+  steps:
+    - name: Prepare identity and cache mounts
+      shell: bash
+      run: |
+        cp .env.test .env
+        echo "WWWUSER=$(id -u)" >> "$GITHUB_ENV"
+        echo "WWWGROUP=$(id -g)" >> "$GITHUB_ENV"
+        echo 'SAIL_FILES=.github/docker-compose.ci.yml:.github/docker-compose.ci-optimized.yml' >> "$GITHUB_ENV"
+        mkdir -p "$RUNNER_TEMP/nntmux-ci-cache/composer/files" "$RUNNER_TEMP/nntmux-ci-cache/npm/_cacache"
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      id: composer
+      with:
+        path: ${{ runner.temp }}/nntmux-ci-cache/composer/files
+        key: downloads-v1-${{ runner.os }}-${{ runner.arch }}-php85-${{ hashFiles('composer.lock') }}
+        restore-keys: downloads-v1-${{ runner.os }}-${{ runner.arch }}-php85-
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: inputs.npm-cache == 'true'
+      id: npm
+      with:
+        path: ${{ runner.temp }}/nntmux-ci-cache/npm/_cacache
+        key: downloads-v1-${{ runner.os }}-${{ runner.arch }}-node22-${{ hashFiles('package-lock.json') }}
+        restore-keys: downloads-v1-${{ runner.os }}-${{ runner.arch }}-node22-
+    - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+    - name: Build and load runtime
+      id: build
+      continue-on-error: true
+      uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+      with:
+        context: ./docker/8.5
+        file: ./docker/8.5/Dockerfile
+        platforms: linux/amd64
+        build-args: WWWGROUP=${{ env.WWWGROUP }}
+        tags: nntmux-ci/php85
+        load: true
+        push: false
+        pull: ${{ inputs.fresh == 'true' }}
+        no-cache: ${{ inputs.fresh == 'true' }}
+        cache-from: ${{ inputs.fresh != 'true' && 'type=gha,version=2,scope=php85-linux-amd64-v1' || '' }}
+        cache-to: ${{ inputs.export-build-cache == 'true' && github.ref == 'refs/heads/master' && github.event_name != 'pull_request' && 'type=gha,version=2,scope=php85-linux-amd64-v1,mode=max,ignore-error=true,timeout=2m' || '' }}
+    - name: Retry build without cache import
+      if: steps.build.outcome == 'failure'
+      uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+      with:
+        context: ./docker/8.5
+        file: ./docker/8.5/Dockerfile
+        platforms: linux/amd64
+        build-args: WWWGROUP=${{ env.WWWGROUP }}
+        tags: nntmux-ci/php85
+        load: true
+        push: false
+        pull: ${{ inputs.fresh == 'true' }}
+        no-cache: ${{ inputs.fresh == 'true' }}
+        cache-to: ${{ inputs.export-build-cache == 'true' && github.ref == 'refs/heads/master' && github.event_name != 'pull_request' && 'type=gha,version=2,scope=php85-linux-amd64-v1,mode=max,ignore-error=true,timeout=2m' || '' }}
+    - name: Start loaded image and verify identity
+      shell: bash
+      run: |
+        ./sail up -d --no-build laravel.test
+        loaded_image=$(docker image inspect nntmux-ci/php85 --format '{{.Id}}')
+        container=$(./sail ps -q laravel.test)
+        test "$(docker inspect "$container" --format '{{.Image}}')" = "$loaded_image"
+        scripts/ci-sail-ready
+    - name: Verify PHP configuration and install dependencies
+      shell: bash
+      run: |
+        ./sail exec -T -u sail laravel.test php -r '
+          if (PHP_MAJOR_VERSION !== 8 || PHP_MINOR_VERSION !== 5) { exit(1); }
+          foreach (["xdebug" => ["xdebug.mode", "off"], "pcov" => ["pcov.enabled", "0"]] as $extension => [$key, $value]) {
+              if (extension_loaded($extension) && ini_get($key) !== $value) { fwrite(STDERR, "$key must be $value\n"); exit(1); }
+          }
+          echo "PHP ".PHP_VERSION."; CLI instrumentation disabled\n";'
+        ./sail exec -T -u sail laravel.test bash -c 'umask 0022; exec composer install --no-interaction --prefer-dist'
+        ./sail artisan key:generate --force
+        ./sail artisan --version
