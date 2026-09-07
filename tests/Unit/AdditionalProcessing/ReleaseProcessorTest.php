@@ -38,6 +38,7 @@ use dariusiii\rarinfo\Par2Info;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -778,6 +779,99 @@ class ReleaseProcessorTest extends TestCase
             ['download-a', 'download-unknown', 'download-b', 'archive-a', 'archive-b'],
             $events,
         );
+    }
+
+    #[DataProvider('nestedArchivePaths')]
+    public function test_nested_archive_pattern_only_treats_terminal_numbers_as_split_volumes(string $path, bool $expected): void
+    {
+        $pattern = (new \ReflectionClass(ReleaseProcessor::class))->getConstant('NESTED_ARCHIVE_PATTERN');
+
+        $this->assertSame($expected, preg_match($pattern, $path) === 1);
+    }
+
+    /**
+     * @return array<string, array{string, bool}>
+     */
+    public static function nestedArchivePaths(): array
+    {
+        return [
+            'dated video' => ['unrar/ClubSweethearts 2023 10/ClubSweethearts.2023.10.01.Foo.1080p.mp4', false],
+            'numbered directory' => ['unrar/Disc.01/movie.mkv', false],
+            'numbered part' => ['unrar/Title.Part.1.Bar.mp4', false],
+            'plain video' => ['foo.mp4', false],
+            'season directory' => ['Season.1/episode.mkv', false],
+            'chapter video' => ['Chapter.1.mp4', false],
+            'three digit token' => ['Title.001-extra.mp4', false],
+            'split 7z' => ['inner.7z.001', true],
+            'split three digits' => ['inner.001', true],
+            'split two digits' => ['inner.01', true],
+            'split one digit' => ['inner.1', true],
+            'nested split volume' => ['unrar/Disc.01/inner.001', true],
+            'rar' => ['inner.rar', true],
+            'rar volume' => ['inner.r00', true],
+            'zip' => ['inner.zip', true],
+            'zip volume' => ['inner.z01', true],
+            'zipx' => ['inner.zipx', true],
+            'uppercase archive' => ['inner.RAR', true],
+            'tolerated rar suffix' => ['inner.rar-extra', true],
+            'tolerated volume suffix' => ['inner.r00-extra', true],
+            'tolerated zip suffix' => ['inner.zip-extra', true],
+        ];
+    }
+
+    #[Test]
+    public function it_preserves_videos_with_numeric_path_tokens_during_the_nested_archive_sweep(): void
+    {
+        $tmpPath = $this->makeTempDirectory('nntmux-nested-archives').'/';
+        $videos = [
+            'unrar/ClubSweethearts 2023 10/ClubSweethearts.2023.10.01.Foo.1080p.mp4',
+            'unrar/Disc.01/movie.mkv',
+            'unrar/Title.Part.1.Bar.mp4',
+        ];
+        $archives = ['inner.7z.001', 'inner.001', 'inner.01', 'inner.1', 'inner.rar', 'inner.r00', 'inner.zip', 'inner.z01', 'inner.zipx'];
+        foreach (array_merge($videos, $archives) as $name) {
+            File::ensureDirectoryExists(dirname($tmpPath.$name));
+            File::put($tmpPath.$name, $name);
+        }
+
+        $context = $this->makeContext();
+        $context->tmpPath = $tmpPath;
+        $archiveService = Mockery::mock(ArchiveExtractionService::class);
+        foreach ($archives as $name) {
+            $archiveService->shouldReceive('processCompressedData')->once()
+                ->with($name, $context, $tmpPath)
+                ->andReturn(['success' => false, 'hasPassword' => false]);
+        }
+
+        $mediaService = Mockery::mock(MediaExtractionService::class);
+        foreach ($videos as $name) {
+            $mediaService->shouldReceive('processVideoFile')->once()
+                ->with($tmpPath.$name, $context, $tmpPath, Mockery::type(MediaInfoProbeContext::class))
+                ->andReturn([]);
+        }
+
+        $config = $this->makeConfig(['maxNestedLevels' => 2]);
+        $processor = new ReleaseProcessor(
+            $config,
+            Mockery::mock(NzbContentParser::class),
+            new AdditionalWorkPlanner($config),
+            $archiveService,
+            $mediaService,
+            Mockery::mock(UsenetDownloadService::class),
+            Mockery::mock(ReleaseFileManager::class),
+            Mockery::mock(ReleaseFilesArchiveFallback::class),
+            new TempWorkspaceService,
+            Mockery::mock(ConsoleOutputService::class),
+        );
+
+        (new \ReflectionMethod(ReleaseProcessor::class, 'processExtractedFiles'))->invoke($processor, $context);
+
+        foreach ($videos as $name) {
+            $this->assertFileExists($tmpPath.$name);
+        }
+        foreach ($archives as $name) {
+            $this->assertFileDoesNotExist($tmpPath.$name);
+        }
     }
 
     #[Test]
