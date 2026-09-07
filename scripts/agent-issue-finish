@@ -124,20 +124,6 @@ if [[ -n "$timeout_seconds" ]]; then
     monitor_deadline=$((SECONDS + timeout_seconds))
 fi
 
-# One jq pass classifies every rollup entry (CheckRun or StatusContext) so a
-# transient gh failure is never mistaken for a CI failure.
-snapshot_query='def check_states: [.statusCheckRollup[]
-    | if .__typename == "CheckRun"
-        then (if .status == "COMPLETED" then (.conclusion // "PENDING") else "PENDING" end)
-        else (.state // "PENDING") end];
-[.state,
- .mergeStateStatus,
- (if (.reviewDecision // "") == "" then "NONE" else .reviewDecision end),
- (.statusCheckRollup | length),
- (check_states | map(select(. == "FAILURE" or . == "ERROR" or . == "TIMED_OUT" or . == "CANCELLED" or . == "ACTION_REQUIRED" or . == "STARTUP_FAILURE")) | length),
- (check_states | map(select(. == "PENDING" or . == "QUEUED" or . == "IN_PROGRESS" or . == "WAITING" or . == "EXPECTED" or . == "")) | length)
-] | @tsv'
-
 while true; do
     if [[ -n "$monitor_deadline" && "$SECONDS" -ge "$monitor_deadline" ]]; then
         print_pull_request_status pending
@@ -145,12 +131,12 @@ while true; do
         exit 0
     fi
 
-    pull_request_snapshot="$(gh pr view "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
-        --json state,mergeStateStatus,reviewDecision,statusCheckRollup \
-        --jq "$snapshot_query")" ||
-        agent_fail "could not read the status of pull request #$pull_request_number; check network access and gh auth status, then rerun scripts/agent-issue-finish --monitor rather than ending the session"
-    IFS=$'\t' read -r pull_request_state merge_state review_decision check_count \
-        failed_check_count pending_check_count <<<"$pull_request_snapshot"
+    pull_request_snapshot="$("$script_directory/agent-check-snapshot" "$AGENT_EXPECTED_REPOSITORY" "$pull_request_number")" ||
+        agent_fail "could not read a consistent required-check snapshot for pull request #$pull_request_number; check the GitHub API error above, then rerun scripts/agent-issue-finish --monitor"
+    snapshot_fields="$(printf '%s' "$pull_request_snapshot" | jq -er \
+        '[.state, .mergeStateStatus, .reviewDecision, .checksStatus] | @tsv')" ||
+        agent_fail 'invalid required-check snapshot; rerun scripts/agent-issue-finish --monitor'
+    IFS=$'\t' read -r pull_request_state merge_state review_decision checks_status <<<"$snapshot_fields"
 
     if [[ "$pull_request_state" == MERGED ]]; then
         break
@@ -180,19 +166,21 @@ while true; do
             ;;
     esac
 
-    if [[ "$check_count" -eq 0 ]]; then
-        sleep 5
-        continue
-    fi
-    if [[ "$failed_check_count" -gt 0 ]]; then
-        agent_fail "required checks failed for pull request #$pull_request_number; fix the failure on the issue branch, commit, push, then rerun scripts/agent-issue-finish --monitor; do not end the session here"
-    fi
-    if [[ "$pending_check_count" -gt 0 ]]; then
-        sleep 10
-    else
-        # Every check passed; wait for auto-merge to complete.
-        sleep 5
-    fi
+    case "$checks_status" in
+        failure)
+            agent_fail "current required checks failed or were cancelled for pull request #$pull_request_number; fix the failure or rerun the current required workflow, then rerun scripts/agent-issue-finish --monitor"
+            ;;
+        pending)
+            sleep 10
+            ;;
+        success)
+            # Only GitHub's MERGED state permits cleanup, even after checks pass.
+            sleep 5
+            ;;
+        *)
+            agent_fail 'unknown required-check state; inspect the snapshot helper before retrying'
+            ;;
+    esac
 done
 
 # Cleanup is deliberately scoped to this worktree's Compose label, remote branch,

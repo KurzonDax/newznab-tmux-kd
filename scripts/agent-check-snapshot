@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""Read actual required checks, rejecting stale heads and superseded Actions runs."""
+import json
+import re
+import subprocess
+import sys
+from urllib.parse import urlencode
+
+EXPECTED = 'PHP 8.5 via Sail'
+PENDING = {'PENDING', 'QUEUED', 'IN_PROGRESS', 'WAITING', 'EXPECTED', 'REQUESTED'}
+
+
+def gh_json(*args, checks=False):
+    result = subprocess.run(['gh', *args], capture_output=True, text=True)
+    if result.returncode not in ({0, 1, 8} if checks else {0}):
+        raise ValueError(f'gh {args[0]} failed: {result.stderr.strip()}')
+    # gh reports the initial absence of checks on stderr, before JSON is available.
+    if checks and not result.stdout.strip() and result.returncode == 1 and result.stderr.startswith('no checks reported'):
+        return []
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise ValueError(f'gh {args[0]} returned invalid JSON: {result.stderr.strip()}') from error
+
+
+def read_pr(repo, number):
+    snapshot = gh_json('pr', 'view', number, '--repo', repo,
+                       '--json', 'state,mergeStateStatus,reviewDecision,headRefOid')
+    if not isinstance(snapshot, dict) or snapshot.get('state') not in {'OPEN', 'CLOSED', 'MERGED'}:
+        raise ValueError('invalid PR state')
+    if not all(isinstance(snapshot.get(key), str) and snapshot[key] for key in ('headRefOid', 'mergeStateStatus')):
+        raise ValueError('missing PR head or merge state')
+    snapshot['reviewDecision'] = snapshot.get('reviewDecision') or 'NONE'
+    snapshot['checksStatus'] = 'pending'
+    return snapshot
+
+
+def classify(state):
+    if state == 'SUCCESS':
+        return 'success'
+    return 'pending' if state in PENDING else 'failure'
+
+
+def actions_state(repo, number, head, check):
+    match = re.fullmatch(r'https://github\.com/' + re.escape(repo) + r'/actions/runs/(\d+)(?:/job/\d+)?/?', check['link'])
+    if not match:
+        return classify(check['state'])
+    run = gh_json('api', f'repos/{repo}/actions/runs/{match[1]}')
+    if not isinstance(run, dict) or not all(key in run for key in ('id', 'workflow_id', 'head_sha', 'event', 'run_attempt', 'status')):
+        raise ValueError('invalid Actions run response')
+    query = urlencode({'head_sha': head, 'event': run['event'], 'per_page': 100})
+    runs = gh_json('api', f'repos/{repo}/actions/workflows/{run["workflow_id"]}/runs?{query}')
+    if not isinstance(runs, dict) or not isinstance(runs.get('workflow_runs'), list):
+        raise ValueError('invalid Actions workflow runs response')
+    candidates = [candidate for candidate in [run, *runs['workflow_runs']]
+                  if candidate.get('head_sha') == head and candidate.get('workflow_id') == run['workflow_id']
+                  and candidate.get('event') == run['event']
+                  and (not candidate.get('pull_requests') or
+                       any(str(pr.get('number')) == number for pr in candidate['pull_requests']))]
+    if not candidates:
+        return 'pending'
+    newest = max(candidates, key=lambda item: (item['id'], item['run_attempt']))
+    jobs = gh_json('api', f'repos/{repo}/actions/runs/{newest["id"]}/jobs?filter=latest&per_page=100')
+    if not isinstance(jobs, dict) or not isinstance(jobs.get('jobs'), list) or jobs.get('total_count') != len(jobs['jobs']):
+        raise ValueError('invalid or incomplete Actions jobs response')
+    matching = [job for job in jobs['jobs'] if job.get('name') == check['name']]
+    if not matching:
+        return 'pending'
+    job = max(matching, key=lambda item: (item['run_attempt'], item['id']))
+    if newest['status'] != 'completed' or job.get('status') != 'completed':
+        return 'pending'
+    return classify((job.get('conclusion') or 'UNKNOWN').upper())
+
+
+def main(repo, number):
+    before = read_pr(repo, number)
+    if (before['state'] != 'OPEN' or before['mergeStateStatus'] in {'BEHIND', 'DIRTY'} or
+            before['reviewDecision'] in {'REVIEW_REQUIRED', 'CHANGES_REQUESTED'}):
+        return before
+    checks = gh_json('pr', 'checks', number, '--repo', repo, '--required',
+                     '--json', 'name,state,bucket,link,workflow', checks=True)
+    if not isinstance(checks, list) or not all(isinstance(check, dict) and
+            all(isinstance(check.get(key), str) for key in ('name', 'state', 'bucket', 'link', 'workflow')) for check in checks):
+        raise ValueError('invalid required checks JSON')
+    after = read_pr(repo, number)
+    if before['headRefOid'] != after['headRefOid']:
+        return after
+    results = [actions_state(repo, number, before['headRefOid'], check) for check in checks]
+    final = read_pr(repo, number)
+    if before['headRefOid'] != final['headRefOid']:
+        return final
+    if 'failure' in results:
+        final['checksStatus'] = 'failure'
+    elif any(check['name'] == EXPECTED for check in checks) and results and all(result == 'success' for result in results):
+        final['checksStatus'] = 'success'
+    return final
+
+
+if __name__ == '__main__':
+    try:
+        if len(sys.argv) != 3:
+            raise ValueError('usage: scripts/agent-check-snapshot owner/repo pr-number')
+        print(json.dumps(main(*sys.argv[1:])))
+    except (ValueError, KeyError, TypeError, OSError) as error:
+        print(f'GitHub snapshot error: {error}', file=sys.stderr)
+        sys.exit(2)

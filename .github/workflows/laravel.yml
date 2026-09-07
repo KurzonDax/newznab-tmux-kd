@@ -1,18 +1,115 @@
 name: Run tests
-
 on:
   push:
     branches: [master]
   pull_request:
-
 permissions:
   contents: read
-
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
-  tests:
+  scope:
+    name: Classify changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+      dependencies: ${{ steps.diff.outputs.dependencies }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - id: diff
+        run: scripts/ci-classify-changes >> "$GITHUB_OUTPUT"
+  php:
+    name: PHP shard ${{ matrix.shard }}
+    needs: scope
+    if: needs.scope.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    name: PHP 8.5 via Sail
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [0, 1, 2, 3]
+    env:
+      COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/ci-sail
+      - name: Run complete PHPUnit file shard
+        env:
+          SHARD_INDEX: ${{ matrix.shard }}
+        run: ./sail exec -T -u sail laravel.test scripts/run-tests-isolated.sh scripts/ci-phpunit-shard --index "$SHARD_INDEX" --count 4
+      - name: Stop Sail
+        if: always()
+        run: ./sail down
+  runtime:
+    name: Runtime and frontend
+    needs: scope
+    if: needs.scope.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/ci-sail
+        with:
+          npm-cache: 'true'
+      - name: Run CBP MariaDB integration tests
+        run: |
+          ./sail up -d --wait mariadb
+          ./sail exec -T -e CBP_INTEGRATION_DB_DATABASE=cbp_integration -e CBP_INTEGRATION_DB_USERNAME=sail -e CBP_INTEGRATION_DB_PASSWORD=password laravel.test php artisan test --compact tests/Integration/CbpMariaDbIngestionTest.php tests/Integration/ReleaseCleanupSafetyMariaDbTest.php
+
+      - name: Run backup schema MariaDB integration tests
+        run: ./sail exec -T -e BACKUP_INTEGRATION_MARIADB=1 laravel.test php artisan test --compact --fail-on-skipped tests/Integration/BackupSchemaMariaDbTest.php
+
+      - name: Run permission and test-isolation regressions
+        run: make test-permissions
+
+      - name: Prove focused tests leave live caches unchanged
+        run: make test-focused-cache-isolation
+
+      - name: Build frontend and run JS tests
+        run: |
+          make npm-build-ci
+          ./sail npm run test:js
+
+      - name: Verify production permissions
+        run: |
+          make fix-permissions
+          make check-permissions
+
+      - name: Audit dependencies (informational)
+        if: needs.scope.outputs.dependencies == 'true'
+        continue-on-error: true
+        run: make deps-audit
+      - name: Stop Sail
+        if: always()
+        run: ./sail down
+  required:
+    name: ${{ github.event_name == 'pull_request' && 'PHP 8.5 via Sail' || 'PR aggregate (not applicable to master)' }}
+    needs: [scope, php, runtime]
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Assert required result
+        env:
+          CODE: ${{ needs.scope.outputs.code }}
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          PHP_RESULT: ${{ needs.php.result }}
+          RUNTIME_RESULT: ${{ needs.runtime.result }}
+        run: scripts/ci-required-result "$CODE" "$SCOPE_RESULT" "$PHP_RESULT" "$RUNTIME_RESULT"
+  serial-master:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    name: Serial master validation (transition)
     env:
       SAIL_FILES: .github/docker-compose.ci.yml
       COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
