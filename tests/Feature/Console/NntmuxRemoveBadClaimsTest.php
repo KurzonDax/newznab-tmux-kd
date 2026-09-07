@@ -110,6 +110,7 @@ class NntmuxRemoveBadClaimsTest extends TestCase
             id INTEGER PRIMARY KEY,
             guid VARCHAR(64),
             passwordstatus INTEGER NOT NULL DEFAULT -1,
+            nzbstatus INTEGER NOT NULL DEFAULT 1,
             additional_pp_claimed_at DATETIME NULL,
             recovery_claimed_at DATETIME NULL
         )');

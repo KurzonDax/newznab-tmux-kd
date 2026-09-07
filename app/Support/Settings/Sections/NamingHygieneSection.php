@@ -143,7 +143,7 @@ final class NamingHygieneSection implements SettingsSectionProvider
                         new SettingDefinition(
                             key: 'fix_crap',
                             label: 'Custom classes',
-                            help: 'Read only when the sweep mode is Custom. These are every class the sweep accepts.',
+                            help: 'Read only when the sweep mode is Custom. Passworded archives requires a password-like title and confirmed encryption; it does not enable the separate encrypted-release policy. PAR2-only requires a readable, complete stored NZB containing only PAR2 files. Unknown inventories and unfinished creation are deferred.',
                             type: SettingType::CheckboxSet,
                             options: self::crapClasses(),
                             icon: 'fas fa-list-check',

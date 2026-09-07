@@ -46,7 +46,7 @@ class NntmuxResetTruncateTest extends TestCase
     }
 
     #[Test]
-    public function reset_truncate_cleans_unclaimed_nzbless_releases_through_the_canonical_path(): void
+    public function reset_truncate_preserves_pending_releases_under_the_lifecycle_gate(): void
     {
         $nzbRoot = $this->makeTempDirectory('reset-truncate-nzb').'/';
         $coversRoot = $this->makeTempDirectory('reset-truncate-covers');
@@ -69,20 +69,20 @@ class NntmuxResetTruncateTest extends TestCase
             DB::table($table)->insert(['id' => 1]);
         }
 
-        $deletedArtifacts = $this->createArtifacts(1);
+        $pendingArtifacts = $this->createArtifacts(1);
         $protectedArtifacts = $this->createArtifacts(2);
-        Search::shouldReceive('deleteReleases')->once()->with([1]);
+        Search::shouldReceive('deleteReleases')->never();
 
         $this->artisan('nntmux:reset-truncate')->assertSuccessful();
 
-        $this->assertSame([2, 3], DB::table('releases')->orderBy('id')->pluck('id')->map(intval(...))->all());
+        $this->assertSame([1, 2, 3], DB::table('releases')->orderBy('id')->pluck('id')->map(intval(...))->all());
         $this->assertSame(0, (int) DB::table('usenet_groups')->value('first_record'));
         $this->assertSame(0, (int) DB::table('usenet_groups')->value('last_record'));
         foreach (['parts', 'missed_parts', 'binaries', 'collections'] as $table) {
             $this->assertSame(0, DB::table($table)->count());
         }
-        foreach ($deletedArtifacts as $path) {
-            $this->assertFileDoesNotExist($path);
+        foreach ($pendingArtifacts as $path) {
+            $this->assertFileExists($path);
         }
         foreach ($protectedArtifacts as $path) {
             $this->assertFileExists($path);
@@ -149,6 +149,7 @@ class NntmuxResetTruncateTest extends TestCase
         foreach (['parts', 'missed_parts', 'binaries', 'collections'] as $table) {
             Schema::create($table, function (Blueprint $table): void {
                 $table->increments('id');
+                $table->unsignedInteger('releases_id')->nullable();
             });
         }
     }

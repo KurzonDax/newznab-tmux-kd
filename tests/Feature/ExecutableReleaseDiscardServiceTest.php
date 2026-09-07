@@ -33,8 +33,8 @@ class ExecutableReleaseDiscardServiceTest extends TestCase
 
     protected function tearDown(): void
     {
-        Mockery::close();
         $this->tearDownIsolatedDatabase();
+        Mockery::close();
         parent::tearDown();
     }
 
@@ -213,6 +213,8 @@ class ExecutableReleaseDiscardServiceTest extends TestCase
 
         Search::shouldReceive('deleteReleases')->once()->with([1]);
         Log::shouldReceive('warning')->once();
+        Log::shouldReceive('channel')->with('daily')->andReturnSelf();
+        Log::shouldReceive('info')->twice();
 
         $swept = [];
         $count = (new ExecutableReleaseDiscardService)->sweep(function ($release) use (&$swept): void {
@@ -295,6 +297,7 @@ class ExecutableReleaseDiscardServiceTest extends TestCase
         });
 
         Schema::create('releases', function (Blueprint $table): void {
+            $table->integer('nzbstatus')->default(1);
             $table->unsignedInteger('id')->primary();
             $table->string('guid');
             $table->string('name')->default('');

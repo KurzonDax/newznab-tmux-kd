@@ -6,8 +6,11 @@ namespace App\Services;
 
 use App\Enums\BlacklistConstants;
 use App\Models\Category;
+use App\Models\Release;
 use App\Models\Settings;
 use App\Services\Nzb\NzbService;
+use App\Services\Nzb\Par2Inventory;
+use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Releases\ReleaseDeletionProtection;
 use App\Services\Releases\ReleaseManagementService;
 use Carbon\Carbon;
@@ -479,6 +482,7 @@ class ReleaseRemoverService
             AND r.searchname NOT LIKE %s
             AND r.searchname NOT LIKE %s
             AND r.searchname NOT LIKE %s
+            AND (r.passwordstatus = %d OR EXISTS (SELECT 1 FROM release_files confirmed WHERE confirmed.releases_id = r.id AND confirmed.passworded = %d))
             AND r.categories_id NOT IN (%d, %d, %d, %d, %d, %d, %d, %d, %d) %s',
             escapeString('%passwor%'),
             escapeString('%advanced%'),
@@ -487,6 +491,8 @@ class ReleaseRemoverService
             escapeString('%recovery%'),
             escapeString('%reset%'),
             escapeString('%unlocker%'),
+            ReleaseBrowseService::PASSWD_RAR,
+            ReleaseBrowseService::PASSWD_RAR,
             Category::PC_GAMES,
             Category::PC_0DAY,
             Category::PC_ISO,
@@ -819,16 +825,32 @@ class ReleaseRemoverService
             foreach ($matches as $release) {
                 if ($this->echoCLI) {
                     cli()->primary(
-                        ($this->delete ? 'Deleting: ' : 'Would be deleting: ').$release->removal_method.': '.$release->searchname,
+                        'Evaluating: '.$release->removal_method.': '.$release->searchname,
                         true
                     );
                 }
             }
 
-            $removed = $matches->count();
-            if ($this->delete && $matches->isNotEmpty()) {
-                $removed = $this->releaseManagement->deleteBatchIfUnclaimed($matches, $this->nzb, $this->releaseImage);
-            }
+            $removed = $matches->isEmpty() ? 0 : $this->releaseManagement->deleteBatchIfUnclaimed(
+                $matches, $this->nzb, $this->releaseImage,
+                reason: 'php_matched_cleanup',
+                evidence: function (Release $release) use ($candidateSql, $matcher, $includeFiles): array {
+                    $candidate = DB::selectOne(
+                        'SELECT candidates.* FROM ('.$this->cleanSpaces($candidateSql).') candidates WHERE candidates.id = ? LIMIT 1',
+                        [(int) $release->id],
+                    );
+                    if ($candidate === null) {
+                        return ['eligible' => false, 'reason' => 'candidate_changed'];
+                    }
+                    if ($includeFiles) {
+                        $candidate->file_names = DB::table('release_files')->where('releases_id', $release->id)->pluck('name');
+                    }
+                    $method = $matcher($candidate);
+
+                    return ['eligible' => $method !== null, 'predicate' => $method];
+                },
+                dryRun: ! $this->delete,
+            );
 
             $this->deletedCount += $removed;
 
@@ -913,55 +935,23 @@ class ReleaseRemoverService
     }
 
     /**
-     * Remove releases that contain only PAR2 files (no actual content files).
-     *
-     * These releases are useless since PAR2 files are only repair/verification
-     * data and cannot be used without the original content files.
-     *
-     * Two detection strategies are used:
-     * 1. The searchname contains a .par2 filename AND has no associated
-     *    release_files, or only par2 release_files. The character class after
-     *    .par2 includes underscore because the searchname sanitizer replaces
-     *    quotes and special chars with underscores (e.g. .par2" becomes .par2_).
-     *    Note: We intentionally do NOT match on r.name (raw Usenet subject)
-     *    because many legitimate releases list a .par2 index file in the subject
-     *    even though the actual content is video/audio/etc.
-     * 2. All associated release_files have names containing .par2 (rare edge case
-     *    where par2 metadata was stored during post-processing).
+     * Preserve both historical candidate prefilters; only the locked stored-inventory
+     * classifier can turn a candidate into affirmative PAR2-only evidence.
      *
      * @throws Exception
      */
     protected function removePar2Only(): bool|string
     {
-        // Strategy 1: searchname contains a par2 filename pattern and has
-        // no non-par2 release_files. Matches .par2 (index) and .vol123+45.par2 (volumes)
-        // followed by a delimiter char or end of string.
-        // IMPORTANT: We use [.] and [+] instead of \. and \+ because MySQL's SQL
-        // string parser silently strips backslashes before unrecognized escape chars
-        // (e.g. \. → . , \+ → +) before the regex engine sees them.
-        // The delimiter class []" _[)(>] includes: ] " space _ [ ) ( > where ]
-        // must be first in the class per regex syntax.
-        $this->executeSimpleRemoval('Par2Only', sprintf(
-            "SELECT r.guid, r.searchname, r.id
-            FROM releases r
-            WHERE r.searchname REGEXP '[.](vol[0-9]+[+][0-9]+[.]par2|par2)([]\" _[)(>]|$)'
-            AND r.id NOT IN (
-                SELECT rf.releases_id FROM release_files rf
-                WHERE rf.name NOT REGEXP '[.]par2'
-            )
-            %s",
-            $this->crapTime
-        ));
-
-        // Strategy 2: All release_files are .par2
-        return $this->executeSimpleRemoval('Par2Only_Files', sprintf(
-            "SELECT r.guid, r.searchname, r.id
-            FROM releases r
-            INNER JOIN release_files rf ON r.id = rf.releases_id
-            WHERE 1=1 %s
-            GROUP BY r.id, r.guid, r.searchname
-            HAVING COUNT(*) = SUM(CASE WHEN rf.name REGEXP '[.]par2' THEN 1 ELSE 0 END)",
-            $this->crapTime
+        return $this->executeSimpleRemoval('Par2Only', sprintf(
+            "SELECT r.guid, r.searchname, r.id FROM releases r
+             WHERE (
+                (r.searchname REGEXP '[.](vol[0-9]+[+][0-9]+[.]par2|par2)([]\" _[)(>]|$)'
+                 AND r.id NOT IN (SELECT rf.releases_id FROM release_files rf WHERE rf.name NOT REGEXP '[.]par2'))
+                OR (EXISTS (SELECT 1 FROM release_files rf WHERE rf.releases_id = r.id)
+                    AND NOT EXISTS (SELECT 1 FROM release_files rf WHERE rf.releases_id = r.id
+                        AND (rf.name IS NULL OR rf.name NOT REGEXP '[.]par2')))
+             ) %s",
+            $this->crapTime,
         ));
     }
 
@@ -997,21 +987,49 @@ class ReleaseRemoverService
 
             $batch = collect($batch)->unique('id')->values();
             $lastId = (int) $batch->max('id');
+            $selectedCount = $batch->count();
             $batch = ReleaseDeletionProtection::filterCandidates($batch);
+            Log::channel('daily')->info('release_cleanup_selection', [
+                'reason' => $this->method, 'dry_run' => ! $this->delete,
+                'protected' => $selectedCount - $batch->count(),
+            ]);
 
             foreach ($batch as $release) {
                 if ($this->echoCLI) {
                     cli()->primary(
-                        ($this->delete ? 'Deleting: ' : 'Would be deleting: ').$this->method.': '.$release->searchname,
+                        'Evaluating: '.$this->method.': '.$release->searchname,
                         true
                     );
                 }
             }
 
-            $removed = $batch->count();
-            if ($this->delete) {
-                $removed = $this->releaseManagement->deleteBatchIfUnclaimed($batch, $this->nzb, $this->releaseImage);
-            }
+            $removed = $this->releaseManagement->deleteBatchIfUnclaimed(
+                $batch,
+                $this->nzb,
+                $this->releaseImage,
+                reason: $this->method,
+                evidence: function (Release $release): array {
+                    $matches = DB::selectOne(
+                        'SELECT 1 FROM ('.$this->cleanSpaces($this->query).') candidates WHERE candidates.id = ? LIMIT 1',
+                        [(int) $release->id],
+                    );
+                    if ($matches === null) {
+                        return ['eligible' => false, 'reason' => 'candidate_changed'];
+                    }
+                    if ($this->method !== 'Par2Only') {
+                        return ['eligible' => true, 'predicate' => $this->method];
+                    }
+                    $path = $this->nzb->nzbPath((string) $release->guid);
+                    $inventory = (new Par2Inventory)->inspect(
+                        $path === false ? '' : $path,
+                        (int) $release->totalpart,
+                        (int) $release->declaredfiles,
+                    );
+
+                    return ['eligible' => $inventory['par2_only'], ...$inventory];
+                },
+                dryRun: ! $this->delete,
+            );
 
             $this->deletedCount += $removed;
 

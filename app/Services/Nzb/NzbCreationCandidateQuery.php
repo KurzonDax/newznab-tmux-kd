@@ -187,7 +187,7 @@ final class NzbCreationCandidateQuery
     /**
      * @param  Builder<Release>  $query
      */
-    private static function applyClaimWindow(Builder $query): void
+    public static function applyClaimWindow(Builder $query, string $table = 'r'): void
     {
         if (! self::supportsClaims()) {
             return;
@@ -195,10 +195,10 @@ final class NzbCreationCandidateQuery
 
         $staleBefore = now()->subSeconds(self::claimTtlSeconds());
 
-        $query->where(function (Builder $claimQuery) use ($staleBefore): void {
+        $query->where(function (Builder $claimQuery) use ($staleBefore, $table): void {
             $claimQuery
-                ->whereNull('r.'.self::CLAIMED_AT_COLUMN)
-                ->orWhere('r.'.self::CLAIMED_AT_COLUMN, '<', $staleBefore);
+                ->whereNull($table.'.'.self::CLAIMED_AT_COLUMN)
+                ->orWhere($table.'.'.self::CLAIMED_AT_COLUMN, '<', $staleBefore);
         });
     }
 
