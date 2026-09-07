@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+changed_paths="$(mktemp)"
+trap 'rm -f -- "$changed_paths"' EXIT
+code=true
+dependencies=true
+if git diff --name-only --no-renames -z HEAD^ HEAD -- > "$changed_paths" && [[ -s "$changed_paths" ]]; then
+    code=false
+    dependencies=false
+    while IFS= read -r -d '' path; do
+        case "$path" in
+            docs/*|.ai/*|*.md|LICENSE) ;;
+            *) code=true ;;
+        esac
+        case "$path" in
+            composer.json|composer.lock|package.json|package-lock.json) dependencies=true ;;
+        esac
+    done < "$changed_paths"
+fi
+printf 'code=%s\ndependencies=%s\n' "$code" "$dependencies"

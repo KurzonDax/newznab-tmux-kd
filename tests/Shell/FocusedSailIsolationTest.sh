@@ -31,9 +31,35 @@ snapshot_live_caches() {
 
 snapshot_live_caches "$before_snapshot"
 
-"$repository_root/sail" artisan test --compact \
-    tests/Feature/Settings/SettingsWorkerBoundsTest.php \
-    tests/Feature/Settings/SettingsHubPagesTest.php
+sail_command="$repository_root/sail"
+if [[ -f "$repository_root/.git" ]]; then
+    sail_command="$repository_root/scripts/agent-sail"
+fi
+arguments=(--compact
+    tests/Feature/Settings/SettingsWorkerBoundsTest.php
+    tests/Feature/Settings/SettingsHubPagesTest.php)
+case "${1:-}" in
+    --ci)
+        methods=(
+            'Tests\Feature\Settings\SettingsWorkerBoundsTest::test_every_worker_field_still_lives_on_the_page_that_owns_its_pane'
+            'Tests\Feature\Settings\SettingsHubPagesTest::test_the_website_page_renders_its_cards_from_the_registry'
+            'Tests\Feature\Settings\SettingsHubPagesTest::test_a_picker_card_saves_and_rejects_an_out_of_range_number'
+        )
+        filter='/::(?:test_every_worker_field_still_lives_on_the_page_that_owns_its_pane|test_the_website_page_renders_its_cards_from_the_registry|test_a_picker_card_saves_and_rejects_an_out_of_range_number)$/'
+        arguments+=(--filter "$filter" --fail-on-empty-test-suite)
+        selected="$("$sail_command" artisan test "${arguments[@]}" --list-tests)"
+        expected="$(printf ' - %s\n' "${methods[@]}" | LC_ALL=C sort)"
+        actual="$(printf '%s\n' "$selected" | grep '^ - ' | LC_ALL=C sort)"
+        [[ "$actual" == "$expected" ]] || {
+            printf 'FAIL: expected exactly the three CI isolation methods; selected:\n%s\n' "$selected" >&2
+            exit 1
+        }
+        ;;
+    '') ;;
+    *) echo 'Usage: FocusedSailIsolationTest.sh [--ci]' >&2; exit 2 ;;
+esac
+[[ "$#" -le 1 ]] || exit 2
+"$sail_command" artisan test "${arguments[@]}"
 
 snapshot_live_caches "$after_snapshot"
 

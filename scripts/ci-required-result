@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$#" == 4 && "$2" == success ]]; then
+    if [[ "$1" == true && "$3" == success && "$4" == success ]] ||
+       [[ "$1" == false && "$3" == skipped && "$4" == skipped ]]; then
+        printf 'Required validation passed (code=%s).\n' "$1"
+        exit 0
+    fi
+fi
+printf 'Required validation did not pass: %s\n' "$*" >&2
+exit 1

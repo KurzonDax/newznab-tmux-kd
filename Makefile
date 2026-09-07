@@ -171,6 +171,9 @@ test: ## Run the PHPUnit test suite (usage: make test filter=TestName)
 .PHONY: test-permissions
 test-permissions: ## Run permission, Sail-wrapper, and test-isolation regressions
 	@$(SAIL) exec -u sail $(APP_SERVICE) tests/Shell/CiSailReadyTest.sh
+	@$(SAIL) exec -u sail $(APP_SERVICE) python3 tests/Shell/CiContractsTest.py
+	@$(SAIL) exec -u sail $(APP_SERVICE) python3 tests/Shell/AgentCheckSnapshotTest.py
+	@$(SAIL) exec -u sail $(APP_SERVICE) python3 tests/Shell/AgentIssueFinishTest.py
 	@$(SAIL) exec -u sail $(APP_SERVICE) tests/Shell/RuntimePermissionsTest.sh
 	@$(SAIL) exec -u sail $(APP_SERVICE) tests/Shell/SailWorkflowTest.sh
 	@$(SAIL) exec -u sail $(APP_SERVICE) tests/Shell/TestIsolationTest.sh
@@ -178,8 +181,8 @@ test-permissions: ## Run permission, Sail-wrapper, and test-isolation regression
 test-focused-isolation: ## Deployment: verify focused-test cache isolation and served admin HTTP 200
 	@tests/Shell/FocusedSailIsolationTest.sh
 .PHONY: test-focused-cache-isolation
-test-focused-cache-isolation: ## CI: prove issue #19 tests leave live caches unchanged
-	@PERMISSION_TEST_SKIP_HTTP=1 tests/Shell/FocusedSailIsolationTest.sh
+test-focused-cache-isolation: ## CI: prove representative settings tests leave live caches unchanged
+	@PERMISSION_TEST_SKIP_HTTP=1 tests/Shell/FocusedSailIsolationTest.sh --ci
 .PHONY: pint
 pint: ## Run Laravel Pint code formatter on dirty files
 	@$(SAIL) pint --dirty
