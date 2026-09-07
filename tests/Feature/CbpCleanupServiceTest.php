@@ -303,6 +303,7 @@ class CbpCleanupServiceTest extends TestCase
             'minfilestoformrelease' => 200,
         ]);
         $this->insertRelease(140, 'Inactive.Underfilled.Release', 1000, groupId: 2);
+        DB::table('releases')->where('id', 140)->update(['nzbstatus' => NzbService::NZB_ADDED]);
         Search::shouldReceive('deleteReleases')->once()->with([140]);
 
         app(ReleaseProcessingService::class)->setEchoCLI(false)->deletedReleasesByGroup();

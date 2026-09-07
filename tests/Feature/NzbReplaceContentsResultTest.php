@@ -7,7 +7,9 @@ namespace Tests\Feature;
 use App\Services\CollectionCleanupService;
 use App\Services\Nzb\NzbService;
 use App\Support\Data\NzbReplaceResult;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
@@ -33,6 +35,22 @@ final class NzbReplaceContentsResultTest extends TestCase
         config(['nntmux_settings.path_to_nzbs' => $this->nzbDirectory]);
 
         $this->guid = str_repeat('a', 36);
+        Schema::create('releases', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->string('guid');
+        });
+        DB::table('releases')->insert(['guid' => $this->guid]);
+    }
+
+    public function test_a_deleted_release_cannot_have_its_nzb_replaced(): void
+    {
+        $nzb = $this->service();
+        $this->writeStoredNzb($nzb, '<nzb>old</nzb>');
+        DB::table('releases')->delete();
+
+        $this->assertFalse($nzb->replaceNzbContents($this->guid, '<nzb>new</nzb>')->success);
+        $this->assertSame('<nzb>old</nzb>', $nzb->readNzbContents($this->guid));
+        $this->assertSame([], $this->leftoverTemporaryFiles());
     }
 
     public function test_a_successful_replace_swaps_the_stored_contents_atomically(): void

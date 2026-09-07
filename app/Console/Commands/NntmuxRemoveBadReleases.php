@@ -50,6 +50,8 @@ class NntmuxRemoveBadReleases extends Command
                 ['g' => (string) $badRelease->guid, 'i' => (int) $badRelease->id],
                 $nzb,
                 $releaseImage,
+                reason: 'failed_post_processing',
+                evidence: static fn (Release $current): array => ['eligible' => (int) $current->passwordstatus <= -2],
             );
         }
 

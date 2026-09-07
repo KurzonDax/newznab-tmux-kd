@@ -208,6 +208,11 @@ class ExecutableReleaseDiscardService
             ['g' => (string) $release->guid, 'i' => (int) $release->id],
             app(NzbService::class),
             new ReleaseImageService,
+            reason: 'executable_discard',
+            evidence: fn (Release $current): array => [
+                'eligible' => in_array((int) $current->categories_id, $this->categoryIdsWithDiscardEnabled(), true)
+                    && $this->firstMatchingFileName((int) $current->id) !== null,
+            ],
         );
 
         if ($deleted) {

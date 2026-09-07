@@ -6,14 +6,18 @@ namespace Tests\Feature;
 
 use App\Enums\BlacklistConstants;
 use App\Facades\Search;
+use App\Models\Release;
+use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseImageService;
 use App\Services\ReleaseRemoverService;
 use App\Services\Releases\ReleaseManagementService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
+use Psr\Log\LoggerInterface;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
@@ -62,6 +66,9 @@ class ReleaseRemoverBatchingTest extends TestCase
             $table->increments('id');
             $table->string('guid', 40);
             $table->string('searchname');
+            $table->integer('nzbstatus')->default(NzbService::NZB_ADDED);
+            $table->dateTime('nzb_creation_claimed_at')->nullable();
+            $table->string('nzb_creation_claim_token')->nullable();
             $table->string('fromname')->nullable();
             $table->unsignedInteger('groups_id');
             $table->dateTime('adddate')->nullable();
@@ -72,10 +79,17 @@ class ReleaseRemoverBatchingTest extends TestCase
             $table->unsignedInteger('releases_id');
             $table->string('name');
         });
+        Schema::dropIfExists('collections');
+        Schema::create('collections', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->unsignedInteger('releases_id')->nullable()->index();
+        });
+        NzbCreationCandidateQuery::flushCapabilityCache();
     }
 
     protected function tearDown(): void
     {
+        NzbCreationCandidateQuery::flushCapabilityCache();
         $this->tearDownIsolatedDatabase();
         parent::tearDown();
     }
@@ -252,6 +266,86 @@ class ReleaseRemoverBatchingTest extends TestCase
 
         self::assertSame(0, $deleted);
         self::assertSame([1, 2], DB::table('releases')->orderBy('id')->pluck('id')->map(intval(...))->all());
+    }
+
+    public function test_routine_deletion_defers_pending_claimed_and_linked_releases_until_creation_finishes(): void
+    {
+        DB::table('releases')->insert(array_map(fn (int $id): array => $this->releaseRow($id), range(1, 6)));
+        $selected = DB::table('releases')->orderBy('id')->get(['id', 'guid']);
+        DB::table('releases')->whereIn('id', [1, 2])->update(['nzbstatus' => NzbService::NZB_NONE]);
+        DB::table('releases')->where('id', 2)->update(['nzb_creation_claimed_at' => now()->subDay()]);
+        DB::table('releases')->where('id', 3)->update(['nzb_creation_claimed_at' => now()]);
+        DB::table('collections')->insert(['releases_id' => 4]);
+        DB::table('releases')->where('id', 5)->update(['nzb_creation_claimed_at' => now()->subDay()]);
+
+        $nzb = Mockery::mock(NzbService::class);
+        $images = Mockery::mock(ReleaseImageService::class);
+        foreach ([5, 6] as $id) {
+            $guid = $this->releaseRow($id)['guid'];
+            $nzb->shouldReceive('deleteNzb')->once()->with($guid);
+            $images->shouldReceive('delete')->once()->with($guid);
+        }
+        Search::shouldReceive('deleteReleases')->once()->with([5, 6]);
+
+        self::assertSame(2, (new ReleaseManagementService)->deleteBatchIfUnclaimed($selected, $nzb, $images));
+        self::assertSame([1, 2, 3, 4], DB::table('releases')->orderBy('id')->pluck('id')->all());
+        self::assertSame(1, DB::table('collections')->count());
+    }
+
+    public function test_a_later_candidate_failure_still_cleans_up_previously_committed_deletions(): void
+    {
+        DB::table('releases')->insert([$this->releaseRow(1), $this->releaseRow(2)]);
+        $nzb = Mockery::mock(NzbService::class);
+        $nzb->shouldReceive('deleteNzb')->once()->with($this->releaseRow(1)['guid']);
+        $images = Mockery::mock(ReleaseImageService::class);
+        $images->shouldReceive('delete')->once()->with($this->releaseRow(1)['guid']);
+        Search::shouldReceive('deleteReleases')->once()->with([1]);
+        try {
+            (new ReleaseManagementService)->deleteBatchIfUnclaimed(
+                DB::table('releases')->orderBy('id')->get(), $nzb, $images,
+                evidence: static function (Release $release): array {
+                    if ($release->id === 2) {
+                        throw new \RuntimeException('Injected later failure');
+                    }
+
+                    return ['eligible' => true];
+                },
+            );
+            self::fail('Expected the injected failure.');
+        } catch (\RuntimeException $exception) {
+            self::assertSame('Injected later failure', $exception->getMessage());
+        }
+        self::assertSame([2], DB::table('releases')->pluck('id')->all());
+    }
+
+    public function test_criteria_advances_past_a_fully_protected_page_and_logs_only_actual_deletions(): void
+    {
+        $rows = array_map(fn (int $id): array => $this->releaseRow($id, additionalClaimedAt: $id <= 500 ? now() : null), range(1, 501));
+        DB::table('releases')->insert($rows);
+        $events = [];
+        $logger = Mockery::mock(LoggerInterface::class);
+        $logger->shouldReceive('info')->andReturnUsing(static function (string $message, array $context) use (&$events): void {
+            $events[] = [$message, $context];
+        });
+        Log::shouldReceive('channel')->with('daily')->andReturn($logger);
+        $nzb = Mockery::mock(NzbService::class);
+        $nzb->shouldReceive('deleteNzb')->once()->with($rows[500]['guid']);
+        $images = Mockery::mock(ReleaseImageService::class);
+        $images->shouldReceive('delete')->once()->with($rows[500]['guid']);
+        Search::shouldReceive('deleteReleases')->once()->with([501]);
+        $management = new ReleaseManagementService;
+        self::assertSame(1, $management->deleteBatchIfUnclaimed(DB::table('releases')->get(), $nzb, $images, dryRun: true));
+        self::assertSame([], array_values(array_filter($events, static fn (array $event): bool => $event[0] === 'release_deleted')));
+        self::assertSame(501, DB::table('releases')->count());
+
+        (new ReleaseRemoverService($management, $nzb, $images))->removeByCriteria(['ignore', 'searchname=like=blocked']);
+
+        self::assertSame(500, DB::table('releases')->count());
+        $deleted = array_values(array_filter($events, static fn (array $event): bool => $event[0] === 'release_deleted'));
+        self::assertCount(1, $deleted);
+        self::assertSame(501, $deleted[0][1]['release_id']);
+        self::assertSame('userCriteria', $deleted[0][1]['reason']);
+        self::assertSame(500, $events[0][1]['protected_or_deferred']);
     }
 
     /**

@@ -27,7 +27,7 @@ class NntmuxResetTruncate extends Command
      *
      * @var string
      */
-    protected $description = 'This command removes releases with no NZBs, resets all groups, truncates article tables. All other releases are left alone.';
+    protected $description = 'Reset all groups and truncate article tables. Pending releases remain protected for owned NZB failure disposal.';
 
     /**
      * Execute the console command.
@@ -57,8 +57,8 @@ class NntmuxResetTruncate extends Command
             $releases = ReleaseDeletionProtection::apply(Release::query())
                 ->where('nzbstatus', 0)
                 ->get(['id', 'guid']);
-            $deletedCount = $releaseManagement->deleteBatchIfUnclaimed($releases, $nzb, $releaseImage);
-            $this->info($deletedCount.' releases had no nzb, deleted.');
+            $deletedCount = $releaseManagement->deleteBatchIfUnclaimed($releases, $nzb, $releaseImage, reason: 'reset_truncate_pending');
+            $this->info($deletedCount.' releases deleted; pending NZBs remain lifecycle-protected.');
         } finally {
             if ($usesMysql) {
                 DB::statement('SET FOREIGN_KEY_CHECKS = 1;');

@@ -70,7 +70,7 @@ jobs:
         if: steps.scope.outputs.code == 'true'
         run: |
           ./sail up -d --wait mariadb
-          ./sail exec -T -e CBP_INTEGRATION_DB_DATABASE=cbp_integration -e CBP_INTEGRATION_DB_USERNAME=sail -e CBP_INTEGRATION_DB_PASSWORD=password laravel.test php artisan test --compact tests/Integration/CbpMariaDbIngestionTest.php
+          ./sail exec -T -e CBP_INTEGRATION_DB_DATABASE=cbp_integration -e CBP_INTEGRATION_DB_USERNAME=sail -e CBP_INTEGRATION_DB_PASSWORD=password laravel.test php artisan test --compact tests/Integration/CbpMariaDbIngestionTest.php tests/Integration/ReleaseCleanupSafetyMariaDbTest.php
 
       - name: Run backup schema MariaDB integration tests
         if: steps.scope.outputs.code == 'true'

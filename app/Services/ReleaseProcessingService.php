@@ -19,6 +19,7 @@ use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
 use App\Services\Releases\CollectionCompletionMeasurer;
+use App\Services\Releases\CollectionQuietPredicate;
 use App\Services\Releases\ExecutableReleaseDiscardService;
 use App\Services\Releases\IncompleteReleaseSweepQuery;
 use App\Services\Releases\PreviewGenerationPolicy;
@@ -31,7 +32,6 @@ use App\Support\Data\NzbCreationResult;
 use App\Support\Data\ProcessReleasesSettings;
 use App\Support\Data\ReleaseCreationResult;
 use App\Support\Data\ReleaseDeleteStats;
-use App\Support\DatabaseClock;
 use App\Support\ReleaseSearchIndexSync;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
@@ -422,7 +422,7 @@ final class ReleaseProcessingService
     {
         $lastId = 0;
         $hasLastSeenAt = Schema::hasColumn('collections', 'last_seen_at');
-        $quiet = $this->collectionQuietSql($this->settings->collectionDelayTime);
+        $quiet = CollectionQuietPredicate::build($this->settings->collectionDelayTime);
         $statuses = [
             CollectionFileCheckStatus::Default->value,
             CollectionFileCheckStatus::CompleteCollection->value,
@@ -486,7 +486,7 @@ final class ReleaseProcessingService
 
         $idPlaceholders = implode(',', array_fill(0, \count($collectionIds), '?'));
         $statusPlaceholders = implode(',', array_fill(0, \count($statuses), '?'));
-        $quiet = $this->collectionQuietSql($this->settings->collectionDelayTime, 'c');
+        $quiet = CollectionQuietPredicate::build($this->settings->collectionDelayTime, 'c');
 
         DB::transaction(function () use ($collectionIds, $idPlaceholders, $quiet, $statuses, $statusPlaceholders): void {
             DB::update(
@@ -548,7 +548,7 @@ final class ReleaseProcessingService
         array $collectionIds,
         array $statuses,
     ): void {
-        $quiet = $this->collectionQuietSql($this->settings->collectionDelayTime);
+        $quiet = CollectionQuietPredicate::build($this->settings->collectionDelayTime);
 
         DB::transaction(function () use ($collectionIds, $quiet, $statuses): void {
             foreach ($collectionIds as $collectionId) {
@@ -885,15 +885,6 @@ final class ReleaseProcessingService
                 return false;
             }
 
-            Log::channel('nzb_creation')->warning('Deleting release after NZB creation failure', [
-                'release_id' => $release->id,
-                'guid' => $release->guid,
-                'failure_type' => $result->failureType,
-                'reason' => $result->reason,
-                'attempt' => $attempt,
-                'max_attempts' => self::NZB_CREATION_MAX_ATTEMPTS,
-            ]);
-
             $collectionIds = $result->collectionIds !== []
                 ? $result->collectionIds
                 : Collection::query()
@@ -915,6 +906,17 @@ final class ReleaseProcessingService
                 $this->nzb,
                 $this->releaseImage
             );
+
+            DB::afterCommit(static fn () => Log::channel('nzb_creation')->warning('Deleting release after NZB creation failure', [
+                'release_id' => $release->id,
+                'guid' => $release->guid,
+                'failure_type' => $result->failureType,
+                'reason' => $result->reason,
+                'attempt' => $attempt,
+                'max_attempts' => self::NZB_CREATION_MAX_ATTEMPTS,
+                'nzbstatus' => NzbService::NZB_NONE,
+                'timestamp' => now()->toIso8601String(),
+            ]));
 
             return true;
         }, 3);
@@ -1122,49 +1124,12 @@ final class ReleaseProcessingService
         return $groupInfo !== null ? (int) $groupInfo['id'] : null;
     }
 
-    /** @return array{sql: string, bindings: list<int|string>} */
-    private function collectionQuietSql(int $hours, string $alias = 'collections', string $legacyColumn = 'dateadded'): array
-    {
-        $cutoff = DatabaseClock::cutoff(now()->subHours($hours));
-        $clock = Schema::hasColumn('collections', 'last_seen_at')
-            ? "COALESCE({$alias}.last_seen_at, {$alias}.dateadded, {$alias}.added)"
-            : "{$alias}.{$legacyColumn}";
-        $wall = $clock.' < '.$cutoff['sql'];
-        if (! Schema::hasColumns('collections', ['last_seen_head_postdate', 'last_seen_tail_postdate'])
-            || ! Schema::hasColumn('usenet_groups', 'backfill_settled_at')) {
-            return ['sql' => $wall, 'bindings' => $cutoff['bindings']];
-        }
-
-        $head = "{$alias}.last_seen_head_postdate";
-        $tail = "{$alias}.last_seen_tail_postdate";
-        $headLimit = DB::getDriverName() === 'sqlite'
-            ? "datetime({$head}, ? || ' hours')"
-            : "DATE_ADD({$head}, INTERVAL ? HOUR)";
-        $tailLimit = DB::getDriverName() === 'sqlite'
-            ? "datetime({$tail}, ? || ' hours')"
-            : "DATE_ADD({$tail}, INTERVAL ? HOUR)";
-
-        return [
-            'sql' => "(({$head} IS NULL AND {$tail} IS NULL AND {$wall})
-                OR (({$head} IS NOT NULL OR {$tail} IS NOT NULL) AND EXISTS (
-                    SELECT 1 FROM usenet_groups g WHERE g.id = {$alias}.groups_id
-                    AND ({$head} IS NULL
-                        OR (g.active = 1 AND g.last_record_postdate >= {$headLimit})
-                        OR (g.active = 0 AND {$wall}))
-                    AND ({$tail} IS NULL
-                        OR (g.backfill = 1 AND g.backfill_settled_at IS NULL AND g.first_record_postdate <= {$tailLimit})
-                        OR ((g.backfill = 0 OR g.backfill_settled_at IS NOT NULL) AND {$wall}))
-                )))",
-            'bindings' => [...$cutoff['bindings'], $hours, ...$cutoff['bindings'], -$hours, ...$cutoff['bindings']],
-        ];
-    }
-
     /**
      * @throws Throwable
      */
     private function processStuckCollections(int $groupID): void
     {
-        $quiet = $this->collectionQuietSql($this->settings->collectionTimeout, legacyColumn: 'added');
+        $quiet = CollectionQuietPredicate::build($this->settings->collectionTimeout, legacyColumn: 'added');
         $totalDeleted = 0;
 
         do {
@@ -1251,11 +1216,11 @@ final class ReleaseProcessingService
                 'AND releases.size < GREATEST(IFNULL(usenet_groups.minsizetoformrelease, 0), ?)',
                 [$this->settings->minSizeToFormRelease, $this->settings->minSizeToFormRelease]
             )
-            ->select(['releases.id', 'releases.guid'])
+            ->select(['releases.*'])
             ->get();
 
         foreach ($releases as $release) {
-            if ($this->deleteSingleRelease($release)) {
+            if ($this->deleteSingleRelease($release, 'deleteReleasesUnderMinSize')) {
                 $stats['minSize']++;
             }
         }
@@ -1273,11 +1238,11 @@ final class ReleaseProcessingService
         $releases = $this->releaseSweepQuery()
             ->where('groups_id', $groupId)
             ->where('size', '>', $this->settings->maxSizeToFormRelease)
-            ->select(['id', 'guid'])
+            ->select(['releases.*'])
             ->get();
 
         foreach ($releases as $release) {
-            if ($this->deleteSingleRelease($release)) {
+            if ($this->deleteSingleRelease($release, 'deleteReleasesOverMaxSize')) {
                 $stats['maxSize']++;
             }
         }
@@ -1296,11 +1261,11 @@ final class ReleaseProcessingService
                 'AND releases.totalpart < GREATEST(IFNULL(usenet_groups.minfilestoformrelease, 0), ?)',
                 [$this->settings->minFilesToFormRelease, $this->settings->minFilesToFormRelease]
             )
-            ->select(['releases.id', 'releases.guid'])
+            ->select(['releases.*'])
             ->get();
 
         foreach ($releases as $release) {
-            if ($this->deleteSingleRelease($release)) {
+            if ($this->deleteSingleRelease($release, 'deleteReleasesUnderMinFiles')) {
                 $stats['minFiles']++;
             }
         }
@@ -1316,10 +1281,10 @@ final class ReleaseProcessingService
 
         $this->releaseSweepQuery()
             ->where('postdate', '<', $cutoff)
-            ->select(['id', 'guid'])
+            ->select(['releases.*'])
             ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats): bool {
                 foreach ($releases as $release) {
-                    if ($this->deleteSingleRelease($release)) {
+                    if ($this->deleteSingleRelease($release, 'deleteReleasesOverRetention')) {
                         $stats = $stats->increment('retention');
                     }
                 }
@@ -1345,10 +1310,10 @@ final class ReleaseProcessingService
                             ->where('passworded', '=', ReleaseBrowseService::PASSWD_RAR);
                     });
             })
-            ->select(['id', 'guid'])
+            ->select(['releases.*'])
             ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats): bool {
                 foreach ($releases as $release) {
-                    if ($this->deleteSingleRelease($release)) {
+                    if ($this->deleteSingleRelease($release, 'deletePasswordedReleases')) {
                         $stats = $stats->increment('password');
                     }
                 }
@@ -1369,11 +1334,11 @@ final class ReleaseProcessingService
             ->where('adddate', '>', now()->subHours($this->settings->crossPostTime))
             ->groupBy(['name', 'fromname'])
             ->havingRaw('COUNT(name) > 1 AND COUNT(fromname) > 1')
-            ->select(['id', 'guid'])
+            ->select(['releases.*'])
             ->get();
 
         foreach ($releases as $release) {
-            if ($this->deleteSingleRelease($release)) {
+            if ($this->deleteSingleRelease($release, 'deleteCrossPostedReleases')) {
                 $stats = $stats->increment('duplicate');
             }
         }
@@ -1399,10 +1364,10 @@ final class ReleaseProcessingService
         }
 
         IncompleteReleaseSweepQuery::builder((float) $this->settings->completion)
-            ->select(['id', 'guid'])
+            ->select(['releases.*'])
             ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats): bool {
                 foreach ($releases as $release) {
-                    if ($this->deleteSingleRelease($release)) {
+                    if ($this->deleteSingleRelease($release, 'deleteIncompleteReleases')) {
                         $stats = $stats->increment('completion');
                     }
                 }
@@ -1425,10 +1390,10 @@ final class ReleaseProcessingService
 
         $this->releaseSweepQuery()
             ->whereIn('categories_id', $categoryIds)
-            ->select(['id', 'guid'])
+            ->select(['releases.*'])
             ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats): bool {
                 foreach ($releases as $release) {
-                    if ($this->deleteSingleRelease($release)) {
+                    if ($this->deleteSingleRelease($release, 'deleteDisabledCategoryReleases')) {
                         $stats = $stats->increment('disabledCategory');
                     }
                 }
@@ -1450,11 +1415,11 @@ final class ReleaseProcessingService
             $this->releaseSweepQuery()
                 ->where('categories_id', (int) $category->id)
                 ->where('size', '<', (int) $category->minsize) // @phpstan-ignore property.notFound
-                ->select(['id', 'guid'])
+                ->select(['releases.*'])
                 ->limit(1000)
                 ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats): bool {
                     foreach ($releases as $release) {
-                        if ($this->deleteSingleRelease($release)) {
+                        if ($this->deleteSingleRelease($release, 'deleteCategoryMinSizeReleases')) {
                             $stats = $stats->increment('categoryMinSize');
                         }
                     }
@@ -1500,10 +1465,10 @@ final class ReleaseProcessingService
                     'mi',
                     static fn ($join) => $join->on('releases.musicinfo_id', '=', 'mi.id')
                 )
-                ->select(['releases.id', 'releases.guid'])
+                ->select(['releases.*'])
                 ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats): bool {
                     foreach ($releases as $release) {
-                        if ($this->deleteSingleRelease($release)) {
+                        if ($this->deleteSingleRelease($release, 'deleteDisabledGenreReleases')) {
                             $stats = $stats->increment('disabledGenre');
                         }
                     }
@@ -1523,10 +1488,10 @@ final class ReleaseProcessingService
             $this->releaseSweepQuery()
                 ->where('categories_id', Category::OTHER_MISC)
                 ->where('adddate', '<=', $cutoff)
-                ->select(['id', 'guid'])
+                ->select(['releases.*'])
                 ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats): bool {
                     foreach ($releases as $release) {
-                        if ($this->deleteSingleRelease($release)) {
+                        if ($this->deleteSingleRelease($release, 'deleteMiscReleases')) {
                             $stats = $stats->increment('miscOther');
                         }
                     }
@@ -1541,10 +1506,10 @@ final class ReleaseProcessingService
             $this->releaseSweepQuery()
                 ->where('categories_id', Category::OTHER_HASHED)
                 ->where('adddate', '<=', $cutoff)
-                ->select(['id', 'guid'])
+                ->select(['releases.*'])
                 ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats): bool {
                     foreach ($releases as $release) {
-                        if ($this->deleteSingleRelease($release)) {
+                        if ($this->deleteSingleRelease($release, 'deleteMiscReleases')) {
                             $stats = $stats->increment('miscHashed');
                         }
                     }
@@ -1556,12 +1521,23 @@ final class ReleaseProcessingService
         return $stats;
     }
 
-    private function deleteSingleRelease(object $release): bool
+    private function deleteSingleRelease(Release $release, string $reason): bool
     {
         return $this->releaseManagement->deleteSingleIfUnclaimed(
             ['g' => $release->guid, 'i' => $release->id],
             $this->nzb,
-            $this->releaseImage
+            $this->releaseImage,
+            reason: $reason,
+            evidence: static function (Release $current) use ($release, $reason): array {
+                $unchanged = $current->getRawOriginal() === $release->getRawOriginal();
+                if ($reason === 'deletePasswordedReleases') {
+                    $unchanged = $unchanged && ((int) $current->passwordstatus === ReleaseBrowseService::PASSWD_RAR
+                        || DB::table('release_files')->where('releases_id', $current->id)
+                            ->where('passworded', ReleaseBrowseService::PASSWD_RAR)->exists());
+                }
+
+                return ['eligible' => $unchanged, 'reason' => 'release_evidence_changed', 'predicate' => $reason];
+            },
         );
     }
 

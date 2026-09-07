@@ -6,6 +6,8 @@ namespace App\Services\Releases;
 
 use App\Models\Release;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
+use App\Services\Nzb\NzbCreationCandidateQuery;
+use App\Services\Nzb\NzbService;
 use App\Services\ReleaseRepair\RecoveryLease;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -25,6 +27,16 @@ final class ReleaseDeletionProtection
      */
     public static function apply(Builder $query, string $table = 'releases'): Builder
     {
+        $query->where($table.'.nzbstatus', NzbService::NZB_ADDED);
+        NzbCreationCandidateQuery::applyClaimWindow($query, $table);
+
+        if (Schema::hasTable('collections')) {
+            $query->whereNotExists(static function (\Illuminate\Database\Query\Builder $collections) use ($table): void {
+                $collections->selectRaw('1')->from('collections')
+                    ->whereColumn('collections.releases_id', $table.'.id');
+            });
+        }
+
         if (Schema::hasTable('releases') && Schema::hasColumn('releases', ReleaseClaimant::CLAIMED_AT_COLUMN)) {
             $column = $table.'.'.ReleaseClaimant::CLAIMED_AT_COLUMN;
 

@@ -8,11 +8,13 @@ use App\Facades\Search;
 use App\Models\Release;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseImageService;
+use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 use Throwable;
 
@@ -146,10 +148,12 @@ class ReleaseManagementService
         array $identifiers,
         NzbService $nzb,
         ReleaseImageService $releaseImage,
+        string $reason = 'routine_cleanup',
+        ?Closure $evidence = null,
     ): bool {
         return $this->deleteBatchIfUnclaimed([
             ['id' => $identifiers['i'], 'guid' => $identifiers['g']],
-        ], $nzb, $releaseImage) === 1;
+        ], $nzb, $releaseImage, $reason, $evidence) === 1;
     }
 
     /**
@@ -164,17 +168,31 @@ class ReleaseManagementService
         iterable $releases,
         NzbService $nzb,
         ReleaseImageService $releaseImage,
+        string $reason = 'routine_cleanup',
+        ?Closure $evidence = null,
+        bool $dryRun = false,
     ): int {
         $candidates = $this->normalizeReleaseRows($releases);
+        // An enclosing transaction may already have an obsolete consistent-read snapshot.
+        if (DB::transactionLevel() > 0) {
+            Log::channel('daily')->info('release_cleanup_batch', [
+                'reason' => $reason,
+                'dry_run' => $dryRun,
+                'eligible' => 0,
+                'protected_or_deferred' => $candidates->count(),
+                'deferred_reasons' => ['enclosing_transaction' => $candidates->count()],
+            ]);
 
-        if ($candidates->isEmpty()) {
             return 0;
         }
-
-        $deleted = $this->deleteUnclaimedRows($candidates);
-        $this->cleanupDeletedRows($deleted, $nzb, $releaseImage);
-
-        return $deleted->count();
+        $committed = collect();
+        try {
+            return $this->deleteUnclaimedRows($candidates, $reason, $evidence, $dryRun, $committed)->count();
+        } finally {
+            if (! $dryRun) {
+                DB::afterCommit(fn () => $this->cleanupDeletedRows($committed, $nzb, $releaseImage));
+            }
+        }
     }
 
     /**
@@ -198,40 +216,81 @@ class ReleaseManagementService
 
     /**
      * @param  Collection<int, array{id: int, guid: string}>  $candidates
+     * @param  Collection<int, array{id: int, guid: string}>  $committed
      * @return Collection<int, array{id: int, guid: string}>
      */
-    private function deleteUnclaimedRows(Collection $candidates): Collection
+    private function deleteUnclaimedRows(Collection $candidates, string $reason, ?Closure $evidence, bool $dryRun, Collection $committed): Collection
     {
-        return DB::transaction(function () use ($candidates): Collection {
-            $query = ReleaseDeletionProtection::apply(Release::query())
-                ->whereIn('id', $candidates->pluck('id')->all())
-                ->orderBy('id');
+        $accepted = collect();
+        $deferredReasons = [];
+        foreach ($candidates->sortBy('id') as $candidate) {
+            $row = DB::transaction(function () use ($candidate, $reason, $evidence, $dryRun, $committed, &$deferredReasons): ?array {
+                $release = Release::query()->whereKey($candidate['id'])->lockForUpdate()->first();
+                if ($release === null || $release->guid !== $candidate['guid']) {
+                    $deferredReasons['lifecycle'] = ($deferredReasons['lifecycle'] ?? 0) + 1;
 
-            if (DB::getDriverName() !== 'sqlite') {
-                $query->lockForUpdate();
+                    return null;
+                }
+                if ($evidence !== null && Schema::hasTable('release_files')) {
+                    $fileRows = DB::table('release_files')->where('releases_id', $release->id)
+                        ->limit(10001)->lockForUpdate()->get(['releases_id']);
+                    if ($fileRows->count() > 10000) {
+                        $deferredReasons['file_evidence_limit'] = ($deferredReasons['file_evidence_limit'] ?? 0) + 1;
+
+                        return null;
+                    }
+                }
+                // Establish the consistent-read snapshot only after all evidence locks are held.
+                if (! ReleaseDeletionProtection::apply(Release::query())->whereKey($release->id)->exists()) {
+                    $deferredReasons['lifecycle'] = ($deferredReasons['lifecycle'] ?? 0) + 1;
+
+                    return null;
+                }
+                $summary = $evidence === null ? ['eligible' => true] : $evidence($release);
+                if (! ($summary['eligible'] ?? false)) {
+                    $deferredReason = (string) ($summary['reason'] ?? 'evidence_changed');
+                    $deferredReasons[$deferredReason] = ($deferredReasons[$deferredReason] ?? 0) + 1;
+
+                    return null;
+                }
+                if (! $dryRun) {
+                    if (Release::query()->whereKey($release->id)->delete() !== 1) {
+                        throw new RuntimeException('Protected release deletion affected an unexpected row count.');
+                    }
+                    DB::afterCommit(static function () use ($committed, $candidate): void {
+                        $committed->push($candidate);
+                    });
+                    DB::afterCommit(static fn () => Log::channel('daily')->info('release_deleted', [
+                        'release_id' => (int) $release->id,
+                        'guid' => (string) $release->guid,
+                        'reason' => $summary['predicate'] ?? $reason,
+                        'nzbstatus' => (int) $release->nzbstatus,
+                        'linked_collections' => false,
+                        'claims' => [
+                            'nzb_creation_claimed_at' => $release->getRawOriginal('nzb_creation_claimed_at'),
+                            'additional_pp_claimed_at' => $release->getRawOriginal('additional_pp_claimed_at'),
+                            'recovery_claimed_at' => $release->getRawOriginal('recovery_claimed_at'),
+                        ],
+                        'evidence' => $summary,
+                        'timestamp' => now()->toIso8601String(),
+                    ]));
+                }
+
+                return $candidate;
+            }, 3);
+            if ($row !== null) {
+                $accepted->push($row);
             }
+        }
+        Log::channel('daily')->info('release_cleanup_batch', [
+            'reason' => $reason,
+            'dry_run' => $dryRun,
+            'eligible' => $accepted->count(),
+            'protected_or_deferred' => $candidates->count() - $accepted->count(),
+            'deferred_reasons' => $deferredReasons,
+        ]);
 
-            $available = $query
-                ->get(['id', 'guid'])
-                ->map(static fn (Release $release): array => [
-                    'id' => (int) $release->id,
-                    'guid' => (string) $release->guid,
-                ]);
-
-            if ($available->isEmpty()) {
-                return collect();
-            }
-
-            $affected = Release::query()
-                ->whereIn('id', $available->pluck('id')->all())
-                ->delete();
-
-            if ($affected !== $available->count()) {
-                throw new RuntimeException('Protected release deletion affected an unexpected row count.');
-            }
-
-            return $available;
-        }, 3);
+        return $accepted;
     }
 
     /**

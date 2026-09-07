@@ -738,6 +738,17 @@ class NzbService
      */
     public function replaceNzbContents(string $releaseGuid, string $nzbXml): NzbReplaceResult
     {
+        return DB::transaction(function () use ($releaseGuid, $nzbXml): NzbReplaceResult {
+            if (Release::query()->where('guid', $releaseGuid)->lockForUpdate()->first(['id']) === null) {
+                return NzbReplaceResult::missingNzb('The release disappeared before NZB replacement.');
+            }
+
+            return $this->replaceLockedNzbContents($releaseGuid, $nzbXml);
+        });
+    }
+
+    private function replaceLockedNzbContents(string $releaseGuid, string $nzbXml): NzbReplaceResult
+    {
         $path = $this->nzbPath($releaseGuid);
 
         if ($path === false) {

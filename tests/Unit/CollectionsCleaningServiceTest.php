@@ -11,6 +11,78 @@ use PHPUnit\Framework\TestCase;
 
 class CollectionsCleaningServiceTest extends TestCase
 {
+    public function test_trailing_title_digits_are_preserved_across_archive_and_parity_files(): void
+    {
+        $cleaner = $this->cleaner();
+        $parity = $cleaner->collectionsCleaner(
+            'LovingLadies2024-12Part 5 - [01/94] - "LovingLadies2024-12Part 5.par2" yEnc',
+            'alt.binaries.multimedia.erotica',
+        );
+        $archive = $cleaner->collectionsCleaner(
+            'LovingLadies2024-12Part 5 - [09/94] - "LovingLadies2024-12Part 5.part08.rar" yEnc',
+            'alt.binaries.multimedia.erotica',
+        );
+
+        $this->assertSame($parity['name'], $archive['name']);
+        $this->assertStringContainsString('Part 5', $archive['name']);
+    }
+
+    #[DataProvider('screenshotSidecars')]
+    public function test_screenshot_sidecars_share_the_payload_collection(string $extension): void
+    {
+        $prefix = '(Zink) - AnalVids.26.08.29.Roma.Amor.Miss.Gray.XXX.1080p - ';
+        $base = 'AnalVids.26.08.29.Roma.Amor.Miss.Gray.XXX.1080p';
+        $cleaner = $this->cleaner();
+        $parity = $cleaner->collectionsCleaner($prefix.'[02/83] - "'.$base.'.mp4.par2" yEnc', 'alt.binaries.multimedia.erotica');
+        $sidecar = $cleaner->collectionsCleaner($prefix.'[00/83] - "'.$base.'._Screen.'.$extension.'" yEnc', 'alt.binaries.multimedia.erotica');
+
+        $this->assertSame($parity['name'], $sidecar['name']);
+    }
+
+    /** @return array<string, array{string}> */
+    public static function screenshotSidecars(): array
+    {
+        return ['image' => ['jpg'], 'nzb' => ['nzb']];
+    }
+
+    #[DataProvider('archiveSiblings')]
+    public function test_archive_and_parity_siblings_keep_their_collection_name(string $filename): void
+    {
+        $result = $this->cleaner()->collectionsCleaner('"'.$filename.'" yEnc', 'alt.binaries.multimedia.erotica');
+
+        $this->assertSame('Some.Release.Name yEnc', $result['name']);
+    }
+
+    /** @return array<string, array{string}> */
+    public static function archiveSiblings(): array
+    {
+        return [
+            'archive' => ['Some.Release.Name.mp4.part01.rar'],
+            'index' => ['Some.Release.Name.mp4.par2'],
+            'volume' => ['Some.Release.Name.mp4.vol001+02.PAR2'],
+        ];
+    }
+
+    #[DataProvider('musicVariantSubjects')]
+    public function test_music_fallback_preserves_title_digits_and_removes_variants(string $filename): void
+    {
+        $result = $this->cleaner()->collectionsCleaner($filename.' yEnc', 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(CollectionsCleaningService::REGEX_MUSIC_MATCH, $result['id']);
+        $this->assertSame('Artist.Collection2024 yEnc', $result['name']);
+    }
+
+    /** @return array<string, array{string}> */
+    public static function musicVariantSubjects(): array
+    {
+        return [
+            'archive' => ['Artist.Collection2024.rar'],
+            'index' => ['Artist.Collection2024.par2'],
+            'screenshot' => ['Artist.Collection2024._Screen.jpg'],
+            'nzb' => ['Artist.Collection2024._Screen.nzb'],
+        ];
+    }
+
     public function test_dutch_vd_counters_share_one_non_music_collection_name(): void
     {
         $first = $this->cleaner()->collectionsCleaner(
@@ -110,7 +182,7 @@ class CollectionsCleaningServiceTest extends TestCase
         return [
             'bracketed counter with quoted filename' => [
                 '[02/80] - "The.West.Wing.S06E02.1080p.BluRay.x264.mkv.part01.rar" yEnc',
-                'The.West.Wing.S06E02.1080p.BluRay.x yEnc',
+                'The.West.Wing.S06E02.1080p.BluRay.x264 yEnc',
             ],
             'parenthesized counter' => ['My Release (01/20) yEnc', 'My Release yEnc'],
             'of counter' => ['My Release 01 of 20 yEnc', 'My Release yEnc'],
