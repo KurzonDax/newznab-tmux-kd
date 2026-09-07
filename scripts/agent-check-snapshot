@@ -15,7 +15,7 @@ def gh_json(*args, checks=False):
     if result.returncode not in ({0, 1, 8} if checks else {0}):
         raise ValueError(f'gh {args[0]} failed: {result.stderr.strip()}')
     # gh reports the initial absence of checks on stderr, before JSON is available.
-    if checks and not result.stdout.strip() and result.returncode == 1 and result.stderr.startswith('no checks reported'):
+    if checks and not result.stdout.strip() and result.returncode == 1 and re.match(r'^no (?:required )?checks reported on the ', result.stderr):
         return []
     try:
         return json.loads(result.stdout)

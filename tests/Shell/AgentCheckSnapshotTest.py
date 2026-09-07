@@ -20,8 +20,8 @@ def check(state='SUCCESS', name=NAME, link=''):
     return dict(name=name, state=state, bucket='pass', link=link, workflow='Run tests')
 
 
-def response(match, value, rc=0):
-    return dict(match=match, value=value, rc=rc)
+def response(match, value, rc=0, stderr=''):
+    return dict(match=match, value=value, rc=rc, stderr=stderr)
 
 
 class SnapshotTest(unittest.TestCase):
@@ -43,6 +43,7 @@ if reply['match'] not in ' '.join(sys.argv[1:]):
 path.write_text(json.dumps(responses))
 value = reply['value']
 print(value if isinstance(value, str) else json.dumps(value))
+print(reply.get('stderr', ''), file=sys.stderr)
 sys.exit(reply['rc'])
 ''')
             gh.chmod(0o755)
@@ -60,6 +61,13 @@ sys.exit(reply['rc'])
     def test_missing_expected_context_is_pending(self):
         for checks in ([], [check(name='Some other required check')]):
             self.assertEqual('pending', self.run_snapshot(self.basic(checks))['checksStatus'])
+
+    def test_github_cli_reports_no_required_checks_before_aggregate_starts(self):
+        for message in ("no required checks reported on the 'issue/499' branch",
+                        "no checks reported on the 'issue/499' branch"):
+            replies = self.basic([])
+            replies[1] = response('--required', '', 1, message)
+            self.assertEqual('pending', self.run_snapshot(replies)['checksStatus'])
 
     def test_current_success_failure_cancellation_skip_and_unknown(self):
         for state, expected in [('SUCCESS', 'success'), ('FAILURE', 'failure'), ('CANCELLED', 'failure'),
