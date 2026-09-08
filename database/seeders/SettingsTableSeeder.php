@@ -594,6 +594,10 @@ class SettingsTableSeeder extends Seeder
                 'value' => 'dll|exe|msi|scr|com|bat|cmd|pif',
             ],
             [
+                'name' => 'par2_sidecar_absorb',
+                'value' => '1',
+            ],
+            [
                 'name' => 'descriptive_title_rename',
                 'value' => '1',
             ],

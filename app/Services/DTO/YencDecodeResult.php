@@ -9,5 +9,6 @@ final readonly class YencDecodeResult
     public function __construct(
         public string $data,
         public bool $crcFailed = false,
+        public ?YencArticleMetadata $metadata = null,
     ) {}
 }

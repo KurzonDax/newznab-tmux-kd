@@ -7,6 +7,7 @@ namespace App\Services\AdditionalProcessing;
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\DTO\DownloadMetrics;
 use App\Services\AdditionalProcessing\Enums\DownloadKind;
+use App\Services\DTO\YencArticleMetadata;
 use App\Services\NNTP\NNTPService;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\ObfuscationRecovery\RecoveryLegacyDownload;
@@ -30,7 +31,7 @@ class UsenetDownloadService
     private bool $releaseScopeActive = false;
 
     /**
-     * @var array<string, array{success: bool, data: string|null, groupUnavailable: bool, error: string|null, crcFailures: int, crcFailed: bool}>
+     * @var array<string, array{success: bool, data: string|null, groupUnavailable: bool, error: string|null, crcFailures: int, crcFailed: bool, metadata?: YencArticleMetadata|null}>
      */
     private array $releaseCache = [];
 
@@ -83,7 +84,7 @@ class UsenetDownloadService
      * @param  array<int|string, mixed>|string  $messageIDs  Single or array of message IDs
      * @param  string  $groupName  Group name for logging
      * @param  int|null  $releaseId  Release ID for logging
-     * @return array{success: bool, data: string|null, groupUnavailable: bool, error: string|null, crcFailures: int, crcFailed: bool}
+     * @return array{success: bool, data: string|null, groupUnavailable: bool, error: string|null, crcFailures: int, crcFailed: bool, metadata?: YencArticleMetadata|null}
      *
      * @throws Exception
      */
@@ -183,6 +184,7 @@ class UsenetDownloadService
             return $result;
         }
 
+        $result['metadata'] = count($messageIDs) === 1 ? $download->metadata : null;
         $result['success'] = true;
         $result['data'] = $binary;
 
@@ -193,7 +195,7 @@ class UsenetDownloadService
      * Download content for a specific processing step.
      *
      * @param  array<int|string, mixed>|string  $messageIDs
-     * @return array{success: bool, data: string|null, groupUnavailable: bool, error: string|null, crcFailures: int, crcFailed: bool}
+     * @return array{success: bool, data: string|null, groupUnavailable: bool, error: string|null, crcFailures: int, crcFailed: bool, metadata?: YencArticleMetadata|null}
      */
     public function download(
         DownloadKind $kind,
@@ -269,7 +271,7 @@ class UsenetDownloadService
     }
 
     /**
-     * @param  array{success: bool, data: string|null, groupUnavailable: bool, error: string|null, crcFailures: int, crcFailed: bool}  $result
+     * @param  array{success: bool, data: string|null, groupUnavailable: bool, error: string|null, crcFailures: int, crcFailed: bool, metadata?: YencArticleMetadata|null}  $result
      */
     private function rememberSuccessfulDownload(string $cacheKey, array $result, int $byteSize): void
     {

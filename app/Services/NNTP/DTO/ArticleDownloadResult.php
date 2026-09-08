@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\NNTP\DTO;
 
+use App\Services\DTO\YencArticleMetadata;
+
 final readonly class ArticleDownloadResult
 {
     /**
@@ -13,6 +15,7 @@ final readonly class ArticleDownloadResult
         public mixed $data,
         public array $crcFailedMessageIds = [],
         public bool $damaged = false,
+        public ?YencArticleMetadata $metadata = null,
     ) {}
 
     public function crcFailureCount(): int

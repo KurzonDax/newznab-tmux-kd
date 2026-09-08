@@ -40,6 +40,8 @@ class NzbParserService
             return $result;
         }
 
+        $fileIndex = 0;
+        $fingerprint = hash('sha256', $nzb);
         foreach ($xml->file as $file) {
             // Subject.
             $title = (string) $file->attributes()->subject;
@@ -59,6 +61,11 @@ class NzbParserService
             }
 
             $result[$i]['title'] = $title;
+            $result[$i]['nzbFileIndex'] = $fileIndex++;
+            $result[$i]['nzbFileCount'] = count($xml->file);
+            $result[$i]['membershipFingerprint'] = $fingerprint;
+            $result[$i]['declaredSegmentTotal'] = preg_match('/\([0-9]+\/([1-9][0-9]*)\)$/D', $title, $declared) === 1 ? (int) $declared[1] : 0;
+            $result[$i]['segmentNumbersValid'] = true;
 
             // Extensions.
             if (preg_match(
@@ -93,6 +100,8 @@ class NzbParserService
             // File size.
             foreach ($file->segments->segment as $segment) {
                 $result[$i]['segments'][] = (string) $segment;
+                $rawNumber = (string) $segment->attributes()->number;
+                $result[$i]['segmentNumbersValid'] = $result[$i]['segmentNumbersValid'] && ctype_digit($rawNumber) && (int) $rawNumber > 0;
                 $result[$i]['segmentNumbers'][] = (int) $segment->attributes()->number;
                 $fileSize += $segment->attributes()->bytes;
                 $numSegments++;

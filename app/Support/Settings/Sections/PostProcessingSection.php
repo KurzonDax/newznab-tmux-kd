@@ -31,6 +31,17 @@ final class PostProcessingSection implements SettingsSectionProvider
             stage: PipelineStage::Enrich,
             cards: [
                 new SettingCard(
+                    id: 'par2-sidecars',
+                    title: 'PAR2 sidecars',
+                    description: 'Associate separately posted repair files with the payload they describe.',
+                    icon: 'fas fa-link',
+                    settings: [
+                        SettingDefinition::bool('par2_sidecar_absorb', 'Combine matching repair releases',
+                            'Keep the payload release, add the matching repair files to its download, and remove the separate repair listing. Enabled by default. When off, matching evidence can still name the payload.',
+                            'fas fa-link'),
+                    ],
+                ),
+                new SettingCard(
                     id: 'recovered-release-inspection',
                     title: 'Recovered-release inspection',
                     description: 'Optional extra identification downloads use the existing recovery thread allocation. Cached evidence remains usable when downloads are disabled.',

@@ -60,6 +60,20 @@ class StandardNameSweepAdmissionTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_pending_prefix_evidence_wakes_the_sweep_after_every_legacy_flag_settles(): void
+    {
+        $this->insertRelease(1);
+        (require database_path('migrations/2026_09_08_205107_create_par2_sidecar_evidence_tables.php'))->up();
+        DB::table('payload_prefix_hashes')->insert([
+            'releases_id' => 1, 'nzb_file_index' => 0, 'first_message_id' => 'fixture', 'leftguid' => 'a',
+            'prefix_hash' => str_repeat('a', 32), 'raw_size' => 10000, 'decoded_length' => 10000,
+            'segment_number' => 1, 'segment_offset' => 0, 'observed_segments' => 1, 'declared_segments' => 1,
+            'segment_numbers' => '[1]', 'fingerprint' => str_repeat('b', 64), 'captured_at' => now(),
+        ]);
+        $this->assertSame(1, (new NameFixingQueryService)->standardCandidateCount());
+        $this->assertSame([], $this->candidateIds());
+    }
+
     #[Test]
     #[DataProvider('terminalNfoStatuses')]
     public function ready_non_nfo_evidence_is_admitted_whatever_the_nfo_status_is(int $nfostatus): void

@@ -13,6 +13,7 @@ use App\Services\AdditionalProcessing\ArchiveExtractionService;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use App\Services\AdditionalProcessing\ConsoleOutputService;
 use App\Services\AdditionalProcessing\DTO\DownloadMetrics;
+use App\Services\AdditionalProcessing\DTO\UnknownPayloadCandidate;
 use App\Services\AdditionalProcessing\Enums\DownloadKind;
 use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
 use App\Services\AdditionalProcessing\FreeDiskGuard;
@@ -27,6 +28,7 @@ use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
 use App\Services\AdditionalProcessing\UsenetDownloadService;
 use App\Services\CollectionCleanupService;
+use App\Services\DTO\YencArticleMetadata;
 use App\Services\NameFixing\NameFixingService;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\NfoService;
@@ -34,6 +36,7 @@ use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbService;
 use App\Services\ObfuscationRecovery\RecoveryNameEvidence;
 use App\Services\Par2Processor;
+use App\Services\Par2Sidecar\SidecarEvidence;
 use App\Services\ReleaseImageService;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
@@ -47,6 +50,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionMethod;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
@@ -397,6 +401,107 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         $this->assertSame(1, DB::table('par_hashes')->count());
     }
 
+    #[DataProvider('pureSidecarFileCounts')]
+    public function test_pure_par2_sidecar_records_hashes_without_naming_absent_payloads(int $fileCount): void
+    {
+        DB::table('releases')->insert(array_merge($this->releaseRow(), [
+            'postdate' => '2026-08-16 12:00:00',
+            'proc_pp' => 0,
+            'nfostatus' => 1,
+        ]));
+
+        Search::shouldReceive('updateRelease')->once()->with(1);
+        $config = $this->makeConfig([
+            'addPAR2Files' => true,
+            'renamePar2' => true,
+            'payloadSniffing' => true,
+            'payloadSniffMaxCandidates' => 2,
+            'payloadSniffByteBudget' => 1024,
+        ]);
+        $persistenceMetrics = new PersistenceMetricsCollector;
+        $searchSync = new ReleaseSearchSyncCoordinator($persistenceMetrics);
+        $manager = new ReleaseFileManager(
+            $config,
+            new ReleaseImageService,
+            new NfoService,
+            new TestNzbService,
+            new PersistingPar2NameFixingService,
+            searchSyncCoordinator: $searchSync,
+        );
+
+        $nzbParser = Mockery::mock(NzbContentParser::class);
+        $nzbParser->shouldReceive('parseNzb')->once()->andReturn([
+            'error' => null,
+            'contents' => array_map(static fn (int $file): array => ['title' => 'metadata'.$file.'.bin', 'segments' => ['<par2-'.$file.'>', '<par2-last'.$file.'>'], 'size' => 200, 'partsactual' => 2], range(1, $fileCount)),
+        ]);
+
+        $downloadService = Mockery::mock(UsenetDownloadService::class);
+        $downloadService->shouldReceive('beginReleaseScope')->once()->andReturnNull();
+        $downloadService->shouldReceive('finishReleaseScope')->once()->andReturn(new DownloadMetrics);
+        foreach (range(1, $fileCount) as $file) {
+            $downloadService->shouldReceive('download')->once()->with(DownloadKind::PayloadSniff,
+                ['<par2-'.$file.'>'], 'alt.binaries.test', 1, 'metadata'.$file.'.bin')
+                ->andReturn(['success' => true, 'data' => "PAR2\x00PKTdata", 'groupUnavailable' => false, 'error' => null]);
+        }
+
+        $par2Info = Mockery::mock(Par2Info::class);
+        $par2Info->error = '';
+        $par2Info->shouldReceive('open')->times($fileCount)->andReturnTrue();
+        $par2Info->shouldReceive('getFileList')->times($fileCount)->andReturn([[
+            'name' => 'Canonical.Release.2026.mkv',
+            'size' => 1024,
+            'hash_16K' => '1234567890abcdef1234567890abcdef',
+        ]]);
+        $archiveService = Mockery::mock(ArchiveExtractionService::class);
+        $archiveService->shouldReceive('getPar2Info')->times($fileCount)->andReturn($par2Info);
+
+        $tmpPath = $this->makeTempDirectory('nntmux-sniff-persistence').'/';
+        $tempWorkspace = Mockery::mock(TempWorkspaceService::class);
+        $tempWorkspace->shouldReceive('createReleaseTempFolder')->once()->andReturn($tmpPath);
+        $tempWorkspace->shouldReceive('clearDirectory')->once()->with($tmpPath, false)->andReturnNull();
+        $output = Mockery::mock(ConsoleOutputService::class);
+        $output->shouldReceive('echoReleaseStart')->once()->andReturnNull();
+        $output->shouldReceive('setProcessTitle')->once()->andReturnNull();
+
+        $processor = new ReleaseProcessor(
+            $config,
+            $nzbParser,
+            new AdditionalWorkPlanner($config),
+            $archiveService,
+            Mockery::mock(MediaExtractionService::class),
+            $downloadService,
+            $manager,
+            Mockery::mock(ReleaseFilesArchiveFallback::class),
+            $tempWorkspace,
+            $output,
+            $searchSync,
+            $persistenceMetrics,
+            previewPolicy: new AlwaysEnabledPreviewPolicy,
+            // Pinned open: the default guard measures the real covers volume.
+            freeDiskGuard: new FreeDiskGuard(
+                static fn (string $path): float => 900.0,
+                static fn (string $path): float => 1000.0,
+            ),
+        );
+
+        $result = $processor->process(new ReleaseProcessingContext(Release::query()->findOrFail(1)), $tmpPath);
+
+        $this->assertSame($fileCount, $result->payloadSniffMetrics->candidateCount);
+        $this->assertSame(0, DB::table('release_files')->count());
+        $this->assertSame(0, DB::table('releases')->value('rarinnerfilecount'));
+        $this->assertSame(0, DB::table('releases')->value('isrenamed'));
+        $this->assertDatabaseHas('par_hashes', [
+            'releases_id' => 1,
+            'hash' => '1234567890abcdef1234567890abcdef',
+        ]);
+        $this->assertSame('Example', DB::table('releases')->where('id', 1)->value('searchname'));
+    }
+
+    public static function pureSidecarFileCounts(): array
+    {
+        return [[1], [2]];
+    }
+
     public function test_sniffed_rar_and_par2_payloads_flow_through_real_finalization(): void
     {
         DB::table('releases')->insert(array_merge($this->releaseRow(), [
@@ -671,7 +776,8 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
     {
         DB::table('releases')->insert($this->releaseRow());
 
-        Search::shouldReceive('updateRelease')->never();
+        Search::shouldReceive('updateRelease')->once()->with(1);
+        (require database_path('migrations/2026_09_08_205107_create_par2_sidecar_evidence_tables.php'))->up();
 
         $manager = $this->makeManager();
         $context = new ReleaseProcessingContext(Release::query()->findOrFail(1));
@@ -680,6 +786,10 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
             'size' => 1024,
             'date' => 1_788_600_000,
         ], $context, '\\.(?:par2|sfv|nzb)'));
+
+        $candidate = new UnknownPayloadCandidate('random', 'article@fixture', 1, 11000, 11000, 0, [1], 1, 0, 'inventory');
+        (new SidecarEvidence)->queuePrefix($context, $candidate, str_repeat('A', 10000),
+            new YencArticleMetadata(10000, 1, 1, 0, 10000));
 
         DB::unprepared("CREATE TRIGGER fail_release_finalize BEFORE UPDATE ON releases BEGIN SELECT RAISE(ABORT, 'forced finalization failure'); END");
 
@@ -694,6 +804,11 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
 
         $this->assertSame(0, DB::table('release_files')->count());
         $this->assertArrayHasKey('Example.Movie.2026.mkv', $context->pendingReleaseFiles);
+        $this->assertSame(0, DB::table('payload_prefix_hashes')->count());
+        $this->assertCount(1, $context->pendingPayloadPrefixes);
+        $manager->finalizeRelease($context, false);
+        $this->assertSame(1, DB::table('payload_prefix_hashes')->count());
+        $this->assertSame([], $context->pendingPayloadPrefixes);
     }
 
     public function test_float_release_file_size_is_normalized_before_queueing(): void

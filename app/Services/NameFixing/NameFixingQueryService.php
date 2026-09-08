@@ -8,6 +8,7 @@ use App\Enums\PredbSearchStatus;
 use App\Models\Category;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\ObfuscationRecovery\RecoveryReleaseGate;
+use App\Services\Par2Sidecar\SidecarWork;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Facades\DB;
@@ -161,7 +162,7 @@ final class NameFixingQueryService
             'SELECT COUNT(*) AS aggregate FROM releases r WHERE '.$this->standardSweepPredicate()
         );
 
-        return (int) ($rows[0]->aggregate ?? 0);
+        return (int) ($rows[0]->aggregate ?? 0) + SidecarWork::pendingCount();
     }
 
     /**

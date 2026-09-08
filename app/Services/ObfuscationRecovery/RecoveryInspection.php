@@ -21,7 +21,7 @@ final readonly class RecoveryInspection
             if ($release === null || ! self::additionalOwned($release, $additionalToken)) {
                 return null;
             }
-            $lease = RecoveryLease::acquire($release);
+            $lease = RecoveryLease::acquire($release, additionalToken: $additionalToken);
 
             return $lease === null ? null : new self($publication, $lease, $additionalToken);
         }, 1);

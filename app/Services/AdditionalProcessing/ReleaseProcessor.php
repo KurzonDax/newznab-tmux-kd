@@ -23,6 +23,7 @@ use App\Services\MediaInfo\Enums\MediaInfoSourceCompleteness;
 use App\Services\MediaInfo\Enums\MediaInfoSourceKind;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\ObfuscationRecovery\RecoveryProcessing;
+use App\Services\Par2Sidecar\SidecarEvidence;
 use App\Services\ReleaseImageService;
 use App\Services\Releases\DynamicPreviewBudgetPolicy;
 use App\Services\Releases\PreviewGenerationPolicy;
@@ -465,10 +466,12 @@ class ReleaseProcessor
     {
         /** @var list<array{payload: string, candidate: ArchiveCandidate}> $deferredArchives */
         $deferredArchives = [];
+        $deferredPar2 = [];
+        $sidecarEvidence = new SidecarEvidence;
 
         foreach ($context->workPlan->unknownPayloadCandidates as $candidate) {
             if ($context->isTimedOut($this->config->releaseProcessingTimeout)) {
-                return;
+                break;
             }
 
             $result = $this->downloadService->download(
@@ -483,7 +486,7 @@ class ReleaseProcessor
                 $context->groupUnavailable = true;
                 $this->output->echoGroupUnavailable();
 
-                return;
+                break;
             }
 
             if (! $result['success'] || ! is_string($result['data'])) {
@@ -494,6 +497,13 @@ class ReleaseProcessor
             $sniffResult = $this->payloadSniffer->classify($payload);
             $classification = $sniffResult->classification;
             $context->recordPayloadClassification($classification);
+            $sidecarEvidence->queueClassification($context, $candidate, $classification->value, $payload);
+            if ($classification === PayloadClassification::Par2) {
+                $deferredPar2[] = $payload;
+
+                continue;
+            }
+            $sidecarEvidence->queuePrefix($context, $candidate, $payload, $result['metadata'] ?? null);
 
             if (in_array($classification, [PayloadClassification::Rar, PayloadClassification::Zip], true)) {
                 $archiveCandidate = new ArchiveCandidate(
@@ -512,7 +522,6 @@ class ReleaseProcessor
             }
 
             match ($classification) {
-                PayloadClassification::Par2 => $this->processSniffedPar2($payload, $context),
                 PayloadClassification::Matroska, PayloadClassification::Mp4, PayloadClassification::Avi => $this->processSniffedVideo(
                     $payload,
                     $classification,
@@ -521,6 +530,12 @@ class ReleaseProcessor
                 PayloadClassification::Text => $this->processSniffedNfo($payload, $context),
                 PayloadClassification::Unknown => null,
             };
+        }
+
+        $totalFiles = (int) ($context->nzbContents[0]['nzbFileCount'] ?? count($context->nzbContents));
+        $context->purePar2Sidecar = $totalFiles > 0 && count($deferredPar2) === $totalFiles;
+        foreach ($deferredPar2 as $payload) {
+            $this->processSniffedPar2($payload, $context);
         }
 
         usort(
@@ -543,7 +558,7 @@ class ReleaseProcessor
 
     private function processSniffedPar2(string $payload, ReleaseProcessingContext $context): void
     {
-        if ($context->foundPAR2Info) {
+        if ($context->foundPAR2Info && ! $context->purePar2Sidecar) {
             return;
         }
 

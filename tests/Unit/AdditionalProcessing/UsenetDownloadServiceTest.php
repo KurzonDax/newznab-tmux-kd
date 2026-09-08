@@ -4,6 +4,7 @@ namespace Tests\Unit\AdditionalProcessing;
 
 use App\Services\AdditionalProcessing\Enums\DownloadKind;
 use App\Services\AdditionalProcessing\UsenetDownloadService;
+use App\Services\DTO\YencArticleMetadata;
 use App\Services\NNTP\DTO\ArticleDownloadResult;
 use App\Services\NNTP\NNTPService;
 use Illuminate\Support\Facades\Log;
@@ -19,6 +20,21 @@ class UsenetDownloadServiceTest extends TestCase
     {
         Mockery::close();
         parent::tearDown();
+    }
+
+    public function test_sniff_download_preserves_article_metadata_through_cache_without_refetch(): void
+    {
+        $metadata = new YencArticleMetadata(2000000, 1, 3, 0, 768000);
+        $nntp = Mockery::mock(NNTPService::class);
+        $nntp->shouldReceive('getMessagesByMessageIDWithCrcStatus')->once()->with(['<prefix>'])
+            ->andReturn(new ArticleDownloadResult('bytes', metadata: $metadata));
+        $service = new UsenetDownloadService($this->makeConfig(), $nntp);
+        $service->beginReleaseScope();
+        $first = $service->download(DownloadKind::PayloadSniff, ['<prefix>']);
+        $again = $service->download(DownloadKind::PayloadSniff, ['<prefix>']);
+        $this->assertSame($metadata, $first['metadata']);
+        $this->assertSame($metadata, $again['metadata']);
+        $this->assertSame(1, $service->finishReleaseScope()->networkRequests);
     }
 
     #[Test]

@@ -19,6 +19,7 @@ use App\Services\ObfuscationRecovery\RecoveryInspection;
 use App\Services\ObfuscationRecovery\RecoveryInventory;
 use App\Services\ObfuscationRecovery\RecoveryNaming;
 use App\Services\ObfuscationRecovery\RecoveryPlan;
+use App\Services\Par2Sidecar\SidecarEvidence;
 use App\Services\Releases\ExecutableReleaseDiscardService;
 use dariusiii\rarinfo\Par2Info;
 use Illuminate\Support\Carbon;
@@ -124,6 +125,10 @@ class Par2Processor
             }
 
             return false;
+        }
+
+        if ($recovery === null) {
+            (new SidecarEvidence)->storeParsedDescriptors($relID, $par2);
         }
 
         // Get the file list from Par2Info.

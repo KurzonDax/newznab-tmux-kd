@@ -74,6 +74,14 @@ class SettingsEnrichmentPagesTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_par2_sidecar_combination_defaults_on_and_can_be_disabled_from_its_card(): void
+    {
+        $this->assertSame('1', (string) DB::table('settings')->where('name', 'par2_sidecar_absorb')->value('value'));
+        $this->assertStringContainsString('name="par2_sidecar_absorb"', $this->renderSection('post-processing'));
+        $this->saveCard('post-processing', 'par2-sidecars', ['par2_sidecar_absorb' => '0']);
+        $this->assertSame('0', (string) DB::table('settings')->where('name', 'par2_sidecar_absorb')->value('value'));
+    }
+
     public function test_the_post_processing_page_renders_every_card(): void
     {
         $rendered = $this->renderSection('post-processing');

@@ -81,7 +81,7 @@ final class MissingFileRescanService
         }
 
         try {
-            return $this->rescanWithLease($release, $options, $budget);
+            return $this->rescanWithLease($release, $options, $budget, $lease);
         } finally {
             $lease->release();
         }
@@ -94,6 +94,7 @@ final class MissingFileRescanService
         Release $release,
         MissingFileRescanOptions $options,
         RescanRunBudget $budget,
+        RecoveryLease $lease,
     ): MissingFileRescanResult {
         $completionBefore = (float) $release->completion;
         if (app(RecoveryIdentityPolicy::class)->publication((int) $release->id) !== null) {
@@ -269,7 +270,7 @@ final class MissingFileRescanService
         $added = $document->addFiles($recovered, $envelope);
         $completionAfter = $document->measure($declared)->percentage();
 
-        $replaced = $this->nzb->replaceNzbContents((string) $release->guid, $document->toXml());
+        $replaced = $this->nzb->replaceNzbContentsWithLease((string) $release->guid, $document->toXml(), $lease, hash('sha256', $contents));
         if (! $replaced->success) {
             // We know what to write and could not write it. That is our problem, not the
             // release's: leave its state alone so the next invocation tries again.

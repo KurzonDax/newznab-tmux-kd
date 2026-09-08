@@ -11,6 +11,8 @@ use App\Services\AudioProcessing\AudioCandidateQuery;
 use App\Services\AudioProcessing\AudioRouting;
 use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\ObfuscationRecovery\RecoveryReleaseGate;
+use App\Services\Par2Sidecar\SidecarMutationProtection;
+use App\Services\ReleaseRepair\RecoveryLease;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Carbon;
@@ -149,18 +151,20 @@ final class ReleaseClaimant
      *
      * @param  Builder<Release>  $query
      */
-    public static function applyClaimWindow(Builder $query): void
+    public static function applyClaimWindow(Builder $query, string $table = 'r'): void
     {
+        RecoveryLease::applyAvailable($query, $table);
+        SidecarMutationProtection::apply($query, $table);
         if (! self::supportsClaims()) {
             return;
         }
 
         $staleBefore = self::claimStaleBefore();
 
-        $query->where(function (Builder $claimQuery) use ($staleBefore): void {
+        $query->where(function (Builder $claimQuery) use ($staleBefore, $table): void {
             $claimQuery
-                ->whereNull('r.'.self::CLAIMED_AT_COLUMN)
-                ->orWhere('r.'.self::CLAIMED_AT_COLUMN, '<', $staleBefore);
+                ->whereNull($table.'.'.self::CLAIMED_AT_COLUMN)
+                ->orWhere($table.'.'.self::CLAIMED_AT_COLUMN, '<', $staleBefore);
         });
     }
 
@@ -224,6 +228,8 @@ final class ReleaseClaimant
                 // established by the token-filtered winners query below.
                 Release::query()
                     ->whereIn('id', $stampIds)
+                    ->tap(static fn ($query) => RecoveryLease::applyAvailable($query))
+                    ->tap(static fn ($query) => SidecarMutationProtection::apply($query))
                     ->tap(static fn ($query) => RecoveryReleaseGate::excludePending($query))
                     ->whereRaw(BundleIdentity::availableSql())
                     ->where(function (Builder $claimQuery): void {
@@ -412,17 +418,11 @@ final class ReleaseClaimant
      */
     private static function selectAvailableCount(Builder $query): void
     {
-        if (! self::supportsClaims()) {
-            $query->selectRaw('COUNT(*) AS available_count');
-
-            return;
-        }
-
-        $claimedAt = 'r.'.self::CLAIMED_AT_COLUMN;
-        $query->selectRaw(
-            'SUM(CASE WHEN '.$claimedAt.' IS NULL OR '.$claimedAt.' < ? THEN 1 ELSE 0 END) AS available_count',
-            [self::claimStaleBefore()],
-        );
+        $available = Release::query()->from('releases as claimable')->selectRaw('1')
+            ->whereColumn('claimable.id', 'r.id');
+        self::applyClaimWindow($available, 'claimable');
+        $query->selectRaw('SUM(CASE WHEN EXISTS ('.$available->toSql().') THEN 1 ELSE 0 END) AS available_count',
+            $available->getBindings());
     }
 
     /**
