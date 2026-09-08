@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use App\Models\Category;
+use App\Services\Categorization\Categorizers\MovieCategorizer;
 use App\Services\Categorization\Pipes\CategorizationPassable;
 use App\Services\Categorization\Pipes\MoviePipe;
 use App\Services\Categorization\Pipes\MusicPipe;
@@ -14,6 +15,133 @@ use PHPUnit\Framework\TestCase;
 
 class CategorizeMovieTest extends TestCase
 {
+    public function test_bracketed_dvd_xvid_encode_is_an_sd_movie(): void
+    {
+        $context = new ReleaseContext(
+            releaseName: 'Example.Feature.(1986).{tmdb-123456}.-.[DVD][AC3.2.0][XviD]-GROUP',
+            groupId: 0,
+            groupName: 'alt.binaries.boneless',
+            categorizeForeign: true,
+            catWebDL: false,
+        );
+
+        $this->assertSame(Category::MOVIE_SD, (new MovieCategorizer)->categorize($context)->categoryId);
+
+        $passable = (new MoviePipe)->handle(
+            new CategorizationPassable($context),
+            fn (CategorizationPassable $result): CategorizationPassable => $result,
+        );
+
+        $this->assertSame(Category::MOVIE_SD, $passable->bestResult->categoryId);
+    }
+
+    #[DataProvider('movieFormatNames')]
+    public function test_standalone_format_tags_respect_movie_subcategory_precedence(string $name, int $expectedCategory): void
+    {
+        $context = new ReleaseContext(releaseName: $name, groupId: 0, catWebDL: false);
+
+        $this->assertSame($expectedCategory, (new MovieCategorizer)->categorize($context)->categoryId);
+
+        $passable = (new MoviePipe)->handle(
+            new CategorizationPassable($context),
+            fn (CategorizationPassable $result): CategorizationPassable => $result,
+        );
+
+        $this->assertSame($expectedCategory, $passable->bestResult->categoryId);
+    }
+
+    /**
+     * @return iterable<string, array{string, int}>
+     */
+    public static function movieFormatNames(): iterable
+    {
+        foreach (['XviD', 'DivX'] as $codec) {
+            yield $codec.' bracketed' => ['Example.Feature.(1986).['.$codec.']-GROUP', Category::MOVIE_SD];
+            yield $codec.' adjacent to DVD' => ['Example.Feature.(1986).[DVD]['.$codec.']', Category::MOVIE_SD];
+            yield $codec.' before DVD' => ['Example.Feature.(1986).['.$codec.'][DVD]', Category::MOVIE_SD];
+            yield $codec.' at start' => [$codec.'.Example.Feature.(1986)-GROUP', Category::MOVIE_SD];
+            yield $codec.' at end' => ['Example.Feature.(1986).'.$codec, Category::MOVIE_SD];
+
+            foreach (['.', ' ', '_', '-'] as $separator) {
+                yield $codec.' separator '.$separator => ['Example.Feature.(1986)'.$separator.'DVD'.$separator.$codec.$separator.'GROUP', Category::MOVIE_SD];
+            }
+        }
+
+        yield 'mixed case adjacent tags' => ['Example.Feature.(1986).[dVd][aC3.2.0][xViD]-GROUP', Category::MOVIE_SD];
+
+        foreach (['DVDScr', 'DVDRip', 'VHSRip', 'HDTS', 'HDTS-LINE', 'ExtraScene', 'XviDvd'] as $format) {
+            yield $format.' SD source' => ['Example.Feature.(1986).['.$format.']', Category::MOVIE_SD];
+        }
+
+        foreach (['DVD', 'DVD5', 'DVD9', 'DVD-R', 'DVDR', 'DVD-5', 'DVD-9'] as $disc) {
+            yield $disc.' bracketed disc' => ['Example.Feature.(1986).['.$disc.']', Category::MOVIE_DVD];
+            yield $disc.' legacy disc' => ['Example.Feature.(1986).'.$disc.'-GROUP', Category::MOVIE_DVD];
+            yield $disc.' at start' => [$disc.'.Example.Feature.(1986)-GROUP', Category::MOVIE_DVD];
+            yield $disc.' at end' => ['Example.Feature.(1986).'.$disc, Category::MOVIE_DVD];
+
+            if ($disc !== 'DVD') {
+                yield $disc.' with encode' => ['Example.Feature.(1986).['.$disc.'][XviD]', Category::MOVIE_DVD];
+            }
+        }
+
+        yield 'HD takes precedence over SD encode' => ['Example.Feature.(1986).[DVD][XviD][1080p]', Category::MOVIE_HD];
+        yield 'HD takes precedence over generic DVD' => ['Example.Feature.(1986).[DVD][1080p]', Category::MOVIE_HD];
+        yield 'XvidHD takes precedence over generic DVD' => ['Example.Feature.(1986).[DVD][XvidHD]', Category::MOVIE_HD];
+        yield 'explicit DVD disc retains precedence over HD' => ['Example.Feature.(1986).[DVD9][1080p]', Category::MOVIE_DVD];
+        yield 'UHD takes precedence over DVD disc' => ['Example.Feature.(1986).[DVD9][XviD][2160p]', Category::MOVIE_UHD];
+        yield 'XvidHD retains HD recognition' => ['Example.Feature.(1986).XvidHD-GROUP', Category::MOVIE_HD];
+        yield 'Blu-ray takes precedence' => ['Example.Feature.(1986).Blu-ray.[DVD][XviD]', Category::MOVIE_BLURAY];
+        yield 'foreign takes precedence' => ['Example.Feature.(1986).French.[DVD][XviD]', Category::MOVIE_FOREIGN];
+    }
+
+    #[DataProvider('nonFormatNames')]
+    public function test_format_substrings_are_not_movie_evidence(string $name): void
+    {
+        $context = new ReleaseContext(releaseName: $name, groupId: 0);
+
+        $this->assertFalse((new MovieCategorizer)->categorize($context)->isSuccessful());
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function nonFormatNames(): iterable
+    {
+        foreach (['NotXviDCodec', 'NotDVDSource', 'NotXviD', 'XviDCodec', 'NotDivX', 'DivXCodec', 'NotDVD', 'DVDSource', 'NotDVD9', 'DVD9Source', 'NotDVDRip', 'DVDRipSource'] as $word) {
+            yield $word => ['Example.Feature.(1986).'.$word.'-GROUP'];
+            yield $word.' bracketed' => ['Example.Feature.(1986).['.$word.']-GROUP'];
+        }
+    }
+
+    #[DataProvider('guardedFormatNames')]
+    public function test_bracketed_formats_do_not_bypass_movie_pipe_skip_rules(string $name): void
+    {
+        $context = new ReleaseContext(releaseName: $name, groupId: 0);
+
+        $this->assertTrue((new MovieCategorizer)->shouldSkip($context));
+
+        $passable = (new MoviePipe)->handle(
+            new CategorizationPassable($context),
+            fn (CategorizationPassable $result): CategorizationPassable => $result,
+        );
+
+        $this->assertFalse($passable->bestResult->isSuccessful());
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function guardedFormatNames(): array
+    {
+        return [
+            'TV episode' => ['Example.Show.S01E02.[DVD][XviD]-GROUP'],
+            'season pack' => ['Example.Show.S01.[DVD][DivX]-GROUP'],
+            'anime episode' => ['Example.Anime.E01.[DVD][XviD]-GROUP'],
+            'anime group' => ['[SubsPlease].Example.Feature.(1986).[DVD][XviD]'],
+            'adult' => ['Example.Feature.XXX.(1986).[DVD][XviD]-GROUP'],
+        ];
+    }
+
     public function test_web_rip_movie_with_apes_in_title_stays_in_movie_category(): void
     {
         $context = new ReleaseContext(

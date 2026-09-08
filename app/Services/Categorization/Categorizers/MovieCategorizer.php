@@ -13,6 +13,12 @@ use App\Services\Categorization\ReleaseContext;
  */
 class MovieCategorizer extends AbstractCategorizer
 {
+    private const string SD_ENCODE_TOKENS = 'divx|xvid(?:vd)?';
+
+    private const string SD_FORMAT_TOKENS = self::SD_ENCODE_TOKENS.'|dvdscr|extrascene|dvdrip|HDTS(?:-LINE)?|vhsrip';
+
+    private const string DVD_DISC_TOKENS = 'dvd-?(?:5|9|r)';
+
     protected int $priority = 25;
 
     public function getName(): string
@@ -91,6 +97,10 @@ class MovieCategorizer extends AbstractCategorizer
             return $result;
         }
 
+        if ($result = $this->checkDVDSource($name)) {
+            return $result;
+        }
+
         if ($result = $this->checkSD($name)) {
             return $result;
         }
@@ -112,7 +122,11 @@ class MovieCategorizer extends AbstractCategorizer
             return false;
         }
 
-        return (bool) preg_match('/[._ -]AVC|[BH][DR]RIP|(Bluray|Blu-Ray)|BD[._ -]?(25|50)?|\bBR\b|Camrip|(?:[._ -]|\()\d{4}(?:[._ -]|\)).*(720p|1080p|Cam|HDTS|2160p)|DIVX|[._ -]DVD[._ -]|DVD-?(5|9|R|Rip)|Untouched|VHSRip|XVID|\b(x26[45]|H\.?264|HEVC)\b|\b(?:720|1080|2160)p\b|[._ -](DTS|TVrip|WEB[._ -]?Rip|WEB[._ -]?DL)[._ -]|\b(2160)p\b.*\b(Netflix|Amazon|NF|AMZN|Disney)\b/i', $name);
+        if ($this->hasFormatToken($name, 'dvd|'.self::DVD_DISC_TOKENS.'|'.self::SD_FORMAT_TOKENS.'|xvidhd')) {
+            return true;
+        }
+
+        return (bool) preg_match('/[._ -]AVC|[BH][DR]RIP|(Bluray|Blu-Ray)|BD[._ -]?(25|50)?|\bBR\b|Camrip|(?:[._ -]|\()\d{4}(?:[._ -]|\)).*(720p|1080p|Cam|HDTS|2160p)|Untouched|\b(x26[45]|H\.?264|HEVC)\b|\b(?:720|1080|2160)p\b|[._ -](DTS|TVrip|WEB[._ -]?Rip|WEB[._ -]?DL)[._ -]|\b(2160)p\b.*\b(Netflix|Amazon|NF|AMZN|Disney)\b/i', $name);
     }
 
     protected function checkYearOnlyMovie(string $name): ?CategorizationResult
@@ -197,7 +211,19 @@ class MovieCategorizer extends AbstractCategorizer
 
     protected function checkDVD(string $name): ?CategorizationResult
     {
-        if (preg_match('/(dvd\-?r|[._ -]dvd|dvd9|dvd5|[._ -]r5)[._ -]/i', $name)) {
+        if ($this->hasFormatToken($name, self::DVD_DISC_TOKENS.'|r5')) {
+            return $this->matched(Category::MOVIE_DVD, 0.85, 'dvd');
+        }
+
+        return null;
+    }
+
+    /**
+     * A generic DVD source yields to higher-resolution evidence and explicit SD encodes.
+     */
+    protected function checkDVDSource(string $name): ?CategorizationResult
+    {
+        if ($this->hasFormatToken($name, 'dvd') && ! $this->hasFormatToken($name, self::SD_ENCODE_TOKENS)) {
             return $this->matched(Category::MOVIE_DVD, 0.85, 'dvd');
         }
 
@@ -228,11 +254,17 @@ class MovieCategorizer extends AbstractCategorizer
 
     protected function checkSD(string $name): ?CategorizationResult
     {
-        if (preg_match('/(divx|dvdscr|extrascene|dvdrip|\.CAM|HDTS(-LINE)?|vhsrip|xvid(vd)?)[._ -]/i', $name)) {
+        if ($this->hasFormatToken($name, self::SD_FORMAT_TOKENS) ||
+            preg_match('/\.CAM[._ -]/i', $name)) {
             return $this->matched(Category::MOVIE_SD, 0.8, 'sd');
         }
 
         return null;
+    }
+
+    private function hasFormatToken(string $name, string $tokens): bool
+    {
+        return (bool) preg_match('/(?:^|[._ \[\]-])(?:'.$tokens.')(?=$|[._ \[\]-])/i', $name);
     }
 
     protected function checkOther(string $name): ?CategorizationResult

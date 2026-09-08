@@ -8,6 +8,7 @@ use App\Facades\Search;
 use App\Models\Category;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
@@ -93,6 +94,7 @@ class RecategorizeReleasesCommandTest extends TestCase
             ['id' => Category::OTHER_MISC, 'title' => 'Misc', 'root_categories_id' => Category::OTHER_ROOT],
             ['id' => Category::MOVIE_OTHER, 'title' => 'Other', 'root_categories_id' => Category::MOVIE_ROOT],
             ['id' => Category::MOVIE_HD, 'title' => 'HD', 'root_categories_id' => Category::MOVIE_ROOT],
+            ['id' => Category::MOVIE_SD, 'title' => 'SD', 'root_categories_id' => Category::MOVIE_ROOT],
             ['id' => Category::BOOKS_EBOOK, 'title' => 'Ebook', 'root_categories_id' => Category::BOOKS_ROOT],
         ]);
     }
@@ -161,6 +163,67 @@ class RecategorizeReleasesCommandTest extends TestCase
         )->all();
 
         $this->assertSame($before, $after);
+    }
+
+    public function test_category_preview_reports_bracketed_movie_recovery_without_writes_or_search_updates(): void
+    {
+        Http::preventStrayRequests();
+        $name = 'Example.Feature.(1986).{tmdb-123456}.-.[DVD][AC3.2.0][XviD]-GROUP';
+        DB::table('releases')->insert($this->release(1, $name, Category::OTHER_MISC, 41));
+        $before = (array) DB::table('releases')->find(1);
+
+        Search::shouldReceive('updateRelease')->never();
+
+        $this->artisan('nntmux:recategorize-releases', [
+            '--category' => Category::OTHER_MISC,
+            '--test' => true,
+        ])
+            ->expectsOutputToContain('Would have changed '.$name.' from 10 to 2030')
+            ->assertSuccessful();
+
+        $this->assertSame($before, (array) DB::table('releases')->find(1));
+    }
+
+    public function test_category_recovery_persists_and_synchronizes_a_categorized_misc_movie_only_once(): void
+    {
+        Http::preventStrayRequests();
+        $name = 'Example.Feature.(1986).{tmdb-123456}.-.[DVD][AC3.2.0][XviD]-GROUP';
+        DB::table('releases')->insert($this->release(1, $name, Category::OTHER_MISC, 41));
+
+        Search::shouldReceive('updateRelease')->once()->with(1)->andReturnUsing(function (): bool {
+            $this->assertSame(Category::MOVIE_SD, (int) DB::table('releases')->find(1)->categories_id);
+
+            return true;
+        });
+
+        $this->artisan('nntmux:recategorize-releases', ['--category' => Category::OTHER_MISC])
+            ->assertSuccessful();
+
+        $release = DB::table('releases')->find(1);
+
+        $this->assertSame($name, $release->searchname);
+        $this->assertSame(Category::MOVIE_SD, (int) $release->categories_id);
+        $this->assertSame(1, (int) $release->iscategorized);
+        $this->assertSame(0, (int) $release->videos_id);
+        $this->assertSame(0, (int) $release->tv_episodes_id);
+        $this->assertSame(0, (int) $release->gamesinfo_id);
+        $this->assertNull($release->imdbid);
+        $this->assertNull($release->musicinfo_id);
+        $this->assertNull($release->consoleinfo_id);
+        $this->assertNull($release->bookinfo_id);
+        $this->assertNull($release->anidbid);
+
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+
+        $this->artisan('nntmux:recategorize-releases', ['--category' => Category::OTHER_MISC])
+            ->assertSuccessful();
+
+        $updates = array_filter(DB::getQueryLog(), static fn (array $query): bool => str_starts_with(strtolower($query['query']), 'update'));
+        DB::disableQueryLog();
+
+        $this->assertSame([], $updates);
+        $this->assertSame((array) $release, (array) DB::table('releases')->find(1));
     }
 
     public function test_all_uses_forced_roots_from_junction_groups(): void

@@ -23,6 +23,7 @@ use App\Services\Releases\PreviewGenerationPolicy;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -182,6 +183,47 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
 
         $this->assertSame('Show.Name.S03E05.720p.HDTV.x264-GROUP', $release->searchname);
         $this->assertSame(Category::TV_HD, $release->categories_id);
+        $this->assertSame(1, (int) $release->iscategorized);
+        $this->assertSame(1, (int) $release->isrenamed);
+    }
+
+    public function test_descriptive_rename_recovers_a_misc_release_with_bracketed_movie_formats(): void
+    {
+        Http::preventStrayRequests();
+        Search::shouldReceive('updateRelease')->twice();
+
+        $group = UsenetGroup::query()->create([
+            'name' => 'alt.binaries.boneless',
+            'active' => 1,
+            'backfill' => 0,
+        ]);
+        $release = Release::factory()->create([
+            'name' => '5da7b5393d4f4445ac4db1ee8e95f567',
+            'searchname' => '5da7b5393d4f4445ac4db1ee8e95f567',
+            'groups_id' => $group->id,
+            'categories_id' => Category::OTHER_MISC,
+            'iscategorized' => 1,
+            'isrenamed' => 0,
+            'guid' => str_repeat('d', 40),
+            'leftguid' => 'd',
+        ]);
+        $name = 'Example.Feature.(1986).{tmdb-123456}.-.[DVD][AC3.2.0][XviD]-GROUP';
+
+        app(ReleaseUpdateService::class)->updateRelease(
+            $release->fresh(),
+            $name,
+            'fileCheck: Descriptive title',
+            true,
+            'Filenames, ',
+            true,
+            false,
+            descriptiveTitleCandidate: true,
+        );
+
+        $release->refresh();
+
+        $this->assertSame($name, $release->searchname);
+        $this->assertSame(Category::MOVIE_SD, (int) $release->categories_id);
         $this->assertSame(1, (int) $release->iscategorized);
         $this->assertSame(1, (int) $release->isrenamed);
     }
