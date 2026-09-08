@@ -6,6 +6,8 @@ namespace App\Services\Tmux;
 
 use App\Models\Settings;
 use Illuminate\Support\Facades\Process;
+use RuntimeException;
+use Throwable;
 
 /**
  * Service for managing tmux sessions and panes
@@ -61,10 +63,13 @@ class TmuxSessionManager
             return null;
         }
 
-        $arguments = ['tmux'];
-        if (file_exists($this->configFile)) {
-            array_push($arguments, '-f', $this->configFile);
+        if (! is_file($this->configFile) || ! is_readable($this->configFile)) {
+            $this->lastError = "Tmux profile '{$this->configFile}' must be a readable file. Check tmux.config_file and file permissions.";
+
+            return null;
         }
+
+        $arguments = ['tmux', '-f', $this->configFile];
         array_push(
             $arguments,
             'new-session',
@@ -90,6 +95,19 @@ class TmuxSessionManager
         $paneId = trim($result->output());
         if (! preg_match('/^%[0-9]+$/', $paneId)) {
             $this->lastError = "Tmux returned an invalid pane ID: '{$paneId}'.";
+
+            return null;
+        }
+
+        try {
+            $profileResult = Process::timeout(30)->run(['tmux', 'source-file', $this->configFile]);
+
+            if (! $profileResult->successful()) {
+                throw new RuntimeException(trim($profileResult->errorOutput().$profileResult->output()) ?: 'source-file exited with code '.$profileResult->exitCode());
+            }
+        } catch (Throwable $exception) {
+            $this->lastError = "Unable to load tmux profile '{$this->configFile}': ".$exception->getMessage();
+            Process::timeout(30)->run(['tmux', 'kill-session', '-t', '='.$this->sessionName]);
 
             return null;
         }

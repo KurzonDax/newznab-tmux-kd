@@ -22,11 +22,14 @@ class TmuxSessionManagerTest extends TestCase
     #[DataProvider('serverScenarios')]
     public function test_session_creation_enforces_remain_on_exit_before_using_a_dead_placeholder(
         bool $serverAlreadyRunning,
-        bool $configExists,
+        bool $customConfig,
     ): void {
-        $configFile = $configExists
-            ? config_path('tmux.conf')
-            : $this->makeTempPath('missing-tmux', '.conf');
+        $configFile = $customConfig
+            ? $this->makeTempPath('custom tmux profile', '.conf')
+            : config_path('tmux.conf');
+        if ($customConfig) {
+            file_put_contents($configFile, "set -g mouse on\n");
+        }
         config(['tmux.config_file' => $configFile]);
         $serverRunning = $serverAlreadyRunning;
         $targetSessionExists = false;
@@ -40,7 +43,7 @@ class TmuxSessionManagerTest extends TestCase
             &$targetSessionExists,
             &$remainOnExit,
             &$paneAlive,
-            $configExists,
+            $customConfig,
         ) {
             $command = $process->command;
             $commands[] = $command;
@@ -56,7 +59,7 @@ class TmuxSessionManagerTest extends TestCase
             if (in_array('new-session', $command, true)) {
                 if (! $serverRunning) {
                     $serverRunning = true;
-                    $remainOnExit = $configExists && in_array('-f', $command, true);
+                    $remainOnExit = ! $customConfig && in_array('-f', $command, true);
                 }
 
                 $targetSessionExists = true;
@@ -84,7 +87,7 @@ class TmuxSessionManagerTest extends TestCase
         $this->assertTrue($targetSessionExists);
         $this->assertTrue($remainOnExit);
         $this->assertFalse($paneAlive);
-        $this->assertCount(3, $commands);
+        $this->assertCount(4, $commands);
         $this->assertSame(['tmux', 'has-session', '-t', 'test-session'], $commands[0]);
 
         $newSessionCommand = $commands[1];
@@ -92,13 +95,7 @@ class TmuxSessionManagerTest extends TestCase
         $this->assertContains('new-session', $newSessionCommand);
         $this->assertSame('sh', end($newSessionCommand));
 
-        if ($configExists) {
-            $configFlagIndex = array_search('-f', $newSessionCommand, true);
-            $this->assertIsInt($configFlagIndex);
-            $this->assertSame($configFile, $newSessionCommand[$configFlagIndex + 1]);
-        } else {
-            $this->assertNotContains('-f', $newSessionCommand);
-        }
+        $this->assertSame(['tmux', 'source-file', $configFile], $commands[2]);
 
         $this->assertSame([
             'tmux',
@@ -112,15 +109,16 @@ class TmuxSessionManagerTest extends TestCase
             '-t',
             '%1',
             'true',
-        ], $commands[2]);
+        ], $commands[3]);
     }
 
     public static function serverScenarios(): array
     {
         return [
-            'existing server ignores the new-session config flag' => [true, true],
-            'fresh server loads the config flag' => [false, true],
-            'fresh server without a config uses the fallback' => [false, false],
+            'existing server with repository profile' => [true, false],
+            'fresh server with repository profile' => [false, false],
+            'existing server with custom profile' => [true, true],
+            'fresh server with custom profile' => [false, true],
         ];
     }
 
@@ -153,5 +151,37 @@ class TmuxSessionManagerTest extends TestCase
         $this->assertNull($manager->createSession());
         $this->assertSame('unable to set server options', $manager->lastError());
         $this->assertSame(['tmux', 'kill-session', '-t', 'test-session'], end($commands));
+    }
+
+    #[DataProvider('invalidProfiles')]
+    public function test_invalid_profile_fails_before_creating_a_session(string $kind): void
+    {
+        $profile = $this->makeTempPath('invalid profile', '.conf');
+        if ($kind === 'unreadable') {
+            file_put_contents($profile, "set -g mouse on\n");
+            chmod($profile, 0000);
+        } elseif ($kind === 'directory') {
+            mkdir($profile);
+        }
+        config(['tmux.config_file' => $profile]);
+        Process::fake(fn () => Process::result('', '', 1));
+
+        try {
+            $manager = new TmuxSessionManager('test-session');
+            $this->assertNull($manager->createSession());
+            $this->assertStringContainsString($profile, (string) $manager->lastError());
+            $this->assertStringContainsString('readable file', (string) $manager->lastError());
+            Process::assertNotRan(fn (PendingProcess $process): bool => is_array($process->command)
+                && (in_array('new-session', $process->command, true) || in_array('kill-session', $process->command, true)));
+        } finally {
+            if ($kind === 'unreadable') {
+                chmod($profile, 0600);
+            }
+        }
+    }
+
+    public static function invalidProfiles(): array
+    {
+        return ['missing' => ['missing'], 'unreadable' => ['unreadable'], 'directory' => ['directory']];
     }
 }
