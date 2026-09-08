@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Services\Binaries\BinariesConfig;
+use App\Services\CollectionReconciliation\CollectionOwnership;
 use App\Services\ObfuscationRecovery\RecoveryCollectionOwnership;
 use App\Support\DatabaseClock;
 use App\Support\SettingNumber;
@@ -74,7 +75,7 @@ class CollectionCleanupService
         $batchDeleted = 0;
         do {
             $ids = DB::table('collections')
-                ->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
+                ->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))->tap(static fn ($query) => CollectionOwnership::exclude($query))
                 ->whereRaw('dateadded < '.$cutoff['sql'], $cutoff['bindings'])
                 ->whereNotIn('filecheck', [0, 1, 10, 15, 16])
                 ->orderBy('id')
@@ -185,7 +186,7 @@ class CollectionCleanupService
 
         for ($i = 0; $i < $maxBatches; $i++) {
             $ids = DB::table('collections as c')
-                ->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query, 'c.id'))
+                ->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query, 'c.id'))->tap(static fn ($query) => CollectionOwnership::exclude($query, 'c.id'))
                 ->whereNotExists(fn ($q) => $q->select(DB::raw(1))
                     ->from('binaries as b')
                     ->whereColumn('b.collections_id', 'c.id'))
@@ -235,7 +236,7 @@ class CollectionCleanupService
 
         for ($i = 0; $i < $maxBatches; $i++) {
             $ids = DB::table('collections as c')
-                ->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query, 'c.id'))
+                ->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query, 'c.id'))->tap(static fn ($query) => CollectionOwnership::exclude($query, 'c.id'))
                 ->join('releases as r', 'r.id', '=', 'c.releases_id')
                 ->where('r.nzbstatus', '=', 1)
                 ->orderBy('c.id')
@@ -269,6 +270,7 @@ class CollectionCleanupService
         array $collectionIds,
         string $label = 'CBP cleanup',
         bool $echoCLI = false,
+        ?int $expectedReleaseId = null,
     ): int {
         if ($collectionIds === []) {
             return 0;
@@ -279,10 +281,14 @@ class CollectionCleanupService
         foreach (array_chunk($collectionIds, $this->sqlChunkSize()) as $chunk) {
             $deletedCollections += $this->retryOnLockError(
                 fn (): int => DB::transaction(
-                    function () use ($chunk): int {
+                    function () use ($chunk, $expectedReleaseId): int {
                         $locked = DB::table('collections')->whereIn('id', $chunk)->orderBy('id')->lockForUpdate()->pluck('id');
                         $query = DB::table('collections')->whereIn('id', $locked);
+                        if ($expectedReleaseId !== null) {
+                            $query->where('releases_id', $expectedReleaseId)->where('filecheck', 4);
+                        }
                         RecoveryCollectionOwnership::exclude($query);
+                        CollectionOwnership::exclude($query);
                         $chunk = $query->pluck('id')->all();
                         if ($chunk === []) {
                             return 0;
@@ -324,7 +330,7 @@ class CollectionCleanupService
 
         do {
             $ids = DB::table('collections')
-                ->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
+                ->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))->tap(static fn ($query) => CollectionOwnership::exclude($query))
                 ->where('groups_id', $groupId)
                 ->orderBy('id')
                 ->limit($this->sqlChunkSize())

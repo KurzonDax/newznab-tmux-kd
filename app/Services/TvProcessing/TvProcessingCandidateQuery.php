@@ -7,6 +7,7 @@ namespace App\Services\TvProcessing;
 use App\Models\Category;
 use App\Models\Release;
 use App\Models\Settings;
+use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
@@ -153,7 +154,7 @@ final class TvProcessingCandidateQuery
         bool $renamedOnly,
     ): Builder {
         $resolvedProcessTv = (int) (is_numeric($processTv) ? $processTv : Settings::settingValue('lookuptv'));
-        $query = Release::query()->whereRaw(RecoveryIdentityPolicy::singleItemSql())
+        $query = Release::query()->whereRaw(RecoveryIdentityPolicy::singleItemSql())->whereRaw(BundleIdentity::singleItemSql())
             ->where('size', '>', self::MINIMUM_SIZE_BYTES)
             ->whereBetween('categories_id', [Category::TV_ROOT, Category::TV_OTHER])
             ->where('categories_id', '<>', Category::TV_ANIME);

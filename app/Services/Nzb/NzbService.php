@@ -10,6 +10,7 @@ use App\Models\ReleaseNzbCreationFailure;
 use App\Models\Settings;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\CollectionCleanupService;
+use App\Services\CollectionReconciliation\PostingPublication;
 use App\Services\ObfuscationRecovery\RecoveryAdmission;
 use App\Services\ObfuscationRecovery\RecoveryAdmissionPending;
 use App\Services\ObfuscationRecovery\RecoveryAlgorithm;
@@ -130,6 +131,9 @@ class NzbService
 
     public function createNzbForRelease(Release $release): NzbCreationResult
     {
+        if (PostingPublication::has((int) $release->id)) {
+            return app(PostingPublication::class)->write($release, $this);
+        }
         try {
             $recovery = new RecoveryNzbCommit;
             $publication = $recovery->publication((int) $release->id);
@@ -279,7 +283,9 @@ class NzbService
                     (int) $collection->id => (int) $collection->declaredfiles,
                 ])->all(),
             );
-            $completion = ($completionSignals[(int) $collections->keys()->first()] ?? null)?->percentage() ?? 0.0;
+            $completion = $collections->count() > 1
+                ? $this->completionMeasurer->measureCombined($collections->mapWithKeys(static fn (Collection $collection): array => [(int) $collection->id => (int) $collection->declaredfiles])->all())->percentage()
+                : ($completionSignals[(int) $collections->keys()->first()] ?? null)?->percentage() ?? 0.0;
 
             $receipt = $recovery->verify($release, $tempPath);
             $finalized = DB::transaction(function () use ($release, $completion, $tempPath, $path, $recovery, $receipt): bool {

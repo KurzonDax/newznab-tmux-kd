@@ -1,0 +1,170 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services\CollectionReconciliation;
+
+use App\Models\Category;
+use App\Models\Release;
+use App\Models\Settings;
+use App\Services\Categorization\CategorizationService;
+use App\Services\Releases\CollectionQuietPredicate;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
+use RuntimeException;
+use UnexpectedValueException;
+
+final class PendingReconciler
+{
+    public function __construct(private readonly PendingInventory $inventory, private readonly PostingEvidence $evidence) {}
+
+    public function run(?int $groupId, int $quietHours): void
+    {
+        if (! Schema::hasTable('reconciliation_claims')) {
+            return;
+        }
+        app(LatePostingReconciler::class)->resume($groupId);
+        $quiet = CollectionQuietPredicate::build($quietHours, DB::getTablePrefix().'collections');
+        DB::table('collections')->whereIn('filecheck', [0, 1, 2, 3, 10, 15, 16])
+            ->where('declaredfiles', '>', 1)->whereRaw($quiet['sql'], $quiet['bindings'])
+            ->when($groupId !== null, static fn ($query) => $query->where('groups_id', $groupId))
+            ->whereRaw('(SELECT COUNT(*) FROM binaries b WHERE b.collections_id = collections.id) < collections.declaredfiles')
+            ->orderBy('id')->chunkById(100, function ($rows) use ($quietHours): void {
+                foreach ($rows as $row) {
+                    $this->reconcile((int) $row->id, $quietHours);
+                }
+            });
+    }
+
+    public function reconcile(int $collectionId, int $quietHours): string
+    {
+        $reason = $this->attempt($collectionId, $quietHours);
+        Log::info('Collection reconciliation decision', ['collection_id' => $collectionId, 'reason' => $reason]);
+
+        return $reason;
+    }
+
+    private function attempt(int $collectionId, int $quietHours): string
+    {
+        $owner = (string) Str::uuid();
+        $ids = [];
+        try {
+            $source = DB::table('collections')->where('id', $collectionId)->first();
+            if ($source === null || (int) $source->filecheck >= 4 && (int) $source->filecheck < 10) {
+                return 'not_pending';
+            }
+            $quiet = CollectionQuietPredicate::build($quietHours, DB::getTablePrefix().'collections');
+            if (! DB::table('collections')->where('id', $collectionId)->whereRaw($quiet['sql'], $quiet['bindings'])->exists()) {
+                return 'not_quiet';
+            }
+            $own = $this->inventory->load([$collectionId]);
+            if ($own === [] || count($own) >= (int) $source->declaredfiles
+                || array_any($own, static fn (PostingFile $file): bool => ! $file->hasCompleteSegments())) {
+                return 'not_fragment';
+            }
+            $late = app(LatePostingReconciler::class)->reconcile($collectionId, $quietHours);
+            if ($late !== null) {
+                return $late;
+            }
+            $nearby = DB::table('collections')->where('groups_id', $source->groups_id)->where('declaredfiles', $source->declaredfiles)
+                ->whereBetween('date', [date('Y-m-d H:i:s', strtotime($source->date) - 3600), date('Y-m-d H:i:s', strtotime($source->date) + 3600)])
+                ->whereIn('filecheck', [0, 1, 2, 3, 10, 15, 16])->orderBy('id')->limit(257)->get();
+            if ($nearby->count() > 256 || $nearby->count() < 2) {
+                return 'source_population';
+            }
+            $all = $this->inventory->load($nearby->pluck('id')->map(static fn ($id): int => (int) $id)->all());
+            $bases = array_values(array_filter($all, static fn (PostingFile $file): bool => $file->isBasePar2()));
+            if (count($bases) !== 1) {
+                return 'missing_or_competing_base';
+            }
+            $date = $bases[0]->date;
+            $ids = $nearby->filter(static fn ($row): bool => abs(strtotime($row->date) - $date) <= 1800)->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+            if (! in_array($collectionId, $ids, true) || count($ids) < 2) {
+                return 'outside_fixed_window';
+            }
+            $files = $this->inventory->load($ids);
+            if (array_any($files, static fn (PostingFile $file): bool => ! $file->hasCompleteSegments())) {
+                return 'incomplete_segments';
+            }
+            $revision = PendingInventory::digest($files);
+            $deadline = app(CollectionClaims::class)->claim($ids, $owner, $revision, $quietHours);
+            if ($deadline === null) {
+                return 'unavailable_claim';
+            }
+            $decision = $this->evidence->resolve($files, hash('sha256', 'pending:'.$bases[0]->firstArticle()),
+                microtime(true) + max(0, $deadline - now()->timestamp));
+            if ($decision->accepted === []) {
+                app(CollectionClaims::class)->settle($owner, $decision->reason);
+
+                return $decision->reason;
+            }
+
+            return $this->publishAssociation($ids, $owner, $revision, $decision);
+        } catch (UnexpectedValueException $e) {
+            app(CollectionClaims::class)->settle($owner, 'invalid_evidence');
+
+            return $e->getMessage();
+        } catch (RuntimeException $e) {
+            app(CollectionClaims::class)->retry($owner, $e->getMessage());
+
+            return $e->getMessage();
+        }
+    }
+
+    /** @param list<int> $ids */
+    private function publishAssociation(array $ids, string $owner, string $revision, PostingDecision $decision): string
+    {
+        return DB::transaction(function () use ($ids, $owner, $revision, $decision): string {
+            $collections = DB::table('collections')->whereIn('id', $ids)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+            $claims = DB::table('reconciliation_claims')->whereIn('collection_id', $ids)->where('owner', $owner)
+                ->where('revision', $revision)->where('lease_until', '>', now())->where('deadline', '>', now())->lockForUpdate()->get();
+            if ($claims->count() !== count($ids) || PendingInventory::digest($this->inventory->load($ids)) !== $revision) {
+                app(CollectionClaims::class)->settle($owner, 'changed_inventory');
+
+                return 'changed_inventory';
+            }
+            $source = $collections->get((int) $decision->accepted[0]->sourceId);
+            $size = array_sum(array_map(static fn (PostingFile $file): int => array_sum(array_column($file->segments, 'bytes')), $decision->accepted));
+            $group = DB::table('usenet_groups')->where('id', $source->groups_id)->first();
+            $minSize = max((int) Settings::settingValue('minsizetoformrelease'), (int) ($group->minsizetoformrelease ?? 0));
+            $minFiles = max((int) Settings::settingValue('minfilestoformrelease'), (int) ($group->minfilestoformrelease ?? 0));
+            $maxSize = (int) Settings::settingValue('maxsizetoformrelease');
+            if ($size < $minSize || count($decision->accepted) < $minFiles || ($maxSize > 0 && $size > $maxSize)) {
+                app(CollectionClaims::class)->settle($owner, 'formation_floor');
+
+                return 'formation_floor';
+            }
+            $category = $decision->independentVideos() ? Category::OTHER_MISC
+                : (new CategorizationService)->determineCategory((int) $source->groups_id, $decision->label, $source->fromname)['categories_id'];
+            $releaseId = (int) Release::insertRelease(['name' => $decision->label, 'searchname' => $decision->label,
+                'totalpart' => count($decision->accepted), 'declaredfiles' => $decision->declaredTotal,
+                'groups_id' => $source->groups_id, 'guid' => (string) Str::uuid(), 'postdate' => $source->date,
+                'fromname' => $source->fromname, 'size' => $size, 'categories_id' => $category,
+                'isrenamed' => 0, 'is_trusted_name' => false, 'predb_id' => 0, 'nzbstatus' => 0,
+                'completion' => $decision->completion()]);
+            $postingId = DB::table('reconciled_postings')->insertGetId(['release_id' => $releaseId,
+                'digest' => PendingInventory::digest($decision->accepted), 'state' => 'created',
+                'budget_id' => hash('sha256', 'pending:'.array_values(array_filter($decision->accepted, static fn (PostingFile $file): bool => $file->isBasePar2()))[0]->firstArticle()),
+                'source_digest' => PendingInventory::digest($this->inventory->load(array_map('intval', $decision->sources()))),
+                'independent_videos' => $decision->independentVideos(), 'inventory' => PendingInventory::encode($decision->accepted),
+                'decision' => json_encode($decision, JSON_THROW_ON_ERROR), 'created_at' => now(), 'updated_at' => now()]);
+            foreach ($decision->sources() as $id) {
+                $collection = $collections->get((int) $id);
+                DB::table('reconciled_sources')->insert(['posting_id' => $postingId, 'collection_hash' => bin2hex($collection->collectionhash),
+                    'group_id' => $collection->groups_id, 'postdate' => $collection->date, 'source_id' => $id]);
+                DB::table('collections')->where('id', $id)->update(['releases_id' => $releaseId, 'filecheck' => 4]);
+                DB::table('reconciliation_claims')->where('collection_id', $id)->update(['release_id' => $releaseId]);
+            }
+            $groups = DB::table('usenet_groups')->whereIn('name', array_values(array_unique(array_merge(...array_map(static fn (PostingFile $file): array => $file->groups, $decision->accepted)))))->pluck('id')->all();
+            foreach ($groups as $groupId) {
+                DB::table('releases_groups')->insertOrIgnore(['releases_id' => $releaseId, 'groups_id' => $groupId]);
+            }
+            app(CollectionClaims::class)->settle($owner, 'associated');
+            Log::info('Collection reconciliation associated', ['release_id' => $releaseId, 'sources' => $decision->sources(), 'completion' => $decision->completion()]);
+
+            return 'associated';
+        }, 3);
+    }
+}

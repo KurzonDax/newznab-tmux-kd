@@ -10,6 +10,7 @@ use App\Facades\Search;
 use App\Models\MovieInfo;
 use App\Models\Release;
 use App\Models\Settings;
+use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\MetadataProcessing\MovieProcessingCandidateQuery;
 use App\Services\ObfuscationRecovery\RecoveryCatalog;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
@@ -988,7 +989,7 @@ class MovieService
 
     private function updateReleaseMovie(string $buffer, string $service, int $id, int $processImdb): string|false
     {
-        if (! (new RecoveryIdentityPolicy)->allowsSingleItemMetadata($id)) {
+        if ((! (new RecoveryIdentityPolicy)->allowsSingleItemMetadata($id) || ! BundleIdentity::allowsSingleTitle($id))) {
             return false;
         }
         $existingImdbId = Release::query()->where('id', $id)->value('imdbid');
@@ -1011,7 +1012,7 @@ class MovieService
                 $movieInfoId = MovieInfo::query()->where('imdbid', $imdbId)->first(['id']);
 
                 Release::query()->where('id', $id)
-                    ->whereRaw(RecoveryIdentityPolicy::singleItemSql())->update([
+                    ->whereRaw(RecoveryIdentityPolicy::singleItemSql())->whereRaw(BundleIdentity::singleItemSql())->update([
                         'imdbid' => $imdbId,
                         'movieinfo_id' => $movieInfoId !== null ? $movieInfoId['id'] : null,
                     ]);
@@ -1032,7 +1033,7 @@ class MovieService
                             $freshMovieInfo = MovieInfo::query()->where('imdbid', $imdbId)->first(['id']);
 
                             Release::query()->where('id', $id)
-                                ->whereRaw(RecoveryIdentityPolicy::singleItemSql())->update([
+                                ->whereRaw(RecoveryIdentityPolicy::singleItemSql())->whereRaw(BundleIdentity::singleItemSql())->update([
                                     'movieinfo_id' => $freshMovieInfo !== null ? $freshMovieInfo['id'] : null,
                                 ]);
 

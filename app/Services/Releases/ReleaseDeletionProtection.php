@@ -6,6 +6,7 @@ namespace App\Services\Releases;
 
 use App\Models\Release;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
+use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
 use App\Services\ObfuscationRecovery\RecoveryReleaseGate;
@@ -29,6 +30,7 @@ final class ReleaseDeletionProtection
     public static function apply(Builder $query, string $table = 'releases'): Builder
     {
         RecoveryReleaseGate::excludePending($query, $table);
+        $query->whereRaw(BundleIdentity::availableSql($table));
         $query->where($table.'.nzbstatus', NzbService::NZB_ADDED);
         NzbCreationCandidateQuery::applyClaimWindow($query, $table);
 

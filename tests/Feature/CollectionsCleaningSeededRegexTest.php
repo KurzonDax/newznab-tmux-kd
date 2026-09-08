@@ -54,6 +54,25 @@ class CollectionsCleaningSeededRegexTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_numbered_payloads_and_their_par2_sidecars_share_one_stock_base(): void
+    {
+        $cleaner = new CollectionsCleaningService;
+        foreach (['bin', 'mkv'] as $extension) {
+            foreach (['', '.par2', '.vol000+001.par2'] as $index => $suffix) {
+                $result = $cleaner->collectionsCleaner(
+                    sprintf('[%02d/03] - "Example.%s%s" yEnc', $index + 1, $extension, $suffix),
+                    'alt.binaries.boneless',
+                );
+                $this->assertSame(113, $result['id']);
+                $this->assertSame('Example', $result['name']);
+            }
+        }
+        $this->assertNotSame(
+            $cleaner->collectionsCleaner('[03/12] - "01-example-show.mp3" yEnc', 'alt.binaries.boneless')['name'],
+            $cleaner->collectionsCleaner('[04/12] - "02-example-show.mp3" yEnc', 'alt.binaries.boneless')['name'],
+        );
+    }
+
     public function test_seeded_named_set_regexes_reduce_declared_files_and_bare_par2_to_one_base(): void
     {
         $cleaner = new CollectionsCleaningService;
@@ -146,6 +165,8 @@ class CollectionsCleaningSeededRegexTest extends TestCase
             ->pluck('regex', 'id')
             ->all();
 
+        $updatedRegexes[113] = '/^\\[\\d+\\/\\d+\\] - "(?P<match0>.+?)(?:\\.tar\\.zst(?:\\.vol\\d+\\+\\d+\\.par2|\\.par2)?|([\-_](proof|sample|thumbs?))*(\\.part\\d*(\\.rar)?|\\.rar|\\.7z)?(?:\\d{1,3}\\.rev|\\.vol\\d+\\+\\d+\\.par2|\\.[A-Za-z0-9]{2,4})?)"[\-_\\s]{0,3}yEnc$/ui';
+
         foreach ($this->legacyRegexes() as $id => $regex) {
             DB::table('collection_regexes')->where('id', $id)->update(['regex' => $regex]);
         }
@@ -170,6 +191,26 @@ class CollectionsCleaningSeededRegexTest extends TestCase
         $migration->down();
 
         $this->assertSame($before, DB::table('collection_regexes')->orderBy('id')->pluck('regex', 'id')->all());
+    }
+
+    public function test_payload_upgrade_invalidates_live_caches_and_preserves_custom_definitions(): void
+    {
+        $previous = '/^\\[\\d+\\/\\d+\\] - "(?P<match0>.+?)(?:\\.tar\\.zst(?:\\.vol\\d+\\+\\d+\\.par2|\\.par2)?|([\-_](proof|sample|thumbs?))*(\\.part\\d*(\\.rar)?|\\.rar|\\.7z)?(?:\\d{1,3}\\.rev|\\.vol\\d+\\+\\d+\\.par2|\\.[A-Za-z0-9]{2,4})?)"[\-_\\s]{0,3}yEnc$/ui';
+        DB::table('collection_regexes')->where('id', 113)->update(['regex' => $previous]);
+        $cleaner = new CollectionsCleaningService;
+        $subject = '[02/03] - "Example.bin.par2" yEnc';
+        $this->assertSame('Example.bin', $cleaner->collectionsCleaner($subject, 'alt.binaries.boneless')['name']);
+        $migration = require database_path('migrations/2026_09_08_121212_fix_numbered_payload_par2_collection_regex.php');
+        $migration->up();
+        $this->assertSame('Example', $cleaner->collectionsCleaner($subject, 'alt.binaries.boneless')['name']);
+        $migration->down();
+        $this->assertSame('Example.bin', $cleaner->collectionsCleaner($subject, 'alt.binaries.boneless')['name']);
+        $custom = '/^custom (?P<match0>.+)$/';
+        DB::table('collection_regexes')->where('id', 113)->update(['regex' => $custom]);
+        $migration->up();
+        $this->assertSame($custom, DB::table('collection_regexes')->where('id', 113)->value('regex'));
+        $migration->down();
+        $this->assertSame($custom, DB::table('collection_regexes')->where('id', 113)->value('regex'));
     }
 
     /**

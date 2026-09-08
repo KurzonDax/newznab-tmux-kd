@@ -9,6 +9,7 @@ use App\Models\Settings;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use App\Services\AudioProcessing\AudioCandidateQuery;
 use App\Services\AudioProcessing\AudioRouting;
+use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\ObfuscationRecovery\RecoveryReleaseGate;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -105,6 +106,7 @@ final class ReleaseClaimant
         bool $includePasswordStatuses = true,
     ): Builder {
         RecoveryReleaseGate::excludePending($query, 'r');
+        $query->whereRaw(BundleIdentity::availableSql('r'));
         if ($includePasswordStatuses) {
             $query->whereIn('r.passwordstatus', self::PENDING_PASSWORD_STATUSES);
         }
@@ -223,6 +225,7 @@ final class ReleaseClaimant
                 Release::query()
                     ->whereIn('id', $stampIds)
                     ->tap(static fn ($query) => RecoveryReleaseGate::excludePending($query))
+                    ->whereRaw(BundleIdentity::availableSql())
                     ->where(function (Builder $claimQuery): void {
                         $claimQuery
                             ->whereNull(self::CLAIMED_AT_COLUMN)

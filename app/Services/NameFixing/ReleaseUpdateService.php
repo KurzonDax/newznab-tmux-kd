@@ -11,6 +11,7 @@ use App\Models\UsenetGroup;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\Categorization\CategorizationService;
+use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\ObfuscationRecovery\RecoveryNameEvidence;
 use App\Services\ReleaseCleaningService;
@@ -415,7 +416,7 @@ class ReleaseUpdateService
         $trustedDonorName = $this->sourceTrustPolicy($type, $method, $preId)['trusted_donor'];
         DB::transaction(function () use ($release, $releaseId, $newTitle, $type, $nameStatus, $preId, $trustedDonorName, $imdbId, $categoryOverride, $preserveBookInfo, $recoveryEvidence): void {
             Release::query()->where('id', $releaseId)->lockForUpdate()->first();
-            if (! (new RecoveryIdentityPolicy)->allowsParent($releaseId, $recoveryEvidence)) {
+            if ((! (new RecoveryIdentityPolicy)->allowsParent($releaseId, $recoveryEvidence) || ! BundleIdentity::allowsSingleTitle($releaseId))) {
                 return;
             }
             if ($nameStatus === true) {
@@ -543,7 +544,7 @@ class ReleaseUpdateService
 
     public function attachPredbId(int $releaseId, int $predbId, ?RecoveryNameEvidence $recoveryEvidence = null): void
     {
-        if ($releaseId === 0 || $predbId === 0 || ! (new RecoveryIdentityPolicy)->allowsParent($releaseId, $recoveryEvidence)) {
+        if ($releaseId === 0 || $predbId === 0 || (! (new RecoveryIdentityPolicy)->allowsParent($releaseId, $recoveryEvidence) || ! BundleIdentity::allowsSingleTitle($releaseId))) {
             return;
         }
 
@@ -573,7 +574,7 @@ class ReleaseUpdateService
             return null;
         }
 
-        if (! (new RecoveryIdentityPolicy)->allowsParent($releaseId)) {
+        if ((! (new RecoveryIdentityPolicy)->allowsParent($releaseId) || ! BundleIdentity::allowsSingleTitle($releaseId))) {
             return null;
         }
 
@@ -604,7 +605,7 @@ class ReleaseUpdateService
             return;
         }
 
-        if (! (new RecoveryIdentityPolicy)->allowsParent($releaseId)) {
+        if ((! (new RecoveryIdentityPolicy)->allowsParent($releaseId) || ! BundleIdentity::allowsSingleTitle($releaseId))) {
             return;
         }
 
@@ -631,7 +632,7 @@ class ReleaseUpdateService
             return;
         }
 
-        if (! (new RecoveryIdentityPolicy)->allowsParent($releaseId)) {
+        if ((! (new RecoveryIdentityPolicy)->allowsParent($releaseId) || ! BundleIdentity::allowsSingleTitle($releaseId))) {
             return;
         }
 

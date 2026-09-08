@@ -13,6 +13,7 @@ use App\Models\Release;
 use App\Models\ReleaseRegex;
 use App\Models\UsenetGroup;
 use App\Services\Categorization\CategorizationService;
+use App\Services\CollectionReconciliation\CollectionOwnership;
 use App\Services\Nzb\NzbService;
 use App\Services\ObfuscationRecovery\RecoveryAdmission;
 use App\Services\ObfuscationRecovery\RecoveryAlgorithm;
@@ -128,6 +129,7 @@ class ReleaseCreationService
             ->where('collections.filesize', '>', 0);
         if ($recovery === null) {
             RecoveryCollectionOwnership::exclude($collectionsQuery);
+            CollectionOwnership::exclude($collectionsQuery);
         } else {
             $collectionsQuery->where('collections.id', $recovery->collectionId);
         }
@@ -159,213 +161,220 @@ class ReleaseCreationService
         }
 
         foreach ($collections as $collection) {
-            $cleanRelName = Utf8::clean(str_replace(['#', '@', '$', '%', '^', '§', '¨', '©', 'Ö'], '', $collection->subject));
-            $fromName = Utf8::clean(trim($collection->fromname, "'"));
-
-            $cleanedMeta = $recovery !== null ? ['properlynamed' => false, 'predb' => false, 'cleansubject' => $collection->subject] : $this->releaseCleaning->releaseCleaner(
-                $collection->subject,
-                $collection->fromname,
-                $collection->gname
-            );
-
-            $namingRegexId = 0;
-            if (\is_array($cleanedMeta)) {
-                $namingRegexId = isset($cleanedMeta['id']) ? (int) $cleanedMeta['id'] : 0;
-            }
-
-            if (\is_array($cleanedMeta)) {
-                $properName = $cleanedMeta['properlynamed'] ?? false;
-                $preID = $cleanedMeta['predb'] ?? false;
-                $cleanedName = $cleanedMeta['cleansubject'] ?? $cleanRelName;
-            } else {
-                $properName = true;
-                $preID = false;
-                $cleanedName = $cleanRelName;
-            }
-
-            if ($recovery === null && $preID === false && $cleanedName !== '') {
-                $preMatch = Predb::matchPre($cleanedName);
-                if ($preMatch !== false) {
-                    $cleanedName = $preMatch['title'];
-                    $preID = $preMatch['predb_id'];
-                    $properName = true;
+            DB::transaction(function () use ($collection, $recovery, $categorize, $releaseGroupIds, $completionSignals, $articleRanges, $echoCLI, &$returnCount, &$duplicate): void {
+                $locked = DB::table('collections')->where('id', $collection->id)->lockForUpdate()->first();
+                if ($locked === null || (int) $locked->filecheck !== CollectionFileCheckStatus::Sized->value
+                    || ($recovery === null && CollectionOwnership::protects((int) $collection->id))) {
+                    return;
                 }
-            }
+                $cleanRelName = Utf8::clean(str_replace(['#', '@', '$', '%', '^', '§', '¨', '©', 'Ö'], '', $collection->subject));
+                $fromName = Utf8::clean(trim($collection->fromname, "'"));
 
-            $searchName = ! empty($cleanedName) ? Utf8::clean($cleanedName) : $cleanRelName;
-            $predbIdInt = $preID === false ? 0 : (int) $preID;
-
-            $collectionHash = ($collection->collectionhash ?? '') === '' ? null : (string) $collection->collectionhash;
-
-            [$dupeCheck, $dupeReason] = $this->releaseDuplicateFinder->findDuplicate(
-                $cleanRelName,
-                $searchName,
-                $predbIdInt,
-                (int) $collection->filesize
-            );
-
-            $articleRange = $articleRanges[(int) $collection->id] ?? null;
-
-            $releaseID = null;
-            if ($dupeCheck === null) {
-                $determinedCategory = $recovery !== null ? ['categories_id' => Category::OTHER_MISC] : $categorize->determineCategory(
-                    $collection->groups_id,
-                    $cleanedName,
-                    $fromName,
-                    associatedGroupIds: $releaseGroupIds[(int) $collection->id] ?? [],
+                $cleanedMeta = $recovery !== null ? ['properlynamed' => false, 'predb' => false, 'cleansubject' => $collection->subject] : $this->releaseCleaning->releaseCleaner(
+                    $collection->subject,
+                    $collection->fromname,
+                    $collection->gname
                 );
 
-                try {
-                    $releaseID = Release::insertRelease([
-                        'name' => $cleanRelName,
-                        'searchname' => $searchName,
-                        'totalpart' => $collection->totalfiles,
-                        'declaredfiles' => (int) $collection->declaredfiles,
-                        'firstarticle' => $articleRange['first'] ?? null,
-                        'lastarticle' => $articleRange['last'] ?? null,
-                        'groups_id' => $collection->groups_id,
-                        'guid' => $recovery->guid ?? Str::uuid()->toString(),
-                        'postdate' => $collection->date,
-                        'fromname' => $fromName,
-                        'size' => $collection->filesize,
-                        'categories_id' => $determinedCategory['categories_id'] ?? Category::OTHER_MISC,
-                        'isrenamed' => $properName === true ? 1 : 0,
-                        'is_trusted_name' => $properName === true || $predbIdInt > 0,
-                        'predb_id' => $predbIdInt,
-                        'nzbstatus' => NzbService::NZB_NONE,
-                        'completion' => ($completionSignals[(int) $collection->id] ?? null)?->percentage() ?? 0.0,
-                        'collectionhash' => $collectionHash,
-                    ]);
-                } catch (UniqueConstraintViolationException $exception) {
-                    [$dupeCheck, $dupeReason] = $this->recoverCollectionHashConflict($collectionHash, $exception);
+                $namingRegexId = 0;
+                if (\is_array($cleanedMeta)) {
+                    $namingRegexId = isset($cleanedMeta['id']) ? (int) $cleanedMeta['id'] : 0;
                 }
 
-                if ($releaseID !== null) {
-                    if ($recovery !== null) {
-                        DB::table('obfuscation_recovery_publications')->where('id', $recovery->publicationId)->update([
-                            'releases_id' => $releaseID, 'guid' => $recovery->guid, 'state' => 'created',
-                            'initialization_state' => 'pending', 'updated_at' => now(),
-                        ]);
+                if (\is_array($cleanedMeta)) {
+                    $properName = $cleanedMeta['properlynamed'] ?? false;
+                    $preID = $cleanedMeta['predb'] ?? false;
+                    $cleanedName = $cleanedMeta['cleansubject'] ?? $cleanRelName;
+                } else {
+                    $properName = true;
+                    $preID = false;
+                    $cleanedName = $cleanRelName;
+                }
+
+                if ($recovery === null && $preID === false && $cleanedName !== '') {
+                    $preMatch = Predb::matchPre($cleanedName);
+                    if ($preMatch !== false) {
+                        $cleanedName = $preMatch['title'];
+                        $preID = $preMatch['predb_id'];
+                        $properName = true;
                     }
-                    DB::transaction(static function () use ($collection, $releaseID, $articleRange) {
-                        Collection::query()->where('id', $collection->id)->update([
-                            'filecheck' => CollectionFileCheckStatus::Inserted->value,
-                            'releases_id' => $releaseID,
+                }
+
+                $searchName = ! empty($cleanedName) ? Utf8::clean($cleanedName) : $cleanRelName;
+                $predbIdInt = $preID === false ? 0 : (int) $preID;
+
+                $collectionHash = ($collection->collectionhash ?? '') === '' ? null : (string) $collection->collectionhash;
+
+                [$dupeCheck, $dupeReason] = $this->releaseDuplicateFinder->findDuplicate(
+                    $cleanRelName,
+                    $searchName,
+                    $predbIdInt,
+                    (int) $collection->filesize
+                );
+
+                $articleRange = $articleRanges[(int) $collection->id] ?? null;
+
+                $releaseID = null;
+                if ($dupeCheck === null) {
+                    $determinedCategory = $recovery !== null ? ['categories_id' => Category::OTHER_MISC] : $categorize->determineCategory(
+                        $collection->groups_id,
+                        $cleanedName,
+                        $fromName,
+                        associatedGroupIds: $releaseGroupIds[(int) $collection->id] ?? [],
+                    );
+
+                    try {
+                        $releaseID = Release::insertRelease([
+                            'name' => $cleanRelName,
+                            'searchname' => $searchName,
+                            'totalpart' => $collection->totalfiles,
+                            'declaredfiles' => (int) $collection->declaredfiles,
                             'firstarticle' => $articleRange['first'] ?? null,
                             'lastarticle' => $articleRange['last'] ?? null,
+                            'groups_id' => $collection->groups_id,
+                            'guid' => $recovery->guid ?? Str::uuid()->toString(),
+                            'postdate' => $collection->date,
+                            'fromname' => $fromName,
+                            'size' => $collection->filesize,
+                            'categories_id' => $determinedCategory['categories_id'] ?? Category::OTHER_MISC,
+                            'isrenamed' => $properName === true ? 1 : 0,
+                            'is_trusted_name' => $properName === true || $predbIdInt > 0,
+                            'predb_id' => $predbIdInt,
+                            'nzbstatus' => NzbService::NZB_NONE,
+                            'completion' => ($completionSignals[(int) $collection->id] ?? null)?->percentage() ?? 0.0,
+                            'collectionhash' => $collectionHash,
                         ]);
-                    }, 10);
-
-                    ReleaseRegex::insertOrIgnore([
-                        'releases_id' => $releaseID,
-                        'collection_regex_id' => $collection->collection_regexes_id,
-                        'naming_regex_id' => $namingRegexId,
-                    ]);
-
-                    $groupRows = [];
-                    foreach ($releaseGroupIds[(int) $collection->id] ?? [] as $groupId) {
-                        $groupRows[] = ['releases_id' => $releaseID, 'groups_id' => $groupId];
-                    }
-                    if ($groupRows !== []) {
-                        DB::table('releases_groups')->insertOrIgnore($groupRows);
+                    } catch (UniqueConstraintViolationException $exception) {
+                        [$dupeCheck, $dupeReason] = $this->recoverCollectionHashConflict($collectionHash, $exception);
                     }
 
-                    $returnCount++;
-                    if ($echoCLI) {
-                        echo "Added $returnCount releases.\r";
+                    if ($releaseID !== null) {
+                        if ($recovery !== null) {
+                            DB::table('obfuscation_recovery_publications')->where('id', $recovery->publicationId)->update([
+                                'releases_id' => $releaseID, 'guid' => $recovery->guid, 'state' => 'created',
+                                'initialization_state' => 'pending', 'updated_at' => now(),
+                            ]);
+                        }
+                        DB::transaction(static function () use ($collection, $releaseID, $articleRange) {
+                            Collection::query()->where('id', $collection->id)->update([
+                                'filecheck' => CollectionFileCheckStatus::Inserted->value,
+                                'releases_id' => $releaseID,
+                                'firstarticle' => $articleRange['first'] ?? null,
+                                'lastarticle' => $articleRange['last'] ?? null,
+                            ]);
+                        }, 10);
+
+                        ReleaseRegex::insertOrIgnore([
+                            'releases_id' => $releaseID,
+                            'collection_regex_id' => $collection->collection_regexes_id,
+                            'naming_regex_id' => $namingRegexId,
+                        ]);
+
+                        $groupRows = [];
+                        foreach ($releaseGroupIds[(int) $collection->id] ?? [] as $groupId) {
+                            $groupRows[] = ['releases_id' => $releaseID, 'groups_id' => $groupId];
+                        }
+                        if ($groupRows !== []) {
+                            DB::table('releases_groups')->insertOrIgnore($groupRows);
+                        }
+
+                        $returnCount++;
+                        if ($echoCLI) {
+                            echo "Added $returnCount releases.\r";
+                        }
                     }
                 }
-            }
 
-            if ($dupeCheck !== null) {
-                $absorbed = false;
-                if ($this->releaseDuplicateAbsorber->supportsReason($dupeReason)) {
-                    try {
-                        $absorbResult = $this->releaseDuplicateAbsorber->absorbCollection(
-                            $dupeCheck,
-                            $collection,
-                            ($completionSignals[(int) $collection->id] ?? null)?->percentage() ?? 0.0,
-                        );
-                    } catch (\Throwable $exception) {
-                        // Backstop for errors outside the absorber's outcome
-                        // contract (e.g. the attempt-counter write failing).
-                        Log::error('A better duplicate collection hit an unexpected error while absorbing; preserving it for retry.', [
-                            'matched_release_id' => $dupeCheck->id,
-                            'collection_id' => $collection->id,
-                            'exception' => $exception,
-                        ]);
+                if ($dupeCheck !== null) {
+                    $absorbed = false;
+                    if ($this->releaseDuplicateAbsorber->supportsReason($dupeReason)) {
+                        try {
+                            $absorbResult = $this->releaseDuplicateAbsorber->absorbCollection(
+                                $dupeCheck,
+                                $collection,
+                                ($completionSignals[(int) $collection->id] ?? null)?->percentage() ?? 0.0,
+                            );
+                        } catch (\Throwable $exception) {
+                            // Backstop for errors outside the absorber's outcome
+                            // contract (e.g. the attempt-counter write failing).
+                            Log::error('A better duplicate collection hit an unexpected error while absorbing; preserving it for retry.', [
+                                'matched_release_id' => $dupeCheck->id,
+                                'collection_id' => $collection->id,
+                                'exception' => $exception,
+                            ]);
 
-                        continue;
-                    }
+                            return;
+                        }
 
-                    if ($absorbResult->outcome === DuplicateAbsorbOutcome::Deferred) {
-                        // Expected state while the anchor's NZB creation
-                        // catches up: preserve the collection silently and let
-                        // a later cycle absorb it.
-                        Log::debug('Duplicate absorb deferred: the anchor has no stored NZB yet.', [
-                            'matched_release_id' => $dupeCheck->id,
-                            'collection_id' => $collection->id,
-                        ]);
+                        if ($absorbResult->outcome === DuplicateAbsorbOutcome::Deferred) {
+                            // Expected state while the anchor's NZB creation
+                            // catches up: preserve the collection silently and let
+                            // a later cycle absorb it.
+                            Log::debug('Duplicate absorb deferred: the anchor has no stored NZB yet.', [
+                                'matched_release_id' => $dupeCheck->id,
+                                'collection_id' => $collection->id,
+                            ]);
 
-                        continue;
-                    }
+                            return;
+                        }
 
-                    if ($absorbResult->outcome === DuplicateAbsorbOutcome::Failed) {
-                        if ($absorbResult->attempts < ReleaseDuplicateAbsorber::MAX_ABSORB_ATTEMPTS) {
-                            Log::error('A better duplicate collection could not be absorbed; preserving it for retry.', [
+                        if ($absorbResult->outcome === DuplicateAbsorbOutcome::Failed) {
+                            if ($absorbResult->attempts < ReleaseDuplicateAbsorber::MAX_ABSORB_ATTEMPTS) {
+                                Log::error('A better duplicate collection could not be absorbed; preserving it for retry.', [
+                                    'matched_release_id' => $dupeCheck->id,
+                                    'collection_id' => $collection->id,
+                                    'reason' => $absorbResult->reason,
+                                    'attempts' => $absorbResult->attempts,
+                                ]);
+
+                                return;
+                            }
+
+                            // The backstop: a collection whose absorb keeps
+                            // failing settles as an ordinary duplicate instead of
+                            // retrying every cycle forever.
+                            Log::warning('A better duplicate collection kept failing to absorb; settling it as an ordinary duplicate.', [
                                 'matched_release_id' => $dupeCheck->id,
                                 'collection_id' => $collection->id,
                                 'reason' => $absorbResult->reason,
                                 'attempts' => $absorbResult->attempts,
                             ]);
-
-                            continue;
                         }
 
-                        // The backstop: a collection whose absorb keeps
-                        // failing settles as an ordinary duplicate instead of
-                        // retrying every cycle forever.
-                        Log::warning('A better duplicate collection kept failing to absorb; settling it as an ordinary duplicate.', [
-                            'matched_release_id' => $dupeCheck->id,
-                            'collection_id' => $collection->id,
-                            'reason' => $absorbResult->reason,
-                            'attempts' => $absorbResult->attempts,
-                        ]);
+                        $absorbed = $absorbResult->wasAbsorbed();
                     }
 
-                    $absorbed = $absorbResult->wasAbsorbed();
-                }
-
-                Log::info('Release import skipped as duplicate', [
-                    'reason' => $dupeReason,
-                    'matched_release_id' => $dupeCheck->id,
-                    'absorbed' => $absorbed,
-                    'new_searchname' => $searchName,
-                    'existing_searchname' => $dupeCheck->searchname,
-                    'new_size' => (int) $collection->filesize,
-                    'existing_size' => (int) $dupeCheck->size,
-                    'new_fromname' => $fromName,
-                    'existing_fromname' => $dupeCheck->fromname,
-                    'new_name' => $cleanRelName,
-                    'existing_name' => $dupeCheck->name,
-                ]);
-
-                if ($recovery !== null) {
-                    DB::table('obfuscation_recovery_publications')->where('id', $recovery->publicationId)->update([
-                        'releases_id' => $dupeCheck->id, 'guid' => DB::table('releases')->where('id', $dupeCheck->id)->value('guid'),
-                        'state' => $absorbed ? 'absorbed' : 'duplicate_policy_discarded', 'reason' => $dupeReason,
-                        'initialization_state' => 'not_applicable', 'updated_at' => now(),
+                    Log::info('Release import skipped as duplicate', [
+                        'reason' => $dupeReason,
+                        'matched_release_id' => $dupeCheck->id,
+                        'absorbed' => $absorbed,
+                        'new_searchname' => $searchName,
+                        'existing_searchname' => $dupeCheck->searchname,
+                        'new_size' => (int) $collection->filesize,
+                        'existing_size' => (int) $dupeCheck->size,
+                        'new_fromname' => $fromName,
+                        'existing_fromname' => $dupeCheck->fromname,
+                        'new_name' => $cleanRelName,
+                        'existing_name' => $dupeCheck->name,
                     ]);
-                    app(RecoverySurvivor::class)->inspect($recovery->publicationId);
-                }
-                $this->collectionCleanupService->deleteCollectionsAndDescendants(
-                    [$collection->id],
-                    'Duplicate cleanup',
-                    $echoCLI
-                );
 
-                $duplicate++;
-            }
+                    if ($recovery !== null) {
+                        DB::table('obfuscation_recovery_publications')->where('id', $recovery->publicationId)->update([
+                            'releases_id' => $dupeCheck->id, 'guid' => DB::table('releases')->where('id', $dupeCheck->id)->value('guid'),
+                            'state' => $absorbed ? 'absorbed' : 'duplicate_policy_discarded', 'reason' => $dupeReason,
+                            'initialization_state' => 'not_applicable', 'updated_at' => now(),
+                        ]);
+                        app(RecoverySurvivor::class)->inspect($recovery->publicationId);
+                    }
+                    $this->collectionCleanupService->deleteCollectionsAndDescendants(
+                        [$collection->id],
+                        'Duplicate cleanup',
+                        $echoCLI
+                    );
+
+                    $duplicate++;
+                }
+            }, 3);
         }
 
         $totalTime = now()->diffInSeconds($startTime, true);

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Binaries;
 
 use App\Enums\HeaderScanDirection;
+use App\Services\CollectionReconciliation\CollectionOwnership;
 use App\Services\ObfuscationRecovery\RecoveryStorage;
 use App\Services\ObfuscationRecovery\RecoveryStorageBatch;
 use App\Services\ObfuscationRecovery\RecoveryWorkClaim;
@@ -295,6 +296,8 @@ final class HeaderStorageService
             $totalFilesByIndex,
             $transaction->getBatchNoise()
         );
+
+        CollectionOwnership::ingest(array_values(array_unique($collectionIds)));
 
         $binaryRecords = [];
         foreach ($headers as $index => $header) {
