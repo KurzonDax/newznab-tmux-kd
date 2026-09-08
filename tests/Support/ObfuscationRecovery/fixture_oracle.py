@@ -15,8 +15,7 @@ def assembled(root, nzb, port):
     by_message = {message['id']: name for name, file in truth.items() for message in file['messages']}
     mismatches = []
     count = 0
-    with socket.create_connection(('127.0.0.1', port), timeout=10) as socket_stream:
-        peer = socket_stream.makefile('rwb', buffering=0)
+    with socket.create_connection(('127.0.0.1', port), timeout=10) as socket_stream, socket_stream.makefile('rb') as peer:
         assert peer.readline().startswith(b'200 ')
         for file in ET.fromstring(gzip.decompress(nzb.read_bytes())).findall('{*}file'):
             segments = file.findall('{*}segments/{*}segment')
@@ -24,7 +23,7 @@ def assembled(root, nzb, port):
             output = root / ('oracle-' + str(count))
             with output.open('w+b') as target:
                 for segment in segments:
-                    peer.write(f'BODY <{segment.text}>\r\n'.encode('ascii'))
+                    socket_stream.sendall(f'BODY <{segment.text}>\r\n'.encode('ascii'))
                     assert peer.readline().startswith(b'222 ')
                     start = end = None
                     decoded = bytearray()
@@ -63,7 +62,7 @@ def assembled(root, nzb, port):
             if actual != truth[name]['md5']:
                 mismatches.append(name)
             count += 1
-        peer.write(b'QUIT\r\n')
+        socket_stream.sendall(b'QUIT\r\n')
         peer.readline()
     return {'files': count, 'mismatches': mismatches}
 
