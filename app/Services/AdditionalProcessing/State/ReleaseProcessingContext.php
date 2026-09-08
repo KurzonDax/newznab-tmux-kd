@@ -126,6 +126,19 @@ class ReleaseProcessingContext
      */
     public array $pendingParHashes = [];
 
+    /** @var list<array<string, mixed>> */
+    public array $pendingPayloadPrefixes = [];
+
+    /** @var list<array<string, mixed>> */
+    public array $pendingPar2Descriptors = [];
+
+    /** @var array<int, array<string, mixed>> */
+    public array $sidecarClassifications = [];
+
+    public bool $purePar2Sidecar = false;
+
+    public bool $sidecarDescriptorAmbiguous = false;
+
     /**
      * @var array<string, true>|null
      */
@@ -194,6 +207,11 @@ class ReleaseProcessingContext
         $this->compressedFilesChecked = 0;
         $this->pendingReleaseFiles = [];
         $this->pendingParHashes = [];
+        $this->pendingPayloadPrefixes = [];
+        $this->pendingPar2Descriptors = [];
+        $this->sidecarClassifications = [];
+        $this->purePar2Sidecar = false;
+        $this->sidecarDescriptorAmbiguous = false;
         $this->existingReleaseFileNames = null;
         $this->releaseFilesChanged = false;
         $this->payloadSniffMetrics = new PayloadSniffMetrics;

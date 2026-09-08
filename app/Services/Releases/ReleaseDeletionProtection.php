@@ -10,6 +10,7 @@ use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
 use App\Services\ObfuscationRecovery\RecoveryReleaseGate;
+use App\Services\Par2Sidecar\SidecarMutationProtection;
 use App\Services\ReleaseRepair\RecoveryLease;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -50,6 +51,8 @@ final class ReleaseDeletionProtection
                     ->orWhere($column, '<', ReleaseClaimant::claimStaleBefore());
             });
         }
+
+        SidecarMutationProtection::apply($query, $table);
 
         return RecoveryLease::applyAvailable($query, $table);
     }

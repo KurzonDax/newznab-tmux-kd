@@ -28,7 +28,10 @@ use App\Services\Nzb\NzbService;
 use App\Services\ObfuscationRecovery\RecoveryEvidence;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\Par2Processor;
+use App\Services\Par2Sidecar\SidecarEvidence;
+use App\Services\Par2Sidecar\SidecarMutationProtection;
 use App\Services\ReleaseImageService;
+use App\Services\ReleaseRepair\RecoveryLease;
 use App\Services\Releases\ExecutableReleaseDiscardService;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
@@ -274,11 +277,28 @@ class ReleaseFileManager
         if ($context->releaseDiscarded) {
             $context->pendingReleaseFiles = [];
             $context->pendingParHashes = [];
+            (new SidecarEvidence)->flush($context);
 
             return;
         }
 
-        $refinement = $this->mediaInfoRefinement->refine((int) $context->release->id);
+        DB::transaction(function () use ($context, $processPasswords): void {
+            $lockedRelease = Release::query()->whereKey($context->release->id)->lockForUpdate()->first();
+            if ($lockedRelease === null
+                || ! RecoveryLease::applyAvailable(Release::query()->whereKey($lockedRelease->id))->exists()
+                || ! SidecarMutationProtection::apply(Release::query()->whereKey($lockedRelease->id))->exists()
+                || $lockedRelease->additional_pp_claim_token !== $context->release->additional_pp_claim_token) {
+                throw new \RuntimeException('Additional-processing ownership changed before finalization.');
+            }
+            $this->finalizeOwnedRelease($context, $processPasswords);
+        }, 3);
+
+        $this->searchSyncCoordinator->request((int) $context->release->id);
+    }
+
+    private function finalizeOwnedRelease(ReleaseProcessingContext $context, bool $processPasswords): void
+    {
+        $refinement = $context->purePar2Sidecar ? null : $this->mediaInfoRefinement->refine((int) $context->release->id);
         if ($refinement !== null) {
             $context->release->categories_id = $refinement->categoryId;
         }
@@ -342,6 +362,7 @@ class ReleaseFileManager
             $passwordStatus,
             $previewOwedRequeue,
         ): int {
+            (new SidecarEvidence)->flush($context);
             $inserted = $pendingReleaseFiles === []
                 ? 0
                 : ReleaseFile::query()->insertOrIgnore($pendingReleaseFiles);
@@ -372,8 +393,9 @@ class ReleaseFileManager
         $context->pendingReleaseFiles = [];
         $context->pendingParHashes = [];
         $context->releaseFilesChanged = $context->releaseFilesChanged || $insertedReleaseFiles > 0;
+        $context->release->additional_pp_claim_token = null;
+        $context->release->additional_pp_claimed_at = null;
 
-        $this->searchSyncCoordinator->request((int) $context->release->id);
     }
 
     /**
@@ -578,6 +600,19 @@ class ReleaseFileManager
         }
 
         $fileList = $par2Info->getFileList();
+        if (is_file($fileLocation)) {
+            (new SidecarEvidence)->queueDescriptors($context, File::get($fileLocation));
+        }
+        if ($context->purePar2Sidecar) {
+            foreach ($fileList as $file) {
+                if (isset($file['name'])) {
+                    $this->queueParHash($context, $context->release->id, (string) ($file['hash_16K'] ?? ''));
+                }
+            }
+            $context->foundPAR2Info = true;
+
+            return true;
+        }
 
         // Executable check runs against the complete PAR2 file list before any
         // recording caps, so a payload buried past the cap is still caught.

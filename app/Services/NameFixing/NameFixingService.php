@@ -15,6 +15,7 @@ use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbContentsService;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\ObfuscationRecovery\RecoveryNameEvidence;
+use App\Services\Par2Sidecar\SidecarWork;
 use RuntimeException;
 
 /**
@@ -609,6 +610,9 @@ class NameFixingService
      */
     public function fixNamesWithParHash(int $time, bool $echo, int $cats, bool $nameStatus, bool $show): void
     {
+        if ($echo) {
+            app(SidecarWork::class)->run(show: $show);
+        }
         $type = 'PAR2 hash, ';
         $this->echoStartMessage($time, 'PAR2 hash_16K');
 
@@ -1051,6 +1055,7 @@ class NameFixingService
         bool $show,
         ?callable $par2Processor = null
     ): array {
+        app(SidecarWork::class)->run($leftGuid, $limit, $show);
         $releases = $this->queries->standardCandidateBatch($leftGuid, $limit);
         if ($releases === []) {
             return ['checked' => 0, 'fixed' => 0];

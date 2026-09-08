@@ -8,6 +8,7 @@ use App\Models\Collection;
 use App\Models\Release;
 use App\Models\ReleaseNzbCreationFailure;
 use App\Models\Settings;
+use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\CollectionCleanupService;
 use App\Services\CollectionReconciliation\PostingPublication;
@@ -20,12 +21,14 @@ use App\Services\ObfuscationRecovery\RecoveryManifest;
 use App\Services\ObfuscationRecovery\RecoveryNzbCommit;
 use App\Services\ObfuscationRecovery\RecoveryNzbVerifier;
 use App\Services\ObfuscationRecovery\RecoveryPlan;
+use App\Services\Par2Sidecar\SidecarMutationProtection;
 use App\Services\ReleaseRepair\RecoveryLease;
 use App\Services\Releases\CollectionCompletionMeasurer;
 use App\Support\Data\NzbCreationResult;
 use App\Support\Data\NzbReplaceResult;
 use App\Support\Utf8;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
@@ -884,10 +887,31 @@ class NzbService
      */
     public function replaceNzbContents(string $releaseGuid, string $nzbXml): NzbReplaceResult
     {
-        return DB::transaction(function () use ($releaseGuid, $nzbXml): NzbReplaceResult {
-            $release = Release::query()->where('guid', $releaseGuid)->lockForUpdate()->first(['id']);
+        return $this->replaceGuardedNzbContents($releaseGuid, $nzbXml);
+    }
+
+    public function replaceNzbContentsWithLease(string $releaseGuid, string $nzbXml, RecoveryLease $lease, string $expectedFingerprint): NzbReplaceResult
+    {
+        return $this->replaceGuardedNzbContents($releaseGuid, $nzbXml, $lease, $expectedFingerprint);
+    }
+
+    private function replaceGuardedNzbContents(string $releaseGuid, string $nzbXml, ?RecoveryLease $owner = null, ?string $expectedFingerprint = null): NzbReplaceResult
+    {
+        return DB::transaction(function () use ($releaseGuid, $nzbXml, $owner, $expectedFingerprint): NzbReplaceResult {
+            $release = Release::query()->where('guid', $releaseGuid)->lockForUpdate()->first();
             if ($release === null) {
                 return NzbReplaceResult::missingNzb('The release disappeared before NZB replacement.');
+            }
+            if (($owner !== null && ! $owner->owns((int) $release->id))
+                || ($owner === null && ! RecoveryLease::applyAvailable(Release::query()->whereKey($release->id))->exists())
+                || ! SidecarMutationProtection::apply(Release::query()->whereKey($release->id), 'releases', $owner?->operationId())->exists()
+                || ($release->additional_pp_claimed_at !== null && Carbon::parse($release->additional_pp_claimed_at)
+                    ->greaterThanOrEqualTo(ReleaseClaimant::claimStaleBefore()))) {
+                return NzbReplaceResult::writeFailure('Release membership is held by another worker.');
+            }
+            if ($expectedFingerprint !== null && ($current = $this->readNzbContents($releaseGuid)) !== false
+                && ! hash_equals($expectedFingerprint, hash('sha256', $current))) {
+                return NzbReplaceResult::writeFailure('NZB membership changed before replacement.');
             }
             if (Schema::hasTable('obfuscation_recovery_publications') && DB::table('obfuscation_recovery_publications')
                 ->where('releases_id', $release->id)->where('guid', $releaseGuid)

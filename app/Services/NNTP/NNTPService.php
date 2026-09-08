@@ -749,6 +749,7 @@ class NNTPService extends NntpClient implements BoundedProviderClient
     private function concatenateFromOwnProviderWithCrcStatus(array $ids): ArticleDownloadResult
     {
         $body = '';
+        $metadata = null;
         $messageSize = 0;
         $loops = 0;
         $crcFailedMessageIds = [];
@@ -780,6 +781,7 @@ class NNTPService extends NntpClient implements BoundedProviderClient
                 return new ArticleDownloadResult($body, $crcFailedMessageIds);
             }
 
+            $metadata = count($ids) === 1 ? $message->metadata : null;
             $body .= $message->data;
 
             if ($messageSize === 0) {
@@ -787,7 +789,7 @@ class NNTPService extends NntpClient implements BoundedProviderClient
             }
         }
 
-        return new ArticleDownloadResult($body, $crcFailedMessageIds);
+        return new ArticleDownloadResult($body, $crcFailedMessageIds, metadata: $metadata);
     }
 
     private function pool(): NntpProviderPool
@@ -846,6 +848,7 @@ class NNTPService extends NntpClient implements BoundedProviderClient
                     data: $decoded->data,
                     crcFailedMessageIds: $decoded->crcFailed ? [(string) $identifier] : [],
                     damaged: $decoded->crcFailed,
+                    metadata: $decoded->metadata,
                 );
             }
             if ($line[0] === '.' && isset($line[1]) && $line[1] === '.') {

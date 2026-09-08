@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Services\DTO\YencArticleMetadata;
 use App\Services\DTO\YencDecodeResult;
 use RuntimeException;
 
@@ -194,6 +195,7 @@ class YencService
             return new YencDecodeResult(
                 data: $text,
                 crcFailed: $expectedCrc !== null && ! hash_equals($expectedCrc, hash('crc32b', $text)),
+                metadata: YencArticleMetadata::fromArticle(str_replace("\r\n", "\n", $input[1]), strlen($text)),
             );
         }
 

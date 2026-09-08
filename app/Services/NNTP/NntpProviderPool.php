@@ -218,6 +218,7 @@ class NntpProviderPool
         ?ProviderClient $callerClient = null,
     ): ArticleDownloadResult {
         $body = '';
+        $metadata = null;
         $messageSize = 0;
         $loops = 0;
         $crcFailedMessageIds = [];
@@ -245,6 +246,7 @@ class NntpProviderPool
                 return new ArticleDownloadResult($body, $crcFailedMessageIds);
             }
 
+            $metadata = count($messageIds) === 1 ? $part->metadata : null;
             $body .= $part->data;
 
             if ($messageSize === 0) {
@@ -252,7 +254,7 @@ class NntpProviderPool
             }
         }
 
-        return new ArticleDownloadResult($body, $crcFailedMessageIds);
+        return new ArticleDownloadResult($body, $crcFailedMessageIds, metadata: $metadata);
     }
 
     public function fetchBoundedArticle(string $messageId, bool $head, int $maxBytes, float $deadline,
@@ -337,7 +339,7 @@ class NntpProviderPool
                 }
 
                 if (is_string($result->data) && $result->data !== '') {
-                    return new ArticleDownloadResult($result->data, $crcFailedMessageIds);
+                    return new ArticleDownloadResult($result->data, $crcFailedMessageIds, metadata: $result->metadata);
                 }
             }
 

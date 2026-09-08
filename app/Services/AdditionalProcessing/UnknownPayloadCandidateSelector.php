@@ -40,6 +40,10 @@ final readonly class UnknownPayloadCandidateSelector
                 estimatedSizeBytes: $estimatedSizeBytes,
                 estimatedFirstSegmentBytes: max((int) ceil($estimatedSizeBytes / $segmentCount), 1),
                 sourceIndex: $sourceIndex,
+                segmentNumbers: ($file['segmentNumbersValid'] ?? false) ? array_values($file['segmentNumbers'] ?? []) : [],
+                declaredSegments: (int) ($file['declaredSegmentTotal'] ?? 0),
+                nzbFileIndex: (int) ($file['nzbFileIndex'] ?? -1),
+                fingerprint: (string) ($file['membershipFingerprint'] ?? ''),
             );
         }
 

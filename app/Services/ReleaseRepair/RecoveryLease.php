@@ -6,6 +6,7 @@ namespace App\Services\ReleaseRepair;
 
 use App\Models\Release;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
+use App\Services\Par2Sidecar\SidecarMutationProtection;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
@@ -26,9 +27,10 @@ final class RecoveryLease
         private readonly int $releaseId,
         private readonly ?Carbon $claimedAt,
         private readonly ?string $token = null,
+        private readonly ?int $sidecarOperationId = null,
     ) {}
 
-    public static function acquire(Release $release): ?self
+    public static function acquire(Release $release, ?int $sidecarOperationId = null, ?string $additionalToken = null): ?self
     {
         if (! self::isSupported()) {
             return new self((int) $release->id, null);
@@ -36,12 +38,26 @@ final class RecoveryLease
 
         $claimedAt = now();
         $token = Schema::hasColumn('releases', 'recovery_claim_token') ? (string) Str::uuid() : null;
-        $claimed = self::applyAvailable(Release::query()->whereKey($release->id))
+        $query = self::applyAvailable(Release::query()->whereKey($release->id));
+        if (Schema::hasColumn('releases', ReleaseClaimant::CLAIMED_AT_COLUMN)) {
+            if ($additionalToken === null) {
+                $query->where(fn (Builder $q) => $q->whereNull(ReleaseClaimant::CLAIMED_AT_COLUMN)
+                    ->orWhere(ReleaseClaimant::CLAIMED_AT_COLUMN, '<', ReleaseClaimant::claimStaleBefore()));
+            } else {
+                $query->where(ReleaseClaimant::CLAIM_TOKEN_COLUMN, $additionalToken)
+                    ->where(ReleaseClaimant::CLAIMED_AT_COLUMN, '>=', ReleaseClaimant::claimStaleBefore());
+            }
+        }
+        SidecarMutationProtection::apply($query, 'releases', $sidecarOperationId);
+        $claimed = $query
             ->update([self::COLUMN => $claimedAt, ...($token === null ? [] : ['recovery_claim_token' => $token])]);
 
-        return $claimed === 1
-            ? new self((int) $release->id, $claimedAt, $token)
-            : null;
+        if ($claimed !== 1) {
+            return null;
+        }
+        $lease = new self((int) $release->id, $claimedAt, $token, $sidecarOperationId);
+
+        return $lease;
     }
 
     /**
@@ -75,6 +91,11 @@ final class RecoveryLease
         return $this->claimedAt->greaterThanOrEqualTo(ReleaseClaimant::claimStaleBefore())
             && Release::query()->whereKey($releaseId)->where(self::COLUMN, $this->claimedAt)
                 ->when($this->token !== null, fn (Builder $query) => $query->where('recovery_claim_token', $this->token))->exists();
+    }
+
+    public function operationId(): ?int
+    {
+        return $this->sidecarOperationId;
     }
 
     public function release(): void

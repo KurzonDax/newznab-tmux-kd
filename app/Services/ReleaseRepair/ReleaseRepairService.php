@@ -50,7 +50,7 @@ final class ReleaseRepairService
         }
 
         try {
-            return $this->repairWithLease($release, $options);
+            return $this->repairWithLease($release, $options, $lease);
         } finally {
             $lease->release();
         }
@@ -59,7 +59,7 @@ final class ReleaseRepairService
     /**
      * @throws \Exception
      */
-    private function repairWithLease(Release $release, ReleaseRepairOptions $options): ReleaseRepairResult
+    private function repairWithLease(Release $release, ReleaseRepairOptions $options, RecoveryLease $lease): ReleaseRepairResult
     {
         $completionBefore = (float) $release->completion;
         if (app(RecoveryIdentityPolicy::class)->publication((int) $release->id) !== null) {
@@ -136,7 +136,7 @@ final class ReleaseRepairService
         $rewritten = false;
 
         if (! $options->dryRun) {
-            $replaced = $this->nzb->replaceNzbContents((string) $release->guid, $document->toXml());
+            $replaced = $this->nzb->replaceNzbContentsWithLease((string) $release->guid, $document->toXml(), $lease, hash('sha256', $contents));
             $rewritten = $replaced->success;
 
             if (! $rewritten) {
