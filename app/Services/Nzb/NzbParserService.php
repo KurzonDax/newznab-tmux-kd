@@ -283,7 +283,7 @@ class NzbParserService
      */
     public function detectPar2IndexFile(string $subject): bool
     {
-        return (bool) preg_match('/\.par2$/i', $subject);
+        return (bool) preg_match('/\.par2"?(?:\s+yEnc)?(?:\s+\(\d+\/\d+\))?\s*$/iD', $subject);
     }
 
     /**

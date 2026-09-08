@@ -9,6 +9,7 @@ use App\Models\Release;
 use App\Services\NNTP\NntpProviderPool;
 use App\Services\Nzb\NzbParserService;
 use App\Services\Nzb\NzbService;
+use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 
@@ -61,6 +62,13 @@ final class ReleaseRepairService
     private function repairWithLease(Release $release, ReleaseRepairOptions $options): ReleaseRepairResult
     {
         $completionBefore = (float) $release->completion;
+        if (app(RecoveryIdentityPolicy::class)->publication((int) $release->id) !== null) {
+            return $this->finish($release, $options, new ReleaseRepairResult(
+                ReleaseRepairOutcome::UnsupportedRecoveryProfile, $completionBefore, $completionBefore,
+                0, 0, false, false, 'unsupported_recovery_profile',
+            ));
+        }
+
         $isFinalAttempt = $release->repair_outcome === ReleaseRepairOutcome::RetryPending;
 
         if ($completionBefore < $options->floorCompletion) {

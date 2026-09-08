@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Enums\ReleaseRepairOutcome;
 use App\Facades\Search;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
+use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Support\ReleaseDisplayNameFormatter;
 use App\Support\ReleaseNameNormalizer;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -339,7 +340,7 @@ class Release extends Model
         if (! empty($imDbId)) {
             $movieInfoId = MovieInfo::whereImdbid($imDbId)->first(['id']);
         }
-        self::whereId($id)->update(
+        self::whereId($id)->whereRaw(RecoveryIdentityPolicy::singleItemSql())->update(
             [
                 'name' => $name,
                 ...self::searchNameValues((string) $searchName),

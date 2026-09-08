@@ -9,6 +9,15 @@ use PHPUnit\Framework\TestCase;
 
 class NzbParserServiceTest extends TestCase
 {
+    public function test_generated_par2_subject_retains_index_detection_after_counter_suffix(): void
+    {
+        $parser = new NzbParserService;
+        $this->assertTrue($parser->detectPar2IndexFile('"recovery.par2" yEnc (1/1)'));
+        $this->assertTrue($parser->detectPar2IndexFile('ordinary.par2'));
+        $this->assertFalse($parser->detectPar2IndexFile('"payload.mkv" yEnc (1/4)'));
+        $this->assertFalse($parser->detectPar2IndexFile('"not.par2.exe" yEnc (1/1)'));
+    }
+
     public function test_it_keeps_per_segment_numbering_alongside_the_message_ids(): void
     {
         $nzb = <<<'XML'

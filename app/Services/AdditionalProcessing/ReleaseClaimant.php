@@ -9,6 +9,7 @@ use App\Models\Settings;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use App\Services\AudioProcessing\AudioCandidateQuery;
 use App\Services\AudioProcessing\AudioRouting;
+use App\Services\ObfuscationRecovery\RecoveryReleaseGate;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Carbon;
@@ -103,6 +104,7 @@ final class ReleaseClaimant
         int $maxSizeBytes = 0,
         bool $includePasswordStatuses = true,
     ): Builder {
+        RecoveryReleaseGate::excludePending($query, 'r');
         if ($includePasswordStatuses) {
             $query->whereIn('r.passwordstatus', self::PENDING_PASSWORD_STATUSES);
         }
@@ -220,6 +222,7 @@ final class ReleaseClaimant
                 // established by the token-filtered winners query below.
                 Release::query()
                     ->whereIn('id', $stampIds)
+                    ->tap(static fn ($query) => RecoveryReleaseGate::excludePending($query))
                     ->where(function (Builder $claimQuery): void {
                         $claimQuery
                             ->whereNull(self::CLAIMED_AT_COLUMN)

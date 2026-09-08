@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Services\Binaries\BinariesConfig;
+use App\Services\ObfuscationRecovery\RecoveryCollectionOwnership;
 use App\Support\DatabaseClock;
 use App\Support\SettingNumber;
 use Illuminate\Database\QueryException;
@@ -73,6 +74,7 @@ class CollectionCleanupService
         $batchDeleted = 0;
         do {
             $ids = DB::table('collections')
+                ->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
                 ->whereRaw('dateadded < '.$cutoff['sql'], $cutoff['bindings'])
                 ->whereNotIn('filecheck', [0, 1, 10, 15, 16])
                 ->orderBy('id')
@@ -183,6 +185,7 @@ class CollectionCleanupService
 
         for ($i = 0; $i < $maxBatches; $i++) {
             $ids = DB::table('collections as c')
+                ->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query, 'c.id'))
                 ->whereNotExists(fn ($q) => $q->select(DB::raw(1))
                     ->from('binaries as b')
                     ->whereColumn('b.collections_id', 'c.id'))
@@ -232,6 +235,7 @@ class CollectionCleanupService
 
         for ($i = 0; $i < $maxBatches; $i++) {
             $ids = DB::table('collections as c')
+                ->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query, 'c.id'))
                 ->join('releases as r', 'r.id', '=', 'c.releases_id')
                 ->where('r.nzbstatus', '=', 1)
                 ->orderBy('c.id')
@@ -273,10 +277,17 @@ class CollectionCleanupService
         $deletedCollections = 0;
 
         foreach (array_chunk($collectionIds, $this->sqlChunkSize()) as $chunk) {
-            $placeholders = implode(',', array_fill(0, count($chunk), '?'));
             $deletedCollections += $this->retryOnLockError(
                 fn (): int => DB::transaction(
-                    function () use ($chunk, $placeholders): int {
+                    function () use ($chunk): int {
+                        $locked = DB::table('collections')->whereIn('id', $chunk)->orderBy('id')->lockForUpdate()->pluck('id');
+                        $query = DB::table('collections')->whereIn('id', $locked);
+                        RecoveryCollectionOwnership::exclude($query);
+                        $chunk = $query->pluck('id')->all();
+                        if ($chunk === []) {
+                            return 0;
+                        }
+                        $placeholders = implode(',', array_fill(0, count($chunk), '?'));
                         if ($this->cascadeDeleteReady()) {
                             return (int) DB::affectingStatement(
                                 "DELETE FROM collections WHERE id IN ({$placeholders})",
@@ -313,6 +324,7 @@ class CollectionCleanupService
 
         do {
             $ids = DB::table('collections')
+                ->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
                 ->where('groups_id', $groupId)
                 ->orderBy('id')
                 ->limit($this->sqlChunkSize())

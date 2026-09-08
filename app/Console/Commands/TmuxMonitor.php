@@ -152,6 +152,8 @@ class TmuxMonitor extends Command
 
         // Always run IRC scraper
         $this->runIRCScraper($runVar);
+        $this->taskRunner->runPaneTask('recovery_local', [], $runVar);
+        $this->taskRunner->runPaneTask('recovery_download', [], $runVar);
 
         // Run main tasks based on sequential mode
         if ($sequential === 1) {

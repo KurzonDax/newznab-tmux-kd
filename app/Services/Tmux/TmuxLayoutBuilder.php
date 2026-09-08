@@ -172,6 +172,7 @@ class TmuxLayoutBuilder
         $this->createIRCScraperWindow();
 
         // Additional windows (optional monitoring tools)
+        $this->createRecoveryWindow();
         $this->createOptionalWindows();
 
     }
@@ -233,8 +234,15 @@ class TmuxLayoutBuilder
         // Window 3: IRC Scraper
         $this->createIRCScraperWindow();
 
+        $this->createRecoveryWindow();
         $this->createOptionalWindows();
 
+    }
+
+    protected function createRecoveryWindow(): void
+    {
+        $local = $this->createWindowPane(4, 'Recovery', TmuxPaneRole::RecoveryLocal, 'Recovery discovery / publication');
+        $this->splitHorizontal($local, 50, TmuxPaneRole::RecoveryDownload, 'Recovery downloads');
     }
 
     /**
@@ -254,7 +262,7 @@ class TmuxLayoutBuilder
      * Create optional monitoring windows based on settings
      *
      * Creates separate tmux windows for enabled monitoring tools.
-     * Each tool gets its own dedicated window starting from index 4.
+     * Each tool gets its own dedicated window starting from index 5.
      *
      * Window layout:
      * - Window 0: Monitor + Processing panes (binaries/backfill/releases)
@@ -265,7 +273,7 @@ class TmuxLayoutBuilder
      */
     protected function createOptionalWindows(): void
     {
-        $windowIndex = 4;
+        $windowIndex = 5;
 
         // htop
         if ((int) Settings::settingValue('htop') === 1 && $this->commandExists('htop')) {

@@ -14,6 +14,8 @@ final readonly class NzbCreationResult
 
     public const string FAILURE_CLAIM_LOST = 'claim-lost';
 
+    public const string FAILURE_DEFERRED = 'deferred';
+
     /**
      * @param  list<int>  $collectionIds
      */
@@ -55,6 +57,16 @@ final readonly class NzbCreationResult
     public static function claimLost(array $collectionIds = [], ?string $path = null): self
     {
         return new self(false, self::FAILURE_CLAIM_LOST, 'The NZB creation claim is no longer owned by this worker.', $path, $collectionIds);
+    }
+
+    public static function deferred(string $reason): self
+    {
+        return new self(false, self::FAILURE_DEFERRED, $reason, null, []);
+    }
+
+    public function isDeferred(): bool
+    {
+        return $this->failureType === self::FAILURE_DEFERRED;
     }
 
     public function isDeterministicFailure(): bool

@@ -22,6 +22,34 @@ class SettingsTableSeeder extends Seeder
 
         DB::table('settings')->insert([
             [
+                'name' => 'obfuscation_recovery_enabled',
+                'value' => '0',
+            ],
+            [
+                'name' => 'obfuscation_recovery_threads',
+                'value' => '2',
+            ],
+            [
+                'name' => 'obfuscation_recovery_media_candidate_mib',
+                'value' => '20',
+            ],
+            [
+                'name' => 'obfuscation_recovery_rar_candidate_mib',
+                'value' => '40',
+            ],
+            [
+                'name' => 'obfuscation_recovery_retention_hours',
+                'value' => '144',
+            ],
+            [
+                'name' => 'obfuscation_recovery_enrichment_enabled',
+                'value' => '1',
+            ],
+            [
+                'name' => 'obfuscation_recovery_enrichment_release_mib',
+                'value' => '4',
+            ],
+            [
                 'name' => 'backfillthreads',
                 'value' => '1',
             ],

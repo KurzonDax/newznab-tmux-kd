@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Tests\Unit\Services\NameFixing;
 
 use App\Services\NameFixing\NameFixingQueryService;
+use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\Schema\Builder;
 use PHPUnit\Framework\TestCase;
 
 class NameFixingQueryServiceTest extends TestCase
@@ -26,7 +28,10 @@ class NameFixingQueryServiceTest extends TestCase
 
     public function test_file_candidates_use_exists_without_lossy_grouping(): void
     {
-        $database = $this->createMock(ConnectionInterface::class);
+        $database = $this->createMock(Connection::class);
+        $schema = $this->createStub(Builder::class);
+        $schema->method('hasTable')->willReturn(false);
+        $database->method('getSchemaBuilder')->willReturn($schema);
         $database->expects($this->once())
             ->method('select')
             ->with(
@@ -42,7 +47,10 @@ class NameFixingQueryServiceTest extends TestCase
 
     public function test_uid_candidates_only_use_media_infos(): void
     {
-        $database = $this->createMock(ConnectionInterface::class);
+        $database = $this->createMock(Connection::class);
+        $schema = $this->createStub(Builder::class);
+        $schema->method('hasTable')->willReturn(false);
+        $database->method('getSchemaBuilder')->willReturn($schema);
         $database->expects($this->once())
             ->method('select')
             ->with(
@@ -77,7 +85,10 @@ class NameFixingQueryServiceTest extends TestCase
 
     public function test_uid_donors_only_load_from_media_infos(): void
     {
-        $database = $this->createMock(ConnectionInterface::class);
+        $database = $this->createMock(Connection::class);
+        $schema = $this->createStub(Builder::class);
+        $schema->method('hasTable')->willReturn(false);
+        $database->method('getSchemaBuilder')->willReturn($schema);
         $database->expects($this->once())
             ->method('select')
             ->with(

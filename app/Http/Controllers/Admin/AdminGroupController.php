@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Admin;
 
 use App\Enums\AdminGroupListOrigin;
+use App\Enums\ObfuscationRecoveryProfile;
 use App\Http\Controllers\BasePageController;
 use App\Http\Requests\Admin\AdminGroupListRequest;
 use App\Models\RootCategory;
@@ -83,6 +84,7 @@ class AdminGroupController extends BasePageController
             'first_record' => 0,
             'last_record' => 0,
             'backfill_target' => 0,
+            'obfuscation_recovery_profile' => 'disabled',
             'route_obfuscated_names' => false,
             'obfuscated_default_root_categories_id' => null,
             'forced_root_categories_id' => null,
@@ -100,6 +102,7 @@ class AdminGroupController extends BasePageController
                         : null,
                 ]);
                 $request->validate([
+                    'obfuscation_recovery_profile' => ['sometimes', Rule::enum(ObfuscationRecoveryProfile::class)],
                     'route_obfuscated_names' => ['required', 'boolean'],
                     'obfuscated_default_root_categories_id' => [
                         'nullable',

@@ -11,6 +11,9 @@ use App\Models\MovieInfo;
 use App\Models\Release;
 use App\Models\Settings;
 use App\Services\MetadataProcessing\MovieProcessingCandidateQuery;
+use App\Services\ObfuscationRecovery\RecoveryCatalog;
+use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
+use App\Services\ObfuscationRecovery\RecoveryOmdbClient;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Search\MovieSearchIndexSync;
 use App\Services\TvProcessing\Providers\TraktProvider;
@@ -90,7 +93,7 @@ class MovieService
         $omdbApiKey = trim((string) config('nntmux_api.omdb_api_key', ''));
         $this->omdbapikey = $omdbApiKey !== '' ? $omdbApiKey : null;
         if ($this->omdbapikey !== null) {
-            $this->omdbApi = new OMDbAPI($this->omdbapikey);
+            $this->omdbApi = new RecoveryOmdbClient($this->omdbapikey);
         }
 
         $cacheDir = storage_path('framework/cache/imdb_cache');
@@ -979,6 +982,15 @@ class MovieService
      */
     public function doMovieUpdate(string $buffer, string $service, int $id, int $processImdb = 1): string|false
     {
+        return RecoveryCatalog::run($id,
+            fn (): string|false => $this->updateReleaseMovie($buffer, $service, $id, $processImdb));
+    }
+
+    private function updateReleaseMovie(string $buffer, string $service, int $id, int $processImdb): string|false
+    {
+        if (! (new RecoveryIdentityPolicy)->allowsSingleItemMetadata($id)) {
+            return false;
+        }
         $existingImdbId = Release::query()->where('id', $id)->value('imdbid');
         if ($existingImdbId !== null && imdb_id_is_valid($existingImdbId)) {
             return $existingImdbId;
@@ -998,10 +1010,11 @@ class MovieService
 
                 $movieInfoId = MovieInfo::query()->where('imdbid', $imdbId)->first(['id']);
 
-                Release::query()->where('id', $id)->update([
-                    'imdbid' => $imdbId,
-                    'movieinfo_id' => $movieInfoId !== null ? $movieInfoId['id'] : null,
-                ]);
+                Release::query()->where('id', $id)
+                    ->whereRaw(RecoveryIdentityPolicy::singleItemSql())->update([
+                        'imdbid' => $imdbId,
+                        'movieinfo_id' => $movieInfoId !== null ? $movieInfoId['id'] : null,
+                    ]);
 
                 Search::updateRelease($id);
 
@@ -1018,9 +1031,10 @@ class MovieService
                         if ($info === true) {
                             $freshMovieInfo = MovieInfo::query()->where('imdbid', $imdbId)->first(['id']);
 
-                            Release::query()->where('id', $id)->update([
-                                'movieinfo_id' => $freshMovieInfo !== null ? $freshMovieInfo['id'] : null,
-                            ]);
+                            Release::query()->where('id', $id)
+                                ->whereRaw(RecoveryIdentityPolicy::singleItemSql())->update([
+                                    'movieinfo_id' => $freshMovieInfo !== null ? $freshMovieInfo['id'] : null,
+                                ]);
 
                             Search::updateRelease($id);
                         }
@@ -1077,11 +1091,11 @@ class MovieService
                     cli()->info('Looking up: '.$movieName);
                 }
 
-                $foundIMDB = $this->searchLocalDatabase($arr['id']) ||
+                $foundIMDB = RecoveryCatalog::run((int) $arr['id'], fn (): bool => $this->searchLocalDatabase($arr['id']) ||
                     $this->searchIMDb($arr['id']) ||
                     $this->searchOMDbAPI($arr['id']) ||
                     $this->searchTraktTV($arr['id'], $movieName) ||
-                    $this->searchTMDB($arr['id']);
+                    $this->searchTMDB($arr['id']));
 
                 if ($foundIMDB) {
                     if ($this->echooutput) {

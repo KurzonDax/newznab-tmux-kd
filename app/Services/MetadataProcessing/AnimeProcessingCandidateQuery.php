@@ -7,6 +7,7 @@ namespace App\Services\MetadataProcessing;
 use App\Models\Category;
 use App\Models\Release;
 use App\Models\Settings;
+use App\Services\ObfuscationRecovery\RecoveryReleaseGate;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -23,7 +24,7 @@ final class AnimeProcessingCandidateQuery
         ?int $lookupMode = null,
     ): Builder {
         $resolvedLookupMode = $lookupMode ?? (int) Settings::settingValue('lookupanidb');
-        $query = Release::query()
+        $query = Release::query()->tap(static fn ($query) => RecoveryReleaseGate::excludePending($query))
             ->where('categories_id', Category::TV_ANIME)
             ->whereNull('anidbid');
 

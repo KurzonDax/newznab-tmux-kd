@@ -6,6 +6,8 @@ namespace App\Services\NameFixing;
 
 use App\Enums\PredbSearchStatus;
 use App\Models\Category;
+use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
+use App\Services\ObfuscationRecovery\RecoveryReleaseGate;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Facades\DB;
@@ -202,7 +204,7 @@ final class NameFixingQueryService
             );
         }
 
-        return 'r.isrenamed = 0 AND r.predb_id = 0 AND ('.implode(' OR ', $sources).')';
+        return RecoveryReleaseGate::availableSql('r.id', $this->database).' AND r.isrenamed = 0 AND r.predb_id = 0 AND ('.implode(' OR ', $sources).')';
     }
 
     /**
@@ -301,7 +303,7 @@ final class NameFixingQueryService
              FROM media_infos mi
              INNER JOIN releases r ON r.id = mi.releases_id
              WHERE mi.unique_id IN ({$placeholders})
-             AND ".self::TRUSTED_DONOR_PREDICATE,
+             AND ".self::TRUSTED_DONOR_PREDICATE.' AND '.RecoveryIdentityPolicy::singleItemSql('r.id', $this->database, donor: true),
             $uniqueIds
         );
 
@@ -323,7 +325,7 @@ final class NameFixingQueryService
                     r.proc_uid
              FROM media_infos mi
              INNER JOIN releases r ON r.id = mi.releases_id
-             WHERE mi.unique_id = ?
+             WHERE mi.unique_id = ? AND '.RecoveryIdentityPolicy::singleItemSql('r.id', $this->database, donor: true).'
              ORDER BY r.id ASC',
             [$uniqueId],
         );
@@ -341,7 +343,7 @@ final class NameFixingQueryService
              FROM par_hashes ph
              INNER JOIN releases r ON r.id = ph.releases_id
              WHERE ph.hash IN (%s)
-             AND '.self::TRUSTED_DONOR_PREDICATE,
+             AND '.self::TRUSTED_DONOR_PREDICATE.' AND '.RecoveryIdentityPolicy::singleItemSql('r.id', $this->database, donor: true),
             $hashes
         );
     }
@@ -358,7 +360,7 @@ final class NameFixingQueryService
              FROM release_files rf
              INNER JOIN releases r ON r.id = rf.releases_id
              WHERE rf.crc32 IN (%s)
-             AND '.self::TRUSTED_DONOR_PREDICATE,
+             AND '.self::TRUSTED_DONOR_PREDICATE.' AND '.RecoveryIdentityPolicy::singleItemSql('r.id', $this->database, donor: true),
             $crcs
         );
     }
@@ -429,6 +431,7 @@ final class NameFixingQueryService
                     r.groups_id, r.categories_id
              FROM releases r
              WHERE r.id IN ('.$this->placeholders(count($candidateIds)).')
+             AND '.RecoveryReleaseGate::availableSql('r.id', $this->database).'
              AND r.predb_id = 0
              AND (r.name LIKE ? ESCAPE \'\\\\\' OR r.searchname LIKE ? ESCAPE \'\\\\\')
              ORDER BY r.id ASC
@@ -442,7 +445,7 @@ final class NameFixingQueryService
         $rows = $this->database->select(
             'SELECT COUNT(*) AS aggregate
              FROM releases r
-             WHERE r.predb_id = 0
+             WHERE '.RecoveryReleaseGate::availableSql('r.id', $this->database).' AND r.predb_id = 0
              AND r.isrenamed = 0
              AND r.categories_id IN ('.implode(',', Category::OTHERS_GROUP).')
              AND EXISTS (
@@ -467,7 +470,7 @@ final class NameFixingQueryService
             'SELECT r.id AS releases_id, r.name, r.searchname, r.fromname,
                     r.groups_id, r.categories_id
              FROM releases r
-             WHERE r.predb_id = 0
+             WHERE '.RecoveryReleaseGate::availableSql('r.id', $this->database).' AND r.predb_id = 0
              AND r.isrenamed = 0
              AND r.categories_id IN ('.implode(',', Category::OTHERS_GROUP).")
              AND r.id {$operator} ?
@@ -500,7 +503,7 @@ final class NameFixingQueryService
             throw new InvalidArgumentException("Unsupported name-fixing source [{$source}].");
         }
 
-        $where = ['r.predb_id = 0', '('.self::SOURCE_EXISTS[$source].')'];
+        $where = [RecoveryReleaseGate::availableSql('r.id', $this->database), 'r.predb_id = 0', '('.self::SOURCE_EXISTS[$source].')'];
         $bindings = [];
 
         if ($categories !== 3) {

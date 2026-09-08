@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Binaries;
 
 use App\Enums\HeaderScanDirection;
+use App\Services\ObfuscationRecovery\RecoveryStorage;
+use App\Services\ObfuscationRecovery\RecoveryStorageBatch;
+use App\Services\ObfuscationRecovery\RecoveryWorkClaim;
 use App\Support\SqlError;
 
 /**
@@ -50,6 +53,16 @@ final class HeaderStorageService
             true
         );
         $this->report = HeaderStorageReport::empty();
+    }
+
+    public function storeRecovered(
+        RecoveryWorkClaim $claim,
+        int $publicationId,
+        RecoveryStorageBatch $batch,
+    ): int {
+        return (new RecoveryStorage(
+            $this->collectionHandler, $this->binaryHandler, $this->partHandler, $this->config->sqlChunkSize,
+        ))->store($claim, $publicationId, $batch);
     }
 
     /**

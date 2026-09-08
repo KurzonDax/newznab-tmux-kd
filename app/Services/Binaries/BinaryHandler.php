@@ -406,6 +406,23 @@ final class BinaryHandler
         return (int) ($bin->id ?? 0);
     }
 
+    public function getOrCreateRecoveredBinary(string $projection, string $name, int $collectionId, int $totalParts, int $fileNumber): int
+    {
+        if (strlen($projection) !== 16 || $collectionId < 1 || $totalParts < 1 || $totalParts > 500000
+            || $fileNumber < 1 || $fileNumber > 33 || strlen($name) > 255) {
+            throw new \InvalidArgumentException('invalid_recovery_binary_identity');
+        }
+        $hash = bin2hex($projection);
+        $id = DB::getDriverName() === 'sqlite'
+            ? $this->insertBinarySqlite($hash, $name, $collectionId, $totalParts, $fileNumber)
+            : $this->insertBinaryMysql($hash, $name, $collectionId, $totalParts, $fileNumber);
+        if ($id < 1) {
+            throw new \RuntimeException('recovery_binary_insert_failed');
+        }
+
+        return $id;
+    }
+
     /**
      * Rebuild aggregates from stored parts for the binaries touched by a chunk.
      * This is deliberately idempotent: ignored duplicate part inserts cannot

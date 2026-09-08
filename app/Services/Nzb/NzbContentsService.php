@@ -9,6 +9,9 @@ use App\Models\Release;
 use App\Models\Settings;
 use App\Services\NfoService;
 use App\Services\NNTP\NNTPService;
+use App\Services\ObfuscationRecovery\RecoveryEvidencePending;
+use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
+use App\Services\ObfuscationRecovery\RecoveryNfo;
 use App\Services\PostProcessService;
 
 /**
@@ -78,8 +81,13 @@ class NzbContentsService
      *
      * @throws \Exception If NNTP operations fail.
      */
-    public function getNfoFromNzb(string $guid, int $relID, int $groupID, string $groupName): string|false|NzbParseFailure
+    public function getNfoFromNzb(string $guid, int $relID, int $groupID, string $groupName): string|false|NzbParseFailure|RecoveryEvidencePending
     {
+        $recovery = (new RecoveryIdentityPolicy)->publication($relID);
+        if ($recovery !== null) {
+            return app(RecoveryNfo::class)->read($recovery, $this->nfo);
+        }
+
         // Step 1: Attempt to find a potential NFO message ID
         $messageID = $this->parseNzb($guid, $relID, $groupID, true);
 

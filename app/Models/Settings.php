@@ -25,6 +25,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Services\Api\ApiCapabilitiesService;
+use App\Services\ObfuscationRecovery\RecoveryControl;
 use App\Support\SettingNumber;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
@@ -244,12 +245,15 @@ class Settings extends Model
      */
     public static function settingsUpsert(array $data = []): void
     {
-        foreach ($data as $key => $value) {
-            DB::table((new self)->getTable())->updateOrInsert(
-                ['name' => $key],
-                ['value' => \is_array($value) ? implode(', ', $value) : $value],
-            );
-        }
+        DB::transaction(function () use ($data): void {
+            self::invalidateRecoveryCapture($data);
+            foreach ($data as $key => $value) {
+                DB::table((new self)->getTable())->updateOrInsert(
+                    ['name' => $key],
+                    ['value' => \is_array($value) ? implode(', ', $value) : $value],
+                );
+            }
+        });
 
         self::forgetCachedSettings();
     }
@@ -259,11 +263,26 @@ class Settings extends Model
      */
     public static function settingsUpdate(array $data = []): void
     {
-        foreach ($data as $key => $value) {
-            self::query()->where('name', $key)->update(['value' => \is_array($value) ? implode(', ', $value) : $value]);
-        }
+        DB::transaction(function () use ($data): void {
+            self::invalidateRecoveryCapture($data);
+            foreach ($data as $key => $value) {
+                self::query()->where('name', $key)->update(['value' => \is_array($value) ? implode(', ', $value) : $value]);
+            }
+        });
 
         self::forgetCachedSettings();
+    }
+
+    /** @param array<string, mixed> $data */
+    private static function invalidateRecoveryCapture(array $data): void
+    {
+        foreach (['obfuscation_recovery_enabled', 'obfuscation_recovery_media_candidate_mib', 'obfuscation_recovery_rar_candidate_mib'] as $key) {
+            if (array_key_exists($key, $data) && (string) self::query()->where('name', $key)->value('value') !== (string) $data[$key]) {
+                RecoveryControl::invalidate();
+
+                return;
+            }
+        }
     }
 
     public static function forgetCachedSettings(): void

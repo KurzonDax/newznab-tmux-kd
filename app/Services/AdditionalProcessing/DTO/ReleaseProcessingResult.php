@@ -27,6 +27,7 @@ final readonly class ReleaseProcessingResult
         public array $unsupportedReasons = [],
         public PayloadSniffMetrics $payloadSniffMetrics = new PayloadSniffMetrics,
         public Mp4TailMetrics $mp4TailMetrics = new Mp4TailMetrics,
+        public ?string $nextAttemptAt = null,
     ) {}
 
     public function isSuccessful(): bool
@@ -58,6 +59,7 @@ final readonly class ReleaseProcessingResult
             unsupportedReasons: $this->unsupportedReasons,
             payloadSniffMetrics: $this->payloadSniffMetrics,
             mp4TailMetrics: $this->mp4TailMetrics,
+            nextAttemptAt: $this->nextAttemptAt,
         );
     }
 }

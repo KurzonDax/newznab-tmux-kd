@@ -7,6 +7,7 @@ namespace App\Services\AdditionalProcessing\Enums;
 enum ProcessingOutcome: string
 {
     case Completed = 'completed';
+    case RecoveryEvidencePending = 'recovery_evidence_pending';
     case NoUsefulArtifacts = 'no-useful-artifacts';
     case Passworded = 'passworded';
     case GroupUnavailable = 'group-unavailable';

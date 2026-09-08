@@ -10,6 +10,7 @@ use App\Services\NameFixing\FileNameCleaner;
 use App\Services\NameFixing\FilePrioritizer;
 use App\Services\NameFixing\NameFixingService;
 use App\Services\NameFixing\ReleaseUpdateService;
+use App\Services\ObfuscationRecovery\RecoveryNameEvidence;
 use PHPUnit\Framework\TestCase;
 
 class DescriptiveTitleNameFixingTest extends TestCase
@@ -134,6 +135,7 @@ class RecordingDescriptiveTitleUpdater extends ReleaseUpdateService
         bool $show,
         ?int $preId = 0,
         bool $descriptiveTitleCandidate = false,
+        ?RecoveryNameEvidence $recoveryEvidence = null,
     ): void {
         if (! $descriptiveTitleCandidate) {
             $this->ordinaryName = $name;

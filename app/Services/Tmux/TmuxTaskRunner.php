@@ -348,11 +348,25 @@ class TmuxTaskRunner
             'tv' => $this->runTvTask($runVar),
             'movies' => $this->runMoviesTask($runVar),
             'amazon' => $this->runAmazonTask($runVar),
+            'recovery_local' => $this->runRecovery(false),
+            'recovery_download' => $this->runRecovery(true),
             'scraper' => $this->runIRCScraper($runVar),
             // Legacy mapping for backward compatibility
             'nonamazon' => $this->runTvTask($runVar),
             default => false,
         };
+    }
+
+    private function runRecovery(bool $download): bool
+    {
+        $role = $download ? TmuxPaneRole::RecoveryDownload : TmuxPaneRole::RecoveryLocal;
+        $pane = $this->paneManager->paneForRole($role);
+        $artisan = 'nice -n'.$this->getNiceness().' php '.escapeshellarg(base_path('artisan'));
+        $steps = $download ? ['download'] : ['discover', 'publish'];
+        $commands = array_map(static fn (string $step): string => $artisan.' obfuscation:'.$step.' --engine', $steps);
+        $command = $this->buildCommand(implode('; ', $commands), ['log_pane' => $role->value, 'sleep' => 5]);
+
+        return $this->paneManager->respawnPane($pane, $command);
     }
 
     /**

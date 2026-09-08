@@ -51,6 +51,13 @@ class TmuxOutput extends Tmux
             $buffer .= $this->_getQueries();
         }
 
+        $recovery = $runVar['recovery'] ?? [];
+        if ($recovery['available'] ?? false) {
+            $buffer .= sprintf("\nRecovery %s | slots %d/%d | opens %.2f/s | observed %.0f B/s | accounted %.0f B/s\n",
+                $recovery['enabled'] ? 'enabled' : 'disabled', $recovery['occupied_slots'], $recovery['worker_limit'],
+                $recovery['opens_per_second'], $recovery['observed_bytes_per_second'], $recovery['accounted_bytes_per_second']);
+        }
+
         // begin update display with screen clear
         passthru('clear');
         echo $buffer;

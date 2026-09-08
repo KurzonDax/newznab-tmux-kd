@@ -7,6 +7,7 @@ namespace App\Services\MetadataProcessing;
 use App\Models\Release;
 use App\Models\Settings;
 use App\Services\NfoService;
+use App\Services\ObfuscationRecovery\RecoveryReleaseGate;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -23,7 +24,7 @@ final class NfoProcessingCandidateQuery
         ?int $lookupMode = null,
     ): Builder {
         $resolvedLookupMode = $lookupMode ?? (int) Settings::settingValue('lookupnfo');
-        $query = Release::query()->from('releases as r');
+        $query = Release::query()->from('releases as r')->tap(static fn ($query) => RecoveryReleaseGate::excludePending($query, 'r'));
 
         if ($resolvedLookupMode !== 1) {
             return $query->whereRaw('0 = 1');

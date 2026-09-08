@@ -44,14 +44,17 @@ use App\Services\MusicIdentity\MusicCandidateGenerator;
 use App\Services\MusicIdentity\MusicIdentityResolver;
 use App\Services\MusicIdentity\Persistence\IdentificationDecisionStore;
 use App\Services\NNTP\NntpProviderPool;
+use App\Services\ObfuscationRecovery\RecoveryCatalog;
 use App\Support\Settings\SettingsRegistry;
 use App\View\Composers\AdminDataComposer;
 use App\View\Composers\GlobalDataComposer;
 use Illuminate\Auth\Events\Login;
+use Illuminate\Cache\Events\CacheHit;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\ServiceProvider;
 use PragmaRX\Google2FALaravel\Listeners\LoginViaRemember;
 
@@ -85,6 +88,8 @@ class AppServiceProvider extends ServiceProvider
         });
         Event::listen(Login::class, LoginViaRemember::class);
         Event::listen(ReleaseNameFixed::class, RecategorizeReleaseAfterNameFix::class);
+        Http::globalMiddleware(RecoveryCatalog::middleware());
+        Event::listen(CacheHit::class, [RecoveryCatalog::class, 'cacheHit']);
 
         // Register observers
         RolePromotion::observe(RolePromotionObserver::class);

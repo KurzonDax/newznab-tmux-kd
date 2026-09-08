@@ -15,6 +15,11 @@ use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbContentsService;
 use App\Services\Nzb\NzbParserService;
 use App\Services\Nzb\NzbService;
+use App\Services\ObfuscationRecovery\RecoveryEvidencePending;
+use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
+use App\Services\ObfuscationRecovery\RecoveryInspection;
+use App\Services\ObfuscationRecovery\RecoveryNfo;
+use App\Services\ObfuscationRecovery\RecoveryReleaseGate;
 use dariusiii\rarinfo\Par2Info;
 use dariusiii\rarinfo\SfvInfo;
 use Illuminate\Support\Facades\Cache;
@@ -493,6 +498,11 @@ class NfoService
      */
     public function addAlternateNfo(bool|string &$nfo, mixed $release, NNTPService $nntp): bool
     {
+        $policy = new RecoveryIdentityPolicy;
+        if ($release->id > 0 && $policy->publication((int) $release->id) !== null) {
+            return $policy->allowsParent((int) $release->id) && is_string($nfo) && $this->isNFO($nfo, $release->guid)
+                && $this->storeNfoContent((int) $release->id, $nfo);
+        }
         if ($release->id > 0 && $this->isNFO($nfo, $release->guid)) {
             $check = ReleaseNfo::whereReleasesId($release->id)->first(['releases_id']);
 
@@ -532,8 +542,13 @@ class NfoService
      *
      * @return string|false The NFO content, or false on failure
      */
-    public function attemptNfoFromArchive(string $guid, int $releaseId, NNTPService $nntp): string|false
+    public function attemptNfoFromArchive(string $guid, int $releaseId, NNTPService $nntp): string|false|RecoveryEvidencePending
     {
+        $recovery = (new RecoveryIdentityPolicy)->publication($releaseId);
+        if ($recovery !== null) {
+            return app(RecoveryNfo::class)->read($recovery, $this);
+        }
+
         if ($this->unrarPath === false) {
             return false;
         }
@@ -666,9 +681,15 @@ class NfoService
         return false;
     }
 
-    /**
-     * Build the kill/timeout string for wrapping CLI commands.
-     */
+    private function processRecoveredNfo(object $publication): int
+    {
+        try {
+            return is_string(app(RecoveryNfo::class)->process($publication, $this)) ? 1 : 0;
+        } catch (Throwable) {
+            return 0;
+        }
+    }
+
     private function getKillString(): string
     {
         if ($this->timeoutPath && $this->timeoutSeconds > 0) {
@@ -727,6 +748,12 @@ class NfoService
             $nzbContentsService->setNfo($this);
 
             foreach ($releases as $release) {
+                $recovery = (new RecoveryIdentityPolicy)->publication((int) $release['id']);
+                if ($recovery !== null) {
+                    $processedCount += $this->processRecoveredNfo($recovery);
+
+                    continue;
+                }
                 try {
                     $groupName = UsenetGroup::getNameByID($release['groups_id']);
                     $fetchedBinary = $nzbContentsService->getNfoFromNzb($release['guid'], $release['id'], $release['groups_id'], $groupName);
@@ -740,6 +767,9 @@ class NfoService
                         return $processedCount;
                     }
 
+                    if ($fetchedBinary instanceof RecoveryEvidencePending) {
+                        continue;
+                    }
                     if ($fetchedBinary instanceof NzbParseFailure) {
                         Release::whereId($release['id'])->decrement('nfostatus');
 
@@ -749,6 +779,9 @@ class NfoService
                     // Fallback: try extracting NFO from a RAR/ZIP in the NZB
                     if ($fetchedBinary === false) {
                         $fetchedBinary = $this->attemptNfoFromArchive($release['guid'], $release['id'], $nntp);
+                        if ($fetchedBinary instanceof RecoveryEvidencePending) {
+                            continue;
+                        }
                         if ($fetchedBinary !== false && $this->echo) {
                             echo 'A';
                         }
@@ -857,7 +890,7 @@ class NfoService
      */
     private function processFailedReleasesViaArchive(NNTPService $nntp, string $groupID, string $guidChar): int
     {
-        $query = Release::query()
+        $query = Release::query()->whereRaw(RecoveryReleaseGate::availableSql('releases.id'))
             ->where('nzbstatus', 1)
             ->whereBetween('nfostatus', [self::NFO_FAILED_ARCHIVE + 1, self::retryFloor() - 1])
             ->whereExists(function ($sub) {
@@ -896,8 +929,17 @@ class NfoService
         $processed = 0;
 
         foreach ($releases as $release) {
+            $recovery = (new RecoveryIdentityPolicy)->publication((int) $release['id']);
+            if ($recovery !== null) {
+                $processed += $this->processRecoveredNfo($recovery);
+
+                continue;
+            }
             try {
                 $fetchedBinary = $this->attemptNfoFromArchive($release['guid'], $release['id'], $nntp);
+                if ($fetchedBinary instanceof RecoveryEvidencePending) {
+                    continue;
+                }
 
                 if ($fetchedBinary !== false) {
                     DB::beginTransaction();
@@ -956,7 +998,7 @@ class NfoService
         $minSize = (int) Settings::settingValue('minsizetoprocessnfo');
 
         return sprintf(
-            'AND r.nzbstatus = 1 AND r.nfostatus BETWEEN %d AND %d %s %s',
+            'AND '.RecoveryReleaseGate::availableSql().' AND r.nzbstatus = 1 AND r.nfostatus BETWEEN %d AND %d %s %s',
             self::retryFloor(),
             self::NFO_UNPROC,
             ($maxSize > 0 ? ('AND r.size < '.$maxSize) : ''),
@@ -1683,21 +1725,37 @@ class NfoService
      */
     public function storeNfoContent(int $releaseId, string $nfoContent, bool $compress = true): bool
     {
+        $inspection = null;
         try {
+            $policy = new RecoveryIdentityPolicy;
+            $publication = $policy->publication($releaseId);
+            if ($publication !== null) {
+                if (! $policy->allowsParent($releaseId)) {
+                    return false;
+                }
+                $inspection = RecoveryInspection::acquire($publication);
+                if ($inspection === null) {
+                    return false;
+                }
+            }
             $data = $compress ? "\x1f\x8b\x08\x00".gzcompress($nfoContent) : $nfoContent;
-
-            ReleaseNfo::updateOrCreate(
-                ['releases_id' => $releaseId],
-                ['nfo' => $data]
-            );
-
-            Release::whereId($releaseId)->update(['nfostatus' => self::NFO_FOUND]);
+            $store = static function () use ($releaseId, $data): void {
+                ReleaseNfo::updateOrCreate(['releases_id' => $releaseId], ['nfo' => $data]);
+                Release::whereId($releaseId)->update(['nfostatus' => self::NFO_FOUND]);
+            };
+            if ($inspection === null) {
+                $store();
+            } else {
+                $inspection->mutate($store);
+            }
 
             return true;
         } catch (Throwable $e) {
             Log::error("Failed to store NFO for release {$releaseId}: ".$e->getMessage());
 
             return false;
+        } finally {
+            $inspection?->release();
         }
     }
 

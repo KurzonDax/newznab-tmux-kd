@@ -7,11 +7,14 @@ namespace App\Services\Releases;
 use App\Enums\DuplicateAbsorbOutcome;
 use App\Models\Collection;
 use App\Models\Release;
+use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\Nzb\NzbParserService;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseRepair\EvidenceChangedTransition;
 use App\Services\ReleaseRepair\NzbRepairDocument;
+use App\Services\ReleaseRepair\RecoveryLease;
 use App\Support\Data\DuplicateAbsorbResult;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -133,6 +136,11 @@ class ReleaseDuplicateAbsorber
             $locked = Release::query()->lockForUpdate()->find($anchor->id);
             if ($locked === null) {
                 return DuplicateAbsorbResult::failed('The duplicate anchor disappeared before absorption.');
+            }
+            $additionalClaim = $locked->{ReleaseClaimant::CLAIMED_AT_COLUMN};
+            if (! RecoveryLease::applyAvailable(Release::query()->whereKey($locked->id))->exists()
+                || ($additionalClaim !== null && Carbon::parse($additionalClaim)->greaterThanOrEqualTo(ReleaseClaimant::claimStaleBefore()))) {
+                return DuplicateAbsorbResult::deferred();
             }
 
             if ($incomingCompletion <= (float) $locked->completion) {

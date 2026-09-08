@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
+use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\Releases\ForcedRootPolicy;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -111,6 +112,7 @@ final class AudioRouting
      */
     private static function routedToAudio(Builder $query): void
     {
+        $query->whereRaw(RecoveryIdentityPolicy::ordinarySql());
         $query->where(function (Builder $routingQuery): void {
             $routingQuery
                 ->where(function (Builder $categoryRoute): void {

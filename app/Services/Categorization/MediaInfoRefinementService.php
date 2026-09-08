@@ -9,6 +9,7 @@ use App\Models\Category;
 use App\Models\Release;
 use App\Models\VideoData;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
+use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\Releases\ForcedRootPolicy;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Support\ReleaseSearchIndexSync;
@@ -59,6 +60,9 @@ final class MediaInfoRefinementService
 
     public function refine(int $releaseId, bool $dryRun = false): ?MediaInfoRefinementDecision
     {
+        if (! (new RecoveryIdentityPolicy)->allowsSingleItemMetadata($releaseId)) {
+            return null;
+        }
         $release = Release::query()->find($releaseId, ['id', 'categories_id', 'groups_id']);
         if ($release === null || ! in_array((int) $release->categories_id, self::eligibleCategoryIds(), true)) {
             return null;

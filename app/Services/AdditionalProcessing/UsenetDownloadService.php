@@ -8,6 +8,8 @@ use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\DTO\DownloadMetrics;
 use App\Services\AdditionalProcessing\Enums\DownloadKind;
 use App\Services\NNTP\NNTPService;
+use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
+use App\Services\ObfuscationRecovery\RecoveryLegacyDownload;
 use Exception;
 use Illuminate\Support\Facades\Log;
 
@@ -90,6 +92,10 @@ class UsenetDownloadService
         string $groupName = '',
         ?int $releaseId = null
     ): array {
+        $recovery = $releaseId === null ? null : (new RecoveryIdentityPolicy)->publication($releaseId);
+        if ($recovery !== null) {
+            return app(RecoveryLegacyDownload::class)->read($recovery, $messageIDs);
+        }
         $result = [
             'success' => false,
             'data' => null,

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\TvProcessing\Providers;
 
 use App\Enums\ImageAssetProfile;
+use App\Services\ObfuscationRecovery\RecoveryCatalog;
 use App\Services\ReleaseImageService;
 use App\Services\TmdbClient;
 use App\Services\TraktService;
@@ -270,7 +271,7 @@ class TvMazeProvider extends AbstractTvProvider
         $return = $response = false;
 
         // Try for the best match with AKAs embedded
-        $response = $this->client->getShowBySiteID($site, $siteId);
+        $response = RecoveryCatalog::legacy('api.tvmaze.com', fn () => $this->client->getShowBySiteID($site, $siteId));
 
         sleep(1);
 
@@ -297,7 +298,7 @@ class TvMazeProvider extends AbstractTvProvider
         $name = $this->stripReleaseYear($name);
 
         // Try for the best match with AKAs embedded
-        $response = $this->client->singleSearchAkas($name);
+        $response = RecoveryCatalog::legacy('api.tvmaze.com', fn () => $this->client->singleSearchAkas($name));
 
         sleep(1);
 
@@ -306,14 +307,14 @@ class TvMazeProvider extends AbstractTvProvider
         }
         if ($return === false) {
             // Try for the best match via full search (no AKAs can be returned but the search is better)
-            $response = $this->client->search($name);
+            $response = RecoveryCatalog::legacy('api.tvmaze.com', fn () => $this->client->search($name));
             if (\is_array($response)) {
                 $return = $this->matchShowInfo($response, $name, $releaseYear);
             }
         }
         // If we didn't get any aliases do a direct alias lookup
         if (\is_array($return) && empty($return['aliases']) && is_numeric($return['tvmaze'])) {
-            $return['aliases'] = $this->client->getShowAKAs($return['tvmaze']);
+            $return['aliases'] = RecoveryCatalog::legacy('api.tvmaze.com', fn () => $this->client->getShowAKAs($return['tvmaze']));
         }
 
         return $return;
@@ -420,11 +421,11 @@ class TvMazeProvider extends AbstractTvProvider
         $return = $response = false;
 
         if ($airDate !== '') {
-            $response = $this->client->getEpisodesByAirdate($siteId, $airDate);
+            $response = RecoveryCatalog::legacy('api.tvmaze.com', fn () => $this->client->getEpisodesByAirdate($siteId, $airDate));
         } elseif ($videoId > 0) {
-            $response = $this->client->getEpisodesByShowID($siteId);
+            $response = RecoveryCatalog::legacy('api.tvmaze.com', fn () => $this->client->getEpisodesByShowID($siteId));
         } else {
-            $response = $this->client->getEpisodeByNumber($siteId, $series, $episode);
+            $response = RecoveryCatalog::legacy('api.tvmaze.com', fn () => $this->client->getEpisodeByNumber($siteId, $series, $episode));
         }
 
         sleep(1);

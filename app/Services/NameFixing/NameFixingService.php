@@ -13,6 +13,8 @@ use App\Services\NameFixing\Srrdb\SrrdbLookupResult;
 use App\Services\NameFixing\Srrdb\SrrdbLookupService;
 use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbContentsService;
+use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
+use App\Services\ObfuscationRecovery\RecoveryNameEvidence;
 use RuntimeException;
 
 /**
@@ -1582,17 +1584,20 @@ class NameFixingService
      *
      * @throws \Exception
      */
-    public function checkName(object $release, bool $echo, string $type, bool $nameStatus, bool $show, bool $preId = false): bool
+    public function checkName(object $release, bool $echo, string $type, bool $nameStatus, bool $show, bool $preId = false, ?RecoveryNameEvidence $recoveryEvidence = null): bool
     {
+        if ($echo && ! (new RecoveryIdentityPolicy)->allowsParent((int) ($release->releases_id ?? $release->id), $recoveryEvidence)) {
+            return false;
+        }
         // Check PreDB first
         $preDbMatch = $this->updateService->checkPreDbMatch($release, $release->textstring);
         if ($preDbMatch !== null) {
             if (strcasecmp((string) $preDbMatch['title'], (string) $release->searchname) === 0) {
                 if ($echo) {
-                    $this->updateService->attachPredbId((int) $release->releases_id, (int) $preDbMatch['id']);
+                    $this->updateService->attachPredbId((int) $release->releases_id, (int) $preDbMatch['id'], $recoveryEvidence);
                 }
             } else {
-                $this->updateService->updateRelease($release, $preDbMatch['title'], 'preDB: Match', $echo, $type, $nameStatus, $show, $preDbMatch['id']);
+                $this->updateService->updateRelease($release, $preDbMatch['title'], 'preDB: Match', $echo, $type, $nameStatus, $show, $preDbMatch['id'], recoveryEvidence: $recoveryEvidence);
             }
 
             return $this->updateService->matched;
@@ -1607,14 +1612,14 @@ class NameFixingService
             case 'PAR2, ':
                 $result = $this->fileExtractor->extractFromFile($release->textstring);
                 if ($result !== null) {
-                    $this->updateService->updateRelease($release, $result->newName, 'fileCheck: '.$result->method, $echo, $type, $nameStatus, $show);
+                    $this->updateService->updateRelease($release, $result->newName, 'fileCheck: '.$result->method, $echo, $type, $nameStatus, $show, recoveryEvidence: $recoveryEvidence);
                 }
                 break;
 
             case 'NFO, ':
                 $result = $this->nfoExtractor->extractFromNfo($release->textstring);
                 if ($result !== null) {
-                    $this->updateService->updateRelease($release, $result->newName, 'nfoCheck: '.$result->method, $echo, $type, $nameStatus, $show);
+                    $this->updateService->updateRelease($release, $result->newName, 'nfoCheck: '.$result->method, $echo, $type, $nameStatus, $show, recoveryEvidence: $recoveryEvidence);
                 }
                 break;
 
@@ -1627,7 +1632,7 @@ class NameFixingService
                 if (! $this->updateService->matched) {
                     $result = $this->fileExtractor->extractFromFile($release->textstring);
                     if ($result !== null) {
-                        $this->updateService->updateRelease($release, $result->newName, 'fileCheck: '.$result->method, $echo, $type, $nameStatus, $show);
+                        $this->updateService->updateRelease($release, $result->newName, 'fileCheck: '.$result->method, $echo, $type, $nameStatus, $show, recoveryEvidence: $recoveryEvidence);
                     }
                 }
                 break;
@@ -1636,7 +1641,7 @@ class NameFixingService
                 // Use pattern checker service
                 $result = $this->checkerService->check($release, $release->textstring);
                 if ($result !== null) {
-                    $this->updateService->updateRelease($release, $result->newName, $result->getFormattedMethod(), $echo, $type, $nameStatus, $show);
+                    $this->updateService->updateRelease($release, $result->newName, $result->getFormattedMethod(), $echo, $type, $nameStatus, $show, recoveryEvidence: $recoveryEvidence);
                 }
         }
 

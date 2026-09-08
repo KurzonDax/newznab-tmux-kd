@@ -636,6 +636,22 @@ final class CollectionHandler
         return (int) (Collection::whereCollectionhash($collectionHash)->value('id') ?? 0);
     }
 
+    public function getOrCreateRecoveredCollection(
+        string $projection, string $placeholder, string $poster, int $postTimestamp, int $groupId, int $plannedFiles, string $noise,
+    ): int {
+        if (strlen($projection) !== 20 || $plannedFiles < 2 || $plannedFiles > 33) {
+            throw new \InvalidArgumentException('invalid_recovery_collection_identity');
+        }
+        $id = $this->insertOrGetCollection(DB::getDriverName(), $placeholder, $poster, $postTimestamp, [],
+            $groupId, $plannedFiles, $projection, 0, $noise);
+        if ($id < 1) {
+            throw new \RuntimeException('recovery_collection_insert_failed');
+        }
+        DB::table('collections')->where('id', $id)->update(['declaredfiles' => 0]);
+
+        return $id;
+    }
+
     /**
      * Refresh size and readiness for only the collections touched by a header
      * chunk. Binary and part aggregates have already been refreshed, so this

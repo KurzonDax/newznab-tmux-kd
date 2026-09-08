@@ -37,6 +37,14 @@ return [
             'throw' => false,
         ],
 
+        'recovery' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/recovery'),
+            'serve' => false,
+            'visibility' => 'private',
+            'throw' => true,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),

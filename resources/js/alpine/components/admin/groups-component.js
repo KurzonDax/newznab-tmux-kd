@@ -31,6 +31,8 @@ export function adminGroups() {
         editRouteObfuscatedNames: '',
         editObfuscatedDefaultRootCategoryId: '',
         editForcedRootCategoryId: '',
+        editRecoveryProfile: '',
+        editRecoveryProfileError: '',
         editSelectedHasMissingObfuscatedRoot: false,
         editBackfillTargetError: '',
         editMinFilesError: '',
@@ -270,6 +272,7 @@ export function adminGroups() {
             this.editObfuscatedDefaultRootCategoryId = this._uniformValue(selectedRows, 'obfuscatedDefaultRootCategoryId');
             this.editForcedRootCategoryId = this._uniformValue(selectedRows, 'forcedRootCategoryId');
             this.editSelectedHasMissingObfuscatedRoot = selectedRows.some(row => ! row.obfuscatedDefaultRootCategoryId);
+            this.editRecoveryProfile = '';
             this._editSelectedOriginal = this._editSelectedValues();
             this._editSelectedOriginalNormalized = this._normalizedEditSelectedValues(this._editSelectedOriginal);
             this.editSelectedEditing = true;
@@ -288,6 +291,7 @@ export function adminGroups() {
         },
 
         validateEditSelected() {
+            this.editRecoveryProfileError = ['', 'disabled', 'media', 'rar', 'both'].includes(this.editRecoveryProfile) ? '' : 'Choose a valid recovery profile.';
             this.editBackfillTargetError = this._integerError(this.editBackfillTarget, 1, 7300, 'Backfill Days must be a whole number between 1 and 7300.');
             this.editMinFilesError = this._integerError(this.editMinFiles, 0, 2147483647, 'Minimum Files must be a whole number between 0 and 2,147,483,647.');
 
@@ -315,6 +319,7 @@ export function adminGroups() {
                 && ! this.editMinFilesError
                 && ! this.editMinSizeError
                 && ! this.editObfuscatedRoutingError
+                && ! this.editRecoveryProfileError
                 && Object.keys(this.editSelectedChanges()).length > 0;
         },
 
@@ -354,6 +359,10 @@ export function adminGroups() {
                     : Number(current.forcedRootCategoryId);
             }
 
+            if (current.recoveryProfile !== '') {
+                changes.obfuscation_recovery_profile = current.recoveryProfile;
+            }
+
             return changes;
         },
 
@@ -368,6 +377,7 @@ export function adminGroups() {
                 minsizetoformrelease: 'Minimum File Size',
                 active: 'Active',
                 backfill: 'Backfill',
+                obfuscation_recovery_profile: 'Obfuscated recovery',
                 route_obfuscated_names: 'Route Obfuscated Names',
                 obfuscated_default_root_categories_id: 'Default Root Category',
                 forced_root_categories_id: 'Forced Root Category',
@@ -376,6 +386,7 @@ export function adminGroups() {
             this.editConfirmationChanges = Object.entries(changes).map(([key, value]) => {
                 let display = value;
                 if (key === 'active' || key === 'backfill') { display = value === 1 ? 'Enabled' : 'Disabled'; }
+                if (key === 'obfuscation_recovery_profile') { display = { disabled: 'Disabled', media: 'Media files', rar: 'Multi-volume RAR', both: 'Both' }[value]; }
                 if (key === 'route_obfuscated_names') { display = value === 1 ? 'Enabled' : 'Disabled'; }
                 if (key === 'obfuscated_default_root_categories_id') { display = value === null ? 'Cleared' : this._rootCategoryLabel('edit-selected-obfuscated-root', value); }
                 if (key === 'forced_root_categories_id') { display = value === null ? 'Cleared' : this._rootCategoryLabel('edit-selected-forced-root', value); }
@@ -427,6 +438,7 @@ export function adminGroups() {
                 routeObfuscatedNames: String(this.editRouteObfuscatedNames),
                 obfuscatedDefaultRootCategoryId: String(this.editObfuscatedDefaultRootCategoryId),
                 forcedRootCategoryId: String(this.editForcedRootCategoryId),
+                recoveryProfile: String(this.editRecoveryProfile),
             };
         },
 
@@ -442,6 +454,7 @@ export function adminGroups() {
                 routeObfuscatedNames: values.routeObfuscatedNames,
                 obfuscatedDefaultRootCategoryId: values.obfuscatedDefaultRootCategoryId,
                 forcedRootCategoryId: values.forcedRootCategoryId,
+                recoveryProfile: values.recoveryProfile,
             };
         },
 

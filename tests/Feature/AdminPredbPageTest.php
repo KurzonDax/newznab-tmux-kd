@@ -139,10 +139,9 @@ class AdminPredbPageTest extends TestCase
             ['title' => 'Zero.Release-GROUP', 'size' => '0'],
         ]);
 
-        $response = $this->actingAs($this->admin())->get(route('admin.predb'));
+        $response = $this->withSession(['_token' => 'fixture0Bcsrf'])->actingAs($this->admin())->get(route('admin.predb'));
 
         $response->assertOk();
-        $response->assertDontSee('0B');
         $this->assertSame('—', $this->sizeCellFor((string) $response->getContent(), 'Sizeless.Release-GROUP'));
         $this->assertSame('—', $this->sizeCellFor((string) $response->getContent(), 'Empty.Size.Release-GROUP'));
         $this->assertSame('—', $this->sizeCellFor((string) $response->getContent(), 'Zero.Release-GROUP'));

@@ -209,6 +209,18 @@
 
             <div x-show="editSelectedEditing" class="space-y-4">
                 <div>
+                    <x-label for="edit-selected-recovery-profile">Obfuscated recovery</x-label>
+                    <x-select id="edit-selected-recovery-profile" x-model="editRecoveryProfile" @change="validateEditSelected()">
+                        <option value="">No change</option>
+                        @foreach(\App\Enums\ObfuscationRecoveryProfile::cases() as $profile)
+                            <option value="{{ $profile->value }}">{{ $profile->label() }}</option>
+                        @endforeach
+                    </x-select>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Media covers one or multiple standalone videos. RAR covers supported sequential RAR4 sets. Requires global recovery enablement; does not activate group scanning.</p>
+                    <p x-show="editRecoveryProfileError" x-text="editRecoveryProfileError" class="mt-1 text-sm text-red-600 dark:text-red-400"></p>
+                </div>
+
+                <div>
                     <x-label for="edit-selected-backfill-target">Backfill Days</x-label>
                     <x-input id="edit-selected-backfill-target"
                              type="text"

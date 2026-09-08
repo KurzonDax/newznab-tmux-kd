@@ -260,6 +260,7 @@ class AdminGroupControllerTest extends TestCase
             $table->unsignedBigInteger('minsizetoformrelease')->nullable();
             $table->unsignedBigInteger('minfilestoformrelease')->nullable();
             $table->integer('backfill_target')->default(1);
+            $table->string('obfuscation_recovery_profile')->default('disabled');
             $table->boolean('route_obfuscated_names')->default(false);
             $table->unsignedInteger('obfuscated_default_root_categories_id')->nullable();
             $table->unsignedInteger('forced_root_categories_id')->nullable();

@@ -154,7 +154,7 @@ class ReleaseRepairGateTest extends TestCase
     {
         // `repaired` is an ending too, but a happy one -- the release lives.
         $this->assertSame(
-            ['failed', 'skipped-floor', 'skipped-budget'],
+            ['failed', 'skipped-floor', 'skipped-budget', 'unsupported_recovery_profile'],
             ReleaseRepairOutcome::deletableValues()
         );
         $this->assertFalse(ReleaseRepairOutcome::Repaired->isFinal());

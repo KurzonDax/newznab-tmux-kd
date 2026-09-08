@@ -66,6 +66,44 @@ final class ReleaseFormationSection implements SettingsSectionProvider
                     ],
                 ),
                 new SettingCard(
+                    id: 'obfuscated-recovery',
+                    title: 'Obfuscated recovery',
+                    description: 'Independent background release formation for selected groups. Starts disabled. Group Edit and Edit Selected choose the supported posting layouts.',
+                    icon: 'fas fa-puzzle-piece',
+                    settings: [
+                        SettingDefinition::bool(
+                            'obfuscation_recovery_enabled',
+                            'Enable recovery',
+                            'Allow new capture and recovery work. Disabling preserves existing releases and retained evidence.',
+                            'fas fa-power-off',
+                        ),
+                        new SettingDefinition(
+                            key: 'obfuscation_recovery_threads',
+                            label: 'Recovery download threads',
+                            help: 'Shared by all selected groups and optional inspection. Each thread owns at most one provider connection. Leave capacity for ordinary processing. Default 2.',
+                            type: SettingType::Int,
+                            unit: 'threads',
+                            rules: ['required', 'integer', 'min:1', 'max:60'],
+                        ),
+                        new SettingDefinition(
+                            key: 'obfuscation_recovery_media_candidate_mib',
+                            label: 'Media candidate download limit',
+                            help: 'Lifetime accounted download ceiling for one candidate, including failed attempts. Structural limits still apply. Default 20 MiB.',
+                            type: SettingType::Int,
+                            unit: 'MiB',
+                            rules: ['required', 'integer', 'min:1', 'max:1048576'],
+                        ),
+                        new SettingDefinition(
+                            key: 'obfuscation_recovery_rar_candidate_mib',
+                            label: 'RAR candidate download limit',
+                            help: 'Lifetime accounted download ceiling for one candidate, including failed attempts. Structural limits still apply. Default 40 MiB.',
+                            type: SettingType::Int,
+                            unit: 'MiB',
+                            rules: ['required', 'integer', 'min:1', 'max:1048576'],
+                        ),
+                    ],
+                ),
+                new SettingCard(
                     id: 'gates',
                     title: 'Formation gates',
                     description: 'What a collection must look like to become a release. <strong>Everything in this card deletes.</strong> A collection or release that fails one of these is removed together with its parts; it is not set aside. Groups and categories carry their own minimums, and the stricter of site and group wins, so raising a value here can delete more than the number alone suggests.',
@@ -164,6 +202,14 @@ final class ReleaseFormationSection implements SettingsSectionProvider
                     description: 'How long unfinished work and finished releases are kept. Every value here is a delete, and <strong>0 never means "delete at once"</strong> &mdash; but it does not mean one thing either: on the three release-retention windows it means keep indefinitely, while the incomplete-parts window falls back to its seeded 72 hours. Each field says which.',
                     icon: 'fas fa-broom',
                     settings: [
+                        new SettingDefinition(
+                            key: 'obfuscation_recovery_retention_hours',
+                            label: 'Recovery header retention',
+                            help: 'Keep captured recovery headers this long from their first capture, even if work is waiting. Independent of incomplete-parts retention. Default 144 hours.',
+                            type: SettingType::Int,
+                            unit: 'hours',
+                            rules: ['required', 'integer', 'min:1', 'max:87600'],
+                        ),
                         new SettingDefinition(
                             key: 'partretentionhours',
                             label: 'Incomplete parts retention',

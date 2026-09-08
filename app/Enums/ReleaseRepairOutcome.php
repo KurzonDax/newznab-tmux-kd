@@ -47,6 +47,8 @@ enum ReleaseRepairOutcome: string
      */
     case SkippedBudget = 'skipped-budget';
 
+    case UnsupportedRecoveryProfile = 'unsupported_recovery_profile';
+
     /**
      * Is this the end of the road for the release?
      *
@@ -56,7 +58,7 @@ enum ReleaseRepairOutcome: string
     public function isFinal(): bool
     {
         return match ($this) {
-            self::Failed, self::SkippedFloor, self::SkippedBudget => true,
+            self::Failed, self::SkippedFloor, self::SkippedBudget, self::UnsupportedRecoveryProfile => true,
             self::RetryPending, self::Repaired => false,
         };
     }
@@ -82,6 +84,7 @@ enum ReleaseRepairOutcome: string
             self::Failed => 'Failed',
             self::SkippedFloor => 'Skipped (nothing to recover)',
             self::SkippedBudget => 'Skipped (window too wide)',
+            self::UnsupportedRecoveryProfile => 'Unsupported recovery profile',
         };
     }
 }

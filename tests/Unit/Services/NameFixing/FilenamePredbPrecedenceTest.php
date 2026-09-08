@@ -7,6 +7,7 @@ namespace Tests\Unit\Services\NameFixing;
 use App\Services\NameFixing\Extractors\FileNameExtractor;
 use App\Services\NameFixing\NameFixingService;
 use App\Services\NameFixing\ReleaseUpdateService;
+use App\Services\ObfuscationRecovery\RecoveryNameEvidence;
 use PHPUnit\Framework\TestCase;
 
 class FilenamePredbPrecedenceTest extends TestCase
@@ -78,6 +79,7 @@ class RecordingFilenamePrecedenceUpdater extends ReleaseUpdateService
         bool $show,
         ?int $preId = 0,
         bool $descriptiveTitleCandidate = false,
+        ?RecoveryNameEvidence $recoveryEvidence = null,
     ): void {
         $this->attempts[] = 'generic';
         $this->matched = true;

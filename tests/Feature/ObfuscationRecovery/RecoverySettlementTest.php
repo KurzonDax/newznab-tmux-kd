@@ -1,0 +1,204 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Feature\ObfuscationRecovery;
+
+use App\Enums\HeaderScanDirection;
+use App\Services\ObfuscationRecovery\RecoveryCapture;
+use App\Services\ObfuscationRecovery\RecoveryCaptureBatch;
+use App\Services\ObfuscationRecovery\RecoveryConfig;
+use App\Services\ObfuscationRecovery\RecoveryFrontiers;
+use App\Services\ObfuscationRecovery\RecoveryPositiveCoverage;
+use App\Services\ObfuscationRecovery\RecoveryScanContext;
+use App\Services\ObfuscationRecovery\RecoverySettlement;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
+use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\NeverBlacklistedService;
+use Tests\TestCase;
+
+final class RecoverySettlementTest extends TestCase
+{
+    use IsolatedSqliteDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->bootIsolatedDatabase();
+        Schema::create('usenet_groups', function (Blueprint $table): void {
+            $table->increments('id');
+        });
+        (require database_path('migrations/2026_09_07_172435_add_obfuscation_recovery_storage.php'))->up();
+        DB::table('usenet_groups')->insert(['id' => 1, 'obfuscation_recovery_profile' => 'both']);
+        $this->travelTo(now()->setDate(2026, 9, 7)->setTime(15, 0));
+    }
+
+    protected function tearDown(): void
+    {
+        $this->travelBack();
+        $this->tearDownIsolatedDatabase();
+        parent::tearDown();
+    }
+
+    public function test_wall_clock_alone_cannot_settle_and_reversed_ranges_cannot_hide_a_gap(): void
+    {
+        $this->captureRange(101, 200, '2026-09-07 12:00:00');
+        $this->assertSame('unknown_left_edge', $this->assess());
+        $this->captureRange(1, 100, '2026-09-07 09:50:00');
+        $this->assertSame('waiting_head_frontier', $this->assess());
+        $this->captureRange(301, 400, '2026-09-07 14:10:00');
+        $this->assertSame('waiting_head_frontier', $this->assess());
+        $this->captureRange(201, 300, '2026-09-07 13:00:00', HeaderScanDirection::Repair);
+        $this->assertSame('ready', $this->assess());
+    }
+
+    public function test_fresh_membership_and_tail_only_frontiers_remain_unsettled(): void
+    {
+        $this->captureRange(1, 100, '2026-09-07 09:50:00');
+        $this->captureRange(101, 200, '2026-09-07 12:00:00');
+        $this->captureRange(201, 300, '2026-09-07 14:10:00', HeaderScanDirection::Tail);
+        $this->assertSame('waiting_head_frontier', $this->assess());
+        $this->captureRange(201, 300, '2026-09-07 14:10:00');
+        $this->assertSame('waiting_quiet_interval', $this->assess('2026-09-07 14:59:00'));
+        $this->assertSame('ready', $this->assess());
+    }
+
+    public function test_a_later_island_can_settle_with_its_own_explicit_context(): void
+    {
+        $this->captureRange(1, 5, '2026-09-06 09:00:00');
+        $this->captureRange(80, 100, '2026-09-07 09:50:00');
+        $this->captureRange(101, 200, '2026-09-07 12:00:00');
+        $this->captureRange(201, 300, '2026-09-07 14:10:00');
+        $this->assertSame('ready', $this->assess());
+        DB::table('obfuscation_recovery_scans')->where('requested_first', 101)->update(['complete' => false]);
+        DB::transaction(fn () => (new RecoveryPositiveCoverage)->expire(DB::connection(), 'epoch', 1, 1, 150));
+        $this->assertSame('unknown_capture_gap', $this->assess());
+    }
+
+    public function test_bad_dates_outside_a_candidates_complete_context_do_not_poison_later_work(): void
+    {
+        $this->captureRange(1, 20, '2026-09-07 07:00:00');
+        $this->recordBadDates(1);
+        $this->captureRange(21, 100, '2026-09-07 09:50:00');
+        $this->captureRange(101, 200, '2026-09-07 12:00:00');
+        $this->captureRange(201, 300, '2026-09-07 14:10:00');
+        $this->captureRange(301, 400, '2026-09-07 16:00:00');
+        $this->recordBadDates(301);
+        $this->assertSame('ready', $this->assess());
+        $this->recordBadDates(101);
+        $this->assertSame('conflicting_posting_frontier', $this->assess());
+    }
+
+    public function test_individually_ordered_chunks_cannot_hide_a_conflicting_cross_chunk_date_mapping(): void
+    {
+        $this->captureRange(1, 100, '2026-09-07 09:50:00');
+        $this->captureRange(101, 150, '2026-09-07 12:00:00');
+        $this->captureRange(151, 200, '2026-09-07 11:30:00');
+        $this->captureRange(201, 300, '2026-09-07 14:10:00');
+        $this->assertSame('conflicting_posting_frontier', $this->assess());
+    }
+
+    public function test_repeated_positive_scans_share_compact_intervals_without_losing_frontier_conflicts(): void
+    {
+        $this->captureRange(1, 100, '2026-09-07 09:50:00');
+        $this->captureRange(101, 200, '2026-09-07 12:00:00');
+        $this->captureRange(201, 300, '2026-09-07 14:10:00');
+        $row = (array) DB::table('obfuscation_recovery_scans')->where('requested_first', 101)->first();
+        unset($row['id']);
+        for ($page = 0; $page < 11; $page++) {
+            $rows = [];
+            for ($i = 0; $i < 1000; $i++) {
+                $rows[] = [...$row, 'scan_id' => (string) Str::uuid()];
+            }
+            DB::table('obfuscation_recovery_scans')->insert($rows);
+        }
+        $this->assertSame(1, DB::table('obfuscation_recovery_coverage')->where('kind', 'captured')->count());
+        $this->assertSame('ready', $this->assess());
+        $this->captureRange(101, 200, '2026-09-07 11:00:00');
+        $this->assertSame('conflicting_posting_frontier', $this->assess());
+        DB::transaction(fn () => (new RecoveryPositiveCoverage)->expire(DB::connection(), 'epoch', 1, 1, 150));
+        $this->assertSame([[1, 149], [151, 300]], DB::table('obfuscation_recovery_coverage')->where('kind', 'captured')
+            ->orderBy('first_article')->get()->map(fn ($row) => [(int) $row->first_article, (int) $row->last_article])->all());
+        $this->assertSame(1, DB::table('obfuscation_recovery_coverage')->where('kind', 'retained')->count());
+    }
+
+    public function test_partial_raw_expiry_preserves_date_conflicts_inside_remaining_coverage(): void
+    {
+        $this->captureRange(1, 100, '2026-09-07 09:50:00');
+        $this->captureRange(101, 150, '2026-09-07 12:00:00');
+        $this->captureRange(151, 200, '2026-09-07 11:30:00');
+        $this->captureRange(201, 300, '2026-09-07 14:10:00');
+        DB::transaction(fn () => (new RecoveryPositiveCoverage)->expire(DB::connection(), 'epoch', 1, 1, 101));
+        DB::table('obfuscation_recovery_scans')->where('requested_first', 101)
+            ->update(['complete' => false, 'capture_outcome' => 'raw_expired']);
+        $this->assertSame('conflicting_posting_frontier', $this->assess());
+    }
+
+    public function test_distinct_adjacent_scans_settle_without_an_audit_row_limit(): void
+    {
+        $this->captureRange(1, 100, '2026-09-07 09:50:00');
+        $this->captureRange(11101, 11200, '2026-09-07 14:10:00');
+        $template = DB::table('obfuscation_recovery_scans')->where('requested_first', 1)->first();
+        DB::transaction(function () use ($template): void {
+            for ($article = 101; $article <= 11100; $article++) {
+                $context = new RecoveryScanContext(1, 'alt.binaries.fixture', 'epoch', 1, $article, $article,
+                    HeaderScanDirection::Head, (string) Str::uuid());
+                (new RecoveryPositiveCoverage)->record(DB::connection(), $context);
+                $scan = clone $template;
+                $scan->earliest_date_article = $scan->latest_date_article = $article;
+                $scan->first_postdate = $scan->last_postdate = '2026-09-07 12:00:00';
+                $scan->date_points = json_encode([[$article, $scan->first_postdate]], JSON_THROW_ON_ERROR);
+                (new RecoveryFrontiers)->record(DB::connection(), $scan);
+            }
+        });
+        $this->assertSame(11004, DB::table('obfuscation_recovery_frontiers')->count());
+        $this->assertSame(1, DB::table('obfuscation_recovery_coverage')->where('kind', 'captured')->count());
+        $this->assertSame('ready', (new RecoverySettlement)->assess('epoch', 1, 1, 110, 11090,
+            '2026-09-07 12:00:00', '2026-09-07 12:00:00', '2026-09-07 12:00:00'));
+    }
+
+    public function test_overlapping_scans_cannot_hide_a_contradictory_interior_date(): void
+    {
+        $context = new RecoveryScanContext(1, 'alt.binaries.fixture', 'epoch', 1, 1, 300, HeaderScanDirection::Head, (string) Str::uuid());
+        $batch = new RecoveryCaptureBatch([
+            ['Number' => 1, 'Subject' => 'ordinary marker', 'Date' => '2026-09-07 09:00:00 +0000'],
+            ['Number' => 100, 'Subject' => 'ordinary marker', 'Date' => '2026-09-07 12:00:00 +0000'],
+            ['Number' => 300, 'Subject' => 'ordinary marker', 'Date' => '2026-09-07 15:00:00 +0000'],
+        ], []);
+        $capture = new RecoveryCapture(RecoveryConfig::fromValues(['obfuscation_recovery_enabled' => 1]), new NeverBlacklistedService);
+        $this->assertTrue($capture->capture($batch, $context)->coverageComplete);
+        $context = new RecoveryScanContext(1, 'alt.binaries.fixture', 'epoch', 1, 150, 200, HeaderScanDirection::Head, (string) Str::uuid());
+        $batch = new RecoveryCaptureBatch([
+            ['Number' => 150, 'Subject' => 'ordinary marker', 'Date' => '2026-09-07 11:00:00 +0000'],
+            ['Number' => 200, 'Subject' => 'ordinary marker', 'Date' => '2026-09-07 14:00:00 +0000'],
+        ], []);
+        $this->assertTrue($capture->capture($batch, $context)->coverageComplete);
+        $this->assertSame('conflicting_posting_frontier', (new RecoverySettlement)->assess('epoch', 1, 1, 100, 100,
+            '2026-09-07 12:00:00', '2026-09-07 12:00:00', '2026-09-07 12:00:00'));
+    }
+
+    private function recordBadDates(int $first): void
+    {
+        $scan = DB::table('obfuscation_recovery_scans')->where('requested_first', $first)->first();
+        $scan->date_order_consistent = false;
+        DB::transaction(fn () => (new RecoveryFrontiers)->record(DB::connection(), $scan));
+    }
+
+    private function assess(string $changed = '2026-09-07 12:00:00'): string
+    {
+        return (new RecoverySettlement)->assess('epoch', 1, 1, 110, 190,
+            '2026-09-07 12:00:00', '2026-09-07 12:00:00', $changed);
+    }
+
+    private function captureRange(int $first, int $last, string $date, HeaderScanDirection $direction = HeaderScanDirection::Head): void
+    {
+        $context = new RecoveryScanContext(1, 'alt.binaries.fixture', 'epoch', 1, $first, $last, $direction, (string) Str::uuid());
+        $batch = new RecoveryCaptureBatch([['Number' => $first, 'Subject' => 'ordinary marker', 'Date' => $date.' +0000'],
+            ['Number' => $last, 'Subject' => 'ordinary marker', 'Date' => $date.' +0000']], []);
+        $report = (new RecoveryCapture(RecoveryConfig::fromValues(['obfuscation_recovery_enabled' => 1]), new NeverBlacklistedService))->capture($batch, $context);
+        $this->assertTrue($report->coverageComplete);
+    }
+}

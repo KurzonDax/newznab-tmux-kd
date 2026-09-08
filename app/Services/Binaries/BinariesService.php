@@ -7,7 +7,13 @@ namespace App\Services\Binaries;
 use App\Enums\HeaderScanDirection;
 use App\Models\Settings;
 use App\Models\UsenetGroup;
+use App\Services\BlacklistService;
 use App\Services\NNTP\NNTPService;
+use App\Services\ObfuscationRecovery\RecoveryCapture;
+use App\Services\ObfuscationRecovery\RecoveryCaptureBatch;
+use App\Services\ObfuscationRecovery\RecoveryConfig;
+use App\Services\ObfuscationRecovery\RecoveryControl;
+use App\Services\ObfuscationRecovery\RecoveryScanContext;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -73,6 +79,8 @@ class BinariesService
      * article number, meaning the whole batch has to be thrown away.
      */
     private bool $lastScanRejected = false;
+
+    private ?RecoveryCapture $recoveryCapture = null;
 
     public function __construct(
         ?BinariesConfig $config = null,
@@ -305,7 +313,11 @@ class BinariesService
         $this->timeHeaders = $this->startCleaning->diffInSeconds($this->startLoop, true);
 
         $msgCount = \count($headers);
+        $recoveryContext = $this->beginRecoveryScan($direction, max(1, (int) ceil($msgCount / $this->config->headerChunkSize)));
         if ($msgCount < 1) {
+            $this->captureRecoveryChunk([], [], $recoveryContext);
+            $this->recoveryCapture?->recordOrdinary($recoveryContext, HeaderStorageReport::empty(), 0);
+
             return $returnArray;
         }
 
@@ -354,6 +366,8 @@ class BinariesService
             $rawChunk = array_slice($headers, $offset, $this->config->headerChunkSize);
             $this->headerParser->reset();
             $parseResult = $this->headerParser->parse($rawChunk, $groupMySQL['name'], $partRepair, $missingPartSet);
+            $this->captureRecoveryChunk($rawChunk, $parseResult['headers'],
+                $recoveryContext?->chunk(intdiv($offset, $this->config->headerChunkSize)));
 
             foreach ($parseResult['received'] ?? [] as $number) {
                 $this->headersReceived[(int) $number] = true;
@@ -366,11 +380,10 @@ class BinariesService
             $this->headersRejected += (int) ($parseResult['rejected'] ?? 0);
             $this->headerParser->flushBlacklistUpdates();
 
+            $chunkReport = HeaderStorageReport::empty();
             if ($parseResult['headers'] !== []) {
                 try {
-                    $storageReport = $storageReport->merge(
-                        $this->headerStorage->store($parseResult['headers'], $groupMySQL, $addToPartRepair, $direction)
-                    );
+                    $chunkReport = $this->headerStorage->store($parseResult['headers'], $groupMySQL, $addToPartRepair, $direction);
                 } catch (\Throwable $e) {
                     $this->logError('storeHeaders failed: '.$e->getMessage());
                     $thrownNumbers = [];
@@ -379,13 +392,15 @@ class BinariesService
                             $thrownNumbers[] = $failedHeader['Number'];
                         }
                     }
-                    $storageReport = $storageReport->withRolledBackChunk(
+                    $chunkReport = $chunkReport->withRolledBackChunk(
                         $thrownNumbers,
                         unresolvedHeaders: 0,
                         rejectedHeaders: \count($thrownNumbers),
                     );
                 }
             }
+            $storageReport = $storageReport->merge($chunkReport);
+            $this->recoveryCapture?->recordOrdinary($recoveryContext?->chunk(intdiv($offset, $this->config->headerChunkSize)), $chunkReport, count($parseResult['headers']));
 
             unset($rawChunk, $parseResult);
         }
@@ -417,6 +432,40 @@ class BinariesService
         }
 
         return $returnArray;
+    }
+
+    private function beginRecoveryScan(HeaderScanDirection $direction, int $chunks): ?RecoveryScanContext
+    {
+        $this->recoveryCapture = null;
+        try {
+            $config = RecoveryConfig::fromSettings();
+            if (! $config->enabled) {
+                return null;
+            }
+            $this->recoveryCapture = new RecoveryCapture($config, new BlacklistService);
+
+            return (new RecoveryControl)->begin($config, $this->getNntp()->provider(), (int) $this->groupMySQL['id'],
+                $this->groupMySQL['name'], $this->first, $this->last, $direction, $chunks);
+        } catch (\Throwable) {
+            Log::warning('Recovery capture initialization failed; ordinary scanning continues.', ['group_id' => $this->groupMySQL['id']]);
+
+            return null;
+        }
+    }
+
+    /** @param list<array<string, mixed>> $raw
+     * @param  list<array<string, mixed>>  $accepted
+     */
+    private function captureRecoveryChunk(array $raw, array $accepted, ?RecoveryScanContext $context): void
+    {
+        if ($context === null) {
+            return;
+        }
+        try {
+            $this->recoveryCapture?->capture(new RecoveryCaptureBatch($raw, $accepted), $context);
+        } catch (\Throwable) {
+            Log::warning('Recovery capture failed; ordinary scanning continues.', ['group_id' => $context->groupId]);
+        }
     }
 
     /**

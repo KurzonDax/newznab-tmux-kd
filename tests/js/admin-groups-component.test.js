@@ -451,3 +451,27 @@ test('returned rows replace the originals and remain selected', () => {
     assert.equal(replacementCheckbox.checked, true);
     assert.equal(page.component.selectedCount, 1);
 });
+
+
+test('recovery selection starts with no change and sends only the selected profile', () => {
+    const page = mountPage(2);
+    page.rows.forEach(row => { row.checked = true; });
+    page.component._syncSelection();
+    page.component.openEditSelected();
+    assert.equal(page.component.editRecoveryProfile, '');
+    assert.deepEqual(page.component.editSelectedChanges(), {});
+    page.component.editRecoveryProfile = 'both';
+    page.component.validateEditSelected();
+    assert.deepEqual(page.component.editSelectedChanges(), { obfuscation_recovery_profile: 'both' });
+    page.component.confirmEditSelected();
+    assert.deepEqual(page.component.editConfirmationChanges, [{
+        key: 'obfuscation_recovery_profile', label: 'Obfuscated recovery', value: 'Both',
+    }]);
+    page.component.backToEditSelected();
+    page.component.editRecoveryProfile = '';
+    page.component.validateEditSelected();
+    assert.deepEqual(page.component.editSelectedChanges(), {});
+    page.component.editRecoveryProfile = 'invalid';
+    page.component.validateEditSelected();
+    assert.equal(page.component.canSaveEditSelected(), false);
+});

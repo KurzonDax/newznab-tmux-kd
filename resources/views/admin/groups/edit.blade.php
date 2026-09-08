@@ -140,6 +140,19 @@
             </div>
 
             <!-- Obfuscated-name routing -->
+            <div class="mb-4">
+                <x-label for="obfuscation_recovery_profile">Obfuscated recovery</x-label>
+                <x-select id="obfuscation_recovery_profile" name="obfuscation_recovery_profile">
+                    @foreach(\App\Enums\ObfuscationRecoveryProfile::cases() as $profile)
+                        <option value="{{ $profile->value }}" @selected(old('obfuscation_recovery_profile', $group['obfuscation_recovery_profile'] ?? 'disabled') === $profile->value)>{{ $profile->label() }}</option>
+                    @endforeach
+                </x-select>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Media covers one or multiple standalone videos. RAR covers supported sequential RAR4 sets. Requires global recovery enablement; does not activate group scanning.</p>
+                @error('obfuscation_recovery_profile')
+                    <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                @enderror
+            </div>
+
             <div class="mb-6">
                 <x-label>Route Obfuscated Names:</x-label>
                 @php($routeObfuscatedNames = (bool) old('route_obfuscated_names', $group['route_obfuscated_names'] ?? false))
