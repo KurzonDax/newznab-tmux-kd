@@ -12,7 +12,6 @@ use App\Http\Requests\Admin\UpdateIncidentRequest;
 use App\Http\Requests\Admin\UpdateServiceHealthRequest;
 use App\Models\ServiceIncident;
 use App\Models\ServiceStatus;
-use App\Services\ObfuscationRecovery\RecoveryStatus;
 use App\Services\SiteStatusService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Auth;
@@ -43,7 +42,6 @@ class AdminStatusController extends BasePageController
         $this->viewData = array_merge($this->viewData, [
             'services' => $services,
             'incidents' => $incidents,
-            'recovery' => app(RecoveryStatus::class)->details(max(0, (int) request()->query('recovery_after_group', 0)), max(0, (int) request()->query('recovery_after_bundle', 0))),
             'meta_title' => 'Site status',
             'title' => 'Site status',
         ]);

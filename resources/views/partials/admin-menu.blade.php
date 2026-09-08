@@ -82,7 +82,7 @@
     </div>
 
     <!-- Releases -->
-    <div class="mb-4" x-data="adminSubmenu">
+    <div class="mb-4" x-data="adminSubmenu" @if(request()->routeIs('admin.recovered-releases')) x-init="open = true" @endif>
         <button type="button" @click="toggle()" class="flex items-center justify-between w-full text-left text-gray-300 dark:text-gray-400 hover:text-white dark:hover:text-white hover:bg-white/10 dark:hover:bg-white/5 py-2 px-3 rounded transition">
             <div class="flex items-center space-x-3">
                 <i class="fas fa-download"></i>
@@ -93,6 +93,14 @@
         <div x-show="open" x-cloak class="mt-2 ml-6 space-y-1">
             <a href="{{ url('/admin/release-list') }}" class="block py-2 px-3 text-gray-400 dark:text-gray-500 hover:text-white dark:hover:text-white hover:bg-white/10 dark:hover:bg-white/5 rounded transition">
                 <i class="fas fa-list-ul mr-2 text-primary-400"></i>Release List
+            </a>
+            <a href="{{ route('admin.recovered-releases') }}" @if(request()->routeIs('admin.recovered-releases')) aria-current="page" @endif
+                @class([
+                    'block py-2 px-3 rounded transition',
+                    'bg-primary-500/15 dark:bg-primary-500/15 text-primary-300 dark:text-primary-300' => request()->routeIs('admin.recovered-releases'),
+                    'text-gray-400 dark:text-gray-500 hover:text-white dark:hover:text-white hover:bg-white/10 dark:hover:bg-white/5' => ! request()->routeIs('admin.recovered-releases'),
+                ])>
+                <i class="fas fa-rotate-left mr-2 text-primary-400"></i>Recovered Releases
             </a>
             <a href="{{ url('/admin/release-reports') }}" class="block py-2 px-3 text-gray-400 dark:text-gray-500 hover:text-white dark:hover:text-white hover:bg-white/10 dark:hover:bg-white/5 rounded transition">
                 <i class="fas fa-flag text-red-500 mr-1"></i> Release Reports

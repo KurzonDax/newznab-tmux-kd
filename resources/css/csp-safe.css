@@ -1137,3 +1137,25 @@ code.api-token::-webkit-scrollbar-thumb:hover {
 .mediainfo-error p {
     @apply mt-2;
 }
+/* Recovered releases: quiet table surfaces and a readable horizontal viewport. */
+main table.recovered-releases-table {
+    min-width: 760px;
+}
+
+main .recovered-releases-table thead th {
+    background-color: var(--surface-panel-alt);
+    color: var(--text-muted);
+}
+
+main .recovered-releases-table tbody tr:hover {
+    background-color: var(--surface-panel-alt);
+}
+
+.dark main .recovered-releases-table thead th {
+    background-color: var(--surface-panel-alt-dark);
+    color: var(--text-muted-dark);
+}
+
+.dark main .recovered-releases-table tbody tr:hover {
+    background-color: var(--surface-panel-alt-dark);
+}
