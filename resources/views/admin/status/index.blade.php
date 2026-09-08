@@ -39,7 +39,6 @@
 @endphp
 
 <div class="space-y-6">
-    @include('admin.status.recovery')
     <x-admin.card>
         <x-admin.page-header :title="$title" icon="fas fa-signal">
             <x-slot:actions>

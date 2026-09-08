@@ -34,6 +34,7 @@ use App\Http\Controllers\Admin\AdminPageController;
 use App\Http\Controllers\Admin\AdminPaymentController;
 use App\Http\Controllers\Admin\AdminPredbController;
 use App\Http\Controllers\Admin\AdminPromotionController;
+use App\Http\Controllers\Admin\AdminRecoveredReleasesController;
 use App\Http\Controllers\Admin\AdminRegistrationController;
 use App\Http\Controllers\Admin\AdminReleaseNamingRegexesController;
 use App\Http\Controllers\Admin\AdminReleaseReportController;
@@ -369,6 +370,7 @@ Route::middleware(['role:Admin', '2fa'])->prefix('admin')->group(function () {
         ->whereIn('kind', ['full', 'daily'])
         ->name('admin.backups.run');
     Route::get('release-list', [AdminReleasesController::class, 'index'])->name('admin.release-list');
+    Route::get('recovered-releases', [AdminRecoveredReleasesController::class, 'index'])->name('admin.recovered-releases');
     Route::post('release-bulk-category', [AdminReleasesController::class, 'bulkCategory'])->name('admin.release-bulk-category');
     Route::post('release-delete/{id}', [AdminReleasesController::class, 'destroy'])->name('admin.release-delete');
 

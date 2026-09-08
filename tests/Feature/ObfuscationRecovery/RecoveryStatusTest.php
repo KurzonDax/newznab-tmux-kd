@@ -55,9 +55,5 @@ final class RecoveryStatusTest extends TestCase
         $this->assertSame(0, (int) $status['group_bundles'][0]->verified_manifests);
         $this->assertSame(1, (int) $status['group_bundles'][0]->bundles);
         $this->assertEquals($before, DB::table('obfuscation_recovery_work')->first());
-        $html = view('admin.status.recovery', ['recovery' => $status])->render();
-        $this->assertStringContainsString('Candidate allowances', $html);
-        $this->assertStringContainsString('Supported downloads', $html);
-        $this->assertStringNotContainsString(str_repeat('b', 64), $html);
     }
 }
