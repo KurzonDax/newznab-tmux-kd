@@ -61,6 +61,131 @@ class TmuxPaneManagementTest extends TestCase
         $this->assertFalse((new TmuxMonitor)->getDefinition()->hasOption('reset-collections'));
     }
 
+    #[DataProvider('profileFailures')]
+    public function test_start_aborts_before_layout_and_processing_when_profile_loading_fails(bool $throws): void
+    {
+        $this->seedMonitoringSettings(['sequential' => '0', 'running' => '0']);
+        $profile = $this->makeTempPath('tmux profile', '.conf');
+        file_put_contents($profile, "set -g mouse on\n");
+        config(['tmux.config_file' => $profile]);
+        $commands = [];
+        Process::fake(function (PendingProcess $process) use (&$commands, $throws) {
+            $command = $process->command;
+            $commands[] = $command;
+            if (is_string($command) && str_contains($command, 'which tmux')) {
+                return Process::result('/usr/bin/tmux');
+            }
+            if (is_array($command) && in_array('has-session', $command, true)) {
+                return Process::result('', '', 1);
+            }
+            if (is_array($command) && in_array('new-session', $command, true)) {
+                return Process::result("%1\n");
+            }
+            if (is_array($command) && in_array('source-file', $command, true)) {
+                if ($throws) {
+                    throw new RuntimeException('profile process timed out');
+                }
+
+                return Process::result('', 'unknown tmux option', 1);
+            }
+
+            return Process::result();
+        });
+
+        $detail = $throws ? 'profile process timed out' : 'unknown tmux option';
+        $this->artisan('tmux:start', ['--session' => 'test-profile'])
+            ->expectsOutputToContain("Unable to load tmux profile '{$profile}': {$detail}")
+            ->assertFailed();
+
+        $this->assertDatabaseHas('settings', ['name' => 'running', 'value' => '0']);
+        $this->assertSame(['tmux', 'kill-session', '-t', '=test-profile'], end($commands));
+        Process::assertNotRan(fn (PendingProcess $process): bool => is_array($process->command)
+            && count(array_intersect(['split-window', 'new-window', 'respawn-pane', 'kill-server'], $process->command)) > 0);
+    }
+
+    public static function profileFailures(): array
+    {
+        return ['nonzero source result' => [false], 'source exception' => [true]];
+    }
+
+    #[DataProvider('realProfileScenarios')]
+    public function test_real_tmux_applies_profile_before_building_layout_and_preserves_unrelated_processes(
+        bool $existingServer,
+        bool $invalidProfile,
+    ): void {
+        $socket = 'nntmux-test-'.bin2hex(random_bytes(8));
+        $profile = $this->makeTempPath('custom tmux profile', '.conf');
+        file_put_contents($profile, $invalidProfile
+            ? "not-a-tmux-command\n"
+            : "set -g mouse on\nset -g history-limit 4321\nset -g prefix C-a\nbind-key F12 display-message profile-loaded\n");
+        config(['tmux.config_file' => $profile]);
+
+        try {
+            $unrelatedProcess = null;
+            if ($existingServer) {
+                $start = $this->runIsolatedTmux($socket, ['-f', '/dev/null', 'new-session', '-d', '-s', 'unrelated', 'sleep 120']);
+                $this->assertTrue($start->isSuccessful(), $start->getErrorOutput());
+                $unrelatedProcess = $this->runIsolatedTmux($socket, ['display-message', '-p', '-t', 'unrelated', '#{pane_pid}:#{pane_dead}'])->getOutput();
+                $this->assertSame("off\n", $this->runIsolatedTmux($socket, ['show-options', '-gv', 'mouse'])->getOutput());
+            }
+
+            Process::fake(function (PendingProcess $process) use ($socket) {
+                $this->assertIsArray($process->command);
+                $this->assertSame('tmux', $process->command[0]);
+                $result = $this->runIsolatedTmux($socket, array_slice($process->command, 1));
+
+                return Process::result($result->getOutput(), $result->getErrorOutput(), $result->getExitCode());
+            });
+            $builder = new class(new TmuxSessionManager('processing')) extends TmuxLayoutBuilder
+            {
+                protected function createOptionalWindows(): void {}
+            };
+
+            $this->assertSame(! $invalidProfile, $builder->buildLayout(0), (string) $builder->lastError());
+            if ($invalidProfile) {
+                $this->assertStringContainsString($profile, (string) $builder->lastError());
+                $this->assertStringContainsString('unknown command', (string) $builder->lastError());
+                $this->assertFalse($this->runIsolatedTmux($socket, ['has-session', '-t', '=processing'])->isSuccessful());
+            } else {
+                $this->assertSame("on\n", $this->runIsolatedTmux($socket, ['show-options', '-gv', 'mouse'])->getOutput());
+                $this->assertSame("4321\n", $this->runIsolatedTmux($socket, ['show-options', '-gv', 'history-limit'])->getOutput());
+                $this->assertSame("C-a\n", $this->runIsolatedTmux($socket, ['show-options', '-gv', 'prefix'])->getOutput());
+                $this->assertStringContainsString('profile-loaded', $this->runIsolatedTmux($socket, ['list-keys', 'F12'])->getOutput());
+                $panes = $this->runIsolatedTmux($socket, ['list-panes', '-s', '-t', '=processing', '-F', '#{@nntmux_role}:#{remain-on-exit}']);
+                $this->assertEqualsCanonicalizing(
+                    array_map(fn (string $role): string => $role.':on', self::layoutRolesProvider()['full'][1]),
+                    explode("\n", trim($panes->getOutput())),
+                );
+            }
+
+            if ($existingServer) {
+                $this->assertSame($unrelatedProcess, $this->runIsolatedTmux($socket, ['display-message', '-p', '-t', 'unrelated', '#{pane_pid}:#{pane_dead}'])->getOutput());
+                $this->assertStringEndsWith(":0\n", (string) $unrelatedProcess);
+            }
+        } finally {
+            $this->runIsolatedTmux($socket, ['kill-server']);
+        }
+    }
+
+    public static function realProfileScenarios(): array
+    {
+        return [
+            'existing server' => [true, false],
+            'fresh server' => [false, false],
+            'source failure preserves unrelated session' => [true, true],
+            'source failure on fresh server' => [false, true],
+        ];
+    }
+
+    /** @param list<string> $arguments */
+    private function runIsolatedTmux(string $socket, array $arguments): SymfonyProcess
+    {
+        $process = new SymfonyProcess(['tmux', '-L', $socket, ...$arguments], env: ['TMUX' => false], timeout: 5);
+        $process->run();
+
+        return $process;
+    }
+
     public function test_roles_resolve_to_stable_pane_ids(): void
     {
         Process::fake([
