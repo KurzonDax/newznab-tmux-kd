@@ -8,7 +8,8 @@ use App\Facades\Search;
 use App\Services\NameFixing\NameFixingQueryService;
 use App\Services\NameFixing\NameFixingService;
 use App\Services\NameFixing\ReleaseUpdateService;
-use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\Connection;
+use Illuminate\Database\Schema\Builder;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -23,7 +24,8 @@ class PredbFulltextNameFixingTest extends TestCase
             ->with(['name' => $title, 'searchname' => $title], 21)
             ->andReturn([42]);
 
-        $database = $this->createMock(ConnectionInterface::class);
+        $database = $this->createMock(Connection::class);
+        $database->method('getSchemaBuilder')->willReturn($this->createMock(Builder::class));
         $database->expects($this->once())
             ->method('select')
             ->willReturn([
@@ -59,7 +61,8 @@ class PredbFulltextNameFixingTest extends TestCase
         Search::shouldReceive('isAvailable')->once()->andReturnTrue();
         Search::shouldReceive('searchReleases')->once()->andReturn(range(1, 21));
 
-        $database = $this->createStub(ConnectionInterface::class);
+        $database = $this->createStub(Connection::class);
+        $database->method('getSchemaBuilder')->willReturn($this->createStub(Builder::class));
         $database->method('select')->willReturn(array_map(
             static fn (int $id): object => (object) [
                 'releases_id' => $id,
@@ -90,7 +93,8 @@ class PredbFulltextNameFixingTest extends TestCase
     {
         Search::shouldReceive('isAvailable')->once()->andReturnFalse();
         Search::shouldReceive('searchReleases')->never();
-        $database = $this->createMock(ConnectionInterface::class);
+        $database = $this->createMock(Connection::class);
+        $database->method('getSchemaBuilder')->willReturn($this->createMock(Builder::class));
         $database->expects($this->never())->method('select');
         $service = new NameFixingService(
             updateService: $this->createStub(ReleaseUpdateService::class),

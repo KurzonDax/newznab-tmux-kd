@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Services\ObfuscationRecovery\RecoveryCatalog;
 use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -35,7 +36,7 @@ class ImdbScraper
     public function __construct(?Client $client = null)
     {
         $this->imdbApiDevBaseUrl = rtrim((string) config('nntmux_api.imdbapi_dev_base_url', 'https://api.imdbapi.dev'), '/');
-        $this->client = $client ?? new Client([
+        $this->client = $client ?? RecoveryCatalog::client([
             'timeout' => 10,
             'connect_timeout' => 10,
             'http_errors' => false,

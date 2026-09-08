@@ -31,6 +31,28 @@ final class PostProcessingSection implements SettingsSectionProvider
             stage: PipelineStage::Enrich,
             cards: [
                 new SettingCard(
+                    id: 'recovered-release-inspection',
+                    title: 'Recovered-release inspection',
+                    description: 'Optional extra identification downloads use the existing recovery thread allocation. Cached evidence remains usable when downloads are disabled.',
+                    icon: 'fas fa-magnifying-glass',
+                    settings: [
+                        SettingDefinition::bool(
+                            'obfuscation_recovery_enrichment_enabled',
+                            'Allow extra inspection downloads',
+                            'Permit bounded inspection when global recovery and the group selection also allow it.',
+                            'fas fa-download',
+                        ),
+                        new SettingDefinition(
+                            key: 'obfuscation_recovery_enrichment_release_mib',
+                            label: 'Per-release download limit',
+                            help: 'Lifetime accounted allowance shared by all files and inspection paths. 0 disables extra downloads. Default 4 MiB; tested structural limits still apply.',
+                            type: SettingType::Int,
+                            unit: 'MiB',
+                            rules: ['required', 'integer', 'min:0', 'max:1048576'],
+                        ),
+                    ],
+                ),
+                new SettingCard(
                     id: 'additional',
                     title: 'Additional pane',
                     description: 'Window 2, pane 0. It fans out into per-GUID child processes rather than doing the work itself.',

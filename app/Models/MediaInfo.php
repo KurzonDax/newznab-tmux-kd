@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Services\NameFixing\NameFixingService;
+use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Mhor\MediaInfo\Container\MediaInfoContainer;
@@ -17,6 +18,9 @@ class MediaInfo extends Model
 
     public static function addData(mixed $id, MediaInfoContainer $xmlArray): void
     {
+        if (! (new RecoveryIdentityPolicy)->allowsSingleItemMetadata((int) $id)) {
+            return;
+        }
         $mediainfoArray = $xmlArray->getGeneral();
         if (! $mediainfoArray) {
             return;

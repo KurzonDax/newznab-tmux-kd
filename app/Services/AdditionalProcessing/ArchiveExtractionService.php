@@ -169,6 +169,41 @@ class ArchiveExtractionService
         return $this->loadedArchiveContents();
     }
 
+    /** @return array{files:list<array<string,mixed>>,hasPassword:bool,isFirstVolume:?bool} */
+    public function listRecoveredPrefix(string $prefix): array
+    {
+        if (strlen($prefix) > 2097152 || ! str_starts_with($prefix, "Rar!\x1a\x07\0")) {
+            return ['files' => [], 'hasPassword' => false, 'isFirstVolume' => null];
+        }
+        $this->archiveInfo->setData($prefix, true);
+
+        return $this->loadedArchiveContents();
+    }
+
+    public function recoveredStoredNfo(string $prefix): ?string
+    {
+        $listing = $this->listRecoveredPrefix($prefix);
+        if ($listing['hasPassword']) {
+            return null;
+        }
+        foreach ($listing['files'] as $file) {
+            $name = $file['name'] ?? '';
+            $size = (int) ($file['size'] ?? 0);
+            if (! is_string($name) || ! $this->isNfoFile($name) || $size < 1 || $size > 1048576
+                || ($file['compressed'] ?? 1) !== 0 || ! empty($file['split']) || ! empty($file['pass'])
+                || ! empty($file['is_link']) || ! isset($file['crc32'])) {
+                continue;
+            }
+            $data = $this->archiveInfo->getFileData($name);
+            if (is_string($data) && strlen($data) === $size
+                && hash('crc32b', $data) === str_pad(strtolower((string) $file['crc32']), 8, '0', STR_PAD_LEFT)) {
+                return $data;
+            }
+        }
+
+        return null;
+    }
+
     /**
      * Inspect an archive directly from disk without copying it into a PHP string.
      *

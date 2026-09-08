@@ -20,6 +20,7 @@ use App\Services\MediaInfo\Contracts\MediaInfoSnapshotWriter;
 use App\Services\MediaInfo\DTO\MediaInfoProbeContext;
 use App\Services\MediaInfo\Enums\MediaInfoSourceCompleteness;
 use App\Services\MediaInfo\Enums\MediaInfoSourceKind;
+use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\ReleaseExtraService;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
@@ -65,6 +66,9 @@ final class AudioReleaseProcessor
         $probedMediaInfo = null;
         $probedFilename = null;
 
+        if ((new RecoveryIdentityPolicy)->publication($releaseId) !== null) {
+            return $this->declineToVideoPath($release, false, 'Recovered files use bounded general post-processing.');
+        }
         if (Category::rootCategoryFor((int) $release->categories_id) === Category::PC_ROOT) {
             return $this->declineToVideoPath(
                 $release,

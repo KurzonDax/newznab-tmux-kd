@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Binaries;
 
+use App\Services\ObfuscationRecovery\RecoverySegment;
 use App\Support\SqlError;
 use Illuminate\Support\Facades\DB;
 
@@ -91,6 +92,12 @@ final class PartHandler
         }
 
         return true;
+    }
+
+    public function addRecoveredPart(int $binaryId, RecoverySegment $segment): bool
+    {
+        return $this->addPart($binaryId, ['matches' => [2 => $segment->ordinal], 'Message-ID' => $segment->messageId,
+            'Number' => $segment->articleNumber, 'Bytes' => $segment->advertisedBytes]);
     }
 
     /**

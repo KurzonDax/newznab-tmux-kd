@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Services\CollectionCleanupService;
 use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbService;
+use App\Services\ObfuscationRecovery\RecoveryControl;
 use App\Services\ReleaseImageService;
 use App\Services\Releases\ReleaseManagementService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -358,6 +359,7 @@ class UsenetGroup extends Model
                 'minfilestoformrelease',
                 'minsizetoformrelease',
                 'backfill_target',
+                'obfuscation_recovery_profile',
                 'route_obfuscated_names',
                 'obfuscated_default_root_categories_id',
                 'forced_root_categories_id',
@@ -382,7 +384,7 @@ class UsenetGroup extends Model
      */
     public static function updateGroup(mixed $group): int
     {
-        return self::query()->where('id', $group['id'])->update(
+        return self::updateSelected([(int) $group['id']],
             [
                 'name' => trim($group['name']),
                 'description' => trim($group['description']),
@@ -394,6 +396,7 @@ class UsenetGroup extends Model
                 'backfill' => $group['backfill'],
                 'minsizetoformrelease' => empty($group['minsizetoformrelease']) ? null : $group['minsizetoformrelease'],
                 'minfilestoformrelease' => empty($group['minfilestoformrelease']) ? null : $group['minfilestoformrelease'],
+                ...array_intersect_key($group, ['obfuscation_recovery_profile' => true]),
                 'route_obfuscated_names' => (bool) ($group['route_obfuscated_names'] ?? false),
                 'obfuscated_default_root_categories_id' => empty($group['obfuscated_default_root_categories_id'])
                     ? null
@@ -407,11 +410,19 @@ class UsenetGroup extends Model
 
     /**
      * @param  list<int>  $groupIds
-     * @param  array<string, int|null>  $changes
+     * @param  array<string, int|string|null>  $changes
      */
     public static function updateSelected(array $groupIds, array $changes): int
     {
-        return self::query()->whereIn('id', $groupIds)->update($changes);
+        return DB::transaction(function () use ($groupIds, $changes): int {
+            if (array_key_exists('obfuscation_recovery_profile', $changes)) {
+                $changed = self::query()->whereIn('id', $groupIds)
+                    ->where('obfuscation_recovery_profile', '!=', $changes['obfuscation_recovery_profile'])->pluck('id')->map(intval(...))->all();
+                RecoveryControl::invalidate($changed);
+            }
+
+            return self::query()->whereIn('id', $groupIds)->update($changes);
+        });
     }
 
     /**
@@ -449,6 +460,7 @@ class UsenetGroup extends Model
                 'backfill' => $group['backfill'] ?? 0,
                 'minsizetoformrelease' => $group['minsizetoformrelease'] ?? null,
                 'minfilestoformrelease' => $group['minfilestoformrelease'] ?? null,
+                'obfuscation_recovery_profile' => $group['obfuscation_recovery_profile'] ?? 'disabled',
                 'route_obfuscated_names' => (bool) ($group['route_obfuscated_names'] ?? false),
                 'obfuscated_default_root_categories_id' => $group['obfuscated_default_root_categories_id'] ?? null,
                 'forced_root_categories_id' => $group['forced_root_categories_id'] ?? null,

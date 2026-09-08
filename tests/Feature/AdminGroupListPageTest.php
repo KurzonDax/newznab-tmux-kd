@@ -526,6 +526,38 @@ class AdminGroupListPageTest extends TestCase
         ));
     }
 
+    public function test_recovery_selection_saves_without_activating_normal_scanning(): void
+    {
+        $this->createGroups(2);
+        DB::table('usenet_groups')->update(['active' => 0, 'backfill' => 0]);
+        $ids = DB::table('usenet_groups')->pluck('id')->all();
+        $response = $this->actingAs($this->admin())->postJson(route('admin.ajax'), [
+            'action' => 'edit_selected_groups',
+            'group_ids' => $ids,
+            'changes' => ['obfuscation_recovery_profile' => 'both'],
+        ]);
+        $response->assertOk()->assertJson(['success' => true, 'updated' => 2]);
+        foreach (DB::table('usenet_groups')->get() as $group) {
+            $this->assertSame('both', $group->obfuscation_recovery_profile);
+            $this->assertSame(0, $group->active);
+            $this->assertSame(0, $group->backfill);
+        }
+        $this->get(route('admin.group-list'))
+            ->assertOk()->assertSee('Obfuscated recovery')->assertSee('Both');
+    }
+
+    public function test_invalid_recovery_selection_rejects_all_selected_changes(): void
+    {
+        $this->createGroups(1);
+        $group = DB::table('usenet_groups')->first();
+        $this->actingAs($this->admin())->postJson(route('admin.ajax'), [
+            'action' => 'edit_selected_groups',
+            'group_ids' => [$group->id],
+            'changes' => ['obfuscation_recovery_profile' => 'invalid', 'backfill_target' => 77],
+        ])->assertUnprocessable()->assertJsonValidationErrors('changes.obfuscation_recovery_profile');
+        $this->assertSame($group->backfill_target, DB::table('usenet_groups')->value('backfill_target'));
+    }
+
     public function test_edit_selected_saves_and_surfaces_obfuscated_name_routing(): void
     {
         $this->createGroups(1);
@@ -691,6 +723,30 @@ class AdminGroupListPageTest extends TestCase
 
             $saveResponse->assertRedirect($returnUrl);
         }
+    }
+
+    public function test_single_group_recovery_selection_is_validated_and_preserved(): void
+    {
+        $this->createGroups(1);
+        $group = DB::table('usenet_groups')->first();
+        $payload = [
+            'id' => $group->id, 'name' => $group->name, 'description' => $group->description,
+            'backfill_target' => 1, 'first_record' => 0, 'last_record' => 0,
+            'active' => 0, 'backfill' => 0, 'minfilestoformrelease' => 0, 'minsizetoformrelease' => 0,
+            'obfuscation_recovery_profile' => 'rar',
+        ];
+        $this->actingAs($this->admin())->post('/admin/group-edit?action=submit', $payload)
+            ->assertRedirect(route('admin.group-list'));
+        $this->assertSame('rar', DB::table('usenet_groups')->value('obfuscation_recovery_profile'));
+        $this->get(route('admin.group-edit', ['id' => $group->id]))
+            ->assertOk()->assertSee('Obfuscated recovery')->assertSee('value="rar" selected', false);
+        $this->postJson('/admin/group-edit?action=submit', array_replace($payload, [
+            'obfuscation_recovery_profile' => 'invalid', 'description' => 'must not change',
+        ]))->assertUnprocessable()->assertJsonValidationErrors('obfuscation_recovery_profile');
+        $this->assertSame($group->description, DB::table('usenet_groups')->value('description'));
+        unset($payload['obfuscation_recovery_profile']);
+        $this->post('/admin/group-edit?action=submit', $payload)->assertRedirect(route('admin.group-list'));
+        $this->assertSame('rar', DB::table('usenet_groups')->value('obfuscation_recovery_profile'));
     }
 
     public function test_single_group_edit_saves_obfuscated_name_routing(): void
@@ -982,6 +1038,7 @@ class AdminGroupListPageTest extends TestCase
             $table->unsignedInteger('minfilestoformrelease')->nullable();
             $table->unsignedBigInteger('minsizetoformrelease')->nullable();
             $table->unsignedInteger('backfill_target')->default(1);
+            $table->string('obfuscation_recovery_profile')->default('disabled');
             $table->boolean('route_obfuscated_names')->default(false);
             $table->unsignedInteger('obfuscated_default_root_categories_id')->nullable();
             $table->unsignedInteger('forced_root_categories_id')->nullable();

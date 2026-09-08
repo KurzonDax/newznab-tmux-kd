@@ -21,6 +21,8 @@ use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
 use App\Services\MediaInfo\DTO\MediaInfoProbeContext;
 use App\Services\MediaInfo\Enums\MediaInfoSourceCompleteness;
 use App\Services\MediaInfo\Enums\MediaInfoSourceKind;
+use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
+use App\Services\ObfuscationRecovery\RecoveryProcessing;
 use App\Services\ReleaseImageService;
 use App\Services\Releases\DynamicPreviewBudgetPolicy;
 use App\Services\Releases\PreviewGenerationPolicy;
@@ -124,6 +126,10 @@ class ReleaseProcessor
         }
 
         try {
+            $recovery = (new RecoveryIdentityPolicy)->publication((int) $release->id);
+            if ($recovery !== null) {
+                return app(RecoveryProcessing::class)->run($recovery, $context, $this->mediaService);
+            }
             $releaseNameChanged = false;
             $releaseNeededNfo = false;
             $nzbResult = $metrics->measure(
@@ -300,6 +306,7 @@ class ReleaseProcessor
         $workPlan = $this->workPlanner->plan(
             $context->nzbContents,
             $context->releaseGroupName,
+            (int) $context->release->id,
         );
         $context->workPlan = $workPlan;
         $context->nzbHasCompressedFile = $workPlan->hasCompressedFile();

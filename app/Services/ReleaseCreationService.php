@@ -14,6 +14,15 @@ use App\Models\ReleaseRegex;
 use App\Models\UsenetGroup;
 use App\Services\Categorization\CategorizationService;
 use App\Services\Nzb\NzbService;
+use App\Services\ObfuscationRecovery\RecoveryAdmission;
+use App\Services\ObfuscationRecovery\RecoveryAlgorithm;
+use App\Services\ObfuscationRecovery\RecoveryCollectionOwnership;
+use App\Services\ObfuscationRecovery\RecoveryCreationContext;
+use App\Services\ObfuscationRecovery\RecoveryFormationPolicy;
+use App\Services\ObfuscationRecovery\RecoveryOwnership;
+use App\Services\ObfuscationRecovery\RecoveryStage;
+use App\Services\ObfuscationRecovery\RecoverySurvivor;
+use App\Services\ObfuscationRecovery\RecoveryWorkClaim;
 use App\Services\Releases\CollectionArticleRangeMeasurer;
 use App\Services\Releases\CollectionCompletionMeasurer;
 use App\Services\Releases\ReleaseDuplicateAbsorber;
@@ -45,6 +54,66 @@ class ReleaseCreationService
      */
     public function createReleases(int|string|null $groupID, int $limit, bool $echoCLI): array
     {
+        return $this->createFromCollections($groupID, $limit, $echoCLI);
+    }
+
+    public function createRecovered(RecoveryWorkClaim $claim, int $publicationId): string
+    {
+        return DB::transaction(function () use ($claim, $publicationId): string {
+            if ($claim->stage !== RecoveryStage::Publish || (new RecoveryOwnership)->locked($claim) === null) {
+                return 'obsolete';
+            }
+            $publication = DB::table('obfuscation_recovery_publications')->where('id', $publicationId)->lockForUpdate()->first();
+            if ($publication === null || $publication->deleted_at !== null) {
+                return 'tombstoned';
+            }
+            if (! in_array($publication->state, ['materialized', 'policy_blocked', 'created'], true)) {
+                return $publication->state;
+            }
+            $plan = json_decode($publication->sealed_plan, true, flags: JSON_THROW_ON_ERROR);
+            if ($plan['bundle_id'] !== $claim->bundleId || $plan['revision'] !== $claim->revision) {
+                return 'obsolete';
+            }
+            $collection = DB::table('collections')->where('id', $publication->collections_id)->lockForUpdate()->first();
+            $expected = $publication->releases_id === null ? CollectionFileCheckStatus::Sized : CollectionFileCheckStatus::Inserted;
+            if ($collection === null || (int) $collection->filecheck !== $expected->value) {
+                return 'collection_not_ready';
+            }
+            if (! RecoveryAdmission::allows((int) $collection->groups_id,
+                RecoveryAlgorithm::from($publication->profile))) {
+                return 'admission_pending';
+            }
+            $blocked = (new RecoveryFormationPolicy)->blockedReason($collection);
+            if ($blocked !== null) {
+                DB::table('obfuscation_recovery_publications')->where('id', $publicationId)
+                    ->update(['state' => 'policy_blocked', 'reason' => $blocked, 'updated_at' => now()]);
+
+                return 'policy_blocked';
+            }
+            if ($publication->releases_id !== null) {
+                $release = Release::query()->whereKey($publication->releases_id)->where('guid', $publication->guid)->lockForUpdate()->first();
+                if ($release === null || $release->collectionhash !== $publication->collection_projection
+                    || (int) $release->groups_id !== (int) $collection->groups_id || (int) $release->nzbstatus !== NzbService::NZB_NONE) {
+                    return 'release_association_conflict';
+                }
+                $range = $this->articleRangeMeasurer->measure([(int) $collection->id])[(int) $collection->id] ?? null;
+                Release::query()->whereKey($release->id)->update(['firstarticle' => $range['first'] ?? null, 'lastarticle' => $range['last'] ?? null]);
+                DB::table('obfuscation_recovery_publications')->where('id', $publicationId)->update(['state' => 'created', 'reason' => null, 'updated_at' => now()]);
+
+                return 'created';
+            }
+            DB::table('obfuscation_recovery_publications')->where('id', $publicationId)
+                ->update(['state' => 'materialized', 'reason' => null, 'updated_at' => now()]);
+            $this->createFromCollections((int) $collection->groups_id, 1, false,
+                new RecoveryCreationContext($publicationId, (int) $collection->id, $publication->guid));
+
+            return DB::table('obfuscation_recovery_publications')->where('id', $publicationId)->value('state');
+        }, 1);
+    }
+
+    /** @return array{added:int,dupes:int} */
+    private function createFromCollections(int|string|null $groupID, int $limit, bool $echoCLI, ?RecoveryCreationContext $recovery = null): array
+    {
         $startTime = now()->toImmutable();
         $categorize = new CategorizationService;
         $returnCount = 0;
@@ -57,6 +126,11 @@ class ReleaseCreationService
         $collectionsQuery = Collection::query()
             ->where('collections.filecheck', CollectionFileCheckStatus::Sized->value)
             ->where('collections.filesize', '>', 0);
+        if ($recovery === null) {
+            RecoveryCollectionOwnership::exclude($collectionsQuery);
+        } else {
+            $collectionsQuery->where('collections.id', $recovery->collectionId);
+        }
         if (! empty($groupID)) {
             $collectionsQuery->where('collections.groups_id', $groupID);
         }
@@ -88,7 +162,7 @@ class ReleaseCreationService
             $cleanRelName = Utf8::clean(str_replace(['#', '@', '$', '%', '^', '§', '¨', '©', 'Ö'], '', $collection->subject));
             $fromName = Utf8::clean(trim($collection->fromname, "'"));
 
-            $cleanedMeta = $this->releaseCleaning->releaseCleaner(
+            $cleanedMeta = $recovery !== null ? ['properlynamed' => false, 'predb' => false, 'cleansubject' => $collection->subject] : $this->releaseCleaning->releaseCleaner(
                 $collection->subject,
                 $collection->fromname,
                 $collection->gname
@@ -109,7 +183,7 @@ class ReleaseCreationService
                 $cleanedName = $cleanRelName;
             }
 
-            if ($preID === false && $cleanedName !== '') {
+            if ($recovery === null && $preID === false && $cleanedName !== '') {
                 $preMatch = Predb::matchPre($cleanedName);
                 if ($preMatch !== false) {
                     $cleanedName = $preMatch['title'];
@@ -134,7 +208,7 @@ class ReleaseCreationService
 
             $releaseID = null;
             if ($dupeCheck === null) {
-                $determinedCategory = $categorize->determineCategory(
+                $determinedCategory = $recovery !== null ? ['categories_id' => Category::OTHER_MISC] : $categorize->determineCategory(
                     $collection->groups_id,
                     $cleanedName,
                     $fromName,
@@ -150,7 +224,7 @@ class ReleaseCreationService
                         'firstarticle' => $articleRange['first'] ?? null,
                         'lastarticle' => $articleRange['last'] ?? null,
                         'groups_id' => $collection->groups_id,
-                        'guid' => Str::uuid()->toString(),
+                        'guid' => $recovery->guid ?? Str::uuid()->toString(),
                         'postdate' => $collection->date,
                         'fromname' => $fromName,
                         'size' => $collection->filesize,
@@ -167,6 +241,12 @@ class ReleaseCreationService
                 }
 
                 if ($releaseID !== null) {
+                    if ($recovery !== null) {
+                        DB::table('obfuscation_recovery_publications')->where('id', $recovery->publicationId)->update([
+                            'releases_id' => $releaseID, 'guid' => $recovery->guid, 'state' => 'created',
+                            'initialization_state' => 'pending', 'updated_at' => now(),
+                        ]);
+                    }
                     DB::transaction(static function () use ($collection, $releaseID, $articleRange) {
                         Collection::query()->where('id', $collection->id)->update([
                             'filecheck' => CollectionFileCheckStatus::Inserted->value,
@@ -270,6 +350,14 @@ class ReleaseCreationService
                     'existing_name' => $dupeCheck->name,
                 ]);
 
+                if ($recovery !== null) {
+                    DB::table('obfuscation_recovery_publications')->where('id', $recovery->publicationId)->update([
+                        'releases_id' => $dupeCheck->id, 'guid' => DB::table('releases')->where('id', $dupeCheck->id)->value('guid'),
+                        'state' => $absorbed ? 'absorbed' : 'duplicate_policy_discarded', 'reason' => $dupeReason,
+                        'initialization_state' => 'not_applicable', 'updated_at' => now(),
+                    ]);
+                    app(RecoverySurvivor::class)->inspect($recovery->publicationId);
+                }
                 $this->collectionCleanupService->deleteCollectionsAndDescendants(
                     [$collection->id],
                     'Duplicate cleanup',

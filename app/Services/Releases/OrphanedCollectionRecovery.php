@@ -6,6 +6,7 @@ namespace App\Services\Releases;
 
 use App\Enums\CollectionFileCheckStatus;
 use App\Services\Nzb\Par2Inventory;
+use App\Services\ObfuscationRecovery\RecoveryCollectionOwnership;
 use App\Support\Data\ProcessReleasesSettings;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -25,7 +26,7 @@ final class OrphanedCollectionRecovery
     /** @return list<array<string, mixed>> */
     public function discover(int $limit, int $afterId = 0): array
     {
-        return DB::table('collections')
+        return DB::table('collections')->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
             ->where('id', '>', $afterId)
             ->where('filecheck', CollectionFileCheckStatus::Inserted->value)
             ->where('releases_id', '>', 0)
@@ -62,6 +63,9 @@ final class OrphanedCollectionRecovery
                 }
 
                 return [...$outcome, 'outcome' => 'collection_missing'];
+            }
+            if (RecoveryCollectionOwnership::protects((int) $collection->id)) {
+                return [...$outcome, 'outcome' => 'recovery_owned'];
             }
             if (bin2hex((string) $collection->collectionhash) !== ($entry['hash'] ?? null)) {
                 return [...$outcome, 'outcome' => 'identity_changed'];

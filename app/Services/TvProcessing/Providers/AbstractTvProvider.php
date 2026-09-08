@@ -10,6 +10,7 @@ use App\Models\Settings;
 use App\Models\TvEpisode;
 use App\Models\TvInfo;
 use App\Models\Video;
+use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\TvProcessing\TvProcessingCandidateQuery;
 use Illuminate\Database\Eloquent\Builder;
@@ -153,16 +154,18 @@ abstract class AbstractTvProvider extends BaseVideoProvider
 
     public function setVideoIdFound(int $videoId, int $releaseId, int $episodeId): void
     {
-        // Use Eloquent model update to trigger the ReleaseObserver
-        $release = Release::find($releaseId);
-        if ($release) {
+        DB::transaction(function () use ($videoId, $releaseId, $episodeId): void {
+            $release = Release::query()->where('id', $releaseId)->lockForUpdate()->first();
+            if ($release === null || ! (new RecoveryIdentityPolicy)->allowsSingleItemMetadata($releaseId)) {
+                return;
+            }
             $release->videos_id = $videoId;
             $release->tv_episodes_id = $episodeId;
             if ($episodeId > 0) {
                 $release->tv_episode_lookup_attempted_at = null;
             }
             $release->save();
-        }
+        });
 
         ReleaseBrowseService::bumpCacheVersion();
     }
@@ -174,6 +177,7 @@ abstract class AbstractTvProvider extends BaseVideoProvider
     {
         Release::query()
             ->where('id', $Id)
+            ->whereRaw(RecoveryIdentityPolicy::singleItemSql())
             ->update(['tv_episodes_id' => $status]);
     }
 

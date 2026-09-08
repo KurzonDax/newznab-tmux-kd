@@ -16,6 +16,8 @@ enum TmuxPaneRole: string
     case PostTv = 'post_tv';
     case PostMetadata = 'post_metadata';
     case PostMovies = 'post_movies';
+    case RecoveryLocal = 'recovery_local';
+    case RecoveryDownload = 'recovery_download';
     case IrcScraper = 'irc_scraper';
     case Htop = 'htop';
     case Nmon = 'nmon';

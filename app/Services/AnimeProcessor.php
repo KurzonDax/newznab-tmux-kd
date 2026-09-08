@@ -9,6 +9,7 @@ use App\Models\AnidbTitle;
 use App\Models\Release;
 use App\Models\Settings;
 use App\Services\MetadataProcessing\AnimeProcessingCandidateQuery;
+use App\Services\ObfuscationRecovery\RecoveryCatalog;
 use App\Services\PopulateAniListService as PaList;
 
 class AnimeProcessor
@@ -98,7 +99,7 @@ class AnimeProcessor
             // AniList rate limiting is handled internally in PopulateAniList
 
             foreach ($results as $release) {
-                $matched = $this->matchAnimeRelease($release);
+                $matched = RecoveryCatalog::run((int) $release->id, fn (): bool => $this->matchAnimeRelease($release));
                 if ($matched === false) {
                     // Persist status so we do not keep retrying hopeless releases immediately.
                     Release::query()->where('id', $release->id)->update(['anidbid' => $this->status]);

@@ -11,6 +11,7 @@ use App\Services\NNTP\NntpProviderPool;
 use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbParserService;
 use App\Services\Nzb\NzbService;
+use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 
@@ -95,6 +96,11 @@ final class MissingFileRescanService
         RescanRunBudget $budget,
     ): MissingFileRescanResult {
         $completionBefore = (float) $release->completion;
+        if (app(RecoveryIdentityPolicy::class)->publication((int) $release->id) !== null) {
+            return $this->finish($release, $options, $this->plain(ReleaseRepairOutcome::UnsupportedRecoveryProfile,
+                $completionBefore, 0, (int) $release->totalpart, 'unsupported_recovery_profile'));
+        }
+
         $isFinalAttempt = $release->rescan_outcome === ReleaseRepairOutcome::RetryPending;
 
         $contents = $this->nzb->readNzbContents((string) $release->guid);

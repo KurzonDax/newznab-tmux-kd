@@ -17,6 +17,9 @@ use App\Services\MediaInfo\Contracts\MediaInfoSnapshotWriter;
 use App\Services\MediaInfo\DTO\MediaInfoProbeContext;
 use App\Services\MediaInfo\Enums\MediaInfoSourceCompleteness;
 use App\Services\MediaInfo\Enums\MediaInfoSourceKind;
+use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
+use App\Services\ObfuscationRecovery\RecoveryInspection;
+use App\Services\ObfuscationRecovery\RecoveryMediaObservation;
 use App\Services\ReleaseExtraService;
 use App\Services\ReleaseImageService;
 use App\Services\Releases\ClipGenerationPolicy;
@@ -211,34 +214,61 @@ class MediaExtractionService
         string $fileLocation,
         int $releaseId,
         ?MediaInfoProbeContext $probeContext = null,
+        ?string $recoveryFileId = null,
+        ?RecoveryInspection $recoveryInspection = null,
     ): bool {
         if (! $this->config->processMediaInfo || ! File::isFile($fileLocation)) {
             return false;
         }
 
+        $owned = false;
         try {
             $xmlArray = $this->mediaInfo()->getInfo($fileLocation, true);
             if ($xmlArray->getVideos() === [] && $xmlArray->getAudios() === []) {
                 return false;
             }
-            \App\Models\MediaInfo::addData($releaseId, $xmlArray);
-            $this->releaseExtra->addFromXml($releaseId, $xmlArray);
-            $this->captureMediaInfoSnapshot(
-                $releaseId,
-                $xmlArray,
-                $probeContext ?? new MediaInfoProbeContext(
-                    MediaInfoSourceKind::AdditionalProcessing,
-                    basename($fileLocation),
-                    MediaInfoSourceCompleteness::Unknown,
-                ),
-            );
-            $this->mediaInfoRefinement->refine($releaseId);
+            $recovery = (new RecoveryIdentityPolicy)->publication($releaseId);
+            $owned = $recovery !== null && $recoveryInspection === null;
+            if ($recovery !== null) {
+                $recoveryInspection ??= RecoveryInspection::acquire($recovery);
+                if ($recoveryInspection === null) {
+                    return false;
+                }
+            }
+            $persist = function () use ($recovery, $recoveryFileId, $releaseId, $xmlArray, $fileLocation, $probeContext, $recoveryInspection): bool {
+                if ($recovery !== null) {
+                    if ($recoveryFileId === null || $recoveryInspection === null || ! app(RecoveryMediaObservation::class)->record($recovery, $recoveryFileId, $xmlArray, (int) filesize($fileLocation), $recoveryInspection)) {
+                        return false;
+                    }
+                    if (! (new RecoveryIdentityPolicy)->allowsSingleItemMetadata($releaseId)) {
+                        return true;
+                    }
+                }
+                \App\Models\MediaInfo::addData($releaseId, $xmlArray);
+                $this->releaseExtra->addFromXml($releaseId, $xmlArray);
+                $this->captureMediaInfoSnapshot(
+                    $releaseId,
+                    $xmlArray,
+                    $probeContext ?? new MediaInfoProbeContext(
+                        MediaInfoSourceKind::AdditionalProcessing,
+                        basename($fileLocation),
+                        MediaInfoSourceCompleteness::Unknown,
+                    ),
+                );
+                $this->mediaInfoRefinement->refine($releaseId);
 
-            return true;
+                return true;
+            };
+
+            return $recoveryInspection === null ? $persist() : $recoveryInspection->mutate($persist);
         } catch (\Throwable $e) {
             Log::debug($e->getMessage());
 
             return false;
+        } finally {
+            if ($owned) {
+                $recoveryInspection?->release();
+            }
         }
     }
 

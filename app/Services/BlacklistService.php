@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Enums\BlacklistConstants;
 use App\Models\BinaryBlacklist;
+use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Facades\DB;
 
 class BlacklistService
@@ -96,14 +97,18 @@ class BlacklistService
     /**
      * Update last_activity timestamp for given blacklist IDs.
      *
-     * @param  array<string, mixed>  $ids
+     * @param  array<array-key, mixed>  $ids
      */
-    public function updateBlacklistUsage(array $ids): void
+    public function updateBlacklistUsage(array $ids, ?ConnectionInterface $connection = null): void
     {
         if (empty($ids)) {
             return;
         }
-        BinaryBlacklist::query()->whereIn('id', $ids)->update(['last_activity' => now()]);
+        if ($connection === null) {
+            BinaryBlacklist::query()->whereIn('id', $ids)->update(['last_activity' => now()]);
+        } else {
+            $connection->table((new BinaryBlacklist)->getTable())->whereIn('id', $ids)->update(['last_activity' => now()]);
+        }
     }
 
     /**

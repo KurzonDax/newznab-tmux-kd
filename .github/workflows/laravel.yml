@@ -61,6 +61,12 @@ jobs:
           ./sail up -d --wait mariadb
           ./sail exec -T -e CBP_INTEGRATION_DB_DATABASE=cbp_integration -e CBP_INTEGRATION_DB_USERNAME=sail -e CBP_INTEGRATION_DB_PASSWORD=password laravel.test php artisan test --compact tests/Integration/CbpMariaDbIngestionTest.php tests/Integration/ReleaseCleanupSafetyMariaDbTest.php
 
+      - name: Run release formation concurrency regressions
+        run: ./sail artisan test --compact --fail-on-skipped tests/Integration/RecoveryBudgetMariaDbTest.php tests/Integration/RecoveryPublicationMariaDbTest.php tests/Integration/RecoveryWorkerConcurrencyTest.php
+
+      - name: Run bounded NNTP and synthetic archive regressions
+        run: ./sail artisan test --compact --fail-on-skipped --fail-on-warning tests/Integration/RecoveryTransportTest.php tests/Integration/RecoveryDownloadTest.php tests/Integration/RecoveryOverviewTransportTest.php tests/Integration/RecoveryGapDownloadTest.php tests/Integration/RecoveryArchiveFixtureTest.php tests/Integration/RecoveryMediaFixtureTest.php
+
       - name: Run backup schema MariaDB integration tests
         run: ./sail exec -T -e BACKUP_INTEGRATION_MARIADB=1 laravel.test php artisan test --compact --fail-on-skipped tests/Integration/BackupSchemaMariaDbTest.php
 
@@ -87,14 +93,37 @@ jobs:
       - name: Stop Sail
         if: always()
         run: ./sail down
+  recovery:
+    name: Local downloader regressions
+    needs: scope
+    if: needs.scope.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/ci-sail
+      - name: Install pinned local test clients
+        run: ./sail exec -T laravel.test bash tests/Support/ObfuscationRecovery/install-clients.sh
+      - name: Verify generated publications and local downloads
+        run: ./sail artisan test --compact --fail-on-skipped --fail-on-warning tests/Integration/RecoveryPortablePublicationTest.php tests/Integration/RecoveryDownloaderTest.php
+      - name: Stop Sail
+        if: always()
+        run: ./sail down
   required:
     name: PHP 8.5 via Sail
-    needs: [scope, php, runtime]
+    needs: [scope, php, runtime, recovery]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Require local downloader results
+        env:
+          CODE: ${{ needs.scope.outputs.code }}
+          RECOVERY_RESULT: ${{ needs.recovery.result }}
+        run: test "$CODE" != true || test "$RECOVERY_RESULT" = success
       - name: Assert required result
         env:
           CODE: ${{ needs.scope.outputs.code }}

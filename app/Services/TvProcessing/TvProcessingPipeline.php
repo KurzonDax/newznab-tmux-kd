@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services\TvProcessing;
 
 use App\Models\Settings;
+use App\Services\ObfuscationRecovery\RecoveryCatalog;
+use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\TvProcessing\Pipes\AbstractTvProviderPipe;
 use App\Services\TvProcessing\Pipes\LocalDbPipe;
 use App\Services\TvProcessing\Pipes\ParseInfoPipe;
@@ -79,6 +81,9 @@ class TvProcessingPipeline
     {
         $context = TvReleaseContext::fromRelease($release);
         $passable = new TvProcessingPassable($context, $debug);
+        if (! (new RecoveryIdentityPolicy)->allowsSingleItemMetadata($context->releaseId)) {
+            return $passable->toArray();
+        }
 
         // Set echo output on all pipes
         foreach ($this->pipes as $pipe) {
@@ -86,10 +91,10 @@ class TvProcessingPipeline
         }
 
         /** @var TvProcessingPassable $result */
-        $result = app(Pipeline::class)
+        $result = RecoveryCatalog::run($context->releaseId, fn (): TvProcessingPassable => app(Pipeline::class)
             ->send($passable)
             ->through($this->pipes->values()->all())
-            ->thenReturn();
+            ->thenReturn());
 
         if (! $result->result->isMatched()) {
             app(TvEpisodeRevisitService::class)->settleFinalFailure(

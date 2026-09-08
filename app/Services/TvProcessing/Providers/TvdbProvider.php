@@ -6,6 +6,7 @@ namespace App\Services\TvProcessing\Providers;
 
 use App\Enums\ImageAssetProfile;
 use App\Services\FanartTvService;
+use App\Services\ObfuscationRecovery\RecoveryCatalog;
 use App\Services\ReleaseImageService;
 use App\Services\TmdbClient;
 use App\Services\TraktService;
@@ -54,7 +55,9 @@ class TvdbProvider extends AbstractTvProvider
     public function __construct()
     {
         parent::__construct();
-        $this->client = new TheTVDbAPI;
+        $this->client = new TheTVDbAPI(client: RecoveryCatalog::client([
+            'base_uri' => TheTVDbAPI::API_BASE_URI, 'verify' => false, 'headers' => ['accept' => 'application/json'],
+        ]));
         $this->local = false;
         $this->authorizeTvdb();
 

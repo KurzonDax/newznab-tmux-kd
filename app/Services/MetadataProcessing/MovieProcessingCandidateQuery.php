@@ -7,6 +7,7 @@ namespace App\Services\MetadataProcessing;
 use App\Models\Category;
 use App\Models\Release;
 use App\Models\Settings;
+use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -24,7 +25,7 @@ final class MovieProcessingCandidateQuery
         bool $renamedOnly = false,
     ): Builder {
         $resolvedLookupMode = $lookupMode ?? (int) Settings::settingValue('lookupimdb');
-        $query = Release::query()
+        $query = Release::query()->whereRaw(RecoveryIdentityPolicy::singleItemSql())
             ->whereBetween('categories_id', [Category::MOVIE_ROOT, Category::MOVIE_OTHER])
             ->where(static function (Builder $candidate): void {
                 $candidate->whereNull('imdbid')

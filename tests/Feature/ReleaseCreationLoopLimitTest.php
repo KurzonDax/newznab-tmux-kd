@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Services\CollectionCleanupService;
 use App\Services\NNTP\NNTPService;
+use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\ReleaseCreationService;
 use App\Services\ReleaseProcessingService;
 use Illuminate\Support\Facades\DB;
@@ -41,6 +42,7 @@ class ReleaseCreationLoopLimitTest extends TestCase
     {
         parent::setUp();
         $this->bootIsolatedDatabase();
+        NzbCreationCandidateQuery::flushCapabilityCache();
 
         DB::statement(
             'CREATE TABLE releases (

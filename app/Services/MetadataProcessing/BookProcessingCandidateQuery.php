@@ -7,6 +7,7 @@ namespace App\Services\MetadataProcessing;
 use App\Models\Category;
 use App\Models\Release;
 use App\Models\Settings;
+use App\Services\ObfuscationRecovery\RecoveryReleaseGate;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -23,7 +24,7 @@ final class BookProcessingCandidateQuery
         ?int $lookupMode = null,
     ): Builder {
         $resolvedLookupMode = $lookupMode ?? (int) Settings::settingValue('lookupbooks');
-        $query = Release::query()
+        $query = Release::query()->tap(static fn ($query) => RecoveryReleaseGate::excludePending($query))
             ->where(static function (Builder $category): void {
                 $category->whereBetween('categories_id', [Category::BOOKS_ROOT, Category::BOOKS_UNKNOWN])
                     ->orWhere('categories_id', Category::MUSIC_AUDIOBOOK);

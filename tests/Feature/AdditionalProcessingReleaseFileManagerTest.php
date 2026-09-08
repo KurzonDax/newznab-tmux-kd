@@ -32,6 +32,7 @@ use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\NfoService;
 use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbService;
+use App\Services\ObfuscationRecovery\RecoveryNameEvidence;
 use App\Services\Par2Processor;
 use App\Services\ReleaseImageService;
 use App\Services\Releases\PreviewGenerationPolicy;
@@ -1201,7 +1202,7 @@ class CountingNameFixingService extends NameFixingService
 
 class PersistingPar2NameFixingService extends CountingNameFixingService
 {
-    public function checkName(object $release, bool $echo, string $type, bool $nameStatus, bool $show, bool $preId = false): bool
+    public function checkName(object $release, bool $echo, string $type, bool $nameStatus, bool $show, bool $preId = false, ?RecoveryNameEvidence $recoveryEvidence = null): bool
     {
         if ($type !== 'PAR2, ') {
             return false;

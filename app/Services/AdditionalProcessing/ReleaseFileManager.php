@@ -25,6 +25,9 @@ use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\NfoService;
 use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbService;
+use App\Services\ObfuscationRecovery\RecoveryEvidence;
+use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
+use App\Services\Par2Processor;
 use App\Services\ReleaseImageService;
 use App\Services\Releases\ExecutableReleaseDiscardService;
 use App\Services\Releases\PreviewGenerationPolicy;
@@ -553,6 +556,19 @@ class ReleaseFileManager
     ): bool {
         if ($context->releaseDiscarded) {
             return false;
+        }
+
+        $recovery = (new RecoveryIdentityPolicy)->publication((int) $context->release->id);
+        if ($recovery !== null) {
+            $index = app(RecoveryEvidence::class)->get($recovery->index_message_id);
+            if ($index === null) {
+                return false;
+            }
+            (new Par2Processor($this->nameFixingService, $par2Info, $this->config->addPAR2Files))
+                ->parseData($index->data, (int) $context->release->id, 0, $this->config->renamePar2);
+            $context->foundPAR2Info = true;
+
+            return true;
         }
 
         $par2Info->open($fileLocation);

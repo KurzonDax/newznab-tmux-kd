@@ -11,6 +11,8 @@ use App\Models\UsenetGroup;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\Categorization\CategorizationService;
+use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
+use App\Services\ObfuscationRecovery\RecoveryNameEvidence;
 use App\Services\ReleaseCleaningService;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -179,6 +181,7 @@ class ReleaseUpdateService
         bool $show,
         ?int $preId = 0,
         bool $descriptiveTitleCandidate = false,
+        ?RecoveryNameEvidence $recoveryEvidence = null,
     ): void {
         $preId = $preId ?? 0;
         if (is_array($release)) {
@@ -193,6 +196,12 @@ class ReleaseUpdateService
             $release->releases_id = $release->id;
         }
 
+        if ($echo && ! (new RecoveryIdentityPolicy)->allowsParent((int) $release->releases_id, $recoveryEvidence)) {
+            $this->matched = false;
+            $this->done = true;
+
+            return;
+        }
         if ($this->relid !== $release->releases_id) {
             $descriptiveMediaTitle = $method === self::DESCRIPTIVE_MEDIA_TITLE_METHOD;
             if ($descriptiveMediaTitle
@@ -266,6 +275,7 @@ class ReleaseUpdateService
                         $nameStatus,
                         $preId,
                         $imdbId,
+                        recoveryEvidence: $recoveryEvidence,
                     );
                 }
             }
@@ -399,10 +409,15 @@ class ReleaseUpdateService
         ?string $imdbId,
         ?int $categoryOverride = null,
         bool $preserveBookInfo = false,
+        ?RecoveryNameEvidence $recoveryEvidence = null,
     ): void {
         $releaseId = (int) ($release->releases_id ?? $release->id);
         $trustedDonorName = $this->sourceTrustPolicy($type, $method, $preId)['trusted_donor'];
-        DB::transaction(function () use ($release, $releaseId, $newTitle, $type, $nameStatus, $preId, $trustedDonorName, $imdbId, $categoryOverride, $preserveBookInfo): void {
+        DB::transaction(function () use ($release, $releaseId, $newTitle, $type, $nameStatus, $preId, $trustedDonorName, $imdbId, $categoryOverride, $preserveBookInfo, $recoveryEvidence): void {
+            Release::query()->where('id', $releaseId)->lockForUpdate()->first();
+            if (! (new RecoveryIdentityPolicy)->allowsParent($releaseId, $recoveryEvidence)) {
+                return;
+            }
             if ($nameStatus === true) {
                 $status = $this->getStatusColumnsForType($type);
 
@@ -482,6 +497,7 @@ class ReleaseUpdateService
     {
         return match ($type) {
             'NFO, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_nfo' => 1],
+            'Recovery inventory, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_par2' => 1],
             'PAR2, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_par2' => 1],
             'Filenames, ', 'file matched source: ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_files' => 1],
             'XXX filenames, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_xxx' => 1],
@@ -514,9 +530,20 @@ class ReleaseUpdateService
         }
     }
 
-    public function attachPredbId(int $releaseId, int $predbId): void
+    public function renameRecoveredInventory(Release $release, string $candidate, RecoveryNameEvidence $evidence): bool
     {
-        if ($releaseId === 0 || $predbId === 0) {
+        if (! (new RecoveryIdentityPolicy)->allowsDescriptiveCandidate((int) $release->id, $candidate, $evidence)) {
+            return false;
+        }
+        $this->performDatabaseUpdate($release, $candidate, 'Recovery inventory, ', 'Consistent protected inventory', true,
+            0, null, Category::TV_OTHER, recoveryEvidence: $evidence);
+
+        return true;
+    }
+
+    public function attachPredbId(int $releaseId, int $predbId, ?RecoveryNameEvidence $recoveryEvidence = null): void
+    {
+        if ($releaseId === 0 || $predbId === 0 || ! (new RecoveryIdentityPolicy)->allowsParent($releaseId, $recoveryEvidence)) {
             return;
         }
 
@@ -533,6 +560,7 @@ class ReleaseUpdateService
             true,
             $predbId,
             null,
+            recoveryEvidence: $recoveryEvidence,
         );
         $this->relid = $releaseId;
         $this->matched = true;
@@ -542,6 +570,10 @@ class ReleaseUpdateService
     public function renameFromAudioTags(int $releaseId, string $newTitle, int $categoryId): ?string
     {
         if ($releaseId === 0 || $newTitle === '') {
+            return null;
+        }
+
+        if (! (new RecoveryIdentityPolicy)->allowsParent($releaseId)) {
             return null;
         }
 
@@ -572,6 +604,10 @@ class ReleaseUpdateService
             return;
         }
 
+        if (! (new RecoveryIdentityPolicy)->allowsParent($releaseId)) {
+            return;
+        }
+
         $release = Release::query()->find($releaseId);
         if ($release === null) {
             return;
@@ -592,6 +628,10 @@ class ReleaseUpdateService
     public function attachSrrdbMatch(int $releaseId, int $predbId, ?string $imdbId): void
     {
         if ($releaseId === 0 || $predbId === 0) {
+            return;
+        }
+
+        if (! (new RecoveryIdentityPolicy)->allowsParent($releaseId)) {
             return;
         }
 

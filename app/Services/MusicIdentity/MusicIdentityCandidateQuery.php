@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\Release;
 use App\Services\AudioProcessing\AudioRouting;
 use App\Services\MusicIdentity\Enums\IdentificationStatus;
+use App\Services\ObfuscationRecovery\RecoveryReleaseGate;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
@@ -24,7 +25,7 @@ final class MusicIdentityCandidateQuery
         ?string $algorithmVersion = null,
     ): Builder {
         $algorithmVersion ??= (string) config('music-identity.algorithm_version', 'music-identity-v1');
-        $query = Release::query()->from('releases as r');
+        $query = Release::query()->from('releases as r')->tap(static fn ($query) => RecoveryReleaseGate::excludePending($query, 'r'));
 
         AudioRouting::applyAudioPath($query);
         $query->where('r.categories_id', '!=', Category::MUSIC_VIDEO);

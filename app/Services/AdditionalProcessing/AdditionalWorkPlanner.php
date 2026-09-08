@@ -7,6 +7,7 @@ namespace App\Services\AdditionalProcessing;
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\DTO\AdditionalWorkPlan;
 use App\Services\AdditionalProcessing\DTO\ArchiveCandidate;
+use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use Illuminate\Support\Facades\Log;
 
 final readonly class AdditionalWorkPlanner
@@ -19,8 +20,11 @@ final readonly class AdditionalWorkPlanner
     /**
      * @param  array<int|string, mixed>  $nzbContents
      */
-    public function plan(array $nzbContents, string $groupName): AdditionalWorkPlan
+    public function plan(array $nzbContents, string $groupName, ?int $releaseId = null): AdditionalWorkPlan
     {
+        if ($releaseId !== null && (new RecoveryIdentityPolicy)->publication($releaseId) !== null) {
+            return new AdditionalWorkPlan(unsupportedReasons: ['recovery_scoped_reader_required']);
+        }
         $sampleMessageIds = [];
         $jpgMessageIds = [];
         $mediaInfoMessageIds = [];

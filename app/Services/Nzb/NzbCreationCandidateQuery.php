@@ -6,6 +6,7 @@ namespace App\Services\Nzb;
 
 use App\Models\Release;
 use App\Models\Settings;
+use App\Services\ObfuscationRecovery\RecoveryAdmission;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Facades\DB;
@@ -28,7 +29,8 @@ final class NzbCreationCandidateQuery
     {
         $query = Release::query()
             ->from('releases as r')
-            ->where('r.nzbstatus', NzbService::NZB_NONE);
+            ->where('r.nzbstatus', NzbService::NZB_NONE)
+            ->whereRaw(RecoveryAdmission::nzbSql());
 
         if ($groupID !== null && $groupID !== '' && $groupID !== 0 && $groupID !== '0') {
             $query->where('r.groups_id', $groupID);
@@ -76,6 +78,7 @@ final class NzbCreationCandidateQuery
 
                 Release::query()
                     ->whereIn('id', $stampIds)
+                    ->whereRaw(RecoveryAdmission::nzbSql('releases'))
                     ->where(function (Builder $claimQuery): void {
                         $claimQuery
                             ->whereNull(self::CLAIMED_AT_COLUMN)

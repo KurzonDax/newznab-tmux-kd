@@ -18,6 +18,7 @@ use App\Services\MetadataProcessing\MovieProcessingCandidateQuery;
 use App\Services\MetadataProcessing\NfoProcessingCandidateQuery;
 use App\Services\MusicIdentity\ResolveReleaseMusicIdentity;
 use App\Services\NameFixing\NameFixingQueryService;
+use App\Services\ObfuscationRecovery\RecoveryStatus;
 use App\Services\TvProcessing\TvProcessingCandidateQuery;
 use Illuminate\Support\Facades\DB;
 
@@ -173,6 +174,7 @@ class TmuxMonitorService
         $this->runVar['timers']['query']['tmux_time'] = microtime(true) - $timer;
 
         $this->getProcessCounts();
+        $this->runVar['recovery'] = app(RecoveryStatus::class)->summary();
     }
 
     protected function refreshSlowStatistics(): void

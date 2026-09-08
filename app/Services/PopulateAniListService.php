@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Enums\ImageAssetProfile;
 use App\Models\AnidbInfo;
 use App\Models\AnidbTitle;
+use App\Services\ObfuscationRecovery\RecoveryCatalog;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ClientException;
 use GuzzleHttp\Exception\GuzzleException;
@@ -65,7 +66,7 @@ class PopulateAniListService
         // Use storage_path directly to match CoverController expectations
         $this->imgSavePath = storage_path('covers/anime/');
         $this->imageService = $imageService ?? new ReleaseImageService;
-        $this->client = new Client([
+        $this->client = RecoveryCatalog::client([
             'base_uri' => self::API_URL,
             'timeout' => 30,
             'headers' => [

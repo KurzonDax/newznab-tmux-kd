@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Admin;
 
+use App\Enums\ObfuscationRecoveryProfile;
 use App\Models\UsenetGroup;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 use InvalidArgumentException;
 
@@ -33,7 +35,7 @@ class EditSelectedGroupsRequest extends FormRequest
             'action' => ['required', 'in:edit_selected_groups'],
             'group_ids' => ['required', 'array', 'min:1'],
             'group_ids.*' => ['required', 'integer', 'distinct', 'exists:usenet_groups,id'],
-            'changes' => ['required', 'array:backfill_target,minfilestoformrelease,minsizetoformrelease,active,backfill,route_obfuscated_names,obfuscated_default_root_categories_id,forced_root_categories_id', 'min:1'],
+            'changes' => ['required', 'array:obfuscation_recovery_profile,backfill_target,minfilestoformrelease,minsizetoformrelease,active,backfill,route_obfuscated_names,obfuscated_default_root_categories_id,forced_root_categories_id', 'min:1'],
             'changes.backfill_target' => ['sometimes', 'integer', 'between:1,7300'],
             'changes.minfilestoformrelease' => ['sometimes', 'integer', 'between:0,2147483647'],
             'changes.minsizetoformrelease' => [
@@ -52,6 +54,7 @@ class EditSelectedGroupsRequest extends FormRequest
                     }
                 },
             ],
+            'changes.obfuscation_recovery_profile' => ['sometimes', Rule::enum(ObfuscationRecoveryProfile::class)],
             'changes.active' => ['sometimes', 'integer', 'in:0,1'],
             'changes.backfill' => ['sometimes', 'integer', 'in:0,1'],
             'changes.route_obfuscated_names' => ['sometimes', 'integer', 'in:0,1'],
@@ -119,7 +122,7 @@ class EditSelectedGroupsRequest extends FormRequest
     }
 
     /**
-     * @return array<string, int|null>
+     * @return array<string, int|string|null>
      */
     public function changes(): array
     {
@@ -142,7 +145,7 @@ class EditSelectedGroupsRequest extends FormRequest
             }
         }
 
-        /** @var array<string, int|null> $changes */
+        /** @var array<string, int|string|null> $changes */
         return $changes;
     }
 

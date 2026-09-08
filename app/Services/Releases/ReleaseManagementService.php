@@ -7,6 +7,7 @@ namespace App\Services\Releases;
 use App\Facades\Search;
 use App\Models\Release;
 use App\Services\Nzb\NzbService;
+use App\Services\ObfuscationRecovery\RecoveryPublications;
 use App\Services\ReleaseImageService;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
@@ -52,6 +53,13 @@ class ReleaseManagementService
      */
     public function deleteSingle(array $identifiers, NzbService $nzb, ReleaseImageService $releaseImage): void
     {
+        DB::transaction(function () use ($identifiers): void {
+            $release = Release::query()->where('guid', $identifiers['g'])->lockForUpdate()->first(['id', 'guid']);
+            if ($release !== null) {
+                RecoveryPublications::tombstoneRelease((int) $release->id, $release->guid);
+            }
+        }, 3);
+
         // Delete NZB from disk.
         $nzbPath = $nzb->nzbPath($identifiers['g']);
         if (! empty($nzbPath)) {
@@ -104,6 +112,12 @@ class ReleaseManagementService
         }
 
         foreach ($rows as $release) {
+            DB::transaction(function () use ($release): void {
+                $current = Release::query()->whereKey($release['id'])->where('guid', $release['guid'])->lockForUpdate()->first();
+                if ($current !== null) {
+                    RecoveryPublications::tombstoneRelease((int) $current->id, $current->guid);
+                }
+            }, 3);
             try {
                 $nzb->deleteNzb($release['guid']);
                 $releaseImage->delete($release['guid']);
@@ -254,6 +268,7 @@ class ReleaseManagementService
                     return null;
                 }
                 if (! $dryRun) {
+                    RecoveryPublications::tombstoneRelease((int) $release->id, $release->guid);
                     if (Release::query()->whereKey($release->id)->delete() !== 1) {
                         throw new RuntimeException('Protected release deletion affected an unexpected row count.');
                     }

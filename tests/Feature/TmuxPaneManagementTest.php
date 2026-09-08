@@ -222,6 +222,8 @@ SH;
                     'post_tv',
                     'post_metadata',
                     'irc_scraper',
+                    'recovery_local',
+                    'recovery_download',
                 ],
             ],
             'basic' => [
@@ -236,6 +238,8 @@ SH;
                     'post_tv',
                     'post_metadata',
                     'irc_scraper',
+                    'recovery_local',
+                    'recovery_download',
                 ],
             ],
             'a legacy stripped value falls back to full' => [
@@ -252,6 +256,8 @@ SH;
                     'post_tv',
                     'post_metadata',
                     'irc_scraper',
+                    'recovery_local',
+                    'recovery_download',
                 ],
             ],
         ];

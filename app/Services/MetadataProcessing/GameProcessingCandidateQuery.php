@@ -7,6 +7,7 @@ namespace App\Services\MetadataProcessing;
 use App\Models\Category;
 use App\Models\Release;
 use App\Models\Settings;
+use App\Services\ObfuscationRecovery\RecoveryReleaseGate;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -23,7 +24,7 @@ final class GameProcessingCandidateQuery
         ?int $lookupMode = null,
     ): Builder {
         $resolvedLookupMode = $lookupMode ?? (int) Settings::settingValue('lookupgames');
-        $query = Release::query()
+        $query = Release::query()->tap(static fn ($query) => RecoveryReleaseGate::excludePending($query))
             ->where('categories_id', Category::PC_GAMES)
             ->where('gamesinfo_id', 0);
 

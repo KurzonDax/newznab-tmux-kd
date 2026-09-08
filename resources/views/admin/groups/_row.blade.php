@@ -100,6 +100,9 @@
         </span>
     </td>
     <td class="px-6 py-4 text-center">
+        <div class="mb-1 text-xs text-gray-500 dark:text-gray-400">
+            Recovery: {{ (\App\Enums\ObfuscationRecoveryProfile::tryFrom($group->obfuscation_recovery_profile ?? '') ?? \App\Enums\ObfuscationRecoveryProfile::Disabled)->label() }}
+        </div>
         @if($group->route_obfuscated_names && $group->obfuscatedDefaultRoot)
             <span class="inline-flex items-center rounded-full bg-primary-100 px-2 py-1 text-xs font-semibold text-primary-800 dark:bg-primary-900/30 dark:text-primary-300">
                 <i class="fas fa-route mr-1" aria-hidden="true"></i>{{ $group->obfuscatedDefaultRoot->title }}

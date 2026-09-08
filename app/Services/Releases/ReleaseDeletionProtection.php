@@ -8,6 +8,7 @@ use App\Models\Release;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
+use App\Services\ObfuscationRecovery\RecoveryReleaseGate;
 use App\Services\ReleaseRepair\RecoveryLease;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -27,6 +28,7 @@ final class ReleaseDeletionProtection
      */
     public static function apply(Builder $query, string $table = 'releases'): Builder
     {
+        RecoveryReleaseGate::excludePending($query, $table);
         $query->where($table.'.nzbstatus', NzbService::NZB_ADDED);
         NzbCreationCandidateQuery::applyClaimWindow($query, $table);
 

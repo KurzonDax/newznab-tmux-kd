@@ -19,6 +19,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Mhor\MediaInfo\Container\MediaInfoContainer;
 use Mhor\MediaInfo\MediaInfo;
 use Mhor\MediaInfo\Type\Audio;
@@ -40,6 +41,7 @@ class MediaExtractionServiceTest extends TestCase
         $container->instance('files', new Filesystem);
         Facade::setFacadeApplication($container);
         Log::swap(Mockery::mock()->shouldIgnoreMissing());
+        Schema::swap(Mockery::mock()->shouldReceive('hasTable')->with('obfuscation_recovery_publications')->andReturn(false)->getMock());
 
         $this->tmpPath = sys_get_temp_dir().'/additional-media-'.uniqid('', true).'/';
         (new Filesystem)->makeDirectory($this->tmpPath, 0777, true, true);

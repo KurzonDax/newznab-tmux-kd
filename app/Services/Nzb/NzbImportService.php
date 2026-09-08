@@ -497,14 +497,14 @@ class NzbImportService
                 $this->echoOut($errorMessage);
 
                 // Persist blacklist usage stats if we matched any rule during this NZB processing
-                $this->blacklistService->updateBlacklistUsage($this->blacklistService->getAndClearIdsToUpdate()); // @phpstan-ignore argument.type
+                $this->blacklistService->updateBlacklistUsage($this->blacklistService->getAndClearIdsToUpdate());
 
                 return $isBlackListed ? NzbImportStatus::Blacklisted : NzbImportStatus::NoGroup;
             }
         }
 
         // After scanning all files, persist any matched whitelist/blacklist usage
-        $this->blacklistService->updateBlacklistUsage($this->blacklistService->getAndClearIdsToUpdate()); // @phpstan-ignore argument.type
+        $this->blacklistService->updateBlacklistUsage($this->blacklistService->getAndClearIdsToUpdate());
 
         $completionSignals = $completion->signals();
 

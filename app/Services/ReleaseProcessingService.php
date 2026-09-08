@@ -18,6 +18,7 @@ use App\Services\Categorization\CategorizationService;
 use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
+use App\Services\ObfuscationRecovery\RecoveryCollectionOwnership;
 use App\Services\Releases\CollectionCompletionMeasurer;
 use App\Services\Releases\CollectionQuietPredicate;
 use App\Services\Releases\ExecutableReleaseDiscardService;
@@ -393,7 +394,7 @@ final class ReleaseProcessingService
         $lastId = 0;
         $normalizedGroupId = $this->normalizeGroupId($groupID);
         do {
-            $query = Collection::query()
+            $query = Collection::query()->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
                 ->where('id', '>', $lastId)
                 ->where('filecheck', CollectionFileCheckStatus::CompleteParts->value)
                 ->when($normalizedGroupId !== null, static fn ($q) => $q->where('groups_id', $normalizedGroupId))
@@ -404,7 +405,7 @@ final class ReleaseProcessingService
                 break;
             }
             $lastId = (int) end($ids);
-            $updated += Collection::query()->whereIn('id', $ids)->update([
+            $updated += Collection::query()->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))->whereIn('id', $ids)->update([
                 'filecheck' => CollectionFileCheckStatus::Sized->value,
             ]);
         } while (\count($ids) === $this->binariesConfig->reconcileBatchSize);
@@ -433,7 +434,7 @@ final class ReleaseProcessingService
         ];
 
         do {
-            $query = Collection::query()
+            $query = Collection::query()->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
                 ->where('id', '>', $lastId)
                 ->where(function ($query) use ($quiet, $hasLastSeenAt, $statuses): void {
                     $query->where('filecheck', CollectionFileCheckStatus::CompleteParts->value);
@@ -484,11 +485,18 @@ final class ReleaseProcessingService
             return;
         }
 
-        $idPlaceholders = implode(',', array_fill(0, \count($collectionIds), '?'));
         $statusPlaceholders = implode(',', array_fill(0, \count($statuses), '?'));
         $quiet = CollectionQuietPredicate::build($this->settings->collectionDelayTime, 'c');
 
-        DB::transaction(function () use ($collectionIds, $idPlaceholders, $quiet, $statuses, $statusPlaceholders): void {
+        DB::transaction(function () use ($collectionIds, $quiet, $statuses, $statusPlaceholders): void {
+            $locked = DB::table('collections')->whereIn('id', $collectionIds)->orderBy('id')->lockForUpdate()->pluck('id');
+            $query = DB::table('collections')->whereIn('id', $locked);
+            RecoveryCollectionOwnership::exclude($query);
+            $collectionIds = $query->pluck('id')->all();
+            if ($collectionIds === []) {
+                return;
+            }
+            $idPlaceholders = implode(',', array_fill(0, count($collectionIds), '?'));
             DB::update(
                 "UPDATE binaries b
                  LEFT JOIN (
@@ -552,6 +560,10 @@ final class ReleaseProcessingService
 
         DB::transaction(function () use ($collectionIds, $quiet, $statuses): void {
             foreach ($collectionIds as $collectionId) {
+                DB::table('collections')->where('id', $collectionId)->lockForUpdate()->first();
+                if (RecoveryCollectionOwnership::protects((int) $collectionId)) {
+                    continue;
+                }
                 $binaryIds = DB::table('binaries')->where('collections_id', $collectionId)->pluck('id')->all();
                 foreach ($binaryIds as $binaryId) {
                     $aggregate = DB::selectOne(
@@ -612,6 +624,7 @@ final class ReleaseProcessingService
                 ->whereExists(static function (Builder $query): void {
                     $query->selectRaw('1')
                         ->from('collections')
+                        ->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
                         ->whereColumn('collections.groups_id', 'usenet_groups.id')
                         ->where('collections.filecheck', CollectionFileCheckStatus::Sized->value)
                         ->where('collections.filesize', '>', 0);
@@ -623,7 +636,7 @@ final class ReleaseProcessingService
         $stats = ['minSize' => 0, 'maxSize' => 0, 'minFiles' => 0, 'par2Only' => 0];
 
         // Delete collections where ALL binaries are par2 files (no actual content)
-        $par2OnlyCollectionIds = DB::table('collections as c')
+        $par2OnlyCollectionIds = DB::table('collections as c')->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query, 'c.id'))
             ->join('binaries as b', 'c.id', '=', 'b.collections_id')
             ->where('c.filecheck', CollectionFileCheckStatus::Sized->value)
             ->where('c.filesize', '>', 0)
@@ -645,7 +658,7 @@ final class ReleaseProcessingService
 
             $effectiveMinSize = max($groupMinSize, $this->settings->minSizeToFormRelease);
             if ($effectiveMinSize > 0) {
-                $ids = Collection::query()
+                $ids = Collection::query()->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
                     ->where('filecheck', CollectionFileCheckStatus::Sized->value)
                     ->where('groups_id', (int) $grpID['id'])
                     ->where('filesize', '>', 0)
@@ -654,7 +667,7 @@ final class ReleaseProcessingService
             }
 
             if ($this->settings->maxSizeToFormRelease > 0) {
-                $ids = Collection::query()
+                $ids = Collection::query()->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
                     ->where('filecheck', CollectionFileCheckStatus::Sized->value)
                     ->where('groups_id', (int) $grpID['id'])
                     ->where('filesize', '>', $this->settings->maxSizeToFormRelease);
@@ -663,7 +676,7 @@ final class ReleaseProcessingService
 
             $effectiveMinFiles = max($groupMinFiles, $this->settings->minFilesToFormRelease);
             if ($effectiveMinFiles > 0) {
-                $ids = Collection::query()
+                $ids = Collection::query()->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
                     ->where('filecheck', CollectionFileCheckStatus::Sized->value)
                     ->where('groups_id', (int) $grpID['id'])
                     ->where('filesize', '>', 0)
@@ -705,6 +718,7 @@ final class ReleaseProcessingService
         $retryCount = 0;
         $deletedCount = 0;
         $claimLostCount = 0;
+        $deferredCount = 0;
         $claimToken = bin2hex(random_bytes(16));
         $limit = $this->settings->releaseCreationLimit;
         $total = min(NzbCreationCandidateQuery::baseBuilder($groupID)->count(), $limit);
@@ -741,6 +755,8 @@ final class ReleaseProcessingService
 
                     if ($result->success) {
                         $nzbCount++;
+                    } elseif ($result->isDeferred()) {
+                        $deferredCount++;
                     } elseif ($result->isClaimLost()) {
                         $claimLostCount++;
                     } else {
@@ -766,6 +782,9 @@ final class ReleaseProcessingService
 
         $this->outputStat('NZBs created', $nzbCount);
         $this->outputStat('NZB claims lost', $claimLostCount);
+        if ($deferredCount > 0) {
+            $this->outputStat('NZB creation deferred', $deferredCount);
+        }
         $this->outputStat('NZB creation retries', $retryCount);
         $this->outputStat('NZB creation failures deleted', $deletedCount);
         $this->outputElapsedTime($startTime);
@@ -887,7 +906,7 @@ final class ReleaseProcessingService
 
             $collectionIds = $result->collectionIds !== []
                 ? $result->collectionIds
-                : Collection::query()
+                : Collection::query()->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
                     ->where('releases_id', $release->id)
                     ->pluck('id')
                     ->map(static fn (mixed $id): int => (int) $id)
@@ -1064,7 +1083,7 @@ final class ReleaseProcessingService
 
     private function countCompleteCollections(?int $groupId): int
     {
-        $query = Collection::query()
+        $query = Collection::query()->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
             ->where('filecheck', CollectionFileCheckStatus::CompleteParts->value);
 
         if ($groupId !== null) {
@@ -1076,7 +1095,7 @@ final class ReleaseProcessingService
 
     private function hasSizedCollections(int $groupId): bool
     {
-        return Collection::query()
+        return Collection::query()->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
             ->where('filecheck', CollectionFileCheckStatus::Sized->value)
             ->where('groups_id', $groupId)
             ->where('filesize', '>', 0)
@@ -1156,7 +1175,7 @@ final class ReleaseProcessingService
 
         do {
             try {
-                $query = DB::table('collections')
+                $query = DB::table('collections')->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
                     ->whereIn('filecheck', [
                         CollectionFileCheckStatus::Default->value,
                         CollectionFileCheckStatus::CompleteCollection->value,

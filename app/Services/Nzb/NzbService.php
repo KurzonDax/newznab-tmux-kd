@@ -10,9 +10,20 @@ use App\Models\ReleaseNzbCreationFailure;
 use App\Models\Settings;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\CollectionCleanupService;
+use App\Services\ObfuscationRecovery\RecoveryAdmission;
+use App\Services\ObfuscationRecovery\RecoveryAdmissionPending;
+use App\Services\ObfuscationRecovery\RecoveryAlgorithm;
+use App\Services\ObfuscationRecovery\RecoveryArtifact;
+use App\Services\ObfuscationRecovery\RecoveryArtifacts;
+use App\Services\ObfuscationRecovery\RecoveryManifest;
+use App\Services\ObfuscationRecovery\RecoveryNzbCommit;
+use App\Services\ObfuscationRecovery\RecoveryNzbVerifier;
+use App\Services\ObfuscationRecovery\RecoveryPlan;
+use App\Services\ReleaseRepair\RecoveryLease;
 use App\Services\Releases\CollectionCompletionMeasurer;
 use App\Support\Data\NzbCreationResult;
 use App\Support\Data\NzbReplaceResult;
+use App\Support\Utf8;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -119,6 +130,22 @@ class NzbService
 
     public function createNzbForRelease(Release $release): NzbCreationResult
     {
+        try {
+            $recovery = new RecoveryNzbCommit;
+            $publication = $recovery->publication((int) $release->id);
+            if ($publication !== null && ($existing = $this->nzbPath($release->guid)) !== false) {
+                return $this->adoptRecoveredNzb($release, $existing, $recovery);
+            }
+            if ($publication !== null && $publication->state === 'created'
+                && ! RecoveryAdmission::allows((int) $release->groups_id,
+                    RecoveryAlgorithm::from($publication->profile))) {
+                return NzbCreationResult::deferred('recovery_admission_pending');
+            }
+        } catch (RecoveryAdmissionPending) {
+            return NzbCreationResult::deferred('recovery_admission_pending');
+        } catch (Throwable) {
+            return NzbCreationResult::deterministic('Recovery NZB reconciliation failed.');
+        }
         try {
             $collections = Collection::whereReleasesId($release->id)
                 ->join('usenet_groups', 'collections.groups_id', '=', 'usenet_groups.id')
@@ -254,7 +281,8 @@ class NzbService
             );
             $completion = ($completionSignals[(int) $collections->keys()->first()] ?? null)?->percentage() ?? 0.0;
 
-            $finalized = DB::transaction(function () use ($release, $completion, $tempPath, $path): bool {
+            $receipt = $recovery->verify($release, $tempPath);
+            $finalized = DB::transaction(function () use ($release, $completion, $tempPath, $path, $recovery, $receipt): bool {
                 $affected = NzbCreationCandidateQuery::ownedPendingBuilder(
                     (int) $release->id,
                     $release->getAttribute(NzbCreationCandidateQuery::CLAIM_TOKEN_COLUMN),
@@ -274,6 +302,7 @@ class NzbService
                     throw new \RuntimeException("Final NZB file is missing or unreadable: {$path}");
                 }
 
+                $recovery->commit($receipt);
                 if (NzbCreationCandidateQuery::supportsFailureState()) {
                     ReleaseNzbCreationFailure::query()
                         ->where('releases_id', $release->id)
@@ -289,6 +318,8 @@ class NzbService
             }
 
             $tempPath = null;
+        } catch (RecoveryAdmissionPending) {
+            return NzbCreationResult::deferred('recovery_admission_pending');
         } catch (Throwable $e) {
             return NzbCreationResult::transient('Failed to write NZB file: '.$e->getMessage(), $collectionIds, $path);
         } finally {
@@ -318,6 +349,32 @@ class NzbService
         chmod($path, 0777);
 
         return NzbCreationResult::success($path, $collectionIds);
+    }
+
+    private function adoptRecoveredNzb(Release $release, string $path, RecoveryNzbCommit $recovery): NzbCreationResult
+    {
+        $receipt = $recovery->verify($release, $path, existingFile: true);
+        $adopted = DB::transaction(function () use ($release, $receipt, $recovery): bool {
+            $current = Release::query()->where('id', $release->id)->lockForUpdate()->first();
+            if ($current === null || $current->guid !== $release->guid) {
+                return false;
+            }
+            if ((int) $current->nzbstatus !== self::NZB_ADDED && NzbCreationCandidateQuery::ownedPendingBuilder(
+                (int) $release->id, $release->getAttribute(NzbCreationCandidateQuery::CLAIM_TOKEN_COLUMN),
+            )->update($this->successfulReleaseUpdateValues(100.0)) !== 1) {
+                return false;
+            }
+            $recovery->commit($receipt, existingFile: true);
+
+            return true;
+        }, 1);
+        if (! $adopted) {
+            return NzbCreationResult::claimLost([], $path);
+        }
+        $ids = DB::table('collections')->where('releases_id', $release->id)->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+        $this->collectionCleanupService->deleteCollectionsAndDescendants($ids);
+
+        return NzbCreationResult::success($path, $ids);
     }
 
     private function startNzbDocument(\XMLWriter $writer, Release $release): void
@@ -727,6 +784,89 @@ class NzbService
         return $writer->outputMemory();
     }
 
+    public function restoreRecoveryManifest(Release $release, RecoveryLease $lease,
+        RecoveryPlan $plan): NzbReplaceResult
+    {
+        $path = $this->getNzbPath($release->guid, $this->getNzbSplitLevel(), true);
+        $temporary = $this->temporaryNzbPath($path);
+        $gz = $this->openGzipFile($temporary);
+        if ($gz === false) {
+            return NzbReplaceResult::tempFileOpenFailure('Recovery NZB temporary storage unavailable.');
+        }
+        try {
+            $writer = new \XMLWriter;
+            $writer->openMemory();
+            $this->startNzbDocument($writer, $release);
+            $files = [];
+            foreach ($plan->files as $file) {
+                $files[$file->identity] = $file;
+            }
+            $current = null;
+            $count = 0;
+            $manifest = new RecoveryManifest(app(RecoveryArtifacts::class));
+            foreach ($manifest->read(new RecoveryArtifact($plan->manifestDigest, $plan->manifestBytes)) as $record) {
+                if ($current !== $record['file']) {
+                    if ($current !== null) {
+                        $this->endNzbFile($writer);
+                    }
+                    $file = $files[$record['file']] ?? throw new \RuntimeException('recovery_manifest_scope_mismatch');
+                    $this->startNzbFile($writer, Utf8::clean(base64_decode($record['poster_identity'], true)),
+                        (string) strtotime($record['postdate']), $this->buildBinarySubject('"'.$file->displayName.'" yEnc', $file->totalParts), [$plan->group]);
+                    $current = $record['file'];
+                }
+                $this->writeNzbSegment($writer, $record['advertised_bytes'], $record['ordinal'], $record['message_id']);
+                if (++$count % 500 === 0) {
+                    $chunk = $writer->outputMemory();
+                    if ($this->writeGzipContents($gz, $chunk) !== strlen($chunk) || ! $lease->owns((int) $release->id)) {
+                        throw new \RuntimeException('recovery_restore_interrupted');
+                    }
+                }
+            }
+            if ($current !== null) {
+                $this->endNzbFile($writer);
+            }
+            $this->endNzbDocument($writer);
+            $chunk = $writer->outputMemory();
+            if ($this->writeGzipContents($gz, $chunk) !== strlen($chunk)) {
+                throw new \RuntimeException('recovery_restore_write_failed');
+            }
+            $closed = gzclose($gz);
+            $gz = null;
+            if (! $closed || $count !== $plan->plannedParts()) {
+                throw new \RuntimeException('recovery_restore_incomplete');
+            }
+            $digest = app(RecoveryNzbVerifier::class)->verify($temporary, $plan);
+
+            return DB::transaction(function () use ($release, $lease, $plan, $temporary, $path, $digest): NzbReplaceResult {
+                $current = Release::query()->whereKey($release->id)->where('guid', $release->guid)->lockForUpdate()->first();
+                if ($current === null || ! $lease->owns((int) $release->id)) {
+                    return NzbReplaceResult::writeFailure('Recovery lease no longer owned.');
+                }
+                $publication = DB::table('obfuscation_recovery_publications')->where('releases_id', $release->id)
+                    ->where('guid', $release->guid)->where('state', 'published')->whereNull('deleted_at')->lockForUpdate()->first();
+                if ($publication === null || $publication->manifest_digest !== $plan->manifestDigest
+                    || json_decode($publication->sealed_plan, true, flags: JSON_THROW_ON_ERROR) !== $plan->toArray()) {
+                    return NzbReplaceResult::writeFailure('Recovery publication changed.');
+                }
+                if (! $this->finalizeNzbFile($temporary, $path)) {
+                    return NzbReplaceResult::renameFailure('Recovery NZB replacement failed.');
+                }
+                DB::table('obfuscation_recovery_publications')->where('id', $publication->id)->update(['nzb_digest' => $digest, 'updated_at' => now()]);
+
+                return NzbReplaceResult::success();
+            }, 1);
+        } catch (Throwable) {
+            return NzbReplaceResult::writeFailure('Recovery manifest could not be restored.');
+        } finally {
+            if (is_resource($gz)) {
+                gzclose($gz);
+            }
+            if (is_file($temporary)) {
+                unlink($temporary);
+            }
+        }
+    }
+
     /**
      * Replace a release's stored NZB with new XML, atomically.
      *
@@ -739,8 +879,14 @@ class NzbService
     public function replaceNzbContents(string $releaseGuid, string $nzbXml): NzbReplaceResult
     {
         return DB::transaction(function () use ($releaseGuid, $nzbXml): NzbReplaceResult {
-            if (Release::query()->where('guid', $releaseGuid)->lockForUpdate()->first(['id']) === null) {
+            $release = Release::query()->where('guid', $releaseGuid)->lockForUpdate()->first(['id']);
+            if ($release === null) {
                 return NzbReplaceResult::missingNzb('The release disappeared before NZB replacement.');
+            }
+            if (Schema::hasTable('obfuscation_recovery_publications') && DB::table('obfuscation_recovery_publications')
+                ->where('releases_id', $release->id)->where('guid', $releaseGuid)
+                ->whereNotIn('state', ['absorbed', 'duplicate_policy_discarded'])->exists()) {
+                return NzbReplaceResult::writeFailure('Recovered membership requires the manifest restoration operation.');
             }
 
             return $this->replaceLockedNzbContents($releaseGuid, $nzbXml);

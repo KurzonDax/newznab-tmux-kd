@@ -130,6 +130,35 @@ final class ReleaseDuplicateAbsorberTest extends TestCase
         $this->assertStringNotContainsString('old@example.test', $contents);
     }
 
+    public function test_absorption_cannot_replace_a_release_while_recovery_holds_its_lease(): void
+    {
+        Schema::table('releases', fn (Blueprint $table) => $table->timestamp('recovery_claimed_at')->nullable());
+        $anchor = $this->anchor();
+        DB::table('releases')->where('id', $anchor->id)->update(['recovery_claimed_at' => now()]);
+        $nzb = app(NzbService::class);
+        $old = $this->nzbXml('old@example.test', 1, 2);
+        $this->writeStoredNzb($nzb, $anchor->guid, $old);
+        $result = app(ReleaseDuplicateAbsorber::class)->absorbXml($anchor, $this->nzbXml('new@example.test', 2, 2), 2000, 1, 100.0);
+        $this->assertSame(DuplicateAbsorbOutcome::Deferred, $result->outcome);
+        $this->assertSame($old, $nzb->readNzbContents($anchor->guid));
+    }
+
+    public function test_generic_replacement_cannot_change_a_recovered_publication(): void
+    {
+        Schema::create('obfuscation_recovery_publications', function (Blueprint $table): void {
+            $table->unsignedBigInteger('releases_id');
+            $table->string('guid');
+            $table->string('state');
+        });
+        $anchor = $this->anchor();
+        DB::table('obfuscation_recovery_publications')->insert(['releases_id' => $anchor->id, 'guid' => $anchor->guid, 'state' => 'published']);
+        $nzb = app(NzbService::class);
+        $old = $this->nzbXml('old@example.test', 1, 2);
+        $this->writeStoredNzb($nzb, $anchor->guid, $old);
+        $this->assertFalse($nzb->replaceNzbContents($anchor->guid, $this->nzbXml('new@example.test', 2, 2))->success);
+        $this->assertSame($old, $nzb->readNzbContents($anchor->guid));
+    }
+
     public function test_equal_or_lower_completion_leaves_the_anchor_and_nzb_unchanged(): void
     {
         Search::shouldReceive('updateRelease')->never();
