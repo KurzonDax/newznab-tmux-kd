@@ -10,6 +10,7 @@ use App\Models\Settings;
 use App\Models\TvEpisode;
 use App\Models\TvInfo;
 use App\Models\Video;
+use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\TvProcessing\TvProcessingCandidateQuery;
@@ -156,7 +157,7 @@ abstract class AbstractTvProvider extends BaseVideoProvider
     {
         DB::transaction(function () use ($videoId, $releaseId, $episodeId): void {
             $release = Release::query()->where('id', $releaseId)->lockForUpdate()->first();
-            if ($release === null || ! (new RecoveryIdentityPolicy)->allowsSingleItemMetadata($releaseId)) {
+            if ($release === null || (! (new RecoveryIdentityPolicy)->allowsSingleItemMetadata($releaseId) || ! BundleIdentity::allowsSingleTitle($releaseId))) {
                 return;
             }
             $release->videos_id = $videoId;
@@ -177,7 +178,7 @@ abstract class AbstractTvProvider extends BaseVideoProvider
     {
         Release::query()
             ->where('id', $Id)
-            ->whereRaw(RecoveryIdentityPolicy::singleItemSql())
+            ->whereRaw(RecoveryIdentityPolicy::singleItemSql())->whereRaw(BundleIdentity::singleItemSql())
             ->update(['tv_episodes_id' => $status]);
     }
 

@@ -38,6 +38,8 @@ class RegexService
      */
     protected array $_regexCache = [];
 
+    private string $collectionRevision = '';
+
     /**
      * Default category ID
      */
@@ -309,6 +311,13 @@ class RegexService
      */
     protected function _fetchRegex(string $groupName): void
     {
+        if ($this->tableName === 'collection_regexes') {
+            $revision = (string) Cache::get('collection_regexes_revision', '0');
+            if ($revision !== $this->collectionRevision) {
+                $this->_regexCache = [];
+                $this->collectionRevision = $revision;
+            }
+        }
         $localEntry = $this->_regexCache[$groupName] ?? null;
         if ($localEntry !== null
             && now()->timestamp < $localEntry['fetched_at'] + self::LOCAL_CACHE_TTL_SECONDS) {
@@ -324,11 +333,11 @@ class RegexService
         );
 
         /** @var array<int, object>|null $regexes */
-        $regexes = Cache::get(md5($sql));
+        $regexes = Cache::get(md5($sql.$this->collectionRevision));
         if ($regexes === null) {
             $regexes = DB::select($sql);
             $expiresAt = now()->addMinutes(config('nntmux.cache_expiry_long'));
-            Cache::put(md5($sql), $regexes, $expiresAt);
+            Cache::put(md5($sql.$this->collectionRevision), $regexes, $expiresAt);
         }
 
         $this->_regexCache[$groupName] = [

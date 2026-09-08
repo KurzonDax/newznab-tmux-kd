@@ -29,6 +29,27 @@ final class CollectionCompletionMeasurer
     /** Collection ids per query, matching the batching elsewhere on this path. */
     private const int CHUNK_SIZE = 500;
 
+    /** @param array<int, int> $declaredFilesByCollection */
+    public function measureCombined(array $declaredFilesByCollection): CompletionSignals
+    {
+        $tally = new CompletionTally;
+        $seen = [];
+        foreach (array_chunk(array_keys($declaredFilesByCollection), self::CHUNK_SIZE) as $ids) {
+            $binaries = DB::table('binaries')->whereIn('collections_id', $ids)->orderBy('id')->get(['id', 'totalparts', 'collections_id']);
+            foreach ($binaries as $binary) {
+                $parts = DB::table('parts')->where('binaries_id', $binary->id)->orderBy('partnumber')->get(['partnumber', 'messageid']);
+                $identity = hash('sha256', $parts->toJson());
+                if ($parts->isNotEmpty() && isset($seen[$identity])) {
+                    continue;
+                }
+                $seen[$identity] = true;
+                $tally->addFile($parts->count(), (int) $binary->totalparts, max($declaredFilesByCollection));
+            }
+        }
+
+        return $tally->signals();
+    }
+
     /**
      * @param  array<int, int>  $declaredFilesByCollection  Collection id => `collections.declaredfiles`,
      *                                                      the `[n/N]` file index the headers declared.

@@ -53,6 +53,17 @@ class ReleaseCreationCompletionTest extends TestCase
     }
 
     #[Test]
+    public function associated_fragments_measure_the_union_without_inventing_the_missing_file(): void
+    {
+        $this->insertCollection(100, 'first-fragment', 'First', totalfiles: 1, declaredfiles: 3);
+        $this->insertCollection(101, 'second-fragment', 'Second', totalfiles: 1, declaredfiles: 3);
+        $this->insertBinary(100, 1000, 'first.mkv', declaredParts: 10, presentParts: 10);
+        $this->insertBinary(101, 1001, 'second.mkv', declaredParts: 10, presentParts: 10);
+        $signals = (new CollectionCompletionMeasurer)->measureCombined([100 => 3, 101 => 3]);
+        $this->assertEqualsWithDelta(66.67, $signals->percentage(), 0.01);
+    }
+
+    #[Test]
     public function a_new_release_carries_its_completion_before_any_post_processing_runs(): void
     {
         $this->insertCollection(100, 'hash-partial', 'Partial.Release.S01E01', totalfiles: 2);

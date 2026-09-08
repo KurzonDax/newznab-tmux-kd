@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\NNTP;
 
+use App\Services\NNTP\Contracts\ArticleReadBudget;
+use App\Services\NNTP\Contracts\BoundedProviderClient;
 use App\Services\NNTP\Contracts\ProviderClient;
 use App\Services\NNTP\DTO\ArticleDownloadResult;
+use App\Services\NNTP\DTO\BoundedArticleResponse;
 use Closure;
 use DariusIII\NetNntp\Error;
 use DariusIII\NetNntp\Error as NntpError;
@@ -252,13 +255,43 @@ class NntpProviderPool
         return new ArticleDownloadResult($body, $crcFailedMessageIds);
     }
 
-    /**
-     * Fetch one article body, walking every enabled provider in order.
-     *
-     * @return mixed string body on success, Error object when no provider could serve it.
-     *
-     * @throws \Exception
-     */
+    public function fetchBoundedArticle(string $messageId, bool $head, int $maxBytes, float $deadline,
+        ArticleReadBudget $budget): BoundedArticleResponse
+    {
+        $bytes = 0;
+        $reason = 'no_available_provider';
+        foreach ($this->availableProviders() as $provider) {
+            if (microtime(true) >= $deadline) {
+                break;
+            }
+            $client = $this->clientFor($provider);
+            if (! $client instanceof BoundedProviderClient) {
+                continue;
+            }
+            if (! $budget->reserve($maxBytes)) {
+                return new BoundedArticleResponse(null, $bytes, 'budget_exhausted');
+            }
+            try {
+                $result = $client->fetchBoundedArticle($messageId, $head, $maxBytes, $deadline);
+            } catch (\Throwable) {
+                // Unknown consumption keeps the entire reservation charged.
+                $budget->settle($maxBytes, $maxBytes);
+                $bytes += $maxBytes;
+                $reason = 'transport_failed';
+
+                continue;
+            }
+            $budget->settle($maxBytes, $result->bytes);
+            $bytes += $result->bytes;
+            $reason = $result->reason;
+            if ($result->data !== null) {
+                return new BoundedArticleResponse($result->data, $bytes);
+            }
+        }
+
+        return new BoundedArticleResponse(null, $bytes, $reason);
+    }
+
     public function fetchArticleBody(string $messageId, ?ProviderClient $callerClient = null): mixed
     {
         return $this->fetchArticleBodyWithCrcStatus($messageId, $callerClient)->data;

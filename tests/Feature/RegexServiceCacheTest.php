@@ -21,7 +21,7 @@ class RegexServiceCacheTest extends TestCase
         $this->assertSame('', $service->tryRegex('subject one', 'alt.test'));
         $this->assertSame('', $service->tryRegex('subject two', 'alt.test'));
 
-        Cache::shouldHaveReceived('get')->once();
+        Cache::shouldHaveReceived('get')->withArgs(static fn ($key): bool => $key !== 'collection_regexes_revision')->once();
         Cache::shouldHaveReceived('put')->once();
     }
 
@@ -38,7 +38,7 @@ class RegexServiceCacheTest extends TestCase
         $this->travel(2)->minutes();
         $service->tryRegex('subject three', 'alt.test');
 
-        Cache::shouldHaveReceived('get')->twice();
+        Cache::shouldHaveReceived('get')->withArgs(static fn ($key): bool => $key !== 'collection_regexes_revision')->twice();
         Cache::shouldHaveReceived('put')->twice();
     }
 }

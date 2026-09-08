@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Enums\ReleaseRepairOutcome;
+use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\ReleaseRepair\ReleaseRepairCandidateQuery;
 use App\Services\ReleaseRepair\RescanCandidateQuery;
 use App\Services\Releases\IncompleteReleaseSweepQuery;
@@ -27,10 +28,12 @@ class ReleaseRepairGateTest extends TestCase
         parent::setUp();
         $this->bootIsolatedDatabase();
         $this->createReleasesTable();
+        NzbCreationCandidateQuery::flushCapabilityCache();
     }
 
     protected function tearDown(): void
     {
+        NzbCreationCandidateQuery::flushCapabilityCache();
         $this->tearDownIsolatedDatabase();
         parent::tearDown();
     }

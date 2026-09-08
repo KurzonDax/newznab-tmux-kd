@@ -13,6 +13,7 @@ use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
 use App\Services\AudioProcessing\AudioReleaseProcessor;
 use App\Services\Categorization\MediaInfoRefinementService;
+use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\MediaInfo\Contracts\MediaInfoSnapshotWriter;
 use App\Services\MediaInfo\DTO\MediaInfoProbeContext;
 use App\Services\MediaInfo\Enums\MediaInfoSourceCompleteness;
@@ -240,7 +241,7 @@ class MediaExtractionService
                     if ($recoveryFileId === null || $recoveryInspection === null || ! app(RecoveryMediaObservation::class)->record($recovery, $recoveryFileId, $xmlArray, (int) filesize($fileLocation), $recoveryInspection)) {
                         return false;
                     }
-                    if (! (new RecoveryIdentityPolicy)->allowsSingleItemMetadata($releaseId)) {
+                    if ((! (new RecoveryIdentityPolicy)->allowsSingleItemMetadata($releaseId) || ! BundleIdentity::allowsSingleTitle($releaseId))) {
                         return true;
                     }
                 }

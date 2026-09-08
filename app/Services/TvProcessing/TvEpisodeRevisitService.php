@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\TvProcessing;
 
 use App\Models\Release;
+use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
@@ -72,7 +73,7 @@ final class TvEpisodeRevisitService
      */
     public function settleFinalFailure(int $releaseId, bool $ambiguous = false): void
     {
-        $release = Release::query()->whereRaw(RecoveryIdentityPolicy::singleItemSql())->find($releaseId, ['id', 'videos_id', 'postdate']);
+        $release = Release::query()->whereRaw(RecoveryIdentityPolicy::singleItemSql())->whereRaw(BundleIdentity::singleItemSql())->find($releaseId, ['id', 'videos_id', 'postdate']);
         if ($release === null) {
             return;
         }
@@ -88,7 +89,7 @@ final class TvEpisodeRevisitService
                 $updates['videos_id'] = 0;
             }
 
-            $release->newQuery()->whereKey($releaseId)->whereRaw(RecoveryIdentityPolicy::singleItemSql())->update($updates);
+            $release->newQuery()->whereKey($releaseId)->whereRaw(RecoveryIdentityPolicy::singleItemSql())->whereRaw(BundleIdentity::singleItemSql())->update($updates);
 
             return;
         }
@@ -101,6 +102,6 @@ final class TvEpisodeRevisitService
             $updates['videos_id'] = 0;
         }
 
-        $release->newQuery()->whereKey($releaseId)->whereRaw(RecoveryIdentityPolicy::singleItemSql())->update($updates);
+        $release->newQuery()->whereKey($releaseId)->whereRaw(RecoveryIdentityPolicy::singleItemSql())->whereRaw(BundleIdentity::singleItemSql())->update($updates);
     }
 }

@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace App\Services\NNTP;
 
 use App\Models\Settings;
-use App\Services\NNTP\Contracts\ProviderClient;
+use App\Services\NNTP\Contracts\BoundedProviderClient;
 use App\Services\NNTP\DTO\ArticleDownloadResult;
+use App\Services\NNTP\DTO\BoundedArticleResponse;
 use App\Services\Tmux\Tmux;
 use App\Services\YencService;
 use DariusIII\NetNntp\Client as NntpClient;
@@ -20,7 +21,7 @@ use DariusIII\NetNntp\Protocol\ResponseCode;
  * This service wraps the DariusIII\NetNntp\Client class with enhanced functionality
  * and Laravel-friendly dependency injection.
  */
-class NNTPService extends NntpClient implements ProviderClient
+class NNTPService extends NntpClient implements BoundedProviderClient
 {
     private const int CONNECT_RETRY_INITIAL_DELAY_MICROSECONDS = 250_000;
 
@@ -647,16 +648,11 @@ class NNTPService extends NntpClient implements ProviderClient
         return $this->pool()->fetchArticleBodiesWithCrcStatus($ids, $this);
     }
 
-    /**
-     * Fetch one article body from this client's provider only -- no pool failover.
-     *
-     * This is the pool's per-provider entry point; going through it (rather than
-     * {@see self::getMessagesByMessageID()}) is what keeps a pool walk from recursing.
-     *
-     * @return mixed string body on success, Error on failure.
-     *
-     * @throws \Exception
-     */
+    public function fetchBoundedArticle(string $messageId, bool $head, int $maxBytes, float $deadline): BoundedArticleResponse
+    {
+        return (new BoundedNntpStream)->fetch($this->provider(), $messageId, $head, $maxBytes, $deadline);
+    }
+
     public function fetchArticleBody(string $messageId): mixed
     {
         $result = $this->fetchArticleBodyWithCrcStatus($messageId);

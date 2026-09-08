@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\TvProcessing;
 
 use App\Models\Settings;
+use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\ObfuscationRecovery\RecoveryCatalog;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\TvProcessing\Pipes\AbstractTvProviderPipe;
@@ -81,7 +82,7 @@ class TvProcessingPipeline
     {
         $context = TvReleaseContext::fromRelease($release);
         $passable = new TvProcessingPassable($context, $debug);
-        if (! (new RecoveryIdentityPolicy)->allowsSingleItemMetadata($context->releaseId)) {
+        if ((! (new RecoveryIdentityPolicy)->allowsSingleItemMetadata($context->releaseId) || ! BundleIdentity::allowsSingleTitle($context->releaseId))) {
             return $passable->toArray();
         }
 
