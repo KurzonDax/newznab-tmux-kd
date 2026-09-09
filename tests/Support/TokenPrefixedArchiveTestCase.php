@@ -82,7 +82,7 @@ abstract class TokenPrefixedArchiveTestCase extends TestCase
 
     protected function migration(): Migration
     {
-        return require database_path('migrations/2026_09_09_112013_fix_token_prefixed_archive_collection_regex.php');
+        return require database_path('migrations/2026_09_09_140000_swap_stock_token_prefixed_archive_collection_regex.php');
     }
 
     protected function installPrevious(): void

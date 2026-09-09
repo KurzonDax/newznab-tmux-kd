@@ -13,8 +13,10 @@ use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\ObfuscationRecovery\RecoveryReleaseGate;
 use App\Services\Par2Sidecar\SidecarMutationProtection;
 use App\Services\ReleaseRepair\RecoveryLease;
+use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -59,9 +61,9 @@ final class ReleaseClaimant
     private static ?string $supportsClaimsDatabase = null;
 
     /**
-     * @param  Builder<Release>  $base
+     * @param  Closure(int): Builder<Release>  $base
      */
-    private function __construct(private readonly Builder $base) {}
+    private function __construct(private readonly Closure $base) {}
 
     public static function forAdditionalClaim(
         int|string $groupID = '',
@@ -69,12 +71,16 @@ final class ReleaseClaimant
         ?int $minSizeBytes = null,
         ?int $maxSizeBytes = null,
     ): self {
-        return new self(AdditionalCandidateQuery::baseBuilder(
+        $minSizeBytes ??= AdditionalCandidateQuery::minSizeBytes();
+        $maxSizeBytes ??= AdditionalCandidateQuery::maxSizeBytes();
+
+        return new self(static fn (int $passwordStatus): Builder => AdditionalCandidateQuery::baseBuilder(
             $groupID,
             $guidChar,
             $minSizeBytes,
             $maxSizeBytes,
             includePasswordStatuses: false,
+            passwordStatus: $passwordStatus,
         ));
     }
 
@@ -83,11 +89,14 @@ final class ReleaseClaimant
         string $guidChar = '',
         ?int $maxSizeBytes = null,
     ): self {
-        return new self(AudioCandidateQuery::baseBuilder(
+        $maxSizeBytes ??= AdditionalCandidateQuery::maxSizeBytes();
+
+        return new self(static fn (int $passwordStatus): Builder => AudioCandidateQuery::baseBuilder(
             $groupID,
             $guidChar,
             $maxSizeBytes,
             includePasswordStatuses: false,
+            passwordStatus: $passwordStatus,
         ));
     }
 
@@ -106,16 +115,11 @@ final class ReleaseClaimant
         int $minSizeBytes = 0,
         int $maxSizeBytes = 0,
         bool $includePasswordStatuses = true,
+        ?int $passwordStatus = null,
     ): Builder {
         RecoveryReleaseGate::excludePending($query, 'r');
         $query->whereRaw(BundleIdentity::availableSql('r'));
-        if ($includePasswordStatuses) {
-            $query->whereIn('r.passwordstatus', self::PENDING_PASSWORD_STATUSES);
-        }
-
-        $query
-            ->where('r.haspreview', -1)
-            ->where('r.nzbstatus', 1);
+        self::applySeedPredicates($query, $groupID, $guidChar, $maxSizeBytes, $includePasswordStatuses, $passwordStatus);
 
         if ($minSizeBytes > 0) {
             if (self::supportsClaims()) {
@@ -128,6 +132,30 @@ final class ReleaseClaimant
                 $query->where('r.size', '>', $minSizeBytes);
             }
         }
+
+        return $query;
+    }
+
+    /**
+     * Cheap necessary predicates shared by the seeds and authoritative eligibility.
+     *
+     * @param  Builder<Release>  $query  Aliased r.
+     * @return Builder<Release>
+     */
+    public static function applySeedPredicates(
+        Builder $query,
+        int|string $groupID = '',
+        string $guidChar = '',
+        int $maxSizeBytes = 0,
+        bool $includePasswordStatuses = true,
+        ?int $passwordStatus = null,
+    ): Builder {
+        if ($passwordStatus !== null) {
+            $query->where('r.passwordstatus', $passwordStatus);
+        } elseif ($includePasswordStatuses) {
+            $query->whereIn('r.passwordstatus', self::PENDING_PASSWORD_STATUSES);
+        }
+        $query->where('r.haspreview', -1)->where('r.nzbstatus', 1);
         if ($maxSizeBytes > 0) {
             $query->where('r.size', '<', $maxSizeBytes);
         }
@@ -139,6 +167,49 @@ final class ReleaseClaimant
         }
 
         return $query;
+    }
+
+    /**
+     * Disjoint index ranges for the general minimum and its audio-declined exception.
+     *
+     * @param  Builder<Release>  $pending  Necessary pending predicates, selecting r.id.
+     */
+    public static function additionalCandidateIds(Builder $pending, int $minSizeBytes): QueryBuilder
+    {
+        $seed = clone $pending;
+        if ($minSizeBytes > 0) {
+            $seed->where('r.size', '>', $minSizeBytes);
+            if (self::supportsClaims()) {
+                $declined = (clone $pending)
+                    ->where('r.'.self::CLAIM_TOKEN_COLUMN, AudioRouting::DECLINED_TOKEN)
+                    ->where('r.size', '<=', $minSizeBytes);
+                $seed->unionAll($declined);
+            }
+        }
+
+        return $seed->toBase();
+    }
+
+    /**
+     * Keep MySQL/MariaDB from reversing a selective seed into a full release scan.
+     *
+     * @return Builder<Release>
+     */
+    public static function fromCandidateIds(QueryBuilder $seed, string $alias): Builder
+    {
+        $query = Release::query();
+        if (in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
+            $grammar = $query->getQuery()->getGrammar();
+
+            return $query->fromRaw(
+                '('.$seed->toSql().') as '.$grammar->wrapTable($alias)
+                .' STRAIGHT_JOIN '.$grammar->wrapTable('releases as r')
+                .' ON '.$grammar->wrap('r.id').' = '.$grammar->wrap($alias.'.id'),
+                $seed->getBindings(),
+            );
+        }
+
+        return $query->fromSub($seed, $alias)->join('releases as r', 'r.id', '=', $alias.'.id');
     }
 
     public static function maxPpTimeoutCount(): int
@@ -189,9 +260,8 @@ final class ReleaseClaimant
             $candidates = collect();
 
             foreach (self::PENDING_PASSWORD_STATUSES as $passwordStatus) {
-                $query = (clone $this->base)
+                $query = (($this->base)($passwordStatus))
                     ->select(['r.id', 'r.postdate'])
-                    ->where('r.passwordstatus', $passwordStatus)
                     ->orderByDesc('r.postdate')
                     ->orderBy('r.id')
                     ->limit($effectiveLimit);

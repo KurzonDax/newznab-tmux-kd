@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace Tests\Integration;
 
 use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
+use App\Services\AudioProcessing\AudioCandidateQuery;
 use Dotenv\Dotenv;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
 use RuntimeException;
 use Tests\TestCase;
@@ -44,6 +47,14 @@ final class AdditionalCandidateQueryMariaDbTest extends TestCase
         $app = require __DIR__.'/../../bootstrap/app.php';
         $app->make(Kernel::class)->bootstrap();
         $app->make('config')->set('database.connections.mariadb.prefix', $this->tablePrefix);
+        if (getenv('CBP_INTEGRATION_DB_DATABASE') === 'cbp_integration') {
+            $app->make('config')->set([
+                'database.connections.mariadb.host' => 'mariadb',
+                'database.connections.mariadb.database' => 'cbp_integration',
+                'database.connections.mariadb.username' => getenv('CBP_INTEGRATION_DB_USERNAME'),
+                'database.connections.mariadb.password' => getenv('CBP_INTEGRATION_DB_PASSWORD'),
+            ]);
+        }
         $app->make('db')->purge('mariadb');
 
         return $app;
@@ -68,6 +79,8 @@ final class AdditionalCandidateQueryMariaDbTest extends TestCase
     protected function tearDown(): void
     {
         if (isset($this->tablePrefix) && preg_match('/^phase4_\d+_[a-f0-9]{8}_$/', $this->tablePrefix) === 1) {
+            Schema::dropIfExists('releases_groups');
+            Schema::dropIfExists('usenet_groups');
             DB::statement('DROP TABLE IF EXISTS `'.$this->tableName('releases').'`');
             DB::statement('DROP TABLE IF EXISTS `'.$this->tableName('categories').'`');
             DB::statement('DROP TABLE IF EXISTS `'.$this->tableName('settings').'`');
@@ -153,6 +166,42 @@ final class AdditionalCandidateQueryMariaDbTest extends TestCase
         }
         $this->assertLessThanOrEqual(2_000, $this->examinedRowsFor($bucketPlan, 'r'));
         $this->assertLessThanOrEqual(2_000, $this->examinedRowsFor($backlogPlan, 'r'));
+    }
+
+    #[Test]
+    public function optimized_builders_drive_primary_key_lookups_from_narrow_seeds(): void
+    {
+        DB::table('usenet_groups')->insert(['id' => 1, 'forced_root_categories_id' => 3000]);
+        DB::table('releases')->insert([
+            $this->releaseRow(1, '2026-08-10 12:00:00'),
+            [...$this->releaseRow(2, '2026-08-10 12:00:00'), 'categories_id' => 3010],
+            [...$this->releaseRow(3, '2026-08-10 12:00:00'), 'groups_id' => 1],
+            $this->releaseRow(4, '2026-08-10 12:00:00'),
+        ]);
+        DB::table('releases_groups')->insert([
+            ['releases_id' => 2, 'groups_id' => 1],
+            ['releases_id' => 4, 'groups_id' => 1],
+        ]);
+        foreach ([AdditionalCandidateQuery::class => [1], AudioCandidateQuery::class => [2, 3, 4]] as $builder => $expected) {
+            $query = $builder::baseBuilder()->select('r.id')->orderBy('r.id');
+            $this->assertSame($expected, $query->pluck('r.id')->all());
+            $this->assertStringContainsString('STRAIGHT_JOIN', $query->toSql());
+            $plan = $this->analyze($query->toRawSql());
+            $this->assertStringContainsString('union_result', $plan);
+            $this->assertStringContainsString('"eq_ref"', $plan);
+            $this->assertStringContainsString('"PRIMARY"', $plan);
+        }
+        $this->assertSame(['total' => 1, 'available' => 1], AdditionalCandidateQuery::backlogCounts());
+        $this->assertSame(['total' => 3, 'available' => 3], AudioCandidateQuery::backlogCounts());
+        $this->assertTrue(Schema::hasIndex('releases', ['passwordstatus', 'haspreview', 'nzbstatus', 'size']));
+        $this->assertTrue(Schema::hasIndex('releases', ['additional_pp_claim_token', 'passwordstatus', 'haspreview', 'nzbstatus', 'size']));
+        $this->assertTrue(Schema::hasIndex('releases_groups', ['groups_id', 'releases_id']));
+        (require database_path('migrations/2026_09_09_140100_add_post_processing_candidate_indexes.php'))->down();
+        $this->assertFalse(Schema::hasIndex('releases', 'ix_releases_pp_pending_size'));
+        $this->assertFalse(Schema::hasIndex('releases', 'ix_releases_pp_declined_size'));
+        $this->assertFalse(Schema::hasIndex('releases_groups', 'ix_releases_groups_group_release'));
+        $this->assertTrue(Schema::hasIndex('releases', 'ix_releases_add_pp_claim_queue'));
+        $this->assertTrue(Schema::hasIndex('releases_groups', 'primary'));
     }
 
     #[Test]
@@ -272,14 +321,27 @@ final class AdditionalCandidateQueryMariaDbTest extends TestCase
                 haspreview INT NOT NULL,
                 nzbstatus INT NOT NULL,
                 categories_id INT UNSIGNED NOT NULL,
+                groups_id INT UNSIGNED NOT NULL DEFAULT 0,
                 size BIGINT UNSIGNED NOT NULL,
                 postdate DATETIME NULL,
                 additional_pp_claimed_at TIMESTAMP NULL,
                 additional_pp_claim_token VARCHAR(64) NULL,
+                KEY ix_releases_categories_id_passwordstatus (categories_id, passwordstatus),
+                KEY ix_releases_groups_id_passwordstatus (groups_id, passwordstatus),
                 KEY ix_releases_haspreview_passwordstatus (haspreview, passwordstatus),
                 KEY ix_releases_add_pp_claim_queue (passwordstatus, haspreview, nzbstatus, leftguid, postdate DESC, id, additional_pp_claimed_at)
             ) ENGINE=InnoDB
             SQL);
+        Schema::create('usenet_groups', static function (Blueprint $table): void {
+            $table->unsignedInteger('id')->primary();
+            $table->unsignedInteger('forced_root_categories_id')->nullable();
+        });
+        Schema::create('releases_groups', static function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id');
+            $table->unsignedInteger('groups_id');
+            $table->primary(['releases_id', 'groups_id']);
+        });
+        (require database_path('migrations/2026_09_09_140100_add_post_processing_candidate_indexes.php'))->up();
         DB::table('settings')->insert([
             ['name' => 'categorizeforeign', 'value' => '0'],
             ['name' => 'catwebdl', 'value' => '0'],
@@ -299,6 +361,7 @@ final class AdditionalCandidateQueryMariaDbTest extends TestCase
             'haspreview' => -1,
             'nzbstatus' => 1,
             'categories_id' => 1,
+            'groups_id' => 0,
             'size' => 2 * 1048576,
             'postdate' => $postdate,
             'additional_pp_claimed_at' => $claimedAt?->format('Y-m-d H:i:s'),

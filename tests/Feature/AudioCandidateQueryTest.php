@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Models\Category;
+use App\Models\Settings;
 use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\AudioProcessing\AudioCandidateQuery;
@@ -367,6 +368,96 @@ class AudioCandidateQueryTest extends TestCase
         $this->assertSame([1], $claimed->pluck('id')->map(static fn ($id): int => (int) $id)->all());
         $this->assertSame([], $this->audioIds(), 'A freshly claimed release is not offered again.');
         $this->assertSame([], $this->videoIds(), 'A claimed music release never leaks onto the video path.');
+    }
+
+    public function test_mixed_candidate_boundaries_routing_and_protections_preserve_ids_and_counts(): void
+    {
+        $minimum = 300 * 1024 * 1024;
+        $maximum = 200 * 1024 * 1024 * 1024;
+        Settings::settingsUpsert(['minsizetopostprocess' => (string) $minimum, 'maxsizetopostprocess' => (string) $maximum]);
+        foreach ([0, $minimum - 1, $minimum, $minimum + 1, $maximum - 1, $maximum, $maximum + 1] as $index => $size) {
+            $this->seedRelease($index + 1, Category::MOVIE_SD, 3, $size);
+            $this->seedRelease($index + 11, Category::MUSIC_MP3, 3, $size, claimToken: AudioRouting::DECLINED_TOKEN);
+            $this->seedRelease($index + 21, Category::MUSIC_MP3, 3, $size, passwordStatus: -1);
+        }
+        $this->seedRelease(31, Category::MUSIC_MP3, 3, passwordStatus: 1);
+        $this->seedRelease(32, Category::MOVIE_SD, 3, hasPreview: 0);
+        $this->seedRelease(33, Category::MUSIC_MP3, 3);
+        DB::table('releases')->where('id', 33)->update(['nzbstatus' => 0]);
+        $this->seedRelease(40, Category::MOVIE_SD, 2);
+        $this->seedRelease(41, Category::MOVIE_SD, 3);
+        $this->seedRelease(42, Category::MUSIC_MP3, 2);
+        $this->seedRelease(43, Category::MUSIC_MP3, 4);
+        $this->seedRelease(44, Category::MUSIC_MP3, 3);
+        foreach ([41, 42, 43, 44] as $id) {
+            DB::table('releases_groups')->insert(['releases_id' => $id, 'groups_id' => 2]);
+        }
+        DB::table('releases_groups')->insert(['releases_id' => 44, 'groups_id' => 4]);
+
+        Schema::table('releases', static fn (Blueprint $table) => $table->timestamp('recovery_claimed_at')->nullable());
+        Schema::create('obfuscation_recovery_publications', static function (Blueprint $table): void {
+            $table->integer('releases_id');
+            $table->string('state');
+            $table->string('initialization_state');
+            $table->string('enrichment_outcome')->nullable();
+            $table->timestamp('enrichment_next_attempt_at')->nullable();
+        });
+        Schema::create('reconciled_postings', static function (Blueprint $table): void {
+            $table->integer('id')->primary();
+            $table->integer('release_id');
+            $table->string('state');
+        });
+        Schema::create('reconciled_posting_inputs', static function (Blueprint $table): void {
+            $table->integer('release_id');
+            $table->integer('posting_id');
+        });
+        Schema::create('par2_sidecar_operations', static function (Blueprint $table): void {
+            $table->integer('id')->primary();
+            $table->integer('target_id');
+            $table->integer('source_id')->nullable();
+            $table->string('phase');
+        });
+        foreach (range(45, 52) as $id) {
+            $this->seedRelease($id, Category::MUSIC_MP3, 3);
+        }
+        DB::table('obfuscation_recovery_publications')->insert([
+            ['releases_id' => 45, 'state' => 'published', 'initialization_state' => 'complete'],
+            ['releases_id' => 46, 'state' => 'published', 'initialization_state' => 'pending'],
+        ]);
+        DB::table('reconciled_postings')->insert(['id' => 1, 'release_id' => 47, 'state' => 'planned']);
+        DB::table('par2_sidecar_operations')->insert(['id' => 1, 'target_id' => 48, 'phase' => 'nzb_writing']);
+        DB::table('releases')->where('id', 49)->update(['additional_pp_claimed_at' => now(), 'additional_pp_claim_token' => 'busy']);
+        DB::table('releases')->where('id', 50)->update(['additional_pp_claimed_at' => now()->subSeconds(301), 'additional_pp_claim_token' => 'stale']);
+        DB::table('releases')->where('id', 51)->update(['recovery_claimed_at' => now()]);
+        DB::table('releases')->where('id', 52)->update(['recovery_claimed_at' => now()->subSeconds(301)]);
+
+        $this->assertSame([4, 5, 11, 12, 13, 14, 15, 43, 44, 45], $this->videoIds());
+        $this->assertSame([21, 22, 23, 24, 25, 40, 41, 42, 50, 52], $this->audioIds());
+        $this->assertSame(['total' => 10, 'available' => 10], AdditionalCandidateQuery::backlogCounts());
+        $this->assertSame(['total' => 13, 'available' => 10], AudioCandidateQuery::backlogCounts());
+        $this->assertSame([['bucket' => 'a', 'total' => 13, 'available' => 10]], AudioCandidateQuery::bucketBacklog());
+        $this->assertSame([['bucket' => 'a', 'count' => 10]], AudioCandidateQuery::availableBucketCounts());
+        $this->assertSame([['bucket' => 'a', 'total' => 10, 'available' => 10]], AdditionalCandidateQuery::bucketBacklog());
+
+        $before = DB::table('releases')->orderBy('id')->get()->toJson();
+        Settings::settingsUpsert(['minsizetopostprocess' => '0']);
+        $this->assertSame([1, 2, 3, 4, 5, 11, 12, 13, 14, 15, 43, 44, 45], $this->videoIds());
+        Settings::settingsUpsert(['minsizetopostprocess' => (string) ($minimum + 1)]);
+        $this->assertSame([5, 11, 12, 13, 14, 15, 43, 44, 45], $this->videoIds());
+        Settings::settingsUpsert(['maxsizetopostprocess' => '0']);
+        $this->assertSame([5, 6, 7, 11, 12, 13, 14, 15, 16, 17, 43, 44, 45], $this->videoIds());
+        $this->assertSame([21, 22, 23, 24, 25, 26, 27, 40, 41, 42, 50, 52], $this->audioIds());
+        $this->assertSame($before, DB::table('releases')->orderBy('id')->get()->toJson());
+    }
+
+    public function test_audio_seed_is_distinct_and_keeps_worker_constraints_in_all_sources(): void
+    {
+        $sql = AudioCandidateQuery::baseBuilder(groupID: 2, guidChar: 'a', passwordStatus: -1)->toSql();
+        $this->assertSame(2, substr_count($sql, ' union '));
+        $this->assertStringNotContainsString('union all', $sql);
+        $this->assertSame(4, substr_count($sql, '"r"."groups_id" = ?'));
+        $this->assertSame(4, substr_count($sql, '"r"."leftguid" = ?'));
+        $this->assertSame(4, substr_count($sql, '"r"."passwordstatus" = ?'));
     }
 
     private function seedRelease(

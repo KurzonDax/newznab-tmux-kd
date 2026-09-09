@@ -95,6 +95,7 @@ final class AdditionalCandidateQuery
         ?int $maxSizeBytes = null,
         bool $includeClaimed = false,
         bool $includePasswordStatuses = true,
+        ?int $passwordStatus = null,
     ): Builder {
         ReleaseClaimant::applyPendingPredicates(
             $query,
@@ -103,6 +104,7 @@ final class AdditionalCandidateQuery
             $minSizeBytes ?? self::minSizeBytes(),
             $maxSizeBytes ?? self::maxSizeBytes(),
             $includePasswordStatuses,
+            $passwordStatus,
         );
 
         if (! $includeClaimed) {
@@ -129,8 +131,17 @@ final class AdditionalCandidateQuery
         ?int $maxSizeBytes = null,
         bool $includeClaimed = false,
         bool $includePasswordStatuses = true,
+        ?int $passwordStatus = null,
     ): Builder {
-        $query = Release::query()->from('releases as r');
+        $minSizeBytes ??= self::minSizeBytes();
+        $maxSizeBytes ??= self::maxSizeBytes();
+        $pending = ReleaseClaimant::applySeedPredicates(
+            Release::query()->from('releases as r')->select('r.id'),
+            $groupID, $guidChar, $maxSizeBytes, $includePasswordStatuses, $passwordStatus,
+        );
+        $query = ReleaseClaimant::fromCandidateIds(
+            ReleaseClaimant::additionalCandidateIds($pending, $minSizeBytes), 'additional_seed',
+        );
 
         return self::applyPredicates(
             $query,
@@ -140,6 +151,7 @@ final class AdditionalCandidateQuery
             $maxSizeBytes,
             $includeClaimed,
             $includePasswordStatuses,
+            $passwordStatus,
         );
     }
 

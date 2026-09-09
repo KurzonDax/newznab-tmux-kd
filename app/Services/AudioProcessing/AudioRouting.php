@@ -11,6 +11,7 @@ use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\Releases\ForcedRootPolicy;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 
 /**
  * Which post-processing path a pending release belongs to.
@@ -41,6 +42,27 @@ final class AudioRouting
      * makes a release look busy.
      */
     public const string DECLINED_TOKEN = 'aud:declined';
+
+    /**
+     * A distinct necessary superset of audio identities, before precedence and ownership.
+     * The authoritative routing predicate must still be applied to the resulting rows.
+     *
+     * @param  Builder<Release>  $pending  Necessary pending predicates, selecting r.id.
+     */
+    public static function candidateIds(Builder $pending): QueryBuilder
+    {
+        $category = (clone $pending)->whereBetween('r.categories_id', [Category::MUSIC_ROOT, Category::MUSIC_ROOT + 999]);
+        $primary = (clone $pending)
+            ->join('usenet_groups as music_primary', 'music_primary.id', '=', 'r.groups_id')
+            ->where('music_primary.forced_root_categories_id', Category::MUSIC_ROOT);
+        $associated = (clone $pending)
+            ->join('releases_groups as music_association', 'music_association.releases_id', '=', 'r.id')
+            ->join('usenet_groups as music_group', 'music_group.id', '=', 'music_association.groups_id')
+            ->where('music_group.forced_root_categories_id', Category::MUSIC_ROOT);
+        $seed = $category->union($primary)->union($associated);
+
+        return $seed->toBase();
+    }
 
     /**
      * Restrict a releases query (aliased `r`) to the audio worker's half of the
