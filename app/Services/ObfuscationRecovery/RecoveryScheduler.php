@@ -13,7 +13,7 @@ final class RecoveryScheduler
     /** @phpstan-impure */
     public function allowed(bool $engine): bool
     {
-        return ! $engine || (int) Settings::settingValue('is_running') === 1;
+        return ! $engine || Settings::isEngineRunning();
     }
 
     /** @return array<string,int> */

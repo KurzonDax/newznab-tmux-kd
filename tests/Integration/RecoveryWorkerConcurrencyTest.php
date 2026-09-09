@@ -74,7 +74,7 @@ final class RecoveryWorkerConcurrencyTest extends TestCase
             $table->string('name');
         });
         (require database_path('migrations/2026_09_07_172435_add_obfuscation_recovery_storage.php'))->up();
-        DB::table('settings')->insert([['name' => 'categorizeforeign', 'value' => 0], ['name' => 'catwebdl', 'value' => 0], ['name' => 'is_running', 'value' => 1]]);
+        DB::table('settings')->insert([['name' => 'categorizeforeign', 'value' => 0], ['name' => 'catwebdl', 'value' => 0], ['name' => 'running', 'value' => 1]]);
         DB::table('settings')->where('name', 'obfuscation_recovery_enabled')->update(['value' => 1]);
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.fixture', 'obfuscation_recovery_profile' => 'both']);
         $this->createRecoveryCbpSchema();
@@ -160,11 +160,13 @@ final class RecoveryWorkerConcurrencyTest extends TestCase
         $extra->wait();
         $this->assertCount(3, $this->events('open'));
         $this->assertSame(3, DB::table('obfuscation_recovery_slots')->whereNotNull('worker_token')->count());
-        DB::table('settings')->where('name', 'is_running')->update(['value' => 0]);
+        DB::table('settings')->where('name', 'running')->update(['value' => 0]);
         $supervisor->wait();
         $this->assertTrue($supervisor->isSuccessful(), $supervisor->getErrorOutput());
         $stopped = $this->supervisor(true);
         $stopped->wait();
+        $this->assertTrue($stopped->isSuccessful(), $stopped->getErrorOutput());
+        $this->assertSame('admission_pending', trim($stopped->getOutput()));
         $this->assertCount(3, $this->events('open'));
         DB::table('obfuscation_recovery_slots')->whereNotNull('worker_token')->update(['expires_at' => now()->subSecond()]);
         DB::table('obfuscation_recovery_work')->where('status', 'claimed')->update(['claim_expires_at' => now()->subSecond()]);
