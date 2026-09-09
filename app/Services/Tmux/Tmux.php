@@ -194,7 +194,6 @@ class Tmux
             'colors_end' => 'colors_end',
             'colors_exc' => 'colors_exc',
             'showquery' => 'show_query',
-            'running' => 'is_running',
             'lookupbooks' => 'processbooks',
             'lookupgames' => 'processgames',
             'lookupimdb' => 'processmovies',
@@ -212,7 +211,7 @@ class Tmux
             ->mapWithKeys(function ($item) use ($settingsMap) {
                 return [$settingsMap[$item->name] => Settings::convertValue($item->getRawOriginal('value'))];
             })
-            ->toArray();
+            ->toArray() + ['is_running' => (int) Settings::isEngineRunning()];
     }
 
     public function updateItem(mixed $setting, mixed $value): int

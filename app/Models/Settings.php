@@ -152,6 +152,12 @@ class Settings extends Model
         return $results;
     }
 
+    /** @phpstan-impure */
+    public static function isEngineRunning(): bool
+    {
+        return (int) self::settingValue('running') === 1;
+    }
+
     public static function settingValue(mixed $setting): mixed
     {
         try {
