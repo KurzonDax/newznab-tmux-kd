@@ -2282,7 +2282,7 @@ class CollectionRegexesTableSeeder extends Seeder
             283 => [
                 'id' => 284,
                 'group_regex' => '^alt\\.binaries\\.erotica$',
-                'regex' => '/(.+)[\-_ ]{0,3}[\\(\\[]\\d+\\/(?P<match0>\\d+[\\)\\]][\-_ ]{0,3}("|#34;).+?)(\\.part\\d*|\\.rar)?(\\.vol\\d+\\+\\d+\\.par2"|\\.[A-Za-z0-9]{2,4})("|#34;)(.+?)yEnc$/i',
+                'regex' => '~(?J)(?:^([A-Za-z0-9][A-Za-z0-9._-]{0,199}) +\\[[0-9]{1,5}/(?P<match0>[0-9]{1,5}\\] - "(?-i:\\1))(?:\\.part[0-9]{1,5}\\.rar|\\.7z\\.[0-9]{3}|\\.vol[0-9]{1,5}\\+[0-9]{1,5}\\.par2|\\.(?:rar|7z|par2|nfo|sfv|nzb))" yEnc$|(.+)[\-_ ]{0,3}[\\(\\[]\\d+\\/(?P<match0>\\d+[\\)\\]][\-_ ]{0,3}("|#34;).+?)(\\.part\\d*|\\.rar)?(\\.vol\\d+\\+\\d+\\.par2"|\\.[A-Za-z0-9]{2,4})("|#34;)(.+?)yEnc$)~i',
                 'status' => 1,
                 'description' => '//..::kleverig.eu::.. [001/141] - "ZYGBUTD5TPgMdjjxnvrl.par2" - 13,28 GB yEnc',
                 'ordinal' => 55,
