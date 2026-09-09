@@ -8,7 +8,6 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use RuntimeException;
 use Tests\Support\TokenPrefixedArchiveTestCase;
 
 class TokenPrefixedArchiveMigrationMariaDbTest extends TokenPrefixedArchiveTestCase
@@ -70,9 +69,15 @@ class TokenPrefixedArchiveMigrationMariaDbTest extends TokenPrefixedArchiveTestC
         parent::tearDown();
     }
 
-    public function test_innodb_upgrade_rollback_guard_and_byte_exact_ownership(): void
+    public function test_innodb_upgrade_rollback_lock_and_byte_exact_ownership(): void
     {
         $updated = DB::table('collection_regexes')->where('id', 284)->value('regex');
+        $queries = [];
+        DB::connection()->beforeExecuting(static function (string $sql) use (&$queries): void {
+            if (str_contains($sql, 'collection_regexes')) {
+                $queries[] = [$sql, DB::transactionLevel()];
+            }
+        });
         foreach (['up' => self::PREVIOUS, 'down' => $updated] as $direction => $source) {
             foreach (['regex' => strtoupper($source), 'group_regex' => '^Alt\\.binaries\\.erotica$'] as $field => $local) {
                 DB::table('collection_regexes')->where('id', 284)->update([
@@ -89,18 +94,13 @@ class TokenPrefixedArchiveMigrationMariaDbTest extends TokenPrefixedArchiveTestC
             ]);
             $id = DB::table('collections')->insertGetId(['groups_id' => 1, 'collection_regexes_id' => 284,
                 'subject' => 'Sample-B [01/19] - "Sample-B.7z.001" yEnc']);
-            $error = null;
-            try {
-                $this->migration()->{$direction}();
-            } catch (RuntimeException $exception) {
-                $error = $exception;
-            }
-            $this->assertNotNull($error);
-            $this->assertStringContainsString('drain', $error->getMessage());
-            $this->assertSame($source, DB::table('collection_regexes')->where('id', 284)->value('regex'));
-            $this->assertSame('before', Cache::get('collection_regexes_revision'));
-            DB::table('collections')->where('id', $id)->delete();
+            $queries = [];
             $this->migration()->{$direction}();
+            $this->assertCount(2, $queries);
+            $this->assertStringContainsString('for update', $queries[0][0]);
+            $this->assertSame([1, 1], array_column($queries, 1));
+            $this->assertNotSame('before', Cache::get('collection_regexes_revision'));
+            $this->assertTrue(DB::table('collections')->where('id', $id)->exists());
             $this->assertSame($direction === 'up' ? $updated : self::PREVIOUS, DB::table('collection_regexes')->where('id', 284)->value('regex'));
         }
     }
