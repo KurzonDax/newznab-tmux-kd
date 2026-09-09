@@ -12,8 +12,10 @@ use App\Models\Predb;
 use App\Models\Release;
 use App\Models\UsenetGroup;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
+use App\Services\AdditionalProcessing\ReleaseFileManager;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
+use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
 use App\Services\Categorization\CategorizationService;
 use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\NameFixing\DowngradedNameRestorer;
@@ -619,6 +621,81 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
         $this->assertSame(Category::TV_HD, $release->categories_id);
         $this->assertSame(1, (int) $release->iscategorized);
         $this->assertSame(1, (int) $release->isrenamed);
+    }
+
+    /**
+     * @param  list<string>  $currentFiles
+     * @param  list<string>  $persistedFiles
+     * @param  list<string>  $pendingFiles
+     */
+    #[DataProvider('rarEpisodeEvidence')]
+    public function test_rar_rename_uses_episode_evidence(
+        array $currentFiles,
+        array $persistedFiles,
+        array $pendingFiles,
+        string $expected,
+        bool $preDbMatch = false,
+    ): void {
+        Search::shouldReceive('updateRelease')->andReturn(true);
+        Search::shouldReceive('searchPredb')->andReturn([]);
+        config(['nntmux.echocli' => false]);
+        Schema::create('release_files', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id');
+            $table->string('name');
+        });
+        $group = UsenetGroup::query()->create(['name' => 'alt.binaries.test']);
+        $release = Release::factory()->create([
+            'name' => '(mm02nl) [000/280]',
+            'searchname' => '(mm02nl) [000/280]',
+            'groups_id' => $group->id,
+            'categories_id' => Category::OTHER_HASHED,
+            'isrenamed' => 0,
+        ]);
+        foreach ($persistedFiles as $fileName) {
+            DB::table('release_files')->insert(['releases_id' => $release->id, 'name' => $fileName]);
+        }
+        $preDbId = $preDbMatch
+            ? DB::table('predb')->insertGetId(['title' => $expected])
+            : 0;
+        $context = new ReleaseProcessingContext($release);
+        $manager = app(ReleaseFileManager::class);
+        foreach ($pendingFiles as $fileName) {
+            $this->assertTrue($manager->addFileInfo(['name' => $fileName, 'size' => 1024], $context, '\\.(?:par2|sfv|nzb)'));
+        }
+
+        $manager->processReleaseNameFromRar([
+            'file_list' => array_map(static fn (string $name): array => ['name' => $name], $currentFiles),
+        ], $context);
+
+        $release->refresh();
+        $this->assertSame($expected, $release->searchname);
+        $this->assertSame(1, (int) $release->proc_files);
+        $this->assertSame(1, (int) $release->isrenamed);
+        $this->assertSame($preDbMatch ? 1 : 0, (int) $release->is_trusted_name);
+        $this->assertSame($preDbId, (int) $release->predb_id);
+    }
+
+    /**
+     * @return array<string, array{list<string>, list<string>, list<string>, string, 4?: bool}>
+     */
+    public static function rarEpisodeEvidence(): array
+    {
+        $first = 'Season 2/Murdoch Mysteries S02E01 Mild, Mild West.mkv';
+        $last = 'Season 2/Murdoch Mysteries S02E13 Anything You Can Do.mkv';
+        $episodeTitle = 'Murdoch Mysteries S02E13 Anything You Can Do';
+
+        return [
+            'persisted forward volume' => [[$last], [$first], [], 'Murdoch Mysteries S02'],
+            'queued forward volume' => [[$last], [], [$first], 'Murdoch Mysteries S02'],
+            'two episodes in one volume' => [[$last, $first], [], [], 'Murdoch Mysteries S02'],
+            'single episode in season directory' => [[$last], [], [], $episodeTitle],
+            'same episode repeated' => [[$last], [$last], [], $episodeTitle],
+            'different seasons' => [[$last], ['Murdoch Mysteries S01E01 Title.mkv'], [], $episodeTitle],
+            'different shows' => [[$last], ['Other Mysteries S02E01 Title.mkv'], [], $episodeTitle],
+            'non-video evidence' => [[$last], ['Murdoch Mysteries S02E01 Title.nfo'], [], $episodeTitle],
+            'normalized show and numeric season' => [[$last], ['Season 2\\murdoch_mysteries s2e1 Title.MKV'], [], 'Murdoch Mysteries S02'],
+            'PreDB wins over season evidence' => [[$last], [$first], [], $episodeTitle, true],
+        ];
     }
 
     public function test_descriptive_title_renames_an_obfuscated_release_from_a_video_filename(): void

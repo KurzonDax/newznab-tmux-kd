@@ -38,7 +38,7 @@ class MovieCategorizer extends AbstractCategorizer
         }
 
         // Skip if it looks like a TV episode (S01E01) or season pack (S01.1080p)
-        if (preg_match('/[._ -]S\d{1,3}[._ -]?(E\d|D\d|Complete|Full|1080|720|480|2160|WEB|HDTV|BluRay|NF|AMZN)/i', $context->releaseName)) {
+        if (preg_match('/[._ -]S\d{1,4}[._ -]?(E\d|D\d|Complete|Full|1080|720|480|2160|WEB|HDTV|BluRay|NF|AMZN)/i', $context->releaseName)) {
             return true;
         }
 

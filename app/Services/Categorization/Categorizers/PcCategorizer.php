@@ -40,7 +40,7 @@ class PcCategorizer extends AbstractCategorizer
             return true;
         }
         // Skip TV shows (season patterns)
-        if (preg_match('/[._ -]S\d{1,3}[._ -]?(E\d|Complete|Full|1080|720|480|2160|WEB|HDTV|BluRay)/i', $context->releaseName)) {
+        if (preg_match('/[._ -]S\d{1,4}[._ -]?(E\d|Complete|Full|1080|720|480|2160|WEB|HDTV|BluRay)/i', $context->releaseName)) {
             return true;
         }
 

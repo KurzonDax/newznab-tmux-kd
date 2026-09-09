@@ -14,7 +14,7 @@ use Tests\Unit\ImdbScraperTestCase;
 class AbstractTvProviderTest extends ImdbScraperTestCase
 {
     /**
-     * @param  array{cleanname: string, season: int, episode: int, airdate: string}  $expected
+     * @param  array{cleanname: string, season: int|string, episode: int, airdate: string}  $expected
      */
     #[Test]
     #[DataProvider('episodeFormats')]
@@ -27,6 +27,19 @@ class AbstractTvProviderTest extends ImdbScraperTestCase
         $this->assertSame($expected['season'], $showInfo['season']);
         $this->assertSame($expected['episode'], $showInfo['episode']);
         $this->assertSame($expected['airdate'], $showInfo['airdate']);
+    }
+
+    #[Test]
+    public function it_parses_a_four_digit_season_without_truncating_it(): void
+    {
+        $info = (new LocalDbProvider)->parseInfo(
+            'Dangerous.Encounters.(2005).-.S2010E05.-.Cannibal.Squid.[SDTV][MP3.2.0][XviD]-KAFFEREP',
+        );
+
+        $this->assertIsArray($info);
+        $this->assertSame('Dangerous Encounters', $info['name']);
+        $this->assertSame(2010, $info['season']);
+        $this->assertSame(5, $info['episode']);
     }
 
     #[Test]
@@ -113,7 +126,7 @@ class AbstractTvProviderTest extends ImdbScraperTestCase
     }
 
     /**
-     * @return array<string, array{string, array{cleanname: string, season: int, episode: int, airdate: string}}>
+     * @return array<string, array{string, array{cleanname: string, season: int|string, episode: int, airdate: string}}>
      */
     public static function episodeFormats(): array
     {
@@ -146,6 +159,9 @@ class AbstractTvProviderTest extends ImdbScraperTestCase
                 'Chernobyl.Episode.S01E03.1080p.WEB-DL.x264',
                 ['cleanname' => 'Chernobyl', 'season' => 1, 'episode' => 3, 'airdate' => ''],
             ],
+            'x episode' => ['Example.Show.1x05.HDTV', ['cleanname' => 'Example Show', 'season' => 1, 'episode' => 5, 'airdate' => '']],
+            'year season without S' => ['Example.Show.2019.05.HDTV', ['cleanname' => 'Example Show (2019)', 'season' => '2019', 'episode' => 5, 'airdate' => '']],
+            'dotted year season' => ['Example.Show.S2010.E05.HDTV', ['cleanname' => 'Example Show', 'season' => 2010, 'episode' => 5, 'airdate' => '']],
             'airdate' => [
                 'Example.Show.2024.01.15.720p.HDTV.x264',
                 ['cleanname' => 'Example Show', 'season' => 0, 'episode' => 0, 'airdate' => '2024-01-15'],
