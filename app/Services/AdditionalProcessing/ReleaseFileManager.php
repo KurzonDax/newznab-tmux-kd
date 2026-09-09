@@ -896,7 +896,7 @@ class ReleaseFileManager
 
             $this->releaseUpdateService->updateRelease(
                 $context->release,
-                $basename,
+                $this->seasonPackTitle($basename, $fileNames, $context),
                 'RarInfo: Descriptive title',
                 true,
                 'Filenames, ',
@@ -910,6 +910,54 @@ class ReleaseFileManager
         }
 
         return $extractedName === null ? null : false;
+    }
+
+    /**
+     * @param  list<string>  $fileNames
+     */
+    private function seasonPackTitle(string $candidate, array $fileNames, ReleaseProcessingContext $context): string
+    {
+        $episode = $this->parseVideoEpisode($candidate);
+        if ($episode === null) {
+            return $candidate;
+        }
+
+        $this->loadExistingReleaseFileNames($context);
+        $evidence = array_merge(
+            $fileNames,
+            array_keys($context->pendingReleaseFiles),
+            array_keys($context->existingReleaseFileNames ?? []),
+        );
+
+        foreach ($evidence as $fileName) {
+            $other = $this->parseVideoEpisode($fileName);
+            if ($other !== null
+                && strcasecmp($other['show'], $episode['show']) === 0
+                && $other['season'] === $episode['season']
+                && $other['episode'] !== $episode['episode']) {
+                return sprintf('%s S%02d', $episode['show'], $episode['season']);
+            }
+        }
+
+        return $candidate;
+    }
+
+    /**
+     * @return array{show: string, season: int, episode: int}|null
+     */
+    private function parseVideoEpisode(string $fileName): ?array
+    {
+        $basename = $this->fileNameCleaner->extractFilenameFromPath($fileName);
+        if (! preg_match('/'.PostedFileClassifier::VIDEO_FILE_REGEX.'$/i', $basename)
+            || ! preg_match('/^(?<show>.+?)[ ._-]+S(?<season>\d{1,4})E(?<episode>\d{1,4})\b/i', $basename, $matches)) {
+            return null;
+        }
+
+        return [
+            'show' => trim(preg_replace('/[._]+/', ' ', $matches['show']) ?? $matches['show']),
+            'season' => (int) $matches['season'],
+            'episode' => (int) $matches['episode'],
+        ];
     }
 
     /**
