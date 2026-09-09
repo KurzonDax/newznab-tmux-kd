@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Models\Settings;
 use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
 use Illuminate\Database\Events\QueryExecuted;
@@ -34,6 +35,64 @@ class AdditionalCandidateQueryTest extends TestCase
     {
         $this->tearDownIsolatedDatabase();
         parent::tearDown();
+    }
+
+    public function test_candidate_seed_splits_the_minimum_exception_and_pushes_worker_constraints(): void
+    {
+        $sql = AdditionalCandidateQuery::baseBuilder(groupID: 7, guidChar: 'a', minSizeBytes: 300, maxSizeBytes: 900)->toSql();
+        $this->assertStringContainsString('union all', $sql);
+        $this->assertStringContainsString('"r"."size" <= ?', $sql);
+        $this->assertSame(3, substr_count($sql, '"r"."groups_id" = ?'));
+        $this->assertSame(3, substr_count($sql, '"r"."leftguid" = ?'));
+        $this->assertStringNotContainsString('union', AdditionalCandidateQuery::baseBuilder(minSizeBytes: 0)->toSql());
+    }
+
+    public function test_candidate_indexes_have_ordered_columns_and_rollback_preserves_existing_indexes(): void
+    {
+        $migrationPath = database_path('migrations/2026_09_09_140100_add_post_processing_candidate_indexes.php');
+        $definitions = [
+            'releases' => [
+                'ix_releases_pp_pending_size' => ['passwordstatus', 'haspreview', 'nzbstatus', 'size'],
+                'ix_releases_pp_declined_size' => ['additional_pp_claim_token', 'passwordstatus', 'haspreview', 'nzbstatus', 'size'],
+            ],
+            'releases_groups' => ['ix_releases_groups_group_release' => ['groups_id', 'releases_id']],
+        ];
+        (require $migrationPath)->up();
+        (require $migrationPath)->up();
+        foreach ($definitions as $table => $indexes) {
+            foreach ($indexes as $name => $columns) {
+                $this->assertTrue(Schema::hasIndex($table, $columns));
+                $this->assertTrue(Schema::hasIndex($table, $name));
+            }
+        }
+        (require $migrationPath)->down();
+        foreach ($definitions as $table => $indexes) {
+            foreach ($indexes as $name => $columns) {
+                $this->assertFalse(Schema::hasIndex($table, $name));
+                Schema::table($table, static fn (Blueprint $blueprint) => $blueprint->index($columns, $name));
+            }
+        }
+        $before = [Schema::getIndexes('releases'), Schema::getIndexes('releases_groups')];
+        (require $migrationPath)->up();
+        (require $migrationPath)->down();
+        $this->assertSame($before, [Schema::getIndexes('releases'), Schema::getIndexes('releases_groups')]);
+    }
+
+    public function test_blank_and_missing_bounds_use_defaults_without_rewriting_releases(): void
+    {
+        DB::table('releases')->insert([
+            [...$this->releaseRow(1, 'a'), 'size' => 0],
+            [...$this->releaseRow(2, 'b'), 'size' => 1048576],
+            [...$this->releaseRow(3, 'c'), 'size' => 1048577],
+            [...$this->releaseRow(4, 'd'), 'size' => 107374182400],
+        ]);
+        $before = DB::table('releases')->orderBy('id')->get()->toJson();
+        $this->assertSame([3], AdditionalCandidateQuery::baseBuilder()->pluck('r.id')->all());
+        Settings::settingsUpsert(['minsizetopostprocess' => '', 'maxsizetopostprocess' => '']);
+        $this->assertSame([3], AdditionalCandidateQuery::baseBuilder()->pluck('r.id')->all());
+        Settings::settingsUpsert(['minsizetopostprocess' => '0', 'maxsizetopostprocess' => '0']);
+        $this->assertSame([1, 2, 3, 4], AdditionalCandidateQuery::baseBuilder()->orderBy('r.id')->pluck('r.id')->all());
+        $this->assertSame($before, DB::table('releases')->orderBy('id')->get()->toJson());
     }
 
     public function test_bucket_chars_preserve_alphabetic_guid_buckets(): void

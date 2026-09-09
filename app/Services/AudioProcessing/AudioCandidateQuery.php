@@ -44,6 +44,7 @@ final class AudioCandidateQuery
         ?int $maxSizeBytes = null,
         bool $includeClaimed = false,
         bool $includePasswordStatuses = true,
+        ?int $passwordStatus = null,
     ): Builder {
         ReleaseClaimant::applyPendingPredicates(
             $query,
@@ -53,6 +54,7 @@ final class AudioCandidateQuery
             minSizeBytes: 0,
             maxSizeBytes: $maxSizeBytes ?? AdditionalCandidateQuery::maxSizeBytes(),
             includePasswordStatuses: $includePasswordStatuses,
+            passwordStatus: $passwordStatus,
         );
 
         if (! $includeClaimed) {
@@ -73,14 +75,22 @@ final class AudioCandidateQuery
         ?int $maxSizeBytes = null,
         bool $includeClaimed = false,
         bool $includePasswordStatuses = true,
+        ?int $passwordStatus = null,
     ): Builder {
+        $maxSizeBytes ??= AdditionalCandidateQuery::maxSizeBytes();
+        $pending = ReleaseClaimant::applySeedPredicates(
+            Release::query()->from('releases as r')->select('r.id'),
+            $groupID, $guidChar, $maxSizeBytes, $includePasswordStatuses, $passwordStatus,
+        );
+
         return self::applyPredicates(
-            Release::query()->from('releases as r'),
+            ReleaseClaimant::fromCandidateIds(AudioRouting::candidateIds($pending), 'audio_seed'),
             $groupID,
             $guidChar,
             $maxSizeBytes,
             $includeClaimed,
             $includePasswordStatuses,
+            $passwordStatus,
         );
     }
 
