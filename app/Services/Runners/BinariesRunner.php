@@ -87,7 +87,14 @@ class BinariesRunner extends BaseRunner
             return;
         }
 
-        $queues = $this->buildSafeBinariesQueue($groups, $maxHeaders, $maxMessages);
+        $ingested = [];
+        foreach (DB::table('usenet_group_ingested_ranges as r')
+            ->join('usenet_groups as g', 'g.id', '=', 'r.usenet_groups_id')
+            ->whereIn('g.name', array_column($groups, 'groupname'))
+            ->get(['g.name', 'r.first_record', 'r.last_record']) as $range) {
+            $ingested[$range->name][] = [(int) $range->first_record, (int) $range->last_record];
+        }
+        $queues = $this->buildSafeBinariesQueue($groups, $maxHeaders, $maxMessages, $ingested);
 
         // Streaming mode
         if ((bool) config('nntmux.stream_fork_output', false) === true) {
@@ -125,9 +132,10 @@ class BinariesRunner extends BaseRunner
 
     /**
      * @param  list<object{groupname: string, our_last: int|string, their_last: int|string}>  $groups
+     * @param  array<string, list<array{int, int}>>  $ingestedRanges
      * @return array<int, string>
      */
-    public function buildSafeBinariesQueue(array $groups, int $maxHeaders, int $maxMessages): array
+    public function buildSafeBinariesQueue(array $groups, int $maxHeaders, int $maxMessages, array $ingestedRanges = []): array
     {
         $queueIndex = 1;
         $queues = [];
@@ -171,6 +179,23 @@ class BinariesRunner extends BaseRunner
                 $ranges[] = [$start, $start + $remaining];
             }
 
+            foreach ($ingestedRanges[$group->groupname] ?? [] as [$coveredFirst, $coveredLast]) {
+                $uncovered = [];
+                foreach ($ranges as [$start, $end]) {
+                    if ($coveredLast < $start || $coveredFirst > $end) {
+                        $uncovered[] = [$start, $end];
+
+                        continue;
+                    }
+                    if ($start < $coveredFirst) {
+                        $uncovered[] = [$start, $coveredFirst - 1];
+                    }
+                    if ($end > $coveredLast) {
+                        $uncovered[] = [$coveredLast + 1, $end];
+                    }
+                }
+                $ranges = $uncovered;
+            }
             $rangesByGroup[] = [$group->groupname, $ranges];
         }
 

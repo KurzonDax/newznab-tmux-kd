@@ -425,7 +425,8 @@ class BinariesService
 
         $this->outputHeaderDuration();
 
-        if ($storageReport->rolledBackChunks > 0) {
+        if ($storageReport->rolledBackChunks > 0
+            && (! $addToPartRepair || ! $this->missedPartHandler->coversStorageFailures($storageReport->uniqueFailedNumbers(), (int) $groupMySQL['id']))) {
             $this->lastScanRejected = true;
 
             return [];

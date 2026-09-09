@@ -14,6 +14,7 @@ use App\Services\Releases\CollectionCompletionMeasurer;
 use App\Services\Releases\ReleaseDuplicateAbsorber;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -284,6 +285,32 @@ class ReleaseCreationCompletionTest extends TestCase
         $this->service()->createReleases(null, 10, false);
 
         $this->assertSame(0.0, $this->completionOfFirstRelease());
+    }
+
+    #[Test]
+    public function protected_duplicate_is_decided_once_and_not_formed_again(): void
+    {
+        (require database_path('migrations/2026_09_08_121907_create_collection_reconciliation_tables.php'))->up();
+        $this->insertCollection(100, 'original-hash', 'Duplicate.Release.S01E01');
+        $this->insertBinary(100, 1000, 'Duplicate.Release.S01E01.rar', 1, 1);
+        $service = $this->service();
+        $this->assertSame(['added' => 1, 'dupes' => 0], $service->createReleases(null, 10, false));
+        $this->insertCollection(101, 'duplicate-hash', 'Duplicate.Release.S01E01');
+        $this->insertBinary(101, 1001, 'Duplicate.Release.S01E01.rar', 1, 1);
+        $decisions = 0;
+        Log::listen(static function ($event) use (&$decisions): void {
+            if ($event->message === 'Release import skipped as duplicate') {
+                $decisions++;
+                DB::table('reconciliation_claims')->insertOrIgnore(['collection_id' => 101,
+                    'reason' => 'pending', 'deadline' => now()->addHour()]);
+            }
+        });
+        $this->assertSame(['added' => 0, 'dupes' => 1], $service->createReleases(null, 10, false));
+        $this->assertTrue(DB::table('collections')->where('id', 101)->exists());
+        DB::table('reconciliation_claims')->delete();
+        $this->assertSame(['added' => 0, 'dupes' => 0], $service->createReleases(null, 10, false));
+        $this->assertSame(1, $decisions);
+        $this->assertSame(1, DB::table('releases')->count());
     }
 
     private function service(): ReleaseCreationService

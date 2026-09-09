@@ -11,6 +11,25 @@ use PHPUnit\Framework\TestCase;
 class BinariesRunnerQueueTest extends TestCase
 {
     #[Test]
+    public function ingested_ranges_are_subtracted_without_losing_interleaving(): void
+    {
+        $groups = [
+            (object) ['groupname' => 'alt.binaries.alpha', 'our_last' => 100, 'their_last' => 20130],
+            (object) ['groupname' => 'alt.binaries.bravo', 'our_last' => 200, 'their_last' => 20230],
+        ];
+        $this->assertSame([
+            1 => 'part_repair  alt.binaries.alpha',
+            2 => 'part_repair  alt.binaries.bravo',
+            3 => 'get_range  binaries  alt.binaries.alpha  101  104  3',
+            4 => 'get_range  binaries  alt.binaries.bravo  201  210  4',
+            5 => 'get_range  binaries  alt.binaries.alpha  126  130  5',
+            6 => 'get_range  binaries  alt.binaries.bravo  211  220  6',
+            7 => 'get_range  binaries  alt.binaries.bravo  221  230  7',
+        ], (new BinariesRunner)->buildSafeBinariesQueue($groups, 30, 10,
+            ['alt.binaries.alpha' => [[115, 125], [105, 117]]]));
+    }
+
+    #[Test]
     public function range_entries_are_interleaved_across_groups(): void
     {
         $groups = [

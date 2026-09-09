@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 return [
+    'candidate_limit' => (int) env('COLLECTION_RECONCILIATION_CANDIDATE_LIMIT', 100),
+    'cycle_seconds' => (float) env('COLLECTION_RECONCILIATION_CYCLE_SECONDS', 30),
     'head_bytes' => 64 * 1024,
     'body_bytes' => 2 * 1024 * 1024,
     'decision_bytes' => 16 * 1024 * 1024,

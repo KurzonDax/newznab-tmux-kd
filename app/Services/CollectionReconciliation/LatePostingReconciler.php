@@ -8,6 +8,7 @@ use App\Models\Release;
 use App\Services\CollectionCleanupService;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseRepair\RecoveryLease;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -18,11 +19,22 @@ final class LatePostingReconciler
 {
     public function __construct(private readonly PostingEvidence $evidence) {}
 
-    public function resume(?int $groupId): void
+    public function resume(?int $groupId, ?ReconciliationRunBudget $budget = null): void
     {
-        DB::table('reconciled_postings')->where('state', '!=', 'published')->whereNull('review_digest')
-            ->whereNotNull('original_nzb')->orderBy('id')->chunkById(100, function ($journals) use ($groupId): void {
+        $cursorKey = 'collection-reconciliation:resume-cursor:'.($groupId ?? 'all');
+        $lastId = (int) Cache::get($cursorKey, 0);
+        $stoppedEarly = false;
+        DB::table('reconciled_postings')->where('id', '>', $lastId)->where('state', '!=', 'published')->whereNull('review_digest')
+            ->when($groupId !== null, static fn ($query) => $query->whereIn('release_id',
+                DB::table('releases')->where('groups_id', $groupId)->select('id')))
+            ->whereNotNull('original_nzb')->orderBy('id')->chunkById(100, function ($journals) use ($groupId, $budget, &$lastId, &$stoppedEarly): bool {
                 foreach ($journals as $journal) {
+                    if ($budget !== null && ! $budget->take()) {
+                        $stoppedEarly = true;
+
+                        return false;
+                    }
+                    $lastId = (int) $journal->id;
                     $release = Release::query()->whereKey($journal->release_id)
                         ->when($groupId !== null, static fn ($query) => $query->where('groups_id', $groupId))->first();
                     $lease = $release === null ? null : $this->claimAnchor($release);
@@ -36,7 +48,10 @@ final class LatePostingReconciler
                         $lease->release();
                     }
                 }
+
+                return true;
             });
+        Cache::forever($cursorKey, $stoppedEarly ? $lastId : 0);
     }
 
     private function claimAnchor(Release $release): ?RecoveryLease

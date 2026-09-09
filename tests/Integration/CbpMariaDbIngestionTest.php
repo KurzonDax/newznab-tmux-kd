@@ -13,6 +13,7 @@ use App\Services\Binaries\HeaderStorageService;
 use App\Services\CollectionsCleaningService;
 use App\Services\ReleaseProcessingService;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\CollectionFrontierAssertions;
@@ -135,6 +136,41 @@ final class CbpMariaDbIngestionTest extends TestCase
         putenv($key.'='.$value);
         $_ENV[$key] = $value;
         $_SERVER[$key] = $value;
+    }
+
+    public function test_concurrent_delete_after_snapshot_resolution_recreates_collection_on_retry(): void
+    {
+        $service = new HeaderStorageService(new CollectionHandler(new class extends CollectionsCleaningService
+        {
+            public function collectionsCleaner(string $subject, string $groupName = ''): array
+            {
+                return ['id' => 0, 'name' => $subject];
+            }
+        }), config: new BinariesConfig);
+        $group = ['id' => 1, 'name' => 'alt.binaries.test'];
+        $header = $this->header(1001, 1, 125);
+        $this->assertSame([], $service->store([$header], $group)->uniqueFailedNumbers());
+        $oldId = (int) DB::table('collections')->value('id');
+        config(['database.connections.ingestion_peer' => config('database.connections.'.DB::getDefaultConnection())]);
+        $peer = DB::connection('ingestion_peer');
+        $deleted = false;
+        DB::listen(static function (QueryExecuted $query) use ($peer, &$deleted, $oldId): void {
+            if (! $deleted && str_starts_with($query->sql, 'SELECT id, collectionhash FROM collections')) {
+                $deleted = true;
+                $peer->table('collections')->where('id', $oldId)->delete();
+            }
+        });
+        try {
+            $report = $service->store([$header], $group);
+            $this->assertTrue($deleted);
+            $this->assertSame(1, $report->recoveredChunks);
+            $this->assertSame(0, $report->rolledBackChunks);
+            $this->assertSame([], $report->uniqueFailedNumbers());
+            $this->assertNotSame($oldId, (int) DB::table('collections')->value('id'));
+            $this->assertSame(1, DB::table('parts')->count());
+        } finally {
+            DB::purge('ingestion_peer');
+        }
     }
 
     public function test_reingestion_is_idempotent_and_hot_lookups_use_indexes(): void

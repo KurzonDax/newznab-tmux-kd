@@ -23,10 +23,12 @@ use App\Services\NNTP\NntpProvider;
 use App\Services\NNTP\NntpProviderPool;
 use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
+use App\Services\ReleaseProcessingService;
 use App\Services\YencService;
 use Database\Seeders\CollectionRegexesTableSeeder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Mockery;
 use Tests\Support\Reconciliation\CreatesPostingSchema;
@@ -61,6 +63,113 @@ class PendingReconciliationTest extends TestCase
     {
         NzbCreationCandidateQuery::flushCapabilityCache();
         parent::tearDown();
+    }
+
+    public function test_candidate_cap_yields_to_formation_in_the_same_cycle(): void
+    {
+        config(['collection-reconciliation.candidate_limit' => 2, 'collection-reconciliation.cycle_seconds' => 30]);
+        $this->seedBoundedCandidates();
+        $decisions = 0;
+        Log::listen(static function ($event) use (&$decisions): void {
+            if ($event->message === 'Collection reconciliation decision') {
+                $decisions++;
+            }
+        });
+        $processing = app(ReleaseProcessingService::class);
+        $processing->setEchoCLI(false);
+        $processing->processIncompleteCollections(1);
+
+        $this->assertSame(2, $decisions);
+        $this->assertSame(2, (int) DB::table('collections')->where('id', 4)->value('filecheck'));
+    }
+
+    public function test_time_budget_reports_an_early_stop(): void
+    {
+        config(['collection-reconciliation.candidate_limit' => 10, 'collection-reconciliation.cycle_seconds' => 1]);
+        $this->seedBoundedCandidates();
+        $clock = 0.0;
+        $service = new PendingReconciler(app(PendingInventory::class), app(PostingEvidence::class),
+            static function () use (&$clock): float {
+                return $clock;
+            });
+        Log::listen(static function ($event) use (&$clock): void {
+            if ($event->message === 'Collection reconciliation decision') {
+                $clock = 2.0;
+            }
+        });
+        $result = $service->run(1, 1);
+        $this->assertSame(['processed' => 1, 'stopped_early' => true], $result);
+    }
+
+    public function test_capped_cycles_make_progress_past_unchanged_candidates(): void
+    {
+        config(['collection-reconciliation.candidate_limit' => 2]);
+        $this->seedBoundedCandidates();
+        $ids = [];
+        Log::listen(static function ($event) use (&$ids): void {
+            if ($event->message === 'Collection reconciliation decision') {
+                $ids[] = $event->context['collection_id'];
+            }
+        });
+        $service = app(PendingReconciler::class);
+        $service->run(1, 1);
+        $service->run(1, 1);
+        $this->assertSame([1, 2, 3, 4], $ids);
+    }
+
+    public function test_foreign_group_publications_do_not_consume_pending_budget(): void
+    {
+        config(['collection-reconciliation.candidate_limit' => 2]);
+        $this->seedBoundedCandidates();
+        foreach ([10, 11, 12] as $id) {
+            DB::table('releases')->insert(['id' => $id, 'groups_id' => 2]);
+            DB::table('reconciled_postings')->insert(['release_id' => $id, 'state' => 'created',
+                'digest' => (string) $id, 'inventory' => '[]', 'decision' => '{}', 'budget_id' => (string) $id,
+                'original_nzb' => 'pending']);
+        }
+        $ids = [];
+        Log::listen(static function ($event) use (&$ids): void {
+            if ($event->message === 'Collection reconciliation decision') {
+                $ids[] = $event->context['collection_id'];
+            }
+        });
+        app(PendingReconciler::class)->run(1, 1);
+        $this->assertSame([1, 2], $ids);
+    }
+
+    public function test_unclaimable_publication_cannot_monopolize_single_candidate_cycles(): void
+    {
+        config(['collection-reconciliation.candidate_limit' => 1]);
+        $this->seedBoundedCandidates();
+        DB::table('releases')->insert(['id' => 10, 'groups_id' => 1,
+            'recovery_claimed_at' => now(), 'recovery_claim_token' => 'another-worker']);
+        DB::table('reconciled_postings')->insert(['release_id' => 10, 'state' => 'created',
+            'digest' => 'busy', 'inventory' => '[]', 'decision' => '{}', 'budget_id' => 'busy', 'original_nzb' => 'pending']);
+        $ids = [];
+        Log::listen(static function ($event) use (&$ids): void {
+            if ($event->message === 'Collection reconciliation decision') {
+                $ids[] = $event->context['collection_id'];
+            }
+        });
+        $service = app(PendingReconciler::class);
+        $service->run(1, 1);
+        $service->run(1, 1);
+        $this->assertSame([1], $ids);
+    }
+
+    private function seedBoundedCandidates(): void
+    {
+        DB::table('settings')->insert(['name' => 'delaytime', 'value' => '1']);
+        foreach ([1, 2, 3, 4] as $id) {
+            DB::table('collections')->insert(['id' => $id, 'groups_id' => 1, 'subject' => 'Fixture', 'fromname' => 'fixture@example.invalid',
+                'declaredfiles' => 2, 'totalfiles' => $id === 4 ? 1 : 2, 'filecheck' => 0,
+                'date' => '2026-01-01 10:00:00', 'dateadded' => '2026-01-01 10:00:00',
+                'added' => '2026-01-01 10:00:00', 'last_seen_at' => '2026-01-01 10:00:00',
+                'last_seen_head_postdate' => '2026-01-01 10:00:00']);
+        }
+        DB::table('binaries')->insert(['id' => 4, 'collections_id' => 4, 'name' => 'Fixture',
+            'totalparts' => 1, 'currentparts' => 1, 'partcheck' => 1, 'partsize' => 100]);
+        DB::table('parts')->insert(['binaries_id' => 4, 'number' => 1, 'messageid' => 'fixture@example.invalid', 'partnumber' => 1, 'size' => 100]);
     }
 
     public function test_ingested_course_fragments_are_associated_once_after_the_frontier_is_quiet(): void
