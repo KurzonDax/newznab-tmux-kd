@@ -7,6 +7,7 @@ namespace App\Services\Categorization;
 use App\Models\Category;
 use App\Models\Settings;
 use App\Models\UsenetGroup;
+use App\Services\Categorization\Categorizers\TvCategorizer;
 use App\Services\Categorization\Pipes\AbstractCategorizationPipe;
 use App\Services\Categorization\Pipes\CategorizationPassable;
 use App\Services\NameFixing\Extractors\ObfuscatedSubjectExtractor;
@@ -131,11 +132,47 @@ class CategorizationPipeline
             ->through($this->pipes->values()->all())
             ->thenReturn();
 
+        $this->applyTvTokenOverMovies($result);
         $this->applyForcedRootCategory($result);
 
         $this->logCategorization($result);
 
         return $result->toArray();
+    }
+
+    /**
+     * TV tokens outrank movie guesses, even when a pipe stopped processing early.
+     * Explicit operator forced roots still apply afterwards.
+     */
+    private function applyTvTokenOverMovies(CategorizationPassable $result): void
+    {
+        if ($result->lockedToMisc
+            || Category::rootCategoryFor($result->bestResult->categoryId) !== Category::MOVIE_ROOT
+            || (! $result->context->hasSeasonEpisodeToken() && ! $result->context->hasStandaloneSeasonToken())) {
+            return;
+        }
+
+        $original = $result->bestResult;
+        $tv = (new TvCategorizer)->categorize($result->context);
+        $result->bestResult = new CategorizationResult(
+            $tv->isSuccessful() ? $tv->categoryId : Category::TV_OTHER,
+            $tv->isSuccessful() ? $tv->confidence : $original->confidence,
+            'tv_token_over_movies',
+            [
+                'original_category_id' => $original->categoryId,
+                'original_matched_by' => $original->matchedBy,
+                'tv_matched_by' => $tv->matchedBy,
+            ],
+        );
+
+        if ($result->debug) {
+            $result->allResults['TvTokenOverMovies'] = [
+                'category_id' => $result->bestResult->categoryId,
+                'confidence' => $result->bestResult->confidence,
+                'matched_by' => $result->bestResult->matchedBy,
+                'original_matched_by' => $original->matchedBy,
+            ];
+        }
     }
 
     /**

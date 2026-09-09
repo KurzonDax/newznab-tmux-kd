@@ -101,11 +101,11 @@ class TvCategorizer extends AbstractCategorizer
             return true;
         }
         // Season pack with Complete/Full: S01.Complete, S01.Full
-        if (preg_match('/[._ -]S\d{1,3}[._ -]?(Complete|COMPLETE|Full|FULL)/i', $name)) {
+        if (preg_match('/[._ -]S\d{1,4}[._ -]?(Complete|COMPLETE|Full|FULL)/i', $name)) {
             return true;
         }
         // Season pack with resolution/quality: S01.1080p, S01.720p, S01.2160p, S02.WEB-DL
-        if (preg_match('/[._ -]S\d{1,3}[._ -](480p|720p|1080[pi]|2160p|4K|UHD|WEB|HDTV|BluRay|NF|AMZN|DSNP|ATVP|HMAX)/i', $name)) {
+        if (preg_match('/[._ -]S\d{1,4}[._ -](480p|720p|1080[pi]|2160p|4K|UHD|WEB|HDTV|BluRay|NF|AMZN|DSNP|ATVP|HMAX)/i', $name)) {
             return true;
         }
         // Episode pattern: Episode 01, Ep.01, Ep 1
@@ -180,20 +180,20 @@ class TvCategorizer extends AbstractCategorizer
         // Combined with episode-only pattern (E05 without season prefix) or roman numeral season
         if (preg_match('/[._ ]no[._ ]/i', $name) &&
             (preg_match('/[._ ](I{1,3}|IV|V|VI{0,3}|IX|X)[._ ]?E\d{1,4}[._ ]/i', $name) ||
-             (preg_match('/[._ ]E\d{1,4}[._ ]/i', $name) && ! preg_match('/[._ ]S\d{1,3}[._ ]?E\d/i', $name)))) {
+             (preg_match('/[._ ]E\d{1,4}[._ ]/i', $name) && ! preg_match('/[._ ]S\d{1,4}[._ ]?E\d/i', $name)))) {
             return $this->matched(Category::TV_ANIME, 0.9, 'anime_japanese_title');
         }
         // Episode pattern with known anime indicators
         if (preg_match('/[._ -]E\d{1,4}[._ -]/i', $name) &&
             preg_match('/\b(BluRay|BD|BDRip)\b/i', $name) &&
-            ! preg_match('/\bS\d{1,3}\b/i', $name)) {
+            ! preg_match('/\bS\d{1,4}\b/i', $name)) {
             // Episode-only pattern with BluRay but no season - likely anime
             return $this->matched(Category::TV_ANIME, 0.8, 'anime_episode_bluray');
         }
         // Roman numeral season with episode-only pattern (common in anime)
         // e.g., Title.III.E05, Title.II.E12 - typically anime naming convention
         if (preg_match('/[._ ](I{1,3}|IV|V|VI{0,3}|IX|X)[._ ]E\d{1,4}[._ ]/i', $name) &&
-            ! preg_match('/[._ ]S\d{1,3}[._ ]?E\d/i', $name)) {
+            ! preg_match('/[._ ]S\d{1,4}[._ ]?E\d/i', $name)) {
             return $this->matched(Category::TV_ANIME, 0.85, 'anime_roman_numeral_season');
         }
 

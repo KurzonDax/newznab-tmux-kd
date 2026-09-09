@@ -39,6 +39,7 @@ class CategorizeFullSeasonTest extends TestCase
                 'Show Name S999 2023 1080p WEB-DL GROUP',
                 Category::TV_WEBDL,
             ],
+            'four-digit season' => ['Show.Name.S2010.1080p.WEB-DL', Category::TV_WEBDL],
             'season without quality markers' => [
                 'Show.Name.S03.2023-GROUP',
                 Category::TV_OTHER,
@@ -86,6 +87,15 @@ class CategorizeFullSeasonTest extends TestCase
         $this->assertFalse($context->hasStandaloneSeasonToken());
         $this->assertSame(Category::TV_WEBDL, (new TvCategorizer)->categorize($context)->categoryId);
         $this->assertTrue((new MovieCategorizer)->shouldSkip($context));
+    }
+
+    public function test_season_tokens_do_not_accept_five_digits_or_embedded_prefixes(): void
+    {
+        foreach (['Show S12345E01', 'Show S12345', 'Show AS2010E05', 'Show AS2010'] as $name) {
+            $context = $this->context($name);
+            $this->assertFalse($context->hasSeasonEpisodeToken(), $name);
+            $this->assertFalse($context->hasStandaloneSeasonToken(), $name);
+        }
     }
 
     private function context(string $name): ReleaseContext

@@ -728,6 +728,11 @@ abstract class AbstractTvProvider extends BaseVideoProvider
             $episodeArr['season'] = (int) $hits[2];
             $episodeArr['episode'] = (int) $hits[3];
         }
+        // S2010E05 and S2010.E05
+        elseif (preg_match('/^(.*?)[^a-z0-9]s(\d{4})[^a-z0-9]?e(\d{1,3})[^a-z0-9]?/i', $relname, $hits)) {
+            $episodeArr['season'] = (int) $hits[2];
+            $episodeArr['episode'] = (int) $hits[3];
+        }
         // S01
         elseif (preg_match('/^(.*?)[^a-z0-9]s(\d{1,2})[^a-z0-9]?/i', $relname, $hits)) {
             $episodeArr['season'] = (int) $hits[2];
