@@ -47,13 +47,18 @@ final class CollectionOwnership
      * Serialize header writes with source snapshot validation inside ingestion's transaction.
      *
      * @param  list<int>  $ids
+     * @return list<int> Collections still present under the write lock
      */
-    public static function ingest(array $ids): void
+    public static function ingest(array $ids): array
     {
-        if ($ids === [] || ! Schema::hasTable('reconciliation_claims')) {
-            return;
+        if ($ids === []) {
+            return [];
         }
-        DB::table('collections')->whereIn('id', $ids)->orderBy('id')->lockForUpdate()->get(['id']);
+        $ids = DB::table('collections')->whereIn('id', $ids)->orderBy('id')->lockForUpdate()
+            ->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+        if (! Schema::hasTable('reconciliation_claims')) {
+            return $ids;
+        }
         $published = DB::table('collections')->whereIn('id', $ids)->whereIn('releases_id',
             DB::table('reconciled_postings')->where('state', 'published')->select('release_id'))->pluck('id')->all();
         if ($published !== []) {
@@ -61,5 +66,7 @@ final class CollectionOwnership
             DB::table('reconciliation_claims')->whereIn('collection_id', $published)->delete();
         }
         DB::table('reconciliation_claims')->whereIn('collection_id', $ids)->update(['revision' => 'changed']);
+
+        return $ids;
     }
 }

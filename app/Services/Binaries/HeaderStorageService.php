@@ -141,7 +141,8 @@ final class HeaderStorageService
      */
     private function isRetryableChunkFailure(): bool
     {
-        if ($this->isTransientLockError($this->lastStorageException)) {
+        if ($this->isTransientLockError($this->lastStorageException)
+            || ($this->lastStorageException !== null && SqlError::isCollectionForeignKeyRace($this->lastStorageException))) {
             return true;
         }
 
@@ -195,37 +196,46 @@ final class HeaderStorageService
 
         $transaction->begin();
 
-        $this->processHeaderChunk($headers, $groupMySQL, $transaction);
+        try {
+            $this->processHeaderChunk($headers, $groupMySQL, $transaction);
 
-        // Flush remaining parts
-        if ($this->partHandler->hasPending()) {
-            if (! $this->partHandler->flush()) {
-                $transaction->markError();
-                $this->attemptFailures[] = HeaderFailureReason::RejectedPart;
+            // Flush remaining parts
+            if ($this->partHandler->hasPending()) {
+                if (! $this->partHandler->flush()) {
+                    $transaction->markError();
+                    $this->attemptFailures[] = HeaderFailureReason::RejectedPart;
+                }
             }
-        }
 
-        // Flush binary aggregate updates
-        if (! $transaction->hasErrors()) {
-            if (! $this->binaryHandler->refreshAggregates(
-                $this->partHandler->getTouchedBinaryIds(),
-                $this->config->sqlChunkSize
-            )) {
-                $transaction->markError();
+            // Flush binary aggregate updates
+            if (! $transaction->hasErrors()) {
+                if (! $this->binaryHandler->refreshAggregates(
+                    $this->partHandler->getTouchedBinaryIds(),
+                    $this->config->sqlChunkSize
+                )) {
+                    $transaction->markError();
+                }
+                if (! $transaction->hasErrors() && ! $this->collectionHandler->refreshAggregates(
+                    $this->collectionHandler->getAllIds(),
+                    $this->config->sqlChunkSize,
+                    $direction,
+                    $this->frontierStamp($headers, $groupMySQL, $direction),
+                )) {
+                    $transaction->markError();
+                }
             }
-            if (! $transaction->hasErrors() && ! $this->collectionHandler->refreshAggregates(
-                $this->collectionHandler->getAllIds(),
-                $this->config->sqlChunkSize,
-                $direction,
-                $this->frontierStamp($headers, $groupMySQL, $direction),
-            )) {
-                $transaction->markError();
+        } catch (\Throwable $exception) {
+            $this->lastStorageException = $exception;
+            $transaction->markError();
+            if (config('app.debug') === true) {
+                SqlError::logFailure('Header chunk storage failed', $exception);
             }
         }
 
         // Finish transaction
         if (! $transaction->finish()) {
-            $this->lastStorageException = $transaction->getLastException()
+            $this->lastStorageException = $this->lastStorageException
+                ?? $transaction->getLastException()
                 ?? $this->partHandler->getLastException()
                 ?? $this->binaryHandler->getLastException()
                 ?? $this->collectionHandler->getLastException();
@@ -297,11 +307,11 @@ final class HeaderStorageService
             $transaction->getBatchNoise()
         );
 
-        CollectionOwnership::ingest(array_values(array_unique($collectionIds)));
+        $lockedIds = array_fill_keys(CollectionOwnership::ingest(array_values(array_unique($collectionIds))), true);
 
         $binaryRecords = [];
         foreach ($headers as $index => $header) {
-            if (! isset($collectionIds[$index])) {
+            if (! isset($collectionIds[$index]) || ! isset($lockedIds[$collectionIds[$index]])) {
                 $this->markHeaderFailed($transaction, HeaderFailureReason::UnresolvedCollection);
 
                 continue;

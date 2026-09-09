@@ -106,6 +106,33 @@ final class MissedPartHandler
     }
 
     /**
+     * Every failed header must still have a retry left. Bound the whole eligible
+     * group backlog to maxpartrepair × partrepairmaxtries, so separate ranges
+     * cannot each spend the same repair capacity while advancing the frontier.
+     *
+     * @param  list<int|string>  $numbers
+     */
+    public function coversStorageFailures(array $numbers, int $groupId): bool
+    {
+        $numbers = array_values(array_unique($numbers));
+        if ($numbers === [] || count($numbers) > $this->partRepairLimit * $this->partRepairMaxTries) {
+            return false;
+        }
+        $pending = DB::table('missed_parts')->where('groups_id', $groupId)
+            ->where('attempts', '<', $this->partRepairMaxTries);
+        if ((clone $pending)->count() > $this->partRepairLimit * $this->partRepairMaxTries) {
+            return false;
+        }
+        foreach (array_chunk($numbers, $this->chunkSize) as $chunk) {
+            if ((clone $pending)->whereIn('numberid', $chunk)->count() !== count($chunk)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Remove successfully repaired parts from the queue.
      *
      * @param  array<int, int|string>  $numbers

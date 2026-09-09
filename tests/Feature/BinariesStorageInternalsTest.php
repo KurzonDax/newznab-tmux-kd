@@ -346,6 +346,75 @@ class BinariesStorageInternalsTest extends TestCase
         $this->assertSame(2, DB::table('binaries')->count());
     }
 
+    public function test_vanished_resolved_collection_retries_before_writing_binaries(): void
+    {
+        $this->createHeaderStorageTables();
+        $deleted = false;
+        DB::listen(static function (QueryExecuted $query) use (&$deleted): void {
+            if (! $deleted && str_starts_with($query->sql, 'SELECT id, collectionhash FROM collections')) {
+                if (DB::table('collections')->exists()) {
+                    $deleted = true;
+                    DB::table('collections')->delete();
+                }
+            }
+        });
+        $service = new HeaderStorageService($this->deterministicCollectionHandler(), config: new BinariesConfig);
+        $report = $service->store([$this->parsedHeader(980, 1)], ['id' => 1, 'name' => 'alt.test']);
+
+        $this->assertTrue($deleted);
+        $this->assertSame(1, $report->recoveredChunks);
+        $this->assertSame(0, $report->rolledBackChunks);
+        $this->assertSame([], $report->uniqueFailedNumbers());
+        $this->assertSame(1, DB::table('collections')->count());
+        $this->assertSame(1, DB::table('parts')->count());
+    }
+
+    public function test_ownership_deadlock_retries_but_permanent_exception_is_reported(): void
+    {
+        $this->createHeaderStorageTables();
+        $failure = new \PDOException('Deadlock found');
+        $failure->errorInfo = ['40001', 1213, 'Deadlock found'];
+        $remaining = 1;
+        DB::connection()->beforeExecuting(static function (string $sql) use (&$remaining, &$failure): void {
+            if ($remaining > 0 && str_starts_with($sql, 'select "id" from "collections"')) {
+                $remaining--;
+                throw new QueryException('sqlite', $sql, [], $failure);
+            }
+        });
+        $service = new HeaderStorageService($this->deterministicCollectionHandler(), config: new BinariesConfig);
+        $report = $service->store([$this->parsedHeader(981, 1)], ['id' => 1, 'name' => 'alt.test']);
+        $this->assertSame(1, $report->recoveredChunks);
+        $this->assertSame([], $report->uniqueFailedNumbers());
+        $this->assertSame(0, DB::transactionLevel());
+
+        $failure = new \PDOException('Permanent ownership failure');
+        $remaining = 5;
+        $report = $service->store([$this->parsedHeader(982, 1, 'Other.Release')], ['id' => 1, 'name' => 'alt.test']);
+        $this->assertSame(1, $report->rolledBackChunks);
+        $this->assertSame([982], $report->uniqueFailedNumbers());
+        $this->assertSame(4, $remaining);
+        $this->assertSame(0, DB::transactionLevel());
+    }
+
+    public function test_collection_foreign_key_failure_retries_the_chunk(): void
+    {
+        $this->createHeaderStorageTables();
+        $remaining = 1;
+        DB::connection()->beforeExecuting(static function (string $sql) use (&$remaining): void {
+            if ($remaining > 0 && str_starts_with($sql, 'insert or ignore into "binaries"')) {
+                $remaining--;
+                $failure = new \PDOException('Cannot add child row: CONSTRAINT `FK_Collections` FOREIGN KEY (`collections_id`) REFERENCES `collections` (`id`)');
+                $failure->errorInfo = ['23000', 1452, $failure->getMessage()];
+                throw new QueryException('mariadb', $sql, [], $failure);
+            }
+        });
+        $service = new HeaderStorageService($this->deterministicCollectionHandler(), config: new BinariesConfig);
+        $report = $service->store([$this->parsedHeader(983, 1)], ['id' => 1, 'name' => 'alt.test']);
+        $this->assertSame(1, $report->recoveredChunks);
+        $this->assertSame([], $report->uniqueFailedNumbers());
+        $this->assertSame(1, DB::table('parts')->count());
+    }
+
     private function rawHeader(int $number, string $subject): array
     {
         return [

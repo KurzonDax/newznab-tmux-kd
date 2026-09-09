@@ -154,8 +154,8 @@ final class RecoveryScannerTest extends TestCase
         Schema::drop('parts');
         $scanner = $this->scanner([$this->header(1, '[a] - '.str_repeat('a', 32).' yEnc (1/4)')]);
         $summary = $scanner->scan(['id' => 1, 'name' => 'alt.binaries.fixture'], 4000000001, 4000000001, HeaderScanDirection::Head);
-        $this->assertTrue($scanner->lastScanWasRejected());
-        $this->assertSame([], $summary);
+        $this->assertFalse($scanner->lastScanWasRejected());
+        $this->assertSame(4000000001, $summary['lastArticleNumber']);
         $this->assertSame(1, DB::table('obfuscation_recovery_headers')->count());
         $this->assertSame(1, DB::table('missed_parts')->where('numberid', 4000000001)->count());
     }

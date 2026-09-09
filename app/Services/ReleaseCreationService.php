@@ -371,6 +371,9 @@ class ReleaseCreationService
                         'Duplicate cleanup',
                         $echoCLI
                     );
+                    DB::table('collections')->where('id', $collection->id)
+                        ->where('filecheck', CollectionFileCheckStatus::Sized->value)
+                        ->update(['filecheck' => CollectionFileCheckStatus::Delete->value]);
 
                     $duplicate++;
                 }

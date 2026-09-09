@@ -39,6 +39,13 @@ final class SqlError
             || str_contains($exception->getMessage(), 'database is locked');
     }
 
+    public static function isCollectionForeignKeyRace(\Throwable $exception): bool
+    {
+        return $exception instanceof QueryException
+            && (int) ($exception->errorInfo[1] ?? 0) === 1452
+            && preg_match('/CONSTRAINT [`"]FK_Collections[`"]|REFERENCES [`"]collections[`"]\s*\([`"]id[`"]\)/i', (string) ($exception->errorInfo[2] ?? '')) === 1;
+    }
+
     /**
      * Concise single-line description without the "(Connection: …, SQL: …)"
      * payload Laravel appends to QueryException messages.

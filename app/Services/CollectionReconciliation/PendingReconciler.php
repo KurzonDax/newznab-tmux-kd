@@ -9,6 +9,7 @@ use App\Models\Release;
 use App\Models\Settings;
 use App\Services\Categorization\CategorizationService;
 use App\Services\Releases\CollectionQuietPredicate;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -18,24 +19,60 @@ use UnexpectedValueException;
 
 final class PendingReconciler
 {
-    public function __construct(private readonly PendingInventory $inventory, private readonly PostingEvidence $evidence) {}
+    /** @param null|\Closure(): float $clock */
+    public function __construct(private readonly PendingInventory $inventory, private readonly PostingEvidence $evidence, private readonly ?\Closure $clock = null) {}
 
-    public function run(?int $groupId, int $quietHours): void
+    /** @return array{processed: int, stopped_early: bool} */
+    public function run(?int $groupId, int $quietHours): array
     {
+        $limit = max(1, (int) config('collection-reconciliation.candidate_limit', 100));
+        $budget = new ReconciliationRunBudget($limit,
+            max(0.001, (float) config('collection-reconciliation.cycle_seconds', 30)), $this->clock);
         if (! Schema::hasTable('reconciliation_claims')) {
-            return;
+            return $budget->report();
         }
-        app(LatePostingReconciler::class)->resume($groupId);
+        $phaseKey = 'collection-reconciliation:resume-first:'.($groupId ?? 'all');
+        $resumeFirst = (bool) Cache::get($phaseKey, true);
+        Cache::forever($phaseKey, ! $resumeFirst);
+        if ($resumeFirst) {
+            app(LatePostingReconciler::class)->resume($groupId, $budget);
+        }
+        $this->runCandidates($groupId, $quietHours, $limit, $budget);
+        if (! $resumeFirst) {
+            app(LatePostingReconciler::class)->resume($groupId, $budget);
+        }
+        $report = $budget->report();
+        if ($report['stopped_early']) {
+            Log::info('Collection reconciliation cycle yielded', $report + ['group_id' => $groupId]);
+        }
+
+        return $report;
+    }
+
+    private function runCandidates(?int $groupId, int $quietHours, int $limit, ReconciliationRunBudget $budget): void
+    {
+        $stoppedEarly = false;
+        $cursorKey = 'collection-reconciliation:pending-cursor:'.($groupId ?? 'all');
+        $lastId = (int) Cache::get($cursorKey, 0);
         $quiet = CollectionQuietPredicate::build($quietHours, DB::getTablePrefix().'collections');
-        DB::table('collections')->whereIn('filecheck', [0, 1, 2, 3, 10, 15, 16])
+        DB::table('collections')->where('id', '>', $lastId)->whereIn('filecheck', [0, 1, 2, 3, 10, 15, 16])
             ->where('declaredfiles', '>', 1)->whereRaw($quiet['sql'], $quiet['bindings'])
             ->when($groupId !== null, static fn ($query) => $query->where('groups_id', $groupId))
             ->whereRaw('(SELECT COUNT(*) FROM binaries b WHERE b.collections_id = collections.id) < collections.declaredfiles')
-            ->orderBy('id')->chunkById(100, function ($rows) use ($quietHours): void {
+            ->orderBy('id')->limit($limit + 1)->chunkById(min(100, $limit + 1), function ($rows) use ($quietHours, $budget, &$lastId, &$stoppedEarly): bool {
                 foreach ($rows as $row) {
+                    if (! $budget->take()) {
+                        $stoppedEarly = true;
+
+                        return false;
+                    }
                     $this->reconcile((int) $row->id, $quietHours);
+                    $lastId = (int) $row->id;
                 }
+
+                return true;
             });
+        Cache::forever($cursorKey, $stoppedEarly ? $lastId : 0);
     }
 
     public function reconcile(int $collectionId, int $quietHours): string

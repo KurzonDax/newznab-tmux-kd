@@ -9,6 +9,7 @@ use App\Services\Binaries\BinariesService;
 use App\Services\Binaries\HeaderParser;
 use App\Services\NNTP\NNTPService;
 use Database\Seeders\CollectionRegexesTableSeeder;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -172,6 +173,55 @@ class BinariesStoreHeadersTest extends TestCase
 
         $column = $mode === 'binaries' ? 'last_seen_head_postdate' : 'last_seen_tail_postdate';
         $this->assertSame('2026-08-01 12:00:00', DB::table('collections')->value($column));
+    }
+
+    #[DataProvider('repairCapacities')]
+    public function test_failed_range_only_advances_with_available_repair_capacity(int $limit, int $attempts, bool $enabled, int $expectedLast): void
+    {
+        DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name TEXT, first_record INTEGER, last_record INTEGER,
+            first_record_postdate DATETIME, last_record_postdate DATETIME, backfill_settled_at DATETIME, last_updated DATETIME)');
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.test', 'first_record' => 1, 'last_record' => 8000]);
+        (require database_path('migrations/2026_09_05_213352_create_usenet_group_ingested_ranges_table.php'))->up();
+        DB::table('settings')->insert(['name' => 'safepartrepair', 'value' => '1']);
+        if ($attempts > 0) {
+            DB::table('missed_parts')->insert(['groups_id' => 1, 'numberid' => 8001, 'attempts' => $attempts]);
+        }
+        $headers = [];
+        foreach ([8001, 8002, 8003] as $number) {
+            $header = $this->makeHeader($number, 1, 1);
+            $header['Number'] = (string) $number;
+            $header['Subject'] = 'File.'.$number.' yEnc (1/1)';
+            $headers[] = $header;
+        }
+        $failures = 0;
+        DB::connection()->beforeExecuting(static function (string $sql, array $bindings) use (&$failures): void {
+            if (str_starts_with($sql, 'INSERT OR IGNORE INTO parts') && in_array(8001, $bindings)) {
+                $failures++;
+                $error = new \PDOException('Deadlock found');
+                $error->errorInfo = ['40001', 1213, 'Deadlock found'];
+                throw new QueryException('sqlite', $sql, $bindings, $error);
+            }
+        });
+        $nntp = \Mockery::mock(NNTPService::class);
+        $nntp->shouldReceive('doConnect')->andReturn(true);
+        $nntp->shouldReceive('selectGroup')->andReturn(['group' => 'alt.test', 'first' => 1, 'last' => 10000]);
+        $nntp->shouldReceive('getXOVER')->with('8001-8003')->andReturn($headers);
+        $this->app->instance(NNTPService::class, $nntp);
+        $this->app->instance(BinariesService::class, new BinariesService(
+            config: new BinariesConfig(echoCli: false, headerChunkSize: 2, partRepair: $enabled, partRepairLimit: $limit, partRepairMaxTries: 1),
+            headerParser: new HeaderParser(new NeverBlacklistedService),
+        ));
+        $this->artisan('articles:get-range', ['mode' => 'binaries', 'group' => 'alt.test', 'first' => 8001, 'last' => 8003])->assertExitCode($expectedLast === 8003 ? 0 : 1);
+        $this->assertSame($expectedLast, (int) DB::table('usenet_groups')->value('last_record'));
+        $this->assertSame($enabled ? [8001, 8002] : [], DB::table('missed_parts')->orderBy('numberid')->pluck('numberid')->all());
+        $this->assertSame([8003], DB::table('parts')->pluck('number')->all());
+        $this->assertSame(5, $failures);
+    }
+
+    public static function repairCapacities(): array
+    {
+        return ['covered' => [2, 0, true, 8003], 'over capacity' => [1, 0, true, 8000],
+            'exhausted' => [2, 1, true, 8000], 'disabled' => [2, 0, false, 8000]];
     }
 
     /** @return array<string, array{string, int}> */
