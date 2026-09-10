@@ -8,6 +8,8 @@ use App\Enums\DuplicateAbsorbOutcome;
 use App\Models\Collection;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
+use App\Services\CollectionReconciliation\ArtifactPublication;
+use App\Services\CollectionReconciliation\ArtifactReleaseUpdate;
 use App\Services\Nzb\NzbParserService;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseRepair\EvidenceChangedTransition;
@@ -61,6 +63,19 @@ class ReleaseDuplicateAbsorber
         Collection $collection,
         float $incomingCompletion,
     ): DuplicateAbsorbResult {
+        if (DB::transactionLevel() === 0 && ArtifactPublication::handles((string) $anchor->guid)) {
+            return DB::transaction(function () use ($anchor, $collection, $incomingCompletion): DuplicateAbsorbResult {
+                $lockedSource = Collection::query()->whereKey($collection->id)->lockForUpdate()->first();
+                if ($lockedSource === null) {
+                    return DuplicateAbsorbResult::deferred();
+                }
+
+                return $this->absorbCollection($anchor, $lockedSource, $incomingCompletion);
+            }, 3);
+        }
+        if (($receipt = app(ArtifactPublication::class)->duplicateReceipt((string) $anchor->guid, sourceId: (int) $collection->id)) !== null) {
+            return $receipt->success ? DuplicateAbsorbResult::absorbed() : DuplicateAbsorbResult::deferred($receipt->operationId);
+        }
         if ($incomingCompletion <= (float) $anchor->completion) {
             return DuplicateAbsorbResult::notBetter();
         }
@@ -94,6 +109,7 @@ class ReleaseDuplicateAbsorber
                 (int) $collection->filesize,
                 (int) $collection->declaredfiles,
                 $incomingCompletion,
+                sourceIds: [(int) $collection->id],
             );
         } catch (\Throwable $exception) {
             return $this->recordFailedAttempt($collection, 'Unexpected absorb error: '.$exception->getMessage());
@@ -108,6 +124,8 @@ class ReleaseDuplicateAbsorber
 
     /**
      * Replace a lower-quality anchor's evidence while preserving its identity and history.
+     *
+     * @param  list<int>  $sourceIds
      */
     public function absorbXml(
         Release $anchor,
@@ -115,7 +133,11 @@ class ReleaseDuplicateAbsorber
         int $incomingSize,
         int $incomingDeclaredFiles,
         float $incomingCompletion,
+        array $sourceIds = [],
     ): DuplicateAbsorbResult {
+        if (($receipt = app(ArtifactPublication::class)->duplicateReceipt((string) $anchor->guid, $nzbXml)) !== null) {
+            return $receipt->success ? DuplicateAbsorbResult::absorbed() : DuplicateAbsorbResult::deferred($receipt->operationId);
+        }
         if ($incomingCompletion <= (float) $anchor->completion) {
             return DuplicateAbsorbResult::notBetter();
         }
@@ -123,6 +145,20 @@ class ReleaseDuplicateAbsorber
         $document = NzbRepairDocument::load($nzbXml, $this->parser);
         if ($document === null) {
             return DuplicateAbsorbResult::failed('The incoming duplicate NZB could not be parsed.');
+        }
+
+        if (ArtifactPublication::handles((string) $anchor->guid)) {
+            $update = new ArtifactReleaseUpdate('duplicate', ['size' => $incomingSize, 'declaredfiles' => $incomingDeclaredFiles],
+                true, $incomingDeclaredFiles, ['absorbed' => true]);
+            $replaced = app(ArtifactPublication::class)->replace((string) $anchor->guid, $nzbXml, update: $update, sourceIds: $sourceIds);
+
+            if ($replaced->reason === 'duplicate_not_better') {
+                return DuplicateAbsorbResult::notBetter();
+            }
+
+            return $replaced->success ? DuplicateAbsorbResult::absorbed()
+                : ($replaced->operationId !== null ? DuplicateAbsorbResult::deferred($replaced->operationId)
+                    : DuplicateAbsorbResult::failed($replaced->reason));
         }
 
         return DB::transaction(function () use (

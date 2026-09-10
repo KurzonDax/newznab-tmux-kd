@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Settings\Sections;
 
+use App\Services\CollectionReconciliation\ReconciliationLimits;
 use App\Support\NzbSettingRules;
 use App\Support\RepairSettingRules;
 use App\Support\Settings\PipelineStage;
@@ -62,6 +63,30 @@ final class ReleaseFormationSection implements SettingsSectionProvider
                             unit: 'seconds',
                             rules: ['required', 'integer', 'min:0'],
                             icon: 'fas fa-hourglass-half',
+                        ),
+                    ],
+                ),
+                new SettingCard(
+                    id: 'reconciliation',
+                    title: 'Reconciliation',
+                    description: 'Check whether split collections belong to the same posting before forming a release. These download limits are shared across all reconciliation workers. Both limits apply. Changing a limit keeps usage already counted. When either allowance runs out, further evidence downloads wait for available budget. Usage and budget deferrals appear in the Releases pane (0.0).',
+                    icon: 'fas fa-puzzle-piece',
+                    settings: [
+                        new SettingDefinition(
+                            key: 'reconciliation_hourly_mib',
+                            label: 'Hourly download limit',
+                            help: 'Maximum evidence downloads in one UTC clock hour. Default 256 MiB.',
+                            type: SettingType::Int,
+                            unit: 'MiB',
+                            rules: ['required', 'integer', 'min:1', 'max:'.ReconciliationLimits::maximumMib()],
+                        ),
+                        new SettingDefinition(
+                            key: 'reconciliation_daily_mib',
+                            label: 'Daily download limit',
+                            help: 'Maximum evidence downloads in one UTC calendar day. Default 2,048 MiB (2 GiB).',
+                            type: SettingType::Int,
+                            unit: 'MiB',
+                            rules: ['required', 'integer', 'min:1', 'max:'.ReconciliationLimits::maximumMib()],
                         ),
                     ],
                 ),

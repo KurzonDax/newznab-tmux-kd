@@ -21,6 +21,7 @@ final readonly class DuplicateAbsorbResult
         public DuplicateAbsorbOutcome $outcome,
         public string $reason,
         public int $attempts,
+        public ?string $operationId = null,
     ) {}
 
     public static function absorbed(): self
@@ -33,9 +34,9 @@ final readonly class DuplicateAbsorbResult
         return new self(DuplicateAbsorbOutcome::NotBetter, '', 0);
     }
 
-    public static function deferred(): self
+    public static function deferred(?string $operationId = null): self
     {
-        return new self(DuplicateAbsorbOutcome::Deferred, '', 0);
+        return new self(DuplicateAbsorbOutcome::Deferred, '', 0, $operationId);
     }
 
     public static function failed(string $reason, int $attempts = 0): self

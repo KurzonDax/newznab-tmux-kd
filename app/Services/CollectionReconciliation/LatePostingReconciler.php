@@ -11,6 +11,7 @@ use App\Services\ReleaseRepair\RecoveryLease;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -21,6 +22,13 @@ final class LatePostingReconciler
 
     public function resume(?int $groupId, ?ReconciliationRunBudget $budget = null): void
     {
+        $budget ??= new ReconciliationRunBudget((int) config('collection-reconciliation.candidate_limit', 100), (float) config('collection-reconciliation.cycle_seconds', 30));
+        $phaseKey = 'artifact-resume-first:'.($groupId ?? 'all');
+        $artifactsFirst = (bool) Cache::get($phaseKey, true);
+        Cache::forever($phaseKey, ! $artifactsFirst);
+        if ($artifactsFirst) {
+            app(ArtifactPublication::class)->resume($groupId, $budget);
+        }
         $cursorKey = 'collection-reconciliation:resume-cursor:'.($groupId ?? 'all');
         $lastId = (int) Cache::get($cursorKey, 0);
         $stoppedEarly = false;
@@ -29,7 +37,7 @@ final class LatePostingReconciler
                 DB::table('releases')->where('groups_id', $groupId)->select('id')))
             ->whereNotNull('original_nzb')->orderBy('id')->chunkById(100, function ($journals) use ($groupId, $budget, &$lastId, &$stoppedEarly): bool {
                 foreach ($journals as $journal) {
-                    if ($budget !== null && ! $budget->take()) {
+                    if (! $budget->take()) {
                         $stoppedEarly = true;
 
                         return false;
@@ -52,6 +60,9 @@ final class LatePostingReconciler
                 return true;
             });
         Cache::forever($cursorKey, $stoppedEarly ? $lastId : 0);
+        if (! $artifactsFirst) {
+            app(ArtifactPublication::class)->resume($groupId, $budget);
+        }
     }
 
     private function claimAnchor(Release $release): ?RecoveryLease
@@ -63,17 +74,31 @@ final class LatePostingReconciler
         }, 3);
     }
 
-    public function reconcile(int $collectionId, int $quietHours): ?string
+    public function reconcile(int $collectionId, int $quietHours, ?float $cycleDeadline = null): ?string
     {
+        $current = app(CurrentPostingReconciler::class)->reconcile($collectionId, $quietHours, $cycleDeadline);
+        if ($current !== null) {
+            return $current;
+        }
         $source = DB::table('collections')->where('id', $collectionId)->first();
         if ($source === null) {
             return null;
         }
-        $matches = DB::table('reconciled_sources')->where('collection_hash', bin2hex($source->collectionhash))
+        $matches = DB::table('reconciled_sources')->tap(static function ($query): void {
+            if (Schema::hasTable('reconciled_artifacts')) {
+                $query->whereNotExists(static fn ($artifact) => $artifact->selectRaw('1')->from('reconciled_artifacts as a')
+                    ->join('reconciled_postings as p', 'p.release_id', '=', 'a.release_id')->whereColumn('p.id', 'reconciled_sources.posting_id'));
+            }
+        })->where('collection_hash', bin2hex($source->collectionhash))
             ->where('group_id', $source->groups_id)->whereBetween('postdate', [date('Y-m-d H:i:s', strtotime($source->date) - 1800), date('Y-m-d H:i:s', strtotime($source->date) + 1800)])
             ->limit(257)->get();
         if ($matches->isEmpty()) {
-            $matches = DB::table('reconciled_sources')->where('group_id', $source->groups_id)
+            $matches = DB::table('reconciled_sources')->tap(static function ($query): void {
+                if (Schema::hasTable('reconciled_artifacts')) {
+                    $query->whereNotExists(static fn ($artifact) => $artifact->selectRaw('1')->from('reconciled_artifacts as a')
+                        ->join('reconciled_postings as p', 'p.release_id', '=', 'a.release_id')->whereColumn('p.id', 'reconciled_sources.posting_id'));
+                }
+            })->where('group_id', $source->groups_id)
                 ->whereBetween('postdate', [date('Y-m-d H:i:s', strtotime($source->date) - 1800), date('Y-m-d H:i:s', strtotime($source->date) + 1800)])
                 ->limit(257)->get();
         }

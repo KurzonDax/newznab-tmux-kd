@@ -13,6 +13,7 @@ use App\Models\Release;
 use App\Models\ReleaseRegex;
 use App\Models\UsenetGroup;
 use App\Services\Categorization\CategorizationService;
+use App\Services\CollectionReconciliation\CollectionAdmission;
 use App\Services\CollectionReconciliation\CollectionOwnership;
 use App\Services\Nzb\NzbService;
 use App\Services\ObfuscationRecovery\RecoveryAdmission;
@@ -138,8 +139,11 @@ class ReleaseCreationService
         }
         $collectionsQuery->select(['collections.*', 'usenet_groups.name as gname'])
             ->join('usenet_groups', 'usenet_groups.id', '=', 'collections.groups_id')
-            ->limit($limit);
+            ->limit(min(500, $limit));
         $collections = $collectionsQuery->get();
+        if ($recovery === null && ! app(CollectionAdmission::class)->screen($collections->pluck('id')->map(static fn ($id): int => (int) $id)->all())) {
+            return ['added' => 0, 'dupes' => 0];
+        }
         $releaseGroupIds = $this->loadReleaseGroupIds($collections);
         // Measured now, while the collections/binaries/parts rows are still there: NZB creation
         // deletes them, and it may not run for a while -- or at all, if it keeps failing.
@@ -162,6 +166,9 @@ class ReleaseCreationService
 
         foreach ($collections as $collection) {
             DB::transaction(function () use ($collection, $recovery, $categorize, $releaseGroupIds, $completionSignals, $articleRanges, $echoCLI, &$returnCount, &$duplicate): void {
+                if ($recovery === null && ! app(CollectionAdmission::class)->lockAndScreen([(int) $collection->id])) {
+                    return;
+                }
                 $locked = DB::table('collections')->where('id', $collection->id)->lockForUpdate()->first();
                 if ($locked === null || (int) $locked->filecheck !== CollectionFileCheckStatus::Sized->value
                     || ($recovery === null && CollectionOwnership::protects((int) $collection->id))) {

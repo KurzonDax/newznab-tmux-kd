@@ -15,6 +15,7 @@ use App\Models\Settings;
 use App\Models\UsenetGroup;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\Categorization\CategorizationService;
+use App\Services\CollectionReconciliation\CollectionAdmission;
 use App\Services\CollectionReconciliation\CollectionOwnership;
 use App\Services\CollectionReconciliation\PendingReconciler;
 use App\Services\NNTP\NNTPService;
@@ -402,16 +403,27 @@ final class ReleaseProcessingService
                 ->where('filecheck', CollectionFileCheckStatus::CompleteParts->value)
                 ->when($normalizedGroupId !== null, static fn ($q) => $q->where('groups_id', $normalizedGroupId))
                 ->orderBy('id')
-                ->limit($this->binariesConfig->reconcileBatchSize);
+                ->limit(min(500, $this->binariesConfig->reconcileBatchSize));
             $ids = $query->pluck('id')->map(static fn ($id): int => (int) $id)->all();
             if ($ids === []) {
                 break;
             }
             $lastId = (int) end($ids);
-            $updated += Collection::query()->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))->tap(static fn ($query) => CollectionOwnership::exclude($query))->whereIn('id', $ids)->update([
-                'filecheck' => CollectionFileCheckStatus::Sized->value,
-            ]);
-        } while (\count($ids) === $this->binariesConfig->reconcileBatchSize);
+            if (! app(CollectionAdmission::class)->screen($ids, $this->settings->collectionDelayTime)) {
+                continue;
+            }
+            $updated += DB::transaction(static function () use ($ids): int {
+                if (! app(CollectionAdmission::class)->lockAndScreen($ids)) {
+                    return 0;
+                }
+                DB::table('collections')->whereIn('id', $ids)->orderBy('id')->lockForUpdate()->get();
+
+                return Collection::query()->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
+                    ->tap(static fn ($query) => CollectionOwnership::exclude($query))->whereIn('id', $ids)
+                    ->where('filecheck', CollectionFileCheckStatus::CompleteParts->value)
+                    ->update(['filecheck' => CollectionFileCheckStatus::Sized->value]);
+            }, self::MAX_RETRIES);
+        } while (\count($ids) === min(500, $this->binariesConfig->reconcileBatchSize));
 
         $this->outputStat('Collections sized', $updated);
         $this->outputElapsedTime($startTime);
@@ -466,14 +478,14 @@ final class ReleaseProcessingService
                 })
                 ->when($groupId !== null, static fn ($q) => $q->where('groups_id', $groupId))
                 ->orderBy('id')
-                ->limit($this->binariesConfig->reconcileBatchSize);
+                ->limit(min(500, $this->binariesConfig->reconcileBatchSize));
             $ids = $query->pluck('id')->map(static fn ($id): int => (int) $id)->all();
             if ($ids === []) {
                 break;
             }
             $lastId = (int) end($ids);
             $this->reconcileCollectionIds($ids, $statuses);
-        } while (\count($ids) === $this->binariesConfig->reconcileBatchSize);
+        } while (\count($ids) === min(500, $this->binariesConfig->reconcileBatchSize));
     }
 
     /**
@@ -482,6 +494,9 @@ final class ReleaseProcessingService
      */
     private function reconcileCollectionIds(array $collectionIds, array $statuses): void
     {
+        if (! app(CollectionAdmission::class)->screen($collectionIds, $this->settings->collectionDelayTime)) {
+            return;
+        }
         if (DB::getDriverName() === 'sqlite') {
             $this->reconcileCollectionIdsSqlite($collectionIds, $statuses);
 
@@ -492,6 +507,9 @@ final class ReleaseProcessingService
         $quiet = CollectionQuietPredicate::build($this->settings->collectionDelayTime, 'c');
 
         DB::transaction(function () use ($collectionIds, $quiet, $statuses, $statusPlaceholders): void {
+            if (! app(CollectionAdmission::class)->lockAndScreen($collectionIds, $this->settings->collectionDelayTime)) {
+                return;
+            }
             $locked = DB::table('collections')->whereIn('id', $collectionIds)->orderBy('id')->lockForUpdate()->pluck('id');
             $query = DB::table('collections')->whereIn('id', $locked);
             RecoveryCollectionOwnership::exclude($query);
@@ -564,6 +582,9 @@ final class ReleaseProcessingService
 
         DB::transaction(function () use ($collectionIds, $quiet, $statuses): void {
             foreach ($collectionIds as $collectionId) {
+                if (! app(CollectionAdmission::class)->lockAndScreen([$collectionId], $this->settings->collectionDelayTime)) {
+                    return;
+                }
                 DB::table('collections')->where('id', $collectionId)->lockForUpdate()->first();
                 if (RecoveryCollectionOwnership::protects((int) $collectionId) || CollectionOwnership::protects((int) $collectionId)) {
                     continue;

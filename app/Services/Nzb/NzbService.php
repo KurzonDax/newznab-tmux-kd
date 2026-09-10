@@ -11,6 +11,7 @@ use App\Models\Settings;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\CollectionCleanupService;
+use App\Services\CollectionReconciliation\ArtifactPublication;
 use App\Services\CollectionReconciliation\PostingPublication;
 use App\Services\ObfuscationRecovery\RecoveryAdmission;
 use App\Services\ObfuscationRecovery\RecoveryAdmissionPending;
@@ -897,6 +898,10 @@ class NzbService
 
     private function replaceGuardedNzbContents(string $releaseGuid, string $nzbXml, ?RecoveryLease $owner = null, ?string $expectedFingerprint = null): NzbReplaceResult
     {
+        if (ArtifactPublication::handles($releaseGuid)) {
+            return app(ArtifactPublication::class)->replace($releaseGuid, $nzbXml, $owner, $expectedFingerprint);
+        }
+
         return DB::transaction(function () use ($releaseGuid, $nzbXml, $owner, $expectedFingerprint): NzbReplaceResult {
             $release = Release::query()->where('guid', $releaseGuid)->lockForUpdate()->first();
             if ($release === null) {
@@ -993,12 +998,30 @@ class NzbService
      */
     public function deleteNzb(string $releaseGuid): bool
     {
+        if (ArtifactPublication::handles($releaseGuid)) {
+            app(ArtifactPublication::class)->cancel($releaseGuid);
+        }
         $nzbPath = $this->nzbPath($releaseGuid);
         if ($nzbPath === false) {
             return false;
         }
 
         return File::delete($nzbPath);
+    }
+
+    public function deleteOrphanNzb(string $guid, string $path): bool
+    {
+        return DB::transaction(static function () use ($guid, $path): bool {
+            if (Release::query()->where('guid', $guid)->lockForUpdate()->exists()) {
+                return false;
+            }
+            if (Schema::hasTable('reconciled_artifact_operations') && DB::table('reconciled_artifact_operations')
+                ->where('guid', $guid)->whereIn('state', ['prepared', 'conflict'])->lockForUpdate()->exists()) {
+                return false;
+            }
+
+            return File::delete($path);
+        }, 3);
     }
 
     /**

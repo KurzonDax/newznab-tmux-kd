@@ -647,6 +647,7 @@ class NzbImportService
 
         if ($dupeCheck !== null) {
             $absorbed = false;
+            $absorptionOperationId = null;
             if ($this->releaseDuplicateAbsorber->supportsReason($dupeReason)) {
                 $nzbXml = $nzbDetails['nzbXml'] ?? false;
                 if (! \is_string($nzbXml)) {
@@ -661,6 +662,7 @@ class NzbImportService
                     (float) $nzbDetails['completion'],
                 );
                 $absorbed = $absorbResult->wasAbsorbed();
+                $absorptionOperationId = $absorbResult->operationId;
 
                 // A deferred or failed absorb still records the import as an
                 // ordinary duplicate; the run never aborts over it. There is
@@ -677,6 +679,7 @@ class NzbImportService
                 'reason' => $dupeReason,
                 'matched_release_id' => $dupeCheck->id,
                 'absorbed' => $absorbed,
+                ...($absorptionOperationId === null ? [] : ['absorption_pending' => true, 'absorption_operation_id' => $absorptionOperationId]),
                 'new_searchname' => $escapedSearchName,
                 'existing_searchname' => $dupeCheck->searchname,
                 'new_size' => (int) $nzbDetails['totalSize'],

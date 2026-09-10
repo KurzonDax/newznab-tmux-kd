@@ -72,7 +72,9 @@ class CleanNZB extends Command
                 // If NZB file guid is not present in DB delete the file from disk
                 if (! $releases->whereGuid($guid)->exists()) {
                     if ($delete) {
-                        File::delete($filePath);
+                        if (! app(NzbService::class)->deleteOrphanNzb($guid, $filePath->getPathname())) {
+                            continue;
+                        }
                     }
                     $deleted++;
                     $this->line("Deleted orphan file: $guid.nzb.gz");

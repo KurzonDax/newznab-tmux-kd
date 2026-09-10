@@ -13,7 +13,6 @@ use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
@@ -61,10 +60,7 @@ class ReleaseManagementService
         }, 3);
 
         // Delete NZB from disk.
-        $nzbPath = $nzb->nzbPath($identifiers['g']);
-        if (! empty($nzbPath)) {
-            File::delete($nzbPath);
-        }
+        $nzb->deleteNzb($identifiers['g']);
 
         // Delete images.
         $releaseImage->delete($identifiers['g']);

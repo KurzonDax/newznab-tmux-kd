@@ -6,6 +6,7 @@ namespace App\Services\ReleaseRepair;
 
 use App\Models\Release;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
+use App\Services\CollectionReconciliation\ArtifactPublication;
 use App\Services\Par2Sidecar\SidecarMutationProtection;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
@@ -39,6 +40,7 @@ final class RecoveryLease
         $claimedAt = now();
         $token = Schema::hasColumn('releases', 'recovery_claim_token') ? (string) Str::uuid() : null;
         $query = self::applyAvailable(Release::query()->whereKey($release->id));
+        $query->whereRaw(ArtifactPublication::availableSql());
         if (Schema::hasColumn('releases', ReleaseClaimant::CLAIMED_AT_COLUMN)) {
             if ($additionalToken === null) {
                 $query->where(fn (Builder $q) => $q->whereNull(ReleaseClaimant::CLAIMED_AT_COLUMN)

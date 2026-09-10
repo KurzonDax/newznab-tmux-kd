@@ -22,6 +22,14 @@ class SettingsTableSeeder extends Seeder
 
         DB::table('settings')->insert([
             [
+                'name' => 'reconciliation_hourly_mib',
+                'value' => '256',
+            ],
+            [
+                'name' => 'reconciliation_daily_mib',
+                'value' => '2048',
+            ],
+            [
                 'name' => 'obfuscation_recovery_enabled',
                 'value' => '0',
             ],

@@ -7,6 +7,8 @@ namespace App\Services\ReleaseRepair;
 use App\Enums\ReleaseRepairOutcome;
 use App\Models\Release;
 use App\Models\UsenetGroup;
+use App\Services\CollectionReconciliation\ArtifactPublication;
+use App\Services\CollectionReconciliation\ArtifactReleaseUpdate;
 use App\Services\NNTP\NntpProviderPool;
 use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbParserService;
@@ -71,6 +73,10 @@ final class MissingFileRescanService
      */
     public function rescan(Release $release, MissingFileRescanOptions $options, RescanRunBudget $budget): MissingFileRescanResult
     {
+        if (! $options->dryRun && ($resumed = app(ArtifactPublication::class)->resumeForRelease((int) $release->id, 'rescan')) !== null) {
+            return $resumed->success ? MissingFileRescanResult::fromArtifact($resumed->recordedResult)
+                : MissingFileRescanResult::notAttempted((float) $release->completion, $resumed->reason);
+        }
         $lease = RecoveryLease::acquire($release);
 
         if ($lease === null) {
@@ -270,20 +276,6 @@ final class MissingFileRescanService
         $added = $document->addFiles($recovered, $envelope);
         $completionAfter = $document->measure($declared)->percentage();
 
-        $replaced = $this->nzb->replaceNzbContentsWithLease((string) $release->guid, $document->toXml(), $lease, hash('sha256', $contents));
-        if (! $replaced->success) {
-            // We know what to write and could not write it. That is our problem, not the
-            // release's: leave its state alone so the next invocation tries again.
-            return $this->skip($release, MissingFileRescanResult::notAttempted(
-                $completionBefore,
-                'Re-scanned NZB could not be written back to disk: '.$replaced->reason,
-            ));
-        }
-
-        if ($added > 0) {
-            $this->evidenceChanged->apply($release, $document, $declared);
-        }
-
         $outcome = match (true) {
             $completionAfter >= $options->targetCompletion => ReleaseRepairOutcome::Repaired,
             ! $windowReadCompletely => null,
@@ -291,7 +283,7 @@ final class MissingFileRescanService
             default => ReleaseRepairOutcome::RetryPending,
         };
 
-        return $this->finish($release, $options, new MissingFileRescanResult(
+        $result = new MissingFileRescanResult(
             outcome: $outcome,
             completionBefore: $completionBefore,
             completionAfter: $completionAfter,
@@ -315,7 +307,37 @@ final class MissingFileRescanService
                     $added,
                 ),
             },
-        ), $completionAfter);
+        );
+        if (ArtifactPublication::handles((string) $release->guid)) {
+            $values = $outcome === null ? [] : [
+                'rescan_attempted_at' => now()->toDateTimeString(), 'rescan_outcome' => $outcome->value,
+                'rescan_target_completion' => $outcome === ReleaseRepairOutcome::Repaired ? $options->targetCompletion : null,
+                'rescan_evaluated_target_completion' => $options->targetCompletion,
+            ];
+            $update = new ArtifactReleaseUpdate('rescan', $values, $added > 0, $declared,
+                json_decode(json_encode($result, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR));
+            $replaced = app(ArtifactPublication::class)->replace((string) $release->guid, $document->toXml(), $lease,
+                hash('sha256', $contents), $update);
+
+            return $replaced->success ? MissingFileRescanResult::fromArtifact($replaced->recordedResult)
+                : MissingFileRescanResult::notAttempted($completionBefore, $replaced->reason);
+        }
+
+        $replaced = $this->nzb->replaceNzbContentsWithLease((string) $release->guid, $document->toXml(), $lease, hash('sha256', $contents));
+        if (! $replaced->success) {
+            // We know what to write and could not write it. That is our problem, not the
+            // release's: leave its state alone so the next invocation tries again.
+            return $this->skip($release, MissingFileRescanResult::notAttempted(
+                $completionBefore,
+                'Re-scanned NZB could not be written back to disk: '.$replaced->reason,
+            ));
+        }
+
+        if ($added > 0) {
+            $this->evidenceChanged->apply($release, $document, $declared);
+        }
+
+        return $this->finish($release, $options, $result, $completionAfter);
     }
 
     /**
