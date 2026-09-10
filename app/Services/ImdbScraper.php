@@ -27,6 +27,13 @@ class ImdbScraper
 
     protected bool $lastRequestWasBlocked = false;
 
+    private bool $lastSearchAvailable = false;
+
+    public function wasSearchUnavailable(): bool
+    {
+        return ! $this->lastSearchAvailable;
+    }
+
     protected ?string $lastFetchSource = null;
 
     protected ?string $lastFailureReason = null;
@@ -179,6 +186,7 @@ class ImdbScraper
     public function search(string $query): array
     {
         $this->lastRequestWasBlocked = false;
+        $this->lastSearchAvailable = false;
 
         $query = trim($query);
         if ($query === '') {
@@ -192,8 +200,10 @@ class ImdbScraper
         }
 
         $prefix = substr($slug, 0, 1);
-        $cacheKey = 'imdb_search_'.md5($slug);
+        $cacheKey = 'imdb_search_typed_'.md5($slug);
         if (Cache::has($cacheKey)) {
+            $this->lastSearchAvailable = true;
+
             return Cache::get($cacheKey);
         }
 
@@ -210,7 +220,12 @@ class ImdbScraper
             $body = (string) $res->getBody();
 
             $results = [];
+            if ($this->isWafResponse($res->getStatusCode(), $body)) {
+                $this->lastRequestWasBlocked = true;
+            }
             if ($res->getStatusCode() === 200 && ! $this->isWafResponse($res->getStatusCode(), $body)) {
+                $json = json_decode($body, true);
+                $this->lastSearchAvailable = is_array($json) && isset($json['d']) && is_array($json['d']);
                 $results = $this->parseSuggestionJson($body);
             }
 
@@ -222,20 +237,19 @@ class ImdbScraper
             }
 
             if ($results === []) {
-                $ttl = $this->lastRequestWasBlocked
-                    ? now()->addMinutes(self::SOFT_FAILURE_TTL_MINUTES)
-                    : now()->addHours(self::HARD_FAILURE_TTL_HOURS);
-                Cache::put($cacheKey, [], $ttl);
+                if ($this->lastSearchAvailable) {
+                    Cache::put($cacheKey, [], now()->addHours(self::HARD_FAILURE_TTL_HOURS));
+                }
 
                 return [];
             }
 
+            $this->lastSearchAvailable = true;
             Cache::put($cacheKey, $results, now()->addHours(12));
 
             return $results; // @phpstan-ignore return.type
         } catch (\Throwable $e) {
             Log::debug('IMDb search error '.$query.': '.$e->getMessage());
-            Cache::put($cacheKey, [], now()->addHours(self::HARD_FAILURE_TTL_HOURS));
 
             return [];
         }
@@ -854,7 +868,7 @@ class ImdbScraper
     }
 
     /**
-     * @return array<int, array{imdbid: string, title: string, year: string}>
+     * @return array<int, array{imdbid: string, title: string, year: string, type: string}>
      */
     private function parseSuggestionJson(string $body): array
     {
@@ -878,6 +892,7 @@ class ImdbScraper
                 'imdbid' => substr($row['id'], 2),
                 'title' => $title,
                 'year' => trim((string) ($row['y'] ?? '')),
+                'type' => (string) ($row['qid'] ?? $row['q'] ?? ''),
             ];
 
             if (count($results) >= 25) {
@@ -889,7 +904,7 @@ class ImdbScraper
     }
 
     /**
-     * @return array<int, array{imdbid: string, title: string, year: string}>
+     * @return array<int, array{imdbid: string, title: string, year: string, type: string}>
      */
     private function searchHtmlFallback(string $query): array
     {
@@ -916,7 +931,12 @@ class ImdbScraper
                 return [];
             }
 
-            return $this->parseSearchHtml($html);
+            $results = $this->parseSearchHtml($html);
+            if ($results !== [] || preg_match('/No results found|No results for/i', strip_tags($html))) {
+                $this->lastSearchAvailable = true;
+            }
+
+            return $results;
         } catch (\Throwable $e) {
             Log::debug('IMDb HTML search fallback failed for '.$query.': '.$e->getMessage());
 
@@ -924,68 +944,69 @@ class ImdbScraper
         }
     }
 
+    private function searchTypeFromText(string $text): string
+    {
+        foreach (['TV Mini Series' => 'tvMiniSeries', 'TV Mini-Series' => 'tvMiniSeries', 'TV Series' => 'tvSeries', 'TV Episode' => 'tvEpisode', 'TV Special' => 'tvSpecial', 'Movie' => 'movie'] as $label => $type) {
+            if (stripos($text, $label) !== false) {
+                return $type;
+            }
+        }
+
+        return '';
+    }
+
     /**
-     * @return array<int, array{imdbid: string, title: string, year: string}>
+     * @return array<int, array{imdbid: string, title: string, year: string, type: string}>
      */
     private function parseSearchHtml(string $html): array
     {
+        $document = new \DOMDocument;
+        if (! $document->loadHTML('<?xml encoding="UTF-8">'.$html, LIBXML_NOERROR | LIBXML_NOWARNING)) {
+            return [];
+        }
+        $xpath = new \DOMXPath($document);
+        $links = $xpath->query('//a[contains(@href, "/title/tt")]');
         $results = [];
-
-        if (preg_match_all('#<a[^>]+href=["\']/title/tt(?P<id>\d{5,8})/["\'][^>]*>(?P<title>.*?)</a>#is', $html, $matches, PREG_OFFSET_CAPTURE)) {
-            foreach ($matches[0] as $index => $fullMatch) {
-                $title = trim(html_entity_decode(strip_tags($matches['title'][$index][0]), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
-                if ($title === '') {
-                    continue;
+        if ($links === false) {
+            return [];
+        }
+        foreach ($links as $link) {
+            if (! $link instanceof \DOMElement || ! preg_match('#/title/tt(?P<id>\d{5,})/#', $link->getAttribute('href'), $matches)) {
+                continue;
+            }
+            $title = trim($link->textContent);
+            if ($title === '') {
+                continue;
+            }
+            $row = $link;
+            for ($parent = $link->parentNode; $parent instanceof \DOMElement; $parent = $parent->parentNode) {
+                $rowLinks = $xpath->query('.//a[contains(@href, "/title/tt")]', $parent);
+                $ids = [];
+                foreach ($rowLinks === false ? [] : $rowLinks as $rowLink) {
+                    if ($rowLink instanceof \DOMElement && preg_match('#/title/(tt\d+)/#', $rowLink->getAttribute('href'), $id)) {
+                        $ids[$id[1]] = true;
+                    }
                 }
-
-                $offset = $fullMatch[1] + strlen($fullMatch[0]);
-                $context = substr($html, $offset, 200);
-
-                $results[] = [
-                    'imdbid' => $matches['id'][$index][0],
-                    'title' => $title,
-                    'year' => $this->extractYearFromText(strip_tags($context)),
-                ];
-
-                if (count($results) >= 25) {
+                if (count($ids) > 1) {
+                    break;
+                }
+                $row = $parent;
+                if (in_array(strtolower($parent->tagName), ['li', 'tr'], true)) {
                     break;
                 }
             }
-        }
-
-        if ($results === []) {
-            $dom = HtmlDomParser::str_get_html($html);
-            if ($dom !== false) {
-                foreach ($dom->find("a[href^='/title/tt']") as $link) {
-                    $href = (string) $link->getAttribute('href');
-                    if (! preg_match('#/title/tt(?P<id>\d{5,8})/#', $href, $matches)) {
-                        continue;
-                    }
-
-                    $title = trim($link->text());
-                    if ($title === '') {
-                        continue;
-                    }
-
-                    $context = trim(strip_tags((string) $html));
-                    $results[] = [
-                        'imdbid' => $matches['id'],
-                        'title' => $title,
-                        'year' => $this->extractYearFromText($context),
-                    ];
-
-                    if (count($results) >= 25) {
-                        break;
-                    }
-                }
+            $context = $row->textContent;
+            $results[$matches['id']] = [
+                'imdbid' => $matches['id'],
+                'title' => $title,
+                'year' => $this->extractYearFromText($context),
+                'type' => $this->searchTypeFromText($context),
+            ];
+            if (count($results) >= 25) {
+                break;
             }
         }
 
-        $unique = [];
-        foreach ($results as $result) {
-            $unique[$result['imdbid']] = $result;
-        }
-
-        return array_values($unique);
+        return array_values($results);
     }
 }

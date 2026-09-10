@@ -7,6 +7,9 @@ namespace App\Services;
 use App\Models\Category;
 use App\Models\Release;
 use App\Services\Releases\ReleaseBrowseService;
+use App\Services\TvProcessing\Providers\AbstractTvProvider;
+use App\Services\TvProcessing\Providers\LocalDbProvider;
+use App\Services\TvProcessing\TvEpisodeRevisitService;
 use App\Support\YearRange;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -255,6 +258,16 @@ class SeriesReleaseService
             ->get();
 
         $this->episodeHydrationService->hydrateEpisodeMetadata($candidates);
+
+        foreach ($candidates as $release) {
+            if ((int) $release->tv_episodes_id === TvEpisodeRevisitService::NO_MATCH_FOUND) {
+                $info = (new LocalDbProvider)->parseInfo($release->searchname);
+                if (is_array($info) && $info['episode'] === AbstractTvProvider::NO_EPISODE) {
+                    $release->setAttribute('series', 0);
+                    $release->setAttribute('episode', AbstractTvProvider::NO_EPISODE);
+                }
+            }
+        }
 
         return $candidates
             ->filter(static fn (Release $release): bool => $release->getAttribute('series') !== null && $release->getAttribute('series') !== '' && ! empty($release->getAttribute('episode')))

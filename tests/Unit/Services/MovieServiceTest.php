@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services;
 
+use App\Enums\MovieLookupOutcome;
 use App\Facades\Search;
 use App\Models\Release;
 use App\Services\ImdbScraper;
@@ -13,6 +14,7 @@ use App\Services\TraktService;
 use App\Services\TvProcessing\Providers\TraktProvider;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
@@ -55,8 +57,56 @@ class MovieServiceTest extends ImdbScraperTestCase
             $table->string('searchname')->default('');
             $table->unsignedInteger('categories_id')->default(0);
             $table->string('imdbid')->nullable();
+            $table->timestamp('imdb_lookup_attempted_at')->nullable();
+            $table->unsignedTinyInteger('imdb_lookup_attempts')->nullable();
             $table->unsignedBigInteger('movieinfo_id')->nullable();
         });
+    }
+
+    #[Test]
+    public function imdb_film_series_ties_use_duration_and_similarity_ignores_case(): void
+    {
+        Schema::create('video_data', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id');
+            $table->string('videoduration');
+        });
+        $scraper = $this->mock(ImdbScraper::class);
+        $scraper->shouldReceive('search')->andReturn([
+            ['imdbid' => '1234567', 'title' => 'The Hurt Locker', 'year' => '2008', 'type' => 'feature'],
+            ['imdbid' => '2345678', 'title' => 'The Hurt Locker', 'year' => '2008', 'type' => 'tvSeries'],
+        ]);
+        $scraper->shouldReceive('wasSearchUnavailable')->andReturnFalse();
+        $service = \Mockery::mock(MovieService::class)->makePartial();
+        $service->shouldReceive('doMovieUpdate')->once()->with('tt1234567', 'IMDb(scrape)', 1)->andReturn('1234567');
+        $this->setMovieServiceProperty($service, 'currentTitle', 'the hurt locker');
+        $this->setMovieServiceProperty($service, 'currentYear', '2008');
+        Release::query()->insert(['id' => 1, 'searchname' => 'the-hurt-locker-2008']);
+        $method = new \ReflectionMethod(MovieService::class, 'searchIMDb');
+        $this->assertSame(MovieLookupOutcome::Series, $method->invoke($service, 1));
+        DB::table('video_data')->insert(['releases_id' => 1, 'videoduration' => '00h:45m:00s']);
+        $this->assertSame(MovieLookupOutcome::Series, $method->invoke($service, 1));
+        DB::table('video_data')->update(['videoduration' => '01h:35m:00s']);
+        $this->assertSame(MovieLookupOutcome::Series, $method->invoke($service, 1));
+        DB::table('video_data')->update(['videoduration' => '01h:40m:00s']);
+        $this->assertSame(MovieLookupOutcome::Matched, $method->invoke($service, 1));
+        $this->assertSame(100.0, (new \ReflectionMethod(MovieService::class, 'similarityPercent'))->invoke($service, 'the hurt locker', 'The Hurt Locker'));
+    }
+
+    #[Test]
+    public function a_miniseries_is_not_written_as_a_movie(): void
+    {
+        $scraper = $this->mock(ImdbScraper::class);
+        $scraper->shouldReceive('search')->with('Years and Years')->once()->andReturn([
+            ['imdbid' => '8694364', 'title' => 'Years and Years', 'year' => '2019', 'type' => 'tvMiniSeries'],
+        ]);
+        $scraper->shouldReceive('wasSearchUnavailable')->andReturnFalse();
+        $service = new MovieService;
+        $this->setMovieServiceProperty($service, 'currentTitle', 'Years and Years');
+        $this->setMovieServiceProperty($service, 'currentYear', '2019');
+        Release::query()->insert(['id' => 1, 'searchname' => 'Years and Years (2019)', 'imdbid' => null]);
+        $result = (new \ReflectionMethod(MovieService::class, 'searchIMDb'))->invoke($service, 1);
+        $this->assertSame(MovieLookupOutcome::Series, $result);
+        $this->assertNull(Release::query()->find(1)->imdbid);
     }
 
     #[Test]
@@ -263,6 +313,12 @@ class MovieServiceTest extends ImdbScraperTestCase
     public static function legitimateMovieSearchNames(): array
     {
         return [
+            'short one word' => ['It (2017)', 'It', '2017'],
+            'short animated title' => ['Up (2009)', 'Up', '2009'],
+            'colon title' => ['Special Ops: Lioness (2026)', 'Special Ops: Lioness', '2026'],
+            'numeric colon title' => ['3:10 to Yuma (1957)', '3:10 to Yuma', '1957'],
+            'long colon title' => ['Star Wars: The Mandalorian and Grogu (2026)', 'Star Wars: The Mandalorian and Grogu', '2026'],
+            'hyphen title' => ['the-hurt-locker-2008', 'the hurt locker', '2008'],
             'dot separators' => ['The.Perfect.Storm.1991', 'The Perfect Storm', '1991'],
             'underscore separators' => ['Movie_Title_2024', 'Movie Title', '2024'],
             'scene release' => ['Inception 2010 1080p BluRay x264-SPARKS', 'Inception', '2010'],

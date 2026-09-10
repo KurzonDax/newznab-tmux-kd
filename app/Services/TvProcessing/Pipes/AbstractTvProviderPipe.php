@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\TvProcessing\Pipes;
 
 use App\Services\TvProcessing\Providers\AbstractTvProvider;
+use App\Services\TvProcessing\TvEpisodeRevisitService;
 use App\Services\TvProcessing\TvProcessingPassable;
 use App\Services\TvProcessing\TvProcessingResult;
 use Closure;
@@ -83,6 +84,17 @@ abstract class AbstractTvProviderPipe
      * Attempt to process the release through this provider.
      */
     abstract protected function process(TvProcessingPassable $passable): TvProcessingResult;
+
+    protected function bindWithoutEpisode(
+        AbstractTvProvider $provider,
+        TvProcessingPassable $passable,
+        int $videoId,
+    ): TvProcessingResult {
+        $provider->setVideoIdFound($videoId, $passable->context->releaseId, 0);
+        $provider->setVideoNotFound(TvEpisodeRevisitService::NO_MATCH_FOUND, $passable->context->releaseId);
+
+        return TvProcessingResult::matched($videoId, 0, $this->getName(), ['no_episode' => true]);
+    }
 
     /**
      * Last resort for a bound show whose season/episode (or airdate) lookup missed.

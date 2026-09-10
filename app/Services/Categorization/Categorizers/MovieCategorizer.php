@@ -7,6 +7,7 @@ namespace App\Services\Categorization\Categorizers;
 use App\Models\Category;
 use App\Services\Categorization\CategorizationResult;
 use App\Services\Categorization\ReleaseContext;
+use App\Support\TitleYearName;
 
 /**
  * Categorizer for Movie content including HD, SD, UHD, 3D, Blu-ray, DVD, etc.
@@ -131,13 +132,16 @@ class MovieCategorizer extends AbstractCategorizer
 
     protected function checkYearOnlyMovie(string $name): ?CategorizationResult
     {
-        if (! preg_match('/^(?<title>.+?)(?:[._ -](?:19|20)\d{2}|\((?:19|20)\d{2}\))(?:[._ -]\d{1,2})?(?:[._ -](?:mkv|mp4|avi))?$/iu', $name, $matches)) {
+        $parsed = TitleYearName::parse($name);
+        if ($parsed === null) {
             return null;
         }
-
-        $wordCount = preg_match_all('/[\p{L}\p{N}]+/u', trim($matches['title'], ' ._-'));
-
-        if ($wordCount === false || $wordCount < 2) {
+        $wordCount = preg_match_all('/[\p{L}\p{N}]+/u', $parsed['title'], $words);
+        if ($wordCount === false || $wordCount < 1
+            || ($wordCount === 1 && in_array(mb_strtolower($words[0][0]), [
+                'video', 'movie', 'film', 'clip', 'sample', 'preview', 'trailer',
+                'output', 'untitled', 'new', 'media', 'episode', 'ep', 'part',
+            ], true))) {
             return null;
         }
 

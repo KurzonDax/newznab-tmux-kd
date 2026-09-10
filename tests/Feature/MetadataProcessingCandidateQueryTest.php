@@ -404,6 +404,8 @@ class MetadataProcessingCandidateQueryTest extends TestCase
             $table->integer('tv_episodes_id')->default(0);
             $table->timestamp('tv_episode_lookup_attempted_at')->nullable();
             $table->string('imdbid')->nullable();
+            $table->timestamp('imdb_lookup_attempted_at')->nullable();
+            $table->unsignedTinyInteger('imdb_lookup_attempts')->nullable();
             $table->integer('musicinfo_id')->nullable();
             $table->integer('consoleinfo_id')->nullable();
             $table->integer('bookinfo_id')->nullable();

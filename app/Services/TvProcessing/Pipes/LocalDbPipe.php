@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\TvProcessing\Pipes;
 
+use App\Services\TvProcessing\Providers\AbstractTvProvider;
 use App\Services\TvProcessing\Providers\LocalDbProvider;
 use App\Services\TvProcessing\TvEpisodeRevisitService;
 use App\Services\TvProcessing\TvProcessingPassable;
@@ -77,6 +78,10 @@ class LocalDbPipe extends AbstractTvProviderPipe
             $this->outputNotFound($cleanName);
 
             return TvProcessingResult::notFound($this->getName(), ['title' => $cleanName]);
+        }
+
+        if (($parsedInfo['episode'] ?? null) === AbstractTvProvider::NO_EPISODE) {
+            return $this->bindWithoutEpisode($localDb, $passable, $videoId);
         }
 
         if (($parsedInfo['episode'] ?? null) === 'all') {

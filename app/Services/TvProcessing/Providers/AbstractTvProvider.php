@@ -14,6 +14,7 @@ use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\TvProcessing\TvProcessingCandidateQuery;
+use App\Support\TitleYearName;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
@@ -56,6 +57,8 @@ abstract class AbstractTvProvider extends BaseVideoProvider
     protected const NO_MATCH_FOUND = -6;   // Failed All Methods
 
     protected const FAILED_PARSE = -100; // Failed Parsing
+
+    public const NO_EPISODE = 'none';
 
     public int $tvqty;
 
@@ -503,6 +506,25 @@ abstract class AbstractTvProvider extends BaseVideoProvider
      */
     public function parseInfo(string $relname): bool|array
     {
+        $episodeInfo = $this->parseSeasonEp($relname);
+
+        $titleYear = TitleYearName::parse($relname);
+        if ($titleYear !== null
+            && ($episodeInfo === [] || (is_string($episodeInfo['season']) && ! isset($episodeInfo['airdate'])))) {
+            $title = $titleYear['title'];
+            $year = $titleYear['year'];
+
+            return [
+                'name' => $title,
+                'cleanname' => $title.' ('.$year.')',
+                'country' => $this->parseCountry($title),
+                'season' => 0,
+                'episode' => self::NO_EPISODE,
+                'airdate' => '',
+                'episode_title' => '',
+            ];
+        }
+
         $showInfo['name'] = $this->parseName($relname);
 
         if (! empty($showInfo['name'])) {
@@ -514,7 +536,7 @@ abstract class AbstractTvProvider extends BaseVideoProvider
             $showInfo['cleanname'] = $this->normalizeShowTitle($showInfo['cleanname']);
 
             // Get the Season/Episode/Airdate
-            $showInfo += $this->parseSeasonEp($relname);
+            $showInfo += $episodeInfo;
             $showInfo['episode_title'] = $this->parseEpisodeTitle($relname);
 
             // --- Post-parse correction for daily talk shows misclassified as Season = Year ---

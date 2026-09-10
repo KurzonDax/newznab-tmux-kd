@@ -63,6 +63,16 @@ class SeriesReleaseServiceTest extends TestCase
         $this->assertSame(['Test.Show.S02E03.720p-GROUP'], $seasonTwo['releases']->pluck('searchname')->all());
     }
 
+    public function test_show_only_releases_are_listed_without_an_episode(): void
+    {
+        $videoId = $this->createShow();
+        $this->createRelease($videoId, 'Sterling Point (2026)', -6);
+        $service = app(SeriesReleaseService::class);
+        $categories = $service->categoryIds([-1]);
+        $this->assertSame([0 => 1], $service->seasonCounts($videoId, $categories));
+        $this->assertSame(['Sterling Point (2026)'], $service->releasesForSeason($videoId, 0, 0, 20, $categories)['releases']->pluck('searchname')->all());
+    }
+
     private function createSchema(): void
     {
         if (! Schema::hasTable('settings')) {

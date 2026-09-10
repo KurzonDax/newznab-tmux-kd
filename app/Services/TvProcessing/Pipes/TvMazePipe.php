@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\TvProcessing\Pipes;
 
+use App\Services\TvProcessing\Providers\AbstractTvProvider;
 use App\Services\TvProcessing\Providers\TvMazeProvider;
 use App\Services\TvProcessing\TvProcessingPassable;
 use App\Services\TvProcessing\TvProcessingResult;
@@ -124,6 +125,10 @@ class TvMazePipe extends AbstractTvProviderPipe
             $tvmaze->getPoster($videoId);
         }
 
+        if (($parsedInfo['episode'] ?? null) === AbstractTvProvider::NO_EPISODE) {
+            return $this->bindWithoutEpisode($tvmaze, $passable, $videoId);
+        }
+
         // Process episode
         $seriesNo = ! empty($parsedInfo['season']) ? preg_replace('/^S0*/i', '', (string) $parsedInfo['season']) : '';
         $episodeNo = ! empty($parsedInfo['episode']) ? preg_replace('/^E0*/i', '', (string) $parsedInfo['episode']) : '';
@@ -226,6 +231,10 @@ class TvMazePipe extends AbstractTvProviderPipe
     ): TvProcessingResult {
         $context = $passable->context;
         $cleanName = $parsedInfo['cleanname'];
+
+        if (($parsedInfo['episode'] ?? null) === AbstractTvProvider::NO_EPISODE) {
+            return $this->bindWithoutEpisode($tvmaze, $passable, $videoId);
+        }
 
         $seriesNo = ! empty($parsedInfo['season']) ? preg_replace('/^S0*/i', '', (string) $parsedInfo['season']) : '';
         $episodeNo = ! empty($parsedInfo['episode']) ? preg_replace('/^E0*/i', '', (string) $parsedInfo['episode']) : '';

@@ -178,11 +178,47 @@ class ImdbScraperTest extends ImdbScraperTestCase
         ]);
 
         $results = $scraper->search('Inception');
+        $this->assertSame(['movie', 'short'], array_column($results, 'type'));
 
         $this->assertNotEmpty($results);
         $this->assertSame('1375666', $results[0]['imdbid']);
         $this->assertSame('Inception', $results[0]['title']);
         $this->assertSame('2010', $results[0]['year']);
+    }
+
+    public function test_search_keeps_miniseries_type(): void
+    {
+        $scraper = $this->makeScraperWithResponses([new Response(200, [], '{"d":[{"id":"tt8694364","l":"Years and Years","y":2019,"qid":"tvMiniSeries"}]}')]);
+        $this->assertSame('tvMiniSeries', $scraper->search('Years and Years')[0]['type']);
+    }
+
+    public function test_html_search_types_are_scoped_to_each_result_row(): void
+    {
+        $scraper = $this->makeScraperWithResponses([
+            new Response(200, [], '{}'),
+            new Response(200, [], '<ul><li><a href="/title/tt1234567/?ref_=fn">Con Air</a><span>1997</span></li><li><a href="/title/tt8694364/?ref_=fn">Years and Years</a><span>2019 TV Mini Series</span></li></ul>'),
+        ]);
+        $results = $scraper->search('Years and Years');
+        $this->assertSame('', $results[0]['type']);
+        $this->assertSame('1997', $results[0]['year']);
+        $this->assertSame('tvMiniSeries', $results[1]['type']);
+    }
+
+    public function test_unavailable_searches_are_not_cached_as_empty_successes(): void
+    {
+        $scraper = $this->makeScraperWithResponses([
+            new Response(202, [], '<script>window.gokuProps={}</script>'),
+            new Response(503, [], 'unavailable'),
+            new Response(200, [], '{"d":[]}'),
+            new Response(200, [], '<p>No results found</p>'),
+        ]);
+        $this->assertSame([], $scraper->search('Missing film'));
+        $this->assertTrue($scraper->wasBlockedByWaf());
+        $this->assertTrue($scraper->wasSearchUnavailable());
+        $this->assertSame([], $scraper->search('Missing film'));
+        $this->assertFalse($scraper->wasSearchUnavailable());
+        $this->assertSame([], $scraper->search('Missing film'));
+        $this->assertFalse($scraper->wasSearchUnavailable());
     }
 
     public function test_search_empty_returns_empty_array(): void
