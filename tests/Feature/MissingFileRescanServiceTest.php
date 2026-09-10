@@ -10,17 +10,17 @@ use App\Models\Release;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\Binaries\BinariesService;
-use App\Services\NNTP\NNTPService;
+use App\Services\CollectionReconciliation\ArtifactPublication;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseRepair\MissingFileRescanOptions;
 use App\Services\ReleaseRepair\MissingFileRescanService;
 use App\Services\ReleaseRepair\RescanRunBudget;
 use App\Services\ReleaseRepair\RescanWindowResolver;
-use DariusIII\NetNntp\Error;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\Reconciliation\FakeHeaderNntp;
 use Tests\TestCase;
 
 /**
@@ -616,6 +616,35 @@ class MissingFileRescanServiceTest extends TestCase
         $this->assertSame(0, $this->nntp->xoverCalls);
     }
 
+    public function test_reconciled_rescan_replays_after_rename_without_repeating_overview(): void
+    {
+        $release = $this->releaseHolding([1, 2], declaredFiles: 3, firstArticle: 1000, lastArticle: 1200);
+        (require database_path('migrations/2026_09_08_121907_create_collection_reconciliation_tables.php'))->up();
+        (require database_path('migrations/2026_09_10_140952_create_reconciled_artifact_operations.php'))->up();
+        DB::table('reconciled_postings')->insert(['release_id' => $release->id, 'digest' => str_repeat('a', 64),
+            'state' => 'published', 'inventory' => '[]', 'decision' => '{}', 'artifact_digest' => hash('sha256', $this->storedNzb($release))]);
+        $this->groupCarries($this->articlesForFile(3, segments: 2, startingAt: 1150));
+        $this->app->instance(ArtifactPublication::class,
+            new class extends ArtifactPublication
+            {
+                protected function publish(string $temporary, string $path): bool
+                {
+                    parent::publish($temporary, $path);
+                    throw new \RuntimeException('simulated_rescan_rename_crash');
+                }
+            });
+        $this->assertNull($this->service()->rescan($release, $this->rescanOptions(), $this->budget())->outcome);
+        $this->assertNull($this->storedOutcome(1));
+        $this->app->instance(ArtifactPublication::class, new ArtifactPublication);
+        $this->groupCarries([]);
+        $result = $this->service()->rescan($release->fresh(), $this->rescanOptions(), $this->budget());
+        $this->assertSame(ReleaseRepairOutcome::Repaired, $result->outcome);
+        $this->assertSame(1, $result->filesRecovered);
+        $this->assertSame(2, $result->segmentsAdded);
+        $this->assertSame('repaired', $this->storedOutcome(1));
+        $this->assertSame(1, DB::table('reconciled_artifact_operations')->count());
+    }
+
     private function service(): MissingFileRescanService
     {
         // Only `echoCli` reaches the date bisection; the rest of BinariesConfig is irrelevant here.
@@ -848,100 +877,3 @@ class MissingFileRescanServiceTest extends TestCase
  * real client and override only the two commands under test, so the service under test is wired
  * exactly as it is in production.
  */
-final class FakeHeaderNntp extends NNTPService
-{
-    /** @var array<int, array<string, mixed>> Article number => overview line. */
-    public array $articles = [];
-
-    /** @var array<int, int> Article number => unix time, for the legacy date bisection. */
-    public array $articleDates = [];
-
-    public int $xoverCalls = 0;
-
-    public bool $leaseObservedDuringFetch = false;
-
-    public bool $throwDuringFetch = false;
-
-    public bool $selectFails = false;
-
-    public int $groupFirst = 1;
-
-    public int $groupLast = 2000;
-
-    public function __construct() {}
-
-    public function selectGroup(string $group, mixed $articles = false, bool $force = false): mixed
-    {
-        if ($this->selectFails) {
-            return new Error('No such group');
-        }
-
-        return ['group' => $group, 'first' => $this->groupFirst, 'last' => $this->groupLast];
-    }
-
-    public function getXOVER(string $range): mixed
-    {
-        $this->xoverCalls++;
-        $this->leaseObservedDuringFetch = DB::table('releases')
-            ->where('id', 1)
-            ->whereNotNull('recovery_claimed_at')
-            ->exists();
-
-        if ($this->throwDuringFetch) {
-            throw new \RuntimeException('overview failed');
-        }
-
-        [$first, $last] = array_pad(explode('-', $range, 2), 2, null);
-        $first = (int) $first;
-        $last = $last === null || $last === '' ? $first : (int) $last;
-
-        if ($first === $last && $this->articleDates !== []) {
-            // A single-article probe: the date bisection asking when this article was posted.
-            return [[
-                'Number' => (string) $first,
-                'Date' => gmdate('D, d M Y H:i:s \G\M\T', $this->dateFor($first)),
-                'Subject' => 'probe',
-                'From' => 'probe@example.org',
-                'Message-ID' => '<probe@example.local>',
-            ]];
-        }
-
-        $lines = [];
-
-        foreach ($this->articles as $number => $line) {
-            if ($number >= $first && $number <= $last) {
-                $lines[] = $line;
-            }
-        }
-
-        return $lines;
-    }
-
-    public function doQuit(bool $force = false): mixed
-    {
-        return true;
-    }
-
-    public function __destruct() {}
-
-    /**
-     * Linear interpolation between the pinned article dates, so a bisection converges.
-     */
-    private function dateFor(int $article): int
-    {
-        $numbers = array_keys($this->articleDates);
-        $low = min($numbers);
-        $high = max($numbers);
-        $article = max($low, min($high, $article));
-
-        $span = $high - $low;
-
-        if ($span <= 0) {
-            return $this->articleDates[$low];
-        }
-
-        $elapsed = $this->articleDates[$high] - $this->articleDates[$low];
-
-        return (int) round($this->articleDates[$low] + ($elapsed * (($article - $low) / $span)));
-    }
-}

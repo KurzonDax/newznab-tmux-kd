@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\Release;
 use App\Models\Settings;
 use App\Services\Categorization\CategorizationService;
+use App\Services\ObfuscationRecovery\RecoveryCollectionOwnership;
 use App\Services\Releases\CollectionQuietPredicate;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -66,7 +67,7 @@ final class PendingReconciler
 
                         return false;
                     }
-                    $this->reconcile((int) $row->id, $quietHours);
+                    $this->reconcile((int) $row->id, $quietHours, microtime(true) + $budget->remainingSeconds());
                     $lastId = (int) $row->id;
                 }
 
@@ -75,15 +76,15 @@ final class PendingReconciler
         Cache::forever($cursorKey, $stoppedEarly ? $lastId : 0);
     }
 
-    public function reconcile(int $collectionId, int $quietHours): string
+    public function reconcile(int $collectionId, int $quietHours, ?float $cycleDeadline = null): string
     {
-        $reason = $this->attempt($collectionId, $quietHours);
+        $reason = $this->attempt($collectionId, $quietHours, $cycleDeadline);
         Log::info('Collection reconciliation decision', ['collection_id' => $collectionId, 'reason' => $reason]);
 
         return $reason;
     }
 
-    private function attempt(int $collectionId, int $quietHours): string
+    private function attempt(int $collectionId, int $quietHours, ?float $cycleDeadline): string
     {
         $owner = (string) Str::uuid();
         $ids = [];
@@ -101,66 +102,153 @@ final class PendingReconciler
                 || array_any($own, static fn (PostingFile $file): bool => ! $file->hasCompleteSegments())) {
                 return 'not_fragment';
             }
-            $late = app(LatePostingReconciler::class)->reconcile($collectionId, $quietHours);
+            $late = app(LatePostingReconciler::class)->reconcile($collectionId, $quietHours, $cycleDeadline);
             if ($late !== null) {
                 return $late;
             }
             $nearby = DB::table('collections')->where('groups_id', $source->groups_id)->where('declaredfiles', $source->declaredfiles)
+                ->where('fromname', $source->fromname)->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
                 ->whereBetween('date', [date('Y-m-d H:i:s', strtotime($source->date) - 3600), date('Y-m-d H:i:s', strtotime($source->date) + 3600)])
                 ->whereIn('filecheck', [0, 1, 2, 3, 10, 15, 16])->orderBy('id')->limit(257)->get();
             if ($nearby->count() > 256 || $nearby->count() < 2) {
                 return 'source_population';
             }
-            $all = $this->inventory->load($nearby->pluck('id')->map(static fn ($id): int => (int) $id)->all());
-            $bases = array_values(array_filter($all, static fn (PostingFile $file): bool => $file->isBasePar2()));
-            if (count($bases) !== 1) {
-                return 'missing_or_competing_base';
+            $populationIds = $nearby->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+            $ids = app(CollectionAdmission::class)->eligibleIds($populationIds, $quietHours);
+            if ($ids === null) {
+                return 'file_population';
             }
-            $date = $bases[0]->date;
-            $ids = $nearby->filter(static fn ($row): bool => abs(strtotime($row->date) - $date) <= 1800)->pluck('id')->map(static fn ($id): int => (int) $id)->all();
-            if (! in_array($collectionId, $ids, true) || count($ids) < 2) {
-                return 'outside_fixed_window';
+            if (! in_array($collectionId, $ids, true)) {
+                return 'ineligible_source';
             }
             $files = $this->inventory->load($ids);
-            if (array_any($files, static fn (PostingFile $file): bool => ! $file->hasCompleteSegments())) {
-                return 'incomplete_segments';
+            if (! array_any($files, static fn (PostingFile $file): bool => $file->isBasePar2())) {
+                return 'missing_or_competing_base';
+            }
+            app(CollectionAdmission::class)->screen($ids, $quietHours);
+            if (app(CollectionAdmission::class)->expired([$collectionId])) {
+                return 'admission_expired';
             }
             $revision = PendingInventory::digest($files);
             $deadline = app(CollectionClaims::class)->claim($ids, $owner, $revision, $quietHours);
             if ($deadline === null) {
                 return 'unavailable_claim';
             }
-            $decision = $this->evidence->resolve($files, hash('sha256', 'pending:'.$bases[0]->firstArticle()),
-                microtime(true) + max(0, $deadline - now()->timestamp));
+            $decisions = (new PostingHypotheses)->resolve($files, function (array $hypothesis) use ($cycleDeadline, $deadline): PostingDecision {
+                $base = array_values(array_filter($hypothesis, static fn (PostingFile $file): bool => $file->isBasePar2()))[0];
+
+                return $this->evidence->resolve($hypothesis, app(CollectionAdmission::class)->decisionId((int) $base->sourceId, $base->firstArticle()),
+                    min($cycleDeadline ?? INF, microtime(true) + max(0, $deadline - now()->timestamp)));
+            });
+            foreach ($decisions as $candidate) {
+                $base = array_values(array_filter($files, static fn (PostingFile $file): bool => $file->isBasePar2()
+                    && isset($candidate->evidence[$file->fileId]) && substr($file->filename, 0, -5) === $candidate->label))[0] ?? null;
+                if ($base === null) {
+                    continue;
+                }
+                $disproved = [];
+                foreach ($files as $file) {
+                    if (in_array($candidate->unresolved[$file->fileId] ?? null, ['unlisted_filename', 'contradictory_payload', 'different_poster', 'incompatible_inventory'], true)) {
+                        $disproved[] = (int) $file->sourceId;
+                    }
+                }
+                if ($disproved !== []) {
+                    DB::transaction(function () use ($ids, $revision, $disproved, $base): void {
+                        DB::table('collections')->whereIn('id', $ids)->orderBy('id')->lockForUpdate()->get();
+                        if (PendingInventory::digest($this->inventory->load($ids)) === $revision) {
+                            $admission = app(CollectionAdmission::class);
+                            $admission->disprove($disproved, $admission->decisionId((int) $base->sourceId, $base->firstArticle()));
+                        }
+                    }, 3);
+                }
+            }
+            $decision = null;
+            foreach ($decisions as $candidate) {
+                if (in_array((string) $collectionId, $candidate->sources(), true)) {
+                    $decision = $candidate;
+                    break;
+                }
+            }
+            if ($decision === null) {
+                $reason = array_any($decisions, static fn (PostingDecision $decision): bool => $decision->reason === 'competing_hypothesis')
+                    ? 'competing_hypothesis' : ($decisions[0]->reason ?? 'no_verified_union');
+                app(CollectionClaims::class)->settle($owner, $reason);
+
+                return $reason;
+            }
+            $unsupported = array_values(array_diff($populationIds, $ids));
+            foreach (DB::table('binaries')->whereIn('collections_id', $unsupported)->limit(1025)->pluck('name') as $subject) {
+                if (preg_match('/"([^"\r\n]+)"/', $subject, $name) !== 1 || preg_match('/\.par2$/iD', $name[1]) === 1
+                    || in_array($name[1], array_column($decision->accepted, 'filename'), true)
+                    || (preg_match('/\[([0-9]+)\/[0-9]+\]/', $subject, $ordinal) === 1
+                        && in_array((int) $ordinal[1], array_column($decision->accepted, 'ordinal'), true))) {
+                    app(CollectionClaims::class)->settle($owner, 'unsupported_competitor');
+
+                    return 'unsupported_competitor';
+                }
+            }
             if ($decision->accepted === []) {
                 app(CollectionClaims::class)->settle($owner, $decision->reason);
 
                 return $decision->reason;
             }
 
-            return $this->publishAssociation($ids, $owner, $revision, $decision);
+            if (! app(CollectionAdmission::class)->admitProven($decision, $quietHours)) {
+                app(CollectionClaims::class)->settle($owner, 'changed_inventory');
+
+                return 'changed_inventory';
+            }
+            if (! $decision->complete()) {
+                app(CollectionClaims::class)->settle($owner, 'verified_incomplete');
+
+                return 'verified_incomplete';
+            }
+
+            return $this->publishAssociation($ids, $owner, $revision, $decision, ['group' => (int) $source->groups_id,
+                'poster' => $source->fromname, 'total' => (int) $source->declaredfiles,
+                'from' => gmdate('Y-m-d H:i:s', strtotime($source->date) - 3600), 'until' => gmdate('Y-m-d H:i:s', strtotime($source->date) + 3600)], $populationIds);
         } catch (UnexpectedValueException $e) {
             app(CollectionClaims::class)->settle($owner, 'invalid_evidence');
 
             return $e->getMessage();
         } catch (RuntimeException $e) {
-            app(CollectionClaims::class)->retry($owner, $e->getMessage());
+            app(CollectionClaims::class)->retry($owner, $cycleDeadline !== null && microtime(true) >= $cycleDeadline ? 'cycle_yield' : $e->getMessage());
 
             return $e->getMessage();
         }
     }
 
-    /** @param list<int> $ids */
-    private function publishAssociation(array $ids, string $owner, string $revision, PostingDecision $decision): string
+    /**
+     * @param  list<int>  $ids
+     * @param  list<int>  $observedIds
+     * @param  array{group: int, poster: string, total: int, from: string, until: string}  $population
+     */
+    private function publishAssociation(array $ids, string $owner, string $revision, PostingDecision $decision, array $population, array $observedIds): string
     {
-        return DB::transaction(function () use ($ids, $owner, $revision, $decision): string {
-            $collections = DB::table('collections')->whereIn('id', $ids)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+        return DB::transaction(function () use ($ids, $owner, $revision, $decision, $population, $observedIds): string {
+            if (Schema::hasTable('reconciled_artifacts')) {
+                $lockedPopulation = app(ArtifactPublication::class)->lockSources($observedIds, $population);
+                if (array_diff($lockedPopulation, $observedIds) !== [] || array_diff($observedIds, $lockedPopulation) !== []) {
+                    app(CollectionClaims::class)->settle($owner, 'changed_inventory');
+
+                    return 'changed_inventory';
+                }
+            }
+            $collections = DB::table('collections')->whereIn('id', $observedIds)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
             $claims = DB::table('reconciliation_claims')->whereIn('collection_id', $ids)->where('owner', $owner)
                 ->where('revision', $revision)->where('lease_until', '>', now())->where('deadline', '>', now())->lockForUpdate()->get();
-            if ($claims->count() !== count($ids) || PendingInventory::digest($this->inventory->load($ids)) !== $revision) {
+            $acceptedIds = array_map('intval', $decision->sources());
+            $available = DB::table('collections')->whereIn('id', $acceptedIds)
+                ->tap(static fn ($query) => CollectionOwnership::excludeArtifactSources($query))->lockForUpdate()->count();
+            if ($available !== count($acceptedIds) || $claims->count() !== count($ids) || PendingInventory::digest($this->inventory->load($ids)) !== $revision) {
                 app(CollectionClaims::class)->settle($owner, 'changed_inventory');
 
                 return 'changed_inventory';
+            }
+            if (app(CollectionAdmission::class)->expired(array_map('intval', $decision->sources()))) {
+                app(CollectionClaims::class)->settle($owner, 'admission_expired');
+
+                return 'admission_expired';
             }
             $source = $collections->get((int) $decision->accepted[0]->sourceId);
             $size = array_sum(array_map(static fn (PostingFile $file): int => array_sum(array_column($file->segments, 'bytes')), $decision->accepted));
@@ -175,7 +263,7 @@ final class PendingReconciler
             }
             $category = $decision->independentVideos() ? Category::OTHER_MISC
                 : (new CategorizationService)->determineCategory((int) $source->groups_id, $decision->label, $source->fromname)['categories_id'];
-            $releaseId = (int) Release::insertRelease(['name' => $decision->label, 'searchname' => $decision->label,
+            $releaseId = (int) Release::insertRelease(['name' => $decision->label, ...Release::searchNameValues($decision->label),
                 'totalpart' => count($decision->accepted), 'declaredfiles' => $decision->declaredTotal,
                 'groups_id' => $source->groups_id, 'guid' => (string) Str::uuid(), 'postdate' => $source->date,
                 'fromname' => $source->fromname, 'size' => $size, 'categories_id' => $category,
@@ -183,7 +271,7 @@ final class PendingReconciler
                 'completion' => $decision->completion()]);
             $postingId = DB::table('reconciled_postings')->insertGetId(['release_id' => $releaseId,
                 'digest' => PendingInventory::digest($decision->accepted), 'state' => 'created',
-                'budget_id' => hash('sha256', 'pending:'.array_values(array_filter($decision->accepted, static fn (PostingFile $file): bool => $file->isBasePar2()))[0]->firstArticle()),
+                'budget_id' => app(CollectionAdmission::class)->decisionId((int) array_values(array_filter($decision->accepted, static fn (PostingFile $file): bool => $file->isBasePar2()))[0]->sourceId, array_values(array_filter($decision->accepted, static fn (PostingFile $file): bool => $file->isBasePar2()))[0]->firstArticle()),
                 'source_digest' => PendingInventory::digest($this->inventory->load(array_map('intval', $decision->sources()))),
                 'independent_videos' => $decision->independentVideos(), 'inventory' => PendingInventory::encode($decision->accepted),
                 'decision' => json_encode($decision, JSON_THROW_ON_ERROR), 'created_at' => now(), 'updated_at' => now()]);
@@ -197,6 +285,12 @@ final class PendingReconciler
             $groups = DB::table('usenet_groups')->whereIn('name', array_values(array_unique(array_merge(...array_map(static fn (PostingFile $file): array => $file->groups, $decision->accepted)))))->pluck('id')->all();
             foreach ($groups as $groupId) {
                 DB::table('releases_groups')->insertOrIgnore(['releases_id' => $releaseId, 'groups_id' => $groupId]);
+            }
+            if (Schema::hasTable('reconciled_artifacts')) {
+                app(ArtifactPublication::class)->writePosting(Release::query()->findOrFail($releaseId), (new PostingNzb)->render($decision->accepted), population: $population, observedSourceIds: $observedIds);
+                if (! DB::table('reconciled_artifacts')->where('release_id', $releaseId)->whereNotNull('pending_operation')->exists()) {
+                    throw new RuntimeException('initial_receipt_not_prepared');
+                }
             }
             app(CollectionClaims::class)->settle($owner, 'associated');
             Log::info('Collection reconciliation associated', ['release_id' => $releaseId, 'sources' => $decision->sources(), 'completion' => $decision->completion()]);

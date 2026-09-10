@@ -6,6 +6,8 @@ namespace App\Services\ReleaseRepair;
 
 use App\Enums\ReleaseRepairOutcome;
 use App\Models\Release;
+use App\Services\CollectionReconciliation\ArtifactPublication;
+use App\Services\CollectionReconciliation\ArtifactReleaseUpdate;
 use App\Services\NNTP\NntpProviderPool;
 use App\Services\Nzb\NzbParserService;
 use App\Services\Nzb\NzbService;
@@ -40,6 +42,10 @@ final class ReleaseRepairService
      */
     public function repair(Release $release, ReleaseRepairOptions $options): ReleaseRepairResult
     {
+        if (! $options->dryRun && ($resumed = app(ArtifactPublication::class)->resumeForRelease((int) $release->id, 'repair')) !== null) {
+            return $resumed->success ? ReleaseRepairResult::fromArtifact($resumed->recordedResult)
+                : ReleaseRepairResult::notAttempted((float) $release->completion, $resumed->reason);
+        }
         $lease = RecoveryLease::acquire($release);
 
         if ($lease === null) {
@@ -134,6 +140,22 @@ final class ReleaseRepairService
         $added = $document->addSegments($accepted);
         $completionAfter = $document->measure()->percentage();
         $rewritten = false;
+
+        if (! $options->dryRun && ArtifactPublication::handles((string) $release->guid)) {
+            $outcome = $this->outcomeFor($release, $completionAfter, $options->targetCompletion, $isFinalAttempt);
+            $result = new ReleaseRepairResult($outcome, $completionBefore, $completionAfter, $added, $probes,
+                true, false, sprintf('Added %d verified segment(s).', $added));
+            $update = new ArtifactReleaseUpdate('repair', [
+                'repair_attempted_at' => now()->toDateTimeString(), 'repair_outcome' => $outcome->value,
+                'repair_target_completion' => $outcome === ReleaseRepairOutcome::Repaired ? $options->targetCompletion : null,
+                'repair_evaluated_target_completion' => $options->targetCompletion,
+            ], $added > 0, result: json_decode(json_encode($result, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR));
+            $replaced = app(ArtifactPublication::class)->replace((string) $release->guid, $document->toXml(), $lease,
+                hash('sha256', $contents), $update);
+
+            return $replaced->success ? ReleaseRepairResult::fromArtifact($replaced->recordedResult)
+                : ReleaseRepairResult::notAttempted($completionBefore, $replaced->reason);
+        }
 
         if (! $options->dryRun) {
             $replaced = $this->nzb->replaceNzbContentsWithLease((string) $release->guid, $document->toXml(), $lease, hash('sha256', $contents));

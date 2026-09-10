@@ -18,14 +18,25 @@ final class CollectionOwnership
      */
     public static function exclude(Builder|EloquentBuilder $query, string $column = 'collections.id'): void
     {
+        self::excludeArtifactSources($query, $column);
+        $hasAdmissions = Schema::hasTable('reconciliation_admissions');
+        if ($hasAdmissions) {
+            $query->whereNotExists(static function (Builder $admission) use ($column): void {
+                $admission->selectRaw('1')->from('reconciliation_admissions as ra')->whereColumn('ra.collection_id', $column)
+                    ->where('ra.state', 'admitted')->where('ra.expires_at', '>', now());
+            });
+        }
         if (! Schema::hasTable('reconciliation_claims')) {
             return;
         }
-        $query->whereNotExists(static function (Builder $claim) use ($column): void {
+        $query->whereNotExists(static function (Builder $claim) use ($column, $hasAdmissions): void {
             $claim->selectRaw('1')->from('reconciliation_claims as rc')->whereColumn('rc.collection_id', $column)
-                ->where(static function (Builder $held): void {
-                    $held->where(static function (Builder $pending): void {
+                ->where(static function (Builder $held) use ($hasAdmissions): void {
+                    $held->where(static function (Builder $pending) use ($hasAdmissions): void {
                         $pending->where('rc.deadline', '>', now())->whereIn('rc.reason', ['pending', 'retry', 'budget_exhausted']);
+                        if ($hasAdmissions) {
+                            $pending->whereRaw('1 = 0');
+                        }
                     })->orWhere(static function (Builder $accepted): void {
                         $accepted->whereNotNull('rc.release_id')->whereExists(static function (Builder $posting): void {
                             $posting->selectRaw('1')->from('reconciled_postings as rp')->whereColumn('rp.release_id', 'rc.release_id')->where('rp.state', '!=', 'published');
@@ -33,6 +44,23 @@ final class CollectionOwnership
                     });
                 });
         });
+    }
+
+    /**
+     * @template TModel of \Illuminate\Database\Eloquent\Model
+     *
+     * @param  Builder|EloquentBuilder<TModel>  $query
+     */
+    public static function excludeArtifactSources(Builder|EloquentBuilder $query, string $column = 'collections.id'): void
+    {
+        if (Schema::hasTable('reconciled_artifact_sources')) {
+            $query->whereNotExists(static function (Builder $operation) use ($column): void {
+                $operation->selectRaw('1')->from('reconciled_artifact_sources as ras')
+                    ->join('reconciled_artifact_operations as rao', 'rao.id', '=', 'ras.operation_id')
+                    ->whereColumn('ras.collection_id', $column)->where('ras.cleanup_pending', true)
+                    ->whereIn('rao.state', ['prepared', 'committed', 'conflict']);
+            });
+        }
     }
 
     public static function protects(int $id): bool
@@ -64,6 +92,12 @@ final class CollectionOwnership
         if ($published !== []) {
             DB::table('collections')->whereIn('id', $published)->update(['releases_id' => null, 'filecheck' => 0]);
             DB::table('reconciliation_claims')->whereIn('collection_id', $published)->delete();
+        }
+        if (Schema::hasTable('reconciliation_admissions')) {
+            DB::table('reconciliation_admissions')->whereIn('collection_id', $ids)->where('state', 'disproved')
+                ->update(['state' => 'invalidated', 'revision' => 'changed']);
+            DB::table('reconciliation_admissions')->whereIn('collection_id', $ids)->where('state', 'admitted')
+                ->update(['revision' => 'changed']);
         }
         DB::table('reconciliation_claims')->whereIn('collection_id', $ids)->update(['revision' => 'changed']);
 

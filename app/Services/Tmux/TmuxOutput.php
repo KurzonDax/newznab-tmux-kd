@@ -51,16 +51,52 @@ class TmuxOutput extends Tmux
             $buffer .= $this->_getQueries();
         }
 
-        $recovery = $runVar['recovery'] ?? [];
-        if ($recovery['available'] ?? false) {
-            $buffer .= sprintf("\nRecovery %s | slots %d/%d | opens %.2f/s | observed %.0f B/s | accounted %.0f B/s\n",
-                $recovery['enabled'] ? 'enabled' : 'disabled', $recovery['occupied_slots'], $recovery['worker_limit'],
-                $recovery['opens_per_second'], $recovery['observed_bytes_per_second'], $recovery['accounted_bytes_per_second']);
-        }
+        $buffer .= $this->renderOperationalStatistics($runVar['reconciliation'] ?? [], $runVar['recovery'] ?? []);
 
         // begin update display with screen clear
         passthru('clear');
         echo $buffer;
+    }
+
+    /**
+     * @param  array<string, mixed>  $reconciliation
+     * @param  array<string, mixed>  $recovery
+     */
+    public function renderOperationalStatistics(array $reconciliation, array $recovery): string
+    {
+        $this->tmpMasks = $this->_getFormatMasks(config('nntmux_nntp.compressed_headers'));
+        $buffer = '';
+        if ($reconciliation['available'] ?? false) {
+            $buffer .= "\n".sprintf($this->tmpMasks[3], 'Reconciliation', 'This Hour', 'Today').$this->_getSeparator();
+            $hour = $reconciliation['hour'];
+            $day = $reconciliation['day'];
+            $buffer .= sprintf($this->tmpMasks[4], 'Budget Used',
+                self::compactBytes($hour['used']).' / '.self::compactBytes($hour['limit']),
+                self::compactBytes($day['used']).' / '.self::compactBytes($day['limit']));
+            $buffer .= sprintf($this->tmpMasks[4], 'Budget Deferrals', $hour['deferrals'], $day['deferrals']);
+        }
+        if ($recovery['available'] ?? false) {
+            $buffer .= "\n".sprintf($this->tmpMasks[3], 'Recovery', 'State', 'Slots').$this->_getSeparator();
+            $buffer .= sprintf($this->tmpMasks[4], 'Workers', $recovery['enabled'] ? 'enabled' : 'disabled',
+                $recovery['occupied_slots'].' / '.$recovery['worker_limit']);
+            $buffer .= sprintf($this->tmpMasks[4], 'Opens', sprintf('%.2f/s', $recovery['opens_per_second']), '');
+            $buffer .= sprintf($this->tmpMasks[4], 'Observed', self::compactBytes($recovery['observed_bytes_per_second']).'/s', '');
+            $buffer .= sprintf($this->tmpMasks[4], 'Accounted', self::compactBytes($recovery['accounted_bytes_per_second']).'/s', '');
+        }
+
+        return $buffer;
+    }
+
+    private static function compactBytes(int|float $bytes): string
+    {
+        $units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB'];
+        $unit = 0;
+        while ($bytes >= 1024 && $unit < count($units) - 1) {
+            $bytes /= 1024;
+            $unit++;
+        }
+
+        return rtrim(rtrim(sprintf('%.2f', $bytes), '0'), '.').' '.$units[$unit];
     }
 
     protected function _getBackfill(): string

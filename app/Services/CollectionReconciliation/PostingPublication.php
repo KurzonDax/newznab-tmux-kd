@@ -21,6 +21,12 @@ use RuntimeException;
 /** Durable inventory is the journal; an atomic rename can always be replayed from it. */
 class PostingPublication
 {
+    public static function hasGuid(string $guid): bool
+    {
+        return Schema::hasTable('reconciled_postings') && DB::table('reconciled_postings as p')
+            ->join('releases as r', 'r.id', '=', 'p.release_id')->where('r.guid', $guid)->exists();
+    }
+
     public static function has(int $releaseId): bool
     {
         return Schema::hasTable('reconciled_postings') && DB::table('reconciled_postings')->where('release_id', $releaseId)->exists();
@@ -33,6 +39,9 @@ class PostingPublication
             $posting = DB::table('reconciled_postings')->where('release_id', $release->id)->first();
             if ($posting === null) {
                 return NzbCreationResult::deferred('missing_posting_journal');
+            }
+            if (Schema::hasTable('reconciled_artifacts') && DB::table('reconciled_artifacts')->where('release_id', $release->id)->exists()) {
+                return app(ArtifactPublication::class)->writePosting($release, null, $lease);
             }
             if ($posting->state === 'published') {
                 $xml = $nzbs->readNzbContents($release->guid);
@@ -57,6 +66,9 @@ class PostingPublication
                 $posting = DB::table('reconciled_postings')->where('id', $posting->id)->first();
             }
             $xml = (new PostingNzb)->render($files);
+            if (Schema::hasTable('reconciled_artifacts')) {
+                return app(ArtifactPublication::class)->writePosting($release, $xml, $lease);
+            }
             $digest = hash('sha256', $xml);
             $path = $nzbs->getNzbPath($release->guid, $nzbs->getNzbSplitLevel(), true);
             $existingPath = $nzbs->nzbPath($release->guid);

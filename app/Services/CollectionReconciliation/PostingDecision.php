@@ -32,6 +32,18 @@ final readonly class PostingDecision
         return $tally->signals()->percentage();
     }
 
+    public function complete(): bool
+    {
+        if ($this->declaredTotal < 1 || count($this->accepted) !== $this->declaredTotal
+            || array_any($this->accepted, static fn (PostingFile $file): bool => ! $file->hasCompleteSegments())) {
+            return false;
+        }
+        $ordinals = array_column($this->accepted, 'ordinal');
+        sort($ordinals);
+
+        return $ordinals === range(1, $this->declaredTotal) && $this->completion() === 100.0;
+    }
+
     public function independentVideos(): bool
     {
         return self::hasIndependentVideos($this->accepted);

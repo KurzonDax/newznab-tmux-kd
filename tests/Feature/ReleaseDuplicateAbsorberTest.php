@@ -9,6 +9,7 @@ use App\Facades\Search;
 use App\Models\Collection;
 use App\Models\Release;
 use App\Services\CollectionCleanupService;
+use App\Services\CollectionReconciliation\ArtifactPublication;
 use App\Services\Nzb\NzbService;
 use App\Services\Releases\ReleaseDuplicateAbsorber;
 use App\Support\Data\NzbReplaceResult;
@@ -317,6 +318,56 @@ final class ReleaseDuplicateAbsorberTest extends TestCase
 
         $this->assertSame(DuplicateAbsorbOutcome::Absorbed, $retried->outcome);
         $this->assertSame(2_000, (int) DB::table('releases')->value('size'));
+    }
+
+    public function test_reconciled_duplicate_stages_in_outer_transaction_without_spending_failure_attempts(): void
+    {
+        Search::shouldReceive('updateRelease')->zeroOrMoreTimes();
+        $anchor = $this->anchor();
+        $nzb = app(NzbService::class);
+        $original = $this->nzbXml('old@example.test', 1, 2);
+        $target = $this->nzbXml('new@example.test', 2, 2);
+        $this->writeStoredNzb($nzb, (string) $anchor->guid, $original);
+        Schema::table('collections', function (Blueprint $table): void {
+            $table->unsignedInteger('groups_id')->default(1);
+            $table->timestamp('date')->nullable();
+        });
+        (require database_path('migrations/2026_09_08_121907_create_collection_reconciliation_tables.php'))->up();
+        (require database_path('migrations/2026_09_10_140952_create_reconciled_artifact_operations.php'))->up();
+        DB::table('reconciled_postings')->insert(['release_id' => $anchor->id, 'digest' => str_repeat('a', 64),
+            'state' => 'published', 'inventory' => '[]', 'decision' => '{}', 'artifact_digest' => hash('sha256', $original)]);
+        DB::beginTransaction();
+        $result = app(ReleaseDuplicateAbsorber::class)->absorbXml($anchor, $target, 2000, 1, 100.0);
+        $this->assertSame(DuplicateAbsorbOutcome::Deferred, $result->outcome);
+        $this->assertNotNull($result->operationId);
+        $this->assertSame($original, $nzb->readNzbContents($anchor->guid));
+        DB::commit();
+        $this->assertTrue(app(ArtifactPublication::class)->execute($result->operationId)->success);
+        $this->assertSame($target, $nzb->readNzbContents($anchor->guid));
+        $this->assertSame(100.0, (float) $anchor->fresh()->completion);
+        $this->assertSame(2000, (int) $anchor->fresh()->size);
+    }
+
+    public function test_reconciled_duplicate_rechecks_quality_against_the_locked_current_release(): void
+    {
+        $anchor = $this->anchor();
+        $original = $this->nzbXml('repaired@example.test', 2, 2);
+        $this->writeStoredNzb(app(NzbService::class), $anchor->guid, $original);
+        Schema::table('collections', function (Blueprint $table): void {
+            $table->unsignedInteger('groups_id')->default(1);
+            $table->timestamp('date')->nullable();
+        });
+        (require database_path('migrations/2026_09_08_121907_create_collection_reconciliation_tables.php'))->up();
+        (require database_path('migrations/2026_09_10_140952_create_reconciled_artifact_operations.php'))->up();
+        DB::table('reconciled_postings')->insert(['release_id' => $anchor->id, 'digest' => str_repeat('a', 64),
+            'state' => 'published', 'inventory' => '[]', 'decision' => '{}', 'artifact_digest' => hash('sha256', $original)]);
+        DB::table('releases')->where('id', $anchor->id)->update(['completion' => 100.0]);
+        $incoming = $this->nzbXml('incoming@example.test', 3, 4);
+        $result = app(ReleaseDuplicateAbsorber::class)->absorbXml($anchor, $incoming, 3000, 1, 75.0);
+        $this->assertSame(DuplicateAbsorbOutcome::NotBetter, $result->outcome);
+        $this->assertSame($original, app(NzbService::class)->readNzbContents($anchor->guid));
+        $this->assertSame(0, DB::table('reconciled_artifact_operations')->count());
+        $this->assertSame(100.0, (float) $anchor->fresh()->completion);
     }
 
     private function anchor(int $nzbstatus = NzbService::NZB_ADDED): Release

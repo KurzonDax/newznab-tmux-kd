@@ -6,6 +6,7 @@ namespace App\Services\AdditionalProcessing;
 
 use App\Enums\NzbParseFailure;
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
+use App\Services\CollectionReconciliation\PostingPublication;
 use App\Services\Nzb\NzbParserService;
 use App\Services\Nzb\NzbService;
 use Illuminate\Support\Facades\File;
@@ -52,7 +53,7 @@ class NzbContentParser
         $nzbContents = unzipGzipFile($nzbPath);
         if (! $nzbContents) {
             // Try repair on raw file contents
-            $nzbContents = $this->attemptRawRepair($nzbPath);
+            $nzbContents = $this->attemptRawRepair($nzbPath, $guid);
             if (! $nzbContents) {
                 return [
                     'contents' => [],
@@ -88,7 +89,7 @@ class NzbContentParser
     /**
      * Attempt to repair raw file contents before XML parsing.
      */
-    private function attemptRawRepair(string $nzbPath): ?string
+    private function attemptRawRepair(string $nzbPath, string $guid): ?string
     {
         try {
             $rawFile = @File::get($nzbPath);
@@ -100,10 +101,10 @@ class NzbContentParser
             if (str_ends_with(strtolower($nzbPath), '.gz')) {
                 $decompressed = @gzdecode($rawFile);
                 if ($decompressed !== false) {
-                    return $this->repairNzb($decompressed, $nzbPath, '');
+                    return $this->repairNzb($decompressed, $nzbPath, $guid);
                 }
             } else {
-                return $this->repairNzb($rawFile, $nzbPath, '');
+                return $this->repairNzb($rawFile, $nzbPath, $guid);
             }
         } catch (\Throwable) {
             // Ignore
@@ -149,7 +150,7 @@ class NzbContentParser
 
         // Persist a repaired version if content changed
         try {
-            if ($fixed !== $raw) {
+            if ($fixed !== $raw && ! PostingPublication::hasGuid($guid)) {
                 if (str_ends_with(strtolower($originalPath), '.gz')) {
                     @File::put($originalPath, gzencode($fixed));
                 } else {

@@ -238,7 +238,7 @@ class ReleaseCleanupSafetyMariaDbTest extends ReleaseRemoverBatchingTest
                 parent::__construct();
             }
 
-            public function deleteCollectionsAndDescendants(array $collectionIds, string $label = 'CBP cleanup', bool $echoCLI = false, ?int $expectedReleaseId = null): int
+            public function deleteCollectionsAndDescendants(array $collectionIds, string $label = 'CBP cleanup', bool $echoCLI = false, ?int $expectedReleaseId = null, bool $screenAdmission = true): int
             {
                 $this->called = true;
                 ($this->attempt)();
@@ -246,7 +246,7 @@ class ReleaseCleanupSafetyMariaDbTest extends ReleaseRemoverBatchingTest
                     throw new \RuntimeException('Injected CBP cleanup failure');
                 }
 
-                return parent::deleteCollectionsAndDescendants($collectionIds, $label, $echoCLI, $expectedReleaseId);
+                return parent::deleteCollectionsAndDescendants($collectionIds, $label, $echoCLI, $expectedReleaseId, $screenAdmission);
             }
         };
         $release = Release::query()->findOrFail(1);

@@ -24,6 +24,11 @@ final class ReconciliationRunBudget
         $this->deadline = ($this->clock)() + $seconds;
     }
 
+    public function remainingSeconds(): float
+    {
+        return max(0.0, $this->deadline - ($this->clock)());
+    }
+
     public function take(): bool
     {
         if ($this->processed >= $this->limit || ($this->clock)() >= $this->deadline) {

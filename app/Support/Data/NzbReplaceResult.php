@@ -26,15 +26,24 @@ final readonly class NzbReplaceResult
 
     public const string FAILURE_RENAME = 'rename';
 
+    /** @param array<string, mixed> $recordedResult */
     private function __construct(
         public bool $success,
         public string $failureType,
         public string $reason,
+        public ?string $operationId = null,
+        public array $recordedResult = [],
     ) {}
 
-    public static function success(): self
+    /** @param array<string, mixed> $recordedResult */
+    public static function success(?string $operationId = null, array $recordedResult = []): self
     {
-        return new self(true, self::FAILURE_NONE, '');
+        return new self(true, self::FAILURE_NONE, '', $operationId, $recordedResult);
+    }
+
+    public static function deferred(string $operationId, string $reason = 'artifact_operation_pending'): self
+    {
+        return new self(false, 'deferred', $reason, $operationId);
     }
 
     public static function missingNzb(string $reason): self

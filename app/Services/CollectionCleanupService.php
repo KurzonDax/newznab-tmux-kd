@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Services\Binaries\BinariesConfig;
+use App\Services\CollectionReconciliation\CollectionAdmission;
 use App\Services\CollectionReconciliation\CollectionOwnership;
 use App\Services\ObfuscationRecovery\RecoveryCollectionOwnership;
 use App\Support\DatabaseClock;
@@ -271,6 +272,7 @@ class CollectionCleanupService
         string $label = 'CBP cleanup',
         bool $echoCLI = false,
         ?int $expectedReleaseId = null,
+        bool $screenAdmission = true,
     ): int {
         if ($collectionIds === []) {
             return 0;
@@ -278,10 +280,16 @@ class CollectionCleanupService
 
         $deletedCollections = 0;
 
-        foreach (array_chunk($collectionIds, $this->sqlChunkSize()) as $chunk) {
+        foreach (array_chunk($collectionIds, min(500, $this->sqlChunkSize())) as $chunk) {
+            if ($screenAdmission && ! app(CollectionAdmission::class)->screen(array_map('intval', $chunk))) {
+                continue;
+            }
             $deletedCollections += $this->retryOnLockError(
                 fn (): int => DB::transaction(
-                    function () use ($chunk, $expectedReleaseId): int {
+                    function () use ($chunk, $expectedReleaseId, $screenAdmission): int {
+                        if ($screenAdmission && ! app(CollectionAdmission::class)->lockAndScreen(array_map('intval', $chunk))) {
+                            return 0;
+                        }
                         $locked = DB::table('collections')->whereIn('id', $chunk)->orderBy('id')->lockForUpdate()->pluck('id');
                         $query = DB::table('collections')->whereIn('id', $locked);
                         if ($expectedReleaseId !== null) {

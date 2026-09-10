@@ -26,6 +26,14 @@ final readonly class ReleaseRepairResult
         public string $reason,
     ) {}
 
+    /** @param array<string, mixed> $result */
+    public static function fromArtifact(array $result): self
+    {
+        return new self($result['outcome'] === null ? null : ReleaseRepairOutcome::from($result['outcome']),
+            $result['completionBefore'], $result['completionAfter'], $result['segmentsAdded'], $result['articlesProbed'],
+            $result['nzbRewritten'], $result['requeuedForAdditionalProcessing'], $result['reason']);
+    }
+
     /**
      * The pass could not run: something about *our* side was broken, not the release.
      *

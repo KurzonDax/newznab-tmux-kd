@@ -7,7 +7,10 @@ namespace Tests\Feature;
 use App\Facades\Search;
 use App\Models\Category;
 use App\Models\Release;
+use App\Services\Binaries\BinariesConfig;
+use App\Services\Binaries\BinariesService;
 use App\Services\CollectionCleanupService;
+use App\Services\CollectionReconciliation\ArtifactInventory;
 use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\CollectionReconciliation\CollectionOwnership;
 use App\Services\CollectionReconciliation\HistoricalReconciliation;
@@ -18,20 +21,31 @@ use App\Services\CollectionReconciliation\PostingNzb;
 use App\Services\CollectionReconciliation\PostingPublication;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\NNTP\Contracts\BoundedProviderClient;
+use App\Services\NNTP\Contracts\ProviderClient;
 use App\Services\NNTP\DTO\BoundedArticleResponse;
 use App\Services\NNTP\NntpProvider;
 use App\Services\NNTP\NntpProviderPool;
 use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseProcessingService;
+use App\Services\ReleaseRepair\MissingFileRescanOptions;
+use App\Services\ReleaseRepair\MissingFileRescanService;
+use App\Services\ReleaseRepair\ReleaseRepairOptions;
+use App\Services\ReleaseRepair\ReleaseRepairService;
+use App\Services\ReleaseRepair\RescanRunBudget;
+use App\Services\ReleaseRepair\RescanWindowResolver;
 use App\Services\YencService;
 use Database\Seeders\CollectionRegexesTableSeeder;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\Reconciliation\CreatesPostingSchema;
+use Tests\Support\Reconciliation\FakeHeaderNntp;
 use Tests\Support\Reconciliation\Par2Fixture;
 use Tests\Support\TestBinariesHarness;
 use Tests\TestCase;
@@ -174,6 +188,8 @@ class PendingReconciliationTest extends TestCase
 
     public function test_ingested_course_fragments_are_associated_once_after_the_frontier_is_quiet(): void
     {
+        (require database_path('migrations/2026_09_10_134847_add_reconciliation_admissions.php'))->up();
+        (require database_path('migrations/2026_09_10_140952_create_reconciled_artifact_operations.php'))->up();
         [$service, $id] = $this->ingestCourse();
         $this->assertSame('not_quiet', $service->reconcile($id, 1));
         DB::table('usenet_groups')->update(['last_record_postdate' => '2026-01-01 14:00:00']);
@@ -191,6 +207,7 @@ class PendingReconciliationTest extends TestCase
         $this->assertTrue($result->success, $result->reason);
         $xml = $nzbs->readNzbContents($release->guid);
         $this->assertCount(33, (new PostingNzb)->parse($xml, 'stored'));
+        $this->assertSame(1, (int) DB::table('reconciled_artifacts')->value('version'));
         $this->assertSame(0, DB::table('collections')->count());
         $this->assertSame(100.0, (float) $release->fresh()->completion);
         $this->assertTrue($nzbs->createNzbForRelease($release->fresh())->success);
@@ -202,6 +219,151 @@ class PendingReconciliationTest extends TestCase
         $this->assertSame(1, DB::table('releases')->count());
         $this->assertSame($xml, $nzbs->readNzbContents($release->guid));
 
+    }
+
+    #[DataProvider('ordinaryWriterCases')]
+    public function test_late_addition_preserves_current_replacement_and_unproved_opaque_file(bool $repair): void
+    {
+        (require database_path('migrations/2026_09_10_134847_add_reconciliation_admissions.php'))->up();
+        (require database_path('migrations/2026_09_10_140952_create_reconciled_artifact_operations.php'))->up();
+        [$service, $id] = $this->ingestCourse(multipart: $repair);
+        DB::table('usenet_groups')->update(['last_record_postdate' => '2026-01-01 14:00:00']);
+        $this->assertSame('associated', $service->reconcile($id, 1));
+        config(['nntmux_settings.path_to_nzbs' => $this->makeTempDirectory('current-artifact-late')]);
+        $nzbs = app(NzbService::class);
+        $release = Release::query()->first();
+        $this->assertTrue($nzbs->createNzbForRelease($release)->success);
+        $document = new \DOMDocument;
+        $document->loadXML($nzbs->readNzbContents($release->guid));
+        foreach (iterator_to_array($document->getElementsByTagName('file')) as $file) {
+            if (str_contains($file->getAttribute('subject'), 'bundle.r15')) {
+                $file->parentNode->removeChild($file);
+            }
+            if ($repair && str_contains($file->getAttribute('subject'), 'bundle.r10')) {
+                $segments = $file->getElementsByTagName('segments')->item(0);
+                foreach (iterator_to_array($segments->getElementsByTagName('segment')) as $segment) {
+                    if ($segment->getAttribute('number') === '1') {
+                        $segments->removeChild($segment);
+                    }
+                }
+            }
+        }
+        $this->assertTrue($nzbs->replaceNzbContents($release->guid, $document->saveXML())->success);
+        if ($repair) {
+            Schema::table('releases', function (Blueprint $table): void {
+                $table->timestamp('repair_attempted_at')->nullable();
+                $table->string('repair_outcome')->nullable();
+                $table->double('repair_target_completion')->nullable();
+                $table->double('repair_evaluated_target_completion')->nullable();
+                foreach (['pp_timeout_count', 'proc_nfo', 'proc_files', 'proc_srr', 'proc_crc32', 'proc_uid', 'proc_hash16k', 'proc_par2', 'proc_srrdb', 'proc_xxx', 'proc_media_movie'] as $column) {
+                    $table->integer($column)->default(1);
+                }
+            });
+            DB::statement('CREATE TABLE video_data (releases_id INTEGER PRIMARY KEY)');
+            DB::statement('CREATE TABLE audio_data (id INTEGER PRIMARY KEY, releases_id INTEGER)');
+            $client = Mockery::mock(ProviderClient::class);
+            $client->shouldReceive('doConnect')->andReturn(true);
+            $client->shouldReceive('statArticle')->once()->with('part1of3.CourseRepair@host')->andReturn(true);
+            $client->shouldReceive('doQuit')->andReturn(true);
+            $provider = new NntpProvider(1, 'repair-fixture', 'example.invalid', 119, false, '', '', 1, 5, true);
+            $pool = new NntpProviderPool([$provider], clientFactory: static fn () => $client);
+            $result = (new ReleaseRepairService($nzbs, $pool))->repair($release->fresh(), new ReleaseRepairOptions);
+            $this->assertSame(1, $result->segmentsAdded, $result->reason);
+            $document->loadXML($nzbs->readNzbContents($release->guid));
+            $this->assertStringContainsString('part1of3.CourseRepair@host', $document->saveXML());
+            $this->assertSame('additive', DB::table('reconciled_artifact_operations')->where('kind', 'repair')->value('change_kind'));
+        }
+        $opaque = $document->createElement('file');
+        $opaque->setAttribute('subject', '"unproved.txt" (1/1)');
+        $opaque->setAttribute('poster', 'Unrelated Poster');
+        $opaque->setAttribute('date', '1767268800');
+        $opaque->appendChild($document->createElement('groups'))->appendChild($document->createElement('group', 'alt.binaries.boneless'));
+        $segment = $opaque->appendChild($document->createElement('segments'))->appendChild($document->createElement('segment', 'opaque@example.invalid'));
+        $segment->setAttribute('bytes', '7');
+        $segment->setAttribute('number', '1');
+        $opaque->appendChild($document->createElement('unrecognized', 'keep this metadata'));
+        $document->documentElement->appendChild($opaque);
+        $this->assertTrue($nzbs->replaceNzbContents($release->guid, $document->saveXML())->success);
+        $late = array_values(array_filter($this->courseHeaders, static fn ($header): bool => str_contains($header['Subject'], '"bundle.r15"')));
+        (new TestBinariesHarness)->simulateScan($late, ['id' => 1, 'name' => 'alt.binaries.boneless']);
+        $lateId = (int) DB::table('collections')->value('id');
+        $this->assertSame('late_added', $service->reconcile($lateId, 1));
+        $stored = $nzbs->readNzbContents($release->guid);
+        $this->assertStringContainsString('opaque@example.invalid', $stored);
+        $this->assertStringContainsString('keep this metadata', $stored);
+        $this->assertStringContainsString('bundle.r15', $stored);
+        if ($repair) {
+            foreach ([1, 2, 3] as $part) {
+                $this->assertStringContainsString('part'.$part.'of3.CourseRepair@host', $stored);
+            }
+        }
+        $this->assertSame(2, (int) DB::table('reconciled_artifacts')->value('epoch'));
+    }
+
+    public function test_legacy_partial_union_can_rescan_a_whole_file_then_prove_another_late_source(): void
+    {
+        [$service] = $this->ingestCourse(['bundle.r14', 'bundle.r15']);
+        DB::table('usenet_groups')->update(['last_record_postdate' => '2026-01-01 14:00:00']);
+        $this->seedLegacyPartialPosting();
+        config(['nntmux_settings.path_to_nzbs' => $this->makeTempDirectory('legacy-rescan-late')]);
+        $nzbs = app(NzbService::class);
+        $release = Release::query()->first();
+        $this->assertTrue($nzbs->createNzbForRelease($release)->success);
+        (require database_path('migrations/2026_09_10_140952_create_reconciled_artifact_operations.php'))->up();
+        Schema::table('releases', function (Blueprint $table): void {
+            foreach (['repair', 'rescan'] as $prefix) {
+                $table->timestamp($prefix.'_attempted_at')->nullable();
+                $table->string($prefix.'_outcome')->nullable();
+                $table->double($prefix.'_target_completion')->nullable();
+                $table->double($prefix.'_evaluated_target_completion')->nullable();
+            }
+            foreach (['pp_timeout_count', 'proc_nfo', 'proc_files', 'proc_srr', 'proc_crc32', 'proc_uid', 'proc_hash16k', 'proc_par2', 'proc_srrdb', 'proc_xxx', 'proc_media_movie'] as $column) {
+                $table->integer($column)->default(1);
+            }
+        });
+        DB::statement('CREATE TABLE video_data (releases_id INTEGER PRIMARY KEY)');
+        DB::statement('CREATE TABLE audio_data (id INTEGER PRIMARY KEY, releases_id INTEGER)');
+        DB::table('releases')->where('id', $release->id)->update(['firstarticle' => 100000, 'lastarticle' => 100033]);
+        $lines = [];
+        foreach ($this->courseHeaders as $header) {
+            if (str_contains($header['Subject'], '"bundle.r14"')) {
+                $lines[$header['Number']] = $header;
+            }
+        }
+        $nntp = new FakeHeaderNntp($lines);
+        $nntp->groupFirst = 100000;
+        $nntp->groupLast = 100033;
+        $binaries = new BinariesService(config: new BinariesConfig(echoCli: false));
+        $binaries->setNntp($nntp);
+        $rescan = new MissingFileRescanService($nzbs, $nntp, new RescanWindowResolver($binaries));
+        $result = $rescan->rescan($release->fresh(), new MissingFileRescanOptions(windowMinutes: 0), new RescanRunBudget(1000));
+        $this->assertSame(1, $result->filesRecovered, $result->reason);
+        $rescanXml = $nzbs->readNzbContents($release->guid);
+        $this->assertStringContainsString('bundle.r14', $rescanXml);
+        $late = array_values(array_filter($this->courseHeaders, static fn ($header): bool => str_contains($header['Subject'], '"bundle.r15"')));
+        (new TestBinariesHarness)->simulateScan($late, ['id' => 1, 'name' => 'alt.binaries.boneless']);
+        $lateId = (int) DB::table('collections')->value('id');
+        $this->assertSame('late_added', $service->reconcile($lateId, 1));
+        $current = ArtifactInventory::load($nzbs->readNzbContents($release->guid));
+        $this->assertSame('additive', $current->classifyAgainst(ArtifactInventory::load($rescanXml)));
+        $this->assertCount(33, $current->files());
+    }
+
+    public static function ordinaryWriterCases(): iterable
+    {
+        yield 'replacement then late addition' => [false];
+        yield 'replacement then real segment repair then late addition' => [true];
+    }
+
+    public function test_partial_verified_union_keeps_original_sources_pending(): void
+    {
+        (require database_path('migrations/2026_09_10_134847_add_reconciliation_admissions.php'))->up();
+        [$service, $id] = $this->ingestCourse('bundle.r15');
+        DB::table('usenet_groups')->update(['last_record_postdate' => '2026-01-01 14:00:00']);
+        $this->assertSame('verified_incomplete', $service->reconcile($id, 1));
+        $this->assertSame(0, DB::table('releases')->count());
+        $this->assertSame(0, DB::table('collections')->whereNotNull('releases_id')->count());
+        $this->assertTrue(CollectionOwnership::protects($id));
     }
 
     public function test_historical_dry_run_only_accounts_traffic_and_apply_preserves_source_artifacts(): void
@@ -235,21 +397,18 @@ class PendingReconciliationTest extends TestCase
         }
     }
 
-    public function test_budget_exhaustion_and_expired_leases_never_extend_the_original_hold(): void
+    public function test_unproved_different_families_do_not_gain_a_hold_from_shared_budget_deferrals(): void
     {
+        (require database_path('migrations/2026_09_10_134847_add_reconciliation_admissions.php'))->up();
         [$service, $id] = $this->ingestCourse();
         DB::table('usenet_groups')->update(['last_record_postdate' => '2026-01-01 14:00:00']);
         config(['collection-reconciliation.hour_bytes' => 1]);
-        $this->assertSame('budget_exhausted', $service->reconcile($id, 1));
-        $deadline = DB::table('reconciliation_claims')->where('collection_id', $id)->value('deadline');
-        $this->assertTrue(CollectionOwnership::protects($id));
-        $this->assertSame('unavailable_claim', $service->reconcile($id, 1));
-        $this->travel(61)->seconds();
-        $this->assertSame('budget_exhausted', $service->reconcile($id, 1));
-        $this->travel(301)->seconds();
-        $this->assertSame('budget_exhausted', $service->reconcile($id, 1));
-        $this->assertFalse(CollectionOwnership::protects($id));
-        $this->assertSame($deadline, DB::table('reconciliation_claims')->where('collection_id', $id)->value('deadline'));
+        foreach ([0, 61, 301] as $seconds) {
+            $this->travel($seconds)->seconds();
+            $this->assertSame('budget_exhausted', $service->reconcile($id, 1));
+            $this->assertFalse(CollectionOwnership::protects($id));
+        }
+        $this->assertSame(0, (int) DB::table('reconciliation_claims')->where('collection_id', $id)->value('attempts'));
         $this->assertSame(0, DB::table('releases')->count());
     }
 
@@ -307,7 +466,7 @@ class PendingReconciliationTest extends TestCase
     {
         [$service, $id] = $this->ingestCourse('bundle.r15');
         DB::table('usenet_groups')->update(['last_record_postdate' => '2026-01-01 14:00:00']);
-        $this->assertSame('associated', $service->reconcile($id, 1));
+        $this->seedLegacyPartialPosting();
         config(['nntmux_settings.path_to_nzbs' => $this->makeTempDirectory('late-publication')]);
         $nzbs = app(NzbService::class);
         $release = Release::query()->first();
@@ -391,7 +550,7 @@ class PendingReconciliationTest extends TestCase
         $videos = array_slice(array_keys(Par2Fixture::course()), 1, 14);
         [$service, $id] = $this->ingestCourse($videos);
         DB::table('usenet_groups')->update(['last_record_postdate' => '2026-01-01 14:00:00']);
-        $this->assertSame('associated', $service->reconcile($id, 1));
+        $this->seedLegacyPartialPosting();
         config(['nntmux_settings.path_to_nzbs' => $this->makeTempDirectory('late-identity')]);
         $nzbs = app(NzbService::class);
         $release = Release::query()->first();
@@ -468,7 +627,7 @@ class PendingReconciliationTest extends TestCase
     {
         [$service, $id] = $this->ingestCourse('bundle.r15');
         DB::table('usenet_groups')->update(['last_record_postdate' => '2026-01-01 14:00:00']);
-        $this->assertSame('associated', $service->reconcile($id, 1));
+        $this->seedLegacyPartialPosting();
         config(['nntmux_settings.path_to_nzbs' => $this->makeTempDirectory('late-abort')]);
         $nzbs = app(NzbService::class);
         $release = Release::query()->first();
@@ -519,8 +678,36 @@ class PendingReconciliationTest extends TestCase
         return [$sources, $originals];
     }
 
+    private function seedLegacyPartialPosting(): void
+    {
+        $ids = DB::table('collections')->orderBy('id')->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+        $files = (new PendingInventory)->load($ids);
+        $decision = app(PostingEvidence::class)->resolve($files, 'legacy-test-proof', microtime(true) + 30);
+        $this->assertCount(count($files), $decision->accepted);
+        $source = DB::table('collections')->where('id', $ids[0])->first();
+        $releaseId = (int) Release::insertRelease(['name' => $decision->label, ...Release::searchNameValues($decision->label),
+            'totalpart' => count($files), 'declaredfiles' => $decision->declaredTotal, 'groups_id' => $source->groups_id,
+            'guid' => (string) Str::uuid(), 'postdate' => $source->date, 'fromname' => $source->fromname,
+            'size' => array_sum(array_map(static fn ($file) => array_sum(array_column($file->segments, 'bytes')), $files)),
+            'categories_id' => Category::OTHER_MISC, 'isrenamed' => 0, 'is_trusted_name' => false, 'predb_id' => 0,
+            'nzbstatus' => 0, 'completion' => $decision->completion()]);
+        $digest = PendingInventory::digest($files);
+        $postingId = DB::table('reconciled_postings')->insertGetId(['release_id' => $releaseId, 'digest' => PendingInventory::digest($decision->accepted),
+            'source_digest' => $digest, 'state' => 'created', 'inventory' => PendingInventory::encode($decision->accepted),
+            'decision' => json_encode($decision, JSON_THROW_ON_ERROR), 'independent_videos' => $decision->independentVideos()]);
+        foreach ($ids as $id) {
+            $collection = DB::table('collections')->where('id', $id)->first();
+            DB::table('reconciled_sources')->insert(['posting_id' => $postingId, 'collection_hash' => bin2hex($collection->collectionhash),
+                'group_id' => $source->groups_id, 'postdate' => $collection->date, 'source_id' => (string) $id]);
+            DB::table('reconciliation_claims')->insert(['collection_id' => $id, 'revision' => $digest, 'reason' => 'associated',
+                'release_id' => $releaseId, 'deadline' => now()->addSeconds(900)]);
+        }
+        DB::table('collections')->whereIn('id', $ids)->update(['releases_id' => $releaseId, 'filecheck' => 4]);
+        DB::table('releases_groups')->insert(['releases_id' => $releaseId, 'groups_id' => $source->groups_id]);
+    }
+
     /** @return array{PendingReconciler, int} */
-    private function ingestCourse(array|string|null $omit = null): array
+    private function ingestCourse(array|string|null $omit = null, bool $multipart = false): array
     {
         $payloads = Par2Fixture::course();
         $manifest = Par2Fixture::metadata($payloads);
@@ -529,13 +716,25 @@ class PendingReconciliationTest extends TestCase
             $payloads[sprintf('Course.Set.vol%03d+001.par2', $i)] = $manifest;
         }
         $headers = $responses = [];
+        $ordinal = 0;
         foreach ($payloads as $filename => $data) {
-            $i = count($headers) + 1;
+            $i = ++$ordinal;
             $id = sprintf('<fixture-%06d@example.invalid>', $i);
             $subject = sprintf('[%02d/33] - "%s" yEnc (1/1)', $i, $filename);
             $headers[] = ['Number' => 99999 + $i, 'Subject' => $subject, 'From' => 'Synthetic Poster A',
                 'Date' => 'Thu, 01 Jan 2026 12:00:00 +0000', 'Message-ID' => $id, 'Bytes' => strlen($data),
                 'Xref' => 'news.example.invalid alt.binaries.boneless:'.(99999 + $i)];
+            if ($multipart && $filename === 'bundle.r10') {
+                array_pop($headers);
+                for ($part = 1; $part <= 3; $part++) {
+                    $partId = '<part'.$part.'of3.CourseRepair@host>';
+                    $partSubject = str_replace('(1/1)', '('.$part.'/3)', $subject);
+                    $headers[] = ['Number' => 200000 + $part, 'Subject' => $partSubject, 'From' => 'Synthetic Poster A',
+                        'Date' => 'Thu, 01 Jan 2026 12:00:00 +0000', 'Message-ID' => $partId, 'Bytes' => 100,
+                        'Xref' => 'news.example.invalid alt.binaries.boneless:'.(200000 + $part)];
+                    $responses['HEAD'.$partId] = "From: Synthetic Poster A\r\nSubject: {$partSubject}\r\nDate: Thu, 01 Jan 2026 12:00:00 +0000\r\nMessage-ID: {$partId}\r\n";
+                }
+            }
             $responses['HEAD'.$id] = "From: Synthetic Poster A\r\nSubject: {$subject}\r\nDate: Thu, 01 Jan 2026 12:00:00 +0000\r\nMessage-ID: {$id}\r\n";
             if (str_ends_with($filename, '.par2')) {
                 $responses['BODY'.$id] = (new YencService)->encode($data, $filename);

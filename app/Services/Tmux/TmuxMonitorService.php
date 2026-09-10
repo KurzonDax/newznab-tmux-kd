@@ -10,6 +10,7 @@ use App\Models\Release;
 use App\Models\Settings;
 use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
 use App\Services\AudioProcessing\AudioCandidateQuery;
+use App\Services\CollectionReconciliation\ReconciliationStatus;
 use App\Services\MetadataProcessing\AnimeProcessingCandidateQuery;
 use App\Services\MetadataProcessing\BookProcessingCandidateQuery;
 use App\Services\MetadataProcessing\ConsoleProcessingCandidateQuery;
@@ -175,6 +176,7 @@ class TmuxMonitorService
 
         $this->getProcessCounts();
         $this->runVar['recovery'] = app(RecoveryStatus::class)->summary();
+        $this->runVar['reconciliation'] = app(ReconciliationStatus::class)->summary();
     }
 
     protected function refreshSlowStatistics(): void
