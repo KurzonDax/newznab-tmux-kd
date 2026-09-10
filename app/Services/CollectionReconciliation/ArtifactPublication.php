@@ -131,6 +131,9 @@ class ArtifactPublication
             $observedIds = array_values(array_unique([...$sourceIds, ...array_keys($expectedSources)]));
             if ($observedIds !== []) {
                 $locked = $this->lockSources($observedIds, $expectedSnapshot['population'] ?? null);
+                if ($locked === null) {
+                    return NzbReplaceResult::writeFailure('source_population_incomplete');
+                }
                 if (array_diff($locked, $observedIds) !== [] || array_diff($observedIds, $locked) !== []) {
                     return NzbReplaceResult::writeFailure('source_population_changed_during_verification');
                 }
@@ -245,6 +248,9 @@ class ArtifactPublication
         $observedSourceIds = array_values(array_unique([...$ids, ...$observedSourceIds]));
         $prepared = DB::transaction(function () use ($caller, $xml, $lease, $ids, $population, $observedSourceIds): NzbReplaceResult {
             $locked = $this->lockSources($observedSourceIds, $population);
+            if ($locked === null) {
+                return NzbReplaceResult::writeFailure('source_population_incomplete');
+            }
             if (array_diff($locked, $observedSourceIds) !== [] || array_diff($observedSourceIds, $locked) !== []) {
                 return NzbReplaceResult::writeFailure('initial_population_changed');
             }
@@ -375,6 +381,9 @@ class ArtifactPublication
                 $sources = json_decode($operation->source_revisions, true, flags: JSON_THROW_ON_ERROR);
                 $population = $operation->population === null ? null : json_decode($operation->population, true, flags: JSON_THROW_ON_ERROR);
                 $lockedSources = $this->lockSources(array_keys($sources), $population);
+                if ($lockedSources === null) {
+                    return NzbReplaceResult::deferred($id, 'source_population_incomplete');
+                }
                 $populationChanged = array_diff($lockedSources, array_keys($sources)) !== [] || array_diff(array_keys($sources), $lockedSources) !== [];
                 $release = Release::query()->whereKey($operation->release_id)->lockForUpdate()->first();
                 DB::table('reconciled_postings')->where('release_id', $operation->release_id)->lockForUpdate()->first();
@@ -625,23 +634,34 @@ class ArtifactPublication
     /**
      * @param  list<int>  $ids
      * @param  array{group: int, poster: string, total: int, from: string, until: string}|null  $population
-     * @return list<int>
+     * @return list<int>|null Null means the population is unavailable or exceeds the raw bound.
      */
-    public function lockSources(array $ids, ?array $population): array
+    public function lockSources(array $ids, ?array $population): ?array
     {
-        if ($ids === [] && $population === null) {
-            return [];
+        $ids = array_values(array_unique($ids));
+        if (count($ids) > PopulationQuery::LIMIT) {
+            return null;
+        }
+        $queries = new PopulationQuery;
+        $sources = $queries->lockIds($ids);
+        if ($sources->count() !== count($ids)) {
+            return null;
+        }
+        if ($population !== null) {
+            $window = $queries->lockWindow($population);
+            if (! $window['complete']) {
+                return null;
+            }
+            $eligible = DB::table('collections')->whereIn('id', $window['rows']->pluck('id'))
+                ->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
+                ->orderBy('id')->lockForUpdate()->get();
+            $sources = $sources->concat($eligible)->unique('id');
+        }
+        if ($sources->count() > PopulationQuery::LIMIT) {
+            return null;
         }
 
-        return DB::table('collections')->where(static function ($query) use ($ids, $population): void {
-            $query->whereIn('id', $ids);
-            if ($population !== null) {
-                $query->orWhere(static fn ($window) => $window->where('groups_id', $population['group'])
-                    ->where('fromname', $population['poster'])->where('declaredfiles', $population['total'])
-                    ->whereIn('filecheck', [0, 1, 2, 3, 10, 15, 16])->whereBetween('date', [$population['from'], $population['until']])
-                    ->tap(static fn ($eligible) => RecoveryCollectionOwnership::exclude($eligible)));
-            }
-        })->orderBy('id')->limit(258)->lockForUpdate()->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+        return $sources->sortBy('id')->pluck('id')->map(static fn ($id): int => (int) $id)->values()->all();
     }
 
     /** @param array<int, string|null> $sources */

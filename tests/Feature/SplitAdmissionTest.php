@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Facades\Search;
 use App\Models\Release;
 use App\Services\CollectionCleanupService;
+use App\Services\CollectionReconciliation\ArtifactPublication;
 use App\Services\CollectionReconciliation\CollectionAdmission;
 use App\Services\CollectionReconciliation\CollectionClaims;
 use App\Services\CollectionReconciliation\CollectionOwnership;
@@ -23,6 +24,7 @@ use App\Services\Nzb\NzbService;
 use App\Services\ReleaseProcessingService;
 use App\Services\YencService;
 use Carbon\Carbon;
+use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -48,6 +50,104 @@ class SplitAdmissionTest extends TestCase
         DB::table('collection_regexes')->insert(['group_regex' => '.*', 'regex' => '/^\[\d+\/\d+\] - "(?P<name>[^.]+)\./', 'status' => 1]);
         $this->source(1, [1 => 'Example.mkv', 4 => 'Example.par2', 5 => 'Example.vol000+001.par2']);
         $this->source(2, [2 => 'example.r10', 3 => 'example.sfv']);
+    }
+
+    public function test_sources_without_a_group_do_not_receive_admission(): void
+    {
+        DB::table('collections')->update(['groups_id' => 999]);
+        $this->assertTrue(DB::transaction(fn (): bool => app(CollectionAdmission::class)->lockAndScreen([1, 2], 1)));
+        $this->assertSame(0, DB::table('reconciliation_admissions')->count());
+    }
+
+    public function test_sizing_processes_an_entire_page_across_independent_small_commits(): void
+    {
+        $source = (array) DB::table('collections')->where('id', 1)->first();
+        for ($id = 3; $id <= 502; $id++) {
+            DB::table('collections')->insert(array_replace($source, ['id' => $id, 'fromname' => 'Poster-'.$id,
+                'filecheck' => 2, 'collectionhash' => sha1((string) $id, true)]));
+        }
+        $completed = [];
+        $this->app['events']->listen(TransactionCommitted::class,
+            function ($event) use (&$completed): void {
+                if ($event->connection->transactionLevel() === 0) {
+                    $completed[] = DB::table('collections')->where('filecheck', 3)->count();
+                }
+            });
+        $processing = app(ReleaseProcessingService::class);
+        $processing->setEchoCLI(false);
+        $processing->processCollectionSizes(1);
+        $this->assertSame(500, DB::table('collections')->where('filecheck', 3)->count());
+        $previous = 0;
+        foreach ($completed as $count) {
+            $this->assertLessThanOrEqual(8, $count - $previous);
+            $previous = $count;
+        }
+        $this->assertSame(500, $previous);
+    }
+
+    public function test_unsupported_binary_inventory_stops_before_parts_aggregation(): void
+    {
+        $binary = (array) DB::table('binaries')->first();
+        unset($binary['id']);
+        for ($i = 0; $i < 1025; $i++) {
+            DB::table('binaries')->insert($binary);
+        }
+        DB::enableQueryLog();
+        try {
+            $this->assertTrue(DB::transaction(fn (): bool => app(CollectionAdmission::class)->lockAndScreen([1], 1)));
+            foreach (DB::getQueryLog() as $query) {
+                $this->assertStringNotContainsString('from "parts"', $query['query']);
+            }
+            $this->assertSame(0, DB::table('reconciliation_admissions')->count());
+        } finally {
+            DB::disableQueryLog();
+            DB::flushQueryLog();
+        }
+    }
+
+    public function test_artifact_population_overflow_defers_then_can_retry_after_population_shrinks(): void
+    {
+        $source = (array) DB::table('collections')->where('id', 1)->first();
+        for ($id = 3; $id <= 257; $id++) {
+            DB::table('collections')->insert(array_replace($source, ['id' => $id, 'filecheck' => [0, 1, 2, 3, 10, 15, 16][$id % 7], 'collectionhash' => sha1((string) $id, true)]));
+        }
+        $window = ['group' => 1, 'poster' => 'Synthetic Poster', 'total' => 5,
+            'from' => '2026-01-01 08:00:00', 'until' => '2026-01-01 10:00:00'];
+        $publication = app(ArtifactPublication::class);
+        $this->assertNull(DB::transaction(fn () => $publication->lockSources([1, 2], $window)));
+        (require database_path('migrations/2026_09_10_140952_create_reconciled_artifact_operations.php'))->up();
+        $association = new \ReflectionMethod(PendingReconciler::class, 'publishAssociation');
+        $decision = new PostingDecision([], 5, null, 'Example', [], [], 'verified');
+        $this->assertSame('source_population_incomplete', $association->invoke(app(PendingReconciler::class),
+            [1, 2], 'overflow-worker', 'unchanged', $decision, $window, [1, 2]));
+        $this->assertSame(0, DB::table('releases')->count());
+        DB::table('collections')->where('id', 257)->delete();
+        $this->assertCount(256, DB::transaction(fn () => $publication->lockSources([1, 2], $window)));
+        DB::table('collections')->where('id', 256)->delete();
+        $this->assertCount(255, DB::transaction(fn () => $publication->lockSources([1, 2], $window)));
+    }
+
+    public function test_locked_admission_never_combines_seed_ids_with_population_ranges(): void
+    {
+        DB::enableQueryLog();
+        try {
+            $this->assertTrue(DB::transaction(fn (): bool => app(CollectionAdmission::class)->lockAndScreen([1, 2], 1)));
+            foreach (DB::getQueryLog() as $query) {
+                if (str_starts_with($query['query'], 'select * from "collections"')) {
+                    $this->assertStringNotContainsString(' or ', $query['query']);
+                }
+            }
+            $this->assertSame(2, DB::table('reconciliation_admissions')->count());
+        } finally {
+            DB::disableQueryLog();
+            DB::flushQueryLog();
+        }
+    }
+
+    public function test_oversized_ordinary_admission_yields_without_creating_holds(): void
+    {
+        $this->assertFalse(DB::transaction(fn (): bool => app(CollectionAdmission::class)->lockAndScreen(range(1, 9), 1)));
+        $this->assertSame(0, DB::table('reconciliation_admissions')->count());
     }
 
     public function test_artifact_reservation_fences_existing_evidence_claim_until_abandoned(): void

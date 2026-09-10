@@ -228,6 +228,11 @@ final class PendingReconciler
         return DB::transaction(function () use ($ids, $owner, $revision, $decision, $population, $observedIds): string {
             if (Schema::hasTable('reconciled_artifacts')) {
                 $lockedPopulation = app(ArtifactPublication::class)->lockSources($observedIds, $population);
+                if ($lockedPopulation === null) {
+                    app(CollectionClaims::class)->settle($owner, 'source_population_incomplete');
+
+                    return 'source_population_incomplete';
+                }
                 if (array_diff($lockedPopulation, $observedIds) !== [] || array_diff($observedIds, $lockedPopulation) !== []) {
                     app(CollectionClaims::class)->settle($owner, 'changed_inventory');
 

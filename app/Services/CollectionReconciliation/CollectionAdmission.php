@@ -20,6 +20,8 @@ final class CollectionAdmission
 {
     public const int HOLD_SECONDS = 7200;
 
+    public const int MUTATION_BATCH_SIZE = 8;
+
     public function __construct(private readonly CollectionsCleaningService $cleaning) {}
 
     /**
@@ -30,42 +32,54 @@ final class CollectionAdmission
      */
     public function lockAndScreen(array $ids, ?int $quietHours = null): bool
     {
+        if (count(array_unique($ids)) > self::MUTATION_BATCH_SIZE) {
+            return false;
+        }
         if (! Schema::hasTable('reconciliation_admissions')) {
             return true;
         }
-        $sources = DB::table('collections')->whereIn('id', $ids)->orderBy('id')->get();
-        $bound = max(500, count($ids) * 257);
-        $population = DB::table('collections')->where(function ($query) use ($ids, $sources): void {
-            $query->whereIn('id', $ids);
-            foreach ($sources as $source) {
-                $query->orWhere(static function ($window) use ($source): void {
-                    $window->where('groups_id', $source->groups_id)->where('declaredfiles', $source->declaredfiles)
-                        ->where('fromname', $source->fromname)->whereIn('filecheck', [0, 1, 2, 3, 10, 15, 16])
-                        ->whereBetween('date', [gmdate('Y-m-d H:i:s', strtotime($source->date) - 3600), gmdate('Y-m-d H:i:s', strtotime($source->date) + 3600)]);
-                });
-            }
-        })->orderBy('id')->limit($bound + 1)->lockForUpdate()->get();
-        if ($population->count() > $bound) {
+        $queries = new PopulationQuery;
+        $sources = $queries->lockIds($ids);
+        if ($sources->count() !== count(array_unique($ids))) {
             return false;
         }
+        $windows = [];
+        $sourceWindows = [];
         foreach ($sources as $source) {
-            $current = $population->firstWhere('id', $source->id);
-            if ($current !== null && [$current->groups_id, $current->declaredfiles, $current->fromname, $current->date]
-                !== [$source->groups_id, $source->declaredfiles, $source->fromname, $source->date]) {
+            $window = $queries->sourceWindow($source);
+            if ($window === null) {
+                continue;
+            }
+            $key = json_encode($window, JSON_THROW_ON_ERROR);
+            $windows[$key] = $window;
+            $sourceWindows[(int) $source->id] = $key;
+        }
+        ksort($windows);
+        $populations = [];
+        foreach ($windows as $key => $window) {
+            $populations[$key] = $queries->lockWindow($window);
+        }
+        foreach ($sourceWindows as $id => $key) {
+            $population = $populations[$key];
+            if (! $population['complete']) {
+                continue;
+            }
+            $rows = $population['rows']->concat($sources->where('id', $id))->unique('id')->sortBy('id')->values();
+            if (! $this->screen([$id], $quietHours, $rows)) {
                 return false;
             }
         }
 
-        return $this->screen($ids, $quietHours, $population);
+        return true;
     }
 
     private function nearby(object $source): Builder
     {
         return DB::table('collections')->where('groups_id', $source->groups_id)
             ->where('declaredfiles', $source->declaredfiles)->where('fromname', $source->fromname)
-            ->whereIn('filecheck', [0, 1, 2, 3, 10, 15, 16])
-            ->whereBetween('date', [gmdate('Y-m-d H:i:s', strtotime($source->date) - 3600), gmdate('Y-m-d H:i:s', strtotime($source->date) + 3600)])
-            ->orderBy('id')->limit(257);
+            ->whereIn('filecheck', PopulationQuery::STATES)
+            ->whereBetween('date', [gmdate('Y-m-d H:i:s', strtotime($source->date) - PopulationQuery::WINDOW_SECONDS), gmdate('Y-m-d H:i:s', strtotime($source->date) + PopulationQuery::WINDOW_SECONDS)])
+            ->orderBy('id')->limit(PopulationQuery::LIMIT + 1);
     }
 
     /**
@@ -81,15 +95,15 @@ final class CollectionAdmission
         foreach (array_chunk(array_values(array_unique($ids)), 500) as $page) {
             $seen = [];
             foreach (($lockedPopulation?->whereIn('id', $page) ?? DB::table('collections')->whereIn('id', $page)->orderBy('id')->get()) as $source) {
-                if (isset($seen[$source->id])) {
+                if ($source->date === null || isset($seen[$source->id])) {
                     continue;
                 }
                 $nearby = $lockedPopulation === null ? $this->nearby($source)->get() : $lockedPopulation->filter(
                     static fn ($candidate): bool => (int) $candidate->groups_id === (int) $source->groups_id
                         && (int) $candidate->declaredfiles === (int) $source->declaredfiles && $candidate->fromname === $source->fromname
-                        && abs(strtotime($candidate->date) - strtotime($source->date)) <= 3600
-                        && in_array((int) $candidate->filecheck, [0, 1, 2, 3, 10, 15, 16], true));
-                if ($nearby->count() > 256) {
+                        && abs(strtotime($candidate->date) - strtotime($source->date)) <= PopulationQuery::WINDOW_SECONDS
+                        && in_array((int) $candidate->filecheck, PopulationQuery::STATES, true));
+                if ($nearby->count() > PopulationQuery::LIMIT) {
                     continue;
                 }
                 if ($nearby->count() < 2) {
@@ -186,23 +200,32 @@ final class CollectionAdmission
     private function snapshots(array $ids, int $quietHours, bool $locked = false): ?array
     {
         $quiet = CollectionQuietPredicate::build($quietHours, DB::getTablePrefix().'c');
-        $collections = DB::table('collections as c')->join('usenet_groups as g', 'g.id', '=', 'c.groups_id')
-            ->whereIn('c.id', $ids)->whereIn('c.filecheck', [0, 1, 2, 3, 10, 15, 16])
+        $collections = DB::table('collections as c')
+            ->whereIn('c.id', $ids)->whereIn('c.filecheck', PopulationQuery::STATES)
             ->whereRaw($quiet['sql'], $quiet['bindings'])
             ->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query, 'c.id'))
             ->tap(static fn ($query) => CollectionOwnership::excludeArtifactSources($query, 'c.id'))
-            ->orderBy('c.id')->when($locked, static fn ($query) => $query->lockForUpdate())->get(['c.*', 'g.name as group_name'])->keyBy('id');
+            ->orderBy('c.id')->when($locked, static fn ($query) => $query->lockForUpdate())->get(['c.*'])->keyBy('id');
+        $groupNames = DB::table('usenet_groups')->whereIn('id', $collections->pluck('groups_id'))->pluck('name', 'id');
+        $collections = $collections->filter(static fn ($collection): bool => $groupNames->has($collection->groups_id));
+        $binaryIds = [];
+        sort($ids);
+        foreach ($ids as $id) {
+            $selected = DB::table('binaries')->where('collections_id', $id)->limit(1025 - count($binaryIds))
+                ->when($locked, static fn ($query) => $query->lockForUpdate())->pluck('id')->all();
+            $binaryIds = [...$binaryIds, ...$selected];
+            if (count($binaryIds) > 1024) {
+                return null;
+            }
+        }
         $partAlias = DB::getTablePrefix().'p';
-        $parts = DB::table('parts as p')->join('binaries as selected', 'selected.id', '=', 'p.binaries_id')
-            ->whereIn('selected.collections_id', $ids)->groupBy('p.binaries_id')
+        $parts = DB::table('parts as p')->whereIn('p.binaries_id', $binaryIds)->groupBy('p.binaries_id')
+            ->when(DB::getDriverName() !== 'sqlite', static fn ($query) => $query->forceIndex('PRIMARY'))
             ->when($locked, static fn ($query) => $query->lockForUpdate())->selectRaw("{$partAlias}.binaries_id, COUNT(*) AS held, MIN({$partAlias}.partnumber) AS first_part, MAX({$partAlias}.partnumber) AS last_part, SUM({$partAlias}.size) AS bytes");
         $binaries = DB::table('binaries as b')->leftJoinSub($parts, 'p', 'p.binaries_id', '=', 'b.id')
             ->leftJoin('parts as first', static fn ($join) => $join->on('first.binaries_id', '=', 'b.id')->where('first.partnumber', 1))
-            ->whereIn('b.collections_id', $ids)->orderBy('b.id')->limit(1025)->when($locked, static fn ($query) => $query->lockForUpdate())
+            ->whereIn('b.id', $binaryIds)->orderBy('b.id')->when($locked, static fn ($query) => $query->lockForUpdate())
             ->get(['b.id', 'b.collections_id', 'b.name', 'b.totalparts', 'p.held', 'p.first_part', 'p.last_part', 'p.bytes', 'first.messageid']);
-        if ($binaries->count() > 1024) {
-            return null;
-        }
         $snapshots = [];
         foreach ($collections as $id => $collection) {
             $files = [];
@@ -216,7 +239,7 @@ final class CollectionAdmission
                         throw new UnexpectedValueException('ineligible_inventory');
                     }
                     $subject = preg_replace('/ \(\d+\/\d+\)$/D', '', $binary->name) ?? '';
-                    $family = $this->cleaning->collectionsCleaner($subject, $collection->group_name)['name'];
+                    $family = $this->cleaning->collectionsCleaner($subject, (string) $groupNames[$collection->groups_id])['name'];
                     $families[$family] = true;
                     $files[$parsed['ordinal']] = $parsed + ['article' => '<'.trim((string) $binary->messageid, '<>').'>',
                         'parts' => (int) $binary->totalparts, 'bytes' => (int) $binary->bytes, 'id' => (int) $binary->id];

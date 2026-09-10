@@ -412,17 +412,19 @@ final class ReleaseProcessingService
             if (! app(CollectionAdmission::class)->screen($ids, $this->settings->collectionDelayTime)) {
                 continue;
             }
-            $updated += DB::transaction(static function () use ($ids): int {
-                if (! app(CollectionAdmission::class)->lockAndScreen($ids)) {
-                    return 0;
-                }
-                DB::table('collections')->whereIn('id', $ids)->orderBy('id')->lockForUpdate()->get();
+            foreach (array_chunk($ids, CollectionAdmission::MUTATION_BATCH_SIZE) as $chunk) {
+                $updated += DB::transaction(static function () use ($chunk): int {
+                    if (! app(CollectionAdmission::class)->lockAndScreen($chunk)) {
+                        return 0;
+                    }
+                    DB::table('collections')->whereIn('id', $chunk)->orderBy('id')->lockForUpdate()->get();
 
-                return Collection::query()->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
-                    ->tap(static fn ($query) => CollectionOwnership::exclude($query))->whereIn('id', $ids)
-                    ->where('filecheck', CollectionFileCheckStatus::CompleteParts->value)
-                    ->update(['filecheck' => CollectionFileCheckStatus::Sized->value]);
-            }, self::MAX_RETRIES);
+                    return Collection::query()->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
+                        ->tap(static fn ($query) => CollectionOwnership::exclude($query))->whereIn('id', $chunk)
+                        ->where('filecheck', CollectionFileCheckStatus::CompleteParts->value)
+                        ->update(['filecheck' => CollectionFileCheckStatus::Sized->value]);
+                }, self::MAX_RETRIES);
+            }
         } while (\count($ids) === min(500, $this->binariesConfig->reconcileBatchSize));
 
         $this->outputStat('Collections sized', $updated);
@@ -494,6 +496,14 @@ final class ReleaseProcessingService
      */
     private function reconcileCollectionIds(array $collectionIds, array $statuses): void
     {
+        if (count($collectionIds) > CollectionAdmission::MUTATION_BATCH_SIZE) {
+            foreach (array_chunk($collectionIds, CollectionAdmission::MUTATION_BATCH_SIZE) as $chunk) {
+                $this->reconcileCollectionIds($chunk, $statuses);
+            }
+
+            return;
+        }
+
         if (! app(CollectionAdmission::class)->screen($collectionIds, $this->settings->collectionDelayTime)) {
             return;
         }
