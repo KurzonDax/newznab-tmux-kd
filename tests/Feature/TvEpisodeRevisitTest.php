@@ -8,9 +8,14 @@ use App\Facades\Search;
 use App\Models\Category;
 use App\Services\Runners\PostProcessRunner;
 use App\Services\Tmux\TmuxMonitorService;
+use App\Services\TvProcessing\Pipes\AbstractTvProviderPipe;
+use App\Services\TvProcessing\Pipes\LocalDbPipe;
+use App\Services\TvProcessing\Pipes\ParseInfoPipe;
+use App\Services\TvProcessing\Pipes\TmdbPipe;
 use App\Services\TvProcessing\Providers\TraktProvider;
 use App\Services\TvProcessing\TvEpisodeRevisitService;
 use App\Services\TvProcessing\TvProcessingCandidateQuery;
+use App\Services\TvProcessing\TvProcessingPassable;
 use App\Services\TvProcessing\TvProcessingPipeline;
 use App\Services\TvProcessing\TvProcessingResult;
 use App\Services\TvProcessor;
@@ -21,6 +26,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
@@ -61,6 +67,107 @@ class TvEpisodeRevisitTest extends TestCase
         Carbon::setTestNow();
         $this->tearDownIsolatedDatabase();
         parent::tearDown();
+    }
+
+    #[Test]
+    public function tmdb_adds_and_binds_a_title_year_show_without_episode_http_requests(): void
+    {
+        Event::fake();
+        config(['tmdb.api_key' => 'test-key', 'services.trakt.client_id' => '']);
+        Schema::table('videos', function (Blueprint $table): void {
+            $table->string('countries_id')->default('');
+        });
+        Schema::create('tv_info', function (Blueprint $table): void {
+            $table->unsignedInteger('videos_id');
+            $table->text('summary');
+            $table->string('publisher');
+            $table->string('localzone');
+        });
+        Http::preventStrayRequests();
+        Http::fake([
+            '*search/tv*' => Http::response(['results' => [[
+                'id' => 200, 'name' => 'Sterling Point', 'overview' => 'A series',
+                'first_air_date' => '2026-01-01', 'origin_country' => ['US'],
+            ]]]),
+            '*tv/200/alternative_titles*' => Http::response(['results' => []]),
+            '*tv/200/external_ids*' => Http::response([]),
+        ]);
+        $this->insertRelease(1, ['searchname' => 'Sterling Point (2026)']);
+        $pipeline = new TvProcessingPipeline([
+            new ParseInfoPipe, new LocalDbPipe, new TmdbPipe,
+        ], false);
+        $result = $pipeline->processRelease(DB::table('releases')->find(1));
+        $this->assertTrue($result['matched']);
+        $this->assertSame('Sterling Point', DB::table('videos')->where('id', $result['video_id'])->value('title'));
+        $this->assertSame($result['video_id'], DB::table('releases')->find(1)->videos_id);
+        $this->assertSame(-6, DB::table('releases')->find(1)->tv_episodes_id);
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), '/season/') || str_contains($request->url(), '/episode/'));
+    }
+
+    #[Test]
+    public function a_title_year_with_an_old_local_show_continues_to_external_providers(): void
+    {
+        Event::fake();
+        DB::table('videos')->insert([
+            'id' => 10, 'type' => 0, 'title' => 'Sterling Point',
+            'source' => 1, 'started' => '2011-01-01',
+        ]);
+        $this->insertRelease(1, ['searchname' => 'Sterling Point (2026)']);
+        $external = new class extends AbstractTvProviderPipe
+        {
+            public bool $reached = false;
+
+            public function getName(): string
+            {
+                return 'External';
+            }
+
+            public function getStatusCode(): int
+            {
+                return 0;
+            }
+
+            protected function process(TvProcessingPassable $passable): TvProcessingResult
+            {
+                $this->reached = true;
+
+                return TvProcessingResult::notFound($this->getName());
+            }
+        };
+        $pipeline = new TvProcessingPipeline([
+            new ParseInfoPipe,
+            new LocalDbPipe,
+            $external,
+        ], false);
+        $result = $pipeline->processRelease(DB::table('releases')->find(1));
+        $this->assertFalse($result['matched']);
+        $this->assertSame(0, DB::table('releases')->find(1)->videos_id);
+        $this->assertTrue($external->reached);
+        DB::table('videos')->delete();
+        $external->reached = false;
+        $pipeline->processRelease(DB::table('releases')->find(1));
+        $this->assertTrue($external->reached);
+    }
+
+    #[Test]
+    public function title_year_binding_settles_without_an_episode_revisit(): void
+    {
+        Event::fake();
+        DB::table('videos')->insert([
+            'id' => 10, 'type' => 0, 'title' => 'Sterling Point',
+            'source' => 1, 'started' => '2026-01-01',
+        ]);
+        $this->insertRelease(1, ['searchname' => 'Sterling Point (2026)']);
+        $pipeline = new TvProcessingPipeline([
+            new ParseInfoPipe,
+            new LocalDbPipe,
+        ], false);
+        $result = $pipeline->processRelease(DB::table('releases')->find(1));
+        $this->assertTrue($result['matched']);
+        $release = DB::table('releases')->find(1);
+        $this->assertSame(10, $release->videos_id);
+        $this->assertSame(TvEpisodeRevisitService::NO_MATCH_FOUND, $release->tv_episodes_id);
+        $this->assertFalse(TvProcessingCandidateQuery::query()->where('id', 1)->exists());
     }
 
     #[Test]

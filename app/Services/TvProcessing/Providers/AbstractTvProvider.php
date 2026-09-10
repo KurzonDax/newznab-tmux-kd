@@ -57,6 +57,8 @@ abstract class AbstractTvProvider extends BaseVideoProvider
 
     protected const FAILED_PARSE = -100; // Failed Parsing
 
+    public const NO_EPISODE = 'none';
+
     public int $tvqty;
 
     /**
@@ -503,6 +505,25 @@ abstract class AbstractTvProvider extends BaseVideoProvider
      */
     public function parseInfo(string $relname): bool|array
     {
+        $episodeInfo = $this->parseSeasonEp($relname);
+
+        if (preg_match('/^(?<title>.+?)(?:[._ -](?<year>(?:19|20)\d{2})|\((?<bracket_year>(?:19|20)\d{2})\))(?:[._ -]\d{1,2})?(?:[._ -](?:mkv|mp4|avi))?$/iu', $relname, $matches)
+            && ($episodeInfo === [] || (is_string($episodeInfo['season']) && ! isset($episodeInfo['airdate'])))) {
+            $title = trim(str_replace(['.', '_', '-'], ' ', $matches['title']));
+            $title = preg_replace('/\s+/u', ' ', $title) ?? $title;
+            $year = $matches['year'] !== '' ? $matches['year'] : $matches['bracket_year'];
+
+            return [
+                'name' => $title,
+                'cleanname' => $title.' ('.$year.')',
+                'country' => $this->parseCountry($title),
+                'season' => 0,
+                'episode' => self::NO_EPISODE,
+                'airdate' => '',
+                'episode_title' => '',
+            ];
+        }
+
         $showInfo['name'] = $this->parseName($relname);
 
         if (! empty($showInfo['name'])) {
@@ -514,7 +535,7 @@ abstract class AbstractTvProvider extends BaseVideoProvider
             $showInfo['cleanname'] = $this->normalizeShowTitle($showInfo['cleanname']);
 
             // Get the Season/Episode/Airdate
-            $showInfo += $this->parseSeasonEp($relname);
+            $showInfo += $episodeInfo;
             $showInfo['episode_title'] = $this->parseEpisodeTitle($relname);
 
             // --- Post-parse correction for daily talk shows misclassified as Season = Year ---

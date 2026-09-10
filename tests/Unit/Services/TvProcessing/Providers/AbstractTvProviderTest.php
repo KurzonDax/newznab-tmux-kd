@@ -109,6 +109,47 @@ class AbstractTvProviderTest extends ImdbScraperTestCase
         $this->assertStringContainsString("v.imdb = IF(v.imdb IN ('', '0'), '1176432', v.imdb)", $sql);
     }
 
+    #[Test]
+    public function title_year_names_have_an_explicit_no_episode_marker(): void
+    {
+        foreach ([
+            'Sterling Point (2026)' => 'Sterling Point (2026)',
+            'Sterling.Point.2026' => 'Sterling Point (2026)',
+            'Years and Years (2019)' => 'Years and Years (2019)',
+            'The.Mind.Behind.Power.2024.1.mkv' => 'The Mind Behind Power (2024)',
+        ] as $name => $cleanname) {
+            $info = (new LocalDbProvider)->parseInfo($name);
+            $this->assertIsArray($info);
+            $this->assertSame($cleanname, $info['cleanname']);
+            $this->assertSame('none', $info['episode']);
+        }
+        $this->assertFalse((new LocalDbProvider)->parseInfo('Con.Air.1997.1080p.BluRay.x264-GRP'));
+    }
+
+    #[Test]
+    public function existing_episode_and_season_formats_keep_their_parsed_shape(): void
+    {
+        $provider = new LocalDbProvider;
+        foreach ([
+            'Show.S01E02' => ['name' => 'Show', 'country' => '', 'cleanname' => 'Show', 'season' => 1, 'episode' => 2, 'episode_title' => '', 'airdate' => ''],
+            'Show.S01' => ['name' => 'Show', 'country' => '', 'cleanname' => 'Show', 'season' => 1, 'episode' => 'all', 'episode_title' => '', 'airdate' => ''],
+            'Show.2024.05.01' => ['name' => 'Show', 'country' => '', 'cleanname' => 'Show', 'season' => 0, 'episode' => 0, 'episode_title' => '', 'airdate' => '2024-05-01'],
+            'Show.S03E05.Episode.Title' => ['name' => 'Show', 'country' => '', 'cleanname' => 'Show', 'season' => 3, 'episode' => 5, 'episode_title' => '', 'airdate' => ''],
+        ] as $name => $expected) {
+            $this->assertEquals($expected, $provider->parseInfo($name), $name);
+        }
+    }
+
+    #[Test]
+    public function a_trailing_year_does_not_replace_existing_episode_evidence(): void
+    {
+        foreach (['Show.01.05.2024', 'Show.Season.1.2026', 'Show_S01E02_2026'] as $name) {
+            $info = (new LocalDbProvider)->parseInfo($name);
+            $this->assertIsArray($info);
+            $this->assertNotSame('none', $info['episode']);
+        }
+    }
+
     private function makeProvider(): TraktProvider
     {
         return new TraktProvider;

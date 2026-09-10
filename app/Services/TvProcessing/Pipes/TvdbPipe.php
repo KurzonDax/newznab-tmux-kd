@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\TvProcessing\Pipes;
 
 use App\Services\FanartTvService;
+use App\Services\TvProcessing\Providers\AbstractTvProvider;
 use App\Services\TvProcessing\Providers\TvdbProvider;
 use App\Services\TvProcessing\TvProcessingPassable;
 use App\Services\TvProcessing\TvProcessingResult;
@@ -135,6 +136,10 @@ class TvdbPipe extends AbstractTvProviderPipe
             $tvdb->getBanner($videoId, $siteId);
         }
 
+        if (($parsedInfo['episode'] ?? null) === AbstractTvProvider::NO_EPISODE) {
+            return $this->bindWithoutEpisode($tvdb, $passable, $videoId);
+        }
+
         // Process episode
         $seriesNo = ! empty($parsedInfo['season']) ? preg_replace('/^S0*/i', '', (string) $parsedInfo['season']) : '';
         $episodeNo = ! empty($parsedInfo['episode']) ? preg_replace('/^E0*/i', '', (string) $parsedInfo['episode']) : '';
@@ -257,6 +262,10 @@ class TvdbPipe extends AbstractTvProviderPipe
     ): TvProcessingResult {
         $context = $passable->context;
         $cleanName = $parsedInfo['cleanname'];
+
+        if (($parsedInfo['episode'] ?? null) === AbstractTvProvider::NO_EPISODE) {
+            return $this->bindWithoutEpisode($tvdb, $passable, $videoId);
+        }
 
         $seriesNo = ! empty($parsedInfo['season']) ? preg_replace('/^S0*/i', '', (string) $parsedInfo['season']) : '';
         $episodeNo = ! empty($parsedInfo['episode']) ? preg_replace('/^E0*/i', '', (string) $parsedInfo['episode']) : '';

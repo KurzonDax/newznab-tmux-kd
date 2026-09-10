@@ -6,7 +6,11 @@ namespace Tests\Unit\Services\TvProcessing\Providers;
 
 use App\Services\TmdbClient;
 use App\Services\TraktService;
+use App\Services\TvProcessing\Pipes\TmdbPipe;
+use App\Services\TvProcessing\Pipes\TraktPipe;
 use App\Services\TvProcessing\Pipes\TvdbPipe;
+use App\Services\TvProcessing\Pipes\TvMazePipe;
+use App\Services\TvProcessing\Providers\LocalDbProvider;
 use App\Services\TvProcessing\Providers\TmdbProvider;
 use App\Services\TvProcessing\Providers\TraktProvider;
 use App\Services\TvProcessing\Providers\TvdbProvider;
@@ -23,6 +27,38 @@ use Tests\TestCase;
 
 final class ProviderShowYearAcceptanceTest extends TestCase
 {
+    #[Test]
+    public function every_external_pipe_binds_a_new_show_without_requesting_episodes(): void
+    {
+        foreach ([
+            [TmdbPipe::class, TmdbProvider::class, 'tmdb'],
+            [TvdbPipe::class, TvdbProvider::class, 'tvdb'],
+            [TvMazePipe::class, TvMazeProvider::class, 'tvmaze'],
+            [TraktPipe::class, TraktProvider::class, 'trakt'],
+        ] as [$pipeClass, $providerClass, $property]) {
+            $provider = Mockery::mock($providerClass);
+            $provider->shouldReceive('getByRelease')->once()->andReturn(0);
+            $provider->shouldReceive('getShowInfo')->once()->with('Sterling Point (2026)')->andReturn([
+                $property => 200, 'poster' => 'poster.jpg',
+            ]);
+            $provider->shouldReceive('add')->once()->andReturn(77);
+            $provider->shouldReceive('getPoster')->andReturn(1);
+            $provider->shouldReceive('getBanner')->andReturnTrue();
+            $provider->shouldNotReceive('getEpisodeInfo');
+            $provider->shouldNotReceive('getBySeasonEp');
+            $provider->shouldNotReceive('countEpsByVideoID');
+            $provider->shouldReceive('setVideoIdFound')->once()->with(77, 99, 0);
+            $provider->shouldReceive('setVideoNotFound')->once()->with(-6, 99);
+            $pipe = (new $pipeClass)->setEchoOutput(false);
+            (new \ReflectionProperty($pipeClass, $property))->setValue($pipe, $provider);
+            $passable = new TvProcessingPassable(new TvReleaseContext(99, 'Sterling Point (2026)', 1, 5000));
+            $passable->setParsedInfo((new LocalDbProvider)->parseInfo('Sterling Point (2026)'));
+            $result = $pipe->handle($passable, fn ($value) => $value);
+            $this->assertTrue($result->result->isMatched());
+            $this->assertSame(0, $result->result->episodeId);
+        }
+    }
+
     #[Test]
     public function tvdb_prefers_the_same_titled_show_with_a_plausible_premiere_year(): void
     {
