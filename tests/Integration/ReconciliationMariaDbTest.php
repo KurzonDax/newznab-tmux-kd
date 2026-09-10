@@ -77,7 +77,7 @@ final class ReconciliationMariaDbTest extends TestCase
             $table->unsignedInteger('groups_id');
             $table->string('fromname');
             $table->integer('declaredfiles');
-            $table->dateTime('date');
+            $table->dateTime('date')->nullable();
             $table->dateTime('dateadded');
             $table->integer('filecheck')->default(0);
             $table->unsignedInteger('releases_id')->nullable();
@@ -97,6 +97,7 @@ final class ReconciliationMariaDbTest extends TestCase
             $table->primary(['binaries_id', 'partnumber']);
         });
         (require database_path('migrations/2026_09_10_134847_add_reconciliation_admissions.php'))->up();
+        (require database_path('migrations/2026_09_10_175414_add_collections_admission_window_index.php'))->up();
         config(['database.connections.reconciliation_peer' => config('database.connections.reconciliation_fixture')]);
         DB::purge('reconciliation_peer');
         $peer = DB::connection('reconciliation_peer');
@@ -122,6 +123,7 @@ final class ReconciliationMariaDbTest extends TestCase
             $this->assertTrue($admission->lockAndScreen([1], 1));
             $this->assertTrue(CollectionOwnership::protects(1));
             $this->assertSame(2, DB::table('reconciliation_admissions')->count());
+            $this->assertSame(1, $peer->table('usenet_groups')->where('id', 1)->update(['name' => 'example.updated']));
             config(['database.default' => 'reconciliation_peer']);
             try {
                 $peer->transaction(static fn () => CollectionOwnership::ingest([2]));
@@ -131,7 +133,27 @@ final class ReconciliationMariaDbTest extends TestCase
             } finally {
                 config(['database.default' => 'reconciliation_fixture']);
             }
+            try {
+                $peer->transaction(static fn () => $peer->table('collections')->insert(['id' => 3, ...$source]));
+                $this->fail('A new counterpart slipped into the validated window.');
+            } catch (QueryException $exception) {
+                $this->assertSame(1205, (int) $exception->errorInfo[1]);
+            }
             DB::commit();
+            $peer->table('collections')->insert(['id' => 3, ...$source]);
+            $this->assertSame(3, $peer->table('collections')->count());
+            $peer->table('collections')->where('id', 3)->update(['fromname' => 'synthetic poster']);
+            $peer->table('collections')->insert(['id' => 4, ...$source, 'date' => null]);
+            $this->assertTrue(DB::transaction(fn (): bool => $admission->lockAndScreen([1, 4], 1)));
+            $this->assertFalse(DB::table('reconciliation_admissions')->where('collection_id', 3)->exists());
+            $this->assertFalse(DB::table('reconciliation_admissions')->where('collection_id', 4)->exists());
+            $this->assertFalse(DB::transaction(fn (): bool => $admission->lockAndScreen([999], 1)));
+            DB::table('collections')->insert(['id' => 5, ...$source, 'fromname' => str_repeat('😺', 255)]);
+            $this->assertTrue(DB::transaction(fn (): bool => $admission->lockAndScreen([5], 1)));
+            (require database_path('migrations/2026_09_10_175414_add_collections_admission_window_index.php'))->down();
+            $this->assertSame(5, DB::table('collections')->count());
+            $this->assertTrue(Schema::hasIndex('collections', ['groups_id', 'declaredfiles', 'date']));
+            $this->assertFalse(Schema::hasIndex('collections', 'collections_admission_window'));
         } finally {
             if (DB::transactionLevel() > 0) {
                 DB::rollBack();

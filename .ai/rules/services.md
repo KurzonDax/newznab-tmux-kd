@@ -22,3 +22,6 @@ Reconciled postings can contain independent videos: naming and movie/episode wri
 
 ## Title-year names are not unique release identities
 Releases named from a container title or any title-plus-year source can share one searchname across distinct files, including episodes of one series. Dedupe keyed on searchname must exclude these releases or also key on duration.
+
+## Collection population locks require selective access and real commits
+Keep exact collection-ID locks separate from state-by-state collections_admission_window ranges: LIMIT bounds returned rows, not examined or locked records. Ordinary sizing, completeness and cleanup commit at most eight source IDs per transaction; nested savepoints do not release locks. Establish raw window completeness before recovery exclusions: overflow skips speculative admission and defers artifact publication. Deploy the additive index before code requiring it (#539).

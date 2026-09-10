@@ -280,7 +280,7 @@ class CollectionCleanupService
 
         $deletedCollections = 0;
 
-        foreach (array_chunk($collectionIds, min(500, $this->sqlChunkSize())) as $chunk) {
+        foreach (array_chunk($collectionIds, min($screenAdmission ? CollectionAdmission::MUTATION_BATCH_SIZE : 500, $this->sqlChunkSize())) as $chunk) {
             if ($screenAdmission && ! app(CollectionAdmission::class)->screen(array_map('intval', $chunk))) {
                 continue;
             }

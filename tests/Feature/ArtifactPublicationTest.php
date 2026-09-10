@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Facades\Search;
+use App\Models\Release;
 use App\Services\AdditionalProcessing\NzbContentParser;
 use App\Services\CollectionReconciliation\ArtifactPublication;
 use App\Services\CollectionReconciliation\ArtifactReleaseUpdate;
@@ -126,6 +127,66 @@ class ArtifactPublicationTest extends TestCase
             expectedSources: [1 => ArtifactSourceRevision::capture(1)]);
         $this->assertTrue($result->success, $result->reason);
         $this->assertTrue(DB::table('collections')->where('id', 2)->exists());
+    }
+
+    public function test_dense_recovery_owned_population_defers_without_publication_and_retries_after_shrinking(): void
+    {
+        Schema::create('obfuscation_recovery_publications', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('collections_id');
+            $table->unsignedInteger('releases_id')->nullable();
+            $table->string('guid')->nullable();
+            $table->string('state');
+        });
+        $source = ['groups_id' => 1, 'fromname' => 'Poster', 'declaredfiles' => 2, 'date' => '2026-01-01 12:00:00'];
+        DB::table('collections')->insert([['id' => 1, ...$source], ['id' => 2, ...$source]]);
+        DB::table('obfuscation_recovery_publications')->insert(['collections_id' => 2, 'state' => 'prepared']);
+        for ($id = 3; $id <= 257; $id++) {
+            DB::table('collections')->insert(['id' => $id, ...$source]);
+            DB::table('obfuscation_recovery_publications')->insert(['collections_id' => $id, 'state' => 'prepared']);
+        }
+        $replace = fn () => app(ArtifactPublication::class)->replace($this->guid, str_replace('preserve', 'target', $this->original), sourceIds: [1],
+            expectedSnapshot: ['version' => 1, 'epoch' => 1, 'proof_revision' => 1,
+                'population' => ['group' => 1, 'poster' => 'Poster', 'total' => 2, 'from' => '2026-01-01 11:00:00', 'until' => '2026-01-01 13:00:00']],
+            expectedSources: [1 => ArtifactSourceRevision::capture(1)]);
+        $result = $replace();
+        $this->assertFalse($result->success);
+        $this->assertSame('source_population_incomplete', $result->reason);
+        $this->assertSame(0, DB::table('reconciled_artifact_operations')->count());
+        $posting = app(ArtifactPublication::class)->writePosting(Release::findOrFail(1), $this->original,
+            population: ['group' => 1, 'poster' => 'Poster', 'total' => 2, 'from' => '2026-01-01 11:00:00', 'until' => '2026-01-01 13:00:00'],
+            observedSourceIds: [1]);
+        $this->assertSame('source_population_incomplete', $posting->reason);
+        $this->assertSame(0, DB::table('reconciled_artifact_operations')->count());
+        $this->assertSame($this->original, app(NzbService::class)->readNzbContents($this->guid));
+        DB::table('collections')->where('id', 257)->delete();
+        $result = $replace();
+        $this->assertTrue($result->success, $result->reason);
+        $this->assertTrue(DB::table('collections')->where('id', 2)->exists());
+    }
+
+    public function test_prepared_artifact_waits_for_complete_population_without_abandoning_its_receipt(): void
+    {
+        $source = ['groups_id' => 1, 'fromname' => 'Poster', 'declaredfiles' => 2, 'date' => '2026-01-01 12:00:00'];
+        DB::table('collections')->insert(['id' => 1, ...$source]);
+        $target = str_replace('preserve', 'target', $this->original);
+        DB::beginTransaction();
+        $receipt = app(ArtifactPublication::class)->replace($this->guid, $target, sourceIds: [1],
+            expectedSnapshot: ['version' => 1, 'epoch' => 1, 'proof_revision' => 1,
+                'population' => ['group' => 1, 'poster' => 'Poster', 'total' => 2, 'from' => '2026-01-01 11:00:00', 'until' => '2026-01-01 13:00:00']],
+            expectedSources: [1 => ArtifactSourceRevision::capture(1)]);
+        DB::commit();
+        for ($id = 2; $id <= 257; $id++) {
+            DB::table('collections')->insert(['id' => $id, ...$source]);
+        }
+        $result = app(ArtifactPublication::class)->execute($receipt->operationId);
+        $this->assertFalse($result->success);
+        $this->assertSame('source_population_incomplete', $result->reason);
+        $this->assertSame('prepared', DB::table('reconciled_artifact_operations')->value('state'));
+        $this->assertSame($this->original, app(NzbService::class)->readNzbContents($this->guid));
+        DB::table('collections')->where('id', '>', 1)->delete();
+        $this->assertTrue(app(ArtifactPublication::class)->execute($receipt->operationId)->success);
+        $this->assertSame($target, app(NzbService::class)->readNzbContents($this->guid));
     }
 
     public function test_trusted_identity_acquired_after_preparation_prevents_a_new_bundle_write(): void
