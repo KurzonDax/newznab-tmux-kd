@@ -19,3 +19,6 @@ Collection promotion and stuck deletion share a quiet predicate comparing collec
 
 ## PAR2 membership does not establish one media title
 Reconciled postings can contain independent videos: naming and movie/episode writers must honor CollectionReconciliation\BundleIdentity at the mutation boundary, because identifying one member does not identify the bundle. Collection promotion and cleanup must recheck CollectionOwnership under the same source-row locks used by ingestion. Publish replacements through PostingPublication so interrupted handoffs retain the prior NZB and inventory; a late rewrite must preserve files whose original CBP rows were already cleaned.
+
+## Title-year names are not unique release identities
+Releases named from a container title or any title-plus-year source can share one searchname across distinct files, including episodes of one series. Dedupe keyed on searchname must exclude these releases or also key on duration.

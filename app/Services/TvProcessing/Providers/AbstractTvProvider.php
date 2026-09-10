@@ -14,6 +14,7 @@ use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\TvProcessing\TvProcessingCandidateQuery;
+use App\Support\TitleYearName;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
@@ -507,11 +508,11 @@ abstract class AbstractTvProvider extends BaseVideoProvider
     {
         $episodeInfo = $this->parseSeasonEp($relname);
 
-        if (preg_match('/^(?<title>.+?)(?:[._ -](?<year>(?:19|20)\d{2})|\((?<bracket_year>(?:19|20)\d{2})\))(?:[._ -]\d{1,2})?(?:[._ -](?:mkv|mp4|avi))?$/iu', $relname, $matches)
+        $titleYear = TitleYearName::parse($relname);
+        if ($titleYear !== null
             && ($episodeInfo === [] || (is_string($episodeInfo['season']) && ! isset($episodeInfo['airdate'])))) {
-            $title = trim(str_replace(['.', '_', '-'], ' ', $matches['title']));
-            $title = preg_replace('/\s+/u', ' ', $title) ?? $title;
-            $year = $matches['year'] !== '' ? $matches['year'] : $matches['bracket_year'];
+            $title = $titleYear['title'];
+            $year = $titleYear['year'];
 
             return [
                 'name' => $title,

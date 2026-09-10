@@ -6,24 +6,32 @@ namespace App\Services;
 
 use aharen\OMDbAPI;
 use App\Enums\ImageAssetProfile;
+use App\Enums\MovieLookupOutcome;
 use App\Facades\Search;
+use App\Models\Category;
 use App\Models\MovieInfo;
 use App\Models\Release;
 use App\Models\Settings;
+use App\Models\VideoData;
+use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\MetadataProcessing\MovieProcessingCandidateQuery;
 use App\Services\ObfuscationRecovery\RecoveryCatalog;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\ObfuscationRecovery\RecoveryOmdbClient;
+use App\Services\Releases\ForcedRootPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Search\MovieSearchIndexSync;
 use App\Services\TvProcessing\Providers\TraktProvider;
+use App\Services\TvProcessing\TvProcessingPipeline;
 use App\Support\ReleaseSearchIndexSync;
+use App\Support\TitleYearName;
 use App\Traits\DetectsHashedNames;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -41,6 +49,8 @@ class MovieService
     protected const MATCH_PERCENT_ALT_TITLE = 55;
 
     protected const YEAR_MATCH_PERCENT = 80;
+
+    private bool $providerAnswered = false;
 
     protected string $currentTitle = '';
 
@@ -1092,11 +1102,18 @@ class MovieService
                     cli()->info('Looking up: '.$movieName);
                 }
 
-                $foundIMDB = RecoveryCatalog::run((int) $arr['id'], fn (): bool => $this->searchLocalDatabase($arr['id']) ||
-                    $this->searchIMDb($arr['id']) ||
-                    $this->searchOMDbAPI($arr['id']) ||
-                    $this->searchTraktTV($arr['id'], $movieName) ||
-                    $this->searchTMDB($arr['id']));
+                $outcome = RecoveryCatalog::run((int) $arr['id'], fn (): MovieLookupOutcome => $this->lookupMovie((int) $arr['id'], $movieName));
+                if ($outcome === MovieLookupOutcome::Series || $outcome === MovieLookupOutcome::NotFound) {
+                    if (TitleYearName::parse($arr['searchname']) !== null && $this->handoffToTv((int) $arr['id'], $outcome)) {
+                        continue;
+                    }
+                }
+                if ($outcome === MovieLookupOutcome::Unavailable) {
+                    $this->recordUnavailableLookup((int) $arr['id']);
+
+                    continue;
+                }
+                $foundIMDB = $outcome === MovieLookupOutcome::Matched;
 
                 if ($foundIMDB) {
                     if ($this->echooutput) {
@@ -1146,6 +1163,68 @@ class MovieService
         }
     }
 
+    private function lookupMovie(int $releaseId, string $movieName): MovieLookupOutcome
+    {
+        $this->providerAnswered = false;
+        if ($this->searchLocalDatabase($releaseId)) {
+            return MovieLookupOutcome::Matched;
+        }
+        $imdbOutcome = $this->searchIMDb($releaseId);
+        if (in_array($imdbOutcome, [MovieLookupOutcome::Matched, MovieLookupOutcome::Series], true)) {
+            return $imdbOutcome;
+        }
+        $this->providerAnswered = $imdbOutcome === MovieLookupOutcome::NotFound;
+        if ($this->searchOMDbAPI($releaseId) || $this->searchTraktTV($releaseId, $movieName) || $this->searchTMDB($releaseId)) {
+            return MovieLookupOutcome::Matched;
+        }
+
+        return $this->providerAnswered ? MovieLookupOutcome::NotFound : MovieLookupOutcome::Unavailable;
+    }
+
+    private function handoffToTv(int $releaseId, MovieLookupOutcome $outcome): bool
+    {
+        $release = Release::query()->findOrFail($releaseId);
+        $result = app(TvProcessingPipeline::class)->processRelease($release);
+        $bound = (int) ($result['video_id'] ?? 0) > 0;
+        if (! $bound && $outcome !== MovieLookupOutcome::Series) {
+            Release::query()->whereKey($releaseId)->update($release->only(['videos_id', 'tv_episodes_id', 'tv_episode_lookup_attempted_at']));
+
+            return false;
+        }
+
+        $forcedRoot = app(ForcedRootPolicy::class)->selectForRelease((int) $release->groups_id, $releaseId);
+        if ($forcedRoot === Category::MOVIE_ROOT && $outcome === MovieLookupOutcome::Series) {
+            Release::query()->whereKey($releaseId)->update(['imdbid' => '']);
+            ReleaseSearchIndexSync::forIds([$releaseId]);
+        }
+        if ($forcedRoot === null || $forcedRoot === Category::TV_ROOT) {
+            Release::query()->whereKey($releaseId)->update(['categories_id' => Category::TV_OTHER]);
+            if ($bound) {
+                app(MediaInfoRefinementService::class)->refine($releaseId);
+            }
+            ReleaseSearchIndexSync::forIds([$releaseId]);
+        }
+
+        return $outcome === MovieLookupOutcome::Series;
+    }
+
+    private function recordUnavailableLookup(int $releaseId): void
+    {
+        DB::transaction(function () use ($releaseId): void {
+            $release = Release::query()->whereKey($releaseId)->lockForUpdate()->first();
+            if ($release === null || ! imdb_id_needs_lookup($release->imdbid)) {
+                return;
+            }
+            $attempts = (int) $release->imdb_lookup_attempts + 1;
+            Release::query()->whereKey($releaseId)->update([
+                'imdbid' => $attempts >= MovieProcessingCandidateQuery::MAX_ATTEMPTS ? '' : null,
+                'imdb_lookup_attempts' => $attempts,
+                'imdb_lookup_attempted_at' => now(),
+            ]);
+        });
+        ReleaseSearchIndexSync::forIds([$releaseId]);
+    }
+
     private function formatMovieName(): string
     {
         $movieName = $this->currentTitle;
@@ -1168,11 +1247,14 @@ class MovieService
         return $imdbId !== false;
     }
 
-    private function searchIMDb(int $releaseId): bool
+    private function searchIMDb(int $releaseId): MovieLookupOutcome
     {
         try {
             $scraper = app(ImdbScraper::class);
             $matches = $scraper->search($this->currentTitle);
+            $eligible = [];
+            $films = [];
+            $series = [];
             foreach ($matches as $match) {
                 $title = $match['title'] ?? '';
                 if ($title === '') {
@@ -1191,16 +1273,51 @@ class MovieService
                 if (! $yearMatches) {
                     continue;
                 }
-                $imdbId = $this->doMovieUpdate('tt'.$match['imdbid'], 'IMDb(scrape)', $releaseId);
-                if ($imdbId !== false) {
-                    return true;
+                $eligible[] = $match;
+                $type = strtolower(preg_replace('/[^a-z]/i', '', (string) ($match['type'] ?? '')) ?? '');
+                if (in_array($type, ['tvseries', 'tvminiseries', 'tvepisode', 'tvspecial'], true)) {
+                    $series[] = $match;
+                } else {
+                    $films[] = $match;
                 }
             }
+            $name = (string) Release::query()->whereKey($releaseId)->value('searchname');
+            $scoped = TitleYearName::parse($name) !== null;
+            if ($scoped && $series !== [] && ($films === [] || ! $this->hasFeatureLengthDuration($releaseId))) {
+                return MovieLookupOutcome::Series;
+            }
+            foreach ($scoped ? $films : $eligible as $match) {
+                $imdbId = $this->doMovieUpdate('tt'.$match['imdbid'], 'IMDb(scrape)', $releaseId);
+                if ($imdbId !== false) {
+                    return MovieLookupOutcome::Matched;
+                }
+            }
+
+            return $scraper->wasSearchUnavailable() ? MovieLookupOutcome::Unavailable : MovieLookupOutcome::NotFound;
         } catch (\Throwable $e) {
             Log::debug('IMDb scraper search failed: '.$e->getMessage());
         }
 
-        return false;
+        return MovieLookupOutcome::Unavailable;
+    }
+
+    private function hasFeatureLengthDuration(int $releaseId): bool
+    {
+        $duration = (string) VideoData::query()->where('releases_id', $releaseId)->value('videoduration');
+        if (! preg_match('/^(\d+)h:(\d+)m:(\d+)s$/', $duration, $parts)) {
+            return false;
+        }
+
+        return (int) $parts[1] * 3600 + (int) $parts[2] * 60 + (int) $parts[3] > 95 * 60;
+    }
+
+    private function recordOmdbResponse(mixed $buffer): void
+    {
+        if (is_object($buffer) && ($buffer->message ?? '') === 'OK'
+            && (is_array($buffer->data->Search ?? null)
+                || (($buffer->data->Response ?? '') === 'False' && ($buffer->data->Error ?? '') === 'Movie not found!'))) {
+            $this->providerAnswered = true;
+        }
     }
 
     private function searchOMDbAPI(int $releaseId): bool
@@ -1209,12 +1326,14 @@ class MovieService
             return false;
         }
 
-        $omdbTitle = strtolower(str_replace(' ', '_', $this->currentTitle));
+        $omdbTitle = $this->currentTitle;
 
         try {
             $buffer = $this->currentYear !== ''
                 ? $this->omdbApi->search($omdbTitle, 'movie', $this->currentYear)
                 : $this->omdbApi->search($omdbTitle, 'movie');
+
+            $this->recordOmdbResponse($buffer);
 
             if ($this->currentYear !== '' && (
                 ! is_object($buffer) ||
@@ -1223,6 +1342,7 @@ class MovieService
                 empty($buffer->data->Search[0]->imdbID ?? null)
             )) {
                 $buffer = $this->omdbApi->search($omdbTitle, 'movie');
+                $this->recordOmdbResponse($buffer);
             }
 
             if (! is_object($buffer) ||
@@ -1238,7 +1358,7 @@ class MovieService
 
             return $imdbId !== false;
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error('OMDb API error: '.$e->getMessage());
 
             return false;
@@ -1253,6 +1373,9 @@ class MovieService
 
         try {
             $data = $this->traktTv->client->getMovieSummary($movieName, 'full');
+            if (is_array($data)) {
+                $this->providerAnswered = true;
+            }
             if ($data === false || empty($data['ids']['imdb'])) {
                 return false;
             }
@@ -1262,7 +1385,7 @@ class MovieService
 
             return $imdbId !== false;
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error('Trakt.tv error: '.$e->getMessage());
 
             return false;
@@ -1281,6 +1404,9 @@ class MovieService
             $year = $this->currentYear !== '' ? $this->currentYear : null;
             $data = $tmdbClient->searchMovies($this->currentTitle, 1, $year);
 
+            if (is_array($data) && isset($data['results']) && is_array($data['results'])) {
+                $this->providerAnswered = true;
+            }
             if ($data === null || empty($data['total_results']) || empty($data['results'])) {
                 return false;
             }
@@ -1396,7 +1522,7 @@ class MovieService
             return 0.0;
         }
 
-        similar_text($normalizedLeft, $normalizedRight, $percent);
+        similar_text(mb_strtolower($normalizedLeft), mb_strtolower($normalizedRight), $percent);
 
         return $percent;
     }
@@ -1452,12 +1578,12 @@ class MovieService
             .'BluRay|divx|HDTV|iNTERNAL|LiMiTED|(Real\.)?PROPER|RE(pack|Rip)|Sub\.?(fix|pack)|'
             .'Unrated|WEB-?DL|WEBRip|(x|H|HEVC)[ ._-]?26[45]|xvid|AAC|REMUX)[^\w]';
 
-        if (preg_match('/(?P<name>[\w. -]+)[^\w](?P<year>(19|20)\d\d)/i', $releaseName, $hits)) {
+        if (preg_match('/(?P<name>[\w.: -]+)[^\w](?P<year>(19|20)\d\d)/i', $releaseName, $hits)) {
             $name = $hits['name'];
             $year = $hits['year'];
-        } elseif (preg_match('/([^\w]{2,})?(?P<name>[\w .-]+?)'.$followingList.'/i', $releaseName, $hits)) {
+        } elseif (preg_match('/([^\w]{2,})?(?P<name>[\w .:-]+?)'.$followingList.'/i', $releaseName, $hits)) {
             $name = $hits['name'];
-        } elseif (preg_match('/^(?P<name>[\w .-]+?)'.$followingList.'/i', $releaseName, $hits)) {
+        } elseif (preg_match('/^(?P<name>[\w .:-]+?)'.$followingList.'/i', $releaseName, $hits)) {
             $name = $hits['name'];
         } elseif (strlen($releaseName) <= 100 && ! preg_match('/\.(rar|zip|avi|mkv|mp4)$/i', $releaseName)) {
             $name = $releaseName;
@@ -1469,11 +1595,10 @@ class MovieService
             while (($openPos = strpos($name, '[')) !== false && ($closePos = strpos($name, ']', $openPos)) !== false) {
                 $name = substr($name, 0, $openPos).' '.substr($name, $closePos + 1);
             }
-            $name = str_replace(['.', '_'], ' ', $name);
-            $name = preg_replace('/-[A-Z0-9].*$/i', '', $name);
+            $name = str_replace(['.', '_', '-'], ' ', $name);
             $name = trim(preg_replace('/\s{2,}/', ' ', $name));
 
-            if (strlen($name) > 2 && ! preg_match('/^\d+$/', $name)) {
+            if ((strlen($name) > 2 || ($name !== '' && TitleYearName::parse($releaseName) !== null)) && ! preg_match('/^\d+$/', $name)) {
                 $this->currentTitle = $name;
                 $this->currentYear = $year;
 

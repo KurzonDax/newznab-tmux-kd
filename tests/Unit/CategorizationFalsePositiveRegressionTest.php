@@ -232,6 +232,9 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
     public static function yearOnlyMovieTitleProvider(): array
     {
         return [
+            'one word parenthesized' => ['Enemy (2013)'],
+            'one word dotted' => ['Gremlins.1984'],
+            'one word long' => ['Octopussy (1983)'],
             'dot-separated title and year' => ['Some.Film.Title.2024'],
             'space-separated title with parenthesized year' => ['Some Film Title (2024)'],
             'dot-separated title with part number' => ['Some.Film.Title.2025.12'],
@@ -259,6 +262,8 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
             'episode after year' => ['Some.Show.2024.E12'],
             'season before year' => ['Some.Show.S02.2024'],
             'single title token' => ['Video.2024'],
+            'generic sample' => ['Sample.2023'],
+            'generic episode' => ['Episode (2024)'],
             'year only' => ['2024'],
             'adult marker' => ['Brazzers.Some.Title.2024'],
         ];

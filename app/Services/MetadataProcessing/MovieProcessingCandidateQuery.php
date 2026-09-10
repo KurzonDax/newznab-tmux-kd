@@ -16,6 +16,10 @@ use Illuminate\Database\Eloquent\Builder;
  */
 final class MovieProcessingCandidateQuery
 {
+    public const MAX_ATTEMPTS = 4;
+
+    public const RETRY_HOURS = 6;
+
     /**
      * @return Builder<Release>
      */
@@ -29,7 +33,11 @@ final class MovieProcessingCandidateQuery
         $query = Release::query()->whereRaw(RecoveryIdentityPolicy::singleItemSql())->whereRaw(BundleIdentity::singleItemSql())
             ->whereBetween('categories_id', [Category::MOVIE_ROOT, Category::MOVIE_OTHER])
             ->where(static function (Builder $candidate): void {
-                $candidate->whereNull('imdbid')
+                $candidate->where(function (Builder $pending): void {
+                    $pending->whereNull('imdbid')
+                        ->where(fn (Builder $attempts) => $attempts->whereNull('imdb_lookup_attempts')->orWhere('imdb_lookup_attempts', '<', self::MAX_ATTEMPTS))
+                        ->where(fn (Builder $due) => $due->whereNull('imdb_lookup_attempted_at')->orWhere('imdb_lookup_attempted_at', '<=', now()->subHours(self::RETRY_HOURS)));
+                })
                     ->orWhereIn('imdbid', imdb_id_pending_values());
             });
 
