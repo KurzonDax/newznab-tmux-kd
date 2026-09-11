@@ -16,7 +16,7 @@ class OwnedProcessFixtureRunner extends ReleasesRunner
 
     protected function concurrencyTimeout(): int
     {
-        return 2;
+        return 10;
     }
 
     protected function taskForCommand(array $command): \Closure

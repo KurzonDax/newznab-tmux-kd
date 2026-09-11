@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Services\Runners\ReleasesRunner;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Tests\Support\OwnedProcessFixtureRunner;
 use Tests\TestCase;
 
@@ -37,6 +38,7 @@ class BufferedRunnerOwnershipTest extends TestCase
             ['id' => 2, 'name' => 'fixture.two', 'active' => 1, 'backfill' => 0],
         ]);
         DB::table('collections')->insert([['id' => 1, 'groups_id' => 1], ['id' => 2, 'groups_id' => 2]]);
+        Log::spy();
         try {
             ob_start();
             try {
@@ -45,6 +47,10 @@ class BufferedRunnerOwnershipTest extends TestCase
                 $output = (string) ob_get_clean();
             }
             $this->assertFileExists($pids, $output);
+            Log::shouldHaveReceived('error')->once()->withArgs(
+                static fn (string $message): bool => str_contains($message, 'Release processing batch failed:')
+                    && str_contains($message, 'exceeded the timeout of 10 seconds')
+            );
             $this->assertCount(3, json_decode(file_get_contents($pids), true));
             $this->assertFileExists($next, $output);
             foreach (json_decode(file_get_contents($next), true) as $state) {
