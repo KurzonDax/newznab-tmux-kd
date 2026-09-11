@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\ObfuscationRecovery;
 
+use App\Support\SchemaCapabilities;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 final class RecoveryCollectionOwnership
 {
@@ -18,7 +18,7 @@ final class RecoveryCollectionOwnership
      */
     public static function exclude(Builder|EloquentBuilder $query, string $column = 'collections.id', ?array $populationIds = null, bool $currentRead = false): void
     {
-        if (! Schema::hasTable('obfuscation_recovery_publications')) {
+        if (! SchemaCapabilities::hasTable('obfuscation_recovery_publications')) {
             return;
         }
         $query->whereNotExists(static fn (Builder $owned): Builder => $owned->selectRaw('1')

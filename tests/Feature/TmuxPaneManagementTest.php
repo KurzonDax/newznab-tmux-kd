@@ -103,6 +103,7 @@ class TmuxPaneManagementTest extends TestCase
             && count(array_intersect(['split-window', 'new-window', 'respawn-pane', 'kill-server'], $process->command)) > 0);
     }
 
+    /** @return array<string, array{bool}> */
     public static function profileFailures(): array
     {
         return ['nonzero source result' => [false], 'source exception' => [true]];
@@ -167,6 +168,7 @@ class TmuxPaneManagementTest extends TestCase
         }
     }
 
+    /** @return array<string, array{bool, bool}> */
     public static function realProfileScenarios(): array
     {
         return [
@@ -281,6 +283,7 @@ SH;
         });
     }
 
+    /** @param list<string> $expectedRoles */
     #[DataProvider('layoutRolesProvider')]
     public function test_layouts_tag_every_logical_pane(int $mode, array $expectedRoles): void
     {
@@ -330,6 +333,7 @@ SH;
         }
     }
 
+    /** @return array<string, array{int, list<string>}> */
     public static function layoutRolesProvider(): array
     {
         return [
@@ -884,6 +888,10 @@ SH;
         });
     }
 
+    /**
+     * @param  array<string, int>  $settings
+     * @param  array<string, int>  $counts
+     */
     #[DataProvider('emptyProcessingPaneProvider')]
     public function test_processing_pane_parks_when_its_candidate_backlogs_are_empty(
         string $taskName,
@@ -1006,6 +1014,7 @@ SH;
         });
     }
 
+    /** @return array<string, array{bool}> */
     public static function srrdbFixNameLevelProvider(): array
     {
         return [
@@ -1056,6 +1065,29 @@ SH;
         ]));
 
         $this->assertStringContainsString('multiprocessing:fixrelnames predbft', $this->respawnedCommand());
+    }
+
+    #[DataProvider('nameAvailabilityProvider')]
+    public function test_fix_names_uses_fresh_availability_instead_of_cached_display_count(int $available, int $cachedCount): void
+    {
+        $this->fakeFixNamesPane();
+        $this->runnerWithTimeoutBinary('timeout')->runPaneTask('fixnames', [], [
+            'settings' => ['fix_names' => 1, 'fix_timer' => 300],
+            'counts' => ['now' => ['name_work_available' => $available, 'processrenames' => $cachedCount]],
+        ]);
+        $command = $this->respawnedCommand();
+        if ($available === 1) {
+            $this->assertStringContainsString('multiprocessing:fixrelnames standard', $command);
+        } else {
+            $this->assertStringContainsString('no releases to process', $command);
+            $this->assertStringNotContainsString('multiprocessing:fixrelnames standard', $command);
+        }
+    }
+
+    /** @return array<string, array{int, int}> */
+    public static function nameAvailabilityProvider(): array
+    {
+        return ['new work after empty snapshot' => [1, 0], 'settled work after pending snapshot' => [0, 100]];
     }
 
     #[DataProvider('fixNamesTimeoutProvider')]

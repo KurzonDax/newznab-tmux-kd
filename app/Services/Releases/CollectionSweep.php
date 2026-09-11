@@ -16,15 +16,23 @@ use LogicException;
 final class CollectionSweep
 {
     /** @param callable(list<int>, CollectionSweepLease): int $page */
-    public function run(string $kind, ?int $group, callable $page): CollectionSweepResult
-    {
+    public function run(
+        string $kind,
+        ?int $group,
+        callable $page,
+        ?Builder $population = null,
+        int $pageSize = 1000,
+        int $maxPages = 20,
+        float $seconds = 5,
+    ): CollectionSweepResult {
         if (DB::transactionLevel() !== 0) {
             throw new LogicException('Collection maintenance must commit each mutation independently.');
         }
-        $deadline = microtime(true) + 5;
+        $deadline = microtime(true) + $seconds;
+        $population ??= $this->population($group);
         $scope = $kind.':'.($group === null ? 'global' : 'group:'.$group);
         $token = (string) Str::uuid();
-        $cursor = DB::transaction(function () use ($scope, $token, $group): ?object {
+        $cursor = DB::transaction(function () use ($scope, $token, $population): ?object {
             DB::table('collection_sweep_cursors')->insertOrIgnore(['scope' => $scope, 'created_at' => now(), 'updated_at' => now()]);
             $row = DB::table('collection_sweep_cursors')->where('scope', $scope)->lockForUpdate()->first();
             if ($row->lease_token !== null && $row->lease_expires_at !== null
@@ -33,7 +41,7 @@ final class CollectionSweep
             }
             if ((int) $row->high_water_id === 0) {
                 $row->last_id = 0;
-                $row->high_water_id = (int) $this->population($group)->max('id');
+                $row->high_water_id = (int) (clone $population)->max('id');
             }
             DB::table('collection_sweep_cursors')->where('scope', $scope)->update([
                 'last_id' => $row->last_id, 'high_water_id' => $row->high_water_id,
@@ -50,16 +58,16 @@ final class CollectionSweep
         $examined = 0;
         $outcome = CollectionSweepOutcome::BudgetYielded;
         try {
-            for ($index = 0; $index < 20 && microtime(true) < $deadline; $index++) {
+            for ($index = 0; $index < $maxPages && microtime(true) < $deadline; $index++) {
                 $lease->renew();
-                $ids = $this->population($group)->where('id', '>', $cursor->last_id)->where('id', '<=', $cursor->high_water_id)
-                    ->orderBy('id')->limit(1000)->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+                $ids = (clone $population)->where('id', '>', $cursor->last_id)->where('id', '<=', $cursor->high_water_id)
+                    ->orderBy('id')->limit($pageSize)->pluck('id')->map(static fn ($id): int => (int) $id)->all();
                 if ($ids !== []) {
                     $examined += count($ids);
                     $deleted += $page($ids, $lease);
                     $cursor->last_id = end($ids);
                 }
-                $finished = count($ids) < 1000 || $cursor->last_id >= $cursor->high_water_id;
+                $finished = count($ids) < $pageSize || $cursor->last_id >= $cursor->high_water_id;
                 $lease->advance((int) $cursor->last_id, $finished);
                 if ($finished) {
                     $outcome = CollectionSweepOutcome::Exhausted;

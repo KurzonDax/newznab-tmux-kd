@@ -16,14 +16,18 @@ use App\Services\CollectionReconciliation\PendingReconciler;
 use App\Services\CollectionReconciliation\PostingDecision;
 use App\Services\CollectionReconciliation\PostingEvidence;
 use App\Services\CollectionReconciliation\PostingNzb;
+use App\Services\CollectionsCleaningService;
 use App\Services\NNTP\Contracts\BoundedProviderClient;
 use App\Services\NNTP\DTO\BoundedArticleResponse;
 use App\Services\NNTP\NntpProvider;
 use App\Services\NNTP\NntpProviderPool;
 use App\Services\Nzb\NzbService;
+use App\Services\ReleaseCreationService;
 use App\Services\ReleaseProcessingService;
 use App\Services\YencService;
 use Carbon\Carbon;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
@@ -110,6 +114,8 @@ class SplitAdmissionTest extends TestCase
     public function test_dense_overlapping_batches_use_bounded_id_only_admission_proofs(?int $state): void
     {
         $template = (array) DB::table('collections')->where('id', 1)->first();
+        DB::table('parts')->delete();
+        DB::table('binaries')->delete();
         DB::table('collections')->delete();
         for ($id = 1; $id <= 385; $id++) {
             DB::table('collections')->insert(array_replace($template, [
@@ -117,6 +123,13 @@ class SplitAdmissionTest extends TestCase
                 'filecheck' => $state ?? ($id <= 250 ? 0 : 16), 'date' => Carbon::parse('2026-01-01 09:00:00')->addSeconds($id % 120),
                 'subject' => str_repeat('s', 255), 'xref' => str_repeat('x', 2000),
             ]));
+            if ($id <= 128) {
+                $binary = DB::table('binaries')->insertGetId(['collections_id' => $id,
+                    'name' => sprintf('[01/03] - "Example-%d.par2" yEnc', $id),
+                    'totalparts' => 1, 'currentparts' => 1, 'partcheck' => 1, 'filenumber' => 1]);
+                DB::table('parts')->insert(['binaries_id' => $binary, 'partnumber' => 1,
+                    'messageid' => 'dense-'.$id.'@example.invalid', 'size' => 100]);
+            }
         }
         foreach (['screen', 'lockAndScreen'] as $method) {
             DB::flushQueryLog();
@@ -230,11 +243,214 @@ class SplitAdmissionTest extends TestCase
             foreach (DB::getQueryLog() as $query) {
                 $this->assertStringNotContainsString('from "parts"', $query['query']);
             }
+            $this->assertNotEmpty(array_filter(DB::getQueryLog(),
+                static fn (array $query): bool => str_contains($query['query'], '"date" between')));
             $this->assertSame(0, DB::table('reconciliation_admissions')->count());
         } finally {
             DB::disableQueryLog();
             DB::flushQueryLog();
         }
+    }
+
+    public function test_complete_source_windows_skip_parts_aggregation_and_cleaning(): void
+    {
+        DB::table('parts')->delete();
+        DB::table('binaries')->delete();
+        DB::table('collections')->delete();
+        foreach (range(1, 204) as $id) {
+            $this->source($id, [1 => 'Complete.mkv', 2 => 'Complete.r10', 3 => 'Complete.sfv',
+                4 => 'Complete.par2', 5 => 'Complete.vol000+001.par2']);
+        }
+        $cleaning = \Mockery::mock(CollectionsCleaningService::class);
+        $cleaning->shouldNotReceive('collectionsCleaner');
+        $admission = new CollectionAdmission($cleaning);
+        foreach (['screen', 'lockAndScreen'] as $method) {
+            DB::flushQueryLog();
+            DB::enableQueryLog();
+            try {
+                $this->assertTrue(DB::transaction(fn (): bool => $admission->$method([1, 2], 1)));
+                foreach (DB::getQueryLog() as $query) {
+                    $this->assertStringNotContainsString('from "parts"', $query['query']);
+                }
+            } finally {
+                DB::disableQueryLog();
+                DB::flushQueryLog();
+            }
+        }
+        $this->assertSame(0, DB::table('reconciliation_admissions')->count());
+    }
+
+    public static function ineligibleSourceInventory(): array
+    {
+        return [['missing_segments'], ['complete_files'], ['invalid_ordinal'], ['no_files']];
+    }
+
+    #[DataProvider('ineligibleSourceInventory')]
+    public function test_locked_ineligible_sources_skip_neighbor_reads(string $case): void
+    {
+        $template = (array) DB::table('collections')->where('id', 1)->first();
+        for ($id = 3; $id <= 385; $id++) {
+            DB::table('collections')->insert(array_replace($template, ['id' => $id,
+                'collectionhash' => sha1('ineligible-neighbor:'.$id, true)]));
+        }
+        match ($case) {
+            'missing_segments' => DB::table('binaries')->update(['totalparts' => 3000, 'currentparts' => 3000]),
+            'complete_files' => DB::table('collections')->whereIn('id', [1, 2])->update(['declaredfiles' => 2]),
+            'invalid_ordinal' => DB::table('binaries')->update(['name' => '[06/05] - "Example.mkv" yEnc']),
+            'no_files' => DB::table('binaries')->delete(),
+        };
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        try {
+            $this->assertTrue(DB::transaction(fn (): bool => app(CollectionAdmission::class)->lockAndScreen([1, 2], 1)));
+            $queries = DB::getQueryLog();
+            $this->assertSame([], array_values(array_filter($queries,
+                static fn (array $query): bool => str_contains($query['query'], '"date" between'))));
+            $this->assertLessThan(20, count($queries));
+        } finally {
+            DB::disableQueryLog();
+            DB::flushQueryLog();
+        }
+        $this->assertSame(0, DB::table('reconciliation_admissions')->count());
+    }
+
+    public function test_source_inventory_rejection_is_rechecked_in_the_next_transaction(): void
+    {
+        $binary = (int) DB::table('binaries')->where('collections_id', 1)->value('id');
+        DB::table('binaries')->where('id', $binary)->update(['totalparts' => 2, 'currentparts' => 2]);
+        $this->assertTrue(DB::transaction(fn (): bool => app(CollectionAdmission::class)->lockAndScreen([1], 1)));
+        $this->assertSame(0, DB::table('reconciliation_admissions')->count());
+        DB::table('parts')->insert(['binaries_id' => $binary, 'partnumber' => 2,
+            'messageid' => 'late-source-segment@example.invalid', 'size' => 100]);
+        $this->assertTrue(DB::transaction(fn (): bool => app(CollectionAdmission::class)->lockAndScreen([1], 1)));
+        $this->assertSame([1, 2], DB::table('reconciliation_admissions')->orderBy('collection_id')->pluck('collection_id')->all());
+    }
+
+    public function test_source_inventory_rejection_does_not_bypass_existing_ownership(): void
+    {
+        DB::table('binaries')->update(['totalparts' => 3000, 'currentparts' => 3000]);
+        foreach ([1, 2] as $id) {
+            DB::table('reconciliation_admissions')->insert(['collection_id' => $id, 'decision_id' => 'protected-inventory-'.$id,
+                'revision' => 'protected', 'admitted_at' => now(), 'expires_at' => now()->addHours(1), 'state' => 'admitted']);
+        }
+        $before = [DB::table('collections')->get(), DB::table('binaries')->get(), DB::table('parts')->get()];
+        $this->assertSame(0, app(CollectionCleanupService::class)->deleteCollectionsAndDescendants([1, 2]));
+        $this->assertEquals($before, [DB::table('collections')->get(), DB::table('binaries')->get(), DB::table('parts')->get()]);
+        $this->assertTrue(CollectionOwnership::protects(1));
+        $this->assertTrue(CollectionOwnership::protects(2));
+    }
+
+    public function test_neighbor_inventory_can_become_eligible_after_the_source_inventory_read(): void
+    {
+        $binary = (int) DB::table('binaries')->where('collections_id', 2)->value('id');
+        DB::table('binaries')->where('id', $binary)->update(['totalparts' => 2, 'currentparts' => 2]);
+        $arrived = false;
+        DB::listen(static function (QueryExecuted $query) use (&$arrived, $binary): void {
+            if (! $arrived && str_starts_with($query->sql, 'select "binaries_id", "partnumber" from "parts"')) {
+                $arrived = true;
+                DB::table('parts')->insert(['binaries_id' => $binary, 'partnumber' => 2,
+                    'messageid' => 'late-neighbor-segment@example.invalid', 'size' => 100]);
+            }
+        });
+        $this->assertTrue(DB::transaction(fn (): bool => app(CollectionAdmission::class)->lockAndScreen([1], 1)));
+        $this->assertTrue($arrived);
+        $this->assertSame([1, 2], DB::table('reconciliation_admissions')->orderBy('collection_id')->pluck('collection_id')->all());
+    }
+
+    public function test_source_inventory_preselection_does_not_cache_a_quietness_rejection(): void
+    {
+        DB::table('collections')->update(['dateadded' => '2026-01-01 11:30:00']);
+        $advanced = false;
+        DB::listen(function (QueryExecuted $query) use (&$advanced): void {
+            if (! $advanced && str_starts_with($query->sql, 'select "binaries_id", "partnumber" from "parts"')) {
+                $advanced = true;
+                $this->travel(2)->hours();
+            }
+        });
+        $this->assertTrue(DB::transaction(fn (): bool => app(CollectionAdmission::class)->lockAndScreen([1], 1)));
+        $this->assertTrue($advanced);
+        $this->assertSame([1, 2], DB::table('reconciliation_admissions')->orderBy('collection_id')->pluck('collection_id')->all());
+    }
+
+    public static function largeSourceInventories(): array
+    {
+        return [[1025, false], [1025, true], [1, true]];
+    }
+
+    #[DataProvider('largeSourceInventories')]
+    public function test_source_part_probe_overflow_preserves_the_original_population_path(int $declaredParts, bool $crowded): void
+    {
+        $binary = (int) DB::table('binaries')->where('collections_id', 1)->value('id');
+        DB::table('binaries')->where('id', $binary)->update(['totalparts' => $declaredParts]);
+        $parts = [];
+        foreach (range(2, 1025) as $part) {
+            $parts[] = ['binaries_id' => $binary, 'partnumber' => $part,
+                'messageid' => 'large-source-'.$part.'@example.invalid', 'size' => 100];
+        }
+        DB::table('parts')->insert($parts);
+        if ($crowded) {
+            $template = (array) DB::table('collections')->where('id', 1)->first();
+            for ($id = 3; $id <= 257; $id++) {
+                DB::table('collections')->insert(array_replace($template, ['id' => $id,
+                    'collectionhash' => sha1('large-inventory-neighbor:'.$id, true)]));
+            }
+        }
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        try {
+            $this->assertTrue(DB::transaction(fn (): bool => app(CollectionAdmission::class)->lockAndScreen([1], 1)));
+            $queries = DB::getQueryLog();
+            $this->assertNotEmpty(array_filter($queries,
+                static fn (array $query): bool => str_contains($query['query'], '"date" between')));
+            $probes = array_values(array_filter($queries,
+                static fn (array $query): bool => str_starts_with($query['query'], 'select "binaries_id", "partnumber" from "parts"')));
+            $this->assertCount(1, $probes);
+            $this->assertStringEndsWith('limit 1025', $probes[0]['query']);
+            if ($crowded) {
+                $this->assertSame([], array_values(array_filter($queries,
+                    static fn (array $query): bool => str_contains($query['query'], 'COUNT(*) AS held'))));
+            }
+        } finally {
+            DB::disableQueryLog();
+            DB::flushQueryLog();
+        }
+        $this->assertSame($crowded ? [] : [1, 2], DB::table('reconciliation_admissions')->orderBy('collection_id')->pluck('collection_id')->all());
+    }
+
+    public function test_complete_neighbors_are_not_aggregated_while_valid_fragment_partners_remain_eligible(): void
+    {
+        $this->source(3, [1 => 'Complete.mkv', 2 => 'Complete.r10', 3 => 'Complete.sfv',
+            4 => 'Complete.par2', 5 => 'Complete.vol000+001.par2']);
+        $completeIds = DB::table('binaries')->where('collections_id', 3)->pluck('id')->all();
+        $fragmentIds = DB::table('binaries')->whereIn('collections_id', [1, 2])->pluck('id')->all();
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        try {
+            $this->assertSame([1, 2], app(CollectionAdmission::class)->eligibleIds([1, 2, 3], 1));
+            $aggregates = array_filter(DB::getQueryLog(), static fn (array $query): bool => str_contains($query['query'], 'COUNT(*) AS held'));
+            $this->assertNotEmpty($aggregates);
+            foreach ($aggregates as $query) {
+                $this->assertSame([], array_values(array_intersect($completeIds, $query['bindings'])));
+                $this->assertSame($fragmentIds, array_values(array_intersect($fragmentIds, $query['bindings'])));
+            }
+        } finally {
+            DB::disableQueryLog();
+            DB::flushQueryLog();
+        }
+        $this->assertTrue(DB::transaction(fn (): bool => app(CollectionAdmission::class)->lockAndScreen([1, 2], 1)));
+        $this->assertSame([1, 2], DB::table('reconciliation_admissions')->orderBy('collection_id')->pluck('collection_id')->all());
+    }
+
+    public function test_complete_sources_still_count_toward_the_raw_binary_limit(): void
+    {
+        $this->source(3, [1 => 'Complete.mkv', 2 => 'Complete.r10', 3 => 'Complete.sfv',
+            4 => 'Complete.par2', 5 => 'Complete.vol000+001.par2']);
+        $binary = (array) DB::table('binaries')->where('collections_id', 3)->first();
+        unset($binary['id']);
+        DB::table('binaries')->insert(array_fill(0, 1015, $binary));
+
+        $this->assertNull(app(CollectionAdmission::class)->eligibleIds([1, 2, 3], 1));
+        $this->assertSame(0, DB::table('reconciliation_admissions')->count());
     }
 
     public function test_artifact_population_overflow_defers_then_can_retry_after_population_shrinks(): void
@@ -442,6 +658,54 @@ class SplitAdmissionTest extends TestCase
         $this->assertTrue(CollectionOwnership::protects(2));
     }
 
+    public static function boundedMutationAdmissionCases(): array
+    {
+        return [
+            'cleanup existing family' => [false, false],
+            'creation existing family' => [true, false],
+            'cleanup partner completed at mutation' => [false, true],
+            'creation partner completed at mutation' => [true, true],
+        ];
+    }
+
+    #[DataProvider('boundedMutationAdmissionCases')]
+    public function test_bounded_mutation_proves_and_admits_the_current_family_only_under_lock(bool $create, bool $latePart): void
+    {
+        DB::table('collections')->update(['filecheck' => 3, 'filesize' => 100]);
+        $arrived = false;
+        if ($latePart) {
+            $binary = DB::table('binaries')->where('collections_id', 2)->orderBy('id')->value('id');
+            $part = (array) DB::table('parts')->where('binaries_id', $binary)->first();
+            DB::table('parts')->where('id', $part['id'])->delete();
+            $this->app['events']->listen(TransactionBeginning::class, static function () use ($part, &$arrived): void {
+                if (! $arrived) {
+                    $arrived = true;
+                    DB::table('parts')->insert($part);
+                }
+            });
+        }
+        $populationReadLevels = [];
+        DB::listen(static function (QueryExecuted $query) use (&$populationReadLevels): void {
+            if (str_contains($query->sql, '"date" between')) {
+                $populationReadLevels[] = $query->connection->transactionLevel();
+            }
+        });
+
+        if ($create) {
+            $this->assertSame(['added' => 0, 'dupes' => 0], app(ReleaseCreationService::class)->createSelectedCollections(1, [1], false));
+        } else {
+            $this->assertSame(0, app(CollectionCleanupService::class)->deleteCollectionsAndDescendants([1]));
+        }
+
+        $this->assertSame($latePart, $arrived);
+        $this->assertNotEmpty($populationReadLevels);
+        $this->assertNotContains(0, $populationReadLevels, 'Explicit bounded mutations must not repeat the locked population proof as an unlocked preflight.');
+        $this->assertSame([1, 2], DB::table('reconciliation_admissions')->where('state', 'admitted')->orderBy('collection_id')->pluck('collection_id')->all());
+        $this->assertSame([3, 3], DB::table('collections')->orderBy('id')->pluck('filecheck')->all());
+        $this->assertSame(5, DB::table('parts')->count());
+        $this->assertSame(0, DB::table('releases')->count());
+    }
+
     public function test_candidate_cap_preserves_the_pair_and_allows_ordinary_progress(): void
     {
         DB::table('collections')->where('id', 1)->update(['id' => 101, 'collectionhash' => sha1('101', true)]);
@@ -504,6 +768,7 @@ class SplitAdmissionTest extends TestCase
             'time' => DB::table('collections')->where('id', 2)->update(['date' => '2026-01-01 10:30:01']),
             'family' => DB::table('binaries')->where('collections_id', 2)->update(['name' => '[02/05] - "Unrelated.r10" yEnc']),
             'overlap' => DB::table('binaries')->where('collections_id', 2)->where('filenumber', 2)->update(['name' => '[01/05] - "example.r10" yEnc']),
+            'out-of-range' => DB::table('binaries')->where('collections_id', 2)->where('filenumber', 2)->update(['name' => '[06/05] - "example.r10" yEnc']),
             'not-quiet' => DB::table('collections')->where('id', 2)->update(['last_seen_head_postdate' => '2026-01-01 12:00:00']),
         };
         app(CollectionAdmission::class)->screen([1, 2], 1);
@@ -514,7 +779,7 @@ class SplitAdmissionTest extends TestCase
     /** @return iterable<string, array{string}> */
     public static function ineligibleCases(): iterable
     {
-        foreach (['gap', 'poster', 'count', 'time', 'family', 'overlap', 'not-quiet'] as $case) {
+        foreach (['gap', 'poster', 'count', 'time', 'family', 'overlap', 'out-of-range', 'not-quiet'] as $case) {
             yield $case => [$case];
         }
     }

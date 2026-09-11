@@ -72,6 +72,7 @@ final readonly class ArtifactReleaseUpdate
         }
         $result = $this->result;
         if (in_array($this->kind, ['repair', 'rescan'], true)) {
+            $values['size'] = ArtifactInventory::load($xml)->bytes();
             $prefix = $this->kind;
             $outcome = $values[$prefix.'_outcome'] ?? null;
             $target = $values[$prefix.'_evaluated_target_completion'] ?? null;

@@ -489,13 +489,18 @@ class NzbService
     private function loadNzbRowPage(int $releaseId, array $cursor): array
     {
         $limit = $this->binariesConfig->nzbStreamRows;
+        $sources = in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)
+            ? 'FROM collections c FORCE INDEX (ix_collection_releaseid)
+               STRAIGHT_JOIN binaries b FORCE INDEX (ix_binaries_collection_filenumber) ON b.collections_id = c.id
+               STRAIGHT_JOIN parts p FORCE INDEX (PRIMARY) ON p.binaries_id = b.id'
+            : 'FROM collections c
+               INNER JOIN binaries b ON b.collections_id = c.id
+               INNER JOIN parts p ON p.binaries_id = b.id';
 
         return DB::select(
             'SELECT b.collections_id AS collection_id, b.id AS binary_id, b.name AS binary_name,
                     b.totalparts, p.messageid, p.size, p.partnumber
-             FROM binaries b
-             INNER JOIN collections c ON c.id = b.collections_id
-             INNER JOIN parts p ON p.binaries_id = b.id
+             '.$sources.'
              WHERE c.releases_id = ? AND (
                 b.collections_id > ? OR
                 (b.collections_id = ? AND b.name > ?) OR

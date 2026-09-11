@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Releases;
 
 use App\Support\DatabaseClock;
+use App\Support\SchemaCapabilities;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 final class CollectionQuietPredicate
 {
@@ -14,12 +14,12 @@ final class CollectionQuietPredicate
     public static function build(int $hours, string $alias = 'collections', string $legacyColumn = 'dateadded', bool $currentRead = false): array
     {
         $cutoff = DatabaseClock::cutoff(now()->subHours($hours));
-        $clock = Schema::hasColumn('collections', 'last_seen_at')
+        $clock = SchemaCapabilities::hasColumn('collections', 'last_seen_at')
             ? "COALESCE({$alias}.last_seen_at, {$alias}.dateadded, {$alias}.added)"
             : "{$alias}.{$legacyColumn}";
         $wall = $clock.' < '.$cutoff['sql'];
-        if (! Schema::hasColumns('collections', ['last_seen_head_postdate', 'last_seen_tail_postdate'])
-            || ! Schema::hasColumn('usenet_groups', 'backfill_settled_at')) {
+        if (! SchemaCapabilities::hasColumns('collections', ['last_seen_head_postdate', 'last_seen_tail_postdate'])
+            || ! SchemaCapabilities::hasColumn('usenet_groups', 'backfill_settled_at')) {
             return ['sql' => $wall, 'bindings' => $cutoff['bindings']];
         }
 

@@ -370,6 +370,36 @@ final class ReleaseDuplicateAbsorberTest extends TestCase
         $this->assertSame(100.0, (float) $anchor->fresh()->completion);
     }
 
+    public function test_reimporting_an_old_duplicate_reevaluates_the_artifact_after_an_intervening_replacement(): void
+    {
+        Search::shouldReceive('updateRelease')->zeroOrMoreTimes();
+        $anchor = $this->anchor();
+        $nzb = app(NzbService::class);
+        $original = $this->nzbXml('old@example.test', 1, 2);
+        $target = $this->nzbXml('new@example.test', 2, 2);
+        $this->writeStoredNzb($nzb, $anchor->guid, $original);
+        Schema::table('collections', function (Blueprint $table): void {
+            $table->unsignedInteger('groups_id')->default(1);
+            $table->timestamp('date')->nullable();
+        });
+        (require database_path('migrations/2026_09_08_121907_create_collection_reconciliation_tables.php'))->up();
+        (require database_path('migrations/2026_09_10_140952_create_reconciled_artifact_operations.php'))->up();
+        DB::table('reconciled_postings')->insert(['release_id' => $anchor->id, 'digest' => str_repeat('a', 64),
+            'state' => 'published', 'inventory' => '[]', 'decision' => '{}', 'artifact_digest' => hash('sha256', $original)]);
+        $absorber = app(ReleaseDuplicateAbsorber::class);
+        $this->assertSame(DuplicateAbsorbOutcome::Absorbed, $absorber->absorbXml($anchor, $target, 2000, 1, 100.0)->outcome);
+        $this->assertTrue(app(ArtifactPublication::class)->replace($anchor->guid, $original)->success);
+        $this->assertSame(50.0, (float) $anchor->fresh()->completion);
+
+        $result = $absorber->absorbXml($anchor->fresh(), $target, 2000, 1, 100.0);
+
+        $this->assertSame(DuplicateAbsorbOutcome::Absorbed, $result->outcome);
+        $this->assertSame($target, $nzb->readNzbContents($anchor->guid));
+        $this->assertSame(100.0, (float) $anchor->fresh()->completion);
+        $this->assertSame(3, DB::table('reconciled_artifact_operations')->count());
+        $this->assertSame(4, (int) DB::table('reconciled_artifacts')->value('version'));
+    }
+
     private function anchor(int $nzbstatus = NzbService::NZB_ADDED): Release
     {
         DB::table('releases')->insert([

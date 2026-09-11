@@ -467,6 +467,7 @@ class ReleaseRepairServiceTest extends TestCase
     public function test_reconciled_repair_replays_recorded_result_after_rename_crash(): void
     {
         $release = $this->releaseWithNzb(1, completion: 40.0, segments: [1 => 1, 3 => 3]);
+        DB::table('releases')->where('id', $release->id)->update(['size' => 1800]);
         (require database_path('migrations/2026_09_08_121907_create_collection_reconciliation_tables.php'))->up();
         (require database_path('migrations/2026_09_10_140952_create_reconciled_artifact_operations.php'))->up();
         DB::table('reconciled_postings')->insert(['release_id' => $release->id, 'digest' => str_repeat('a', 64),
@@ -483,6 +484,7 @@ class ReleaseRepairServiceTest extends TestCase
             });
         $this->assertNull($this->service()->repair($release, new ReleaseRepairOptions)->outcome);
         $this->assertNull($this->storedOutcome(1));
+        $this->assertSame(1800, (int) $release->fresh()->size);
         $this->app->instance(ArtifactPublication::class, new ArtifactPublication);
         $this->providerArticles = [];
         $result = $this->service()->repair($release->fresh(), new ReleaseRepairOptions);
@@ -490,7 +492,11 @@ class ReleaseRepairServiceTest extends TestCase
         $this->assertSame(3, $result->segmentsAdded);
         $this->assertSame('repaired', $this->storedOutcome(1));
         $this->assertSame(100.0, (float) $release->fresh()->completion);
+        $this->assertSame(4500, (int) $release->fresh()->size);
         $this->assertSame(1, DB::table('reconciled_artifact_operations')->count());
+        $receipt = DB::table('reconciled_artifact_operations')->value('id');
+        $this->assertTrue(app(ArtifactPublication::class)->execute($receipt)->success);
+        $this->assertSame(4500, (int) $release->fresh()->size);
     }
 
     private function service(): ReleaseRepairService
@@ -659,6 +665,7 @@ class ReleaseRepairServiceTest extends TestCase
             recovery_claimed_at DATETIME NULL,
             postdate DATETIME NULL,
             totalpart INTEGER NOT NULL DEFAULT 0,
+            size INTEGER NOT NULL DEFAULT 0,
             haspreview INTEGER NOT NULL DEFAULT -1,
             passwordstatus INTEGER NOT NULL DEFAULT -1,
             pp_timeout_count INTEGER NOT NULL DEFAULT 2,

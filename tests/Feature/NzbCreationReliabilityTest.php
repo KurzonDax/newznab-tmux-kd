@@ -81,6 +81,41 @@ class NzbCreationReliabilityTest extends TestCase
         $this->assertSame('claimed', DB::table('releases')->where('id', 1)->value('nzb_creation_claim_token'));
     }
 
+    public function test_pending_nzb_cursor_passes_a_claimed_page_without_claiming_outside_that_page(): void
+    {
+        $this->prepareFinalizationSchema();
+        Carbon::setTestNow('2026-07-13 12:00:00 UTC');
+        foreach (range(1, 128) as $id) {
+            $this->insertRelease($id, dechex($id), claimedAt: now());
+        }
+        $this->insertRelease(129, 'z');
+        $this->insertRelease(130, 'u');
+        DB::table('releases')->where('id', 130)->update(['groups_id' => 2]);
+        $this->insertWritableCbp(1, 1, 129);
+        Search::shouldReceive('updateRelease')->zeroOrMoreTimes();
+        $service = (new ReleaseProcessingService(
+            nzb: app(NzbService::class),
+            releaseManagement: new DatabaseOnlyReleaseManagementService,
+            collectionCleanupService: app(CollectionCleanupService::class),
+        ))->setEchoCLI(false);
+        $publish = new \ReflectionMethod($service, 'publishPendingPage');
+        $totals = ['releases' => 0, 'nzbs' => 0, 'dupes' => 0, 'iterations' => 0];
+        $publish->invokeArgs($service, [1, &$totals]);
+        $this->assertSame(0, $totals['nzbs']);
+        $this->assertSame(128, (int) DB::table('collection_sweep_cursors')
+            ->where('scope', 'formation:nzb:group:1')->value('last_id'));
+        $this->assertNull(DB::table('releases')->where('id', 129)->value('nzb_creation_claim_token'));
+        $this->assertSame(NzbService::NZB_NONE, (int) DB::table('releases')->where('id', 129)->value('nzbstatus'));
+
+        $publish->invokeArgs($service, [1, &$totals]);
+        $this->assertSame(1, $totals['nzbs']);
+        $this->assertSame(NzbService::NZB_ADDED, (int) DB::table('releases')->where('id', 129)->value('nzbstatus'));
+        $this->assertSame(128, DB::table('releases')->where('nzb_creation_claim_token', 'claimed')->count());
+        $this->assertSame(NzbService::NZB_NONE, (int) DB::table('releases')->where('id', 130)->value('nzbstatus'));
+        $this->assertNull(DB::table('releases')->where('id', 130)->value('nzb_creation_claim_token'));
+        $this->assertStringContainsString('binary1-part1@example.test', app(NzbService::class)->readNzbContents(str_repeat('z', 36)));
+    }
+
     public function test_finalization_handles_pending_nzbs_without_collections_and_preserves_fresh_claims(): void
     {
         $this->prepareFinalizationSchema();

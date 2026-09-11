@@ -69,6 +69,7 @@ class StandardNameSweepAdmissionTest extends TestCase
             foreach ([false, true] as $enabled) {
                 config(['nntmux_srrdb.enabled' => $enabled]);
                 $this->assertSame($reference->standardCandidateCount(), $current->standardCandidateCount());
+                $this->assertSame($reference->standardCandidateCount() > 0, $current->hasStandardCandidates());
                 foreach (str_split('0123456789abcdef') as $bucket) {
                     foreach ([3, 1000] as $limit) {
                         $this->assertEquals($reference->standardCandidateBatch($bucket, $limit), $current->standardCandidateBatch($bucket, $limit));
@@ -113,8 +114,30 @@ class StandardNameSweepAdmissionTest extends TestCase
             'segment_number' => 1, 'segment_offset' => 0, 'observed_segments' => 1, 'declared_segments' => 1,
             'segment_numbers' => '[1]', 'fingerprint' => str_repeat('b', 64), 'captured_at' => now(),
         ]);
-        $this->assertSame(1, (new NameFixingQueryService)->standardCandidateCount());
+        $queries = new NameFixingQueryService;
+        $this->assertSame(1, $queries->standardCandidateCount());
+        $this->assertTrue($queries->hasStandardCandidates());
         $this->assertSame([], $this->candidateIds());
+        DB::table('payload_prefix_hashes')->update(['retry_at' => now()->addHour()]);
+        $this->assertFalse($queries->hasStandardCandidates());
+        DB::table('payload_prefix_hashes')->update(['retry_at' => now()->subSecond()]);
+        $this->assertTrue($queries->hasStandardCandidates());
+    }
+
+    public function test_due_sidecar_operations_alone_wake_the_sweep(): void
+    {
+        DB::statement('CREATE TABLE payload_prefix_hashes (state TEXT, retry_at TEXT)');
+        DB::statement('CREATE TABLE par2_sidecar_operations (phase TEXT, retry_at TEXT)');
+        DB::table('par2_sidecar_operations')->insert(['phase' => 'selected', 'retry_at' => now()->addHour()]);
+        $service = new NameFixingQueryService;
+        $this->assertFalse($service->hasStandardCandidates());
+        $this->assertSame(0, $service->standardCandidateCount());
+        DB::table('par2_sidecar_operations')->update(['retry_at' => null]);
+        $this->assertTrue($service->hasStandardCandidates());
+        $this->assertSame(1, $service->standardCandidateCount());
+        DB::table('par2_sidecar_operations')->update(['phase' => 'done']);
+        $this->assertFalse($service->hasStandardCandidates());
+        $this->assertSame(0, $service->standardCandidateCount());
     }
 
     #[Test]
@@ -368,25 +391,35 @@ class StandardNameSweepAdmissionTest extends TestCase
     }
 
     #[Test]
-    public function the_fix_names_pane_gate_is_the_sweeps_own_count(): void
+    public function the_fix_names_pane_gate_uses_fresh_availability_without_counting_the_union(): void
     {
         $this->insertRelease(1, ['proc_uid' => 0]);
         $this->insertMediaInfo(1);
         $this->insertRelease(2, ['categories_id' => Category::MOVIE_HD, 'proc_crc32' => 0]);
         $this->insertRelease(3, ['nfostatus' => 1]);
 
-        $this->assertSame(2, $this->collectedProcessRenames());
+        DB::enableQueryLog();
+        try {
+            $this->assertSame(1, $this->collectedNameAvailability());
+            $queries = DB::getQueryLog();
+        } finally {
+            DB::disableQueryLog();
+            DB::flushQueryLog();
+        }
+        foreach ($queries as $query) {
+            $this->assertStringNotContainsString('name_seed', $query['query']);
+        }
 
         DB::table('releases')->whereIn('id', [1, 2])->update(['isrenamed' => 1]);
 
-        $this->assertSame(0, $this->collectedProcessRenames());
+        $this->assertSame(0, $this->collectedNameAvailability());
     }
 
     /**
-     * The `processrenames` value tmux's Fix Names pane gates on, as the monitor
+     * The fresh availability value tmux's Fix Names pane gates on, as the monitor
      * collects it.
      */
-    private function collectedProcessRenames(): int
+    private function collectedNameAvailability(): int
     {
         // The rest of the aggregate stats query needs the full releases schema and
         // MySQL's IF(); only the derived rename gate is under test here.
@@ -398,7 +431,37 @@ class StandardNameSweepAdmissionTest extends TestCase
 
         (new ReflectionMethod(TmuxMonitorService::class, 'getProcessCounts'))->invoke($monitor);
 
-        return (int) $runVar->getValue($monitor)['counts']['now']['processrenames'];
+        return (int) $runVar->getValue($monitor)['counts']['now']['name_work_available'];
+    }
+
+    public function test_availability_and_batches_both_honor_recovery_initialization_and_retry_gates(): void
+    {
+        DB::statement('CREATE TABLE obfuscation_recovery_publications (
+            releases_id INTEGER, state TEXT, initialization_state TEXT,
+            enrichment_outcome TEXT, enrichment_next_attempt_at TEXT)');
+        $this->insertRelease(1, ['proc_files' => 0]);
+        $this->insertRelease(2, ['proc_uid' => 0]);
+        $this->insertMediaInfo(2);
+        foreach ([1, 2] as $id) {
+            DB::table('obfuscation_recovery_publications')->insert([
+                'releases_id' => $id, 'state' => 'published', 'initialization_state' => 'pending',
+            ]);
+        }
+        $service = new NameFixingQueryService;
+        $this->assertFalse($service->hasStandardCandidates());
+        $this->assertSame(0, $service->standardCandidateCount());
+        $this->assertSame([], $this->candidateIds());
+        DB::table('obfuscation_recovery_publications')->update([
+            'initialization_state' => 'done', 'enrichment_outcome' => 'enrichment_pending',
+            'enrichment_next_attempt_at' => now()->addHour(),
+        ]);
+        $this->assertFalse($service->hasStandardCandidates());
+        DB::table('obfuscation_recovery_publications')->where('releases_id', 2)->update([
+            'enrichment_next_attempt_at' => now()->subSecond(),
+        ]);
+        $this->assertTrue($service->hasStandardCandidates());
+        $this->assertSame([2], $this->candidateIds());
+        $this->assertSame(1, $service->standardCandidateCount());
     }
 
     /** @return list<int> */
@@ -414,7 +477,7 @@ class StandardNameSweepAdmissionTest extends TestCase
      * Insert a release with every source consumed, then apply the overrides that
      * make the case under test.
      *
-     * @param  array<string, int>  $overrides
+     * @param  array<string, int|string>  $overrides
      */
     private function insertRelease(int $id, array $overrides = []): void
     {

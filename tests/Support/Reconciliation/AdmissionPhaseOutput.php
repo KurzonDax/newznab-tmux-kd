@@ -24,7 +24,8 @@ final class AdmissionPhaseOutput extends Output
 
     protected function doWrite(string $message, bool $newline): void
     {
-        foreach (['Finding Complete Collections' => 'completeness',
+        foreach (['Formation group ' => 'formation',
+            'Finding Complete Collections' => 'completeness',
             'Calculating Collection Sizes' => 'sizing',
             'Filtering Collections by Size/File Count' => 'filtering',
             'Create releases from complete collections.' => 'creation',

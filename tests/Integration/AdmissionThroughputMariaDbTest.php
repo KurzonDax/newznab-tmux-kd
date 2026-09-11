@@ -7,6 +7,7 @@ namespace Tests\Integration;
 use App\Console\Commands\ProcessReleasesCommand;
 use App\Facades\Search;
 use App\Models\Settings;
+use App\Services\Binaries\BinariesConfig;
 use App\Services\CollectionCleanupService;
 use App\Services\CollectionReconciliation\CollectionAdmission;
 use App\Services\CollectionReconciliation\CollectionOwnership;
@@ -14,6 +15,7 @@ use App\Services\CollectionReconciliation\PopulationQuery;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseCreationService;
 use App\Services\ReleaseProcessingService;
+use App\Services\Releases\CollectionArticleRangeMeasurer;
 use Carbon\Carbon;
 use Database\Seeders\CategoriesTableSeeder;
 use Database\Seeders\RootCategoriesTableSeeder;
@@ -28,6 +30,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Termwind\Termwind;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\Reconciliation\AdmissionMariaDbFixture;
@@ -165,13 +168,16 @@ final class AdmissionThroughputMariaDbTest extends TestCase
         }
     }
 
+    #[Group('admission-scale')]
     public function test_all_valid_group_worker_publishes_one_thousand_named_nzbs(): void
     {
         AdmissionMariaDbFixture::collections(1, 1000, 1);
-        $worker = $this->runGroupWorker();
-        fwrite(STDERR, 'ADMISSION_WORKER='.json_encode(['fixture' => 'all-valid'] + $worker, JSON_THROW_ON_ERROR).PHP_EOL);
-        $this->assertSame(0, $worker['exit'], Artisan::output());
-        $this->assertLessThan(1800, $worker['seconds']);
+        for ($cycle = 0; $cycle < 40 && DB::table('releases')->where('nzbstatus', 1)->count() < 1000; $cycle++) {
+            $worker = $this->runGroupWorker();
+            fwrite(STDERR, 'ADMISSION_WORKER='.json_encode(['fixture' => 'all-valid'] + $worker, JSON_THROW_ON_ERROR).PHP_EOL);
+            $this->assertSame(0, $worker['exit'], Artisan::output());
+            $this->assertLessThan(1800, $worker['seconds']);
+        }
         app(ReleaseProcessingService::class)->setEchoCLI(false)->deleteCollections(1);
         $this->assertSame(1000, DB::table('releases')->where('nzbstatus', 1)->where('searchname', 'like', 'Synthetic.Series.S01E%.1080p.TEST')->count());
         $this->assertSame(0, DB::table('collections')->count());
@@ -180,7 +186,33 @@ final class AdmissionThroughputMariaDbTest extends TestCase
         $this->assertNamedNzbs(1000);
     }
 
-    public function test_worker_reports_real_phase_timings_and_exact_nzb_contents(): void
+    public function test_default_limit_publishes_before_completeness_exhaustion_and_resumes_past_five_hundred(): void
+    {
+        DB::table('settings')->where('name', 'maxnzbsprocessed')->update(['value' => '1000']);
+        Settings::forgetCachedSettings();
+        $this->app->forgetInstance(ReleaseProcessingService::class);
+        Artisan::registerCommand(new ProcessReleasesCommand(app(ReleaseProcessingService::class)->setEchoCLI(false)));
+        AdmissionMariaDbFixture::collections(1, 1001, 1);
+        $remainingAtFirstPublication = null;
+        DB::listen(function (QueryExecuted $event) use (&$remainingAtFirstPublication): void {
+            if ($remainingAtFirstPublication === null && str_starts_with(strtolower($event->sql), 'update `releases`')
+                && str_contains($event->sql, '`nzbstatus`')
+                && DB::table('releases')->where('nzbstatus', 1)->exists()) {
+                $remainingAtFirstPublication = DB::table('collections')->where('filecheck', 2)->count();
+            }
+        });
+        $this->assertSame(0, Artisan::call('releases:process', ['groupId' => 1, '--orchestrated' => true]));
+        $this->assertNotNull($remainingAtFirstPublication);
+        $this->assertGreaterThan(500, $remainingAtFirstPublication,
+            'The first real named NZB must be published while the rest of the group still awaits sizing.');
+        for ($cycle = 0; $cycle < 20 && DB::table('releases')->where('nzbstatus', 1)->count() < 1001; $cycle++) {
+            $this->assertSame(0, Artisan::call('releases:process', ['groupId' => 1, '--orchestrated' => true]));
+        }
+        $this->assertSame(1001, DB::table('releases')->where('nzbstatus', 1)->count());
+        $this->assertNamedNzbs(1001);
+    }
+
+    public function test_worker_reports_real_progress_and_exact_nzb_contents(): void
     {
         AdmissionMariaDbFixture::collections(1, 3, 1);
         $worker = $this->runGroupWorker();
@@ -188,6 +220,47 @@ final class AdmissionThroughputMariaDbTest extends TestCase
         $this->assertNamedNzbs(3);
     }
 
+    public function test_selected_sizing_and_quality_filters_do_not_scan_unrelated_sources(): void
+    {
+        AdmissionMariaDbFixture::collections(1, 1000, 1);
+        DB::table('collections')->whereBetween('id', [1, 8])->update(['filecheck' => 3, 'filesize' => 2097152]);
+        $active = false;
+        $before = 0;
+        $reads = [];
+        DB::connection()->beforeExecuting(function (string $sql) use (&$active, &$before): void {
+            if ($active && (str_contains($sql, 'having COUNT(b.id)')
+                || str_starts_with($sql, 'select `id` from `collections`'))) {
+                $before = AdmissionTelemetry::handlerReads();
+            }
+        });
+        DB::listen(function (QueryExecuted $event) use (&$active, &$before, &$reads): void {
+            if ($active && (str_contains($event->sql, 'having COUNT(b.id)')
+                || str_starts_with($event->sql, 'select `id` from `collections`'))) {
+                $reads[] = AdmissionTelemetry::handlerReads() - $before;
+            }
+        });
+        foreach ([1000, 100000] as $population) {
+            if ($population === 100000) {
+                AdmissionMariaDbFixture::collections(1001, 99000, 1);
+            }
+            DB::table('collections')->whereBetween('id', [1, 8])->update(['filecheck' => 2]);
+            $active = true;
+            try {
+                app(ReleaseProcessingService::class)->setEchoCLI(false)->processCollectionSizes(1, range(1, 8));
+                app(ReleaseProcessingService::class)->setEchoCLI(false)->deleteUnwantedCollections(1, range(1, 8));
+            } finally {
+                $active = false;
+            }
+            $this->assertSame($population, DB::table('collections')->count());
+            $this->assertSame(8, DB::table('collections')->where('filecheck', 3)->count());
+        }
+        $this->assertGreaterThanOrEqual(4, count($reads));
+        foreach ($reads as $count) {
+            $this->assertLessThan(500, $count, 'Eight selected sources must bound selection and the binary-side PAR2 check.');
+        }
+    }
+
+    #[Group('admission-scale')]
     public function test_entire_worker_drains_one_hundred_thousand_sources_with_concurrent_arrivals(): void
     {
         AdmissionMariaDbFixture::collections(1, 100000);
@@ -231,7 +304,7 @@ final class AdmissionThroughputMariaDbTest extends TestCase
         });
         $cycles = [];
         try {
-            for ($cycle = 0; $cycle < 3; $cycle++) {
+            for ($cycle = 0; $cycle < 200; $cycle++) {
                 $worker = $this->runGroupWorker();
                 $remaining = DB::table('collections')->where('id', '<=', 103000)->count();
                 $cycles[] = $worker + ['cycle' => $cycle + 1, 'remaining_before_finalization' => $remaining,
@@ -243,7 +316,6 @@ final class AdmissionThroughputMariaDbTest extends TestCase
                 app(ReleaseProcessingService::class)->setEchoCLI(false)->deleteCollections(1);
                 $remaining = DB::table('collections')->where('id', '<=', 103000)->count();
                 if ($cycle === 0) {
-                    $this->assertSame(3, $bursts);
                     $this->assertLessThan(100000, $remaining);
                 }
                 if ($remaining === 0) {
@@ -254,6 +326,7 @@ final class AdmissionThroughputMariaDbTest extends TestCase
             $active = false;
             DB::disconnect('admission_writer');
         }
+        $this->assertSame(3, $bursts);
         $this->assertEquals($protected, $this->protectedTrees());
         $this->assertSame(0, DB::table('collections')->where('id', '<=', 103000)->count());
         $this->assertSame(0, DB::table('binaries')->where('collections_id', '<=', 103000)->count());
@@ -289,7 +362,7 @@ final class AdmissionThroughputMariaDbTest extends TestCase
         $metrics = $telemetry->finish();
         $phases = $output->finish();
         if ($exit === 0) {
-            foreach (['completeness', 'sizing', 'filtering', 'creation', 'nzb'] as $phase) {
+            foreach (['formation'] as $phase) {
                 $this->assertArrayHasKey($phase, $phases);
             }
         }
@@ -448,6 +521,8 @@ final class AdmissionThroughputMariaDbTest extends TestCase
     public function test_current_overflow_proofs_revalidate_witness_changes_and_hold_locks_until_commit(string $change): void
     {
         AdmissionMariaDbFixture::collections(1, 257);
+        DB::table('collections')->update(['declaredfiles' => 3]);
+        DB::table('binaries')->where('collections_id', '<=', 8)->update(['name' => DB::raw("REPLACE(name, '/02]', '/03]')")]);
         $queries = new PopulationQuery;
         $ids = range(1, 8);
         $sources = DB::table('collections')->whereIn('id', $ids)->orderBy('id')->get();
@@ -618,9 +693,153 @@ final class AdmissionThroughputMariaDbTest extends TestCase
 
     public function test_discovery_remains_bounded_with_tenfold_matching_and_unrelated_growth(): void
     {
+        $this->assertDiscoveryRemainsBounded(1000, 10000);
+    }
+
+    #[Group('admission-scale')]
+    public function test_discovery_remains_bounded_at_one_million_background_collections(): void
+    {
+        $this->assertDiscoveryRemainsBounded(100000, 1000000);
+    }
+
+    public function test_nzb_stream_and_article_ranges_ignore_unrelated_parts_growth(): void
+    {
+        DB::table('usenet_groups')->insert(['id' => 2, 'name' => 'alt.binaries.background']);
+        AdmissionMariaDbFixture::collections(1, 8, 1);
+        DB::table('collections')->where('groups_id', 1)->update(['releases_id' => 1]);
+        $firstName = DB::table('binaries')->where('id', 3)->value('name');
+        DB::table('binaries')->where('id', 4)->update(['name' => $firstName]);
+        DB::table('binaries')->where('id', 3)->update(['totalparts' => 2, 'currentparts' => 2]);
+        DB::table('parts')->insert(['binaries_id' => 3, 'messageid' => 'extra-segment@example.invalid',
+            'number' => 901, 'partnumber' => 2, 'size' => 7]);
+        $writer = new NzbService(app(CollectionCleanupService::class), new BinariesConfig(nzbStreamRows: 3));
+        $pageMethod = new \ReflectionMethod(NzbService::class, 'loadNzbRowPage');
+        $metrics = [];
+        foreach ([1000, 100000] as $background) {
+            AdmissionMariaDbFixture::collections($background === 1000 ? 1001 : 2001,
+                $background === 1000 ? 1000 : 99000, 1, 2);
+            $before = AdmissionTelemetry::handlerReads();
+            $cursor = ['collection_id' => 0, 'name' => '', 'binary_id' => 0, 'partnumber' => 0];
+            $rows = [];
+            $pages = 0;
+            do {
+                $page = $pageMethod->invoke($writer, 1, $cursor);
+                foreach ($page as $row) {
+                    $rows[] = [(int) $row->collection_id, (int) $row->binary_id, (int) $row->partnumber, $row->messageid];
+                    $cursor = ['collection_id' => (int) $row->collection_id, 'name' => $row->binary_name,
+                        'binary_id' => (int) $row->binary_id, 'partnumber' => (int) $row->partnumber];
+                }
+                $pages++;
+            } while (count($page) === 3 && $pages < 10);
+            $metrics[$background]['stream_reads'] = AdmissionTelemetry::handlerReads() - $before;
+            $expectedRows = [];
+            foreach (range(1, 8) as $source) {
+                foreach ([1, 2] as $file) {
+                    $binary = $source * 2 + $file;
+                    $expectedRows[] = [$source, $binary, 1, 'synthetic-'.$source.'-'.$file.'@example.invalid'];
+                    if ($binary === 3) {
+                        $expectedRows[] = [$source, $binary, 2, 'extra-segment@example.invalid'];
+                    }
+                }
+            }
+            $this->assertSame($expectedRows, $rows);
+            $this->assertSame(6, $pages);
+            $before = AdmissionTelemetry::handlerReads();
+            $ranges = app(CollectionArticleRangeMeasurer::class)->measure(range(1, 8));
+            $metrics[$background]['range_reads'] = AdmissionTelemetry::handlerReads() - $before;
+            foreach (range(1, 8) as $source) {
+                $this->assertSame(['first' => $source * 2 + 1, 'last' => $source === 1 ? 901 : $source * 2 + 2], $ranges[$source]);
+            }
+            $this->assertLessThan(2000, $metrics[$background]['stream_reads']);
+            $this->assertLessThan(500, $metrics[$background]['range_reads']);
+        }
+        foreach (['stream_reads', 'range_reads'] as $metric) {
+            $this->assertLessThanOrEqual(2 * $metrics[1000][$metric] + 100, $metrics[100000][$metric]);
+        }
+        fwrite(STDERR, 'NZB_SCOPED_READS='.json_encode($metrics, JSON_THROW_ON_ERROR).PHP_EOL);
+    }
+
+    public function test_ineligible_source_inventory_reads_remain_bounded_as_matching_population_grows(): void
+    {
+        AdmissionMariaDbFixture::collections(1, 8, 1);
+        DB::table('collections')->update(['declaredfiles' => 3]);
+        DB::table('binaries')->update(['totalparts' => 3000, 'currentparts' => 3000,
+            'name' => DB::raw("REPLACE(name, '/02]', '/03]')")]);
+        $metrics = [];
+        foreach ([1000, 100000] as $background) {
+            AdmissionMariaDbFixture::collections($background === 1000 ? 1001 : 2001,
+                $background === 1000 ? 1000 : 99000, 1);
+            DB::table('collections')->where('id', '>', 8)->update(['declaredfiles' => 3]);
+            DB::flushQueryLog();
+            DB::enableQueryLog();
+            $before = AdmissionTelemetry::handlerReads();
+            try {
+                $this->assertTrue(DB::transaction(fn (): bool => app(CollectionAdmission::class)->lockAndScreen(range(1, 8), 2)));
+                $metrics[$background] = AdmissionTelemetry::handlerReads() - $before;
+                $queries = DB::getQueryLog();
+            } finally {
+                DB::disableQueryLog();
+                DB::flushQueryLog();
+            }
+            $this->assertLessThan(500, $metrics[$background]);
+            $this->assertSame([], array_values(array_filter($queries,
+                static fn (array $query): bool => str_contains($query['query'], '`date` between'))));
+            $probes = array_values(array_filter($queries,
+                static fn (array $query): bool => str_contains($query['query'], 'limit 1025')));
+            $this->assertCount(2, $probes);
+            foreach ($probes as $query) {
+                $this->assertStringEndsWith('for update', $query['query']);
+                $plan = DB::selectOne('EXPLAIN '.$query['query'], $query['bindings']);
+                $this->assertContains($plan->type, ['ref', 'range']);
+                $this->assertStringNotContainsString('filesort', (string) $plan->Extra);
+                $this->assertContains($plan->key, ['ix_binaries_collection_filenumber', 'PRIMARY']);
+            }
+        }
+        $this->assertLessThanOrEqual(2 * $metrics[1000] + 100, $metrics[100000]);
+        $this->assertSame(0, DB::table('reconciliation_admissions')->count());
+        fwrite(STDERR, 'SOURCE_INVENTORY_READS='.json_encode($metrics, JSON_THROW_ON_ERROR).PHP_EOL);
+    }
+
+    public function test_source_inventory_uses_current_reads_after_an_older_transaction_snapshot(): void
+    {
+        AdmissionMariaDbFixture::callerBatch('positive');
+        DB::table('binaries')->where('id', 1)->update(['totalparts' => 2, 'currentparts' => 2]);
+        config(['database.connections.inventory_peer' => config('database.connections.mariadb')]);
+        $peer = DB::connection('inventory_peer');
+        $peer->statement('SET SESSION innodb_lock_wait_timeout=1');
+        try {
+            DB::beginTransaction();
+            $this->assertSame(5, DB::table('parts')->count());
+            $peer->transaction(static function () use ($peer): void {
+                $peer->table('collections')->where('id', 1)->lockForUpdate()->first();
+                $peer->table('parts')->insert(['binaries_id' => 1, 'partnumber' => 2, 'number' => 99,
+                    'messageid' => 'peer-segment@example.invalid', 'size' => 1048576]);
+            });
+            $this->assertSame(5, DB::table('parts')->count(), 'The ordinary read still sees the older repeatable-read snapshot.');
+            $this->assertTrue(app(CollectionAdmission::class)->lockAndScreen([1], 2));
+            $this->assertSame([1, 2], DB::table('reconciliation_admissions')->orderBy('collection_id')
+                ->pluck('collection_id')->map(static fn ($id): int => (int) $id)->all());
+            try {
+                $peer->table('collections')->where('id', 1)->update(['xref' => 'peer mutation']);
+                $this->fail('The source lock must survive inventory screening until the caller commits.');
+            } catch (QueryException $exception) {
+                $this->assertSame(1205, (int) $exception->errorInfo[1]);
+            }
+            DB::commit();
+            $this->assertSame(1, $peer->table('collections')->where('id', 1)->update(['xref' => 'peer mutation']));
+        } finally {
+            while (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+            DB::disconnect('inventory_peer');
+        }
+    }
+
+    private function assertDiscoveryRemainsBounded(int $smallPopulation, int $largePopulation): void
+    {
         $metrics = [];
         foreach (['unrelated', 'matching'] as $kind) {
-            foreach ([100000, 1000000] as $background) {
+            foreach ([$smallPopulation, $largePopulation] as $background) {
                 $ids = AdmissionMariaDbFixture::callerBatch('dense');
                 DB::table('collections')->where('id', '>', 128)->update(['filecheck' => 2]);
                 $group = $kind === 'matching' ? 1 : 2;
@@ -686,12 +905,12 @@ final class AdmissionThroughputMariaDbTest extends TestCase
                 }
             }
             foreach (['completeness', 'sizing', 'creation', 'cleanup'] as $caller) {
-                $this->assertLessThanOrEqual(2 * $metrics[$kind][100000][$caller]['admission_handler_reads'] + 1000,
-                    $metrics[$kind][1000000][$caller]['admission_handler_reads']);
+                $this->assertLessThanOrEqual(2 * $metrics[$kind][$smallPopulation][$caller]['admission_handler_reads'] + 1000,
+                    $metrics[$kind][$largePopulation][$caller]['admission_handler_reads']);
             }
             foreach (['screen', 'lockAndScreen'] as $method) {
-                $this->assertLessThanOrEqual(2 * $metrics[$kind][100000][$method]['handler_reads'] + 1000,
-                    $metrics[$kind][1000000][$method]['handler_reads']);
+                $this->assertLessThanOrEqual(2 * $metrics[$kind][$smallPopulation][$method]['handler_reads'] + 1000,
+                    $metrics[$kind][$largePopulation][$method]['handler_reads']);
             }
         }
     }

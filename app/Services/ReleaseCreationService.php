@@ -59,6 +59,15 @@ class ReleaseCreationService
         return $this->createFromCollections($groupID, $limit, $echoCLI);
     }
 
+    /**
+     * @param  list<int>  $collectionIds
+     * @return array{added:int,dupes:int}
+     */
+    public function createSelectedCollections(int $groupId, array $collectionIds, bool $echoCLI): array
+    {
+        return $this->createFromCollections($groupId, count($collectionIds), $echoCLI, collectionIds: $collectionIds);
+    }
+
     public function createRecovered(RecoveryWorkClaim $claim, int $publicationId): string
     {
         return DB::transaction(function () use ($claim, $publicationId): string {
@@ -113,8 +122,11 @@ class ReleaseCreationService
         }, 1);
     }
 
-    /** @return array{added:int,dupes:int} */
-    private function createFromCollections(int|string|null $groupID, int $limit, bool $echoCLI, ?RecoveryCreationContext $recovery = null): array
+    /**
+     * @param  list<int>|null  $collectionIds
+     * @return array{added:int,dupes:int}
+     */
+    private function createFromCollections(int|string|null $groupID, int $limit, bool $echoCLI, ?RecoveryCreationContext $recovery = null, ?array $collectionIds = null): array
     {
         $startTime = now()->toImmutable();
         $categorize = new CategorizationService;
@@ -127,7 +139,10 @@ class ReleaseCreationService
 
         $collectionsQuery = Collection::query()
             ->where('collections.filecheck', CollectionFileCheckStatus::Sized->value)
-            ->where('collections.filesize', '>', 0);
+            ->where('collections.filesize', '>', 0)
+            ->when($collectionIds !== null, static fn ($query) => $query->whereIn('collections.id', $collectionIds))
+            ->when($collectionIds !== null && in_array(DB::getDriverName(), ['mysql', 'mariadb'], true),
+                static fn ($query) => $query->forceIndex('PRIMARY'));
         if ($recovery === null) {
             RecoveryCollectionOwnership::exclude($collectionsQuery);
             CollectionOwnership::exclude($collectionsQuery);
@@ -139,9 +154,11 @@ class ReleaseCreationService
         }
         $collectionsQuery->select(['collections.*', 'usenet_groups.name as gname'])
             ->join('usenet_groups', 'usenet_groups.id', '=', 'collections.groups_id')
+            ->orderBy('collections.id')
             ->limit(min(500, $limit));
         $collections = $collectionsQuery->get();
-        if ($recovery === null && ! app(CollectionAdmission::class)->screen($collections->pluck('id')->map(static fn ($id): int => (int) $id)->all())) {
+        $preflight = $collectionIds === null || count($collectionIds) > CollectionAdmission::MUTATION_BATCH_SIZE;
+        if ($recovery === null && $preflight && ! app(CollectionAdmission::class)->screen($collections->pluck('id')->map(static fn ($id): int => (int) $id)->all())) {
             return ['added' => 0, 'dupes' => 0];
         }
         $releaseGroupIds = $this->loadReleaseGroupIds($collections);

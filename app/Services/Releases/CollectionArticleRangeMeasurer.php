@@ -34,13 +34,16 @@ final class CollectionArticleRangeMeasurer
 
         foreach (array_chunk($collectionIds, self::CHUNK_SIZE) as $chunk) {
             $placeholders = implode(',', array_fill(0, \count($chunk), '?'));
+            $sources = in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)
+                ? 'FROM binaries b FORCE INDEX (ix_binaries_collection_filenumber)
+                   STRAIGHT_JOIN parts p FORCE INDEX (PRIMARY) ON p.binaries_id = b.id'
+                : 'FROM binaries b INNER JOIN parts p ON p.binaries_id = b.id';
 
             $rows = DB::select(
                 "SELECT b.collections_id AS collections_id,
                         MIN(p.number) AS first_article,
                         MAX(p.number) AS last_article
-                 FROM binaries b
-                 INNER JOIN parts p ON p.binaries_id = b.id
+                 {$sources}
                  WHERE b.collections_id IN ({$placeholders})
                  GROUP BY b.collections_id",
                 $chunk

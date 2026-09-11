@@ -227,11 +227,12 @@ class CollectionCleanupService
         }
 
         $deletedCollections = 0;
+        $preflight = count($collectionIds) > CollectionAdmission::MUTATION_BATCH_SIZE;
 
         try {
             foreach (array_chunk($collectionIds, min(($screenAdmission || $lease !== null || $selection !== null) ? CollectionAdmission::MUTATION_BATCH_SIZE : 500, $this->sqlChunkSize())) as $chunk) {
                 $lease?->renew();
-                if ($screenAdmission && ! app(CollectionAdmission::class)->screen(array_map('intval', $chunk))) {
+                if ($screenAdmission && $preflight && ! app(CollectionAdmission::class)->screen(array_map('intval', $chunk))) {
                     continue;
                 }
                 $links = $selection?->reason === CollectionDeletionReason::MissedNzb
