@@ -531,7 +531,8 @@ final class ReleaseProcessingService
                 "UPDATE binaries b
                  LEFT JOIN (
                     SELECT p.binaries_id, COUNT(*) currentparts, COALESCE(SUM(p.size), 0) partsize
-                    FROM parts p INNER JOIN binaries selected ON selected.id = p.binaries_id
+                    FROM binaries selected FORCE INDEX (ix_binaries_collection_filenumber)
+                    STRAIGHT_JOIN parts p FORCE INDEX (PRIMARY) ON p.binaries_id = selected.id
                     WHERE selected.collections_id IN ({$idPlaceholders}) GROUP BY p.binaries_id
                  ) p ON p.binaries_id = b.id
                  SET b.currentparts = COALESCE(p.currentparts, 0),

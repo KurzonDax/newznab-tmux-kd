@@ -114,9 +114,29 @@ jobs:
       - name: Stop Sail
         if: always()
         run: ./sail down
+  admission:
+    name: Admission development acceptance
+    needs: scope
+    if: needs.scope.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/ci-sail
+      - name: Start disposable MariaDB
+        run: ./sail up -d --wait mariadb
+      - name: Compare identical synthetic caller fixtures
+        run: ./sail exec -T -u sail -e CBP_INTEGRATION_DB_DATABASE=cbp_integration laravel.test scripts/benchmark-admission
+      - name: Exercise complete workers, locks, and scale
+        run: ./sail exec -T -u sail -e CBP_INTEGRATION_DB_DATABASE=cbp_integration laravel.test php artisan test --compact --fail-on-skipped tests/Integration/AdmissionThroughputMariaDbTest.php --filter 'worker|proofs|growth|peer_ownership'
+      - name: Stop Sail
+        if: always()
+        run: ./sail down
   required:
     name: PHP 8.5 via Sail
-    needs: [scope, php, runtime, recovery]
+    needs: [scope, php, runtime, recovery, admission]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -127,6 +147,11 @@ jobs:
           CODE: ${{ needs.scope.outputs.code }}
           RECOVERY_RESULT: ${{ needs.recovery.result }}
         run: test "$CODE" != true || test "$RECOVERY_RESULT" = success
+      - name: Require admission acceptance results
+        env:
+          CODE: ${{ needs.scope.outputs.code }}
+          ADMISSION_RESULT: ${{ needs.admission.result }}
+        run: test "$CODE" != true || test "$ADMISSION_RESULT" = success
       - name: Assert required result
         env:
           CODE: ${{ needs.scope.outputs.code }}
