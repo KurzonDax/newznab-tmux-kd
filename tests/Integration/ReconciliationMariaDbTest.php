@@ -87,8 +87,10 @@ final class ReconciliationMariaDbTest extends TestCase
         Schema::create('binaries', function (Blueprint $table): void {
             $table->unsignedBigInteger('id')->primary();
             $table->unsignedBigInteger('collections_id')->index();
+            $table->unsignedInteger('filenumber')->default(0);
             $table->string('name');
             $table->integer('totalparts');
+            $table->index(['collections_id', 'filenumber'], 'ix_binaries_collection_filenumber');
         });
         Schema::create('parts', function (Blueprint $table): void {
             $table->unsignedBigInteger('binaries_id');
@@ -227,8 +229,14 @@ final class ReconciliationMariaDbTest extends TestCase
                     exit(99);
                 }
             };
-            $result = $publisher->execute($receipt->operationId);
-            fwrite($sockets[1], 'failed:'.$result->reason."\n");
+            try {
+                $result = $publisher->execute($receipt->operationId);
+                @fwrite($sockets[1], 'failed:'.$result->reason."\n");
+            } catch (\Throwable $exception) {
+                @fwrite($sockets[1], 'failed:'.$exception->getMessage()."\n");
+            } finally {
+                fclose($sockets[1]);
+            }
             exit(1);
         }
         fclose($sockets[1]);
@@ -265,7 +273,10 @@ final class ReconciliationMariaDbTest extends TestCase
         } finally {
             @fwrite($sockets[0], "abort\n");
             fclose($sockets[0]);
-            pcntl_waitpid($pid, $status, WNOHANG);
+            if (pcntl_waitpid($pid, $status, WNOHANG) === 0) {
+                posix_kill($pid, SIGKILL);
+                pcntl_waitpid($pid, $status);
+            }
             (require database_path('migrations/2026_09_10_140952_create_reconciled_artifact_operations.php'))->down();
             Schema::dropIfExists('releases');
         }

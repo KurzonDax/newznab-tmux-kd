@@ -19,6 +19,7 @@ use App\Services\Releases\CollectionArticleRangeMeasurer;
 use Carbon\Carbon;
 use Database\Seeders\CategoriesTableSeeder;
 use Database\Seeders\RootCategoriesTableSeeder;
+use Illuminate\Database\Connection;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Database\Events\TransactionCommitting;
@@ -420,14 +421,14 @@ final class AdmissionThroughputMariaDbTest extends TestCase
         $peer->statement('SET SESSION innodb_lock_wait_timeout=1');
         $acquired = false;
         $active = true;
-        app('events')->listen(QueryExecuted::class, function (QueryExecuted $event) use ($peer, $kind, &$active, &$acquired): void {
-            if (! $active || $acquired || $event->connection->getName() !== 'mariadb'
-                || ! str_starts_with($event->sql, 'select * from `collections` where `id` in')
-                || str_contains($event->sql, 'for update')) {
+        DB::connection()->beforeExecuting(function (string $sql, array $bindings, Connection $connection) use ($peer, $kind, &$active, &$acquired): void {
+            if (! $active || $acquired || $connection->getName() !== 'mariadb'
+                || ! str_starts_with($sql, 'select * from `collections`')
+                || ! str_contains($sql, '`id` in') || ! str_ends_with($sql, 'for update')) {
                 return;
             }
-            $this->assertSame([200001], $event->bindings);
-            $this->assertSame(0, DB::transactionLevel());
+            $this->assertSame([200001], $bindings);
+            $this->assertSame(1, DB::transactionLevel());
             config(['database.default' => 'ownership_peer']);
             try {
                 $peer->transaction(function () use ($kind): void {
@@ -441,7 +442,7 @@ final class AdmissionThroughputMariaDbTest extends TestCase
         });
         try {
             $this->assertSame(0, app(CollectionCleanupService::class)->deleteCollectionsAndDescendants([200001]));
-            $this->assertTrue($acquired, 'The independent ownership writer must commit after advisory selection.');
+            $this->assertTrue($acquired, 'The independent ownership writer must commit after selection and before the source lock.');
             $this->assertEquals($before, $this->protectedTrees());
         } finally {
             $active = false;
@@ -595,7 +596,11 @@ final class AdmissionThroughputMariaDbTest extends TestCase
                     if ($caller === 'creation') {
                         DB::table('collections')->whereIn('id', $ids)->update(['filecheck' => 3]);
                     }
-                    $metrics = $this->measureCallerWithPeer($caller, $ids);
+                    try {
+                        $metrics = $this->measureCallerWithPeer($caller, $ids);
+                    } catch (\Throwable $exception) {
+                        throw new \RuntimeException('Synthetic caller '.$case.'/'.$caller.': '.$exception->getMessage(), previous: $exception);
+                    }
                     $this->assertSame(0, DB::transactionLevel());
                     $this->assertLessThan(1.0, $metrics['transaction_p95_seconds']);
                     if ($case === 'positive') {
@@ -623,6 +628,15 @@ final class AdmissionThroughputMariaDbTest extends TestCase
         $this->assertSame(1, $metrics['commits']);
     }
 
+    public function test_positive_cleanup_admission_allows_peer_ingestion(): void
+    {
+        $ids = AdmissionMariaDbFixture::callerBatch('positive');
+        $metrics = $this->measureCallerWithPeer('cleanup', $ids);
+        $this->assertSame(1, $metrics['commits']);
+        $this->assertSame(2, DB::table('collections')->whereIn('id', $ids)->count());
+        $this->assertSame(2, DB::table('reconciliation_admissions')->where('state', 'admitted')->count());
+    }
+
     /** @param list<int> $ids
      * @return array<string, int|float>
      */
@@ -630,7 +644,8 @@ final class AdmissionThroughputMariaDbTest extends TestCase
     {
         AdmissionMariaDbFixture::collections(1900000, 1, 1, 2);
         /** Keep the unrelated writer beyond the next-key boundary and exact-ID reads selective on sparse fixtures. */
-        DB::table('collections')->insert(['id' => 1800000, 'groups_id' => 1, 'declaredfiles' => 4,
+        $boundaryDeclaration = (int) DB::table('collections')->whereIn('id', $ids)->max('declaredfiles') + 1;
+        DB::table('collections')->insert(['id' => 1800000, 'groups_id' => 1, 'declaredfiles' => $boundaryDeclaration,
             'fromname' => 'Synthetic boundary', 'date' => '2026-01-01 12:00:00',
             'dateadded' => '2026-01-01 12:00:00', 'last_seen_at' => '2026-01-01 12:00:00',
             'last_seen_head_postdate' => '2026-01-01 12:00:00', 'filecheck' => 0, 'totalfiles' => 0,
@@ -662,7 +677,8 @@ final class AdmissionThroughputMariaDbTest extends TestCase
                 });
                 $progress++;
             } catch (\Throwable $exception) {
-                throw new \RuntimeException('Synthetic ingestion barrier failed before the local commit.', previous: $exception);
+                fwrite(STDERR, 'ADMISSION_BARRIER_FAILURE='.json_encode(['error' => $exception->getMessage()], JSON_THROW_ON_ERROR).PHP_EOL);
+                throw new \RuntimeException('Synthetic ingestion barrier failed before the local commit: '.$exception->getMessage(), previous: $exception);
             } finally {
                 config(['database.default' => 'mariadb']);
             }

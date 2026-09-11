@@ -90,18 +90,20 @@ class ArtifactPublication
         if (! Schema::hasTable('reconciled_artifact_operations')) {
             return null;
         }
+        $grammar = DB::connection()->getQueryGrammar();
         $query = DB::table('reconciled_artifact_operations as o')->join('releases as r', 'r.id', '=', 'o.release_id')
             ->join('reconciled_artifacts as a', 'a.release_id', '=', 'o.release_id')
             ->where('o.guid', $guid)->where('r.guid', $guid)->where('a.guid', $guid)->where('a.cancelled', false)
-            ->where('o.kind', 'duplicate')->where(static function ($query): void {
+            ->where('o.kind', 'duplicate')->where(static function ($query) use ($grammar): void {
                 $query->where(static function ($prepared): void {
                     $prepared->where('o.state', 'prepared')->whereColumn('a.pending_operation', 'o.id')
                         ->whereColumn('a.version', 'o.expected_version')->whereColumn('a.epoch', 'o.expected_epoch')
                         ->whereColumn('a.proof_revision', 'o.expected_proof_revision')->whereColumn('a.digest', 'o.expected_digest');
-                })->orWhere(static function ($committed): void {
+                })->orWhere(static function ($committed) use ($grammar): void {
                     $committed->where('o.state', 'committed')->whereNull('a.pending_operation')
-                        ->whereRaw('a.version = o.expected_version + 1')
-                        ->whereRaw("a.epoch = o.expected_epoch + CASE WHEN o.change_kind = 'replacement' THEN 1 ELSE 0 END")
+                        ->whereRaw($grammar->wrap('a.version').' = '.$grammar->wrap('o.expected_version').' + 1')
+                        ->whereRaw($grammar->wrap('a.epoch').' = '.$grammar->wrap('o.expected_epoch')
+                            .' + CASE WHEN '.$grammar->wrap('o.change_kind')." = 'replacement' THEN 1 ELSE 0 END")
                         ->whereColumn('a.digest', 'o.target_digest');
                 });
             });

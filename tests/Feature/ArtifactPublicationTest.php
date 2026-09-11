@@ -47,8 +47,14 @@ class ArtifactPublicationTest extends TestCase
     }
 
     #[DataProvider('duplicateChanges')]
-    public function test_duplicate_receipts_follow_the_current_artifact_without_replaying_over_later_versions(bool $replacement): void
+    public function test_duplicate_receipts_follow_the_current_artifact_without_replaying_over_later_versions(bool $replacement, string $prefix): void
     {
+        if ($prefix !== '') {
+            foreach (Schema::getTableListing(schemaQualified: false) as $table) {
+                Schema::rename($table, $prefix.$table);
+            }
+            DB::connection()->setTablePrefix($prefix);
+        }
         $publisher = app(ArtifactPublication::class);
         $target = str_replace('<segments>', '<segments><segment number="1" bytes="10">one@example.invalid</segment>', $this->original);
         if ($replacement) {
@@ -81,8 +87,10 @@ class ArtifactPublicationTest extends TestCase
 
     public static function duplicateChanges(): iterable
     {
-        yield 'additive receipt keeps its epoch' => [false];
-        yield 'replacement receipt advances its epoch' => [true];
+        foreach (['' => '', 'prefixed ' => 'artifact_'] as $label => $prefix) {
+            yield $label.'additive receipt keeps its epoch' => [false, $prefix];
+            yield $label.'replacement receipt advances its epoch' => [true, $prefix];
+        }
     }
 
     #[DataProvider('unmeasurableSizes')]
