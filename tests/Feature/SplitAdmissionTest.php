@@ -62,6 +62,103 @@ class SplitAdmissionTest extends TestCase
         $this->assertSame(0, DB::table('reconciliation_admissions')->count());
     }
 
+    public function test_impossible_declarations_skip_speculative_population_and_inventory_reads(): void
+    {
+        foreach ([0, 1] as $declaration) {
+            DB::table('collections')->update(['declaredfiles' => $declaration]);
+            foreach (['screen', 'lockAndScreen'] as $method) {
+                DB::flushQueryLog();
+                DB::enableQueryLog();
+                try {
+                    $this->assertTrue(DB::transaction(fn (): bool => app(CollectionAdmission::class)->$method([1, 2], 1)));
+                    foreach (DB::getQueryLog() as $query) {
+                        $this->assertStringNotContainsString('"date" between', $query['query']);
+                        $this->assertStringNotContainsString('from "binaries"', $query['query']);
+                        $this->assertStringNotContainsString('from "parts"', $query['query']);
+                    }
+                } finally {
+                    DB::disableQueryLog();
+                    DB::flushQueryLog();
+                }
+            }
+        }
+        $this->assertSame(0, DB::table('reconciliation_admissions')->count());
+    }
+
+    public function test_impossible_declarations_do_not_bypass_existing_ownership_during_ordinary_mutation(): void
+    {
+        DB::table('collections')->where('id', 1)->update(['declaredfiles' => 0]);
+        DB::table('collections')->where('id', 2)->update(['declaredfiles' => 1]);
+        foreach ([1, 2] as $id) {
+            DB::table('reconciliation_admissions')->insert(['collection_id' => $id, 'decision_id' => 'protected-'.$id,
+                'revision' => 'protected', 'admitted_at' => now(), 'expires_at' => now()->addHours(1), 'state' => 'admitted']);
+        }
+        $before = [DB::table('collections')->get(), DB::table('binaries')->get(), DB::table('parts')->get()];
+        app(ReleaseProcessingService::class)->setEchoCLI(false)->processCollectionSizes(1);
+        app(CollectionCleanupService::class)->deleteCollectionsAndDescendants([1, 2]);
+        $this->assertEquals($before, [DB::table('collections')->get(), DB::table('binaries')->get(), DB::table('parts')->get()]);
+        $this->assertTrue(CollectionOwnership::protects(1));
+        $this->assertTrue(CollectionOwnership::protects(2));
+    }
+
+    public static function denseStates(): array
+    {
+        return [[0], [1], [2], [3], [10], [15], [16], [null]];
+    }
+
+    #[DataProvider('denseStates')]
+    public function test_dense_overlapping_batches_use_bounded_id_only_admission_proofs(?int $state): void
+    {
+        $template = (array) DB::table('collections')->where('id', 1)->first();
+        DB::table('collections')->delete();
+        for ($id = 1; $id <= 385; $id++) {
+            DB::table('collections')->insert(array_replace($template, [
+                'id' => $id, 'collectionhash' => sha1('dense:'.$id, true), 'declaredfiles' => 3,
+                'filecheck' => $state ?? ($id <= 250 ? 0 : 16), 'date' => Carbon::parse('2026-01-01 09:00:00')->addSeconds($id % 120),
+                'subject' => str_repeat('s', 255), 'xref' => str_repeat('x', 2000),
+            ]));
+        }
+        foreach (['screen', 'lockAndScreen'] as $method) {
+            DB::flushQueryLog();
+            DB::enableQueryLog();
+            try {
+                if ($method === 'screen') {
+                    $this->assertTrue(app(CollectionAdmission::class)->screen(range(1, 128), 1));
+                } else {
+                    foreach (array_chunk(range(1, 128), 8) as $ids) {
+                        $this->assertTrue(DB::transaction(fn (): bool => app(CollectionAdmission::class)->lockAndScreen($ids, 1)));
+                    }
+                }
+                $proofs = array_filter(DB::getQueryLog(), static fn (array $query): bool => str_contains($query['query'], '"date" between'));
+                $this->assertNotEmpty($proofs);
+                $this->assertLessThanOrEqual(16 * 7, count($proofs));
+                foreach ($proofs as $query) {
+                    $this->assertStringStartsWith('select "id" from "collections"', $query['query']);
+                }
+            } finally {
+                DB::disableQueryLog();
+                DB::flushQueryLog();
+            }
+        }
+        $this->assertSame(0, DB::table('reconciliation_admissions')->count());
+    }
+
+    public function test_failed_intersection_falls_back_to_a_positive_family_beside_a_crowded_envelope(): void
+    {
+        DB::table('collections')->update(['date' => '2026-01-01 09:00:00']);
+        $template = (array) DB::table('collections')->where('id', 1)->first();
+        for ($id = 3; $id <= 260; $id++) {
+            DB::table('collections')->insert(array_replace($template, ['id' => $id,
+                'collectionhash' => sha1('neighbor:'.$id, true),
+                'date' => $id === 3 ? '2026-01-01 10:59:00' : '2026-01-01 11:00:00']));
+        }
+        foreach (['screen', 'lockAndScreen'] as $method) {
+            DB::table('reconciliation_admissions')->delete();
+            $this->assertTrue(DB::transaction(fn (): bool => app(CollectionAdmission::class)->$method([1, 3], 1)));
+            $this->assertSame([1, 2], DB::table('reconciliation_admissions')->orderBy('collection_id')->pluck('collection_id')->all());
+        }
+    }
+
     public function test_pending_discovery_counts_recovery_owned_rows_before_overflow(): void
     {
         Schema::create('obfuscation_recovery_publications', static function (Blueprint $table): void {
@@ -74,6 +171,10 @@ class SplitAdmissionTest extends TestCase
             DB::table('obfuscation_recovery_publications')->insert(['collections_id' => $id, 'state' => 'prepared']);
         }
         $this->assertSame('source_population', app(PendingReconciler::class)->reconcile(1, 1));
+        foreach (['screen', 'lockAndScreen'] as $method) {
+            $this->assertTrue(DB::transaction(fn (): bool => app(CollectionAdmission::class)->$method([1, 2], 1)));
+            $this->assertSame(0, DB::table('reconciliation_admissions')->where('state', 'admitted')->count());
+        }
     }
 
     public function test_unlocked_screening_finds_the_source_population_in_the_application_timezone(): void

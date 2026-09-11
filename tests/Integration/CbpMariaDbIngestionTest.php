@@ -557,7 +557,7 @@ final class CbpMariaDbIngestionTest extends TestCase
                 DB::disableQueryLog();
                 DB::flushQueryLog();
                 foreach ($lockedQueries as $query) {
-                    if (! str_starts_with($query['query'], 'select * from `collections` force index')) {
+                    if (! str_contains($query['query'], 'from `collections` force index')) {
                         continue;
                     }
                     $plan = DB::select('EXPLAIN '.$query['query'], $query['bindings'])[0];

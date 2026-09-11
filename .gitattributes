@@ -35,6 +35,7 @@
 
 scripts/agent-*		-binary text eol=lf
 scripts/ci-*		-binary text eol=lf
+scripts/benchmark-admission	-binary text eol=lf
 tests/Shell/*.py		-binary text eol=lf
 
 libs/*			-whitespace

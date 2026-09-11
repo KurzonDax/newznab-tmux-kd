@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+"""Run inside the issue Sail runtime; both sides use only committed synthetic fixtures."""
+
+import json
+import os
+from pathlib import Path
+import statistics
+import subprocess
+import sys
+
+if os.environ.get("CBP_INTEGRATION_DB_DATABASE") != "cbp_integration":
+    sys.exit("Set CBP_INTEGRATION_DB_DATABASE=cbp_integration; application databases are refused.")
+
+root = Path(__file__).resolve().parent.parent
+results = {}
+for reference in (True, False):
+    environment = os.environ.copy()
+    environment["ADMISSION_BENCHMARK_REFERENCE"] = "1" if reference else "0"
+    command = [
+        "scripts/run-tests-isolated.sh", "vendor/bin/phpunit", "--colors=never",
+        "--bootstrap", "tests/Support/Reconciliation/admission-benchmark-bootstrap.php",
+        "tests/Integration/AdmissionThroughputMariaDbTest.php", "--filter", "bounded_callers",
+        "--fail-on-skipped",
+    ]
+    process = subprocess.Popen(command, cwd=root, env=environment, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, text=True)
+    records = {}
+    for line in process.stdout:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        marker = "ADMISSION_BENCHMARK="
+        if marker in line:
+            record = json.loads(line.split(marker, 1)[1])
+            records[(record["case"], record["caller"])] = record["samples"]
+    if process.wait() != 0:
+        sys.exit("Admission benchmark failed; see the actual test failure above.")
+    results[reference] = records
+
+if len(results[True]) != 20 or results[True].keys() != results[False].keys():
+    sys.exit("Missing benchmark cases; refusing an incomplete comparison.")
+
+failures = []
+for key, before in results[True].items():
+    after = results[False][key]
+    median = lambda rows, field: statistics.median(row[field] for row in rows)
+    old_time = median(before, "seconds")
+    new_time = median(after, "seconds")
+    old_bytes = median(before, "admission_bytes")
+    new_bytes = median(after, "admission_bytes")
+    print("ADMISSION_COMPARISON=" + json.dumps({"case": key[0], "caller": key[1],
+          "before_seconds": old_time, "after_seconds": new_time,
+          "before_bytes": old_bytes, "after_bytes": new_bytes}))
+    if key[0] == "dense":
+        if new_time >= old_time or new_bytes > old_bytes * 0.25:
+            failures.append(key)
+    elif new_time > old_time * 1.25 + 0.010:
+        failures.append(key)
+
+if failures:
+    sys.exit("Performance acceptance failed: " + repr(failures))

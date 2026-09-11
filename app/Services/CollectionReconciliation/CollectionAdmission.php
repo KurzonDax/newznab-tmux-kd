@@ -42,24 +42,7 @@ final class CollectionAdmission
         if ($sources->count() !== count(array_unique($ids))) {
             return false;
         }
-        $windows = [];
-        $sourceWindows = [];
-        foreach ($sources as $source) {
-            $window = $queries->sourceWindow($source);
-            if ($window === null) {
-                continue;
-            }
-            $key = json_encode($window, JSON_THROW_ON_ERROR);
-            $windows[$key] = $window;
-            $sourceWindows[(int) $source->id] = $key;
-        }
-        ksort($windows);
-        $populations = [];
-        foreach ($windows as $key => $window) {
-            $populations[$key] = $queries->lockWindow($window);
-        }
-        foreach ($sourceWindows as $id => $key) {
-            $population = $populations[$key];
+        foreach ($queries->admissionPopulations($sources, true) as $id => $population) {
             if (! $population['complete']) {
                 continue;
             }
@@ -82,18 +65,20 @@ final class CollectionAdmission
             return true;
         }
         $quietHours ??= ProcessReleasesSettings::forDatabase(['delaytime' => Settings::settingValue('delaytime')])->collectionDelayTime;
-        foreach (array_chunk(array_values(array_unique($ids)), 500) as $page) {
+        foreach (array_chunk(array_values(array_unique($ids)), self::MUTATION_BATCH_SIZE) as $page) {
             $seen = [];
-            foreach (($lockedPopulation?->whereIn('id', $page) ?? DB::table('collections')->whereIn('id', $page)->orderBy('id')->get()) as $source) {
-                if ($source->date === null || isset($seen[$source->id])) {
+            $sources = $lockedPopulation?->whereIn('id', $page) ?? DB::table('collections')->whereIn('id', $page)->orderBy('id')->get();
+            $queries = new PopulationQuery;
+            $populations = $lockedPopulation === null ? $queries->admissionPopulations($sources, false) : [];
+            foreach ($sources as $source) {
+                if ((int) $source->declaredfiles <= 1 || $source->date === null || isset($seen[$source->id])) {
                     continue;
                 }
-                $queries = new PopulationQuery;
                 $window = $queries->sourceWindow($source);
                 if ($window === null) {
                     continue;
                 }
-                $population = $lockedPopulation === null ? $queries->readWindow($window) : null;
+                $population = $populations[(int) $source->id] ?? null;
                 if ($population !== null && ! $population['complete']) {
                     continue;
                 }

@@ -9,10 +9,66 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Support\Reconciliation\AdmissionWindowReference;
 use Tests\TestCase;
 
 class CollectionPopulationWindowTest extends TestCase
 {
+    #[DataProvider('admissionPopulations')]
+    public function test_admission_discovery_preserves_raw_membership_without_hydrating_overflow(int $count, ?int $state): void
+    {
+        $this->createCollections();
+        $source = (object) ['id' => 1, 'groups_id' => 1, 'declaredfiles' => 3,
+            'fromname' => 'Synthetic Poster', 'date' => '2026-01-01 09:00:00'];
+        for ($id = 1; $id <= $count; $id++) {
+            DB::table('collections')->insert(['id' => $id, 'groups_id' => 1, 'declaredfiles' => 3,
+                'fromname' => 'Synthetic Poster', 'date' => '2026-01-01 09:00:00',
+                'filecheck' => $state ?? ($id <= 250 ? 0 : 16)]);
+        }
+        $queries = new PopulationQuery;
+        $window = $queries->sourceWindow($source);
+        $reference = AdmissionWindowReference::read($window);
+        $this->assertSame($count <= 256, $reference['complete']);
+        foreach ([false, true] as $lock) {
+            $population = DB::transaction(fn (): array => $queries->admissionPopulations(collect([$source]), $lock)[1]);
+            $this->assertSame($reference['complete'], $population['complete']);
+            $this->assertEquals($reference['complete'] ? $reference['rows'] : collect(), $population['rows']);
+        }
+    }
+
+    public static function admissionPopulations(): iterable
+    {
+        foreach ([0, 1, 2, 256, 257] as $count) {
+            foreach ([0, 1, 2, 3, 10, 15, 16, null] as $state) {
+                yield $count.'-'.($state ?? 'mixed') => [$count, $state];
+            }
+        }
+    }
+
+    #[DataProvider('clocks')]
+    public function test_admission_discovery_keeps_inclusive_boundaries_and_identity_predicates(string $timezone, string $day): void
+    {
+        $this->createCollections();
+        config(['app.timezone' => $timezone]);
+        $source = (object) ['id' => 1, 'groups_id' => 1, 'declaredfiles' => 3,
+            'fromname' => 'Synthetic Poster', 'date' => $day.' 09:00:00'];
+        $template = ['groups_id' => 1, 'declaredfiles' => 3, 'fromname' => 'Synthetic Poster', 'date' => $source->date, 'filecheck' => 2];
+        foreach ([['date' => $day.' 08:00:00'], ['date' => $day.' 10:00:00'],
+            ['date' => $day.' 07:59:59'], ['date' => $day.' 10:00:01'],
+            ['groups_id' => 2], ['fromname' => 'Different Poster'], ['declaredfiles' => 4], ['filecheck' => 4]] as $index => $changes) {
+            DB::table('collections')->insert(array_replace($template, ['id' => $index + 1], $changes));
+        }
+        foreach ([false, true] as $lock) {
+            $result = DB::transaction(fn (): array => (new PopulationQuery)->admissionPopulations(collect([$source]), $lock));
+            $this->assertTrue($result[1]['complete']);
+            $this->assertSame([1, 2], $result[1]['rows']->pluck('id')->all());
+        }
+        foreach ([null, 'not-a-date'] as $date) {
+            $source->date = $date;
+            $this->assertSame([], (new PopulationQuery)->admissionPopulations(collect([$source]), false));
+        }
+    }
+
     public function test_read_and_lock_windows_share_one_raw_population_allowance(): void
     {
         $this->createCollections();

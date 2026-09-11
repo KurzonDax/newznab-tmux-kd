@@ -55,7 +55,8 @@ final class ReconciliationMariaDbTest extends TestCase
         }
     }
 
-    public function test_locked_admission_observes_a_counterpart_inserted_after_the_repeatable_read_snapshot(): void
+    #[DataProvider('preliminaryDeclarations')]
+    public function test_locked_admission_observes_a_counterpart_inserted_after_the_repeatable_read_snapshot(int $declaration): void
     {
         Schema::create('settings', function (Blueprint $table): void {
             $table->string('name')->primary();
@@ -107,12 +108,16 @@ final class ReconciliationMariaDbTest extends TestCase
             DB::table('collection_regexes')->insert(['group_regex' => '.*', 'regex' => '/^\[\d+\/\d+\] - "(?P<name>[^.]+)\./']);
             $source = ['groups_id' => 1, 'fromname' => 'Synthetic Poster', 'declaredfiles' => 3,
                 'date' => now()->subHours(3), 'dateadded' => now()->subHours(3)];
-            DB::table('collections')->insert(['id' => 1, ...$source]);
+            DB::table('collections')->insert(['id' => 1, ...$source, 'declaredfiles' => $declaration]);
             DB::table('binaries')->insert(['id' => 1, 'collections_id' => 1, 'name' => '[03/03] - "Example.par2" yEnc', 'totalparts' => 1]);
             DB::table('parts')->insert(['binaries_id' => 1, 'partnumber' => 1, 'messageid' => 'base@example.invalid', 'size' => 100]);
+            $this->assertTrue(app(CollectionAdmission::class)->screen([1], 1));
+            $this->assertSame(0, DB::table('reconciliation_admissions')->count());
             DB::beginTransaction();
             $this->assertSame(1, DB::table('collections')->count());
             $peer->transaction(static function () use ($peer, $source): void {
+                $peer->table('collections')->where('id', 1)->lockForUpdate()->first();
+                $peer->table('collections')->where('id', 1)->update(['declaredfiles' => 3]);
                 $peer->table('collections')->insert(['id' => 2, ...$source]);
                 $peer->table('binaries')->insert(['id' => 2, 'collections_id' => 2, 'name' => '[01/03] - "example.mkv" yEnc', 'totalparts' => 1]);
                 $peer->table('parts')->insert(['binaries_id' => 2, 'partnumber' => 1, 'messageid' => 'video@example.invalid', 'size' => 100]);
@@ -164,6 +169,11 @@ final class ReconciliationMariaDbTest extends TestCase
                 Schema::dropIfExists($table);
             }
         }
+    }
+
+    public static function preliminaryDeclarations(): array
+    {
+        return ['potentially admissible' => [3], 'impossible until source lock' => [1]];
     }
 
     #[DataProvider('artifactContenders')]
