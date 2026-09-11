@@ -9,6 +9,7 @@ use App\Models\Release;
 use App\Services\AudioProcessing\AudioRouting;
 use App\Services\MusicIdentity\Enums\IdentificationStatus;
 use App\Services\ObfuscationRecovery\RecoveryReleaseGate;
+use App\Services\Releases\CandidateReleaseQuery;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
@@ -25,7 +26,15 @@ final class MusicIdentityCandidateQuery
         ?string $algorithmVersion = null,
     ): Builder {
         $algorithmVersion ??= (string) config('music-identity.algorithm_version', 'music-identity-v1');
-        $query = Release::query()->from('releases as r')->tap(static fn ($query) => RecoveryReleaseGate::excludePending($query, 'r'));
+        $seed = Release::query()->from('releases as r')->select('r.id');
+        if ($groupId !== '') {
+            $seed->where('r.groups_id', $groupId);
+        }
+        if ($guidChar !== '') {
+            $seed->where('r.leftguid', 'like', $guidChar.'%');
+        }
+        $query = CandidateReleaseQuery::fromCandidateIds(AudioRouting::candidateIds($seed), 'music_seed')
+            ->tap(static fn ($query) => RecoveryReleaseGate::excludePending($query, 'r'));
 
         AudioRouting::applyAudioPath($query);
         $query->where('r.categories_id', '!=', Category::MUSIC_VIDEO);
@@ -115,9 +124,10 @@ final class MusicIdentityCandidateQuery
      */
     public static function buckets(): array
     {
+        $column = DB::connection()->getQueryGrammar()->wrap('r.leftguid');
         $expression = DB::getDriverName() === 'sqlite'
-            ? 'substr(r.leftguid, 1, 1)'
-            : 'LEFT(r.leftguid, 1)';
+            ? 'substr('.$column.', 1, 1)'
+            : 'LEFT('.$column.', 1)';
 
         return self::query()
             ->selectRaw($expression.' AS id')

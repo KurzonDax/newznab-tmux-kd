@@ -75,6 +75,35 @@ class Release extends Model
      */
     protected $guarded = [];
 
+    /** @var list<string> */
+    protected $hidden = ['name_direct_work_pending', 'name_evidence_work_pending'];
+
+    /**
+     * @param  string  $key
+     * @param  mixed  $value
+     */
+    public function setAttribute($key, $value): static
+    {
+        if (in_array($key, ['name_direct_work_pending', 'name_evidence_work_pending'], true)) {
+            return $this;
+        }
+
+        return parent::setAttribute($key, $value);
+    }
+
+    /**
+     * Generated query attributes must never become copied insert/update payloads.
+     *
+     * @param  array<string, mixed>  $attributes
+     * @param  bool  $sync
+     */
+    public function setRawAttributes(array $attributes, $sync = false): static
+    {
+        unset($attributes['name_direct_work_pending'], $attributes['name_evidence_work_pending']);
+
+        return parent::setRawAttributes($attributes, $sync);
+    }
+
     /**
      * @return array<string, string>
      */

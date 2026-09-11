@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Runners;
 
+use Illuminate\Concurrency\ProcessDriver;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
@@ -32,101 +33,17 @@ abstract class BaseRunner
      */
     private function convertSwitchToArtisan(string $args): string
     {
-        $parts = array_filter(explode('  ', trim($args)));
-
-        if (empty($parts)) {
+        if (trim($args) === '') {
             return '';
         }
+        try {
+            return implode(' ', array_map('escapeshellarg', $this->buildDnrArguments($args)));
+        } catch (RuntimeException) {
+            if (config('app.debug')) {
+                Log::warning('Unrecognized multiprocessing command: '.$args);
+            }
 
-        $command = $parts[0] ?? '';
-
-        switch ($command) {
-            case 'backfill':
-                // backfill  {group}  {type}
-                $group = $parts[1] ?? '';
-                $type = $parts[2] ?? '1';
-
-                return PHP_BINARY.' artisan backfill:group "'.$group.'" '.$type;
-
-            case 'backfill_all_quantity':
-                // backfill_all_quantity  {group}  {quantity}
-                $group = $parts[1] ?? '';
-                $quantity = $parts[2] ?? '';
-
-                return PHP_BINARY.' artisan backfill:group "'.$group.'" 1 '.$quantity;
-
-            case 'backfill_all_quick':
-                // backfill_all_quick  {group}
-                $group = $parts[1] ?? '';
-
-                return PHP_BINARY.' artisan backfill:group "'.$group.'" 1 10000';
-
-            case 'get_range':
-                // get_range  {mode}  {group}  {first}  {last}  {threads}
-                $mode = $parts[1] ?? '';
-                $group = $parts[2] ?? '';
-                $first = $parts[3] ?? '0';
-                $last = $parts[4] ?? '0';
-
-                return PHP_BINARY.' artisan articles:get-range "'.$mode.'" "'.$group.'" '.$first.' '.$last;
-
-            case 'part_repair':
-                // part_repair  {group}
-                $group = $parts[1] ?? '';
-
-                return PHP_BINARY.' artisan binaries:part-repair "'.$group.'"';
-
-            case 'releases':
-                // releases  {groupId}
-                $groupId = $parts[1] ?? '';
-
-                return PHP_BINARY.' artisan releases:process '.($groupId !== '' ? $groupId : '');
-
-            case 'update_group_headers':
-                // update_group_headers  {group}
-                $group = $parts[1] ?? '';
-
-                return PHP_BINARY.' artisan group:update-headers "'.$group.'"';
-
-            case 'update_per_group':
-                // update_per_group  {groupId}
-                $groupId = $parts[1] ?? '';
-
-                return PHP_BINARY.' artisan group:update-all '.$groupId;
-
-            case 'pp_additional':
-                // pp_additional  {guid}
-                $guid = $parts[1] ?? '';
-
-                return PHP_BINARY.' artisan postprocess:guid additional '.$guid;
-
-            case 'pp_nfo':
-                // pp_nfo  {guid}
-                $guid = $parts[1] ?? '';
-
-                return PHP_BINARY.' artisan postprocess:guid nfo '.$guid;
-
-            case 'pp_movie':
-                // pp_movie  {guid}  {renamed}
-                $guid = $parts[1] ?? '';
-                $renamed = $parts[2] ?? '';
-
-                return PHP_BINARY.' artisan postprocess:guid movie '.$guid.($renamed !== '' ? ' '.$renamed : '');
-
-            case 'pp_tv':
-                // pp_tv  {guid}  {renamed}
-                $guid = $parts[1] ?? '';
-                $renamed = $parts[2] ?? '';
-
-                return PHP_BINARY.' artisan postprocess:guid tv '.$guid.($renamed !== '' ? ' '.$renamed : '');
-
-            default:
-                // Log unrecognized command and return empty string
-                if (config('app.debug')) {
-                    Log::warning('Unrecognized multiprocessing command: '.$args);
-                }
-
-                return '';
+            return '';
         }
     }
 
@@ -138,9 +55,10 @@ abstract class BaseRunner
         return $this->buildDnrCommand($args);
     }
 
-    protected function executeCommand(string $command): string
+    /** @param list<string>|string $command */
+    protected function executeCommand(array|string $command): string
     {
-        $process = Process::fromShellCommandline($command);
+        $process = $this->createProcess($command);
         $process->setTimeout($this->concurrencyTimeout());
 
         try {
@@ -159,9 +77,58 @@ abstract class BaseRunner
         return $process->getOutput();
     }
 
-    protected function createProcess(string $command): Process
+    /** @param list<string>|string $command */
+    protected function createProcess(array|string $command): Process
     {
-        return Process::fromShellCommandline($command);
+        return new OwnedProcess(is_array($command) ? $command : ['/bin/sh', '-c', $command]);
+    }
+
+    /**
+     * @param  array<array-key, \Closure>  $tasks
+     * @return array<array-key, mixed>
+     */
+    protected function runConcurrentTasks(array $tasks): array
+    {
+        $factory = new OwnedProcessFactory;
+        try {
+            return (new ProcessDriver($factory))->run($tasks, $this->concurrencyTimeout());
+        } finally {
+            $factory->stopAll();
+        }
+    }
+
+    /** @param list<string> $command */
+    protected function taskForCommand(array $command): \Closure
+    {
+        $timeout = $this->concurrencyTimeout();
+
+        return static fn (): string => (new CommandRunner($timeout))->run($command);
+    }
+
+    /** @return list<string> */
+    protected function buildDnrArguments(string $args): array
+    {
+        $parts = explode('  ', trim($args));
+        $command = array_shift($parts);
+        $first = $parts[0] ?? '';
+        $rest = $parts[1] ?? '';
+        $arguments = match ($command) {
+            'backfill' => ['backfill:group', $first, $parts[1] ?? '1'],
+            'backfill_all_quantity' => ['backfill:group', $first, '1', $rest],
+            'backfill_all_quick' => ['backfill:group', $first, '1', '10000'],
+            'get_range' => ['articles:get-range', $first, $rest, $parts[2] ?? '0', $parts[3] ?? '0'],
+            'part_repair' => ['binaries:part-repair', $first],
+            'releases' => ['releases:process', $first],
+            'update_group_headers' => ['group:update-headers', $first],
+            'update_per_group' => ['group:update-all', $first],
+            'pp_additional' => ['postprocess:guid', 'additional', $first],
+            'pp_nfo' => ['postprocess:guid', 'nfo', $first],
+            'pp_movie' => ['postprocess:guid', 'movie', $first, ...($rest === '' ? [] : [$rest])],
+            'pp_tv' => ['postprocess:guid', 'tv', $first, ...($rest === '' ? [] : [$rest])],
+            default => throw new RuntimeException('Unrecognized multiprocessing command: '.$command),
+        };
+
+        return [PHP_BINARY, 'artisan', ...$arguments];
     }
 
     protected function headerStart(string $workType, int $count, int $maxProcesses): void
@@ -264,7 +231,7 @@ abstract class BaseRunner
     /**
      * Run multiple commands in parallel with real process forking and configurable timeout.
      *
-     * @param  array<string|int, string>  $commands  Array of shell commands keyed by identifier
+     * @param  array<string|int, list<string>|string>  $commands  Array of shell commands keyed by identifier
      * @param  int  $maxProcesses  Maximum concurrent processes
      * @param  int|null  $timeout  Timeout in seconds (null = use config default)
      * @param  callable(string|int, string, int): void|null  $onComplete
@@ -340,7 +307,7 @@ abstract class BaseRunner
      * Run multiple shell commands concurrently and stream their output in real-time.
      * Uses Symfony Process start() with a small event loop to enforce max concurrency.
      *
-     * @param  array<string|int, string>  $commands
+     * @param  array<string|int, list<string>|string>  $commands
      * @param  callable(string|int, string, int): void|null  $onComplete
      */
     protected function runStreamingCommands(

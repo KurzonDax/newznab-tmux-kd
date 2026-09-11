@@ -11,6 +11,8 @@ use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseImageService;
 use App\Services\ReleaseRemoverService;
+use App\Services\Releases\CollectionDeletionSelection;
+use App\Services\Releases\CollectionSweepLease;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Releases\ReleaseDeletionProtection;
 use App\Services\Releases\ReleaseManagementService;
@@ -238,7 +240,7 @@ class ReleaseCleanupSafetyMariaDbTest extends ReleaseRemoverBatchingTest
                 parent::__construct();
             }
 
-            public function deleteCollectionsAndDescendants(array $collectionIds, string $label = 'CBP cleanup', bool $echoCLI = false, ?int $expectedReleaseId = null, bool $screenAdmission = true): int
+            public function deleteCollectionsAndDescendants(array $collectionIds, string $label = 'CBP cleanup', bool $echoCLI = false, ?int $expectedReleaseId = null, bool $screenAdmission = true, ?CollectionDeletionSelection $selection = null, ?CollectionSweepLease $lease = null): int
             {
                 $this->called = true;
                 ($this->attempt)();
@@ -246,7 +248,7 @@ class ReleaseCleanupSafetyMariaDbTest extends ReleaseRemoverBatchingTest
                     throw new \RuntimeException('Injected CBP cleanup failure');
                 }
 
-                return parent::deleteCollectionsAndDescendants($collectionIds, $label, $echoCLI, $expectedReleaseId, $screenAdmission);
+                return parent::deleteCollectionsAndDescendants($collectionIds, $label, $echoCLI, $expectedReleaseId, $screenAdmission, $selection, $lease);
             }
         };
         $release = Release::query()->findOrFail(1);

@@ -155,6 +155,7 @@ final class TvProcessingCandidateQuery
     ): Builder {
         $resolvedProcessTv = (int) (is_numeric($processTv) ? $processTv : Settings::settingValue('lookuptv'));
         $query = Release::query()->whereRaw(RecoveryIdentityPolicy::singleItemSql())->whereRaw(BundleIdentity::singleItemSql())
+            ->when(in_array(DB::getDriverName(), ['mysql', 'mariadb'], true), static fn ($query) => $query->forceIndex('ix_releases_categories_postdate_admin'))
             ->where('size', '>', self::MINIMUM_SIZE_BYTES)
             ->whereBetween('categories_id', [Category::TV_ROOT, Category::TV_OTHER])
             ->where('categories_id', '<>', Category::TV_ANIME);

@@ -7,6 +7,7 @@ namespace App\Services\AdditionalProcessing;
 use App\Models\Release;
 use App\Models\Settings;
 use App\Services\AudioProcessing\AudioRouting;
+use App\Services\Releases\CandidateReleaseQuery;
 use App\Services\Runners\PostProcessRunner;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -139,7 +140,7 @@ final class AdditionalCandidateQuery
             Release::query()->from('releases as r')->select('r.id'),
             $groupID, $guidChar, $maxSizeBytes, $includePasswordStatuses, $passwordStatus,
         );
-        $query = ReleaseClaimant::fromCandidateIds(
+        $query = CandidateReleaseQuery::fromCandidateIds(
             ReleaseClaimant::additionalCandidateIds($pending, $minSizeBytes), 'additional_seed',
         );
 

@@ -89,8 +89,8 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
 
         $this->assertSame(5, $runner->capturedMaxProcesses);
         $this->assertCount(5, $runner->capturedCommands);
-        $this->assertContains(PHP_BINARY.' artisan postprocess:guid additional 0 --worker --max-batches=4', $runner->capturedCommands);
-        $this->assertContains(PHP_BINARY.' artisan postprocess:guid additional 4 --worker --max-batches=4', $runner->capturedCommands);
+        $this->assertContains([PHP_BINARY, 'artisan', 'postprocess:guid', 'additional', '0', '--worker', '--max-batches=4'], $runner->capturedCommands);
+        $this->assertContains([PHP_BINARY, 'artisan', 'postprocess:guid', 'additional', '4', '--worker', '--max-batches=4'], $runner->capturedCommands);
     }
 
     public function test_process_additional_repeats_hot_bucket_to_fill_configured_threads(): void
@@ -121,7 +121,7 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
         $this->assertSame(5, $runner->capturedMaxProcesses);
         $this->assertCount(5, $runner->capturedCommands);
         $this->assertSame(
-            array_fill(0, 5, PHP_BINARY.' artisan postprocess:guid additional a --worker --max-batches=4'),
+            array_fill(0, 5, [PHP_BINARY, 'artisan', 'postprocess:guid', 'additional', 'a', '--worker', '--max-batches=4']),
             array_values($runner->capturedCommands)
         );
     }
@@ -149,7 +149,7 @@ class PostProcessRunnerAdditionalThreadsTest extends TestCase
         $runner->processAdditional();
 
         $this->assertSame([
-            PHP_BINARY.' artisan postprocess:guid additional a --worker --max-batches=4',
+            [PHP_BINARY, 'artisan', 'postprocess:guid', 'additional', 'a', '--worker', '--max-batches=4'],
         ], array_values($runner->capturedCommands));
     }
 

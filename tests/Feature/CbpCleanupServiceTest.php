@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Enums\CollectionDeletionReason;
 use App\Enums\CollectionFileCheckStatus;
+use App\Enums\CollectionSweepOutcome;
 use App\Facades\Search;
 use App\Models\Release;
 use App\Services\CollectionCleanupService;
@@ -11,9 +13,12 @@ use App\Services\ReleaseCleaningService;
 use App\Services\ReleaseCreationService;
 use App\Services\ReleaseProcessingService;
 use App\Services\Releases\CollectionCompletionMeasurer;
+use App\Services\Releases\CollectionDeletionSelection;
 use App\Services\Releases\ReleaseDuplicateAbsorber;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use App\Support\ReleaseNameNormalizer;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -63,6 +68,7 @@ class CbpCleanupServiceTest extends TestCase
         );
 
         $this->createTables();
+        (require database_path('migrations/2026_09_10_224820_create_collection_sweep_cursors_table.php'))->up();
         $this->seedSettings();
         Search::shouldReceive('updateRelease')->zeroOrMoreTimes();
     }
@@ -113,6 +119,85 @@ class CbpCleanupServiceTest extends TestCase
         $this->assertSame(0, DB::table('parts')->count());
         $this->assertSame(0, DB::table('binaries')->count());
         $this->assertSame(0, DB::table('collections')->count());
+    }
+
+    public function test_orphan_selection_is_rechecked_after_a_binary_arrives(): void
+    {
+        $this->insertCollectionTree(109, $this->databaseTimestamp('-6 hours'), 0, 0);
+        $deleted = app(CollectionCleanupService::class)->deleteCollectionsAndDescendants([109],
+            selection: new CollectionDeletionSelection(CollectionDeletionReason::Orphan));
+        $this->assertSame(0, $deleted);
+        $this->assertTrue(DB::table('collections')->where('id', 109)->exists());
+        $this->assertTrue(DB::table('binaries')->where('collections_id', 109)->exists());
+    }
+
+    public function test_exhausted_mutation_retries_leave_the_page_available_for_retry(): void
+    {
+        $this->insertCollectionTree(109, $this->databaseTimestamp('-100 hours'), 3, 0);
+        $fail = true;
+        DB::listen(static function (QueryExecuted $query) use (&$fail): void {
+            if ($fail && str_starts_with(strtolower($query->sql), 'delete from "parts"')) {
+                $error = new \PDOException('Lock wait timeout exceeded');
+                $error->errorInfo = ['HY000', 1205, 'Lock wait timeout exceeded'];
+                throw new QueryException($query->connectionName, $query->sql, $query->bindings, $error);
+            }
+        });
+        try {
+            app(CollectionCleanupService::class)->runMaintenance(new CollectionDeletionSelection(CollectionDeletionReason::Retention));
+            $this->fail('Expected exhausted lock retries to propagate.');
+        } catch (QueryException) {
+            $this->assertSame(0, (int) DB::table('collection_sweep_cursors')->value('last_id'));
+            $this->assertNull(DB::table('collection_sweep_cursors')->value('lease_token'));
+            $this->assertTrue(DB::table('collections')->where('id', 109)->exists());
+            $this->assertGreaterThan(0, DB::table('parts')->count());
+        } finally {
+            $fail = false;
+        }
+        $result = app(CollectionCleanupService::class)->runMaintenance(new CollectionDeletionSelection(CollectionDeletionReason::Retention));
+        $this->assertSame(1, $result->deleted);
+        $this->assertSame(CollectionSweepOutcome::Exhausted, $result->outcome);
+    }
+
+    public function test_lease_lost_result_counts_committed_chunks_without_advancing_the_page(): void
+    {
+        $this->travelTo(Carbon::parse('2026-01-01 12:00:00'));
+        foreach (range(100, 108) as $id) {
+            $this->insertCollectionTree($id, $this->databaseTimestamp('-100 hours'), 3, 0);
+        }
+        $scheduled = false;
+        DB::listen(function (QueryExecuted $query) use (&$scheduled): void {
+            if (! $scheduled && str_starts_with(strtolower($query->sql), 'delete from "collections"')) {
+                $scheduled = true;
+                DB::afterCommit(fn () => $this->travel(61)->seconds());
+            }
+        });
+        $result = app(CollectionCleanupService::class)->runMaintenance(new CollectionDeletionSelection(CollectionDeletionReason::Retention));
+        $this->assertSame(CollectionSweepOutcome::LeaseLost, $result->outcome);
+        $this->assertSame(9, $result->examined);
+        $this->assertSame(8, $result->deleted);
+        $this->assertSame(1, DB::table('collections')->count());
+        $this->assertSame(0, (int) DB::table('collection_sweep_cursors')->value('last_id'));
+    }
+
+    public function test_lease_expiry_during_descendant_deletion_rolls_back_the_chunk(): void
+    {
+        $this->travelTo(Carbon::parse('2026-01-01 12:00:00'));
+        $this->insertCollectionTree(109, $this->databaseTimestamp('-100 hours'), 3, 0);
+        $expired = false;
+        DB::listen(function (QueryExecuted $query) use (&$expired): void {
+            if (! $expired && str_starts_with(strtolower($query->sql), 'delete from "parts"')) {
+                $expired = true;
+                $this->travel(61)->seconds();
+            }
+        });
+        $deleted = app(CollectionCleanupService::class)->runMaintenance(
+            new CollectionDeletionSelection(CollectionDeletionReason::Retention, 72))->deleted;
+        $this->assertTrue($expired);
+        $this->assertSame(0, $deleted);
+        $this->assertTrue(DB::table('collections')->where('id', 109)->exists());
+        $this->assertTrue(DB::table('binaries')->where('collections_id', 109)->exists());
+        $this->assertGreaterThan(0, DB::table('parts')->count());
+        $this->assertSame(0, (int) DB::table('collection_sweep_cursors')->where('scope', 'retention:global')->value('last_id'));
     }
 
     public function test_frozen_head_does_not_promote_after_wall_clock_delay(): void

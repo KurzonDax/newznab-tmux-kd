@@ -190,28 +190,6 @@ final class ReleaseClaimant
         return $seed->toBase();
     }
 
-    /**
-     * Keep MySQL/MariaDB from reversing a selective seed into a full release scan.
-     *
-     * @return Builder<Release>
-     */
-    public static function fromCandidateIds(QueryBuilder $seed, string $alias): Builder
-    {
-        $query = Release::query();
-        if (in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
-            $grammar = $query->getQuery()->getGrammar();
-
-            return $query->fromRaw(
-                '('.$seed->toSql().') as '.$grammar->wrapTable($alias)
-                .' STRAIGHT_JOIN '.$grammar->wrapTable('releases as r')
-                .' ON '.$grammar->wrap('r.id').' = '.$grammar->wrap($alias.'.id'),
-                $seed->getBindings(),
-            );
-        }
-
-        return $query->fromSub($seed, $alias)->join('releases as r', 'r.id', '=', $alias.'.id');
-    }
-
     public static function maxPpTimeoutCount(): int
     {
         return max(1, (int) (Settings::settingValue('maxpptimeoutcount') ?: 3));

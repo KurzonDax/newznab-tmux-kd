@@ -146,9 +146,9 @@ class ParallelBaseRunnerTestDouble extends BaseRunner
         return $this->runParallelCommands($commands, $maxProcesses, onComplete: $onComplete);
     }
 
-    protected function createProcess(string $command): Process
+    protected function createProcess(array|string $command): Process
     {
-        return $this->factory->create($command);
+        return $this->factory->create(is_array($command) ? json_encode($command, JSON_THROW_ON_ERROR) : $command);
     }
 }
 

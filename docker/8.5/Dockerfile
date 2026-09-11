@@ -30,7 +30,7 @@ RUN apt-get update \
 
 # Install core PHP packages
 RUN apt-get install -y php8.5 php8.5-cli php8.5-common php8.5-dev php8.5-fpm \
-    php8.5-bcmath php8.5-bz2 php8.5-curl php8.5-gd php8.5-gmp \
+    php8.5-bcmath php8.5-bz2 php8.5-curl php8.5-ffi php8.5-gd php8.5-gmp \
     php8.5-intl php8.5-mbstring php8.5-mysql \
     php8.5-readline php8.5-soap php8.5-sqlite3 php8.5-xml php8.5-xsl \
     php8.5-zip php8.5-pgsql

@@ -312,13 +312,14 @@ class Tmux
                 return sprintf(
                     '
 					SELECT
-					SUM(IF(isrenamed = %d,1,0)) AS renamed,
-          SUM(IF(nfostatus = %d,1,0)) AS nfo,
-					SUM(IF(predb_id > 0,1,0)) AS predb_matched,
+					SUM(CASE WHEN isrenamed = %d THEN 1 ELSE 0 END) AS renamed,
+          SUM(CASE WHEN nfostatus = %d THEN 1 ELSE 0 END) AS nfo,
+					SUM(CASE WHEN predb_id > 0 THEN 1 ELSE 0 END) AS predb_matched,
 					COUNT(DISTINCT(predb_id)) AS distinct_predb_matched
-					FROM releases r',
+					FROM %s r',
                     NameFixingService::IS_RENAMED_DONE,
-                    NfoService::NFO_FOUND
+                    NfoService::NFO_FOUND,
+                    DB::connection()->getQueryGrammar()->wrapTable('releases')
                 );
 
             case 2:

@@ -15,7 +15,7 @@ class ProcessReleasesCommand extends Command
      *
      * @var string
      */
-    protected $signature = 'releases:process {groupId? : Group ID to process (optional)}';
+    protected $signature = 'releases:process {groupId? : Group ID to process (optional)} {--orchestrated : Leave global cleanup to the cycle finalizer}';
 
     /**
      * The console command description.
@@ -72,7 +72,9 @@ class ProcessReleasesCommand extends Command
             $shouldContinue = $result->total() >= $limit || $nzbFilesAdded >= $limit;
         } while ($shouldContinue);
 
-        $this->releaseProcessingService->deleteCollections($groupID);
+        if (! $this->option('orchestrated')) {
+            $this->releaseProcessingService->deleteCollections($groupID);
+        }
     }
 
     /**

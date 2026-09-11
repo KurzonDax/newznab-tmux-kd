@@ -21,6 +21,7 @@ use App\Services\MusicIdentity\ResolveReleaseMusicIdentity;
 use App\Services\NameFixing\NameFixingQueryService;
 use App\Services\ObfuscationRecovery\RecoveryStatus;
 use App\Services\TvProcessing\TvProcessingCandidateQuery;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -29,6 +30,8 @@ use Illuminate\Support\Facades\DB;
 class TmuxMonitorService
 {
     protected Tmux $tmux;
+
+    protected ?TmuxDisplaySnapshot $displaySnapshot = null;
 
     /**
      * @var array<string, mixed>
@@ -175,13 +178,49 @@ class TmuxMonitorService
         $this->runVar['timers']['query']['tmux_time'] = microtime(true) - $timer;
 
         $this->getProcessCounts();
+        $this->refreshOperationalReleaseStatistics();
         $this->runVar['recovery'] = app(RecoveryStatus::class)->summary();
         $this->runVar['reconciliation'] = app(ReconciliationStatus::class)->summary();
     }
 
+    protected function refreshOperationalReleaseStatistics(): void
+    {
+        try {
+            $newest = Release::query()->orderByDesc('id')->first(['searchname', 'adddate']);
+            $this->runVar['timers']['newOld']['newestrelname'] = $newest->searchname ?? '';
+            $this->runVar['timers']['newOld']['newestrelease'] = $newest?->adddate === null
+                ? 0 : CarbonImmutable::parse($newest->adddate, config('app.timezone'))->timestamp;
+            $limit = (int) ($this->runVar['settings']['collections_kill'] ?? 0);
+            $this->runVar['collection_limit_exceeded'] = $limit > 0
+                && DB::query()->fromSub(Collection::query()->select('id')->limit($limit + 1), 'collection_gate')->count() > $limit;
+        } catch (\Exception $e) {
+            logger()->error('Error collecting operational release/collection status: '.$e->getMessage());
+        }
+    }
+
     protected function refreshSlowStatistics(): void
     {
-        $this->getCategoryCounts();
+        $connection = DB::connection();
+        $scope = hash('sha256', $connection->getName().'|'.$connection->getDatabaseName().'|'.$connection->getTablePrefix());
+        $snapshot = ($this->displaySnapshot ??= app(TmuxDisplaySnapshot::class))->get($scope, function (): array {
+            $previous = $this->runVar;
+            try {
+                $this->getCategoryCounts();
+                $this->runVar['counts']['now']['collections_table'] = Collection::query()->count();
+                $this->runVar['counts']['now']['releases'] = Release::query()->count();
+                $distribution = DB::selectOne($this->tmux->proc_query(1, (string) config('nntmux.db_name'), ''));
+
+                return array_intersect_key($this->runVar['counts']['now'], array_flip([
+                    ...array_keys($this->categoryRanges()), 'collections_table', 'releases',
+                ])) + (array) $distribution;
+            } finally {
+                $this->runVar = $previous;
+            }
+        });
+        $this->runVar['display_snapshot'] = $snapshot;
+        if ($snapshot !== null) {
+            $this->runVar['counts']['now'] = array_replace($this->runVar['counts']['now'], $snapshot['counts']);
+        }
         $this->getTableCounts();
     }
 
@@ -213,8 +252,8 @@ class TmuxMonitorService
                     $this->runVar['counts']['now'][$name] = (int) $counts->getAttribute($name);
                 }
             }
-        } catch (\Exception $e) {
-            logger()->error('Error collecting category counts: '.$e->getMessage());
+        } finally {
+            $this->runVar['timers']['query']['init_time'] = microtime(true) - $timer;
         }
 
         $this->runVar['timers']['query']['init_time'] = microtime(true) - $timer;
@@ -305,17 +344,6 @@ class TmuxMonitorService
         try {
             $dbName = config('nntmux.db_name');
 
-            $proc1Query = $this->tmux->proc_query(1, $dbName, '');
-            $proc1Result = DB::selectOne($proc1Query);
-
-            if ($proc1Result) {
-                foreach ((array) $proc1Result as $key => $value) {
-                    $this->runVar['counts']['now'][$key] = $value;
-                }
-            }
-
-            $this->runVar['timers']['query']['proc1_time'] = microtime(true) - $timer;
-
             // Process 2
             $timer2 = microtime(true);
             $maxSize = $this->runVar['settings']['maxsize_pp'] ?? '';
@@ -360,9 +388,6 @@ class TmuxMonitorService
         $timer = microtime(true);
 
         try {
-            $this->runVar['counts']['now']['collections_table'] = Collection::query()->count();
-            $this->runVar['counts']['now']['releases'] = Release::query()->count();
-
             foreach ($this->aggregateTableRowEstimates($this->tmux->cbpmTableQuery()) as $key => $count) {
                 $this->runVar['counts']['now'][$key] = $count;
             }
@@ -378,7 +403,9 @@ class TmuxMonitorService
                 $target = $queryNumber === 4 ? 'counts' : 'timers';
                 $section = $queryNumber === 4 ? 'now' : 'newOld';
                 foreach ((array) $result as $key => $value) {
-                    $this->runVar[$target][$section][$key] = $value;
+                    if (! in_array($key, ['newestrelname', 'newestrelease'], true)) {
+                        $this->runVar[$target][$section][$key] = $value;
+                    }
                 }
             }
         } catch (\Exception $e) {
@@ -592,10 +619,9 @@ class TmuxMonitorService
         $collKillLimit = (int) ($this->runVar['settings']['collections_kill'] ?? 0);
 
         $totalWork = (int) ($this->runVar['counts']['now']['total_work'] ?? 0);
-        $collections = (int) ($this->runVar['counts']['now']['collections_table'] ?? 0);
 
         $this->runVar['killswitch']['pp'] = ($ppKillLimit > 0 && $ppKillLimit < $totalWork);
-        $this->runVar['killswitch']['coll'] = ($collKillLimit > 0 && $collKillLimit < $collections);
+        $this->runVar['killswitch']['coll'] = ($collKillLimit > 0 && ($this->runVar['collection_limit_exceeded'] ?? false));
     }
 
     /**

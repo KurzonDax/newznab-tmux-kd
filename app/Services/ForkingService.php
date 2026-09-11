@@ -7,9 +7,9 @@ namespace App\Services;
 use App\Models\Settings;
 use App\Services\Runners\BackfillRunner;
 use App\Services\Runners\BinariesRunner;
+use App\Services\Runners\OwnedProcess;
 use App\Services\Runners\PostProcessRunner;
 use App\Services\Runners\ReleasesRunner;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
 
@@ -256,47 +256,21 @@ class ForkingService
     }
 
     /**
-     * Process end work for releases (DNR signalling).
+     * Run global finalization once, without repeating collection formation.
      */
     protected function processReleasesEndWork(): void
     {
-        $count = $this->getReleaseWorkCount();
-        $command = $this->backfillRunner->buildDnrCommandPublic("releases  {$count}_");
+        $command = [PHP_BINARY, 'artisan', 'releases:finalize'];
         $this->executeCommand($command);
-    }
-
-    /**
-     * Count groups with pending collections.
-     */
-    protected function getReleaseWorkCount(): int
-    {
-        $groups = DB::select('SELECT id FROM usenet_groups WHERE (active = 1 OR backfill = 1)');
-        $count = 0;
-
-        foreach ($groups as $group) {
-            try {
-                $query = DB::select(
-                    sprintf('SELECT id FROM collections WHERE groups_id = %d LIMIT 1', $group->id)
-                );
-                if (! empty($query)) {
-                    $count++;
-                }
-            } catch (\PDOException $e) {
-                if (config('app.debug')) {
-                    Log::debug($e->getMessage());
-                }
-            }
-        }
-
-        return $count;
     }
 
     /**
      * Execute a shell command.
      */
-    protected function executeCommand(string $command): string
+    /** @param list<string>|string $command */
+    protected function executeCommand(array|string $command): string
     {
-        $process = Process::fromShellCommandline($command);
+        $process = new OwnedProcess(is_array($command) ? $command : ['/bin/sh', '-c', $command]);
         $process->setTimeout((int) config('nntmux.multiprocessing_max_child_time', 1800));
         $process->run(function ($type, $buffer) {
             if ($type === Process::ERR) {

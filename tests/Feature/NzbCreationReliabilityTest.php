@@ -9,6 +9,8 @@ use App\Facades\Search;
 use App\Models\Release;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\CollectionCleanupService;
+use App\Services\CollectionReconciliation\PendingInventory;
+use App\Services\CollectionReconciliation\PostingFile;
 use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseImageService;
@@ -77,6 +79,97 @@ class NzbCreationReliabilityTest extends TestCase
         $this->assertSame([3, 2], $claimed->pluck('id')->all());
         $this->assertSame('token-one', DB::table('releases')->where('id', 2)->value('nzb_creation_claim_token'));
         $this->assertSame('claimed', DB::table('releases')->where('id', 1)->value('nzb_creation_claim_token'));
+    }
+
+    public function test_finalization_handles_pending_nzbs_without_collections_and_preserves_fresh_claims(): void
+    {
+        $this->prepareFinalizationSchema();
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'fixture.empty']);
+        $this->insertRelease(1, 'a');
+        $this->insertRelease(2, 'b', claimedAt: now());
+        $this->insertRelease(3, 'c', claimedAt: now()->subSeconds(301));
+        $service = (new ReleaseProcessingService(
+            nzb: new NzbService(app(CollectionCleanupService::class)),
+            releaseManagement: new DatabaseOnlyReleaseManagementService,
+            collectionCleanupService: app(CollectionCleanupService::class),
+        ))->setEchoCLI(false);
+        $this->app->instance(ReleaseProcessingService::class, $service);
+        $this->artisan('releases:finalize')->assertSuccessful();
+        $this->assertFalse(DB::table('releases')->where('id', 1)->exists());
+        $this->assertFalse(DB::table('releases')->where('id', 3)->exists());
+        $this->assertSame('claimed', DB::table('releases')->where('id', 2)->value('nzb_creation_claim_token'));
+    }
+
+    public function test_finalization_continues_global_nzb_batches_without_repeating_formation(): void
+    {
+        $this->prepareFinalizationSchema();
+        DB::table('settings')->where('name', 'maxnzbsprocessed')->update(['value' => '2']);
+        Search::shouldReceive('updateRelease')->zeroOrMoreTimes();
+        foreach ([1 => 'a', 2 => 'b', 3 => 'c'] as $id => $guid) {
+            $this->insertRelease($id, $guid);
+            if ($id === 1) {
+                $this->insertWritableCbp(1, 1, 1);
+            } else {
+                $collection = (array) DB::table('collections')->where('id', 1)->first();
+                DB::table('collections')->insert(array_replace($collection, ['id' => $id, 'releases_id' => $id]));
+                $this->insertWritableBinary($id, $id, 'Fixture.part01.rar yEnc', 1, 1);
+            }
+        }
+        $service = (new ReleaseProcessingService(
+            nzb: new NzbService(app(CollectionCleanupService::class)),
+            releaseManagement: new DatabaseOnlyReleaseManagementService,
+            collectionCleanupService: app(CollectionCleanupService::class),
+        ))->setEchoCLI(false);
+        $this->app->instance(ReleaseProcessingService::class, $service);
+        $this->artisan('releases:finalize')->assertSuccessful();
+        $this->assertSame(3, DB::table('releases')->where('nzbstatus', 1)->count());
+        $this->assertSame(0, DB::table('collections')->count());
+        foreach (DB::table('releases')->pluck('guid') as $guid) {
+            $this->assertNotFalse((new NzbService(app(CollectionCleanupService::class)))->nzbPath($guid));
+        }
+    }
+
+    public function test_finalization_publishes_reconciled_inventory_without_any_collections(): void
+    {
+        $this->prepareFinalizationSchema();
+        (require database_path('migrations/2026_09_08_121907_create_collection_reconciliation_tables.php'))->up();
+        DB::statement('ALTER TABLE releases ADD COLUMN is_trusted_name INTEGER DEFAULT 0');
+        DB::statement('ALTER TABLE releases ADD COLUMN isrenamed INTEGER DEFAULT 0');
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'fixture.empty']);
+        $this->insertRelease(1, 'a', claimedAt: now()->subSeconds(301));
+        $files = [new PostingFile('1', '1', '[1/1] - "Fixture.part01.rar" yEnc',
+            'fixture.empty', 'neutral', 1780000000, 1, [['number' => 1, 'messageid' => 'fixture@example.invalid', 'bytes' => 100]])];
+        DB::table('reconciled_postings')->insert(['release_id' => 1, 'state' => 'created',
+            'digest' => PendingInventory::digest($files),
+            'inventory' => PendingInventory::encode($files),
+            'decision' => json_encode(['label' => 'Fixture.Release'])]);
+        Search::shouldReceive('updateRelease')->zeroOrMoreTimes();
+        $service = (new ReleaseProcessingService(nzb: app(NzbService::class),
+            releaseManagement: new DatabaseOnlyReleaseManagementService,
+            collectionCleanupService: app(CollectionCleanupService::class)))->setEchoCLI(false);
+        $this->app->instance(ReleaseProcessingService::class, $service);
+        $this->artisan('releases:finalize')->assertSuccessful();
+        $this->assertSame('published', DB::table('reconciled_postings')->value('state'));
+        $this->assertSame(1, (int) DB::table('releases')->value('nzbstatus'));
+        $this->assertSame(0, DB::table('collections')->count());
+        $this->assertStringContainsString('fixture@example.invalid', app(NzbService::class)->readNzbContents(str_repeat('a', 36)));
+    }
+
+    private function prepareFinalizationSchema(): void
+    {
+        $this->registerSqliteFunction('GREATEST', static fn (mixed ...$values): mixed => max($values));
+        DB::statement('ALTER TABLE usenet_groups ADD COLUMN minsizetoformrelease INTEGER DEFAULT 0');
+        DB::statement('ALTER TABLE usenet_groups ADD COLUMN minfilestoformrelease INTEGER DEFAULT 0');
+        DB::statement('ALTER TABLE releases ADD COLUMN size INTEGER DEFAULT 100');
+        DB::statement('ALTER TABLE releases ADD COLUMN totalpart INTEGER DEFAULT 1');
+        (require database_path('migrations/2026_09_10_224820_create_collection_sweep_cursors_table.php'))->up();
+        DB::statement('ALTER TABLE categories ADD COLUMN status INTEGER DEFAULT 1');
+        DB::statement('ALTER TABLE categories ADD COLUMN minsizetoformrelease INTEGER DEFAULT 0');
+        DB::statement('ALTER TABLE root_categories ADD COLUMN discard_executables INTEGER DEFAULT 0');
+        DB::statement('ALTER TABLE releases ADD COLUMN iscategorized INTEGER DEFAULT 1');
+        DB::statement('ALTER TABLE releases ADD COLUMN fromname VARCHAR(255)');
+        DB::statement('ALTER TABLE releases ADD COLUMN adddate DATETIME');
+        DB::statement('CREATE TABLE genres (id INTEGER PRIMARY KEY, disabled INTEGER DEFAULT 0)');
     }
 
     public function test_candidate_query_returns_only_rows_won_after_a_competing_stamp(): void

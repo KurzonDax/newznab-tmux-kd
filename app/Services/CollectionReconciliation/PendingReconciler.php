@@ -8,7 +8,6 @@ use App\Models\Category;
 use App\Models\Release;
 use App\Models\Settings;
 use App\Services\Categorization\CategorizationService;
-use App\Services\ObfuscationRecovery\RecoveryCollectionOwnership;
 use App\Services\Releases\CollectionQuietPredicate;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -106,11 +105,14 @@ final class PendingReconciler
             if ($late !== null) {
                 return $late;
             }
-            $nearby = DB::table('collections')->where('groups_id', $source->groups_id)->where('declaredfiles', $source->declaredfiles)
-                ->where('fromname', $source->fromname)->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
-                ->whereBetween('date', [date('Y-m-d H:i:s', strtotime($source->date) - 3600), date('Y-m-d H:i:s', strtotime($source->date) + 3600)])
-                ->whereIn('filecheck', [0, 1, 2, 3, 10, 15, 16])->orderBy('id')->limit(257)->get();
-            if ($nearby->count() > 256 || $nearby->count() < 2) {
+            $queries = new PopulationQuery;
+            $window = $queries->sourceWindow($source);
+            if ($window === null) {
+                return 'source_population';
+            }
+            $population = $queries->readWindow($window);
+            $nearby = $population['rows'];
+            if (! $population['complete'] || $nearby->count() < 2) {
                 return 'source_population';
             }
             $populationIds = $nearby->pluck('id')->map(static fn ($id): int => (int) $id)->all();
@@ -204,9 +206,7 @@ final class PendingReconciler
                 return 'verified_incomplete';
             }
 
-            return $this->publishAssociation($ids, $owner, $revision, $decision, ['group' => (int) $source->groups_id,
-                'poster' => $source->fromname, 'total' => (int) $source->declaredfiles,
-                'from' => gmdate('Y-m-d H:i:s', strtotime($source->date) - 3600), 'until' => gmdate('Y-m-d H:i:s', strtotime($source->date) + 3600)], $populationIds);
+            return $this->publishAssociation($ids, $owner, $revision, $decision, $window, $populationIds);
         } catch (UnexpectedValueException $e) {
             app(CollectionClaims::class)->settle($owner, 'invalid_evidence');
 

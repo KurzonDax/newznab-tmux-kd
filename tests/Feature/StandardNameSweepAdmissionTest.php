@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Models\Category;
+use App\Models\Release;
 use App\Services\NameFixing\NameFixingQueryService;
 use App\Services\Tmux\Tmux;
 use App\Services\Tmux\TmuxMonitorService;
@@ -45,6 +46,48 @@ class StandardNameSweepAdmissionTest extends TestCase
         'proc_crc32' => 1,
         'proc_srrdb' => 1,
     ];
+
+    public function test_union_matches_reference_with_duplicates_late_evidence_and_every_bucket(): void
+    {
+        $reference = new \Tests\Support\CandidateReference\NameFixingQueryService;
+        $current = new NameFixingQueryService;
+        foreach (range(1, 160) as $id) {
+            $flag = array_keys(self::CONSUMED)[($id - 1) % 10];
+            $this->insertRelease($id, [$flag => 0, 'leftguid' => dechex($id % 16),
+                'nfostatus' => $id % 3 === 0 ? 1 : -9, 'nzbstatus' => $id % 2,
+                'isrenamed' => $id % 7 === 0 ? 1 : 0, 'predb_id' => $id % 11 === 0 ? 10 : 0,
+                'is_trusted_name' => $id % 5 === 0 ? 1 : 0]);
+        }
+        foreach ([false, true] as $lateEvidence) {
+            if ($lateEvidence) {
+                foreach (range(1, 160) as $id) {
+                    $this->insertReleaseFile($id, 'SDPORN.part.rar', sprintf('%08x', $id));
+                    $this->insertReleaseFile($id, 'SDPORN.duplicate.rar', sprintf('%08x', $id));
+                    DB::table('media_infos')->insert(['releases_id' => $id, 'unique_id' => 'uid-'.$id, 'movie_name' => 'Movie '.$id]);
+                }
+            }
+            foreach ([false, true] as $enabled) {
+                config(['nntmux_srrdb.enabled' => $enabled]);
+                $this->assertSame($reference->standardCandidateCount(), $current->standardCandidateCount());
+                foreach (str_split('0123456789abcdef') as $bucket) {
+                    foreach ([3, 1000] as $limit) {
+                        $this->assertEquals($reference->standardCandidateBatch($bucket, $limit), $current->standardCandidateBatch($bucket, $limit));
+                    }
+                }
+            }
+        }
+    }
+
+    public function test_generated_query_field_is_not_serialized_or_copied(): void
+    {
+        $release = (new Release)->newFromBuilder(['id' => 1, 'name' => 'fixture', 'name_direct_work_pending' => 1, 'name_evidence_work_pending' => 1]);
+        foreach (['name_direct_work_pending', 'name_evidence_work_pending'] as $field) {
+            $release->setAttribute($field, 1);
+            $this->assertArrayNotHasKey($field, $release->toArray());
+            $this->assertArrayNotHasKey($field, $release->getAttributes());
+            $this->assertArrayNotHasKey($field, $release->replicate()->getAttributes());
+        }
+    }
 
     protected function setUp(): void
     {

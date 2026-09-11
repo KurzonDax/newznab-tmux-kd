@@ -84,13 +84,17 @@ final class LatePostingReconciler
         if ($source === null) {
             return null;
         }
+        $window = (new PopulationQuery)->sourceWindow($source, 1800);
+        if ($window === null) {
+            return null;
+        }
         $matches = DB::table('reconciled_sources')->tap(static function ($query): void {
             if (Schema::hasTable('reconciled_artifacts')) {
                 $query->whereNotExists(static fn ($artifact) => $artifact->selectRaw('1')->from('reconciled_artifacts as a')
                     ->join('reconciled_postings as p', 'p.release_id', '=', 'a.release_id')->whereColumn('p.id', 'reconciled_sources.posting_id'));
             }
         })->where('collection_hash', bin2hex($source->collectionhash))
-            ->where('group_id', $source->groups_id)->whereBetween('postdate', [date('Y-m-d H:i:s', strtotime($source->date) - 1800), date('Y-m-d H:i:s', strtotime($source->date) + 1800)])
+            ->where('group_id', $source->groups_id)->whereBetween('postdate', [$window['from'], $window['until']])
             ->limit(257)->get();
         if ($matches->isEmpty()) {
             $matches = DB::table('reconciled_sources')->tap(static function ($query): void {
@@ -99,7 +103,7 @@ final class LatePostingReconciler
                         ->join('reconciled_postings as p', 'p.release_id', '=', 'a.release_id')->whereColumn('p.id', 'reconciled_sources.posting_id'));
                 }
             })->where('group_id', $source->groups_id)
-                ->whereBetween('postdate', [date('Y-m-d H:i:s', strtotime($source->date) - 1800), date('Y-m-d H:i:s', strtotime($source->date) + 1800)])
+                ->whereBetween('postdate', [$window['from'], $window['until']])
                 ->limit(257)->get();
         }
         $postingIds = $matches->pluck('posting_id')->unique()->all();

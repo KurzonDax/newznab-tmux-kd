@@ -9,8 +9,11 @@ use App\Models\Category;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\ObfuscationRecovery\RecoveryReleaseGate;
 use App\Services\Par2Sidecar\SidecarWork;
+use App\Services\Releases\CandidateReleaseQuery;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -132,37 +135,27 @@ final class NameFixingQueryService
      */
     public function standardCandidateBatch(string $leftGuid, int $limit): array
     {
-        return $this->database->select(
-            'SELECT r.id AS releases_id, r.id, r.name, r.searchname, r.fromname, r.guid,
-                    r.groups_id, r.categories_id, r.size AS relsize, r.completion, r.predb_id,
-                    r.nfostatus, r.is_trusted_name, r.proc_nfo, r.proc_uid, r.proc_files,
-                    r.proc_xxx, r.proc_media_movie, r.proc_par2, r.proc_hash16k,
-                    r.proc_srr, r.proc_crc32, r.proc_srrdb
-             FROM releases r
-             WHERE r.leftguid = ?
-             AND '.$this->standardSweepPredicate().'
-             ORDER BY r.id DESC
-             LIMIT ?',
-            [$leftGuid, max(1, $limit)]
-        );
+        return $this->standardCandidates($leftGuid)
+            ->selectRaw($this->standardSql('r.id AS releases_id, r.id, r.name, r.searchname, r.fromname, r.guid,
+                r.groups_id, r.categories_id, r.size AS relsize, r.completion, r.predb_id,
+                r.nfostatus, r.is_trusted_name, r.proc_nfo, r.proc_uid, r.proc_files,
+                r.proc_xxx, r.proc_media_movie, r.proc_par2, r.proc_hash16k,
+                r.proc_srr, r.proc_crc32, r.proc_srrdb'))
+            ->orderByDesc('r.id')->limit(max(1, $limit))->get()->all();
     }
 
     /**
      * How many releases the standard sweep would admit across every GUID bucket.
      *
      * This is the tmux Fix Names pane's wake-up gate. It shares
-     * {@see self::standardSweepPredicate()} with {@see self::standardCandidateBatch()}
+     * {@see self::standardCandidates()} with {@see self::standardCandidateBatch()}
      * so the pane sleeps exactly when the sweep has nothing to do -- the
      * hand-written copy it replaced counted only three of the sweep's sources
      * and let the pane sleep on real UID/SRR/hash/CRC work.
      */
     public function standardCandidateCount(): int
     {
-        $rows = $this->database->select(
-            'SELECT COUNT(*) AS aggregate FROM releases r WHERE '.$this->standardSweepPredicate()
-        );
-
-        return (int) ($rows[0]->aggregate ?? 0) + SidecarWork::pendingCount();
+        return $this->standardCandidates()->count() + SidecarWork::pendingCount();
     }
 
     /**
@@ -183,29 +176,64 @@ final class NameFixingQueryService
      * These gates keep the pane asleep until the worker can record an honest
      * verdict.
      */
-    private function standardSweepPredicate(): string
+    private function standardCandidates(?string $leftGuid = null): Builder
     {
-        $sources = [
-            '(r.nfostatus = 1 AND r.proc_nfo = 0)',
-            'r.proc_files = 0',
-            '(r.proc_xxx = 0 AND '.self::SOURCE_EXISTS[self::SOURCE_XXX].')',
-            '(r.proc_uid = 0 AND '.self::SOURCE_EXISTS[self::SOURCE_UID].')',
-            '(r.proc_media_movie = 0 AND '.self::SOURCE_EXISTS[self::SOURCE_MEDIA_MOVIE].')',
-            '(r.nzbstatus = 1 AND r.proc_par2 = 0)',
-            'r.proc_srr = 0',
-            'r.proc_hash16k = 0',
-            'r.proc_crc32 = 0',
-        ];
-
-        if ($this->srrdbEnabled()) {
-            $sources[] = sprintf(
-                '(r.proc_srrdb = 0 AND %s AND %s)',
-                self::SRRDB_TRUST_PREDICATE,
-                self::SOURCE_EXISTS[self::SOURCE_SRRDB]
-            );
+        /** @var Connection $connection */
+        $connection = $this->database;
+        $indexed = in_array($connection->getDriverName(), ['mysql', 'mariadb'], true);
+        $direct = $connection->table('releases as r')->select('r.id');
+        $this->standardBase($direct, $leftGuid);
+        if ($indexed) {
+            $direct->forceIndex('releases_name_direct_work')->where('r.name_direct_work_pending', 1);
+        } else {
+            $direct->whereRaw($this->standardSql('((r.nfostatus = 1 AND r.proc_nfo = 0) OR r.proc_files = 0
+                OR (r.nzbstatus = 1 AND r.proc_par2 = 0) OR r.proc_srr = 0
+                OR r.proc_hash16k = 0 OR r.proc_crc32 = 0)'));
         }
 
-        return RecoveryReleaseGate::availableSql('r.id', $this->database).' AND r.isrenamed = 0 AND r.predb_id = 0 AND ('.implode(' OR ', $sources).')';
+        $evidence = [
+            ['release_files', 'proc_xxx', "e.name LIKE '%SDPORN%'"],
+            ['media_infos', 'proc_uid', "e.unique_id IS NOT NULL AND e.unique_id != ''"],
+            ['media_infos', 'proc_media_movie', "e.movie_name IS NOT NULL AND e.movie_name != ''"],
+        ];
+        if ($this->srrdbEnabled()) {
+            $evidence[] = ['release_files', 'proc_srrdb', 'LENGTH(e.crc32) = 8 AND r.is_trusted_name = 0'];
+        }
+        foreach ($evidence as [$table, $flag, $predicate]) {
+            $arm = $connection->table('releases as r')->select('r.id');
+            if ($indexed) {
+                $grammar = $connection->getQueryGrammar();
+                $arm->fromRaw($grammar->wrapTable('releases as r').' FORCE INDEX (releases_name_evidence_work)'
+                    .' STRAIGHT_JOIN '.$grammar->wrapTable($table.' as e')
+                    .' ON '.$grammar->wrap('r.id').' = '.$grammar->wrap('e.releases_id'))
+                    ->where('r.name_evidence_work_pending', 1);
+            } else {
+                $arm->join($table.' as e', 'e.releases_id', '=', 'r.id');
+            }
+            $arm->where('r.'.$flag, 0)->whereRaw($this->standardSql($predicate));
+            $this->standardBase($arm, $leftGuid);
+            $direct->union($arm);
+        }
+
+        return CandidateReleaseQuery::fromCandidateIds($direct, 'name_seed')->toBase()
+            ->whereRaw(RecoveryReleaseGate::availableSql('r.id', $connection));
+    }
+
+    private function standardSql(string $sql): string
+    {
+        /** @var Connection $connection */
+        $connection = $this->database;
+
+        return preg_replace_callback('/\\b[re]\\.[a-z_0-9]+/',
+            static fn (array $match): string => $connection->getQueryGrammar()->wrap($match[0]), $sql);
+    }
+
+    private function standardBase(Builder $query, ?string $leftGuid): void
+    {
+        $query->where('r.isrenamed', 0)->where('r.predb_id', 0);
+        if ($leftGuid !== null) {
+            $query->where('r.leftguid', $leftGuid);
+        }
     }
 
     /**

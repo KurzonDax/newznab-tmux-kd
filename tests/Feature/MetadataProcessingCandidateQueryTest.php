@@ -23,6 +23,7 @@ use App\Services\Tmux\TmuxMonitorService;
 use App\Services\TvProcessing\TvEpisodeRevisitService;
 use App\Services\TvProcessing\TvProcessingCandidateQuery;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -96,6 +97,38 @@ class MetadataProcessingCandidateQueryTest extends TestCase
         $statistics = $monitor->collectStatistics();
 
         $this->assertSame(2, (int) $statistics['counts']['now']['processbooks']);
+    }
+
+    public function test_tv_and_movie_candidates_match_the_original_predicates_across_controls(): void
+    {
+        $this->travelTo(Carbon::parse('2026-09-10 12:00:00'));
+        $categories = [Category::TV_HD, Category::TV_ANIME, Category::TV_OTHER, Category::MOVIE_HD, Category::MOVIE_OTHER, Category::OTHER_MISC];
+        $identities = [null, '0', '0000000', '00000000', '1234567'];
+        for ($id = 1; $id <= 180; $id++) {
+            $this->insertRelease($id, $categories[$id % count($categories)], dechex($id % 16), $id % 2 === 0);
+            DB::table('releases')->where('id', $id)->update([
+                'groups_id' => 1 + $id % 2, 'size' => $id % 7 === 0 ? 1_048_576 : 2_000_000,
+                'videos_id' => $id % 3 === 0 ? 10 : 0, 'tv_episodes_id' => -4 + $id % 6,
+                'tv_episode_lookup_attempted_at' => $id % 3 === 0 ? null : now()->subHours($id % 8),
+                'postdate' => now()->subDays($id % 16), 'imdbid' => $identities[$id % 5],
+                'imdb_lookup_attempts' => $id % 5, 'imdb_lookup_attempted_at' => $id % 3 === 0 ? null : now()->subHours($id % 8),
+            ]);
+        }
+        foreach ([TvProcessingCandidateQuery::class => \Tests\Support\CandidateReference\TvProcessingCandidateQuery::class,
+            MovieProcessingCandidateQuery::class => \Tests\Support\CandidateReference\MovieProcessingCandidateQuery::class] as $current => $reference) {
+            foreach ([0, 1, 2] as $mode) {
+                foreach (['', '1', '2'] as $group) {
+                    foreach (['', 'a', 'b'] as $bucket) {
+                        foreach ([false, true] as $renamed) {
+                            $expected = $reference::query($group, $bucket, $mode, $renamed)->orderBy('postdate')->orderBy('id');
+                            $actual = $current::query($group, $bucket, $mode, $renamed)->orderBy('postdate')->orderBy('id');
+                            $this->assertSame((clone $expected)->pluck('id')->all(), (clone $actual)->pluck('id')->all());
+                            $this->assertSame((clone $expected)->limit(5)->pluck('id')->all(), (clone $actual)->limit(5)->pluck('id')->all());
+                        }
+                    }
+                }
+            }
+        }
     }
 
     public function test_game_renamed_only_mode_agrees_at_worker_runner_and_monitor_seams(): void
@@ -347,9 +380,9 @@ class MetadataProcessingCandidateQueryTest extends TestCase
             /** @var list<string> */
             public array $capturedCommands = [];
 
-            protected function executeCommand(string $command): string
+            protected function executeCommand(array|string $command): string
             {
-                $this->capturedCommands[] = $command;
+                $this->capturedCommands[] = is_array($command) ? implode(' ', $command) : $command;
 
                 return '';
             }
@@ -360,7 +393,7 @@ class MetadataProcessingCandidateQueryTest extends TestCase
                 string $desc,
                 ?callable $onComplete = null,
             ): void {
-                array_push($this->capturedCommands, ...$commands);
+                array_push($this->capturedCommands, ...array_map(static fn ($command): string => is_array($command) ? implode(' ', $command) : $command, $commands));
             }
 
             protected function headerStart(string $workType, int $count, int $maxProcesses): void {}

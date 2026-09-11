@@ -14,6 +14,8 @@ use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\Schema\Builder;
+use Illuminate\Database\SQLiteConnection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
@@ -31,11 +33,12 @@ class NameFixingBatchTest extends TestCase
     #[Test]
     public function grouped_processing_fetches_sources_once_for_the_whole_batch(): void
     {
-        $database = $this->createMock(Connection::class);
+        $database = $this->mockCandidateConnection();
         $database->method('getSchemaBuilder')->willReturn($this->createMock(Builder::class));
         $database->expects($this->exactly(5))
             ->method('select')
             ->willReturnCallback(function (string $sql): array {
+                $sql = str_replace('"', '', $sql);
                 $this->assertStringNotContainsString('GROUP_CONCAT', $sql);
                 $this->assertStringNotContainsString('GROUP BY r.id', $sql);
 
@@ -79,9 +82,10 @@ class NameFixingBatchTest extends TestCase
         $release->proc_par2 = NameFixingService::PROC_PAR2_NONE;
         $release->adddate = '2026-08-20 00:00:00';
 
-        $database = $this->createMock(Connection::class);
+        $database = $this->mockCandidateConnection();
         $database->method('getSchemaBuilder')->willReturn($this->createMock(Builder::class));
         $database->method('select')->willReturnCallback(function (string $sql) use ($release): array {
+            $sql = str_replace('"', '', $sql);
             if (str_contains($sql, 'r.proc_par2 = 0')) {
                 $this->assertStringNotContainsString('adddate', $sql, 'the sweep has no time window');
 
@@ -128,10 +132,11 @@ class NameFixingBatchTest extends TestCase
         $release = $this->processedRelease(40);
         $release->proc_srrdb = NameFixingService::PROC_SRRDB_NONE;
 
-        $database = $this->createMock(Connection::class);
+        $database = $this->mockCandidateConnection();
         $database->method('getSchemaBuilder')->willReturn($this->createMock(Builder::class));
         $database->method('select')->willReturnCallback(function (string $sql) use ($release): array {
-            if (str_contains($sql, 'r.proc_srrdb = 0')) {
+            $sql = str_replace('"', '', $sql);
+            if (str_contains(str_replace('"', '', $sql), 'r.proc_srrdb')) {
                 return [$release];
             }
 
@@ -170,9 +175,10 @@ class NameFixingBatchTest extends TestCase
         $release = $this->processedRelease(50);
         $release->proc_srrdb = NameFixingService::PROC_SRRDB_NONE;
 
-        $database = $this->createMock(Connection::class);
+        $database = $this->mockCandidateConnection();
         $database->method('getSchemaBuilder')->willReturn($this->createMock(Builder::class));
         $database->method('select')->willReturnCallback(function (string $sql) use ($release): array {
+            $sql = str_replace('"', '', $sql);
             $this->assertStringNotContainsString('LENGTH(rf.crc32) = 8', $sql);
 
             return str_contains($sql, 'r.proc_nfo') ? [$release] : [];
@@ -202,10 +208,10 @@ class NameFixingBatchTest extends TestCase
         $release->proc_srrdb = NameFixingService::PROC_SRRDB_NONE;
         $release->proc_uid = NameFixingService::PROC_UID_NONE;
 
-        $database = $this->createMock(Connection::class);
+        $database = $this->mockCandidateConnection();
         $database->method('getSchemaBuilder')->willReturn($this->createMock(Builder::class));
         $database->method('select')->willReturnCallback(
-            static fn (string $sql): array => str_contains($sql, 'r.proc_srrdb = 0') ? [$release] : []
+            static fn (string $sql): array => str_contains(str_replace('"', '', $sql), 'r.proc_srrdb') ? [$release] : []
         );
 
         $updateService = $this->createPartialMock(ReleaseUpdateService::class, ['updateSingleColumn']);
@@ -228,10 +234,11 @@ class NameFixingBatchTest extends TestCase
         $release->proc_uid = NameFixingService::PROC_UID_NONE;
         $release->is_trusted_name = 1;
 
-        $database = $this->createMock(Connection::class);
+        $database = $this->mockCandidateConnection();
         $database->method('getSchemaBuilder')->willReturn($this->createMock(Builder::class));
         $database->method('select')->willReturnCallback(function (string $sql) use ($release): array {
-            if (str_contains($sql, 'r.proc_srrdb = 0')) {
+            $sql = str_replace('"', '', $sql);
+            if (str_contains(str_replace('"', '', $sql), 'r.proc_srrdb')) {
                 return [$release];
             }
 
@@ -263,10 +270,11 @@ class NameFixingBatchTest extends TestCase
         $release = $this->processedRelease(80);
         $release->proc_xxx = NameFixingService::PROC_XXX_NONE;
 
-        $database = $this->createMock(Connection::class);
+        $database = $this->mockCandidateConnection();
         $database->method('getSchemaBuilder')->willReturn($this->createMock(Builder::class));
         $database->method('select')->willReturnCallback(function (string $sql) use ($release): array {
-            if (str_contains($sql, 'r.proc_xxx = 0')) {
+            $sql = str_replace('"', '', $sql);
+            if (str_contains($sql, 'r.proc_xxx')) {
                 return [$release];
             }
 
@@ -298,10 +306,11 @@ class NameFixingBatchTest extends TestCase
         $release = $this->processedRelease(90);
         $release->proc_media_movie = NameFixingService::PROC_MEDIA_MOVIE_NONE;
 
-        $database = $this->createMock(Connection::class);
+        $database = $this->mockCandidateConnection();
         $database->method('getSchemaBuilder')->willReturn($this->createMock(Builder::class));
         $database->method('select')->willReturnCallback(function (string $sql) use ($release): array {
-            if (str_contains($sql, 'r.proc_media_movie = 0')) {
+            $sql = str_replace('"', '', $sql);
+            if (str_contains($sql, 'r.proc_media_movie')) {
                 return [$release];
             }
 
@@ -326,6 +335,18 @@ class NameFixingBatchTest extends TestCase
         $service = $this->serviceWith($database, $updateService);
 
         $this->assertSame(['checked' => 1, 'fixed' => 0], $service->processStandardBatch('a', 100, false));
+    }
+
+    private function mockCandidateConnection(): Connection
+    {
+        $database = $this->getMockBuilder(SQLiteConnection::class)
+            ->setConstructorArgs([new \PDO('sqlite::memory:'), ':memory:', '', ['name' => 'namefix_batch', 'driver' => 'sqlite']])
+            ->onlyMethods(['select', 'getSchemaBuilder'])->getMock();
+        config(['database.connections.namefix_batch' => ['driver' => 'sqlite', 'database' => ':memory:']]);
+        DB::purge('namefix_batch');
+        DB::extend('namefix_batch', static fn () => $database);
+
+        return $database;
     }
 
     private function serviceWith(

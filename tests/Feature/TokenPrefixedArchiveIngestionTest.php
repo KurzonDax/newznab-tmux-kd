@@ -22,6 +22,7 @@ class TokenPrefixedArchiveIngestionTest extends TokenPrefixedArchiveTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        (require database_path('migrations/2026_09_10_224820_create_collection_sweep_cursors_table.php'))->up();
         Search::shouldReceive('updateRelease')->zeroOrMoreTimes();
         $this->registerSqliteFunction('UNIX_TIMESTAMP', static fn (?string $value): int => strtotime((string) $value));
         NzbCreationCandidateQuery::flushCapabilityCache();

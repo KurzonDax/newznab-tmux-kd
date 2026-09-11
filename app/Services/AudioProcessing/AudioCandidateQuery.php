@@ -7,6 +7,7 @@ namespace App\Services\AudioProcessing;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\AdditionalCandidateQuery;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
+use App\Services\Releases\CandidateReleaseQuery;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 
@@ -84,7 +85,7 @@ final class AudioCandidateQuery
         );
 
         return self::applyPredicates(
-            ReleaseClaimant::fromCandidateIds(AudioRouting::candidateIds($pending), 'audio_seed'),
+            CandidateReleaseQuery::fromCandidateIds(AudioRouting::candidateIds($pending), 'audio_seed'),
             $groupID,
             $guidChar,
             $maxSizeBytes,

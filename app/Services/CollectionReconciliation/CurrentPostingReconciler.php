@@ -28,7 +28,12 @@ final class CurrentPostingReconciler
         if ($source === null) {
             return null;
         }
-        $window = [gmdate('Y-m-d H:i:s', strtotime($source->date) - 1800), gmdate('Y-m-d H:i:s', strtotime($source->date) + 1800)];
+        $queries = new PopulationQuery;
+        $envelope = $queries->sourceWindow($source, 1800);
+        if ($envelope === null) {
+            return null;
+        }
+        $window = [$envelope['from'], $envelope['until']];
         $matches = DB::table('reconciled_artifacts as a')->join('reconciled_postings as p', 'p.release_id', '=', 'a.release_id')
             ->where('p.state', 'published')->where(static function ($query) use ($source, $window): void {
                 $query->where(static fn ($envelope) => $envelope->where('a.discovery_group_id', $source->groups_id)
@@ -105,14 +110,21 @@ final class CurrentPostingReconciler
                     $provenance['components'][] = $groups;
                 }
                 $candidates = $target->proofCandidates($provenance);
-                $nearby = DB::table('collections')->where('id', '!=', $collectionId)
-                    ->where('groups_id', $source->groups_id)->where('fromname', $source->fromname)
-                    ->where('declaredfiles', $source->declaredfiles)->whereIn('filecheck', [0, 1, 2, 3, 10, 15, 16])
-                    ->whereBetween('date', [gmdate('Y-m-d H:i:s', strtotime($source->date) - 3600), gmdate('Y-m-d H:i:s', strtotime($source->date) + 3600)])
-                    ->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))->orderBy('id')->limit(257)->pluck('id')->map(static fn ($id): int => (int) $id)->all();
-                if (count($nearby) > 256) {
+                $populationWindow = $queries->sourceWindow($source);
+                if ($populationWindow === null) {
+                    app(CollectionClaims::class)->retry($owner, 'cycle_yield');
+
                     return 'late_source_population';
                 }
+                $population = $queries->readWindow($populationWindow);
+                if (! $population['complete']) {
+                    app(CollectionClaims::class)->retry($owner, 'cycle_yield');
+
+                    return 'late_source_population';
+                }
+                $nearby = DB::table('collections')->whereIn('id', $population['rows']->pluck('id'))
+                    ->where('id', '!=', $collectionId)->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
+                    ->orderBy('id')->pluck('id')->map(static fn ($id): int => (int) $id)->all();
                 $eligible = app(CollectionAdmission::class)->eligibleIds($nearby, $quietHours);
                 if ($eligible === null) {
                     return 'late_file_population';
@@ -128,9 +140,7 @@ final class CurrentPostingReconciler
                 }, 3);
                 $competitors = $frozen['files'];
                 $expectedSources += $frozen['revisions'];
-                $populationSnapshot = ['population' => ['group' => (int) $source->groups_id, 'poster' => $source->fromname,
-                    'total' => (int) $source->declaredfiles, 'from' => gmdate('Y-m-d H:i:s', strtotime($source->date) - 3600),
-                    'until' => gmdate('Y-m-d H:i:s', strtotime($source->date) + 3600)]];
+                $populationSnapshot = ['population' => $populationWindow];
                 foreach (DB::table('binaries')->whereIn('collections_id', array_diff($nearby, $eligible))->limit(1025)->pluck('name') as $subject) {
                     if (preg_match('/"([^"\r\n]+)"/', $subject, $name) !== 1 || preg_match('/\.par2$/iD', $name[1]) === 1
                         || in_array($name[1], array_column($pending, 'filename'), true)

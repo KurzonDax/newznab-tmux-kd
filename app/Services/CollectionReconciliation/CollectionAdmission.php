@@ -9,7 +9,6 @@ use App\Services\CollectionsCleaningService;
 use App\Services\ObfuscationRecovery\RecoveryCollectionOwnership;
 use App\Services\Releases\CollectionQuietPredicate;
 use App\Support\Data\ProcessReleasesSettings;
-use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -73,15 +72,6 @@ final class CollectionAdmission
         return true;
     }
 
-    private function nearby(object $source): Builder
-    {
-        return DB::table('collections')->where('groups_id', $source->groups_id)
-            ->where('declaredfiles', $source->declaredfiles)->where('fromname', $source->fromname)
-            ->whereIn('filecheck', PopulationQuery::STATES)
-            ->whereBetween('date', [gmdate('Y-m-d H:i:s', strtotime($source->date) - PopulationQuery::WINDOW_SECONDS), gmdate('Y-m-d H:i:s', strtotime($source->date) + PopulationQuery::WINDOW_SECONDS)])
-            ->orderBy('id')->limit(PopulationQuery::LIMIT + 1);
-    }
-
     /**
      * @param  list<int>  $ids
      * @param  Collection<int, \stdClass>|null  $lockedPopulation
@@ -98,10 +88,19 @@ final class CollectionAdmission
                 if ($source->date === null || isset($seen[$source->id])) {
                     continue;
                 }
-                $nearby = $lockedPopulation === null ? $this->nearby($source)->get() : $lockedPopulation->filter(
+                $queries = new PopulationQuery;
+                $window = $queries->sourceWindow($source);
+                if ($window === null) {
+                    continue;
+                }
+                $population = $lockedPopulation === null ? $queries->readWindow($window) : null;
+                if ($population !== null && ! $population['complete']) {
+                    continue;
+                }
+                $nearby = $population['rows'] ?? $lockedPopulation->filter(
                     static fn ($candidate): bool => (int) $candidate->groups_id === (int) $source->groups_id
                         && (int) $candidate->declaredfiles === (int) $source->declaredfiles && $candidate->fromname === $source->fromname
-                        && abs(strtotime($candidate->date) - strtotime($source->date)) <= PopulationQuery::WINDOW_SECONDS
+                        && $candidate->date !== null && $candidate->date >= $window['from'] && $candidate->date <= $window['until']
                         && in_array((int) $candidate->filecheck, PopulationQuery::STATES, true));
                 if ($nearby->count() > PopulationQuery::LIMIT) {
                     continue;

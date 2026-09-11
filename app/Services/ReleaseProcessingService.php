@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\CollectionDeletionReason;
 use App\Enums\CollectionFileCheckStatus;
 use App\Enums\NzbCreationFailureDisposition;
 use App\Models\Category;
@@ -23,6 +24,7 @@ use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
 use App\Services\ObfuscationRecovery\RecoveryCollectionOwnership;
 use App\Services\Releases\CollectionCompletionMeasurer;
+use App\Services\Releases\CollectionDeletionSelection;
 use App\Services\Releases\CollectionQuietPredicate;
 use App\Services\Releases\ExecutableReleaseDiscardService;
 use App\Services\Releases\IncompleteReleaseSweepQuery;
@@ -61,10 +63,6 @@ final class ReleaseProcessingService
     private const int BATCH_SIZE = 500;
 
     private const int MAX_RETRIES = 5;
-
-    private const int RETRY_BASE_DELAY_US = 20000;
-
-    private const int BATCH_PAUSE_US = 10000;
 
     private const int CATEGORIZE_CHUNK_SIZE = 1000;
 
@@ -1183,74 +1181,13 @@ final class ReleaseProcessingService
      */
     private function processStuckCollections(int $groupID): void
     {
-        $quiet = CollectionQuietPredicate::build($this->settings->collectionTimeout, legacyColumn: 'added');
-        $totalDeleted = 0;
-
-        do {
-            $affected = $this->deleteStuckCollectionBatch($groupID, $quiet);
-            $totalDeleted += $affected;
-
-            if ($affected < self::BATCH_SIZE) {
-                break;
-            }
-
-            usleep(self::BATCH_PAUSE_US);
-        } while (true);
+        $totalDeleted = $this->collectionCleanupService->runMaintenance(
+            new CollectionDeletionSelection(CollectionDeletionReason::Stuck, $this->settings->collectionTimeout),
+            $groupID === 0 ? null : $groupID, $this->echoCLI)->deleted;
 
         if ($this->echoCLI && $totalDeleted > 0) {
             cli()->primary("Deleted {$totalDeleted} broken/stuck collections.", true);
         }
-    }
-
-    /** @param array{sql: string, bindings: list<int|string>} $quiet */
-    private function deleteStuckCollectionBatch(int $groupID, array $quiet): int
-    {
-        $attempt = 0;
-        $affected = 0;
-
-        do {
-            try {
-                $query = DB::table('collections')->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))->tap(static fn ($query) => CollectionOwnership::exclude($query))
-                    ->whereIn('filecheck', [
-                        CollectionFileCheckStatus::Default->value,
-                        CollectionFileCheckStatus::CompleteCollection->value,
-                        CollectionFileCheckStatus::TempComplete->value,
-                        CollectionFileCheckStatus::ZeroPart->value,
-                        10,
-                    ])
-                    ->orderBy('id')
-                    ->limit(self::BATCH_SIZE);
-                $query->whereRaw($quiet['sql'], $quiet['bindings']);
-                if ($groupID !== 0) {
-                    $query->where('groups_id', '=', $groupID);
-                }
-
-                $ids = $query->pluck('id')->all();
-                if ($ids === []) {
-                    break;
-                }
-
-                $affected = $this->collectionCleanupService->deleteCollectionsAndDescendants(
-                    $ids,
-                    'Stuck collections cleanup',
-                    $this->echoCLI
-                );
-                break;
-            } catch (Throwable $e) {
-                $attempt++;
-                if ($attempt >= self::MAX_RETRIES) {
-                    if ($this->echoCLI) {
-                        cli()->error(
-                            'Stuck collections delete failed after retries: '.$e->getMessage()
-                        );
-                    }
-                    break;
-                }
-                usleep(self::RETRY_BASE_DELAY_US * $attempt);
-            }
-        } while (true);
-
-        return $affected;
     }
 
     // ========================================================================

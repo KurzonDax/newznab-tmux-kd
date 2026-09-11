@@ -81,6 +81,35 @@ final class MusicIdentityCandidateQueryTest extends TestCase
         );
     }
 
+    public function test_seed_join_preserves_exact_candidates_with_group_precedence_and_evidence(): void
+    {
+        $this->travelTo(Carbon::parse('2026-09-10 12:00:00'));
+        $categories = [Category::MUSIC_MP3, Category::MUSIC_VIDEO, Category::MOVIE_HD, Category::MUSIC_AUDIOBOOK];
+        for ($id = 1; $id <= 64; $id++) {
+            $this->release($id, $categories[$id % 4], dechex($id % 16), groupId: 1 + $id % 3,
+                claimToken: $id % 7 === 0 ? AudioRouting::DECLINED_TOKEN : null);
+            if ($id % 5 === 0) {
+                DB::table('releases_groups')->insert([['releases_id' => $id, 'groups_id' => 2], ['releases_id' => $id, 'groups_id' => 3]]);
+            }
+            if ($id % 3 === 0) {
+                $evidence = $this->evidence($id, 1, dechex($id % 16));
+                if ($id % 2 === 0) {
+                    $this->terminalDecision($evidence, 'music-identity-v1');
+                }
+            }
+        }
+        foreach (['music-identity-v1', 'music-identity-v2'] as $version) {
+            foreach (['', '1', '2', '3'] as $group) {
+                foreach (['', ...str_split('0123456789abcdef')] as $bucket) {
+                    $reference = \Tests\Support\CandidateReference\MusicIdentityCandidateQuery::query($group, $bucket, $version)->orderBy('r.postdate')->orderBy('r.id');
+                    $current = MusicIdentityCandidateQuery::query($group, $bucket, $version)->orderBy('r.postdate')->orderBy('r.id');
+                    $this->assertSame((clone $reference)->pluck('r.id')->all(), (clone $current)->pluck('r.id')->all());
+                    $this->assertSame((clone $reference)->limit(3)->pluck('r.id')->all(), (clone $current)->limit(3)->pluck('r.id')->all());
+                }
+            }
+        }
+    }
+
     #[Test]
     public function the_latest_evidence_revision_and_algorithm_version_define_replay_eligibility(): void
     {

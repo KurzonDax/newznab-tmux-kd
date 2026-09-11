@@ -106,9 +106,9 @@ class ReleaseRenameMetadataEligibilityTest extends TestCase
             /** @var list<string> */
             public array $capturedCommands = [];
 
-            protected function executeCommand(string $command): string
+            protected function executeCommand(array|string $command): string
             {
-                $this->capturedCommands[] = $command;
+                $this->capturedCommands[] = is_array($command) ? implode(' ', $command) : $command;
 
                 return '';
             }
