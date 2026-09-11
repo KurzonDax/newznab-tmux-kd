@@ -10,6 +10,7 @@ use App\Models\Settings;
 use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Single source of truth for movie metadata admission.
@@ -31,6 +32,7 @@ final class MovieProcessingCandidateQuery
     ): Builder {
         $resolvedLookupMode = $lookupMode ?? (int) Settings::settingValue('lookupimdb');
         $query = Release::query()->whereRaw(RecoveryIdentityPolicy::singleItemSql())->whereRaw(BundleIdentity::singleItemSql())
+            ->when(in_array(DB::getDriverName(), ['mysql', 'mariadb'], true), static fn ($query) => $query->forceIndex('ix_releases_imdbid_password_cat_postdate'))
             ->whereBetween('categories_id', [Category::MOVIE_ROOT, Category::MOVIE_OTHER])
             ->where(static function (Builder $candidate): void {
                 $candidate->where(function (Builder $pending): void {

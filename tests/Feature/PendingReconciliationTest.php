@@ -58,14 +58,18 @@ class PendingReconciliationTest extends TestCase
 
     private ?\Closure $beforeFirstRead = null;
 
+    private string $originalTimezone;
+
     protected function setUp(): void
     {
         parent::setUp();
+        $this->originalTimezone = date_default_timezone_get();
         config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => ':memory:']);
         DB::purge();
         DB::reconnect();
         $this->registerSqliteFunction('regexp', static fn ($pattern, $value): int => preg_match('/'.str_replace('/', '\\/', $pattern).'/i', (string) $value) === 1 ? 1 : 0, 2);
         $this->createPostingSchema();
+        (require database_path('migrations/2026_09_10_224820_create_collection_sweep_cursors_table.php'))->up();
         NzbCreationCandidateQuery::flushCapabilityCache();
         $this->seed(CollectionRegexesTableSeeder::class);
         Cache::flush();
@@ -75,6 +79,7 @@ class PendingReconciliationTest extends TestCase
 
     protected function tearDown(): void
     {
+        date_default_timezone_set($this->originalTimezone);
         NzbCreationCandidateQuery::flushCapabilityCache();
         parent::tearDown();
     }
@@ -221,9 +226,11 @@ class PendingReconciliationTest extends TestCase
 
     }
 
-    #[DataProvider('ordinaryWriterCases')]
-    public function test_late_addition_preserves_current_replacement_and_unproved_opaque_file(bool $repair): void
+    #[DataProvider('lateWriterClocks')]
+    public function test_late_addition_preserves_current_replacement_and_unproved_opaque_file(bool $repair, string $timezone): void
     {
+        config(['app.timezone' => $timezone]);
+        date_default_timezone_set($timezone);
         (require database_path('migrations/2026_09_10_134847_add_reconciliation_admissions.php'))->up();
         (require database_path('migrations/2026_09_10_140952_create_reconciled_artifact_operations.php'))->up();
         [$service, $id] = $this->ingestCourse(multipart: $repair);
@@ -287,6 +294,18 @@ class PendingReconciliationTest extends TestCase
         $late = array_values(array_filter($this->courseHeaders, static fn ($header): bool => str_contains($header['Subject'], '"bundle.r15"')));
         (new TestBinariesHarness)->simulateScan($late, ['id' => 1, 'name' => 'alt.binaries.boneless']);
         $lateId = (int) DB::table('collections')->value('id');
+        Schema::create('obfuscation_recovery_publications', static function (Blueprint $table): void {
+            $table->unsignedBigInteger('collections_id')->primary();
+            $table->string('state');
+        });
+        $source = (array) DB::table('collections')->where('id', $lateId)->first();
+        for ($id = $lateId + 1; $id <= $lateId + 256; $id++) {
+            DB::table('collections')->insert(array_replace($source, ['id' => $id, 'collectionhash' => sha1('late-owned:'.$id, true)]));
+            DB::table('obfuscation_recovery_publications')->insert(['collections_id' => $id, 'state' => 'prepared']);
+        }
+        $this->assertSame('late_source_population', $service->reconcile($lateId, 1));
+        DB::table('collections')->where('id', '>', $lateId)->delete();
+        DB::table('obfuscation_recovery_publications')->delete();
         $this->assertSame('late_added', $service->reconcile($lateId, 1));
         $stored = $nzbs->readNzbContents($release->guid);
         $this->assertStringContainsString('opaque@example.invalid', $stored);
@@ -298,6 +317,11 @@ class PendingReconciliationTest extends TestCase
             }
         }
         $this->assertSame(2, (int) DB::table('reconciled_artifacts')->value('epoch'));
+    }
+
+    public static function lateWriterClocks(): array
+    {
+        return [[false, 'UTC'], [true, 'UTC'], [false, 'America/Chicago'], [true, 'America/Chicago']];
     }
 
     public function test_legacy_partial_union_can_rescan_a_whole_file_then_prove_another_late_source(): void

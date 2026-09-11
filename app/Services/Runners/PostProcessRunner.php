@@ -17,7 +17,6 @@ use App\Services\MetadataProcessing\NfoProcessingCandidateQuery;
 use App\Services\MusicIdentity\ResolveReleaseMusicIdentity;
 use App\Services\TempWorkspaceService;
 use App\Services\TvProcessing\TvProcessingCandidateQuery;
-use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -52,9 +51,10 @@ class PostProcessRunner extends BaseRunner
                 // id may already be a single GUID bucket char; if not, take first char defensively
                 $char = isset($release->id) ? substr((string) $release->id, 0, 1) : '';
                 // Use postprocess:guid command which accepts the GUID character
-                $command = PHP_BINARY.' artisan postprocess:guid '.$type.' '.$char;
+                $command = [PHP_BINARY, 'artisan', 'postprocess:guid', $type, $char];
                 if ($type === 'additional') {
-                    $command .= ' --worker --max-batches='.self::ADDITIONAL_WORKER_MAX_BATCHES;
+                    $command[] = '--worker';
+                    $command[] = '--max-batches='.self::ADDITIONAL_WORKER_MAX_BATCHES;
                 }
                 $commands[] = $command;
             }
@@ -69,7 +69,7 @@ class PostProcessRunner extends BaseRunner
         if ($count <= 1 || $maxProcesses <= 1) {
             foreach ($releases as $release) {
                 $char = isset($release->id) ? substr((string) $release->id, 0, 1) : '';
-                $command = PHP_BINARY.' artisan postprocess:guid '.$type.' '.$char;
+                $command = [PHP_BINARY, 'artisan', 'postprocess:guid', $type, $char];
                 echo $this->executeCommand($command);
                 cli()->primary('Finished task for '.$desc);
             }
@@ -80,7 +80,7 @@ class PostProcessRunner extends BaseRunner
         $commands = [];
         foreach ($releases as $idx => $release) {
             $char = isset($release->id) ? substr((string) $release->id, 0, 1) : '';
-            $commands[$idx] = PHP_BINARY.' artisan postprocess:guid '.$type.' '.$char;
+            $commands[$idx] = [PHP_BINARY, 'artisan', 'postprocess:guid', $type, $char];
         }
 
         try {
@@ -111,7 +111,7 @@ class PostProcessRunner extends BaseRunner
             $commands = [];
             foreach ($tasks as $task) {
                 $char = substr((string) $task->id, 0, 1);
-                $commands[] = PHP_BINARY.' artisan postprocess:guid '.$task->type.' '.$char;
+                $commands[] = [PHP_BINARY, 'artisan', 'postprocess:guid', $task->type, $char];
             }
             $this->runStreamingCommands($commands, $maxProcesses, $desc);
 
@@ -124,7 +124,7 @@ class PostProcessRunner extends BaseRunner
         if ($count <= 1 || $maxProcesses <= 1) {
             foreach ($tasks as $task) {
                 $char = substr((string) $task->id, 0, 1);
-                $command = PHP_BINARY.' artisan postprocess:guid '.$task->type.' '.$char;
+                $command = [PHP_BINARY, 'artisan', 'postprocess:guid', $task->type, $char];
                 echo $this->executeCommand($command);
                 cli()->primary('Finished task for '.$desc);
             }
@@ -138,12 +138,12 @@ class PostProcessRunner extends BaseRunner
             $runTasks = [];
             foreach ($batch as $idx => $task) {
                 $char = substr((string) $task->id, 0, 1);
-                $command = PHP_BINARY.' artisan postprocess:guid '.$task->type.' '.$char;
-                $runTasks[$idx] = fn () => $this->executeCommand($command);
+                $command = [PHP_BINARY, 'artisan', 'postprocess:guid', $task->type, $char];
+                $runTasks[$idx] = $this->taskForCommand($command);
             }
 
             try {
-                $results = Concurrency::run($runTasks, $this->concurrencyTimeout());
+                $results = $this->runConcurrentTasks($runTasks);
 
                 foreach ($results as $output) {
                     echo $output;
@@ -482,7 +482,7 @@ class PostProcessRunner extends BaseRunner
                 $char = isset($release->id) ? substr((string) $release->id, 0, 1) : '';
                 $renamed = isset($release->renamed) ? $release->renamed : '';
                 // Use the pipelined TV command
-                $commands[] = PHP_BINARY.' artisan postprocess:tv-pipeline '.$char.($renamed ? ' '.$renamed : '').' --mode=pipeline';
+                $commands[] = [PHP_BINARY, 'artisan', 'postprocess:tv-pipeline', $char, ...($renamed ? [(string) $renamed] : []), '--mode=pipeline'];
             }
             $this->runStreamingCommands($commands, $maxProcesses, $desc);
 
@@ -501,12 +501,12 @@ class PostProcessRunner extends BaseRunner
                 $char = isset($release->id) ? substr((string) $release->id, 0, 1) : '';
                 $renamed = isset($release->renamed) ? $release->renamed : '';
                 // Use the pipelined TV command for each GUID bucket
-                $command = PHP_BINARY.' artisan postprocess:tv-pipeline '.$char.($renamed ? ' '.$renamed : '').' --mode=pipeline';
-                $tasks[$idx] = fn () => $this->executeCommand($command);
+                $command = [PHP_BINARY, 'artisan', 'postprocess:tv-pipeline', $char, ...($renamed ? [(string) $renamed] : []), '--mode=pipeline'];
+                $tasks[$idx] = $this->taskForCommand($command);
             }
 
             try {
-                $results = Concurrency::run($tasks, $this->concurrencyTimeout());
+                $results = $this->runConcurrentTasks($tasks);
 
                 foreach ($results as $taskIdx => $output) {
                     echo $output;

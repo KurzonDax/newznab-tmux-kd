@@ -13,7 +13,7 @@ class BackfillRunner extends BaseRunner
     {
         $startedAt = microtime(true);
 
-        $this->executeCommand(PHP_BINARY.' app/Services/Tmux/Scripts/update_groups.php');
+        $this->executeCommand([PHP_BINARY, 'app/Services/Tmux/Scripts/update_groups.php']);
 
         $groups = (new BackfillService)->eligibleGroups();
         $quantity = (int) Settings::settingValue('backfill_qty');
@@ -32,12 +32,7 @@ class BackfillRunner extends BaseRunner
         $commands = [];
         $workByGroup = [];
         foreach ($groups as $group) {
-            $commands[$group->name] = sprintf(
-                '%s artisan backfill:group "%s" 2 %d',
-                PHP_BINARY,
-                addcslashes($group->name, '"\\'),
-                $quantity,
-            );
+            $commands[$group->name] = [PHP_BINARY, 'artisan', 'backfill:group', $group->name, '2', (string) $quantity];
             $workByGroup[$group->name] = $group;
         }
 

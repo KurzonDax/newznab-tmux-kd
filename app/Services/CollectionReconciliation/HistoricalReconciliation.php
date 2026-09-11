@@ -58,13 +58,12 @@ final class HistoricalReconciliation
         if (count($bases) === 1 && Schema::hasTable('collections')) {
             $base = $bases[0];
             $groupId = DB::table('usenet_groups')->where('name', $base->group)->value('id');
-            $pendingIds = DB::table('collections')->where('groups_id', $groupId)->where('declaredfiles', $base->total)
-                ->whereIn('filecheck', [0, 1, 2, 3, 10, 15, 16])
-                ->whereBetween('date', [gmdate('Y-m-d H:i:s', $base->date - 1800), gmdate('Y-m-d H:i:s', $base->date + 1800)])
-                ->orderBy('id')->limit(257)->pluck('id')->map(static fn ($id): int => (int) $id)->all();
-            if (count($pendingIds) + count($ids) > 256) {
+            $population = (new PopulationQuery)->readHistoricalWindow((int) $groupId, $base->total, $base->date);
+            if (! $population['complete'] || $population['rows']->count() + count($ids) > PopulationQuery::LIMIT) {
                 throw new RuntimeException('Combined source population exceeds 256.');
             }
+            $pendingIds = $population['rows']->whereIn('filecheck', PopulationQuery::STATES)
+                ->pluck('id')->map(static fn ($id): int => (int) $id)->all();
             $pending = (new PendingInventory)->load($pendingIds);
             $pendingDigest = PendingInventory::digest($pending);
             $known = array_fill_keys(array_map(static fn (PostingFile $file): string => $file->firstArticle(), $files), true);

@@ -158,10 +158,9 @@ class PredbSearchLifecycleTest extends TestCase
 
         $this->assertCount(3, $runner->commands);
         $this->assertSame(3, $runner->maxProcesses);
-        foreach ($runner->commands as $command) {
-            $this->assertStringContainsString('predbft', $command);
-            $this->assertStringContainsString(' 25 ', $command);
-            $this->assertStringContainsString(' 3"', $command);
+        foreach ($runner->commands as $index => $command) {
+            $this->assertSame([PHP_BINARY, 'app/Services/Tmux/Scripts/groupfixrelnames.php'], array_slice($command, 0, 2));
+            $this->assertSame(['predbft', (string) $index, '25', (string) ($index + 1), '3'], explode(' ', $command[2]));
         }
     }
 

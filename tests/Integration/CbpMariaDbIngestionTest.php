@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Integration;
 
+use App\Enums\CollectionDeletionReason;
 use App\Enums\CollectionFileCheckStatus;
+use App\Enums\CollectionSweepOutcome;
 use App\Enums\HeaderScanDirection;
 use App\Models\UsenetGroup;
 use App\Services\Binaries\BinariesConfig;
@@ -12,10 +14,14 @@ use App\Services\Binaries\CollectionHandler;
 use App\Services\Binaries\HeaderStorageService;
 use App\Services\CollectionCleanupService;
 use App\Services\CollectionReconciliation\CollectionAdmission;
+use App\Services\CollectionReconciliation\PopulationQuery;
 use App\Services\CollectionReconciliation\PostingEvidence;
 use App\Services\CollectionsCleaningService;
 use App\Services\NNTP\NntpProviderPool;
 use App\Services\ReleaseProcessingService;
+use App\Services\Releases\CollectionDeletionSelection;
+use App\Services\Releases\CollectionSweep;
+use App\Services\Releases\CollectionSweepLease;
 use App\Services\YencService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Console\Kernel;
@@ -27,6 +33,8 @@ use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 use Tests\Support\CollectionFrontierAssertions;
 use Tests\TestCase;
 
@@ -44,6 +52,9 @@ final class CbpMariaDbIngestionTest extends TestCase
         $database = getenv('CBP_INTEGRATION_DB_DATABASE');
         if ($database === false || $database === '') {
             return parent::createApplication();
+        }
+        if ($database !== 'cbp_integration') {
+            throw new \RuntimeException('Collection scale tests require the isolated cbp_integration database.');
         }
 
         foreach (['DB_CONNECTION', 'DB_DATABASE', 'DB_HOST', 'DB_USERNAME', 'DB_PASSWORD'] as $key) {
@@ -69,12 +80,18 @@ final class CbpMariaDbIngestionTest extends TestCase
             $this->markTestSkipped('MariaDB/MySQL integration test.');
         }
 
-        foreach (['cbp_optimization_checkpoints', 'cbp_binary_map', 'parts_cbp_new', 'parts_cbp_pre_optimize', 'settings'] as $table) {
+        if (DB::connection()->getDatabaseName() !== 'cbp_integration') {
+            throw new \RuntimeException('Refusing a non-test database.');
+        }
+        DB::statement('SET FOREIGN_KEY_CHECKS=0');
+        foreach (['parts', 'binaries', 'collection_groups', 'collections', 'collection_regexes', 'usenet_group_ingested_ranges', 'usenet_groups', 'collection_sweep_cursors', 'cbp_optimization_checkpoints', 'cbp_binary_map', 'parts_cbp_new', 'parts_cbp_pre_optimize', 'settings'] as $table) {
             DB::statement("DROP TABLE IF EXISTS {$table}");
         }
+        DB::statement('SET FOREIGN_KEY_CHECKS=1');
         DB::statement('CREATE TABLE settings (name VARCHAR(255) PRIMARY KEY, value TEXT NULL) ENGINE=InnoDB');
         DB::statement('CREATE TABLE usenet_groups (id INT UNSIGNED PRIMARY KEY, first_record BIGINT DEFAULT 0, last_record BIGINT DEFAULT 0, last_updated DATETIME NULL, name VARCHAR(255) NOT NULL, active TINYINT DEFAULT 1, backfill TINYINT DEFAULT 1, last_record_postdate DATETIME NULL, first_record_postdate DATETIME NULL, backfill_settled_at DATETIME NULL) ENGINE=InnoDB');
         (require database_path('migrations/2026_09_05_213352_create_usenet_group_ingested_ranges_table.php'))->up();
+        (require database_path('migrations/2026_09_10_224820_create_collection_sweep_cursors_table.php'))->up();
         DB::statement('CREATE TABLE collection_regexes (id INT PRIMARY KEY, group_regex VARCHAR(255), regex VARCHAR(255), status TINYINT DEFAULT 1, ordinal INT DEFAULT 0) ENGINE=InnoDB');
         DB::statement('CREATE TABLE collections (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -87,7 +104,7 @@ final class CbpMariaDbIngestionTest extends TestCase
             last_seen_at DATETIME NULL, last_seen_head_postdate DATETIME NULL, last_seen_tail_postdate DATETIME NULL, filecheck TINYINT NOT NULL DEFAULT 0,
             filesize BIGINT UNSIGNED NOT NULL DEFAULT 0, noise CHAR(32) NOT NULL DEFAULT \'\',
             UNIQUE KEY ix_collection_collectionhash (collectionhash),
-            KEY ix_collections_group_filecheck_seen_id (groups_id, filecheck, last_seen_at, id)
+            KEY ix_collections_group_filecheck_seen_id (groups_id, filecheck, last_seen_at, id), KEY groups_id (groups_id)
         ) ENGINE=InnoDB');
         DB::statement('CREATE TABLE collection_groups (
             collections_id INT UNSIGNED NOT NULL, group_name VARCHAR(255) NOT NULL,
@@ -122,7 +139,7 @@ final class CbpMariaDbIngestionTest extends TestCase
     {
         if (\in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
             DB::statement('SET FOREIGN_KEY_CHECKS=0');
-            foreach (['parts', 'parts_cbp_new', 'parts_cbp_pre_optimize', 'cbp_binary_map', 'cbp_optimization_checkpoints', 'binaries', 'collection_groups', 'collections', 'collection_regexes', 'usenet_group_ingested_ranges', 'usenet_groups', 'settings'] as $table) {
+            foreach (['collection_sweep_cursors', 'parts', 'parts_cbp_new', 'parts_cbp_pre_optimize', 'cbp_binary_map', 'cbp_optimization_checkpoints', 'binaries', 'collection_groups', 'collections', 'collection_regexes', 'usenet_group_ingested_ranges', 'usenet_groups', 'settings'] as $table) {
                 DB::statement("DROP TABLE IF EXISTS {$table}");
             }
             DB::statement('SET FOREIGN_KEY_CHECKS=1');
@@ -133,6 +150,229 @@ final class CbpMariaDbIngestionTest extends TestCase
             $this->setEnvironmentValue($key, $value === false ? null : $value);
         }
         $this->originalEnvironment = [];
+    }
+
+    public function test_every_dense_live_state_yields_after_257_raw_members(): void
+    {
+        (require database_path('migrations/2026_09_10_175414_add_collections_admission_window_index.php'))->up();
+        $queries = new PopulationQuery;
+        foreach ([0, 1, 2, 3, 10, 15, 16] as $state) {
+            DB::table('collections')->delete();
+            DB::statement("INSERT INTO collections (id,subject,fromname,groups_id,declaredfiles,collectionhash,date,dateadded,filecheck)
+                SELECT seq,'dense fixture','one prolific poster',1,3,UNHEX(SHA1(CONCAT('dense:',seq))),
+                '2026-01-10 08:00:00','2026-01-10 08:00:00',$state FROM seq_1_to_10000");
+            $window = $queries->sourceWindow(DB::table('collections')->where('id', 1)->first());
+            $before = $this->admissionHandlerReads();
+            $read = $queries->readWindow($window);
+            $locked = DB::transaction(fn (): array => $queries->lockWindow($window));
+            $reads = $this->admissionHandlerReads() - $before;
+            $this->assertFalse($read['complete']);
+            $this->assertFalse($locked['complete']);
+            $this->assertCount(257, $read['rows']);
+            $this->assertSame($read['rows']->pluck('id')->all(), $locked['rows']->pluck('id')->all());
+            $this->assertLessThan(1100, $reads);
+        }
+    }
+
+    public function test_maintenance_pages_bound_descendant_reads_and_advance_without_matches(): void
+    {
+        DB::statement('CREATE TABLE releases (id INT UNSIGNED PRIMARY KEY, nzbstatus INT NOT NULL)');
+        $metrics = [];
+        try {
+            foreach ([100000, 1000000] as $size) {
+                DB::table('collection_sweep_cursors')->delete();
+                DB::table('collections')->delete();
+                DB::statement("INSERT INTO collections (id,subject,fromname,groups_id,collectionhash,date,dateadded,added,last_seen_at,filecheck)
+                    SELECT seq,'neutral','neutral',100+MOD(seq,20),UNHEX(SHA1(CONCAT('background:',seq))),NOW(),NOW(),NOW(),NOW(),0 FROM seq_1_to_$size");
+                DB::statement("INSERT INTO binaries (id,collections_id,binaryhash,name,totalparts,currentparts)
+                    SELECT id,id,UNHEX(MD5(CONCAT('binary:',id))),'neutral.rar',1,1 FROM collections");
+                DB::statement("INSERT INTO parts (binaries_id,messageid,number,partnumber,size)
+                    SELECT id,CONCAT('fixture:',id),id,1,100 FROM binaries");
+                foreach (CollectionDeletionReason::cases() as $reason) {
+                    foreach ([null, 100] as $group) {
+                        $scope = $reason->value.':'.($group === null ? 'global' : 'group:'.$group);
+                        $before = $this->admissionHandlerReads();
+                        $start = microtime(true);
+                        DB::enableQueryLog();
+                        $deleted = app(CollectionCleanupService::class)->runMaintenance(new CollectionDeletionSelection($reason), $group)->deleted;
+                        $seconds = microtime(true) - $start;
+                        $sql = DB::getQueryLog();
+                        DB::disableQueryLog();
+                        DB::flushQueryLog();
+                        $reads = $this->admissionHandlerReads() - $before;
+                        $this->assertSame(0, $deleted);
+                        $cursor = DB::table('collection_sweep_cursors')->where('scope', $scope)->first();
+                        $this->assertNull($cursor->lease_token);
+                        if ($group === null) {
+                            $this->assertSame(20000, (int) $cursor->last_id);
+                        }
+                        $pages = array_filter($sql, static fn (array $query): bool => str_contains($query['query'], 'limit 1000'));
+                        $this->assertLessThanOrEqual(20, count($pages));
+                        $metrics[$size][$scope] = ['reads' => $reads, 'seconds' => $seconds, 'sql_count' => count($sql), 'pages' => count($pages)];
+                    }
+                }
+                DB::table('binaries')->where('collections_id', 20001)->delete();
+                $this->assertSame(1, app(CollectionCleanupService::class)->runMaintenance(
+                    new CollectionDeletionSelection(CollectionDeletionReason::Orphan))->deleted);
+                $this->assertFalse(DB::table('collections')->where('id', 20001)->exists());
+                DB::table('collection_sweep_cursors')->where('scope', 'orphan:global')->update(['last_id' => $size]);
+                app(CollectionCleanupService::class)->runMaintenance(new CollectionDeletionSelection(CollectionDeletionReason::Orphan))->deleted;
+                $this->assertSame(0, (int) DB::table('collection_sweep_cursors')->where('scope', 'orphan:global')->value('high_water_id'));
+                DB::table('binaries')->where('collections_id', 1)->delete();
+                $this->assertSame(1, app(CollectionCleanupService::class)->runMaintenance(
+                    new CollectionDeletionSelection(CollectionDeletionReason::Orphan))->deleted);
+                $this->assertFalse(DB::table('collections')->where('id', 1)->exists());
+            }
+            foreach ($metrics[100000] as $scope => $small) {
+                // Group 100 has 5 pages at 100k and reaches the explicit 20-page budget at 1m.
+                $pageRatio = $metrics[1000000][$scope]['pages'] / $small['pages'];
+                $this->assertLessThanOrEqual($small['reads'] * $pageRatio * 2 + 1000, $metrics[1000000][$scope]['reads']);
+            }
+            fwrite(STDERR, 'MAINTENANCE_METRICS='.json_encode($metrics, JSON_THROW_ON_ERROR).PHP_EOL);
+        } finally {
+            DB::statement('DROP TABLE IF EXISTS releases');
+        }
+    }
+
+    public function test_collection_lock_wait_crossing_lease_expiry_rolls_back_before_deletion(): void
+    {
+        (new HeaderStorageService)->store([$this->header(1001, 1, 100)], ['id' => 1, 'name' => 'alt.binaries.test']);
+        DB::table('collections')->update(['date' => null, 'dateadded' => now()->subDays(10), 'filecheck' => 2]);
+        $ready = $this->makeTempPath('collection-lock-ready');
+        $waited = $this->makeTempPath('collection-lock-waited');
+        $thread = (int) DB::selectOne('SELECT CONNECTION_ID() AS id')->id;
+        $blocker = new Process([PHP_BINARY, base_path('tests/Fixtures/collection-lock-barrier.php'), '1', (string) $thread, $ready, $waited]);
+        $blocker->setTimeout(15);
+        $blocker->start();
+        $deadline = microtime(true) + 5;
+        while (! is_file($ready) && microtime(true) < $deadline && $blocker->isRunning()) {
+            usleep(1000);
+        }
+        $this->assertFileExists($ready, $blocker->getErrorOutput());
+        $expired = false;
+        DB::listen(function (QueryExecuted $event) use (&$expired): void {
+            if (! $expired && str_contains($event->sql, 'from `collections`') && str_contains($event->sql, 'for update')) {
+                $expired = true;
+                Carbon::setTestNow(now()->addSeconds(61));
+            }
+        });
+        try {
+            $this->assertSame(0, app(CollectionCleanupService::class)->runMaintenance(
+                new CollectionDeletionSelection(CollectionDeletionReason::Retention))->deleted);
+            $this->assertSame(0, $blocker->wait(), $blocker->getErrorOutput());
+            $this->assertFileExists($waited, 'The blocker must observe a real InnoDB lock wait before releasing its lock.');
+            $this->assertTrue($expired);
+            $this->assertSame(1, DB::table('collections')->count());
+            $this->assertSame(1, DB::table('binaries')->count());
+            $this->assertSame(1, DB::table('parts')->count());
+            $this->assertSame(0, (int) DB::table('collection_sweep_cursors')->value('last_id'));
+        } finally {
+            $blocker->stop(0);
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_a_binary_inserted_after_orphan_selection_survives_current_read_revalidation(): void
+    {
+        (new HeaderStorageService)->store([$this->header(1001, 1, 100)], ['id' => 1, 'name' => 'alt.binaries.test']);
+        DB::table('binaries')->delete();
+        config(['database.connections.sweep_peer' => config('database.connections.mariadb')]);
+        $peer = DB::connection('sweep_peer');
+        $inserted = false;
+        DB::listen(function (QueryExecuted $event) use ($peer, &$inserted): void {
+            if ($inserted || $event->connectionName !== 'mariadb' || ! str_contains($event->sql, 'not exists')
+                || ! str_contains($event->sql, '`binaries`') || str_contains($event->sql, 'for update')) {
+                return;
+            }
+            $inserted = true;
+            $peer->table('binaries')->insert(['id' => 2, 'collections_id' => 1, 'binaryhash' => md5('concurrent binary', true), 'name' => 'arrived.rar']);
+        });
+        try {
+            $this->assertSame(0, app(CollectionCleanupService::class)->runMaintenance(
+                new CollectionDeletionSelection(CollectionDeletionReason::Orphan))->deleted);
+            $this->assertTrue($inserted);
+            $this->assertSame(1, DB::table('collections')->count());
+            $this->assertSame(1, DB::table('binaries')->count());
+        } finally {
+            DB::disconnect('sweep_peer');
+        }
+    }
+
+    public function test_a_superseded_maintenance_worker_cannot_delete_or_advance(): void
+    {
+        $storage = new HeaderStorageService;
+        $storage->store([$this->header(1001, 1, 100)], ['id' => 1, 'name' => 'alt.binaries.test']);
+        config(['database.connections.sweep_peer' => config('database.connections.mariadb')]);
+        $peer = DB::connection('sweep_peer');
+        $replacement = (string) Str::uuid();
+        $deleted = (new CollectionSweep)->run('retention', null,
+            function (array $ids, CollectionSweepLease $lease) use ($peer, $replacement): int {
+                $lease->renew();
+                $peer->table('collection_sweep_cursors')->where('scope', $lease->scope)->update([
+                    'lease_expires_at' => now()->subSecond(),
+                ]);
+                $peer->transaction(function () use ($peer, $lease, $replacement): void {
+                    $row = $peer->table('collection_sweep_cursors')->where('scope', $lease->scope)->lockForUpdate()->first();
+                    $this->assertLessThan(now()->timestamp, strtotime($row->lease_expires_at));
+                    $peer->table('collection_sweep_cursors')->where('scope', $lease->scope)->update([
+                        'lease_token' => $replacement, 'lease_expires_at' => now()->addMinute(),
+                    ]);
+                });
+
+                return app(CollectionCleanupService::class)->deleteCollectionsAndDescendants($ids, 'retention',
+                    lease: $lease, selection: new CollectionDeletionSelection(CollectionDeletionReason::Retention));
+            });
+        $this->assertSame(0, $deleted->deleted);
+        $this->assertSame(CollectionSweepOutcome::LeaseLost, $deleted->outcome);
+        $this->assertSame(1, DB::table('collections')->count());
+        $this->assertSame(1, DB::table('binaries')->count());
+        $this->assertSame(1, DB::table('parts')->count());
+        $row = DB::table('collection_sweep_cursors')->first();
+        $this->assertSame(0, (int) $row->last_id);
+        $this->assertSame($replacement, $row->lease_token);
+        DB::disconnect('sweep_peer');
+    }
+
+    public function test_takeover_is_blocked_through_a_fenced_chunk_and_expiry_rolls_it_back(): void
+    {
+        (require database_path('migrations/2026_09_10_175414_add_collections_admission_window_index.php'))->up();
+        $storage = new HeaderStorageService;
+        $storage->store([$this->header(1001, 1, 100)], ['id' => 1, 'name' => 'alt.binaries.test']);
+        DB::table('collections')->update(['date' => null, 'dateadded' => now()->subDays(10), 'filecheck' => 2]);
+        config(['database.connections.sweep_peer' => config('database.connections.mariadb')]);
+        $peer = DB::connection('sweep_peer');
+        $peer->statement('SET SESSION innodb_lock_wait_timeout=1');
+        $attempted = false;
+        DB::listen(function (QueryExecuted $event) use ($peer, &$attempted): void {
+            if ($attempted || $event->connectionName !== 'mariadb'
+                || ! str_contains($event->sql, 'from `collections`') || ! str_contains($event->sql, 'for update')) {
+                return;
+            }
+            $attempted = true;
+            try {
+                $peer->table('collection_sweep_cursors')->where('scope', 'retention:global')->update(['lease_token' => '11111111-1111-4111-8111-111111111111']);
+                $this->fail('A successor acquired a scope while the source mutation held its fence.');
+            } catch (QueryException $exception) {
+                $this->assertSame(1205, (int) $exception->errorInfo[1]);
+            }
+            Carbon::setTestNow(now()->addSeconds(61));
+        });
+        try {
+            $deleted = app(CollectionCleanupService::class)->runMaintenance(
+                new CollectionDeletionSelection(CollectionDeletionReason::Retention))->deleted;
+            $this->assertTrue($attempted);
+            $this->assertSame(0, $deleted);
+            $this->assertSame(1, DB::table('collections')->count());
+            $this->assertSame(1, DB::table('binaries')->count());
+            $this->assertSame(1, DB::table('parts')->count());
+            $this->assertSame(0, (int) DB::table('collection_sweep_cursors')->value('last_id'));
+            $this->assertNull($peer->table('collection_sweep_cursors')->value('lease_token'));
+            $peer->table('collection_sweep_cursors')->where('scope', 'retention:global')->update(['lease_token' => '11111111-1111-4111-8111-111111111111']);
+            $this->assertSame('11111111-1111-4111-8111-111111111111', $peer->table('collection_sweep_cursors')->value('lease_token'));
+        } finally {
+            Carbon::setTestNow();
+            DB::disconnect('sweep_peer');
+        }
     }
 
     public function test_overlapping_admission_retries_from_a_fresh_transaction_after_ingestion(): void
@@ -200,12 +440,13 @@ final class CbpMariaDbIngestionTest extends TestCase
     {
         $this->travelTo(Carbon::parse('2026-01-01 12:00:00', 'UTC'));
         DB::statement('SET timestamp = 1767268800');
+        DB::statement('DROP TABLE IF EXISTS releases');
         DB::statement('CREATE TABLE releases (id INT UNSIGNED PRIMARY KEY, groups_id INT UNSIGNED) ENGINE=InnoDB');
         $this->app->instance(PostingEvidence::class,
             new PostingEvidence(new NntpProviderPool([]), new YencService));
         config(['collection-reconciliation.candidate_limit' => 1]);
         DB::statement('ALTER TABLE collections CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');
-        DB::statement('ALTER TABLE collections ADD KEY fromname (fromname), ADD KEY date (date), ADD KEY groups_id (groups_id), ADD KEY ix_collection_dateadded (dateadded), ADD KEY ix_collection_filecheck (filecheck), ADD KEY ix_collection_releaseid (releases_id)');
+        DB::statement('ALTER TABLE collections ADD KEY fromname (fromname), ADD KEY date (date), ADD KEY ix_collection_dateadded (dateadded), ADD KEY ix_collection_filecheck (filecheck), ADD KEY ix_collection_releaseid (releases_id)');
         (require database_path('migrations/2026_09_08_121907_create_collection_reconciliation_tables.php'))->up();
         (require database_path('migrations/2026_09_10_134847_add_reconciliation_admissions.php'))->up();
         $index = require database_path('migrations/2026_09_10_175414_add_collections_admission_window_index.php');
@@ -280,10 +521,10 @@ final class CbpMariaDbIngestionTest extends TestCase
                 }
                 DB::rollBack();
                 $this->assertTrue($blocked || $oldReads > 10000, 'Original query must exhibit broad work or unrelated contention.');
-                for ($batch = 0; $batch < 10; $batch++) {
+                for ($batch = 0; $batch < 20; $batch++) {
                     $rows = [];
                     for ($i = 0; $i < 1000; $i++) {
-                        $distant = $batch < 5;
+                        $distant = $batch < 10;
                         $rows[] = ['subject' => 'Dense selective fixture', 'groups_id' => 1,
                             'fromname' => $distant ? 'TargetPoster-3' : 'TargetPoster-4', 'declaredfiles' => 3,
                             'filecheck' => $distant ? 0 : 4, 'date' => $distant ? '2025-01-01 09:00:00' : '2026-01-01 09:00:00',
@@ -395,6 +636,10 @@ final class CbpMariaDbIngestionTest extends TestCase
                 DB::table('reconciliation_decisions')->delete();
             }
             $this->assertLessThan($metrics[100000]['reads'] * 2 + 100, $metrics[1000000]['reads']);
+            foreach (['sizing', 'completeness', 'cleanup'] as $caller) {
+                $this->assertLessThanOrEqual($metrics[100000]['callers'][$caller]['reads'] * 2 + 100,
+                    $metrics[1000000]['callers'][$caller]['reads'], $caller.' must include bounded preflight discovery.');
+            }
             fwrite(STDERR, 'ADMISSION_METRICS='.json_encode($metrics, JSON_THROW_ON_ERROR).PHP_EOL);
         } finally {
             while (DB::transactionLevel() > 0) {
@@ -422,7 +667,7 @@ final class CbpMariaDbIngestionTest extends TestCase
         $this->fail('The held transaction must appear in the live InnoDB monitor.');
     }
 
-    /** @return array{commits: int, p95_seconds: float, max_locks: int} */
+    /** @return array{commits: int, p95_seconds: float, max_locks: int, seconds: float, reads: int, sql_count: int} */
     private function measureAdmissionCaller(callable $operation): array
     {
         $active = true;
@@ -452,17 +697,35 @@ final class CbpMariaDbIngestionTest extends TestCase
                     $times[] = microtime(true) - $start;
                 }
             });
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $readsBefore = $this->admissionHandlerReads();
+        $callStart = microtime(true);
         try {
             $operation();
+            $callSeconds = microtime(true) - $callStart;
+            $callReads = $this->admissionHandlerReads() - $readsBefore;
+            $queries = DB::getQueryLog();
         } finally {
             $active = false;
+            DB::disableQueryLog();
+            DB::flushQueryLog();
+        }
+        foreach ($queries as $query) {
+            if (str_starts_with($query['query'], 'select * from `collections`') && str_contains($query['query'], '`date` between')) {
+                $this->assertStringContainsString('force index (collections_admission_window)', $query['query']);
+                $plan = DB::select('EXPLAIN '.$query['query'], $query['bindings'])[0];
+                $this->assertContains($plan->type, ['const', 'ref', 'range']);
+                $this->assertStringNotContainsString('filesort', (string) $plan->Extra);
+            }
         }
         sort($times);
         $this->assertGreaterThanOrEqual(20, count($times));
         $p95 = $times[(int) floor(count($times) * 0.95)];
         $this->assertLessThan(1.0, $p95);
 
-        return ['commits' => count($times), 'p95_seconds' => $p95, 'max_locks' => max($locks)];
+        return ['commits' => count($times), 'p95_seconds' => $p95, 'max_locks' => max($locks),
+            'seconds' => $callSeconds, 'reads' => $callReads, 'sql_count' => count($queries)];
     }
 
     private function measureAdmissionHeaderInserts(int $offset): float

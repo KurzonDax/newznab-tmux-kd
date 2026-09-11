@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\CollectionDeletionReason;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\CollectionReconciliation\CollectionAdmission;
 use App\Services\CollectionReconciliation\CollectionOwnership;
 use App\Services\ObfuscationRecovery\RecoveryCollectionOwnership;
-use App\Support\DatabaseClock;
+use App\Services\Releases\CollectionDeletionSelection;
+use App\Services\Releases\CollectionSweep;
+use App\Services\Releases\CollectionSweepLease;
+use App\Services\Releases\CollectionSweepLeaseLost;
+use App\Services\Releases\CollectionSweepResult;
 use App\Support\SettingNumber;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -69,34 +74,7 @@ class CollectionCleanupService
                 ), true);
         }
 
-        // Batch-delete old collections using select-then-delete so we can
-        // explicitly remove parts/binaries/collections even when FK cascades
-        // are not present in the runtime schema.
-        $cutoff = DatabaseClock::cutoff(now()->subHours($retentionHours));
-        $batchDeleted = 0;
-        do {
-            $ids = DB::table('collections')
-                ->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))->tap(static fn ($query) => CollectionOwnership::exclude($query))
-                ->whereRaw('dateadded < '.$cutoff['sql'], $cutoff['bindings'])
-                ->whereNotIn('filecheck', [0, 1, 10, 15, 16])
-                ->orderBy('id')
-                ->limit($this->sqlChunkSize())
-                ->pluck('id')
-                ->all();
-
-            if ($ids === []) {
-                break;
-            }
-
-            $affected = $this->deleteCollectionsAndDescendants($ids, 'Cleanup', $echoCLI);
-
-            $batchDeleted += $affected;
-            if ($affected < $this->sqlChunkSize()) {
-                break;
-            }
-            // Brief pause to reduce pressure on the lock manager in busy systems.
-            usleep(10000);
-        } while (true);
+        $batchDeleted = $this->runMaintenance(new CollectionDeletionSelection(CollectionDeletionReason::Retention, $retentionHours), null, $echoCLI)->deleted;
 
         $deletedCount += $batchDeleted;
 
@@ -181,35 +159,7 @@ class CollectionCleanupService
      */
     private function deleteOrphanCollections(bool $echoCLI): int
     {
-        $deleted = 0;
-        $maxBatches = 20; // hard cap per cycle; bounded backlog drain
-        $batchSize = $this->sqlChunkSize();
-
-        for ($i = 0; $i < $maxBatches; $i++) {
-            $ids = DB::table('collections as c')
-                ->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query, 'c.id'))->tap(static fn ($query) => CollectionOwnership::exclude($query, 'c.id'))
-                ->whereNotExists(fn ($q) => $q->select(DB::raw(1))
-                    ->from('binaries as b')
-                    ->whereColumn('b.collections_id', 'c.id'))
-                ->orderBy('c.id')
-                ->limit($batchSize)
-                ->pluck('c.id')
-                ->all();
-
-            if ($ids === []) {
-                break;
-            }
-
-            $affected = $this->deleteCollectionsAndDescendants($ids, 'Orphan cleanup', $echoCLI);
-
-            $deleted += $affected;
-            if ($affected < $batchSize) {
-                break;
-            }
-            usleep(10000);
-        }
-
-        return $deleted;
+        return $this->runMaintenance(new CollectionDeletionSelection(CollectionDeletionReason::Orphan), null, $echoCLI)->deleted;
     }
 
     /**
@@ -231,34 +181,30 @@ class CollectionCleanupService
      */
     private function deleteCollectionsMissedAfterNzb(bool $echoCLI): int
     {
-        $deleted = 0;
-        $maxBatches = 20;
-        $batchSize = $this->sqlChunkSize();
+        return $this->runMaintenance(new CollectionDeletionSelection(CollectionDeletionReason::MissedNzb), null, $echoCLI)->deleted;
+    }
 
-        for ($i = 0; $i < $maxBatches; $i++) {
-            $ids = DB::table('collections as c')
-                ->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query, 'c.id'))->tap(static fn ($query) => CollectionOwnership::exclude($query, 'c.id'))
-                ->join('releases as r', 'r.id', '=', 'c.releases_id')
-                ->where('r.nzbstatus', '=', 1)
-                ->orderBy('c.id')
-                ->limit($batchSize)
-                ->pluck('c.id')
-                ->all();
+    public function runMaintenance(CollectionDeletionSelection $selection, ?int $groupId = null, bool $echoCLI = false): CollectionSweepResult
+    {
+        $selection = new CollectionDeletionSelection($selection->reason, $selection->hours, $selection->expectedLinks, $groupId);
 
-            if ($ids === []) {
-                break;
-            }
+        $result = (new CollectionSweep)->run($selection->reason->value, $groupId,
+            function (array $ids, CollectionSweepLease $lease) use ($selection, $echoCLI): int {
+                $rows = $selection->query($ids)->get(['id', 'releases_id']);
+                $eligible = $rows->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+                if ($selection->reason === CollectionDeletionReason::MissedNzb) {
+                    $selection = new CollectionDeletionSelection($selection->reason, $selection->hours, $rows->pluck('releases_id', 'id')->all(), $selection->groupId);
+                }
 
-            $affected = $this->deleteCollectionsAndDescendants($ids, 'Missed-NZB cleanup', $echoCLI);
-
-            $deleted += $affected;
-            if ($affected < $batchSize) {
-                break;
-            }
-            usleep(10000);
+                return $this->deleteCollectionsAndDescendants($eligible, $selection->reason->value, $echoCLI,
+                    selection: $selection, lease: $lease);
+            });
+        if ($echoCLI) {
+            cli()->primary(sprintf('%s maintenance: %s; examined %d, deleted %d.',
+                $selection->reason->value, $result->outcome->value, $result->examined, $result->deleted), true);
         }
 
-        return $deleted;
+        return $result;
     }
 
     /**
@@ -273,6 +219,8 @@ class CollectionCleanupService
         bool $echoCLI = false,
         ?int $expectedReleaseId = null,
         bool $screenAdmission = true,
+        ?CollectionDeletionSelection $selection = null,
+        ?CollectionSweepLease $lease = null,
     ): int {
         if ($collectionIds === []) {
             return 0;
@@ -280,53 +228,68 @@ class CollectionCleanupService
 
         $deletedCollections = 0;
 
-        foreach (array_chunk($collectionIds, min($screenAdmission ? CollectionAdmission::MUTATION_BATCH_SIZE : 500, $this->sqlChunkSize())) as $chunk) {
-            if ($screenAdmission && ! app(CollectionAdmission::class)->screen(array_map('intval', $chunk))) {
-                continue;
+        try {
+            foreach (array_chunk($collectionIds, min(($screenAdmission || $lease !== null || $selection !== null) ? CollectionAdmission::MUTATION_BATCH_SIZE : 500, $this->sqlChunkSize())) as $chunk) {
+                $lease?->renew();
+                if ($screenAdmission && ! app(CollectionAdmission::class)->screen(array_map('intval', $chunk))) {
+                    continue;
+                }
+                $links = $selection?->reason === CollectionDeletionReason::MissedNzb
+                    ? ($selection->expectedLinks === null ? DB::table('collections')->whereIn('id', $chunk)->pluck('releases_id', 'id')->all()
+                        : array_intersect_key($selection->expectedLinks, array_flip($chunk))) : [];
+                $deletedCollections += $this->retryOnLockError(
+                    fn (): int => DB::transaction(
+                        function () use ($chunk, $expectedReleaseId, $screenAdmission, $selection, $lease, $links): int {
+                            $lease?->assertOwned();
+                            if ($links !== [] || $expectedReleaseId !== null) {
+                                DB::table('releases')->whereIn('id', $expectedReleaseId === null ? array_values($links) : [$expectedReleaseId])->orderBy('id')->lockForUpdate()->get(['id']);
+                            }
+                            if ($screenAdmission && ! app(CollectionAdmission::class)->lockAndScreen(array_map('intval', $chunk))) {
+                                return 0;
+                            }
+                            $locked = DB::table('collections')->whereIn('id', $chunk)->orderBy('id')->lockForUpdate()->pluck('id');
+                            $query = $selection?->query($locked->map(static fn ($id): int => (int) $id)->all(), true, $links)
+                                ?? DB::table('collections')->whereIn('id', $locked)->lockForUpdate();
+                            if ($expectedReleaseId !== null) {
+                                $query->where('releases_id', $expectedReleaseId)->where('filecheck', 4);
+                            }
+                            if ($selection === null) {
+                                RecoveryCollectionOwnership::exclude($query, currentRead: true);
+                                CollectionOwnership::exclude($query, currentRead: true);
+                            }
+                            $chunk = $query->pluck('id')->all();
+                            $lease?->assertOwned();
+                            if ($chunk === []) {
+                                return 0;
+                            }
+                            if ($this->cascadeDeleteReady()) {
+                                $lease?->assertOwned();
+                                $deleted = DB::table('collections')->whereIn('id', $chunk)->delete();
+                                $lease?->assertOwned();
+
+                                return $deleted;
+                            }
+
+                            $lease?->assertOwned();
+                            DB::table('parts')->whereIn('binaries_id', DB::table('binaries')->whereIn('collections_id', $chunk)->select('id'))->delete();
+                            $lease?->assertOwned();
+                            DB::table('binaries')->whereIn('collections_id', $chunk)->delete();
+                            $lease?->assertOwned();
+                            $deleted = DB::table('collections')->whereIn('id', $chunk)->delete();
+                            $lease?->assertOwned();
+
+                            return $deleted;
+                        }
+                    ),
+                    $label,
+                    $echoCLI,
+                    $lease !== null,
+                );
             }
-            $deletedCollections += $this->retryOnLockError(
-                fn (): int => DB::transaction(
-                    function () use ($chunk, $expectedReleaseId, $screenAdmission): int {
-                        if ($screenAdmission && ! app(CollectionAdmission::class)->lockAndScreen(array_map('intval', $chunk))) {
-                            return 0;
-                        }
-                        $locked = DB::table('collections')->whereIn('id', $chunk)->orderBy('id')->lockForUpdate()->pluck('id');
-                        $query = DB::table('collections')->whereIn('id', $locked);
-                        if ($expectedReleaseId !== null) {
-                            $query->where('releases_id', $expectedReleaseId)->where('filecheck', 4);
-                        }
-                        RecoveryCollectionOwnership::exclude($query);
-                        CollectionOwnership::exclude($query);
-                        $chunk = $query->pluck('id')->all();
-                        if ($chunk === []) {
-                            return 0;
-                        }
-                        $placeholders = implode(',', array_fill(0, count($chunk), '?'));
-                        if ($this->cascadeDeleteReady()) {
-                            return (int) DB::affectingStatement(
-                                "DELETE FROM collections WHERE id IN ({$placeholders})",
-                                $chunk
-                            );
-                        }
 
-                        DB::statement(
-                            "DELETE FROM parts WHERE binaries_id IN (SELECT id FROM binaries WHERE collections_id IN ({$placeholders}))",
-                            $chunk
-                        );
-                        DB::statement(
-                            "DELETE FROM binaries WHERE collections_id IN ({$placeholders})",
-                            $chunk
-                        );
-
-                        return (int) DB::affectingStatement(
-                            "DELETE FROM collections WHERE id IN ({$placeholders})",
-                            $chunk
-                        );
-                    }
-                ),
-                $label,
-                $echoCLI,
-            );
+        } catch (CollectionSweepLeaseLost $exception) {
+            $exception->deleted += $deletedCollections;
+            throw $exception;
         }
 
         return $deletedCollections;
@@ -382,10 +345,11 @@ class CollectionCleanupService
 
         try {
             $rows = DB::select(
-                "SELECT TABLE_NAME, DELETE_RULE
+                'SELECT TABLE_NAME, DELETE_RULE
                  FROM information_schema.REFERENTIAL_CONSTRAINTS
                  WHERE CONSTRAINT_SCHEMA = DATABASE()
-                   AND TABLE_NAME IN ('binaries', 'parts')"
+                   AND TABLE_NAME IN (?, ?)',
+                [DB::getTablePrefix().'binaries', DB::getTablePrefix().'parts']
             );
             $cascades = [];
             foreach ($rows as $row) {
@@ -394,7 +358,7 @@ class CollectionCleanupService
                 }
             }
 
-            return $this->cascadeDeleteReady = isset($cascades['binaries'], $cascades['parts']);
+            return $this->cascadeDeleteReady = isset($cascades[DB::getTablePrefix().'binaries'], $cascades[DB::getTablePrefix().'parts']);
         } catch (\Throwable) {
             return $this->cascadeDeleteReady = false;
         }
@@ -414,7 +378,7 @@ class CollectionCleanupService
      * @param  bool  $echoCLI  Whether to echo a final error after exhausting retries.
      * @return int Rows affected on success, or 0 if all retries exhausted.
      */
-    private function retryOnLockError(callable $op, string $label, bool $echoCLI): int
+    private function retryOnLockError(callable $op, string $label, bool $echoCLI, bool $propagateFailure = false): int
     {
         $attempt = 0;
 
@@ -428,6 +392,9 @@ class CollectionCleanupService
 
                 $attempt++;
                 if ($attempt >= self::LOCK_RETRY_MAX) {
+                    if ($propagateFailure) {
+                        throw $e;
+                    }
                     if ($echoCLI) {
                         cli()->error($label.' delete failed after retries: '.$e->getMessage());
                     }

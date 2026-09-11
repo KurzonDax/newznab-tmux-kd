@@ -365,7 +365,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
 
         $runner->processAmazon();
 
-        $this->assertSame([PHP_BINARY.' artisan postprocess:guid music a'], $runner->commands);
+        $this->assertSame([[PHP_BINARY, 'artisan', 'postprocess:guid', 'music', 'a']], $runner->commands);
         $this->assertSame([3], $runner->parallelism);
     }
 

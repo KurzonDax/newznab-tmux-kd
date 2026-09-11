@@ -25,8 +25,10 @@ use App\Services\ReleaseProcessingService;
 use App\Services\YencService;
 use Carbon\Carbon;
 use Illuminate\Database\Events\TransactionCommitted;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\Reconciliation\CreatesPostingSchema;
 use Tests\Support\Reconciliation\Par2Fixture;
@@ -46,6 +48,7 @@ class SplitAdmissionTest extends TestCase
         $this->createPostingSchema();
         Cache::flush();
         (require database_path('migrations/2026_09_10_134847_add_reconciliation_admissions.php'))->up();
+        (require database_path('migrations/2026_09_10_224820_create_collection_sweep_cursors_table.php'))->up();
         $this->travelTo(Carbon::parse('2026-01-01T12:00:00Z'));
         DB::table('collection_regexes')->insert(['group_regex' => '.*', 'regex' => '/^\[\d+\/\d+\] - "(?P<name>[^.]+)\./', 'status' => 1]);
         $this->source(1, [1 => 'Example.mkv', 4 => 'Example.par2', 5 => 'Example.vol000+001.par2']);
@@ -57,6 +60,34 @@ class SplitAdmissionTest extends TestCase
         DB::table('collections')->update(['groups_id' => 999]);
         $this->assertTrue(DB::transaction(fn (): bool => app(CollectionAdmission::class)->lockAndScreen([1, 2], 1)));
         $this->assertSame(0, DB::table('reconciliation_admissions')->count());
+    }
+
+    public function test_pending_discovery_counts_recovery_owned_rows_before_overflow(): void
+    {
+        Schema::create('obfuscation_recovery_publications', static function (Blueprint $table): void {
+            $table->unsignedBigInteger('collections_id')->primary();
+            $table->string('state');
+        });
+        $source = (array) DB::table('collections')->where('id', 1)->first();
+        for ($id = 3; $id <= 257; $id++) {
+            DB::table('collections')->insert(array_replace($source, ['id' => $id, 'collectionhash' => sha1('owned:'.$id, true)]));
+            DB::table('obfuscation_recovery_publications')->insert(['collections_id' => $id, 'state' => 'prepared']);
+        }
+        $this->assertSame('source_population', app(PendingReconciler::class)->reconcile(1, 1));
+    }
+
+    public function test_unlocked_screening_finds_the_source_population_in_the_application_timezone(): void
+    {
+        config(['app.timezone' => 'America/Chicago']);
+        $previous = date_default_timezone_get();
+        date_default_timezone_set('America/Chicago');
+        try {
+            $this->travelTo(Carbon::parse('2026-01-01 12:00:00', 'America/Chicago'));
+            $this->assertTrue(app(CollectionAdmission::class)->screen([1], 1));
+            $this->assertSame(2, DB::table('reconciliation_admissions')->where('state', 'admitted')->count());
+        } finally {
+            date_default_timezone_set($previous);
+        }
     }
 
     public function test_sizing_processes_an_entire_page_across_independent_small_commits(): void

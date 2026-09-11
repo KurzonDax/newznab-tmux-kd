@@ -39,8 +39,8 @@ This project is a fork of [newznab plus](https://github.com/anth0/nnplus) and [n
 
 ## Prerequisites
 
-- System administration experience (Linux recommended)
-- PHP 8.4+ with extensions: curl, json, pdo_mysql, openssl, mbstring, xml, zip, gd, intl, pcntl
+- System administration experience; Linux is required for processing workers.
+- PHP 8.4+ with extensions: curl, json, pdo_mysql, openssl, mbstring, xml, zip, gd, intl, pcntl, posix, ffi. Worker CLI PHP must permit `FFI::cdef()` (`ffi.enable=preload` or `true`) and expose Linux `/proc`; workers use the kernel subreaper facility to terminate and reap owned descendants before replacing timed-out work.
 - MariaDB 10.6+ or MySQL 8+ (PostgreSQL not supported)
 - Composer 2.x
 - Node.js 18+ and npm for frontend assets

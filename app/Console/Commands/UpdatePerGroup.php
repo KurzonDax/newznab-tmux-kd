@@ -22,7 +22,7 @@ class UpdatePerGroup extends Command
      *
      * @var string
      */
-    protected $signature = 'group:update-all {groupId : Group ID to process}';
+    protected $signature = 'group:update-all {groupId : Group ID to process} {--orchestrated : Leave global cleanup to the cycle finalizer}';
 
     /**
      * The console command description.
@@ -122,7 +122,9 @@ class UpdatePerGroup extends Command
             $shouldContinue = $result->total() >= $limit || $nzbFilesAdded >= $limit;
         } while ($shouldContinue);
 
-        $this->releaseProcessingService->deleteCollections($groupID);
+        if (! $this->option('orchestrated')) {
+            $this->releaseProcessingService->deleteCollections($groupID);
+        }
     }
 
     /**

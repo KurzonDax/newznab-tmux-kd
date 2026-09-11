@@ -7,7 +7,6 @@ namespace App\Services\Runners;
 use App\Models\Settings;
 use App\Models\UsenetGroup;
 use App\Services\NameFixing\NameFixingQueryService;
-use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -19,22 +18,8 @@ class ReleasesRunner extends BaseRunner
 
     public function releases(): void
     {
-        $groups = DB::select('SELECT id, name FROM usenet_groups WHERE (active = 1 OR backfill = 1)');
+        $uGroups = $this->pendingGroups();
         $maxProcesses = (int) Settings::settingValue('releasethreads');
-
-        $uGroups = [];
-        foreach ($groups as $group) {
-            try {
-                $query = DB::select(sprintf('SELECT id FROM collections WHERE groups_id = %d LIMIT 1', $group->id));
-                if (! empty($query)) {
-                    $uGroups[] = ['id' => $group->id, 'name' => $group->name];
-                }
-            } catch (\PDOException $e) {
-                if (config('app.debug') === true) {
-                    Log::debug($e->getMessage());
-                }
-            }
-        }
 
         $count = count($uGroups);
         if ($count === 0) {
@@ -47,7 +32,7 @@ class ReleasesRunner extends BaseRunner
         if ((bool) config('nntmux.stream_fork_output', false) === true) {
             $commands = [];
             foreach ($uGroups as $group) {
-                $commands[] = $this->buildDnrCommand('releases  '.$group['id']);
+                $commands[] = [PHP_BINARY, 'artisan', 'releases:process', (string) $group['id'], '--orchestrated'];
             }
             $this->runStreamingCommands($commands, $maxProcesses, 'releases');
 
@@ -62,12 +47,12 @@ class ReleasesRunner extends BaseRunner
         foreach ($batches as $batchIndex => $batch) {
             $tasks = [];
             foreach ($batch as $group) {
-                $command = $this->buildDnrCommand('releases  '.$group['id']);
-                $tasks[$group['id']] = fn () => $this->executeCommand($command);
+                $command = [PHP_BINARY, 'artisan', 'releases:process', (string) $group['id'], '--orchestrated'];
+                $tasks[$group['id']] = $this->taskForCommand($command);
             }
 
             try {
-                $results = Concurrency::run($tasks, $this->concurrencyTimeout());
+                $results = $this->runConcurrentTasks($tasks);
 
                 foreach ($results as $groupId => $output) {
                     echo $output;
@@ -82,7 +67,11 @@ class ReleasesRunner extends BaseRunner
 
     public function updatePerGroup(): void
     {
-        $groups = DB::select('SELECT id , name FROM usenet_groups WHERE (active = 1 OR backfill = 1)');
+        $groups = DB::table('usenet_groups')->where(static fn ($query) => $query->where('active', 1)->orWhere('backfill', 1))
+            ->get(['id', 'name'])->map(static fn ($group): object => (object) ['id' => (int) $group->id, 'name' => $group->name, 'releaseOnly' => false])->all();
+        foreach ($this->pendingGroups(array_map(static fn ($group): int => $group->id, $groups)) as $group) {
+            $groups[] = (object) [...$group, 'releaseOnly' => true];
+        }
         $maxProcesses = (int) Settings::settingValue('releasethreads');
 
         $count = count($groups);
@@ -96,7 +85,7 @@ class ReleasesRunner extends BaseRunner
         if ((bool) config('nntmux.stream_fork_output', false) === true) {
             $commands = [];
             foreach ($groups as $group) {
-                $commands[] = $this->buildDnrCommand('update_per_group  '.$group->id);
+                $commands[] = [PHP_BINARY, 'artisan', $group->releaseOnly ? 'releases:process' : 'group:update-all', (string) $group->id, '--orchestrated'];
             }
             $this->runStreamingCommands($commands, $maxProcesses, 'update_per_group');
 
@@ -111,12 +100,12 @@ class ReleasesRunner extends BaseRunner
         foreach ($batches as $batchIndex => $batch) {
             $tasks = [];
             foreach ($batch as $group) {
-                $command = $this->buildDnrCommand('update_per_group  '.$group->id);
-                $tasks[$group->id] = fn () => $this->executeCommand($command);
+                $command = [PHP_BINARY, 'artisan', $group->releaseOnly ? 'releases:process' : 'group:update-all', (string) $group->id, '--orchestrated'];
+                $tasks[$group->id] = $this->taskForCommand($command);
             }
 
             try {
-                $results = Concurrency::run($tasks, $this->concurrencyTimeout());
+                $results = $this->runConcurrentTasks($tasks);
 
                 foreach ($results as $groupId => $output) {
                     echo $output;
@@ -128,6 +117,25 @@ class ReleasesRunner extends BaseRunner
                 cli()->error('Batch '.($batchIndex + 1).' failed: '.$e->getMessage());
             }
         }
+    }
+
+    /**
+     * @param  list<int>  $alreadyProcessed
+     * @return list<array{id: int, name: string}>
+     */
+    private function pendingGroups(array $alreadyProcessed = []): array
+    {
+        $pending = [];
+        foreach (DB::table('usenet_groups')->whereNotIn('id', $alreadyProcessed)->orderBy('id')->get(['id', 'name']) as $group) {
+            $exists = DB::table('collections')->where('groups_id', $group->id)
+                ->when(in_array(DB::getDriverName(), ['mysql', 'mariadb'], true), static fn ($query) => $query->forceIndex('groups_id'))
+                ->limit(1)->value('id');
+            if ($exists !== null) {
+                $pending[] = ['id' => (int) $group->id, 'name' => (string) $group->name];
+            }
+        }
+
+        return $pending;
     }
 
     public function fixRelNames(string $mode, int $maxPerRun, int $maxThreads): void
@@ -168,7 +176,7 @@ class ReleasesRunner extends BaseRunner
             $commands = [];
             foreach ($queues as $queue) {
                 // Updated to use new script location (modernized)
-                $commands[] = PHP_BINARY.' app/Services/Tmux/Scripts/groupfixrelnames.php "'.$queue.'" true';
+                $commands[] = [PHP_BINARY, 'app/Services/Tmux/Scripts/groupfixrelnames.php', $queue, 'true'];
             }
             $this->runStreamingCommands($commands, $maxThreads, 'fixRelNames_'.$mode);
 
@@ -184,12 +192,12 @@ class ReleasesRunner extends BaseRunner
             $tasks = [];
             foreach ($batch as $idx => $queue) {
                 // Updated to use new script location (modernized)
-                $command = PHP_BINARY.' app/Services/Tmux/Scripts/groupfixrelnames.php "'.$queue.'" true';
-                $tasks[$idx] = fn () => $this->executeCommand($command);
+                $command = [PHP_BINARY, 'app/Services/Tmux/Scripts/groupfixrelnames.php', $queue, 'true'];
+                $tasks[$idx] = $this->taskForCommand($command);
             }
 
             try {
-                $results = Concurrency::run($tasks, $this->concurrencyTimeout());
+                $results = $this->runConcurrentTasks($tasks);
 
                 foreach ($results as $taskIdx => $output) {
                     echo $output;

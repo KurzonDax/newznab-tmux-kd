@@ -22,7 +22,7 @@ RUN apt update \
  && dpkg -i repo-mediaarea_1.0-25_all.deb \
  && apt update \
  && apt install -y libmediainfo0v5 mediainfo libzen0v5
-RUN install-php-extensions imagick/imagick@master
+RUN install-php-extensions imagick/imagick@master ffi
 RUN docker-php-ext-install \
      bcmath \
      exif \
@@ -56,5 +56,4 @@ EXPOSE ${APP_PORT:-80}
 
 CMD ["--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
 ENTRYPOINT ["docker-entrypoint"]
-
 

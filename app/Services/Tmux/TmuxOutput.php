@@ -245,7 +245,19 @@ class TmuxOutput extends Tmux
 
     protected function _getMonitor(): string
     {
-        $buffer = $this->_getTableCounts();
+        if (array_key_exists('display_snapshot', $this->runVar) && $this->runVar['display_snapshot'] === null) {
+            $buffer = 'Display totals unavailable'.PHP_EOL.$this->_getPaths();
+            foreach ($this->runVar['counts']['now'] as $name => $count) {
+                if (str_starts_with($name, 'process') || in_array($name, ['work', 'audio_work'], true)) {
+                    $buffer .= $name.': '.number_format((int) $count).PHP_EOL;
+                }
+            }
+
+            return $buffer;
+        }
+        $observed = $this->runVar['display_snapshot']['observed_at'] ?? null;
+        $buffer = $observed === null ? '' : 'Exact totals observed '.date('Y-m-d H:i:s T', $observed).PHP_EOL;
+        $buffer .= $this->_getTableCounts();
         $buffer .= $this->_getPaths();
 
         $buffer .= sprintf($this->tmpMasks[3], 'PP Lists', 'Unmatched', 'Matched');
@@ -528,7 +540,7 @@ class TmuxOutput extends Tmux
 
     protected function _getTableCounts(): string
     {
-        $buffer = sprintf($this->tmpMasks[3], 'Collections', 'Binaries', 'Parts');
+        $buffer = sprintf($this->tmpMasks[3], 'Collections', 'Binaries (approx.)', 'Parts (approx.)');
         $buffer .= $this->_getSeparator();
         $buffer .= sprintf(
             $this->tmpMasks[5],

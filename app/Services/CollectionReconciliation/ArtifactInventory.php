@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\CollectionReconciliation;
 
+use Carbon\CarbonImmutable;
 use DOMDocument;
 use DOMElement;
 use UnexpectedValueException;
@@ -98,7 +99,7 @@ final class ArtifactInventory
             $base = $bases[0];
 
             return ['discovery_group_id' => $groupId, 'discovery_count' => $base->total,
-                'discovery_postdate' => gmdate('Y-m-d H:i:s', $base->date), 'discovery_poster' => $base->poster,
+                'discovery_postdate' => CarbonImmutable::createFromTimestamp($base->date, config('app.timezone'))->toDateTimeString(), 'discovery_poster' => $base->poster,
                 'discovery_base' => $base->firstArticle()];
         } catch (UnexpectedValueException) {
             return $empty;

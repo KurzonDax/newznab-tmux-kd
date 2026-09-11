@@ -74,14 +74,14 @@ class BackfillRunnerTest extends TestCase
         $this->addGroup('gamma', firstRecord: 180, serverFirst: 100);
 
         $commands = [
-            PHP_BINARY.' artisan backfill:group "alpha" 2 100',
-            PHP_BINARY.' artisan backfill:group "beta" 2 100',
-            PHP_BINARY.' artisan backfill:group "gamma" 2 100',
+            [PHP_BINARY, 'artisan', 'backfill:group', 'alpha', '2', '100'],
+            [PHP_BINARY, 'artisan', 'backfill:group', 'beta', '2', '100'],
+            [PHP_BINARY, 'artisan', 'backfill:group', 'gamma', '2', '100'],
         ];
         $factory = new BackfillRunnerFakeProcessFactory([
-            $commands[0] => ['output' => 'alpha output'.PHP_EOL, 'exitCode' => 0],
-            $commands[1] => ['output' => 'beta output'.PHP_EOL, 'exitCode' => 1],
-            $commands[2] => ['output' => 'gamma output'.PHP_EOL, 'exitCode' => 0],
+            json_encode($commands[0]) => ['output' => 'alpha output'.PHP_EOL, 'exitCode' => 0],
+            json_encode($commands[1]) => ['output' => 'beta output'.PHP_EOL, 'exitCode' => 1],
+            json_encode($commands[2]) => ['output' => 'gamma output'.PHP_EOL, 'exitCode' => 0],
         ]);
         $runner = new BackfillRunnerTestDouble($factory);
 
@@ -89,7 +89,7 @@ class BackfillRunnerTest extends TestCase
         $runner->backfill();
         $output = (string) ob_get_clean();
 
-        $this->assertSame([PHP_BINARY.' app/Services/Tmux/Scripts/update_groups.php'], $runner->executedCommands);
+        $this->assertSame([[PHP_BINARY, 'app/Services/Tmux/Scripts/update_groups.php']], $runner->executedCommands);
         $this->assertSame($commands, $factory->startedCommands);
         $this->assertStringContainsString('[alpha]'.PHP_EOL.'alpha output', $output);
         $this->assertStringContainsString('[beta]'.PHP_EOL.'beta output', $output);
@@ -122,14 +122,14 @@ class BackfillRunnerTestDouble extends BackfillRunner
 
     public function __construct(private readonly BackfillRunnerFakeProcessFactory $factory) {}
 
-    protected function executeCommand(string $command): string
+    protected function executeCommand(array|string $command): string
     {
         $this->executedCommands[] = $command;
 
         return '';
     }
 
-    protected function createProcess(string $command): Process
+    protected function createProcess(array|string $command): Process
     {
         return $this->factory->create($command);
     }
@@ -151,9 +151,9 @@ class BackfillRunnerFakeProcessFactory
         $this->definitions = $definitions;
     }
 
-    public function create(string $command): Process
+    public function create(array|string $command): Process
     {
-        return new BackfillRunnerFakeProcess($command, $this->definitions[$command], $this);
+        return new BackfillRunnerFakeProcess($command, $this->definitions[is_array($command) ? json_encode($command) : $command], $this);
     }
 }
 
@@ -165,7 +165,7 @@ class BackfillRunnerFakeProcess extends Process
      * @param  array{output: string, exitCode: int}  $definition
      */
     public function __construct(
-        private readonly string $fakeCommand,
+        private readonly array|string $fakeCommand,
         private readonly array $definition,
         private readonly BackfillRunnerFakeProcessFactory $factory,
     ) {
