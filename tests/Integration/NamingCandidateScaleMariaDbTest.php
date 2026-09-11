@@ -22,8 +22,8 @@ final class NamingCandidateScaleMariaDbTest extends TestCase
         if ($database === false || $database === '') {
             return parent::createApplication();
         }
-        if ($database !== 'cbp_integration') {
-            throw new \RuntimeException('Collection scale tests require the isolated cbp_integration database.');
+        if (! in_array($database, ['cbp_integration', 'naming_incident_tests'], true)) {
+            throw new \RuntimeException('Naming scale tests require an explicitly isolated test database.');
         }
 
         foreach (['DB_CONNECTION', 'DB_DATABASE', 'DB_HOST', 'DB_USERNAME', 'DB_PASSWORD'] as $key) {
@@ -48,7 +48,7 @@ final class NamingCandidateScaleMariaDbTest extends TestCase
         if (! in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
             $this->markTestSkipped('Isolated MariaDB integration test.');
         }
-        if (DB::connection()->getDatabaseName() !== 'cbp_integration') {
+        if (! in_array(DB::connection()->getDatabaseName(), ['cbp_integration', 'naming_incident_tests'], true)) {
             throw new \RuntimeException('Refusing a non-test database.');
         }
         DB::setTablePrefix('naming_'.getmypid().'_');
@@ -166,7 +166,7 @@ final class NamingCandidateScaleMariaDbTest extends TestCase
             $migration->up();
             $build = microtime(true) - $start;
             $writeAfter = $this->measureReleaseWrites();
-            $indexBytes = (int) DB::selectOne('SELECT INDEX_LENGTH AS bytes FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?', ['cbp_integration', $r])->bytes;
+            $indexBytes = (int) DB::selectOne('SELECT INDEX_LENGTH AS bytes FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?', [DB::connection()->getDatabaseName(), $r])->bytes;
             DB::statement("ANALYZE TABLE `$r`, `$m`, `$f`");
             foreach ([1, 0] as $renamed) {
                 DB::table('releases')->update(['isrenamed' => $renamed]);
@@ -201,6 +201,94 @@ final class NamingCandidateScaleMariaDbTest extends TestCase
         foreach ([0, 1] as $renamed) {
             $this->assertLessThanOrEqual($measurements[100000][$renamed] * 2 + 1000, $measurements[1000000][$renamed]);
         }
+    }
+
+    public function test_pending_flags_without_evidence_do_not_scan_retained_releases(): void
+    {
+        $migration = require database_path('migrations/2026_09_10_231728_add_name_direct_work_index_to_releases.php');
+        $migration->up();
+        $r = DB::getTablePrefix().'releases';
+        $m = DB::getTablePrefix().'media_infos';
+        $f = DB::getTablePrefix().'release_files';
+        $measurements = [];
+        foreach ([1000, 10000] as $size) {
+            DB::table('releases')->delete();
+            DB::statement("INSERT INTO `$r` (id,name,searchname,fromname,guid,leftguid,groups_id,categories_id,size,adddate,
+                nfostatus,nzbstatus,isrenamed,predb_id,proc_nfo,proc_files,proc_par2,proc_srr,proc_hash16k,proc_crc32,
+                proc_uid,proc_media_movie,proc_xxx,proc_srrdb)
+                SELECT seq,'fixture','fixture','neutral',SHA1(CONCAT('release:',seq)),SUBSTRING('0123456789abcdef',MOD(seq,16)+1,1),
+                1,7000,100,'2026-01-01',1,1,0,0,1,1,1,1,1,1,0,0,0,0 FROM seq_1_to_$size");
+            DB::statement("ANALYZE TABLE `$r`, `$m`, `$f`");
+            $service = new NameFixingQueryService;
+            $before = $this->reads();
+            $this->assertFalse($service->hasStandardCandidates());
+            $this->assertSame(0, $service->standardCandidateCount());
+            foreach (str_split('0123456789abcdef') as $bucket) {
+                $this->assertSame([], $service->standardCandidateBatch($bucket, 100));
+            }
+            $measurements[$size] = $this->reads() - $before;
+        }
+        fwrite(STDERR, 'ABSENT_NAMING_EVIDENCE_READS='.json_encode($measurements, JSON_THROW_ON_ERROR).PHP_EOL);
+        $this->assertLessThanOrEqual($measurements[1000] * 2 + 500, $measurements[10000]);
+        $this->assertLessThan(1000, $measurements[10000]);
+
+        DB::table('media_infos')->insert([
+            ['releases_id' => 9999, 'unique_id' => 'late uid', 'movie_name' => null],
+            ['releases_id' => 9999, 'unique_id' => 'duplicate uid', 'movie_name' => null],
+            ['releases_id' => 9983, 'unique_id' => null, 'movie_name' => 'late title'],
+        ]);
+        DB::table('release_files')->insert([
+            ['releases_id' => 9998, 'name' => 'SDPORN.fixture.rar', 'crc32' => null],
+            ['releases_id' => 9997, 'name' => 'archive.rar', 'crc32' => '1234ABCD'],
+        ]);
+        $this->assertSame(4, $service->standardCandidateCount());
+        $this->assertSame([9999], array_map(static fn (object $row): int => (int) $row->id, $service->standardCandidateBatch('f', 1)));
+        $this->assertSame([9999, 9983], array_map(static fn (object $row): int => (int) $row->id, $service->standardCandidateBatch('f', 100)));
+        $this->assertTrue($service->hasStandardCandidates());
+        config(['nntmux_srrdb.enabled' => false]);
+        $this->assertSame(3, $service->standardCandidateCount());
+        DB::table('releases')->update(['proc_files' => 0]);
+        $before = $this->reads();
+        $this->assertTrue($service->hasStandardCandidates());
+        $this->assertLessThan(50, $this->reads() - $before, 'A wake-up must stop at the first direct candidate.');
+    }
+
+    public function test_consumed_flags_with_dense_retained_evidence_keep_selective_release_access(): void
+    {
+        $migration = require database_path('migrations/2026_09_10_231728_add_name_direct_work_index_to_releases.php');
+        $migration->up();
+        $r = DB::getTablePrefix().'releases';
+        $m = DB::getTablePrefix().'media_infos';
+        $f = DB::getTablePrefix().'release_files';
+        $measurements = [];
+        foreach ([1000, 10000] as $size) {
+            foreach (['media_infos', 'release_files', 'releases'] as $table) {
+                DB::table($table)->delete();
+            }
+            DB::statement("INSERT INTO `$r` (id,name,searchname,fromname,guid,leftguid,groups_id,categories_id,size,adddate,
+                nfostatus,nzbstatus,isrenamed,predb_id,proc_nfo,proc_files,proc_par2,proc_srr,proc_hash16k,proc_crc32,
+                proc_uid,proc_media_movie,proc_xxx,proc_srrdb)
+                SELECT seq,'fixture','fixture','neutral',SHA1(CONCAT('release:',seq)),SUBSTRING('0123456789abcdef',MOD(seq,16)+1,1),
+                1,7000,100,'2026-01-01',1,1,0,0,1,1,1,1,1,1,1,1,1,1 FROM seq_1_to_$size");
+            DB::statement("INSERT INTO `$m` (releases_id,unique_id,movie_name) SELECT id,CONCAT('uid:',id),'neutral title' FROM `$r`");
+            DB::statement("INSERT INTO `$f` (releases_id,name,crc32) SELECT id,'SDPORN.fixture.rar',LPAD(HEX(id),8,'0') FROM `$r`");
+            DB::statement("ANALYZE TABLE `$r`, `$m`, `$f`");
+            $service = new NameFixingQueryService;
+            $before = $this->reads();
+            $this->assertFalse($service->hasStandardCandidates());
+            $this->assertSame(0, $service->standardCandidateCount());
+            foreach (str_split('0123456789abcdef') as $bucket) {
+                $this->assertSame([], $service->standardCandidateBatch($bucket, 100));
+            }
+            $measurements[$size] = $this->reads() - $before;
+        }
+        fwrite(STDERR, 'CONSUMED_NAMING_EVIDENCE_READS='.json_encode($measurements, JSON_THROW_ON_ERROR).PHP_EOL);
+        $this->assertLessThanOrEqual($measurements[1000] * 2 + 500, $measurements[10000]);
+        $this->assertLessThan(1000, $measurements[10000]);
+        DB::table('releases')->where('id', 9999)->update(['proc_uid' => 0]);
+        $this->assertTrue($service->hasStandardCandidates());
+        $this->assertSame(1, $service->standardCandidateCount());
+        $this->assertSame([9999], array_map(static fn (object $row): int => (int) $row->id, $service->standardCandidateBatch('f', 1)));
     }
 
     private function measureReleaseWrites(): float

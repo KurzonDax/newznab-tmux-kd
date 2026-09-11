@@ -619,6 +619,7 @@ class MissingFileRescanServiceTest extends TestCase
     public function test_reconciled_rescan_replays_after_rename_without_repeating_overview(): void
     {
         $release = $this->releaseHolding([1, 2], declaredFiles: 3, firstArticle: 1000, lastArticle: 1200);
+        DB::table('releases')->where('id', $release->id)->update(['size' => 3072000]);
         (require database_path('migrations/2026_09_08_121907_create_collection_reconciliation_tables.php'))->up();
         (require database_path('migrations/2026_09_10_140952_create_reconciled_artifact_operations.php'))->up();
         DB::table('reconciled_postings')->insert(['release_id' => $release->id, 'digest' => str_repeat('a', 64),
@@ -635,6 +636,7 @@ class MissingFileRescanServiceTest extends TestCase
             });
         $this->assertNull($this->service()->rescan($release, $this->rescanOptions(), $this->budget())->outcome);
         $this->assertNull($this->storedOutcome(1));
+        $this->assertSame(3072000, (int) $release->fresh()->size);
         $this->app->instance(ArtifactPublication::class, new ArtifactPublication);
         $this->groupCarries([]);
         $result = $this->service()->rescan($release->fresh(), $this->rescanOptions(), $this->budget());
@@ -642,7 +644,11 @@ class MissingFileRescanServiceTest extends TestCase
         $this->assertSame(1, $result->filesRecovered);
         $this->assertSame(2, $result->segmentsAdded);
         $this->assertSame('repaired', $this->storedOutcome(1));
+        $this->assertSame(4608000, (int) $release->fresh()->size);
         $this->assertSame(1, DB::table('reconciled_artifact_operations')->count());
+        $receipt = DB::table('reconciled_artifact_operations')->value('id');
+        $this->assertTrue(app(ArtifactPublication::class)->execute($receipt)->success);
+        $this->assertSame(4608000, (int) $release->fresh()->size);
     }
 
     private function service(): MissingFileRescanService
@@ -824,6 +830,7 @@ class MissingFileRescanServiceTest extends TestCase
             nzbstatus INTEGER NOT NULL DEFAULT 0,
             completion DOUBLE NOT NULL DEFAULT 0,
             totalpart INTEGER NOT NULL DEFAULT 0,
+            size INTEGER NOT NULL DEFAULT 0,
             declaredfiles INTEGER NULL,
             firstarticle INTEGER NULL,
             lastarticle INTEGER NULL,

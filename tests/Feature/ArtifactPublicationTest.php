@@ -46,6 +46,75 @@ class ArtifactPublicationTest extends TestCase
         Search::shouldReceive('updateRelease')->zeroOrMoreTimes();
     }
 
+    #[DataProvider('duplicateChanges')]
+    public function test_duplicate_receipts_follow_the_current_artifact_without_replaying_over_later_versions(bool $replacement, string $prefix): void
+    {
+        if ($prefix !== '') {
+            foreach (Schema::getTableListing(schemaQualified: false) as $table) {
+                Schema::rename($table, $prefix.$table);
+            }
+            DB::connection()->setTablePrefix($prefix);
+        }
+        $publisher = app(ArtifactPublication::class);
+        $target = str_replace('<segments>', '<segments><segment number="1" bytes="10">one@example.invalid</segment>', $this->original);
+        if ($replacement) {
+            $target = str_replace('two@example.invalid', 'replacement@example.invalid', $target);
+        }
+        DB::beginTransaction();
+        $prepared = $publisher->replace($this->guid, $target,
+            update: new ArtifactReleaseUpdate('duplicate', ['size' => 30], result: ['absorbed' => true]));
+        $this->assertNotNull($prepared->operationId);
+        $this->assertSame($prepared->operationId, $publisher->duplicateReceipt($this->guid, $target)?->operationId);
+        $this->assertSame('prepared', DB::table('reconciled_artifact_operations')->value('state'));
+        DB::commit();
+
+        $committed = $publisher->duplicateReceipt($this->guid, $target);
+        $this->assertTrue($committed?->success);
+        $this->assertSame($prepared->operationId, $committed->operationId);
+        $this->assertSame($replacement ? 2 : 1, (int) DB::table('reconciled_artifacts')->value('epoch'));
+        $this->assertSame($prepared->operationId, $publisher->duplicateReceipt($this->guid, $target)?->operationId);
+        $this->assertSame(1, DB::table('reconciled_artifact_operations')->count());
+
+        $later = str_replace('preserve', 'later metadata', $target);
+        $this->assertTrue($publisher->replace($this->guid, $later)->success);
+        $this->assertNull($publisher->duplicateReceipt($this->guid, $target), 'A version change invalidates incoming duplicate receipt lookup even within the same epoch.');
+        $this->assertTrue($publisher->replace($this->guid, $this->original)->success);
+        $this->assertNull($publisher->duplicateReceipt($this->guid, $target));
+        $this->assertTrue($publisher->execute($prepared->operationId)->success);
+        $this->assertSame($this->original, app(NzbService::class)->readNzbContents($this->guid));
+        $this->assertSame(4, (int) DB::table('reconciled_artifacts')->value('version'));
+    }
+
+    public static function duplicateChanges(): iterable
+    {
+        foreach (['' => '', 'prefixed ' => 'artifact_'] as $label => $prefix) {
+            yield $label.'additive receipt keeps its epoch' => [false, $prefix];
+            yield $label.'replacement receipt advances its epoch' => [true, $prefix];
+        }
+    }
+
+    #[DataProvider('unmeasurableSizes')]
+    public function test_recovery_rejects_unmeasurable_size_before_preparing_or_publishing(string $kind, string $bytes): void
+    {
+        $target = str_replace('bytes="20"', 'bytes="'.$bytes.'"', $this->original);
+
+        $result = app(ArtifactPublication::class)->replace($this->guid, $target, update: new ArtifactReleaseUpdate($kind));
+
+        $this->assertFalse($result->success);
+        $this->assertSame('artifact_size_overflow', $result->reason);
+        $this->assertSame($this->original, app(NzbService::class)->readNzbContents($this->guid));
+        $this->assertSame(0, DB::table('reconciled_artifact_operations')->count());
+    }
+
+    public static function unmeasurableSizes(): iterable
+    {
+        foreach (['repair', 'rescan'] as $kind) {
+            yield $kind.' missing size' => [$kind, ''];
+            yield $kind.' negative size' => [$kind, '-1'];
+            yield $kind.' overflowing size' => [$kind, '9223372036854775808'];
+        }
+    }
+
     public function test_a_source_reserved_after_evidence_cannot_prepare_a_second_artifact(): void
     {
         DB::table('collections')->insert(['id' => 1]);

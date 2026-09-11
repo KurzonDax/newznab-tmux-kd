@@ -20,12 +20,31 @@ final class SidecarWork
 
     public static function pendingCount(): int
     {
-        if (! Schema::hasTable('payload_prefix_hashes')) {
-            return 0;
+        return array_sum(array_map(static fn (Builder $query): int => $query->count(), self::pendingQueues()));
+    }
+
+    public static function hasPending(): bool
+    {
+        foreach (self::pendingQueues() as $query) {
+            if ($query->exists()) {
+                return true;
+            }
         }
 
-        return self::due(DB::table('payload_prefix_hashes')->where('state', 'pending'))->count()
-            + self::due(DB::table('par2_sidecar_operations')->where('phase', '<>', 'done'))->count();
+        return false;
+    }
+
+    /** @return list<Builder> */
+    private static function pendingQueues(): array
+    {
+        if (! Schema::hasTable('payload_prefix_hashes')) {
+            return [];
+        }
+
+        return [
+            self::due(DB::table('payload_prefix_hashes')->where('state', 'pending')),
+            self::due(DB::table('par2_sidecar_operations')->where('phase', '<>', 'done')),
+        ];
     }
 
     public function run(?string $leftGuid = null, int $limit = 25, bool $show = false): void

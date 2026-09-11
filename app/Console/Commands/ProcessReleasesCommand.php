@@ -59,18 +59,7 @@ class ProcessReleasesCommand extends Command
      */
     private function processReleasesForGroup(string $groupID): void
     {
-        $limit = $this->releaseProcessingService->getReleaseCreationLimit();
-
-        $this->releaseProcessingService->processIncompleteCollections($groupID);
-        $this->releaseProcessingService->processCollectionSizes($groupID);
-        $this->releaseProcessingService->deleteUnwantedCollections($groupID);
-
-        do {
-            $result = $this->releaseProcessingService->createReleases($groupID);
-            $nzbFilesAdded = $this->releaseProcessingService->createNZBs($groupID);
-
-            $shouldContinue = $result->total() >= $limit || $nzbFilesAdded >= $limit;
-        } while ($shouldContinue);
+        $this->releaseProcessingService->formReleases($groupID);
 
         if (! $this->option('orchestrated')) {
             $this->releaseProcessingService->deleteCollections($groupID);

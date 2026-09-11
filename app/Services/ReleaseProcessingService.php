@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Enums\CollectionDeletionReason;
 use App\Enums\CollectionFileCheckStatus;
+use App\Enums\CollectionSweepOutcome;
 use App\Enums\NzbCreationFailureDisposition;
 use App\Models\Category;
 use App\Models\Collection;
@@ -26,6 +27,8 @@ use App\Services\ObfuscationRecovery\RecoveryCollectionOwnership;
 use App\Services\Releases\CollectionCompletionMeasurer;
 use App\Services\Releases\CollectionDeletionSelection;
 use App\Services\Releases\CollectionQuietPredicate;
+use App\Services\Releases\CollectionSweep;
+use App\Services\Releases\CollectionSweepLease;
 use App\Services\Releases\ExecutableReleaseDiscardService;
 use App\Services\Releases\IncompleteReleaseSweepQuery;
 use App\Services\Releases\PreviewGenerationPolicy;
@@ -33,18 +36,19 @@ use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Releases\ReleaseDeletionProtection;
 use App\Services\Releases\ReleaseDuplicateAbsorber;
 use App\Services\Releases\ReleaseDuplicateFinder;
+use App\Services\Releases\ReleaseFormationGroupQuery;
 use App\Services\Releases\ReleaseManagementService;
 use App\Support\Data\NzbCreationResult;
 use App\Support\Data\ProcessReleasesSettings;
 use App\Support\Data\ReleaseCreationResult;
 use App\Support\Data\ReleaseDeleteStats;
 use App\Support\ReleaseSearchIndexSync;
+use App\Support\SchemaCapabilities;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 /**
@@ -67,6 +71,17 @@ final class ReleaseProcessingService
     private const int CATEGORIZE_CHUNK_SIZE = 1000;
 
     private const int NZB_CREATION_MAX_ATTEMPTS = 3;
+
+    private const int FORMATION_SECONDS_PER_GROUP = 60;
+
+    private const array INCOMPLETE_COLLECTION_STATUSES = [
+        CollectionFileCheckStatus::Default->value,
+        CollectionFileCheckStatus::CompleteCollection->value,
+        CollectionFileCheckStatus::CompleteParts->value,
+        CollectionFileCheckStatus::TempComplete->value,
+        CollectionFileCheckStatus::ZeroPart->value,
+        10,
+    ];
 
     private bool $echoCLI;
 
@@ -164,6 +179,118 @@ final class ReleaseProcessingService
     // ========================================================================
 
     /**
+     * Move bounded, resumable pages all the way to publication before examining more sources.
+     * Ready sources and pending NZBs have independent queues so old incomplete work cannot hide them.
+     *
+     * @return array{releases: int, nzbs: int, dupes: int, iterations: int}
+     */
+    public function formReleases(int|string|null $groupID): array
+    {
+        return SchemaCapabilities::during(function () use ($groupID): array {
+            $totals = ['releases' => 0, 'nzbs' => 0, 'dupes' => 0, 'iterations' => 0];
+            $groupId = $this->normalizeGroupId($groupID);
+            $groups = $groupId === null
+                ? ReleaseFormationGroupQuery::query()->orderBy('id')->pluck('id')->all()
+                : [$groupId];
+            foreach ($groups as $group) {
+                $group = (int) $group;
+                $this->publishPendingPage($group, $totals);
+                $deadline = microtime(true) + self::FORMATION_SECONDS_PER_GROUP;
+                $lastProgress = 0.0;
+                $states = [CollectionFileCheckStatus::Sized->value, CollectionFileCheckStatus::CompleteParts->value,
+                    CollectionFileCheckStatus::Default->value, CollectionFileCheckStatus::CompleteCollection->value,
+                    10, CollectionFileCheckStatus::TempComplete->value, CollectionFileCheckStatus::ZeroPart->value];
+                $firstRound = true;
+                do {
+                    foreach ($states as $key => $status) {
+                        $population = DB::table('collections')->where('groups_id', $group)->where('filecheck', $status)
+                            ->when(in_array(DB::getDriverName(), ['mysql', 'mariadb'], true),
+                                static fn ($query) => $query->forceIndex('collections_formation_queue'));
+                        $result = app(CollectionSweep::class)->run('formation:'.$status, $group,
+                            function (array $ids, CollectionSweepLease $lease) use ($group, $status, &$totals, &$lastProgress): int {
+                                $started = microtime(true);
+                                $before = $totals;
+                                $echo = $this->echoCLI;
+                                $this->echoCLI = false;
+                                try {
+                                    $candidates = $this->formationCollectionIds($group, $ids, $status);
+                                    foreach (array_chunk($candidates, CollectionAdmission::MUTATION_BATCH_SIZE) as $chunk) {
+                                        $lease->renew();
+                                        $this->reconcileIncompleteCollections($group, $chunk);
+                                        $this->processCollectionSizes($group, $chunk);
+                                        $this->deleteUnwantedCollections($group, $chunk);
+                                        $created = $this->releaseCreationService->createSelectedCollections($group, $chunk, false);
+                                        $totals['releases'] += $created['added'];
+                                        $totals['dupes'] += $created['dupes'];
+                                        $releaseIds = DB::table('collections')->whereIn('id', $chunk)->whereNotNull('releases_id')
+                                            ->pluck('releases_id')->map(static fn ($id): int => (int) $id)->unique()->values()->all();
+                                        $totals['nzbs'] += $this->createNZBs($group, $releaseIds);
+                                    }
+                                } finally {
+                                    $this->echoCLI = $echo;
+                                }
+                                $totals['iterations']++;
+                                if ($candidates !== [] || microtime(true) - $lastProgress >= 1) {
+                                    $lastProgress = microtime(true);
+                                    $this->outputStat('Formation group '.$group.' examined', count($ids));
+                                    $this->outputStat('Releases created', $totals['releases'] - $before['releases']);
+                                    $this->outputStat('NZBs published', $totals['nzbs'] - $before['nzbs']);
+                                    $this->outputInfo(sprintf('Formation page completed in %.2fs; last source ID %d', microtime(true) - $started, end($ids)));
+                                }
+
+                                return 0;
+                            }, population: $population, pageSize: min(128, $this->settings->releaseCreationLimit),
+                            maxPages: $firstRound ? 1 : 1000, seconds: min(5, max(0.01, $deadline - microtime(true))));
+                        if ($result->outcome !== CollectionSweepOutcome::BudgetYielded) {
+                            unset($states[$key]);
+                        }
+                    }
+                    $firstRound = false;
+                } while ($states !== [] && microtime(true) < $deadline);
+                app(PendingReconciler::class)->run($group, $this->settings->collectionDelayTime);
+                $this->publishPendingPage($group, $totals);
+                $this->processStuckCollections($group);
+            }
+
+            return $totals;
+        });
+    }
+
+    /**
+     * @param  list<int>  $collectionIds
+     * @return list<int>
+     */
+    private function formationCollectionIds(int $groupId, array $collectionIds, int $status): array
+    {
+        $query = $status === CollectionFileCheckStatus::Sized->value
+            ? Collection::query()->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))
+                ->tap(static fn ($query) => CollectionOwnership::exclude($query))
+                ->whereIn('id', $collectionIds)->where('groups_id', $groupId)
+                ->when(in_array(DB::getDriverName(), ['mysql', 'mariadb'], true),
+                    static fn ($query) => $query->forceIndex('PRIMARY'))
+            : $this->incompleteCollectionCandidates($groupId, $collectionIds);
+
+        return $query->where('filecheck', $status)->orderBy('id')->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+    }
+
+    /** @param array{releases: int, nzbs: int, dupes: int, iterations: int} $totals */
+    private function publishPendingPage(int $group, array &$totals): void
+    {
+        $population = DB::table('releases')->where('groups_id', $group)->where('nzbstatus', NzbService::NZB_NONE)
+            ->when(in_array(DB::getDriverName(), ['mysql', 'mariadb'], true),
+                static fn ($query) => $query->forceIndex('releases_formation_queue'));
+        app(CollectionSweep::class)->run('formation:nzb', $group,
+            function (array $ids, CollectionSweepLease $lease) use ($group, &$totals): int {
+                foreach (array_chunk($ids, CollectionAdmission::MUTATION_BATCH_SIZE) as $chunk) {
+                    $lease->renew();
+                    $totals['nzbs'] += $this->createNZBs($group, $chunk);
+                }
+
+                return 0;
+            }, population: $population, pageSize: min(128, $this->settings->releaseCreationLimit), maxPages: 1);
+    }
+
+    /**
      * Get the current completion percentage setting.
      */
     public function getCompletion(): int
@@ -245,15 +372,10 @@ final class ReleaseProcessingService
             $this->outputInfo("Processing group: {$groupName}");
         }
 
-        // Phase 1: Collection processing
-        $this->outputHeader('Phase 1: Collection Processing');
-        $this->processIncompleteCollections($normalizedGroupId);
-        $this->processCollectionSizes($normalizedGroupId);
-        $this->deleteUnwantedCollections($normalizedGroupId);
-
-        // Phase 2: Release creation loop
-        $this->outputHeader('Phase 2: Release Creation');
-        $totals = $this->runReleaseCreationLoop($normalizedGroupId, $categorize, $postProcess, $nntp);
+        $totals = $this->formReleases($normalizedGroupId);
+        $this->categorizeReleases($categorize, $normalizedGroupId);
+        $this->postProcessReleases($postProcess, $nntp);
+        $this->deleteCollections($normalizedGroupId);
 
         // Phase 3: Cleanup
         $this->outputHeader('Phase 3: Cleanup');
@@ -268,42 +390,6 @@ final class ReleaseProcessingService
         );
 
         return $totals['releases'];
-    }
-
-    /**
-     * Run the release creation loop.
-     *
-     * @return array{releases: int, nzbs: int, dupes: int, iterations: int}
-     *
-     * @throws Throwable
-     */
-    private function runReleaseCreationLoop(
-        ?int $normalizedGroupId,
-        int $categorize,
-        int $postProcess,
-        NNTPService $nntp
-    ): array {
-        $totals = ['releases' => 0, 'nzbs' => 0, 'dupes' => 0, 'iterations' => 0];
-        $limit = $this->settings->releaseCreationLimit;
-
-        do {
-            $totals['iterations']++;
-
-            $result = $this->createReleases($normalizedGroupId);
-            $totals['releases'] += $result->added;
-            $totals['dupes'] += $result->dupes;
-
-            $nzbFilesAdded = $this->createNZBs($normalizedGroupId);
-            $totals['nzbs'] += $nzbFilesAdded;
-
-            $this->categorizeReleases($categorize, $normalizedGroupId);
-            $this->postProcessReleases($postProcess, $nntp);
-            $this->deleteCollections($normalizedGroupId);
-
-            $shouldContinue = $result->total() >= $limit || $nzbFilesAdded >= $limit;
-        } while ($shouldContinue);
-
-        return $totals;
     }
 
     /**
@@ -385,9 +471,11 @@ final class ReleaseProcessingService
     /**
      * Calculate sizes for complete collections.
      *
+     * @param  list<int>|null  $collectionIds
+     *
      * @throws Throwable
      */
-    public function processCollectionSizes(int|string|null $groupID): void
+    public function processCollectionSizes(int|string|null $groupID, ?array $collectionIds = null): void
     {
         $startTime = now()->toImmutable();
         $this->outputSubHeader('Calculating Collection Sizes');
@@ -398,6 +486,9 @@ final class ReleaseProcessingService
         do {
             $query = Collection::query()->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))->tap(static fn ($query) => CollectionOwnership::exclude($query))
                 ->where('id', '>', $lastId)
+                ->when($collectionIds !== null, static fn ($query) => $query->whereIn('id', $collectionIds))
+                ->when($collectionIds !== null && in_array(DB::getDriverName(), ['mysql', 'mariadb'], true),
+                    static fn ($query) => $query->forceIndex('PRIMARY'))
                 ->where('filecheck', CollectionFileCheckStatus::CompleteParts->value)
                 ->when($normalizedGroupId !== null, static fn ($q) => $q->where('groups_id', $normalizedGroupId))
                 ->orderBy('id')
@@ -407,7 +498,8 @@ final class ReleaseProcessingService
                 break;
             }
             $lastId = (int) end($ids);
-            if (! app(CollectionAdmission::class)->screen($ids, $this->settings->collectionDelayTime)) {
+            if (($collectionIds === null || count($ids) > CollectionAdmission::MUTATION_BATCH_SIZE)
+                && ! app(CollectionAdmission::class)->screen($ids, $this->settings->collectionDelayTime)) {
                 continue;
             }
             foreach (array_chunk($ids, CollectionAdmission::MUTATION_BATCH_SIZE) as $chunk) {
@@ -433,59 +525,64 @@ final class ReleaseProcessingService
      * Reconcile only a bounded keyset page at a time. Stored parts are the
      * authority for binary counts/sizes; binary aggregates are then the
      * authority for collection readiness and filesize.
+     *
+     * @param  list<int>|null  $collectionIds
      */
-    private function reconcileIncompleteCollections(?int $groupId): void
+    private function reconcileIncompleteCollections(?int $groupId, ?array $collectionIds = null): void
     {
         $lastId = 0;
-        $hasLastSeenAt = Schema::hasColumn('collections', 'last_seen_at');
-        $quiet = CollectionQuietPredicate::build($this->settings->collectionDelayTime);
-        $statuses = [
-            CollectionFileCheckStatus::Default->value,
-            CollectionFileCheckStatus::CompleteCollection->value,
-            CollectionFileCheckStatus::CompleteParts->value,
-            CollectionFileCheckStatus::TempComplete->value,
-            CollectionFileCheckStatus::ZeroPart->value,
-            10,
-        ];
-
         do {
-            $query = Collection::query()->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))->tap(static fn ($query) => CollectionOwnership::exclude($query))
-                ->where('id', '>', $lastId)
-                ->where(function ($query) use ($quiet, $hasLastSeenAt, $statuses): void {
-                    $query->where('filecheck', CollectionFileCheckStatus::CompleteParts->value);
-                    $query->orWhere(function ($evidence) use ($statuses): void {
-                        $evidence->whereIn('filecheck', $statuses)->where('totalfiles', '>', 0)
-                            ->whereRaw('EXISTS (SELECT 1 FROM binaries b WHERE b.collections_id = collections.id
-                                GROUP BY b.collections_id HAVING COUNT(*) IN (collections.totalfiles, collections.totalfiles + 1)
-                                AND SUM(CASE WHEN b.partcheck = 1 THEN 1 ELSE 0 END) >= collections.totalfiles)');
-                    });
-                    if ($hasLastSeenAt) {
-                        $query->orWhere(function ($stale) use ($quiet, $statuses): void {
-                            $stale->whereIn('filecheck', array_values(array_diff(
-                                $statuses,
-                                [CollectionFileCheckStatus::CompleteParts->value]
-                            )))->whereRaw(
-                                $quiet['sql'],
-                                $quiet['bindings']
-                            );
-                        });
-                    } else {
-                        $query->orWhereIn('filecheck', array_values(array_diff(
-                            $statuses,
-                            [CollectionFileCheckStatus::CompleteParts->value]
-                        )));
-                    }
-                })
-                ->when($groupId !== null, static fn ($q) => $q->where('groups_id', $groupId))
-                ->orderBy('id')
-                ->limit(min(500, $this->binariesConfig->reconcileBatchSize));
-            $ids = $query->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+            $ids = $this->incompleteCollectionCandidates($groupId, $collectionIds)->where('id', '>', $lastId)
+                ->orderBy('id')->limit(min(500, $this->binariesConfig->reconcileBatchSize))
+                ->pluck('id')->map(static fn ($id): int => (int) $id)->all();
             if ($ids === []) {
                 break;
             }
             $lastId = (int) end($ids);
-            $this->reconcileCollectionIds($ids, $statuses);
+            $this->reconcileCollectionIds($ids, self::INCOMPLETE_COLLECTION_STATUSES);
         } while (\count($ids) === min(500, $this->binariesConfig->reconcileBatchSize));
+    }
+
+    /**
+     * @param  list<int>|null  $collectionIds
+     * @return EloquentBuilder<Collection>
+     */
+    private function incompleteCollectionCandidates(?int $groupId, ?array $collectionIds = null): EloquentBuilder
+    {
+        $hasLastSeenAt = SchemaCapabilities::hasColumn('collections', 'last_seen_at');
+        $quiet = CollectionQuietPredicate::build($this->settings->collectionDelayTime);
+        $statuses = self::INCOMPLETE_COLLECTION_STATUSES;
+
+        return Collection::query()->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))->tap(static fn ($query) => CollectionOwnership::exclude($query))
+            ->when($collectionIds !== null, static fn ($query) => $query->whereIn('id', $collectionIds))
+            ->when($collectionIds !== null && in_array(DB::getDriverName(), ['mysql', 'mariadb'], true),
+                static fn ($query) => $query->forceIndex('PRIMARY'))
+            ->where(function ($query) use ($quiet, $hasLastSeenAt, $statuses): void {
+                $query->where('filecheck', CollectionFileCheckStatus::CompleteParts->value);
+                $query->orWhere(function ($evidence) use ($statuses): void {
+                    $evidence->whereIn('filecheck', $statuses)->where('totalfiles', '>', 0)
+                        ->whereRaw('EXISTS (SELECT 1 FROM binaries b WHERE b.collections_id = collections.id
+                                GROUP BY b.collections_id HAVING COUNT(*) IN (collections.totalfiles, collections.totalfiles + 1)
+                                AND SUM(CASE WHEN b.partcheck = 1 THEN 1 ELSE 0 END) >= collections.totalfiles)');
+                });
+                if ($hasLastSeenAt) {
+                    $query->orWhere(function ($stale) use ($quiet, $statuses): void {
+                        $stale->whereIn('filecheck', array_values(array_diff(
+                            $statuses,
+                            [CollectionFileCheckStatus::CompleteParts->value]
+                        )))->whereRaw(
+                            $quiet['sql'],
+                            $quiet['bindings']
+                        );
+                    });
+                } else {
+                    $query->orWhereIn('filecheck', array_values(array_diff(
+                        $statuses,
+                        [CollectionFileCheckStatus::CompleteParts->value]
+                    )));
+                }
+            })
+            ->when($groupId !== null, static fn ($q) => $q->where('groups_id', $groupId));
     }
 
     /**
@@ -502,9 +599,6 @@ final class ReleaseProcessingService
             return;
         }
 
-        if (! app(CollectionAdmission::class)->screen($collectionIds, $this->settings->collectionDelayTime)) {
-            return;
-        }
         if (DB::getDriverName() === 'sqlite') {
             $this->reconcileCollectionIdsSqlite($collectionIds, $statuses);
 
@@ -645,9 +739,11 @@ final class ReleaseProcessingService
     /**
      * Delete collections that don't meet size/file count requirements.
      *
+     * @param  list<int>|null  $collectionIds
+     *
      * @throws Throwable
      */
-    public function deleteUnwantedCollections(int|string|null $groupID): void
+    public function deleteUnwantedCollections(int|string|null $groupID, ?array $collectionIds = null): void
     {
         $startTime = now()->toImmutable();
         $this->outputSubHeader('Filtering Collections by Size/File Count');
@@ -655,9 +751,10 @@ final class ReleaseProcessingService
         $normalizedGroupId = $this->normalizeGroupId($groupID);
         $groupIDs = $normalizedGroupId === null
             ? UsenetGroup::query()
-                ->whereExists(static function (Builder $query): void {
+                ->whereExists(static function (Builder $query) use ($collectionIds): void {
                     $query->selectRaw('1')
                         ->from('collections')
+                        ->when($collectionIds !== null, static fn ($query) => $query->whereIn('collections.id', $collectionIds))
                         ->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))->tap(static fn ($query) => CollectionOwnership::exclude($query))
                         ->whereColumn('collections.groups_id', 'usenet_groups.id')
                         ->where('collections.filecheck', CollectionFileCheckStatus::Sized->value)
@@ -672,6 +769,8 @@ final class ReleaseProcessingService
         // Delete collections where ALL binaries are par2 files (no actual content)
         $par2OnlyCollectionIds = DB::table('collections as c')->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query, 'c.id'))->tap(static fn ($query) => CollectionOwnership::exclude($query, 'c.id'))
             ->join('binaries as b', 'c.id', '=', 'b.collections_id')
+            ->when($collectionIds !== null, static fn ($query) => $query->whereIn('c.id', $collectionIds)
+                ->whereIn('b.collections_id', $collectionIds))
             ->where('c.filecheck', CollectionFileCheckStatus::Sized->value)
             ->where('c.filesize', '>', 0)
             ->groupBy('c.id')
@@ -686,7 +785,7 @@ final class ReleaseProcessingService
             $groupMinSize = (int) ($groupSettings['minsizetoformrelease'] ?? 0);
             $groupMinFiles = (int) ($groupSettings['minfilestoformrelease'] ?? 0);
 
-            if (! $this->hasSizedCollections((int) $grpID['id'])) {
+            if (! $this->hasSizedCollections((int) $grpID['id'], $collectionIds)) {
                 continue;
             }
 
@@ -695,6 +794,9 @@ final class ReleaseProcessingService
                 $ids = Collection::query()->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))->tap(static fn ($query) => CollectionOwnership::exclude($query))
                     ->where('filecheck', CollectionFileCheckStatus::Sized->value)
                     ->where('groups_id', (int) $grpID['id'])
+                    ->when($collectionIds !== null, static fn ($query) => $query->whereIn('id', $collectionIds))
+                    ->when($collectionIds !== null && in_array(DB::getDriverName(), ['mysql', 'mariadb'], true),
+                        static fn ($query) => $query->forceIndex('PRIMARY'))
                     ->where('filesize', '>', 0)
                     ->where('filesize', '<', $effectiveMinSize);
                 $stats['minSize'] += $this->deleteCollectionQueryInBatches($ids, 'Min-size cleanup');
@@ -704,6 +806,9 @@ final class ReleaseProcessingService
                 $ids = Collection::query()->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))->tap(static fn ($query) => CollectionOwnership::exclude($query))
                     ->where('filecheck', CollectionFileCheckStatus::Sized->value)
                     ->where('groups_id', (int) $grpID['id'])
+                    ->when($collectionIds !== null, static fn ($query) => $query->whereIn('id', $collectionIds))
+                    ->when($collectionIds !== null && in_array(DB::getDriverName(), ['mysql', 'mariadb'], true),
+                        static fn ($query) => $query->forceIndex('PRIMARY'))
                     ->where('filesize', '>', $this->settings->maxSizeToFormRelease);
                 $stats['maxSize'] += $this->deleteCollectionQueryInBatches($ids, 'Max-size cleanup');
             }
@@ -713,6 +818,9 @@ final class ReleaseProcessingService
                 $ids = Collection::query()->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))->tap(static fn ($query) => CollectionOwnership::exclude($query))
                     ->where('filecheck', CollectionFileCheckStatus::Sized->value)
                     ->where('groups_id', (int) $grpID['id'])
+                    ->when($collectionIds !== null, static fn ($query) => $query->whereIn('id', $collectionIds))
+                    ->when($collectionIds !== null && in_array(DB::getDriverName(), ['mysql', 'mariadb'], true),
+                        static fn ($query) => $query->forceIndex('PRIMARY'))
                     ->where('filesize', '>', 0)
                     ->where('totalfiles', '<', $effectiveMinFiles);
                 $stats['minFiles'] += $this->deleteCollectionQueryInBatches($ids, 'Min-files cleanup');
@@ -741,9 +849,11 @@ final class ReleaseProcessingService
     /**
      * Create NZB files from releases that don't have them yet.
      *
+     * @param  list<int>|null  $releaseIds
+     *
      * @throws Throwable
      */
-    public function createNZBs(int|string|null $groupID): int
+    public function createNZBs(int|string|null $groupID, ?array $releaseIds = null): int
     {
         $startTime = now()->toImmutable();
         $this->outputSubHeader('Creating NZB Files');
@@ -755,9 +865,11 @@ final class ReleaseProcessingService
         $deferredCount = 0;
         $claimToken = bin2hex(random_bytes(16));
         $limit = $this->settings->releaseCreationLimit;
-        $total = min(NzbCreationCandidateQuery::baseBuilder($groupID)->count(), $limit);
+        if ($releaseIds !== null) {
+            $limit = min($limit, count($releaseIds));
+        }
 
-        if ($total > 0) {
+        if ($limit > 0) {
             $columns = [
                 'id',
                 'guid',
@@ -770,7 +882,8 @@ final class ReleaseProcessingService
             ];
 
             $processed = 0;
-            $releases = NzbCreationCandidateQuery::claimBatch($groupID, $limit, $claimToken, $columns);
+            $releases = NzbCreationCandidateQuery::claimBatch($groupID, $limit, $claimToken, $columns, $releaseIds);
+            $total = $releases->count();
             foreach ($releases as $release) {
                 $keepClaimUntilLeaseExpires = false;
 
@@ -1127,11 +1240,15 @@ final class ReleaseProcessingService
         return $query->count('id');
     }
 
-    private function hasSizedCollections(int $groupId): bool
+    /** @param list<int>|null $collectionIds */
+    private function hasSizedCollections(int $groupId, ?array $collectionIds = null): bool
     {
         return Collection::query()->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))->tap(static fn ($query) => CollectionOwnership::exclude($query))
             ->where('filecheck', CollectionFileCheckStatus::Sized->value)
             ->where('groups_id', $groupId)
+            ->when($collectionIds !== null, static fn ($query) => $query->whereIn('id', $collectionIds))
+            ->when($collectionIds !== null && in_array(DB::getDriverName(), ['mysql', 'mariadb'], true),
+                static fn ($query) => $query->forceIndex('PRIMARY'))
             ->where('filesize', '>', 0)
             ->exists();
     }

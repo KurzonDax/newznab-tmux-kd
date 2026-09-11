@@ -45,6 +45,7 @@ final class NzbCreationCandidateQuery
 
     /**
      * @param  list<string>  $columns
+     * @param  list<int>|null  $releaseIds
      * @return EloquentCollection<int, Release>
      */
     public static function claimBatch(
@@ -52,13 +53,15 @@ final class NzbCreationCandidateQuery
         int $limit,
         string $token,
         array $columns = ['*'],
+        ?array $releaseIds = null,
     ): EloquentCollection {
         $effectiveLimit = max(1, $limit);
 
-        return DB::transaction(function () use ($groupID, $effectiveLimit, $token, $columns): EloquentCollection {
+        return DB::transaction(function () use ($groupID, $effectiveLimit, $token, $columns, $releaseIds): EloquentCollection {
             $supportsClaims = self::supportsClaims();
             $query = self::baseBuilder($groupID)
                 ->select('r.id')
+                ->when($releaseIds !== null, static fn ($query) => $query->whereIn('r.id', $releaseIds))
                 ->orderBy('r.postdate')
                 ->orderByDesc('r.id')
                 ->limit($effectiveLimit);

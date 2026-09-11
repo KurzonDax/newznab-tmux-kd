@@ -30,6 +30,7 @@ trait CreatesRecoveryCbpSchema
             $table->unsignedBigInteger('filesize')->default(0);
             $table->unsignedTinyInteger('filecheck')->default(0);
             $table->unsignedInteger('releases_id')->nullable();
+            $table->index('releases_id', 'ix_collection_releaseid');
         });
         Schema::create('collection_groups', function (Blueprint $table): void {
             $table->unsignedInteger('collections_id');
@@ -47,6 +48,7 @@ trait CreatesRecoveryCbpSchema
             $table->unsignedBigInteger('partsize');
             $table->unsignedTinyInteger('partcheck')->default(0);
             $table->unique(['binaryhash', 'collections_id']);
+            $table->index(['collections_id', 'filenumber'], 'ix_binaries_collection_filenumber');
         });
         Schema::create('parts', function (Blueprint $table): void {
             $table->unsignedInteger('binaries_id');

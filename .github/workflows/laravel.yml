@@ -119,7 +119,7 @@ jobs:
     needs: scope
     if: needs.scope.outputs.code == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 20
     env:
       COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
     steps:
@@ -127,10 +127,10 @@ jobs:
       - uses: ./.github/actions/ci-sail
       - name: Start disposable MariaDB
         run: ./sail up -d --wait mariadb
-      - name: Compare identical synthetic caller fixtures
-        run: ./sail exec -T -u sail -e CBP_INTEGRATION_DB_DATABASE=cbp_integration laravel.test scripts/benchmark-admission
-      - name: Exercise complete workers, locks, and scale
-        run: ./sail exec -T -u sail -e CBP_INTEGRATION_DB_DATABASE=cbp_integration laravel.test php artisan test --compact --fail-on-skipped tests/Integration/AdmissionThroughputMariaDbTest.php --filter 'worker|proofs|growth|peer_ownership'
+      - name: Verify progressive publication, locks, callers, and bounded discovery
+        run: ./sail exec -T -u sail -e CBP_INTEGRATION_DB_DATABASE=cbp_integration laravel.test scripts/run-tests-isolated.sh php artisan test --compact --fail-on-skipped --fail-on-warning --fail-on-empty-test-suite tests/Integration/AdmissionThroughputMariaDbTest.php --exclude-group admission-scale
+      - name: Verify naming selection with absent and retained evidence
+        run: ./sail exec -T -u sail -e CBP_INTEGRATION_DB_DATABASE=cbp_integration -e CBP_INTEGRATION_DB_USERNAME=sail -e CBP_INTEGRATION_DB_PASSWORD=password laravel.test scripts/run-tests-isolated.sh php artisan test --compact --fail-on-skipped --fail-on-warning --fail-on-empty-test-suite tests/Integration/NamingCandidateScaleMariaDbTest.php --filter='test_generated_work_flags|test_pending_flags_without_evidence|test_consumed_flags_with_dense_retained_evidence'
       - name: Stop Sail
         if: always()
         run: ./sail down

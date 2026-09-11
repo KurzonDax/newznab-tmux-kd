@@ -29,6 +29,7 @@ final class AdmissionMariaDbFixture
         };
         self::collections(1, $count, 1);
         DB::table('collections')->where('id', '<=', $count)->update(['declaredfiles' => 3, 'filesize' => 2097152]);
+        DB::table('binaries')->where('collections_id', '<=', $count)->update(['name' => DB::raw("REPLACE(name, '/02]', '/03]')")]);
         if ($case === 'sparse') {
             DB::statement("UPDATE collections SET fromname = CONCAT('Poster ', id)");
         } elseif ($case === 'positive') {

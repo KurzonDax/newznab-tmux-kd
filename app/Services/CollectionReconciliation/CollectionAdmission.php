@@ -9,9 +9,9 @@ use App\Services\CollectionsCleaningService;
 use App\Services\ObfuscationRecovery\RecoveryCollectionOwnership;
 use App\Services\Releases\CollectionQuietPredicate;
 use App\Support\Data\ProcessReleasesSettings;
+use App\Support\SchemaCapabilities;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use UnexpectedValueException;
 
 /** Cheap pre-mutation admission; this boundary never opens a provider connection. */
@@ -34,13 +34,19 @@ final class CollectionAdmission
         if (count(array_unique($ids)) > self::MUTATION_BATCH_SIZE) {
             return false;
         }
-        if (! Schema::hasTable('reconciliation_admissions')) {
+        if (! SchemaCapabilities::hasTable('reconciliation_admissions')) {
             return true;
         }
         $queries = new PopulationQuery;
         $sources = $queries->lockIds($ids);
         if ($sources->count() !== count(array_unique($ids))) {
             return false;
+        }
+        $possible = $sources->filter(static fn ($source): bool => (int) $source->declaredfiles > 1 && $source->date !== null);
+        $inventory = $this->snapshots($possible->pluck('id')->map(static fn ($id): int => (int) $id)->all(), 0,
+            locked: true, inventoryOnly: true);
+        if ($inventory !== null) {
+            $sources = $sources->whereIn('id', array_keys($inventory));
         }
         foreach ($queries->admissionPopulations($sources, true) as $id => $population) {
             if (! $population['complete']) {
@@ -61,7 +67,7 @@ final class CollectionAdmission
      */
     public function screen(array $ids, ?int $quietHours = null, ?Collection $lockedPopulation = null): bool
     {
-        if (! Schema::hasTable('reconciliation_admissions')) {
+        if (! SchemaCapabilities::hasTable('reconciliation_admissions')) {
             return true;
         }
         $quietHours ??= ProcessReleasesSettings::forDatabase(['delaytime' => Settings::settingValue('delaytime')])->collectionDelayTime;
@@ -126,7 +132,7 @@ final class CollectionAdmission
     public function decisionId(int $baseSourceId, string $baseArticle): string
     {
         $id = hash('sha256', 'pending:'.$baseArticle);
-        if (! Schema::hasTable('reconciliation_decisions')) {
+        if (! SchemaCapabilities::hasTable('reconciliation_decisions')) {
             return $id;
         }
         DB::table('reconciliation_decisions')->insertOrIgnore(['base_collection_id' => $baseSourceId, 'decision_id' => $id]);
@@ -136,7 +142,7 @@ final class CollectionAdmission
 
     public function admitProven(PostingDecision $decision, int $quietHours): bool
     {
-        if (! Schema::hasTable('reconciliation_admissions')) {
+        if (! SchemaCapabilities::hasTable('reconciliation_admissions')) {
             return true;
         }
         $ids = array_map('intval', $decision->sources());
@@ -162,14 +168,14 @@ final class CollectionAdmission
     /** @param list<int> $ids */
     public function expired(array $ids): bool
     {
-        return Schema::hasTable('reconciliation_admissions') && DB::table('reconciliation_admissions')
+        return SchemaCapabilities::hasTable('reconciliation_admissions') && DB::table('reconciliation_admissions')
             ->whereIn('collection_id', $ids)->where('expires_at', '<=', now())->exists();
     }
 
     /** @param list<int> $ids */
     public function disprove(array $ids, ?string $decisionId = null): void
     {
-        if (Schema::hasTable('reconciliation_admissions')) {
+        if (SchemaCapabilities::hasTable('reconciliation_admissions')) {
             $decisions = DB::table('reconciliation_admissions')->whereIn('collection_id', $ids)
                 ->when($decisionId !== null, static fn ($query) => $query->where('decision_id', $decisionId))->pluck('decision_id');
             DB::table('reconciliation_admissions')->whereIn('decision_id', $decisions)
@@ -179,37 +185,84 @@ final class CollectionAdmission
 
     /**
      * @param  list<int>  $ids
+     * @param  bool  $inventoryOnly  A locked seed-only necessary proof; omit volatile quietness, ownership, group and family filters.
      * @return array<int, array<string, mixed>>|null
      */
-    private function snapshots(array $ids, int $quietHours, bool $locked = false): ?array
+    private function snapshots(array $ids, int $quietHours, bool $locked = false, bool $inventoryOnly = false): ?array
     {
-        $quiet = CollectionQuietPredicate::build($quietHours, DB::getTablePrefix().'c');
+        if ($ids === []) {
+            return [];
+        }
         $collections = DB::table('collections as c')
-            ->whereIn('c.id', $ids)->whereIn('c.filecheck', PopulationQuery::STATES)
-            ->whereRaw($quiet['sql'], $quiet['bindings'])
-            ->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query, 'c.id'))
-            ->tap(static fn ($query) => CollectionOwnership::excludeArtifactSources($query, 'c.id'))
+            ->whereIn('c.id', $ids)
+            ->when(! $inventoryOnly, static function ($query) use ($quietHours): void {
+                $quiet = CollectionQuietPredicate::build($quietHours, DB::getTablePrefix().'c');
+                $query->whereIn('c.filecheck', PopulationQuery::STATES)->whereRaw($quiet['sql'], $quiet['bindings']);
+                RecoveryCollectionOwnership::exclude($query, 'c.id');
+                CollectionOwnership::excludeArtifactSources($query, 'c.id');
+            })
             ->orderBy('c.id')->when($locked, static fn ($query) => $query->lockForUpdate())->get(['c.*'])->keyBy('id');
-        $groupNames = DB::table('usenet_groups')->whereIn('id', $collections->pluck('groups_id'))->pluck('name', 'id');
-        $collections = $collections->filter(static fn ($collection): bool => $groupNames->has($collection->groups_id));
-        $binaryIds = [];
-        sort($ids);
-        foreach ($ids as $id) {
-            $selected = DB::table('binaries')->where('collections_id', $id)->limit(1025 - count($binaryIds))
-                ->when($locked, static fn ($query) => $query->lockForUpdate())->pluck('id')->all();
-            $binaryIds = [...$binaryIds, ...$selected];
-            if (count($binaryIds) > 1024) {
+        $groupNames = $inventoryOnly ? collect() : DB::table('usenet_groups')->whereIn('id', $collections->pluck('groups_id'))->pluck('name', 'id');
+        if (! $inventoryOnly) {
+            $collections = $collections->filter(static fn ($collection): bool => $groupNames->has($collection->groups_id));
+        }
+        $sourceBinaries = null;
+        if ($inventoryOnly) {
+            $sourceBinaries = DB::table('binaries')->whereIn('collections_id', $ids)
+                ->when(in_array(DB::getDriverName(), ['mysql', 'mariadb'], true), static fn ($query) => $query->forceIndex('ix_binaries_collection_filenumber'))
+                ->orderBy('collections_id')->orderBy('filenumber')->orderBy('id')->limit(1025)
+                ->when($locked, static fn ($query) => $query->lockForUpdate())->get(['id', 'collections_id', 'name', 'totalparts']);
+            if ($sourceBinaries->count() > 1024) {
                 return null;
             }
         }
-        $partAlias = DB::getTablePrefix().'p';
-        $parts = DB::table('parts as p')->whereIn('p.binaries_id', $binaryIds)->groupBy('p.binaries_id')
-            ->when(DB::getDriverName() !== 'sqlite', static fn ($query) => $query->forceIndex('PRIMARY'))
-            ->when($locked, static fn ($query) => $query->lockForUpdate())->selectRaw("{$partAlias}.binaries_id, COUNT(*) AS held, MIN({$partAlias}.partnumber) AS first_part, MAX({$partAlias}.partnumber) AS last_part, SUM({$partAlias}.size) AS bytes");
-        $binaries = DB::table('binaries as b')->leftJoinSub($parts, 'p', 'p.binaries_id', '=', 'b.id')
-            ->leftJoin('parts as first', static fn ($join) => $join->on('first.binaries_id', '=', 'b.id')->where('first.partnumber', 1))
-            ->whereIn('b.id', $binaryIds)->orderBy('b.id')->when($locked, static fn ($query) => $query->lockForUpdate())
-            ->get(['b.id', 'b.collections_id', 'b.name', 'b.totalparts', 'p.held', 'p.first_part', 'p.last_part', 'p.bytes', 'first.messageid']);
+        $binaryIds = [];
+        $binaryCount = 0;
+        sort($ids);
+        foreach ($ids as $id) {
+            $selected = $sourceBinaries?->where('collections_id', $id)->pluck('id')->all()
+                ?? DB::table('binaries')->where('collections_id', $id)->limit(1025 - $binaryCount)
+                    ->when($locked, static fn ($query) => $query->lockForUpdate())->pluck('id')->all();
+            $binaryCount += count($selected);
+            if ($binaryCount > 1024) {
+                return null;
+            }
+            if (! $collections->has($id) || count($selected) >= (int) $collections[$id]->declaredfiles) {
+                $collections->forget($id);
+
+                continue;
+            }
+            $binaryIds = [...$binaryIds, ...$selected];
+        }
+        if ($binaryIds === []) {
+            return [];
+        }
+        if ($sourceBinaries !== null) {
+            $parts = DB::table('parts')->whereIn('binaries_id', $binaryIds)
+                ->when(in_array(DB::getDriverName(), ['mysql', 'mariadb'], true), static fn ($query) => $query->forceIndex('PRIMARY'))
+                ->orderBy('binaries_id')->orderBy('partnumber')->limit(1025)
+                ->when($locked, static fn ($query) => $query->lockForUpdate())->get(['binaries_id', 'partnumber']);
+            if ($parts->count() > 1024) {
+                return null;
+            }
+            $binaries = $sourceBinaries->whereIn('id', $binaryIds)->map(static function ($binary) use ($parts) {
+                $held = $parts->where('binaries_id', $binary->id);
+                $binary->held = $held->count();
+                $binary->first_part = $held->min('partnumber');
+                $binary->last_part = $held->max('partnumber');
+
+                return $binary;
+            });
+        } else {
+            $partAlias = DB::getTablePrefix().'p';
+            $parts = DB::table('parts as p')->whereIn('p.binaries_id', $binaryIds)->groupBy('p.binaries_id')
+                ->when(DB::getDriverName() !== 'sqlite', static fn ($query) => $query->forceIndex('PRIMARY'))
+                ->when($locked, static fn ($query) => $query->lockForUpdate())->selectRaw("{$partAlias}.binaries_id, COUNT(*) AS held, MIN({$partAlias}.partnumber) AS first_part, MAX({$partAlias}.partnumber) AS last_part, SUM({$partAlias}.size) AS bytes");
+            $binaries = DB::table('binaries as b')->leftJoinSub($parts, 'p', 'p.binaries_id', '=', 'b.id')
+                ->leftJoin('parts as first', static fn ($join) => $join->on('first.binaries_id', '=', 'b.id')->where('first.partnumber', 1))
+                ->whereIn('b.id', $binaryIds)->orderBy('b.id')->when($locked, static fn ($query) => $query->lockForUpdate())
+                ->get(['b.id', 'b.collections_id', 'b.name', 'b.totalparts', 'p.held', 'p.first_part', 'p.last_part', 'p.bytes', 'first.messageid']);
+        }
         $snapshots = [];
         foreach ($collections as $id => $collection) {
             $files = [];
@@ -222,16 +275,26 @@ final class CollectionAdmission
                         || $parsed['total'] !== (int) $collection->declaredfiles || isset($files[$parsed['ordinal']])) {
                         throw new UnexpectedValueException('ineligible_inventory');
                     }
+                    if ($inventoryOnly) {
+                        $files[$parsed['ordinal']] = $parsed;
+
+                        continue;
+                    }
                     $subject = preg_replace('/ \(\d+\/\d+\)$/D', '', $binary->name) ?? '';
                     $family = $this->cleaning->collectionsCleaner($subject, (string) $groupNames[$collection->groups_id])['name'];
                     $families[$family] = true;
                     $files[$parsed['ordinal']] = $parsed + ['article' => '<'.trim((string) $binary->messageid, '<>').'>',
                         'parts' => (int) $binary->totalparts, 'bytes' => (int) $binary->bytes, 'id' => (int) $binary->id];
                 }
-                if ($files === [] || count($files) >= (int) $collection->declaredfiles || count($families) !== 1) {
+                if ($files === [] || count($files) >= (int) $collection->declaredfiles || (! $inventoryOnly && count($families) !== 1)) {
                     continue;
                 }
             } catch (UnexpectedValueException) {
+                continue;
+            }
+            if ($inventoryOnly) {
+                $snapshots[(int) $id] = ['id' => (int) $id];
+
                 continue;
             }
             $snapshot = ['id' => (int) $id, 'group' => (int) $collection->groups_id, 'poster' => (string) $collection->fromname,

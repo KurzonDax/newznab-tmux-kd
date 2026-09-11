@@ -365,12 +365,15 @@ class ReleaseCleanupSafetyMariaDbTest extends ReleaseRemoverBatchingTest
             $table->string('fromname')->default('fixture@example.invalid');
             $table->integer('declaredfiles')->default(1);
             $table->string('xref')->default('server alt.binaries.test:1');
+            $table->index('releases_id', 'ix_collection_releaseid');
         });
         Schema::create('binaries', function (Blueprint $table): void {
             $table->increments('id');
             $table->integer('collections_id');
+            $table->unsignedInteger('filenumber')->default(0);
             $table->string('name');
             $table->integer('totalparts');
+            $table->index(['collections_id', 'filenumber'], 'ix_binaries_collection_filenumber');
         });
         Schema::create('parts', function (Blueprint $table): void {
             $table->integer('binaries_id');
@@ -378,6 +381,7 @@ class ReleaseCleanupSafetyMariaDbTest extends ReleaseRemoverBatchingTest
             $table->integer('partnumber');
             $table->integer('size');
             $table->string('messageid');
+            $table->primary(['binaries_id', 'partnumber']);
         });
     }
 

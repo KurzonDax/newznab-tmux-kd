@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use RuntimeException;
+use UnexpectedValueException;
 
 /** Durable intent precedes filesystem publication; replay adopts only recognized bytes. */
 class ArtifactPublication
@@ -89,8 +90,23 @@ class ArtifactPublication
         if (! Schema::hasTable('reconciled_artifact_operations')) {
             return null;
         }
+        $grammar = DB::connection()->getQueryGrammar();
         $query = DB::table('reconciled_artifact_operations as o')->join('releases as r', 'r.id', '=', 'o.release_id')
-            ->where('o.guid', $guid)->where('r.guid', $guid)->where('o.kind', 'duplicate')->whereIn('o.state', ['prepared', 'committed']);
+            ->join('reconciled_artifacts as a', 'a.release_id', '=', 'o.release_id')
+            ->where('o.guid', $guid)->where('r.guid', $guid)->where('a.guid', $guid)->where('a.cancelled', false)
+            ->where('o.kind', 'duplicate')->where(static function ($query) use ($grammar): void {
+                $query->where(static function ($prepared): void {
+                    $prepared->where('o.state', 'prepared')->whereColumn('a.pending_operation', 'o.id')
+                        ->whereColumn('a.version', 'o.expected_version')->whereColumn('a.epoch', 'o.expected_epoch')
+                        ->whereColumn('a.proof_revision', 'o.expected_proof_revision')->whereColumn('a.digest', 'o.expected_digest');
+                })->orWhere(static function ($committed) use ($grammar): void {
+                    $committed->where('o.state', 'committed')->whereNull('a.pending_operation')
+                        ->whereRaw($grammar->wrap('a.version').' = '.$grammar->wrap('o.expected_version').' + 1')
+                        ->whereRaw($grammar->wrap('a.epoch').' = '.$grammar->wrap('o.expected_epoch')
+                            .' + CASE WHEN '.$grammar->wrap('o.change_kind')." = 'replacement' THEN 1 ELSE 0 END")
+                        ->whereColumn('a.digest', 'o.target_digest');
+                });
+            });
         if ($xml !== null) {
             $query->where('o.target_digest', hash('sha256', $xml));
         }
@@ -127,6 +143,13 @@ class ArtifactPublication
     {
         $target = ArtifactInventory::load($xml);
         $update ??= new ArtifactReleaseUpdate;
+        if (in_array($update->kind, ['repair', 'rescan'], true)) {
+            try {
+                $target->bytes();
+            } catch (UnexpectedValueException $exception) {
+                return NzbReplaceResult::writeFailure($exception->getMessage());
+            }
+        }
         $prepared = DB::transaction(function () use ($guid, $xml, $owner, $expectedDigest, $target, $update, $sourceIds, $expectedSnapshot, $expectedSources, $proof): NzbReplaceResult {
             $observedIds = array_values(array_unique([...$sourceIds, ...array_keys($expectedSources)]));
             if ($observedIds !== []) {

@@ -6,6 +6,7 @@ namespace App\Services\Runners;
 
 use FFI;
 use RuntimeException;
+use Symfony\Component\Process\Exception\RuntimeException as ProcessRuntimeException;
 use Symfony\Component\Process\Process;
 
 /** A private process group keeps descendants owned even after their immediate parent exits. */
@@ -15,6 +16,8 @@ final class OwnedProcess extends Process
 
     private ?int $processGroup = null;
 
+    private ?int $ownerPid = null;
+
     private bool $stoppingTree = false;
 
     /** @var list<int> */
@@ -23,7 +26,7 @@ final class OwnedProcess extends Process
     /** @var list<int> */
     private array $ownedPids = [];
 
-    private static bool $subreaperEnabled = false;
+    private static ?int $subreaperPid = null;
 
     /**
      * @param  list<string>  $command
@@ -45,7 +48,13 @@ final class OwnedProcess extends Process
      */
     public function start(?callable $callback = null, array $env = []): void
     {
-        if (! self::$subreaperEnabled) {
+        if ($this->isRunning()) {
+            throw new ProcessRuntimeException('Process is already running.');
+        }
+        if ($this->ownerPid !== null && $this->ownerPid !== getmypid()) {
+            throw new RuntimeException('Worker process instances cannot be started by a different owner.');
+        }
+        if (self::$subreaperPid !== getmypid()) {
             if (PHP_OS_FAMILY !== 'Linux' || ! is_dir('/proc/self') || ! extension_loaded('ffi')
                 || ! function_exists('pcntl_waitpid') || ! function_exists('posix_kill')) {
                 throw new RuntimeException('Processing workers require Linux /proc and PHP FFI, pcntl, and posix.');
@@ -58,20 +67,27 @@ final class OwnedProcess extends Process
             if ($libc->prctl(self::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) !== 0) { // @phpstan-ignore method.notFound (libc function declared by FFI::cdef above)
                 throw new RuntimeException('Unable to own orphaned worker descendants.');
             }
-            self::$subreaperEnabled = true;
+            self::$subreaperPid = getmypid();
         }
-        parent::start($callback, $env);
-        $this->processGroup = $this->getPid();
-        $this->ownedGroups = $this->processGroup === null ? [] : [$this->processGroup];
-        while ($this->processGroup !== null && $this->isRunning()) {
-            $stat = @file_get_contents('/proc/'.$this->processGroup.'/stat');
-            if ($stat !== false && ($end = strrpos($stat, ')')) !== false
-                && in_array(explode(' ', substr($stat, $end + 2))[0], ['T', 't'], true)) {
-                posix_kill($this->processGroup, 18);
-                break;
+        $this->ownerPid = getmypid();
+        OwnedProcessShutdown::register($this);
+        try {
+            parent::start($callback, $env);
+            $this->processGroup = $this->getPid();
+            $this->ownedGroups = $this->processGroup === null ? [] : [$this->processGroup];
+            while ($this->processGroup !== null && $this->isRunning()) {
+                $stat = @file_get_contents('/proc/'.$this->processGroup.'/stat');
+                if ($stat !== false && ($end = strrpos($stat, ')')) !== false
+                    && in_array(explode(' ', substr($stat, $end + 2))[0], ['T', 't'], true)) {
+                    posix_kill($this->processGroup, 18);
+                    break;
+                }
+                $this->checkTimeout();
+                usleep(1000);
             }
-            $this->checkTimeout();
-            usleep(1000);
+        } catch (\Throwable $exception) {
+            $this->stop(0);
+            throw $exception;
         }
     }
 
@@ -86,9 +102,13 @@ final class OwnedProcess extends Process
 
     public function stop(float $timeout = 10, ?int $signal = null): ?int
     {
+        if ($this->ownerPid !== null && $this->ownerPid !== getmypid()) {
+            return null;
+        }
         if ($this->stoppingTree) {
             return parent::stop($timeout, $signal);
         }
+        pcntl_sigprocmask(SIG_BLOCK, [SIGHUP, SIGTERM, SIGINT], $previousMask);
         $this->stoppingTree = true;
         try {
             if ($this->processGroup !== null) {
@@ -121,6 +141,8 @@ final class OwnedProcess extends Process
             $this->ownedGroups = [];
             $this->ownedPids = [];
             $this->stoppingTree = false;
+            OwnedProcessShutdown::unregister($this);
+            pcntl_sigprocmask(SIG_SETMASK, $previousMask);
         }
     }
 

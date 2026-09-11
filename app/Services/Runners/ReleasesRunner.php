@@ -7,6 +7,7 @@ namespace App\Services\Runners;
 use App\Models\Settings;
 use App\Models\UsenetGroup;
 use App\Services\NameFixing\NameFixingQueryService;
+use App\Services\Releases\ReleaseFormationGroupQuery;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -125,17 +126,8 @@ class ReleasesRunner extends BaseRunner
      */
     private function pendingGroups(array $alreadyProcessed = []): array
     {
-        $pending = [];
-        foreach (DB::table('usenet_groups')->whereNotIn('id', $alreadyProcessed)->orderBy('id')->get(['id', 'name']) as $group) {
-            $exists = DB::table('collections')->where('groups_id', $group->id)
-                ->when(in_array(DB::getDriverName(), ['mysql', 'mariadb'], true), static fn ($query) => $query->forceIndex('groups_id'))
-                ->limit(1)->value('id');
-            if ($exists !== null) {
-                $pending[] = ['id' => (int) $group->id, 'name' => (string) $group->name];
-            }
-        }
-
-        return $pending;
+        return ReleaseFormationGroupQuery::query()->whereNotIn('id', $alreadyProcessed)->orderBy('id')->get(['id', 'name'])
+            ->map(static fn (object $group): array => ['id' => (int) $group->id, 'name' => (string) $group->name])->all();
     }
 
     public function fixRelNames(string $mode, int $maxPerRun, int $maxThreads): void

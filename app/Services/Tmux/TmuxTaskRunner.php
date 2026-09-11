@@ -419,7 +419,7 @@ class TmuxTaskRunner
     protected function runFixNamesTask(array $runVar): bool
     {
         $enabled = (int) ($runVar['settings']['fix_names'] ?? 0);
-        $work = (int) ($runVar['counts']['now']['processrenames'] ?? 0)
+        $work = (int) ($runVar['counts']['now']['name_work_available'] ?? $runVar['counts']['now']['processrenames'] ?? 0)
             + (int) ($runVar['counts']['now']['processpredbft'] ?? 0);
         $pane = $this->paneManager->paneForRole(TmuxPaneRole::FixNames, '1.0');
 

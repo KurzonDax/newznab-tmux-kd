@@ -144,18 +144,35 @@ final class NameFixingQueryService
             ->orderByDesc('r.id')->limit(max(1, $limit))->get()->all();
     }
 
-    /**
-     * How many releases the standard sweep would admit across every GUID bucket.
-     *
-     * This is the tmux Fix Names pane's wake-up gate. It shares
-     * {@see self::standardCandidates()} with {@see self::standardCandidateBatch()}
-     * so the pane sleeps exactly when the sweep has nothing to do -- the
-     * hand-written copy it replaced counted only three of the sweep's sources
-     * and let the pane sleep on real UID/SRR/hash/CRC work.
-     */
+    /** Exact display count; operational wake-ups use hasStandardCandidates(). */
     public function standardCandidateCount(): int
     {
         return $this->standardCandidates()->count() + SidecarWork::pendingCount();
+    }
+
+    /** Stop at the first eligible source without materializing the complete union. */
+    public function hasStandardCandidates(): bool
+    {
+        $gate = RecoveryReleaseGate::availableSql('r.id', $this->database);
+        foreach ($this->standardCandidateSources() as $source) {
+            if ($source->whereRaw($gate)->exists()) {
+                return true;
+            }
+        }
+
+        return SidecarWork::hasPending();
+    }
+
+    private function standardCandidates(?string $leftGuid = null): Builder
+    {
+        $sources = $this->standardCandidateSources($leftGuid);
+        $candidates = $sources[0];
+        foreach (array_slice($sources, 1) as $source) {
+            $candidates->union($source);
+        }
+
+        return CandidateReleaseQuery::fromCandidateIds($candidates, 'name_seed')->toBase()
+            ->whereRaw(RecoveryReleaseGate::availableSql('r.id', $this->database));
     }
 
     /**
@@ -175,8 +192,10 @@ final class NameFixingQueryService
      * also requires an archive CRC, an untrusted name, and an enabled source.
      * These gates keep the pane asleep until the worker can record an honest
      * verdict.
+     *
+     * @return non-empty-list<Builder>
      */
-    private function standardCandidates(?string $leftGuid = null): Builder
+    private function standardCandidateSources(?string $leftGuid = null): array
     {
         /** @var Connection $connection */
         $connection = $this->database;
@@ -191,6 +210,7 @@ final class NameFixingQueryService
                 OR r.proc_hash16k = 0 OR r.proc_crc32 = 0)'));
         }
 
+        $sources = [$direct];
         $evidence = [
             ['release_files', 'proc_xxx', "e.name LIKE '%SDPORN%'"],
             ['media_infos', 'proc_uid', "e.unique_id IS NOT NULL AND e.unique_id != ''"],
@@ -200,23 +220,17 @@ final class NameFixingQueryService
             $evidence[] = ['release_files', 'proc_srrdb', 'LENGTH(e.crc32) = 8 AND r.is_trusted_name = 0'];
         }
         foreach ($evidence as [$table, $flag, $predicate]) {
-            $arm = $connection->table('releases as r')->select('r.id');
+            $arm = $connection->table('releases as r')->select('r.id')
+                ->join($table.' as e', 'e.releases_id', '=', 'r.id');
             if ($indexed) {
-                $grammar = $connection->getQueryGrammar();
-                $arm->fromRaw($grammar->wrapTable('releases as r').' FORCE INDEX (releases_name_evidence_work)'
-                    .' STRAIGHT_JOIN '.$grammar->wrapTable($table.' as e')
-                    .' ON '.$grammar->wrap('r.id').' = '.$grammar->wrap('e.releases_id'))
-                    ->where('r.name_evidence_work_pending', 1);
-            } else {
-                $arm->join($table.' as e', 'e.releases_id', '=', 'r.id');
+                $arm->where('r.name_evidence_work_pending', 1);
             }
             $arm->where('r.'.$flag, 0)->whereRaw($this->standardSql($predicate));
             $this->standardBase($arm, $leftGuid);
-            $direct->union($arm);
+            $sources[] = $arm;
         }
 
-        return CandidateReleaseQuery::fromCandidateIds($direct, 'name_seed')->toBase()
-            ->whereRaw(RecoveryReleaseGate::availableSql('r.id', $connection));
+        return $sources;
     }
 
     private function standardSql(string $sql): string

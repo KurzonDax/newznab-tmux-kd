@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\CollectionReconciliation;
 
+use App\Support\SchemaCapabilities;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 final class CollectionOwnership
 {
@@ -20,7 +20,7 @@ final class CollectionOwnership
     public static function exclude(Builder|EloquentBuilder $query, string $column = 'collections.id', ?array $populationIds = null, bool $currentRead = false): void
     {
         self::excludeArtifactSources($query, $column, $populationIds, $currentRead);
-        $hasAdmissions = Schema::hasTable('reconciliation_admissions');
+        $hasAdmissions = SchemaCapabilities::hasTable('reconciliation_admissions');
         if ($hasAdmissions) {
             $query->whereNotExists(static function (Builder $admission) use ($column, $populationIds, $currentRead): void {
                 $admission->selectRaw('1')->from('reconciliation_admissions as ra')->whereColumn('ra.collection_id', $column)
@@ -29,7 +29,7 @@ final class CollectionOwnership
                     ->where('ra.state', 'admitted')->where('ra.expires_at', '>', now());
             });
         }
-        if (! Schema::hasTable('reconciliation_claims')) {
+        if (! SchemaCapabilities::hasTable('reconciliation_claims')) {
             return;
         }
         $query->whereNotExists(static function (Builder $claim) use ($column, $hasAdmissions, $populationIds, $currentRead): void {
@@ -60,7 +60,7 @@ final class CollectionOwnership
      */
     public static function excludeArtifactSources(Builder|EloquentBuilder $query, string $column = 'collections.id', ?array $populationIds = null, bool $currentRead = false): void
     {
-        if (Schema::hasTable('reconciled_artifact_sources')) {
+        if (SchemaCapabilities::hasTable('reconciled_artifact_sources')) {
             $query->whereNotExists(static function (Builder $operation) use ($column, $populationIds, $currentRead): void {
                 $operation->selectRaw('1')->from('reconciled_artifact_sources as ras')
                     ->join('reconciled_artifact_operations as rao', 'rao.id', '=', 'ras.operation_id')
@@ -93,7 +93,7 @@ final class CollectionOwnership
         }
         $ids = DB::table('collections')->whereIn('id', $ids)->orderBy('id')->lockForUpdate()
             ->pluck('id')->map(static fn ($id): int => (int) $id)->all();
-        if (! Schema::hasTable('reconciliation_claims')) {
+        if (! SchemaCapabilities::hasTable('reconciliation_claims')) {
             return $ids;
         }
         $published = DB::table('collections')->whereIn('id', $ids)->whereIn('releases_id',
@@ -102,7 +102,7 @@ final class CollectionOwnership
             DB::table('collections')->whereIn('id', $published)->update(['releases_id' => null, 'filecheck' => 0]);
             DB::table('reconciliation_claims')->whereIn('collection_id', $published)->delete();
         }
-        if (Schema::hasTable('reconciliation_admissions')) {
+        if (SchemaCapabilities::hasTable('reconciliation_admissions')) {
             DB::table('reconciliation_admissions')->whereIn('collection_id', $ids)->where('state', 'disproved')
                 ->update(['state' => 'invalidated', 'revision' => 'changed']);
             DB::table('reconciliation_admissions')->whereIn('collection_id', $ids)->where('state', 'admitted')

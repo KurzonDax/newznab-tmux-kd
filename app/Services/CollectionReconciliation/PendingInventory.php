@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\CollectionReconciliation;
 
+use App\Support\SchemaCapabilities;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use UnexpectedValueException;
 
 final class PendingInventory
@@ -32,7 +32,7 @@ final class PendingInventory
                 'messageid' => (string) $part->messageid, 'bytes' => (int) $part->size])->all();
             $files[] = new PostingFile((string) $row->collections_id, (string) $row->id, $row->name, $row->group_name,
                 $row->fromname, (int) strtotime($row->date), (int) $row->totalparts, $segments,
-                Schema::hasTable('collection_groups')
+                SchemaCapabilities::hasTable('collection_groups')
                     ? DB::table('collection_groups')->where('collections_id', $row->collections_id)->orderBy('group_name')->pluck('group_name')->all() : []);
         }
 

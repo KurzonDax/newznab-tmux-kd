@@ -8,6 +8,7 @@ use App\Enums\CollectionSweepOutcome;
 use App\Facades\Search;
 use App\Models\Release;
 use App\Services\CollectionCleanupService;
+use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseCleaningService;
 use App\Services\ReleaseCreationService;
@@ -44,6 +45,7 @@ class CbpCleanupServiceTest extends TestCase
         config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => ':memory:']);
         DB::purge();
         DB::reconnect();
+        NzbCreationCandidateQuery::flushCapabilityCache();
         $this->nzbDirectory = $this->makeTempDirectory('cbp-dedupe').DIRECTORY_SEPARATOR;
         config([
             'nntmux_settings.path_to_nzbs' => $this->nzbDirectory,
@@ -75,6 +77,7 @@ class CbpCleanupServiceTest extends TestCase
 
     protected function tearDown(): void
     {
+        NzbCreationCandidateQuery::flushCapabilityCache();
         $this->travelBack();
         date_default_timezone_set($this->originalTimezone);
 
