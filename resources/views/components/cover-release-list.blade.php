@@ -60,6 +60,15 @@
                                     </span>
                                 @endif
                                 <x-release-completion-chips :release="$release" :only-when-incomplete="true" />
+                                @if(!empty($release->has_media_info))
+                                    <button type="button"
+                                            class="mediainfo-badge release-action-sm release-action-primary"
+                                            data-release-id="{{ $release->id }}"
+                                            data-release-display-name="{{ release_display_name($release) }}"
+                                            title="View media info">
+                                        <i class="fas fa-info-circle mr-1"></i> Media Info
+                                    </button>
+                                @endif
                                 @if((isset($release->nfoid) && !empty($release->nfoid)) || (isset($release->nfostatus) && (int) $release->nfostatus === 1))
                                     <button type="button"
                                             class="nfo-badge inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 hover:bg-yellow-200 dark:hover:bg-yellow-800 transition cursor-pointer"

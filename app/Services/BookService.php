@@ -201,6 +201,8 @@ class BookService
 
         $cached = Cache::get($cacheKey);
         if ($cached !== null) {
+            app(ReleaseBrowseService::class)->loadCoverReleaseData($cached);
+
             return $cached;
         }
 
@@ -278,6 +280,7 @@ class BookService
         }
 
         Cache::put($cacheKey, $books, $expiresAt);
+        app(ReleaseBrowseService::class)->loadCoverReleaseData($books);
 
         return $books;
     }

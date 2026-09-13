@@ -5,30 +5,16 @@
     <x-breadcrumb :items="[
         ['label' => 'Home', 'url' => url($site['home_link'] ?? '/'), 'icon' => 'fas fa-home'],
         ['label' => 'Movies', 'url' => route('Movies')],
-        ['label' => 'Trending'],
     ]" />
 
-    <!-- Header -->
-    <div class="px-6 py-6 bg-primary-600 text-white">
-        <div class="flex items-center justify-between">
-            <div>
-                <h1 class="text-3xl font-bold mb-2">
-                    <i class="fas fa-fire mr-2"></i>Trending Movies
-                </h1>
-                <p class="text-primary-100">Most downloaded movies in the last 48 hours - Updated every hour</p>
-            </div>
-            <div class="text-right flex gap-2">
-                @if(auth()->check())
-                    <a href="{{ url('/rss/trending-movies?dl=1&api_token=' . auth()->user()->api_token) }}" class="inline-flex items-center px-4 py-2 bg-primary-700 hover:bg-primary-800 text-white rounded-lg transition shadow-md" title="RSS Feed">
-                        <i class="fas fa-rss mr-2"></i> RSS Feed
-                    </a>
-                @endif
-                <a href="{{ route('Movies') }}" class="inline-flex items-center px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition">
-                    <i class="fas fa-film mr-2"></i> Browse All Movies
-                </a>
-            </div>
-        </div>
-    </div>
+    <x-page-header title="Trending Movies" description="Most downloaded movies in the last 48 hours - Updated every hour" icon="fas fa-fire">
+        <x-slot:actions>
+            @auth
+                <x-button-link href="{{ url('/rss/trending-movies?dl=1&api_token=' . auth()->user()->api_token) }}" variant="secondary" size="sm" icon="fas fa-rss">RSS Feed</x-button-link>
+            @endauth
+            <x-button-link href="{{ route('Movies') }}" variant="secondary" size="sm" icon="fas fa-compass">Browse All Movies</x-button-link>
+        </x-slot:actions>
+    </x-page-header>
 
     <!-- Trending Movies List -->
     @if(isset($trendingMovies) && $trendingMovies->count() > 0)

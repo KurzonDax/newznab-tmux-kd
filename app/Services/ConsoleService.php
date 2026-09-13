@@ -14,6 +14,7 @@ use App\Models\Release;
 use App\Models\Settings;
 use App\Services\IGDB\Exceptions\IgdbHttpException;
 use App\Services\MetadataProcessing\ConsoleProcessingCandidateQuery;
+use App\Services\Releases\ReleaseBrowseService;
 use App\Support\LookupThrottle;
 use App\Support\MetadataSearchLookup;
 use Illuminate\Database\Eloquent\Model;
@@ -183,7 +184,7 @@ class ConsoleService
         }
         $order = $this->getConsoleOrder($orderBy);
         $expiresAt = now()->addMinutes(config('nntmux.cache_expiry_medium'));
-        $showPasswords = app(Releases\ReleaseBrowseService::class)->showPasswords();
+        $showPasswords = app(ReleaseBrowseService::class)->showPasswords();
 
         $baseWhere = "con.title != '' AND con.cover = 1 "
             ."AND r.passwordstatus {$showPasswords} "
@@ -196,6 +197,8 @@ class ConsoleService
 
         $cached = Cache::get($cacheKey);
         if ($cached !== null) {
+            app(ReleaseBrowseService::class)->loadCoverReleaseData($cached);
+
             return $cached;
         }
 
@@ -275,6 +278,7 @@ class ConsoleService
         }
 
         Cache::put($cacheKey, $consoles, $expiresAt);
+        app(ReleaseBrowseService::class)->loadCoverReleaseData($consoles);
 
         return $consoles;
     }

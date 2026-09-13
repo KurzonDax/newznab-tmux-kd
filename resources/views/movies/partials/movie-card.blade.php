@@ -168,6 +168,16 @@
                                                     </span>
                                                 @endif
 
+                                                @if(!empty($release->has_media_info))
+                                                    <button type="button"
+                                                            class="mediainfo-badge release-action-sm release-action-primary"
+                                                            data-release-id="{{ $release->id }}"
+                                                            data-release-display-name="{{ release_display_name($release) }}"
+                                                            title="View media info">
+                                                        <i class="fas fa-info-circle mr-1"></i> Media Info
+                                                    </button>
+                                                @endif
+
                                                 @php
                                                     $releaseHasImage = ($release->haspreview ?? 0) == 1;
                                                     $releaseHasVideo = (bool) ($release->has_video_preview ?? false);

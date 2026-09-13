@@ -1,23 +1,5 @@
-<!-- Breadcrumb -->
-<div class="mb-6">
-    <nav aria-label="breadcrumb">
-        <ol class="flex items-center space-x-2 text-sm">
-            <li>
-                <a href="{{ url($site['home_link']) }}" class="text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:text-primary-400 transition-colors">
-                    Home
-                </a>
-            </li>
-            <li class="text-gray-400">/</li>
-            <li>
-                <a href="{{ url('/browse') }}" class="text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:text-primary-400 transition-colors">
-                    Browse
-                </a>
-            </li>
-            <li class="text-gray-400">/</li>
-            <li class="text-gray-900 dark:text-gray-100 font-medium">Groups</li>
-        </ol>
-    </nav>
-</div>
+<x-breadcrumb :items="[['label' => 'Browse', 'url' => url('/browse')]]" />
+<x-page-header title="Browse Groups" icon="fas fa-users" />
 
 {!! $site['adbrowse'] ?? '' !!}
 
@@ -59,7 +41,6 @@
     <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         <!-- Header -->
         <div class="px-6 py-4 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex flex-col md:flex-row md:justify-between md:items-center gap-3">
-            <h5 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Browse Groups</h5>
             <div class="flex items-center">
                 {{ $results->onEachSide(3)->links() }}
             </div>

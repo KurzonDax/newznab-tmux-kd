@@ -552,3 +552,44 @@ mark {
 .public-modal-audio { display: flex; align-items: center; gap: 16px; }
 .public-modal-audio-art { display: grid; place-items: center; width: 96px; height: 96px; flex-shrink: 0; border-radius: 8px; overflow: hidden; font-size: 32px; }
 .public-modal-audio-art img { width: 100%; height: 100%; object-fit: contain; }
+
+/* Public page headings and navigation paths use the shared type scale. */
+.public-ui .page-heading {
+    font-size: 20px;
+    line-height: 1.25;
+}
+
+.public-ui .page-header-description {
+    font-size: 13px;
+    line-height: 1.5;
+    word-break: break-all;
+}
+
+.public-ui .breadcrumb-list {
+    font-size: 12px;
+    line-height: 1.5;
+    flex-wrap: wrap;
+    row-gap: 4px;
+}
+
+.public-ui .breadcrumb-list li,
+.public-ui .breadcrumb-list a,
+.public-ui .breadcrumb-list span,
+.public-ui .page-heading > span {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+.public-ui .breadcrumb-list a,
+.public-ui .breadcrumb-list span {
+    word-break: break-all;
+}
+
+.public-ui .page-header {
+    padding-block: 16px;
+}
+
+.public-ui .page-breadcrumb {
+    padding-block: 12px;
+}
