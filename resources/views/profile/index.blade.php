@@ -41,14 +41,14 @@
                         <a href="#general" class="tab-link flex items-center px-4 py-3 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 rounded-lg font-medium">
                             <i class="fa fa-info-circle mr-3"></i>General Information
                         </a>
-                        <a href="#preferences" class="tab-link flex items-center px-4 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:bg-gray-900 rounded-lg">
+                        <a href="#preferences" class="tab-link flex items-center px-4 py-3 text-gray-700 dark:text-gray-300 hover:bg-(--public-surface-hover) dark:bg-(--surface-body-dark) rounded-lg">
                             <i class="fa fa-sliders-h mr-3"></i>UI Preferences
                         </a>
-                        <a href="#api" class="tab-link flex items-center px-4 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:bg-gray-900 rounded-lg">
+                        <a href="#api" class="tab-link flex items-center px-4 py-3 text-gray-700 dark:text-gray-300 hover:bg-(--public-surface-hover) dark:bg-(--surface-body-dark) rounded-lg">
                             <i class="fa fa-key mr-3"></i>API & Downloads
                         </a>
                         @if(($user->id === auth()->id() || ($isadmin ?? false)) && config('nntmux.registerstatus') == 1)
-                            <a href="{{ route('invitations.index') }}" class="flex items-center px-4 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:bg-gray-900 rounded-lg">
+                            <a href="{{ route('invitations.index') }}" class="flex items-center px-4 py-3 text-gray-700 dark:text-gray-300 hover:bg-(--public-surface-hover) dark:bg-(--surface-body-dark) rounded-lg">
                                 <i class="fa fa-envelope mr-3"></i>My Invitations
                             </a>
                         @endif
@@ -82,7 +82,7 @@
                                     <div class="w-2/3">
                                         <i class="fa fa-calendar text-gray-400 mr-2"></i>
                                         {{ \Carbon\Carbon::parse($user->created_at)->format('M d, Y') }}
-                                        <span class="ml-2 px-2 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs rounded">{{ \Carbon\Carbon::parse($user->created_at)->diffForHumans() }}</span>
+                                        <span class="ml-2 px-2 py-1 bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-300 text-xs rounded">{{ \Carbon\Carbon::parse($user->created_at)->diffForHumans() }}</span>
                                     </div>
                                 </div>
 
@@ -272,8 +272,8 @@
                                         $themePreference = $user->theme_preference ?? 'light';
                                     @endphp
                                     @if($themePreference === 'dark')
-                                        <div class="flex items-center px-4 py-2 bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 rounded-lg">
-                                            <i class="fas fa-moon text-indigo-600 dark:text-indigo-400 text-lg mr-2"></i>
+                                        <div class="flex items-center px-4 py-2 bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 rounded-lg">
+                                            <i class="fas fa-moon text-primary-600 dark:text-primary-400 text-lg mr-2"></i>
                                             <span class="font-medium">Dark Mode</span>
                                         </div>
                                     @elseif($themePreference === 'system')
@@ -333,7 +333,7 @@
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                                 <!-- Downloads Usage -->
                                 <div class="surface-panel rounded-lg p-4 shadow">
-                                    <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                                    <div class="w-full bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) rounded-full h-3">
                                         @php
                                             $downloadPercentage = $downloadLimit > 0 ? min(($grabstoday / $downloadLimit) * 100, 100) : 0;
                                             $downloadColor = $downloadPercentage >= 90 ? 'bg-red-600' : ($downloadPercentage >= 70 ? 'bg-yellow-500' : 'bg-green-600');
@@ -349,16 +349,16 @@
                                 <div class="surface-panel rounded-lg p-4 shadow">
                                     <div class="flex justify-between items-center mb-2">
                                         <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                                            <i class="fa fa-server text-purple-600 mr-2"></i>API Requests (24h)
+                                            <i class="fa fa-server text-primary-600 mr-2"></i>API Requests (24h)
                                         </h3>
                                         <span class="text-sm font-bold {{ $apirequests >= $apiLimit ? 'text-red-600' : 'text-green-600' }}">
                                             {{ $apirequests ?? 0 }} / {{ $apiLimit }}
                                         </span>
                                     </div>
-                                    <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                                    <div class="w-full bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) rounded-full h-3">
                                         @php
                                             $apiPercentage = $apiLimit > 0 ? min(($apirequests / $apiLimit) * 100, 100) : 0;
-                                            $apiColor = $apiPercentage >= 90 ? 'bg-red-600' : ($apiPercentage >= 70 ? 'bg-yellow-500' : 'bg-purple-600');
+                                            $apiColor = $apiPercentage >= 90 ? 'bg-red-600' : ($apiPercentage >= 70 ? 'bg-yellow-500' : 'bg-primary-600');
                                         @endphp
                                         <div class="{{ $apiColor }} h-3 rounded-full progress-bar" data-width="{{ $apiPercentage }}"></div>
                                     </div>
@@ -379,7 +379,7 @@
                                     <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">Today</div>
                                 </div>
                                 <div class="surface-panel rounded-lg p-4 text-center shadow">
-                                    <div class="text-3xl font-bold text-purple-600">{{ $apirequests ?? 0 }}</div>
+                                    <div class="text-3xl font-bold text-primary-600">{{ $apirequests ?? 0 }}</div>
                                     <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">API Requests</div>
                                 </div>
                             </div>
@@ -390,7 +390,7 @@
                                 <div class="space-y-4">
                                     <div>
                                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">API Token</label>
-                                        <code class="api-token block text-xs bg-gray-800 text-green-400 p-3 rounded break-all">{{ $user->api_token }}</code>
+                                        <code class="api-token block text-xs bg-(--surface-body-dark) text-green-400 p-3 rounded break-all">{{ $user->api_token }}</code>
                                     </div>
                                 </div>
                             @endif

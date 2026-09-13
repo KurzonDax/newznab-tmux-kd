@@ -8,7 +8,7 @@
      aria-live="polite"
      aria-atomic="true">
     <template x-for="toast in items()" :key="toast.id">
-        <div class="pointer-events-auto max-w-sm w-full surface-panel shadow-lg rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden transform transition-all duration-300"
+        <div class="pointer-events-auto max-w-sm w-full bg-white dark:bg-gray-800 shadow-lg rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden transform transition-all duration-300"
              :class="toast.removing ? 'opacity-0 translate-x-full' : 'opacity-100 translate-x-0'"
              x-transition:enter="transition ease-out duration-300"
              x-transition:enter-start="opacity-0 translate-x-full"
@@ -37,5 +37,3 @@
         </div>
     </template>
 </div>
-
-

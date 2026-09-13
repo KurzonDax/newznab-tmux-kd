@@ -4,11 +4,11 @@
             {{-- Previous Page Link --}}
             @if ($paginator->onFirstPage())
                 <li aria-disabled="true" aria-label="@lang('pagination.previous')">
-                    <span class="inline-flex items-center justify-center w-10 h-10 rounded-md bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed transition-colors" aria-hidden="true">&lsaquo;</span>
+                    <span class="inline-flex items-center justify-center w-10 h-10 rounded-md bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-400 dark:text-gray-500 cursor-not-allowed transition-colors" aria-hidden="true">&lsaquo;</span>
                 </li>
             @else
                 <li>
-                    <a href="{{ $paginator->previousPageUrl() }}" rel="prev" aria-label="@lang('pagination.previous')" class="inline-flex items-center justify-center w-10 h-10 rounded-md bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">&lsaquo;</a>
+                    <a href="{{ $paginator->previousPageUrl() }}" rel="prev" aria-label="@lang('pagination.previous')" class="inline-flex items-center justify-center w-10 h-10 rounded-md bg-(--surface-card) dark:bg-(--surface-card-dark) border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) transition-colors">&lsaquo;</a>
                 </li>
             @endif
 
@@ -30,7 +30,7 @@
                             </li>
                         @else
                             <li>
-                                <a href="{{ $url }}" class="inline-flex items-center justify-center w-10 h-10 rounded-md bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">{{ $page }}</a>
+                                <a href="{{ $url }}" class="inline-flex items-center justify-center w-10 h-10 rounded-md bg-(--surface-card) dark:bg-(--surface-card-dark) border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) transition-colors">{{ $page }}</a>
                             </li>
                         @endif
                     @endforeach
@@ -40,11 +40,11 @@
             {{-- Next Page Link --}}
             @if ($paginator->hasMorePages())
                 <li>
-                    <a href="{{ $paginator->nextPageUrl() }}" rel="next" aria-label="@lang('pagination.next')" class="inline-flex items-center justify-center w-10 h-10 rounded-md bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">&rsaquo;</a>
+                    <a href="{{ $paginator->nextPageUrl() }}" rel="next" aria-label="@lang('pagination.next')" class="inline-flex items-center justify-center w-10 h-10 rounded-md bg-(--surface-card) dark:bg-(--surface-card-dark) border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) transition-colors">&rsaquo;</a>
                 </li>
             @else
                 <li aria-disabled="true" aria-label="@lang('pagination.next')">
-                    <span class="inline-flex items-center justify-center w-10 h-10 rounded-md bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed transition-colors" aria-hidden="true">&rsaquo;</span>
+                    <span class="inline-flex items-center justify-center w-10 h-10 rounded-md bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-400 dark:text-gray-500 cursor-not-allowed transition-colors" aria-hidden="true">&rsaquo;</span>
                 </li>
             @endif
         </ul>

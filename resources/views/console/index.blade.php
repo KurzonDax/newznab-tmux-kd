@@ -20,7 +20,7 @@
 
     @if($results->count() > 0)
         <form id="nzb_multi_operations_form" method="get" x-data="releaseMultiOps">
-            <div class="px-6 py-4 bg-gray-50 dark:bg-gray-900 border-b border-gray-200">
+            <div class="px-6 py-4 bg-(--surface-panel-alt) dark:bg-(--surface-body-dark) border-b border-gray-200">
                 <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
                     <!-- Left Section -->
                     <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4">
@@ -87,7 +87,7 @@
                                             @endif
                                         </a>
                                     @else
-                                        <div class="w-32 h-48 bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                                        <div class="w-32 h-48 bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) flex items-center justify-center">
                                             <i class="fas fa-gamepad text-gray-400 text-2xl"></i>
                                         </div>
                                     @endif
@@ -113,7 +113,7 @@
                                                     <div class="flex flex-wrap gap-1">
                                                         <strong>Genre:</strong>
                                                         @foreach(explode(', ', $result->genre) as $genre)
-                                                            <span class="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded text-xs">{{ $genre }}</span>
+                                                            <span class="px-2 py-0.5 bg-(--surface-panel-alt) dark:bg-(--surface-card-dark) text-gray-700 dark:text-gray-300 rounded text-xs">{{ $genre }}</span>
                                                         @endforeach
                                                     </div>
                                                 @endif
@@ -153,7 +153,7 @@
             </div>
 
             <!-- Pagination -->
-            <div class="px-6 py-4 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">
+            <div class="px-6 py-4 bg-(--surface-panel-alt) dark:bg-(--surface-body-dark) border-t border-gray-200 dark:border-gray-700">
                 {{ $results->links() }}
             </div>
         </form>

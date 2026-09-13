@@ -80,7 +80,7 @@
                 <dl class="space-y-4 text-sm">
                     <div>
                         <dt class="font-medium text-gray-700 dark:text-gray-300">Regex</dt>
-                        <dd class="mt-1 rounded-lg bg-gray-100 dark:bg-gray-800 p-3 font-mono text-gray-900 dark:text-gray-100 break-all">{{ $blacklistPreview['regex'] }}</dd>
+                        <dd class="mt-1 rounded-lg bg-(--surface-panel-alt) dark:bg-(--surface-card-dark) p-3 font-mono text-gray-900 dark:text-gray-100 break-all">{{ $blacklistPreview['regex'] }}</dd>
                     </div>
                     <div>
                         <dt class="font-medium text-gray-700 dark:text-gray-300">Rule</dt>
@@ -88,7 +88,7 @@
                     </div>
                     <div>
                         <dt class="font-medium text-gray-700 dark:text-gray-300">Group scope</dt>
-                        <dd class="mt-1 rounded-lg bg-gray-100 dark:bg-gray-800 p-3 font-mono text-gray-900 dark:text-gray-100 break-all">{{ $blacklistPreview['groupname'] }}</dd>
+                        <dd class="mt-1 rounded-lg bg-(--surface-panel-alt) dark:bg-(--surface-card-dark) p-3 font-mono text-gray-900 dark:text-gray-100 break-all">{{ $blacklistPreview['groupname'] }}</dd>
                     </div>
                     <div>
                         <dt class="font-medium text-gray-700 dark:text-gray-300">Description</dt>
@@ -102,7 +102,7 @@
                            name="delete_releases"
                            value="1"
                            x-model="deleteReleases"
-                           class="mt-1 rounded border-gray-300 text-red-600 focus:ring-red-500 dark:border-gray-600 dark:bg-gray-800">
+                           class="mt-1 rounded border-gray-300 text-red-600 focus:ring-red-500 dark:border-gray-600 dark:bg-(--surface-card-dark)">
                     <span class="text-sm font-medium text-gray-900 dark:text-gray-100">
                         Also permanently remove this poster's {{ number_format($results->total()) }} existing releases now
                     </span>

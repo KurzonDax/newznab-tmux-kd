@@ -4,7 +4,7 @@
 <div class="max-w-4xl mx-auto px-4 py-3">
     <x-breadcrumb :items="[['label' => 'Home', 'url' => url($site['home_link'] ?? '/')]]" />
 
-    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm dark:bg-gray-800">
+    <div class="bg-(--surface-card) dark:bg-(--surface-card-dark) rounded-xl shadow-sm dark:bg-(--surface-card-dark)">
         <x-page-header :title="'Invitation to Join '.$site['title']" icon="fas fa-envelope-open" />
         <div class="p-6">
             @if($preview)
@@ -21,7 +21,7 @@
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                    <div class="bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-700 dark:border-gray-600">
+                    <div class="bg-(--surface-panel-alt) dark:bg-(--surface-body-dark) rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600">
                         <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 dark:border-gray-600">
                             <h6 class="font-semibold text-gray-900 dark:text-gray-100 dark:text-white flex items-center">
                                 <i class="fa fa-info-circle mr-2"></i>Invitation Details
@@ -83,7 +83,7 @@
                             @endif
                         </div>
                     </div>
-                    <div class="bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-700 dark:border-gray-600">
+                    <div class="bg-(--surface-panel-alt) dark:bg-(--surface-body-dark) rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600">
                         <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 dark:border-gray-600">
                             <h6 class="font-semibold text-gray-900 dark:text-gray-100 dark:text-white flex items-center">
                                 <i class="fa fa-list-ol mr-2"></i>What's Next?

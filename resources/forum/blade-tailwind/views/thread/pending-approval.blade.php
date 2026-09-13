@@ -7,24 +7,24 @@
         </div>
 
         @if ($threads->isEmpty())
-            <div class="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-6 text-center text-gray-500 dark:border-gray-600 dark:bg-gray-900/40 dark:text-gray-400">
+            <div class="rounded-xl border border-dashed border-gray-300 bg-(--surface-panel-alt) p-6 text-center text-gray-500 dark:border-gray-600 dark:bg-(--surface-body-dark)/40 dark:text-gray-400">
                 {{ trans('forum::threads.none_found') }}
             </div>
         @else
             <div class="mb-4 flex justify-end">
                 <label class="inline-flex items-center gap-2 cursor-pointer text-sm text-gray-700 dark:text-gray-300">
-                    <input type="checkbox" v-model="selectAll" class="rounded border-gray-300 text-primary-600 shadow-sm focus:border-primary-300 focus:ring focus:ring-primary-200 focus:ring-opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-primary-400 dark:focus:border-primary-400 dark:focus:ring-primary-400">
+                    <input type="checkbox" v-model="selectAll" class="rounded border-gray-300 text-primary-600 shadow-sm focus:border-primary-300 focus:ring focus:ring-primary-200 focus:ring-opacity-50 dark:border-gray-600 dark:bg-(--surface-panel-alt-dark) dark:text-primary-400 dark:focus:border-primary-400 dark:focus:ring-primary-400">
                     <span>{{ trans('forum::threads.select_all') }}</span>
                 </label>
             </div>
 
             <div class="space-y-4">
                 @foreach ($threads as $thread)
-                    <div class="rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                    <div class="rounded-xl border border-gray-200 bg-(--surface-card) shadow-sm dark:border-gray-700 dark:bg-(--surface-card-dark)">
                         <div class="border-b border-gray-200 p-4 dark:border-gray-700">
                             <div class="flex items-start gap-4">
                                 <div class="pt-1">
-                                    <input type="checkbox" name="threads[]" :value="{{ $thread->id }}" v-model="selectedIds" class="thread-checkbox rounded border-gray-300 text-primary-600 shadow-sm focus:border-primary-300 focus:ring focus:ring-primary-200 focus:ring-opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-primary-400 dark:focus:border-primary-400 dark:focus:ring-primary-400">
+                                    <input type="checkbox" name="threads[]" :value="{{ $thread->id }}" v-model="selectedIds" class="thread-checkbox rounded border-gray-300 text-primary-600 shadow-sm focus:border-primary-300 focus:ring focus:ring-primary-200 focus:ring-opacity-50 dark:border-gray-600 dark:bg-(--surface-panel-alt-dark) dark:text-primary-400 dark:focus:border-primary-400 dark:focus:ring-primary-400">
                                 </div>
                                 <div class="flex-1">
                                     <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">

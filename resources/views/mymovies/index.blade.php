@@ -58,7 +58,7 @@
             <div class="hidden lg:block">
                 <div class="divide-y divide-gray-200 dark:divide-gray-700">
                     @foreach($movies as $movie)
-                        <div class="p-6 hover:bg-primary-50 dark:hover:bg-gray-700 transition-colors duration-150">
+                        <div class="p-6 hover:bg-primary-50 dark:hover:bg-(--public-surface-hover-dark) transition-colors duration-150">
                             <div class="flex gap-6">
                                 <!-- Movie Poster -->
                                 <div class="shrink-0">
@@ -157,7 +157,7 @@
             <!-- Mobile/Tablet Card View -->
             <div class="lg:hidden">
                 @foreach($movies as $movie)
-                    <div class="p-6 border-b border-gray-200 dark:border-gray-700 hover:bg-primary-50 dark:hover:bg-gray-700 transition-colors duration-150">
+                    <div class="p-6 border-b border-gray-200 dark:border-gray-700 hover:bg-primary-50 dark:hover:bg-(--public-surface-hover-dark) transition-colors duration-150">
                         <div class="flex gap-4 mb-4">
                             <div class="shrink-0">
                                 <img class="rounded-lg shadow-md w-24 h-36 object-cover"

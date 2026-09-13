@@ -151,7 +151,7 @@ Alpine.data('sortDropdown', () => ({
         }
 
         function hideDropdown() { dropdown.classList.add('hidden'); dropdown.innerHTML = ''; suggestions = []; currentIndex = -1; }
-        function updateSelection(items) { items.forEach(function(el, i) { if (i === currentIndex) el.classList.add('bg-blue-100', 'dark:bg-blue-900'); else el.classList.remove('bg-blue-100', 'dark:bg-blue-900'); }); }
+        function updateSelection(items) { items.forEach(function(el, i) { if (i === currentIndex) el.classList.add('bg-primary-100', 'dark:bg-primary-900'); else el.classList.remove('bg-primary-100', 'dark:bg-primary-900'); }); }
     }
 
     initAutocomplete('header-search-input', 'header-autocomplete-dropdown', 'header-search-form', 'header-autocomplete-item', 8);

@@ -34,7 +34,7 @@
             <div>
                 <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Email Address</label>
                 <input type="email" name="email" id="email" value="{{ old('email', $user->email) }}"
-                    class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 @error('email') border-red-500 dark:border-red-600 @enderror">
+                    class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 @error('email') border-red-500 dark:border-red-600 @enderror">
                 @error('email')
                     <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
                 @enderror
@@ -45,7 +45,7 @@
                 <label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">New Password (leave blank to keep current)</label>
                 <div class="relative">
                     <input type="password" name="password" id="password"
-                        class="w-full px-4 py-2 pr-12 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 @error('password') border-red-500 dark:border-red-600 @enderror">
+                        class="w-full px-4 py-2 pr-12 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 @error('password') border-red-500 dark:border-red-600 @enderror">
                     <button type="button" class="password-toggle-btn absolute inset-y-0 right-0 flex items-center px-3 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" data-field-id="password">
                         <i class="fas fa-eye" id="password-eye"></i>
                     </button>
@@ -61,7 +61,7 @@
                 <label for="password_confirmation" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Confirm Password</label>
                 <div class="relative">
                     <input type="password" name="password_confirmation" id="password_confirmation"
-                        class="w-full px-4 py-2 pr-12 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500">
+                        class="w-full px-4 py-2 pr-12 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500">
                     <button type="button" class="password-toggle-btn absolute inset-y-0 right-0 flex items-center px-3 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" data-field-id="password_confirmation">
                         <i class="fas fa-eye" id="password_confirmation-eye"></i>
                     </button>
@@ -74,7 +74,7 @@
                     <i class="fas fa-palette mr-2 text-primary-600 dark:text-primary-400"></i>Theme Preference
                 </h3>
                 <div class="space-y-3">
-                    <label class="flex items-center p-4 border-2 rounded-lg cursor-pointer transition {{ ($user->theme_preference ?? 'light') === 'light' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700' }}">
+                    <label class="flex items-center p-4 border-2 rounded-lg cursor-pointer transition {{ ($user->theme_preference ?? 'light') === 'light' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-300 dark:border-gray-600 bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark)' }}">
                         <input type="radio" name="theme_preference" value="light" {{ ($user->theme_preference ?? 'light') === 'light' ? 'checked' : '' }}
                             class="w-4 h-4 text-primary-600 focus:ring-primary-500 border-gray-300">
                         <div class="ml-3 flex-1">
@@ -87,12 +87,12 @@
                             </div>
                         </div>
                     </label>
-                    <label class="flex items-center p-4 border-2 rounded-lg cursor-pointer transition {{ ($user->theme_preference ?? 'light') === 'dark' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700' }}">
+                    <label class="flex items-center p-4 border-2 rounded-lg cursor-pointer transition {{ ($user->theme_preference ?? 'light') === 'dark' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-300 dark:border-gray-600 bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark)' }}">
                         <input type="radio" name="theme_preference" value="dark" {{ ($user->theme_preference ?? 'light') === 'dark' ? 'checked' : '' }}
                             class="w-4 h-4 text-primary-600 focus:ring-primary-500 border-gray-300">
                         <div class="ml-3 flex-1">
                             <div class="flex items-center">
-                                <i class="fas fa-moon text-indigo-500 text-xl mr-3"></i>
+                                <i class="fas fa-moon text-primary-500 text-xl mr-3"></i>
                                 <div>
                                     <span class="block text-sm font-medium text-gray-900 dark:text-gray-100">Dark Mode</span>
                                     <span class="block text-xs text-gray-600 dark:text-gray-400">Easy on the eyes, especially at night</span>
@@ -100,7 +100,7 @@
                             </div>
                         </div>
                     </label>
-                    <label class="flex items-center p-4 border-2 rounded-lg cursor-pointer transition {{ ($user->theme_preference ?? 'light') === 'system' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700' }}">
+                    <label class="flex items-center p-4 border-2 rounded-lg cursor-pointer transition {{ ($user->theme_preference ?? 'light') === 'system' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-300 dark:border-gray-600 bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark)' }}">
                         <input type="radio" name="theme_preference" value="system" {{ ($user->theme_preference ?? 'light') === 'system' ? 'checked' : '' }}
                             class="w-4 h-4 text-primary-600 focus:ring-primary-500 border-gray-300">
                         <div class="ml-3 flex-1">
@@ -161,7 +161,7 @@
                         Select Your Timezone
                     </label>
                     <select name="timezone" id="timezone"
-                        class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
+                        class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100">
                         @php
                             $timezones = getAvailableTimezones();
                             $currentTimezone = old('timezone', $user->timezone ?? 'UTC');
@@ -339,7 +339,7 @@
 
                                 <div x-show="show2faForm"
                                      x-cloak
-                                     class="bg-white dark:bg-gray-800 border border-red-200 dark:border-red-700 rounded-lg p-4 mt-3">
+                                     class="bg-(--surface-card) dark:bg-(--surface-card-dark) border border-red-200 dark:border-red-700 rounded-lg p-4 mt-3">
                                     <div class="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg">
                                         <div class="flex items-start">
                                             <i class="fas fa-exclamation-triangle text-yellow-600 dark:text-yellow-400 mr-2 mt-0.5"></i>
@@ -360,7 +360,7 @@
                                                        id="disable_2fa_password"
                                                        name="current-password"
                                                        required
-                                                       class="w-full px-4 py-2 pr-12 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
+                                                       class="w-full px-4 py-2 pr-12 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
                                                        placeholder="Enter your password">
                                                 <button type="button" class="password-toggle-btn absolute inset-y-0 right-0 flex items-center px-3 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" data-field-id="disable_2fa_password">
                                                     <i class="fas fa-eye" id="disable_2fa_password-eye"></i>
@@ -397,13 +397,13 @@
                                 <li>Enter the 6-digit code from your app to verify</li>
                             </ol>
 
-                            <div class="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4 flex justify-center">
+                            <div class="bg-(--surface-card) dark:bg-(--surface-card-dark) rounded-lg p-4 mb-4 flex justify-center">
                                 {!! $google2fa_url !!}
                             </div>
 
                             <p class="text-xs text-primary-600 dark:text-primary-400 mb-4">
                                 <strong>Secret Key (manual entry):</strong>
-                                <code class="bg-white dark:bg-gray-800 px-2 py-1 rounded">{{ $user->passwordSecurity->google2fa_secret }}</code>
+                                <code class="bg-(--surface-card) dark:bg-(--surface-card-dark) px-2 py-1 rounded">{{ $user->passwordSecurity->google2fa_secret }}</code>
                             </p>
 
 
@@ -419,7 +419,7 @@
                                            placeholder="Enter 6-digit code"
                                            maxlength="6"
                                            required
-                                           class="w-full md:w-64 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-center text-lg tracking-widest bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500">
+                                           class="w-full md:w-64 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-center text-lg tracking-widest bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500">
                                 </div>
                                 <div class="flex gap-2">
                                     <x-button type="submit" variant="success" icon="fas fa-check">Verify and Enable 2FA</x-button>
@@ -451,7 +451,7 @@
                 </div>
             @endif
 
-            <div class="mt-4 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+            <div class="mt-4 p-3 bg-(--surface-panel-alt) dark:bg-(--surface-body-dark) rounded-lg">
                 <p class="text-xs text-gray-600">
                     <i class="fas fa-info-circle mr-1"></i>
                     <strong>What is 2FA?</strong> Two-Factor Authentication adds an extra layer of security by requiring both your password and a code from your phone to log in.

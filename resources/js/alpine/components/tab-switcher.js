@@ -88,7 +88,7 @@ Alpine.data('profileTabs', () => ({
     const activeTabClasses = ['active', 'border-primary-500', 'dark:border-primary-400', 'text-primary-600', 'dark:text-primary-400'];
     const inactiveTabClasses = ['border-transparent', 'text-gray-500', 'dark:text-gray-300'];
     const activeProfileClasses = ['bg-primary-50', 'dark:bg-primary-900/20', 'text-primary-700', 'dark:text-primary-300', 'font-medium'];
-    const inactiveProfileClasses = ['text-gray-700', 'dark:text-gray-300', 'hover:bg-gray-50', 'dark:bg-gray-900'];
+    const inactiveProfileClasses = ['text-gray-700', 'dark:text-gray-300', 'hover:bg-(--public-surface-hover)', 'dark:bg-(--surface-body-dark)'];
 
     // Generic tab triggers (data-tab-trigger)
     document.querySelectorAll('[data-tab-trigger]').forEach(function(trigger) {

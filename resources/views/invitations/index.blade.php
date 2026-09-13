@@ -11,7 +11,7 @@
 </div>
 @else
 <div class="px-4 py-3">
-    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm mb-4 dark:bg-gray-800">
+    <div class="bg-(--surface-card) dark:bg-(--surface-card-dark) rounded-xl shadow-sm mb-4 dark:bg-(--surface-card-dark)">
         <x-page-header title="My Invitations" icon="fas fa-envelope">
             <x-slot:actions>
             <x-button-link href="{{ url('/invitations/create') }}" variant="secondary" size="sm" icon="fas fa-plus">Send New Invitation</x-button-link>
@@ -82,7 +82,7 @@
                 <!-- Desktop Table -->
                 <div class="hidden md:block overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                        <thead class="bg-gray-50 dark:bg-gray-900">
+                        <thead class="bg-(--surface-panel-alt) dark:bg-(--surface-body-dark)">
                             <tr>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-300">Email</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-300">Status</th>
@@ -93,9 +93,9 @@
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-300">Actions</th>
                             </tr>
                         </thead>
-                        <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                        <tbody class="bg-(--surface-card) dark:bg-(--surface-card-dark) divide-y divide-gray-200 dark:divide-gray-700">
                 @endif
-                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+                            <tr class="hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark)">
                                 <td class="px-4 py-3 whitespace-nowrap">
                                     <span class="text-sm text-gray-900 dark:text-gray-100"><i class="fa fa-envelope text-gray-400 mr-1"></i>{{ $invitation['email'] }}</span>
                                 </td>
@@ -105,7 +105,7 @@
                                     @elseif($invitation['expires_at'] < time())
                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"><i class="fa fa-times mr-1"></i>Expired</span>
                                     @elseif(!$invitation['is_active'])
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"><i class="fa fa-ban mr-1"></i>Cancelled</span>
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-(--surface-panel-alt) text-gray-800 dark:bg-(--surface-panel-alt-dark) dark:text-gray-300"><i class="fa fa-ban mr-1"></i>Cancelled</span>
                                     @else
                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"><i class="far fa-clock mr-1"></i>Pending</span>
                                     @endif
@@ -135,12 +135,12 @@
                                         <div class="flex items-center space-x-2">
                                             <form method="POST" action="{{ url('/invitations/' . $invitation['id'] . '/resend') }}" class="inline">
                                                 @csrf
-                                                <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-primary-300 rounded text-xs font-medium text-primary-700 bg-white hover:bg-primary-50 dark:bg-gray-700 dark:text-primary-400 dark:border-primary-600 dark:hover:bg-gray-600" title="Resend"><i class="fas fa-paper-plane"></i></button>
+                                                <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-primary-300 rounded text-xs font-medium text-primary-700 bg-(--surface-card) hover:bg-primary-50 dark:bg-(--surface-panel-alt-dark) dark:text-primary-400 dark:border-primary-600 dark:hover:bg-(--public-surface-hover-dark)" title="Resend"><i class="fas fa-paper-plane"></i></button>
                                             </form>
                                             <form method="POST" action="{{ url('/invitations/' . $invitation['id']) }}" class="inline">
                                                 @csrf
                                                 @method('DELETE')
-                                                <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-red-300 rounded text-xs font-medium text-red-700 bg-white hover:bg-red-50 dark:bg-gray-700 dark:text-red-400 dark:border-red-600 dark:hover:bg-gray-600" title="Cancel" data-confirm="Are you sure you want to cancel this invitation?"><i class="fas fa-times"></i></button>
+                                                <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-red-300 rounded text-xs font-medium text-red-700 bg-(--surface-card) hover:bg-red-50 dark:bg-(--surface-panel-alt-dark) dark:text-red-400 dark:border-red-600 dark:hover:bg-(--public-surface-hover-dark)" title="Cancel" data-confirm="Are you sure you want to cancel this invitation?"><i class="fas fa-times"></i></button>
                                             </form>
                                         </div>
                                     @else
@@ -178,7 +178,7 @@
                                     @elseif($invitation['expires_at'] < time())
                                         <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"><i class="fa fa-times mr-1"></i>Expired</span>
                                     @elseif(!$invitation['is_active'])
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"><i class="fa fa-ban mr-1"></i>Cancelled</span>
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-(--surface-panel-alt) text-gray-800 dark:bg-(--surface-panel-alt-dark) dark:text-gray-300"><i class="fa fa-ban mr-1"></i>Cancelled</span>
                                     @else
                                         <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"><i class="far fa-clock mr-1"></i>Pending</span>
                                     @endif
@@ -188,12 +188,12 @@
                                 <div class="flex gap-1 shrink-0">
                                     <form method="POST" action="{{ url('/invitations/' . $invitation['id'] . '/resend') }}" class="inline">
                                         @csrf
-                                        <button type="submit" class="px-2 py-1 border border-primary-300 rounded text-xs text-primary-700 bg-white dark:bg-gray-700 dark:text-primary-400 dark:border-primary-600" title="Resend"><i class="fas fa-paper-plane"></i></button>
+                                        <button type="submit" class="px-2 py-1 border border-primary-300 rounded text-xs text-primary-700 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) dark:text-primary-400 dark:border-primary-600" title="Resend"><i class="fas fa-paper-plane"></i></button>
                                     </form>
                                     <form method="POST" action="{{ url('/invitations/' . $invitation['id']) }}" class="inline">
                                         @csrf
                                         @method('DELETE')
-                                        <button type="submit" class="px-2 py-1 border border-red-300 rounded text-xs text-red-700 bg-white dark:bg-gray-700 dark:text-red-400 dark:border-red-600" title="Cancel"><i class="fas fa-times"></i></button>
+                                        <button type="submit" class="px-2 py-1 border border-red-300 rounded text-xs text-red-700 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) dark:text-red-400 dark:border-red-600" title="Cancel"><i class="fas fa-times"></i></button>
                                     </form>
                                 </div>
                             @endif

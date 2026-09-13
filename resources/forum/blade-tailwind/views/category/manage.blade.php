@@ -44,7 +44,7 @@
             :empty-insert-threshold="50"
             item-key="id">
             <template #item="{element}">
-                <li class="bg-white dark:bg-gray-800 p-4 my-2 rounded-md border dark:border-gray-700 transition-colors" :data-id="element.id">
+                <li class="bg-(--surface-card) dark:bg-(--surface-card-dark) p-4 my-2 rounded-md border dark:border-gray-700 transition-colors" :data-id="element.id">
                     <span class="flex">
                         <span class="grow">
                             <strong class="text-gray-900 dark:text-gray-100">@{{ element.title }}</strong>

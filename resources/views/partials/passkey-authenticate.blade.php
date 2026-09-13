@@ -35,7 +35,7 @@
             type="text"
             autocomplete="username webauthn"
             inputmode="email"
-            class="mt-2 block w-full rounded-lg border border-gray-300 px-3 py-3 text-sm text-gray-900 shadow-sm transition focus:border-primary-500 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+            class="mt-2 block w-full rounded-lg border border-gray-300 px-3 py-3 text-sm text-gray-900 shadow-sm transition focus:border-primary-500 focus:ring-primary-500 dark:border-gray-600 dark:bg-(--surface-card-dark) dark:text-white"
             placeholder="Choose a saved passkey"
         >
     </div>

@@ -28,7 +28,7 @@
     $impactBadge = static function (IncidentImpactEnum $i): string {
         $base = 'px-2 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full';
         return $base.' '.match ($i) {
-            IncidentImpactEnum::None => 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200',
+            IncidentImpactEnum::None => 'bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-800 dark:text-gray-200',
             IncidentImpactEnum::Minor => 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200',
             IncidentImpactEnum::Major => 'bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200',
             IncidentImpactEnum::Critical => 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200',
@@ -38,7 +38,7 @@
     $incidentStatusBadge = static function (IncidentStatusEnum $st): string {
         $base = 'px-2 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full';
         return $base.' '.match ($st) {
-            IncidentStatusEnum::Investigating => 'bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200',
+            IncidentStatusEnum::Investigating => 'bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200',
             IncidentStatusEnum::Identified => 'bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200',
             IncidentStatusEnum::Monitoring => 'bg-cyan-100 dark:bg-cyan-900 text-cyan-800 dark:text-cyan-200',
             IncidentStatusEnum::Resolved => 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200',
@@ -61,7 +61,7 @@
         </div>
         <div class="px-6 py-6 space-y-4">
             @forelse($services as $service)
-                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 rounded-lg border border-gray-200 dark:border-gray-600 bg-white/50 dark:bg-gray-800/90">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 rounded-lg border border-gray-200 dark:border-gray-600 bg-(--surface-card)/50 dark:bg-(--surface-card-dark)/90">
                     <div>
                         <div class="font-semibold text-gray-900 dark:text-gray-100">{{ $service->name }}</div>
                         <div class="text-sm text-gray-700 dark:text-gray-300 mt-1">
@@ -90,7 +90,7 @@
         </div>
         <div class="px-6 py-6 space-y-4">
             @forelse($activeIncidents as $incident)
-                <article class="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/30 dark:bg-gray-900/20">
+                <article class="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-(--surface-chrome-border) dark:bg-(--surface-body-dark)/20">
                     <div class="flex flex-wrap items-start justify-between gap-2">
                         <h3 class="font-semibold text-gray-900 dark:text-gray-100">{{ $incident->title }}</h3>
                         <span class="{{ $impactBadge($incident->impact) }}">
@@ -126,7 +126,7 @@
                     <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ $date === 'unknown' ? 'Unknown date' : \Carbon\Carbon::parse($date)->format('F j, Y') }}</h3>
                     <ul class="space-y-3">
                         @foreach($group as $incident)
-                            <li class="p-3 rounded-lg bg-gray-50 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700">
+                            <li class="p-3 rounded-lg bg-(--surface-panel-alt) dark:bg-(--surface-card-dark)/80 border border-gray-100 dark:border-gray-700">
                                 <div class="font-medium text-gray-900 dark:text-gray-100">{{ $incident->title }}</div>
                                 <div class="text-xs text-gray-600 dark:text-gray-400 mt-1 flex flex-wrap gap-x-2 gap-y-1 items-center">
                                     <span class="{{ $impactBadge($incident->impact) }}">{{ $incident->impact->label() }}</span>

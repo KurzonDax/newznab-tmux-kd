@@ -1,7 +1,7 @@
 @extends('layouts.main')
 
 @section('content')
-<div class="movie-detail-page bg-white dark:bg-gray-800 rounded-xl shadow-sm">
+<div class="movie-detail-page bg-(--surface-card) dark:bg-(--surface-card-dark) rounded-xl shadow-sm">
     <x-breadcrumb :items="[
         ['label' => 'Home', 'url' => url($site['home_link'] ?? '/'), 'icon' => 'fas fa-home'],
         ['label' => 'Movies', 'url' => route('Movies')],
@@ -16,7 +16,7 @@
                     @if(!empty($movie['cover'] ?? null))
                         <img src="{{ $movie['cover'] }}" alt="{{ $movie['title'] ?? 'Movie' }}" class="movie-detail-poster w-full rounded-lg" loading="lazy">
                     @else
-                        <div class="movie-detail-poster w-full h-96 bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center justify-center">
+                        <div class="movie-detail-poster w-full h-96 bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) rounded-lg flex items-center justify-center">
                             <i class="fas fa-film text-gray-400 text-6xl"></i>
                         </div>
                     @endif
@@ -103,7 +103,7 @@
                                 </a>
                             @endif
                             @if(!empty($movie['imdbid'] ?? null) && auth()->check())
-                                <a href="{{ url('/mymovies?id=add&imdb=' . $movie['imdbid'] . '&from=' . urlencode(request()->fullUrl())) }}" class="inline-flex items-center px-4 py-2 bg-purple-100 text-purple-800 rounded-lg hover:bg-purple-200 transition">
+                                <a href="{{ url('/mymovies?id=add&imdb=' . $movie['imdbid'] . '&from=' . urlencode(request()->fullUrl())) }}" class="inline-flex items-center px-4 py-2 bg-primary-100 text-primary-800 rounded-lg hover:bg-primary-200 transition">
                                     <i class="fas fa-plus-circle mr-2"></i> Add to My Movies
                                 </a>
                             @endif
@@ -141,15 +141,15 @@
                                     <i class="fas fa-list mr-1"></i> All
                                 </button>
                                 <button data-resolution="720p"
-                                        class="px-4 py-2 rounded-lg text-sm font-medium transition bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600">
+                                        class="px-4 py-2 rounded-lg text-sm font-medium transition bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-300 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark)">
                                     <i class="fas fa-tv mr-1"></i> 720p
                                 </button>
                                 <button data-resolution="1080p"
-                                        class="px-4 py-2 rounded-lg text-sm font-medium transition bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600">
+                                        class="px-4 py-2 rounded-lg text-sm font-medium transition bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-300 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark)">
                                     <i class="fas fa-desktop mr-1"></i> 1080p
                                 </button>
                                 <button data-resolution="2160p"
-                                        class="px-4 py-2 rounded-lg text-sm font-medium transition bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600">
+                                        class="px-4 py-2 rounded-lg text-sm font-medium transition bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-300 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark)">
                                     <i class="fas fa-film mr-1"></i> 2160p / 4K
                                 </button>
                             </div>
@@ -162,15 +162,15 @@
                                     <i class="fas fa-list mr-1"></i> All
                                 </button>
                                 <button data-source="bluray"
-                                        class="px-4 py-2 rounded-lg text-sm font-medium transition bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600">
+                                        class="px-4 py-2 rounded-lg text-sm font-medium transition bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-300 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark)">
                                     <i class="fas fa-compact-disc mr-1"></i> Bluray
                                 </button>
                                 <button data-source="web-dl"
-                                        class="px-4 py-2 rounded-lg text-sm font-medium transition bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600">
+                                        class="px-4 py-2 rounded-lg text-sm font-medium transition bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-300 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark)">
                                     <i class="fas fa-cloud-download-alt mr-1"></i> WEB-DL
                                 </button>
                                 <button data-source="webrip"
-                                        class="px-4 py-2 rounded-lg text-sm font-medium transition bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600">
+                                        class="px-4 py-2 rounded-lg text-sm font-medium transition bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-300 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark)">
                                     <i class="fas fa-globe mr-1"></i> WEBRip
                                 </button>
                             </div>
@@ -179,7 +179,7 @@
 
                     <div class="space-y-3" id="releases-container">
                         @foreach($releases as $release)
-                            <div class="movie-release-card release-item bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-700" data-release-name="{{ strtolower(release_display_name($release)) }}">
+                            <div class="movie-release-card release-item bg-(--surface-panel-alt) dark:bg-(--surface-body-dark) rounded-lg p-4 border border-gray-200 dark:border-gray-700" data-release-name="{{ strtolower(release_display_name($release)) }}">
                                 <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                                     <div class="flex-1 min-w-0">
                                         <a href="{{ url('/details/' . $release->guid) }}" class="text-base text-gray-800 dark:text-gray-200 hover:text-primary-600 dark:text-primary-400 font-medium block truncate" title="{{ release_display_name($release) }}">

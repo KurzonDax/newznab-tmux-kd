@@ -12,12 +12,12 @@
             @csrf
             @method('DELETE')
 
-            <div class="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-md mb-3 transition-colors">
+            <div class="bg-(--surface-card) dark:bg-(--surface-card-dark) border dark:border-gray-700 rounded-md mb-3 transition-colors">
                 <div class="p-4 text-gray-900 dark:text-gray-100">
 
                     @if (config('forum.general.soft_deletes'))
                         <div class="form-check" v-if="state.selectedPostAction == 'delete'">
-                            <input class="form-check-input rounded border-gray-300 dark:border-gray-600 text-primary-500 dark:text-primary-400 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-gray-700" type="checkbox" name="permadelete" value="1" id="permadelete">
+                            <input class="form-check-input rounded border-gray-300 dark:border-gray-600 text-primary-500 dark:text-primary-400 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-(--surface-panel-alt-dark)" type="checkbox" name="permadelete" value="1" id="permadelete">
                             <label class="form-check-label text-gray-700 dark:text-gray-300" for="permadelete">
                                 {{ trans('forum::general.perma_delete') }}
                             </label>

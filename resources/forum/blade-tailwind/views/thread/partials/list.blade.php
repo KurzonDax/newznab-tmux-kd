@@ -1,4 +1,4 @@
-<div class="rounded-xl border border-gray-200 bg-white shadow-sm transition hover:shadow-md dark:border-gray-700 dark:bg-gray-800" :class="{ 'ring-1 ring-primary-500 dark:ring-primary-400': state.selectedThreads.includes({{ $thread->id }}) }">
+<div class="rounded-xl border border-gray-200 bg-(--surface-card) shadow-sm transition hover:shadow-md dark:border-gray-700 dark:bg-(--surface-card-dark)" :class="{ 'ring-1 ring-primary-500 dark:ring-primary-400': state.selectedThreads.includes({{ $thread->id }}) }">
     <div class="flex flex-col gap-4 p-5 md:flex-row md:items-start md:justify-between md:gap-6 sm:p-6">
         <div class="md:w-3/6 text-center md:text-left">
             <span class="lead">
@@ -50,7 +50,7 @@
 
         @if (isset($category) && isset($selectableThreadIds) && in_array($thread->id, $selectableThreadIds))
             <div class="flex-none">
-                <input type="checkbox" name="threads[]" :value="{{ $thread->id }}" v-model="state.selectedThreads" class="rounded border-gray-300 dark:border-gray-600 text-primary-500 dark:text-primary-400 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-gray-700">
+                <input type="checkbox" name="threads[]" :value="{{ $thread->id }}" v-model="state.selectedThreads" class="rounded border-gray-300 dark:border-gray-600 text-primary-500 dark:text-primary-400 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-(--surface-panel-alt-dark)">
             </div>
         @endif
     </div>

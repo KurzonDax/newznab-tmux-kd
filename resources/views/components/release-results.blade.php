@@ -145,7 +145,7 @@
                                     @endif
                                     @if(!empty($result->videos_id) && (int) $result->videos_id > 0)
                                         <a href="{{ url('/series/' . $result->videos_id) }}"
-                                           class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 dark:bg-indigo-900 text-indigo-800 dark:text-indigo-200 hover:bg-indigo-200 dark:hover:bg-indigo-800 transition"
+                                           class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 hover:bg-primary-200 dark:hover:bg-primary-800 transition"
                                            title="View full series">
                                             <i class="fas fa-tv mr-1"></i> View Series
                                         </a>
@@ -233,7 +233,7 @@
                             </a>
                             @if(!empty($result->imdbid) && imdb_id_is_valid($result->imdbid))
                                 <a href="{{ url('/mymovies?id=add&imdb=' . $result->imdbid) }}"
-                                   class="px-2 py-1 bg-purple-600 dark:bg-purple-700 text-white rounded-lg hover:bg-purple-700 dark:hover:bg-purple-800 transition text-sm"
+                                   class="px-2 py-1 bg-primary-600 dark:bg-primary-700 text-white rounded-lg hover:bg-primary-700 dark:hover:bg-primary-800 transition text-sm"
                                    title="Add to My Movies">
                                     <i class="fa fa-film"></i>
                                 </a>
@@ -324,7 +324,7 @@
                         </a>
                         @if(!empty($result->imdbid) && imdb_id_is_valid($result->imdbid))
                             <a href="{{ url('/mymovies?id=add&imdb=' . $result->imdbid) }}"
-                               class="px-3 py-1.5 bg-purple-600 dark:bg-purple-700 text-white rounded-lg hover:bg-purple-700 dark:hover:bg-purple-800 transition text-sm"
+                               class="px-3 py-1.5 bg-primary-600 dark:bg-primary-700 text-white rounded-lg hover:bg-primary-700 dark:hover:bg-primary-800 transition text-sm"
                                title="Add to My Movies">
                                 <i class="fa fa-film"></i>
                             </a>

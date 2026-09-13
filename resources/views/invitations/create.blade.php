@@ -14,7 +14,7 @@
 </div>
 @else
 <div class="max-w-4xl mx-auto px-4 py-3">
-    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm dark:bg-gray-800">
+    <div class="bg-(--surface-card) dark:bg-(--surface-card-dark) rounded-xl shadow-sm dark:bg-(--surface-card-dark)">
         <x-page-header title="Send New Invitation" icon="fas fa-paper-plane">
             <x-slot:actions>
             <div class="flex items-center gap-3">
@@ -57,7 +57,7 @@
                         <x-button-link href="{{ url('/invitations') }}" icon="fa fa-arrow-left" class="shadow-sm">
                             Back to My Invitations
                         </x-button-link>
-                        <a href="{{ url('/contact') }}" class="inline-flex items-center px-4 py-2 border border-primary-300 rounded-md text-sm font-medium text-primary-700 bg-white dark:bg-gray-800 hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-primary-400 dark:border-primary-600 dark:hover:bg-gray-600">
+                        <a href="{{ url('/contact') }}" class="inline-flex items-center px-4 py-2 border border-primary-300 rounded-md text-sm font-medium text-primary-700 bg-(--surface-card) dark:bg-(--surface-card-dark) hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:text-primary-400 dark:border-primary-600 dark:hover:bg-(--public-surface-hover-dark)">
                             <i class="fa fa-envelope mr-1"></i> Contact Support
                         </a>
                     </div>
@@ -83,7 +83,7 @@
                                     <i class="fa fa-envelope mr-1"></i>Email Address <span class="text-red-600">*</span>
                                 </label>
                                 <input type="email"
-                                       class="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white @error('email') border-red-500 @enderror"
+                                       class="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600 dark:text-white @error('email') border-red-500 @enderror"
                                        id="email"
                                        name="email"
                                        value="{{ old('email') }}"
@@ -101,7 +101,7 @@
                                 <label for="expiry_days" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                     <i class="far fa-clock mr-1"></i>Expiry Period
                                 </label>
-                                <select class="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white @error('expiry_days') border-red-500 @enderror"
+                                <select class="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600 dark:text-white @error('expiry_days') border-red-500 @enderror"
                                         id="expiry_days"
                                         name="expiry_days">
                                     <option value="1" @selected(old('expiry_days') == '1')>1 Day</option>
@@ -123,7 +123,7 @@
                                     <label for="role" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                         <i class="fa fa-user-tag mr-1"></i>Default Role <small class="text-gray-500 dark:text-gray-400">(Optional)</small>
                                     </label>
-                                    <select class="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white @error('role') border-red-500 @enderror"
+                                    <select class="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600 dark:text-white @error('role') border-red-500 @enderror"
                                             id="role"
                                             name="role">
                                         <option value="">Use System Default</option>
@@ -144,7 +144,7 @@
 
                             <div class="mb-6 bg-primary-50 border border-primary-200 text-primary-800 rounded-lg p-4 dark:bg-primary-900 dark:border-primary-700 dark:text-primary-300">
                                 <div class="flex">
-                                    <i class="fa fa-lightbulb-o text-lg mr-3 mt-1"></i>
+                                    <i class="fa fa-lightbulb text-lg mr-3 mt-1"></i>
                                     <div>
                                         <strong>How it works:</strong>
                                         <ul class="list-disc list-inside mt-2 mb-0 space-y-1">

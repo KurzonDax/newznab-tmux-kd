@@ -17,7 +17,7 @@
             </div>
 
             <div class="text-end">
-                <x-forum::button-link href="{{ URL::previous() }}" class="bg-gray-500 dark:bg-gray-600">{{ trans('forum::general.cancel') }}</x-forum::button-link>
+                <x-forum::button-link href="{{ URL::previous() }}" class="bg-(--surface-body-dark) dark:bg-(--surface-panel-alt-dark)">{{ trans('forum::general.cancel') }}</x-forum::button-link>
                 <x-forum::button type="submit">{{ trans('forum::general.create') }}</x-forum::button>
             </div>
         </form>

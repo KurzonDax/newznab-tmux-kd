@@ -7,7 +7,7 @@
 
     <div class="px-6 py-4">
         <!-- Search Filters -->
-        <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 mb-6">
+        <div class="bg-(--surface-panel-alt) dark:bg-(--surface-body-dark) rounded-lg p-4 mb-6">
             <form method="get" action="{{ url('/Books/' . ($categorytitle ?: 'All')) }}">
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     <!-- Author Filter -->
@@ -18,7 +18,7 @@
                                name="author"
                                value="{{ $author ?? '' }}"
                                placeholder="Search by author"
-                               class="bg-white text-gray-900 dark:bg-gray-700 dark:text-gray-200 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-primary-500 focus:border-primary-500">
+                               class="bg-(--surface-card) text-gray-900 dark:bg-(--surface-panel-alt-dark) dark:text-gray-200 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-primary-500 focus:border-primary-500">
                     </div>
 
                     <!-- Title Filter -->
@@ -29,7 +29,7 @@
                                name="title"
                                value="{{ $title ?? '' }}"
                                placeholder="Search by title"
-                               class="bg-white text-gray-900 dark:bg-gray-700 dark:text-gray-200 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-primary-500 focus:border-primary-500">
+                               class="bg-(--surface-card) text-gray-900 dark:bg-(--surface-panel-alt-dark) dark:text-gray-200 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-primary-500 focus:border-primary-500">
                     </div>
 
                     <!-- Category Filter -->
@@ -37,7 +37,7 @@
                         <label for="category" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Category</label>
                         <select id="category"
                                 name="t"
-                                class="bg-white text-gray-900 dark:bg-gray-700 dark:text-gray-200 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-primary-500 focus:border-primary-500">
+                                class="bg-(--surface-card) text-gray-900 dark:bg-(--surface-panel-alt-dark) dark:text-gray-200 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-primary-500 focus:border-primary-500">
                             <option value="">All Categories</option>
                             @foreach($catlist ?? [] as $cat)
                                 <option value="{{ $cat['id'] }}" {{ ($category ?? '') == $cat['id'] ? 'selected' : '' }}>
@@ -77,7 +77,7 @@
                         $guid = $firstRelease->guid ?? null;
                         $totalFailed = collect($releases)->sum(fn($r) => (int)($r->failed_count ?? 0));
                     @endphp
-                    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden hover:shadow-lg transition-shadow duration-200">
+                    <div class="bg-(--surface-card) dark:bg-(--surface-card-dark) border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden hover:shadow-lg transition-shadow duration-200">
                         <a href="{{ $guid ? url('/details/' . $guid) : '#' }}" class="block relative">
                             @if(!empty($result->cover))
                                 <img src="{{ getImageAssetUrl('book', (string) $result->id, asset('assets/images/no-cover.png')) }}"
@@ -86,7 +86,7 @@
                                      loading="lazy"
                                      data-fallback-src="{{ url('/images/no-cover.png') }}">
                             @else
-                                <div class="w-full h-64 bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                                <div class="w-full h-64 bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) flex items-center justify-center">
                                     <i class="fa fa-book text-4xl text-gray-400"></i>
                                 </div>
                             @endif

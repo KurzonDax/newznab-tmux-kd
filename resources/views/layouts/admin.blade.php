@@ -118,10 +118,10 @@
     @include('partials.back-to-top')
 
     <!-- Confirmation Modal -->
-    @include('partials.confirmation-modal')
+    @include('admin.confirmation-modal')
 
     <!-- Toast Notifications (Alpine.js CSP Safe) -->
-    @include('partials.toast-notifications')
+    @include('admin.toast-notifications')
 
     @stack('scripts')
 

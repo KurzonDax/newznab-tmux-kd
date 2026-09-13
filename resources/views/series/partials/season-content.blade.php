@@ -8,9 +8,9 @@
                     </h6>
                     <div class="space-y-2">
                         @foreach($releases as $release)
-                            <div class="series-episode-card flex items-center gap-3 bg-gray-50 dark:bg-gray-900 rounded-lg p-3 hover:bg-gray-100 dark:hover:bg-gray-800">
+                            <div class="series-episode-card flex items-center gap-3 bg-(--surface-panel-alt) dark:bg-(--surface-body-dark) rounded-lg p-3 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark)">
                                 <div class="shrink-0">
-                                    <input type="checkbox" class="chkRelease rounded border-gray-300 dark:border-gray-600 text-primary-600 dark:text-primary-500 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-gray-700" name="release[]" value="{{ $release->guid }}" @change="onCheckboxChange()">
+                                    <input type="checkbox" class="chkRelease rounded border-gray-300 dark:border-gray-600 text-primary-600 dark:text-primary-500 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-(--surface-panel-alt-dark)" name="release[]" value="{{ $release->guid }}" @change="onCheckboxChange()">
                                 </div>
                                 <div class="flex-1">
                                     <div class="flex items-center gap-2 flex-wrap">

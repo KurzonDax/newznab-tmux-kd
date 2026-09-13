@@ -11,7 +11,7 @@
                 @endforeach
             </div>
         @else
-            <div class="bg-white dark:bg-gray-800 shadow rounded text-gray-500 dark:text-gray-400 text-center py-4 transition-colors">
+            <div class="bg-(--surface-card) dark:bg-(--surface-card-dark) shadow rounded text-gray-500 dark:text-gray-400 text-center py-4 transition-colors">
                 {{ trans('forum::threads.none_found') }}
             </div>
         @endif

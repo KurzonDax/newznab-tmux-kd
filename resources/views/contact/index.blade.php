@@ -43,12 +43,12 @@
                         Name <span class="text-red-500">*</span>
                     </label>
                     <div class="flex">
-                        <span class="inline-flex items-center px-3 bg-gray-50 dark:bg-gray-900 border border-r-0 border-gray-300 dark:border-gray-600 rounded-l-md">
+                        <span class="inline-flex items-center px-3 bg-(--surface-panel-alt) dark:bg-(--surface-body-dark) border border-r-0 border-gray-300 dark:border-gray-600 rounded-l-md">
                             <i class="fas fa-user text-gray-500 dark:text-gray-400"></i>
                         </span>
                         <input id="username" type="text" name="username" value="{{ old('username') }}"
                                placeholder="Your name"
-                               class="flex-1 block w-full px-4 py-3 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-r-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 placeholder-gray-400 dark:placeholder-gray-500 @error('username') border-red-500 @enderror"
+                               class="flex-1 block w-full px-4 py-3 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-r-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 placeholder-gray-400 dark:placeholder-gray-500 @error('username') border-red-500 @enderror"
                                required>
                     </div>
                     @error('username')
@@ -61,12 +61,12 @@
                         Email <span class="text-red-500">*</span>
                     </label>
                     <div class="flex">
-                        <span class="inline-flex items-center px-3 bg-gray-50 dark:bg-gray-900 border border-r-0 border-gray-300 dark:border-gray-600 rounded-l-md">
+                        <span class="inline-flex items-center px-3 bg-(--surface-panel-alt) dark:bg-(--surface-body-dark) border border-r-0 border-gray-300 dark:border-gray-600 rounded-l-md">
                             <i class="fas fa-envelope text-gray-500 dark:text-gray-400"></i>
                         </span>
                         <input type="email" id="useremail" name="useremail" value="{{ old('useremail') }}"
                                placeholder="Your email address"
-                               class="flex-1 block w-full px-4 py-3 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-r-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 placeholder-gray-400 dark:placeholder-gray-500 @error('useremail') border-red-500 @enderror"
+                               class="flex-1 block w-full px-4 py-3 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-r-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 placeholder-gray-400 dark:placeholder-gray-500 @error('useremail') border-red-500 @enderror"
                                required>
                     </div>
                     @error('useremail')
@@ -79,12 +79,12 @@
                         Message <span class="text-red-500">*</span>
                     </label>
                     <div class="flex">
-                        <span class="inline-flex items-start px-3 pt-3 bg-gray-50 dark:bg-gray-900 border border-r-0 border-gray-300 dark:border-gray-600 rounded-tl-md rounded-bl-md">
+                        <span class="inline-flex items-start px-3 pt-3 bg-(--surface-panel-alt) dark:bg-(--surface-body-dark) border border-r-0 border-gray-300 dark:border-gray-600 rounded-tl-md rounded-bl-md">
                             <i class="fas fa-comment text-gray-500 dark:text-gray-400"></i>
                         </span>
                         <textarea rows="7" name="comment" id="comment"
                                   placeholder="Your message"
-                                  class="flex-1 block w-full px-4 py-3 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-r-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 placeholder-gray-400 dark:placeholder-gray-500 @error('comment') border-red-500 @enderror"
+                                  class="flex-1 block w-full px-4 py-3 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-r-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 placeholder-gray-400 dark:placeholder-gray-500 @error('comment') border-red-500 @enderror"
                                   required>{{ old('comment') }}</textarea>
                     </div>
                     @error('comment')

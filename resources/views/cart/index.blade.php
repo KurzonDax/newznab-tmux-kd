@@ -42,11 +42,11 @@
                 <!-- Desktop Table -->
                 <div class="hidden md:block overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                        <thead class="bg-gray-50 dark:bg-gray-700">
+                        <thead class="bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark)">
                             <tr>
                                 <th class="px-4 py-3 text-left w-8">
                                     <label class="inline-flex items-center cursor-pointer">
-                                        <input id="check-all" type="checkbox" class="form-checkbox h-4 w-4 text-primary-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500 dark:focus:ring-primary-600 focus:ring-2" x-model="allChecked" @change="toggleAll()">
+                                        <input id="check-all" type="checkbox" class="form-checkbox h-4 w-4 text-primary-600 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500 dark:focus:ring-primary-600 focus:ring-2" x-model="allChecked" @change="toggleAll()">
                                     </label>
                                 </th>
                                 <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Name</th>
@@ -54,15 +54,15 @@
                                 <th class="px-4 py-3 text-right text-sm font-semibold text-gray-700 dark:text-gray-300">Action</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-800">
+                        <tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-(--surface-card) dark:bg-(--surface-card-dark)">
                             @foreach($results as $result)
                                 @continue(!$result->release)
-                                <tr id="guid{{ $result->release->guid }}" class="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                <tr id="guid{{ $result->release->guid }}" class="hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark)">
                                     <td class="px-4 py-3">
                                         <input id="chk{{ substr($result->release->guid, 0, 7) }}"
                                                type="checkbox"
                                                name="table_records"
-                                               class="cart-checkbox form-checkbox h-4 w-4 text-primary-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500 dark:focus:ring-primary-600 focus:ring-2 cursor-pointer"
+                                               class="cart-checkbox form-checkbox h-4 w-4 text-primary-600 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500 dark:focus:ring-primary-600 focus:ring-2 cursor-pointer"
                                                value="{{ $result->release->guid }}"
                                                @change="onCheckboxChange()">
                                     </td>
@@ -114,7 +114,7 @@
                             <div class="flex items-start gap-3">
                                 <input type="checkbox"
                                        name="table_records"
-                                       class="cart-checkbox form-checkbox h-4 w-4 mt-1 text-primary-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500 dark:focus:ring-primary-600 focus:ring-2 cursor-pointer shrink-0"
+                                       class="cart-checkbox form-checkbox h-4 w-4 mt-1 text-primary-600 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) border-gray-300 dark:border-gray-600 rounded focus:ring-primary-500 dark:focus:ring-primary-600 focus:ring-2 cursor-pointer shrink-0"
                                        value="{{ $result->release->guid }}"
                                        @change="onCheckboxChange()">
                                 <a href="{{ url('/details/' . $result->release->guid) }}"
@@ -161,7 +161,7 @@
             </div>
         @else
             <!-- Empty Cart -->
-            <div class="bg-yellow-50 dark:bg-gray-700 border border-yellow-200 dark:border-gray-600 rounded-lg p-8 text-center">
+            <div class="bg-yellow-50 dark:bg-(--surface-panel-alt-dark) border border-yellow-200 dark:border-gray-600 rounded-lg p-8 text-center">
                 <i class="fa fa-shopping-basket text-yellow-600 dark:text-yellow-400 text-5xl mb-4"></i>
                 <h3 class="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-2">Your basket is empty</h3>
                 <p class="text-gray-600 dark:text-gray-400 mb-4">Add some releases to your download basket to get started.</p>

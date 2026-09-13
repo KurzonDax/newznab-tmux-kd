@@ -4,8 +4,8 @@
 {!! $site['adbrowse'] ?? '' !!}
 
 <!-- Search Filter -->
-<div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 mb-6">
-    <div class="p-4 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+<div class="bg-(--surface-card) dark:bg-(--surface-card-dark) rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 mb-6">
+    <div class="p-4 bg-(--surface-panel-alt) dark:bg-(--surface-body-dark) border-b border-gray-200 dark:border-gray-700">
         <form method="get" action="{{ url('/browsegroup') }}">
             <div class="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
                 <div class="flex-1">
@@ -18,7 +18,7 @@
                             name="search"
                             value="{{ $search ?? '' }}"
                             placeholder="Search group names..."
-                            class="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
+                            class="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
                         />
                     </div>
                 </div>
@@ -38,9 +38,9 @@
 </div>
 
 @if(isset($results) && count($results) > 0)
-    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div class="bg-(--surface-card) dark:bg-(--surface-card-dark) rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         <!-- Header -->
-        <div class="px-6 py-4 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex flex-col md:flex-row md:justify-between md:items-center gap-3">
+        <div class="px-6 py-4 bg-(--surface-panel-alt) dark:bg-(--surface-body-dark) border-b border-gray-200 dark:border-gray-700 flex flex-col md:flex-row md:justify-between md:items-center gap-3">
             <div class="flex items-center">
                 {{ $results->onEachSide(3)->links() }}
             </div>
@@ -49,7 +49,7 @@
         <!-- Table -->
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead class="bg-gray-50 dark:bg-gray-700">
+                <thead class="bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark)">
                     <tr>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                             Name
@@ -62,9 +62,9 @@
                         </th>
                     </tr>
                 </thead>
-                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                <tbody class="bg-(--surface-card) dark:bg-(--surface-card-dark) divide-y divide-gray-200 dark:divide-gray-700">
                     @foreach($results as $result)
-                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                        <tr class="hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) transition-colors">
                             <td class="px-6 py-4 whitespace-nowrap">
                                 <a
                                     href="{{ url('/browse/group?g=' . $result->name) }}"
@@ -90,7 +90,7 @@
         </div>
 
         <!-- Footer -->
-        <div class="px-6 py-4 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">
+        <div class="px-6 py-4 bg-(--surface-panel-alt) dark:bg-(--surface-body-dark) border-t border-gray-200 dark:border-gray-700">
             <div class="flex flex-col md:flex-row md:justify-between md:items-center gap-3">
                 <div class="text-sm text-gray-600 dark:text-gray-400">
                     <span class="font-medium">Found {{ $results->total() }} groups</span>

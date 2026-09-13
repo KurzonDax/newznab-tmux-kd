@@ -75,6 +75,9 @@ test('profile clicks transfer the server active state including dark colors', ()
     assert.equal(links[1].classes.has('bg-primary-50'), true);
     assert.equal(links[1].classes.has('dark:bg-primary-900/20'), true);
     assert.equal(links[1].classes.has('dark:bg-gray-900'), false);
+    assert.equal(links[1].classes.has('dark:bg-(--surface-body-dark)'), false);
+    assert.equal(links[1].classes.has('hover:bg-(--public-surface-hover)'), false);
+    assert.equal(links[0].classes.has('dark:bg-(--surface-body-dark)'), true);
     assert.equal(panels[0].style.display, 'none');
     assert.equal(panels[1].style.display, 'block');
 
@@ -114,6 +117,9 @@ test('quality clicks clear server colors and preserve combined release filtering
         const selected = buttons.find(button => button.getAttribute(key) === component[key === 'data-source' ? 'activeSource' : 'activeResolution']);
         assert.equal(selected.classes.has('bg-primary-600'), true);
         assert.equal(selected.classes.has('dark:bg-primary-700'), true);
+        assert.equal(selected.classes.has('bg-(--surface-panel-alt)'), false);
+        assert.equal(selected.classes.has('dark:bg-(--surface-panel-alt-dark)'), false);
+        assert.equal(all.classes.has('bg-(--surface-panel-alt)'), true);
     }
     assert.equal(component.visibleCount, 1);
     assert.equal(releases[1].style.display, 'none');
@@ -126,7 +132,7 @@ test('quality clicks clear server colors and preserve combined release filtering
 
 test('loading another season transfers active tab and badge colors', async () => {
     const firstBadge = new Element({ tag: 'span', class: 'bg-primary-100 text-primary-800' });
-    const secondBadge = new Element({ tag: 'span', class: 'bg-gray-100 dark:bg-gray-800 text-gray-600' });
+    const secondBadge = new Element({ tag: 'span', class: 'bg-(--surface-panel-alt) dark:bg-(--surface-card-dark) text-gray-600' });
     const first = new Element({ 'data-series-season-link': '', 'data-season': '1', 'aria-current': 'page', class: 'border-primary-500 text-primary-600' }, [firstBadge]);
     const second = new Element({ 'data-series-season-link': '', 'data-season': '2', class: 'border-transparent text-gray-500' }, [secondBadge]);
     const panel = new Element({ 'data-series-season-content': '' });
@@ -144,5 +150,35 @@ test('loading another season transfers active tab and badge colors', async () =>
     assert.equal(firstBadge.classes.has('bg-primary-100'), false);
     assert.equal(second.classes.has('text-primary-600'), true);
     assert.equal(secondBadge.classes.has('bg-primary-100'), true);
+    assert.equal(secondBadge.classes.has('bg-(--surface-panel-alt)'), false);
+    assert.equal(firstBadge.classes.has('bg-(--surface-panel-alt)'), true);
     [first, second, firstBadge, secondBadge].forEach(assertPrimaryOnly);
+});
+
+test('theme selection removes the server neutral hover fill and restores it on deselection', () => {
+    const view = readFileSync(new URL('../../resources/views/partials/theme-switcher.blade.php', import.meta.url), 'utf8');
+    const inactive = view.match(/: '(text-gray-300[^']+)'/)[1];
+    const buttons = ['light', 'dark'].map(theme => {
+        const button = new Element({ class: inactive });
+        button.dataset.theme = theme;
+        return button;
+    });
+    let store;
+    const source = readFileSync(new URL('../../resources/js/alpine/stores/theme.js', import.meta.url), 'utf8');
+    vm.runInNewContext(source.replace(/^import Alpine from '@alpinejs\/csp';\n/m, ''), {
+        Alpine: { store(name, value) { store = value; } },
+        window: { matchMedia: () => ({}) },
+        document: { getElementById: () => null, querySelectorAll: selector => selector.includes('theme-btn') ? buttons : [] },
+    });
+    store.current = 'dark';
+    store._updateUI();
+    assert.equal(buttons[1].classes.has('bg-primary-600'), true);
+    assert.equal(buttons[1].classes.has('hover:bg-(--surface-chrome-border)'), false);
+    assert.equal(buttons[1].classes.has('dark:hover:bg-(--surface-chrome-border-dark)'), false);
+    store.current = 'light';
+    store._updateUI();
+    assert.equal(buttons[1].classes.has('bg-primary-600'), false);
+    assert.equal(buttons[1].classes.has('hover:bg-(--surface-chrome-border)'), true);
+    assert.equal(buttons[1].classes.has('dark:hover:bg-(--surface-chrome-border-dark)'), true);
+    assert.equal(buttons.some(button => [...button.classes].some(name => name.includes('bg-gray-'))), false);
 });
