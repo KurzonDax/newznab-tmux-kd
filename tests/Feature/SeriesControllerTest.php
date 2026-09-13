@@ -11,6 +11,8 @@ use App\Models\Category;
 use App\Models\TvInfo;
 use App\Models\User;
 use App\View\Composers\GlobalDataComposer;
+use DOMDocument;
+use DOMXPath;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -86,6 +88,27 @@ class SeriesControllerTest extends TestCase
         $seasonTwo->assertOk();
         $seasonTwo->assertSee('Only.Season.Two.S02E01.720p-GROUP');
         $seasonTwo->assertDontSee('Only.Season.One.S01E01.720p-GROUP');
+    }
+
+    public function test_episode_card_stays_inside_the_series_page_panel(): void
+    {
+        $user = $this->createUser();
+        $videoId = $this->createShow();
+        $this->createMatchedRelease($videoId, 1, 1, 'Nested.Show.S01E01.720p-GROUP');
+
+        $response = $this->actingAs($user)->get(route('series', ['id' => $videoId]));
+        $response->assertOk();
+
+        $document = new DOMDocument;
+        $document->loadHTML($response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $xpath = new DOMXPath($document);
+
+        $this->assertSame(1.0, $xpath->evaluate(
+            'count(//div[contains(@class, "series-detail-page")]//div[@id="series-episodes"])'
+        ));
+        $this->assertSame(1.0, $xpath->evaluate(
+            'count(//div[@id="series-episodes"]//div[contains(@class, "series-episode-card")])'
+        ));
     }
 
     public function test_season_links_preserve_category_and_reset_page(): void
