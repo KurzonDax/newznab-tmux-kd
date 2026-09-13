@@ -118,6 +118,9 @@
                                                     data-audio-url="{{ route('preview.audio', $result->guid) }}"
                                                     data-audio-type="{{ $audioPreviewMime }}"
                                                     data-audio-meta="{{ $audioPreviewMeta }}"
+                                                    data-audio-title="{{ $result->audio_preview_title ?? $loadedAudioTags?->track_name ?? $loadedAudioTags?->album ?? release_display_name($result) }}"
+                                                    data-audio-artist="{{ $result->audio_preview_artist ?? $loadedAudioTags?->performer ?? $loadedAudioTags?->album_performer }}"
+                                                    data-audio-artwork="{{ getReleaseCover($result) }}"
                                                 @endif
                                                 @if($hasVideoPreview)
                                                     data-video-url="{{ route('preview.video', $result->guid) }}"
@@ -235,7 +238,7 @@
                                     <i class="fa fa-film"></i>
                                 </a>
                             @endif
-                            <x-report-button :release-id="$result->id" :reported-count="$reportedCount" variant="icon" />
+                            <x-report-button :release-name="release_display_name($result)" :release-id="$result->id" :reported-count="$reportedCount" variant="icon" />
                         </div>
                     </td>
                 </tr>
@@ -326,7 +329,7 @@
                                 <i class="fa fa-film"></i>
                             </a>
                         @endif
-                        <x-report-button :release-id="$result->id" :reported-count="$reportedCount" variant="icon" />
+                        <x-report-button :release-name="release_display_name($result)" :release-id="$result->id" :reported-count="$reportedCount" variant="icon" />
                     </div>
                 </div>
             </div>

@@ -98,6 +98,8 @@ final class ReleasePreviewDataLoader
                 'has_audio_preview' => $audioPreviewMime !== null,
                 'audio_preview_mime' => $audioPreviewMime,
                 'audio_preview_meta' => $audioPreviewMime !== null ? $audioTags->previewSummary() : null,
+                'audio_preview_title' => $audioTags->track_name ?? $audioTags?->album,
+                'audio_preview_artist' => $audioTags->performer ?? $audioTags?->album_performer,
                 'has_video_preview' => $videoPreviewMime !== null,
                 'video_preview_mime' => $videoPreviewMime,
             ];

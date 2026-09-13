@@ -21,6 +21,9 @@ class ReleasePreviewDataLoaderTest extends TestCase
             $table->increments('id');
             $table->unsignedInteger('releases_id')->unique();
             $table->string('audio_format', 50)->nullable();
+            $table->string('track_name')->nullable();
+            $table->string('performer')->nullable();
+            $table->string('album_performer')->nullable();
             $table->unsignedTinyInteger('has_preview')->default(0);
             $table->string('preview_extension', 8)->nullable();
             $table->string('preview_mime', 32)->nullable();
@@ -53,6 +56,9 @@ class ReleasePreviewDataLoaderTest extends TestCase
             [
                 'releases_id' => 10,
                 'audio_format' => 'MPEG Audio',
+                'track_name' => 'Opening Track',
+                'performer' => 'Example Artist',
+                'album_performer' => 'Example Album Artist',
                 'has_preview' => 1,
                 'preview_extension' => 'mp3',
                 'preview_mime' => 'audio/mpeg',
@@ -62,6 +68,9 @@ class ReleasePreviewDataLoaderTest extends TestCase
             [
                 'releases_id' => 20,
                 'audio_format' => null,
+                'track_name' => null,
+                'performer' => null,
+                'album_performer' => null,
                 'has_preview' => 0,
                 'preview_extension' => null,
                 'preview_mime' => null,
@@ -88,6 +97,8 @@ class ReleasePreviewDataLoaderTest extends TestCase
         $this->assertTrue($playable->has_audio_preview);
         $this->assertSame('audio/mpeg', $playable->audio_preview_mime);
         $this->assertSame('30s · MP3 · stream copy', $playable->audio_preview_meta);
+        $this->assertSame('Opening Track', $playable->audio_preview_title);
+        $this->assertSame('Example Artist', $playable->audio_preview_artist);
         $this->assertTrue($playable->has_spectrogram);
 
         $this->assertFalse($spectrogramOnly->has_audio_preview);

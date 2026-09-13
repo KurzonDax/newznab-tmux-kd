@@ -551,6 +551,56 @@ mark {
     @apply bg-yellow-700;
 }
 
+/* Shared public modal chrome. */
+.public-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgb(2 6 23 / 45%);
+}
+
+.public-modal-card {
+    display: flex;
+    flex-direction: column;
+    width: min(640px, 94vw);
+    max-height: 88vh;
+    border-radius: 12px;
+    box-shadow: 0 24px 60px -16px rgb(2 6 23 / 55%);
+}
+
+.public-modal-sm .public-modal-card { width: min(440px, 94vw); }
+.public-modal-picker .public-modal-card { width: min(340px, 94vw); }
+.public-modal-lg .public-modal-card { width: min(820px, 94vw); }
+.public-modal-xl .public-modal-card { width: min(980px, 94vw); }
+.public-modal-preview .public-modal-card { width: min(760px, 92vw); }
+
+.public-modal-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-default);
+    flex-shrink: 0;
+}
+
+.dark .public-modal-header { border-color: var(--border-default-dark); }
+.public-modal-icon { font-size: 13px; line-height: 20px; }
+.public-modal-title { font-size: 13px; line-height: 20px; font-weight: 600; }
+.public-modal-subtitle { font-size: 12px; line-height: 18px; color: var(--text-muted); word-break: break-all; }
+.dark .public-modal-subtitle { color: var(--text-muted-dark); }
+.public-modal-close { flex-shrink: 0; width: 30px; height: 30px; }
+.public-modal-body { min-height: 0; overflow: auto; padding: 16px; font-size: 13px; }
+.public-modal-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex-shrink: 0; padding: 10px 16px; border-radius: 0 0 12px 12px; }
+.public-modal-nfo { background: #0b1220; color: #cbd5e1; font-family: ui-monospace, monospace; font-size: 12px; white-space: pre; overflow: auto; padding: 16px; }
+.public-modal-image-frame { aspect-ratio: 16 / 9; background: #000; display: flex; align-items: center; justify-content: center; }
+.public-modal-image-frame img, .public-modal-image-frame video { width: 100%; height: 100%; object-fit: contain; }
+.public-modal-audio { display: flex; align-items: center; gap: 16px; }
+.public-modal-audio-art { display: grid; place-items: center; width: 96px; height: 96px; flex-shrink: 0; border-radius: 8px; overflow: hidden; font-size: 32px; }
+.public-modal-audio-art img { width: 100%; height: 100%; object-fit: contain; }
+
 /* Public page headings and navigation paths use the shared type scale. */
 .public-ui .page-heading {
     font-size: 20px;

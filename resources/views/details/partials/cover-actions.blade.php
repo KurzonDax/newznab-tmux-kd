@@ -37,7 +37,7 @@
                                 <i class="icon_cart fas fa-shopping-basket mr-2"></i> Add to Cart
                             </a>
                             @if(isset($release->nfostatus) && $release->nfostatus == 1)
-                                <button type="button" class="nfo-badge release-action release-action-primary px-4 py-2" data-guid="{{ $release->guid }}" title="View NFO file">
+                                <button id="nfo" type="button" class="nfo-badge release-action release-action-primary px-4 py-2" data-guid="{{ $release->guid }}" title="View NFO file">
                                     <i class="fas fa-file-alt mr-2"></i> View NFO
                                 </button>
                             @endif
@@ -53,7 +53,7 @@
                                     </a>
                                 @endif
                             @endauth
-                            <x-report-button :release-id="$release->id" :reported-count="$totalReportCount ?? 0" variant="button-lg" />
+                            <x-report-button :release-name="release_display_name($release)" :release-id="$release->id" :reported-count="$totalReportCount ?? 0" variant="button-lg" />
                         </div>
                         @if(!empty($originalReportData) && $originalReportData->count() > 0)
                             <div class="mt-4 rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/20 p-4">

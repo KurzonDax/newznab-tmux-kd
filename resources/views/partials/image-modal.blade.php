@@ -1,75 +1,15 @@
-<!-- Image Modal - Alpine.js CSP Safe -->
-<div x-data="imageModal"
-     x-show="open"
-     x-cloak
-     class="fixed inset-0 z-50 overflow-y-auto"
-     aria-labelledby="image-modal-title"
-     role="dialog"
-     aria-modal="true"
-     x-transition:enter="transition ease-out duration-200"
-     x-transition:enter-start="opacity-0"
-     x-transition:enter-end="opacity-100"
-     x-transition:leave="transition ease-in duration-150"
-     x-transition:leave-start="opacity-100"
-     x-transition:leave-end="opacity-0">
-
-    <!-- Background overlay -->
-    <div class="fixed inset-0 bg-gray-500/75 dark:bg-gray-900/75 transition-opacity"
-         aria-hidden="true"
-         @click="close()"></div>
-
-    <!-- Modal panel container -->
-    <div class="fixed inset-0 z-10 overflow-y-auto" @click.self="close()">
-        <div class="flex min-h-full items-center justify-center p-4 text-center sm:p-0" @click.self="close()">
-            <div class="relative transform overflow-hidden rounded-2xl bg-white dark:bg-gray-800 text-left shadow-xl transition-all sm:my-8 w-auto max-w-[90vw]"
-                 x-transition:enter="transition ease-out duration-200"
-                 x-transition:enter-start="opacity-0 scale-95"
-                 x-transition:enter-end="opacity-100 scale-100"
-                 x-transition:leave="transition ease-in duration-150"
-                 x-transition:leave-start="opacity-100 scale-100"
-                 x-transition:leave-end="opacity-0 scale-95">
-            <div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                <div class="flex items-start justify-between gap-4 mb-4">
-                    <div class="min-w-0 flex-1">
-                        <template x-if="hasReleaseName()">
-                            <div>
-                                <h3 class="line-clamp-2 wrap-break-word text-lg font-medium text-gray-900 dark:text-gray-100" id="image-modal-title" x-text="releaseName" :title="releaseName"></h3>
-                                <p class="text-xs text-gray-500 dark:text-gray-400" x-text="imageTitle"></p>
-                            </div>
-                        </template>
-                        <template x-if="hasNoReleaseName()">
-                            <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100" id="image-modal-title" x-text="imageTitle">
-                                Image Preview
-                            </h3>
-                        </template>
-                    </div>
-                    <button type="button" class="shrink-0 text-gray-400 hover:text-gray-500 dark:hover:text-gray-300" @click="close()">
-                        <i class="fas fa-times text-xl"></i>
-                    </button>
-                </div>
-
-                <!-- Image -->
-                <div class="flex justify-center">
-                    <div class="relative inline-block">
-                        <img :src="imageUrl"
-                             :alt="imageTitle"
-                             decoding="async"
-                             class="max-w-full max-h-[85vh] rounded-lg shadow-lg">
-
-                        <x-image-fullscreen-control />
-                    </div>
-                </div>
-            </div>
-            <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                <button type="button"
-                        @click="close()"
-                        class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-600 text-base font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
-                    Close
-                </button>
-            </div>
-            </div>
-        </div>
-    </div>
-
-    <x-image-fullscreen-layer title-property="imageTitle" />
+<div x-data="imageModal">
+    <x-modal name="image" width="xl" backdrop="stepBack()">
+        <x-slot:title><span x-text="imageTitle">Preview image</span></x-slot:title>
+        <x-slot:icon><i class="fas fa-image text-cyan-600 dark:text-cyan-400"></i></x-slot:icon>
+        <x-slot:subtitle><span x-text="releaseName"></span></x-slot:subtitle>
+        <div class="public-modal-image-frame"><img :src="imageUrl" :alt="imageTitle" decoding="async"></div>
+        <x-slot:footer>
+            <x-button x-show="fullUrl" variant="secondary" size="sm" icon="fas fa-expand" @click="enterFullscreen()">Full size</x-button>
+            <span class="flex-1"></span>
+            <x-button-link x-show="guid" variant="secondary" size="sm" ::href="detailsUrl()" icon="fas fa-circle-info">Details</x-button-link>
+            <x-button-link x-show="guid" variant="success" size="sm" ::href="downloadUrl()" icon="fas fa-download">Download NZB</x-button-link>
+        </x-slot:footer>
+        <x-slot:overlay><x-image-fullscreen-layer title-property="imageTitle" /></x-slot:overlay>
+    </x-modal>
 </div>
