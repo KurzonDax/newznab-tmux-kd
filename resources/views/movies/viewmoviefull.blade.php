@@ -138,7 +138,7 @@
                             <div class="flex flex-wrap gap-2 items-center">
                                 <span class="text-sm font-medium text-gray-700 dark:text-gray-300 mr-2">Resolution:</span>
                                 <button data-resolution="all"
-                                        class="px-4 py-2 rounded-lg text-sm font-medium transition bg-primary-600 text-white hover:bg-primary-700">
+                                        class="px-4 py-2 rounded-lg text-sm font-medium transition bg-primary-600 dark:bg-primary-700 text-white hover:bg-primary-700 dark:hover:bg-primary-800">
                                     <i class="fas fa-list mr-1"></i> All
                                 </button>
                                 <button data-resolution="720p"
@@ -159,7 +159,7 @@
                             <div class="flex flex-wrap gap-2 items-center">
                                 <span class="text-sm font-medium text-gray-700 dark:text-gray-300 mr-2">Source:</span>
                                 <button data-source="all"
-                                        class="px-4 py-2 rounded-lg text-sm font-medium transition bg-purple-600 text-white hover:bg-purple-700">
+                                        class="px-4 py-2 rounded-lg text-sm font-medium transition bg-primary-600 dark:bg-primary-700 text-white hover:bg-primary-700 dark:hover:bg-primary-800">
                                     <i class="fas fa-list mr-1"></i> All
                                 </button>
                                 <button data-source="bluray"
