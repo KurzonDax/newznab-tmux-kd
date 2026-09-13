@@ -1,28 +1,12 @@
 
 <div class="max-w-7xl mx-auto">
-    <!-- Header Section -->
-    <div class="header-gradient rounded-xl shadow-lg mb-6 overflow-hidden">
-        <div class="px-8 py-6">
-            <div class="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-                <div>
-                    <h1 class="text-3xl font-bold text-white flex items-center">
-                        <i class="fa fa-tv mr-3"></i>My TV Shows
-                    </h1>
-                    <p class="text-primary-100 mt-2">Manage your favorite TV series and get automatic updates</p>
-                </div>
-                <nav aria-label="breadcrumb">
-                    <ol class="flex items-center space-x-2 text-sm text-primary-100">
-                        <li><a href="{{ url($site['home_link']) }}" class="hover:text-white transition">Home</a></li>
-                        <li><i class="fas fa-chevron-right text-xs"></i></li>
-                        <li class="text-white font-medium">My TV Shows</li>
-                    </ol>
-                </nav>
-            </div>
-        </div>
+    <div class="card mb-6 overflow-hidden">
+        <x-breadcrumb :items="[['label' => 'Home', 'url' => url($site['home_link'])]]" />
+        <x-page-header title="My TV Shows" description="Manage your favorite TV series and get automatic updates" icon="fas fa-tv" />
     </div>
 
     <!-- RSS Feed Info Card -->
-    <div class="info-card-gradient border-l-4 border-primary-500 rounded-lg p-5 mb-6 shadow">
+    <div class="surface-panel-alt border-l-4 border-primary-500 rounded-lg p-5 mb-6 shadow">
         <div class="flex items-start">
             <div class="shrink-0">
                 <div class="flex items-center justify-center h-10 w-10 rounded-lg bg-primary-500 text-white">
@@ -48,11 +32,9 @@
         <x-button-link size="lg" icon="fa fa-list" class="shadow-md hover:shadow-lg"
            href="{{ url('/browse/TV') }}"
            title="View available TV series">Browse All Series</x-button-link>
-        <a class="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-md hover:shadow-lg transition-all duration-200 inline-flex items-center font-medium"
+        <x-button-link variant="secondary" size="lg" icon="fas fa-search"
            href="{{ url('/myshows/browse') }}"
-           title="View a list of all releases in your shows">
-            <i class="fa fa-search mr-2"></i>View Releases
-        </a>
+           title="View a list of all releases in your shows">View Releases</x-button-link>
         <x-button-link variant="secondary" size="lg" icon="fa fa-rss text-orange-500" class="shadow-md hover:shadow-lg"
            href="{{ url("/rss/myshows?dl=1&i={$userdata->id}&api_token={$userdata->api_token}") }}"
            title="All releases in your shows as an RSS feed">RSS Feed</x-button-link>
@@ -60,9 +42,9 @@
 
     <!-- Shows Table/Cards -->
     @if(count($shows ?? []) > 0)
-        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+        <div class="surface-panel rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700">
             <!-- Table Header -->
-            <div class="table-header-gradient px-6 py-4 border-b-2 border-gray-300 dark:border-gray-600">
+            <div class="surface-panel-alt px-6 py-4 border-b-2 border-gray-300 dark:border-gray-600">
                 <div class="flex items-center justify-between">
                     <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-200 flex items-center">
                         <i class="fa fa-bookmark mr-2 text-primary-600"></i>
@@ -75,27 +57,27 @@
             <div class="hidden md:block overflow-x-auto">
                 <table class="min-w-full">
                     <thead>
-                        <tr class="bg-gray-50 dark:bg-gray-700">
+                        <tr class="surface-panel-alt">
                             <th scope="col" class="px-8 py-5 text-left text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
                                 Series Name
                             </th>
-                            <th scope="col" class="px-8 py-5 text-left text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider col-width-180">
+                            <th scope="col" class="px-8 py-5 text-left text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider w-[180px]">
                                 Categories
                             </th>
-                            <th scope="col" class="px-8 py-5 text-left text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider col-width-160">
+                            <th scope="col" class="px-8 py-5 text-left text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider w-40">
                                 Added Date
                             </th>
-                            <th scope="col" class="px-8 py-5 text-center text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider col-width-170">
+                            <th scope="col" class="px-8 py-5 text-center text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider w-[170px]">
                                 Actions
                             </th>
                         </tr>
                     </thead>
-                    <tbody class="bg-white dark:bg-gray-800">
+                    <tbody class="surface-panel">
                         @foreach($shows as $show)
                             <tr class="hover:bg-primary-50 dark:hover:bg-gray-700 transition-colors duration-150">
                                 <td class="px-8 py-5">
                                     <div class="flex items-center">
-                                        <div class="shrink-0 h-12 w-12 show-avatar rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-sm">
+                                        <div class="shrink-0 h-12 w-12 bg-primary-600 dark:bg-primary-700 rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-sm">
                                             {{ strtoupper(substr($show['title'] ?? 'T', 0, 1)) }}
                                         </div>
                                         <div class="ml-4">
@@ -109,11 +91,11 @@
                                 </td>
                                 <td class="px-8 py-5">
                                     @if(!empty($show['categoryNames']))
-                                        <span class="inline-flex items-center px-3 py-1.5 category-badge text-primary-800 text-xs font-semibold rounded-full border border-primary-200">
+                                        <span class="inline-flex items-center px-3 py-1.5 bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 text-xs font-semibold rounded-full border border-primary-200 dark:border-primary-800">
                                             <i class="fa fa-folder-open mr-1.5"></i>{{ e($show['categoryNames']) }}
                                         </span>
                                     @else
-                                        <span class="inline-flex items-center px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs font-semibold rounded-full border border-gray-300 dark:border-gray-600">
+                                        <span class="inline-flex items-center px-3 py-1.5 surface-panel-alt text-gray-600 dark:text-gray-400 text-xs font-semibold rounded-full border border-gray-300 dark:border-gray-600">
                                             <i class="fa fa-folder mr-1.5"></i>All Categories
                                         </span>
                                     @endif
@@ -162,7 +144,7 @@
                     <div class="p-6 border-b border-gray-200 dark:border-gray-700 hover:bg-primary-50 dark:hover:bg-gray-700 transition-colors duration-150">
                         <div class="flex items-start justify-between mb-4">
                             <div class="flex items-center flex-1">
-                                <div class="shrink-0 h-12 w-12 show-avatar rounded-lg flex items-center justify-center text-white font-bold text-xl shadow-sm">
+                                <div class="shrink-0 h-12 w-12 bg-primary-600 dark:bg-primary-700 rounded-lg flex items-center justify-center text-white font-bold text-xl shadow-sm">
                                     {{ strtoupper(substr($show['title'] ?? 'T', 0, 1)) }}
                                 </div>
                                 <div class="ml-3 flex-1">
@@ -172,11 +154,11 @@
                                     </a>
                                     <div class="mt-1.5">
                                         @if(!empty($show['categoryNames']))
-                                            <span class="inline-flex items-center px-2 py-1 category-badge text-primary-800 text-xs font-semibold rounded-full border border-primary-200">
+                                            <span class="inline-flex items-center px-2 py-1 bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 text-xs font-semibold rounded-full border border-primary-200 dark:border-primary-800">
                                                 <i class="fa fa-folder-open mr-1"></i>{{ e($show['categoryNames']) }}
                                             </span>
                                         @else
-                                            <span class="inline-flex items-center px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs font-semibold rounded-full border border-gray-300 dark:border-gray-600">
+                                            <span class="inline-flex items-center px-2 py-1 surface-panel-alt text-gray-600 dark:text-gray-400 text-xs font-semibold rounded-full border border-gray-300 dark:border-gray-600">
                                                 All Categories
                                             </span>
                                         @endif
@@ -211,9 +193,9 @@
         </div>
     @else
         <!-- Empty State -->
-        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+        <div class="surface-panel rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700">
             <div class="text-center py-16 px-6">
-                <div class="mx-auto h-24 w-24 empty-state-bg rounded-full flex items-center justify-center mb-6 shadow-sm">
+                <div class="mx-auto h-24 w-24 surface-panel-alt rounded-full flex items-center justify-center mb-6 shadow-sm">
                     <i class="fa fa-tv text-5xl text-primary-600"></i>
                 </div>
                 <h3 class="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">No TV Shows Yet</h3>
