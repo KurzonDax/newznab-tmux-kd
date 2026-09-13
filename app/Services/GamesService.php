@@ -253,6 +253,8 @@ class GamesService
 
         $cached = Cache::get($cacheKey);
         if ($cached !== null) {
+            app(ReleaseBrowseService::class)->loadCoverReleaseData($cached);
+
             return $cached;
         }
 
@@ -332,6 +334,7 @@ class GamesService
         }
 
         Cache::put($cacheKey, $games, $expiresAt);
+        app(ReleaseBrowseService::class)->loadCoverReleaseData($games);
 
         return $games;
     }
