@@ -93,12 +93,15 @@ final class RecoveryCapture
                 $this->policy->updateBlacklistUsage($ids, $connection);
                 $operation = bin2hex(random_bytes(16));
                 $now = now();
-                $source = $connection->table('obfuscation_recovery_controls')->where('scope', 'primary')->first();
+                $sourceQuery = $connection->table('obfuscation_recovery_controls')->where('scope', 'primary');
+                $source = $claim?->purpose === RecoveryFrontierRebuild::PURPOSE ? $sourceQuery->sharedLock()->first() : $sourceQuery->first();
                 $control = $connection->table('obfuscation_recovery_controls')->where('scope', 'group:'.$context->groupId)->lockForUpdate()->first();
                 if (($source !== null && $source->epoch !== $context->sourceEpoch)
                     || ($control !== null && (int) $control->generation !== $context->generation)) {
                     throw new InvalidArgumentException('obsolete_capture_context');
                 }
+                $frontierTargets = null;
+                $frontier = $claim?->purpose === RecoveryFrontierRebuild::PURPOSE;
                 if ($claim === null) {
                     RecoveryScanWindow::record($connection, $context, $this->config);
                 } else {
@@ -106,12 +109,18 @@ final class RecoveryCapture
                     $owned = $connection->table('obfuscation_recovery_work')->where('id', $claim->id)->where('claim_token', $claim->token)
                         ->where('status', 'claimed')->where('revision', $claim->revision)->where('claim_expires_at', '>', now())->exists();
                     if (! $owned || $owner === null || (int) $owner->revision !== $claim->revision
-                        || $owner->kind !== 'gap' || $claim->purpose !== 'gap'
+                        || $owner->kind !== ($frontier ? 'frontier' : 'gap') || ! in_array($claim->purpose, ['gap', RecoveryFrontierRebuild::PURPOSE], true)
                         || (int) $owner->groups_id !== $context->groupId || $owner->source_epoch !== $context->sourceEpoch
                         || (int) $owner->capture_generation !== $context->generation
                         || ($claim->payload['first'] ?? null) !== $context->first || ($claim->payload['last'] ?? null) !== $context->last
                         || in_array($owner->state, RecoveryOwnership::INACTIVE_STATES, true)) {
                         throw new InvalidArgumentException('obsolete_capture_claim');
+                    }
+                    if ($frontier) {
+                        $frontierTargets = (new RecoveryFrontierTargets)->authorized($connection, $owner, $claim->payload, true);
+                        if ($frontierTargets === null) {
+                            throw new InvalidArgumentException('obsolete_frontier_target');
+                        }
                     }
                 }
                 $digest = (new RecoveryIdentity)->digest(array_map(strval(...), [
@@ -125,8 +134,9 @@ final class RecoveryCapture
                 if ($batch->context_digest !== $digest) {
                     throw new InvalidArgumentException('conflicting_scan_context');
                 }
+                (new RecoveryFrontierMembers)->invalidateRaw($connection, $context, $coverage);
                 $captured = $duplicates = 0;
-                $dirty = [];
+                $dirty = $membershipChanges = [];
                 ksort($rows, SORT_STRING);
                 foreach (array_chunk($rows, 250, true) as $chunk) {
                     $expired = $connection->table('obfuscation_recovery_expired_headers')->where('source_epoch', $context->sourceEpoch)
@@ -147,7 +157,7 @@ final class RecoveryCapture
                         $insert[] = $row + ['capture_token' => $operation, 'first_observed_at' => $now, 'last_observed_at' => $now, 'metadata_conflict' => false];
                     }
                     $connection->table('obfuscation_recovery_headers')->upsert($insert,
-                        ['source_epoch', 'groups_id', 'message_id_digest'], ['last_observed_at', 'capture_generation']);
+                        ['source_epoch', 'groups_id', 'message_id_digest'], $frontier ? ['last_observed_at'] : ['last_observed_at', 'capture_generation']);
                     $stored = $connection->table('obfuscation_recovery_headers')->where('source_epoch', $context->sourceEpoch)
                         ->where('groups_id', $context->groupId)->whereIn('message_id_digest', array_keys($chunk))->get();
                     foreach ($stored as $record) {
@@ -164,15 +174,26 @@ final class RecoveryCapture
                         if ($record->capture_token === $operation) {
                             $captured++;
                             $dirty[] = $incoming;
+                            $membershipChanges[] = $incoming;
                         } else {
                             $duplicates++;
-                            if (($conflict && ! $record->metadata_conflict) || (int) ($previousGenerations[$record->message_id_digest] ?? 0) !== $context->generation) {
+                            if (($conflict && ! $record->metadata_conflict) || (! $frontier && (int) ($previousGenerations[$record->message_id_digest] ?? 0) !== $context->generation)) {
                                 $dirty[] = $incoming;
+                            }
+                            if ($conflict && ! $record->metadata_conflict) {
+                                $membershipChanges[] = $incoming;
                             }
                         }
                     }
                 }
                 RecoveryLateCapture::invalidate($connection, $dirty);
+                foreach ($frontierTargets ?? [] as $target) {
+                    if ((int) $target->capture_generation !== $context->generation) {
+                        RecoveryLateCapture::invalidate($connection, array_map(static fn (array $row): array => [
+                            ...$row, 'capture_generation' => (int) $target->capture_generation,
+                        ], $membershipChanges));
+                    }
+                }
                 RecoveryDirty::mark($connection, $dirty);
                 $connection->table('obfuscation_recovery_scans')->insertOrIgnore([
                     'scan_id' => $context->scanId, 'groups_id' => $context->groupId, 'source_epoch' => $context->sourceEpoch,
@@ -181,6 +202,9 @@ final class RecoveryCapture
                     'direction' => $context->direction->name, 'capture_outcome' => isset($exclusions['retention_expired']) ? 'raw_expired' : 'captured',
                     'returned_ranges' => json_encode($coverage['returned'], JSON_THROW_ON_ERROR),
                     'date_points' => json_encode($coverage['date_points'], JSON_THROW_ON_ERROR),
+                    'date_conflicts' => json_encode($coverage['date_conflicts'], JSON_THROW_ON_ERROR),
+                    'invalid_date_articles' => json_encode($coverage['invalid_date_articles'], JSON_THROW_ON_ERROR),
+                    'evidence_version' => RecoveryFrontiers::VERSION,
                     'first_postdate' => $coverage['first_postdate'], 'last_postdate' => $coverage['last_postdate'],
                     'earliest_date_article' => $coverage['earliest_date_article'], 'latest_date_article' => $coverage['latest_date_article'],
                     'date_order_consistent' => $coverage['date_order_consistent'],
@@ -195,11 +219,24 @@ final class RecoveryCapture
                         throw new InvalidArgumentException('conflicting_scan_context');
                     }
                 }
-                $complete = $chunks->count() === $context->expectedChunks && $chunks->every(static fn (object $chunk): bool => $chunk->capture_outcome === 'captured' && ($chunk->date_points !== null || $chunk->complete));
+                $retainedRepair = $frontierTargets !== null && collect($frontierTargets)->every(static fn (object $target): bool => $target->plan_digest !== null);
+                $complete = $chunks->count() === $context->expectedChunks && $chunks->every(static fn (object $chunk): bool => ($chunk->capture_outcome === 'captured' || $retainedRepair) && ($chunk->date_points !== null || $chunk->complete));
                 if ($complete) {
-                    (new RecoveryPositiveCoverage)->record($connection, $context);
-                    foreach ($chunks as $chunk) {
-                        (new RecoveryFrontiers)->record($connection, $chunk);
+                    if ($frontier) {
+                        $frontierTargets = (new RecoveryFrontierTargets)->authorized($connection, $owner, $claim->payload, true);
+                        if ($frontierTargets === null) {
+                            return new RecoveryCaptureReport('frontier_membership_changed', $captured, $duplicates, false, $exclusions);
+                        }
+                    }
+                    if ($frontierTargets !== null && ! (new RecoveryFrontierMembers)->validate($connection, (new RecoveryFrontiers)->combine($chunks), $frontierTargets)) {
+                        return new RecoveryCaptureReport('frontier_membership_changed', $captured, $duplicates, false, $exclusions);
+                    }
+                    if (! isset($exclusions['retention_expired'])) {
+                        (new RecoveryPositiveCoverage)->record($connection, $context);
+                    }
+                    (new RecoveryFrontiers)->recordBatch($connection, $chunks);
+                    if ($frontierTargets !== null) {
+                        (new RecoveryFrontierTargets)->install($connection, $chunks, $frontierTargets);
                     }
                     $returned = [];
                     foreach ($chunks as $chunk) {
@@ -207,7 +244,7 @@ final class RecoveryCapture
                     }
                     $missing = RecoveryCoverage::holes($context->first, $context->last, $returned);
                     $connection->table('obfuscation_recovery_scans')->where('scan_id', $context->scanId)
-                        ->update(['complete' => true, 'date_points' => null, 'coverage_verified_at' => now(), 'missing_ranges' => json_encode($missing, JSON_THROW_ON_ERROR)]);
+                        ->update(['complete' => true, 'date_points' => null, 'date_conflicts' => null, 'invalid_date_articles' => null, 'coverage_verified_at' => now(), 'missing_ranges' => json_encode($missing, JSON_THROW_ON_ERROR)]);
                 }
 
                 return new RecoveryCaptureReport('captured', $captured, $duplicates, $complete, $exclusions);

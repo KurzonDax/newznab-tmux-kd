@@ -29,7 +29,7 @@ final class RecoveryPreparation
             }
             $settled = (new RecoverySettlement)->assess($bundle->source_epoch, (int) $bundle->groups_id, (int) $bundle->capture_generation,
                 min(array_column($runs, 'first_article')), max(array_column($runs, 'last_article')),
-                min(array_column($runs, 'first_postdate')), max(array_column($runs, 'last_postdate')), $bundle->membership_changed_at);
+                min(array_column($runs, 'first_postdate')), max(array_column($runs, 'last_postdate')), $bundle->membership_changed_at, false, $bundle);
             if ($settled !== 'ready') {
                 return $this->waiting($claim, $settled);
             }
@@ -295,7 +295,7 @@ final class RecoveryPreparation
                 'first_postdate' => min(array_column($runs, 'first_postdate')), 'last_postdate' => max(array_column($runs, 'last_postdate')),
                 'changed_at' => $bundle->membership_changed_at];
             $settled = (new RecoverySettlement)->assess($bundle->source_epoch, (int) $bundle->groups_id, (int) $bundle->capture_generation,
-                $coverage['first_article'], $coverage['last_article'], $coverage['first_postdate'], $coverage['last_postdate'], $coverage['changed_at']);
+                $coverage['first_article'], $coverage['last_article'], $coverage['first_postdate'], $coverage['last_postdate'], $coverage['changed_at'], false, $bundle);
             if ($settled !== 'ready') {
                 return $this->waiting($claim, $settled);
             }

@@ -12,12 +12,12 @@ final class RecoveryCoverage
 {
     /**
      * @param  list<array<string, mixed>>  $headers
-     * @return array{returned: list<array{int,int}>, first_postdate: ?string, last_postdate: ?string, earliest_date_article:?int, latest_date_article:?int, date_order_consistent:bool, date_points:list<array{int,string}>}
+     * @return array{returned: list<array{int,int}>, first_postdate: ?string, last_postdate: ?string, earliest_date_article:?int, latest_date_article:?int, date_order_consistent:bool, date_points:list<array{int,string,?string}>, date_conflicts:list<int>, invalid_date_articles:list<int>}
      */
     public static function overview(array $headers, int $first, int $last): array
     {
         $numbers = $dates = [];
-        $usableDates = true;
+        $digests = $conflicts = $invalidDates = [];
         foreach ($headers as $header) {
             $raw = $header['Number'] ?? null;
             $number = (is_string($raw) || is_int($raw))
@@ -27,29 +27,40 @@ final class RecoveryCoverage
             }
             $numbers[] = [$number, $number];
             $date = self::sourceDate($header['Date'] ?? null);
-            if ($date === null || (isset($dates[$number]) && $dates[$number] !== $date)) {
-                $usableDates = false;
+            if ($date === null || $date > now('UTC')->addDay()->format('Y-m-d H:i:s')) {
+                $invalidDates[] = $number;
+
+                continue;
+            }
+            if (isset($dates[$number]) && $dates[$number] !== $date) {
+                $conflicts[$number] = true;
             } else {
                 $dates[$number] = $date;
             }
+            $digest = self::observationDigest($header);
+            if (isset($digests[$number]) && $digests[$number] !== $digest) {
+                $conflicts[$number] = true;
+            }
+            $digests[$number] = $digest;
         }
 
         ksort($dates, SORT_NUMERIC);
-        $previous = null;
-        foreach ($dates as $date) {
-            if ($previous !== null && $date < $previous) {
-                $usableDates = false;
-            }
-            $previous = $date;
-        }
 
         return ['returned' => self::merge($numbers),
-            'first_postdate' => $usableDates && $dates !== [] ? min($dates) : null,
-            'last_postdate' => $usableDates && $dates !== [] ? max($dates) : null,
-            'earliest_date_article' => $usableDates && $dates !== [] ? array_key_first($dates) : null,
-            'latest_date_article' => $usableDates && $dates !== [] ? array_key_last($dates) : null,
-            'date_order_consistent' => $usableDates,
-            'date_points' => $usableDates ? array_map(static fn (int $number, string $date): array => [$number, $date], array_keys($dates), array_values($dates)) : []];
+            'first_postdate' => $dates !== [] ? min($dates) : null,
+            'last_postdate' => $dates !== [] ? max($dates) : null,
+            'earliest_date_article' => $dates !== [] ? (int) array_search(min($dates), $dates, true) : null,
+            'latest_date_article' => $dates !== [] ? (int) array_search(max($dates), $dates, true) : null,
+            'date_order_consistent' => true,
+            'date_points' => array_map(static fn (int $number, string $date): array => [$number, $date, $digests[$number]], array_keys($dates), array_values($dates)),
+            'date_conflicts' => array_keys($conflicts), 'invalid_date_articles' => $invalidDates];
+    }
+
+    /** @param array<string,mixed> $header */
+    public static function observationDigest(array $header): ?string
+    {
+        return isset($header['Message-ID'], $header['Subject'], $header['From'], $header['Bytes'])
+            ? hash('sha256', json_encode([$header['Message-ID'], $header['Subject'], $header['From'], (string) $header['Bytes']], JSON_THROW_ON_ERROR)) : null;
     }
 
     public static function sourceDate(mixed $raw): ?string

@@ -65,7 +65,7 @@ jobs:
         run: ./sail artisan test --compact --fail-on-skipped tests/Integration/ReconciliationMariaDbTest.php
 
       - name: Run release formation concurrency regressions
-        run: ./sail artisan test --compact --fail-on-skipped tests/Integration/RecoveryBudgetMariaDbTest.php tests/Integration/RecoveryPublicationMariaDbTest.php tests/Integration/RecoveryWorkerConcurrencyTest.php
+        run: ./sail artisan test --compact --fail-on-skipped --exclude-group=frontier-scale tests/Integration/RecoveryBudgetMariaDbTest.php tests/Integration/RecoveryPublicationMariaDbTest.php tests/Integration/RecoveryWorkerConcurrencyTest.php
 
       - name: Run bounded NNTP and synthetic archive regressions
         run: ./sail artisan test --compact --fail-on-skipped --fail-on-warning tests/Integration/RecoveryTransportTest.php tests/Integration/RecoveryDownloadTest.php tests/Integration/RecoveryOverviewTransportTest.php tests/Integration/RecoveryGapDownloadTest.php tests/Integration/RecoveryArchiveFixtureTest.php tests/Integration/RecoveryMediaFixtureTest.php

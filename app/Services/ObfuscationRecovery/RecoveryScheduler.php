@@ -54,6 +54,9 @@ final class RecoveryScheduler
                 app(RecoveryGapPlanner::class)->step();
                 app(RecoveryRunRefresh::class)->step();
                 app(RecoveryBundleRefresh::class)->step();
+                foreach (app(RecoveryFrontierRebuild::class)->step() as $outcome => $count) {
+                    $report[$outcome] = ($report[$outcome] ?? 0) + $count;
+                }
             }
             $claim = $work->claim($stage);
             if ($claim === null) {

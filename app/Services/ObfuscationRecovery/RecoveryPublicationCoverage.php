@@ -18,6 +18,6 @@ final class RecoveryPublicationCoverage
 
         return (new RecoverySettlement)->assess($bundle->source_epoch, (int) $bundle->groups_id, (int) $bundle->capture_generation,
             $coverage['first_article'], $coverage['last_article'], $coverage['first_postdate'], $coverage['last_postdate'],
-            $coverage['changed_at'], true) === 'ready';
+            $coverage['changed_at'], true, $bundle) === 'ready';
     }
 }

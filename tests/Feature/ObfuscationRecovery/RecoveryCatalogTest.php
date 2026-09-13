@@ -31,6 +31,7 @@ final class RecoveryCatalogTest extends TestCase
             $table->string('guid');
         });
         (require database_path('migrations/2026_09_07_172435_add_obfuscation_recovery_storage.php'))->up();
+        (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
         DB::table('releases')->insert(['id' => 1, 'guid' => 'fixture']);
         DB::table('obfuscation_recovery_publications')->insert([
             'identity' => str_repeat('a', 64), 'index_identity' => str_repeat('b', 64), 'index_message_id' => 'index@local',

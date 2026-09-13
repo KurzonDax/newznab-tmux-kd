@@ -10,19 +10,21 @@ use Illuminate\Support\Facades\DB;
 final class RecoverySettlement
 {
     public function assess(string $epoch, int $group, int $generation, int $firstArticle, int $lastArticle,
-        string $firstPostdate, string $lastPostdate, string $changedAt, bool $retainedPlan = false): string
+        string $firstPostdate, string $lastPostdate, string $changedAt, bool $retainedPlan = false, ?object $candidate = null): string
     {
-        if ($firstArticle < 1 || $lastArticle < $firstArticle || $firstPostdate > $lastPostdate) {
+        if ($firstArticle < 1 || $lastArticle < $firstArticle || $firstPostdate > $lastPostdate
+            || RecoveryCoverage::sourceDate($firstPostdate.' +0000') !== $firstPostdate
+            || RecoveryCoverage::sourceDate($lastPostdate.' +0000') !== $lastPostdate
+            || $lastPostdate > now('UTC')->addDay()->format('Y-m-d H:i:s')) {
             return 'invalid_candidate_envelope';
         }
-        if (Carbon::parse($changedAt)->addMinutes(120)->isFuture()) {
+        if (Carbon::parse($changedAt, 'UTC')->addMinutes(120)->isFuture()) {
             return 'waiting_quiet_interval';
         }
-        $leftDate = Carbon::parse($firstPostdate)->subMinutes(120)->format('Y-m-d H:i:s');
-        $rightDate = Carbon::parse($lastPostdate)->addMinutes(120)->format('Y-m-d H:i:s');
+        $leftDate = Carbon::parse($firstPostdate, 'UTC')->subMinutes(120)->format('Y-m-d H:i:s');
+        $rightDate = Carbon::parse($lastPostdate, 'UTC')->addMinutes(120)->format('Y-m-d H:i:s');
         $scopeDigest = RecoveryPositiveCoverage::scope($epoch, $group, $generation);
-        $points = DB::table('obfuscation_recovery_frontiers')->where('scope_digest', $scopeDigest);
-        $head = (clone $points)->where('head_observed', true);
+        $head = RecoveryFrontiers::witnesses(DB::connection(), $scopeDigest);
         $left = (clone $head)->where('article_number', '<', $firstArticle)->where('postdate', '<=', $leftDate)
             ->max('article_number');
         $right = (clone $head)->where('article_number', '>', $lastArticle)->where('postdate', '>=', $rightDate)
@@ -58,14 +60,31 @@ final class RecoverySettlement
             return 'unknown_capture_gap';
         }
         $conflicts = DB::table('obfuscation_recovery_frontier_conflicts')->where('scope_digest', $scopeDigest);
-        $unknown = (clone $conflicts)->where('kind', 'unknown')->where('first_article', '<=', $containing[1])
-            ->where('last_article', '>=', $containing[0])->exists();
-        $reversed = (clone $conflicts)->where('kind', 'ordering')->where('first_article', '>=', $containing[0])
-            ->where('last_article', '<=', $containing[1])->exists();
-        $future = (clone $points)->whereBetween('article_number', $containing)
-            ->where('postdate', '>', now()->addDay()->format('Y-m-d H:i:s'))->exists();
-        if ($unknown || $reversed || $future) {
+        $legacy = RecoveryFrontierConflicts::overlapping(DB::connection(), $scopeDigest, $containing[0], $containing[1], ['unknown', 'ordering'])->exists();
+        $contradictions = (clone $conflicts)->where('kind', 'contradiction')->whereBetween('first_article', [$firstArticle, $lastArticle]);
+        if ($candidate === null) {
+            $contradiction = $contradictions->whereIn('first_article', [$firstArticle, $lastArticle])->exists();
+        } elseif (! $contradictions->exists()) {
+            $contradiction = false;
+        } elseif ($retainedPlan && ! (new RecoveryFrontierMembers)->complete(DB::connection(), $candidate)) {
+            return 'frontier_member_evidence_required';
+        } else {
+            $members = $retainedPlan ? DB::table('obfuscation_recovery_frontier_members')->where('bundle_id', $candidate->id)->where('revision', $candidate->revision)
+                : (new RecoveryFrontierMembers)->raw(DB::connection(), $candidate);
+            $table = $retainedPlan ? 'obfuscation_recovery_frontier_members' : 'obfuscation_recovery_headers';
+            $contradiction = $members->whereExists(fn ($query) => $query->selectRaw('1')->from('obfuscation_recovery_frontier_conflicts as conflict')
+                ->where('conflict.scope_digest', $scopeDigest)->where('conflict.kind', 'contradiction')->whereColumn('conflict.first_article', $table.'.article_number'))->exists();
+        }
+        if ($contradiction) {
             return 'conflicting_posting_frontier';
+        }
+        if ($legacy) {
+            return 'frontier_rebuild_required';
+        }
+        $usable = RecoveryFrontiers::witnesses(DB::connection(), $scopeDigest, false);
+        if (($left === null && (clone $usable)->where('article_number', '<', $firstArticle)->where('postdate', '<=', $leftDate)->exists())
+            || ($right === null && (clone $usable)->where('article_number', '>', $lastArticle)->where('postdate', '>=', $rightDate)->exists())) {
+            return 'conflicting_boundary_witness';
         }
 
         return match (true) {

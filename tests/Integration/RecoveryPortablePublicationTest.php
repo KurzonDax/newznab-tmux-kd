@@ -35,4 +35,17 @@ final class RecoveryPortablePublicationTest extends TestCase
         return [['media1', false, 5, 2, 2], ['media1', true, 5, 2, 3], ['media7', false, 43, 8, 8],
             ['media32', false, 593, 33, 33], ['rar4', false, 12, 5, 9], ['rar4', true, 12, 5, 10]];
     }
+
+    #[DataProvider('frontierCases')]
+    public function test_interleaved_dates_and_retained_frontiers_reach_actual_nzb_publication(string $case, string $frontier): void
+    {
+        $this->buildPortablePublication($case, false, $case === 'rar4' ? 12 : 5, $case === 'rar4' ? 5 : 2,
+            $case === 'rar4' ? 9 : 2, frontier: $frontier);
+    }
+
+    public static function frontierCases(): array
+    {
+        return [['media1', 'interleaved'], ['rar4', 'interleaved'], ['media1', 'legacy'], ['rar4', 'legacy'],
+            ['media1', 'sealed_generation'], ['rar4', 'sealed_generation'], ['media1', 'cross_chunk'], ['rar4', 'cross_chunk']];
+    }
 }

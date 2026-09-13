@@ -34,6 +34,10 @@ final class RecoveryOwnership
     /** @param array<string,mixed> $payload */
     public function current(object $bundle, RecoveryStage $stage, string $purpose, array $payload): bool
     {
+        if ($purpose === RecoveryFrontierRebuild::PURPOSE) {
+            return $stage === RecoveryStage::Download
+                && (new RecoveryFrontierTargets)->authorized(DB::connection(), $bundle, $payload) !== null;
+        }
         if ($stage === RecoveryStage::Publish && $bundle->manifest_verified_at !== null && $bundle->sealed_plan !== null
             && in_array($bundle->state, ['ready', 'publishing', 'published'], true)) {
             return true;
