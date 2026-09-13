@@ -27,10 +27,10 @@
                                     </div>
                                     <div class="text-xs text-gray-500 mt-1 flex flex-wrap gap-2">
                                         <span class="mr-3">
-                                            <i class="fa fa-hdd-o mr-1"></i>{{ formatBytes($release->size) }}
+                                            <i class="fas fa-hard-drive mr-1"></i>{{ formatBytes($release->size) }}
                                         </span>
                                         <span>
-                                            <i class="fa fa-clock-o mr-1"></i>Added: {{ userDateDiffForHumans($release->adddate) }}
+                                            <i class="far fa-clock mr-1"></i>Added: {{ userDateDiffForHumans($release->adddate) }}
                                         </span>
                                         @if(!empty($release->postdate))
                                             <span>

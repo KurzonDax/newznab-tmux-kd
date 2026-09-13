@@ -89,7 +89,7 @@
                         <i class="fa fa-list mr-1"></i>All
                     </a>
                     <a href="{{ url('/invitations?status=pending') }}" class="inline-flex items-center px-4 py-2 border-b-2 text-sm font-medium {{ ($status ?? '') == 'pending' ? 'border-primary-500 text-primary-600 dark:text-primary-400 dark:border-primary-400 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:border-gray-600 dark:text-gray-400 dark:hover:text-gray-300' }}">
-                        <i class="fa fa-clock-o mr-1"></i>Pending
+                        <i class="far fa-clock mr-1"></i>Pending
                     </a>
                     <a href="{{ url('/invitations?status=used') }}" class="inline-flex items-center px-4 py-2 border-b-2 text-sm font-medium {{ ($status ?? '') == 'used' ? 'border-primary-500 text-primary-600 dark:text-primary-400 dark:border-primary-400 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:border-gray-600 dark:text-gray-400 dark:hover:text-gray-300' }}">
                         <i class="fa fa-check mr-1"></i>Accepted
@@ -131,7 +131,7 @@
                                     @elseif(!$invitation['is_active'])
                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"><i class="fa fa-ban mr-1"></i>Cancelled</span>
                                     @else
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"><i class="fa fa-clock-o mr-1"></i>Pending</span>
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"><i class="far fa-clock mr-1"></i>Pending</span>
                                     @endif
                                 </td>
                                 <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
@@ -204,7 +204,7 @@
                                     @elseif(!$invitation['is_active'])
                                         <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"><i class="fa fa-ban mr-1"></i>Cancelled</span>
                                     @else
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"><i class="fa fa-clock-o mr-1"></i>Pending</span>
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"><i class="far fa-clock mr-1"></i>Pending</span>
                                     @endif
                                 </div>
                             </div>
