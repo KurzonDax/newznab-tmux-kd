@@ -6,13 +6,14 @@ namespace Tests\Support\ObfuscationRecovery;
 
 use App\Enums\HeaderScanDirection;
 use App\Facades\Search;
+use App\Models\Category;
 use App\Models\Release;
 use App\Services\Binaries\HeaderParser;
-use App\Services\Binaries\HeaderStorageService;
 use App\Services\BlacklistService;
 use App\Services\NNTP\NntpProvider;
 use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
+use App\Services\ObfuscationRecovery\RecoveredReleaseList;
 use App\Services\ObfuscationRecovery\RecoveryArtifacts;
 use App\Services\ObfuscationRecovery\RecoveryBundleRefresh;
 use App\Services\ObfuscationRecovery\RecoveryCapture;
@@ -23,9 +24,7 @@ use App\Services\ObfuscationRecovery\RecoveryDownload;
 use App\Services\ObfuscationRecovery\RecoveryEvidence;
 use App\Services\ObfuscationRecovery\RecoveryFrontierRebuild;
 use App\Services\ObfuscationRecovery\RecoveryIdentity;
-use App\Services\ObfuscationRecovery\RecoveryMaterialization;
 use App\Services\ObfuscationRecovery\RecoveryPositiveCoverage;
-use App\Services\ObfuscationRecovery\RecoveryPreparation;
 use App\Services\ObfuscationRecovery\RecoveryPublicationCoverage;
 use App\Services\ObfuscationRecovery\RecoveryRunRefresh;
 use App\Services\ObfuscationRecovery\RecoveryScanContext;
@@ -33,11 +32,11 @@ use App\Services\ObfuscationRecovery\RecoveryScheduler;
 use App\Services\ObfuscationRecovery\RecoverySettlement;
 use App\Services\ObfuscationRecovery\RecoveryStage;
 use App\Services\ObfuscationRecovery\RecoveryWork;
-use App\Services\ReleaseCreationService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Symfony\Component\Process\Process;
+use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\NeverBlacklistedService;
 
@@ -45,6 +44,7 @@ trait BuildsPortablePublication
 {
     use CreatesRecoveryCbpSchema;
     use CreatesRecoveryReleaseSchema;
+    use InteractsWithAdminListPages;
     use IsolatedSqliteDatabase;
 
     private ?Process $server = null;
@@ -59,8 +59,20 @@ trait BuildsPortablePublication
         });
         (require database_path('migrations/2026_09_07_172435_add_obfuscation_recovery_storage.php'))->up();
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
+        (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
         $this->createRecoveryCbpSchema();
         $this->createRecoveryReleaseSchema();
+        Schema::drop('categories');
+        $this->bootAdminListPage();
+        Schema::table('categories', fn (Blueprint $table) => $table->unsignedBigInteger('minsizetoformrelease')->default(0));
+        DB::table('categories')->insert(['id' => Category::OTHER_MISC, 'title' => 'Other', 'root_categories_id' => 1]);
+        Schema::table('releases', fn (Blueprint $table) => $table->integer('rarinnerfilecount')->default(0));
+        Schema::create('par_hashes', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id');
+            $table->string('hash');
+            $table->unique(['releases_id', 'hash']);
+        });
+        config(['nntmux_settings.add_par2' => false]);
         $this->registerSqliteFunction('UNIX_TIMESTAMP', static fn (?string $value): int => (int) strtotime((string) $value));
         Search::shouldReceive('updateRelease')->zeroOrMoreTimes();
         DB::table('settings')->where('name', 'obfuscation_recovery_enabled')->update(['value' => 1]);
@@ -70,6 +82,7 @@ trait BuildsPortablePublication
     protected function tearDown(): void
     {
         $this->server?->stop(1);
+        $this->tearDownAdminListPage();
         $this->tearDownIsolatedDatabase();
         parent::tearDown();
     }
@@ -105,6 +118,10 @@ trait BuildsPortablePublication
                 $header['Number'] = (string) (4000000000 + $ordinal);
             }
             unset($header);
+            if (str_starts_with($frontier, 'retained_right')) {
+                $headers[0]['Number'] = '3999990000';
+                $headers[count($headers) - 1]['Number'] = '4000030000';
+            }
             $articles = json_decode(file_get_contents($root.'/articles.json'), true, flags: JSON_THROW_ON_ERROR);
             foreach ($headers as $header) {
                 $id = trim($header['Message-ID'], '<>');
@@ -124,13 +141,20 @@ trait BuildsPortablePublication
         $policy = new NeverBlacklistedService;
         $this->app->instance(BlacklistService::class, $policy);
         $chunks = $frontier === 'cross_chunk' ? array_chunk($headers, 2) : [$headers];
-        $context = (new RecoveryControl)->begin(RecoveryConfig::fromSettings(), $provider, 1, 'alt.binaries.fixture', 4000000000, (int) max(array_column($headers, 'Number')), HeaderScanDirection::Head, count($chunks));
         $captured = 0;
-        foreach ($chunks as $ordinal => $chunk) {
-            $parsed = (new HeaderParser($policy))->parse($chunk, 'alt.binaries.fixture');
-            $capture = (new RecoveryCapture(RecoveryConfig::fromSettings(), $policy))->capture(new RecoveryCaptureBatch($chunk, $parsed['headers']), $context->chunk($ordinal));
-            $captured += $capture->captured;
-            $this->assertSame($ordinal === count($chunks) - 1, $capture->coverageComplete);
+        $ranges = str_starts_with($frontier, 'retained_right')
+            ? [[3999940001, 3999960000], [3999960001, 3999980000], [3999980001, 4000000000], [4000000001, 4000020000], [4000020001, 4000040000]]
+            : [[4000000000, (int) max(array_column($headers, 'Number'))]];
+        foreach ($ranges as [$first, $last]) {
+            $selected = array_values(array_filter($headers, static fn (array $header): bool => (int) $header['Number'] >= $first && (int) $header['Number'] <= $last));
+            $chunks = $frontier === 'cross_chunk' ? array_chunk($selected, 2) : [$selected];
+            $context = (new RecoveryControl)->begin(RecoveryConfig::fromSettings(), $provider, 1, 'alt.binaries.fixture', $first, $last, HeaderScanDirection::Head, count($chunks));
+            foreach ($chunks as $ordinal => $chunk) {
+                $parsed = (new HeaderParser($policy))->parse($chunk, 'alt.binaries.fixture');
+                $capture = (new RecoveryCapture(RecoveryConfig::fromSettings(), $policy))->capture(new RecoveryCaptureBatch($chunk, $parsed['headers']), $context->chunk($ordinal));
+                $captured += $capture->captured;
+                $this->assertSame($ordinal === count($chunks) - 1, $capture->coverageComplete);
+            }
         }
         $this->assertTrue($capture->coverageComplete);
         $this->assertSame($parts, $captured);
@@ -145,23 +169,46 @@ trait BuildsPortablePublication
         $this->assertSame(1, DB::table('obfuscation_recovery_bundles')->count());
         $work = app(RecoveryWork::class);
         $repairs = 0;
+        if (str_starts_with($frontier, 'retained_right')) {
+            $scope = RecoveryPositiveCoverage::scope($context->sourceEpoch, 1, $context->generation);
+            DB::table('obfuscation_recovery_frontier_ranges')->where('first_article', '>', 4000020000)->update(['evidence_version' => 1]);
+            DB::table('obfuscation_recovery_frontier_conflicts')->insert([
+                'identity' => hash('sha256', 'right-debt'), 'scope_digest' => $scope, 'kind' => 'unknown',
+                'first_article' => 4000025000, 'last_article' => 4000025000,
+            ]);
+            if ($frontier === 'retained_right_missing') {
+                DB::table('obfuscation_recovery_scan_windows')->where('requested_first', 4000020001)->delete();
+                for ($cycle = 0; $cycle < 10; $cycle++) {
+                    app(RecoveryScheduler::class)->local(RecoveryStage::Discover, 2, 10);
+                    app(RecoveryScheduler::class)->local(RecoveryStage::Publish, 2, 10);
+                }
+                $this->assertNull($work->claim(RecoveryStage::Download));
+                $this->assertSame(0, Release::query()->count());
+                $this->assertSame(0, (new RecoveredReleaseList)->query()->count());
+                $this->actingAs($this->admin())->get('/admin/recovered-releases')->assertOk()->assertSee('No recovered releases');
+
+                return ['root' => $root, 'nzb' => '', 'port' => $provider->port];
+            }
+            $repairs += $this->repairPortableFrontiers($provider);
+            $this->assertSame([[4000020001, 4000040000]], DB::table('obfuscation_recovery_frontier_requests')->get()
+                ->map(static fn (object $row): array => [(int) $row->requested_first, (int) $row->requested_last])->all());
+        }
         if ($frontier === 'legacy') {
             $this->legacyPortableFrontiers($context);
             $repairs += $this->repairPortableFrontiers($provider);
         }
         $prepared = '';
         for ($i = 0; $i < 100 && $prepared !== 'ready'; $i++) {
-            $claim = $work->claim(RecoveryStage::Discover);
-            $this->assertNotNull($claim, $prepared);
-            $prepared = app(RecoveryPreparation::class)->run($claim);
+            $report = app(RecoveryScheduler::class)->local(RecoveryStage::Discover, 1, 10);
+            $prepared = DB::table('obfuscation_recovery_bundles')->where('kind', 'posting')->value('state');
             if ($prepared !== 'ready') {
                 $download = $work->claim(RecoveryStage::Download);
-                $this->assertNotNull($download, $prepared);
-                $result = app(RecoveryDownload::class)->run($download, [$provider]);
-                $this->assertSame('downloaded', $result);
+                if ($download !== null) {
+                    $this->assertSame('downloaded', app(RecoveryDownload::class)->run($download, [$provider]));
+                }
             }
         }
-        $this->assertSame('ready', $prepared);
+        $this->assertSame('ready', $prepared, json_encode($report, JSON_THROW_ON_ERROR));
         if ($frontier === 'sealed_generation') {
             $original = DB::table('obfuscation_recovery_bundles')->where('kind', 'posting')->first();
             $this->legacyPortableFrontiers($context);
@@ -175,18 +222,39 @@ trait BuildsPortablePublication
             $this->assertSame(2, (int) DB::table('obfuscation_recovery_frontier_requests')->value('capture_generation'));
         }
         $this->assertSame($targets + $repairs, DB::table('obfuscation_recovery_attempts')->count());
-        $claim = $work->claim(RecoveryStage::Publish);
-        $this->assertSame('materialized', (new RecoveryMaterialization($artifacts, app(HeaderStorageService::class), $work))->run($claim));
-        $this->assertSame($parts, DB::table('parts')->count());
-        $this->assertSame($files, DB::table('binaries')->count());
-        $this->assertSame(1, DB::table('collections')->count());
-        $this->assertSame(0, (int) DB::table('collections')->value('declaredfiles'));
-        $publication = DB::table('obfuscation_recovery_publications')->first();
-        $this->assertSame('created', app(ReleaseCreationService::class)->createRecovered($claim, (int) $publication->id));
-        $release = Release::query()->first();
+        if ($frontier === 'retained_right_policy') {
+            DB::table('categories')->where('id', Category::OTHER_MISC)->update(['minsizetoformrelease' => PHP_INT_MAX]);
+            $report = app(RecoveryScheduler::class)->local(RecoveryStage::Publish, 1, 10);
+            $this->assertSame(1, $report['policy_blocked'] ?? 0);
+            $this->assertSame('category_minimum_size', DB::table('obfuscation_recovery_publications')->value('reason'));
+            $this->assertSame(0, Release::query()->count());
+            $this->actingAs($this->admin())->get('/admin/recovered-releases')->assertOk()->assertSee('No recovered releases');
+
+            return ['root' => $root, 'nzb' => '', 'port' => $provider->port];
+        }
         NzbCreationCandidateQuery::flushCapabilityCache();
+        $report = app(RecoveryScheduler::class)->local(RecoveryStage::Publish, 1, 10);
+        $this->assertSame(1, $report['published'] ?? 0, json_encode($report, JSON_THROW_ON_ERROR));
+        $release = Release::query()->first();
+        $publication = DB::table('obfuscation_recovery_publications')->first();
+        $this->assertSame('published', $publication->state);
+        $this->assertSame((int) $release->id, (int) $publication->releases_id);
+        $this->assertSame($release->guid, $publication->guid);
+        $this->assertSame('pending', $publication->initialization_state);
+        $list = new RecoveredReleaseList;
+        $this->assertSame(0, $list->query()->count());
+        if ($frontier === 'retained_right_initialization_failure') {
+            DB::table('obfuscation_recovery_evidence')->where('message_id', $publication->index_message_id)->delete();
+        }
+        $report = app(RecoveryScheduler::class)->local(RecoveryStage::Publish, 1, 10);
+        $this->assertSame(1, $report[$frontier === 'retained_right_initialization_failure' ? 'bootstrap_cached_index_unavailable' : 'bootstrap_complete'] ?? 0, json_encode([$report, DB::table('obfuscation_recovery_publications')->value('reason')], JSON_THROW_ON_ERROR));
+        $this->assertSame($frontier === 'retained_right_initialization_failure' ? 'failed' : 'complete', DB::table('obfuscation_recovery_publications')->value('initialization_state'));
+        if ($frontier === 'retained_right_initialization_failure') {
+            $this->assertSame('cached_index_unavailable', DB::table('obfuscation_recovery_publications')->value('reason'));
+        }
+        $this->assertSame((int) $release->id, (int) $list->query()->value('releases.id'));
+        $this->actingAs($this->admin())->get('/admin/recovered-releases')->assertOk()->assertSee($release->searchname)->assertSee('1–1 of 1 recovered releases');
         $nzb = app(NzbService::class);
-        $this->assertTrue($nzb->createNzbForRelease($release)->success);
         $this->assertSame(0, DB::table('parts')->count());
         $truth = json_decode(file_get_contents($root.'/truth.json'), true, flags: JSON_THROW_ON_ERROR);
         $events = array_map(static fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR), file($root.'/server-events.jsonl', FILE_IGNORE_NEW_LINES));
@@ -219,7 +287,13 @@ trait BuildsPortablePublication
         app(RecoveryScheduler::class)->local(RecoveryStage::Discover, 2, 10);
         $this->assertSame(1, Release::query()->count());
         $this->assertSame($before, DB::table('obfuscation_recovery_budgets')->orderBy('id')->get()->toJson());
+        app(RecoveryScheduler::class)->local(RecoveryStage::Publish, 2, 10);
+        $this->assertSame($release->guid, Release::query()->value('guid'));
+        $this->assertSame((int) $release->id, (int) DB::table('obfuscation_recovery_publications')->value('releases_id'));
+        $this->assertSame($before, DB::table('obfuscation_recovery_budgets')->orderBy('id')->get()->toJson());
         $this->assertFileExists($path);
+        $repeatedEvents = array_map(static fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR), file($root.'/server-events.jsonl', FILE_IGNORE_NEW_LINES));
+        $this->assertSame(count($events), count($repeatedEvents));
 
         return ['root' => $root, 'nzb' => $path, 'port' => $provider->port];
     }
@@ -242,8 +316,9 @@ trait BuildsPortablePublication
         for ($cycle = 0; $cycle < 10; $cycle++) {
             $report = app(RecoveryScheduler::class)->local(RecoveryStage::Discover, 2, 10);
             $claim = app(RecoveryWork::class)->claim(RecoveryStage::Download);
-            $this->assertNotNull($claim, json_encode([$cycle, $report, DB::table('obfuscation_recovery_work')->get(),
-                DB::table('obfuscation_recovery_bundles')->get(['id', 'kind', 'state', 'reason', 'capture_generation'])], JSON_THROW_ON_ERROR));
+            if ($claim === null) {
+                continue;
+            }
             $this->assertSame('frontier_rebuild', $claim->purpose);
             $this->assertSame('frontier_rebuilt', app(RecoveryDownload::class)->run($claim, [$provider]));
             $repairs++;

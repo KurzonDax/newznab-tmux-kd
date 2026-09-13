@@ -49,6 +49,13 @@ final class RecoveryFrontierTargets
             if ($sealed && ! (new RecoveryFrontierMembers)->complete($connection, $bundle)) {
                 continue;
             }
+            $envelope = json_decode($target->envelope, true, flags: JSON_THROW_ON_ERROR);
+            $context = (new RecoverySettlement)->context($bundle->source_epoch, (int) $bundle->groups_id, (int) $bundle->capture_generation,
+                $envelope['first_article'], $envelope['last_article'], $envelope['first_postdate'], $envelope['last_postdate'], $sealed, $connection);
+            if (($context['left'] !== null && (int) $target->last_article < $context['left'])
+                || ($context['right'] !== null && (int) $target->first_article > $context['right'])) {
+                continue;
+            }
             $valid[] = $target;
         }
 

@@ -50,6 +50,14 @@ final class RecoveryBudget
                 }
                 $spent += (int) $account->debited_bytes;
             }
+            if ($purpose === RecoveryFrontierRebuild::PURPOSE) {
+                $limits = (new RecoveryFrontierAllowance)->limits($members);
+                $limit = min($limit, $limits['bytes']);
+                $physical = DB::table('obfuscation_recovery_attempts')->whereIn('budget_id', $budgets->pluck('id'));
+                if ((clone $physical)->whereNull('settled_at')->exists() || $physical->count() >= $limits['requests']) {
+                    return null;
+                }
+            }
             if ($budget === null || $bytes > $limit || $spent > $limit - $bytes) {
                 return null;
             }
@@ -130,7 +138,11 @@ final class RecoveryBudget
 
     public function reserveGap(RecoveryWorkClaim $claim, RecoverySlot $slot, NntpProvider $provider): ?RecoveryReservation
     {
-        return DB::transaction(function () use ($claim, $slot, $provider): ?RecoveryReservation {
+        $group = DB::table('obfuscation_recovery_bundles')->where('id', $claim->bundleId)->value('groups_id');
+
+        return DB::transaction(function () use ($claim, $slot, $provider, $group): ?RecoveryReservation {
+            DB::table('obfuscation_recovery_controls')->where('scope', 'primary')->sharedLock()->first();
+            DB::table('obfuscation_recovery_controls')->where('scope', 'group:'.$group)->lockForUpdate()->first();
             $bundle = (new RecoveryOwnership)->locked($claim);
             $frontier = $claim->purpose === RecoveryFrontierRebuild::PURPOSE;
             if ($bundle === null || $bundle->kind !== ($frontier ? 'frontier' : 'gap')
@@ -153,8 +165,11 @@ final class RecoveryBudget
             if (! app(RecoverySlots::class)->canStart($slot, $config)) {
                 return null;
             }
-            $request = $frontier ? $gap->budget_owner : implode(':', ['gap', $gap->source_epoch, $gap->groups_id, $gap->capture_generation, $gap->requested_first, $gap->requested_last]);
-            $reservation = $this->reserve($frontier ? $gap->budget_owner : $bundle->owner_digest, $claim->purpose, $request, 33554432, 67108864);
+            $request = $frontier ? (new RecoveryFrontierAllowance)->logicalRequest($gap) : implode(':', ['gap', $gap->source_epoch, $gap->groups_id, $gap->capture_generation, $gap->requested_first, $gap->requested_last]);
+            if ($frontier) {
+                (new RecoveryFrontierAllowance)->grant($gap, $bundle);
+            }
+            $reservation = $this->reserve($frontier ? $gap->budget_owner : $bundle->owner_digest, $claim->purpose, $request, 33554432, $frontier ? 134217728 : 67108864);
             if ($reservation !== null) {
                 DB::table('obfuscation_recovery_attempts')->where('id', $reservation->attemptId)->update([
                     'groups_id' => $bundle->groups_id, 'profile' => $bundle->profile,
@@ -172,14 +187,21 @@ final class RecoveryBudget
         if ($request === null || $claim->purpose !== RecoveryFrontierRebuild::PURPOSE) {
             return false;
         }
+
+        return $this->frontierAvailable($request);
+    }
+
+    public function frontierAvailable(object $request): bool
+    {
         $members = (new RecoveryBudgetOwners($this->identity))->members($request->budget_owner);
         $budgets = DB::table('obfuscation_recovery_budgets')->whereIn('owner_digest', $members)->where('purpose', RecoveryFrontierRebuild::PURPOSE);
-        $attempts = DB::table('obfuscation_recovery_attempts')->whereIn('budget_id', (clone $budgets)->pluck('id'))
-            ->where('request_digest', $this->identity->digest(['request', $request->budget_owner]));
+        $attempts = DB::table('obfuscation_recovery_attempts')->whereIn('budget_id', (clone $budgets)->pluck('id'));
+        $logical = (clone $attempts)->where('request_digest', $this->identity->digest(['request', (new RecoveryFrontierAllowance)->logicalRequest($request)]));
+        $limits = (new RecoveryFrontierAllowance)->limits($members);
 
         return (clone $attempts)->whereNull('settled_at')->exists()
-            || ($attempts->count() < 2 && ! (clone $attempts)->where('outcome', 'semantic_failure')->exists()
-                && (int) $budgets->sum('debited_bytes') <= 33554432);
+            || ($logical->count() < 2 && ! (clone $logical)->where('outcome', 'semantic_failure')->exists()
+                && $attempts->count() < $limits['requests'] && (int) $budgets->sum('debited_bytes') <= $limits['bytes'] - 33554432);
     }
 
     public function reserveEnrichment(RecoveryWorkClaim $claim, RecoverySlot $slot): ?RecoveryReservation
