@@ -1,22 +1,10 @@
 <div class="max-w-4xl mx-auto">
     <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700 mb-6">
-        <!-- Header -->
-        <div class="bg-linear-to-r from-primary-600 to-primary-700 px-6 py-4">
-            <div class="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-                <h3 class="text-xl font-bold text-white flex items-center">
-                    <i class="fa fa-tv mr-2"></i>{{ ucfirst($type ?? 'add') }} Show to Watchlist
-                </h3>
-                <nav aria-label="breadcrumb">
-                    <ol class="flex items-center space-x-2 text-sm text-primary-100">
-                        <li><a href="{{ url($site['home_link']) }}" class="hover:text-white transition">Home</a></li>
-                        <li><i class="fas fa-chevron-right text-xs"></i></li>
-                        <li><a href="{{ url('/myshows') }}" class="hover:text-white transition">My Shows</a></li>
-                        <li><i class="fas fa-chevron-right text-xs"></i></li>
-                        <li class="text-white font-medium">{{ ucfirst($type ?? 'add') }} Show</li>
-                    </ol>
-                </nav>
-            </div>
-        </div>
+        <x-breadcrumb :items="[
+            ['label' => 'Home', 'url' => url($site['home_link'] ?? '/')],
+            ['label' => 'My Shows', 'url' => url('/myshows')],
+        ]" />
+        <x-page-header :title="ucfirst($type ?? 'add').' Show to Watchlist'" icon="fas fa-tv" />
 
         <div class="p-6">
             <div class="mb-6">

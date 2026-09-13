@@ -3,12 +3,8 @@
 @section('content')
 <div class="max-w-5xl mx-auto space-y-6">
     <div class="surface-panel rounded-xl shadow-sm overflow-hidden">
-        <div class="surface-panel-alt border-b px-6 py-4">
-            <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">
-                <i class="fas fa-shield-alt mr-2 text-primary-600 dark:text-primary-400"></i>Privacy Center
-            </h1>
-            <p class="text-gray-600 dark:text-gray-400 mt-1">Export your account data and manage GDPR requests.</p>
-        </div>
+        <x-breadcrumb :items="[['label' => 'Profile', 'url' => route('profile')]]" />
+        <x-page-header title="Privacy Center" description="Export your account data and manage GDPR requests." icon="fas fa-shield-halved" />
 
         @if(session('success'))
             <div class="mx-6 mt-6 p-4 bg-green-50 dark:bg-green-900/20 border-l-4 border-green-500 text-green-800 dark:text-green-200 rounded">

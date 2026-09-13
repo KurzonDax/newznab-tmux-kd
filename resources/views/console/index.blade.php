@@ -16,6 +16,7 @@
         }
     @endphp
     <x-breadcrumb :items="$crumbs" />
+    <x-page-header :title="!empty($categorytitle) && $categorytitle !== 'All' ? 'Console · '.$categorytitle : 'Console'" />
 
     @if($results->count() > 0)
         <form id="nzb_multi_operations_form" method="get" x-data="releaseMultiOps">
