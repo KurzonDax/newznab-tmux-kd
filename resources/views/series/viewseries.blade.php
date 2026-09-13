@@ -195,8 +195,6 @@
                                             <i class="fa fa-video mr-2"></i> TMDb
                                         </a>
                                     @endif
-                                </div>
-                            </div>
                         </div>
                     </div>
                 </div>
