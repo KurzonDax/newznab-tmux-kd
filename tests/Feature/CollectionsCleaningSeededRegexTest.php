@@ -10,6 +10,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\NumberedMkvArchiveTestCase;
 use Tests\TestCase;
 
 class CollectionsCleaningSeededRegexTest extends TestCase
@@ -52,6 +53,97 @@ class CollectionsCleaningSeededRegexTest extends TestCase
         Schema::dropIfExists('collection_regexes');
 
         parent::tearDown();
+    }
+
+    public function test_numbered_mkv_archives_and_parity_share_the_exact_stock_base(): void
+    {
+        $cleaner = new CollectionsCleaningService;
+        foreach (['Example.mkv.par2', 'Example.mkv.part01.rar', 'Example.mkv.part02.rar',
+            'Example.mkv.vol000+001.par2', 'Example.mkv.vol001+002.par2'] as $index => $filename) {
+            $subject = sprintf('[%02d/05] - "%s" yEnc', $index + 1, $filename);
+            $this->assertSame(['id' => 113, 'name' => 'Example'],
+                $cleaner->collectionsCleaner($subject, 'alt.binaries.boneless'), $subject);
+        }
+    }
+
+    public function test_previous_numbered_mkv_split_is_corrected_by_migration(): void
+    {
+        DB::table('collection_regexes')->where('id', 113)->update(['regex' => NumberedMkvArchiveTestCase::PREVIOUS]);
+        $cleaner = new CollectionsCleaningService;
+        $subjects = [
+            '[01/05] - "Example.mkv.par2" yEnc',
+            '[02/05] - "Example.mkv.part01.rar" yEnc',
+            '[03/05] - "Example.mkv.part02.rar" yEnc',
+            '[04/05] - "Example.mkv.vol000+001.par2" yEnc',
+            '[05/05] - "Example.mkv.vol001+002.par2" yEnc',
+        ];
+        foreach ($subjects as $index => $subject) {
+            $this->assertSame(['id' => 113, 'name' => in_array($index, [1, 2], true) ? 'Example.mkv' : 'Example'],
+                $cleaner->collectionsCleaner($subject, 'alt.binaries.boneless'));
+        }
+
+        (require database_path('migrations/2026_09_13_120000_fix_numbered_mkv_archive_collection_regex.php'))->up();
+        foreach ($subjects as $subject) {
+            $this->assertSame(['id' => 113, 'name' => 'Example'],
+                $cleaner->collectionsCleaner($subject, 'alt.binaries.boneless'));
+        }
+    }
+
+    public function test_numbered_mkv_suffixes_preserve_literal_stems_and_strip_only_the_terminal_suffix(): void
+    {
+        $cleaner = new CollectionsCleaningService;
+        foreach (['Example', 'Another.Example', 'Example.mkv.Title', 'Episode.S01E02', 'Résumé.2026',
+            'Example.mkv.part01.rar'] as $stem) {
+            foreach (['.mkv.part1.rar', '.mkv.part01.rar', '.mkv.part123456.rar', '.MKV.PART02.RAR',
+                '.mKv.pArT003.rAr', '.mkv.par2', '.mkv.vol000+001.par2'] as $suffix) {
+                $subject = '[02/05] - "'.$stem.$suffix.'" yEnc';
+                $this->assertSame(['id' => 113, 'name' => $stem],
+                    $cleaner->collectionsCleaner($subject, 'alt.binaries.boneless'), $subject);
+            }
+        }
+    }
+
+    public function test_numbered_mkv_correction_preserves_excluded_filenames_and_neighboring_rule_ownership(): void
+    {
+        $updated = DB::table('collection_regexes')->where('id', 113)->value('regex');
+        $cases = [
+            '[02/05] - "Example.bin.part01.rar" yEnc',
+            '[02/05] - "Example.mp4.part01.rar" yEnc',
+            '[02/05] - "Example.mkv.part.rar" yEnc',
+            '[02/05] - "Example.mkv.partx.rar" yEnc',
+            '[02/05] - "Example.mkv.r00" yEnc',
+            '[02/05] - "Example.mkv.7z.001" yEnc',
+            '[02/05] - "Example.mkv.part01.rar.par2" yEnc',
+            '[02/05] - "Example.mkv.part01.rar.vol000+001.par2" yEnc',
+            '[02/05] - "Example.part01.rar" yEnc',
+            '[03/12] - "01-example-show.mp3" yEnc',
+            '[04/12] - "02-example-show.mp3" yEnc',
+        ];
+        foreach (['bin', 'mkv', 'tar.zst'] as $extension) {
+            foreach (['', '.par2', '.vol000+001.par2'] as $suffix) {
+                $cases[] = '[02/05] - "Example.'.$extension.$suffix.'" yEnc';
+            }
+        }
+        $neighbors = [
+            96 => '4Etmo7uBeuTW[047/106] - "006dEbPcea29U6K.part046.rar" yEnc',
+            103 => '1VSXrAZPD - [123/177] - "1VSXrAZPD.part122.rar" yEnc',
+            107 => '82561089-n [25/33] - "p4cvu9gj503a1dui6c113v9nq1ejkqrd9u4eo998o0d5acajvog56" yEnc',
+            108 => 'P2H - "AMHZQHPHDUZZJSFZ.vol181+33.par2" yEnc',
+            111 => '"Example.tar.zst.par2" yEnc',
+        ];
+        $cases = [...$cases, ...array_values($neighbors)];
+        DB::table('collection_regexes')->where('id', 113)->update(['regex' => NumberedMkvArchiveTestCase::PREVIOUS]);
+        $previousCleaner = new CollectionsCleaningService;
+        $previous = array_map(static fn (string $subject): array => $previousCleaner->collectionsCleaner($subject, 'alt.binaries.boneless'), $cases);
+        DB::table('collection_regexes')->where('id', 113)->update(['regex' => $updated]);
+        Cache::flush();
+        $cleaner = new CollectionsCleaningService;
+        foreach ($cases as $index => $subject) {
+            $this->assertSame($previous[$index], $cleaner->collectionsCleaner($subject, 'alt.binaries.boneless'), $subject);
+        }
+        foreach ($neighbors as $id => $subject) {
+            $this->assertSame($id, $cleaner->collectionsCleaner($subject, 'alt.binaries.boneless')['id']);
+        }
     }
 
     public function test_numbered_payloads_and_their_par2_sidecars_share_one_stock_base(): void
