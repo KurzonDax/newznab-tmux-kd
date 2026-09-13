@@ -210,6 +210,54 @@ footer {
     }
 }
 
+/* Public controls share a scale; admin retains its existing component sizes. */
+.public-ui button {
+    appearance: none;
+}
+
+.public-ui .ui-control {
+    height: 36px;
+    padding: 0 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.public-ui .ui-field {
+    padding-inline: 10px;
+}
+
+.public-ui .ui-control-sm {
+    height: 30px;
+    padding-inline: 10px;
+    font-size: 12px;
+}
+
+.public-ui .ui-control-icon {
+    width: 36px;
+    padding: 0;
+}
+
+.public-ui .ui-control-icon.ui-control-sm {
+    width: 30px;
+}
+
+.public-ui select.ui-control:not([multiple]) {
+    appearance: none;
+    padding-right: 26px;
+    /* Font Awesome Free chevron-down; its CC BY 4.0 attribution is embedded. */
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20448%20512%22%3E%3C%21--%21%20Font%20Awesome%20Free%207.3.1%20by%20%40fontawesome%20-%20https%3A%2F%2Ffontawesome.com%20License%20-%20https%3A%2F%2Ffontawesome.com%2Flicense%2Ffree%20%28Icons%3A%20CC%20BY%204.0%2C%20Fonts%3A%20SIL%20OFL%201.1%2C%20Code%3A%20MIT%20License%29%20Copyright%202026%20Fonticons%2C%20Inc.%20--%3E%3Cpath%20fill%3D%22%236b7280%22%20d%3D%22M201.4%20406.6c12.5%2012.5%2032.8%2012.5%2045.3%200l192-192c12.5-12.5%2012.5-32.8%200-45.3s-32.8-12.5-45.3%200L224%20338.7%2054.6%20169.4c-12.5-12.5-32.8-12.5-45.3%200s-12.5%2032.8%200%2045.3l192%20192z%22%2F%3E%3C%2Fsvg%3E");
+    background-position: right 10px center;
+    background-repeat: no-repeat;
+    background-size: 12px 12px;
+}
+
+.public-ui .ui-dropdown-panel {
+    width: max-content;
+    min-width: 14rem;
+    max-width: calc(100vw - 2rem);
+}
+
 /* Page-level card container (rounded-xl, shadow) */
 .card {
     background-color: var(--surface-card);
