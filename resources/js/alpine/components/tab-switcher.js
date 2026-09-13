@@ -85,6 +85,11 @@ Alpine.data('profileTabs', () => ({
  * Document-level delegation for tab triggers and profile tabs without x-data.
  */
 (function() {
+    const activeTabClasses = ['active', 'border-primary-500', 'dark:border-primary-400', 'text-primary-600', 'dark:text-primary-400'];
+    const inactiveTabClasses = ['border-transparent', 'text-gray-500', 'dark:text-gray-300'];
+    const activeProfileClasses = ['bg-primary-50', 'dark:bg-primary-900/20', 'text-primary-700', 'dark:text-primary-300', 'font-medium'];
+    const inactiveProfileClasses = ['text-gray-700', 'dark:text-gray-300', 'hover:bg-gray-50', 'dark:bg-gray-900'];
+
     // Generic tab triggers (data-tab-trigger)
     document.querySelectorAll('[data-tab-trigger]').forEach(function(trigger) {
         if (trigger.closest('[x-data]')) return;
@@ -94,9 +99,9 @@ Alpine.data('profileTabs', () => ({
             document.querySelectorAll('.tab-content').forEach(function(t) { t.style.display = 'none'; });
             var sel = document.getElementById(tabId);
             if (sel) sel.style.display = 'block';
-            document.querySelectorAll('[data-tab-trigger]').forEach(function(t) { t.classList.remove('active', 'border-blue-500', 'text-blue-600'); t.classList.add('border-transparent', 'text-gray-500'); });
-            this.classList.remove('border-transparent', 'text-gray-500');
-            this.classList.add('active', 'border-blue-500', 'text-blue-600');
+            document.querySelectorAll('[data-tab-trigger]').forEach(function(t) { t.classList.remove(...activeTabClasses); t.classList.add(...inactiveTabClasses); });
+            this.classList.remove(...inactiveTabClasses);
+            this.classList.add(...activeTabClasses);
         });
     });
 
@@ -109,9 +114,9 @@ Alpine.data('profileTabs', () => ({
             link.addEventListener('click', function(ev) {
                 ev.preventDefault();
                 var targetId = this.getAttribute('href').substring(1);
-                links.forEach(function(l) { l.classList.remove('bg-blue-50', 'text-blue-700', 'font-medium'); l.classList.add('text-gray-700', 'dark:text-gray-300'); });
-                this.classList.add('bg-blue-50', 'text-blue-700', 'font-medium');
-                this.classList.remove('text-gray-700', 'dark:text-gray-300');
+                links.forEach(function(l) { l.classList.remove(...activeProfileClasses); l.classList.add(...inactiveProfileClasses); });
+                this.classList.remove(...inactiveProfileClasses);
+                this.classList.add(...activeProfileClasses);
                 contents.forEach(function(c) { c.style.display = 'none'; });
                 var target = document.getElementById(targetId);
                 if (target) { target.style.display = 'block'; if (targetId === 'api' && !chartsInited) { chartsInited = true; var att = 0; var check = setInterval(function() { att++; if (typeof Chart !== 'undefined') { clearInterval(check); if (typeof initializeProfileCharts === 'function') initializeProfileCharts(); } else if (att >= 20) clearInterval(check); }, 100); } }
