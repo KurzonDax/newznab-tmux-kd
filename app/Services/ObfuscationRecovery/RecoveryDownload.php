@@ -18,7 +18,7 @@ final class RecoveryDownload
     /** @param list<NntpProvider>|null $providers */
     public function run(RecoveryWorkClaim $claim, ?array $providers = null): string
     {
-        if ($claim->purpose === 'gap') {
+        if (in_array($claim->purpose, ['gap', RecoveryFrontierRebuild::PURPOSE], true)) {
             return app(RecoveryGapDownload::class)->run($claim, $providers);
         }
         if ($claim->purpose === 'enrichment') {

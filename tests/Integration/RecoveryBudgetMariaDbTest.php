@@ -23,10 +23,12 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\NeverBlacklistedService;
+use Tests\Support\ObfuscationRecovery\ChecksFrontierMigration;
 use Tests\TestCase;
 
 final class RecoveryBudgetMariaDbTest extends TestCase
 {
+    use ChecksFrontierMigration;
     use IsolatedSqliteDatabase;
 
     protected function setUp(): void
@@ -51,13 +53,14 @@ final class RecoveryBudgetMariaDbTest extends TestCase
             $table->increments('id');
         });
         (require database_path('migrations/2026_09_07_172435_add_obfuscation_recovery_storage.php'))->up();
+        (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
     }
 
     protected function tearDown(): void
     {
         $this->travelBack();
         try {
-            foreach (['obfuscation_recovery_frontier_conflicts', 'obfuscation_recovery_frontiers', 'obfuscation_recovery_catalog', 'obfuscation_recovery_coverage', 'obfuscation_recovery_housekeeping', 'obfuscation_recovery_artifacts', 'obfuscation_recovery_references', 'obfuscation_recovery_index_owners', 'obfuscation_recovery_traffic', 'obfuscation_recovery_scan_windows', 'obfuscation_recovery_gaps', 'obfuscation_recovery_expired_headers', 'obfuscation_recovery_dispatch', 'obfuscation_recovery_provider_backoff', 'obfuscation_recovery_targets', 'obfuscation_recovery_headers', 'obfuscation_recovery_dirty', 'obfuscation_recovery_metrics', 'obfuscation_recovery_runs', 'obfuscation_recovery_scans', 'obfuscation_recovery_scan_batches', 'obfuscation_recovery_controls', 'obfuscation_recovery_files', 'obfuscation_recovery_publications', 'obfuscation_recovery_work', 'obfuscation_recovery_bundles', 'obfuscation_recovery_attempts', 'obfuscation_recovery_budgets', 'obfuscation_recovery_budget_owners', 'obfuscation_recovery_slots', 'obfuscation_recovery_evidence', 'usenet_groups', 'settings'] as $table) {
+            foreach (['obfuscation_recovery_frontier_members', 'obfuscation_recovery_frontier_progress', 'obfuscation_recovery_frontier_targets', 'obfuscation_recovery_frontier_requests', 'obfuscation_recovery_frontier_ranges', 'obfuscation_recovery_frontier_conflicts', 'obfuscation_recovery_frontiers', 'obfuscation_recovery_catalog', 'obfuscation_recovery_coverage', 'obfuscation_recovery_housekeeping', 'obfuscation_recovery_artifacts', 'obfuscation_recovery_references', 'obfuscation_recovery_index_owners', 'obfuscation_recovery_traffic', 'obfuscation_recovery_scan_windows', 'obfuscation_recovery_gaps', 'obfuscation_recovery_expired_headers', 'obfuscation_recovery_dispatch', 'obfuscation_recovery_provider_backoff', 'obfuscation_recovery_targets', 'obfuscation_recovery_headers', 'obfuscation_recovery_dirty', 'obfuscation_recovery_metrics', 'obfuscation_recovery_runs', 'obfuscation_recovery_scans', 'obfuscation_recovery_scan_batches', 'obfuscation_recovery_controls', 'obfuscation_recovery_files', 'obfuscation_recovery_publications', 'obfuscation_recovery_work', 'obfuscation_recovery_bundles', 'obfuscation_recovery_attempts', 'obfuscation_recovery_budgets', 'obfuscation_recovery_budget_owners', 'obfuscation_recovery_slots', 'obfuscation_recovery_evidence', 'usenet_groups', 'settings'] as $table) {
                 Schema::dropIfExists($table);
             }
             DB::disconnect('recovery_fixture');
@@ -86,7 +89,7 @@ final class RecoveryBudgetMariaDbTest extends TestCase
             HeaderScanDirection::Head, (string) Str::uuid());
         $report = $capture->capture(new RecoveryCaptureBatch($headers, []), $context);
         $this->assertTrue($report->coverageComplete);
-        $this->assertSame(20000, DB::table('obfuscation_recovery_frontiers')->count());
+        $this->assertLessThanOrEqual(128, DB::table('obfuscation_recovery_frontiers')->count());
         $this->assertNull(DB::table('obfuscation_recovery_scans')->value('date_points'));
         $this->assertSame(0, DB::table('obfuscation_recovery_frontier_conflicts')->count());
         $context = new RecoveryScanContext(1, 'alt.binaries.fixture', 'epoch', 1, 1, 20000,
@@ -94,6 +97,7 @@ final class RecoveryBudgetMariaDbTest extends TestCase
         $report = $capture->capture(new RecoveryCaptureBatch([$headers[0], $headers[19999]], []), $context);
         $this->assertTrue($report->coverageComplete);
         $this->assertSame(0, DB::table('obfuscation_recovery_frontier_conflicts')->count());
+        $retainedPoints = DB::table('obfuscation_recovery_frontiers')->count();
         foreach ($headers as &$header) {
             $header['Date'] = gmdate('Y-m-d H:i:s', 1788771600 + $header['Number'] + 1).' +0000';
         }
@@ -102,8 +106,8 @@ final class RecoveryBudgetMariaDbTest extends TestCase
             HeaderScanDirection::Head, (string) Str::uuid());
         $report = $capture->capture(new RecoveryCaptureBatch($headers, []), $context);
         $this->assertTrue($report->coverageComplete);
-        $this->assertSame(20000, DB::table('obfuscation_recovery_frontier_conflicts')->where('kind', 'ordering')->count());
-        $this->assertSame(20000, DB::table('obfuscation_recovery_frontiers')->count());
+        $this->assertSame($retainedPoints, DB::table('obfuscation_recovery_frontier_conflicts')->where('kind', 'contradiction')->count());
+        $this->assertLessThanOrEqual(128, DB::table('obfuscation_recovery_frontiers')->count());
         $this->assertGreaterThan(0, $queries->count);
         $this->assertLessThan(1200, $queries->count);
     }

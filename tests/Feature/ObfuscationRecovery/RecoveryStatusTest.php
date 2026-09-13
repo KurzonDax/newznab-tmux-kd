@@ -23,6 +23,7 @@ final class RecoveryStatusTest extends TestCase
         $this->bootIsolatedDatabase();
         Schema::create('usenet_groups', fn (Blueprint $table) => $table->increments('id'));
         (require database_path('migrations/2026_09_07_172435_add_obfuscation_recovery_storage.php'))->up();
+        (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
     }
 
     protected function tearDown(): void

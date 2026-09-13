@@ -8,10 +8,12 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ObfuscationRecovery\ChecksFrontierMigration;
 use Tests\TestCase;
 
 final class RecoverySchemaTest extends TestCase
 {
+    use ChecksFrontierMigration;
     use IsolatedSqliteDatabase;
 
     protected function setUp(): void
@@ -22,12 +24,31 @@ final class RecoverySchemaTest extends TestCase
             $table->increments('id');
         });
         (require database_path('migrations/2026_09_07_172435_add_obfuscation_recovery_storage.php'))->up();
+        (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
     }
 
     protected function tearDown(): void
     {
         $this->tearDownIsolatedDatabase();
         parent::tearDown();
+    }
+
+    public function test_frontier_migration_supports_sqlite_table_prefixes(): void
+    {
+        Schema::dropAllTables();
+        DB::connection()->setTablePrefix('fixture_');
+        try {
+            Schema::create('settings', function (Blueprint $table): void {
+                $table->string('name')->primary();
+                $table->text('value')->nullable();
+            });
+            Schema::create('usenet_groups', fn (Blueprint $table) => $table->increments('id'));
+            (require database_path('migrations/2026_09_07_172435_add_obfuscation_recovery_storage.php'))->up();
+            (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
+            $this->test_additive_frontier_migration_preserves_legacy_facts_until_verified_replacement();
+        } finally {
+            DB::connection()->setTablePrefix('');
+        }
     }
 
     public function test_raw_storage_preserves_large_article_numbers_and_absent_source_counters(): void

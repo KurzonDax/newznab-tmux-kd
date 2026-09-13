@@ -18,9 +18,10 @@ final class RecoveryGapDownload
     public function run(RecoveryWorkClaim $claim, ?array $providers = null): string
     {
         $work = app(RecoveryWork::class);
+        $frontier = $claim->purpose === RecoveryFrontierRebuild::PURPOSE;
         $bundle = DB::transaction(fn (): ?object => (new RecoveryOwnership)->locked($claim), 1);
-        $gap = DB::table('obfuscation_recovery_gaps')->where('bundle_id', $claim->bundleId)->first();
-        if ($bundle === null || $bundle->kind !== 'gap' || $gap === null) {
+        $gap = DB::table($frontier ? 'obfuscation_recovery_frontier_requests' : 'obfuscation_recovery_gaps')->where('bundle_id', $claim->bundleId)->first();
+        if ($bundle === null || $bundle->kind !== ($frontier ? 'frontier' : 'gap') || $gap === null) {
             return 'obsolete';
         }
         if ($gap->expires_at <= now()) {
@@ -29,8 +30,9 @@ final class RecoveryGapDownload
         $first = (int) $gap->requested_first;
         $last = (int) $gap->requested_last;
         $planner = app(RecoveryGapPlanner::class);
-        if ($planner->positive($gap, $first, $last) === [[$first, $last]]) {
-            return $this->finish($claim, 'reused_capture');
+        if ($frontier ? (new RecoveryFrontierTargets)->sufficient(DB::connection(), $bundle, $claim->payload)
+            : $planner->positive($gap, $first, $last) === [[$first, $last]]) {
+            return $this->finish($claim, $frontier ? 'frontier_reused' : 'reused_capture');
         }
         $config = RecoveryConfig::fromSettings();
         $group = DB::table('usenet_groups')->where('id', $gap->groups_id)->first();
@@ -77,8 +79,13 @@ final class RecoveryGapDownload
 
                     return 'capacity_pending';
                 }
+                if ($frontier && $budget->frontierPending($claim)) {
+                    $work->defer($claim);
 
-                return $this->finish($claim, 'gap_limit_reached');
+                    return 'range_pending';
+                }
+
+                return $this->finish($claim, $frontier ? 'frontier_limit_reached' : 'gap_limit_reached');
             }
             DB::table('obfuscation_recovery_attempts')->where('id', $reservation->attemptId)->where('token', $reservation->token)
                 ->update(['provider' => 'position:1']);
@@ -92,10 +99,11 @@ final class RecoveryGapDownload
                 $policy = app(BlacklistService::class);
                 $parsed = (new HeaderParser($policy))->parse($result->headers, $group->name);
                 $context = new RecoveryScanContext((int) $gap->groups_id, $group->name, $gap->source_epoch,
-                    (int) $gap->capture_generation, $first, $last, HeaderScanDirection::Head, (string) Str::uuid());
-                (new RecoveryCapture(RecoveryConfig::fromSettings(), $policy))->capture(new RecoveryCaptureBatch($result->headers, $parsed['headers']), $context, $claim);
-                if ($planner->positive($gap, $first, $last) === [[$first, $last]]) {
-                    return $this->finish($claim, 'captured');
+                    (int) $gap->capture_generation, $first, $last, $frontier ? HeaderScanDirection::Repair : HeaderScanDirection::Head, (string) Str::uuid());
+                $captured = (new RecoveryCapture(RecoveryConfig::fromSettings(), $policy))->capture(new RecoveryCaptureBatch($result->headers, $parsed['headers']), $context, $claim);
+                if ($frontier ? $captured->coverageComplete && (new RecoveryFrontierTargets)->sufficient(DB::connection(), $bundle, $claim->payload)
+                    : $planner->positive($gap, $first, $last) === [[$first, $last]]) {
+                    return $this->finish($claim, $frontier ? 'frontier_rebuilt' : 'captured');
                 }
             }
             if ($reservation->physicalAttempt < 2 && $result->transport->outcome !== 'semantic_failure') {
@@ -104,7 +112,7 @@ final class RecoveryGapDownload
                 return 'retry_pending';
             }
 
-            return $this->finish($claim, 'gap_unresolved');
+            return $this->finish($claim, $frontier ? 'frontier_unresolved' : 'gap_unresolved');
         } finally {
             $slots->release($slot);
         }
@@ -116,8 +124,9 @@ final class RecoveryGapDownload
             if (! app(RecoveryWork::class)->complete($claim, $outcome)) {
                 return 'obsolete';
             }
-            DB::table('obfuscation_recovery_gaps')->where('bundle_id', $claim->bundleId)->update(['outcome' => $outcome, 'updated_at' => now()]);
-            DB::table('obfuscation_recovery_bundles')->where('id', $claim->bundleId)->update(['state' => 'gap_complete', 'reason' => $outcome, 'updated_at' => now()]);
+            $frontier = $claim->purpose === RecoveryFrontierRebuild::PURPOSE;
+            DB::table($frontier ? 'obfuscation_recovery_frontier_requests' : 'obfuscation_recovery_gaps')->where('bundle_id', $claim->bundleId)->update(['outcome' => $outcome, 'updated_at' => now()]);
+            DB::table('obfuscation_recovery_bundles')->where('id', $claim->bundleId)->update(['state' => $frontier ? 'frontier_complete' : 'gap_complete', 'reason' => $outcome, 'updated_at' => now()]);
 
             return $outcome;
         }, 1);

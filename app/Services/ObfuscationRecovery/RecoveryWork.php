@@ -48,7 +48,7 @@ final class RecoveryWork
             }
             $lane = match ($purpose) {
                 'enrichment' => 'enrichment',
-                'gap' => 'gap',
+                'gap', RecoveryFrontierRebuild::PURPOSE => 'gap',
                 default => 'construction',
             };
             $scope = $this->identity->digest([$stage->value, (string) $bundle->groups_id, (string) $bundle->profile, $lane]);
