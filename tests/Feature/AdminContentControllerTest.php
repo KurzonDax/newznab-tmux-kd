@@ -94,6 +94,25 @@ class AdminContentControllerTest extends TestCase
         $this->assertSame('/about/', $content->url);
     }
 
+    public function test_home_page_renders_html_when_no_front_page_content_exists(): void
+    {
+        $user = $this->createUserWithRole('User');
+
+        $this->actingAs($user)->get(route('home'))
+            ->assertOk()
+            ->assertViewIs('content.index')
+            ->assertSee('<!DOCTYPE html>', false)
+            ->assertSee('No Content Available');
+    }
+
+    public function test_missing_specific_content_still_returns_not_found(): void
+    {
+        $user = $this->createUserWithRole('User');
+
+        $this->actingAs($user)->get(route('content', ['page' => 'content', 'id' => 999]))
+            ->assertNotFound();
+    }
+
     public function test_content_page_accepts_string_content_id_from_query(): void
     {
         $user = $this->createUserWithRole('User');
