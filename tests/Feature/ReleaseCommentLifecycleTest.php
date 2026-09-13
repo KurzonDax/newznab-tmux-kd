@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Models\Release;
 use App\Models\ReleaseComment;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
@@ -67,5 +69,70 @@ final class ReleaseCommentLifecycleTest extends TestCase
         $this->assertIsString($controller);
         $this->assertStringContainsString('ReleaseComment::addComment((int) $data[\'id\']', $controller);
         $this->assertStringNotContainsString("\$data['gid']", $controller);
+    }
+
+    public function test_details_paginate_only_visible_comments_and_keep_the_total_on_every_page(): void
+    {
+        for ($number = 1; $number <= 26; $number++) {
+            DB::table('release_comments')->insert([
+                'releases_id' => 10,
+                'text' => sprintf('Public comment %02d', $number),
+                'isvisible' => 1,
+                'username' => 'commenter',
+                'users_id' => 7,
+                'created_at' => now(),
+            ]);
+        }
+        DB::table('release_comments')->insert([
+            ['releases_id' => 10, 'text' => 'Hidden moderation text', 'isvisible' => 0],
+            ['releases_id' => 20, 'text' => 'Another release comment', 'isvisible' => 1],
+        ]);
+        ReleaseComment::updateReleaseCommentCount(10);
+        request()->query->replace(['tab' => 'comments']);
+
+        $firstPage = ReleaseComment::getComments(10);
+        $this->assertInstanceOf(LengthAwarePaginator::class, $firstPage);
+        $this->assertCount(25, $firstPage);
+        $this->assertSame(26, $firstPage->total());
+        $this->assertSame($firstPage->total(), (int) DB::table('releases')->where('id', 10)->value('comments'));
+        $this->view('details.partials.comments', ['comments' => $firstPage])
+            ->assertSee('Comments (26)')
+            ->assertSee('Public comment 26')
+            ->assertDontSee('Public comment 01')
+            ->assertDontSee('Hidden moderation text')
+            ->assertDontSee('Another release comment')
+            ->assertSee('tab=comments&amp;comments_page=2#comments', false);
+
+        request()->query->set('comments_page', 2);
+        $secondPage = ReleaseComment::getComments(10);
+        $this->assertCount(1, $secondPage);
+        $this->view('details.partials.comments', ['comments' => $secondPage])
+            ->assertSee('Comments (26)')
+            ->assertSee('Public comment 01')
+            ->assertDontSee('Public comment 26');
+
+        request()->query->set('comments_page', 3);
+        $this->view('details.partials.comments', ['comments' => ReleaseComment::getComments(10)])
+            ->assertSee('Comments (26)')
+            ->assertSee('No comments on this page.')
+            ->assertDontSee('No comments yet.')
+            ->assertSee('comments_page=1#comments', false);
+    }
+
+    public function test_a_release_with_only_hidden_comments_has_an_empty_public_discussion(): void
+    {
+        DB::table('release_comments')->insert([
+            'releases_id' => 10,
+            'text' => 'Hidden moderation text',
+            'isvisible' => 0,
+        ]);
+
+        $this->view('details.partials.comments', [
+            'release' => Release::factory()->make(['id' => 10]),
+            'comments' => ReleaseComment::getComments(10),
+        ])
+            ->assertSee('Comments (0)')
+            ->assertSee('No comments yet.')
+            ->assertDontSee('Hidden moderation text');
     }
 }
