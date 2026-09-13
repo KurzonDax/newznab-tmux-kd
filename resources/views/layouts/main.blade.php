@@ -62,24 +62,6 @@
             <!-- Page Content - This is the scrollable area -->
             <main class="flex-1 overflow-y-auto shadow-inner ring-1 ring-black/10 dark:ring-white/5" data-scroll-container>
                 <div class="container mx-auto px-4 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-                    @if(session('success'))
-                        <div class="mb-4 p-4 bg-green-100 dark:bg-green-900 border border-green-400 dark:border-green-700 text-green-700 dark:text-green-200 rounded-lg">
-                            {{ session('success') }}
-                        </div>
-                    @endif
-
-                    @if(session('error'))
-                        <div class="mb-4 p-4 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-200 rounded-lg">
-                            @if(is_array(session('error')))
-                                @foreach(session('error') as $error)
-                                    <div>{{ $error }}</div>
-                                @endforeach
-                            @else
-                                {{ session('error') }}
-                            @endif
-                        </div>
-                    @endif
-
                     @yield('content')
                     @if(isset($content) && is_string($content))
                         {!! $content !!}

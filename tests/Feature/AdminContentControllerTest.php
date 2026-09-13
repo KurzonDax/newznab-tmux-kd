@@ -8,12 +8,15 @@ use App\Http\Middleware\Google2FAMiddleware;
 use App\Models\Content;
 use App\Models\User;
 use App\View\Composers\GlobalDataComposer;
+use DOMDocument;
+use DOMElement;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionClass;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -436,6 +439,43 @@ class AdminContentControllerTest extends TestCase
         $response->assertOk();
         $this->assertSame(12, $remainingContent->fresh()->ordinal);
         $this->assertDatabaseMissing('content', ['id' => $deletedContent->id]);
+    }
+
+    /** @return array<string, array{string|list<string>}> */
+    public static function flashErrorProvider(): array
+    {
+        return [
+            'single error' => ['Could not save preferences.'],
+            'multiple errors' => [['Could not save preferences.', 'Please select a category.']],
+        ];
+    }
+
+    /** @param string|list<string> $error */
+    #[DataProvider('flashErrorProvider')]
+    public function test_front_page_flash_messages_use_only_the_toast_payload(string|array $error): void
+    {
+        $this->createContent(['contenttype' => Content::TYPE_INDEX]);
+        $messages = [
+            'success' => 'Preferences saved.',
+            'error' => $error,
+            'warning' => 'Attention needed.',
+            'info' => 'Latest update.',
+        ];
+
+        $response = $this->actingAs($this->createUserWithRole('User'))
+            ->withSession($messages)->get(route('home'));
+        $response->assertOk();
+
+        $document = new DOMDocument;
+        $document->loadHTML($response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $payload = $document->getElementById('flash-messages-data');
+        $this->assertInstanceOf(DOMElement::class, $payload);
+        $this->assertSame($messages, json_decode($payload->getAttribute('data-messages'), true, 512, JSON_THROW_ON_ERROR));
+        $this->assertSame(1, substr_count($response->getContent(), 'x-data="toastContainer"'));
+
+        foreach ([$messages['success'], ...(array) $error, $messages['warning'], $messages['info']] as $message) {
+            $this->assertStringNotContainsString($message, $document->textContent);
+        }
     }
 
     private function createContent(array $overrides = []): Content
