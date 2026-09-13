@@ -256,12 +256,12 @@
                         <nav class="flex flex-wrap -mb-px px-4" aria-label="Tabs">
                             @foreach($seasonTabs as $tab)
                                 <a href="{{ $tab['url'] }}"
-                                        class="series-season-tab whitespace-nowrap py-4 px-6 border-b-2 font-medium text-sm transition-colors duration-200 {{ $tab['active'] ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-300 hover:border-gray-300' }}"
+                                        class="series-season-tab whitespace-nowrap py-4 px-6 border-b-2 font-medium text-sm transition-colors duration-200 {{ $tab['active'] ? 'border-primary-500 dark:border-primary-400 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-300 hover:border-gray-300' }}"
                                         data-season="{{ $tab['season'] }}"
                                         data-series-season-link
                                         @if($tab['active']) aria-current="page" @endif>
                                     Season {{ $tab['season'] }}
-                                    <span class="ml-2 px-2 py-0.5 rounded-full text-xs {{ $tab['active'] ? 'bg-primary-100 text-primary-800' : 'bg-gray-100 dark:bg-gray-800 text-gray-600' }}">
+                                    <span class="ml-2 px-2 py-0.5 rounded-full text-xs {{ $tab['active'] ? 'bg-primary-100 dark:bg-primary-900/40 text-primary-800 dark:text-primary-200' : 'bg-gray-100 dark:bg-gray-800 text-gray-600' }}">
                                         {{ $tab['count'] }}
                                     </span>
                                 </a>
