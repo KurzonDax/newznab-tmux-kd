@@ -204,6 +204,8 @@ class MusicService
 
         $cached = Cache::get($cacheKey);
         if ($cached !== null) {
+            app(ReleaseBrowseService::class)->loadCoverReleaseData($cached);
+
             return $cached;
         }
 
@@ -282,6 +284,7 @@ class MusicService
         }
 
         Cache::put($cacheKey, $musicEntities, $expiresAt);
+        app(ReleaseBrowseService::class)->loadCoverReleaseData($musicEntities);
 
         return $musicEntities;
     }
