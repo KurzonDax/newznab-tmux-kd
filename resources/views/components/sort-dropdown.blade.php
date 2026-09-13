@@ -2,7 +2,7 @@
     <button
         type="button"
         @click="toggle"
-        class="inline-flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:focus:ring-primary-400 transition shadow-sm"
+        class="ui-control ui-control-md inline-flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:focus:ring-primary-400 transition shadow-sm"
     >
         <i class="fas {{ $currentIcon }} text-gray-500 dark:text-gray-300"></i>
         <span>Sort: {{ $currentLabel }}</span>
@@ -17,7 +17,7 @@
          x-transition:leave="transition ease-in duration-75"
          x-transition:leave-start="opacity-100 scale-100"
          x-transition:leave-end="opacity-0 scale-95"
-         class="absolute right-0 z-50 mt-2 w-56 origin-top-right rounded-lg bg-white dark:bg-gray-700 shadow-lg border border-gray-200 dark:border-gray-600 focus:outline-none">
+         class="ui-dropdown-panel absolute right-0 z-50 mt-2 w-56 origin-top-right rounded-lg bg-white dark:bg-gray-700 shadow-lg border border-gray-200 dark:border-gray-600 focus:outline-none">
         <div class="py-1 max-h-80 overflow-y-auto">
             @foreach($sortOptions as $sortKey => $sortData)
                 <a
