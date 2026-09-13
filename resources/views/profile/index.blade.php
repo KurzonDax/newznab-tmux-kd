@@ -2,39 +2,27 @@
 
 @section('content')
 <!-- Breadcrumb -->
-<nav class="mb-4 text-sm" aria-label="breadcrumb">
-    <ol class="flex items-center space-x-2">
-        <li><a href="{{ url('/') }}" class="text-primary-600 dark:text-primary-400 hover:text-primary-800">Home</a></li>
-        <li class="text-gray-400">/</li>
-        <li><a href="#" class="text-primary-600 dark:text-primary-400 hover:text-primary-800">Profile</a></li>
-        <li class="text-gray-400">/</li>
-        <li class="text-gray-600">{{ $user->username }}</li>
-    </ol>
-</nav>
+<x-breadcrumb :items="[['label' => 'Home', 'url' => url($site['home_link'] ?? '/')],['label' => 'Profile', 'url' => url('/profile')]]" />
 
 <div class="surface-panel rounded-xl shadow-sm overflow-hidden">
-        <!-- Profile Header -->
-        <div class="surface-panel-alt border-b px-6 py-4 flex justify-between items-center">
-            <h1 class="text-xl font-semibold text-gray-800 dark:text-gray-200">
-                <i class="fas fa-user mr-2"></i>User Profile
-            </h1>
-            <div class="flex gap-2">
+        <x-page-header title="User Profile" :description="$user->username" icon="fas fa-user">
+            <x-slot:actions>
                 @if(($isadmin ?? false) || !$publicview)
-                    <x-button-link href="{{ route('profileedit') }}" variant="success" icon="fa fa-edit">Edit Profile</x-button-link>
+                    <x-button-link href="{{ route('profileedit') }}" variant="secondary" size="sm" icon="fa fa-edit">Edit Profile</x-button-link>
                 @endif
                 @if(!($isadmin ?? false) && !$publicview)
-                    <x-button-link href="{{ route('privacy-center.index') }}" icon="fa fa-shield-alt">Privacy Center</x-button-link>
+                    <x-button-link href="{{ route('privacy-center.index') }}" variant="secondary" size="sm" icon="fa fa-shield-alt">Privacy Center</x-button-link>
                 @endif
                 @if(!($isadmin ?? false) && !$publicview)
                     <x-button-link href="{{ url('profile_delete?id=' . $user->id) }}"
                        variant="danger"
-                       icon="fa fa-trash"
+                       size="sm" icon="fa fa-trash"
                        data-confirm="Are you sure you want to delete your account? This action cannot be undone.">
                         Delete Account
                     </x-button-link>
                 @endif
-            </div>
-        </div>
+            </x-slot:actions>
+        </x-page-header>
 
         <div class="p-6">
             <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">

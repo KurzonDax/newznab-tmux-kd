@@ -17,6 +17,7 @@
         ] + request()->except(['t', 'view']));
     @endphp
     <x-breadcrumb :items="$crumbs" />
+    <x-page-header :title="!empty($categorytitle) && $categorytitle !== 'All' ? 'Adult · '.$categorytitle : 'Adult'" />
 
     <div class="px-6 py-4">
         <x-button-link :href="$browseUrl" variant="secondary" icon="fas fa-list" class="mb-4">

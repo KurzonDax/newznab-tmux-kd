@@ -22,6 +22,7 @@
         }
     @endphp
     <x-breadcrumb :items="$crumbs" />
+    <x-page-header :title="!empty($parentcat) ? ucfirst($parentcat).' · '.$currentCategoryLabel : ($currentCategoryLabel === 'All' ? 'All releases' : $currentCategoryLabel)" icon="fas fa-compass" />
 
     @if($results->count() > 0)
         @php

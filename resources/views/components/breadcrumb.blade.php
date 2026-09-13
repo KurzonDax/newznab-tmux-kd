@@ -2,9 +2,9 @@
     'items' => []
 ])
 
-<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+<div class="page-breadcrumb px-6 py-4 border-b border-gray-200 dark:border-gray-700">
     <nav class="flex" aria-label="Breadcrumb">
-        <ol class="inline-flex items-center space-x-1 md:space-x-2 text-sm">
+        <ol class="breadcrumb-list inline-flex items-center space-x-1 md:space-x-2 text-sm">
             @foreach($items as $index => $item)
                 @if($index > 0)
                     <li aria-hidden="true">
