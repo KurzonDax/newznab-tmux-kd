@@ -1,39 +1,11 @@
 @extends('layouts.main')
 
 @section('content')
+<x-breadcrumb :items="[['label' => 'Home', 'url' => url($site['home_link'] ?? '/')],['label' => 'Profile', 'url' => url('/profile')],['label' => 'My Invitations', 'url' => url('/invitations')]]" />
 @unless($invite_mode)
-<div class="mb-6">
-    <nav class="flex" aria-label="breadcrumb">
-        <ol class="inline-flex items-center space-x-1 md:space-x-3">
-            <li class="inline-flex items-center">
-                <a href="{{ $site['home_link'] }}" class="text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:text-primary-400 dark:text-gray-400 dark:hover:text-white">Home</a>
-            </li>
-            <li>
-                <div class="flex items-center">
-                    <svg class="w-3 h-3 text-gray-400 mx-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
-                    <a href="{{ url('/profile') }}" class="text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:text-primary-400 dark:text-gray-400 dark:hover:text-white">Profile</a>
-                </div>
-            </li>
-            <li>
-                <div class="flex items-center">
-                    <svg class="w-3 h-3 text-gray-400 mx-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
-                    <a href="{{ url('/invitations') }}" class="text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:text-primary-400 dark:text-gray-400 dark:hover:text-white">My Invitations</a>
-                </div>
-            </li>
-            <li aria-current="page">
-                <div class="flex items-center">
-                    <svg class="w-3 h-3 text-gray-400 mx-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
-                    <span class="text-gray-500 dark:text-gray-400">Invitations Disabled</span>
-                </div>
-            </li>
-        </ol>
-    </nav>
-</div>
+<x-page-header title="Invitations Disabled" icon="fas fa-ban" />
 <div class="max-w-4xl mx-auto px-4 py-3">
     <div class="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg p-6 shadow-sm dark:bg-yellow-900 dark:border-yellow-700 dark:text-yellow-300">
-        <h5 class="text-lg font-semibold mb-2 flex items-center">
-            <i class="fa fa-ban mr-2"></i>Invitations Disabled
-        </h5>
         <p class="mb-3">User invitations are currently disabled on this site. You cannot send new invitations at this time.</p>
         <x-button-link href="{{ url('/profile') }}" variant="secondary" icon="fa fa-arrow-left">
             Back to Profile
@@ -41,50 +13,21 @@
     </div>
 </div>
 @else
-<div class="mb-6">
-    <nav class="flex" aria-label="breadcrumb">
-        <ol class="inline-flex items-center space-x-1 md:space-x-3">
-            <li class="inline-flex items-center">
-                <a href="{{ $site['home_link'] }}" class="text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:text-primary-400 dark:text-gray-400 dark:hover:text-white">Home</a>
-            </li>
-            <li>
-                <div class="flex items-center">
-                    <svg class="w-3 h-3 text-gray-400 mx-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
-                    <a href="{{ url('/profile') }}" class="text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:text-primary-400 dark:text-gray-400 dark:hover:text-white">Profile</a>
-                </div>
-            </li>
-            <li>
-                <div class="flex items-center">
-                    <svg class="w-3 h-3 text-gray-400 mx-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
-                    <a href="{{ url('/invitations') }}" class="text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:text-primary-400 dark:text-gray-400 dark:hover:text-white">My Invitations</a>
-                </div>
-            </li>
-            <li aria-current="page">
-                <div class="flex items-center">
-                    <svg class="w-3 h-3 text-gray-400 mx-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
-                    <span class="text-gray-500 dark:text-gray-400">Send New Invitation</span>
-                </div>
-            </li>
-        </ol>
-    </nav>
-</div>
-
 <div class="max-w-4xl mx-auto px-4 py-3">
     <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm dark:bg-gray-800">
-        <div class="bg-gray-50 dark:bg-gray-900 px-6 py-4 border-b border-gray-200 dark:border-gray-700 rounded-t-lg flex justify-between items-center dark:bg-gray-700 dark:border-gray-600">
-            <h5 class="text-lg font-semibold text-gray-900 dark:text-gray-100 dark:text-white flex items-center">
-                <i class="fa fa-paper-plane mr-2"></i>Send New Invitation
-            </h5>
+        <x-page-header title="Send New Invitation" icon="fas fa-paper-plane">
+            <x-slot:actions>
             <div class="flex items-center gap-3">
                 <div class="px-3 py-1 rounded text-sm font-medium text-white {{ $user_invites_left > 0 ? 'bg-green-600' : 'bg-red-600' }}">
                     <i class="fa fa-envelope mr-1"></i>
                     {{ $user_invites_left }} invites left
                 </div>
-                <x-button-link href="{{ url('/invitations') }}" variant="secondary" icon="fas fa-arrow-left">
+                <x-button-link href="{{ url('/invitations') }}" variant="secondary" size="sm" icon="fas fa-arrow-left">
                     Back to Invitations
                 </x-button-link>
             </div>
-        </div>
+            </x-slot:actions>
+        </x-page-header>
         <div class="p-6">
             @if(session('error'))
                 <div class="mb-4 bg-red-50 border border-red-200 text-red-800 rounded-lg p-4 dark:bg-red-900 dark:border-red-700 dark:text-red-200" role="alert">

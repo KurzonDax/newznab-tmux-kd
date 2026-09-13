@@ -6,14 +6,8 @@
 
 @section('content')
 <div class="release-detail-page surface-panel rounded-xl shadow-sm p-6">
-    <div class="mb-6">
-        <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Release Details</h1>
-        <nav class="text-sm text-gray-600 dark:text-gray-400">
-            <a href="{{ url('/') }}" class="hover:text-primary-600 dark:hover:text-primary-400">Home</a>
-            <i class="fas fa-chevron-right mx-2 text-xs"></i>
-            <span class="wrap-break-word break-all">{{ release_display_name($release) }}</span>
-        </nav>
-    </div>
+    <x-breadcrumb :items="[['label' => 'Home', 'url' => url('/')], ['label' => 'Browse', 'url' => route('All')]]" />
+    <x-page-header title="Release Details" :description="release_display_name($release)" icon="fas fa-circle-info" />
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Main Content -->

@@ -36,7 +36,7 @@ class PersonalListsPresentationTest extends TestCase
 
     public function test_add_movie_page_shows_the_category_form_without_an_unrelated_empty_list(): void
     {
-        $this->view('mymovies.add', [
+        $view = $this->view('mymovies.add', [
             ...$this->viewData(),
             'type' => 'add',
             'imdbid' => '0137523',
@@ -48,6 +48,16 @@ class PersonalListsPresentationTest extends TestCase
             ->assertSee('value="2040"', false)
             ->assertDontSee('No movies bookmarked yet.')
             ->assertDontSee('id="sortable"', false);
+
+        $document = new \DOMDocument;
+        @$document->loadHTML((string) $view);
+        $xpath = new \DOMXPath($document);
+        $this->assertSame('Add Movie to Watchlist', trim((string) $xpath->evaluate('string(//h1)')));
+        $headings = $xpath->query('//nav[@aria-label="Breadcrumb"]/following::h1');
+        $this->assertNotFalse($headings);
+        $this->assertSame(1, $headings->length);
+        $this->assertStringNotContainsString('Add Movie', (string) $xpath->evaluate('string(//nav[@aria-label="Breadcrumb"])'));
+        $this->assertSame(url('/mymovies'), $xpath->evaluate('string((//nav[@aria-label="Breadcrumb"]//a)[last()]/@href)'));
     }
 
     /** @return array<string, mixed> */

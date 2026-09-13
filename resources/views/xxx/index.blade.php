@@ -13,6 +13,7 @@
         }
     @endphp
     <x-breadcrumb :items="$crumbs" />
+    <x-page-header :title="!empty($categorytitle) && $categorytitle !== 'All' ? 'Adult · '.$categorytitle : 'Adult'" />
 
     <div class="px-6 py-4">
         <!-- Category and order -->

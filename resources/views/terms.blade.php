@@ -4,17 +4,8 @@
     <div class="container mx-auto px-4 py-6">
         <div class="max-w-4xl mx-auto">
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-                <!-- Header -->
-                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                    <h1 class="text-2xl font-semibold text-gray-800 dark:text-gray-200 mb-2">Terms and Conditions</h1>
-                    <nav aria-label="breadcrumb">
-                        <ol class="flex text-sm text-gray-600 dark:text-gray-400">
-                            <li><a href="{{ url('/') }}" class="hover:text-primary-600 dark:hover:text-primary-400">Home</a></li>
-                            <li class="mx-2">/</li>
-                            <li class="text-gray-500 dark:text-gray-500">Terms and Conditions</li>
-                        </ol>
-                    </nav>
-                </div>
+                <x-breadcrumb :items="[['label' => 'Home', 'url' => url('/')]]" />
+                <x-page-header title="Terms and Conditions" icon="fas fa-file-lines" />
 
                 <!-- Info Alert -->
                 <div class="mx-6 mt-4 p-4 bg-primary-50 dark:bg-primary-900 border border-primary-200 dark:border-primary-700 rounded-lg flex items-start">

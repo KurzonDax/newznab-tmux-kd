@@ -15,6 +15,7 @@
         ];
     @endphp
     <x-breadcrumb :items="$movieCrumbs" />
+    <x-page-header :title="$currentMovieCategory !== 'All' ? 'Movies · '.$currentMovieCategory : 'Movies'" />
 
     {{-- Movies Filter Section --}}
     <div class="px-6 py-5 surface-panel-alt border-b">
