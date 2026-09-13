@@ -120,11 +120,11 @@
                                 @if($guid)
                                     <a href="{{ url('/details/' . $guid) }}" class="block">
                                         @if(!empty($result->cover))
-                                            <img src="{{ url('/covers/games/' . $result->cover) }}"
+                                            <img src="{{ getReleaseCover(['gamesinfo_id' => $result->id]) }}"
                                                  alt="{{ $result->title ?? release_display_name($result) }}"
                                                  class="w-32 h-48 object-cover"
                                                  loading="lazy"
-                                                 data-fallback-src="{{ url('/images/no-cover.png') }}">
+                                                 data-fallback-src="{{ asset('assets/images/no-cover.png') }}">
                                         @else
                                             <div class="w-32 h-48 bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
                                                 <i class="fas fa-gamepad text-gray-400 text-2xl"></i>
