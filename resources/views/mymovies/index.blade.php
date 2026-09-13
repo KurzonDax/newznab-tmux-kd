@@ -1,28 +1,12 @@
 
 <div class="max-w-7xl mx-auto">
-    <!-- Header Section -->
-    <div class="header-gradient rounded-xl shadow-lg mb-6 overflow-hidden">
-        <div class="px-8 py-6">
-            <div class="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-                <div>
-                    <h1 class="text-3xl font-bold text-white flex items-center">
-                        <i class="fa fa-film mr-3"></i>My Movies
-                    </h1>
-                    <p class="text-primary-100 mt-2">Manage your movie wishlist and get automatic updates</p>
-                </div>
-                <nav aria-label="breadcrumb">
-                    <ol class="flex items-center space-x-2 text-sm text-primary-100">
-                        <li><a href="{{ url($site['home_link']) }}" class="hover:text-white transition">Home</a></li>
-                        <li><i class="fas fa-chevron-right text-xs"></i></li>
-                        <li class="text-white font-medium">My Movies</li>
-                    </ol>
-                </nav>
-            </div>
-        </div>
+    <div class="card mb-6 overflow-hidden">
+        <x-breadcrumb :items="[['label' => 'Home', 'url' => url($site['home_link'])]]" />
+        <x-page-header title="My Movies" description="Manage your movie wishlist and get automatic updates" icon="fas fa-film" />
     </div>
 
     <!-- RSS Feed Info Card -->
-    <div class="info-card-gradient border-l-4 border-primary-500 rounded-lg p-5 mb-6 shadow">
+    <div class="surface-panel-alt border-l-4 border-primary-500 rounded-lg p-5 mb-6 shadow">
         <div class="flex items-start">
             <div class="shrink-0">
                 <div class="flex items-center justify-center h-10 w-10 rounded-lg bg-primary-500 text-white">
@@ -59,9 +43,9 @@
 
     <!-- Movies Table/Cards -->
     @if(count($movies ?? []) > 0)
-        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+        <div class="surface-panel rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700">
             <!-- Table Header -->
-            <div class="table-header-gradient px-6 py-4 border-b-2 border-gray-300 dark:border-gray-600">
+            <div class="surface-panel-alt px-6 py-4 border-b-2 border-gray-300 dark:border-gray-600">
                 <div class="flex items-center justify-between">
                     <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-200 flex items-center">
                         <i class="fa fa-bookmark mr-2 text-primary-600"></i>
@@ -78,7 +62,7 @@
                             <div class="flex gap-6">
                                 <!-- Movie Poster -->
                                 <div class="shrink-0">
-                                    <img class="rounded-lg movie-poster-shadow w-32 h-48 object-cover"
+                                    <img class="rounded-lg shadow-md w-32 h-48 object-cover"
                                          src="{{ ($movie['cover'] ?? 0) == 1 ? getImageAssetUrl('movies', $movie['imdbid'] . '-cover', url('/covers/movies/no-cover.jpg')) : url('/covers/movies/no-cover.jpg') }}"
                                          loading="lazy"
                                          alt="{{ e($movie['title'] ?? '') }}"/>
@@ -89,7 +73,7 @@
                                     <div class="flex items-start justify-between mb-3">
                                         <div class="flex-1">
                                             <h3 class="text-xl font-bold text-gray-900 dark:text-gray-100 mb-1">
-                                                <a href="{{ url("/Movies?imdb={$movie['imdbid']}") }}"
+                                                <a href="{{ route('movie.view', ['imdbid' => $movie['imdbid']]) }}"
                                                    class="hover:text-primary-600 dark:text-primary-400 transition-colors">
                                                     {{ e($movie['title'] ?? '') }}
                                                     @if(!empty($movie['year']))
@@ -150,7 +134,7 @@
                                     @endif
 
                                     <div class="flex items-center gap-4 pt-3 border-t border-gray-200 dark:border-gray-700">
-                                        <span class="inline-flex items-center px-3 py-1.5 category-badge text-primary-800 text-xs font-semibold rounded-full border border-primary-200">
+                                        <span class="inline-flex items-center px-3 py-1.5 bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 text-xs font-semibold rounded-full border border-primary-200 dark:border-primary-800">
                                             <i class="fa fa-folder-open mr-1.5"></i>{{ !empty($movie['categoryNames']) ? e($movie['categoryNames']) : 'All Categories' }}
                                         </span>
                                         <span class="text-xs text-gray-500 dark:text-gray-400 flex items-center">
@@ -176,14 +160,14 @@
                     <div class="p-6 border-b border-gray-200 dark:border-gray-700 hover:bg-primary-50 dark:hover:bg-gray-700 transition-colors duration-150">
                         <div class="flex gap-4 mb-4">
                             <div class="shrink-0">
-                                <img class="rounded-lg movie-poster-shadow w-24 h-36 object-cover"
+                                <img class="rounded-lg shadow-md w-24 h-36 object-cover"
                                      src="{{ ($movie['cover'] ?? 0) == 1 ? getImageAssetUrl('movies', $movie['imdbid'] . '-cover', url('/covers/movies/no-cover.jpg')) : url('/covers/movies/no-cover.jpg') }}"
                                      loading="lazy"
                                      alt="{{ e($movie['title'] ?? '') }}"/>
                             </div>
                             <div class="flex-1 min-w-0">
                                 <h3 class="text-lg font-bold text-gray-900 dark:text-gray-100 mb-1">
-                                    <a href="{{ url("/Movies?imdb={$movie['imdbid']}") }}"
+                                    <a href="{{ route('movie.view', ['imdbid' => $movie['imdbid']]) }}"
                                        class="hover:text-primary-600">
                                         {{ e($movie['title'] ?? '') }}
                                         @if(!empty($movie['year']))
@@ -194,7 +178,7 @@
                                 @if(!empty($movie['tagline']))
                                     <p class="text-xs italic text-gray-600 dark:text-gray-400 mb-2">{{ e($movie['tagline']) }}</p>
                                 @endif
-                                <span class="inline-flex items-center px-2 py-1 category-badge text-primary-800 text-xs font-semibold rounded-full border border-primary-200">
+                                <span class="inline-flex items-center px-2 py-1 bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 text-xs font-semibold rounded-full border border-primary-200 dark:border-primary-800">
                                     <i class="fa fa-folder-open mr-1"></i>{{ !empty($movie['categoryNames']) ? e($movie['categoryNames']) : 'All' }}
                                 </span>
                             </div>
@@ -239,9 +223,9 @@
         </div>
     @else
         <!-- Empty State -->
-        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+        <div class="surface-panel rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700">
             <div class="text-center py-16 px-6">
-                <div class="mx-auto h-24 w-24 empty-state-bg rounded-full flex items-center justify-center mb-6 shadow-sm">
+                <div class="mx-auto h-24 w-24 surface-panel-alt rounded-full flex items-center justify-center mb-6 shadow-sm">
                     <i class="fa fa-film text-5xl text-primary-600"></i>
                 </div>
                 <h3 class="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">No Movies in Watchlist</h3>
