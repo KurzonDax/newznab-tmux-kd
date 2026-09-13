@@ -144,7 +144,7 @@
                                            target="_blank"
                                            href="{{ $site['dereferrer_link'] }}http://www.imdb.com/title/tt{{ $movie['imdbid'] }}"
                                            title="View on IMDB">
-                                            <i class="fa fa-external-link mr-1"></i>IMDB
+                                            <i class="fas fa-up-right-from-square mr-1"></i>IMDB
                                         </a>
                                     </div>
                                 </div>
@@ -193,7 +193,7 @@
                                 <a class="inline-flex items-center px-3 py-1.5 bg-yellow-400 hover:bg-yellow-500 text-gray-900 text-xs font-semibold rounded-full transition-colors"
                                    target="_blank"
                                    href="{{ $site['dereferrer_link'] }}http://www.imdb.com/title/tt{{ $movie['imdbid'] }}">
-                                    <i class="fa fa-external-link mr-1"></i>IMDB
+                                    <i class="fas fa-up-right-from-square mr-1"></i>IMDB
                                 </a>
                                 <span class="text-xs text-gray-500 dark:text-gray-400 flex items-center">
                                     <i class="fa fa-calendar mr-1"></i>{{ isset($movie['created_at']) ? date('M d, Y', strtotime($movie['created_at'])) : '' }}
