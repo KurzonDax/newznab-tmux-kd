@@ -35,6 +35,24 @@ class ReleaseBrowseService
     ) {}
 
     /**
+     * Refresh release artifacts for an entity cover page, including cached pages.
+     *
+     * @param  iterable<int, object>  $entities
+     */
+    public function loadCoverReleaseData(iterable $entities): void
+    {
+        $releases = [];
+        foreach ($entities as $entity) {
+            foreach (($entity->releases ?? []) as $release) {
+                $releases[] = $release;
+            }
+        }
+
+        $this->previewDataLoader->load($releases);
+        $this->mediaInfoAvailabilityLoader->load($releases);
+    }
+
+    /**
      * Used for Browse results on the web frontend with optional search term filtering via search index.
      * Selects only columns needed by the browse/search Blade views.
      *
