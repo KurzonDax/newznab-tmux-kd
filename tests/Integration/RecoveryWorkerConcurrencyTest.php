@@ -9,7 +9,6 @@ use App\Services\Binaries\BinariesConfig;
 use App\Services\Binaries\CollectionHandler;
 use App\Services\Binaries\HeaderParser;
 use App\Services\Binaries\HeaderStorageService;
-use App\Services\BlacklistService;
 use App\Services\CollectionsCleaningService;
 use App\Services\NNTP\NntpProvider;
 use App\Services\ObfuscationRecovery\RecoveryAlgorithm;
@@ -20,7 +19,6 @@ use App\Services\ObfuscationRecovery\RecoveryCaptureBatch;
 use App\Services\ObfuscationRecovery\RecoveryConfig;
 use App\Services\ObfuscationRecovery\RecoveryConstructionTargets;
 use App\Services\ObfuscationRecovery\RecoveryControl;
-use App\Services\ObfuscationRecovery\RecoveryDownload;
 use App\Services\ObfuscationRecovery\RecoveryEnrichmentResume;
 use App\Services\ObfuscationRecovery\RecoveryEvidence;
 use App\Services\ObfuscationRecovery\RecoveryFilePlan;
@@ -96,6 +94,7 @@ final class RecoveryWorkerConcurrencyTest extends TestCase
         });
         (require database_path('migrations/2026_09_07_172435_add_obfuscation_recovery_storage.php'))->up();
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
+        (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
         DB::table('settings')->insert([['name' => 'categorizeforeign', 'value' => 0], ['name' => 'catwebdl', 'value' => 0], ['name' => 'running', 'value' => 1]]);
         DB::table('settings')->where('name', 'obfuscation_recovery_enabled')->update(['value' => 1]);
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.fixture', 'obfuscation_recovery_profile' => 'both']);
@@ -461,7 +460,7 @@ final class RecoveryWorkerConcurrencyTest extends TestCase
         }
     }
 
-    public function test_differing_overlapping_ranges_defer_while_their_shared_attempt_is_running(): void
+    public function test_widened_retained_window_reuses_the_running_observation_for_its_required_context(): void
     {
         [, , $bundle] = $this->seedFrontier(false, 3);
         $this->settingsThreads(2);
@@ -472,21 +471,16 @@ final class RecoveryWorkerConcurrencyTest extends TestCase
         DB::table('obfuscation_recovery_scan_windows')->update(['requested_last' => 600]);
         $planner->step();
         $planner->step();
-        $claim = app(RecoveryWork::class)->claim(RecoveryStage::Download);
-        $this->assertNotNull($claim);
-        $this->assertSame(600, $claim->payload['last']);
-        $provider = NntpProvider::fromConfig($this->providers[0]);
-        $this->app->instance(BlacklistService::class, new NeverBlacklistedService);
-        $this->assertSame('range_pending', app(RecoveryDownload::class)->run($claim, [$provider]));
+        $this->assertNull(app(RecoveryWork::class)->claim(RecoveryStage::Download));
         $worker->wait();
         $this->assertTrue($worker->isSuccessful(), $worker->getErrorOutput());
-        DB::table('obfuscation_recovery_work')->where('id', $claim->id)->update(['due_at' => now()]);
-        $next = app(RecoveryWork::class)->claim(RecoveryStage::Download);
-        $this->assertNotNull($next);
-        $this->assertSame('frontier_rebuilt', app(RecoveryDownload::class)->run($next, [$provider]));
-        $this->assertCount(2, $this->events('request'));
+        $planner->step();
+        $planner->step();
+        $this->assertNull(app(RecoveryWork::class)->claim(RecoveryStage::Download));
+        $this->assertCount(1, $this->events('request'));
+        $this->assertSame(1, DB::table('obfuscation_recovery_frontier_requests')->count());
         $this->assertSame(1, DB::table('obfuscation_recovery_budgets')->where('purpose', 'frontier_rebuild')->count());
-        $this->assertSame(2, DB::table('obfuscation_recovery_attempts')->count());
+        $this->assertSame(1, DB::table('obfuscation_recovery_attempts')->count());
         $this->assertSame($bundle->revision, DB::table('obfuscation_recovery_bundles')->where('id', $bundle->id)->value('revision'));
     }
 

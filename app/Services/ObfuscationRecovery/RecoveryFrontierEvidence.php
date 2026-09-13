@@ -9,6 +9,57 @@ use Illuminate\Support\Carbon;
 
 final class RecoveryFrontierEvidence
 {
+    /** @return array{first:int,last:int,expires_at:string}|null */
+    public function interval(Connection $connection, object $bundle, int $position, bool $sealed): ?array
+    {
+        $partition = intdiv($position - 1, 20000) * 20000 + 1;
+        $windows = RecoveryFrontierWindows::overlapping($connection, $bundle, $partition, $partition + 19999, $sealed)
+            ->orderBy('requested_first')->orderBy('requested_last')->limit(1001)->get();
+        if ($windows->count() > 1000) {
+            return null;
+        }
+        $components = [];
+        foreach ($windows as $window) {
+            $first = max($partition, (int) $window->requested_first);
+            $last = min($partition + 19999, (int) $window->requested_last);
+            $index = count($components) - 1;
+            if ($index >= 0 && $first <= $components[$index]['last'] + 1) {
+                $components[$index]['last'] = max($last, $components[$index]['last']);
+                $components[$index]['expires_at'] = min($window->expires_at, $components[$index]['expires_at']);
+            } else {
+                $components[] = ['first' => $first, 'last' => $last, 'expires_at' => $window->expires_at];
+            }
+        }
+        foreach ($components as $component) {
+            if ($component['first'] <= $position && $component['last'] >= $position) {
+                $coverage = $connection->table('obfuscation_recovery_coverage')->where('source_epoch', $bundle->source_epoch)
+                    ->where('groups_id', $bundle->groups_id)->where('capture_generation', $bundle->capture_generation)
+                    ->where('kind', $sealed ? 'retained' : 'captured')->where('direction', 'Head')
+                    ->where('first_article', '<=', $component['last'])->where('last_article', '>=', $component['first'])
+                    ->orderBy('first_article')->limit(1001)->get();
+                if ($coverage->count() > 1000) {
+                    return null;
+                }
+                $holes = RecoveryCoverage::holes($component['first'], $component['last'], $coverage->map(
+                    static fn (object $row): array => [(int) $row->first_article, (int) $row->last_article])->all());
+                foreach ($holes as [$first, $last]) {
+                    if ($first <= $position && $last >= $position) {
+                        return null;
+                    }
+                    if ($last < $position) {
+                        $component['first'] = $last + 1;
+                    } else {
+                        $component['last'] = min($component['last'], $first - 1);
+                    }
+                }
+
+                return $component;
+            }
+        }
+
+        return null;
+    }
+
     /** @param array{first_article:int,last_article:int,first_postdate:string,last_postdate:string,changed_at:string} $envelope */
     public function answer(Connection $connection, string $scope, int $first, int $last, array $envelope): string
     {
@@ -54,20 +105,14 @@ final class RecoveryFrontierEvidence
 
     public function retainedHead(Connection $connection, object $bundle, int $first, int $last, bool $sealed): bool
     {
-        $windows = $connection->table('obfuscation_recovery_scan_windows')->where('source_epoch', $bundle->source_epoch)
-            ->where('groups_id', $bundle->groups_id)->where('capture_generation', $bundle->capture_generation)
-            ->where('requested_first', '<=', $last)->where('requested_last', '>=', $first)
-            ->when(! $sealed, fn ($query) => $query->where('expires_at', '>', now()))
+        $windows = RecoveryFrontierWindows::overlapping($connection, $bundle, $first, $last, $sealed)
             ->orderBy('requested_first')->limit(1001)->get();
         if ($windows->count() > 1000 || RecoveryCoverage::holes($first, $last, $windows->map(
             static fn (object $row): array => [(int) $row->requested_first, (int) $row->requested_last])->all()) !== []) {
             return false;
         }
-        if (! $sealed) {
-            return true;
-        }
         $scope = RecoveryPositiveCoverage::scope($bundle->source_epoch, (int) $bundle->groups_id, (int) $bundle->capture_generation);
-        $ranges = $connection->table('obfuscation_recovery_coverage')->where('scope_digest', $scope)->where('kind', 'retained')
+        $ranges = $connection->table('obfuscation_recovery_coverage')->where('scope_digest', $scope)->where('kind', $sealed ? 'retained' : 'captured')
             ->where('direction', 'Head')->where('first_article', '<=', $last)->where('last_article', '>=', $first)
             ->orderBy('first_article')->limit(1001)->get();
 

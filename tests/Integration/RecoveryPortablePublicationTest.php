@@ -43,9 +43,20 @@ final class RecoveryPortablePublicationTest extends TestCase
             $case === 'rar4' ? 9 : 2, frontier: $frontier);
     }
 
+    #[DataProvider('retainedControls')]
+    public function test_retained_recovery_preserves_real_refusal_and_initialization_outcomes(string $control): void
+    {
+        $this->buildPortablePublication('media1', false, 5, 2, 2, frontier: 'retained_right_'.$control);
+    }
+
+    public static function retainedControls(): array
+    {
+        return [['missing'], ['policy'], ['initialization_failure']];
+    }
+
     public static function frontierCases(): array
     {
-        return [['media1', 'interleaved'], ['rar4', 'interleaved'], ['media1', 'legacy'], ['rar4', 'legacy'],
+        return [['media1', 'retained_right'], ['rar4', 'retained_right'], ['media1', 'interleaved'], ['rar4', 'interleaved'], ['media1', 'legacy'], ['rar4', 'legacy'],
             ['media1', 'sealed_generation'], ['rar4', 'sealed_generation'], ['media1', 'cross_chunk'], ['rar4', 'cross_chunk']];
     }
 }

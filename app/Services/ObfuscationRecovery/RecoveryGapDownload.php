@@ -106,7 +106,8 @@ final class RecoveryGapDownload
                     return $this->finish($claim, $frontier ? 'frontier_rebuilt' : 'captured');
                 }
             }
-            if ($reservation->physicalAttempt < 2 && $result->transport->outcome !== 'semantic_failure') {
+            if ($reservation->physicalAttempt < 2 && $result->transport->outcome !== 'semantic_failure'
+                && (! $frontier || $budget->frontierPending($claim))) {
                 $work->defer($claim);
 
                 return 'retry_pending';

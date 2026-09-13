@@ -31,8 +31,10 @@ trait InteractsWithRecoveryNntpServer
         }
     }
 
-    /** @param array<string,string> $dialogue */
-    private function server(string $response, bool $drip = false, bool $tls = false, int $position = 1, string $messageId = 'fixture@local', array $dialogue = []): NntpProvider
+    /** @param array<string,string> $dialogue
+     * @param  list<array<string,string>>  $conversations
+     */
+    private function server(string $response, bool $drip = false, bool $tls = false, int $position = 1, string $messageId = 'fixture@local', array $dialogue = [], array $conversations = []): NntpProvider
     {
         $this->assertTrue(extension_loaded('pcntl'), 'The loopback transport layer is required.');
         $context = stream_context_create($tls ? ['ssl' => ['local_cert' => $this->certificate(), 'verify_peer' => false]] : []);
@@ -42,33 +44,35 @@ trait InteractsWithRecoveryNntpServer
         $pid = pcntl_fork();
         $this->assertGreaterThanOrEqual(0, $pid);
         if ($pid === 0) {
-            $peer = stream_socket_accept($listener, 2);
-            fclose($listener);
-            if (! is_resource($peer)) {
-                exit(1);
-            }
-            stream_set_timeout($peer, 2);
-            if ($tls && @stream_socket_enable_crypto($peer, true, STREAM_CRYPTO_METHOD_TLS_SERVER) !== true) {
-                fclose($peer);
-                exit(3);
-            }
-            fwrite($peer, "200 local fixture\r\n");
-            foreach ($dialogue === [] ? ["BODY <{$messageId}>\r\n" => $response] : $dialogue as $expected => $reply) {
-                $command = fgets($peer);
-                if ($command !== $expected) {
+            foreach ($conversations === [] ? [$dialogue] : $conversations as $conversation) {
+                $peer = stream_socket_accept($listener, 2);
+                if (! is_resource($peer)) {
+                    exit(1);
+                }
+                stream_set_timeout($peer, 2);
+                if ($tls && @stream_socket_enable_crypto($peer, true, STREAM_CRYPTO_METHOD_TLS_SERVER) !== true) {
                     fclose($peer);
-                    exit(2);
+                    exit(3);
                 }
-                foreach (str_split($reply, $drip ? 1 : 4096) as $chunk) {
-                    if (@fwrite($peer, $chunk) === false) {
-                        break;
+                fwrite($peer, "200 local fixture\r\n");
+                foreach ($conversation === [] ? ["BODY <{$messageId}>\r\n" => $response] : $conversation as $expected => $reply) {
+                    $command = fgets($peer);
+                    if ($command !== $expected) {
+                        fclose($peer);
+                        exit(2);
                     }
-                    if ($drip) {
-                        usleep(40000);
+                    foreach (str_split($reply, $drip ? 1 : 4096) as $chunk) {
+                        if (@fwrite($peer, $chunk) === false) {
+                            break;
+                        }
+                        if ($drip) {
+                            usleep(40000);
+                        }
                     }
                 }
+                fclose($peer);
             }
-            fclose($peer);
+            fclose($listener);
             exit(0);
         }
         $this->children[] = $pid;
