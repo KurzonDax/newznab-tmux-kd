@@ -237,6 +237,12 @@ final class RecoveryCapture
                     (new RecoveryFrontiers)->recordBatch($connection, $chunks);
                     if ($frontierTargets !== null) {
                         (new RecoveryFrontierTargets)->install($connection, $chunks, $frontierTargets);
+                        $connection->table('obfuscation_recovery_frontier_installs')->where('work_id', $claim->id)->where('claim_token', $claim->token)
+                            ->whereNull('installed_at')->whereIn('attempt_id', $connection->table('obfuscation_recovery_attempts')
+                            ->select('id')->where('outcome', 'success')->whereNotNull('settled_at'))
+                            ->update(['installed_at' => now(), 'evidence_digest' => hash('sha256', json_encode([
+                                (new RecoveryFrontiers)->combine($chunks), $frontierTargets,
+                            ], JSON_THROW_ON_ERROR))]);
                     }
                     $returned = [];
                     foreach ($chunks as $chunk) {

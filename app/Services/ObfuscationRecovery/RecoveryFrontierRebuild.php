@@ -106,12 +106,20 @@ final class RecoveryFrontierRebuild
         $context = (new RecoverySettlement)->context($bundle->source_epoch, (int) $bundle->groups_id, (int) $bundle->capture_generation,
             $envelope['first_article'], $envelope['last_article'], $envelope['first_postdate'], $envelope['last_postdate'], $sealed);
         $unresolved = 'frontier_boundary_unresolved';
+        $scope = RecoveryPositiveCoverage::scope($bundle->source_epoch, (int) $bundle->groups_id, (int) $bundle->capture_generation);
         foreach (['middle', 'left', 'right'] as $side) {
+            if ($side !== 'middle' && $context[$side] !== null
+                && ! (new RecoveryFrontierRequirement)->legacy(DB::connection(), $scope, $context[$side], $context[$side], null, null)) {
+                continue;
+            }
             $progress = (new RecoveryIdentity)->digest(['frontier-progress', (string) $id, (string) $bundle->revision, $side]);
             $initial = $side === 'right' ? $envelope['last_article'] + 1 : ($side === 'left' ? $envelope['first_article'] - 1 : $envelope['first_article']);
             DB::table('obfuscation_recovery_frontier_progress')->insertOrIgnore(['scope' => $progress, 'cursor' => max(0, $initial)]);
             $position = DB::table('obfuscation_recovery_frontier_progress')->where('scope', $progress)->first();
             $cursor = (int) $position->cursor;
+            if ($side !== 'middle' && $context[$side] !== null) {
+                $cursor = $context[$side];
+            }
             if ($cursor < 1 || ($side === 'middle' && $cursor > $envelope['last_article'])
                 || ($side === 'left' && $context['left'] !== null && $cursor < $context['left'])
                 || ($side === 'right' && $context['right'] !== null && $cursor > $context['right'])) {
@@ -147,15 +155,13 @@ final class RecoveryFrontierRebuild
             $first = $interval['first'];
             $last = $interval['last'];
             $window->expires_at = $interval['expires_at'];
-            $scope = RecoveryPositiveCoverage::scope($bundle->source_epoch, (int) $bundle->groups_id, (int) $bundle->capture_generation);
             if (! (new RecoveryFrontierEvidence)->retainedHead(DB::connection(), $bundle, $first, $last, $sealed)) {
                 $unresolved = 'frontier_boundary_unavailable';
 
                 continue;
             }
             if ((new RecoveryFrontierEvidence)->answer(DB::connection(), $scope, $first, $last, $envelope) === 'examined') {
-                (new RecoveryFrontiers)->replaceLegacy(DB::connection(), $scope, $first, $last);
-                if (! RecoveryFrontierConflicts::overlapping(DB::connection(), $scope, $first, $last, ['unknown', 'ordering'])->exists()) {
+                if ((new RecoveryFrontierEvidence)->retire(DB::connection(), $scope, $first, $last, $envelope)) {
                     DB::table('obfuscation_recovery_frontier_progress')->where('scope', $progress)
                         ->update(['cursor' => $side === 'left' ? $first - 1 : $last + 1]);
                 }
@@ -177,23 +183,10 @@ final class RecoveryFrontierRebuild
     }
 
     /** @param array{first_article:int,last_article:int,first_postdate:string,last_postdate:string,changed_at:string} $envelope */
-    private function queue(object $bundle, int $generation, object $window, int $first, int $last, int $partition, array $envelope): string
+    public function queue(object $bundle, int $generation, object $window, int $first, int $last, int $partition, array $envelope): string
     {
         $identity = new RecoveryIdentity;
         $budgetOwner = $identity->digest(['frontier-range', $bundle->source_epoch, (string) $bundle->groups_id, (string) RecoveryFrontiers::VERSION, (string) $partition]);
-        $context = (new RecoverySettlement)->context($bundle->source_epoch, (int) $bundle->groups_id, (int) $bundle->capture_generation,
-            $envelope['first_article'], $envelope['last_article'], $envelope['first_postdate'], $envelope['last_postdate'], $this->sealed($bundle));
-        $pending = DB::table('obfuscation_recovery_frontier_requests')->where('budget_owner', $budgetOwner)->where('capture_generation', $generation)
-            ->where('outcome', 'pending')->where('expires_at', '>', now())->where('requested_first', '<=', $last)->where('requested_last', '>=', $first)
-            ->when($context['left'] !== null, fn ($query) => $query->where('requested_last', '>=', $context['left']))
-            ->when($context['right'] !== null, fn ($query) => $query->where('requested_first', '<=', $context['right']))
-            ->orderBy('id')->first();
-        if ($pending !== null && (new RecoveryFrontierEvidence)->retainedHead(DB::connection(), $bundle,
-            (int) $pending->requested_first, (int) $pending->requested_last, $this->sealed($bundle))) {
-            $first = (int) $pending->requested_first;
-            $last = (int) $pending->requested_last;
-            $window->expires_at = min($window->expires_at, $pending->expires_at);
-        }
         $owner = $identity->digest([$budgetOwner, (string) $generation, (string) $first, (string) $last]);
         DB::table('obfuscation_recovery_bundles')->insertOrIgnore([
             'owner_digest' => $owner, 'kind' => 'frontier', 'groups_id' => $bundle->groups_id, 'profile' => $bundle->profile,
@@ -208,20 +201,30 @@ final class RecoveryFrontierRebuild
             'created_at' => now(), 'updated_at' => now(),
         ]);
         $request = DB::table('obfuscation_recovery_frontier_requests')->where('bundle_id', $ownerId)->first();
+        if ($request->superseded_by !== null) {
+            return 'frontier_rebuild_unresolved';
+        }
+        if (DB::table('obfuscation_recovery_work')->where('bundle_id', $ownerId)->where('status', 'claimed')->exists()) {
+            return 'frontier_rebuild_pending';
+        }
         $ownerBundle = DB::table('obfuscation_recovery_bundles')->where('id', $ownerId)->first();
         $validTargets = (new RecoveryFrontierTargets)->authorized(DB::connection(), $ownerBundle,
             ['first' => $first, 'last' => $last, 'version' => RecoveryFrontiers::VERSION], true) ?? [];
         DB::table('obfuscation_recovery_frontier_targets')->where('request_id', $request->id)
-            ->whereNotIn('id', array_column($validTargets, 'id'))->delete();
+            ->whereNotIn('id', array_column($validTargets, 'id'))->update(['outcome' => 'obsolete']);
         if (count($validTargets) >= 16 && ! in_array((int) $bundle->id, array_map(intval(...), array_column($validTargets, 'bundle_id')), true)) {
             return $this->reason($bundle, 'frontier_targets_pending');
         }
-        DB::table('obfuscation_recovery_frontier_targets')->insertOrIgnore([
-            'request_id' => $request->id, 'bundle_id' => $bundle->id, 'revision' => $bundle->revision,
-            'plan_digest' => $this->sealed($bundle) ? hash('sha256', $bundle->sealed_plan) : null,
-            'capture_generation' => $bundle->capture_generation, 'first_article' => $first, 'last_article' => $last,
-            'envelope' => json_encode($envelope, JSON_THROW_ON_ERROR),
-        ]);
+        if (! in_array((int) $bundle->id, array_map(intval(...), array_column($validTargets, 'bundle_id')), true)) {
+            $planDigest = $this->sealed($bundle) ? hash('sha256', $bundle->sealed_plan) : null;
+            DB::table('obfuscation_recovery_frontier_targets')->upsert([
+                'request_id' => $request->id, 'bundle_id' => $bundle->id, 'revision' => $bundle->revision,
+                'plan_digest' => $planDigest, 'capture_generation' => $bundle->capture_generation,
+                'first_article' => $first, 'last_article' => $last, 'envelope' => json_encode($envelope, JSON_THROW_ON_ERROR),
+                'authority_digest' => hash('sha256', json_encode([$bundle->capture_generation, $planDigest, $envelope], JSON_THROW_ON_ERROR)),
+                'outcome' => 'pending',
+            ], ['request_id', 'bundle_id', 'revision', 'first_article', 'last_article', 'authority_digest'], ['outcome']);
+        }
         if (in_array($request->outcome, ['frontier_limit_reached', 'frontier_unresolved', 'expired_unresolved'], true)) {
             (new RecoveryFrontierAllowance)->grant($request, $ownerBundle);
             if (! app(RecoveryBudget::class)->frontierAvailable($request)) {

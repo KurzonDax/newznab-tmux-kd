@@ -92,6 +92,33 @@ final class RecoveryFrontierMariaDbTest extends TestCase
         $this->assertSame(3, DB::table('obfuscation_recovery_attempts')->count());
     }
 
+    public function test_concurrent_claimers_and_planners_redirect_inherited_work_once(): void
+    {
+        $this->coverage(20001, 40000);
+        $this->window(20001, 40000);
+        $bundle = $this->candidate(39000, 39001);
+        $this->seedInheritedHistory($bundle, 20001, 'r3_pending');
+        $results = $this->concurrently(static function (): string {
+            if (getmypid() % 2 === 0) {
+                (new RecoveryFrontierRebuild)->step();
+            }
+            $claim = app(RecoveryWork::class)->claim(RecoveryStage::Download);
+            if ($claim === null) {
+                return 'unclaimed';
+            }
+            if ($claim->payload['first'] !== 20001 || $claim->payload['last'] !== 40000) {
+                throw new \RuntimeException('An inherited clip escaped coalescing.');
+            }
+
+            return 'claimed';
+        });
+        $this->assertSame(1, count(array_filter($results, static fn (string $result): bool => $result === 'claimed')));
+        $this->assertSame(3, DB::table('obfuscation_recovery_frontier_requests')->count());
+        $this->assertSame(2, DB::table('obfuscation_recovery_frontier_requests')->where('outcome', 'superseded')->count());
+        $this->assertSame(1, DB::table('obfuscation_recovery_frontier_requests')->whereNotNull('superseded_by')->distinct()->count('superseded_by'));
+        $this->assertSame(0, DB::table('obfuscation_recovery_attempts')->count());
+    }
+
     /** @return list<string> */
     private function concurrently(\Closure $operation): array
     {

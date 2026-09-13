@@ -89,10 +89,14 @@ final class RecoveryWork
                 ->where('work.stage', $stage->value)->where('work.status', 'pending')->where('work.due_at', '<=', now()->format('Y-m-d H:i:s.u'))
                 ->whereColumn('work.revision', 'bundle.revision')->whereNotIn('bundle.state', RecoveryOwnership::INACTIVE_STATES)
                 ->orderBy('dispatch.last_dispatched_at')->orderBy('work.due_at')->orderBy('work.id')->limit(10)
-                ->get(['work.id', 'work.bundle_id', 'work.dispatch_scope']);
+                ->get(['work.id', 'work.bundle_id', 'work.dispatch_scope', 'work.purpose', 'bundle.groups_id']);
             $lock = in_array(DB::getDriverName(), ['mysql', 'mariadb'], true) ? 'for update skip locked' : true;
             $row = null;
             foreach ($candidates as $candidate) {
+                if ($candidate->purpose === RecoveryFrontierRebuild::PURPOSE
+                    && DB::table('obfuscation_recovery_controls')->where('scope', 'group:'.$candidate->groups_id)->lock($lock)->first() === null) {
+                    continue;
+                }
                 $bundle = DB::table('obfuscation_recovery_bundles')->where('id', $candidate->bundle_id)->lock($lock)->first();
                 if ($bundle === null || in_array($bundle->state, RecoveryOwnership::INACTIVE_STATES, true)) {
                     continue;
@@ -102,6 +106,10 @@ final class RecoveryWork
                 }
                 $row = DB::table('obfuscation_recovery_work')->where('id', $candidate->id)->where('status', 'pending')
                     ->where('revision', $bundle->revision)->where('due_at', '<=', now()->format('Y-m-d H:i:s.u'))->lock($lock)->first();
+                if ($row !== null && $row->purpose === RecoveryFrontierRebuild::PURPOSE
+                    && ! (new RecoveryFrontierDispatch)->prepare($bundle, $row)) {
+                    $row = null;
+                }
                 if ($row !== null && ! (new RecoveryOwnership)->current($bundle, $stage, $row->purpose,
                     json_decode($row->payload, true, flags: JSON_THROW_ON_ERROR))) {
                     DB::table('obfuscation_recovery_work')->where('id', $row->id)->update([
