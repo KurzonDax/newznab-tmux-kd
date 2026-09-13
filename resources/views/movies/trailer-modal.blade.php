@@ -4,12 +4,12 @@
         <h2 class="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">{{ $movie['title'] ?? 'Movie Trailer' }}</h2>
 
         @if(isset($movie['trailer']) && $movie['trailer'])
-            <div class="aspect-w-16 aspect-h-9 mb-4">
+            <div class="aspect-video mb-4">
                 <iframe src="https://www.youtube.com/embed/{{ $movie['trailer'] }}"
                         frameborder="0"
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                         allowfullscreen
-                        class="w-full h-96 rounded-lg">
+                        class="w-full h-full rounded-lg">
                 </iframe>
             </div>
         @else

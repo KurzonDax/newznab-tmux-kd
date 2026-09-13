@@ -62,7 +62,7 @@
                             </div>
                             <div class="grid grid-cols-5 gap-3 mb-3">
                                 <div class="col-span-2 text-gray-600 dark:text-gray-400">
-                                    <i class="fa fa-clock-o mr-1"></i>Expires:
+                                    <i class="far fa-clock mr-1"></i>Expires:
                                 </div>
                                 <div class="col-span-3">
                                     @isset($preview['expires_at'])

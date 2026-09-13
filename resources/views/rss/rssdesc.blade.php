@@ -103,7 +103,7 @@
                         <strong class="text-gray-900 dark:text-gray-100 dark:text-white flex items-center">
                             <i class="fa fa-rss mr-2 text-primary-500 dark:text-primary-400"></i>Full Site Feed
                         </strong>
-                        <x-button-link href="{{ url('/rss/full-feed?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" variant="secondary" size="sm" target="_blank" icon="fa fa-external-link">Open Feed</x-button-link>
+                        <x-button-link href="{{ url('/rss/full-feed?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                     </div>
                     <div class="flex rounded-md shadow-sm">
                         <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" value="{{ url('/rss/full-feed?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" readonly id="fullFeedUrl">
@@ -119,7 +119,7 @@
                         <strong class="text-gray-900 dark:text-gray-100 dark:text-white flex items-center">
                             <i class="fa fa-shopping-basket mr-2 text-primary-500 dark:text-primary-400"></i>My Cart Feed
                         </strong>
-                        <x-button-link href="{{ url('/rss/cart?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" variant="secondary" size="sm" target="_blank" icon="fa fa-external-link">Open Feed</x-button-link>
+                        <x-button-link href="{{ url('/rss/cart?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                     </div>
                     <div class="flex rounded-md shadow-sm">
                         <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" value="{{ url('/rss/cart?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" readonly id="cartFeedUrl">
@@ -134,7 +134,7 @@
                         <strong class="text-gray-900 dark:text-gray-100 dark:text-white flex items-center">
                             <i class="fa fa-tv mr-2 text-green-600 dark:text-green-400"></i>My Shows Feed
                         </strong>
-                        <x-button-link href="{{ url('/rss/myshows?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" variant="secondary" size="sm" target="_blank" icon="fa fa-external-link">Open Feed</x-button-link>
+                        <x-button-link href="{{ url('/rss/myshows?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                     </div>
                     <div class="flex rounded-md shadow-sm">
                         <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" value="{{ url('/rss/myshows?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" readonly id="myShowsFeedUrl">
@@ -149,7 +149,7 @@
                         <strong class="text-gray-900 dark:text-gray-100 dark:text-white flex items-center">
                             <i class="fa fa-film mr-2 text-red-600 dark:text-red-400"></i>My Movies Feed
                         </strong>
-                        <x-button-link href="{{ url('/rss/mymovies?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" variant="secondary" size="sm" target="_blank" icon="fa fa-external-link">Open Feed</x-button-link>
+                        <x-button-link href="{{ url('/rss/mymovies?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                     </div>
                     <div class="flex rounded-md shadow-sm">
                         <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" value="{{ url('/rss/mymovies?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" readonly id="myMoviesFeedUrl">
@@ -175,7 +175,7 @@
                         <strong class="text-gray-900 dark:text-gray-100 dark:text-white flex items-center">
                             <i class="fa fa-film mr-2 text-primary-600 dark:text-primary-400"></i>Trending Movies
                         </strong>
-                        <x-button-link href="{{ url('/rss/trending-movies?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" variant="secondary" size="sm" target="_blank" icon="fa fa-external-link">Open Feed</x-button-link>
+                        <x-button-link href="{{ url('/rss/trending-movies?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                     </div>
                     <div class="flex rounded-md shadow-sm">
                         <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" value="{{ url('/rss/trending-movies?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" readonly id="trendingMoviesFeedUrl">
@@ -189,7 +189,7 @@
                         <strong class="text-gray-900 dark:text-gray-100 dark:text-white flex items-center">
                             <i class="fa fa-tv mr-2 text-purple-600 dark:text-purple-400"></i>Trending TV Shows
                         </strong>
-                        <x-button-link href="{{ url('/rss/trending-shows?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" variant="secondary" size="sm" target="_blank" icon="fa fa-external-link">Open Feed</x-button-link>
+                        <x-button-link href="{{ url('/rss/trending-shows?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                     </div>
                     <div class="flex rounded-md shadow-sm">
                         <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" value="{{ url('/rss/trending-shows?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" readonly id="trendingShowsFeedUrl">
@@ -216,7 +216,7 @@
                                 <strong class="text-gray-900 dark:text-gray-100 dark:text-white flex items-center">
                                     <i class="fa fa-folder-open mr-2 text-yellow-600 dark:text-yellow-400"></i>{{ $category['title'] }}
                                 </strong>
-                                <x-button-link href="{{ url('/rss/category?id=' . $category['id'] . '&dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" variant="secondary" size="sm" target="_blank" icon="fa fa-external-link">Open Feed</x-button-link>
+                                <x-button-link href="{{ url('/rss/category?id=' . $category['id'] . '&dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                             </div>
                             <div class="flex rounded-md shadow-sm">
                                 <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" value="{{ url('/rss/category?id=' . $category['id'] . '&dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" readonly id="parentCat{{ $category['id'] }}Url">
@@ -248,7 +248,7 @@
                                     <strong class="text-gray-900 dark:text-gray-100 dark:text-white flex items-center">
                                         <i class="fa fa-tag mr-2 text-primary-500 dark:text-primary-400"></i>{{ $category['title'] }}
                                     </strong>
-                                    <x-button-link href="{{ url('/rss/category?id=' . $category['id'] . '&dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" variant="secondary" size="sm" target="_blank" icon="fa fa-external-link">Open Feed</x-button-link>
+                                    <x-button-link href="{{ url('/rss/category?id=' . $category['id'] . '&dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                                 </div>
                                 <div class="flex rounded-md shadow-sm">
                                     <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" value="{{ url('/rss/category?id=' . $category['id'] . '&dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" readonly id="subCat{{ $category['id'] }}Url">
