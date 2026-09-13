@@ -2,7 +2,7 @@
 
 
 @section('content')
-<div class="w-full contact-page-container mx-auto">
+<div class="w-full mx-auto">
     <div class="surface-panel rounded-xl shadow-sm mb-6">
         <div class="surface-panel-alt px-6 py-4 border-b rounded-t-lg">
             <h4 class="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-0">Contact Us</h4>
