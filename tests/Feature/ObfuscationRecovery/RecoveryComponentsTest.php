@@ -28,6 +28,7 @@ final class RecoveryComponentsTest extends TestCase
         (require database_path('migrations/2026_09_07_172435_add_obfuscation_recovery_storage.php'))->up();
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
         (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
+        (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
     }
 
     protected function tearDown(): void

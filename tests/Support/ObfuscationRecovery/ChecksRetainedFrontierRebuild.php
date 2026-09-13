@@ -13,9 +13,11 @@ use App\Services\ObfuscationRecovery\RecoveryCapture;
 use App\Services\ObfuscationRecovery\RecoveryCaptureBatch;
 use App\Services\ObfuscationRecovery\RecoveryConfig;
 use App\Services\ObfuscationRecovery\RecoveryDownload;
+use App\Services\ObfuscationRecovery\RecoveryFrontierAllowance;
 use App\Services\ObfuscationRecovery\RecoveryFrontierEvidence;
 use App\Services\ObfuscationRecovery\RecoveryFrontierRebuild;
 use App\Services\ObfuscationRecovery\RecoveryFrontiers;
+use App\Services\ObfuscationRecovery\RecoveryFrontierTargets;
 use App\Services\ObfuscationRecovery\RecoveryIdentity;
 use App\Services\ObfuscationRecovery\RecoveryPositiveCoverage;
 use App\Services\ObfuscationRecovery\RecoveryScanContext;
@@ -24,6 +26,7 @@ use App\Services\ObfuscationRecovery\RecoverySlots;
 use App\Services\ObfuscationRecovery\RecoveryStage;
 use App\Services\ObfuscationRecovery\RecoveryTransfer;
 use App\Services\ObfuscationRecovery\RecoveryWork;
+use App\Services\ObfuscationRecovery\RecoveryWorkClaim;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -35,6 +38,275 @@ use Tests\Support\NeverBlacklistedService;
 trait ChecksRetainedFrontierRebuild
 {
     use InteractsWithRecoveryNntpServer;
+    use SeedsInheritedFrontierHistory;
+
+    #[DataProvider('inheritedHistories')]
+    public function test_original_cutoff_histories_progress_with_preserved_spend(string $history, bool $plannerFirst): void
+    {
+        $bundle = $this->candidate(39000, 39001);
+        $this->coverage(20001, 40000);
+        $this->window(20001, 40000);
+        $seed = $this->seedInheritedHistory($bundle, 20001, $history);
+        $oldAttempts = DB::table('obfuscation_recovery_attempts')->count();
+        if ($plannerFirst || ! str_ends_with($history, '_pending')) {
+            (new RecoveryFrontierRebuild)->step();
+        }
+        $this->observe(true);
+        $this->assertSame($seed['attempts'], DB::table('obfuscation_recovery_attempts')->where('id', '<=', $oldAttempts)->orderBy('id')->get()->toJson());
+        $this->assertEquals($seed['policy'], DB::table('obfuscation_recovery_frontier_policy')->first());
+        $this->assertSame($oldAttempts + 1, DB::table('obfuscation_recovery_attempts')->count());
+        $this->assertSame(str_ends_with($history, '_pending') ? 0 : 1, DB::table('obfuscation_recovery_frontier_allowances')->count());
+        $this->assertSame('examined', (new RecoveryFrontierEvidence)->answer(DB::connection(),
+            RecoveryPositiveCoverage::scope($this->sourceEpoch(), 1, 1), 20001, 40000, (new RecoveryFrontierRebuild)->envelope($bundle)));
+        for ($visit = 0; $visit < 12; $visit++) {
+            (new RecoveryFrontierRebuild)->step();
+        }
+        $this->assertNull(app(RecoveryWork::class)->claim(RecoveryStage::Download));
+    }
+
+    public static function inheritedHistories(): array
+    {
+        return [['r1', true], ['r2', true], ['r3', true], ['r2_pending', true], ['r2_pending', false], ['r3_pending', true], ['r3_pending', false]];
+    }
+
+    public function test_pending_candidate_work_is_retired_when_its_witnesses_become_sufficient(): void
+    {
+        $bundle = $this->candidate(60001, 60010);
+        $this->coverage(1, 100000);
+        $this->window(60001, 80000);
+        $this->terminalRequest($bundle, 60001, 80000, false);
+        $scope = RecoveryPositiveCoverage::scope($this->sourceEpoch(), 1, 1);
+        (new RecoveryFrontiers)->savePoints(DB::connection(), $scope, [[50000, '2026-09-13 09:50:00'], [90000, '2026-09-13 14:10:00']], true);
+        $this->assertSame('ready', $this->assessment($bundle));
+        $this->assertNull(app(RecoveryWork::class)->claim(RecoveryStage::Download));
+        $this->assertSame('frontier_reused', DB::table('obfuscation_recovery_frontier_requests')->value('outcome'));
+        $this->assertSame(0, DB::table('obfuscation_recovery_attempts')->count());
+    }
+
+    #[DataProvider('reservationStates')]
+    public function test_claimed_partial_is_coalesced_only_before_its_reservation(string $reserved): void
+    {
+        $bundle = $this->candidate(39000, 39001);
+        $this->coverage(20001, 40000);
+        $this->window(20001, 40000);
+        $this->terminalRequest($bundle, 20001, 35404, false);
+        $row = DB::table('obfuscation_recovery_work')->first();
+        $token = (string) Str::uuid();
+        DB::table('obfuscation_recovery_work')->where('id', $row->id)->update([
+            'status' => 'claimed', 'claim_token' => $token, 'claim_expires_at' => now()->addMinute(),
+        ]);
+        $claim = new RecoveryWorkClaim((int) $row->id, (int) $row->bundle_id, 1, RecoveryStage::Download,
+            RecoveryFrontierRebuild::PURPOSE, $token, json_decode($row->payload, true, flags: JSON_THROW_ON_ERROR));
+        $budget = app(RecoveryBudget::class);
+        if ($reserved !== 'unreserved') {
+            $request = DB::table('obfuscation_recovery_frontier_requests')->first();
+            $reservation = $budget->reserve($request->budget_owner, RecoveryFrontierRebuild::PURPOSE,
+                $reserved === 'inherited_owner' ? $request->budget_owner : (new RecoveryFrontierAllowance)->logicalRequest($request), 33554432, 67108864);
+            if ($reserved === 'reserved') {
+                DB::table('obfuscation_recovery_frontier_requests')->where('id', $request->id)->update(['reserved_attempt_id' => $reservation->attemptId]);
+            }
+        }
+        $before = DB::table('obfuscation_recovery_frontier_requests')->get()->toJson();
+        $slots = app(RecoverySlots::class);
+        $slot = $slots->acquire(RecoveryConfig::fromSettings());
+        $provider = NntpProvider::fromConfig(['position' => 1, 'name' => 'fixture', 'host' => '127.0.0.1', 'port' => 1]);
+        $this->assertNull($budget->reserveGap($claim, $slot, $provider));
+        if ($reserved !== 'unreserved') {
+            $this->assertSame($before, DB::table('obfuscation_recovery_frontier_requests')->get()->toJson());
+            $this->assertTrue(app(RecoveryWork::class)->heartbeat($claim));
+            $this->assertSame(1, DB::table('obfuscation_recovery_attempts')->count());
+        } else {
+            $this->assertFalse(app(RecoveryWork::class)->heartbeat($claim));
+            $successor = app(RecoveryWork::class)->claim(RecoveryStage::Download);
+            $this->assertNotNull($successor);
+            $this->assertSame([20001, 40000], [$successor->payload['first'], $successor->payload['last']]);
+            $this->assertSame(0, DB::table('obfuscation_recovery_attempts')->count());
+        }
+        $slots->release($slot);
+    }
+
+    public static function reservationStates(): array
+    {
+        return [['unreserved'], ['reserved'], ['inherited_owner'], ['inherited_logical']];
+    }
+
+    public function test_alias_preserves_its_target_while_the_shared_successor_is_claimed(): void
+    {
+        $first = $this->candidate(39000, 39001);
+        $second = $this->candidate(39500, 39501);
+        $this->coverage(20001, 40000);
+        $this->window(20001, 40000);
+        $this->terminalRequest($first, 20001, 40000, false);
+        $work = app(RecoveryWork::class);
+        $claim = $work->claim(RecoveryStage::Download);
+        $this->assertNotNull($claim);
+        $this->terminalRequest($second, 20001, 35404, false);
+        $alias = DB::table('obfuscation_recovery_frontier_requests')->where('requested_last', 35404)->first();
+        $targets = DB::table('obfuscation_recovery_frontier_targets')->orderBy('id')->get()->toJson();
+        $this->assertNull($work->claim(RecoveryStage::Download));
+        $this->assertSame('pending', DB::table('obfuscation_recovery_frontier_requests')->where('id', $alias->id)->value('outcome'));
+        $this->assertSame($targets, DB::table('obfuscation_recovery_frontier_targets')->orderBy('id')->get()->toJson());
+        $this->assertTrue($work->heartbeat($claim));
+        $this->assertSame(0, DB::table('obfuscation_recovery_attempts')->count());
+        $this->assertTrue($work->defer($claim, 1));
+        $this->travel(2)->seconds();
+        $successor = $work->claim(RecoveryStage::Download);
+        $this->assertNotNull($successor);
+        $this->assertSame($claim->bundleId, $successor->bundleId);
+        $request = DB::table('obfuscation_recovery_frontier_requests')->where('bundle_id', $successor->bundleId)->first();
+        $this->assertSame('superseded', DB::table('obfuscation_recovery_frontier_requests')->where('id', $alias->id)->value('outcome'));
+        $this->assertSame(2, DB::table('obfuscation_recovery_frontier_targets')->where('request_id', $request->id)->count());
+    }
+
+    public function test_sealed_member_verification_cannot_be_retired_by_sufficient_range_summaries(): void
+    {
+        $bundle = $this->candidate(39000, 39001);
+        $envelope = (new RecoveryFrontierRebuild)->envelope($bundle);
+        $this->coverage(20001, 40000);
+        $this->window(20001, 40000);
+        $this->terminalRequest($bundle, 20001, 40000, false);
+        $plan = json_encode(['manifest_bytes' => 1], JSON_THROW_ON_ERROR);
+        DB::table('obfuscation_recovery_bundles')->where('id', $bundle->id)->update([
+            'state' => 'ready', 'sealed_plan' => $plan, 'manifest_verified_at' => now(), 'coverage_evidence' => json_encode($envelope, JSON_THROW_ON_ERROR),
+        ]);
+        DB::table('obfuscation_recovery_frontier_targets')->update(['plan_digest' => hash('sha256', $plan)]);
+        DB::table('obfuscation_recovery_frontier_members')->insert([
+            'bundle_id' => $bundle->id, 'revision' => 1, 'article_number' => 39000, 'postdate' => '2026-09-13 12:00:00',
+            'observation_digest' => hash('sha256', 'member'), 'embedded_timestamp_ms' => 1,
+        ]);
+        DB::table('obfuscation_recovery_frontier_progress')->insert([
+            'scope' => (new RecoveryIdentity)->digest(['frontier-members', (string) $bundle->id, '1', hash('sha256', $plan)]), 'cursor' => 1,
+        ]);
+        $scope = RecoveryPositiveCoverage::scope($this->sourceEpoch(), 1, 1);
+        (new RecoveryFrontiers)->saveRange(DB::connection(), $scope, 20001, 40000, [], true, true);
+        $owner = DB::table('obfuscation_recovery_bundles')->where('kind', 'frontier')->first();
+        $payload = ['first' => 20001, 'last' => 40000, 'version' => RecoveryFrontiers::VERSION];
+        $this->assertFalse((new RecoveryFrontierTargets)->sufficient(DB::connection(), $owner, $payload));
+        $this->assertNotNull(app(RecoveryWork::class)->claim(RecoveryStage::Download));
+        $this->assertSame('pending', DB::table('obfuscation_recovery_frontier_requests')->value('outcome'));
+    }
+
+    #[DataProvider('unsafeInheritedHistories')]
+    public function test_omitted_history_repair_requires_unambiguous_installed_success(string $change): void
+    {
+        $bundle = $this->candidate(39000, 39001);
+        $this->coverage(20001, 40000);
+        $this->window(20001, 40000);
+        $seed = $this->seedInheritedHistory($bundle, 20001, 'r3');
+        match ($change) {
+            'failed' => DB::table('obfuscation_recovery_attempts')->where('id', 1)->update(['outcome' => 'transport_failure']),
+            'crash' => DB::table('obfuscation_recovery_attempts')->where('id', 1)->update(['outcome' => 'reserved', 'settled_at' => null]),
+            'uninstalled' => DB::table('obfuscation_recovery_frontier_ranges')->delete(),
+            'ambiguous' => DB::table('obfuscation_recovery_frontier_requests')->where('id', $seed['requests'][0])->update(['updated_at' => now()]),
+            'fresh' => DB::table('obfuscation_recovery_frontier_requests')->whereIn('id', $seed['requests'])->update(['created_at' => now()]),
+            'attributed_without_install' => DB::table('obfuscation_recovery_frontier_installs')->insert([
+                'attempt_id' => 1, 'request_id' => $seed['requests'][0], 'work_id' => 1, 'claim_token' => (string) Str::uuid(),
+            ]),
+        };
+        (new RecoveryFrontierRebuild)->step();
+        $claim = app(RecoveryWork::class)->claim(RecoveryStage::Download);
+        $this->assertNotNull($claim);
+        $slots = app(RecoverySlots::class);
+        $slot = $slots->acquire(RecoveryConfig::fromSettings());
+        $provider = NntpProvider::fromConfig(['position' => 1, 'name' => 'fixture', 'host' => '127.0.0.1', 'port' => 1]);
+        $this->assertNull(app(RecoveryBudget::class)->reserveGap($claim, $slot, $provider));
+        $this->assertSame(0, DB::table('obfuscation_recovery_frontier_allowances')->count());
+        $this->assertSame(2, DB::table('obfuscation_recovery_attempts')->count());
+        $slots->release($slot);
+    }
+
+    public static function unsafeInheritedHistories(): array
+    {
+        return [['failed'], ['crash'], ['uninstalled'], ['ambiguous'], ['fresh'], ['attributed_without_install']];
+    }
+
+    public function test_unrelated_legacy_uncertainty_does_not_require_recapture(): void
+    {
+        $bundle = $this->scopedCandidate();
+        $this->coverage(1, 100000);
+        foreach ([1, 20001, 40001, 60001, 80001] as $first) {
+            $this->window($first, $first + 19999);
+        }
+        $scope = RecoveryPositiveCoverage::scope($this->sourceEpoch(), 1, 1);
+        $frontiers = new RecoveryFrontiers;
+        $frontiers->savePoints(DB::connection(), $scope, [[50000, '2026-09-13 09:50:00'], [90000, '2026-09-13 14:10:00']], true);
+        foreach ([[40001, 60000], [60001, 80000], [90000, 90000]] as [$first, $last]) {
+            $frontiers->saveRange(DB::connection(), $scope, $first, $last, [], true, true);
+        }
+        $this->assertSame('ready', $this->assessment($bundle));
+        DB::table('obfuscation_recovery_frontier_conflicts')->insert([
+            'identity' => hash('sha256', 'unrelated-legacy'), 'scope_digest' => $scope,
+            'kind' => 'unknown', 'first_article' => 85000, 'last_article' => 85001,
+        ]);
+        $this->assertSame('ready', $this->assessment($bundle));
+        for ($visit = 0; $visit < 8; $visit++) {
+            (new RecoveryFrontierRebuild)->step();
+        }
+        $this->assertSame(0, DB::table('obfuscation_recovery_frontier_requests')->count());
+        $this->assertSame(1, DB::table('obfuscation_recovery_frontier_conflicts')->count());
+        $this->assertSame('examined', (new RecoveryFrontierEvidence)->answer(DB::connection(), $scope, 80001, 100000,
+            (new RecoveryFrontierRebuild)->envelope($bundle)));
+        $this->assertSame('frontier_rebuild_required', $this->assessment($this->candidate(85000, 85001)));
+    }
+
+    #[DataProvider('scopedControls')]
+    public function test_candidate_scoping_preserves_required_uncertainty_and_frontier_guards(string $control, string $expected): void
+    {
+        $bundle = $this->scopedCandidate();
+        $this->coverage(1, 100000);
+        $scope = RecoveryPositiveCoverage::scope($this->sourceEpoch(), 1, 1);
+        (new RecoveryFrontiers)->savePoints(DB::connection(), $scope, [[50000, '2026-09-13 09:50:00'], [90000, '2026-09-13 14:10:00']], true);
+        DB::table('obfuscation_recovery_frontier_conflicts')->insert([
+            'identity' => hash('sha256', 'irrelevant'), 'scope_digest' => $scope, 'kind' => 'unknown', 'first_article' => 85000, 'last_article' => 85001,
+        ]);
+        if (in_array($control, ['member_legacy', 'witness_legacy', 'member_conflict', 'witness_conflict', 'unrelated_conflict'], true)) {
+            $article = match ($control) {
+                'witness_legacy', 'witness_conflict' => 90000,
+                'unrelated_conflict' => 85000,
+                default => 60005,
+            };
+            DB::table('obfuscation_recovery_frontier_conflicts')->insert([
+                'identity' => hash('sha256', 'required'), 'scope_digest' => $scope,
+                'kind' => str_ends_with($control, '_legacy') ? 'unknown' : 'contradiction', 'first_article' => $article, 'last_article' => $article,
+            ]);
+        } elseif (in_array($control, ['gap', 'expiry'], true)) {
+            DB::transaction(fn () => (new RecoveryPositiveCoverage)->expire(DB::connection(), $this->sourceEpoch(), 1, 1, $control === 'gap' ? 85000 : 60005));
+        } elseif ($control === 'quiet') {
+            $bundle->membership_changed_at = now()->subMinute()->format('Y-m-d H:i:s');
+        } elseif ($control === 'frozen') {
+            DB::table('obfuscation_recovery_frontiers')->where('article_number', 90000)->update(['postdate' => '2026-09-13 13:59:00']);
+        }
+        $this->assertSame($expected, $this->assessment($bundle));
+    }
+
+    public static function scopedControls(): array
+    {
+        return [['member_legacy', 'frontier_rebuild_required'], ['witness_legacy', 'frontier_rebuild_required'],
+            ['member_conflict', 'conflicting_posting_frontier'], ['witness_conflict', 'conflicting_boundary_witness'],
+            ['unrelated_conflict', 'ready'], ['gap', 'waiting_head_frontier'], ['expiry', 'unknown_capture_gap'],
+            ['quiet', 'waiting_quiet_interval'], ['frozen', 'waiting_head_frontier']];
+    }
+
+    private function scopedCandidate(): object
+    {
+        $bundle = $this->candidate(60001, 60010);
+        DB::table('obfuscation_recovery_runs')->whereIn('id', json_decode($bundle->candidate_runs, true, flags: JSON_THROW_ON_ERROR))
+            ->update(['partition_value' => '10', 'observed_count' => 10]);
+        foreach (range(60001, 60010) as $article) {
+            $message = 'member-'.$article.'@fixture.invalid';
+            DB::table('obfuscation_recovery_headers')->insert([
+                'source_epoch' => $this->sourceEpoch(), 'groups_id' => 1, 'capture_generation' => 1,
+                'message_id' => $message, 'source_message_id' => '<'.$message.'>', 'message_id_digest' => hash('sha256', $message),
+                'article_number' => $article, 'raw_subject' => 'Neutral candidate member', 'poster_identity' => 'fixture',
+                'source_date' => '2026-09-13 12:00:00 +0000', 'postdate' => '2026-09-13 12:00:00', 'advertised_bytes' => 100,
+                'advertised_total' => 10, 'original_part' => $article - 60000, 'embedded_timestamp_ms' => 1,
+                'profile' => $bundle->profile, 'key_digest' => hash('sha256', $message),
+                'first_observed_at' => '2026-09-13 12:00:00', 'last_observed_at' => '2026-09-13 12:00:00',
+            ]);
+        }
+
+        return $bundle;
+    }
 
     private function sourceEpoch(): string
     {
@@ -51,6 +323,7 @@ trait ChecksRetainedFrontierRebuild
         (require database_path('migrations/2026_09_07_172435_add_obfuscation_recovery_storage.php'))->up();
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
         (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
+        (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
         DB::table('settings')->where('name', 'obfuscation_recovery_enabled')->update(['value' => 1]);
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.fixture', 'obfuscation_recovery_profile' => 'media']);
         $provider = NntpProvider::fromConfig(['position' => 1, 'name' => $this->sourceEpoch(), 'host' => '127.0.0.1', 'port' => 1]);
@@ -75,7 +348,7 @@ trait ChecksRetainedFrontierRebuild
         $frontiers->saveRange(DB::connection(), $scope, 40001, 80000, [], true, true);
         $this->assertSame('ready', $this->assessment($bundle));
         DB::table('obfuscation_recovery_frontier_conflicts')->insert(['identity' => hash('sha256', 'legacy'),
-            'scope_digest' => $scope, 'kind' => 'unknown', 'first_article' => 85000, 'last_article' => 85000]);
+            'scope_digest' => $scope, 'kind' => 'unknown', 'first_article' => 90000, 'last_article' => 90000]);
         $this->assertSame('frontier_rebuild_required', $this->assessment($bundle));
         if ($retained) {
             $this->terminalRequest($bundle, 20001, 40000);
@@ -108,6 +381,30 @@ trait ChecksRetainedFrontierRebuild
     public static function retainedStates(): array
     {
         return [[false], [true]];
+    }
+
+    #[DataProvider('retainedStates')]
+    public function test_inherited_pending_clips_coalesce_before_a_claim_spends_the_tile(bool $plannerFirst): void
+    {
+        $bundle = $this->candidate(39000, 39001);
+        $this->coverage(20001, 40000);
+        $this->window(20001, 40000);
+        $this->terminalRequest($bundle, 20001, 35404, false);
+        $this->terminalRequest($bundle, 35405, 37000, false);
+        if ($plannerFirst) {
+            (new RecoveryFrontierRebuild)->step();
+        }
+        $claim = app(RecoveryWork::class)->claim(RecoveryStage::Download);
+        $this->assertNotNull($claim);
+        $this->assertSame([20001, 40000], [$claim->payload['first'], $claim->payload['last']]);
+        $this->assertSame(0, DB::table('obfuscation_recovery_attempts')->count());
+        $this->assertSame(2, DB::table('obfuscation_recovery_frontier_requests')->where('outcome', 'superseded')->count());
+        $this->assertTrue(app(RecoveryWork::class)->defer($claim, 1));
+        $this->travel(2)->seconds();
+        $this->observe(false);
+        $this->assertNull(app(RecoveryWork::class)->claim(RecoveryStage::Download));
+        $this->assertSame(1, DB::table('obfuscation_recovery_attempts')->count());
+        $this->assertSame(0, DB::table('obfuscation_recovery_frontier_allowances')->count());
     }
 
     #[DataProvider('retainedStates')]
@@ -168,6 +465,28 @@ trait ChecksRetainedFrontierRebuild
         $this->assertNotSame('ready', $this->assessment($bundle));
     }
 
+    #[DataProvider('installedPartialIntervals')]
+    public function test_installed_partial_successes_receive_the_existing_allowance(array $intervals): void
+    {
+        $bundle = $this->candidate(39000, 39001);
+        $this->coverage(20001, 40000);
+        $this->window(20001, 40000);
+        $this->fragmentedHistory(true, $intervals);
+        $before = DB::table('obfuscation_recovery_attempts')->orderBy('id')->get()->toJson();
+        (new RecoveryFrontierRebuild)->step();
+        $this->observe(true);
+        $this->assertSame(1, DB::table('obfuscation_recovery_frontier_allowances')->count());
+        $this->assertSame($before, DB::table('obfuscation_recovery_attempts')->where('id', '<=', 2)->orderBy('id')->get()->toJson());
+        $this->assertSame('examined', (new RecoveryFrontierEvidence)->answer(DB::connection(),
+            RecoveryPositiveCoverage::scope($this->sourceEpoch(), 1, 1), 20001, 40000, (new RecoveryFrontierRebuild)->envelope($bundle)));
+        $this->assertSame(100663296, (int) DB::table('obfuscation_recovery_budgets')->sum('debited_bytes'));
+    }
+
+    public static function installedPartialIntervals(): array
+    {
+        return ['same request' => [[[20001, 35404], [20001, 35404]]], 'overlapping requests' => [[[20001, 35404], [30000, 37000]]]];
+    }
+
     #[DataProvider('retainedStates')]
     public function test_historical_success_covers_the_remaining_articles_without_rewriting_old_debits(bool $tls): void
     {
@@ -192,7 +511,7 @@ trait ChecksRetainedFrontierRebuild
     }
 
     #[DataProvider('ineligibleHistories')]
-    public function test_only_installed_disjoint_successes_before_cutover_qualify(string $history): void
+    public function test_unattributed_or_ineligible_historical_successes_do_not_qualify(string $history): void
     {
         $this->candidate(39000, 39001);
         $this->coverage(20001, 40000);
@@ -206,7 +525,7 @@ trait ChecksRetainedFrontierRebuild
             'failures' => DB::table('obfuscation_recovery_attempts')->update(['outcome' => 'transport_failure']),
             'unsettled' => DB::table('obfuscation_recovery_attempts')->where('id', 1)->update(['settled_at' => null]),
             'full_tile' => (clone $requests)->where('id', 1)->update(['requested_first' => 20001, 'requested_last' => 40000]),
-            'overlapping' => (clone $requests)->where('id', 2)->update(['requested_last' => 39000]),
+            'unattributed_interval' => (clone $requests)->where('id', 2)->update(['requested_last' => 39000]),
             'late_installation' => (clone $requests)->update(['updated_at' => now()->addSecond()]),
             'other_epoch' => (clone $requests)->where('id', 1)->update(['source_epoch' => '00000000-0000-4000-8000-000000000554']),
         };
@@ -225,7 +544,7 @@ trait ChecksRetainedFrontierRebuild
     public static function ineligibleHistories(): array
     {
         return array_map(static fn (string $case): array => [$case], ['post_cutover', 'reused', 'uninstalled', 'failures', 'unsettled',
-            'full_tile', 'overlapping', 'late_installation', 'other_epoch']);
+            'full_tile', 'unattributed_interval', 'late_installation', 'other_epoch']);
     }
 
     public function test_connected_windows_do_not_bridge_a_positive_coverage_hole(): void
@@ -302,12 +621,22 @@ trait ChecksRetainedFrontierRebuild
         $policy = DB::table('obfuscation_recovery_frontier_policy')->first();
         $grants = DB::table('obfuscation_recovery_frontier_allowances')->get()->toJson();
         $attempts = DB::table('obfuscation_recovery_attempts')->get()->toJson();
+        $requests = DB::table('obfuscation_recovery_frontier_requests')->orderBy('id')->get()->toJson();
+        $targets = DB::table('obfuscation_recovery_frontier_targets')->orderBy('id')->get()->toJson();
+        $installs = DB::table('obfuscation_recovery_frontier_installs')->orderBy('attempt_id')->get()->toJson();
         $owner = DB::table('obfuscation_recovery_frontier_requests')->value('budget_owner');
         $this->travel(1)->hours();
         $migration = require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php');
         $migration->down();
         $migration->up();
         $migration->up();
+        $attribution = require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php');
+        $attribution->down();
+        $attribution->up();
+        $attribution->up();
+        $this->assertSame($requests, DB::table('obfuscation_recovery_frontier_requests')->orderBy('id')->get()->toJson());
+        $this->assertSame($targets, DB::table('obfuscation_recovery_frontier_targets')->orderBy('id')->get()->toJson());
+        $this->assertSame($installs, DB::table('obfuscation_recovery_frontier_installs')->orderBy('attempt_id')->get()->toJson());
         DB::table('obfuscation_recovery_frontier_progress')->delete();
         DB::table('settings')->where('name', 'obfuscation_recovery_enabled')->update(['value' => 0]);
         (new RecoveryFrontierRebuild)->step();
@@ -393,7 +722,7 @@ trait ChecksRetainedFrontierRebuild
         $frontiers = new RecoveryFrontiers;
         $frontiers->savePoints(DB::connection(), $scope, [[50000, '2026-09-13 09:50:00'], [90000, '2026-09-13 14:10:00']], true);
         $frontiers->saveRange(DB::connection(), $scope, 60001, 80000, [], true, true);
-        foreach ([55000, 85000] as $article) {
+        foreach ([50000, 90000] as $article) {
             DB::table('obfuscation_recovery_frontier_conflicts')->insert(['identity' => hash('sha256', 'legacy-'.$article),
                 'scope_digest' => $scope, 'kind' => 'unknown', 'first_article' => $article, 'last_article' => $article]);
         }
@@ -408,7 +737,7 @@ trait ChecksRetainedFrontierRebuild
 
     public function test_required_legacy_retirement_resumes_before_advancing_past_its_witness(): void
     {
-        $bundle = $this->candidate(60001, 60010);
+        $bundle = $this->candidate(60001, 60500);
         $this->coverage(1, 100000);
         foreach ([1, 20001, 40001, 60001, 80001] as $first) {
             $this->window($first, $first + 19999);
@@ -420,7 +749,7 @@ trait ChecksRetainedFrontierRebuild
         }
         $frontiers->savePoints(DB::connection(), $scope, [[50000, '2026-09-13 09:50:00'], [90000, '2026-09-13 14:10:00']], true);
         $frontiers->saveRange(DB::connection(), $scope, 40001, 100000, [], true, true);
-        foreach (array_chunk(range(80100, 80549), 100) as $articles) {
+        foreach (array_chunk(range(60001, 60450), 100) as $articles) {
             DB::table('obfuscation_recovery_frontier_conflicts')->insert(array_map(static fn (int $article): array => [
                 'identity' => hash('sha256', 'legacy-'.$article), 'scope_digest' => $scope,
                 'kind' => 'unknown', 'first_article' => $article, 'last_article' => $article,
@@ -442,7 +771,7 @@ trait ChecksRetainedFrontierRebuild
         ]);
     }
 
-    private function terminalRequest(object $bundle, int $first, int $last): void
+    private function terminalRequest(object $bundle, int $first, int $last, bool $spent = true): void
     {
         $identity = new RecoveryIdentity;
         $partition = intdiv($first - 1, 20000) * 20000 + 1;
@@ -463,6 +792,12 @@ trait ChecksRetainedFrontierRebuild
         ]);
         $work = app(RecoveryWork::class)->enqueueForBundle(RecoveryStage::Download, $id, 1, RecoveryFrontierRebuild::PURPOSE,
             ['first' => $first, 'last' => $last, 'version' => RecoveryFrontiers::VERSION]);
+        if (! $spent) {
+            DB::table('obfuscation_recovery_frontier_requests')->where('id', $request)->update(['outcome' => 'pending']);
+            DB::table('obfuscation_recovery_bundles')->where('id', $id)->update(['state' => 'frontier_pending', 'reason' => null]);
+
+            return;
+        }
         DB::table('obfuscation_recovery_work')->where('id', $work)->update(['status' => 'completed', 'result' => 'frontier_limit_reached']);
         $budget = app(RecoveryBudget::class);
         for ($i = 0; $i < 2; $i++) {
@@ -496,7 +831,8 @@ trait ChecksRetainedFrontierRebuild
         $slots->release($slot);
     }
 
-    private function fragmentedHistory(bool $tls = true): string
+    /** @param list<array{int,int}> $intervals */
+    private function fragmentedHistory(bool $tls = true, array $intervals = [[38339, 40000], [37966, 38338]]): string
     {
         $identity = new RecoveryIdentity;
         $owner = $identity->digest(['frontier-range', $this->sourceEpoch(), '1', (string) RecoveryFrontiers::VERSION, '20001']);
@@ -504,19 +840,22 @@ trait ChecksRetainedFrontierRebuild
             'owner_digest' => $identity->digest(['budget', $owner]), 'purpose' => RecoveryFrontierRebuild::PURPOSE,
             'debited_bytes' => $tls ? 67108864 : 133072, 'created_at' => now()->subHour(), 'updated_at' => now()->subHour(),
         ]);
-        foreach ([[38339, 40000], [37966, 38338]] as $ordinal => [$first, $last]) {
+        foreach ($intervals as $ordinal => [$first, $last]) {
             $when = now()->subMinutes(60 - $ordinal * 10);
-            $ownerId = DB::table('obfuscation_recovery_bundles')->insertGetId([
-                'owner_digest' => $identity->digest([$owner, '1', (string) $first, (string) $last]), 'kind' => 'frontier',
+            $ownerDigest = $identity->digest([$owner, '1', (string) $first, (string) $last]);
+            DB::table('obfuscation_recovery_bundles')->insertOrIgnore([
+                'owner_digest' => $ownerDigest, 'kind' => 'frontier',
                 'groups_id' => 1, 'profile' => RecoveryAlgorithm::Media->value, 'source_epoch' => $this->sourceEpoch(),
                 'capture_generation' => 1, 'state' => 'frontier_complete', 'created_at' => $when, 'updated_at' => $when,
             ]);
-            DB::table('obfuscation_recovery_frontier_requests')->insert([
+            $ownerId = DB::table('obfuscation_recovery_bundles')->where('owner_digest', $ownerDigest)->value('id');
+            DB::table('obfuscation_recovery_frontier_requests')->insertOrIgnore([
                 'bundle_id' => $ownerId, 'budget_owner' => $owner, 'groups_id' => 1, 'source_epoch' => $this->sourceEpoch(),
                 'capture_generation' => 1, 'evidence_version' => RecoveryFrontiers::VERSION, 'requested_first' => $first,
                 'requested_last' => $last, 'outcome' => 'frontier_rebuilt', 'expires_at' => now()->addDay(),
                 'created_at' => $when, 'updated_at' => $when->copy()->addSeconds(2),
             ]);
+            DB::table('obfuscation_recovery_frontier_requests')->where('bundle_id', $ownerId)->update(['updated_at' => $when->copy()->addSeconds(2)]);
             DB::table('obfuscation_recovery_attempts')->insert([
                 'budget_id' => $budgetId, 'request_digest' => $identity->digest(['request', $owner]),
                 'physical_attempt' => $ordinal + 1, 'token' => (string) Str::uuid(), 'reserved_bytes' => 33554432,
@@ -524,6 +863,8 @@ trait ChecksRetainedFrontierRebuild
                 'created_at' => $when, 'updated_at' => $when->copy()->addSecond(),
             ]);
             (new RecoveryFrontiers)->saveRange(DB::connection(), RecoveryPositiveCoverage::scope($this->sourceEpoch(), 1, 1), $first, $last, [], true, true);
+            DB::table('obfuscation_recovery_frontier_ranges')->where('first_article', $first)->where('last_article', $last)
+                ->update(['observed_at' => $when->copy()->addSeconds(2)]);
         }
         DB::table('obfuscation_recovery_frontier_policy')->update([
             'last_attempt_id' => DB::table('obfuscation_recovery_attempts')->max('id'),

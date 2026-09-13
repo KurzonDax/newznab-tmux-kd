@@ -34,7 +34,7 @@ final class RecoverySettlement
         $leftDate = Carbon::parse($firstPostdate, 'UTC')->subMinutes(120)->format('Y-m-d H:i:s');
         $rightDate = Carbon::parse($lastPostdate, 'UTC')->addMinutes(120)->format('Y-m-d H:i:s');
         $conflicts = DB::table('obfuscation_recovery_frontier_conflicts')->where('scope_digest', $scopeDigest);
-        $legacy = RecoveryFrontierConflicts::overlapping(DB::connection(), $scopeDigest, $containing[0], $containing[1], ['unknown', 'ordering'])->exists();
+        $legacy = (new RecoveryFrontierRequirement)->legacy(DB::connection(), $scopeDigest, $firstArticle, $lastArticle, $left, $right);
         $contradictions = (clone $conflicts)->where('kind', 'contradiction')->whereBetween('first_article', [$firstArticle, $lastArticle]);
         if ($candidate === null) {
             $contradiction = $contradictions->whereIn('first_article', [$firstArticle, $lastArticle])->exists();
@@ -73,14 +73,10 @@ final class RecoverySettlement
         string $firstPostdate, string $lastPostdate, bool $retainedPlan = false, ?Connection $connection = null): array
     {
         $connection ??= DB::connection();
-        $leftDate = Carbon::parse($firstPostdate, 'UTC')->subMinutes(120)->format('Y-m-d H:i:s');
-        $rightDate = Carbon::parse($lastPostdate, 'UTC')->addMinutes(120)->format('Y-m-d H:i:s');
         $scopeDigest = RecoveryPositiveCoverage::scope($epoch, $group, $generation);
-        $head = RecoveryFrontiers::witnesses($connection, $scopeDigest);
-        $left = (clone $head)->where('article_number', '<', $firstArticle)->where('postdate', '<=', $leftDate)
-            ->max('article_number');
-        $right = (clone $head)->where('article_number', '>', $lastArticle)->where('postdate', '>=', $rightDate)
-            ->min('article_number');
+        ['left' => $left, 'right' => $right] = (new RecoveryFrontierRequirement)->witnesses($connection, $scopeDigest, [
+            'first_article' => $firstArticle, 'last_article' => $lastArticle, 'first_postdate' => $firstPostdate, 'last_postdate' => $lastPostdate,
+        ]);
         $start = $left === null ? $firstArticle : (int) $left;
         $end = $right === null ? $lastArticle : (int) $right;
         $islands = [];

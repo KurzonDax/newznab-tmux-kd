@@ -167,10 +167,20 @@ final class RecoveryBudget
             }
             $request = $frontier ? (new RecoveryFrontierAllowance)->logicalRequest($gap) : implode(':', ['gap', $gap->source_epoch, $gap->groups_id, $gap->capture_generation, $gap->requested_first, $gap->requested_last]);
             if ($frontier) {
+                $work = DB::table('obfuscation_recovery_work')->where('id', $claim->id)->first();
+                if (! (new RecoveryFrontierDispatch)->prepare($bundle, $work, $claim)) {
+                    return null;
+                }
                 (new RecoveryFrontierAllowance)->grant($gap, $bundle);
             }
             $reservation = $this->reserve($frontier ? $gap->budget_owner : $bundle->owner_digest, $claim->purpose, $request, 33554432, $frontier ? 134217728 : 67108864);
             if ($reservation !== null) {
+                if ($frontier) {
+                    DB::table('obfuscation_recovery_frontier_requests')->where('id', $gap->id)->update(['reserved_attempt_id' => $reservation->attemptId]);
+                    DB::table('obfuscation_recovery_frontier_installs')->insert([
+                        'attempt_id' => $reservation->attemptId, 'request_id' => $gap->id, 'work_id' => $claim->id, 'claim_token' => $claim->token,
+                    ]);
+                }
                 DB::table('obfuscation_recovery_attempts')->where('id', $reservation->attemptId)->update([
                     'groups_id' => $bundle->groups_id, 'profile' => $bundle->profile,
                 ]);

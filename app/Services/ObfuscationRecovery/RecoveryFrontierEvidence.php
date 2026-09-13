@@ -63,6 +63,19 @@ final class RecoveryFrontierEvidence
     /** @param array{first_article:int,last_article:int,first_postdate:string,last_postdate:string,changed_at:string} $envelope */
     public function answer(Connection $connection, string $scope, int $first, int $last, array $envelope): string
     {
+        foreach ((new RecoveryFrontierRequirement)->intervals($connection, $scope, $first, $last, $envelope) as [$start, $end]) {
+            $answer = $this->examine($connection, $scope, $start, $end, $envelope);
+            if ($answer !== 'examined') {
+                return $answer;
+            }
+        }
+
+        return 'examined';
+    }
+
+    /** @param array{first_article:int,last_article:int,first_postdate:string,last_postdate:string,changed_at:string} $envelope */
+    private function examine(Connection $connection, string $scope, int $first, int $last, array $envelope): string
+    {
         $rows = $connection->table('obfuscation_recovery_frontier_ranges')->where('scope_digest', $scope)
             ->where('evidence_version', RecoveryFrontiers::VERSION)->where('first_article', '<=', $last)
             ->where('last_article', '>=', $first)->orderBy('first_article')->limit(1001)->get();
@@ -101,6 +114,22 @@ final class RecoveryFrontierEvidence
         }
 
         return 'examined';
+    }
+
+    /** @param array{first_article:int,last_article:int,first_postdate:string,last_postdate:string,changed_at:string} $envelope */
+    public function retire(Connection $connection, string $scope, int $first, int $last, array $envelope): bool
+    {
+        foreach ((new RecoveryFrontierRequirement)->intervals($connection, $scope, $first, $last, $envelope) as [$start, $end]) {
+            if ($this->examine($connection, $scope, $start, $end, $envelope) !== 'examined') {
+                return false;
+            }
+            (new RecoveryFrontiers)->replaceLegacy($connection, $scope, $start, $end);
+            if (RecoveryFrontierConflicts::overlapping($connection, $scope, $start, $end, ['unknown', 'ordering'])->exists()) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function retainedHead(Connection $connection, object $bundle, int $first, int $last, bool $sealed): bool

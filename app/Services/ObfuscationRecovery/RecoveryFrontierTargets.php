@@ -27,7 +27,7 @@ final class RecoveryFrontierTargets
             || ! RecoveryConfig::fromValues($settings)->admits($selection, RecoveryAlgorithm::from($owner->profile)->selection())) {
             return null;
         }
-        $targets = $connection->table('obfuscation_recovery_frontier_targets')->where('request_id', $request->id)->orderBy('bundle_id')->limit(17)->get();
+        $targets = $connection->table('obfuscation_recovery_frontier_targets')->where('request_id', $request->id)->where('outcome', '!=', 'obsolete')->orderBy('bundle_id')->limit(17)->get();
         if ($targets->isEmpty() || $targets->count() > 16) {
             return null;
         }
@@ -50,6 +50,9 @@ final class RecoveryFrontierTargets
                 continue;
             }
             $envelope = json_decode($target->envelope, true, flags: JSON_THROW_ON_ERROR);
+            if ($envelope !== (new RecoveryFrontierRebuild)->envelope($bundle)) {
+                continue;
+            }
             $context = (new RecoverySettlement)->context($bundle->source_epoch, (int) $bundle->groups_id, (int) $bundle->capture_generation,
                 $envelope['first_article'], $envelope['last_article'], $envelope['first_postdate'], $envelope['last_postdate'], $sealed, $connection);
             if (($context['left'] !== null && (int) $target->last_article < $context['left'])
@@ -71,25 +74,32 @@ final class RecoveryFrontierTargets
         }
         foreach ($targets as $target) {
             $scope = RecoveryPositiveCoverage::scope($owner->source_epoch, (int) $owner->groups_id, (int) $target->capture_generation);
-            if ($target->plan_digest !== null && $target->outcome !== 'examined') {
-                $unverified = $connection->table('obfuscation_recovery_frontier_members as member')
-                    ->leftJoin('obfuscation_recovery_frontiers as point', function ($join) use ($scope): void {
-                        $join->on('point.article_number', '=', 'member.article_number')->where('point.scope_digest', $scope);
-                    })->where('member.bundle_id', $target->bundle_id)->where('member.revision', $target->revision)
-                    ->whereBetween('member.article_number', [(int) $target->first_article, (int) $target->last_article])
-                    ->where(fn ($query) => $query->whereNull('point.observation_digest')->orWhereColumn('point.observation_digest', '!=', 'member.observation_digest')
-                        ->orWhereColumn('point.postdate', '!=', 'member.postdate'))->exists();
-                if ($unverified) {
-                    return false;
-                }
-            }
-            if ((new RecoveryFrontierEvidence)->answer($connection, $scope, (int) $target->first_article, (int) $target->last_article,
-                json_decode($target->envelope, true, flags: JSON_THROW_ON_ERROR)) !== 'examined') {
+            if (! $this->evidenceSufficient($connection, $scope, $target, (int) $target->first_article, (int) $target->last_article)) {
                 return false;
             }
         }
 
         return true;
+    }
+
+    public function evidenceSufficient(Connection $connection, string $scope, object $target, int $first, int $last): bool
+    {
+        if ($target->plan_digest !== null && ($target->outcome !== 'examined'
+            || $first !== (int) $target->first_article || $last !== (int) $target->last_article)) {
+            $unverified = $connection->table('obfuscation_recovery_frontier_members as member')
+                ->leftJoin('obfuscation_recovery_frontiers as point', function ($join) use ($scope): void {
+                    $join->on('point.article_number', '=', 'member.article_number')->where('point.scope_digest', $scope);
+                })->where('member.bundle_id', $target->bundle_id)->where('member.revision', $target->revision)
+                ->whereBetween('member.article_number', [$first, $last])
+                ->where(fn ($query) => $query->whereNull('point.observation_digest')->orWhereColumn('point.observation_digest', '!=', 'member.observation_digest')
+                    ->orWhereColumn('point.postdate', '!=', 'member.postdate'))->exists();
+            if ($unverified) {
+                return false;
+            }
+        }
+
+        return (new RecoveryFrontierEvidence)->answer($connection, $scope, $first, $last,
+            json_decode($target->envelope, true, flags: JSON_THROW_ON_ERROR)) === 'examined';
     }
 
     /** @param iterable<object> $chunks
