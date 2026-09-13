@@ -210,8 +210,6 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         Route::match(['GET', 'POST'], 'trending-movies', [MovieController::class, 'showTrending'])->name('trending-movies');
         Route::match(['GET', 'POST'], 'movie/{imdbid}', [MovieController::class, 'showMovie'])->name('movie.view');
         Route::match(['GET', 'POST'], 'Movies/{id?}', [MovieController::class, 'showMovies'])->name('Movies');
-        Route::match(['GET', 'POST'], 'movie', [MovieController::class, 'showMovies'])->name('movie');
-        Route::match(['GET', 'POST'], 'movietrailers', [MovieController::class, 'showTrailer'])->name('movietrailers');
         Route::post('movies/update-layout', [MovieController::class, 'updateLayout'])->name('movies.update-layout');
         Route::match(['GET', 'POST'], 'Audio/{id?}', [MusicController::class, 'show'])->name('Audio');
         Route::match(['GET', 'POST'], 'Console/{id?}', [ConsoleController::class, 'show'])->name('Console');
@@ -248,14 +246,8 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         ->middleware(['2fa', 'throttle:60,1'])
         ->name('release.mediainfo');
     Route::match(['GET', 'POST'], 'ajax_profile', [AjaxController::class, 'profile'])->name('ajax_profile');
-    Route::match(['GET', 'POST'], '2fa', [PasswordSecurityController::class, 'show2faForm'])->name('2fa');
-    Route::get('2fa/enable', [PasswordSecurityController::class, 'showEnable2faForm'])->name('2fa.enable');
-    Route::get('2fa/disable', [PasswordSecurityController::class, 'showDisable2faForm'])->name('2fa.disable');
-    Route::post('generate2faSecret', [PasswordSecurityController::class, 'generate2faSecret'])->name('generate2faSecret');
-    Route::post('2fa', [PasswordSecurityController::class, 'enable2fa'])->name('enable2fa');
-    Route::post('disable2fa', [PasswordSecurityController::class, 'disable2fa'])->name('disable2fa');
-    Route::post('profile-disable2fa', [PasswordSecurityController::class, 'profileDisable2fa'])->name('profile-disable2fa');
-    // Custom 2FA routes that redirect to profile page
+    // Profile security actions
+    Route::post('profileedit/generate2faSecret', [PasswordSecurityController::class, 'generate2faSecret'])->name('profileedit.generate2faSecret');
     Route::post('profileedit/enable2fa', [PasswordSecurityController::class, 'enable2fa'])->name('profileedit.enable2fa');
     Route::post('profileedit/disable2fa', [PasswordSecurityController::class, 'disable2fa'])->name('profileedit.disable2fa');
     Route::post('profileedit/cancel2fa', [PasswordSecurityController::class, 'cancelSetup'])->name('profileedit.cancel2fa');

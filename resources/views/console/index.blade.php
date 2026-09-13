@@ -170,5 +170,4 @@
 @endsection
 
 @push('scripts')
-@include('partials.cart-script')
 @endpush

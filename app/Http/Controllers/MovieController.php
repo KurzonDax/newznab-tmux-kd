@@ -8,12 +8,10 @@ use App\Models\Category;
 use App\Services\MovieBrowseService;
 use App\Services\MovieService;
 use App\Support\YearRange;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\View\View;
 
 class MovieController extends BasePageController
 {
@@ -170,44 +168,6 @@ class MovieController extends BasePageController
         ]);
 
         return view('movies.viewmoviefull', $this->viewData);
-    }
-
-    /**
-     * @return JsonResponse|View
-     */
-    public function showTrailer(Request $request)
-    {
-        $movieId = $this->scalarInput($request, 'id');
-        if ($movieId !== '' && ctype_digit($movieId)) {
-            $mov = $this->movieService->getMovieInfo($movieId);
-
-            if (! $mov) {
-                return response()->json(['message' => 'There is no trailer for this movie.'], 404);
-            }
-
-            $modal = $request->has('modal');
-
-            $viewData = [
-                'movie' => $mov,
-            ];
-
-            // Return different views for modal vs full page
-            if ($modal) {
-                return view('movies.trailer-modal', $viewData);
-            }
-
-            $this->viewData = array_merge($this->viewData, [
-                'movie' => $mov,
-                'title' => 'Info for '.$mov['title'],
-                'meta_title' => '',
-                'meta_keywords' => '',
-                'meta_description' => '',
-            ]);
-
-            return view('movies.viewmovietrailer', $this->viewData);
-        }
-
-        return response()->json(['message' => 'Invalid movie ID.'], 400);
     }
 
     /**
