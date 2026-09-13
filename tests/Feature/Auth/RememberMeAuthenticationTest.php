@@ -391,6 +391,52 @@ class RememberMeAuthenticationTest extends TestCase
         return Auth::guard()->getRecallerName();
     }
 
+    public function test_profile_security_can_generate_a_secret_without_the_retired_two_factor_page(): void
+    {
+        $user = $this->createUser('profile-secret@example.test');
+        Google2FA::shouldReceive('generateSecretKey')->once()->andReturn('JBSWY3DPEHPK3PXP');
+
+        $this->actingAs($user)
+            ->post('/profileedit/generate2faSecret')
+            ->assertRedirect('/profileedit#security')
+            ->assertSessionHas('success_2fa');
+
+        $this->assertDatabaseHas('password_securities', [
+            'user_id' => $user->id,
+            'google2fa_enable' => 0,
+        ]);
+        self::assertSame('JBSWY3DPEHPK3PXP', $user->fresh()->passwordSecurity->google2fa_secret);
+    }
+
+    public function test_retired_frontend_routes_are_not_registered(): void
+    {
+        foreach (['movie', 'movietrailers', '2fa', '2fa.enable', '2fa.disable', 'generate2faSecret', 'enable2fa', 'disable2fa', 'profile-disable2fa'] as $name) {
+            self::assertFalse(Route::has($name), 'Retired route is still registered: '.$name);
+        }
+        foreach (['movie.view', '2fa.verify', '2fa.post', 'profileedit.generate2faSecret', 'profileedit.enable2fa', 'profileedit.disable2fa', 'profileedit.cancel2fa'] as $name) {
+            self::assertTrue(Route::has($name), 'Live route is missing: '.$name);
+        }
+    }
+
+    public function test_enabled_two_factor_middleware_can_still_render_its_configured_challenge(): void
+    {
+        $this->withoutVite();
+        config(['google2fa.enabled' => true]);
+        $user = $this->createUser('middleware-challenge@example.test');
+        PasswordSecurity::create([
+            'user_id' => $user->id,
+            'google2fa_enable' => 1,
+            'google2fa_secret' => 'JBSWY3DPEHPK3PXP',
+        ]);
+        Route::middleware(['web', 'auth', '2fa'])->get('__middleware_otp_probe', fn () => response('verified destination'));
+
+        $this->actingAs($user)->get('/__middleware_otp_probe')
+            ->assertOk()
+            ->assertSee('One Time Password')
+            ->assertSee('action="'.route('2faVerify').'"', false)
+            ->assertDontSee('verified destination');
+    }
+
     protected function createSchema(): void
     {
         foreach ([
