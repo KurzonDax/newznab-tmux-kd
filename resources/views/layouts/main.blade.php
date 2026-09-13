@@ -98,7 +98,7 @@
     @include('partials.confirmation-modal')
 
     <!-- Toast Notifications (Alpine.js CSP Safe) -->
-    @include('partials.toast-notifications')
+    @include('partials.toast-notifications', ['publicToasts' => true])
 
     {{-- Release-specific modals: pushed by pages that show releases --}}
     @stack('modals')
@@ -116,14 +116,6 @@
     </div>
 
     <!-- Flash Messages Data (moved to csp-safe.js) -->
-    <div id="flash-messages-data"
-         data-messages="{{ json_encode([
-             'success' => session('success'),
-             'error' => session('error'),
-             'warning' => session('warning'),
-             'info' => session('info')
-         ]) }}"
-         class="hidden">
-    </div>
+    @include('partials.flash-messages-data')
 </body>
 </html>

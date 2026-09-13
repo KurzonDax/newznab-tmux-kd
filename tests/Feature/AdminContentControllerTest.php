@@ -15,7 +15,9 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\MessageBag;
 use Illuminate\Support\Str;
+use Illuminate\Support\ViewErrorBag;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionClass;
 use Spatie\Permission\Models\Role;
@@ -476,6 +478,49 @@ class AdminContentControllerTest extends TestCase
         foreach ([$messages['success'], ...(array) $error, $messages['warning'], $messages['info']] as $message) {
             $this->assertStringNotContainsString($message, $document->textContent);
         }
+    }
+
+    public function test_contact_page_uses_the_toast_payload_without_a_duplicate_banner(): void
+    {
+        $message = 'Message sent <script>alert(1)</script>';
+        $response = $this->actingAs($this->createUserWithRole('User'))
+            ->withSession(['success' => $message])->get(route('contact-us'));
+        $response->assertOk();
+
+        $document = new DOMDocument;
+        $document->loadHTML($response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $payload = $document->getElementById('flash-messages-data');
+        $this->assertInstanceOf(DOMElement::class, $payload);
+        $this->assertSame($message, json_decode($payload->getAttribute('data-messages'), true, 512, JSON_THROW_ON_ERROR)['success']);
+        $this->assertStringNotContainsString($message, $document->textContent);
+        $response->assertDontSee('<script>alert(1)</script>', false);
+    }
+
+    public function test_forum_action_messages_join_the_public_payload_and_keep_inline_validation(): void
+    {
+        $this->createContent(['contenttype' => Content::TYPE_INDEX]);
+        $response = $this->actingAs($this->createUserWithRole('User'))->withSession([
+            'success' => 'Preferences saved.',
+            'alerts' => [
+                ['type' => 'success', 'message' => 'Reply added.'],
+                ['type' => 'success', 'message' => 'Thread created.'],
+                ['type' => 'warning', 'message' => 'Thread is locked.'],
+            ],
+        ])->get(route('home'));
+        $response->assertOk();
+        $document = new DOMDocument;
+        $document->loadHTML($response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $payload = $document->getElementById('flash-messages-data');
+        $this->assertInstanceOf(DOMElement::class, $payload);
+        $messages = json_decode($payload->getAttribute('data-messages'), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame(['Preferences saved.', 'Reply added.', 'Thread created.'], $messages['success']);
+        $this->assertSame(['Thread is locked.'], $messages['warning']);
+
+        $errors = (new ViewErrorBag)->put('default', new MessageBag(['body' => 'A reply is required.']));
+        $alerts = view('forum::partials.alerts', ['errors' => $errors])->render();
+        $this->assertStringContainsString('A reply is required.', $alerts);
+        $this->assertStringNotContainsString('Reply added.', $alerts);
+        $this->assertStringNotContainsString('Thread created.', $alerts);
     }
 
     private function createContent(array $overrides = []): Content

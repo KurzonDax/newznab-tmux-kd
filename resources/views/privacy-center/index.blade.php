@@ -10,18 +10,6 @@
             <p class="text-gray-600 dark:text-gray-400 mt-1">Export your account data and manage GDPR requests.</p>
         </div>
 
-        @if(session('success'))
-            <div class="mx-6 mt-6 p-4 bg-green-50 dark:bg-green-900/20 border-l-4 border-green-500 text-green-800 dark:text-green-200 rounded">
-                <i class="fas fa-check-circle mr-2"></i>{{ session('success') }}
-            </div>
-        @endif
-
-        @if(session('error'))
-            <div class="mx-6 mt-6 p-4 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 text-red-800 dark:text-red-200 rounded">
-                <i class="fas fa-exclamation-circle mr-2"></i>{{ session('error') }}
-            </div>
-        @endif
-
         @if($errors->any())
             <div class="mx-6 mt-6 p-4 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 text-red-800 dark:text-red-200 rounded">
                 <i class="fas fa-exclamation-circle mr-2"></i>{{ $errors->first() }}
