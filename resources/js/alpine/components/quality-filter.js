@@ -46,37 +46,16 @@ Alpine.data('qualityFilter', () => ({
      * Update button active/inactive styles
      */
     _updateButtonStyles() {
-        // Resolution buttons
-        this.$el.querySelectorAll('[data-resolution]').forEach(btn => {
-            const filter = btn.getAttribute('data-resolution');
-            const isActive = filter === this.activeResolution;
+        const activeClasses = ['bg-primary-600', 'dark:bg-primary-700', 'text-white', 'hover:bg-primary-700', 'dark:hover:bg-primary-800'];
+        const inactiveClasses = ['bg-gray-200', 'dark:bg-gray-700', 'text-gray-700', 'dark:text-gray-300', 'hover:bg-gray-300', 'dark:hover:bg-gray-600'];
 
-            // Remove all state classes first
-            btn.classList.remove('bg-blue-600', 'text-white', 'hover:bg-blue-700');
-            btn.classList.remove('bg-gray-200', 'dark:bg-gray-700', 'text-gray-700', 'dark:text-gray-300', 'hover:bg-gray-300', 'dark:hover:bg-gray-600');
-
-            if (isActive) {
-                btn.classList.add('bg-blue-600', 'text-white', 'hover:bg-blue-700');
-            } else {
-                btn.classList.add('bg-gray-200', 'dark:bg-gray-700', 'text-gray-700', 'dark:text-gray-300', 'hover:bg-gray-300', 'dark:hover:bg-gray-600');
-            }
-        });
-
-        // Source buttons
-        this.$el.querySelectorAll('[data-source]').forEach(btn => {
-            const filter = btn.getAttribute('data-source');
-            const isActive = filter === this.activeSource;
-
-            // Remove all state classes first
-            btn.classList.remove('bg-purple-600', 'text-white', 'hover:bg-purple-700');
-            btn.classList.remove('bg-gray-200', 'dark:bg-gray-700', 'text-gray-700', 'dark:text-gray-300', 'hover:bg-gray-300', 'dark:hover:bg-gray-600');
-
-            if (isActive) {
-                btn.classList.add('bg-purple-600', 'text-white', 'hover:bg-purple-700');
-            } else {
-                btn.classList.add('bg-gray-200', 'dark:bg-gray-700', 'text-gray-700', 'dark:text-gray-300', 'hover:bg-gray-300', 'dark:hover:bg-gray-600');
-            }
-        });
+        for (const [attribute, selected] of [['resolution', this.activeResolution], ['source', this.activeSource]]) {
+            this.$el.querySelectorAll(`[data-${attribute}]`).forEach(button => {
+                const isActive = button.getAttribute(`data-${attribute}`) === selected;
+                button.classList.remove(...activeClasses, ...inactiveClasses);
+                button.classList.add(...(isActive ? activeClasses : inactiveClasses));
+            });
+        }
     },
 
     countText() {
