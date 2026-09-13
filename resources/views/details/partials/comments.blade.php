@@ -1,8 +1,8 @@
             <!-- Comments Section -->
-            <div>
+            <div id="comments">
                 <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-4 flex items-center">
                     <i class="fas fa-comments mr-2 text-primary-600 dark:text-primary-400"></i>
-                    Comments ({{ isset($comments) ? count($comments) : 0 }})
+                    Comments ({{ isset($comments) ? $comments->total() : 0 }})
                 </h3>
 
                 <!-- Flash Messages -->
@@ -76,7 +76,7 @@
                                             <p class="font-semibold text-gray-800 dark:text-gray-200">{{ $comment['username'] ?? 'Anonymous' }}</p>
                                             <p class="text-xs text-gray-500 dark:text-gray-400">
                                                 <i class="far fa-clock mr-1"></i>
-                                                {{ \Carbon\Carbon::parse($comment['created_at'])->diffForHumans() }}
+                                                {{ userDateDiffForHumans($comment['created_at']) }}
                                             </p>
                                         </div>
                                     </div>
@@ -85,10 +85,19 @@
                             </div>
                         @endforeach
                     </div>
+                @elseif(isset($comments) && $comments->total() > 0)
+                    <div class="detail-empty-comments surface-panel-alt rounded-lg p-8 border text-center">
+                        <p class="text-gray-500 dark:text-gray-400">No comments on this page.</p>
+                    </div>
                 @else
                     <div class="detail-empty-comments surface-panel-alt rounded-lg p-8 border text-center">
                         <i class="fas fa-comments text-4xl text-gray-400 dark:text-gray-600 mb-3"></i>
                         <p class="text-gray-500 dark:text-gray-400">No comments yet. Be the first to comment!</p>
+                    </div>
+                @endif
+                @if(isset($comments) && $comments->total() > 0)
+                    <div class="mt-4">
+                        {{ $comments->links() }}
                     </div>
                 @endif
             </div>
