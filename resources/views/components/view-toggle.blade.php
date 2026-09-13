@@ -18,7 +18,6 @@
         'games' => 'Games',
         'music' => 'Audio',
         'books' => 'Books',
-        'xxx' => 'XXX',
     ];
 
     // Map covgroup to correct list browse parent category
@@ -95,7 +94,7 @@
         <a href="{{ $listUrl }}" class="text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300">List</a>
     @else
         {{-- Currently in list view --}}
-        @if($covgroup || $shows)
+        @if(isset($coverRouteMap[$covgroup ?? '']) || $shows)
             <a href="{{ $coverUrl }}" class="text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300">Covers</a>
             <span class="text-gray-400 dark:text-gray-500">|</span>
         @endif
