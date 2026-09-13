@@ -2,6 +2,7 @@
 
 @section('content')
 <div class="surface-panel rounded-xl shadow-sm">
+    <x-breadcrumb :items="[['label' => 'Home', 'url' => url($site['home_link'] ?? '/')]]" />
     @if($front)
         <!-- Front Page Content -->
         <div class="px-6 py-8">
@@ -11,7 +12,7 @@
                         <article class="surface-panel rounded-lg shadow-sm p-6 border transition-shadow duration-200 hover:shadow-md">
                             <div class="surface-prose">
                                 @if(filled($item->title))
-                                    <h1 class="mb-4 text-3xl font-bold">{{ $item->title }}</h1>
+                                    <x-page-header :title="$item->title" />
                                 @endif
 
                                 @if(isset($item->body))

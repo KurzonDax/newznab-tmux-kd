@@ -2,18 +2,8 @@
 
 @section('content')
 <div class="series-detail-page surface-panel rounded-xl shadow-sm">
-    <!-- Breadcrumb -->
-    <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-        <nav aria-label="breadcrumb">
-            <ol class="flex items-center space-x-2 text-sm text-gray-600">
-                <li><a href="{{ url($site['home_link'] ?? '/') }}" class="hover:text-primary-600">Home</a></li>
-                <li><i class="fas fa-chevron-right text-xs mx-2"></i></li>
-                <li><a href="{{ route('series') }}" class="hover:text-primary-600">TV Series</a></li>
-                <li><i class="fas fa-chevron-right text-xs mx-2"></i></li>
-                <li class="text-gray-500">{{ $seriestitles ?? '' }}</li>
-            </ol>
-        </nav>
-    </div>
+    <x-breadcrumb :items="[['label' => 'Browse', 'url' => url('/browse')],['label' => 'TV Series', 'url' => route('series')]]" />
+    <x-page-header :title="($seriestitles ?? '') ?: 'TV Series'" :description="$show['publisher'] ?? null" icon="fas fa-tv" />
 
     <div class="px-6 py-4">
         @if(!empty($nodata))
@@ -23,14 +13,6 @@
         @else
             <!-- Series Info Card -->
             <div class="series-main-card bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm mb-4">
-                <div class="px-4 py-3 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
-                    <h5 class="text-xl font-bold text-gray-800 dark:text-white">
-                        <i class="fa fa-tv mr-2 text-indigo-600 dark:text-indigo-400"></i>{{ $seriestitles ?? '' }}
-                        @if(!empty($show['publisher']))
-                            <span class="text-sm font-normal text-gray-600 dark:text-gray-300 ml-2">({{ $show['publisher'] }})</span>
-                        @endif
-                    </h5>
-                </div>
                 <div class="p-6">
                     <!-- Series Stats -->
                     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">

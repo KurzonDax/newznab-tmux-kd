@@ -5,8 +5,8 @@
     <x-breadcrumb :items="[
         ['label' => 'Home', 'url' => url($site['home_link'] ?? '/'), 'icon' => 'fas fa-home'],
         ['label' => 'Movies', 'url' => route('Movies')],
-        ['label' => $movie['title'] ?? 'Movie Details'],
     ]" />
+    <x-page-header :title="$movie['title'] ?? 'Movie Details'" icon="fas fa-film" />
 
     @if(isset($movie))
         <div class="px-6 py-6">
@@ -24,7 +24,6 @@
 
                 <!-- Movie Details -->
                 <div class="lg:col-span-2">
-                    <h1 class="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-4">{{ $movie['title'] ?? 'Unknown Title' }}</h1>
 
                     @if(!empty($movie['tagline'] ?? null))
                         <p class="text-lg text-gray-600 dark:text-gray-400 italic mb-4">"{{ $movie['tagline'] }}"</p>

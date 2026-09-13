@@ -33,7 +33,7 @@
         @endif
     @endif
 </head>
-<body class="font-sans antialiased text-gray-900 dark:text-gray-100 pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
+<body class="public-ui font-sans antialiased text-gray-900 dark:text-gray-100 pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
     @yield('content')
 
     @include('partials.back-to-top')

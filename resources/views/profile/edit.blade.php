@@ -3,11 +3,8 @@
 @section('content')
 <div class="max-w-4xl mx-auto">
     <div class="surface-panel rounded-xl shadow-sm">
-        <!-- Header -->
-        <div class="px-6 py-4 border-b border-gray-200">
-            <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Edit Profile</h1>
-            <p class="text-gray-600 dark:text-gray-400 mt-1">Update your account settings and preferences</p>
-        </div>
+        <x-breadcrumb :items="[['label' => 'Profile', 'url' => route('profile')]]" />
+        <x-page-header title="Edit Profile" description="Update your account settings and preferences" icon="fas fa-user-pen" />
 
         @if($error)
             <div class="mx-6 mt-6 p-4 bg-red-50 border-l-4 border-red-500 text-red-800 rounded">

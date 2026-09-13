@@ -6,20 +6,8 @@
 
 @section('content')
 <div class="surface-panel rounded-xl shadow-sm">
-    <!-- Breadcrumb -->
-    <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-        <nav aria-label="breadcrumb">
-            <ol class="flex items-center space-x-2 text-sm text-gray-600">
-                <li><a href="{{ url($site['home_link'] ?? '/') }}" class="hover:text-primary-600">Home</a></li>
-                <li><i class="fas fa-chevron-right text-xs mx-2"></i></li>
-                <li><a href="{{ url('/browse/PC') }}" class="hover:text-primary-600">PC</a></li>
-                @if(!empty($catname) && $catname !== 'All')
-                    <li><i class="fas fa-chevron-right text-xs mx-2"></i></li>
-                    <li class="text-gray-500">{{ $catname }}</li>
-                @endif
-            </ol>
-        </nav>
-    </div>
+    <x-breadcrumb :items="[['label' => 'Browse', 'url' => url('/browse')]]" />
+    <x-page-header :title="!empty($catname) && $catname !== 'All' ? 'PC Games · '.$catname : 'PC Games'" icon="fas fa-gamepad" />
 
     <div class="px-6 py-4">
         <!-- Search Filters -->
