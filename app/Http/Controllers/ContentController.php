@@ -66,7 +66,7 @@ class ContentController extends BasePageController
             $meta_description = $index->metadescription ?? 'This is the contents page.';
         }
 
-        if (empty($content)) {
+        if (empty($content) && ! $isFront) {
             return response()->json(['message' => 'There is nothing to see here, no content provided.'], 404);
         }
 
