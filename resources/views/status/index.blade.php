@@ -47,18 +47,11 @@
 @endphp
 
 <div class="w-full max-w-5xl mx-auto">
+    <x-breadcrumb :items="[['label' => 'Home', 'url' => url($site['home_link'] ?? '/')]]" />
     <div class="surface-panel rounded-xl shadow-sm mb-6 overflow-hidden border {{ $overallBanner }}">
-        <div class="px-6 py-5">
-            <h1 class="text-2xl font-bold tracking-tight">Service status</h1>
-            <p class="mt-2 text-sm leading-relaxed">
-                Overall: <strong class="font-semibold">{{ $overallStatus->label() }}</strong>
-                @if($activeIncidents->isNotEmpty())
-                    &mdash; {{ $activeIncidents->count() }} active {{ Str::plural('incident', $activeIncidents->count()) }}
-                @else
-                    &mdash; No active incidents
-                @endif
-            </p>
-        </div>
+        <x-page-header title="Service status"
+            :description="'Overall: '.$overallStatus->label().' — '.($activeIncidents->isNotEmpty() ? $activeIncidents->count().' active '.Str::plural('incident', $activeIncidents->count()) : 'No active incidents')"
+            icon="fas fa-heart-pulse" />
     </div>
 
     <div class="surface-panel rounded-xl shadow-sm mb-6">
@@ -149,12 +142,5 @@
         </div>
     </div>
 
-    <nav class="text-sm text-gray-700 dark:text-gray-300" aria-label="breadcrumb">
-        <ol class="flex flex-wrap gap-2">
-            <li><a href="{{ url($site['home_link'] ?? '/') }}" class="text-primary-600 dark:text-primary-400 hover:underline">Home</a></li>
-            <li aria-hidden="true">/</li>
-            <li class="text-gray-800 dark:text-gray-200">Status</li>
-        </ol>
-    </nav>
 </div>
 @endsection

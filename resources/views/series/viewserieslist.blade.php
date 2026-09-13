@@ -2,21 +2,8 @@
 
 @section('content')
 <div class="surface-panel rounded-xl shadow-sm">
-    <!-- Header -->
-    <div class="surface-panel-alt px-6 py-4 border-b">
-        <div class="flex justify-between items-center">
-            <h3 class="text-2xl font-bold text-gray-800 dark:text-gray-200 flex items-center">
-                <i class="fa fa-tv mr-3 text-primary-600 dark:text-primary-400"></i>TV Series
-            </h3>
-            <nav aria-label="breadcrumb">
-                <ol class="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
-                    <li><a href="{{ url($site['home_link'] ?? '/') }}" class="hover:text-primary-600 dark:hover:text-primary-400">Home</a></li>
-                    <li><i class="fas fa-chevron-right text-xs mx-2"></i></li>
-                    <li class="text-gray-500 dark:text-gray-400">TV Series List</li>
-                </ol>
-            </nav>
-        </div>
-    </div>
+    <x-breadcrumb :items="[['label' => 'Browse', 'url' => url('/browse')]]" />
+    <x-page-header title="TV Series" icon="fas fa-tv" />
 
     <div class="px-6 py-4">
         @php
