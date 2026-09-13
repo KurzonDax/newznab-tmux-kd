@@ -78,11 +78,18 @@ class ReleaseComment extends Model
     }
 
     /**
-     * @return array<string, mixed>
+     * @return LengthAwarePaginator<int, self>
      */
-    public static function getComments(mixed $id): array
+    public static function getComments(mixed $id): LengthAwarePaginator
     {
-        return self::query()->where('releases_id', $id)->orderByDesc('created_at')->get()->toArray();
+        return self::query()
+            ->where('releases_id', $id)
+            ->where('isvisible', 1)
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->paginate(25, ['*'], 'comments_page')
+            ->withQueryString()
+            ->fragment('comments');
     }
 
     public static function getCommentCount(): int
