@@ -95,7 +95,7 @@
     @endguest
 
     <!-- Confirmation Modal (used on many pages) -->
-    @include('partials.confirmation-modal')
+    @include('partials.confirmation-modal', ['publicModal' => true])
 
     <!-- Toast Notifications (Alpine.js CSP Safe) -->
     @include('partials.toast-notifications', ['publicToasts' => true])

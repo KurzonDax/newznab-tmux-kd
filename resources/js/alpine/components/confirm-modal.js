@@ -1,3 +1,4 @@
+import { modalLifecycle } from "./modal-lifecycle.js";
 /**
  * Alpine.data('confirmModal') - Styled confirmation modal (replaces native confirm)
  * Global singleton - one per page, invoked via window.showConfirm() or $dispatch.
@@ -6,6 +7,7 @@ import Alpine from '@alpinejs/csp';
 import { submitConfirmedElement } from './confirm-submit.js';
 
 Alpine.data('confirmModal', () => ({
+    ...modalLifecycle(),
     open: false,
     title: 'Confirm Action',
     message: 'Are you sure you want to proceed?',
@@ -59,7 +61,9 @@ Alpine.data('confirmModal', () => ({
         if (this.type === 'danger') return 'fa-exclamation-triangle text-red-600 dark:text-red-400';
         if (this.type === 'warning') return 'fa-exclamation-circle text-yellow-600 dark:text-yellow-400';
         if (this.type === 'success') return 'fa-check-circle text-green-600 dark:text-green-400';
-        return 'fa-info-circle text-blue-600 dark:text-blue-400';
+        return this.$el?.querySelector('[data-modal-dialog]')
+            ? 'fa-info-circle text-primary-600 dark:text-primary-400'
+            : 'fa-info-circle text-blue-600 dark:text-blue-400';
     },
 
     confirmBtnClass() {
@@ -71,6 +75,7 @@ Alpine.data('confirmModal', () => ({
     },
 
     init() {
+        this.initModal(() => this.cancel());
         // Global showConfirm for backward compatibility + non-Alpine callers
         const self = this;
         window.showConfirm = function(options) { return self.show(options); };

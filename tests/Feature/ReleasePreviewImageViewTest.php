@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\Release;
 use App\Models\ReleaseAudioTag;
 use App\Models\ReleaseVideoClip;
+use App\Models\User;
 use stdClass;
 use Tests\TestCase;
 
@@ -38,12 +39,18 @@ class ReleasePreviewImageViewTest extends TestCase
             'has_audio_preview' => 1,
             'audio_preview_mime' => 'audio/mpeg',
             'audio_preview_meta' => '30s · MP3 · stream copy',
+            'audio_preview_title' => 'Opening Track',
+            'audio_preview_artist' => 'Example Artist',
+            'musicinfo_id' => 42,
         ]));
 
         $this->assertStringContainsString('class="preview-badge', $html);
         $this->assertStringContainsString('data-audio-url="'.route('preview.audio', 'audio-guid').'"', $html);
         $this->assertStringContainsString('data-audio-type="audio/mpeg"', $html);
         $this->assertStringContainsString('data-audio-meta="30s · MP3 · stream copy"', $html);
+        $this->assertStringContainsString('data-audio-title="Opening Track"', $html);
+        $this->assertStringContainsString('data-audio-artist="Example Artist"', $html);
+        $this->assertStringContainsString('data-audio-artwork="'.e(getReleaseCover((object) ['musicinfo_id' => 42])).'"', $html);
         $this->assertStringContainsString('/covers/audiosample/audio-guid_spectrum.png', $html);
         $this->assertStringContainsString('data-image-title="Audio Preview"', $html);
         $this->assertStringContainsString('fas fa-headphones', $html);
@@ -62,6 +69,19 @@ class ReleasePreviewImageViewTest extends TestCase
 
         $this->assertSame(2, substr_count($html, 'data-release-display-name="'.$displayName.'"'));
         $this->assertStringNotContainsString('data-release-display-name="Wrong.Source.Name', $html);
+    }
+
+    public function test_report_actions_supply_the_release_name_for_the_dialog_subtitle(): void
+    {
+        $this->actingAs(User::factory()->make());
+        $html = $this->renderResults($this->release(['display_name' => 'Readable Release Title']));
+        $document = new \DOMDocument;
+        $document->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
+        $buttons = (new \DOMXPath($document))->query('//*[@data-report-release-id]');
+        $this->assertCount(2, $buttons);
+        foreach ($buttons as $button) {
+            $this->assertSame('Readable Release Title', $button->getAttribute('data-release-display-name'));
+        }
     }
 
     public function test_playable_audio_release_without_a_spectrogram_still_has_a_preview_chip(): void

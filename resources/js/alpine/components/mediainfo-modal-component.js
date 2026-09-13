@@ -1,3 +1,4 @@
+import { modalLifecycle } from "./modal-lifecycle.js";
 function escapeHtml(value) {
   const map = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" };
   return String(value).replace(/[&<>"']/g, (character) => map[character]);
@@ -156,11 +157,11 @@ function additionalDetails(media) {
 
 export function mediainfoModal() {
   return {
+    ...modalLifecycle(),
     open: false,
     loading: false,
     releaseName: "",
     requestVersion: 0,
-    returnFocus: null,
 
     _setContent(html) {
       if (this.$refs?.content) this.$refs.content.innerHTML = html;
@@ -168,12 +169,10 @@ export function mediainfoModal() {
 
     show(releaseId, releaseName, trigger = null) {
       const version = ++this.requestVersion;
-      this.returnFocus = trigger;
       this.releaseName = releaseName || "";
       this.open = true;
       this.loading = true;
       this._setContent("");
-      if (typeof this.$nextTick === "function") this.$nextTick(() => this.$refs?.closeButton?.focus());
 
       fetch("/release/" + encodeURIComponent(releaseId) + "/mediainfo", { headers: { Accept: "application/json" } })
         .then((response) => {
@@ -199,8 +198,6 @@ export function mediainfoModal() {
       this.loading = false;
       this.releaseName = "";
       this._setContent("");
-      this.returnFocus?.focus?.();
-      this.returnFocus = null;
     },
 
     _buildHtml(media) {
@@ -228,6 +225,7 @@ export function mediainfoModal() {
     },
 
     init() {
+      this.initModal();
       const self = this;
       window.showMediainfo = (id, name) => self.show(id, name);
       window.closeMediainfoModal = () => self.close();
@@ -237,9 +235,6 @@ export function mediainfoModal() {
           event.preventDefault();
           self.show(badge.dataset.releaseId, badge.dataset.releaseDisplayName, badge);
         }
-      });
-      document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && self.open) self.close();
       });
     },
   };

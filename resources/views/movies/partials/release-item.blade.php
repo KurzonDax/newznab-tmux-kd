@@ -86,7 +86,7 @@
                 </a>
 
                 @if($release->id)
-                    <x-report-button :release-id="(int)$release->id" variant="icon" />
+                    <x-report-button :release-name="release_display_name($release)" :release-id="(int)$release->id" variant="icon" />
                 @endif
             </div>
         </div>

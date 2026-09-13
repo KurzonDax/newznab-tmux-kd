@@ -1,3 +1,4 @@
+import { modalLifecycle } from "./modal-lifecycle.js";
 import { fullscreenStage } from "./fullscreen-stage.js";
 
 /**
@@ -8,14 +9,17 @@ import { fullscreenStage } from "./fullscreen-stage.js";
  */
 export function imageModal() {
   return {
+    ...modalLifecycle(),
     ...fullscreenStage(),
 
     open: false,
     imageUrl: "",
     imageTitle: "Image Preview",
     releaseName: "",
+    guid: "",
 
-    openModal(url, title, fullUrl, releaseName) {
+    openModal(url, title, fullUrl, releaseName, guid = '') {
+      this.guid = guid;
       this.imageUrl = url || "";
       this.imageTitle = title || "Image Preview";
       this.releaseName = releaseName || "";
@@ -27,6 +31,9 @@ export function imageModal() {
       return this.releaseName !== "";
     },
 
+    detailsUrl() { return '/details/' + encodeURIComponent(this.guid); },
+    downloadUrl() { return '/getnzb/' + encodeURIComponent(this.guid); },
+
     hasNoReleaseName() {
       return !this.hasReleaseName();
     },
@@ -37,9 +44,10 @@ export function imageModal() {
     },
 
     init() {
+      this.initModal(() => this.close(), () => this.stepBack());
       const self = this;
-      window.openImageModal = function (url, title, fullUrl, releaseName) {
-        self.openModal(url, title, fullUrl, releaseName);
+      window.openImageModal = function (url, title, fullUrl, releaseName, guid) {
+        self.openModal(url, title, fullUrl, releaseName, guid);
       };
       window.closeImageModal = function () {
         self.close();
@@ -55,6 +63,7 @@ export function imageModal() {
             trigger.dataset.imageTitle,
             trigger.dataset.fullUrl,
             trigger.dataset.releaseDisplayName,
+            trigger.dataset.guid,
           );
           return;
         }
@@ -62,10 +71,6 @@ export function imageModal() {
           e.preventDefault();
           self.close();
         }
-      });
-
-      document.addEventListener("keydown", function (e) {
-        if (e.key === "Escape" && self.open) self.stepBack();
       });
     },
   };

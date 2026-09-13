@@ -1,3 +1,4 @@
+import { modalLifecycle } from "./modal-lifecycle.js";
 /**
  * Alpine.data('releaseReport') - Shared release report modal (singleton)
  * Alpine.data('adminReleaseReports') - Admin release reports page
@@ -8,8 +9,10 @@
 import Alpine from '@alpinejs/csp';
 
 Alpine.data('releaseReport', () => ({
+    ...modalLifecycle(),
     open: false,
     releaseId: '',
+    releaseName: '',
     reason: '',
     description: '',
     isSubmitting: false,
@@ -19,6 +22,7 @@ Alpine.data('releaseReport', () => ({
 
     openModal(releaseId, trigger) {
         this.releaseId = releaseId;
+        this.releaseName = trigger?.dataset.releaseDisplayName || '';
         this._currentTrigger = trigger || null;
         this.reason = '';
         this.description = '';
@@ -62,17 +66,17 @@ Alpine.data('releaseReport', () => ({
         .then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
         .then(function(result) {
             if (result.ok && result.data.success) {
-                self.successMsg = result.data.message;
+                window.showToast(result.data.message || 'Report submitted', 'success');
                 // Mark the trigger button as reported
                 if (triggerRef) {
-                    triggerRef.disabled = true;
+                    triggerRef.setAttribute('aria-disabled', 'true');
                     triggerRef.classList.add('opacity-50', 'cursor-not-allowed');
                     var icon = triggerRef.querySelector('i');
                     if (icon) icon.classList.add('text-red-500');
                     var label = triggerRef.querySelector('.report-label');
                     if (label) label.textContent = 'Reported';
                 }
-                setTimeout(function() { self.close(); }, 2000);
+                self.close();
             } else {
                 self.errorMsg = result.data.message || 'An error occurred. Please try again.';
             }
@@ -82,6 +86,7 @@ Alpine.data('releaseReport', () => ({
     },
 
     init() {
+        this.initModal();
         var self = this;
 
         // Document-level click delegation for .report-trigger buttons
@@ -91,16 +96,12 @@ Alpine.data('releaseReport', () => ({
 
             e.preventDefault();
             e.stopPropagation();
+            if (trigger.getAttribute('aria-disabled') === 'true') return;
 
             var releaseId = trigger.getAttribute('data-report-release-id');
             if (!releaseId) return;
 
             self.openModal(releaseId, trigger);
-        });
-
-        // Close on Escape key
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape' && self.open) self.close();
         });
     }
 }));
@@ -215,4 +216,3 @@ Alpine.data('adminReleaseReports', () => ({
         }
     }
 }));
-
