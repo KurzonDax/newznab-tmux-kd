@@ -55,5 +55,4 @@
 {{-- NFO modal is included globally via layouts.main --}}
 
 @push('scripts')
-@include('partials.cart-script')
 @endpush

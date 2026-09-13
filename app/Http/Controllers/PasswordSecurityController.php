@@ -9,9 +9,7 @@ use App\Models\PasswordSecurity;
 use App\Models\TrustedDevice;
 use App\Models\User;
 use App\Services\Auth\WebLoginSessionPolicy;
-use Illuminate\Contracts\View\Factory;
-use Illuminate\Contracts\View\View;
-use Illuminate\Foundation\Application;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Redirector;
@@ -24,30 +22,6 @@ use PragmaRX\Google2FALaravel\Facade as Google2FA;
 class PasswordSecurityController extends Controller
 {
     public function __construct(private readonly WebLoginSessionPolicy $webLoginSessionPolicy) {}
-
-    public function show2faForm(Request $request): Application|View|Factory|\Illuminate\Contracts\Foundation\Application|RedirectResponse
-    {
-        $user = $request->user();
-
-        if (! $user) {
-            return $this->redirectToLoginWithError('Please log in to access 2FA settings.');
-        }
-
-        $google2fa_url = '';
-        if ($user->passwordSecurity()->exists()) {
-            $google2fa_url = Google2FA::getQRCodeInline(
-                config('app.name'),
-                $user->email,
-                $user->passwordSecurity->google2fa_secret
-            );
-        }
-        $data = [
-            'user' => $user,
-            'google2fa_url' => $google2fa_url,
-        ];
-
-        return view('auth.2fa')->with('data', $data);
-    }
 
     /**
      * @throws IncompatibleWithGoogleAuthenticatorException
@@ -71,12 +45,7 @@ class PasswordSecurityController extends Controller
             ]
         );
 
-        // Check if request is from profile page
-        if ($request->has('from_profile') || $request->headers->get('referer') && str_contains($request->headers->get('referer'), 'profileedit')) {
-            return redirect()->to('profileedit#security')->with('success_2fa', 'Secret Key is generated, Please scan the QR code and verify to Enable 2FA');
-        }
-
-        return redirect()->to('2fa')->with('success', 'Secret Key is generated, Please verify Code to Enable 2FA');
+        return redirect()->to('profileedit#security')->with('success_2fa', 'Secret Key is generated, Please scan the QR code and verify to Enable 2FA');
     }
 
     /**
@@ -124,7 +93,7 @@ class PasswordSecurityController extends Controller
         return redirect()->to('profileedit#security')->with('error_2fa', 'Unable to cancel 2FA setup.');
     }
 
-    public function disable2fa(Disable2faPasswordSecurityRequest $request): Redirector|RedirectResponse|\Illuminate\Contracts\Foundation\Application
+    public function disable2fa(Disable2faPasswordSecurityRequest $request): Redirector|RedirectResponse|Application
     {
         $user = $request->user();
 
@@ -262,90 +231,6 @@ class PasswordSecurityController extends Controller
         }
 
         return view('auth.2fa_verify', compact('user'));
-    }
-
-    /**
-     * Handle disabling 2FA directly from profile page to avoid form conflicts.
-     * This route is specifically for the profile page 2FA section.
-     */
-    public function profileDisable2fa(Request $request): RedirectResponse
-    {
-        $user = $request->user();
-
-        if (! $user) {
-            return $this->redirectToLoginWithError('Please log in to access 2FA settings.');
-        }
-
-        $request->validate([
-            'current-password' => 'required',
-        ]);
-
-        if (! (Hash::check($request->get('current-password'), $user->password))) {
-            return redirect()->to('profileedit#security')->with('error_2fa', 'Your password does not match with your account password. Please try again.');
-        }
-
-        if ($user->passwordSecurity) {
-            $user->passwordSecurity->google2fa_enable = 0;
-            $user->passwordSecurity->save();
-        }
-
-        return redirect()->to('profileedit#security')->with('success_2fa', '2FA is now Disabled.');
-    }
-
-    /**
-     * Show the 2FA enable form on a dedicated page
-     */
-    public function showEnable2faForm(Request $request): Application|View|Factory|\Illuminate\Contracts\Foundation\Application|RedirectResponse
-    {
-        $user = $request->user();
-
-        if (! $user) {
-            return $this->redirectToLoginWithError('Please log in to access 2FA settings.');
-        }
-
-        $google2fa_url = '';
-        if ($user->passwordSecurity()->exists()) {
-            $google2fa_url = Google2FA::getQRCodeInline(
-                config('app.name'),
-                $user->email,
-                $user->passwordSecurity->google2fa_secret
-            );
-        }
-
-        $data = [
-            'user' => $user,
-            'google2fa_url' => $google2fa_url,
-        ];
-
-        return view('auth.2fa')->with('data', $data);
-    }
-
-    /**
-     * Show the 2FA disable form on a dedicated page
-     */
-    public function showDisable2faForm(Request $request): Application|View|Factory|\Illuminate\Contracts\Foundation\Application|RedirectResponse
-    {
-        $user = $request->user();
-
-        if (! $user) {
-            return $this->redirectToLoginWithError('Please log in to access 2FA settings.');
-        }
-
-        $google2fa_url = '';
-        if ($user->passwordSecurity()->exists()) {
-            $google2fa_url = Google2FA::getQRCodeInline(
-                config('app.name'),
-                $user->email,
-                $user->passwordSecurity->google2fa_secret
-            );
-        }
-
-        $data = [
-            'user' => $user,
-            'google2fa_url' => $google2fa_url,
-        ];
-
-        return view('auth.2fa')->with('data', $data);
     }
 
     private function redirectToLoginWithError(string $message): RedirectResponse

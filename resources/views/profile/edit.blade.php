@@ -432,9 +432,8 @@
                             <h4 class="text-yellow-800 font-semibold mb-1">Two-Factor Authentication is Disabled</h4>
                             <p class="text-yellow-700 text-sm mb-4">Add an extra layer of security to your account by enabling two-factor authentication.</p>
 
-                            <form method="POST" action="{{ route('generate2faSecret') }}">
+                            <form method="POST" action="{{ route('profileedit.generate2faSecret') }}">
                                 @csrf
-                                <input type="hidden" name="from_profile" value="1">
                                 <x-button type="submit" icon="fas fa-shield-alt">Enable Two-Factor Authentication</x-button>
                             </form>
                         </div>
