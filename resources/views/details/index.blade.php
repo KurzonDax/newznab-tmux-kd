@@ -52,8 +52,6 @@
 </div>
 @endsection
 
-@include('details.partials.image-modal')
-
 {{-- NFO modal is included globally via layouts.main --}}
 
 @push('scripts')
