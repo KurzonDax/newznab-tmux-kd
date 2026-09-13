@@ -97,7 +97,7 @@
                                 {{ $result->description ?? '' }}
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-gray-600 dark:text-gray-400">
-                                <i class="fa fa-clock-o text-gray-400 mr-2"></i>
+                                <i class="far fa-clock text-gray-400 mr-2"></i>
                                 <span title="{{ userDate($result->last_updated) }}">
                                     {{ $result->last_updated ? userDateDiffForHumans($result->last_updated) : 'Never' }}
                                 </span>

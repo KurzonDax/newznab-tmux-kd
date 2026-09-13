@@ -82,7 +82,7 @@
                                     </td>
                                     <td class="px-4 py-3">
                                         <div class="flex items-center text-sm text-gray-600 dark:text-gray-400">
-                                            <i class="fa fa-clock-o mr-2"></i>
+                                            <i class="far fa-clock mr-2"></i>
                                             <span title="{{ $result->created_at }}">{{ \Carbon\Carbon::parse($result->created_at)->diffForHumans() }}</span>
                                         </div>
                                     </td>
@@ -132,7 +132,7 @@
                             </div>
                             <div class="flex items-center justify-between">
                                 <span class="text-xs text-gray-500 dark:text-gray-400">
-                                    <i class="fa fa-clock-o mr-1"></i>{{ \Carbon\Carbon::parse($result->created_at)->diffForHumans() }}
+                                    <i class="far fa-clock mr-1"></i>{{ \Carbon\Carbon::parse($result->created_at)->diffForHumans() }}
                                 </span>
                                 <div class="flex gap-2">
                                     <x-button-link href="{{ url('/getnzb?id=' . $result->release->guid) }}" variant="muted" size="sm" title="Download NZB">
