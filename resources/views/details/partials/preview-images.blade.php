@@ -53,12 +53,12 @@
                         @if($hasPreviewImage)
                             <!-- Preview image -->
                             <div>
-                                <div class="block cursor-pointer image-modal-trigger" data-release-display-name="{{ release_display_name($release) }}" data-image-url="{{ $previewImageUrl }}" data-image-title="Preview Image" @if($previewFullUrl) data-full-url="{{ $previewFullUrl }}" @endif>
+                                <button type="button" class="block w-full cursor-pointer image-modal-trigger" data-guid="{{ $release->guid }}" data-release-display-name="{{ release_display_name($release) }}" data-image-url="{{ $previewImageUrl }}" data-image-title="Preview Image" @if($previewFullUrl) data-full-url="{{ $previewFullUrl }}" @endif>
                                     <img src="{{ $previewImageUrl }}"
                                          alt="Preview"
                                          class="detail-gallery-image w-full h-auto rounded-lg"
                                          loading="lazy">
-                                </div>
+                                </button>
                                 <p class="text-xs text-gray-500 mt-1 text-center">Preview</p>
                             </div>
                         @endif
@@ -66,12 +66,12 @@
                         @if($hasSampleImage)
                             <!-- Sample image -->
                             <div>
-                                <div class="block cursor-pointer image-modal-trigger" data-release-display-name="{{ release_display_name($release) }}" data-image-url="{{ $sampleImageUrl }}" data-image-title="Sample Image" @if($sampleFullUrl) data-full-url="{{ $sampleFullUrl }}" @endif>
+                                <button type="button" class="block w-full cursor-pointer image-modal-trigger" data-guid="{{ $release->guid }}" data-release-display-name="{{ release_display_name($release) }}" data-image-url="{{ $sampleImageUrl }}" data-image-title="Sample Image" @if($sampleFullUrl) data-full-url="{{ $sampleFullUrl }}" @endif>
                                     <img src="{{ $sampleImageUrl }}"
                                          alt="Sample"
                                          class="detail-gallery-image w-full h-auto rounded-lg"
                                          loading="lazy">
-                                </div>
+                                </button>
                                 <p class="text-xs text-gray-500 mt-1 text-center">Sample</p>
                             </div>
                         @endif

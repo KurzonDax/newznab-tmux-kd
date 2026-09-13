@@ -1,3 +1,4 @@
+import { modalLifecycle } from "./modal-lifecycle.js";
 /**
  * Alpine.data('filelistModal') - File list modal
  */
@@ -17,8 +18,10 @@ function formatFileSize(bytes) {
 }
 
 Alpine.data('filelistModal', () => ({
+    ...modalLifecycle(),
     open: false,
     loading: false,
+    releaseName: '',
 
     _setContent(html) {
         if (this.$refs.content) {
@@ -28,12 +31,14 @@ Alpine.data('filelistModal', () => ({
 
     show(guid) {
         this.open = true;
+        this.releaseName = '';
         this.loading = true;
         this._setContent('');
 
         fetch('/api/release/' + guid + '/filelist')
             .then(r => { if (!r.ok) throw new Error('Failed to load file list'); return r.json(); })
             .then(data => {
+                this.releaseName = data.release?.display_name || data.release?.searchname || '';
                 if (!data.files || data.files.length === 0) {
                     this._setContent('<p class="text-center text-gray-500 dark:text-gray-400 py-8">No files available</p>');
                 } else {
@@ -74,6 +79,7 @@ Alpine.data('filelistModal', () => ({
     },
 
     init() {
+        this.initModal();
         const self = this;
         window.showFilelist = function(guid) { self.show(guid); };
         window.closeFilelistModal = function() { self.close(); };
@@ -83,10 +89,6 @@ Alpine.data('filelistModal', () => ({
             const badge = e.target.closest('.filelist-badge');
             if (badge) { e.preventDefault(); self.show(badge.dataset.guid); return; }
             if (e.target.closest('[data-close-filelist-modal]')) { e.preventDefault(); self.close(); }
-        });
-
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape' && self.open) self.close();
         });
     }
 }));

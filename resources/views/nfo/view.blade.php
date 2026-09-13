@@ -1,5 +1,5 @@
 @if(isset($modal) && $modal)
-    <pre class="nfo-content">{{ $nfo['nfoUTF'] ?? $nfo['nfo'] ?? 'NFO content not available' }}</pre>
+    <pre class="nfo-content" data-release-name="{{ isset($rel) ? release_display_name($rel) : '' }}">{{ $nfo['nfoUTF'] ?? $nfo['nfo'] ?? 'NFO content not available' }}</pre>
 @else
     @extends('layouts.main')
 
@@ -32,4 +32,3 @@
     </div>
     @endsection
 @endif
-

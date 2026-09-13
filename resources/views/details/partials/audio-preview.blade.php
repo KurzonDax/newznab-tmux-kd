@@ -27,12 +27,12 @@
 
                     @if($spectrogramUrl)
                         <div class="mt-4">
-                            <div class="block cursor-pointer image-modal-trigger" data-release-display-name="{{ release_display_name($release) }}" data-image-url="{{ $spectrogramUrl }}" data-image-title="Spectrogram">
+                            <button type="button" class="block w-full cursor-pointer image-modal-trigger" data-guid="{{ $release->guid }}" data-release-display-name="{{ release_display_name($release) }}" data-image-url="{{ $spectrogramUrl }}" data-image-title="Spectrogram">
                                 <img src="{{ $spectrogramUrl }}"
                                      alt="Spectrogram of the audio preview"
                                      class="w-full max-w-full h-auto rounded-lg"
                                      loading="lazy">
-                            </div>
+                            </button>
                             <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 text-center">Spectrogram</p>
                         </div>
                     @endif

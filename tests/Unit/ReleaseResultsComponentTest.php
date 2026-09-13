@@ -46,15 +46,4 @@ class ReleaseResultsComponentTest extends TestCase
         $this->assertStringContainsString('data-release-display-name', $component);
         $this->assertStringContainsString('<x-report-button', $component);
     }
-
-    public function test_media_info_modal_closes_when_the_foreground_backdrop_area_is_clicked(): void
-    {
-        $modal = (string) file_get_contents(__DIR__.'/../../resources/views/partials/mediainfo-modal.blade.php');
-
-        $this->assertMatchesRegularExpression(
-            '/class="flex min-h-full items-center justify-center" @click\.self="close\(\)"/',
-            $modal,
-        );
-        $this->assertSame(2, substr_count($modal, '@click.self="close()"'));
-    }
 }

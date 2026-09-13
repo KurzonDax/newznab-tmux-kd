@@ -1,47 +1,10 @@
-{{-- Shared Report Modal - Alpine.js CSP Safe --}}
-{{-- Rendered once in the layout via partials/release-modals, reused by all report-trigger buttons --}}
 @auth
-<div x-data="releaseReport"
-     x-show="open"
-     x-cloak
-     class="fixed inset-0 z-50 overflow-y-auto"
-     aria-labelledby="report-modal-title"
-     role="dialog"
-     aria-modal="true"
-     x-transition:enter="transition ease-out duration-200"
-     x-transition:enter-start="opacity-0"
-     x-transition:enter-end="opacity-100"
-     x-transition:leave="transition ease-in duration-150"
-     x-transition:leave-start="opacity-100"
-     x-transition:leave-end="opacity-0">
-
-    <!-- Backdrop -->
-    <div class="fixed inset-0 bg-gray-500/75 dark:bg-gray-900/75 transition-opacity"
-         aria-hidden="true"
-         @click="close()"></div>
-
-    <!-- Modal Content Container -->
-    <div class="fixed inset-0 z-10 overflow-y-auto">
-        <div class="flex min-h-full items-center justify-center p-4 text-center sm:p-0">
-            <!-- Modal Panel -->
-            <div class="relative w-full max-w-md p-6 overflow-hidden text-left align-middle transition-all transform bg-white dark:bg-gray-800 shadow-xl rounded-2xl"
-                 x-transition:enter="transition ease-out duration-200"
-                 x-transition:enter-start="opacity-0 scale-95"
-                 x-transition:enter-end="opacity-100 scale-100"
-                 x-transition:leave="transition ease-in duration-150"
-                 x-transition:leave-start="opacity-100 scale-100"
-                 x-transition:leave-end="opacity-0 scale-95">
-
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100" id="report-modal-title">
-                        <i class="fas fa-flag text-red-500 mr-2"></i>Report Release
-                    </h3>
-                    <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" @click="close()">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-
-                <form @submit.prevent="submit()">
+<div x-data="releaseReport">
+    <x-modal name="report" width="sm">
+        <x-slot:title>Report release</x-slot:title>
+        <x-slot:icon><i class="fas fa-flag text-red-600 dark:text-red-400"></i></x-slot:icon>
+        <x-slot:subtitle><span x-text="releaseName"></span></x-slot:subtitle>
+        <form id="shared-report-form" @submit.prevent="submit()">
                     <!-- Reason Select -->
                     <div class="mb-4">
                         <label for="shared-report-reason" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -81,26 +44,14 @@
                         <p class="text-sm text-red-600 dark:text-red-400" x-text="errorMsg"></p>
                     </div>
 
-                    <!-- Success Message -->
-                    <div x-show="successMsg" x-cloak class="mb-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-                        <p class="text-sm text-green-600 dark:text-green-400" x-text="successMsg"></p>
-                    </div>
-
-                    <!-- Action Buttons -->
-                    <div class="flex justify-end space-x-3">
-                        <x-button variant="muted"
-                                @click="close()">
-                            Cancel
-                        </x-button>
-                        <x-button type="submit" variant="danger"
-                                ::disabled="!canSubmit()">
-                            <i x-show="isSubmitting" class="fas fa-spinner fa-spin"></i>
-                            <span x-text="submitText()"></span>
-                        </x-button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
+        </form>
+        <x-slot:footer>
+            <span class="flex-1"></span>
+            <x-button variant="secondary" size="sm" @click="close()">Cancel</x-button>
+            <x-button type="submit" form="shared-report-form" variant="danger" size="sm" ::disabled="!canSubmit()">
+                <i x-show="isSubmitting" class="fas fa-spinner fa-spin"></i><span x-text="submitText()"></span>
+            </x-button>
+        </x-slot:footer>
+    </x-modal>
 </div>
 @endauth

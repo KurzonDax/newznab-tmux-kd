@@ -12,7 +12,7 @@
     photograph against a neutral ground, not to render a surface -- but it says
     so at the source rather than relying on rescue CSS.
 --}}
-<div x-show="fullscreen"
+<div data-full-size-layer x-show="fullscreen"
      x-cloak
      class="fixed inset-0 z-20 flex items-center justify-center bg-gray-900/95 dark:bg-gray-950/95 p-4"
      @click.self="exitFullscreen()"

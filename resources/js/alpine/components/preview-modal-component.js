@@ -1,3 +1,4 @@
+import { modalLifecycle } from "./modal-lifecycle.js";
 import { fullscreenStage } from "./fullscreen-stage.js";
 
 const prefetchedUrls = new Set();
@@ -35,6 +36,7 @@ function imagePrefetchPayload(element) {
 export function previewModal() {
   return {
     ...fullscreenStage(),
+    ...modalLifecycle(),
 
     open: false,
     title: "Preview Image",
@@ -48,8 +50,14 @@ export function previewModal() {
     videoUrl: "",
     videoType: "",
     videoPlaying: false,
+    guid: '',
+    previewKind: 'preview',
+    audioTitle: '',
+    audioArtist: '',
+    audioArtwork: '',
 
     show(guid, type, resolvedUrl, title, audio, video, fullUrl, releaseName) {
+      this.guid = guid;
       this.releaseAudio();
       this.releaseVideo();
       // Offered only where a Full-size copy is on disk (ADR 0012); the trigger
@@ -69,8 +77,13 @@ export function previewModal() {
       this.audioUrl = audio?.url || "";
       this.audioType = audio?.type || "";
       this.audioMeta = audio?.meta || "";
+      this.audioTitle = audio?.title || releaseName || 'Audio preview';
+      this.audioArtist = audio?.artist || '';
+      this.audioArtwork = audio?.artwork || '';
       this.videoUrl = video?.url || "";
       this.videoType = video?.type || "";
+      this.previewKind = hasAudioPreview ? 'audio' : hasVideoPreview ? 'video' : type;
+      if (hasVideoPreview) this.title = 'Video preview';
 
       if (this.imageUrl === newUrl) {
         this.open = true;
@@ -86,6 +99,13 @@ export function previewModal() {
     onImageError() {
       this.imageError = true;
     },
+
+    kindIcon() {
+      return { audio: 'fa-headphones', video: 'fa-video', sample: 'fa-images', preview: 'fa-image' }[this.previewKind];
+    },
+
+    detailsUrl() { return '/details/' + encodeURIComponent(this.guid); },
+    downloadUrl() { return '/getnzb/' + encodeURIComponent(this.guid); },
 
     onImageLoad() {
       this.imageLoaded = true;
@@ -156,6 +176,7 @@ export function previewModal() {
     },
 
     init() {
+      this.initModal(() => this.close(), () => this.stepBack());
       const self = this;
       window.showPreviewImage = function (guid, type) {
         self.show(guid, type);
@@ -178,6 +199,9 @@ export function previewModal() {
                   url: preview.dataset.audioUrl,
                   type: preview.dataset.audioType,
                   meta: preview.dataset.audioMeta,
+                  title: preview.dataset.audioTitle,
+                  artist: preview.dataset.audioArtist,
+                  artwork: preview.dataset.audioArtwork,
                 }
               : undefined,
             preview.dataset.videoUrl
@@ -229,10 +253,6 @@ export function previewModal() {
             prefetchImage(payload.guid, payload.type, payload.imageUrl);
           }
         }
-      });
-
-      document.addEventListener("keydown", function (e) {
-        if (e.key === "Escape" && self.open) self.stepBack();
       });
 
       // Prefetch images for badges visible in the viewport during idle time
