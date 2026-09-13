@@ -1,0 +1,1194 @@
+<title>NNTmux Frontend Redesign</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/js/all.min.js" crossorigin="anonymous"></script>
+<style>
+/* ---------- Tokens: mirrors resources/css/app.css (blue/emerald/violet schemes, class-free dark via data-theme) ---------- */
+:root{
+  --font-sans:"Figtree",ui-sans-serif,system-ui,sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --surface-body:#f8fafc;--surface-sidebar:#1e293b;--surface-header:#1e293b;--surface-card:#ffffff;--surface-dropdown:#0f172a;
+  --surface-hover:#334155;--border-default:#e2e8f0;--text-muted:#64748b;--surface-panel-alt:#f1f5f9;--surface-chrome-border:rgba(255,255,255,.08);
+  --text:#0f172a;--text-2:#334155;
+  --p50:#eff6ff;--p100:#dbeafe;--p200:#bfdbfe;--p300:#93c5fd;--p400:#60a5fa;--p500:#3b82f6;--p600:#2563eb;--p700:#1d4ed8;--p800:#1e40af;--p900:#1e3a8a;
+  --ok:#16a34a;--ok-bg:#dcfce7;--ok-fg:#166534;--warn:#ca8a04;--warn-bg:#fef9c3;--warn-fg:#854d0e;--bad:#dc2626;--bad-bg:#fee2e2;--bad-fg:#991b1b;--info:#0891b2;--info-bg:#cffafe;--info-fg:#155e75;
+  --chip-bg:var(--surface-panel-alt);--chip-fg:#374151;--btn-muted-bg:#e2e8f0;--btn-muted-fg:#334155;--btn-muted-hover:#cbd5e1;
+  --radius-card:.75rem;
+  --review-accent:#b45309;--review-accent-bg:#fef3c7; /* annotation colour for "current problem" callouts — deliberately not the product accent */
+}
+:root[data-scheme="emerald"]{--surface-body:#f0fdf4;--surface-sidebar:#14332a;--surface-header:#14332a;--surface-card:#fff;--surface-dropdown:#0d281f;--surface-hover:#166534;--border-default:#bbf7d0;--text-muted:#047857;--surface-panel-alt:#ecfdf5;--p50:#ecfdf5;--p100:#d1fae5;--p200:#a7f3d0;--p300:#6ee7b7;--p400:#34d399;--p500:#10b981;--p600:#059669;--p700:#047857;--p800:#065f46;--p900:#064e3b}
+:root[data-scheme="violet"]{--surface-body:#faf5ff;--surface-sidebar:#2d1f4e;--surface-header:#2d1f4e;--surface-card:#fff;--surface-dropdown:#1e1b4b;--surface-hover:#5b21b6;--border-default:#e9d5ff;--text-muted:#6d28d9;--surface-panel-alt:#f5f3ff;--p50:#f5f3ff;--p100:#ede9fe;--p200:#ddd6fe;--p300:#c4b5fd;--p400:#a78bfa;--p500:#8b5cf6;--p600:#7c3aed;--p700:#6d28d9;--p800:#5b21b6;--p900:#4c1d95}
+
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--surface-body:#0f172a;--surface-sidebar:#020617;--surface-header:#020617;--surface-card:#1e293b;--surface-dropdown:#020617;--surface-hover:#1e293b;--border-default:#334155;--text-muted:#94a3b8;--surface-panel-alt:#1e293b;--text:#f1f5f9;--text-2:#cbd5e1;--chip-bg:#0f172a;--chip-fg:#d1d5db;--btn-muted-bg:#334155;--btn-muted-fg:#e2e8f0;--btn-muted-hover:#475569;--ok-bg:#14532d;--ok-fg:#bbf7d0;--warn-bg:#713f12;--warn-fg:#fef08a;--bad-bg:#7f1d1d;--bad-fg:#fecaca;--info-bg:#164e63;--info-fg:#a5f3fc;--review-accent:#fbbf24;--review-accent-bg:#451a03}
+  :root:not([data-theme="light"])[data-scheme="emerald"]{--surface-body:#071a12;--surface-sidebar:#020c09;--surface-header:#020c09;--surface-card:#0f2e24;--surface-dropdown:#020c09;--surface-hover:#14532d;--border-default:#14532d;--text-muted:#6ee7b7;--surface-panel-alt:#14332a;--chip-bg:#071a12}
+  :root:not([data-theme="light"])[data-scheme="violet"]{--surface-body:#120b20;--surface-sidebar:#0f0620;--surface-header:#0f0620;--surface-card:#1e1b4b;--surface-dropdown:#0f0620;--surface-hover:#3b0764;--border-default:#6b21a8;--text-muted:#c4b5fd;--surface-panel-alt:#2d1f4e;--chip-bg:#120b20}
+}
+:root[data-theme="dark"]{--surface-body:#0f172a;--surface-sidebar:#020617;--surface-header:#020617;--surface-card:#1e293b;--surface-dropdown:#020617;--surface-hover:#1e293b;--border-default:#334155;--text-muted:#94a3b8;--surface-panel-alt:#1e293b;--text:#f1f5f9;--text-2:#cbd5e1;--chip-bg:#0f172a;--chip-fg:#d1d5db;--btn-muted-bg:#334155;--btn-muted-fg:#e2e8f0;--btn-muted-hover:#475569;--ok-bg:#14532d;--ok-fg:#bbf7d0;--warn-bg:#713f12;--warn-fg:#fef08a;--bad-bg:#7f1d1d;--bad-fg:#fecaca;--info-bg:#164e63;--info-fg:#a5f3fc;--review-accent:#fbbf24;--review-accent-bg:#451a03}
+:root[data-theme="dark"][data-scheme="emerald"]{--surface-body:#071a12;--surface-sidebar:#020c09;--surface-header:#020c09;--surface-card:#0f2e24;--surface-dropdown:#020c09;--surface-hover:#14532d;--border-default:#14532d;--text-muted:#6ee7b7;--surface-panel-alt:#14332a;--chip-bg:#071a12}
+:root[data-theme="dark"][data-scheme="violet"]{--surface-body:#120b20;--surface-sidebar:#0f0620;--surface-header:#0f0620;--surface-card:#1e1b4b;--surface-dropdown:#0f0620;--surface-hover:#3b0764;--border-default:#6b21a8;--text-muted:#c4b5fd;--surface-panel-alt:#2d1f4e;--chip-bg:#120b20}
+
+*{box-sizing:border-box}
+html{color-scheme:light dark}
+body{margin:0;background:var(--surface-body);color:var(--text);font-family:var(--font-sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+a{color:var(--p600);text-decoration:none}
+a:hover{color:var(--p700)}
+h1,h2,h3,h4{margin:0;text-wrap:balance;font-weight:600;color:var(--text)}
+p{margin:0}
+button{font:inherit;cursor:pointer}
+input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--p500);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--font-mono);font-size:.8em}
+.muted{color:var(--text-muted)}
+.small{font-size:12px}
+.eyebrow{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);font-weight:600}
+
+/* ---------- Review site chrome (the wrapper around the prototypes) ---------- */
+.review{display:grid;grid-template-columns:240px minmax(0,1fr);min-height:100vh}
+.review-nav{position:sticky;top:0;height:100vh;overflow-y:auto;background:var(--surface-card);border-right:1px solid var(--border-default);padding:20px 16px;display:flex;flex-direction:column;gap:6px}
+.review-nav .brand{font-weight:700;font-size:16px;margin-bottom:6px}
+.review-nav .brand small{display:block;font-weight:400;color:var(--text-muted);font-size:12px}
+.review-nav a{display:block;padding:7px 10px;border-radius:8px;color:var(--text-2);font-size:13px}
+.review-nav a:hover{background:var(--surface-panel-alt)}
+.review-nav a.active{background:var(--p100);color:var(--p800);font-weight:600}
+.review-nav .group{margin-top:12px}
+.review-main{padding:28px 36px 80px;max-width:1380px}
+.review-main > section{margin-bottom:64px;scroll-margin-top:16px}
+.sec-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+.sec-head h2{font-size:22px}
+.sec-head .routes{font-family:var(--font-mono);font-size:11px;color:var(--text-muted)}
+.lede{max-width:70ch;color:var(--text-2);margin-bottom:18px}
+.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0 18px}
+.seg{display:inline-flex;border:1px solid var(--border-default);border-radius:8px;overflow:hidden;background:var(--surface-card)}
+.seg button{border:0;background:transparent;padding:6px 12px;font-size:12.5px;color:var(--text-2);height:32px}
+.seg button[aria-pressed="true"]{background:var(--p600);color:#fff}
+.seg button + button{border-left:1px solid var(--border-default)}
+
+/* Findings + options */
+.findings{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-bottom:22px}
+.finding{background:var(--surface-card);border:1px solid var(--border-default);border-radius:10px;padding:14px 16px}
+.finding h4{font-size:13.5px;margin-bottom:6px;display:flex;gap:8px;align-items:center}
+.finding p{font-size:13px;color:var(--text-2)}
+.finding .where{display:block;margin-top:6px;font-family:var(--font-mono);font-size:11px;color:var(--text-muted);word-break:break-all}
+.sev{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.06em;padding:2px 6px;border-radius:4px;text-transform:uppercase}
+.sev.high{background:var(--bad-bg);color:var(--bad-fg)}.sev.med{background:var(--warn-bg);color:var(--warn-fg)}.sev.low{background:var(--info-bg);color:var(--info-fg)}
+.options{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.options button{border:1px solid var(--border-default);background:var(--surface-card);color:var(--text-2);border-radius:999px;padding:6px 14px;font-size:13px;height:34px}
+.options button[aria-pressed="true"]{background:var(--p600);border-color:var(--p600);color:#fff}
+.option-panel{display:none}
+.option-panel.active{display:block}
+.option-note{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:0 0 14px}
+.option-note > div{background:var(--surface-panel-alt);border:1px solid var(--border-default);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--text-2)}
+.option-note h5{margin:0 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)}
+.option-note ul{margin:0;padding-left:18px}
+.option-note li{margin:2px 0}
+
+/* Device frame the mockups render inside */
+.frame{border:1px solid var(--border-default);border-radius:14px;overflow:hidden;background:var(--surface-body);box-shadow:0 10px 30px -18px rgba(2,6,23,.4)}
+.frame-bar{height:30px;background:var(--surface-panel-alt);border-bottom:1px solid var(--border-default);display:flex;align-items:center;gap:6px;padding:0 12px;font-family:var(--font-mono);font-size:11px;color:var(--text-muted)}
+.frame-bar i{width:9px;height:9px;border-radius:50%;background:var(--border-default);display:inline-block}
+.frame-bar .url{margin-left:8px;background:var(--surface-card);border:1px solid var(--border-default);border-radius:6px;padding:2px 10px;flex:1;max-width:520px}
+.frame.mobile{max-width:400px}
+.frame.mobile .app-nav{display:none}
+.frame.mobile .app-body{grid-template-columns:1fr}
+.callout{position:relative}
+.callout::after{content:attr(data-note);position:absolute;right:-2px;top:-10px;background:var(--review-accent-bg);color:var(--review-accent);border:1px solid var(--review-accent);font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:999px;white-space:nowrap;z-index:3}
+.frame.hide-notes .callout::after{display:none}
+
+/* ---------- App primitives, modelled on the project's .card/.surface-panel/<x-button>/release-action ---------- */
+.app{display:grid;grid-template-rows:auto 1fr;min-height:560px}
+.app-header{background:var(--surface-header);color:#fff;height:56px;display:flex;align-items:center;gap:14px;padding:0 16px;border-bottom:1px solid var(--surface-chrome-border)}
+.app-header .logo{font-weight:700;letter-spacing:-.01em}
+.app-header .spacer{flex:1}
+.app-body{display:grid;grid-template-columns:220px minmax(0,1fr)}
+.app-nav{background:var(--surface-sidebar);color:#cbd5e1;padding:12px 10px;display:flex;flex-direction:column;gap:2px}
+.app-nav .lbl{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8;padding:12px 10px 4px;font-weight:600}
+.app-nav a{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px;color:#cbd5e1;font-size:13px}
+.app-nav a:hover{background:rgba(255,255,255,.08);color:#fff}
+.app-nav a.active{background:rgba(255,255,255,.12);color:#fff;font-weight:600}
+.app-nav a .ico{width:16px;text-align:center;opacity:.8}
+.app-content{padding:18px 20px 28px;min-width:0}
+.card{background:var(--surface-card);border:1px solid var(--border-default);border-radius:var(--radius-card);box-shadow:0 1px 2px rgba(2,6,23,.05)}
+.surface-panel-alt{background:var(--surface-panel-alt);border-color:var(--border-default)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:36px;padding:0 14px;border-radius:8px;border:1px solid transparent;font-size:13px;font-weight:500;white-space:nowrap}
+.btn.sm{height:30px;padding:0 10px;font-size:12px}
+.btn.icon{width:36px;padding:0}
+.btn.sm.icon{width:30px}
+.btn.primary{background:var(--p600);color:#fff}.btn.primary:hover{background:var(--p700)}
+.btn.secondary{background:var(--surface-card);color:var(--text-2);border-color:var(--border-default)}.btn.secondary:hover{background:var(--surface-panel-alt)}
+.btn.success{background:var(--ok);color:#fff}
+.btn.ghost{background:transparent;color:var(--text-2)}.btn.ghost:hover{background:var(--surface-panel-alt)}
+.btn.muted{background:var(--surface-panel-alt);color:var(--text-2)}
+.field{height:36px;border:1px solid var(--border-default);background:var(--surface-card);border-radius:8px;padding:0 10px;font-size:13px;color:var(--text);display:inline-flex;align-items:center;gap:8px;min-width:0}
+.field.sm{height:30px;font-size:12px}
+.field input{border:0;background:transparent;outline:none;min-width:0;flex:1;font-size:inherit}
+.field.select::after{content:"▾";color:var(--text-muted);font-size:11px}
+.field .ph{color:var(--text-muted)}
+.chip{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px;border-radius:5px;font-size:11px;font-weight:500;background:var(--chip-bg);color:var(--chip-fg);white-space:nowrap}
+.chip.p{background:var(--p100);color:var(--p800)}
+.chip.ok{background:var(--ok-bg);color:var(--ok-fg)}.chip.warn{background:var(--warn-bg);color:var(--warn-fg)}.chip.bad{background:var(--bad-bg);color:var(--bad-fg)}.chip.info{background:var(--info-bg);color:var(--info-fg)}
+.chip.action{cursor:pointer}.chip.action:hover{filter:brightness(.95)}
+.pill{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;font-size:11px;font-weight:600;background:var(--p100);color:var(--p800)}
+.toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;border-bottom:1px solid var(--border-default)}
+.toolbar .grow{flex:1}
+.toolbar .count{font-size:12.5px;color:var(--text-muted);white-space:nowrap}
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:14px;flex-wrap:wrap}
+.page-head h1{font-size:20px;font-weight:700}
+.crumbs{font-size:12px;color:var(--text-muted);margin-bottom:4px}
+.crumbs b{color:var(--text-2);font-weight:500}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border-default);margin-bottom:14px}
+.tabs a{padding:8px 12px;font-size:13px;color:var(--text-2);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs a.active{color:var(--p700);border-color:var(--p600);font-weight:600}
+.actions{display:inline-flex;gap:4px}
+.ra{width:28px;height:28px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;border:0;color:#fff}
+.ra.dl{background:var(--ok)}.ra.pr{background:var(--p600)}.ra.mu{background:var(--surface-panel-alt);color:var(--text-2)}.ra.pu{background:#7c3aed}
+.poster{background:linear-gradient(160deg,var(--p200),var(--p600));border-radius:6px;position:relative;overflow:hidden;color:#fff;display:flex;align-items:flex-end;padding:6px;font-size:11px;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+.poster.sq{aspect-ratio:1/1}.poster.tall{aspect-ratio:2/3}
+.poster[data-c="poster-dune"]{background:linear-gradient(160deg,#f59e0b,#7c2d12)}
+.poster[data-c="poster-alien"]{background:linear-gradient(160deg,#334155,#020617)}
+.poster[data-c="poster-bear"]{background:linear-gradient(160deg,#0ea5e9,#1e3a8a)}
+.poster[data-c="cover-kida"]{background:linear-gradient(160deg,#fca5a5,#7f1d1d)}
+.poster[data-c="cover-elden"]{background:linear-gradient(160deg,#fde68a,#78350f)}
+.poster[data-c="cover-holly"]{background:linear-gradient(160deg,#a7f3d0,#064e3b)}
+.poster[data-c="cover-gt7"]{background:linear-gradient(160deg,#c7d2fe,#312e81)}
+.grid{display:grid;gap:14px}
+.grid.covers{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+.grid.cards{grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+table.rel{width:100%;border-collapse:collapse;font-size:13px}
+table.rel th{text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);padding:10px 10px;border-bottom:1px solid var(--border-default);font-weight:600;white-space:nowrap}
+table.rel td{padding:10px;border-bottom:1px solid var(--border-default);vertical-align:top}
+table.rel tr:last-child td{border-bottom:0}
+table.rel td.r{text-align:right}
+table.rel .name a{font-weight:500;color:var(--p700);word-break:break-all}
+.meta{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+.subline{font-size:11.5px;color:var(--text-muted);margin-top:4px;display:flex;gap:10px;flex-wrap:wrap}
+.pagination{display:flex;gap:4px;justify-content:flex-end;padding:12px 14px}
+.pagination span{min-width:30px;height:30px;border:1px solid var(--border-default);border-radius:7px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;background:var(--surface-card)}
+.pagination span.cur{background:var(--p600);border-color:var(--p600);color:#fff}
+.empty{padding:40px;text-align:center;color:var(--text-muted)}
+.strike{text-decoration:line-through;opacity:.6}
+kbd{font-family:var(--font-mono);font-size:10.5px;border:1px solid var(--border-default);border-bottom-width:2px;border-radius:4px;padding:0 5px;background:var(--surface-panel-alt);color:var(--text-2)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--text-muted);margin:8px 0 0}
+.legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.legend .cur::before{background:var(--review-accent)}
+.legend .new::before{background:var(--p600)}
+@media (max-width:900px){.review{grid-template-columns:1fr}.review-nav{position:static;height:auto;flex-direction:row;flex-wrap:wrap}.review-main{padding:20px}.option-note{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+/* one-pass fixes after the render check */
+.pill{white-space:nowrap}
+table.rel td.r,table.rel td.num{white-space:nowrap}
+table.rel td > div[style*="gap:10px"]{white-space:nowrap}
+.app-nav .callout::after{left:8px;right:auto;top:-9px;max-width:200px;overflow:hidden;text-overflow:ellipsis}
+.app-nav .lbl.callout::after{top:2px}
+/* ---------- Covers view prototype ---------- */
+.cover-art{position:relative;overflow:hidden;background:linear-gradient(155deg,var(--a),var(--b) 70%);display:block;width:100%;height:0;padding:0 0 150%;flex:none;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+.cover-art::before{content:"";position:absolute;inset:0;background:radial-gradient(120% 80% at 20% 0%,rgba(255,255,255,.35),transparent 55%),repeating-linear-gradient(135deg,rgba(255,255,255,.05) 0 6px,transparent 6px 14px)}
+.cover-art::after{content:"";position:absolute;left:0;right:0;bottom:0;height:45%;background:linear-gradient(to top,rgba(0,0,0,.55),transparent)}
+.cover-art.tall{padding-bottom:150%}.cover-art.square{padding-bottom:100%}
+.cover-art-title{position:absolute;left:8px;right:8px;bottom:8px;z-index:1;font-weight:700;line-height:1.15;letter-spacing:-.01em}
+.cover-grid{display:grid;grid-template-columns:repeat(var(--cols,6),minmax(0,1fr));gap:14px;padding:14px}
+.cover-grid.mobile{--cols:2;padding:0;gap:10px}
+.cover-card{position:relative;background:var(--surface-card);border:1px solid var(--border-default);border-radius:10px;overflow:hidden;cursor:pointer;transition:transform .12s,box-shadow .12s,border-color .12s;display:flex;flex-direction:column}
+.cover-card:hover,.cover-card:focus-visible{transform:translateY(-2px);box-shadow:0 12px 24px -14px rgba(2,6,23,.5);border-color:var(--p400)}
+.cover-card.is-open{border-color:var(--p600);box-shadow:0 0 0 2px var(--p200)}
+.cover-card.is-open::after{content:"";position:absolute;left:50%;bottom:-9px;width:14px;height:14px;background:var(--surface-panel-alt);border-left:1px solid var(--p600);border-top:1px solid var(--p600);transform:translateX(-50%) rotate(45deg)}
+.cover-heart{position:absolute;top:8px;right:8px;background:rgba(15,23,42,.6);color:#fca5a5;border-radius:999px;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;z-index:2}
+.cover-body{padding:8px 9px 9px;display:flex;flex-direction:column;gap:5px;flex:1}
+.cover-title{font-weight:600;font-size:12.5px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.cover-sub{font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cover-body .meta{margin-top:0;gap:3px}
+.cover-foot{display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:4px}
+.cover-row-expand{grid-column:1/-1}
+.cover-expanded{background:var(--surface-panel-alt);border:1px solid var(--p600);border-radius:10px;overflow:hidden}
+.cover-expanded-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border-default);font-size:13px}
+.cover-expanded table.rel tbody tr{background:var(--surface-card)}
+.dc-grid{display:grid;grid-template-columns:repeat(var(--cols,2),minmax(0,1fr));gap:14px;padding:14px}
+.dc{display:grid;grid-template-columns:140px minmax(0,1fr);overflow:hidden}
+.dc-art{display:flex;min-height:210px}.dc-art .cover-art{height:auto;padding-bottom:0;flex:1;border-radius:0}
+.dc-body{padding:12px 14px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.dc-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.dc-title{font-weight:700;font-size:15px;line-height:1.2}
+.dc-meta{display:flex;flex-wrap:wrap;gap:4px 14px;color:var(--text-2)}
+.dc-plot{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.4}
+.dc-rels{border-top:1px solid var(--border-default);margin-top:2px}
+.dc-rel{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--border-default)}
+.dc-rel:last-child{border-bottom:0}
+.sheet{margin-top:12px;box-shadow:0 -8px 30px -10px rgba(2,6,23,.45);border-bottom-left-radius:0;border-bottom-right-radius:0}
+.frame.mobile .cover-grid{--cols:2}
+.frame.mobile .dc-grid{--cols:1}.frame.mobile .dc{grid-template-columns:96px 1fr}
+@media (max-width:1100px){.cover-grid{--cols:4!important}}
+
+.cover-body .chip{max-width:100%;overflow:hidden;text-overflow:ellipsis;display:inline-block;line-height:20px}
+.cover-foot{flex-wrap:wrap;gap:4px}
+.cover-foot .small{white-space:nowrap}
+
+.cover-card,.cover-body{min-width:0}
+.cover-card{contain:layout}
+/* ---------- Covers at volume ---------- */
+.cover-grid.compact{gap:10px;padding:12px 14px}
+.cover-card.compact .cover-body{padding:6px 7px 7px;gap:2px}
+.cover-title.one{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+.cover-pip{position:absolute;top:6px;left:6px;width:10px;height:10px;border-radius:50%;border:2px solid rgba(255,255,255,.85);z-index:2;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.cover-pip.ok{background:var(--ok)}.cover-pip.warn{background:var(--warn)}.cover-pip.bad{background:var(--bad)}
+.cover-count{position:absolute;top:5px;right:6px;z-index:2;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:rgba(15,23,42,.75);color:#fff;font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
+.cover-card.compact .cover-heart{top:28px;right:6px}
+.cover-hover{position:absolute;left:0;right:0;top:0;bottom:0;padding:8px;background:linear-gradient(to top,rgba(2,6,23,.92) 55%,rgba(2,6,23,.35));color:#fff;opacity:0;transition:opacity .12s;display:flex;flex-direction:column;justify-content:flex-end;z-index:3;pointer-events:none}
+.cover-hover .chip{background:rgba(255,255,255,.14);color:#fff}
+.cover-hover .chip.ok{background:var(--ok);color:#fff}.cover-hover .chip.warn{background:var(--warn);color:#111}.cover-hover .chip.bad{background:var(--bad);color:#fff}.cover-hover .chip.p{background:var(--p500);color:#fff}
+.cover-card.compact:hover .cover-hover,.cover-card.compact:focus-visible .cover-hover{opacity:1;pointer-events:auto}
+.cover-card.compact .cover-hover{bottom:auto;height:calc(100% - 42px)} /* covers the artwork only; the title line stays readable */
+.toolbar.sticky{position:sticky;top:0;z-index:4;background:var(--surface-card);border-radius:12px 12px 0 0}
+.letters{display:flex;gap:2px;padding:8px 14px;border-bottom:1px solid var(--border-default);align-items:center;flex-wrap:wrap}
+.letters a{min-width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;font-size:12px;font-weight:600;color:var(--text-2)}
+.letters a:hover{background:var(--p100);color:var(--p800)}
+.pager{display:flex;align-items:center;gap:12px;padding:8px 14px;border-bottom:1px solid var(--border-default);flex-wrap:wrap}
+.card > .pager:last-child{border-bottom:0;border-top:1px solid var(--border-default)}
+.pager .pagination span{min-width:26px;height:26px;font-size:11.5px}
+.frame.mobile .cover-grid.compact{--cols:3}
+@media (max-width:1100px){.cover-grid.compact{--cols:6!important}}
+/* entity cards: no hover overlay, no release-level chrome */
+.cover-hover,.cover-pip{display:none!important}
+.cover-count{background:var(--p600);color:#fff}
+.cover-card.compact .cover-heart{top:6px;left:6px;right:auto}
+.cover-heart{color:#fca5a5;font-size:11px}
+.cover-foot{padding-top:6px;border-top:1px solid var(--border-default);margin-top:6px}
+/* Font Awesome (JS build injects SVGs): size them like the project's fa-fw icons */
+svg.svg-inline--fa{width:1em;height:1em;vertical-align:-.125em}
+.ra svg{font-size:12px}.btn svg{font-size:13px}.seg button svg{font-size:13px}.chip svg{font-size:10px}
+.field > svg{color:var(--text-muted);font-size:12px}
+.app-nav .ico svg{opacity:.85}
+.cover-expanded-head{flex-wrap:wrap;row-gap:6px}
+table.rel td:last-child{white-space:nowrap}
+.cover-count{font-size:11px;min-width:20px;height:20px}
+
+/* Row action buttons: one size, one radius, all filled; hover darkens; focus ring shared */
+.actions{display:inline-flex;gap:4px;align-items:center}
+.ra{width:28px;height:28px;border-radius:7px;border:0;padding:0;display:inline-flex;align-items:center;justify-content:center;font-size:12px;line-height:1;cursor:pointer;color:#fff;transition:filter .12s}
+.ra:hover{filter:brightness(.92)}
+.ra.dl{background:var(--ok);color:#fff}
+.ra.pr{background:var(--p600);color:#fff}
+.ra.mu{background:var(--btn-muted-bg);color:var(--btn-muted-fg)}
+.ra.mu:hover{background:var(--btn-muted-hover);filter:none}
+.ra svg{font-size:12px}
+table.rel td.name{width:100%;min-width:220px}
+table.rel th,table.rel td{padding:9px 8px}
+table.rel td:last-child{padding-right:10px}
+table.rel td.name{min-width:160px}
+.actions{gap:3px}
+table.rel td > div[style*="gap:10px"]{gap:8px!important}
+
+.frame.mobile .cover-grid.compact{--cols:3!important}
+.frame.mobile .cover-grid{--cols:3!important}
+
+button{appearance:none;-webkit-appearance:none}
+/* link colour that holds contrast in both themes (p700 on light, p300 on dark); release names are the row's title */
+:root{--link:var(--p700)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--link:var(--p300)}}
+:root[data-theme="dark"]{--link:var(--p300)}
+a{color:var(--link)}
+a:hover{color:var(--p500)}
+table.rel .name > div > div > a:first-child,table.rel .name a.title,.dc-rel a.mono,.grid.cards a.mono{font-size:14px;font-weight:600;color:var(--link);line-height:1.3;display:inline-block;word-break:break-all}
+table.rel .name > div > div > a:first-child:hover{text-decoration:underline}
+.subline a{color:var(--text-muted);font-weight:400;font-size:11.5px}
+/* chip semantics, matching the project's badges: completion ok/warn/bad · password bad · media info primary · NFO yellow · preview cyan · group/neutral grey */
+.chip.nfo{background:var(--warn-bg);color:var(--warn-fg)}
+.chip.info{background:var(--info-bg);color:var(--info-fg)}
+.chip.p{background:var(--p100);color:var(--p800)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .chip.p{background:var(--p900);color:var(--p200)}}
+:root[data-theme="dark"] .chip.p{background:var(--p900);color:var(--p200)}
+
+</style>
+<div class="review">
+<nav class="review-nav" aria-label="Sections">
+  <div class="brand">NNTmux Frontend Redesign<small>Review + prototype options · non-admin routes · Sep 2026</small></div>
+  <a href="https://claude.ai/code/artifact/6337e5de-2bac-45a6-9576-9017fdd4f159" target="_blank" style="background:var(--p600);color:#fff;font-weight:600">▶ Open the clickable prototype</a>
+  <a href="#overview" class="active">Overview &amp; scorecard</a>
+  <a href="#must-fix">Broken today (must-fix)</a>
+  <div class="group eyebrow">Areas</div>
+  <a href="#shell">1 · Shell &amp; navigation</a>
+  <a href="#browse">2 · Browse &amp; listings</a>
+  <a href="#covers" style="padding-left:22px">2b · Covers view, at volume</a>
+  <a href="#search">3 · Search</a>
+  <a href="#details">4 · Release details</a>
+  <a href="#hubs">5 · TV &amp; Movie hubs</a>
+  <a href="#account">6 · Account, basket, home</a>
+  <div class="group eyebrow">Plan</div>
+  <a href="#system">7 · Shared primitives</a>
+  <a href="#rollout">8 · Rollout order</a>
+  <div class="group eyebrow">Preview controls</div>
+  <div class="controls" style="flex-direction:column;align-items:stretch;gap:6px;margin:6px 0 0">
+    <span class="seg" role="group" aria-label="Theme"><button data-set="theme" data-val="light" aria-pressed="true">Light</button><button data-set="theme" data-val="dark" aria-pressed="false">Dark</button></span>
+    <span class="seg" role="group" aria-label="Colour scheme"><button data-set="scheme" data-val="blue" aria-pressed="true">Blue</button><button data-set="scheme" data-val="emerald" aria-pressed="false">Emerald</button><button data-set="scheme" data-val="violet" aria-pressed="false">Violet</button></span>
+    <span class="seg" role="group" aria-label="Viewport"><button data-set="vp" data-val="desktop" aria-pressed="true">Desktop</button><button data-set="vp" data-val="mobile" aria-pressed="false">Mobile</button></span>
+    <span class="seg" role="group" aria-label="Annotations"><button data-set="notes" data-val="on" aria-pressed="true">Notes on</button><button data-set="notes" data-val="off" aria-pressed="false">Notes off</button></span>
+  </div>
+  <p class="small muted" style="margin-top:10px">Mockups use the project's own tokens, so the scheme and theme switches prove every proposed surface retheme correctly.</p>
+</nav>
+
+<main class="review-main">
+
+<!-- ============================================================ OVERVIEW -->
+<section id="overview">
+  <div class="sec-head"><h2>Overview &amp; scorecard</h2><span class="routes">routes/web.php · 60 non-admin GET routes · 141 non-admin Blade files</span></div>
+  <p class="lede">The front end is not one design. It is four or five, layered over time: a shared release table that is actually good, five cover pages that each copied and drifted from one another, two hub families (TV and Movies) built by different hands, and account pages that predate the component library. Almost every complaint in the brief traces back to one root cause: <b>the same information is rendered by different markup in each place it appears</b>, so parity, sizing and colour drift independently. The fix is structural, not cosmetic: one release component with three view modes, one toolbar, one control size scale, one modal base.</p>
+
+  <div class="findings" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">
+    <div class="finding"><div class="eyebrow">1 · Ease of use</div><h4>Users cannot compare releases where they choose</h4><p>Completion %, grabs, media info and NFO exist in the list table only. Covers, hubs, basket and mobile drop most of them.</p></div>
+    <div class="finding"><div class="eyebrow">2 · Consistency</div><h4>4 page-header styles, 9 hand-rolled breadcrumbs, 7 pagination styles</h4><p>Only 3 of 141 files use <span class="mono">x-page-header</span>; zero account pages use <span class="mono">x-input</span>.</p></div>
+    <div class="finding"><div class="eyebrow">3 · Data parity</div><h4>Media-info chip lives in exactly one file</h4><p><span class="mono">release-results.blade.php:150</span>. Cover queries do not even fetch the signal.</p></div>
+    <div class="finding"><div class="eyebrow">4 · Sizing</div><h4>Four control heights share one toolbar</h4><p>30 / 34 / 38 / 42 px across inline-search, sort dropdown, <span class="mono">x-button</span> and <span class="mono">x-input</span>. Dropdown widths hard-coded w-40…w-64.</p></div>
+    <div class="finding"><div class="eyebrow">5 · Redundancy</div><h4>Nine search inputs, four implementations</h4><p>Header, mobile, inline-search, /search page, plus per-page forms on movies, music, games, books, series. One component is dead.</p></div>
+    <div class="finding"><div class="eyebrow">6 · Broken views</div><h4>Audio and Games covers are all placeholders</h4><p>The 0/1 <span class="mono">cover</span> flag is concatenated into the image URL. Plus 11 other outright bugs, listed next.</p></div>
+    <div class="finding"><div class="eyebrow">7 · Jank</div><h4>Undefined CSS classes, FA4 icon names, Tailwind-v2 aspect classes</h4><p>My Shows header is white text on nothing; <span class="mono">fa-clock-o</span> draws a blank box; trailer iframes fall back to h-96.</p></div>
+    <div class="finding"><div class="eyebrow">8 · Design standard</div><h4>The rules exist, the linter checks two of them</h4><p><span class="mono">check-design-system.sh</span> enforces blue-* and inline style. bg-white/bg-gray, indigo/purple, missing dark: and JS-injected classes all slip through.</p></div>
+  </div>
+
+  <div class="card" style="padding:14px 18px;margin-bottom:18px;border-color:var(--p400)">
+    <div class="eyebrow" style="color:var(--p700);margin-bottom:6px">Decisions so far</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:6px 18px;font-size:13px">
+      <div><b>1 · Shell</b> → B · Top bar only</div>
+      <div><b>2 · Browse</b> → A · One browser</div>
+      <div><b>2b · Covers</b> → open: second group now labelled "Cover size", shown only in Covers</div>
+      <div><b>3 · Search</b> → A · One search, scoped</div>
+      <div><b>4 · Details</b> → A · Header-first with tabs</div>
+      <div><b>5 · TV &amp; Movies</b> → open: where the watchlist lives, see 5</div>
+      <div><b>6 · Account</b> → A · Account page + Basket + Home</div>
+    </div>
+  </div>
+  <h3 style="font-size:15px;margin:8px 0 8px">Recommended direction</h3>
+  <ul style="max-width:80ch;color:var(--text-2);padding-left:20px;margin:0 0 6px">
+    <li><b>One release browser.</b> A single <span class="mono">&lt;x-release-browser&gt;</span> renders Table, Cards and Covers from the same row shape and the same "facts strip" (completion · password · media info · NFO · preview). Every listing page, hub, basket and search result mounts it. Parity stops being a per-page chore.</li>
+    <li><b>One toolbar, one search.</b> Scope-aware search in the header (with a category select) replaces the page forms; per-page fields become a filter drawer on the toolbar. Sort and view switch appear on every listing, including covers.</li>
+    <li><b>One control scale.</b> Inputs, selects, buttons and dropdown triggers all resolve to 36 px (md) or 30 px (sm) with the same radius and padding. Dropdown panels size to content with a min-width.</li>
+    <li><b>Same skeleton for equivalent pages.</b> Series page and movie page share an entity template; My Shows and My Movies become one Watchlist; profile view/edit become one Account page with sections.</li>
+  </ul>
+  <div class="legend"><span class="cur">Amber callouts mark what is wrong today</span><span class="new">Primary colour marks the proposal (retheme with the scheme switch)</span></div>
+</section>
+
+<!-- ============================================================ MUST FIX -->
+<section id="must-fix">
+  <div class="sec-head"><h2>Broken today (must-fix, independent of any redesign)</h2></div>
+  <p class="lede">These are defects, not taste. Each is a small PR and none depends on the redesign direction. They are ordered by how many users hit them.</p>
+  <div class="findings">
+    <div class="finding"><h4><span class="sev high">High</span>Audio &amp; Games covers never load</h4><p><span class="mono">musicinfo.cover</span> / <span class="mono">gamesinfo.cover</span> are 0/1 flags (the query filters <span class="mono">cover = 1</span>) but the view builds <span class="mono">/covers/music/1</span>. Every cover falls back to no-cover.png. Console already uses <span class="mono">getReleaseCover()</span>.</p><span class="where">music/index.blade.php:120 · games/index.blade.php:123 · MusicService.php:196 · GamesService.php:245</span></div>
+    <div class="finding"><h4><span class="sev high">High</span>Every My Movies title link lands on "Movie details not available"</h4><p>Links go to <span class="mono">/Movies?imdb=…</span>; that branch of <span class="mono">showMovies()</span> returns the detail view without loading <span class="mono">$movie</span>. The working route is <span class="mono">movie.view</span>, used only by Trending.</p><span class="where">MovieController.php:118 · mymovies/index.blade.php:92,186 · mymovies/add.blade.php:152,213</span></div>
+    <div class="finding"><h4><span class="sev high">High</span>Site root can serve raw JSON</h4><p>With no front-page content row, <span class="mono">/</span> returns a JSON 404. Two ready landing views (home/index, welcome) are unrouted.</p><span class="where">ContentController.php:67</span></div>
+    <div class="finding"><h4><span class="sev high">High</span>My Shows / My Movies headers are invisible in light mode</h4><p><span class="mono">header-gradient</span>, <span class="mono">table-header-gradient</span>, <span class="mono">show-avatar</span>, <span class="mono">empty-state-bg</span>, <span class="mono">col-width-*</span> are defined nowhere in resources/css. White headings render on the page background.</p><span class="where">myshows/index.blade.php:4-11 · mymovies/index.blade.php</span></div>
+    <div class="finding"><h4><span class="sev high">High</span>Details page emits markup before &lt;!DOCTYPE&gt;</h4><p><span class="mono">@include('details.partials.image-modal')</span> sits after <span class="mono">@endsection</span>, so it is echoed ahead of the layout. The included modal and its CSS are dead anyway (the live one is partials/image-modal).</p><span class="where">details/index.blade.php:55 · csp-safe.css:477-500</span></div>
+    <div class="finding"><h4><span class="sev high">High</span>Series page has two unmatched &lt;/div&gt;</h4><p>48 opening, 50 closing. The episode filter and the Episodes card render outside the page panel and lose their padding.</p><span class="where">series/viewseries.blade.php:200-203</span></div>
+    <div class="finding"><h4><span class="sev med">Med</span>JS paints blue-* over primary-* → two active states</h4><p>Profile tabs, movie quality filter and season tabs add <span class="mono">bg-blue-50 / bg-blue-600 / border-blue-500</span> and never remove the server-rendered primary classes. Wrong under emerald/violet, unreadable in dark.</p><span class="where">tab-switcher.js:97-113 · quality-filter.js:55-77 · series-season-loader.js:99-102</span></div>
+    <div class="finding"><h4><span class="sev med">Med</span>Trending TV rank badges escape their cards</h4><p>The movie card has <span class="mono">relative</span>; the TV clone dropped it, so the absolute badge positions against the page.</p><span class="where">series/trending.blade.php:38 vs movies/trending.blade.php:38</span></div>
+    <div class="finding"><h4><span class="sev med">Med</span>Adult browse is a dead end</h4><p><span class="mono">x-view-toggle</span> labels the XXX link "Covers" but it renders a table, and that page has no toggle back.</p><span class="where">view-toggle.blade.php:21 · xxx/index.blade.php</span></div>
+    <div class="finding"><h4><span class="sev med">Med</span>My Movies "add" page renders a second, empty My Movies list beneath the form</h4><p>The controller never passes <span class="mono">$movies</span> for add/edit, so users see "No movies bookmarked yet" while adding one.</p><span class="where">mymovies/add.blade.php:89-255</span></div>
+    <div class="finding"><h4><span class="sev med">Med</span>Flash messages appear twice</h4><p>Layout prints banners and the toast store reads the same data.</p><span class="where">layouts/main.blade.php:66-84,138 · stores/toast.js:46</span></div>
+    <div class="finding"><h4><span class="sev med">Med</span>Hidden comments still render, count disagrees with list chip</h4><p><span class="mono">getComments()</span> ignores <span class="mono">isvisible</span>; the counter does not.</p><span class="where">ReleaseComment.php:83-86,160-167 · comments.blade.php:5</span></div>
+    <div class="finding"><h4><span class="sev low">Low</span>Dead or orphaned</h4><p>x-search-autocomplete (0 uses), cart-script.blade.php, home/index, welcome, auth/verify, auth/google2fa, auth/2fa (unlinked), routes <span class="mono">movie</span>, <span class="mono">movietrailers</span>, 7 orphan 2FA routes, viewmovietrailer + trailer-modal, errors/layout, Alpine <span class="mono">dropdown</span>/<span class="mono">submenu</span>, <span class="mono">$similars</span> computed and discarded on every details load.</p></div>
+    <div class="finding"><h4><span class="sev low">Low</span>Icon and utility names that do not exist</h4><p>FA4 names <span class="mono">fa-hdd-o / fa-clock-o / fa-external-link</span> draw blank; Tailwind-v2 <span class="mono">aspect-w-16 aspect-h-9</span>; <span class="mono">w-30 h-30</span> avatar; <span class="mono">contact-page-container</span>.</p><span class="where">season-content:30,33 · browsegroup:100 · mymovies:163 · viewmovietrailer:16 · profile/index:48 · contact/index:5</span></div>
+  </div>
+</section>
+
+<!-- ============================================================ SHELL -->
+<section id="shell">
+  <div class="sec-head"><h2>1 · Shell &amp; navigation</h2><span class="routes">layouts/main · partials/header-menu · partials/sidebar · partials/*-modal</span></div>
+  <p class="lede">The header is category-driven with five hard-coded root branches; the sidebar is fully hand-written and ignores the category list; the mobile panel is a third rendering with its own icon map. They disagree on names (Audio / Music, TV / TV Series, Adult / XXX) and on what exists (My Shows and Trending are missing from different menus). Three search boxes and three theme switchers live in the shell alone.</p>
+  <div class="findings">
+    <div class="finding"><h4><span class="sev high">High</span>Nav rendered three times, from two sources</h4><p>Header dropdowns from <span class="mono">$parentcatlist</span>; sidebar hard-coded; mobile panel copied again. My Shows/My Movies only in the avatar menu; Trending missing from the dropdowns.</p><span class="where">header-menu.blade.php:14-135,303-407 · sidebar.blade.php:13-66</span></div>
+    <div class="finding"><h4><span class="sev high">High</span>Header search inputs are bg-gray-700 with no dark: variant</h4><p>Dark controls on light pages, and the mobile panels hard-code <span class="mono">bg-gray-800</span>, so they ignore the emerald/violet schemes.</p><span class="where">header-menu.blade.php:174,192,271,303</span></div>
+    <div class="finding"><h4><span class="sev med">Med</span>No modal base component</h4><p>8 partials, the transition block copy-pasted 14 times, two visual shapes (only mediainfo uses <span class="mono">.card</span>), inconsistent backdrop-click, no focus trap.</p><span class="where">partials/nfo-modal … report-modal</span></div>
+    <div class="finding"><h4><span class="sev med">Med</span>Control size scale does not exist</h4><p><span class="mono">x-input</span> text-base py-2 (≈42px) · <span class="mono">x-button md</span> text-sm (≈38px) · inline-search (34 + 30px) · sort-dropdown (38px). Dropdown panels w-40 / w-48 / w-56 / w-64.</p><span class="where">components/input,select,button,inline-search,sort-dropdown</span></div>
+    <div class="finding"><h4><span class="sev med">Med</span>Guests get no navigation on layouts.main; layouts.guest has no theme switch</h4><span class="where">layouts/main.blade.php:40-107 · layouts/guest.blade.php</span></div>
+    <div class="finding"><h4><span class="sev low">Low</span>z-index collisions</h4><p>Dropdowns, mobile panels and modals all z-50; toasts 9999; three 99999 rules in csp-safe.css.</p></div>
+  </div>
+
+  <div class="options" role="tablist" data-group="shell">
+    <button aria-pressed="false" data-opt="shell-cur">Current (annotated)</button>
+    <button aria-pressed="false" data-opt="shell-a">A · One rail, one search</button>
+    <button aria-pressed="true" data-opt="shell-b">B · Top bar only ✓ chosen</button>
+    <button aria-pressed="false" data-opt="shell-c">C · Collapsible icon rail</button>
+  </div>
+
+  <div class="option-panel" id="shell-cur">
+    <div class="frame"><div class="frame-bar"><i></i><i></i><i></i><span class="url">/browse/Movies</span></div>
+      <div class="app">
+        <div class="app-header">
+          <span class="logo">NNTmux</span>
+          <span class="callout" data-note="5 hard-coded root branches" style="display:flex;gap:14px;font-size:13px;color:#cbd5e1"><span>Console ▾</span><span>Movies ▾</span><span>Music ▾</span><span>PC ▾</span><span>TV Series ▾</span><span>XXX ▾</span><span>Books ▾</span></span>
+          <span class="spacer"></span>
+          <span class="callout" data-note="bg-gray-700, no dark:, w-40 xl:w-48" style="display:flex;gap:6px"><span class="field" style="background:#374151;color:#fff;border-color:#374151;width:150px">All ▾</span><span class="field" style="background:#374151;color:#9ca3af;border-color:#374151;width:190px">Search…</span><span class="btn primary" style="height:38px">Go</span></span>
+          <span style="width:30px;height:30px;border-radius:50%;background:#475569"></span>
+        </div>
+        <div class="app-body">
+          <nav class="app-nav">
+            <div class="lbl callout" data-note="hard-coded, not category-driven">Browse</div>
+            <a><span class="ico">🎮</span>Console</a><a class="callout" data-note="header adds My Movies here"><span class="ico">🎬</span>Movies</a><a><span class="ico">🔥</span>Trending Movies</a><a class="callout" data-note="header says Music"><span class="ico">🎵</span>Audio</a><a><span class="ico">🕹</span>Games</a><a class="callout" data-note="header says TV Series"><span class="ico">📺</span>TV</a><a><span class="ico">🔥</span>Trending TV</a><a class="callout" data-note="header says XXX"><span class="ico">🔞</span>Adult</a><a><span class="ico">📚</span>Books</a><a>All</a><a>Groups</a>
+            <div class="lbl">More</div><a>Forum</a><a class="callout" data-note="search #3 and #4">Search</a><a>Advanced search</a><a>RSS</a><a>API v1</a><a>API v2</a><a>Status</a><a class="callout" data-note="also in footer">Contact</a>
+            <a class="callout" data-note="also in avatar menu; 2 logout forms" style="margin-top:8px">Sign out</a>
+          </nav>
+          <div class="app-content">
+            <div class="callout" data-note="flash shown as banner AND toast" style="background:var(--ok-bg);color:var(--ok-fg);padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:13px">Release added to your cart.</div>
+            <div class="card">
+              <div class="toolbar">
+                <span class="callout" data-note="38px" ><span class="field select" style="height:38px"><span>Sort: Newest</span></span></span>
+                <span class="callout" data-note="38px"><span class="field select" style="height:38px"><span>Completion: All</span></span></span>
+                <span class="grow"></span>
+                <span class="callout" data-note="34px input + 30px button; drops sort/view params on submit"><span class="field" style="height:34px;width:190px"><span class="ph">Quick search…</span></span> <span class="btn primary sm">⌕</span></span>
+                <span class="small muted callout" data-note="text links, not a control">View: <b>List</b> | Covers | Show Thumbs</span>
+              </div>
+              <div class="empty small">Release table (see Browse section)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option-panel" id="shell-a">
+    <div class="option-note">
+      <div><h5>What changes</h5><ul><li>Sidebar and mobile drawer are generated from the same <span class="mono">$parentcatlist</span> as the header, with one name per root taken from the category title. No hand-written links.</li><li>Header keeps only: scope-aware search (category select + input + <kbd>/</kbd> shortcut), basket count, user menu. Category dropdowns leave the header; they are the sidebar's job.</li><li>Sidebar gains a "Mine" group (Watchlist, Basket, Downloads) and a "Discover" group (Trending TV, Trending Movies). Sign out lives in the user menu only.</li><li>One flash channel (toast), one theme control (user menu; a small pill on guest pages).</li></ul></div>
+      <div><h5>Trade-offs</h5><ul><li>Least disruptive: users keep the sidebar mental model.</li><li>Sidebar costs 220 px of width on cover grids; Option C mitigates that.</li><li>Requires the category title to be the single source of the display name (rename "Music" vs "Audio" once in the DB).</li></ul></div>
+    </div>
+    <div class="frame" data-mock="shell" data-variant="a"></div>
+  </div>
+
+  <div class="option-panel active" id="shell-b">
+    <div class="option-note">
+      <div><h5>What changes</h5><ul><li>No sidebar. A single top bar carries a "Browse" mega-menu (category-driven, two columns: roots and their sub-categories), search, Watchlist, Basket, user menu.</li><li>Full content width for cover grids and wide tables; mobile is the same bar with a drawer, so there is one nav to maintain instead of three.</li><li>Chosen. Pairs with Search option A: the bar carries the single scoped search box.</li></ul></div>
+      <div><h5>Trade-offs</h5><ul><li>Biggest change for existing users; category sub-lists move one click away.</li><li>Mega-menu needs care for keyboard and touch; the current dropdown JS is vanilla delegation and would be rewritten.</li></ul></div>
+    </div>
+    <div class="frame" data-mock="shell" data-variant="b"></div>
+  </div>
+
+  <div class="option-panel" id="shell-c">
+    <div class="option-note">
+      <div><h5>What changes</h5><ul><li>Option A's rail, collapsible to a 56 px icon rail (state remembered per user, like the movie layout preference already is). Hover or focus reveals labels.</li><li>Best of both: navigation stays one click away; covers and tables get the width back when the user wants it.</li></ul></div>
+      <div><h5>Trade-offs</h5><ul><li>Slightly more Alpine work (rail state store + tooltip labels).</li><li>Icon-only rail relies on distinct icons; today Console and Games share <span class="mono">fa-gamepad</span>.</li></ul></div>
+    </div>
+    <div class="frame" data-mock="shell" data-variant="c"></div>
+  </div>
+</section>
+
+<!-- ============================================================ BROWSE -->
+<section id="browse">
+  <div class="sec-head"><h2>2 · Browse &amp; listings</h2><span class="routes">/browse/{parent}/{id?} · /Movies · /Audio · /Console · /Games · /Books · /XXX · /browsegroup · /poster</span></div>
+  <p class="lede">There is no view preference; "view" is which route you are on. The list table (<span class="mono">release-results</span>) is shared and decent. The five cover pages each hand-roll a card, a filter form, pagination and a breadcrumb: music and games are 73 % line-identical and both have the broken cover URL. None of the cover pages show category, file count, media info or a report button; none have a sort control although every controller computes the sort URLs.</p>
+
+  <h3 style="font-size:15px;margin:0 0 8px">Data parity today</h3>
+  <div class="card" style="overflow-x:auto;margin-bottom:18px"><table class="rel parity">
+    <thead><tr><th>Element</th><th>List table</th><th>List mobile</th><th>Movies covers</th><th>Audio covers</th><th>Console covers</th><th>Games covers</th><th>Books covers</th><th>Adult table</th><th>Series page</th><th>Movie page</th><th>Basket</th></tr></thead>
+    <tbody>
+      <tr><td>Category badge</td><td>✅</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+      <tr><td>Size</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>❌</td><td>✅</td><td>✅</td><td>✅</td><td>❌</td></tr>
+      <tr><td>File count → file list</td><td>✅</td><td>text only</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+      <tr><td>Grabs / comments</td><td>✅</td><td>✅</td><td>❌</td><td>fetched, not shown</td><td>✅</td><td>fetched, not shown</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+      <tr><td>Completion / repair chips</td><td>✅</td><td>✅</td><td>❌</td><td>only if incomplete</td><td>only if incomplete</td><td>only if incomplete</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+      <tr><td><b>Media info chip</b></td><td>✅</td><td>❌</td><td>❌ not queried</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+      <tr><td>NFO</td><td>✅</td><td>❌</td><td>❌</td><td>✅</td><td>✅</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+      <tr><td>Preview / sample / audio</td><td>✅</td><td>❌</td><td>✅ (purple)</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+      <tr><td>Cover image</td><td>thumbs=1</td><td>✅</td><td>✅</td><td>🔴 broken</td><td>✅</td><td>🔴 broken</td><td>✅</td><td>placeholder</td><td>n/a</td><td>n/a</td><td>❌</td></tr>
+      <tr><td>Report button</td><td>✅</td><td>✅</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+      <tr><td>Multi-select</td><td>✅</td><td>✅</td><td>❌</td><td>❌</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td><td>✅</td><td>❌</td><td>✅</td></tr>
+      <tr><td>Sort control</td><td>✅</td><td>✅</td><td>❌</td><td>❌ (URLs point at /music/, no route)</td><td>❌</td><td>❌</td><td>❌</td><td>text links</td><td>❌</td><td>❌</td><td>❌</td></tr>
+    </tbody></table></div>
+
+  <div class="findings">
+    <div class="finding"><h4><span class="sev high">High</span>Mobile list drops media info, NFO, preview and the file-list link</h4><span class="where">release-results.blade.php:247-335 vs :107-166</span></div>
+    <div class="finding"><h4><span class="sev high">High</span>Cover queries do not fetch the media-info signal</h4><p><span class="mono">MovieBrowseService::rankedReleases</span> selects 11 columns and never joins probes; <span class="mono">ReleasePreviewDataLoader</span> sets <span class="mono">has_media_info</span> from audio tags only.</p><span class="where">MovieBrowseService.php:196 · ReleasePreviewDataLoader.php:84</span></div>
+    <div class="finding"><h4><span class="sev med">Med</span>Thumbs toggle hidden unless the category has covers; state lost on paginate</h4><span class="where">browse/index.blade.php:52 · cart-page.js:90-99</span></div>
+    <div class="finding"><h4><span class="sev med">Med</span>Books shows one of N releases per book</h4><span class="where">books/index.blade.php:126-141 · BookService.php:242</span></div>
+    <div class="finding"><h4><span class="sev med">Med</span>Three input looks on sibling pages</h4><p>rounded-md dark:bg-gray-700 (music/games/books) · <span class="mono">x-input</span> rounded-lg dark:bg-gray-800 (movies) · px-4 py-2 (search).</p></div>
+    <div class="finding"><h4><span class="sev low">Low</span>Seven pagination treatments, four cover sizes, size formatted as GB in four places</h4><p>A 400 MB release reads "0.39 GB" everywhere.</p></div>
+  </div>
+
+  <div class="options" role="tablist" data-group="browse">
+    <button aria-pressed="true" data-opt="browse-a">A · One browser, three views ✓ chosen</button>
+    <button aria-pressed="false" data-opt="browse-b">B · Covers-first for media roots</button>
+    <button aria-pressed="false" data-opt="browse-c">C · Split pane (entity ▸ releases)</button>
+    <button aria-pressed="false" data-opt="browse-m">Mobile behaviour</button>
+  </div>
+
+  <div class="option-panel active" id="browse-a">
+    <div class="option-note">
+      <div><h5>What changes</h5><ul><li>One component, <span class="mono">&lt;x-release-browser :rows :view :scope&gt;</span>, replaces release-results, cover-release-list, movie-card and the four cover pages. It has three views chosen by one segmented control in the toolbar: <b>Table</b> (one release per row), <b>Cards</b> (one release per card, with artwork), <b>Covers</b> (one title per card, releases on click). The choice is stored per root category on the user (like <span class="mono">movie_layout</span> is today). Table has a thumbnails toggle (today's "Show thumbs"); Covers has a cover-size toggle. On phones Table renders as Cards automatically.</li><li>Every mode renders the same <b>facts strip</b>: completion · password · media info · NFO · preview. The row DTO is built by one service that always loads the media-info availability, so parity is a property of the query, not the page.</li><li>The toolbar is identical everywhere: search-in-scope, filter selects (from the category's filter definition), count, sort, view switch. Cover pages get sort for free.</li><li>Table is the default for TV, PC, Other, Adult and Browse-All; the same table replaces the Adult and basket tables.</li></ul></div>
+      <div><h5>Trade-offs</h5><ul><li>Largest single refactor in the plan, but it retires ~1,200 lines of duplicated Blade and is where most of the brief's complaints live.</li><li>Cover mode groups by entity (movie, album, game, book) with releases folded beneath, so it needs the grouped query shape that Movies already has; Audio, Games, Books already return the same shape via their services.</li></ul></div>
+    </div>
+    <div class="controls"><span class="small muted">View inside the mock:</span><span class="seg" data-viewswitch="browse-a"><button aria-pressed="true" data-view="table">Table</button><button aria-pressed="false" data-view="thumbs">Table + thumbnails</button><button aria-pressed="false" data-view="cards">Cards</button><button aria-pressed="false" data-view="covers">Covers</button></span></div>
+    <div class="frame" data-mock="browse" data-variant="a" data-view="table"></div>
+  </div>
+
+  <div class="option-panel" id="browse-b">
+    <div class="option-note">
+      <div><h5>What changes</h5><ul><li>Same component as A, but the default view is Covers for Movies, Audio, Console, Games, Books and Adult, and the grid is the page (no card around it). Entity cards carry the metadata that matters for that root: rating and year for movies, artist for albums, platform for games, author for books.</li><li>Each entity card folds its releases: the newest release's facts strip is on the card, the rest open inline ("3 releases ▾") without leaving the grid. This is what Books and Movies half-do today.</li><li>The filter drawer carries the per-root fields (genre, year, rating, platform, publisher) so the page-level forms disappear.</li></ul></div>
+      <div><h5>Trade-offs</h5><ul><li>Grid density means the facts strip is compact; users who want the table are one click away and it is remembered.</li><li>Adult moves to covers only if adult metadata has artwork; otherwise it defaults to table like TV.</li></ul></div>
+    </div>
+    <div class="frame" data-mock="browse" data-variant="b" data-view="covers"></div>
+  </div>
+
+  <div class="option-panel" id="browse-c">
+    <div class="option-note">
+      <div><h5>What changes</h5><ul><li>Master-detail: a compact entity grid on the left (poster, title, year, release count) and a releases panel on the right showing the selected entity's releases in the full table with the facts strip, plus the entity's metadata header. Selecting a cover never leaves the page.</li><li>This is the bolder option. It is closest to how people actually use a cover page: scan artwork, then compare releases of the one they want.</li></ul></div>
+      <div><h5>Trade-offs</h5><ul><li>Needs a small JSON endpoint per entity (releases for imdbid / album id) or pre-rendered panels; the API is frozen, so this would be an internal web route, not the API.</li><li>Collapses to a stacked layout on narrow screens (grid, then a sheet).</li></ul></div>
+    </div>
+    <div class="frame" data-mock="browse" data-variant="c"></div>
+  </div>
+
+  <div class="option-panel" id="browse-m">
+    <div class="option-note">
+      <div><h5>What changes</h5><ul><li>Below the md breakpoint, Table renders as Cards automatically (one card per release, full facts strip). The current mobile card drops half the chips; the proposed one is the same card as desktop Cards.</li><li>Toolbar collapses to search + a "Filters (2)" button that opens a bottom sheet with sort, filters and the view switch.</li></ul></div>
+      <div><h5>Trade-offs</h5><ul><li>Sticky bulk-action bar at the bottom replaces the top and bottom duplicated icon buttons.</li></ul></div>
+    </div>
+    <div class="frame mobile" data-mock="browse" data-variant="mobile"></div>
+  </div>
+</section>
+
+
+<!-- ============================================================ COVERS -->
+<section id="covers">
+  <div class="sec-head"><h2>2b · The Covers view, at volume</h2><span class="pill" style="height:22px">open point: view control</span><span class="routes">replaces movies/index · music/index · games/index · console/index · books/index · series/viewserieslist</span></div>
+  <p class="lede">The live system has roughly 15,000 movies (600 pages at today's 25 per page) and thousands of series, albums and books. A covers view for that catalogue has one job: let someone scan a lot of artwork fast, then drill into one title without losing their place. So the default is the small cover size: ten across, poster plus title plus one line, at whatever per-page count the user has set (48 by default, up to 100). An entity card carries entity information only: artwork, title, the root's identifying line (year, artist, network, author, platform), a release-count badge on the artwork, and a watchlist heart. Nothing about any individual release appears until you click, because with several releases per title there is no honest way to pick one to summarise. Click opens every release of that title in a full-width row under its grid row, in the List-view table, with keyboard left/right to step to the neighbouring title. The page-size control, sticky toolbar, "go to page" and, for alphabetical roots, an A–Z jump strip make 150 pages navigable where 600 were not. <b>On the two button groups:</b> the first is <b>View</b> and picks what a card <i>is</i>: Table (one release per row), Cards (one release per card, with artwork), Covers (one title per card, its releases on click). The second was unlabelled and always visible, which made it look like a second view control. It is now labelled <b>Cover size</b> and appears only while Covers is active: S (10 across), L (6 across), XL (2 across, an entity card with its metadata and its releases listed, which is today's Movies layout). Table likewise gets its own secondary toggle, thumbnails on/off, only while Table is active. Nothing was removed. <b>Per page</b> is a separate, single setting in the pager (24 / 48 / 100) that applies to every view; cover size no longer changes it.</p>
+  <div class="findings" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr))">
+    <div class="finding"><h4>Pages at 15,240 movies</h4><p>Today: 25 per page → 610 pages.<br>Per page 24 → 635 pages · 48 → 318 pages · 100 → 153 pages.<br>Per page is one setting in the pager, the same in Table, Cards and Covers. Cover size (S 10 across · L 6 across · XL 2 across) only changes the layout, not the count.</p></div>
+    <div class="finding"><h4>What an entity card shows</h4><p>Artwork, title, one identifying line per root (year · genre, artist · year, network · status, author · year, platform · ESRB), release count, watchlist heart. No release-level data, no download or basket on the card.</p></div>
+    <div class="finding"><h4>What one click opens</h4><p>Every release of the title in the List-view table: completion, password, media info, NFO, preview, size, files, age, grabs, with the same per-row actions as List view (Download, Details, Basket, Report), select-all and download-selected, and a link to the title page. Esc closes; left and right step to the neighbouring title.</p></div>
+  </div>
+  <div class="controls">
+    <span class="small muted">Root:</span><span class="seg"><button data-covers-root="movies" aria-pressed="true">Movies</button><button data-covers-root="tv" aria-pressed="false">TV</button><button data-covers-root="music" aria-pressed="false">Audio</button><button data-covers-root="games" aria-pressed="false">PC / Games</button><button data-covers-root="console" aria-pressed="false">Console</button><button data-covers-root="books" aria-pressed="false">Books</button></span>
+    <span class="small muted" style="margin-left:10px">Cover size:</span><span class="seg"><button data-covers-density="compact" aria-pressed="true">S · 10 across</button><button data-covers-density="standard" aria-pressed="false">L · 6 across</button><button data-covers-density="detail" aria-pressed="false">XL · 2 across, with releases</button></span>
+  </div>
+  <div class="frame" id="covers-frame" data-mock="covers"></div>
+  <h3 style="font-size:15px;margin:22px 0 8px">Mobile</h3>
+  <p class="lede">Three across, the same per-page setting with a "Load more" control instead of a pager, the same cards, and a tap opens the title's releases as a bottom sheet.</p>
+  <div class="frame mobile" id="covers-mobile"></div>
+</section>
+
+<!-- ============================================================ SEARCH -->
+<section id="search">
+  <div class="sec-head"><h2>3 · Search</h2><span class="routes">/search · api/search/autocomplete · api/search/suggest · api/search/assist</span></div>
+  <p class="lede">Four implementations: the header form (desktop and a copied mobile version), <span class="mono">x-inline-search</span> (builds a URL in JS and drops sort/view params), the /search page's own form, and a dead <span class="mono">x-search-autocomplete</span> component that nothing renders. Five more page-level forms live on movies, music, games, books and series. Only the header has suggestions.</p>
+  <div class="findings">
+    <div class="finding"><h4><span class="sev high">High</span>Nine inputs, one suggestion engine, zero shared component</h4><span class="where">header-menu:173-200,271-300 · inline-search.blade.php · search/index:17-60 · search-autocomplete.blade.php (dead)</span></div>
+    <div class="finding"><h4><span class="sev med">Med</span>Advanced search is a separate mode with raw inputs</h4><p><span class="mono">?search_type=adv</span> renders a second form; movies re-implement advanced as <span class="mono">title:/actor:/director:/plot:</span> prefixes in a collapsed details.</p><span class="where">search/index.blade.php:62-148 · movies/index.blade.php:88-126</span></div>
+    <div class="finding"><h4><span class="sev low">Low</span>"Did you mean" block duplicated; results page uses the shared list, so it will inherit the browser component.</h4></div>
+  </div>
+  <div class="options" role="tablist" data-group="search">
+    <button aria-pressed="true" data-opt="search-a">A · One search, scoped ✓ chosen</button>
+    <button aria-pressed="false" data-opt="search-b">B · Command palette</button>
+  </div>
+  <div class="option-panel active" id="search-a">
+    <div class="option-note">
+      <div><h5>What changes</h5><ul><li>One <span class="mono">&lt;x-search-box&gt;</span> with a scope select, suggestions, and keyboard shortcut. The header mounts it; every listing page's toolbar mounts the same component with the scope pre-set to that category ("Search in Movies"). Inline-search and the page forms go away.</li><li>/search becomes the release browser with a query-chip bar: the free-text query plus structured chips (category, age, size, completion, and the movie fields actor/director/plot). Chips are removable; "Advanced" is just "add a chip".</li><li>Prefix syntax (<span class="mono">actor:</span>) stays for power users and is parsed into chips.</li></ul></div>
+      <div><h5>Trade-offs</h5><ul><li>The controller already accepts these fields; the change is mostly view plus one parser.</li><li>Suggestions endpoint stays as-is.</li></ul></div>
+    </div>
+    <div class="frame" data-mock="search" data-variant="a"></div>
+  </div>
+  <div class="option-panel" id="search-b">
+    <div class="option-note">
+      <div><h5>What changes</h5><ul><li>Everything in A, plus <kbd>⌘K</kbd> / <kbd>/</kbd> opens a palette that mixes release suggestions with jumps: categories, series, movies, "My basket", "Trending TV". Fast for keyboard users, and it makes the sidebar less load-bearing (pairs well with Shell option B).</li></ul></div>
+      <div><h5>Trade-offs</h5><ul><li>Needs the suggest endpoint to return typed results (release / series / movie / page). Small addition, internal route only.</li></ul></div>
+    </div>
+    <div class="frame" data-mock="search" data-variant="b"></div>
+  </div>
+</section>
+
+<!-- ============================================================ DETAILS -->
+<section id="details">
+  <div class="sec-head"><h2>4 · Release details</h2><span class="routes">/details/{guid} · /nfo/{id} · release/{id}/mediainfo · api/release/{guid}/filelist</span></div>
+  <p class="lede">A fixed chain of seven type partials in one order, with the facts sidebar last in the DOM, so on a phone the size, completion and group sit below every comment. The controller computes similar releases on every load and throws them away. Actions use different colours and icons from the list rows (cart is primary here and grey there; NFO is a blue button here and a yellow chip everywhere else). There is no media-info trigger on the release's own page.</p>
+  <div class="findings">
+    <div class="finding"><h4><span class="sev high">High</span>Facts sidebar renders last; unbounded comment list above it on mobile</h4><span class="where">details/index.blade.php:18-50 · comments.blade.php:66-87</span></div>
+    <div class="finding"><h4><span class="sev high">High</span>Similar releases computed, never shown; media info unreachable</h4><span class="where">DetailsController.php:71,179-209</span></div>
+    <div class="finding"><h4><span class="sev med">Med</span>Action styling contradicts list rows</h4><p>Cart primary vs muted; NFO button vs chip; three cart icons; report large vs icon. Page-level actions use the compact <span class="mono">release-action*</span> escape hatch instead of <span class="mono">x-button-link</span>.</p><span class="where">cover-actions.blade.php:32-56 vs release-results.blade.php:222-238</span></div>
+    <div class="finding"><h4><span class="sev med">Med</span>Poster block does not stack on phones; trailer iframe has fixed px dims inside aspect-video</h4><span class="where">cover-actions.blade.php:3,8 · movie-info.blade.php:81-87</span></div>
+    <div class="finding"><h4><span class="sev low">Low</span>Size hard-coded as GB; comments bypass user timezone; dark-mode holes in six partials</h4><span class="where">info-sidebar:12 · comments:79 · preview-images:27,62,75 · predb-info:5 · anime-info:228,237</span></div>
+  </div>
+  <div class="options" role="tablist" data-group="details">
+    <button aria-pressed="true" data-opt="details-a">A · Header-first with tabs ✓ chosen</button>
+    <button aria-pressed="false" data-opt="details-b">B · Dossier (two fixed columns)</button>
+  </div>
+  <div class="option-panel active" id="details-a">
+    <div class="option-note">
+      <div><h5>What changes</h5><ul><li>Top block is the same "release card" as Cards mode, expanded: poster, name, category, the facts strip (identical chips to the list), stats, and one action row using <span class="mono">x-button</span> variants (Download = success, everything else secondary, Report = ghost).</li><li>Below it, tabs: <b>Overview</b> (the type partial: movie / series / album / game / book, plus PreDB and password), <b>Files</b>, <b>Media info</b>, <b>NFO</b>, <b>Comments (n)</b>. Tabs are server-rendered anchors so deep links work; they are not modals.</li><li>Right rail: Similar releases (finally rendered) and "Other releases of this title" for movies and episodes. On mobile the rail drops below Overview, never below comments.</li><li>Comments paginate, hide moderated rows, and use the toast channel.</li></ul></div>
+      <div><h5>Trade-offs</h5><ul><li>Modals for NFO / media info / files stay for list rows; on the details page the same content renders in-tab from the same endpoints.</li><li>Type partials survive as-is inside Overview; only the wrapper changes.</li></ul></div>
+    </div>
+    <div class="frame" data-mock="details" data-variant="a"></div>
+  </div>
+  <div class="option-panel" id="details-b">
+    <div class="option-note">
+      <div><h5>What changes</h5><ul><li>Left column (320 px, sticky): poster, facts, stats, the action stack, PreDB, password, group and poster identity. Right column: type metadata, media metadata, files, NFO, comments in sequence with in-page anchors. No tabs.</li><li>Reads like a dossier; everything is on one scroll, which suits users who skim.</li></ul></div>
+      <div><h5>Trade-offs</h5><ul><li>Long pages for movies with trailers and 40 comments; tabs (A) keep the fold short.</li><li>On mobile the left column becomes the top block, so the mobile outcome is identical to A.</li></ul></div>
+    </div>
+    <div class="frame" data-mock="details" data-variant="b"></div>
+  </div>
+</section>
+
+<!-- ============================================================ HUBS -->
+<section id="hubs">
+  <div class="sec-head"><h2>5 · TV &amp; Movie hubs</h2><span class="routes">/series/{id?} · /trending-tv · /myshows · /movie/{imdbid} · /trending-movies · /mymovies</span></div>
+  <p class="lede">TV and Movies were built as two products. The series list is an A–Z index with a title/year form; the movie list is a cover grid with filters. The series page has a stat grid, season tabs and bulk actions; the movie page has key/value rows and client-side quality buttons and no bulk actions. My Shows is a table; My Movies is a stack of poster cards. The episode and movie release rows are re-implemented and lose completion, grabs, NFO, media info and report.</p>
+  <div class="card" style="padding:14px 18px;margin-bottom:18px;border-color:var(--p400)">
+    <div class="eyebrow" style="color:var(--p700);margin-bottom:6px">What is common, and what the decision actually is</div>
+    <p style="font-size:13px;color:var(--text-2);max-width:80ch"><b>Common to both options, not up for decision here:</b> the browse lists become the Covers view of section 2b (TV root and Movies root, same component). The series page and the movie page share one entity template: hero (poster, title, year, rating, external links, a Watch button), then the release browser in Table view with season tabs for TV and quality chips for movies, with bulk select on both. Trending TV and Trending Movies are the same Covers view with a rank badge. The mock under option A shows that entity page.</p>
+    <p style="font-size:13px;color:var(--text-2);max-width:80ch;margin-top:8px"><b>How a title gets added, today:</b> only through a link to the add form. For movies that link is the purple film button on a release row (only when the release has a valid IMDb id) and a button on the movie page; you cannot add from the Movies covers page or by title. For series it is a button on the series page and on each row of the A–Z list. The link opens a full-page category form.</p>
+    <p style="font-size:13px;color:var(--text-2);max-width:80ch;margin-top:8px"><b>How a title gets added, proposed:</b> one <b>Watch</b> button, identical for movies and series, in three places: (1) the movie page and series page hero, next to the title; (2) every cover in Covers view, as the heart on the card and in the expanded-releases row header; (3) a release row or card, as a fifth action after Download / Details / Basket / Report, shown only when the release is matched to a movie or series (this replaces the purple film button). Clicking opens a small category picker, defaulting to your last choice, and saves in place. The merged page adds a search box to find a title by name and add it directly, which today's pages cannot do.</p>
+    <p style="font-size:13px;color:var(--text-2);max-width:80ch;margin-top:8px"><b>The only decision:</b> where the watchlist lives. <b>A:</b> a dedicated Watchlist page (TV and Movies tabs, one card design) replacing My Shows and My Movies. <b>B:</b> no Watchlist page; the covers views get a "Watching" filter and a heart on every card, and watchlist preferences live in the entity page's Watch button. The mock under option B shows the TV covers view with that filter on. Recommendation: A, and take the heart-on-covers from B as well, since it costs nothing once the card exists.</p>
+  </div>
+  <div class="findings">
+    <div class="finding"><h4><span class="sev high">High</span>Hub rows lose the facts strip</h4><p><span class="mono">season-content</span> shows name/size/dates; <span class="mono">viewmoviefull</span> shows name/size/postdate (twice)/adddate. Neither uses the shared component.</p><span class="where">series/partials/season-content.blade.php · viewmoviefull.blade.php:183-224</span></div>
+    <div class="finding"><h4><span class="sev high">High</span>Four page-header treatments; none use x-page-header</h4><p>surface-panel-alt h3 · no header at all · bg-primary-600 hero · undefined header-gradient.</p></div>
+    <div class="finding"><h4><span class="sev med">Med</span>Five search/filter surfaces across six pages</h4><p>A–Z bar, title/year form, year-only episode filter, movie 4-field + Advanced, movie quality buttons.</p></div>
+    <div class="finding"><h4><span class="sev med">Med</span>Movie-side cart buttons never show the check-mark feedback</h4><p><span class="mono">cart-button.js</span> keys off <span class="mono">.icon_cart</span>, which the movie views omit.</p><span class="where">cart-button.js:62 · viewmoviefull.blade.php:216</span></div>
+    <div class="finding"><h4><span class="sev low">Low</span>Navigation gaps</h4><p>My Shows/My Movies absent from sidebar and category dropdowns; Trending absent from dropdowns; two names for /myshows/browse.</p></div>
+  </div>
+  <h3 style="font-size:15px;margin:0 0 8px">How a movie is added to My Movies (same for a series and My Shows)</h3>
+  <div class="frame" data-mock="watch" data-variant="a"></div>
+  <div style="height:18px"></div>
+  <div class="options" role="tablist" data-group="hubs">
+    <button aria-pressed="true" data-opt="hubs-a">A · Watchlist is a page (+ entity page, common to both)</button>
+    <button aria-pressed="false" data-opt="hubs-b">B · Watchlist is a filter on Covers</button>
+  </div>
+  <div class="option-panel active" id="hubs-a">
+    <div class="option-note">
+      <div><h5>What changes</h5><ul><li>Series and movie pages share one <b>entity template</b>: hero (poster, title, year, rating, genres, external links, Watch/Unwatch button), then the release browser in Table mode with an entity-specific grouping: seasons and episodes for TV (season tabs stay), quality/source chips for movies (the client-side buttons become filter chips on the toolbar, so both roots get them). Bulk select on both.</li><li>Trending TV and Trending Movies are the Covers view with a rank badge and a "Watch" button, sharing the entity card.</li><li>My Shows and My Movies become one <b>Watchlist</b> page with a TV / Movies tab, one card design (poster, title, next-air or latest release, category prefs, unwatch), and the "Find shows" flow as a search-box on the same page.</li><li>The series A–Z index becomes Covers view of the TV root with a letter filter chip; the "Find My Shows" and "View Releases" doors merge.</li></ul></div>
+      <div><h5>Trade-offs</h5><ul><li>Fixes the /Movies?imdb link class of bug by construction: one route per entity (<span class="mono">movie.view</span>, <span class="mono">series</span>), the other aliases deleted.</li><li>Season loading via Alpine stays; its blue-* classes go.</li></ul></div>
+    </div>
+    <div class="frame" data-mock="hubs" data-variant="a"></div>
+  </div>
+  <div class="option-panel" id="hubs-b">
+    <div class="option-note">
+      <div><h5>What changes</h5><ul><li>Everything in A for entity and trending pages, but no Watchlist page at all: Covers view of TV and Movies gets a "Watching" filter chip and a heart on each entity card. Watchlist preferences (categories to include) move into the entity hero's Watch button popover.</li><li>Fewer pages, and the watch state is visible while browsing, which is where the decision is made.</li></ul></div>
+      <div><h5>Trade-offs</h5><ul><li>Users who treat My Shows as a dashboard ("what aired this week") lose a dedicated landing spot unless the Home dashboard (section 6) carries a Watchlist block. Pair B with Home option A.</li></ul></div>
+    </div>
+    <div class="frame" data-mock="hubs" data-variant="b"></div>
+  </div>
+</section>
+
+<!-- ============================================================ ACCOUNT -->
+<section id="account">
+  <div class="sec-head"><h2>6 · Account, basket, home &amp; auth</h2><span class="routes">/profile · /profileedit · /cart/index · / · /privacy-center · /invitations · /poster · /contact-us · /status · auth/*</span></div>
+  <p class="lede">Profile view is full-width with a tab rail whose switching JS paints blue-*; Profile edit is a separate max-w-4xl page holding every actual setting. The basket re-implements the release table with three columns and no size or completion. The home route renders admin CMS blocks or a JSON 404. Auth pages are the most consistent area, with width, padding and title-size drift only. Error pages are a Tailwind-v1 relic with no navigation.</p>
+  <div class="findings">
+    <div class="finding"><h4><span class="sev high">High</span>Profile tab switch leaves two tabs active and paints blue-*</h4><span class="where">tab-switcher.js:97-113 · profile/index.blade.php:53</span></div>
+    <div class="finding"><h4><span class="sev high">High</span>Basket hides what users are about to download</h4><p>Name / Added / Action only; bulk buttons icon-only with no count; select-all double-bound; half of cart-page.js dead.</p><span class="where">cart/index.blade.php:37-167</span></div>
+    <div class="finding"><h4><span class="sev med">Med</span>Zero account pages use x-input / x-select / x-textarea / x-label; six input variants; invitations inputs have no padding</h4><span class="where">profile/edit:40 · login:92 · privacy-center:45 · invitations/create:143 · contact:59 · passkeys-manage:47</span></div>
+    <div class="finding"><h4><span class="sev med">Med</span>Four 2FA UIs, three unreachable; no Security page; passkeys only on edit</h4><span class="where">routes/web.php:251-262 · auth/2fa.blade.php · auth/google2fa.blade.php</span></div>
+    <div class="finding"><h4><span class="sev med">Med</span>Downloads-usage card has no title; API token has no copy button here but does on the API help page</h4><span class="where">profile/index.blade.php:347-357,405 · api/apidesc.blade.php:26-30</span></div>
+    <div class="finding"><h4><span class="sev low">Low</span>Widths max-w-4xl / 5xl / full across account pages; nine breadcrumb variants; invitations use inline SVG chevrons</h4></div>
+  </div>
+  <div class="options" role="tablist" data-group="account">
+    <button aria-pressed="true" data-opt="account-a">A · Account page + Basket + Home ✓ chosen</button>
+    <button aria-pressed="false" data-opt="account-b">B · Minimal: standardise in place</button>
+  </div>
+  <div class="option-panel active" id="account-a">
+    <div class="option-note">
+      <div><h5>What changes</h5><ul><li><b>Account</b> is one page with a left section list: Profile, Appearance (theme, scheme, default views per root, timezone), Security (password, 2FA, passkeys, sessions), API &amp; RSS (token with copy, limits with titles, feed builder), Downloads (usage, history), Privacy (export, erasure), Invitations. Each section edits in place with <span class="mono">x-input</span>/<span class="mono">x-select</span>; no separate edit page, no orphan 2FA routes.</li><li><b>Basket</b> mounts the release browser (Table mode, multi-select on) with a sticky footer: "3 selected · 54.2 GB · Download NZBs · Remove". Empty state uses <span class="mono">x-empty-state</span>.</li><li><b>Home</b> becomes a dashboard: latest releases (browser, Cards mode, 8 rows), Watchlist updates, Trending strip, then the admin content blocks. Never JSON.</li><li>Auth: one <span class="mono">max-w-md</span>, one padding, one title size; passkey button is <span class="mono">x-button variant="secondary"</span>. Error pages extend layouts.guest.</li></ul></div>
+      <div><h5>Trade-offs</h5><ul><li>Account consolidation touches ProfileController and PasswordSecurityController routes; keep the old URLs as redirects for bookmarks.</li></ul></div>
+    </div>
+    <div class="frame" data-mock="account" data-variant="a"></div>
+  </div>
+  <div class="option-panel" id="account-b">
+    <div class="option-note">
+      <div><h5>What changes</h5><ul><li>Keep the current pages and routes. Replace hand-rolled headers, breadcrumbs, inputs, cards and empty states with the existing components; fix the tab JS; give the basket the shared table; route home to a landing view when content is empty.</li><li>Cheapest path. It fixes consistency and the listed bugs but keeps the view/edit split and the 2FA sprawl.</li></ul></div>
+      <div><h5>Trade-offs</h5><ul><li>Users still bounce between two profile pages of different widths.</li></ul></div>
+    </div>
+    <div class="frame" data-mock="account" data-variant="b"></div>
+  </div>
+</section>
+
+<!-- ============================================================ SYSTEM -->
+<section id="system">
+  <div class="sec-head"><h2>7 · Shared primitives the options depend on</h2><span class="routes">resources/views/components · resources/css/app.css · scripts/check-design-system.sh</span></div>
+  <p class="lede">Whichever options are chosen, these five primitives are the prerequisite. They are small, and each one retires a class of drift.</p>
+  <div class="findings" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
+    <div class="finding"><h4>Control scale</h4><p>Two heights only: <b>md 36 px</b> (<span class="mono">h-9 px-3 text-sm rounded-lg</span>) and <b>sm 30 px</b>. <span class="mono">x-input</span>, <span class="mono">x-select</span>, <span class="mono">x-button</span>, sort/filter triggers and the search box all use it. Dropdown panels: <span class="mono">min-w-48 w-max max-w-80</span>, never a fixed width.</p><div class="mock-scale" style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="field" style="width:150px"><span class="ph">x-input</span></span><span class="field select"><span>x-select</span></span><span class="btn primary">x-button</span><span class="btn secondary">Sort ▾</span><span class="field sm" style="width:110px"><span class="ph">sm input</span></span><span class="btn secondary sm">sm button</span></div></div>
+    <div class="finding"><h4>x-release-browser + facts strip</h4><p>One row DTO (name, category, size, files, dates, grabs, comments, completion, password, has_media_info, nfo, preview kind, cover, entity ids) built by one loader that always joins media-info availability. Three views, one toolbar, persisted view per root.</p><div class="meta" style="margin-top:10px" data-mock="facts"></div></div>
+    <div class="finding"><h4>x-modal</h4><p>One base: backdrop, panel on <span class="mono">.card</span>, header/body/footer slots, close button, focus trap, scroll lock, <kbd>Esc</kbd> and backdrop click. NFO, files, media info, preview, image, report and confirm become 10-line wrappers.</p></div>
+    <div class="finding"><h4>x-page-header + x-breadcrumb everywhere</h4><p>Title, optional subtitle, actions slot, optional tabs slot. Replaces the four hub headers, nine breadcrumbs, and the hero gradients.</p></div>
+    <div class="finding"><h4>Lint what the rules say</h4><p>Extend <span class="mono">check-design-system.sh</span> to fail on <span class="mono">bg-white</span>/<span class="mono">bg-gray-*</span> surfaces outside components, <span class="mono">indigo-*</span>/<span class="mono">purple-*</span> accents, FA4 icon names, and <span class="mono">blue-*</span> inside resources/js. Today it checks two of the eight documented rules.</p></div>
+    <div class="finding"><h4>Chip colour semantics, fixed once</h4><p>Completion good/warn/bad = green/yellow/red. Password = red. Media info, NFO, preview, group = neutral or primary. "View Series" and "My Movies" lose their indigo/purple. Reported = orange stays.</p></div>
+  </div>
+</section>
+
+<!-- ============================================================ ROLLOUT -->
+<section id="rollout">
+  <div class="sec-head"><h2>8 · Rollout order</h2></div>
+  <p class="lede">Each line is one GitHub issue sized for one PR through the normal loop. Phases 0 and 1 do not depend on which options you pick; phase 2 does.</p>
+  <div class="card" style="padding:4px 18px">
+    <ol style="padding-left:20px;color:var(--text-2);line-height:1.7">
+      <li><b>Phase 0, defects (13 issues, all small).</b> Cover URL on Audio/Games · /Movies?imdb links → movie.view · image-modal include after @endsection · viewseries div balance · trending TV `relative` · JS blue-* in three components · home JSON 404 → landing view · mymovies/add second list · flash double-render · comment visibility · FA4 icon names and aspect-w classes · undefined myshows/mymovies classes · delete dead views, routes and components.</li>
+      <li><b>Phase 1, primitives (5 issues).</b> Control scale on x-input/x-select/x-button + sort/filter triggers · x-modal base and migrate the seven modals · x-page-header/x-breadcrumb adoption sweep · row DTO + media-info availability in every release loader · linter extension.</li>
+      <li><b>Phase 2, the browser (3 issues).</b> x-release-browser with Table + Cards (replaces release-results and the basket/Adult tables) · Covers mode + entity grouping (replaces the five cover pages) · toolbar with scoped search, filter drawer, sort, view switch, persisted preference.</li>
+      <li><b>Phase 3, pages (5 issues).</b> Top-bar-only shell with the category mega-menu and the single scoped search box (1B + 3A) · details page, header-first with tabs (4A) · entity template for series/movie + trending · Watchlist (5, pending) · Account page, Home dashboard, auth and error pages (6A).</li>
+    </ol>
+  </div>
+</section>
+
+</main>
+</div>
+
+<script>
+// Sample releases used by every prototype. Values mirror what the real
+// release_results component reads (guid, name, category, size, files, grabs,
+// comments, completion, media info, nfo, preview, poster) so parity can be shown.
+window.PROTO = {
+  releases: [
+    {name:'Dune.Part.Two.2024.2160p.UHD.BluRay.x265-XYZ', cat:'Movies > UHD', catRoot:'movies', size:'42.6 GB', files:88, added:'2 h ago', posted:'Sep 13, 2026 08:12', grabs:1421, comments:6, complete:100, media:'2160p · HEVC · TrueHD 7.1', nfo:true, preview:'image', pw:'none', group:'alt.binaries.movies', poster:'yEncBin@poster.com', imdb:'15239678', year:2024, rating:8.7, cover:'poster-dune', title:'Dune: Part Two'},
+    {name:'The.Bear.S04E03.1080p.WEB.H264-ABC', cat:'TV > HD', catRoot:'tv', size:'2.1 GB', files:23, added:'5 h ago', posted:'Sep 13, 2026 05:40', grabs:388, comments:1, complete:100, media:'1080p · H.264 · EAC3 5.1', nfo:false, preview:'video', pw:'none', group:'alt.binaries.teevee', poster:'tv@post.er', tvdb:1, series:'The Bear', season:4, episode:3, cover:'poster-bear'},
+    {name:'Radiohead-Kid.A.Mnesia-3CD-FLAC-2021-XYZ', cat:'Audio > Lossless', catRoot:'music', size:'1.4 GB', files:37, added:'9 h ago', posted:'Sep 13, 2026 01:02', grabs:96, comments:0, complete:97, media:'FLAC · 44.1 kHz · 16-bit', nfo:true, preview:'audio', pw:'none', group:'alt.binaries.sounds.lossless', poster:'flac@nz.b', artist:'Radiohead', album:'Kid A Mnesia', year:2021, cover:'cover-kida'},
+    {name:'Elden.Ring.Shadow.of.the.Erdtree-RUNE', cat:'PC > Games', catRoot:'games', size:'58.3 GB', files:112, added:'1 d ago', posted:'Sep 12, 2026 11:22', grabs:772, comments:12, complete:100, media:null, nfo:true, preview:null, pw:'passworded', group:'alt.binaries.games', poster:'rune@ga.me', title:'Elden Ring: Shadow of the Erdtree', platform:'PC', cover:'cover-elden'},
+    {name:'Stephen.King-Holly.2023.Retail.EPUB-BOOK', cat:'Books > Ebook', catRoot:'books', size:'2.3 MB', files:2, added:'1 d ago', posted:'Sep 12, 2026 09:10', grabs:54, comments:0, complete:100, media:null, nfo:false, preview:null, pw:'none', group:'alt.binaries.e-book', poster:'ebook@rea.der', author:'Stephen King', title:'Holly', cover:'cover-holly'},
+    {name:'Alien.Romulus.2024.1080p.BluRay.x264-DEF', cat:'Movies > HD', catRoot:'movies', size:'9.8 GB', files:41, added:'2 d ago', posted:'Sep 11, 2026 22:41', grabs:2204, comments:3, complete:88, media:'1080p · x264 · DTS-HD 5.1', nfo:true, preview:'image', pw:'none', group:'alt.binaries.movies', poster:'yEncBin@poster.com', imdb:'18412256', year:2024, rating:7.2, cover:'poster-alien', title:'Alien: Romulus'},
+    {name:'Gran.Turismo.7.PS5-DUPLEX', cat:'Console > PS5', catRoot:'console', size:'93.1 GB', files:160, added:'3 d ago', posted:'Sep 10, 2026 17:03', grabs:210, comments:2, complete:100, media:null, nfo:true, preview:null, pw:'none', group:'alt.binaries.console.ps5', poster:'ps5@po.st', title:'Gran Turismo 7', platform:'PS5', cover:'cover-gt7'},
+  ],
+  cats: ['Console','Movies','Audio','PC / Games','TV','Adult','Books','Other'],
+};
+
+</script>
+<script>
+/* Shared mockup renderers. Every proposed view mode reads the same release object,
+   which is the point: parity is a property of the component, not of each page. */
+(function(){
+  const R = window.PROTO.releases;
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  // ----- The single "release facts" strip: identical in table, card, cover and details -----
+  function facts(r, opts={}){
+    const o = Object.assign({media:true, nfo:true, preview:true, completion:true, pw:true, group:false, poster:false}, opts);
+    const out = [];
+    if (o.completion) out.push(r.complete === 100 ? `<span class="chip ok" title="All parts present"><i class="fas fa-check"></i> 100%</span>` : `<span class="chip ${r.complete >= 95 ? 'warn':'bad'}" title="Parts present / expected">${r.complete}%</span>`);
+    if (o.pw && r.pw === 'passworded') out.push(`<span class="chip bad"><i class="fas fa-lock"></i> Password</span>`);
+    if (o.media && r.media) out.push(`<span class="chip p action" title="Open media info"><i class="fas fa-circle-info"></i> ${esc(r.media)}</span>`);
+    if (o.nfo && r.nfo) out.push(`<span class="chip nfo action" title="View NFO"><i class="fas fa-file-lines"></i> NFO</span>`);
+    if (o.preview && r.preview) out.push(`<span class="chip info action">${r.preview==='audio'?'<i class="fas fa-headphones"></i> Listen':r.preview==='video'?'<i class="fas fa-video"></i> Clip':'<i class="fas fa-image"></i> Preview'}</span>`);
+    if (o.group) out.push(`<span class="chip">${esc(r.group)}</span>`);
+    return out.join('');
+  }
+  function stats(r){ return `<span class="num" title="Grabs"><i class="fas fa-download" style="color:var(--ok)"></i> ${r.grabs.toLocaleString()}</span><span class="num" title="Comments"><i class="fas fa-comment" style="color:var(--p500)"></i> ${r.comments}</span>`; }
+  // Row actions: the same four the project's release rows have today (download / details / cart / report),
+  // as equal 28px filled buttons — green, primary, muted, muted — mirroring release-action-download/-primary/-muted.
+  function actions(r){
+    return `<span class="actions"><a class="ra dl" href="#" title="Download NZB"><i class="fas fa-download"></i></a><a class="ra pr" href="#" title="Details"><i class="fas fa-info"></i></a><button class="ra mu" title="Add to basket"><i class="fas fa-shopping-basket"></i></button><button class="ra mu" title="Report release"><i class="fas fa-flag"></i></button></span>`;
+  }
+
+  // ----- Unified toolbar: one search, one sort, one view switch, one filter drawer -----
+  function toolbar({view='table', title='Movies', count=1284, search=true, filters=['Sub-category','Year','Quality','Completion'], viewModes=['table','cards','covers'], thumbs=false}={}){
+    const label = {table:'Table', cards:'Cards', covers:'Covers', split:'Split'};
+    const seg = viewModes.map(v => `<button aria-pressed="${v===view}" title="${label[v]} view"><i class="fas ${v==='table'?'fa-list':v==='cards'?'fa-table-cells-large':v==='covers'?'fa-table-cells':'fa-table-columns'}"></i> ${label[v]}</button>`).join('');
+    const extra = view==='table' ? `<span class="seg" title="Thumbnails in the table"><button aria-pressed="${thumbs}" title="Show cover thumbnails"><i class="fas fa-image"></i></button></span>` : view==='covers' ? `<span class="seg" title="Cover size"><button aria-pressed="true" title="Small · 10 across">S</button><button aria-pressed="false" title="Large · 6 across">L</button><button aria-pressed="false" title="Extra large · entity card with its releases">XL</button></span>` : '';
+    return `<div class="toolbar">
+      ${search?`<label class="field" style="width:260px"><i class="fas fa-magnifying-glass muted"></i><input placeholder="Search in ${esc(title)}…" aria-label="Search in ${esc(title)}"></label>`:''}
+      ${filters.map(f=>`<span class="field select"><span class="ph">${f}</span></span>`).join('')}
+      <span class="grow"></span>
+      <span class="count num">${count.toLocaleString()} releases</span>
+      <span class="field select"><span>Sort: Newest</span></span>
+      <span class="seg">${seg}</span>${extra}
+    </div>`;
+  }
+
+  // ----- View mode 1: table (the existing release-results, tightened) -----
+  function table(rows=R, opts={}){
+    const o = Object.assign({checkbox:true, thumbs:false}, opts);
+    return `<div style="overflow-x:auto"><table class="rel">
+      <thead><tr>${o.checkbox?'<th style="width:28px"><input type="checkbox" aria-label="Select all"></th>':''}<th>Release</th><th>Category</th><th class="r">Size</th><th class="r">Files</th><th>Added</th><th>Stats</th><th></th></tr></thead>
+      <tbody>${rows.map(r=>`<tr>
+        ${o.checkbox?'<td><input type="checkbox"></td>':''}
+        <td class="name"><div style="display:flex;gap:10px">${o.thumbs?`<div class="poster tall" data-c="${r.cover}" style="width:40px;flex:none"></div>`:''}<div><a href="#">${esc(r.name)}</a><div class="meta">${facts(r)}</div><div class="subline"><span>${esc(r.group)}</span><span>${esc(r.poster)}</span></div></div></div></td>
+        <td><span class="pill">${esc(r.cat)}</span></td>
+        <td class="r num">${r.size}</td><td class="r num"><a href="#" title="File list">${r.files}</a></td>
+        <td class="num" title="Posted ${r.posted}">${r.added}</td>
+        <td><div style="display:flex;gap:10px">${stats(r)}</div></td>
+        <td>${actions(r)}</td></tr>`).join('')}</tbody></table></div>`;
+  }
+
+  // ----- View mode 2: cards (one release per card, poster optional; what "list + thumbs" should have been) -----
+  function cards(rows=R, opts={}){
+    return `<div class="grid cards" style="padding:14px">${rows.map(r=>`<div class="card" style="padding:12px;display:grid;grid-template-columns:${r.cover?'56px ':''}1fr;gap:12px">
+      ${r.cover?`<div class="poster tall" data-c="${r.cover}"></div>`:''}
+      <div style="min-width:0">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><a href="#" style="font-weight:600;color:var(--p700);word-break:break-all;font-size:13px">${esc(r.title||r.name)}</a><input type="checkbox" aria-label="Select"></div>
+        ${r.title?`<div class="small muted mono" style="margin-top:2px;word-break:break-all">${esc(r.name)}</div>`:''}
+        <div class="meta">${facts(r)}</div>
+        <div class="subline"><span class="pill" style="height:18px;font-size:10.5px">${esc(r.cat)}</span><span class="num">${r.size}</span><span class="num">${r.files} files</span><span class="num">${r.added}</span>${stats(r)}</div>
+        <div style="margin-top:8px">${actions(r)}</div>
+      </div></div>`).join('')}</div>`;
+  }
+
+  // ----- View mode 3: covers (grouped by title/album/game — the metadata entity — with releases folded beneath) -----
+  function covers(rows=R, opts={}){
+    const o = Object.assign({square:false}, opts);
+    return `<div class="grid covers" style="padding:14px;grid-template-columns:repeat(auto-fill,minmax(${o.square?150:130}px,1fr))">${rows.map((r,i)=>`<div class="card" style="overflow:hidden">
+      <div class="poster ${o.square?'sq':'tall'}" data-c="${r.cover}" style="border-radius:0"><span>${esc(r.title||r.album||r.name.split('.').slice(0,2).join(' '))}</span></div>
+      <div style="padding:8px 10px">
+        <div style="font-weight:600;font-size:12.5px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.title||r.album||r.series||r.name.split('.')[0])}</div>
+        <div class="small muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.year?r.year+' · ':''}${r.rating?'★ '+r.rating:r.artist?esc(r.artist):r.platform?esc(r.platform):r.author?esc(r.author):esc(r.cat)}</div>
+        <div class="small num" style="margin-top:4px;font-weight:600;color:var(--p700)">${i===0?3:i%3===0?2:1} release${(i===0||i%3===0)?'s':''}</div>
+      </div></div>`).join('')}</div>`;
+  }
+
+  // ----- Details header (poster + facts + actions) used by details options -----
+  function detailsHead(r, {stacked=false}={}){
+    return `<div class="card" style="padding:16px;display:grid;grid-template-columns:${stacked?'1fr':'120px 1fr'};gap:16px">
+      <div class="poster tall" data-c="${r.cover}" style="${stacked?'width:120px':''}"></div>
+      <div style="min-width:0">
+        <div class="crumbs">Movies › <b>UHD</b></div>
+        <h1 style="font-size:18px;word-break:break-all">${esc(r.name)}</h1>
+        <div class="meta" style="margin-top:8px">${facts(r,{group:true})}</div>
+        <div class="subline" style="margin-top:8px"><span class="pill" style="height:18px;font-size:10.5px">${esc(r.cat)}</span><span class="num">${r.size}</span><span class="num">${r.files} files</span><span class="num">added ${r.added}</span><span class="num">posted ${r.posted}</span>${stats(r)}</div>
+        <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn success"><i class="fas fa-download"></i> Download NZB</button><button class="btn secondary"><i class="fas fa-shopping-basket"></i> Add to basket</button><button class="btn secondary"><i class="fas fa-file-lines"></i> NFO</button><button class="btn secondary"><i class="fas fa-circle-info"></i> Media info</button><button class="btn secondary"><i class="fas fa-folder-open"></i> Files (${r.files})</button><button class="btn ghost"><i class="fas fa-flag"></i> Report</button></div>
+      </div></div>`;
+  }
+
+  window.PR = {facts, stats, actions, toolbar, table, cards, covers, detailsHead, esc, R};
+})();
+
+</script>
+<script>
+(function(){
+  const {facts, stats, actions, toolbar, table, cards, covers, detailsHead, esc, R} = window.PR;
+  const bar = url => `<div class="frame-bar"><i></i><i></i><i></i><span class="url">${url}</span></div>`;
+
+  // ---------- Shell ----------
+  const navA = (active='Movies', rail=false) => `<nav class="app-nav" style="${rail?'width:56px;padding:12px 6px':''}">
+    <div class="lbl">Browse</div>
+    ${['Console','Movies','Music','PC','TV','Adult','Books','Other'].map(c=>`<a class="${c===active?'active':''}" title="${c}"><span class="ico">${`<i class="fas ${({Console:'fa-gamepad',Movies:'fa-film',Music:'fa-music',PC:'fa-desktop',TV:'fa-tv',Adult:'fa-venus-mars',Books:'fa-book-open',Other:'fa-box'})[c]}"></i>`}</span>${rail?'':c}</a>`).join('')}
+    <a title="All"><span class="ico"><i class="fas fa-list"></i></span>${rail?'':'All releases'}</a>
+    <div class="lbl">${rail?'':'Discover'}</div><a><span class="ico"><i class="fas fa-fire"></i></span>${rail?'':'Trending TV'}</a><a><span class="ico"><i class="fas fa-fire"></i></span>${rail?'':'Trending Movies'}</a>
+    <div class="lbl">${rail?'':'Mine'}</div><a><span class="ico"><i class="fas fa-heart"></i></span>${rail?'':'Watchlist'}</a><a><span class="ico"><i class="fas fa-shopping-basket"></i></span>${rail?'':'Basket · 3'}</a><a><span class="ico"><i class="fas fa-download"></i></span>${rail?'':'Downloads'}</a>
+    <div class="lbl">${rail?'':'Help'}</div><a><span class="ico"><i class="fas fa-rss"></i></span>${rail?'':'RSS &amp; API'}</a><a><span class="ico"><i class="fas fa-circle-dot"></i></span>${rail?'':'Status'}</a>
+    ${rail?'<a style="margin-top:auto" title="Expand"><span class="ico"><i class="fas fa-angles-right"></i></span></a>':'<a style="margin-top:auto" title="Collapse"><span class="ico"><i class="fas fa-angles-left"></i></span>Collapse</a>'}
+  </nav>`;
+  const headerA = (search=true) => `<div class="app-header"><span class="logo">NNTmux</span><span class="spacer"></span>
+    ${search?`<span class="field" style="width:420px;background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.12);color:#fff"><span class="field select" style="height:26px;border:0;background:rgba(255,255,255,.1);color:#e2e8f0;font-size:12px;padding:0 8px">All</span><input placeholder="Search releases… ( / )" style="color:#fff" aria-label="Search releases"></span>`:''}
+    <button class="btn ghost sm" style="color:#e2e8f0"><i class="fas fa-shopping-basket"></i> 3</button><span style="width:30px;height:30px;border-radius:50%;background:#475569"></span></div>`;
+  const headerB = () => `<div class="app-header"><span class="logo">NNTmux</span>
+    <span style="display:flex;gap:4px;margin-left:10px">${['Browse ▾','Trending ▾','Watchlist'].map((t,i)=>`<span class="btn ghost sm" style="color:${i===0?'#fff':'#cbd5e1'};${i===0?'background:rgba(255,255,255,.12)':''}">${t}</span>`).join('')}</span>
+    <span class="spacer"></span><span class="field" style="width:380px;background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.12);color:#fff"><span class="field select" style="height:26px;border:0;background:rgba(255,255,255,.1);color:#e2e8f0;font-size:12px;padding:0 8px">All</span><input placeholder="Search releases… ( / )" style="color:#fff"></span>
+    <button class="btn ghost sm" style="color:#e2e8f0"><i class="fas fa-shopping-basket"></i> 3</button><span style="width:30px;height:30px;border-radius:50%;background:#475569"></span></div>`;
+  const megaMenu = () => `<div class="card" style="position:absolute;left:96px;top:60px;z-index:5;padding:14px 16px;display:grid;grid-template-columns:repeat(4,150px);gap:10px 18px;background:var(--surface-card)">
+    ${[['Movies',['UHD','HD','SD','Foreign','Other']],['TV',['UHD','HD','SD','Anime','Foreign']],['Music',['Lossless','MP3','Video','Audiobook']],['PC',['Games','ISO','Mac','Mobile']],['Console',['PS5','Xbox','Switch','Retro']],['Books',['Ebook','Comics','Magazines','Technical']],['Adult',['SD','HD','Imageset']],['Other',['Misc','Hashed']]].map(([r,s])=>`<div><div style="font-weight:600;font-size:13px;margin-bottom:4px">${r}</div>${s.map(x=>`<div class="small muted">${x}</div>`).join('')}</div>`).join('')}
+    <div style="grid-column:1/-1;border-top:1px solid var(--border-default);padding-top:8px" class="small muted">All releases · Groups · Poster identities</div></div>`;
+  function shell(v){
+    const content = `<div class="app-content"><div class="page-head"><div><div class="crumbs">Browse › <b>Movies</b></div><h1>Movies</h1></div><div style="display:flex;gap:8px"><button class="btn secondary sm"><i class="fas fa-fire"></i> Trending</button><button class="btn secondary sm"><i class="fas fa-rss"></i> RSS for this view</button></div></div><div class="card">${toolbar({view:'covers',search:false,filters:['Sub-category','Year','Rating']})}${covers(R.filter(r=>r.catRoot==='movies').concat(R.slice(1,4)))}</div></div>`;
+    if (v==='a') return bar('/browse/Movies') + `<div class="app">${headerA()}<div class="app-body">${navA()}${content}</div></div>`;
+    if (v==='c') return bar('/browse/Movies') + `<div class="app">${headerA()}<div class="app-body" style="grid-template-columns:56px 1fr">${navA('Movies',true)}${content}</div></div>`;
+    return bar('/browse/Movies') + `<div class="app" style="position:relative">${headerB()}${megaMenu()}<div class="app-body" style="grid-template-columns:1fr">${content}</div></div>`;
+  }
+
+  // ---------- Browse ----------
+  function browse(v, view){
+    const wrap = (inner, url='/browse/Movies') => bar(url) + `<div class="app">${headerA()}<div class="app-body">${navA()}<div class="app-content">${inner}</div></div></div>`;
+    const head = (t='Movies', extra='') => `<div class="page-head"><div><div class="crumbs">Browse › <b>${t}</b></div><h1>${t}</h1></div><div style="display:flex;gap:8px">${extra}<button class="btn secondary sm"><i class="fas fa-rss"></i> RSS</button></div></div>`;
+    if (v==='a'){
+      const body = view==='thumbs'?table(R,{thumbs:true}):view==='table'?table(R):view==='cards'?cards(R):covers(R);
+      return wrap(head('All releases') + `<div class="card">${toolbar({view:view==='thumbs'?'table':view, thumbs:view==='thumbs', title:'all releases', count:48211, filters:['Category','Age','Size','Completion']})}${body}<div class="pagination"><span>‹</span><span class="cur">1</span><span>2</span><span>3</span><span>…</span><span>964</span><span>›</span></div></div>`, '/browse/All');
+    }
+    if (v==='b'){
+      return wrap(head('Audio', '<button class="btn secondary sm"><i class="fas fa-sliders"></i> Filters · 2</button>') + `<div class="card">${toolbar({view:'covers', title:'Audio', count:6120, filters:['Sub-category','Genre','Year']})}<div style="padding:10px 14px;border-bottom:1px solid var(--border-default);display:flex;gap:6px;flex-wrap:wrap"><span class="chip p">Lossless ✕</span><span class="chip p">2021–2026 ✕</span><span class="small muted" style="align-self:center">Clear</span></div>${covers([R[2],{...R[2],name:'Radiohead-In.Rainbows-FLAC-2007',album:'In Rainbows',year:2007,cover:'poster-alien',complete:100},{...R[2],name:'Boards.of.Canada-Geogaddi-24bit-FLAC',album:'Geogaddi',artist:'Boards of Canada',year:2002,cover:'cover-holly',media:'FLAC · 96 kHz · 24-bit',complete:100},{...R[2],album:'OK Computer',year:1997,cover:'cover-gt7',complete:100,media:'FLAC · 44.1 kHz'},{...R[2],album:'Kid A',year:2000,cover:'cover-elden',complete:100,media:'MP3 · 320 kbps'},{...R[2],album:'Amnesiac',year:2001,cover:'poster-bear',complete:100,media:'FLAC · 44.1 kHz'}],{square:true})}
+      <div style="margin:0 14px 14px" class="card"><div style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center"><span style="font-weight:600;font-size:13px">Kid A Mnesia · 3 releases <span class="muted small">(expanded inline from the card)</span></span><button class="btn ghost sm">Collapse ▴</button></div>${table([R[2],{...R[2],name:'Radiohead-Kid_A_Mnesia-WEB-FLAC-2021-XYZ',complete:100,size:'1.3 GB',grabs:210},{...R[2],name:'Radiohead-Kid.A.Mnesia-320kbps-MP3',media:'MP3 · 320 kbps',complete:100,size:'380 MB',grabs:44}],{checkbox:true})}</div></div>`, '/browse/Audio');
+    }
+    if (v==='c'){
+      const gridRows = [R[0],R[5],{...R[0],title:'Blade Runner 2049',year:2017,cover:'poster-bear',rating:8.0},{...R[0],title:'Arrival',year:2016,cover:'cover-gt7',rating:7.9},{...R[0],title:'Sicario',year:2015,cover:'cover-holly',rating:7.6},{...R[0],title:'Prisoners',year:2013,cover:'cover-elden',rating:8.2}];
+      return wrap(head('Movies') + `<div class="card">${toolbar({view:'covers', title:'Movies', count:11480, filters:['Sub-category','Year','Rating'], viewModes:['table','cards','covers','split']})}
+        <div style="display:grid;grid-template-columns:minmax(280px,38%) 1fr;min-height:420px">
+          <div style="border-right:1px solid var(--border-default);padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:10px;align-content:start">${gridRows.map((r,i)=>`<div style="cursor:pointer;${i===0?'outline:2px solid var(--p600);outline-offset:2px;border-radius:6px':''}"><div class="poster tall" data-c="${r.cover}"></div><div class="small" style="margin-top:4px;font-weight:500;line-height:1.2">${esc(r.title)}</div><div class="small muted num">${r.year} · ${i===0?3:1} rel.</div></div>`).join('')}</div>
+          <div style="padding:14px;min-width:0"><div style="display:flex;gap:12px;align-items:flex-start"><div class="poster tall" data-c="poster-dune" style="width:70px;flex:none"></div><div><h3 style="font-size:16px">Dune: Part Two <span class="muted" style="font-weight:400">2024</span></h3><div class="small muted">★ 8.7 IMDb · Sci-Fi, Adventure · 166 min · Denis Villeneuve</div><div style="display:flex;gap:6px;margin-top:8px"><button class="btn secondary sm">♥ Watch</button><button class="btn secondary sm">IMDb ↗</button><button class="btn secondary sm">TMDB ↗</button><button class="btn secondary sm"><i class="fas fa-play"></i> Trailer</button></div></div></div>
+          <div style="margin-top:12px;display:flex;gap:6px"><span class="chip p">All 3</span><span class="chip action">2160p</span><span class="chip action">1080p</span><span class="chip action">BluRay</span><span class="chip action">WEB</span></div>
+          <div style="margin-top:8px;border:1px solid var(--border-default);border-radius:8px;overflow:hidden">${table([R[0],{...R[0],name:'Dune.Part.Two.2024.1080p.BluRay.x264-ABC',size:'12.1 GB',media:'1080p · x264 · DTS-HD 5.1',grabs:3310,complete:100},{...R[0],name:'Dune.Part.Two.2024.1080p.WEB.H264-DEF',size:'6.4 GB',media:'1080p · H.264 · EAC3 5.1',grabs:900,complete:92,preview:null}])}</div></div>
+        </div></div>`);
+    }
+    // mobile
+    return bar('/browse/All') + `<div class="app"><div class="app-header" style="padding:0 12px;gap:8px"><i class="fas fa-bars"></i><span class="logo">NNTmux</span><span class="spacer"></span><i class="fas fa-magnifying-glass"></i><i class="fas fa-shopping-basket"></i></div><div class="app-body" style="grid-template-columns:1fr"><div class="app-content" style="padding:12px">
+      <div class="crumbs">Browse › <b>All</b></div>
+      <div style="display:flex;gap:8px;margin:8px 0"><span class="field" style="flex:1"><i class="fas fa-magnifying-glass muted"></i><input placeholder="Search in All…"></span><button class="btn secondary"><i class="fas fa-sliders"></i> 2</button></div>
+      <div class="small muted num" style="margin-bottom:8px">48,211 releases · Newest first</div>
+      ${cards(R.slice(0,3)).replace('style="padding:14px"','style="padding:0;grid-template-columns:1fr"')}
+      <div class="card" style="position:sticky;bottom:8px;margin-top:12px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 8px 24px -12px rgba(2,6,23,.5)"><span class="small num"><b>2 selected</b> · 44.7 GB</span><span style="display:flex;gap:6px"><button class="btn success sm"><i class="fas fa-download"></i> NZBs</button><button class="btn secondary sm icon"><i class="fas fa-shopping-basket"></i></button></span></div>
+    </div></div></div>`;
+  }
+
+  // ---------- Search ----------
+  function search(v){
+    const chips = `<div style="padding:10px 14px;border-bottom:1px solid var(--border-default);display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="chip p" style="height:24px">“dune” ✕</span><span class="chip p" style="height:24px">Category: Movies ✕</span><span class="chip p" style="height:24px">Age ≤ 30 d ✕</span><span class="chip p" style="height:24px">actor: Chalamet ✕</span><button class="btn ghost sm">+ Add filter</button><span class="grow"></span><span class="small muted">Did you mean <a href="#">dune part two</a>?</span></div>`;
+    const page = `<div class="app-content"><div class="page-head"><div><div class="crumbs"><b>Search</b></div><h1>Results for “dune”</h1></div><button class="btn secondary sm"><i class="fas fa-rss"></i> RSS for this search</button></div><div class="card">${chips}${toolbar({view:'table',search:false,count:212,filters:[]})}${table([R[0],{...R[0],name:'Dune.Part.Two.2024.1080p.BluRay.x264-ABC',size:'12.1 GB',media:'1080p · x264 · DTS-HD 5.1',grabs:3310},{...R[0],name:'Dune.2021.2160p.UHD.BluRay.x265-GHI',size:'38.0 GB',cover:'poster-alien',grabs:5120,complete:100},{...R[1],name:'Dune.Prophecy.S01E06.1080p.WEB.H264-JKL',cover:'poster-bear'}])}</div></div>`;
+    if (v==='a') return bar('/search?q=dune&t=2000&age=30&actor=Chalamet') + `<div class="app">${headerA()}<div class="app-body">${navA('')}${page}</div></div>`;
+    return bar('/browse/Movies  ·  ⌘K') + `<div class="app" style="position:relative">${headerA(false)}<div class="app-body">${navA()}${page}</div>
+      <div style="position:absolute;inset:0;background:rgba(2,6,23,.45);display:flex;justify-content:center;align-items:flex-start;padding-top:70px"><div class="card" style="width:560px;overflow:hidden;background:var(--surface-card)"><div class="field" style="height:46px;border:0;border-bottom:1px solid var(--border-default);border-radius:0;padding:0 14px;font-size:15px"><i class="fas fa-magnifying-glass muted"></i><input value="the bear" aria-label="Command palette"></div>
+      <div style="padding:8px"><div class="eyebrow" style="padding:6px 8px">Series</div><div style="padding:8px;border-radius:8px;background:var(--p100);color:#0f172a;display:flex;gap:10px;align-items:center"><div class="poster tall" data-c="poster-bear" style="width:26px"></div><div><div style="font-weight:600;font-size:13px">The Bear <span class="muted small">FX · 2022–</span></div><div class="small" style="color:#334155">Open series page · 4 seasons · watching</div></div><span class="grow"></span><kbd>↵</kbd></div>
+      <div class="eyebrow" style="padding:10px 8px 6px">Releases</div>${['The.Bear.S04E03.1080p.WEB.H264-ABC','The.Bear.S04E02.2160p.WEB.H265-DEF','The.Bear.S03.COMPLETE.1080p.WEB.H264-GHI'].map(n=>`<div style="padding:7px 8px;border-radius:8px;font-size:13px;display:flex;gap:10px"><span class="mono" style="flex:1">${n}</span><span class="chip ok">✓</span><span class="chip p">1080p</span></div>`).join('')}
+      <div class="eyebrow" style="padding:10px 8px 6px">Go to</div><div style="padding:7px 8px;font-size:13px;display:flex;gap:16px"><span>Search all for “the bear” <kbd>⇧↵</kbd></span><span class="muted">Trending TV</span><span class="muted">Watchlist</span></div></div></div></div></div>`;
+  }
+
+  // ---------- Details ----------
+  function details(v){
+    const tabs = `<div class="tabs"><a class="active">Overview</a><a>Files (88)</a><a>Media info</a><a>NFO</a><a>Comments (6)</a></div>`;
+    const overview = `<div class="card" style="padding:16px"><div class="eyebrow" style="margin-bottom:8px">Movie</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px 18px;font-size:13px">${[['Title','Dune: Part Two (2024)'],['Rating','★ 8.7 · 610k votes'],['Genre','Sci-Fi, Adventure, Drama'],['Director','Denis Villeneuve'],['Runtime','166 min'],['Language','English'],['Actors','Timothée Chalamet, Zendaya, Rebecca Ferguson'],['Links','IMDb ↗ · TMDB ↗ · Trakt ↗']].map(([k,v])=>`<div><div class="small muted">${k}</div><div>${v}</div></div>`).join('')}</div>
+      <div style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px 18px;font-size:13px;border-top:1px solid var(--border-default);padding-top:12px">${[['PreDB','Matched · Dune.Part.Two.2024.2160p.UHD.BluRay.x265-XYZ'],['Password','None detected'],['Group','alt.binaries.movies'],['Poster','yEncBin@poster.com ↗']].map(([k,v])=>`<div><div class="small muted">${k}</div><div class="${k==='PreDB'?'mono':''}">${v}</div></div>`).join('')}</div></div>`;
+    const rail = `<div class="card" style="padding:14px"><div class="eyebrow" style="margin-bottom:8px">Other releases of this title</div>${[['1080p · BluRay · x264','12.1 GB','✓'],['1080p · WEB · H.264','6.4 GB','92%']].map(([m,s,c])=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--border-default);font-size:12.5px"><span>${m}</span><span class="num muted">${s}</span><span class="chip ${c==='✓'?'ok':'warn'}">${c}</span></div>`).join('')}</div>
+      <div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="margin-bottom:8px">Similar releases <span class="muted" style="text-transform:none;letter-spacing:0">(from $similars, currently discarded)</span></div>${['Dune.2021.2160p.UHD.BluRay.x265-GHI','Dune.Part.Two.2024.1080p.WEB.H264-DEF','Blade.Runner.2049.2017.2160p.UHD-XYZ'].map(n=>`<div class="mono" style="padding:6px 0;border-top:1px solid var(--border-default);font-size:11.5px"><a href="#">${n}</a></div>`).join('')}</div>`;
+    if (v==='a') return bar('/details/3f9c…') + `<div class="app">${headerA()}<div class="app-body">${navA()}<div class="app-content">${detailsHead(R[0])}<div style="display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:14px;margin-top:14px"><div>${tabs}${overview}</div><div>${rail}</div></div></div></div></div>`;
+    return bar('/details/3f9c…') + `<div class="app">${headerA()}<div class="app-body">${navA()}<div class="app-content"><div class="crumbs">Movies › UHD › <b>Dune.Part.Two.2024.2160p…</b></div><div style="display:grid;grid-template-columns:300px minmax(0,1fr);gap:14px;margin-top:8px">
+      <div class="card" style="padding:14px;position:sticky;top:0;align-self:start"><div class="poster tall" data-c="poster-dune" style="width:100%"></div><div class="meta" style="margin-top:10px">${facts(R[0],{group:true})}</div><div style="display:grid;gap:6px;margin-top:12px"><button class="btn success"><i class="fas fa-download"></i> Download NZB</button><button class="btn secondary"><i class="fas fa-shopping-basket"></i> Add to basket</button><button class="btn secondary"><i class="fas fa-flag"></i> Report</button></div><div style="margin-top:12px;font-size:12.5px;display:grid;gap:5px">${[['Category','Movies › UHD'],['Size','42.6 GB · 88 files'],['Added','2 h ago'],['Posted','Sep 13, 2026 08:12'],['Grabs','1,421'],['Group','alt.binaries.movies'],['PreDB','Matched'],['Password','None']].map(([k,v])=>`<div style="display:flex;justify-content:space-between;gap:8px"><span class="muted">${k}</span><span class="num" style="text-align:right">${v}</span></div>`).join('')}</div></div>
+      <div><h1 style="font-size:18px;word-break:break-all;margin-bottom:12px">${esc(R[0].name)}</h1>${overview}<div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow">Media</div><div class="small muted" style="margin-top:6px">Video: HEVC Main 10 · 3840×2160 · 23.976 fps · HDR10 · 34.1 Mb/s &nbsp;|&nbsp; Audio: TrueHD Atmos 7.1 · English &nbsp;|&nbsp; Subs: English, French, Spanish</div></div><div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow">Files (88)</div><div class="small muted" style="margin-top:6px">dune.part.two.2024.2160p.uhd.bluray.x265-xyz.mkv · 42.1 GB … <a href="#">show all</a></div></div><div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow">Comments (6)</div><div class="small muted" style="margin-top:6px">Paginated, visible-only, toast on post.</div></div></div></div></div></div></div>`;
+  }
+
+  // ---------- Hubs ----------
+  function hubs(v){
+    const hero = (poster, title, sub, links, watch=true) => `<div class="card" style="padding:16px;display:grid;grid-template-columns:110px 1fr;gap:16px"><div class="poster tall" data-c="${poster}"></div><div><div class="crumbs">TV › <b>${title}</b></div><h1 style="font-size:20px">${title} <span class="muted" style="font-weight:400;font-size:15px">${sub}</span></h1><div class="small muted" style="margin-top:4px">FX · Comedy, Drama · 30 min · ★ 8.6 · Returning series · Next: S04E04 · Sep 19</div><div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap"><button class="btn ${watch?'primary':'secondary'} sm">${watch?'<i class="fas fa-heart"></i> Watching ▾':'<i class="far fa-heart"></i> Watch'}</button>${links.map(l=>`<button class="btn secondary sm">${l} ↗</button>`).join('')}</div><div style="display:grid;grid-template-columns:repeat(4,auto);gap:14px;margin-top:12px;width:max-content;font-size:12.5px">${[['Seasons','4'],['Episodes','38'],['Releases','412'],['Latest','2 h ago']].map(([k,n])=>`<div><div class="muted small">${k}</div><div class="num" style="font-weight:600">${n}</div></div>`).join('')}</div></div></div>`;
+    const seasons = `<div class="tabs" style="margin:14px 0 0"><a>S01</a><a>S02</a><a>S03</a><a class="active">S04</a><a>Specials</a></div>`;
+    const eps = [R[1],{...R[1],name:'The.Bear.S04E03.2160p.WEB.H265.DV-DEF',size:'5.3 GB',media:'2160p · HEVC · DV · EAC3 5.1',grabs:120,complete:100},{...R[1],name:'The.Bear.S04E02.1080p.WEB.H264-ABC',episode:2,grabs:610,complete:100,preview:null},{...R[1],name:'The.Bear.S04E01.1080p.WEB.H264-ABC',episode:1,grabs:880,complete:100}];
+    const grouped = `<div class="card" style="margin-top:0;border-top-left-radius:0;border-top-right-radius:0">${toolbar({view:'table',title:'The Bear',count:412,filters:['Quality','Source']})}<div style="padding:8px 14px;border-bottom:1px solid var(--border-default);display:flex;gap:8px;align-items:center;font-size:13px"><b>E03</b> · “Doors” · aired Sep 12 · 2 releases</div>${table(eps.slice(0,2))}<div style="padding:8px 14px;border-top:1px solid var(--border-default);border-bottom:1px solid var(--border-default);display:flex;gap:8px;align-items:center;font-size:13px"><b>E02</b> · “Soubrette” · 1 release</div>${table([eps[2]])}<div class="pagination"><button class="btn secondary sm">Select all in season</button><span class="grow"></span><button class="btn success sm"><i class="fas fa-download"></i> 0 selected</button></div></div>`;
+    if (v==='a') return bar('/series/1234') + `<div class="app">${headerA()}<div class="app-body">${navA('TV')}<div class="app-content">${hero('poster-bear','The Bear','2022–',['TVDB','TVMaze','Trakt'])}${seasons}${grouped}
+      <div class="eyebrow" style="margin:22px 0 8px">Watchlist page (same card for TV and Movies)</div><div class="card"><div class="tabs" style="margin:0;padding:0 14px"><a class="active">TV · 12</a><a>Movies · 7</a><span class="grow"></span><span class="field sm" style="margin:4px 0;width:200px"><i class="fas fa-magnifying-glass muted"></i><input placeholder="Find a show to watch…"></span></div><div class="grid cards" style="padding:14px">${[['poster-bear','The Bear','S04E03 · 2 h ago · next Sep 19'],['poster-alien','Severance','S03E01 · 3 d ago'],['cover-gt7','Slow Horses','S05E02 · 1 w ago']].map(([c,t,s])=>`<div class="card" style="padding:10px;display:grid;grid-template-columns:44px 1fr auto;gap:10px;align-items:center"><div class="poster tall" data-c="${c}"></div><div><div style="font-weight:600;font-size:13px">${t}</div><div class="small muted">${s}</div><div class="meta"><span class="chip">HD</span><span class="chip">UHD</span></div></div><button class="btn secondary sm icon" title="Watchlist options"><i class="fas fa-gear"></i></button></div>`).join('')}</div></div></div></div></div>`;
+    return bar('/browse/TV?watching=1') + `<div class="app">${headerA()}<div class="app-body">${navA('TV')}<div class="app-content"><div class="page-head"><div><div class="crumbs">Browse › <b>TV</b></div><h1>TV</h1></div><button class="btn secondary sm"><i class="fas fa-rss"></i> RSS</button></div><div class="card">${toolbar({view:'covers',title:'TV',count:12,filters:['Sub-category','Network']})}<div style="padding:10px 14px;border-bottom:1px solid var(--border-default);display:flex;gap:6px"><span class="chip p"><i class="fas fa-heart"></i> Watching ✕</span><span class="chip action">Airing this week</span><span class="chip action">A–Z</span></div>${covers([{...R[1],title:'The Bear',rating:8.6,cover:'poster-bear'},{...R[1],title:'Severance',rating:8.7,cover:'poster-alien'},{...R[1],title:'Slow Horses',rating:8.2,cover:'cover-gt7'},{...R[1],title:'Shrinking',rating:8.1,cover:'cover-holly'},{...R[1],title:'Silo',rating:8.0,cover:'cover-elden'},{...R[1],title:'Andor',rating:8.9,cover:'cover-kida'}]).replace(/<div style="padding:8px 10px">/g,'<div style="padding:8px 10px"><div style="display:flex;justify-content:flex-end;margin-bottom:-18px;position:relative;z-index:1"><span style="color:var(--bad)">♥</span></div>')}</div></div></div></div>`;
+  }
+
+
+  // ---------- Adding a movie to My Movies: the three entry points, with the picker open ----------
+  function watch(){
+    const picker = (title) => `<div class="card" style="position:absolute;top:calc(100% + 8px);left:0;width:300px;padding:12px 14px;z-index:5;box-shadow:0 14px 30px -12px rgba(2,6,23,.5);background:var(--surface-card)">
+      <div style="font-weight:600;font-size:13px">Add “${esc(title)}” to My Movies</div>
+      <div class="small muted" style="margin:2px 0 8px">Get releases in these categories:</div>
+      ${[['UHD',true],['HD',true],['SD',false],['Foreign',false],['Other',false]].map(([c,on])=>`<label style="display:flex;gap:8px;align-items:center;font-size:13px;padding:3px 0"><input type="checkbox" ${on?'checked':''}> ${c}</label>`).join('')}
+      <div style="display:flex;gap:6px;margin-top:10px"><button class="btn primary sm"><i class="fas fa-heart"></i> Add</button><button class="btn secondary sm">Cancel</button><span class="grow"></span><span class="small muted" style="align-self:center">Defaults: your last choice</span></div></div>`;
+    const step = (n, title, body) => `<div><div class="eyebrow" style="margin-bottom:8px"><span class="pill" style="height:20px;font-size:10.5px;margin-right:6px">${n}</span>${title}</div>${body}</div>`;
+    const r = R[0];
+    const hero = `<div class="card" style="padding:14px;display:grid;grid-template-columns:90px 1fr;gap:14px;position:relative;overflow:visible"><div class="poster tall" data-c="poster-dune"></div><div><div class="crumbs">Movies › <b>Dune: Part Two</b></div><h1 style="font-size:17px">Dune: Part Two <span class="muted" style="font-weight:400;font-size:13px">2024</span></h1><div class="small muted">★ 8.7 · Sci-Fi, Adventure · 166 min · Denis Villeneuve</div><div style="display:flex;gap:6px;margin-top:10px;position:relative"><span style="position:relative"><button class="btn primary sm" style="outline:2px solid var(--p300);outline-offset:2px"><i class="far fa-heart"></i> Watch</button>${picker('Dune: Part Two')}</span><button class="btn secondary sm">IMDb ↗</button><button class="btn secondary sm">TMDB ↗</button><button class="btn secondary sm"><i class="fas fa-play"></i> Trailer</button></div></div></div>`;
+    const cover = `<div style="display:flex;gap:14px;align-items:flex-start"><div class="cover-card" style="width:150px;position:relative;overflow:visible"><div class="cover-art tall" style="--a:#f59e0b;--b:#7c2d12;border-radius:10px 10px 0 0"><span class="cover-art-title" style="font-size:12px">Dune: Part Two</span></div><span class="cover-count">3</span><span class="cover-heart" style="outline:2px solid var(--p300);background:var(--p600);color:#fff"><i class="far fa-heart"></i></span><div class="cover-body"><div class="cover-title one">Dune: Part Two</div><div class="cover-sub">2024 · ★ 8.7</div></div><div style="position:absolute;left:160px;top:0">${picker('Dune: Part Two')}</div></div><div class="small muted" style="max-width:220px;padding-top:4px;margin-left:320px">The heart on a cover. Hollow = not followed, filled = followed. Click opens the same picker.</div></div>`;
+    const row = `<div class="card" style="overflow-x:auto"><table class="rel"><tbody><tr><td><input type="checkbox"></td><td class="name"><a href="#">${esc(r.name)}</a><div class="meta">${facts(r)}</div><div class="subline"><span>${esc(r.group)}</span></div></td><td><span class="pill">Movies > UHD</span></td><td class="r num">42.6 GB</td><td class="num">2 h ago</td><td><span class="actions"><a class="ra dl" href="#" title="Download NZB"><i class="fas fa-download"></i></a><a class="ra pr" href="#" title="Details"><i class="fas fa-info"></i></a><button class="ra mu" title="Add to basket"><i class="fas fa-shopping-basket"></i></button><button class="ra mu" title="Report"><i class="fas fa-flag"></i></button><button class="ra mu" title="Add Dune: Part Two to My Movies" style="outline:2px solid var(--p300);outline-offset:2px"><i class="far fa-heart"></i></button></span></td></tr></tbody></table></div><div class="small muted" style="margin-top:6px">Fifth action on a release row, only when the release is matched to a movie (replaces today's purple film button). Same picker.</div>`;
+    const after = `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn primary sm"><i class="fas fa-heart"></i> Watching <i class="fas fa-chevron-down" style="font-size:10px"></i></button><span class="cover-heart" style="position:static;display:inline-flex"><i class="fas fa-heart"></i></span><button class="ra pr" title="On My Movies"><i class="fas fa-heart"></i></button><span class="card" style="padding:8px 12px;font-size:13px;display:inline-flex;gap:8px;align-items:center;border-color:var(--ok)"><i class="fas fa-check" style="color:var(--ok)"></i> Added Dune: Part Two to My Movies <a href="#" class="small">Undo</a></span></div><div class="small muted" style="margin-top:6px">After adding: the button reads Watching (click again to change categories or remove), the heart fills, a toast confirms.</div>`;
+    return bar('/movie/tt15239678  ·  /browse/Movies  ·  /browse/All') + `<div class="app"><div class="app-body" style="grid-template-columns:1fr"><div class="app-content" style="display:grid;gap:22px;padding-bottom:28px">
+      ${step('1','From the movie page', `<div style="padding-bottom:250px">${hero}</div>`)}
+      ${step('2','From a cover in Covers view', `<div style="padding-bottom:20px">${cover}</div>`)}
+      ${step('3','From a release row', row)}
+      ${step('4','After adding', after)}
+    </div></div></div>`;
+  }
+
+  // ---------- Account ----------
+  function account(v){
+    const sections = ['Profile','Appearance','Security','API & RSS','Downloads','Privacy','Invitations'];
+    const nav = (act)=>`<div class="card" style="padding:8px;align-self:start">${sections.map(s=>`<a style="display:block;padding:7px 10px;border-radius:8px;font-size:13px;${s===act?'background:var(--p100);color:var(--p800);font-weight:600':'color:var(--text-2)'}">${s}</a>`).join('')}</div>`;
+    const field = (l,v,w='100%')=>`<label style="display:block;font-size:12.5px"><span class="muted" style="display:block;margin-bottom:4px">${l}</span><span class="field" style="width:${w}"><input value="${v}"></span></label>`;
+    if (v==='a') return bar('/account/security') + `<div class="app">${headerA()}<div class="app-body">${navA('')}<div class="app-content"><div class="page-head"><div><div class="crumbs"><b>Account</b></div><h1>Account</h1></div><span class="small muted">randy · member since 2019 · role: Admin</span></div>
+      <div style="display:grid;grid-template-columns:200px minmax(0,1fr);gap:14px">${nav('Security')}<div style="display:grid;gap:12px">
+        <div class="card" style="padding:16px"><h3 style="font-size:14px">Password</h3><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:10px">${field('Current','••••••••')}${field('New','')}${field('Confirm','')}</div><div style="margin-top:10px"><button class="btn primary sm">Update password</button></div></div>
+        <div class="card" style="padding:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-size:14px">Two-factor authentication <span class="chip ok" style="margin-left:6px">Enabled</span></h3><button class="btn secondary sm">Disable</button></div><p class="small muted" style="margin-top:4px">Authenticator app · recovery codes: 8 unused · <a href="#">regenerate</a></p></div>
+        <div class="card" style="padding:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="font-size:14px">Passkeys</h3><button class="btn secondary sm">+ Add passkey</button></div>${[['MacBook Touch ID','added Mar 2026 · last used today'],['YubiKey 5C','added Jan 2025 · last used 2 w ago']].map(([n,s])=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--border-default);font-size:13px"><div><div>${n}</div><div class="small muted">${s}</div></div><button class="btn ghost sm" style="color:var(--bad)">Remove</button></div>`).join('')}</div>
+        <div class="card" style="padding:16px"><h3 style="font-size:14px">Sessions</h3><div class="small muted" style="margin-top:4px">This device · Chrome on macOS · 10.1.8.x &nbsp;·&nbsp; <a href="#">Sign out other sessions</a></div></div>
+      </div></div>
+      <div class="eyebrow" style="margin:22px 0 8px">Basket (release browser, table mode, multi-select)</div><div class="card">${toolbar({view:'table',title:'basket',count:3,search:false,filters:[],viewModes:['table','cards']})}${table(R.slice(0,3))}<div style="padding:10px 14px;border-top:1px solid var(--border-default);display:flex;align-items:center;gap:10px;background:var(--surface-panel-alt);border-radius:0 0 12px 12px"><span class="small num"><b>3 selected</b> · 46.1 GB</span><span class="grow"></span><button class="btn secondary sm">Remove</button><button class="btn success sm"><i class="fas fa-download"></i> Download 3 NZBs</button></div></div>
+      <div class="eyebrow" style="margin:22px 0 8px">Home dashboard</div><div style="display:grid;grid-template-columns:2fr 1fr;gap:12px"><div class="card"><div class="toolbar" style="padding:10px 14px"><b style="font-size:13px">Latest releases</b><span class="grow"></span><a class="small">Browse all →</a></div>${cards(R.slice(0,4)).replace('grid cards','grid cards" data-x="').replace('style="padding:14px"','style="padding:12px;grid-template-columns:1fr 1fr"')}</div><div style="display:grid;gap:12px;align-content:start"><div class="card" style="padding:14px"><b style="font-size:13px">Watchlist</b><div class="small muted" style="margin-top:6px">The Bear S04E03 · 2 h ago<br>Severance S03E01 · 3 d ago</div></div><div class="card" style="padding:14px"><b style="font-size:13px">Trending this week</b><div style="display:flex;gap:6px;margin-top:8px">${['poster-dune','poster-alien','poster-bear','cover-gt7'].map(c=>`<div class="poster tall" data-c="${c}" style="width:44px"></div>`).join('')}</div></div><div class="card" style="padding:14px"><b style="font-size:13px">Site notice</b><div class="small muted" style="margin-top:6px">Admin content block, as today.</div></div></div></div>
+      </div></div></div>`;
+    return bar('/profile') + `<div class="app">${headerA()}<div class="app-body">${navA('')}<div class="app-content"><div class="page-head"><div><div class="crumbs">Home › <b>Profile</b></div><h1>Profile</h1></div><button class="btn primary sm">Edit profile</button></div>
+      <div style="display:grid;grid-template-columns:200px minmax(0,1fr);gap:14px">${nav('General')}<div style="display:grid;gap:12px"><div class="card" style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;font-size:13px">${[['Username','randy'],['Role','Admin'],['Member since','Mar 2019'],['Last login','Today 09:14'],['Timezone','America/Chicago'],['Theme','System · Blue']].map(([k,v])=>`<div><div class="small muted">${k}</div><div>${v}</div></div>`).join('')}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div class="card" style="padding:16px"><div style="display:flex;justify-content:space-between"><b style="font-size:13px">Downloads (24 h)</b><span class="num small">38 / 200</span></div><div style="height:6px;background:var(--surface-panel-alt);border-radius:3px;margin-top:8px"><div style="width:19%;height:6px;background:var(--p600);border-radius:3px"></div></div></div><div class="card" style="padding:16px"><div style="display:flex;justify-content:space-between"><b style="font-size:13px">API requests (24 h)</b><span class="num small">412 / 5,000</span></div><div style="height:6px;background:var(--surface-panel-alt);border-radius:3px;margin-top:8px"><div style="width:8%;height:6px;background:var(--p600);border-radius:3px"></div></div></div></div>
+      <div class="card" style="padding:16px"><b style="font-size:13px">API key</b><div style="display:flex;gap:8px;margin-top:8px"><span class="field mono" style="flex:1"><input value="a91c…e7f2" readonly></span><button class="btn secondary">Copy</button><button class="btn secondary">Regenerate</button></div></div></div></div>
+      <p class="small muted" style="margin-top:14px">Option B keeps the view/edit split and existing routes; it standardises components and fixes the tab JS and the unlabeled usage card.</p></div></div></div>`;
+  }
+
+  // ---------- Mount ----------
+  const mocks = {shell, browse, search, details, hubs, account, watch};
+  document.querySelectorAll('[data-mock]').forEach(el=>{
+    const k = el.dataset.mock;
+    try {
+      if (k==='facts'){ el.innerHTML = facts(R[0],{group:true}) + facts({...R[3],media:null},{group:false}); return; }
+      if (!mocks[k]) return; // covers has its own renderer (proto-covers)
+      el.innerHTML = mocks[k](el.dataset.variant, el.dataset.view);
+    } catch (e) { el.innerHTML = `<div class="empty">Mock failed to render: ${String(e.message)}</div>`; console.error('mock', k, e); }
+  });
+  try{ document.querySelectorAll('[data-viewswitch]').forEach(sw=>{
+    sw.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+      sw.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed', x===b));
+      const frame = document.querySelector(`#${sw.dataset.viewswitch} .frame`);
+      frame.dataset.view = b.dataset.view; frame.innerHTML = browse('a', b.dataset.view);
+    }));
+  }); }catch(e){ console.error(e); }
+
+  // Option pills
+  document.querySelectorAll('.options').forEach(group=>{
+    group.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+      group.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed', x===b));
+      const sec = group.closest('section');
+      sec.querySelectorAll('.option-panel').forEach(p=>p.classList.toggle('active', p.id===b.dataset.opt));
+    }));
+  });
+
+  // Global preview controls
+  const root = document.documentElement;
+  const apply = {
+    theme: v => { root.setAttribute('data-theme', v); },
+    scheme: v => { root.setAttribute('data-scheme', v); },
+    vp: v => document.querySelectorAll('.frame').forEach(f=>{ if(f.dataset.mock && f.dataset.variant!=='mobile') f.classList.toggle('mobile', v==='mobile'); }),
+    notes: v => document.querySelectorAll('.frame').forEach(f=>f.classList.toggle('hide-notes', v==='off')),
+  };
+  document.querySelectorAll('[data-set]').forEach(b=>b.addEventListener('click',()=>{
+    document.querySelectorAll(`[data-set="${b.dataset.set}"]`).forEach(x=>x.setAttribute('aria-pressed', x===b));
+    apply[b.dataset.set](b.dataset.val);
+  }));
+
+  // Reflect the OS theme in the control when nothing is stamped
+  try{ const dark = matchMedia('(prefers-color-scheme: dark)').matches; document.querySelectorAll('[data-set="theme"]').forEach(x=>x.setAttribute('aria-pressed', x.dataset.val===(dark?'dark':'light'))); }catch(e){}
+
+  // Nav highlight on scroll
+  const links = [...document.querySelectorAll('.review-nav a[href^="#"]')];
+  const io = new IntersectionObserver(es=>{ es.forEach(e=>{ if(e.isIntersecting){ links.forEach(l=>l.classList.toggle('active', l.getAttribute('href')==='#'+e.target.id)); } }); },{rootMargin:'-20% 0px -70% 0px'});
+  document.querySelectorAll('.review-main > section').forEach(s=>io.observe(s));
+})();
+
+</script>
+<script>
+/* Covers view prototype, built for volume: ~15,000 movies (600 pages × 25 today), thousands of series.
+   Three densities. Compact is the default for Movies and TV: 10 across, 100 per page, facts on hover and on click. */
+(function(){
+  const {facts, stats, esc} = window.PR;
+  const rel = (name, o={}) => Object.assign({name, size:'8.2 GB', files:34, added:'3 h ago', posted:'Sep 13, 2026', grabs:120, comments:0, complete:100, media:null, nfo:true, preview:null, pw:'none', group:'alt.binaries.movies', poster:'yEncBin@poster.com'}, o);
+
+  const MOVIES = ['Dune: Part Two|2024|8.7','Alien: Romulus|2024|7.2','Blade Runner 2049|2017|8.0','Arrival|2016|7.9','Sicario|2015|7.6','Prisoners|2013|8.2','Enemy|2013|6.9','Incendies|2010|8.3','Oppenheimer|2023|8.3','Poor Things|2023|7.8','The Zone of Interest|2023|7.4','Past Lives|2023|7.8','Anatomy of a Fall|2023|7.7','Killers of the Flower Moon|2023|7.6','The Holdovers|2023|7.9','Godzilla Minus One|2023|7.9','Civil War|2024|7.0','Furiosa|2024|7.5','Challengers|2024|7.1','The Substance|2024|7.3','Anora|2024|7.6','Conclave|2024|7.4','Nosferatu|2024|7.2','A Complete Unknown|2024|7.5','The Brutalist|2024|7.4','Sinners|2025|7.8','Mickey 17|2025|6.9','Warfare|2025|7.3','The Phoenician Scheme|2025|7.0','28 Years Later|2025|7.1','F1|2025|7.7','Weapons|2025|7.6','One Battle After Another|2025|8.1','Heat|1995|8.3','Collateral|2004|7.5','Drive|2011|7.8','Nightcrawler|2014|7.8','Whiplash|2014|8.5','Ex Machina|2014|7.7','Her|2013|8.0','Gravity|2013|7.7','Interstellar|2014|8.7','Inception|2010|8.8','The Prestige|2006|8.5','Memento|2000|8.4','Tenet|2020|7.3','Dunkirk|2017|7.8','No Country for Old Men|2007|8.2','There Will Be Blood|2007|8.2','The Master|2012|7.1','Phantom Thread|2017|7.4','Licorice Pizza|2021|7.1','Parasite|2019|8.5','Memories of Murder|2003|8.1','Oldboy|2003|8.3','The Handmaiden|2016|8.1','Burning|2018|7.5','Decision to Leave|2022|7.3','Drive My Car|2021|7.6','Perfect Days|2023|7.9','Aftersun|2022|7.6','The Banshees of Inisherin|2022|7.7','Tár|2022|7.4','The Northman|2022|7.0','The Lighthouse|2019|7.4','The Witch|2015|7.0','Hereditary|2018|7.3','Midsommar|2019|7.1','Get Out|2017|7.8','Nope|2022|6.8','Us|2019|6.8','Everything Everywhere All at Once|2022|7.8','Top Gun: Maverick|2022|8.2','Mad Max: Fury Road|2015|8.1','The Batman|2022|7.8','Joker|2019|8.4','Spider-Man: Across the Spider-Verse|2023|8.6','The Boy and the Heron|2023|7.5','Spirited Away|2001|8.6','Princess Mononoke|1997|8.3','Akira|1988|8.0','Ghost in the Shell|1995|7.9','Perfect Blue|1997|8.0','Paprika|2006|7.7','Your Name|2016|8.4','Children of Men|2006|7.9','Sunshine|2007|7.2','Moon|2009|7.8','Annihilation|2018|6.8','Under the Skin|2013|6.3','The Lobster|2015|7.1','The Favourite|2018|7.5','Kinds of Kindness|2024|6.5','Uncut Gems|2019|7.4','Good Time|2017|7.3','Marriage Story|2019|7.9','The Irishman|2019|7.8','Roma|2018|7.7','Amour|2012|7.9','Zodiac|2007|7.7','Se7en|1995|8.6','Gone Girl|2014|8.1','The Social Network|2010|7.8','Fight Club|1999|8.8'];
+  const SERIES = ['The Bear|FX','Severance|Apple TV+','Slow Horses|Apple TV+','Andor|Disney+','Shrinking|Apple TV+','Silo|Apple TV+','Succession|HBO','The White Lotus|HBO','The Last of Us|HBO','House of the Dragon|HBO','Shōgun|FX','Fallout|Prime Video','Reacher|Prime Video','The Boys|Prime Video','Invincible|Prime Video','Ted Lasso|Apple TV+','For All Mankind|Apple TV+','Foundation|Apple TV+','Pachinko|Apple TV+','Bad Sisters|Apple TV+','Only Murders in the Building|Hulu','The Diplomat|Netflix','Ripley|Netflix','Beef|Netflix','Baby Reindeer|Netflix','3 Body Problem|Netflix','Adolescence|Netflix','Black Doves|Netflix','Nobody Wants This|Netflix','The Gentlemen|Netflix','Fargo|FX','Reservation Dogs|FX','What We Do in the Shadows|FX','Atlanta|FX','The Americans|FX','Better Call Saul|AMC','Breaking Bad|AMC','Mad Men|AMC','Interview with the Vampire|AMC','Dark Winds|AMC','Yellowjackets|Showtime','Fellow Travelers|Showtime','The Penguin|HBO','Industry|HBO','The Gilded Age|HBO','True Detective|HBO','Barry|HBO','Euphoria|HBO','Hacks|Max','The Pitt|Max','The Righteous Gemstones|HBO','Curb Your Enthusiasm|HBO','Poker Face|Peacock','Mr. & Mrs. Smith|Prime Video','Presumed Innocent|Apple TV+','Sugar|Apple TV+','Dark Matter|Apple TV+','Masters of the Air|Apple TV+','Lessons in Chemistry|Apple TV+','Hijack|Apple TV+','Blue Lights|BBC','Happy Valley|BBC','Line of Duty|BBC','Sherlock|BBC','Bodyguard|BBC','The Responder|BBC','Boiling Point|BBC','Ludwig|BBC','Vigil|BBC','Gangs of London|Sky','Landman|Paramount+','Tulsa King|Paramount+','Yellowstone|Paramount','1923|Paramount+','Lioness|Paramount+','Star Trek: Strange New Worlds|Paramount+','Lower Decks|Paramount+','Alien: Earth|FX','Daredevil: Born Again|Disney+','Loki|Disney+','The Mandalorian|Disney+','Ahsoka|Disney+','Skeleton Crew|Disney+','Arcane|Netflix','Blue Eye Samurai|Netflix','Pluribus|Apple TV+','Task|HBO','The Studio|Apple TV+','Murderbot|Apple TV+','Dept. Q|Netflix','The Four Seasons|Netflix','Dope Thief|Apple TV+','Long Bright River|Peacock','Paradise|Hulu','Étoile|Prime Video','Overcompensating|Prime Video','Mobland|Paramount+','Chief of War|Apple TV+','Smoke|Apple TV+','Black Mirror|Netflix','Squid Game|Netflix','Wednesday|Netflix'];
+  const ALBUMS = ['Kid A Mnesia|Radiohead|2021','In Rainbows|Radiohead|2007','Geogaddi|Boards of Canada|2002','OK Computer|Radiohead|1997','Selected Ambient Works 85–92|Aphex Twin|1992','Music Has the Right to Children|Boards of Canada|1998','Amnesiac|Radiohead|2001','Tomorrow\'s Harvest|Boards of Canada|2013','Blonde|Frank Ocean|2016','Channel Orange|Frank Ocean|2012','To Pimp a Butterfly|Kendrick Lamar|2015','good kid, m.A.A.d city|Kendrick Lamar|2012','GNX|Kendrick Lamar|2024','Random Access Memories|Daft Punk|2013','Discovery|Daft Punk|2001','Currents|Tame Impala|2015','Lonerism|Tame Impala|2012','Vespertine|Björk|2001','Homogenic|Björk|1997','Post|Björk|1995','Loveless|My Bloody Valentine|1991','Spiderland|Slint|1991','Ágætis byrjun|Sigur Rós|1999','Untrue|Burial|2007','Endtroducing|DJ Shadow|1996','Dummy|Portishead|1994','Mezzanine|Massive Attack|1998','Blue Lines|Massive Attack|1991','Illmatic|Nas|1994','Madvillainy|Madvillain|2004','Donuts|J Dilla|2006','Cosmogramma|Flying Lotus|2010','Since I Left You|The Avalanches|2000','Merriweather Post Pavilion|Animal Collective|2009','Funeral|Arcade Fire|2004','Is This It|The Strokes|2001','Turn On the Bright Lights|Interpol|2002','Silent Alarm|Bloc Party|2005','Hounds of Love|Kate Bush|1985','Remain in Light|Talking Heads|1980','Low|David Bowie|1977','Blackstar|David Bowie|2016','Rumours|Fleetwood Mac|1977','Blue|Joni Mitchell|1971','Kind of Blue|Miles Davis|1959','A Love Supreme|John Coltrane|1965','Ambient 1: Music for Airports|Brian Eno|1978','Trans-Europe Express|Kraftwerk|1977','Purple Rain|Prince|1984','Voodoo|D\'Angelo|2000','Black Messiah|D\'Angelo|2014','SOS|SZA|2022','Ctrl|SZA|2017','Norman Fucking Rockwell!|Lana Del Rey|2019','Punisher|Phoebe Bridgers|2020','Fetch the Bolt Cutters|Fiona Apple|2020','Igor|Tyler, the Creator|2019','Chromakopia|Tyler, the Creator|2024','Brat|Charli XCX|2024','Hit Me Hard and Soft|Billie Eilish|2024','Cowboy Carter|Beyoncé|2024','Renaissance|Beyoncé|2022','Motomami|Rosalía|2022','Un Verano Sin Ti|Bad Bunny|2022','Debí Tirar Más Fotos|Bad Bunny|2025','Alligator Bites Never Heal|Doechii|2024','Mahashmashana|Father John Misty|2024','Songs of a Lost World|The Cure|2024','Wild God|Nick Cave|2024','Only God Was Above Us|Vampire Weekend|2024','Diamond Jubilee|Cindy Lee|2024','Manning Fireworks|MJ Lenderman|2024','Bright Future|Adrianne Lenker|2024','Tigers Blood|Waxahatchee|2024','Romance|Fontaines D.C.|2024','Cutouts|The Smile|2024','Wall of Eyes|The Smile|2024','Eusexua|FKA twigs|2025','Forever Howlong|Black Country, New Road|2025','Sable, Fable|Bon Iver|2025','Lux|Rosalía|2025','Virgin|Lorde|2025','I Quit|Haim|2025','Glory|Perfume Genius|2025','Blue Rev|Alvvays|2022','Deceiver|DIIV|2019','Frog in Boiling Water|DIIV|2024','Skinty Fia|Fontaines D.C.|2022','A Hero\'s Death|Fontaines D.C.|2020','Ants From Up There|Black Country, New Road|2022','Crack-Up|Fleet Foxes|2017','Shore|Fleet Foxes|2020','Helplessness Blues|Fleet Foxes|2011','Carrie & Lowell|Sufjan Stevens|2015','Illinois|Sufjan Stevens|2005','Javelin|Sufjan Stevens|2023','In the Aeroplane Over the Sea|Neutral Milk Hotel|1998','Yankee Hotel Foxtrot|Wilco|2002','Either/Or|Elliott Smith|1997'];
+  const GAMES = ['Elden Ring: Shadow of the Erdtree|Bandai Namco|2024','Baldur\'s Gate 3|Larian|2023','Hades II|Supergiant|2024','Cyberpunk 2077|CD Projekt|2020','Factorio: Space Age|Wube|2024','Stardew Valley|ConcernedApe|2016','Clair Obscur: Expedition 33|Kepler|2025','Kingdom Come: Deliverance II|Deep Silver|2025','Monster Hunter Wilds|Capcom|2025','Split Fiction|EA|2025','Doom: The Dark Ages|Bethesda|2025','Indiana Jones and the Great Circle|Bethesda|2024','Black Myth: Wukong|Game Science|2024','Helldivers 2|Sony|2024','Palworld|Pocketpair|2024','Balatro|Playstack|2024','Manor Lords|Hooded Horse|2024','Satisfactory|Coffee Stain|2024','Frostpunk 2|11 bit|2024','Metaphor: ReFantazio|Atlus|2024','Silent Hill 2|Konami|2024','Dragon Age: The Veilguard|EA|2024','Alan Wake 2|Epic|2023','Armored Core VI|Bandai Namco|2023','Lies of P|Neowiz|2023','Sea of Stars|Sabotage|2023','Dave the Diver|Mintrocket|2023','Hi-Fi Rush|Bethesda|2023','Dead Space|EA|2023','Resident Evil 4|Capcom|2023','Street Fighter 6|Capcom|2023','Star Wars Jedi: Survivor|EA|2023','Hogwarts Legacy|WB|2023','Elden Ring|Bandai Namco|2022','God of War Ragnarök|Sony|2024','Horizon Forbidden West|Sony|2024','The Last of Us Part I|Sony|2023','Ghost of Tsushima|Sony|2024','Spider-Man 2|Sony|2025','Returnal|Sony|2023','Ratchet & Clank: Rift Apart|Sony|2023','Death Stranding|Kojima|2020','Control|Remedy|2019','Disco Elysium|ZA/UM|2019','Outer Wilds|Annapurna|2019','Hollow Knight|Team Cherry|2017','Hollow Knight: Silksong|Team Cherry|2025','Celeste|EXOK|2018','Hades|Supergiant|2020','Slay the Spire|Mega Crit|2019','Slay the Spire 2|Mega Crit|2025','Vampire Survivors|poncle|2022','Deep Rock Galactic|Coffee Stain|2020','Valheim|Iron Gate|2021','Subnautica|Unknown Worlds|2018','No Man\'s Sky|Hello Games|2016','Starfield|Bethesda|2023','Skyrim Special Edition|Bethesda|2016','Fallout 4|Bethesda|2015','The Witcher 3|CD Projekt|2015','Red Dead Redemption 2|Rockstar|2019','Grand Theft Auto V|Rockstar|2015','Half-Life: Alyx|Valve|2020','Portal 2|Valve|2011','Divinity: Original Sin 2|Larian|2017','Pillars of Eternity II|Obsidian|2018','Pentiment|Obsidian|2022','Avowed|Obsidian|2025','Rimworld|Ludeon|2018','Dwarf Fortress|Bay 12|2022','Cities: Skylines II|Paradox|2023','Crusader Kings III|Paradox|2020','Europa Universalis V|Paradox|2025','Civilization VII|2K|2025','Age of Empires IV|Xbox|2021','Total War: Warhammer III|Sega|2022','Persona 5 Royal|Atlus|2022','Persona 3 Reload|Atlus|2024','Like a Dragon: Infinite Wealth|Sega|2024','Final Fantasy VII Rebirth|Square Enix|2025','Final Fantasy XVI|Square Enix|2024','Octopath Traveler II|Square Enix|2023','Dragon Quest III HD-2D|Square Enix|2024','Nier: Automata|Square Enix|2017','Sekiro|Activision|2019','Dark Souls III|Bandai Namco|2016','Nine Sols|Red Candle|2024','Animal Well|Bigmode|2024','UFO 50|Mossmouth|2024','Tactical Breach Wizards|Suspicious|2024','Caves of Qud|Freehold|2024','Blue Prince|Raw Fury|2025','Peak|Aggro Crab|2025','Schedule I|TVGS|2025','R.E.P.O.|semiwork|2025','Ghost of Yōtei|Sony|2025','Mafia: The Old Country|2K|2025','Assassin\'s Creed Shadows|Ubisoft|2025','Avowed|Xbox|2025','Marathon|Bungie|2025'];
+  const CONSOLE = ['Gran Turismo 7|PS5|E','Tears of the Kingdom|Switch|E10+','Halo Infinite|Xbox Series|T','Astro Bot|PS5|E10+','Metroid Dread|Switch|T','Forza Horizon 5|Xbox Series|E','Mario Kart World|Switch 2|E','Donkey Kong Bananza|Switch 2|E10+','Super Mario Bros. Wonder|Switch|E','Pikmin 4|Switch|E10+','Fire Emblem Engage|Switch|T','Xenoblade Chronicles 3|Switch|T','Bayonetta 3|Switch|M','Splatoon 3|Switch|E10+','Animal Crossing: New Horizons|Switch|E','Kirby and the Forgotten Land|Switch|E10+','Pokémon Scarlet|Switch|E','Pokémon Legends: Z-A|Switch 2|E','Zelda: Echoes of Wisdom|Switch|E10+','Mario & Luigi: Brothership|Switch|E','Princess Peach: Showtime!|Switch|E','Paper Mario: TTYD|Switch|E','Luigi\'s Mansion 2 HD|Switch|E','Spider-Man 2|PS5|T','God of War Ragnarök|PS5|M','Horizon Forbidden West|PS5|T','Ratchet & Clank: Rift Apart|PS5|E10+','Returnal|PS5|T','Demon\'s Souls|PS5|M','Final Fantasy VII Rebirth|PS5|T','Final Fantasy XVI|PS5|M','Stellar Blade|PS5|M','Rise of the Ronin|PS5|M','Helldivers 2|PS5|M','Death Stranding 2|PS5|M','Ghost of Yōtei|PS5|M','Astro\'s Playroom|PS5|E','The Last of Us Part II Remastered|PS5|M','Uncharted: Legacy of Thieves|PS5|T','Gran Turismo Sport|PS4|E','Bloodborne|PS4|M','Persona 5 Royal|PS4|M','Nioh 2|PS4|M','Starfield|Xbox Series|M','Forza Motorsport|Xbox Series|E','Gears 5|Xbox Series|M','Sea of Thieves|Xbox Series|T','Hi-Fi Rush|Xbox Series|T','Senua\'s Saga: Hellblade II|Xbox Series|M','Avowed|Xbox Series|M','Indiana Jones|Xbox Series|T','South of Midnight|Xbox Series|T','Fable|Xbox Series|T','Gears of War: Reloaded|Xbox Series|M','Elden Ring|PS5|M','Elden Ring Nightreign|PS5|M','Armored Core VI|PS5|T','Resident Evil 4|PS5|M','Resident Evil Village|PS5|M','Street Fighter 6|PS5|T','Tekken 8|PS5|T','Mortal Kombat 1|PS5|M','Dragon\'s Dogma 2|PS5|M','Monster Hunter Wilds|PS5|T','Like a Dragon: Infinite Wealth|PS5|M','Metaphor: ReFantazio|PS5|T','Silent Hill 2|PS5|M','Alan Wake 2|PS5|M','Baldur\'s Gate 3|PS5|M','Cyberpunk 2077|PS5|M','Hogwarts Legacy|PS5|T','Star Wars Outlaws|PS5|T','Assassin\'s Creed Shadows|PS5|M','Avatar: Frontiers of Pandora|PS5|T','Prince of Persia: The Lost Crown|PS5|T','Black Myth: Wukong|PS5|M','Clair Obscur: Expedition 33|PS5|M','Split Fiction|PS5|T','It Takes Two|PS5|T','Kingdom Come: Deliverance II|PS5|M','Doom: The Dark Ages|PS5|M','Hades II|Switch 2|T','Cyberpunk 2077|Switch 2|M','Street Fighter 6|Switch 2|T','Yakuza 0 Director\'s Cut|Switch 2|M','Bravely Default HD|Switch 2|T','Metroid Prime 4|Switch 2|T','Kirby Air Riders|Switch 2|E','Hyrule Warriors: Age of Imprisonment|Switch 2|T','Drag x Drive|Switch 2|E','Welcome Tour|Switch 2|E','Mario Party Jamboree|Switch|E','Super Smash Bros. Ultimate|Switch|E10+','Mario Kart 8 Deluxe|Switch|E','Breath of the Wild|Switch|E10+','Super Mario Odyssey|Switch|E10+','Metroid Prime Remastered|Switch|T','Sonic X Shadow Generations|Switch|E10+','Sonic Frontiers|PS5|E10+'];
+  const BOOKS = ['Holly|Stephen King|2023','Project Hail Mary|Andy Weir|2021','The Three-Body Problem|Liu Cixin|2014','Dune|Frank Herbert|1965','The Left Hand of Darkness|Ursula K. Le Guin|1969','Neuromancer|William Gibson|1984','Hyperion|Dan Simmons|1989','Children of Time|Adrian Tchaikovsky|2015','Never Flinch|Stephen King|2025','The Life of Chuck|Stephen King|2020','Fairy Tale|Stephen King|2022','Billy Summers|Stephen King|2021','The Institute|Stephen King|2019','11/22/63|Stephen King|2011','The Stand|Stephen King|1978','It|Stephen King|1986','Misery|Stephen King|1987','The Shining|Stephen King|1977','Doctor Sleep|Stephen King|2013','The Outsider|Stephen King|2018','Mr. Mercedes|Stephen King|2014','The Martian|Andy Weir|2011','Artemis|Andy Weir|2017','The Dark Forest|Liu Cixin|2008','Death\'s End|Liu Cixin|2010','Dune Messiah|Frank Herbert|1969','Children of Dune|Frank Herbert|1976','The Dispossessed|Ursula K. Le Guin|1974','A Wizard of Earthsea|Ursula K. Le Guin|1968','Count Zero|William Gibson|1986','The Peripheral|William Gibson|2014','The Fall of Hyperion|Dan Simmons|1990','Children of Ruin|Adrian Tchaikovsky|2019','Children of Memory|Adrian Tchaikovsky|2022','Service Model|Adrian Tchaikovsky|2024','Alien Clay|Adrian Tchaikovsky|2024','A Memory Called Empire|Arkady Martine|2019','The Ministry for the Future|Kim Stanley Robinson|2020','Red Mars|Kim Stanley Robinson|1992','Ancillary Justice|Ann Leckie|2013','The Fifth Season|N. K. Jemisin|2015','Piranesi|Susanna Clarke|2020','Jonathan Strange & Mr Norrell|Susanna Clarke|2004','The Name of the Wind|Patrick Rothfuss|2007','The Way of Kings|Brandon Sanderson|2010','Mistborn|Brandon Sanderson|2006','Wind and Truth|Brandon Sanderson|2024','The Blade Itself|Joe Abercrombie|2006','The Devils|Joe Abercrombie|2025','Gideon the Ninth|Tamsyn Muir|2019','Harrow the Ninth|Tamsyn Muir|2020','Nona the Ninth|Tamsyn Muir|2022','This Is How You Lose the Time War|El-Mohtar & Gladstone|2019','Exhalation|Ted Chiang|2019','Stories of Your Life|Ted Chiang|2002','Klara and the Sun|Kazuo Ishiguro|2021','Never Let Me Go|Kazuo Ishiguro|2005','The Remains of the Day|Kazuo Ishiguro|1989','Sea of Tranquility|Emily St. John Mandel|2022','Station Eleven|Emily St. John Mandel|2014','Tomorrow, and Tomorrow, and Tomorrow|Gabrielle Zevin|2022','Demon Copperhead|Barbara Kingsolver|2022','James|Percival Everett|2024','The Vegetarian|Han Kang|2007','Orbital|Samantha Harvey|2023','Prophet Song|Paul Lynch|2023','Intermezzo|Sally Rooney|2024','Normal People|Sally Rooney|2018','The Bee Sting|Paul Murray|2023','Trust|Hernan Diaz|2022','Lessons in Chemistry|Bonnie Garmus|2022','Yellowface|R. F. Kuang|2023','Babel|R. F. Kuang|2022','Katabasis|R. F. Kuang|2025','Fourth Wing|Rebecca Yarros|2023','Onyx Storm|Rebecca Yarros|2025','The Will of the Many|James Islington|2023','Sunrise on the Reaping|Suzanne Collins|2025','Wild Dark Shore|Charlotte McConaghy|2025','The Emperor of Gladness|Ocean Vuong|2025','Atmosphere|Taylor Jenkins Reid|2025','Great Big Beautiful Life|Emily Henry|2025','My Friends|Fredrik Backman|2025','The Wedding People|Alison Espach|2024','All Fours|Miranda July|2024','Martyr!|Kaveh Akbar|2024','The God of the Woods|Liz Moore|2024','Long Island|Colm Tóibín|2024','Playground|Richard Powers|2024','The Overstory|Richard Powers|2018','Bewilderment|Richard Powers|2021','Cloud Cuckoo Land|Anthony Doerr|2021','All the Light We Cannot See|Anthony Doerr|2014','The Nickel Boys|Colson Whitehead|2019','The Underground Railroad|Colson Whitehead|2016','Crook Manifesto|Colson Whitehead|2023','Harlem Shuffle|Colson Whitehead|2021','Lincoln in the Bardo|George Saunders|2017','Liberation Day|George Saunders|2022'];
+
+  const HUES = [['#f59e0b','#7c2d12'],['#475569','#020617'],['#f97316','#1e1b4b'],['#94a3b8','#0f172a'],['#a16207','#1c1917'],['#64748b','#111827'],['#ca8a04','#292524'],['#dc2626','#1c1917'],['#fca5a5','#7f1d1d'],['#fb7185','#4c1d95'],['#f43f5e','#450a0a'],['#e2e8f0','#1e3a8a'],['#a3e635','#14532d'],['#fdba74','#7c2d12'],['#fde68a','#78350f'],['#fdba74','#0c4a6e'],['#c084fc','#1e1b4b'],['#f87171','#450a0a'],['#fde047','#0f172a'],['#fb923c','#292524'],['#86efac','#14532d'],['#c7d2fe','#312e81'],['#7dd3fc','#0c4a6e'],['#e0f2fe','#1d4ed8'],['#0ea5e9','#1e3a8a'],['#bfdbfe','#1e293b'],['#d6d3d1','#292524'],['#fcd34d','#111827'],['#fed7aa','#7c2d12'],['#a8a29e','#1c1917'],['#a7f3d0','#064e3b'],['#bae6fd','#0c4a6e'],['#e0e7ff','#312e81'],['#f0abfc','#3b0764'],['#fecaca','#7f1d1d'],['#bbf7d0','#134e4a']];
+  const h = s => { let x=7; for (const c of s) x=(x*31+c.charCodeAt(0))>>>0; return x; };
+  const pick = (arr, s) => arr[h(s)%arr.length];
+  const MEDIA = ['2160p · HEVC · TrueHD 7.1','1080p · x264 · DTS-HD 5.1','1080p · H.264 · EAC3 5.1','2160p · HEVC · DV · Atmos','720p · x264 · AC3 5.1','1080p · x265 · AAC 2.0'];
+  const AGES = ['2 h ago','5 h ago','9 h ago','1 d ago','2 d ago','3 d ago','5 d ago','1 w ago','2 w ago','3 w ago','1 mo ago','2 mo ago'];
+  const slug = t => t.replace(/[^A-Za-z0-9]+/g,'.').replace(/^\.|\.$/g,'');
+  const CAT = {movies:'Movies > HD', music:'Audio > Lossless', games:'PC > Games', console:'Console > Games', books:'Books > Ebook', tv:'TV > HD'};
+
+  function genReleases(root, e){
+    const n = 1 + (h(e.title+'n')%3); const out=[];
+    for (let k=0;k<n;k++){
+      const q = pick(MEDIA, e.title+k); const comp = (h(e.title+'c'+k)%9===0)?61+(h(e.title)%35):100;
+      const size = root==='books' ? `${(1+(h(e.title+k)%40)/10).toFixed(1)} MB` : root==='music' ? `${(0.3+(h(e.title+k)%14)/10).toFixed(1)} GB` : `${(4+(h(e.title+k)%56)+(h(e.title)%10)/10).toFixed(1)} GB`;
+      const tag = ['XYZ','ABC','DEF','GHI'][k];
+      const res = q.split(' · ')[0]; const src = res==='2160p' ? (k===0?'UHD.BluRay':'WEB') : res==='1080p' ? (k===0?'BluRay':'WEB') : 'WEB';
+      const name = root==='movies' ? `${slug(e.title)}.${e.year}.${res}.${src}.${q.includes('HEVC')?'x265':'x264'}-${tag}`
+        : root==='tv' ? `${slug(e.title)}.S0${1+(h(e.title)%5)}E0${1+k}.${q.split(' · ')[0]}.WEB.${q.includes('HEVC')?'H265':'H264'}-${tag}`
+        : root==='music' ? `${slug(e.artist)}-${slug(e.title)}-${k===0?'FLAC':k===1?'24bit-FLAC':'320kbps-MP3'}-${e.year}-${tag}`
+        : root==='games' ? `${slug(e.title)}${k?'.Update.v1.'+(k+1):''}-${['RUNE','GOG','P2P'][k]}`
+        : root==='console' ? `${slug(e.title)}${k?'.Update.v1.'+k:''}.${e.platform.replace(/\s/g,'')}-${['DUPLEX','VENOM','COMPLEX'][k]}`
+        : `${slug(e.author)}-${slug(e.title)}.${k===0?'Retail.EPUB':k===1?'Unabridged.Audiobook.MP3':'PDF'}-${['BOOK','AUDIO','BOOK'][k]}`;
+      out.push(rel(name,{size, files:2+(h(name)%150), added:AGES[(h(name)+k)%AGES.length], grabs:20+(h(name)%4000), comments:h(name)%9===0?1+(h(name)%12):0, complete:comp,
+        media: root==='music'?(k===2?'MP3 · 320 kbps':'FLAC · 44.1 kHz · 16-bit'):(root==='movies'||root==='tv')?q:null, nfo:h(name)%4!==0, preview:(root==='movies'&&k===0)?'image':root==='tv'&&k===0?'video':root==='music'?'audio':null, pw:h(name)%23===0?'passworded':'none', cat:CAT[root]}));
+    }
+    return out;
+  }
+
+  const uniq = a => a.filter((s,i)=>a.indexOf(s)===i);
+  const ROOTS = {
+    movies: { label:'Movies', url:'/browse/Movies', shape:'tall', filters:['Sub-category','Genre','Year','Rating'], total:15240, unit:'titles', letters:false, entities: uniq(MOVIES).map(s=>{ const [title,year,rating]=s.split('|'); return {title, year:+year, rating:+rating, genre:pick(['Sci-Fi · Drama','Thriller','Drama','Horror','Action','Comedy · Drama','Crime','Animation'],title), links:['IMDb','TMDB','Trakt'], director:pick(['Denis Villeneuve','Christopher Nolan','Bong Joon-ho','Robert Eggers','Yorgos Lanthimos','Ari Aster','David Fincher'],title), watching:h(title)%11===0}; }) },
+    tv: { label:'TV', url:'/browse/TV', shape:'tall', filters:['Sub-category','Network','Status'], total:4880, unit:'series', letters:true, entities: uniq(SERIES).map(s=>{ const [title,network]=s.split('|'); return {title, network, year:2015+(h(title)%10), rating:(7+(h(title)%20)/10).toFixed(1), genre:pick(['Drama','Comedy','Thriller','Sci-Fi','Crime'],title), status:h(title)%3?'Returning':'Ended', watching:h(title)%7===0}; }).sort((a,b)=>a.title.localeCompare(b.title)) },
+    music: { label:'Audio', url:'/browse/Audio', shape:'square', filters:['Sub-category','Genre','Year','Label'], total:61200, unit:'albums', letters:true, entities: uniq(ALBUMS).map(s=>{ const [title,artist,year]=s.split('|'); return {title, artist, year:+year, genre:pick(['Alternative','Electronic','Hip-Hop','Indie','Jazz','Pop'],title), label:pick(['XL','Warp','Def Jam','Columbia','4AD','Domino'],title)}; }) },
+    games: { label:'PC / Games', url:'/browse/PC/Games', shape:'tall', filters:['Genre','Publisher','Year'], total:9310, unit:'games', letters:false, entities: uniq(GAMES).map(s=>{ const [title,publisher,year]=s.split('|'); return {title, publisher, year:+year, platform:'PC', genre:pick(['RPG','Action','Strategy','Simulation','Roguelike','Adventure'],title)}; }) },
+    console: { label:'Console', url:'/browse/Console', shape:'tall', filters:['Platform','Genre','ESRB','Publisher'], total:7904, unit:'games', letters:false, entities: uniq(CONSOLE).map(s=>{ const [title,platform,esrb]=s.split('|'); return {title, platform, esrb, year:2015+(h(title)%11), publisher:pick(['Sony','Nintendo','Xbox Game Studios','Capcom','Sega','Bandai Namco'],title), genre:pick(['Action','Racing','RPG','Adventure','Platformer','Shooter'],title)}; }) },
+    books: { label:'Books', url:'/browse/Books', shape:'tall', filters:['Sub-category','Author','Year'], total:187300, unit:'books', letters:true, entities: uniq(BOOKS).map(s=>{ const [title,author,year]=s.split('|'); return {title, author, year:+year, publishdate:String(year)}; }) },
+  };
+  Object.entries(ROOTS).forEach(([k,R])=>R.entities.forEach(e=>{ e.releases = genReleases(k,e); e.art = e.title; }));
+
+  const art = (e, shape, big=false) => { const [a,b]=pick(HUES, e.art); return `<div class="cover-art ${shape}" style="--a:${a};--b:${b}"><span class="cover-art-title" style="font-size:${big?15:11}px">${esc(e.title)}</span></div>`; };
+  const subCompact = (root, e) => ({ movies: `${e.year}`, music: esc(e.artist), games: `${e.year}`, console: e.platform, books: esc(e.author), tv: e.network })[root];
+  const sub = (root, e) => ({ movies: `${e.year} · ${e.genre}`, music: `${esc(e.artist)} · ${e.year}`, games: `${e.publisher} · ${e.year}`, console: `${e.platform} · ${e.esrb}`, books: `${esc(e.author)} · ${e.year}`, tv: `${e.network} · ${e.status}` })[root];
+  const badge = (root, e) => root==='movies'||root==='tv' ? `<span class="chip" title="Rating">★ ${e.rating}</span>` : root==='console'||root==='games' ? `<span class="chip">${e.platform}</span>` : root==='music' ? `<span class="chip">${esc(e.genre)}</span>` : `<span class="chip">EPUB</span>`;
+  const best = e => e.releases[0];
+  const nRel = e => `${e.releases.length} release${e.releases.length>1?'s':''}`;
+  const pipClass = e => { const r=best(e); return r.pw==='passworded'?'bad':r.complete===100?'ok':r.complete>=95?'warn':'bad'; };
+  const expandedTable = e => `<div class="cover-expanded"><div class="cover-expanded-head"><span style="white-space:nowrap"><b>${esc(e.title)}</b> · ${nRel(e)}</span><span class="muted small" style="white-space:nowrap">List-view table for this title · Esc closes · ← → next title</span><span class="grow"></span><button class="btn secondary sm"><i class="far fa-square-check"></i> Select all</button><button class="btn success sm"><i class="fas fa-download"></i> Download selected</button><button class="btn secondary sm"><i class="fas fa-arrow-up-right-from-square"></i> Title page</button><button class="btn ghost sm icon" data-collapse title="Collapse"><i class="fas fa-xmark"></i></button></div>${window.PR.table(e.releases)}</div>`;
+
+  function compactCard(e, root, i, open){
+    return `<div class="cover-card compact ${i===open?'is-open':''}" tabindex="0" title="${esc(e.title)} · ${nRel(e)}">
+      ${art(e,ROOTS[root].shape)}
+      <span class="cover-count" title="${nRel(e)}">${e.releases.length}</span>
+      ${e.watching?'<span class="cover-heart" title="On your watchlist"><i class="fas fa-heart"></i></span>':''}
+      <div class="cover-body"><div class="cover-title one">${esc(e.title)}</div><div class="cover-sub">${subCompact(root,e)}</div></div></div>`;
+  }
+  function standardCard(e, root, i, open){
+    return `<div class="cover-card ${i===open?'is-open':''}" tabindex="0">
+      ${art(e,ROOTS[root].shape)}
+      ${e.watching?'<span class="cover-heart" title="On your watchlist"><i class="fas fa-heart"></i></span>':''}
+      <div class="cover-body">
+        <div class="cover-title">${esc(e.title)}</div>
+        <div class="cover-sub">${sub(root,e)}</div>
+        <div class="cover-foot"><span class="meta" style="margin:0">${badge(root,e)}</span><span class="num small" style="font-weight:600;color:var(--p700)">${nRel(e)}</span></div>
+      </div></div>`;
+  }
+  function posterGrid(root, {expandIndex=0, cols=10, density='compact', perPage=100}={}){
+    const R = ROOTS[root]; const ents = R.entities.slice(0, perPage); let out='';
+    const rowEnd = expandIndex>=0 ? Math.min(Math.ceil((expandIndex+1)/cols)*cols, ents.length)-1 : -1;
+    const card = density==='compact' ? compactCard : standardCard;
+    for (let i=0;i<ents.length;i++){ out += card(ents[i],root,i,expandIndex); if (i===rowEnd) out += `<div class="cover-row-expand">${expandedTable(ents[expandIndex])}</div>`; }
+    return `<div class="cover-grid ${density}" style="--cols:${cols}">${out}</div>`;
+  }
+  function detailCards(root, {cols=2, perPage=48}={}){
+    const R = ROOTS[root]; const shape = R.shape;
+    const metaRows = e => ({ movies:[['Director',e.director],['Genre',e.genre]], music:[['Artist',e.artist],['Label',e.label],['Genre',e.genre]], games:[['Publisher',e.publisher],['Genre',e.genre]], console:[['Platform',e.platform],['Publisher',e.publisher],['ESRB',e.esrb]], books:[['Author',e.author],['Published',e.publishdate]], tv:[['Network',e.network],['Status',e.status],['Genre',e.genre]] })[root].map(([k,v])=>`<div><span class="muted">${k}</span> ${esc(v)}</div>`).join('');
+    const relRow = r => `<div class="dc-rel"><div style="min-width:0"><a href="#" class="mono" style="font-size:12px;color:var(--p700);word-break:break-all">${esc(r.name)}</a><div class="meta">${facts(r)}</div><div class="subline"><span class="num">${r.size}</span><span class="num">${r.files} files</span><span class="num">${r.added}</span>${window.PR.stats(r)}</div></div>${window.PR.actions(r)}</div>`;
+    return `<div class="dc-grid" style="--cols:${cols}">${R.entities.slice(0, Math.min(perPage, 8)).map(e=>`<div class="card dc">
+      <div class="dc-art">${art(e,shape,true)}</div>
+      <div class="dc-body">
+        <div class="dc-head"><div><div class="dc-title">${esc(e.title)} <span class="muted" style="font-weight:400">${e.year}</span></div><div class="meta" style="margin-top:4px">${badge(root,e)}${(e.links||[]).map(l=>`<span class="chip action">${l} ↗</span>`).join('')}${root==='tv'?`<span class="chip action">${e.watching?'♥ Watching':'♡ Watch'}</span>`:''}</div></div><span class="small muted num" style="white-space:nowrap">${nRel(e)}</span></div>
+        <div class="dc-meta small">${metaRows(e)}</div>
+        <div class="dc-rels">${e.releases.slice(0,2).map(relRow).join('')}${e.releases.length>2?`<a href="#" class="small" style="display:block;padding:6px 0">Show ${e.releases.length-2} more ▾</a>`:''}</div>
+      </div></div>`).join('')}<div class="small muted" style="grid-column:1/-1;padding:4px 2px">…${Math.max(perPage-8,0)} more cards on this page (8 shown in the mock).</div></div>`;
+  }
+
+  const DENS = {compact:{cols:10}, standard:{cols:6}, detail:{cols:2}};
+
+  function page(root, inner, {density='compact', perPage=48}={}){
+    const R = ROOTS[root]; const pages = Math.ceil(R.total/perPage);
+    const letters = R.letters ? `<div class="letters">${['#',...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map(l=>`<a href="#">${l}</a>`).join('')}<span class="small muted" style="margin-left:auto">Jump by initial · switches sort to title</span></div>` : '';
+    const tb = `<div class="toolbar sticky">
+      <label class="field" style="width:220px"><i class="fas fa-magnifying-glass muted"></i><input placeholder="Search in ${R.label}…" aria-label="Search in ${R.label}"></label>
+      ${R.filters.map(f=>`<span class="field select"><span class="ph">${f}</span></span>`).join('')}
+      <span class="grow"></span><span class="count num">${R.total.toLocaleString()} ${R.unit}</span>
+      <span class="field select"><span>Sort: Newest release</span></span>
+      <span class="seg" title="View"><button aria-pressed="false" title="Table"><i class="fas fa-list"></i> Table</button><button aria-pressed="false" title="Cards · one release per card"><i class="fas fa-table-cells-large"></i> Cards</button><button aria-pressed="true" title="Covers · one title per card"><i class="fas fa-table-cells"></i> Covers</button></span>
+      <span class="seg" title="Cover size — appears only in Covers view"><span class="small muted" style="padding:0 8px;display:inline-flex;align-items:center">Cover size</span><button aria-pressed="${density==='compact'}" title="Small · 10 across">S</button><button aria-pressed="${density==='standard'}" title="Large · 6 across">L</button><button aria-pressed="${density==='detail'}" title="Extra large · 2 across · entity card with metadata and its releases">XL</button></span>
+    </div>`;
+    const pager = `<div class="pager"><span class="small muted num">Page <b>1</b> of ${pages.toLocaleString()}</span><span class="seg" title="Titles per page — the same setting in every view"><span class="small muted" style="padding:0 8px;display:inline-flex;align-items:center">Per page</span><button data-perpage="24" aria-pressed="${perPage===24}">24</button><button data-perpage="48" aria-pressed="${perPage===48}">48</button><button data-perpage="100" aria-pressed="${perPage===100}">100</button></span><span class="grow"></span><span class="pagination" style="padding:0"><span>‹</span><span class="cur">1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>…</span><span>${pages.toLocaleString()}</span><span>›</span></span><label class="field sm" style="width:120px"><span class="ph">Go to page</span></label></div>`;
+    return `<div class="frame-bar"><i></i><i></i><i></i><span class="url">${R.url}?view=covers&size=${density}&per=${perPage}</span></div><div class="app"><div class="app-header"><span class="logo">NNTmux</span><span class="spacer"></span><span class="field" style="width:420px;background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.12);color:#fff"><span class="field select" style="height:26px;border:0;background:rgba(255,255,255,.1);color:#e2e8f0;font-size:12px;padding:0 8px">${R.label}</span><input placeholder="Search releases… ( / )" style="color:#fff"></span><button class="btn ghost sm" style="color:#e2e8f0"><i class="fas fa-shopping-basket"></i> 3</button><span style="width:30px;height:30px;border-radius:50%;background:#475569"></span></div>
+      <div class="app-body"><nav class="app-nav">${['Console','Movies','Audio','PC / Games','TV','Adult','Books','Other'].map(c=>`<a class="${c===R.label?'active':''}">${c}</a>`).join('')}<div class="lbl">Discover</div><a>Trending TV</a><a>Trending Movies</a><div class="lbl">Mine</div><a>Watchlist</a><a>Basket · 3</a></nav>
+      <div class="app-content"><div class="page-head"><div><div class="crumbs">Browse › <b>${R.label}</b></div><h1>${R.label}</h1></div><div style="display:flex;gap:8px"><button class="btn secondary sm"><i class="fas fa-rss"></i> RSS for this view</button></div></div>
+      <div class="card">${tb}${letters}${pager}${inner}${pager}</div></div></div></div>`;
+  }
+
+  function mobile(root){
+    const R = ROOTS[root]; const e0 = R.entities[0];
+    return `<div class="frame-bar"><i></i><i></i><i></i><span class="url">${R.url}</span></div><div class="app"><div class="app-header" style="padding:0 12px;gap:8px"><i class="fas fa-bars"></i><span class="logo">NNTmux</span><span class="spacer"></span><i class="fas fa-magnifying-glass"></i><i class="fas fa-shopping-basket"></i></div><div class="app-body" style="grid-template-columns:1fr"><div class="app-content" style="padding:12px">
+      <div class="crumbs">Browse › <b>${R.label}</b></div>
+      <div style="display:flex;gap:8px;margin:8px 0"><span class="field" style="flex:1"><i class="fas fa-magnifying-glass muted"></i><input placeholder="Search in ${R.label}…"></span><button class="btn secondary"><i class="fas fa-sliders"></i> 2</button><span class="seg"><button aria-pressed="false" title="Table"><i class="fas fa-list"></i></button><button aria-pressed="true" title="Covers"><i class="fas fa-table-cells"></i></button></span></div>
+      <div class="small muted num" style="margin-bottom:8px">${R.total.toLocaleString()} ${R.unit} · newest release first</div>
+      ${posterGrid(root,{expandIndex:-1,cols:3,density:'compact',perPage:12}).replace('class="cover-grid compact"','class="cover-grid compact mobile"')}
+      <button class="btn secondary" style="width:100%;margin-top:10px">Load ${state.perPage} more</button>
+      <div class="card sheet"><div class="cover-expanded-head" style="border:0"><b>${esc(e0.title)}</b> · ${nRel(e0)}<span class="grow"></span><span class="muted"><i class="fas fa-xmark"></i></span></div>${e0.releases.map(r=>`<div class="dc-rel" style="padding:10px 12px"><div style="min-width:0"><span class="mono" style="font-size:11.5px;word-break:break-all">${esc(r.name)}</span><div class="meta">${facts(r)}</div><div class="subline"><span class="num">${r.size}</span><span class="num">${r.added}</span><span class="num"><i class="fas fa-download"></i> ${r.grabs}</span></div></div>${window.PR.actions(r)}</div>`).join('')}<div class="small muted" style="padding:6px 12px 10px">Tapping a cover opens its releases as a bottom sheet.</div></div>
+    </div></div></div>`;
+  }
+
+  const state = {root:'movies', density:'compact', open:0, cols:null, perPage:48};
+  const target = document.getElementById('covers-frame');
+  const mobileTarget = document.getElementById('covers-mobile');
+  const measuredCols = () => { const g = target.querySelector('.card > .cover-grid'); if(!g) return DENS[state.density].cols; const n = getComputedStyle(g).gridTemplateColumns.split(' ').filter(Boolean).length; return n || DENS[state.density].cols; };
+  const grid = cols => posterGrid(state.root,{expandIndex:state.open, cols, density:state.density, perPage:state.perPage});
+  function render(){
+    const d = DENS[state.density]; state.cols = d.cols;
+    const inner = state.density==='detail' ? detailCards(state.root, {perPage:state.perPage}) : grid(d.cols);
+    target.innerHTML = page(state.root, inner, {density:state.density, perPage:state.perPage});
+    if (state.density!=='detail'){ const m = measuredCols(); if (m !== state.cols){ state.cols = m; target.querySelector('.card > .cover-grid').outerHTML = grid(m); } }
+    mobileTarget.innerHTML = mobile(state.root);
+    document.querySelectorAll('[data-covers-root]').forEach(b=>b.setAttribute('aria-pressed', b.dataset.coversRoot===state.root));
+    document.querySelectorAll('[data-covers-density]').forEach(b=>b.setAttribute('aria-pressed', b.dataset.coversDensity===state.density));
+  }
+  document.querySelectorAll('[data-covers-root]').forEach(b=>b.addEventListener('click',()=>{state.root=b.dataset.coversRoot;state.open=0;render();}));
+  document.querySelectorAll('[data-covers-density]').forEach(b=>b.addEventListener('click',()=>{state.density=b.dataset.coversDensity;state.open=0;render();}));
+  render();
+  target.addEventListener('click', ev=>{
+    const pp = ev.target.closest('[data-perpage]'); if (pp){ state.perPage = +pp.dataset.perpage; render(); return; }
+    if (ev.target.closest('[data-collapse]')){ state.open=-1; target.querySelector('.card > .cover-grid').outerHTML = grid(measuredCols()); return; }
+    const c = ev.target.closest('.cover-card'); if(!c || state.density==='detail') return;
+    state.open=[...target.querySelectorAll('.cover-card')].indexOf(c); state.cols = measuredCols(); target.querySelector('.card > .cover-grid').outerHTML = grid(state.cols);
+    const row = target.querySelector('.cover-row-expand'); if(row) row.scrollIntoView({block:'nearest',behavior:'smooth'});
+  });
+  let rt; addEventListener('resize', ()=>{ clearTimeout(rt); rt=setTimeout(()=>{ if(state.density==='detail') return; const m=measuredCols(); if(m!==state.cols){ state.cols=m; target.querySelector('.card > .cover-grid').outerHTML = grid(m); } },120); });
+})();
+
+</script>
