@@ -1,0 +1,240 @@
+/* ---------- Interactive prototype: shell + pages ---------- */
+body{min-height:100vh}
+#app{min-height:100vh;display:flex;flex-direction:column}
+.topbar{background:var(--surface-header);color:#fff;height:56px;display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--surface-chrome-border);position:sticky;top:0;z-index:20}
+.topbar .logo{font-weight:700;letter-spacing:-.01em;margin-right:8px;color:#fff}
+.topbar .nav{display:flex;gap:2px}
+.topbar .nav > button,.topbar .nav > a{background:transparent;border:0;color:#cbd5e1;height:36px;padding:0 12px;border-radius:8px;font-size:13px;display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.topbar .nav > button:hover,.topbar .nav > a:hover,.topbar .nav > .is-open,.topbar .nav > .active{background:rgba(255,255,255,.12);color:#fff}
+.topbar .spacer{flex:1}
+.topbar .search{width:min(460px,40vw);background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.14);color:#fff}
+.topbar .search input{color:#fff}
+.topbar .search input::placeholder{color:#94a3b8}
+.topbar .scope{height:26px;border:0;background:rgba(255,255,255,.12);color:#e2e8f0;font-size:12px;padding:0 8px;border-radius:6px}
+.topbar .count-btn{color:#e2e8f0}
+.topbar .avatar{width:30px;height:30px;border-radius:50%;background:#475569;border:0;cursor:pointer}
+.menu{position:absolute;top:calc(100% + 6px);left:0;background:var(--surface-card);color:var(--text);border:1px solid var(--border-default);border-radius:10px;box-shadow:0 18px 40px -16px rgba(2,6,23,.5);padding:12px 14px;z-index:30;min-width:200px}
+.menu.right{left:auto;right:0}
+.mega{display:grid;grid-template-columns:repeat(4,150px);gap:10px 18px}
+.mega .root{font-weight:600;font-size:13px;margin-bottom:4px;display:block;color:var(--text)}
+.mega .root:hover{color:var(--p700)}
+.mega .sub{display:block;font-size:12px;color:var(--text-muted);padding:1px 0}
+.mega .sub:hover{color:var(--p700)}
+.mega .na{opacity:.45;pointer-events:none}
+.menu-item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;font-size:13px;color:var(--text);cursor:pointer;border:0;background:transparent;width:100%;text-align:left}
+.menu-item:hover{background:var(--surface-panel-alt)}
+.menu .sep{border-top:1px solid var(--border-default);margin:6px 0}
+main.page{flex:1;padding:18px 22px 60px;max-width:1500px;width:100%;margin:0 auto}
+.page-head .crumbs a{color:var(--text-muted)}
+.filters-row{display:flex;gap:6px;flex-wrap:wrap;padding:8px 14px;border-bottom:1px solid var(--border-default);align-items:center}
+select.field{appearance:auto;padding-right:8px}
+.seg button.is-hidden{display:none}
+/* watch picker */
+.overlay{position:fixed;inset:0;background:rgba(2,6,23,.45);z-index:40;display:flex;align-items:center;justify-content:center}
+.dialog{background:var(--surface-card);color:var(--text);border:1px solid var(--border-default);border-radius:12px;padding:16px 18px;width:340px;box-shadow:0 24px 60px -20px rgba(2,6,23,.6)}
+.dialog h3{font-size:14px;margin-bottom:2px}
+.dialog label{display:flex;gap:8px;align-items:center;font-size:13px;padding:4px 0}
+/* toasts */
+.toasts{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;z-index:50}
+.toast{background:var(--surface-card);color:var(--text);border:1px solid var(--border-default);border-left:3px solid var(--ok);border-radius:10px;padding:10px 14px;font-size:13px;box-shadow:0 12px 30px -14px rgba(2,6,23,.5);display:flex;gap:10px;align-items:center;min-width:260px}
+.toast.info{border-left-color:var(--p600)}
+.toast.warn{border-left-color:var(--warn)}
+.toast a{margin-left:auto}
+/* hearts + rows */
+.ra.watch.on{background:var(--p600);color:#fff}
+.cover-heart.on{background:var(--p600);color:#fff}
+.cover-heart{cursor:pointer;background:rgba(15,23,42,.6);color:#fff;font-size:11px;position:absolute;top:6px;left:6px;width:24px;height:24px;border-radius:999px;display:flex;align-items:center;justify-content:center;z-index:2;border:0}
+.cover-heart:hover{background:var(--p700)}
+.cover-card.compact .cover-heart{top:6px;left:6px;right:auto}
+.wl-card{display:grid;grid-template-columns:56px 1fr auto;gap:12px;align-items:center;padding:10px 12px}
+.wl-card .poster{width:56px}
+.qchips{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--border-default)}
+.qchips .chip.on{background:var(--p600);color:#fff}
+.empty-page{padding:40px;text-align:center;color:var(--text-muted)}
+.tabs button{background:transparent;border:0;padding:8px 12px;font-size:13px;color:var(--text-2);border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer}
+.tabs button.active{color:var(--p700);border-color:var(--p600);font-weight:600}
+.letters a.on{background:var(--p600);color:#fff}
+.hint{font-size:12px;color:var(--text-muted)}
+.proto-banner{background:var(--review-accent-bg);color:var(--review-accent);font-size:12px;padding:6px 18px;text-align:center}
+@media (max-width:900px){.topbar .nav > a.text{display:none}.mega{grid-template-columns:1fr 1fr}main.page{padding:12px}}
+/* top bar: every item centred on one line (the Browse button was wrapped in an inline span that sat on the text baseline) */
+.topbar{align-items:center}
+.topbar .nav{align-items:center;height:36px}
+.topbar .nav > span,.topbar > span{display:inline-flex;align-items:center;position:relative;height:36px;line-height:1}
+.topbar .nav > button,.topbar .nav > a{line-height:1}
+/* no native button chrome anywhere; the Browse trigger is a button, Trending/Watchlist are links, they must look identical */
+button,[type="button"],[type="submit"]{appearance:none;-webkit-appearance:none;border:0;background:none;font:inherit;color:inherit;margin:0}
+.topbar .nav > button,.topbar .nav > a{appearance:none;-webkit-appearance:none;border:0;border-radius:8px;background:transparent;color:#cbd5e1;height:36px;padding:0 12px;font-size:13px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;line-height:1}
+.topbar .nav > button:hover,.topbar .nav > a:hover,.topbar .nav > .is-open{background:rgba(255,255,255,.12);color:#fff}
+.topbar .nav > .active{background:transparent;color:#fff;box-shadow:inset 0 -2px 0 var(--p400)}
+.topbar .nav > .active:hover,.topbar .nav > .is-open.active{background:rgba(255,255,255,.12)}
+.seg button,.btn,.ra,.tabs button,.menu-item{appearance:none;-webkit-appearance:none}
+.topbar .avatar{appearance:none;-webkit-appearance:none}
+/* native selects: same box as every other field, custom chevron */
+select.field,select.scope{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2364748b' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:26px;cursor:pointer}
+select.field.select::after{content:none}
+select.scope{background-color:rgba(255,255,255,.12);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23cbd5e1' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");background-position:right 8px center;padding-right:22px}
+select.field option{color:var(--text);background:var(--surface-card)}
+/* title line: release name first, chips follow on the same line and wrap after it */
+.titleline{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-width:0}
+.titleline a.title{font-size:14px;font-weight:600;color:var(--link);line-height:1.3;word-break:break-all}
+.titleline .chip{height:18px;font-size:11px;padding:0 6px}
+.titleline .chip.action:hover{filter:brightness(1.08)}
+.subline{margin-top:3px}
+
+table.rel td > div[style*="gap:8px"],table.rel td > div[style*="gap:10px"]{white-space:nowrap;flex-wrap:nowrap}
+
+/* spacer was only defined inside .toolbar, so the modal header (and other flex rows) never pushed their right-hand controls to the edge */
+.grow{flex:1 1 auto}
+/* XL cover cards: each release is its own contained row, not a run of chips */
+.dc-rels{display:grid;gap:6px;border-top:1px solid var(--border-default);padding-top:10px;margin-top:4px}
+.dc-rel{background:var(--surface-panel-alt);border:1px solid var(--border-default);border-radius:8px;padding:8px 10px;align-items:center;gap:12px}
+.dc-rel:last-child{border-bottom:1px solid var(--border-default)}
+.dc-rel .titleline a.title{font-size:13px}
+.dc-rel .subline{margin-top:4px}
+.dc-rel .actions{flex:none}
+/* release rows inside XL cards: a fill that actually contrasts with the card in both themes, a solid accent edge, real spacing */
+:root{--row-bg:#eef2f7;--row-border:#cbd5e1}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--row-bg:#0b1220;--row-border:#475569}}
+:root[data-theme="dark"]{--row-bg:#0b1220;--row-border:#475569}
+.dc-rels{gap:10px;padding-top:12px}
+.dc-rel{background:var(--row-bg);border:1px solid var(--row-border);border-left:4px solid var(--p500);border-radius:8px;padding:10px 12px}
+.dc-rel:last-child{border-bottom:1px solid var(--row-border)}
+/* posters never stretch with their container: fixed 2:3 box, top-aligned */
+.poster.fixed{width:60px;height:90px;aspect-ratio:auto;align-self:start;flex:none}
+.dc{align-items:start}
+.dc-art{display:block;min-height:0;padding:14px 0 14px 14px}
+.dc-art .cover-art{width:140px;height:0;padding-bottom:150%;flex:none;border-radius:8px}
+.dc-rel .titleline a.title,.grid.cards .titleline a.title{font-size:14px;font-family:var(--font-sans)}
+/* ---------- Type scale: 11 · 12 · 13 · 14 · 16 · 20. One face (Figtree); monospace only inside NFO content. ---------- */
+main.page h1{font-size:20px;font-weight:700;line-height:1.25}
+main.page h3,.dialog h3{font-size:16px;font-weight:600}
+main.page .card h3{font-size:16px}
+.eyebrow{font-size:11px}
+.small,.subline,.crumbs,.hint,.cover-sub{font-size:12px}
+.chip,.pill,.cover-count,.sev{font-size:11px}
+.titleline .chip{font-size:11px;height:20px}
+.btn,.field,.seg button,.tabs button,.menu-item,table.rel td,.toast,.dialog label{font-size:13px}
+.btn.sm,.field.sm{font-size:12px}
+table.rel th{font-size:11px}
+.titleline a.title,.dc-rel .titleline a.title,.grid.cards .titleline a.title,.cover-title,.dc-title a{font-size:14px;font-family:var(--font-sans)}
+.dc-title{font-size:16px}
+.cover-title.one{font-size:13px}
+.cover-art-title{font-family:var(--font-sans)}
+.topbar .nav > button,.topbar .nav > a,.topbar .search input{font-size:13px}
+.mono{font-family:var(--font-mono);font-size:12px}
+pre.mono{font-size:12px}
+/* NFO modal */
+.nfo-dialog{width:min(820px,94vw);padding:0;overflow:hidden;display:flex;flex-direction:column;max-height:88vh}
+.modal-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border-default)}
+.modal-foot{display:flex;align-items:center;gap:8px;padding:10px 16px;background:var(--surface-panel-alt);border-top:1px solid var(--border-default)}
+.nfo-body{overflow:auto;background:#0b1220;padding:16px 20px}
+.nfo-pre{margin:0;font-family:var(--font-mono);font-size:12px;line-height:1.35;color:#cbd5e1;white-space:pre;tab-size:4}
+:root[data-theme="light"] .nfo-body,.nfo-body{background:#0b1220}
+/* missing artwork: same box, panel fill, faint border, root icon; the title still sits on it in the cover grid */
+.no-art{background:var(--surface-panel-alt)!important;background-image:none!important;border:1px solid var(--border-default);display:flex;align-items:center;justify-content:center;color:var(--text-muted)}
+.no-art > i{font-size:22px;opacity:.55}
+.poster.no-art > i{font-size:16px}
+.cover-art.no-art{display:block}
+.cover-art.no-art > i{position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);font-size:26px}
+.cover-art.no-art .cover-art-title{color:var(--text-2);text-shadow:none}
+.cover-art.no-art::before,.cover-art.no-art::after{content:none}
+/* Font Awesome swaps <i> for <svg>; target both */
+.no-art > i,.no-art > svg{font-size:22px;opacity:.55}
+.poster.no-art > i,.poster.no-art > svg{font-size:16px}
+.cover-art.no-art > i,.cover-art.no-art > svg{position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);font-size:26px;width:1em;height:1em}
+/* shapes: 2:3 posters, 1:1 album art, 16:9 preview frames */
+.cover-art.square{padding-bottom:100%}.cover-art.wide{padding-bottom:56.25%}
+.poster.fixed.square{width:60px;height:60px}.poster.fixed.wide{width:96px;height:54px}
+.art-tag{position:absolute;top:6px;right:6px;z-index:2;font-size:10px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;background:rgba(15,23,42,.7);color:#fff;padding:2px 6px;border-radius:4px}
+.cover-grid.compact .cover-card .cover-art.wide + .cover-count{display:none}
+.cover-card .cover-art.wide ~ .cover-body .cover-title.one{font-size:12px}
+
+.pagination [aria-disabled="true"]{opacity:.4;pointer-events:none}
+/* ---------- Cards view: one release per card, four zones ---------- */
+.grid.cards{grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:14px}
+.rcard{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto auto;padding:0;overflow:hidden}
+.rcard-art{grid-row:1;padding:14px 0 14px 14px}
+.rcard-body{grid-row:1;padding:14px 14px 12px 14px;min-width:0;display:grid;gap:8px;align-content:start}
+.rcard-ent{font-size:12px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rcard-ent a{color:var(--text-2);font-weight:500}
+.rcard-name{font-size:14px;font-weight:600;color:var(--link);line-height:1.3;word-break:break-all;display:block}
+.rcard-chips{display:flex;flex-wrap:wrap;gap:4px}
+.rcard-chips .chip{height:20px;font-size:11px}
+.rcard-meta{display:grid;grid-template-columns:repeat(4,auto);gap:2px 16px;width:max-content;max-width:100%}
+.rcard-meta div{display:flex;flex-direction:column;min-width:0}
+.rcard-meta span{font-size:11px;color:var(--text-muted);letter-spacing:.04em;text-transform:uppercase}
+.rcard-meta b{font-size:13px;font-weight:500;color:var(--text);white-space:nowrap}
+.rcard-foot{grid-column:1/-1;display:flex;align-items:center;gap:14px;padding:10px 14px;border-top:1px solid var(--border-default);background:var(--surface-panel-alt)}
+.rcard-sel{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);cursor:pointer}
+.rcard-stats{display:inline-flex;gap:12px;font-size:12px;color:var(--text-2)}
+.rcard .poster.fixed{width:72px;height:108px}.rcard .poster.fixed.square{width:72px;height:72px}.rcard .poster.fixed.wide{width:112px;height:63px}
+@media (max-width:900px){.grid.cards{grid-template-columns:1fr}}
+.rcard-body{gap:10px;padding:16px 16px 14px 16px}
+.rcard-art{padding:16px 0 16px 16px}
+.rcard-chips{gap:5px}
+.rcard-meta{gap:2px 22px}
+.rcard-foot{padding:10px 16px}
+/* ---------- Cards view: one release per row, columns aligned down the page ---------- */
+.rlist{display:flex;flex-direction:column}
+.rrow{display:grid;grid-template-columns:28px auto minmax(0,1fr) 96px 96px 84px auto;gap:0 16px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border-default)}
+.rrow:last-child{border-bottom:0}
+.rrow:hover{background:var(--surface-panel-alt)}
+.rrow.is-sel{background:color-mix(in srgb,var(--p500) 8%,transparent)}
+.rrow-sel{margin:0}
+.rrow-art .poster.fixed{width:56px;height:84px}.rrow-art .poster.fixed.square{width:56px;height:56px}.rrow-art .poster.fixed.wide{width:96px;height:54px}
+.rrow-main{display:grid;gap:6px;min-width:0;align-content:center}
+.rrow-ent{font-size:12px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rrow-ent a{color:var(--text-2);font-weight:500}
+.rrow-name{font-size:14px;font-weight:600;color:var(--link);line-height:1.3;word-break:break-all;display:block}
+.rrow-chips{display:flex;flex-wrap:wrap;gap:4px}
+.rrow-chips .chip{height:20px;font-size:11px}
+.rrow-col{display:flex;flex-direction:column;gap:1px}
+.rrow-col span{font-size:11px;color:var(--text-muted);letter-spacing:.04em;text-transform:uppercase}
+.rrow-col b{font-size:13px;font-weight:500;color:var(--text);white-space:nowrap}
+.rrow-actions{justify-self:end}
+@media (max-width:900px){.rrow{grid-template-columns:28px auto minmax(0,1fr);gap:8px 12px}.rrow-col,.rrow-actions{grid-column:3;justify-self:start}}
+/* release name: no light-blue on dark; plain high-contrast text, link colour on hover */
+.rrow-name,.titleline a.title,table.rel .name a.title,.dc-rel .titleline a.title,.rcard-name{color:var(--text)}
+.rrow-name:hover,.titleline a.title:hover,.rcard-name:hover{color:var(--link);text-decoration:underline}
+/* group + poster chips */
+.chip.origin{background:var(--chip-bg);color:var(--text-2);border:1px solid var(--border-default);height:20px;font-size:11px;cursor:pointer;text-decoration:none}
+.chip.origin:hover{border-color:var(--p400);color:var(--link)}
+.origin-line{margin-top:4px}
+table.rel td.posted{white-space:nowrap}
+/* cards rows: Size · Added · Posted · Grabs columns */
+.rrow{grid-template-columns:28px auto minmax(0,1fr) 84px 84px 150px 72px auto}
+@media (max-width:1100px){.rrow{grid-template-columns:28px auto minmax(0,1fr)}.rrow-col,.rrow-actions{grid-column:3;justify-self:start}}
+
+table.rel .name a.chip.origin,table.rel .name a.chip.origin:hover{font-weight:500;color:var(--text-2);text-decoration:none}
+table.rel .name a.chip.origin:hover{color:var(--link);border-color:var(--p400)}
+/* ---------- Entity overview page ---------- */
+.ent-hero{display:grid;grid-template-columns:180px minmax(0,1fr);gap:20px;padding:18px;margin-top:8px}
+.ent-hero .cover-art{border-radius:8px}
+.ent-body{display:grid;gap:12px;align-content:start;min-width:0}
+.ent-actions{display:flex;gap:6px;flex-wrap:wrap}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px 18px;font-size:13px}
+.kv div{display:flex;flex-direction:column;min-width:0}
+.kv span{font-size:11px;color:var(--text-muted);letter-spacing:.04em;text-transform:uppercase}
+.kv b{font-weight:500;color:var(--text)}
+.ent-plot{font-size:13px;color:var(--text-2);max-width:80ch;line-height:1.55}
+.ent-tracks ol{margin:0;padding-left:20px;font-size:13px;columns:2;column-gap:28px;color:var(--text-2)}
+.ent-tracks li{padding:1px 0}
+.ent-stats{display:flex;gap:22px;font-size:13px}
+.ent-stats div{display:flex;flex-direction:column}
+.ent-stats span{font-size:11px;color:var(--text-muted);letter-spacing:.04em;text-transform:uppercase}
+.ent-stats b{font-weight:600}
+.ent-h2{font-size:16px;margin:20px 0 10px}
+.season{margin-bottom:12px}
+.season-head{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border-default);background:var(--surface-panel-alt);border-radius:12px 12px 0 0}
+.season-head b{font-size:14px}
+.chip.entity{background:color-mix(in srgb,var(--p500) 12%,var(--chip-bg));color:var(--text-2);border:1px solid color-mix(in srgb,var(--p500) 35%,var(--border-default));height:20px;font-size:11px;text-decoration:none}
+.chip.entity:hover{color:var(--link);border-color:var(--p400)}
+@media (max-width:900px){.ent-hero{grid-template-columns:120px 1fr}}
+.season-tabs{margin:0;padding:0 8px;border-bottom:1px solid var(--border-default);overflow-x:auto;white-space:nowrap}
+.season-tabs button{padding:10px 14px}
+.tab-count{margin-left:6px;font-size:11px;background:var(--surface-panel-alt);color:var(--text-muted);border-radius:999px;padding:1px 6px}
+.season-tabs button.active .tab-count{background:var(--p100);color:var(--p800)}
+
+table.rel .name a.chip.entity,table.rel .name a.chip.entity:hover{font-weight:500;color:var(--text-2);text-decoration:none}
+table.rel .name a.chip.entity:hover{color:var(--link);border-color:var(--p400)}

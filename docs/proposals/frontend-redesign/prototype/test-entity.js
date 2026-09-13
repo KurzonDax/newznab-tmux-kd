@@ -1,0 +1,16 @@
+window.addEventListener('error', e => { (window.__errs=window.__errs||[]).push(e.message+' @'+e.lineno); });
+addEventListener('load', () => setTimeout(() => { const log=[]; const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+  const step=(n,f)=>{ try{ f(); log.push('OK '+n);}catch(e){ log.push('FAIL '+n+': '+e.message);} };
+  const out=()=>{ const d=document.createElement('pre'); d.id='testlog'; d.textContent=log.join('\n')+'\nERRORS: '+JSON.stringify(window.__errs||[]); document.body.appendChild(d); };
+  const go=(h,f)=>{ location.hash=h; setTimeout(f,220); };
+  step('cards has entity chip', ()=>{ $('[data-act=view][data-v=cards]').click(); if(!$('.rrow .chip.entity')) throw new Error('no chip'); });
+  const href=$('.rrow .chip.entity').getAttribute('href');
+  go(href, ()=>{ step('movie overview', ()=>{ const t=document.body.textContent; for (const k of ['Director','Cast','Runtime','Rating','Releases','Sample synopsis']) if(!t.includes(k)) throw new Error('missing '+k); if(!$('table.rel')) throw new Error('no releases'); });
+  go('#/title/tv/'+0, ()=>{ step('tv seasons', ()=>{ const n=$$('.season').length; if(n<1) throw new Error('no seasons'); if(!/Season \d/.test($('.season-head').textContent)) throw new Error('head'); if(!$('.season table.rel')) throw new Error('no table'); const t=document.body.textContent; for (const k of ['Network','Status','Seasons']) if(!t.includes(k)) throw new Error('missing '+k); });
+  go('#/title/music/0', ()=>{ step('album tracks', ()=>{ if($$('.ent-tracks li').length<8) throw new Error('tracks'); if(!document.body.textContent.includes('Label')) throw new Error('label'); });
+  go('#/browse/console', ()=>{ step('console covers', ()=>{ if($$('.cover-card').length<20) throw new Error($$('.cover-card').length); if(!$('[data-act=view][data-v=cards]')) throw new Error('no cards btn'); });
+  go('#/title/console/0', ()=>{ step('console overview', ()=>{ const t=document.body.textContent; for (const k of ['Platform','Publisher','ESRB']) if(!t.includes(k)) throw new Error('missing '+k); });
+  go('#/browse/books', ()=>{ step('books covers', ()=>{ if($$('.cover-card').length<20) throw new Error($$('.cover-card').length); if(!$('.letters')) throw new Error('no letters'); $('[data-act=view][data-v=cards]').click(); if(!$('.rrow .chip.entity')) throw new Error('no chip'); });
+  go('#/title/books/0', ()=>{ step('book overview', ()=>{ const t=document.body.textContent; for (const k of ['Author','Pages','ISBN','Sample overview']) if(!t.includes(k)) throw new Error('missing '+k); });
+  go('#/browse/adult', ()=>{ step('adult cards no entity chip', ()=>{ $('[data-act=view][data-v=cards]').click(); if($('.rrow .chip.entity')) throw new Error('chip on adult'); });
+  out(); }); }); }); }); }); }); }); }); }, 400));
