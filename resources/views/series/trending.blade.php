@@ -35,7 +35,7 @@
         <div class="px-6 py-6">
             <div class="grid grid-cols-1 gap-6">
                 @foreach($trendingShows as $index => $show)
-                    <div class="surface-panel border rounded-lg overflow-hidden hover:shadow-xl transition-shadow duration-300">
+                    <div class="relative surface-panel border rounded-lg overflow-hidden hover:shadow-xl transition-shadow duration-300">
                         <div class="flex flex-col md:flex-row">
                             <!-- Rank Badge -->
                             <div class="absolute top-4 left-4 z-10">
