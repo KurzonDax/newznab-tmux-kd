@@ -5,25 +5,6 @@
                     Comments ({{ isset($comments) ? $comments->total() : 0 }})
                 </h3>
 
-                <!-- Flash Messages -->
-                @if(session('success'))
-                    <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 mb-4">
-                        <p class="text-sm text-green-800 dark:text-green-200 flex items-center">
-                            <i class="fas fa-check-circle mr-2"></i>
-                            {{ session('success') }}
-                        </p>
-                    </div>
-                @endif
-
-                @if(session('error'))
-                    <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-4">
-                        <p class="text-sm text-red-800 dark:text-red-200 flex items-center">
-                            <i class="fas fa-exclamation-circle mr-2"></i>
-                            {{ session('error') }}
-                        </p>
-                    </div>
-                @endif
-
                 <!-- Add Comment Form -->
                 @auth
                     <div class="surface-panel rounded-lg p-4 mb-6 border shadow-sm">

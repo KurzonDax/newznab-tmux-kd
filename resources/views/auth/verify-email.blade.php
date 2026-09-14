@@ -10,12 +10,6 @@
                 </p>
             </div>
 
-            @if (session('status') === 'resent')
-                <div class="rounded-md bg-green-50 dark:bg-green-900/30 p-4 text-sm text-green-700 dark:text-green-200">
-                    A fresh verification link has been sent to your email address.
-                </div>
-            @endif
-
             <form method="POST" action="{{ route('verification.send') }}" class="space-y-4">
                 @csrf
                 <x-button

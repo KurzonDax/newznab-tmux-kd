@@ -18,18 +18,6 @@
             </x-slot:actions>
         </x-page-header>
         <div class="p-6">
-            @if(session('success'))
-                <div class="mb-4 bg-green-50 border border-green-200 text-green-800 rounded-lg p-4 dark:bg-green-900 dark:border-green-700 dark:text-green-200" role="alert">
-                    {{ session('success') }}
-                </div>
-            @endif
-
-            @if(session('error'))
-                <div class="mb-4 bg-red-50 border border-red-200 text-red-800 rounded-lg p-4 dark:bg-red-900 dark:border-red-700 dark:text-red-200" role="alert">
-                    {{ session('error') }}
-                </div>
-            @endif
-
             <!-- Stats Cards -->
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                 <div class="bg-primary-600 dark:bg-primary-700 text-white rounded-lg shadow dark:bg-primary-700">

@@ -12,12 +12,6 @@
         Saved browser and password-manager passkeys can appear from the username field. Security keys are still supported.
     </p>
 
-    @if($message = session('authenticatePasskey::message'))
-        <div class="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300" role="alert">
-            {{ $message }}
-        </div>
-    @endif
-
     <form id="passkey-login-form" method="POST" action="{{ route('passkeys.login') }}" class="mt-4">
         @csrf
         <input type="hidden" name="start_authentication_response" x-ref="response" value="">

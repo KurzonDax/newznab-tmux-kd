@@ -13,6 +13,10 @@ Alpine.data('toastContainer', () => ({
         Alpine.store('toast').dismiss(id);
     },
 
+    activateAction(id) {
+        Alpine.store('toast').activateAction(id);
+    },
+
     iconFor(type) {
         return Alpine.store('toast').iconFor(type);
     }

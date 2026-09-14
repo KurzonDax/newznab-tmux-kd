@@ -70,6 +70,24 @@ class RememberMeAuthenticationTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_guest_flash_payload_translates_verification_status_and_preserves_passkey_errors(): void
+    {
+        $response = $this->withSession([
+            'status' => 'resent',
+            'authenticatePasskey::message' => 'The passkey could not be verified.',
+        ])->get(route('login'));
+        $response->assertOk();
+
+        $document = new \DOMDocument;
+        $document->loadHTML($response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $payload = $document->getElementById('flash-messages-data');
+        $this->assertInstanceOf(\DOMElement::class, $payload);
+        $messages = json_decode($payload->getAttribute('data-messages'), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame('A fresh verification link has been sent to your email address.', $messages['success']);
+        $this->assertSame('The passkey could not be verified.', $messages['error']);
+        $this->assertStringNotContainsString('The passkey could not be verified.', $document->textContent);
+    }
+
     public function test_password_login_with_remember_me_queues_recaller_cookie(): void
     {
         Event::fake([UserLoggedIn::class]);
