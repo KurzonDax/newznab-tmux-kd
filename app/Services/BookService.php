@@ -15,10 +15,12 @@ use App\Models\Settings;
 use App\Services\MetadataProcessing\BookProcessingCandidateQuery;
 use App\Services\NameFixing\Extractors\ObfuscatedSubjectExtractor;
 use App\Services\NameFixing\ReleaseUpdateService;
+use App\Services\Releases\CoverBrowseScope;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Support\BookIsbn;
 use App\Support\BookMatchScorer;
+use App\Support\CoverBrowseResults;
 use App\Support\Data\BookParseResult;
 use App\Support\LookupThrottle;
 use App\Support\MetadataSearchLookup;
@@ -150,12 +152,12 @@ class BookService
      * @param  array<int|string, mixed>  $cat  Category IDs (list or associative)
      * @param  array<string, mixed>  $excludedCats
      */
-    public function getBookRange(int $page, array $cat, int $start, int $num, string $orderBy, array $excludedCats = []): mixed
+    public function getBookRange(int $page, array $cat, int $start, int $num, string $orderBy, array $excludedCats = [], ?CoverBrowseScope $scope = null): mixed
     {
         $page = max(1, $page);
         $start = max(0, $start);
 
-        $useIndexForAuthorTitle = Search::isAvailable()
+        $useIndexForAuthorTitle = $scope === null && Search::isAvailable()
             && (! empty($_REQUEST['author']) || ! empty($_REQUEST['title']));
         $bookIdsFromSearch = null;
         if ($useIndexForAuthorTitle) {
@@ -169,11 +171,11 @@ class BookService
                 $bookIdsFromSearch = Search::searchSecondary(SecondarySearchIndex::Books, $q, 5000)['id'];
             }
             if ($bookIdsFromSearch === []) {
-                return collect();
+                return new CoverBrowseResults;
             }
         }
 
-        $browseby = $this->getBrowseBy($useIndexForAuthorTitle);
+        $browseby = $scope === null ? $this->getBrowseBy($useIndexForAuthorTitle) : '';
         $bookInClause = '';
         if (is_array($bookIdsFromSearch) && $bookIdsFromSearch !== []) {
             $bookInClause = ' AND boo.id IN ('.implode(',', array_map('intval', $bookIdsFromSearch)).')';
@@ -186,20 +188,21 @@ class BookService
         if (\count($excludedCats) > 0) {
             $exccatlist = ' AND r.categories_id NOT IN ('.implode(',', $excludedCats).')';
         }
-        $order = $this->getBookOrder($orderBy);
+        $order = $scope?->order('boo') ?? $this->getBookOrder($orderBy);
         $expiresAt = now()->addMinutes(config('nntmux.cache_expiry_medium'));
         $showPasswords = app(ReleaseBrowseService::class)->showPasswords();
 
-        $baseWhere = "boo.cover = 1 AND boo.title != '' "
+        $baseWhere = "boo.title != '' "
             ."AND r.passwordstatus {$showPasswords} "
             .$browseby.' '
             .$bookInClause.' '
             .$catsrch.' '
-            .$exccatlist;
+            .$exccatlist.($scope->sql ?? '');
 
-        $cacheKey = md5('book_range_'.$baseWhere.$order[0].$order[1].$start.$num.$page);
+        $cacheKey = md5('book_range_'.$baseWhere.($scope->cacheKey ?? '').$order[0].$order[1].$start.$num.$page);
 
-        $cached = Cache::get($cacheKey);
+        $cacheable = $scope->cacheable ?? true;
+        $cached = $cacheable ? Cache::get($cacheKey) : null;
         if ($cached !== null) {
             app(ReleaseBrowseService::class)->loadCoverReleaseData($cached);
 
@@ -212,28 +215,28 @@ class BookService
             .'INNER JOIN releases r ON boo.id = r.bookinfo_id '
             .'WHERE '.$baseWhere;
 
-        $totalResult = DB::select($countSql);
+        $totalResult = DB::select($countSql, $scope->bindings ?? []);
         $totalCount = $totalResult[0]->total ?? 0;
 
         if ($totalCount === 0) {
-            return collect();
+            return new CoverBrowseResults([], (int) $totalCount);
         }
 
         // Step 2: Get paginated book entity list with only needed columns
-        $bookSql = 'SELECT boo.id, boo.title, boo.author, boo.cover, boo.publisher, boo.publishdate, boo.overview, boo.url, '
+        $bookSql = 'SELECT boo.id, boo.title, boo.author, boo.cover, boo.publisher, boo.publishdate, boo.overview, boo.url, boo.genre, '
             .'MAX(r.postdate) AS latest_postdate, '
             .'COUNT(r.id) AS total_releases '
             .'FROM bookinfo boo '
             .'INNER JOIN releases r ON boo.id = r.bookinfo_id '
             .'WHERE '.$baseWhere.' '
-            .'GROUP BY boo.id, boo.title, boo.author, boo.cover, boo.publisher, boo.publishdate, boo.overview, boo.url '
-            ."ORDER BY {$order[0]} {$order[1]} "
+            .'GROUP BY boo.id, boo.title, boo.author, boo.cover, boo.publisher, boo.publishdate, boo.overview, boo.url, boo.genre '
+            ."ORDER BY {$order[0]} {$order[1]}, boo.id ASC "
             ."LIMIT {$num} OFFSET {$start}";
 
-        $books = BookInfo::fromQuery($bookSql);
+        $books = BookInfo::fromQuery($bookSql, $scope->bindings ?? []);
 
         if ($books->isEmpty()) {
-            return collect();
+            return new CoverBrowseResults([], (int) $totalCount);
         }
 
         // Build list of book IDs for release query
@@ -241,13 +244,8 @@ class BookService
         $inBookIds = implode(',', array_map('intval', $bookIds));
 
         // Step 3: Get top 2 releases per book using ROW_NUMBER()
-        $releasesSql = 'SELECT ranked.id, ranked.bookinfo_id, ranked.guid, ranked.searchname, ranked.display_name, ranked.completion, ranked.repair_outcome, ranked.rescan_outcome, '
-            .'ranked.size, ranked.postdate, ranked.adddate, ranked.haspreview, ranked.grabs, '
-            .'ranked.comments, ranked.totalpart, ranked.group_name, ranked.nfoid, ranked.failed_count '
-            .'FROM ( '
-            .'SELECT r.id, r.bookinfo_id, r.guid, r.searchname, r.display_name, r.completion, r.repair_outcome, r.rescan_outcome, r.size, r.postdate, r.adddate, '
-            .'r.haspreview, r.grabs, r.comments, r.totalpart, g.name AS group_name, '
-            .'rn.releases_id AS nfoid, df.failed AS failed_count, '
+        $releasesSql = 'SELECT ranked.* FROM ( '
+            .'SELECT r.*, g.name AS group_name, rn.releases_id AS nfoid, df.failed AS failed_count, '
             .'ROW_NUMBER() OVER (PARTITION BY r.bookinfo_id ORDER BY r.postdate DESC) AS rn '
             .'FROM releases r '
             .'LEFT JOIN usenet_groups g ON g.id = r.groups_id '
@@ -257,11 +255,12 @@ class BookService
             ."AND r.passwordstatus {$showPasswords} "
             .$catsrch.' '
             .$exccatlist
+            .($scope->sql ?? '')
             .') ranked '
             .'WHERE ranked.rn <= 2 '
             .'ORDER BY ranked.bookinfo_id, ranked.postdate DESC';
 
-        $releases = DB::select($releasesSql);
+        $releases = DB::select($releasesSql, $scope->bindings ?? []);
 
         // Group releases by bookinfo_id for fast lookup
         $releasesByBook = [];
@@ -279,7 +278,10 @@ class BookService
             $books[0]->_totalcount = $totalCount; // @phpstan-ignore property.notFound
         }
 
-        Cache::put($cacheKey, $books, $expiresAt);
+        $books = new CoverBrowseResults($books, (int) $totalCount);
+        if ($cacheable) {
+            Cache::put($cacheKey, $books, $expiresAt);
+        }
         app(ReleaseBrowseService::class)->loadCoverReleaseData($books);
 
         return $books;

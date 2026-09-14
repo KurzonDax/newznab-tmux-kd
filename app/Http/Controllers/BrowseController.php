@@ -9,6 +9,7 @@ use App\Enums\BrowseRoot;
 use App\Models\Category;
 use App\Services\PosterIdentityBrowserContext;
 use App\Services\Releases\ReleaseBrowserQuery;
+use App\Services\Releases\ReleaseCoverBrowser;
 use Illuminate\Http\Request;
 
 class BrowseController extends BasePageController
@@ -40,12 +41,29 @@ class BrowseController extends BasePageController
     private function renderBrowser(Request $request, BrowseRoot $root, ?Category $category = null): mixed
     {
         $state = ReleaseBrowserState::fromRequest($request, $root, $this->userdata, $category?->id);
+        if ($state->letter !== '' && ! $request->has('page') && ! $request->has('_fragment')) {
+            $page = app(ReleaseCoverBrowser::class)->letterPage($state, $this->userdata);
+
+            return redirect()->to($request->url().'?'.http_build_query([...$state->queryParameters($request), 'sort' => 'title', 'page' => $page], '', '&', PHP_QUERY_RFC3986));
+        }
+        if ($request->input('_fragment') === 'cover') {
+            $id = $request->input('cover');
+            abort_unless(is_string($id), 404);
+            $rows = app(ReleaseCoverBrowser::class)->expanded($state, $this->userdata, $id);
+
+            return view('components.release-browser.expanded-cover', ['rows' => $rows, 'state' => $state]);
+        }
         $browserQuery = app(ReleaseBrowserQuery::class);
-        $results = $browserQuery->paginate($state, $this->userdata);
+        $results = $state->view === 'covers'
+            ? app(ReleaseCoverBrowser::class)->paginate($state, $this->userdata)
+            : $browserQuery->paginate($state, $this->userdata);
         if ($state->page > $results->lastPage()) {
             return redirect()->to($state->pageUrl($request, $results->lastPage()));
         }
         $title = $category === null ? $root->label() : $root->label().' · '.$category->title;
+        if ($root === BrowseRoot::Movies && $state->view === 'covers' && $state->sort === 'grabs') {
+            $title = 'Trending Movies';
+        }
         if ($state->group !== '') {
             $title = 'Releases in '.$state->group;
         }

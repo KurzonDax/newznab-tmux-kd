@@ -7,31 +7,26 @@
         @include('components.release-browser.toolbar')
     @endif
     @if($pager)
+        @if($state->hasLetters())
+            <nav class="release-cover-letters" aria-label="Jump by initial">
+                @foreach(['#', ...range('A', 'Z')] as $letter)
+                    <button type="button" data-letter="{{ $letter }}" aria-pressed="{{ $state->letter === $letter ? 'true' : 'false' }}" @click="jumpLetter">{{ $letter }}</button>
+                @endforeach
+                <span class="text-muted ml-auto">Jump by initial · sorts by title</span>
+            </nav>
+        @endif
         @include('components.release-browser.pager')
     @endif
-    @if($state->view === 'cards')
+    @if($state->view === 'covers')
+        @include('components.release-browser.covers')
+    @elseif($state->view === 'cards')
         <div class="release-browser-cards" data-release-cards role="list">
             @foreach($rows as $release)
                 @include('components.release-browser.card', ['row' => $release->row_data])
             @endforeach
         </div>
     @else
-        <div class="overflow-x-auto">
-            <table class="release-browser-table" data-release-table>
-                <thead>
-                    <tr>
-                        <th><label><input type="checkbox" data-select-all @change="selectAll" aria-label="Select all"><span class="sr-only">Select all</span></label></th>
-                        <th>Release</th><th>Category</th><th class="text-right">Size</th><th class="text-right">Files</th>
-                        <th>Added</th><th>Posted</th><th>Stats</th><th><span class="sr-only">Actions</span></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach($rows as $release)
-                        @include('components.release-browser.row', ['row' => $release->row_data])
-                    @endforeach
-                </tbody>
-            </table>
-        </div>
+        @include('components.release-browser.table')
     @endif
     @if($rows->isEmpty())
         <div data-browser-empty>

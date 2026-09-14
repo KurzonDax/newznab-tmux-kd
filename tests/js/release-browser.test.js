@@ -141,3 +141,26 @@ test('event handlers keep the browser scope when Alpine exposes the clicked cont
     component.goToPage({ target: { value: '999' } });
     assert.equal(navigations.length, 0);
 });
+
+test('cover size preserves the page and initial jumps toggle off while retaining filters', async () => {
+    const navigations = [];
+    globalThis.document = { querySelector: () => ({ content: 'csrf-token' }) };
+    globalThis.window = {
+        location: { href: 'https://nntmux.test/browse/audio?view=covers&per=24&page=3&letter=A&year=2024', assign: value => navigations.push(value) },
+        showToast: () => {},
+    };
+    globalThis.fetch = async () => ({ ok: true, json: async () => ({ success: true }) });
+    const { component } = browser();
+    await component.changePreference({ currentTarget: { dataset: { preference: 'size', value: 'xl' } } });
+    const resized = new URL(navigations.pop());
+    assert.equal(resized.searchParams.get('page'), '3');
+    assert.equal(resized.searchParams.get('size'), 'xl');
+    component.jumpLetter({ currentTarget: { dataset: { letter: 'Z' } } });
+    const jumped = new URL(navigations.pop());
+    assert.equal(jumped.searchParams.get('letter'), 'Z');
+    assert.equal(jumped.searchParams.get('sort'), 'title');
+    assert.equal(jumped.searchParams.get('year'), '2024');
+    assert.equal(jumped.searchParams.has('page'), false);
+    component.jumpLetter({ currentTarget: { dataset: { letter: 'A' } } });
+    assert.equal(new URL(navigations.pop()).searchParams.has('letter'), false);
+});

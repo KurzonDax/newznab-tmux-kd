@@ -90,7 +90,7 @@ class MovieControllerTest extends TestCase
 
     public function test_genre_filter_uses_sql_when_the_movie_index_is_empty(): void
     {
-        $response = $this->actingAs($this->createUser())->get(route('Movies', ['genre' => 'Drama']));
+        $response = $this->actingAs($this->createUser())->followingRedirects()->get(route('Movies', ['genre' => 'Drama']));
 
         $response->assertOk();
         $response->assertSee('The Dark Knight');
@@ -99,7 +99,7 @@ class MovieControllerTest extends TestCase
 
     public function test_rating_filter_treats_integer_rows_as_a_numeric_minimum(): void
     {
-        $response = $this->actingAs($this->createUser())->get(route('Movies', ['rating' => 7]));
+        $response = $this->actingAs($this->createUser())->followingRedirects()->get(route('Movies', ['rating' => 7]));
 
         $response->assertOk();
         $response->assertSee('The Terminal');
@@ -109,7 +109,7 @@ class MovieControllerTest extends TestCase
 
     public function test_plain_words_use_all_movie_text_fields_with_sql_fallback(): void
     {
-        $response = $this->actingAs($this->createUser())->get(route('Movies', ['q' => 'nolan batman']));
+        $response = $this->actingAs($this->createUser())->followingRedirects()->get(route('Movies', ['q' => 'nolan batman']));
 
         $response->assertOk();
         $response->assertSee('The Dark Knight');
@@ -118,7 +118,7 @@ class MovieControllerTest extends TestCase
 
     public function test_partial_words_use_sql_fallback_when_the_index_has_no_match(): void
     {
-        $response = $this->actingAs($this->createUser())->get(route('Movies', ['q' => 'matri']));
+        $response = $this->actingAs($this->createUser())->followingRedirects()->get(route('Movies', ['q' => 'matri']));
 
         $response->assertOk();
         $response->assertSee('The Matrix');
@@ -127,7 +127,7 @@ class MovieControllerTest extends TestCase
 
     public function test_prefixed_terms_are_anded_and_limited_to_their_fields(): void
     {
-        $response = $this->actingAs($this->createUser())->get(route('Movies', [
+        $response = $this->actingAs($this->createUser())->followingRedirects()->get(route('Movies', [
             'q' => 'actor:"tom hanks" director:spielberg',
         ]));
 
@@ -138,7 +138,7 @@ class MovieControllerTest extends TestCase
 
     public function test_plot_prefix_only_matches_plot(): void
     {
-        $response = $this->actingAs($this->createUser())->get(route('Movies', ['q' => 'plot:heist']));
+        $response = $this->actingAs($this->createUser())->followingRedirects()->get(route('Movies', ['q' => 'plot:heist']));
 
         $response->assertOk();
         $response->assertSee('Heat');
@@ -147,7 +147,7 @@ class MovieControllerTest extends TestCase
 
     public function test_advanced_fields_are_anded(): void
     {
-        $response = $this->actingAs($this->createUser())->get(route('Movies', [
+        $response = $this->actingAs($this->createUser())->followingRedirects()->get(route('Movies', [
             'director' => 'Nolan', 'actor' => 'Bale',
         ]));
 
@@ -160,36 +160,30 @@ class MovieControllerTest extends TestCase
     {
         $user = $this->createUser();
 
-        $decade = $this->actingAs($user)->get(route('Movies', ['year' => '1970s']));
+        $decade = $this->actingAs($user)->followingRedirects()->get(route('Movies', ['year' => '1970s']));
         $decade->assertOk();
         $decade->assertSee('Jaws');
         $decade->assertSee('Alien');
         $decade->assertDontSee('The Shining');
 
-        $custom = $this->actingAs($user)->get(route('Movies', [
+        $custom = $this->actingAs($user)->followingRedirects()->get(route('Movies', [
             'year' => 'custom', 'year_from' => 1970, 'year_to' => 1975,
         ]));
         $custom->assertOk();
         $custom->assertSee('Jaws');
         $custom->assertDontSee('Alien');
 
-        $single = $this->actingAs($user)->get(route('Movies', ['year' => '1999']));
+        $single = $this->actingAs($user)->followingRedirects()->get(route('Movies', ['year' => '1999']));
         $single->assertOk();
         $single->assertSee('The Matrix');
         $single->assertDontSee('Jaws');
     }
 
-    public function test_filter_form_preserves_category_and_replaces_release_search(): void
+    public function test_legacy_movie_category_opens_the_shared_cover_browser(): void
     {
-        $response = $this->actingAs($this->createUser())->get(route('Movies', ['id' => 'HD']));
-
-        $response->assertOk();
-        $response->assertSee('name="t" value="2040"', false);
-        $response->assertSee('name="q"', false);
-        $response->assertSee('Advanced');
-        $response->assertSee('value="1970s"', false);
-        $response->assertSee('value="custom"', false);
-        $response->assertDontSee('Search in Movies');
+        $response = $this->actingAs($this->createUser())->followingRedirects()->get(route('Movies', ['id' => 'HD']));
+        $response->assertOk()->assertSee('Search in Movies')->assertSee('data-cover-grid', false);
+        $this->assertSame(2040, $response->viewData('browserState')->categoryId);
     }
 
     private function createSchema(): void
@@ -314,6 +308,7 @@ class MovieControllerTest extends TestCase
             $table->integer('passwordstatus')->default(0);
             $table->integer('haspreview')->default(0);
             $table->integer('videostatus')->default(0);
+            $table->integer('grabs')->default(0);
             $table->string('imdbid')->nullable();
         });
 

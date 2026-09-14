@@ -14,7 +14,9 @@ use App\Models\Release;
 use App\Models\Settings;
 use App\Services\IGDB\Exceptions\IgdbHttpException;
 use App\Services\MetadataProcessing\GameProcessingCandidateQuery;
+use App\Services\Releases\CoverBrowseScope;
 use App\Services\Releases\ReleaseBrowseService;
+use App\Support\CoverBrowseResults;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -220,12 +222,12 @@ class GamesService
      *
      * @throws \Exception
      */
-    public function getGamesRange(mixed $page, mixed $cat, mixed $start, mixed $num, array|string $orderBy = '', string $maxAge = '', array $excludedCats = []): mixed
+    public function getGamesRange(mixed $page, mixed $cat, mixed $start, mixed $num, array|string $orderBy = '', string $maxAge = '', array $excludedCats = [], ?CoverBrowseScope $scope = null): mixed
     {
         $page = max(1, $page);
         $start = max(0, $start);
 
-        $browseBy = $this->getBrowseBy();
+        $browseBy = $scope === null ? $this->getBrowseBy() : '';
         $catsrch = '';
         if (count($cat) > 0 && $cat[0] !== -1) {
             $catsrch = Category::getCategorySearch($cat);
@@ -238,20 +240,21 @@ class GamesService
         if (count($excludedCats) > 0) {
             $exccatlist = ' AND r.categories_id NOT IN ('.implode(',', $excludedCats).')';
         }
-        $order = $this->getGamesOrder($orderBy);
+        $order = $scope?->order('gi') ?? $this->getGamesOrder($orderBy);
         $expiresAt = now()->addMinutes(config('nntmux.cache_expiry_medium'));
         $showPasswords = app(ReleaseBrowseService::class)->showPasswords();
 
-        $baseWhere = "gi.title != '' AND gi.cover = 1 "
+        $baseWhere = "gi.title != '' "
             ."AND r.passwordstatus {$showPasswords} "
             .$browseBy.' '
             .$catsrch.' '
             .$whereAge
-            .$exccatlist;
+            .$exccatlist.($scope->sql ?? '');
 
-        $cacheKey = md5('games_range_'.$baseWhere.$order[0].$order[1].$start.$num.$page);
+        $cacheKey = md5('games_range_'.$baseWhere.($scope->cacheKey ?? '').$order[0].$order[1].$start.$num.$page);
 
-        $cached = Cache::get($cacheKey);
+        $cacheable = $scope->cacheable ?? true;
+        $cached = $cacheable ? Cache::get($cacheKey) : null;
         if ($cached !== null) {
             app(ReleaseBrowseService::class)->loadCoverReleaseData($cached);
 
@@ -264,29 +267,30 @@ class GamesService
             .'INNER JOIN releases r ON gi.id = r.gamesinfo_id '
             .'WHERE '.$baseWhere;
 
-        $totalResult = DB::select($countSql);
+        $totalResult = DB::select($countSql, $scope->bindings ?? []);
         $totalCount = $totalResult[0]->total ?? 0;
 
         if ($totalCount === 0) {
-            return collect();
+            return new CoverBrowseResults([], (int) $totalCount);
         }
 
         // Step 2: Get paginated games entity list with only needed columns
         $gamesSql = 'SELECT gi.id, gi.title, gi.cover, gi.publisher, gi.releasedate, gi.review, gi.url, '
             .'YEAR(gi.releasedate) AS year, '
-            .'MAX(r.postdate) AS latest_postdate, '
+            .'genres.title AS genre, MAX(r.postdate) AS latest_postdate, '
             .'COUNT(r.id) AS total_releases '
             .'FROM gamesinfo gi '
             .'INNER JOIN releases r ON gi.id = r.gamesinfo_id '
+            .'LEFT JOIN genres ON genres.id = gi.genres_id '
             .'WHERE '.$baseWhere.' '
-            .'GROUP BY gi.id, gi.title, gi.cover, gi.publisher, gi.releasedate, gi.review, gi.url '
-            ."ORDER BY {$order[0]} {$order[1]} "
+            .'GROUP BY gi.id, gi.title, gi.cover, gi.publisher, gi.releasedate, gi.review, gi.url, genres.title '
+            ."ORDER BY {$order[0]} {$order[1]}, gi.id ASC "
             ."LIMIT {$num} OFFSET {$start}";
 
-        $games = GamesInfo::fromQuery($gamesSql);
+        $games = GamesInfo::fromQuery($gamesSql, $scope->bindings ?? []);
 
         if ($games->isEmpty()) {
-            return collect();
+            return new CoverBrowseResults([], (int) $totalCount);
         }
 
         // Build list of game IDs for release query
@@ -294,13 +298,8 @@ class GamesService
         $inGameIds = implode(',', array_map('intval', $gameIds));
 
         // Step 3: Get top 2 releases per game using ROW_NUMBER()
-        $releasesSql = 'SELECT ranked.id, ranked.gamesinfo_id, ranked.guid, ranked.searchname, ranked.display_name, ranked.completion, ranked.repair_outcome, ranked.rescan_outcome, '
-            .'ranked.size, ranked.postdate, ranked.adddate, ranked.haspreview, ranked.grabs, '
-            .'ranked.comments, ranked.totalpart, ranked.group_name, ranked.nfoid, ranked.failed_count '
-            .'FROM ( '
-            .'SELECT r.id, r.gamesinfo_id, r.guid, r.searchname, r.display_name, r.completion, r.repair_outcome, r.rescan_outcome, r.size, r.postdate, r.adddate, '
-            .'r.haspreview, r.grabs, r.comments, r.totalpart, g.name AS group_name, '
-            .'rn.releases_id AS nfoid, df.failed AS failed_count, '
+        $releasesSql = 'SELECT ranked.* FROM ( '
+            .'SELECT r.*, g.name AS group_name, rn.releases_id AS nfoid, df.failed AS failed_count, '
             .'ROW_NUMBER() OVER (PARTITION BY r.gamesinfo_id ORDER BY r.postdate DESC) AS rn '
             .'FROM releases r '
             .'LEFT JOIN usenet_groups g ON g.id = r.groups_id '
@@ -311,11 +310,12 @@ class GamesService
             .$catsrch.' '
             .$whereAge
             .$exccatlist
+            .($scope->sql ?? '')
             .') ranked '
             .'WHERE ranked.rn <= 2 '
             .'ORDER BY ranked.gamesinfo_id, ranked.postdate DESC';
 
-        $releases = DB::select($releasesSql);
+        $releases = DB::select($releasesSql, $scope->bindings ?? []);
 
         // Group releases by gamesinfo_id for fast lookup
         $releasesByGame = [];
@@ -333,7 +333,10 @@ class GamesService
             $games[0]->_totalcount = $totalCount; // @phpstan-ignore property.notFound
         }
 
-        Cache::put($cacheKey, $games, $expiresAt);
+        $games = new CoverBrowseResults($games, (int) $totalCount);
+        if ($cacheable) {
+            Cache::put($cacheKey, $games, $expiresAt);
+        }
         app(ReleaseBrowseService::class)->loadCoverReleaseData($games);
 
         return $games;

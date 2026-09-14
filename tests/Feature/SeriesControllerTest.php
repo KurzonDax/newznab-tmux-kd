@@ -107,14 +107,14 @@ class SeriesControllerTest extends TestCase
             $table->integer('isrenamed')->default(1);
         });
         DB::table('user_series')->insert(['users_id' => $user->id, 'videos_id' => $videoId]);
-        $response = $this->actingAs($user)->get(route('myshows.browse'))->assertOk();
+        $response = $this->actingAs($user)->followingRedirects()->get(route('myshows.browse'))->assertOk();
         $row = $response->viewData('results')->first()->row_data;
         $this->assertTrue($row->watched);
         $this->assertFalse($row->pp_done);
         $this->assertSame('Paged Test Show', $row->entity?->title);
 
         DB::table('releases')->update(['nfostatus' => 1]);
-        $response = $this->get(route('myshows.browse'))->assertOk();
+        $response = $this->followingRedirects()->get(route('myshows.browse'))->assertOk();
         $row = $response->viewData('results')->first()->row_data;
         $this->assertTrue($row->pp_done);
         $this->assertTrue($row->nfo);
@@ -222,7 +222,7 @@ class SeriesControllerTest extends TestCase
         $this->createMatchedRelease($muppetShowId, 1, 1, 'Muppet.Show.S01E01.720p-GROUP');
         $this->createMatchedRelease($matlockId, 1, 1, 'Matlock.S01E01.720p-GROUP');
 
-        $response = $this->actingAs($user)->get(route('series', [
+        $response = $this->actingAs($user)->followingRedirects()->get(route('series', [
             'id' => 'M',
             'year' => '1970s',
         ]));
@@ -231,8 +231,8 @@ class SeriesControllerTest extends TestCase
         $response->assertSee('MASH');
         $response->assertSee('Muppet Show');
         $response->assertDontSee('Matlock');
-        $response->assertSee('data-year-picker', false);
-        $response->assertSee('value="1970s" selected', false);
+        $response->assertSee('aria-label="Jump by initial"', false);
+        $this->assertSame(2, $response->viewData('results')->total());
     }
 
     public function test_series_list_supports_single_custom_open_and_reversed_year_ranges(): void
@@ -243,7 +243,7 @@ class SeriesControllerTest extends TestCase
             $this->createMatchedRelease($videoId, 1, 1, 'Range.Show.'.$year.'.S01E01-GROUP');
         }
 
-        $custom = $this->actingAs($user)->get(route('series', [
+        $custom = $this->actingAs($user)->followingRedirects()->get(route('series', [
             'year' => 'custom',
             'year_from' => 1990,
             'year_to' => 1992,
@@ -253,11 +253,11 @@ class SeriesControllerTest extends TestCase
         $custom->assertDontSee('Range Show 1989');
         $custom->assertDontSee('Range Show 1993');
 
-        $single = $this->actingAs($user)->get(route('series', ['year' => '1992']));
+        $single = $this->actingAs($user)->followingRedirects()->get(route('series', ['year' => '1992']));
         $single->assertSee('Range Show 1992');
         $single->assertDontSee('Range Show 1990');
 
-        $reversed = $this->actingAs($user)->get(route('series', [
+        $reversed = $this->actingAs($user)->followingRedirects()->get(route('series', [
             'year' => 'custom',
             'year_from' => 1992,
             'year_to' => 1990,
@@ -267,7 +267,7 @@ class SeriesControllerTest extends TestCase
         $reversed->assertDontSee('Range Show 1989');
         $reversed->assertDontSee('Range Show 1993');
 
-        $openEnded = $this->actingAs($user)->get(route('series', [
+        $openEnded = $this->actingAs($user)->followingRedirects()->get(route('series', [
             'year' => 'custom',
             'year_from' => 1992,
             'year_to' => '',
@@ -276,7 +276,7 @@ class SeriesControllerTest extends TestCase
         $openEnded->assertSee('Range Show 1993');
         $openEnded->assertDontSee('Range Show 1990');
 
-        $blank = $this->actingAs($user)->get(route('series', [
+        $blank = $this->actingAs($user)->followingRedirects()->get(route('series', [
             'title' => 'Range Show',
             'year' => 'custom',
             'year_from' => '',
@@ -347,7 +347,7 @@ class SeriesControllerTest extends TestCase
         $response->assertDontSee('No.Match.S01E01-GROUP');
     }
 
-    public function test_series_list_prefers_banner_then_poster_then_neutral_placeholder(): void
+    public function test_series_covers_use_posters_and_keep_missing_artwork_in_the_grid(): void
     {
         $user = $this->createUser();
         $bannerId = $this->createShow('Banner Show', '2020-01-01', image: true, banner: true);
@@ -364,27 +364,17 @@ class SeriesControllerTest extends TestCase
         File::put($coversRoot.'/tvshows/'.$bannerId.'.webp', 'poster');
         File::put($coversRoot.'/tvshows/'.$posterId.'.jpg', 'poster');
 
-        $response = $this->actingAs($user)->get(route('series', ['title' => 'Show']));
+        $response = $this->actingAs($user)->followingRedirects()->get(route('series', ['title' => 'Show']));
 
         $response->assertOk();
-        $response->assertSee('/covers/tvshows/'.$bannerId.'-banner.webp', false);
-        $response->assertDontSee('/covers/tvshows/'.$bannerId.'.webp', false);
+        $response->assertDontSee('/covers/tvshows/'.$bannerId.'-banner.webp', false);
+        $response->assertSee('/covers/tvshows/'.$bannerId.'.webp', false);
         $response->assertSee('/covers/tvshows/'.$posterId.'.jpg', false);
-        $response->assertSee('/assets/images/no-cover.png', false);
-        $artworkByTitle = collect($response->viewData('serieslist'))
-            ->flatten(1)
-            ->keyBy('title');
+        $items = $response->viewData('results')->getCollection()->keyBy('title');
+        $this->assertNull($items['Placeholder Show']->artwork);
+        $this->assertSame(3, $response->viewData('results')->total());
+        $response->assertSee('data-no-artwork', false);
 
-        $this->assertSame('banner', $artworkByTitle['Banner Show']['artwork_kind']);
-        $this->assertSame('poster', $artworkByTitle['Poster Show']['artwork_kind']);
-        $this->assertSame('placeholder', $artworkByTitle['Placeholder Show']['artwork_kind']);
-        $response->assertSee('h-12 w-auto aspect-[1000/185] rounded-md object-contain', false);
-        $response->assertSee('h-16 w-auto rounded-md object-contain', false);
-        $response->assertSee('flex w-full aspect-[1000/185] items-center justify-center', false);
-        $response->assertSee('w-full aspect-[1000/185] rounded-md object-contain', false);
-        $response->assertSee('h-full w-auto rounded-md object-contain', false);
-        $response->assertDontSee('min-h-24', false);
-        $response->assertDontSee('object-cover', false);
     }
 
     public function test_show_page_renders_available_artwork_when_the_summary_is_empty(): void
@@ -404,7 +394,7 @@ class SeriesControllerTest extends TestCase
         $response->assertSee('/covers/tvshows/'.$videoId.'-banner.webp', false);
     }
 
-    public function test_marking_a_banner_available_refreshes_cached_series_list_artwork_flags(): void
+    public function test_banner_changes_do_not_replace_portrait_artwork_in_cover_tiles(): void
     {
         $user = $this->createUser();
         $videoId = $this->createShow('Cached Artwork Show', '2023-01-01', image: true);
@@ -416,15 +406,15 @@ class SeriesControllerTest extends TestCase
         File::put($coversRoot.'/tvshows/'.$videoId.'.webp', 'poster');
         File::put($coversRoot.'/tvshows/'.$videoId.'-banner.webp', 'banner');
 
-        $before = $this->actingAs($user)->get(route('series', ['title' => 'Cached Artwork Show']));
+        $before = $this->actingAs($user)->followingRedirects()->get(route('series', ['title' => 'Cached Artwork Show']));
         $before->assertSee('/covers/tvshows/'.$videoId.'.webp', false);
         $before->assertDontSee('/covers/tvshows/'.$videoId.'-banner.webp', false);
 
         TvInfo::markBannerAvailable($videoId);
 
-        $after = $this->actingAs($user)->get(route('series', ['title' => 'Cached Artwork Show']));
-        $after->assertSee('/covers/tvshows/'.$videoId.'-banner.webp', false);
-        $after->assertDontSee('/covers/tvshows/'.$videoId.'.webp', false);
+        $after = $this->actingAs($user)->followingRedirects()->get(route('series', ['title' => 'Cached Artwork Show']));
+        $after->assertDontSee('/covers/tvshows/'.$videoId.'-banner.webp', false);
+        $after->assertSee('/covers/tvshows/'.$videoId.'.webp', false);
     }
 
     private function createSchema(): void
