@@ -88,6 +88,36 @@ class SeriesControllerTest extends TestCase
         $seasonTwo->assertOk();
         $seasonTwo->assertSee('Only.Season.Two.S02E01.720p-GROUP');
         $seasonTwo->assertDontSee('Only.Season.One.S01E01.720p-GROUP');
+        $row = $seasonTwo->viewData('seasons')[2][1][0]->row_data;
+        $this->assertSame('tv', $row->entity?->root);
+        $this->assertSame('Paged Test Show', $row->entity?->title);
+        $this->assertSame(2, $row->entity?->season);
+        $this->assertSame(1, $row->entity?->episode);
+    }
+
+    public function test_my_shows_browse_refreshes_row_processing_data_on_cached_pages(): void
+    {
+        $user = $this->createUser();
+        $videoId = $this->createShow();
+        $this->createMatchedRelease($videoId, 1, 1, 'Followed.Show.S01E01');
+        Schema::table('releases', function (Blueprint $table): void {
+            $table->boolean('haspreview')->default(false);
+            $table->boolean('jpgstatus')->default(false);
+            $table->integer('nfostatus')->default(-1);
+            $table->integer('isrenamed')->default(1);
+        });
+        DB::table('user_series')->insert(['users_id' => $user->id, 'videos_id' => $videoId]);
+        $response = $this->actingAs($user)->get(route('myshows.browse'))->assertOk();
+        $row = $response->viewData('results')->first()->row_data;
+        $this->assertTrue($row->watched);
+        $this->assertFalse($row->pp_done);
+        $this->assertSame('Paged Test Show', $row->entity?->title);
+
+        DB::table('releases')->update(['nfostatus' => 1]);
+        $response = $this->get(route('myshows.browse'))->assertOk();
+        $row = $response->viewData('results')->first()->row_data;
+        $this->assertTrue($row->pp_done);
+        $this->assertTrue($row->nfo);
     }
 
     public function test_episode_card_stays_inside_the_series_page_panel(): void
@@ -548,6 +578,27 @@ class SeriesControllerTest extends TestCase
             $table->integer('comments')->default(0);
             $table->unsignedInteger('videos_id')->nullable();
             $table->integer('tv_episodes_id')->nullable();
+        });
+
+        Schema::table('releases', function (Blueprint $table): void {
+            $table->integer('videostatus')->default(0);
+        });
+        Schema::create('release_audio_tags', function (Blueprint $table): void {
+            $table->integer('releases_id')->primary();
+            foreach (['album', 'album_performer', 'performer', 'genre', 'recorded_date', 'track_name', 'track_position', 'track_position_total', 'musicbrainz_album_id', 'musicbrainz_track_id', 'audio_format', 'preview_extension', 'preview_mime', 'preview_seconds'] as $column) {
+                $table->string($column)->nullable();
+            }
+            $table->boolean('has_preview')->default(false);
+            $table->boolean('has_spectrogram')->default(false);
+        });
+        Schema::create('release_video_clips', function (Blueprint $table): void {
+            $table->integer('releases_id')->primary();
+            $table->string('extension');
+            $table->string('mime');
+        });
+        Schema::create('users_releases', function (Blueprint $table): void {
+            $table->integer('users_id');
+            $table->integer('releases_id');
         });
 
         Schema::create('dnzb_failures', function (Blueprint $table): void {

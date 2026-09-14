@@ -152,7 +152,7 @@
                                             <div class="flex flex-wrap items-center gap-2 mt-2">
                                                 @if($release->size)
                                                     <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-(--surface-panel-alt) dark:bg-(--surface-card-dark) text-gray-700 dark:text-gray-300">
-                                                        <i class="fas fa-hdd mr-1"></i>{{ number_format($release->size / 1073741824, 2) }} GB
+                                                        <i class="fas fa-hdd mr-1"></i>{{ \App\Support\ReleaseSize::format((float) $release->size) }}
                                                     </span>
                                                 @endif
 

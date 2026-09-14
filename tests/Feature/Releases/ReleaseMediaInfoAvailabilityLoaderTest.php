@@ -100,7 +100,7 @@ class ReleaseMediaInfoAvailabilityLoaderTest extends TestCase
             static fn (stdClass $row): bool => $row->has_media_info,
             $rows,
         ));
-        self::assertLessThanOrEqual(7, $queries, 'Availability queries are bounded by source tables, not release count.');
+        self::assertLessThanOrEqual(9, $queries, 'Availability queries are bounded by source tables, not release count.');
     }
 
     #[DataProvider('coverListings')]
@@ -118,10 +118,13 @@ class ReleaseMediaInfoAvailabilityLoaderTest extends TestCase
             ])->only(['id', $foreignKey, 'guid', 'searchname', 'postdate']));
         }
         DB::table('media_info_probes')->insert(['releases_id' => 1, 'embedded_title' => 'Embedded title']);
+        DB::table('video_data')->insert(['releases_id' => 1, 'videoheight' => 1080, 'videocodec' => 'x264']);
+        DB::table('audio_data')->insert(['releases_id' => 1, 'audioformat' => 'DTS-HD', 'audiochannels' => '5.1']);
         $service = app($serviceClass);
 
         $results = $service->{$method}(1, [], 0, 48, '');
         $rows = collect($results)->flatMap(static fn ($entity) => $entity->releases)->keyBy('id');
+        self::assertSame('1080p · x264 · DTS-HD 5.1', $rows[1]->row_data?->media_info_summary);
         self::assertTrue($rows[1]->has_media_info ?? false);
         self::assertFalse($rows[2]->has_media_info ?? false);
         $this->blade('<x-cover-release-list :releases="$releases" />', ['releases' => $rows->values()])
@@ -136,6 +139,8 @@ class ReleaseMediaInfoAvailabilityLoaderTest extends TestCase
         }
 
         DB::table('media_info_probes')->delete();
+        DB::table('video_data')->delete();
+        DB::table('audio_data')->delete();
         DB::table('release_audio_tags')->insert(['releases_id' => 2, 'album' => 'Newly processed album']);
         $entityQueries = 0;
         DB::listen(static function ($query) use ($table, &$entityQueries): void {

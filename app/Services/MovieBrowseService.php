@@ -8,8 +8,6 @@ use App\Facades\Search;
 use App\Models\Category;
 use App\Models\MovieInfo;
 use App\Services\Releases\ReleaseBrowseService;
-use App\Services\Releases\ReleaseMediaInfoAvailabilityLoader;
-use App\Services\Releases\ReleasePreviewDataLoader;
 use App\Support\MovieSearchQuery;
 use App\Support\YearRange;
 use Illuminate\Support\Facades\Cache;
@@ -22,9 +20,8 @@ class MovieBrowseService
 {
     protected string $showPasswords;
 
-    public function __construct(
-        private readonly ReleasePreviewDataLoader $previewDataLoader = new ReleasePreviewDataLoader,
-    ) {
+    public function __construct()
+    {
         $this->showPasswords = app(ReleaseBrowseService::class)->showPasswords();
     }
 
@@ -236,8 +233,7 @@ class MovieBrowseService
             .'ORDER BY r.postdate DESC';
 
         $releases = DB::select($sql);
-        $this->previewDataLoader->load($releases);
-        app(ReleaseMediaInfoAvailabilityLoader::class)->load($releases);
+        app(ReleaseBrowseService::class)->loadReleaseRows($releases);
 
         return $releases;
     }

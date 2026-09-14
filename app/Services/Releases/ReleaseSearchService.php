@@ -39,11 +39,6 @@ class ReleaseSearchService
 
     public const PASSWD_RAR = 1;
 
-    public function __construct(
-        private readonly ReleasePreviewDataLoader $previewDataLoader = new ReleasePreviewDataLoader,
-        private readonly ReleaseMediaInfoAvailabilityLoader $mediaInfoAvailabilityLoader = new ReleaseMediaInfoAvailabilityLoader,
-    ) {}
-
     /**
      * Function for searching on the site (by subject, searchname or advanced).
      *
@@ -1936,8 +1931,7 @@ class ReleaseSearchService
     private function withPreviewData(mixed $releases): mixed
     {
         if (is_iterable($releases)) {
-            $this->previewDataLoader->load($releases);
-            $this->mediaInfoAvailabilityLoader->load($releases);
+            app(ReleaseBrowseService::class)->loadReleaseRows($releases);
         }
 
         return $releases;
