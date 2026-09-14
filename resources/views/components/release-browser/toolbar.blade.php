@@ -2,7 +2,9 @@
     <div class="release-browser-filters">
     <x-input type="search" name="q" :value="$state->query" class="release-browser-search" :placeholder="'Search in '.$state->root->label()" :aria-label="'Search in '.$state->root->label()" @input.debounce.180ms="searchListing" />
     @foreach($filterOptions as $key => $options)
-        @if($options !== [])
+        @if($key === 'year')
+            <x-year-picker :selected="$state->filters['year'] ?? ''" :from="$state->filters['year_from'] ?? ''" :to="$state->filters['year_to'] ?? ''" navigate compact />
+        @elseif($options !== [])
             <x-select width="compact" :name="$key" :aria-label="ucfirst($key)" @change="filterListing">
                 <option value="">{{ ucfirst($key) }}</option>
                 @if(isset($state->filters[$key]) && !in_array($state->filters[$key], $options, true))

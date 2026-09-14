@@ -1,4 +1,9 @@
 <div data-title-releases data-selected-season="{{ $selectedSeason }}">
+    @if($title->root === \App\Enums\BrowseRoot::Tv)
+        <div class="card title-quality">
+            <x-year-picker id="air-year" label="Air year" :selected="request('year', '')" :from="request('year_from', '')" :to="request('year_to', '')" navigate />
+        </div>
+    @endif
     @if($yearFilter)
         <div class="title-quality text-muted">Air year: {{ $yearFilter }} <a href="{{ $clearYearUrl }}" data-title-page class="text-primary-600 dark:text-primary-400">Clear year filter</a></div>
     @endif

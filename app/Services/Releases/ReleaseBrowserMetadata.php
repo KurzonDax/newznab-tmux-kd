@@ -115,13 +115,15 @@ final class ReleaseBrowserMetadata
             if (in_array($key, ['rating', 'artist'], true)) {
                 continue;
             }
+            if ($key === 'year') {
+                $options[$key] = YearRange::years();
+
+                continue;
+            }
             $values = (clone $query)->selectRaw($column.' as value')->distinct()->pluck('value');
             $options[$key] = $values->flatMap(static fn ($value): array => $key === 'genre'
                 ? preg_split('/[,|]/', (string) $value) ?: [] : [(string) $value])
                 ->map(static fn (string $value): string => trim($value))->filter()->unique()->sort(SORT_NATURAL | SORT_FLAG_CASE)->values()->all();
-            if ($key === 'year') {
-                $options[$key] = array_reverse($options[$key]);
-            }
         }
 
         return $options;

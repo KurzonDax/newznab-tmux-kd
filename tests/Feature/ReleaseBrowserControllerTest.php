@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Enums\BrowseRoot;
 use App\Http\Middleware\TrustedDevice2FAMiddleware;
 use App\Services\Search\Contracts\SearchDriverInterface;
 use App\Services\Search\SearchService;
@@ -47,6 +48,130 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->tearDownAdminListPage();
         $this->tearDownIsolatedDatabase();
         parent::tearDown();
+    }
+
+    public function test_year_picker_offers_complete_choices_even_without_matching_metadata(): void
+    {
+        $this->createCoverCatalogSchema('movieinfo');
+        $response = $this->actingAs($this->browserUser())->get('/browse/movies?year=custom&year_from=1970&year_to=1975')->assertOk();
+        $response->assertSee('All Years')->assertSee('Decades')->assertSee('Custom Range')->assertSee('Individual Years')
+            ->assertSee('value="1900"', false)->assertSee('value="'.(date('Y') + 1).'"', false)
+            ->assertSee('value="1975"', false)->assertSee('name="year_from"', false)->assertSee('name="year_to"', false)
+            ->assertSee('Apply year');
+        $this->assertSame(0, $response->viewData('results')->total());
+    }
+
+    #[DataProvider('yearContexts')]
+    public function test_every_year_capable_category_uses_its_own_year_in_every_supported_view(string $root, string $table, string $foreignKey, int $category): void
+    {
+        if ($table !== '') {
+            $this->createCoverCatalogSchema($table);
+        }
+        if ($root === 'tv') {
+            Schema::table('tv_episodes', function (Blueprint $table): void {
+                $table->string('firstaired')->nullable();
+            });
+        }
+        DB::table('usenet_groups')->insert([['id' => 1, 'name' => 'alt.year.test'], ['id' => 2, 'name' => 'alt.year.other']]);
+        $years = [1969, 1970, 1975, 1979, 1980];
+        foreach ($years as $year) {
+            if ($table !== '') {
+                DB::table($table)->insert(['id' => $year, 'imdbid' => (string) $year, 'title' => 'Year fixture '.$year,
+                    'year' => (string) $year, 'started' => $year.'-06-15', 'releasedate' => $year.'-06-15', 'publishdate' => $year.'-06-15']);
+            }
+            if ($root === 'tv') {
+                DB::table('tv_episodes')->insert(['id' => $year, 'videos_id' => $year, 'series' => 1, 'episode' => 1, 'title' => 'Episode '.$year, 'firstaired' => '2005-01-01']);
+            }
+            $this->release('Year fixture '.$year, ['categories_id' => $category, 'isrenamed' => 1, 'nfostatus' => 1,
+                'postdate' => ($root === 'xxx' ? $year : 2001).'-06-15', 'adddate' => '2020-01-01', 'groups_id' => 1, 'fromname' => 'Year poster',
+                ...($foreignKey !== '' ? [$foreignKey => $year] : []), 'tv_episodes_id' => $root === 'tv' ? $year : 0]);
+        }
+        $user = $this->browserUser();
+        $this->actingAs($user);
+        $cases = [
+            'year=1970s' => [1970, 1975, 1979], 'year=1975' => [1975],
+            'year=custom&year_from=1970&year_to=1975' => [1970, 1975],
+            'year=custom&year_from=1975' => [1975, 1979, 1980],
+            'year=custom&year_to=1975' => [1969, 1970, 1975],
+            'year=custom&year_from=1980&year_to=1970' => [1970, 1975, 1979, 1980],
+            'year=custom&year_from=&year_to=' => $years,
+            'year=broken' => $years, 'year[]=1970' => $years,
+            'year=custom&year_from[]=1970&year_to=1975' => [1969, 1970, 1975],
+            'year=1900' => [], 'year='.(date('Y') + 1) => [],
+        ];
+        $views = BrowseRoot::fromRoute($root)->views();
+        foreach (['/browse/'.$root, '/browse/'.$root.'/'.$category] as $path) {
+            foreach ($views as $view) {
+                foreach ($cases as $query => $expected) {
+                    $response = $this->get($path.'?view='.$view.'&'.$query)->assertOk();
+                    $this->assertSame(count($expected), $response->viewData('results')->total(), $path.' '.$view.' '.$query);
+                    foreach ($years as $year) {
+                        if (in_array($year, $expected, true)) {
+                            $response->assertSee('Year fixture '.$year);
+                        } else {
+                            $response->assertDontSee('Year fixture '.$year);
+                        }
+                    }
+                    $response->assertSee('All Years')->assertSee('Decades')->assertSee('Individual Years')->assertSee('Custom Range');
+                }
+            }
+        }
+        $this->release('Outside identity', ['categories_id' => $category, 'postdate' => '1975-06-15',
+            'groups_id' => 2, 'fromname' => 'Another poster', ...($foreignKey !== '' ? [$foreignKey => 1975] : [])]);
+        foreach (['group=alt.year.test', 'poster=Year%20poster'] as $restriction) {
+            $page = $this->get('/browse/'.$root.'?view=covers&year=custom&year_from=1970&year_to=1975&'.$restriction)->assertOk();
+            $page->assertSee('Custom Range')->assertSee('Apply year')->assertDontSee('Outside identity');
+            $this->assertSame('table', $page->viewData('browserState')->view);
+            $this->assertSame(2, $page->viewData('results')->total());
+        }
+        if (in_array($root, ['movies', 'tv'], true)) {
+            DB::table($root === 'movies' ? 'user_movies' : 'user_series')->insert(['users_id' => $user->id, $foreignKey => 1970]);
+            foreach ($views as $view) {
+                $page = $this->get('/browse/'.$root.'?view='.$view.'&year=1970s&watching=1')->assertOk();
+                $this->assertSame(1, $page->viewData('results')->total());
+                $page->assertSee('Year fixture 1970')->assertDontSee('Year fixture 1975');
+            }
+        }
+    }
+
+    public function test_custom_year_range_survives_pagination_sort_views_and_legacy_movie_entry(): void
+    {
+        $this->createCoverCatalogSchema('movieinfo');
+        for ($id = 1; $id <= 26; $id++) {
+            DB::table('movieinfo')->insert(['id' => $id, 'imdbid' => (string) $id, 'title' => 'Paged year '.$id, 'year' => $id <= 25 ? '1975' : '1980', 'genre' => 'Drama']);
+            $this->release('Paged year '.$id, ['imdbid' => (string) $id, 'isrenamed' => 1, 'nfostatus' => 1]);
+        }
+        $this->actingAs($this->browserUser());
+        $query = 'year=custom&year_from=1970&year_to=1975&genre=Drama&per=24&page=2';
+        $legacy = $this->get('/Movies?'.$query)->assertRedirect();
+        $this->get($legacy->headers->get('Location'))->assertOk()->assertSee('Apply year');
+        foreach (['table', 'cards', 'covers'] as $view) {
+            $response = $this->get('/browse/movies?'.$query.'&view='.$view.'&size=l&sort=posted')->assertOk();
+            $this->assertSame(25, $response->viewData('results')->total());
+            $this->assertCount(1, $response->viewData('results')->items());
+            $document = new \DOMDocument;
+            @$document->loadHTML($response->getContent());
+            $xpath = new \DOMXPath($document);
+            $this->assertSame('1970', $xpath->query('//*[@name="year_from"]/@value')->item(0)->nodeValue);
+            $this->assertSame('1975', $xpath->query('//*[@name="year_to"]/@value')->item(0)->nodeValue);
+            $clear = $xpath->query('//*[@data-year-clear]/@href')->item(0)->nodeValue;
+            parse_str(parse_url($clear, PHP_URL_QUERY), $parameters);
+            $this->assertSame(['genre' => 'Drama', 'per' => '24', 'view' => $view, 'size' => 'l', 'sort' => 'posted'], $parameters);
+            $this->get($clear)->assertOk()->assertViewHas('results', static fn ($rows): bool => $rows->total() === 26);
+            $this->assertStringContainsString('year_from=1970', $response->viewData('results')->url(1));
+            $this->assertStringContainsString('year_to=1975', $response->viewData('results')->url(1));
+        }
+    }
+
+    public static function yearContexts(): iterable
+    {
+        yield 'movies' => ['movies', 'movieinfo', 'imdbid', 2030];
+        yield 'tv' => ['tv', 'videos', 'videos_id', 5030];
+        yield 'audio' => ['audio', 'musicinfo', 'musicinfo_id', 3030];
+        yield 'console' => ['console', 'consoleinfo', 'consoleinfo_id', 1030];
+        yield 'games' => ['games', 'gamesinfo', 'gamesinfo_id', 4030];
+        yield 'books' => ['books', 'bookinfo', 'bookinfo_id', 7030];
+        yield 'adult' => ['xxx', '', '', 6030];
     }
 
     public function test_long_cover_metadata_preserves_complete_values_and_actions(): void

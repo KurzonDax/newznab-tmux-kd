@@ -69,7 +69,6 @@ final class TvShowDirectory
         }
 
         return ['shows' => new LengthAwarePaginator($shows, $total, $per, $page, ['path' => route('series'), 'query' => [...$request->query(), 'initial' => $initial]]),
-            'years' => DB::table('videos')->whereNotNull('started')->selectRaw('DISTINCT SUBSTR(started, 1, 4) AS year')->orderByDesc('year')->pluck('year')->filter(static fn ($year): bool => (int) $year >= 1900)->values(),
             'networks' => DB::table('tv_info')->whereNotNull('publisher')->where('publisher', '!=', '')->distinct()->orderBy('publisher')->pluck('publisher'), 'initial' => $initial];
     }
 

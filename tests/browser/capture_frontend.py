@@ -10,6 +10,7 @@ import tempfile
 parser = argparse.ArgumentParser()
 parser.add_argument('output', type=Path)
 parser.add_argument('--only', nargs='+')
+parser.add_argument('--filter', help='Override the test selection for the requested classes')
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[2]
 cases = {
@@ -45,7 +46,7 @@ for original, selection in cases.items():
 }
 '''
         path.write_text(source)
-        result = subprocess.run(['scripts/agent-sail', 'artisan', 'test', '--compact', str(path.relative_to(root)), '--filter=' + selection], cwd=root, capture_output=True, text=True)
+        result = subprocess.run(['scripts/agent-sail', 'artisan', 'test', '--compact', str(path.relative_to(root)), '--filter=' + (args.filter or selection)], cwd=root, capture_output=True, text=True)
         for encoded in re.findall(r'FRONTEND_FIXTURE:([A-Za-z0-9+/=]+)', result.stdout):
             fixtures.append(json.loads(base64.b64decode(encoded)))
         clean = re.sub(r'FRONTEND_FIXTURE:[A-Za-z0-9+/=]+', '', result.stdout)
