@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\ObfuscationRecovery;
 
+use App\Models\Settings;
 use stdClass;
 
 final readonly class RecoveredReleaseDetails
@@ -36,10 +37,18 @@ final readonly class RecoveredReleaseDetails
             RecoveryAlgorithm::Rar => 'RAR',
             null => 'Unknown',
         };
-        [$this->naming, $this->namingNote] = match ($publication->identity_outcome) {
+        $namingOutcome = (bool) ($publication->isrenamed ?? false) && ! in_array($publication->identity_outcome, ['identified', 'descriptive_bundle'], true)
+            ? 'named_elsewhere' : $publication->identity_outcome;
+        [$this->naming, $this->namingNote] = match ($namingOutcome) {
             'identified' => ['Named by recovery', 'Recovery established a name from the recovered file inventory.'],
             'descriptive_bundle' => ['Bundle name', 'Recovery established a descriptive name for the group of files; it did not assign one episode identity to the whole release.'],
-            'par2_naming_disabled' => ['Naming disabled', 'Naming was disabled during recovery.'],
+            'named_elsewhere' => ['Named elsewhere', 'The release has a name from another naming path. The recovery result describes an earlier attempt.'],
+            'existing_name_preserved' => ['Existing name kept', 'Recovery retained the existing release name.'],
+            'par2_naming_disabled' => Settings::isPar2NamingEnabled()
+                ? ['Recovery naming skipped', 'Recovery skipped PAR2 naming during initialization. The release has not been named.']
+                : ['Naming disabled', 'PAR2 naming is currently disabled.'],
+            'cached_index_unavailable' => ['Cached naming unavailable', 'The cached recovery index is unavailable. The recovered release is retained.'],
+            'cached_identification_failed' => ['Recovery naming failed', 'The cached inventory could not be applied. The recovered release is retained.'],
             'identity_unresolved' => ['Name unresolved', 'Recovery could not establish a usable release name. The recovered release is retained.'],
             default => ['Naming result unavailable', 'No recovery naming result is recorded.'],
         };

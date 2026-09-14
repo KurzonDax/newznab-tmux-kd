@@ -173,6 +173,7 @@ class SettingsEnrichmentPagesTest extends TestCase
 
         $this->saveCard('naming-hygiene', 'fix-names', [
             'fix_names' => '1',
+            'lookuppar2' => '1',
             'fixnamethreads' => '1',
             'fixnamesperrun' => '10',
             'fix_timer' => '30',
@@ -181,6 +182,18 @@ class SettingsEnrichmentPagesTest extends TestCase
         ]);
 
         $this->assertSame('1', $this->storedSettingValue('descriptive_title_rename'));
+    }
+
+    public function test_the_naming_card_renders_and_saves_the_par2_naming_setting(): void
+    {
+        $this->assertStringContainsString('name="lookuppar2"', $this->renderSection('naming-hygiene'));
+        $this->assertSame('1', $this->storedSettingValue('lookuppar2'));
+
+        $this->saveCard('naming-hygiene', 'fix-names', $this->currentCardPayload('naming-hygiene', 'fix-names', ['lookuppar2' => '0']));
+        $this->assertSame('0', $this->storedSettingValue('lookuppar2'));
+
+        $this->saveCard('naming-hygiene', 'fix-names', $this->currentCardPayload('naming-hygiene', 'fix-names', ['lookuppar2' => '1']));
+        $this->assertSame('1', $this->storedSettingValue('lookuppar2'));
     }
 
     public function test_the_executable_card_renders_and_saves_the_forced_root_escape(): void
@@ -365,6 +378,7 @@ class SettingsEnrichmentPagesTest extends TestCase
     {
         $payload = [
             'fix_names' => '1',
+            'lookuppar2' => '1',
             'fixnamethreads' => '1',
             'fixnamesperrun' => '10',
             'fix_timer' => '30',

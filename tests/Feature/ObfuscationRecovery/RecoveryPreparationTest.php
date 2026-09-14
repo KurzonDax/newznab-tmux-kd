@@ -31,6 +31,7 @@ use App\Services\ObfuscationRecovery\RecoveryArchiveInspection;
 use App\Services\ObfuscationRecovery\RecoveryArtifact;
 use App\Services\ObfuscationRecovery\RecoveryArtifacts;
 use App\Services\ObfuscationRecovery\RecoveryBootstrap;
+use App\Services\ObfuscationRecovery\RecoveryBudget;
 use App\Services\ObfuscationRecovery\RecoveryBundleRefresh;
 use App\Services\ObfuscationRecovery\RecoveryCachedPrefix;
 use App\Services\ObfuscationRecovery\RecoveryCachedReader;
@@ -73,6 +74,7 @@ use App\Services\ReleaseRepair\ReleaseRepairOptions;
 use App\Services\ReleaseRepair\ReleaseRepairService;
 use App\Services\ReleaseRepair\RescanRunBudget;
 use App\Services\Releases\ReleaseManagementService;
+use App\Services\Search\SearchService;
 use App\Services\TvProcessing\Providers\AbstractTvProvider;
 use dariusiii\rarinfo\Par2Info;
 use Illuminate\Database\Schema\Blueprint;
@@ -429,6 +431,350 @@ final class RecoveryPreparationTest extends TestCase
 
     }
 
+    #[DataProvider('cachedNamingPolicies')]
+    public function test_cached_inventory_naming_resolves_policy_without_display_files(?string $setting, bool $allowNaming = true, string $reader = 'bootstrap'): void
+    {
+        $this->createNamingSchema();
+        $indexedNames = [];
+        Search::shouldReceive('updateRelease')->zeroOrMoreTimes()->andReturnUsing(static function (int $id) use (&$indexedNames): void {
+            $indexedNames[] = Release::query()->whereKey($id)->value('searchname');
+        });
+        config(['nntmux_settings.path_to_nzbs' => $this->makeTempDirectory('naming-nzb'), 'nntmux_settings.add_par2' => false, 'nntmux.echocli' => false]);
+        DB::table('settings')->updateOrInsert(['name' => 'fix_names'], ['value' => 1]);
+        DB::table('settings')->where('name', 'lookuppar2')->delete();
+        if ($setting !== null) {
+            DB::table('settings')->insert(['name' => 'lookuppar2', 'value' => $setting]);
+        }
+        $filename = 'Synthetic.Feature.2026.1080p.BluRay.H264-Fixture.mkv';
+        $bytes = "\x1a\x45\xdf\xa3\x8b\x42\x82\x88matroska".SyntheticPosting::bytes('naming-gate', 716800 * 2 + 100000 - 16);
+        [$artifacts, $cache] = $this->captured(false, [$filename => $bytes]);
+        $this->app->instance(RecoveryArtifacts::class, $artifacts);
+        $this->app->instance(RecoveryEvidence::class, $cache);
+        $work = app(RecoveryWork::class);
+        $this->assertSame('ready', (new RecoveryPreparation($cache, $artifacts, $work))->run($work->claim(RecoveryStage::Discover)));
+        NzbCreationCandidateQuery::flushCapabilityCache();
+        $this->artisan('obfuscation:publish', ['--limit' => 1])->assertSuccessful();
+        $publication = DB::table('obfuscation_recovery_publications')->first();
+        if ($reader === 'historical') {
+            DB::table('settings')->updateOrInsert(['name' => 'lookuppar2'], ['value' => 0]);
+            $this->assertSame('complete', app(RecoveryBootstrap::class)->run((int) $publication->id));
+            $this->assertSame('par2_naming_disabled', DB::table('obfuscation_recovery_publications')->value('identity_outcome'));
+            Release::query()->whereKey($publication->releases_id)->update(['proc_par2' => 1, 'proc_files' => 1]);
+            DB::table('settings')->where('name', 'lookuppar2')->delete();
+            if ($setting !== null) {
+                DB::table('settings')->insert(['name' => 'lookuppar2', 'value' => $setting]);
+            }
+            $this->artisan('obfuscation:publish', ['--limit' => 1])->assertSuccessful();
+        } elseif (! $allowNaming) {
+            $processor = new Par2Processor(app(NameFixingService::class), new Par2Info, false);
+            $this->assertFalse($processor->parseData($cache->get($publication->index_message_id)->data, (int) $publication->releases_id, allowNaming: false));
+        } elseif ($reader === 'nzb') {
+            $nntp = \Mockery::mock(NNTPService::class);
+            $nntp->shouldNotReceive('getMessages');
+            $contents = new NzbContentsService(nntp: $nntp);
+            $contents->parseNzb($publication->guid, (int) $publication->releases_id, 1);
+        } else {
+            $this->assertSame('complete', app(RecoveryBootstrap::class)->run((int) $publication->id));
+        }
+        $release = Release::query()->first();
+        $enabled = $setting !== '0' && $allowNaming;
+        $this->assertSame((int) $enabled, (int) $release->isrenamed);
+        if ($enabled) {
+            $this->assertSame('Synthetic.Feature.2026.1080p.BluRay.H264-Fixture', $release->searchname);
+            $this->assertSame($release->searchname, end($indexedNames));
+            $this->assertSame('identified', DB::table('obfuscation_recovery_publications')->value('identity_outcome'));
+        } else {
+            $this->assertStringStartsWith('Recovered.', $release->searchname);
+            if ($reader !== 'nzb') {
+                $this->assertSame('par2_naming_disabled', DB::table('obfuscation_recovery_publications')->value('identity_outcome'));
+            }
+        }
+        $this->assertSame(0, DB::table('release_files')->count());
+        $this->assertSame(0, DB::table('obfuscation_recovery_attempts')->count());
+        if ($reader === 'historical') {
+            $settled = DB::table('obfuscation_recovery_publications')->first();
+            $path = app(NzbService::class)->getNzbPath($release->guid);
+            $digest = hash_file('sha256', $path);
+            $before = $release->getAttributes();
+            $this->artisan('obfuscation:publish', ['--limit' => 10])->assertSuccessful();
+            $this->assertSame($before, $release->fresh()->getAttributes());
+            $this->assertEquals($settled, DB::table('obfuscation_recovery_publications')->first());
+            $this->assertSame($digest, hash_file('sha256', $path));
+            $this->assertSame(1, DB::table('obfuscation_recovery_publications')->count());
+            $this->assertSame(0, DB::table('obfuscation_recovery_attempts')->count());
+            $this->assertSame(1, (int) $release->fresh()->proc_files);
+        }
+    }
+
+    public static function cachedNamingPolicies(): array
+    {
+        return ['missing' => [null], 'blank' => [''], 'enabled' => ['1'], 'disabled' => ['0'],
+            'caller disabled' => ['1', false], 'nzb missing' => [null, true, 'nzb'],
+            'nzb blank' => ['', true, 'nzb'], 'nzb disabled' => ['0', true, 'nzb'],
+            'historical missing' => [null, true, 'historical']];
+    }
+
+    public function test_unresolved_historical_inventory_does_not_inherit_a_previous_naming_success(): void
+    {
+        $publication = $this->historicalNamingPublication(['opaque.mkv']);
+        $release = Release::query()->findOrFail($publication->releases_id);
+        $other = $release->replicate(['guid', 'collectionhash']);
+        $other->guid = str_repeat('d', 32);
+        $other->saveQuietly();
+        $other->textstring = 'Recognized.Feature.2026.1080p.BluRay.H264-Fixture.mkv';
+        $other->releases_id = $other->id;
+        $naming = app(NameFixingService::class);
+        $this->assertTrue($naming->checkName($other, true, 'PAR2, ', true, false));
+        $this->assertSame(1, (int) $other->fresh()->isrenamed);
+
+        $this->artisan('obfuscation:publish', ['--limit' => 1])->assertSuccessful();
+
+        $this->assertSame('identity_unresolved', DB::table('obfuscation_recovery_publications')->value('identity_outcome'));
+        $this->assertSame(0, (int) $release->fresh()->isrenamed);
+        $settled = DB::table('obfuscation_recovery_publications')->first();
+        $ledger = DB::table('obfuscation_recovery_attempts')->get()->all();
+        $this->travel(10)->minutes();
+        $this->artisan('obfuscation:publish', ['--limit' => 10])->assertSuccessful();
+        $this->assertEquals($settled, DB::table('obfuscation_recovery_publications')->first());
+        $this->assertEquals($ledger, DB::table('obfuscation_recovery_attempts')->get()->all());
+    }
+
+    public function test_direct_cached_naming_preserves_a_name_assigned_by_another_path(): void
+    {
+        $publication = $this->historicalNamingPublication(['Synthetic.Feature.2026.1080p.BluRay.H264-Fixture.mkv']);
+        $release = Release::query()->findOrFail($publication->releases_id);
+        $release->forceFill([...Release::searchNameValues('Operator.Chosen.Name'), 'isrenamed' => 1, 'is_trusted_name' => true])->saveQuietly();
+        $before = $release->fresh()->getAttributes();
+        $processor = new Par2Processor(app(NameFixingService::class), new Par2Info, false);
+        $index = app(RecoveryEvidence::class)->get($publication->index_message_id);
+        $processor->parseData($index->data, (int) $release->id);
+        $this->assertSame($before, $release->fresh()->getAttributes());
+        $this->assertSame('existing_name_preserved', DB::table('obfuscation_recovery_publications')->value('identity_outcome'));
+    }
+
+    #[DataProvider('historicalInventories')]
+    public function test_historical_inventory_replays_with_its_original_identity_scope(array $names, bool $rar, ?string $expected, string $outcome): void
+    {
+        $publication = $this->historicalNamingPublication($names, $rar);
+        $release = Release::query()->findOrFail($publication->releases_id);
+        $ledger = DB::table('obfuscation_recovery_attempts')->get()->all();
+        $path = app(NzbService::class)->getNzbPath($release->guid);
+        $digest = hash_file('sha256', $path);
+        $this->artisan('obfuscation:publish', ['--limit' => 1])->assertSuccessful();
+        $current = DB::table('obfuscation_recovery_publications')->first();
+        $this->assertSame($outcome, $current->identity_outcome);
+        $this->assertSame($expected !== null, (bool) $release->fresh()->isrenamed);
+        if ($expected !== null) {
+            $this->assertSame($expected, $release->fresh()->searchname);
+            $this->assertSame($outcome !== 'descriptive_bundle', (bool) $release->fresh()->is_trusted_name);
+        }
+        foreach (['identity', 'guid', 'sealed_plan', 'canonical_bundle_id', 'canonical_revision', 'releases_id', 'initialization_state'] as $field) {
+            $this->assertSame($publication->{$field}, $current->{$field});
+        }
+        $this->assertSame(0, DB::table('release_files')->count());
+        $this->artisan('obfuscation:publish', ['--limit' => 10])->assertSuccessful();
+        $this->assertEquals($current, DB::table('obfuscation_recovery_publications')->first());
+        $this->assertEquals($ledger, DB::table('obfuscation_recovery_attempts')->get()->all());
+        $this->assertSame($digest, hash_file('sha256', $path));
+        $this->assertSame(1, Release::query()->count());
+    }
+
+    public static function historicalInventories(): array
+    {
+        return [
+            [['Synthetic.Feature.2026.1080p.BluRay.H264-Fixture.mkv'], false, 'Synthetic.Feature.2026.1080p.BluRay.H264-Fixture', 'identified'],
+            [['Synthetic.Show.S01E01.1080p.mkv', 'Synthetic.Show.S01E02.1080p.mkv'], false, 'Synthetic Show S01 Episodes 01-02 - 2 files - 1080p', 'descriptive_bundle'],
+            [[], true, 'Synthetic.Feature.2026.1080p.BluRay.H264-Fixture', 'identified'],
+            [['First.Show.S01E01.1080p.mkv', 'Unrelated.Show.S01E02.1080p.mkv'], false, null, 'identity_unresolved'],
+        ];
+    }
+
+    #[DataProvider('historicalNamingRefusals')]
+    public function test_historical_naming_retry_preserves_policy_names_claims_and_accounting(string $condition, string $outcome): void
+    {
+        $publication = $this->historicalNamingPublication(['Synthetic.Feature.2026.1080p.BluRay.H264-Fixture.mkv']);
+        $release = Release::query()->findOrFail($publication->releases_id);
+        $path = app(NzbService::class)->getNzbPath($release->guid);
+        $digest = hash_file('sha256', $path);
+        $ledger = DB::table('obfuscation_recovery_attempts')->get()->all();
+        $budgets = DB::table('obfuscation_recovery_budgets')->get()->all();
+        $lease = null;
+        if ($condition === 'missing_index') {
+            DB::table('obfuscation_recovery_evidence')->where('message_id_digest', hash('sha256', $publication->index_message_id))->delete();
+        } elseif ($condition === 'conflicting_index') {
+            DB::table('obfuscation_recovery_evidence')->where('message_id_digest', hash('sha256', $publication->index_message_id))->update(['state' => 'conflict']);
+        } elseif ($condition === 'manual_name' || $condition === 'already_named') {
+            $release->forceFill([...Release::searchNameValues('Operator.Chosen.Name'), 'isrenamed' => (int) ($condition === 'already_named')])->saveQuietly();
+        } elseif ($condition === 'trusted_name') {
+            $release->forceFill(['is_trusted_name' => true])->saveQuietly();
+        } elseif ($condition === 'predb_name') {
+            $release->forceFill(['predb_id' => 123])->saveQuietly();
+        } elseif ($condition === 'naming_disabled' || $condition === 'pane_disabled') {
+            DB::table('settings')->updateOrInsert(['name' => $condition === 'naming_disabled' ? 'lookuppar2' : 'fix_names'], ['value' => 0]);
+        } elseif ($condition === 'recovery_claim') {
+            $lease = RecoveryLease::acquire($release);
+            $this->assertNotNull($lease);
+        } elseif ($condition === 'additional_claim') {
+            $release->forceFill(['additional_pp_claimed_at' => now(), 'additional_pp_claim_token' => 'current-owner'])->saveQuietly();
+        } elseif ($condition === 'release_deleted') {
+            DB::table('releases')->where('id', $release->id)->delete();
+        } elseif ($condition === 'publication_deleted') {
+            DB::table('obfuscation_recovery_publications')->where('id', $publication->id)->update(['deleted_at' => now()]);
+        } elseif ($condition === 'guid_changed') {
+            $release->forceFill(['guid' => str_repeat('e', 32)])->saveQuietly();
+        } elseif (in_array($condition, ['claim_lost', 'policy_changed', 'named_during_claim', 'policy_changed_after_cache', 'pane_changed_after_cache', 'pane_changed_after_second_cache'], true)) {
+            $armed = true;
+            $cacheReads = 0;
+            DB::listen(function ($query) use (&$armed, &$cacheReads, $condition, $release): void {
+                $afterCache = str_contains($condition, '_after_');
+                $trigger = $afterCache ? 'select * from "obfuscation_recovery_evidence"' : 'update "releases" set "recovery_claimed_at" =';
+                if (! $armed || ! str_starts_with($query->sql, $trigger)) {
+                    return;
+                }
+                if ($afterCache && ! Release::query()->whereKey($release->id)->whereNotNull('recovery_claim_token')->exists()) {
+                    return;
+                }
+                if ($afterCache && ++$cacheReads < ($condition === 'pane_changed_after_second_cache' ? 2 : 1)) {
+                    return;
+                }
+                $armed = false;
+                if ($condition === 'claim_lost') {
+                    DB::table('releases')->where('id', $release->id)->update(['recovery_claim_token' => 'new-owner']);
+                } elseif (in_array($condition, ['policy_changed', 'policy_changed_after_cache', 'pane_changed_after_cache', 'pane_changed_after_second_cache'], true)) {
+                    DB::table('settings')->updateOrInsert(['name' => str_starts_with($condition, 'pane_changed_') ? 'fix_names' : 'lookuppar2'], ['value' => 0]);
+                } else {
+                    DB::table('releases')->where('id', $release->id)->update([...Release::searchNameValues('Concurrent.Manual.Name'), 'isrenamed' => 1]);
+                }
+            });
+        }
+        $before = $release->fresh()?->getAttributes();
+        $this->artisan('obfuscation:publish', ['--limit' => 1])->assertSuccessful();
+        if (isset($armed)) {
+            $this->assertFalse($armed, 'The ownership or policy interruption must occur inside the real retry.');
+        }
+        $this->assertSame($outcome, DB::table('obfuscation_recovery_publications')->value('identity_outcome'));
+        if (! in_array($condition, ['claim_lost', 'named_during_claim'], true)) {
+            $this->assertSame($before, $release->fresh()?->getAttributes());
+        } elseif ($condition === 'claim_lost') {
+            $this->assertSame('new-owner', $release->fresh()->recovery_claim_token);
+            $this->assertSame(0, (int) $release->fresh()->isrenamed);
+        } else {
+            $this->assertSame('Concurrent.Manual.Name', $release->fresh()->searchname);
+        }
+        $settled = DB::table('obfuscation_recovery_publications')->first();
+        $this->artisan('obfuscation:publish', ['--limit' => 10])->assertSuccessful();
+        $this->assertEquals($settled, DB::table('obfuscation_recovery_publications')->first());
+        $this->assertEquals($ledger, DB::table('obfuscation_recovery_attempts')->get()->all());
+        $this->assertEquals($budgets, DB::table('obfuscation_recovery_budgets')->get()->all());
+        $this->assertSame($digest, hash_file('sha256', $path));
+        $this->assertSame(0, DB::table('release_files')->count());
+        $lease?->release();
+    }
+
+    #[DataProvider('bundlePolicyChanges')]
+    public function test_historical_bundle_naming_rechecks_policy_after_final_inventory_validation(string $setting, bool $atMutation = false): void
+    {
+        $publication = $this->historicalNamingPublication(['Synthetic.Show.S01E01.1080p.mkv', 'Synthetic.Show.S01E02.1080p.mkv']);
+        $release = Release::query()->findOrFail($publication->releases_id);
+        $before = $release->getAttributes();
+        Search::swap(\Mockery::spy(SearchService::class));
+        $reads = 0;
+        $changed = false;
+        DB::listen(function ($query) use (&$reads, &$changed, $release, $setting, $atMutation): void {
+            if ($changed) {
+                return;
+            }
+            if (str_starts_with($query->sql, 'select * from "obfuscation_recovery_evidence"')
+                && Release::query()->whereKey($release->id)->whereNotNull('recovery_claim_token')->exists()) {
+                $reads++;
+            }
+            $atBoundary = $atMutation ? $query->sql === 'select * from "releases" where "id" = ? limit 1' : true;
+            if ($reads === 3 && $atBoundary) {
+                $changed = true;
+                DB::table('settings')->updateOrInsert(['name' => $setting], ['value' => 0]);
+            }
+        });
+        $this->artisan('obfuscation:publish', ['--limit' => 1])->assertSuccessful();
+        $this->assertTrue($changed, 'Interrupt the actual cache validation or final locked release read.');
+        $this->assertSame(3, $reads);
+        Search::shouldNotHaveReceived('updateRelease');
+        $this->assertSame($before, $release->fresh()->getAttributes());
+        $this->assertSame('par2_naming_disabled', DB::table('obfuscation_recovery_publications')->value('identity_outcome'));
+    }
+
+    public static function bundlePolicyChanges(): array
+    {
+        return [['fix_names'], ['lookuppar2'], ['fix_names', true], ['lookuppar2', true]];
+    }
+
+    public static function historicalNamingRefusals(): array
+    {
+        return [
+            ['missing_index', 'cached_index_unavailable'], ['conflicting_index', 'cached_identification_failed'],
+            ['manual_name', 'existing_name_preserved'], ['already_named', 'par2_naming_disabled'],
+            ['trusted_name', 'existing_name_preserved'], ['predb_name', 'existing_name_preserved'],
+            ['naming_disabled', 'par2_naming_disabled'], ['pane_disabled', 'par2_naming_disabled'],
+            ['recovery_claim', 'par2_naming_disabled'], ['additional_claim', 'par2_naming_disabled'],
+            ['release_deleted', 'par2_naming_disabled'], ['publication_deleted', 'par2_naming_disabled'],
+            ['guid_changed', 'par2_naming_disabled'], ['claim_lost', 'par2_naming_disabled'],
+            ['policy_changed', 'par2_naming_disabled'], ['named_during_claim', 'existing_name_preserved'],
+            ['policy_changed_after_cache', 'par2_naming_disabled'], ['pane_changed_after_cache', 'par2_naming_disabled'],
+            ['pane_changed_after_second_cache', 'par2_naming_disabled'],
+        ];
+    }
+
+    private function createNamingSchema(): void
+    {
+        $this->createRecoveryCbpSchema();
+        $this->createRecoveryReleaseSchema();
+        $this->createIdentificationSchema();
+        Schema::create('predb', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->string('title');
+        });
+        Schema::create('root_categories', function (Blueprint $table): void {
+            $table->unsignedInteger('id')->primary();
+            $table->boolean('generate_previews')->default(true);
+        });
+        $this->registerSqliteFunction('UNIX_TIMESTAMP', static fn (?string $value): int => (int) strtotime((string) $value));
+    }
+
+    /** @param list<string> $names */
+    private function historicalNamingPublication(array $names, bool $rar = false): object
+    {
+        $this->createNamingSchema();
+        Schema::table('releases', function (Blueprint $table): void {
+            $table->timestamp('additional_pp_claimed_at')->nullable();
+            $table->uuid('additional_pp_claim_token')->nullable();
+        });
+        Search::shouldReceive('updateRelease')->zeroOrMoreTimes();
+        config(['nntmux_settings.path_to_nzbs' => $this->makeTempDirectory('historical-naming-nzb'), 'nntmux_settings.add_par2' => false, 'nntmux.echocli' => false]);
+        DB::table('settings')->updateOrInsert(['name' => 'fix_names'], ['value' => 1]);
+        DB::table('settings')->updateOrInsert(['name' => 'lookuppar2'], ['value' => 0]);
+        $files = [];
+        foreach ($names as $i => $name) {
+            $files[$name] = "\x1a\x45\xdf\xa3\x8b\x42\x82\x88matroska".SyntheticPosting::bytes('historical-'.$i, 716800 * ($i + 2) + 100000 - 16);
+        }
+        [$artifacts, $cache, $bundle] = $this->captured($rar, $files, archiveName: 'Synthetic.Feature.2026.1080p.BluRay.H264-Fixture');
+        $this->app->instance(RecoveryArtifacts::class, $artifacts);
+        $this->app->instance(RecoveryEvidence::class, $cache);
+        $work = app(RecoveryWork::class);
+        $this->assertSame('ready', (new RecoveryPreparation($cache, $artifacts, $work))->run($work->claim(RecoveryStage::Discover)));
+        NzbCreationCandidateQuery::flushCapabilityCache();
+        $this->artisan('obfuscation:publish', ['--limit' => 1])->assertSuccessful();
+        $publication = DB::table('obfuscation_recovery_publications')->first();
+        $this->assertSame('complete', app(RecoveryBootstrap::class)->run((int) $publication->id));
+        $this->assertSame('par2_naming_disabled', DB::table('obfuscation_recovery_publications')->value('identity_outcome'));
+        Release::query()->whereKey($publication->releases_id)->update(['proc_par2' => 1, 'proc_files' => 1]);
+        $budget = app(RecoveryBudget::class);
+        $reservation = $budget->reserve($bundle->owner_digest, 'construction', $publication->index_message_id, 131072, 20971520);
+        $this->assertNotNull($reservation);
+        $this->assertTrue($budget->settle($reservation, 150, 65536, 'success'));
+        DB::table('settings')->where('name', 'lookuppar2')->delete();
+
+        return DB::table('obfuscation_recovery_publications')->first();
+    }
+
     #[DataProvider('recoveryForcedRoots')]
     public function test_recovery_formation_and_cached_inventory_naming_honor_all_group_forces(?int $primary, array $associated, int $expected, string $gate = '', bool $naming = true): void
     {
@@ -713,7 +1059,7 @@ final class RecoveryPreparationTest extends TestCase
     private function createIdentificationSchema(): void
     {
         Schema::table('releases', function (Blueprint $table): void {
-            foreach (['videos_id', 'tv_episodes_id', 'gamesinfo_id', 'proc_par2', 'rarinnerfilecount'] as $column) {
+            foreach (['videos_id', 'tv_episodes_id', 'gamesinfo_id', 'proc_par2', 'proc_files', 'rarinnerfilecount'] as $column) {
                 $table->integer($column)->default(0);
             }
             foreach (['movieinfo_id', 'musicinfo_id', 'consoleinfo_id', 'bookinfo_id', 'anidbid'] as $column) {
@@ -839,11 +1185,11 @@ final class RecoveryPreparationTest extends TestCase
         $this->assertSame(0, DB::table('obfuscation_recovery_attempts')->count());
     }
 
-    private function captured(bool $rar = false, ?array $mediaFiles = null, bool $singleArticleFinalVolume = false, bool $existingAuxiliary = false): array
+    private function captured(bool $rar = false, ?array $mediaFiles = null, bool $singleArticleFinalVolume = false, bool $existingAuxiliary = false, string $archiveName = 'Fixture'): array
     {
         $this->travelTo(new \DateTimeImmutable('2026-01-01T00:00:00Z'));
         $bytes = "\x1a\x45\xdf\xa3\x8b\x42\x82\x88matroska".SyntheticPosting::bytes('media', 2250400 - 16);
-        $fixture = $rar ? RarPostingFixture::make($singleArticleFinalVolume) : MediaPostingFixture::make($mediaFiles ?? ['Feature.Fixture.2026.mkv' => $bytes]);
+        $fixture = $rar ? RarPostingFixture::make($singleArticleFinalVolume, $archiveName) : MediaPostingFixture::make($mediaFiles ?? ['Feature.Fixture.2026.mkv' => $bytes]);
         if ($existingAuxiliary) {
             $right = array_pop($fixture['headers']);
             $fixture['headers'][] = ['Subject' => '[x] - '.str_repeat('Q', 32).' yEnc (1/99)', 'From' => 'fixture@example.invalid',

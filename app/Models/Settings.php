@@ -158,10 +158,15 @@ class Settings extends Model
         return (int) self::settingValue('running') === 1;
     }
 
-    public static function settingValue(mixed $setting): mixed
+    public static function isPar2NamingEnabled(bool $lockForUpdate = false): bool
+    {
+        return (int) self::settingValueOr('lookuppar2', 1, $lockForUpdate) === 1;
+    }
+
+    public static function settingValue(mixed $setting, bool $lockForUpdate = false): mixed
     {
         try {
-            $value = self::query()->where('name', $setting)->value('value');
+            $value = self::query()->where('name', $setting)->when($lockForUpdate, static fn ($query) => $query->lockForUpdate())->value('value');
         } catch (QueryException $e) {
             // The settings table does not exist yet on a fresh install. Console
             // boot eagerly builds commands whose service constructors read
@@ -190,9 +195,9 @@ class Settings extends Model
      * non-numeric row should fall back rather than cast to 0, reach for
      * {@see SettingNumber} instead: it rejects anything non-numeric.
      */
-    public static function settingValueOr(mixed $setting, mixed $default): mixed
+    public static function settingValueOr(mixed $setting, mixed $default, bool $lockForUpdate = false): mixed
     {
-        $value = self::settingValue($setting);
+        $value = self::settingValue($setting, $lockForUpdate);
 
         return ($value === null || $value === '') ? $default : $value;
     }

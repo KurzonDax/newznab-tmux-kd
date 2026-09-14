@@ -44,6 +44,10 @@ final class RecoveryScheduler
                     $result = app(RecoveryBootstrap::class)->run((int) $pending);
                     $report['bootstrap_'.$result] = ($report['bootstrap_'.$result] ?? 0) + 1;
                 }
+                $naming = app(RecoveryNamingReplay::class)->step();
+                if ($naming !== null) {
+                    $report['naming_'.$naming] = ($report['naming_'.$naming] ?? 0) + 1;
+                }
             }
             if (! RecoveryConfig::fromSettings()->enabled) {
                 break;

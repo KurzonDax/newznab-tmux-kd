@@ -10,7 +10,8 @@ use Illuminate\Support\Facades\DB;
 
 final class RecoveryNaming
 {
-    public function apply(object $publication, RecoveryInventory $inventory, NameFixingService $naming, bool $enabled, bool $show): bool
+    /** @param (\Closure(): bool)|null $namingPolicy */
+    public function apply(object $publication, RecoveryInventory $inventory, NameFixingService $naming, bool $enabled, bool $show, ?\Closure $namingPolicy = null): bool
     {
         $plan = RecoveryPlan::fromArray(json_decode($publication->sealed_plan, true, flags: JSON_THROW_ON_ERROR));
         if ($plan->algorithm === RecoveryAlgorithm::Rar && DB::table('obfuscation_recovery_publications')
@@ -27,7 +28,7 @@ final class RecoveryNaming
         }
         $scope = $plan->algorithm === RecoveryAlgorithm::Rar ? RecoveryNameScope::ArchiveSet
             : ($plan->multiMediaInventory() ? RecoveryNameScope::DescriptiveBundle : RecoveryNameScope::SingleFile);
-        $evidence = new RecoveryNameEvidence((int) $publication->id, $plan->manifestDigest, $scope, array_keys($names));
+        $evidence = new RecoveryNameEvidence((int) $publication->id, $plan->manifestDigest, $scope, array_keys($names), $namingPolicy);
         $decision = (new RecoveryInventoryIdentity)->media($names);
         foreach ($decision['files'] as $file) {
             DB::table('obfuscation_recovery_files')->where('bundle_id', $plan->bundleId)->where('revision', $plan->revision)
@@ -40,8 +41,9 @@ final class RecoveryNaming
             return true;
         }
         $identified = false;
-        $outcome = $enabled ? 'identity_unresolved' : 'par2_naming_disabled';
-        if ($enabled) {
+        $preserveName = $enabled && self::hasExistingName($release, $publication->identity);
+        $outcome = $preserveName ? 'existing_name_preserved' : ($enabled ? 'identity_unresolved' : 'par2_naming_disabled');
+        if ($enabled && ! $preserveName) {
             if ($scope === RecoveryNameScope::DescriptiveBundle) {
                 $outcome = 'identity_unresolved';
                 if ($decision['candidate'] !== null) {
@@ -66,5 +68,11 @@ final class RecoveryNaming
         ]);
 
         return $identified;
+    }
+
+    public static function hasExistingName(Release $release, string $publicationIdentity): bool
+    {
+        return (int) $release->isrenamed !== 0 || (bool) $release->is_trusted_name || (int) $release->predb_id > 0
+            || $release->searchname !== 'Recovered.'.substr($publicationIdentity, 0, 24);
     }
 }

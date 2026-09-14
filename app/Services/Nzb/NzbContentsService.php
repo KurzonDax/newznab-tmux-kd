@@ -67,7 +67,7 @@ class NzbContentsService
         $this->nntp = $nntp ?? new NNTPService;
         $this->nfo = $nfo ?? new NfoService;
         $this->postProcessService = $postProcessService ?? app(PostProcessService::class);
-        $this->lookupPar2 = (int) Settings::settingValue('lookuppar2') === 1;
+        $this->lookupPar2 = Settings::isPar2NamingEnabled();
     }
 
     /**
