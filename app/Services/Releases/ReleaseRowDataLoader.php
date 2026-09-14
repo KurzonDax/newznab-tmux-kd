@@ -86,6 +86,8 @@ final class ReleaseRowDataLoader
                     'tv' => in_array($entities[(int) $release->id]->id, $watchedShows, true),
                     default => false,
                 },
+                reports: (int) ($release->total_report_count ?? 0),
+                public_responses: (int) ($release->report_response_count ?? 0),
             );
             if ($release instanceof Model) {
                 $release->setAttribute('row_data', $row);

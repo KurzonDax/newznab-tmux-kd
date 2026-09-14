@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Data\ReleaseBrowserState;
+use App\Enums\BrowseRoot;
 use App\Http\Requests\Admin\StorePosterIdentityBlacklistRequest;
 use App\Services\BlacklistSweepService;
 use App\Services\PosterIdentityBlacklistService;
-use App\Services\Releases\ReleaseBrowseService;
+use App\Services\PosterIdentityBrowserContext;
+use App\Services\Releases\ReleaseBrowserQuery;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -17,7 +20,6 @@ use RuntimeException;
 final class PosterIdentityController extends BasePageController
 {
     public function __construct(
-        private readonly ReleaseBrowseService $releaseBrowseService,
         private readonly PosterIdentityBlacklistService $posterIdentityBlacklist,
         private readonly BlacklistSweepService $blacklistSweeps,
     ) {
@@ -27,42 +29,21 @@ final class PosterIdentityController extends BasePageController
     /**
      * @throws \Exception
      */
-    public function __invoke(Request $request): View
+    public function __invoke(Request $request): View|RedirectResponse
     {
-        $posterIdentity = $this->scalarInput($request, 'name');
-        $orderBy = $this->resolveOrderBy($request, $this->releaseBrowseService->getBrowseOrdering());
-        $perPage = (int) config('nntmux.items_per_page');
-
+        $state = ReleaseBrowserState::fromRequest($request, BrowseRoot::All, $this->userdata);
+        $posterIdentity = $state->posterIdentity;
         $results = $posterIdentity === ''
-            ? new LengthAwarePaginator([], 0, $perPage, $this->resolvePage($request), [
-                'path' => $request->url(),
-                'query' => $request->query(),
-            ])
-            : $this->releaseBrowseService->getPosterIdentityReleases(
-                $posterIdentity,
-                $perPage,
-                $orderBy,
-                (array) $this->userdata->categoryexclusions,
-            );
-        $blacklistRule = $posterIdentity !== '' && $request->user()?->hasRole('Admin')
-            ? $this->posterIdentityBlacklist->matchingRule($posterIdentity)
-            : null;
-        $blacklistConfirmation = $posterIdentity !== '' && $request->user()?->hasRole('Admin') && $blacklistRule === null
-            ? $this->posterIdentityBlacklist->previewForConfirmation($posterIdentity, (string) $request->user()->username)
-            : null;
-        $showSweepStatus = $request->session()->get('poster_identity_blacklist_sweep_started') === true;
+            ? new LengthAwarePaginator([], 0, $state->per, 1, ['path' => $request->url(), 'query' => $request->query()])
+            : app(ReleaseBrowserQuery::class)->paginate($state, $this->userdata);
+        if ($state->page > $results->lastPage()) {
+            return redirect()->to($state->pageUrl($request, $results->lastPage()));
+        }
+        $context = app(PosterIdentityBrowserContext::class)->forIdentity($posterIdentity, $this->userdata, $request->session()->get('poster_identity_blacklist_sweep_started') === true);
 
-        return view('poster-identity.index', array_merge($this->viewData, [
-            'posterIdentity' => $posterIdentity,
-            'results' => $results,
-            'blacklistRule' => $blacklistRule,
-            'blacklistPreview' => $blacklistConfirmation['preview'] ?? null,
-            'blacklistPreviewToken' => $blacklistConfirmation['token'] ?? null,
-            'showSweepStatus' => $showSweepStatus,
-            'sweepStatus' => $showSweepStatus ? $this->blacklistSweeps->publicStatus() : null,
-            'meta_title' => $posterIdentity === '' ? 'Posted By' : 'Posted By '.$posterIdentity,
-            'meta_keywords' => 'posted by,releases,nzb',
-            'meta_description' => 'Browse releases from an exact Posted By identity',
+        return view('poster-identity.index', array_merge($this->viewData, $context, [
+            'results' => $results, 'browserState' => $state,
+            'meta_title' => $posterIdentity === '' ? 'Posted By' : 'Posts by '.$posterIdentity,
         ]));
     }
 

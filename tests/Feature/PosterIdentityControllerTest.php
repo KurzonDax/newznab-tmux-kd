@@ -83,10 +83,13 @@ final class PosterIdentityControllerTest extends TestCase
         $this->release('Newest exact', $identity, '2026-08-03 12:00:00');
         $this->release('Middle exact', $identity, '2026-08-02 12:00:00');
         $this->release('Oldest exact', $identity, '2026-08-01 12:00:00');
+        for ($index = 1; $index <= 22; $index++) {
+            $this->release('Middle filler '.$index, $identity, '2026-08-02 00:00:00');
+        }
         $this->release('Look alike', 'user <user@2.localdomain>', '2026-08-04 12:00:00');
         $this->release('Case variant', 'user <USER@x.localdomain>', '2026-08-05 12:00:00');
 
-        $firstPage = $this->actingAs($user)->get(route('poster-identity', ['name' => $identity]));
+        $firstPage = $this->actingAs($user)->get(route('poster-identity', ['name' => $identity, 'per' => 24]));
 
         $firstPage->assertOk();
         $firstPage->assertSeeInOrder(['Newest exact', 'Middle exact']);
@@ -98,7 +101,7 @@ final class PosterIdentityControllerTest extends TestCase
         $firstPage->assertSee('bg-primary-100', false);
         $firstPage->assertDontSee('bg-indigo-100', false);
 
-        $secondPage = $this->actingAs($user)->get(route('poster-identity', ['name' => $identity, 'page' => 2]));
+        $secondPage = $this->actingAs($user)->get(route('poster-identity', ['name' => $identity, 'per' => 24, 'page' => 2]));
         $secondPage->assertOk();
         $secondPage->assertSee('Oldest exact');
         $secondPage->assertDontSee('Look alike');
@@ -118,12 +121,12 @@ final class PosterIdentityControllerTest extends TestCase
             ->get(route('poster-identity', ['name' => 'excluded@example.test']))
             ->assertOk()
             ->assertDontSee('Excluded release')
-            ->assertSee('No releases found');
+            ->assertSee('No releases match.');
 
         $this->actingAs($user)
             ->get(route('poster-identity'))
             ->assertOk()
-            ->assertSee('No releases found');
+            ->assertSee('No releases match.');
     }
 
     public function test_poster_identity_page_requires_authentication_and_verification(): void
@@ -134,6 +137,17 @@ final class PosterIdentityControllerTest extends TestCase
         $this->actingAs($unverified)
             ->get('/poster?name=poster%40example.test')
             ->assertRedirect(route('verification.notice'));
+    }
+
+    public function test_canonical_poster_browser_preserves_the_privileged_blacklist_control(): void
+    {
+        $admin = $this->verifiedUser('Admin');
+        $identity = ' Exact <poster@Host.test> ';
+        $this->release('Canonical poster release', $identity, '2026-08-03 12:00:00');
+
+        $response = $this->actingAs($admin)->get(route('browse.all', ['poster' => $identity]))->assertOk();
+        $response->assertSee('Posts by '.$identity)->assertSee('Blacklist this poster')
+            ->assertSee('Canonical poster release')->assertSee('data-release-table', false);
     }
 
     public function test_only_admins_see_the_poster_identity_blacklist_control(): void
@@ -518,7 +532,7 @@ final class PosterIdentityControllerTest extends TestCase
         $document = new DOMDocument;
         @$document->loadHTML($response->getContent());
         $chips = (new DOMXPath($document))->query('//span[@data-chip-variant="danger" and normalize-space(.)="Password"]');
-        $this->assertSame(2, $chips->length);
+        $this->assertSame(1, $chips->length);
     }
 
     public function test_row_entity_and_basket_state_belong_to_the_current_viewer(): void

@@ -373,12 +373,10 @@ class AdminReleaseReportControllerTest extends TestCase
     {
         $detailsControllerPath = app_path('Http/Controllers/DetailsController.php');
         $detailsViewPath = resource_path('views/details/index.blade.php');
-        $releaseResultsComponentPath = resource_path('views/components/release-results.blade.php');
         $browseServicePath = app_path('Services/Releases/ReleaseBrowseService.php');
 
         $this->assertFileExists($detailsControllerPath);
         $this->assertFileExists($detailsViewPath);
-        $this->assertFileExists($releaseResultsComponentPath);
         $this->assertFileExists($browseServicePath);
 
         $detailsController = file_get_contents($detailsControllerPath);
@@ -387,7 +385,6 @@ class AdminReleaseReportControllerTest extends TestCase
         foreach (glob(resource_path('views/details/partials/*.blade.php')) ?: [] as $detailsPartial) {
             $detailsView .= file_get_contents($detailsPartial);
         }
-        $releaseResultsComponent = file_get_contents($releaseResultsComponentPath);
         $browseService = file_get_contents($browseServicePath);
 
         $this->assertStringContainsString('publicReportResponses', $detailsController);
@@ -401,7 +398,5 @@ class AdminReleaseReportControllerTest extends TestCase
         $this->assertStringContainsString('all_report_reasons', $browseService);
         $this->assertStringContainsString('report_response_count', $browseService);
         $this->assertStringContainsString('response_is_public = 1', $browseService);
-        $this->assertStringContainsString('Original report:', $releaseResultsComponent);
-        $this->assertStringContainsString('Staff response available on release details', $releaseResultsComponent);
     }
 }

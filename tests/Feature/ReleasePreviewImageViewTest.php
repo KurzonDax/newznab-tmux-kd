@@ -8,7 +8,6 @@ use App\Models\Category;
 use App\Models\Release;
 use App\Models\ReleaseAudioTag;
 use App\Models\ReleaseVideoClip;
-use App\Models\User;
 use stdClass;
 use Tests\TestCase;
 
@@ -31,7 +30,7 @@ class ReleasePreviewImageViewTest extends TestCase
     {
         file_put_contents($this->coversRoot.'/audiosample/audio-guid_spectrum.png', 'png');
 
-        $html = $this->renderResults($this->release([
+        $html = $this->renderFacts($this->release([
             'guid' => 'audio-guid',
             'categories_id' => Category::MUSIC_MP3,
             'haspreview' => 1,
@@ -60,33 +59,20 @@ class ReleasePreviewImageViewTest extends TestCase
     public function test_browse_preview_triggers_carry_the_full_display_name(): void
     {
         $displayName = 'Readable Release 2026.08.29 v1.2.3 DDP5.1 H.264 With A Deliberately Long Untruncated Ending MKV';
-        $html = $this->renderResults($this->release([
+        $html = $this->renderFacts($this->release([
             'display_name' => $displayName,
             'searchname' => 'Wrong.Source.Name.That.Must.Not.Be.Used.mkv',
             'haspreview' => 1,
             'jpgstatus' => 1,
         ]));
 
-        $this->assertSame(4, substr_count($html, 'data-release-display-name="'.$displayName.'"'));
+        $this->assertSame(2, substr_count($html, 'data-release-display-name="'.$displayName.'"'));
         $this->assertStringNotContainsString('data-release-display-name="Wrong.Source.Name', $html);
-    }
-
-    public function test_report_actions_supply_the_release_name_for_the_dialog_subtitle(): void
-    {
-        $this->actingAs(User::factory()->make());
-        $html = $this->renderResults($this->release(['display_name' => 'Readable Release Title']));
-        $document = new \DOMDocument;
-        $document->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
-        $buttons = (new \DOMXPath($document))->query('//*[@data-report-release-id]');
-        $this->assertCount(2, $buttons);
-        foreach ($buttons as $button) {
-            $this->assertSame('Readable Release Title', $button->getAttribute('data-release-display-name'));
-        }
     }
 
     public function test_playable_audio_release_without_a_spectrogram_still_has_a_preview_chip(): void
     {
-        $html = $this->renderResults($this->release([
+        $html = $this->renderFacts($this->release([
             'guid' => 'audio-only-guid',
             'categories_id' => Category::MUSIC_MP3,
             'haspreview' => 0,
@@ -107,7 +93,7 @@ class ReleasePreviewImageViewTest extends TestCase
     {
         file_put_contents($this->coversRoot.'/preview/video-guid_thumb.jpg', 'jpg');
 
-        $html = $this->renderResults($this->release([
+        $html = $this->renderFacts($this->release([
             'guid' => 'video-guid',
             'categories_id' => Category::MOVIE_HD,
             'haspreview' => 1,
@@ -135,7 +121,7 @@ class ReleasePreviewImageViewTest extends TestCase
             'has_spectrogram' => 0,
         ]));
 
-        $html = $this->renderResults($release);
+        $html = $this->renderFacts($release);
 
         $this->assertDoesNotMatchRegularExpression('/class="[^"]*\\bpreview-badge\\b/', $html);
         $this->assertStringNotContainsString('data-audio-url=', $html);
@@ -145,7 +131,7 @@ class ReleasePreviewImageViewTest extends TestCase
     {
         file_put_contents($this->coversRoot.'/audiosample/spectrogram-only-guid_spectrum.png', 'png');
 
-        $html = $this->renderResults($this->release([
+        $html = $this->renderFacts($this->release([
             'guid' => 'spectrogram-only-guid',
             'categories_id' => Category::MUSIC_MP3,
             'haspreview' => 1,
@@ -163,7 +149,7 @@ class ReleasePreviewImageViewTest extends TestCase
     {
         file_put_contents($this->coversRoot.'/preview/clip-guid_thumb.jpg', 'jpg');
 
-        $html = $this->renderResults($this->release([
+        $html = $this->renderFacts($this->release([
             'guid' => 'clip-guid',
             'categories_id' => Category::XXX_XVID,
             'haspreview' => 1,
@@ -180,7 +166,7 @@ class ReleasePreviewImageViewTest extends TestCase
 
     public function test_release_with_only_a_legacy_ogv_sample_still_gets_the_video_chip(): void
     {
-        $html = $this->renderResults($this->release([
+        $html = $this->renderFacts($this->release([
             'guid' => 'legacy-guid',
             'categories_id' => Category::MOVIE_HD,
             'haspreview' => 0,
@@ -198,7 +184,7 @@ class ReleasePreviewImageViewTest extends TestCase
     {
         file_put_contents($this->coversRoot.'/preview/plain-guid_thumb.jpg', 'jpg');
 
-        $html = $this->renderResults($this->release([
+        $html = $this->renderFacts($this->release([
             'guid' => 'plain-guid',
             'categories_id' => Category::MOVIE_HD,
             'haspreview' => 1,
@@ -365,7 +351,7 @@ class ReleasePreviewImageViewTest extends TestCase
         file_put_contents($this->coversRoot.'/sample/row-full-guid_thumb.webp', 'webp');
         file_put_contents($this->coversRoot.'/sample/row-full-guid.webp', 'webp');
 
-        $html = $this->renderResults($this->release([
+        $html = $this->renderFacts($this->release([
             'guid' => 'row-full-guid',
             'haspreview' => 1,
             'jpgstatus' => 1,
@@ -380,7 +366,7 @@ class ReleasePreviewImageViewTest extends TestCase
         file_put_contents($this->coversRoot.'/preview/row-thumb-guid_thumb.webp', 'webp');
         file_put_contents($this->coversRoot.'/sample/row-thumb-guid_thumb.webp', 'webp');
 
-        $html = $this->renderResults($this->release([
+        $html = $this->renderFacts($this->release([
             'guid' => 'row-thumb-guid',
             'haspreview' => 1,
             'jpgstatus' => 1,
@@ -390,9 +376,9 @@ class ReleasePreviewImageViewTest extends TestCase
         $this->assertStringNotContainsString('data-full-url', $html);
     }
 
-    private function renderResults(object $release): string
+    private function renderFacts(object $release): string
     {
-        return view('components.release-results', ['results' => [$release]])->render();
+        return view('components.release-facts', ['release' => $release])->render();
     }
 
     /**

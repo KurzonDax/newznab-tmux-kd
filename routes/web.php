@@ -87,6 +87,7 @@ use App\Http\Controllers\PrivacyPolicyController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProfileSecurityController;
 use App\Http\Controllers\ReleaseReportController;
+use App\Http\Controllers\ReleaseViewPreferencesController;
 use App\Http\Controllers\RssController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SearchSuggestController;
@@ -179,8 +180,8 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
     Route::match(['GET', 'POST'], 'profile', [ProfileController::class, 'show'])->name('profile');
 
     Route::prefix('browse')->group(function () {
-        Route::match(['GET', 'POST'], 'tags', [BrowseController::class, 'tags'])->name('tags');
         Route::match(['GET', 'POST'], 'group', [BrowseController::class, 'group'])->name('group');
+        Route::get('all', [BrowseController::class, 'index'])->name('browse.all');
         Route::match(['GET', 'POST'], 'All', [BrowseController::class, 'index'])->name('All');
         Route::match(['GET', 'POST'], '{parentCategory}/{id?}', [BrowseController::class, 'show'])->middleware('clearance')->name('browse');
     });
@@ -228,6 +229,7 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
 
     Route::match(['GET', 'POST'], 'profileedit', [ProfileController::class, 'edit'])->name('profileedit');
     Route::match(['GET', 'POST'], 'profile_delete', [ProfileController::class, 'destroy'])->name('profile_delete');
+    Route::post('profile/update-view', ReleaseViewPreferencesController::class)->name('profile.update-view');
     Route::post('profile/update-theme', [ProfileController::class, 'updateTheme'])->name('profile.update-theme');
     Route::get('privacy-center', [PrivacyCenterController::class, 'index'])->name('privacy-center.index');
     Route::post('privacy-center/export', [PrivacyCenterController::class, 'requestExport'])->middleware('throttle:3,1')->name('privacy-center.export');

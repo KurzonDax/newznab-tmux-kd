@@ -20,13 +20,10 @@ final class ReleaseDisplayNameViewSurfaceTest extends TestCase
     public static function userFacingViewProvider(): array
     {
         return [
-            'browse and search list rows' => ['components/release-results.blade.php'],
             'cover listings' => ['components/cover-release-list.blade.php'],
             'release details heading' => ['details/index.blade.php'],
             'details cover actions' => ['details/partials/cover-actions.blade.php'],
             'nfo viewer heading' => ['nfo/view.blade.php'],
-            'cart' => ['cart/index.blade.php'],
-            'adult listings' => ['xxx/index.blade.php'],
             'movie cards' => ['movies/partials/movie-card.blade.php'],
             'movie release rows' => ['movies/partials/release-item.blade.php'],
             'single movie page' => ['movies/viewmoviefull.blade.php'],
