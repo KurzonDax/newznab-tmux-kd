@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\TrustedDevice2FAMiddleware;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -91,6 +92,24 @@ final class PublicShellTest extends TestCase
         $this->assertSame(1, $xpath->query('//*[@id="theme-toggle"]')->length);
         Route::get('/shell-contract', fn () => view('layouts.main'));
         $this->get('/shell-contract')->assertRedirect(route('login'));
+    }
+
+    public function test_shared_search_explains_its_keyboard_shortcut(): void
+    {
+        $this->actingAs($this->shellUser(['tv']))->get('/contact-us')->assertOk()
+            ->assertSee('placeholder="Search releases… (Press / to search)"', false);
+    }
+
+    public function test_only_administrators_have_dashboard_navigation_in_the_user_menu(): void
+    {
+        $this->withoutMiddleware(TrustedDevice2FAMiddleware::class);
+        foreach (['User', 'Moderator', 'Admin'] as $role) {
+            $this->flushSession();
+            $this->resetGlobalComposerState();
+            $response = $this->actingAs($this->createUserWithRole($role))->get('/contact-us')->assertOk();
+            $xpath = $this->document($response->getContent());
+            $this->assertSame($role === 'Admin' ? 1 : 0, $xpath->query('//*[@id="user-menu"]//a[@href="'.route('admin.index').'"]')->length, $role);
+        }
     }
 
     /** @param list<string> $roots */

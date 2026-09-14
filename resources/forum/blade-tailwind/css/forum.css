@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap');
-
 @import "tailwindcss" source(none);
 @source "../views";
 @source "../js";
@@ -7,6 +5,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
+    --font-sans: "Figtree", sans-serif;
     --color-primary-50: var(--color-primary-50);
     --color-primary-100: var(--color-primary-100);
     --color-primary-200: var(--color-primary-200);
@@ -26,7 +25,7 @@
     }
 
     .forum {
-        font-family: "Open Sans", sans-serif;
+        font-family: var(--font-sans);
         font-optical-sizing: auto;
         font-weight: 400;
         font-style: normal;

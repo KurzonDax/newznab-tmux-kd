@@ -223,8 +223,8 @@ class SeriesControllerTest extends TestCase
         $response->assertSee('MASH');
         $response->assertSee('Muppet Show');
         $response->assertDontSee('Matlock');
-        $response->assertSee('aria-label="Jump by initial"', false);
-        $this->assertSame(2, $response->viewData('results')->total());
+        $response->assertSee('aria-label="Show initial"', false)->assertSee('initial=M&amp;per=48', false);
+        $this->assertSame(2, $response->viewData('shows')->total());
     }
 
     public function test_series_list_supports_single_custom_open_and_reversed_year_ranges(): void
@@ -361,10 +361,10 @@ class SeriesControllerTest extends TestCase
         $response->assertDontSee('/covers/tvshows/'.$bannerId.'-banner.webp', false);
         $response->assertSee('/covers/tvshows/'.$bannerId.'.webp', false);
         $response->assertSee('/covers/tvshows/'.$posterId.'.jpg', false);
-        $items = $response->viewData('results')->getCollection()->keyBy('title');
+        $items = $response->viewData('shows')->getCollection()->keyBy('title');
         $this->assertNull($items['Placeholder Show']->artwork);
-        $this->assertSame(3, $response->viewData('results')->total());
-        $response->assertSee('data-no-artwork', false);
+        $this->assertSame(3, $response->viewData('shows')->total());
+        $response->assertSee('Open Placeholder Show');
 
     }
 

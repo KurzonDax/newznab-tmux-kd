@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data;
 
 use App\Enums\BrowseRoot;
+use App\Enums\ReleaseSort;
 use App\Models\Category;
 use App\Models\User;
 use App\Support\MovieSearchQuery;
@@ -64,7 +65,7 @@ final readonly class WebSearchState
         if (($completion = ReleaseCompletion::normalizeThreshold($input['minc'] ?? null)) > 0) {
             $parameters['minc'] = (string) $completion;
         }
-        $parameters['sort'] = ($parameters['sort'] ?? (($input['ob'] ?? '') === 'name_asc' ? 'title' : 'newest')) === 'title' ? 'title' : 'newest';
+        $parameters['sort'] = ReleaseSort::resolve($parameters['sort'] ?? (($input['ob'] ?? '') === 'name_asc' ? 'title' : 'newest'))->value;
         $request->query->replace($parameters);
         $browser = ReleaseBrowserState::fromRequest($request, $root, $user, tableOnly: true);
 

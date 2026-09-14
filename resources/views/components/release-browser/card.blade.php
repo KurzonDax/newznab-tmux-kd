@@ -6,7 +6,7 @@
     @include('components.release-browser.artwork')
     <div class="release-browser-card-main">
         <a data-release-title href="{{ route('details', $row->guid) }}">{{ $row->name }}</a>
-        <div class="release-browser-titleline">@include('components.release-browser.facts')</div>
+        @include('components.release-browser.facts')
         @include('components.release-browser.origin')
     </div>
     <div class="release-browser-card-value"><span>Size</span><b>{{ $row->size }}</b></div>

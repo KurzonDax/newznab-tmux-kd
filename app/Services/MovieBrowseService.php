@@ -137,34 +137,21 @@ class MovieBrowseService
         // Inner query aggregates by just imdbid (small temp table, fast filesort on ~53K
         // narrow rows instead of 53K wide rows with TEXT columns like plot/genre/actors).
         // Outer query joins back to movieinfo for full details on only the top N movies.
-        $aggregateOrder = match ($order[0]) {
-            'MAX(r.postdate)' => 'latest_postdate', 'MAX(r.adddate)' => 'latest_added',
-            'SUM(r.grabs)' => 'total_grabs', default => null,
-        };
-
         $recentGrabs = $scope?->isTrending() ? CoverBrowseScope::recentGrabs() : null;
-        if ($recentGrabs !== null) {
-            $aggregateOrder = 'total_grabs';
-        }
         $grabsExpression = $recentGrabs !== null ? 'SUM(COALESCE(recent_grabs.grabs, 0))' : 'SUM(r.grabs)';
-
-        if ($aggregateOrder !== null) {
-            $innerOrderBy = $aggregateOrder;
-            $innerExtraGroupBy = '';
-            $outerOrderBy = 'stats.'.$aggregateOrder;
-        } else {
-            // orderField is like 'm.title', 'm.year', 'm.rating'
-            $innerOrderBy = $order[0];
-            $innerExtraGroupBy = ', '.$order[0];
-            $outerOrderBy = $order[0];
-        }
+        $order = $recentGrabs !== null ? [$grabsExpression, 'desc'] : $order;
+        $isAggregate = preg_match('/^(MIN|MAX|SUM)\(/', $order[0]) === 1;
+        $innerOrderBy = $isAggregate ? 'release_order' : $order[0];
+        $innerExtraGroupBy = $isAggregate ? '' : ', '.$order[0];
+        $outerOrderBy = $isAggregate ? 'stats.release_order' : $order[0];
+        $extraSelect = $isAggregate ? ', '.$order[0].' AS release_order' : '';
 
         $moviesSql = 'SELECT m.imdbid, m.tmdbid, m.traktid, m.title, m.year, m.rating, '
             .'m.plot, m.genre, m.director, m.actors, m.cover, '
             .'stats.latest_postdate, stats.total_releases '
             .'FROM ('
             .'SELECT m.imdbid, MAX(r.postdate) AS latest_postdate, MAX(r.adddate) AS latest_added, '.$grabsExpression.' AS total_grabs, COUNT(r.id) AS total_releases '
-            .'FROM movieinfo m '
+            .$extraSelect.' FROM movieinfo m '
             .'INNER JOIN releases r ON r.imdbid = m.imdbid '
             .($recentGrabs !== null ? 'LEFT JOIN ('.$recentGrabs->toSql().') recent_grabs ON recent_grabs.releases_id = r.id ' : '')
             .'WHERE '.$baseWhere.' '

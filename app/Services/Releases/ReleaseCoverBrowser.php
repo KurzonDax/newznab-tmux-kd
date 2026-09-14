@@ -14,7 +14,6 @@ use App\Services\GamesService;
 use App\Services\MovieBrowseService;
 use App\Services\MusicService;
 use App\Support\CoverBrowseResults;
-use Illuminate\Database\Query\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -71,7 +70,7 @@ final class ReleaseCoverBrowser
             BrowseRoot::Console => app(ConsoleService::class)->getConsoleRange($state->page, $categories, $offset, $state->per, $order, $excluded, scope: $scope),
             BrowseRoot::Games => app(GamesService::class)->getGamesRange($state->page, $categories, $offset, $state->per, $order, excludedCats: $excluded, scope: $scope),
             BrowseRoot::Books => app(BookService::class)->getBookRange($state->page, $categories, $offset, $state->per, $order, $excluded, scope: $scope),
-            BrowseRoot::Tv => $this->shows($state, $user),
+            BrowseRoot::Tv => app(TvEpisodeBrowser::class)->paginate($state, $user),
             BrowseRoot::Adult => $this->adult($state, $user),
             default => collect(),
         };
@@ -150,34 +149,5 @@ final class ReleaseCoverBrowser
         });
 
         return new CoverBrowseResults($items, $page->total());
-    }
-
-    private function shows(ReleaseBrowserState $state, User $user): CoverBrowseResults
-    {
-        $query = app(ReleaseBrowserQuery::class)->matchingQuery($state, $user)
-            ->whereNotNull('m.id')->where('m.title', '!=', '');
-        $total = (clone $query)->distinct()->count('m.id');
-        if ($state->sort === 'grabs') {
-            $query->leftJoinSub(CoverBrowseScope::recentGrabs(), 'recent_grabs', 'recent_grabs.releases_id', '=', 'r.id');
-        }
-        $covers = (clone $query)->select(['m.id', 'm.title', 'm.started', 'tv_info.publisher'])
-            ->selectRaw('COUNT(r.id) AS total_releases, MAX(r.adddate) AS latest_added')
-            ->when($state->sort === 'grabs', fn (Builder $query): Builder => $query->selectRaw('SUM(COALESCE(recent_grabs.grabs, 0)) AS total_grabs'))
-            ->groupBy('m.id', 'm.title', 'm.started', 'tv_info.publisher')
-            ->orderBy(match ($state->sort) {
-                'title' => 'm.title', 'year' => 'm.started', 'grabs' => 'total_grabs', default => 'latest_added'
-            }, $state->sort === 'title' ? 'asc' : 'desc')
-            ->orderBy('m.id')
-            ->offset(($state->page - 1) * $state->per)->limit($state->per)->get();
-        $ranked = (clone $query)->whereIn('m.id', $covers->pluck('id'))->select('r.*')
-            ->selectRaw('ROW_NUMBER() OVER (PARTITION BY r.videos_id ORDER BY r.adddate DESC, r.id DESC) AS release_rank');
-        $releases = DB::query()->fromSub($ranked, 'ranked')->where('release_rank', '<=', 2)->get()->groupBy('videos_id');
-        foreach ($covers as $cover) {
-            $cover->releases = $releases->get($cover->id, collect())->all();
-            $cover->_totalcount = $total;
-        }
-        app(ReleaseBrowseService::class)->loadCoverReleaseData($covers);
-
-        return new CoverBrowseResults($covers, $total);
     }
 }

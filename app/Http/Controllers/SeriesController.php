@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
-use App\Enums\BrowseRoot;
-use App\Services\Releases\LegacyCoverRedirect;
+use App\Services\Releases\TvShowDirectory;
 use Illuminate\Http\Request;
 
 class SeriesController extends BasePageController
@@ -21,14 +20,22 @@ class SeriesController extends BasePageController
             return redirect()->route('title', [...$parameters, 'root' => 'tv', 'id' => $id]);
         }
 
-        return app(LegacyCoverRedirect::class)->redirect($request, BrowseRoot::Tv, $id);
+        abort_if($id !== '' && preg_match('/^(0-9|[A-Z])$/i', $id) !== 1, 404);
+        $directory = app(TvShowDirectory::class);
+        if ($request->has('_fragment')) {
+            $data = $directory->show($request, $this->userdata, $request->integer('show'));
+
+            return view($request->input('_fragment') === 'show' ? 'series.dialog' : 'series.list', $data);
+        }
+
+        return view('series.index', [...$this->viewData, ...$directory->directory($request, $this->userdata, $id), 'meta_title' => 'TV Shows']);
     }
 
     public function showTrending(Request $request): mixed
     {
         return redirect()->route('browse', [
             ...$request->except(['parentCategory', 'id', '_token']),
-            'parentCategory' => 'tv', 'view' => 'covers', 'sort' => 'grabs',
+            'parentCategory' => 'tv', 'view' => 'covers', 'sort' => 'grabs', 'trending' => 1,
         ]);
     }
 }

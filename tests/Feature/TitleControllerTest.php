@@ -98,6 +98,71 @@ final class TitleControllerTest extends TestCase
         $this->assertSame(0, $response->viewData('results')->total());
     }
 
+    public function test_show_dialog_bounds_each_independent_list_and_keeps_packs_out_of_episode_variants(): void
+    {
+        $this->video(['id' => 1, 'title' => 'Harbor Street']);
+        DB::table('tv_info')->insert(['videos_id' => 1, 'publisher' => 'Harbor Network', 'summary' => 'An ensemble mystery along a fictional coast.']);
+        DB::table('tv_episodes')->insert(['id' => 100, 'videos_id' => 1, 'series' => 3, 'episode' => 1]);
+        DB::table('tv_episodes')->insert(['id' => 101, 'videos_id' => 1, 'series' => 0, 'episode' => 1]);
+        for ($episode = 1; $episode <= 30; $episode++) {
+            DB::table('tv_episodes')->insert(['id' => $episode, 'videos_id' => 1, 'series' => 4, 'episode' => $episode]);
+        }
+        for ($variant = 1; $variant <= 60; $variant++) {
+            $this->release('Harbor.Street.S04E01.Variant.'.$variant, ['categories_id' => 5030, 'videos_id' => 1, 'tv_episodes_id' => 1]);
+        }
+        for ($pack = 1; $pack <= 40; $pack++) {
+            $this->release('Harbor.Street.S04.COMPLETE.Pack.'.$pack, ['categories_id' => 5030, 'videos_id' => 1, 'tv_episodes_id' => 0]);
+        }
+        $this->actingAs($this->browserUser());
+        $this->get('/series')->assertOk();
+        $show = $this->get('/series?_fragment=show&show=1')->assertOk();
+        $this->assertSame(4, $show->viewData('season'));
+        $this->assertSame(30, $show->viewData('results')->total());
+        $this->assertCount(24, $show->viewData('results')->items());
+        foreach (['season' => [30, 6], 'episode' => [60, 24], 'packs' => [40, 16]] as $kind => [$total, $count]) {
+            $page = $this->get('/series?_fragment=list&show=1&season=4&kind='.$kind.'&episode=1&page=2&per=24')->assertOk();
+            $this->assertSame($total, $page->viewData('results')->total());
+            $this->assertCount($count, $page->viewData('results')->items());
+            if ($kind === 'episode') {
+                $page->assertDontSee('COMPLETE');
+            }
+        }
+        foreach ([0, 3] as $season) {
+            $this->get('/series?_fragment=list&show=1&season='.$season.'&kind=season&page=1&per=24')->assertOk();
+        }
+        foreach (['season', 'episode', 'packs'] as $kind) {
+            foreach ([24, 48, 100] as $per) {
+                $this->get('/series?_fragment=list&show=1&season=4&kind='.$kind.'&episode=1&page=1&per='.$per)->assertOk();
+            }
+        }
+        $this->get('/series?_fragment=list&show=1&season=4&kind=episode&episode=1&page=3&per=24')->assertOk()
+            ->assertViewHas('results', static fn ($rows): bool => $rows->count() === 12 && $rows->total() === 60);
+    }
+
+    public function test_tv_directory_includes_stored_shows_without_releases_and_filters_availability(): void
+    {
+        $this->video(['id' => 1, 'title' => 'Harbor Street']);
+        $this->video(['id' => 2, 'title' => 'Quiet Harbor']);
+        $this->release('Harbor.S01E01', ['categories_id' => 5030, 'videos_id' => 1]);
+        $this->actingAs($this->browserUser());
+        $this->get('/series')->assertOk()->assertSee('Harbor Street')->assertSee('Quiet Harbor')->assertSee('No releases available');
+        $this->get('/series?available=1')->assertOk()->assertSee('Harbor Street')->assertDontSee('Quiet Harbor');
+        $this->get('/series?title=Quiet')->assertOk()->assertSee('Quiet Harbor')->assertDontSee('Harbor Street');
+    }
+
+    public function test_complete_long_cast_has_its_own_row_after_the_synopsis(): void
+    {
+        $cast = implode(', ', array_map(static fn (int $number): string => 'Fictional Performer '.$number, range(1, 80)));
+        DB::table('movieinfo')->insert(['imdbid' => '1234567', 'title' => 'Harbor', 'year' => '2024', 'actors' => $cast, 'plot' => 'A synopsis before the cast.']);
+        $response = $this->actingAs($this->browserUser())->get('/title/movies/1234567')->assertOk();
+        $response->assertSeeInOrder(['A synopsis before the cast.', $cast]);
+        $document = new \DOMDocument;
+        @$document->loadHTML($response->getContent());
+        $xpath = new \DOMXPath($document);
+        $this->assertSame($cast, $xpath->evaluate('string(//dl[@class="title-cast"]//dd)'));
+        $this->assertSame(0, $xpath->query('//dl[@class="title-metadata"]//dt[text()="Cast"]')->length);
+    }
+
     public function test_movie_table_uses_all_allowed_releases_and_their_display_names(): void
     {
         DB::table('movieinfo')->insert(['id' => 12, 'imdbid' => '1234567', 'title' => 'A Movie', 'year' => '2024', 'director' => 'A Director', 'actors' => 'One, Two', 'plot' => 'A short plot.', 'tmdbid' => '42']);

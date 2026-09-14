@@ -1,8 +1,9 @@
 <div class="release-browser-toolbar">
+    <div class="release-browser-filters">
     <x-input type="search" name="q" :value="$state->query" class="release-browser-search" :placeholder="'Search in '.$state->root->label()" :aria-label="'Search in '.$state->root->label()" @input.debounce.180ms="searchListing" />
     @foreach($filterOptions as $key => $options)
         @if($options !== [])
-            <x-select :name="$key" :aria-label="ucfirst($key)" @change="filterListing">
+            <x-select width="compact" :name="$key" :aria-label="ucfirst($key)" @change="filterListing">
                 <option value="">{{ ucfirst($key) }}</option>
                 @if(isset($state->filters[$key]) && !in_array($state->filters[$key], $options, true))
                     <option value="{{ $state->filters[$key] }}" selected>{{ $state->filters[$key] }}</option>
@@ -16,9 +17,10 @@
     @if($state->hasFilters())
         <x-button variant="ghost" icon="fas fa-xmark" @click="clearFilters" aria-label="Clear filters">Clear</x-button>
     @endif
-    <span class="grow"></span>
+    </div>
+    <div class="release-browser-view-controls">
     <span class="tabular-nums whitespace-nowrap">{{ number_format($rows->total()) }} {{ $state->countUnit() }}</span>
-    <x-select name="sort" aria-label="Sort" @change="sortListing">
+    <x-select width="compact" name="sort" aria-label="Sort" @change="sortListing">
         @foreach($sortOptions as $key => $label)
             <option value="{{ $key }}" @selected($state->sort === $key)>{{ $label }}</option>
         @endforeach
@@ -42,4 +44,5 @@
             @endforeach
         </div>
     @endif
+    </div>
 </div>

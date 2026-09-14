@@ -9,6 +9,7 @@ export function modalLifecycle() {
             if (!dialog) return;
             const document = dialog.ownerDocument;
             let trigger = null;
+            let parent = null;
             const controls = () => {
                 const fullSize = dialog.querySelector('[data-full-size-layer]');
                 const scope = fullSize?.getClientRects().length ? fullSize : dialog;
@@ -18,18 +19,20 @@ export function modalLifecycle() {
             const owner = { close, dialog, trigger: () => trigger };
             const release = () => {
                 if (activeModal !== owner) return;
-                activeModal = null;
-                document.body.style.overflow = savedOverflow;
+                activeModal = parent;
+                document.body.style.overflow = parent ? 'hidden' : savedOverflow;
+                parent = null;
                 if (trigger?.isConnected) trigger.focus();
             };
             this.$watch('open', open => {
                 if (!open) { release(); return; }
                 const previous = activeModal;
-                trigger = previous?.dialog.contains(document.activeElement)
+                parent = previous?.dialog.hasAttribute?.('data-preserve-modal') ? previous : null;
+                trigger = !parent && previous?.dialog.contains(document.activeElement)
                     ? previous.trigger() : document.activeElement;
                 if (!previous) savedOverflow = document.body.style.overflow;
                 activeModal = owner;
-                previous?.close();
+                if (!parent) previous?.close();
                 document.body.style.overflow = 'hidden';
                 this.$nextTick(() => {
                     if (activeModal === owner && this.open) controls()[0]?.focus();

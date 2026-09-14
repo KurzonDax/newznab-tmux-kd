@@ -39,7 +39,7 @@ class MovieController extends BasePageController
     {
         return redirect()->route('browse', [
             ...$request->except(['parentCategory', 'id', '_token']),
-            'parentCategory' => 'movies', 'view' => 'covers', 'sort' => 'grabs',
+            'parentCategory' => 'movies', 'view' => 'covers', 'sort' => 'grabs', 'trending' => 1,
         ]);
     }
 }

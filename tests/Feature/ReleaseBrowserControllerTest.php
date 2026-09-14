@@ -49,6 +49,109 @@ final class ReleaseBrowserControllerTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_long_cover_metadata_preserves_complete_values_and_actions(): void
+    {
+        $this->createCoverCatalogSchema('musicinfo');
+        $publisher = str_repeat('Harbor Records copyright and publishing rights worldwide. ', 12).str_repeat('X', 180);
+        foreach ([1, 2] as $id) {
+            DB::table('musicinfo')->insert(['id' => $id, 'title' => 'Album '.$id, 'publisher' => $publisher, 'artist' => 'A fictional artist']);
+            $this->release('Album.'.$id.'.'.str_repeat('Long.Release.Name.', 15), ['categories_id' => 3030, 'musicinfo_id' => $id, 'nfostatus' => 1]);
+        }
+        $this->actingAs($this->browserUser());
+        foreach (['s', 'l', 'xl'] as $size) {
+            $response = $this->get('/browse/audio?view=covers&size='.$size)->assertOk();
+            if ($size === 'xl') {
+                $response->assertSee($publisher)->assertSee('data-row-action="download"', false)->assertSee('data-row-action="basket"', false);
+            }
+        }
+    }
+
+    public function test_tv_covers_group_identified_episodes_and_explicit_packs_and_keep_internal_posted_order(): void
+    {
+        $this->createCoverCatalogSchema('videos');
+        DB::table('videos')->insert(['id' => 1, 'title' => 'Harbor Street', 'started' => '2024-01-01', 'genre' => 'Drama, Mystery']);
+        DB::table('tv_info')->insert(['videos_id' => 1, 'publisher' => 'Harbor Network']);
+        foreach ([1, 2, 3] as $number) {
+            DB::table('tv_episodes')->insert(['id' => $number, 'videos_id' => 1, 'series' => 2, 'episode' => $number, 'title' => 'Episode '.$number]);
+        }
+        $this->release('Harbor.Street.S02E01.New', ['videos_id' => 1, 'tv_episodes_id' => 1, 'categories_id' => 5030, 'postdate' => '2026-09-13', 'adddate' => '2026-09-10']);
+        $this->release('Harbor.Street.S02E01.Old', ['videos_id' => 1, 'tv_episodes_id' => 1, 'categories_id' => 5030, 'postdate' => '2026-09-09', 'grabs' => 999]);
+        $this->release('Harbor.Street.S02E01-E02', ['videos_id' => 1, 'tv_episodes_id' => 1, 'categories_id' => 5030, 'postdate' => '2026-09-11']);
+        $this->release('Harbor.Street.S02.COMPLETE', ['videos_id' => 1, 'tv_episodes_id' => 0, 'categories_id' => 5030, 'postdate' => '2026-09-12']);
+        $this->release('Unidentified.S02E01', ['categories_id' => 5030]);
+        $this->actingAs($this->browserUser());
+        foreach (['s', 'l', 'xl'] as $size) {
+            $this->get('/browse/tv?view=covers&size='.$size)->assertOk()->assertSee('Harbor Network')->assertSee('Harbor.Street.S02E01.New')->assertSee('Harbor.Street.S02.COMPLETE');
+        }
+        foreach (['posted', 'posted_oldest', 'newest', 'oldest', 'title', 'grabs'] as $sort) {
+            $response = $this->get('/browse/tv?view=covers&size=xl&sort='.$sort.'&letter=Z')->assertOk();
+            $response->assertDontSee('Jump by initial')->assertDontSee('Unidentified');
+            $page = $response->viewData('results');
+            $this->assertSame(3, $page->total());
+            $covers = $page->getCollection()->keyBy('id');
+            $this->assertSame(4, $covers['1']->releaseCount);
+            $this->assertSame(2, $covers['2']->releaseCount);
+            $this->assertSame(1, $covers['3']->releaseCount);
+            $this->assertSame('Harbor.Street.S02E01.New', $covers['1']->releases[0]->row_data->name, $sort);
+            $this->assertSame('Harbor.Street.S02.COMPLETE', $covers['1']->releases[1]->row_data->name, $sort);
+        }
+    }
+
+    public function test_tv_outer_sort_uses_release_values_instead_of_show_or_episode_names(): void
+    {
+        $this->createCoverCatalogSchema('videos');
+        DB::table('videos')->insert(['id' => 1, 'title' => 'Harbor']);
+        foreach ([1 => ['Zulu', '2026-09-13', '2026-09-10', 2], 2 => ['Alpha', '2026-09-11', '2026-09-12', 8], 3 => ['Middle', '2026-09-12', '2026-09-11', 1]] as $id => [$name, $posted, $added, $grabs]) {
+            DB::table('tv_episodes')->insert(['id' => $id, 'videos_id' => 1, 'series' => 1, 'episode' => $id, 'title' => 'Episode '.$id]);
+            $this->release($name, ['categories_id' => 5030, 'videos_id' => 1, 'tv_episodes_id' => $id, 'postdate' => $posted, 'adddate' => $added, 'grabs' => $grabs]);
+        }
+        $this->actingAs($this->browserUser());
+        foreach (['posted' => '1', 'posted_oldest' => '2', 'newest' => '2', 'oldest' => '1', 'title' => '2', 'grabs' => '2'] as $sort => $first) {
+            $page = $this->get('/browse/tv?view=covers&sort='.$sort)->assertOk()->viewData('results');
+            $this->assertSame($first, $page->first()->id, $sort);
+        }
+    }
+
+    public function test_cached_episode_groups_recheck_current_release_visibility(): void
+    {
+        $this->createCoverCatalogSchema('videos');
+        DB::table('videos')->insert(['id' => 1, 'title' => 'Harbor']);
+        DB::table('tv_episodes')->insert(['id' => 1, 'videos_id' => 1, 'series' => 1, 'episode' => 1, 'title' => 'First']);
+        $id = $this->release('Harbor.S01E01', ['categories_id' => 5030, 'videos_id' => 1, 'tv_episodes_id' => 1]);
+        $this->actingAs($this->browserUser());
+        $this->get('/browse/tv?view=covers')->assertOk()->assertSee('Harbor.S01E01');
+        DB::table('releases')->where('id', $id)->update(['passwordstatus' => 2]);
+        $this->get('/browse/tv?view=covers')->assertOk()->assertDontSee('Harbor.S01E01');
+    }
+
+    public function test_release_facts_are_a_separate_block_after_the_complete_name(): void
+    {
+        $this->release('A short name', ['nfostatus' => 1]);
+        $response = $this->actingAs($this->browserUser())->get('/browse/all')->assertOk();
+        $document = new \DOMDocument;
+        @$document->loadHTML($response->getContent());
+        $xpath = new \DOMXPath($document);
+        $this->assertSame(1, $xpath->query('//*[@data-release-title]/parent::*/following-sibling::*[@data-release-facts-row]')->length);
+        $this->assertSame(0, $xpath->query('//*[@data-release-title]/parent::*//*[contains(@class,"release-chip")]')->length);
+    }
+
+    public function test_six_release_sorts_have_distinct_meanings(): void
+    {
+        $this->release('Zulu', ['postdate' => '2026-09-13', 'adddate' => '2026-09-10', 'grabs' => 2]);
+        $this->release('Alpha', ['postdate' => '2026-09-11', 'adddate' => '2026-09-12', 'grabs' => 8]);
+        $this->release('Middle', ['postdate' => '2026-09-12', 'adddate' => '2026-09-11', 'grabs' => 1]);
+        $this->actingAs($this->browserUser());
+        foreach (['posted' => 'Zulu', 'posted_oldest' => 'Alpha', 'newest' => 'Alpha', 'oldest' => 'Zulu', 'title' => 'Alpha', 'grabs' => 'Alpha'] as $sort => $first) {
+            $response = $this->get('/browse/all?sort='.$sort)->assertOk();
+            $this->assertSame($first, $response->viewData('results')->items()[0]->row_data->name, $sort);
+            $this->assertSame(['posted', 'posted_oldest', 'newest', 'oldest', 'title', 'grabs'], array_keys($response->viewData('sortOptions')));
+        }
+        foreach (['year', 'rating', 'artist', 'size', 'files'] as $removed) {
+            $this->get('/browse/all?sort='.$removed)->assertOk()
+                ->assertViewHas('browserState', static fn ($state): bool => $state->sort === 'newest');
+        }
+    }
+
     public function test_group_filter_counts_all_matching_rows_and_bounds_the_page(): void
     {
         $user = $this->browserUser();
@@ -209,7 +312,8 @@ final class ReleaseBrowserControllerTest extends TestCase
         $response->assertSee('value="2020"', false)->assertSee('value="Mystery"', false)
             ->assertDontSee('aria-label="Network"', false);
         $sorted = $this->get('/browse/movies?sort=rating')->assertOk();
-        $this->assertSame('Older', $sorted->viewData('results')->items()[0]->row_data->name);
+        $this->assertSame('newest', $sorted->viewData('browserState')->sort);
+        $this->assertSame('Unmatched', $sorted->viewData('results')->items()[0]->row_data->name);
         $this->assertSame(5, substr_count($response->getContent(), 'data-row-action='));
     }
 
@@ -255,6 +359,7 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->createMusicInfoTable();
         $this->createConsoleInfoTable();
         $this->createBookInfoTable();
+        $this->createGamesInfoTable();
         DB::table('genres')->insert(['id' => 1, 'title' => 'Adventure', 'type' => 1]);
         if ($table !== '') {
             DB::table($table)->insert(['id' => 1, 'title' => 'First title', ...$first]);
@@ -276,6 +381,7 @@ final class ReleaseBrowserControllerTest extends TestCase
     {
         yield 'audio label and year' => ['audio', 3030, 'musicinfo', 'musicinfo_id', ['year' => '2026', 'publisher' => 'Label A', 'artist' => 'Zebra', 'genres_id' => 1], ['year' => '2020', 'publisher' => 'Label B', 'artist' => 'Alpha'], 'year=2026&label=Label%20A&genre=Adventure'];
         yield 'console platform and publisher' => ['console', 1030, 'consoleinfo', 'consoleinfo_id', ['releasedate' => '2026-01-01', 'platform' => 'Switch', 'publisher' => 'Studio A', 'genres_id' => 1], ['releasedate' => '2020-01-01', 'platform' => 'PS5', 'publisher' => 'Studio B'], 'year=2026&platform=Switch&publisher=Studio%20A&genre=Adventure'];
+        yield 'games platform and publisher' => ['games', 4030, 'gamesinfo', 'gamesinfo_id', ['releasedate' => '2026-01-01', 'publisher' => 'Studio A', 'genres_id' => 1], ['releasedate' => '2020-01-01', 'publisher' => 'Studio B'], 'year=2026&platform=PC&publisher=Studio%20A&genre=Adventure'];
         yield 'books author and genre' => ['books', 7030, 'bookinfo', 'bookinfo_id', ['publishdate' => '2026-01-01', 'author' => 'Writer A', 'genre' => 'Adventure'], ['publishdate' => '2020-01-01', 'author' => 'Writer B', 'genre' => 'History'], 'year=2026&author=Writer%20A&genre=Adventure'];
         yield 'adult year is posted year' => ['xxx', 6030, '', '', [], [], 'year=2026'];
     }
@@ -471,14 +577,15 @@ final class ReleaseBrowserControllerTest extends TestCase
         $user = $this->browserUser();
         DB::table('videos')->insert(['id' => 1, 'title' => 'Followed show']);
         DB::table('user_series')->insert(['users_id' => $user->id, 'videos_id' => 1]);
-        $this->release('Followed encoding', ['videos_id' => 1, 'categories_id' => 5030]);
+        DB::table('tv_episodes')->insert(['id' => 1, 'videos_id' => 1, 'series' => 1, 'episode' => 1, 'title' => 'Pilot']);
+        $this->release('Followed encoding', ['videos_id' => 1, 'tv_episodes_id' => 1, 'categories_id' => 5030]);
         $this->actingAs($user)->postJson('/profile/update-view', ['root' => 'tv', 'view' => 'covers'])->assertOk();
 
         $this->get('/myshows/browse?q=Followed&watching=0')->assertRedirect('/browse/tv?q=Followed&watching=1');
         $response = $this->followingRedirects()->get('/myshows/browse?q=Followed')->assertOk();
         $response->assertSee('data-cover-tile="1"', false)->assertSee('Followed show');
         $this->followingRedirects()->get('/myshows/browse?view=covers&_fragment=cover&cover=1')->assertOk()
-            ->assertSee('data-release-table', false)->assertSee('Followed encoding');
+            ->assertSee('data-episode-releases', false)->assertSee('Followed encoding');
     }
 
     #[DataProvider('cardsRoots')]
@@ -575,7 +682,6 @@ final class ReleaseBrowserControllerTest extends TestCase
     public static function entityCoverRoots(): iterable
     {
         yield 'movies' => ['movies', 'movieinfo', 'imdbid', 2030, 'titles'];
-        yield 'tv' => ['tv', 'videos', 'videos_id', 5030, 'titles'];
         yield 'audio' => ['audio', 'musicinfo', 'musicinfo_id', 3030, 'albums'];
         yield 'console' => ['console', 'consoleinfo', 'consoleinfo_id', 1030, 'games'];
         yield 'games' => ['games', 'gamesinfo', 'gamesinfo_id', 4030, 'games'];
@@ -587,7 +693,7 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->createCoverCatalogSchema('movieinfo');
         for ($id = 1; $id <= 26; $id++) {
             DB::table('movieinfo')->insert(['id' => $id, 'imdbid' => (string) $id, 'title' => sprintf('Movie %02d', $id)]);
-            $this->release('Encoding '.$id, ['imdbid' => (string) $id]);
+            $this->release(sprintf('Encoding %02d', $id), ['imdbid' => (string) $id]);
         }
         $this->actingAs($this->browserUser())->postJson('/profile/update-view', ['root' => 'movies', 'view' => 'covers', 'size' => 'l', 'per' => 24])->assertOk();
         foreach (['s', 'l', 'xl'] as $size) {
@@ -703,7 +809,7 @@ final class ReleaseBrowserControllerTest extends TestCase
                 'adddate' => $id === 1 ? '2026-09-12 12:00:00' : '2026-09-13 12:00:00', 'grabs' => $id === 1 ? 50 : 100]);
         }
         $this->actingAs($this->browserUser());
-        foreach (['title' => 'Alpha', 'newest' => 'Alpha', ...($root === 'movies' ? ['year' => 'Alpha', 'rating' => 'Zulu'] : []), ...($root === 'audio' ? ['year' => 'Alpha', 'artist' => 'Zulu'] : [])] as $sort => $first) {
+        foreach (['title' => 'Zulu', 'newest' => 'Alpha', 'oldest' => 'Zulu', 'posted' => 'Zulu', 'posted_oldest' => 'Alpha', 'grabs' => 'Alpha'] as $sort => $first) {
             $response = $this->get('/browse/'.$root.'?view=covers&sort='.$sort)->assertOk();
             $this->assertSame($first, $response->viewData('results')->items()[0]->title, $root.' '.$sort);
         }
@@ -738,7 +844,7 @@ final class ReleaseBrowserControllerTest extends TestCase
         $user = $this->browserUser();
         DB::table('user_excluded_categories')->insert(['users_id' => $user->id, 'categories_id' => $category + 10]);
         $this->actingAs($user);
-        $url = '/browse/'.$root.'?view=covers&sort=grabs';
+        $url = '/browse/'.$root.'?view=covers&sort=grabs&trending=1';
         $response = $this->get($url)->assertOk();
         $covers = $response->viewData('results');
         $this->assertSame(2, $covers->total());
@@ -750,12 +856,12 @@ final class ReleaseBrowserControllerTest extends TestCase
 
     public static function trendingRoots(): array
     {
-        return [['movies', 'movieinfo', 'imdbid', 2030], ['tv', 'videos', 'videos_id', 5030]];
+        return [['movies', 'movieinfo', 'imdbid', 2030]];
     }
 
     public static function letterCoverRoots(): array
     {
-        return array_filter(iterator_to_array(self::entityCoverRoots()), static fn (array $case): bool => in_array($case[0], ['tv', 'audio', 'books'], true));
+        return array_filter(iterator_to_array(self::entityCoverRoots()), static fn (array $case): bool => in_array($case[0], ['audio', 'books'], true));
     }
 
     #[DataProvider('letterCoverRoots')]
@@ -849,9 +955,7 @@ final class ReleaseBrowserControllerTest extends TestCase
             $this->assertEquals(['page' => '2', 'per' => '24', $root === 'movies' ? 'title' : 'q' => 'Wanted', 'sort' => 'title', 'view' => 'covers'], $query);
             $this->get('/'.$legacy.'?t=9999')->assertNotFound();
         }
-        $this->get('/series/M?title=Show')->assertRedirect('/browse/tv?q=Show&view=covers&letter=M');
-        $this->get('/series/0-9')->assertRedirect('/browse/tv?view=covers&letter=%23');
-        $this->get('/trending-movies')->assertRedirect('/browse/movies?view=covers&sort=grabs');
+        $this->get('/trending-movies')->assertRedirect('/browse/movies?view=covers&sort=grabs&trending=1');
     }
 
     public function test_legacy_movie_title_filter_stays_title_specific_and_combines_with_the_query(): void
@@ -903,6 +1007,14 @@ final class ReleaseBrowserControllerTest extends TestCase
             });
         }
         if ($entityTable === 'videos') {
+            Schema::create('tv_episodes', function (Blueprint $table): void {
+                $table->id();
+                $table->integer('videos_id');
+                $table->integer('series');
+                $table->integer('episode');
+                $table->string('title');
+            });
+
             Schema::create('tv_info', function (Blueprint $table): void {
                 $table->integer('videos_id');
                 $table->string('publisher')->nullable();

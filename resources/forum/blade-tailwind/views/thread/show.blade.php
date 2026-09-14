@@ -122,7 +122,7 @@
 
         @if ((count($posts) > 1 || $posts->currentPage() > 1) && (Gate::allows('deletePosts', $thread) || Gate::allows('restorePosts', $thread)) && count($selectablePosts) > 0)
                 <div v-cloak v-show="state.selectedPosts.length" class="fixed bottom-0 right-0 z-[1000] m-2">
-                    <div class="bg-(--surface-card) dark:bg-(--surface-card-dark) shadow-sm rounded-md min-w-96 max-w-full">
+                    <div class="bg-(--surface-card) dark:bg-(--surface-card-dark) shadow-sm rounded-md w-96 max-w-[calc(100vw-1rem)]">
                         <div class="border-b text-center py-4 px-6">
                             {{ trans('forum::general.with_selection') }}
                         </div>
@@ -338,7 +338,7 @@
                     <div class="input-group-prepend">
                         <label class="input-group-text text-gray-700 dark:text-gray-300" for="category-id">{{ trans_choice('forum::categories.category', 1) }}</label>
                     </div>
-                    <select name="category_id" id="category-id" class="form-select bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600">
+                    <select name="category_id" id="category-id" class="form-select max-w-full bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600">
                         @include ('forum::category.partials.options', ['hide' => $thread->category])
                     </select>
                 </div>
