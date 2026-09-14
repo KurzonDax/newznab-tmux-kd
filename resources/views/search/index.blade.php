@@ -37,7 +37,7 @@
                 @if(isset($spellSuggestion) && !empty($spellSuggestion))
                     <div class="mt-2 text-sm">
                         <span class="text-gray-600 dark:text-gray-400">Did you mean: </span>
-                        <a href="{{ route('search', array_merge(request()->except('search'), ['search' => $spellSuggestion])) }}"
+                        <a href="{{ route('search', array_merge(request()->except(['q', 'search', 'subject', 'id', 'searchadvr', 'page']), ['q' => $spellSuggestion])) }}"
                            class="text-primary-600 dark:text-primary-400 hover:underline font-medium">
                             {{ $spellSuggestion }}
                         </a>
@@ -147,29 +147,7 @@
         </div>
     </form>
 
-    <!-- Search Results -->
-    @if(isset($results) && ((is_array($results) && count($results) > 0) || (is_object($results) && $results->count() > 0)))
-        <x-release-results-panel :results="$results" date-field="adddate">
-            <x-slot:summary>
-                <span class="font-semibold">{{ is_object($results) ? $results->total() : count($results) }}</span> results found
-                @if(is_object($results))
-                    - Page {{ $results->currentPage() }} of {{ $results->lastPage() }}
-                @endif
-            </x-slot:summary>
-        </x-release-results-panel>
-    @elseif(request()->has('search'))
-        <x-empty-state
-            icon="fas fa-search"
-            title="No results found"
-            message="Try adjusting your search terms or using different filters."
-        />
-    @else
-        <x-empty-state
-            icon="fas fa-search"
-            title="Start Your Search"
-            message="Enter search terms above to find releases."
-        />
-    @endif
+    <x-release-browser :rows="$results" :state="$browserState" />
 
     {{-- All modals (preview, mediainfo, filelist, NFO) are included globally via layouts.main --}}
 </div>

@@ -4,23 +4,17 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Data\ReleaseBrowserState;
+use App\Enums\BrowseRoot;
 use App\Models\Category;
 use App\Models\Settings;
 use App\Models\UserSerie;
 use App\Models\Video;
-use App\Services\Releases\ReleaseBrowseService;
+use App\Services\Releases\ReleaseBrowserQuery;
 use Illuminate\Http\Request;
 
 class MyShowsController extends BasePageController
 {
-    private ReleaseBrowseService $releaseBrowseService;
-
-    public function __construct(ReleaseBrowseService $releaseBrowseService)
-    {
-        parent::__construct();
-        $this->releaseBrowseService = $releaseBrowseService;
-    }
-
     public function show(Request $request): mixed
     {
         $action = $this->scalarInput($request, 'action');
@@ -142,37 +136,20 @@ class MyShowsController extends BasePageController
      */
     public function browse(Request $request): mixed
     {
-        $title = 'Browse My Shows';
-        $meta_title = 'My Shows';
-        $meta_keywords = 'search,add,to,cart,nzb,description,details';
-        $meta_description = 'Browse Your Shows';
-
-        $shows = UserSerie::getShows($this->userdata->id);
-
-        $page = $this->resolvePage($request);
-        $perPage = (int) config('nntmux.items_per_page');
-        $offset = $this->paginationOffset($page, $perPage);
-        $ordering = $this->releaseBrowseService->getBrowseOrdering();
-        $orderby = $this->resolveOrderBy($request, $ordering);
-        $browseCount = $shows ? $shows->count() : 0;
-
-        $rslt = $this->releaseBrowseService->getShowsRange($shows ?? [], $offset, $perPage, $orderby, -1, (array) $this->userdata->categoryexclusions);
-        $results = $this->paginate($rslt ?? [], $browseCount, $perPage, $page, $request->url(), $request->query());
-
-        $this->viewData['covgroup'] = '';
-
-        foreach ($ordering as $ordertype) {
-            $this->viewData['orderby'.$ordertype] = url('/myshows/browse?ob='.$ordertype.'&amp;offset=0');
+        $browserRequest = clone $request;
+        $browserRequest->merge(['watching' => true]);
+        $state = ReleaseBrowserState::fromRequest($browserRequest, BrowseRoot::Tv, $this->userdata);
+        $query = app(ReleaseBrowserQuery::class);
+        $results = $query->paginate($state, $this->userdata);
+        if ($state->page > $results->lastPage()) {
+            return redirect()->to($state->pageUrl($request, $results->lastPage()));
         }
 
-        $this->viewData['lastvisit'] = $this->userdata->lastlogin;
-        $this->viewData['results'] = $results;
-        $this->viewData['resultsadd'] = $rslt;
-        $this->viewData['shows'] = true;
-        $this->viewData['content'] = view('browse.index', $this->viewData)->render();
-        $this->viewData = array_merge($this->viewData, compact('title', 'meta_title', 'meta_keywords', 'meta_description'));
-
-        return $this->pagerender();
+        return view('browse.index', array_merge($this->viewData, [
+            'browserState' => $state, 'browserTitle' => 'Browse My Shows', 'meta_title' => 'My Shows',
+            'results' => $results, 'filterOptions' => $query->filterOptions($state, $this->userdata),
+            'sortOptions' => $query->sortOptions($state),
+        ]));
     }
 
     /**

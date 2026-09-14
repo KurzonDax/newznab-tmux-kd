@@ -88,6 +88,7 @@ use Spatie\Permission\Traits\HasRoles;
  * @property Carbon|null $email_verified_at
  * @property bool $verified
  * @property string|null $verification_token
+ * @property array<string, array{view: string, size: string, per: int, thumbs: bool}>|null $view_prefs
  * @property string|null $timezone
  * @property bool $can_post
  * @property array<int>|string|null $categoryexclusions Computed from join/subquery for category exclusion lists
@@ -138,6 +139,7 @@ final class User extends Authenticatable implements CanResetPasswordContract, Ha
      * @var list<string>
      */
     protected $hidden = [
+        'view_prefs',
         'remember_token',
         'session_token',
         'password',
@@ -183,6 +185,7 @@ final class User extends Authenticatable implements CanResetPasswordContract, Ha
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
             'password' => 'hashed',
+            'view_prefs' => 'array',
             'movieview' => 'boolean',
             'xxxview' => 'boolean',
             'musicview' => 'boolean',
@@ -200,6 +203,15 @@ final class User extends Authenticatable implements CanResetPasswordContract, Ha
             'pending_roles_id' => 'integer',
             'invitedby' => 'integer',
         ];
+    }
+
+    /** @return array{view: string, size: string, per: int, thumbs: bool} */
+    public function releaseViewPreferences(string $root): array
+    {
+        return array_replace(
+            ['view' => 'table', 'size' => 's', 'per' => 48, 'thumbs' => false],
+            $this->view_prefs[$root] ?? [],
+        );
     }
 
     public function getPasskeyName(): string

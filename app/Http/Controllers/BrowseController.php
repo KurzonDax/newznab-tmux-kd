@@ -4,201 +4,79 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Data\ReleaseBrowserState;
+use App\Enums\BrowseRoot;
 use App\Models\Category;
-use App\Models\RootCategory;
-use App\Services\Releases\ReleaseBrowseService;
+use App\Services\PosterIdentityBrowserContext;
+use App\Services\Releases\ReleaseBrowserQuery;
 use Illuminate\Http\Request;
-use Illuminate\Pagination\LengthAwarePaginator;
 
 class BrowseController extends BasePageController
 {
-    private ReleaseBrowseService $releaseBrowseService;
-
-    public function __construct(ReleaseBrowseService $releaseBrowseService)
-    {
-        parent::__construct();
-        $this->releaseBrowseService = $releaseBrowseService;
-    }
-
     /**
      * @throws \Exception
      */
     public function index(Request $request): mixed
     {
-        $ordering = $this->releaseBrowseService->getBrowseOrdering();
-        $orderBy = $this->resolveOrderBy($request, $ordering);
-        $page = $this->resolvePage($request);
-        $results = $this->getBrowsePaginator($request, $page, [-1], $orderBy);
-
-        // Build order by URLs
-        $orderByUrls = $this->buildOrderByUrls($ordering, 'browse/All');
-
-        $this->viewData = array_merge($this->viewData, [
-            'category' => -1,
-            'catname' => 'All',
-            'results' => $results,
-            'lastvisit' => $this->userdata->lastlogin,
-            'meta_title' => 'Browse All Releases',
-            'meta_keywords' => 'browse,nzb,description,details',
-            'meta_description' => 'Browse for Nzbs',
-        ], $orderByUrls);
-
-        return view('browse.index', $this->viewData);
+        return $this->renderBrowser($request, BrowseRoot::All);
     }
 
-    /**
-     * @throws \Exception
-     */
     public function show(Request $request, string $parentCategory, string $id = 'All'): mixed
     {
-
-        $parentIdValue = RootCategory::query()->where('title', $parentCategory)->value('id');
-        $parentId = $parentIdValue === null ? null : (int) $parentIdValue;
-
-        $query = Category::query()->where('title', $id)->where('root_categories_id', $parentId);
-        if ($id !== 'All') {
-            $cat = $query->first();
-            $category = $cat !== null ? (int) $cat->id : -1;
-        } else {
-            $category = $parentId ?? -1;
+        $root = BrowseRoot::fromRoute($parentCategory);
+        abort_if($root === null || $root === BrowseRoot::All, 404);
+        $category = null;
+        if (strtolower($id) !== 'all') {
+            $query = Category::query()->where('root_categories_id', $root->categoryId());
+            $category = ctype_digit($id)
+                ? $query->whereKey((int) $id)->firstOrFail()
+                : $query->where('title', $id)->firstOrFail();
+            abort_if(in_array((int) $category->id, (array) $this->userdata->categoryexclusions), 403);
         }
 
-        $grp = -1;
-
-        $catarray = [];
-        $catarray[] = $category;
-
-        $ordering = $this->releaseBrowseService->getBrowseOrdering();
-        $orderBy = $this->resolveOrderBy($request, $ordering);
-        $page = $this->resolvePage($request);
-        $results = $this->getBrowsePaginator($request, $page, $catarray, $orderBy, $grp);
-
-        $covgroup = '';
-        $shows = false;
-        if ($category === -1) {
-            $catname = 'All';
-        } else {
-            $catname = $id;
-
-            // Determine the root category ID - either from the category's root_categories_id
-            // or the category itself if it IS a root category
-            $rootCategoryId = null;
-            $cdata = Category::find($category);
-            if ($cdata !== null) {
-                $rootCategoryId = $cdata->root_categories_id ?? $category;
-            } else {
-                // Category not found in categories table, might be a root category
-                // Check if it matches a known root category ID
-                $rootCategoryId = $category;
-            }
-
-            // Also check RootCategory table for parent categories (when $id is 'All')
-            if ($id === 'All' && $parentId !== null) {
-                $rootCategoryId = $parentId;
-            }
-
-            // Set covgroup based on root category
-            if ($rootCategoryId === Category::GAME_ROOT) {
-                $covgroup = 'console';
-            } elseif ($rootCategoryId === Category::MOVIE_ROOT) {
-                $covgroup = 'movies';
-            } elseif ($rootCategoryId === Category::PC_ROOT) {
-                $covgroup = 'games';
-            } elseif ($rootCategoryId === Category::MUSIC_ROOT) {
-                $covgroup = 'music';
-            } elseif ($rootCategoryId === Category::BOOKS_ROOT) {
-                $covgroup = 'books';
-            } elseif ($rootCategoryId === Category::XXX_ROOT) {
-                $covgroup = 'xxx';
-            } elseif ($rootCategoryId === Category::TV_ROOT) {
-                $shows = true;
-            }
-        }
-
-        // Build order by URLs
-        $orderByUrls = [];
-        if ($id === 'All' && $parentCategory === 'All') {
-            $meta_title = 'Browse '.$parentCategory.' releases';
-            $orderByUrls = $this->buildOrderByUrls($ordering, 'browse/'.$parentCategory);
-        } else {
-            $meta_title = 'Browse '.$parentCategory.' / '.$id.' releases';
-            $orderByUrls = $this->buildOrderByUrls($ordering, 'browse/'.$parentCategory.'/'.$id);
-        }
-
-        $viewData = [
-            'parentcat' => ucfirst($parentCategory),
-            'category' => $category,
-            'catname' => $catname,
-            'results' => $results,
-            'lastvisit' => $this->userdata->lastlogin,
-            'covgroup' => $covgroup,
-            'meta_title' => $meta_title,
-            'meta_keywords' => 'browse,nzb,description,details',
-            'meta_description' => 'Browse for Nzbs',
-        ];
-
-        if ($shows) {
-            $viewData['shows'] = true;
-        }
-
-        $this->viewData = array_merge($this->viewData, $viewData, $orderByUrls);
-
-        return view('browse.index', $this->viewData);
+        return $this->renderBrowser($request, $root, $category);
     }
 
-    /**
-     * @throws \Exception
-     */
+    private function renderBrowser(Request $request, BrowseRoot $root, ?Category $category = null): mixed
+    {
+        $state = ReleaseBrowserState::fromRequest($request, $root, $this->userdata, $category?->id);
+        $browserQuery = app(ReleaseBrowserQuery::class);
+        $results = $browserQuery->paginate($state, $this->userdata);
+        if ($state->page > $results->lastPage()) {
+            return redirect()->to($state->pageUrl($request, $results->lastPage()));
+        }
+        $title = $category === null ? $root->label() : $root->label().' · '.$category->title;
+        if ($state->group !== '') {
+            $title = 'Releases in '.$state->group;
+        }
+        if ($state->posterIdentity !== '') {
+            $title = 'Posts by '.$state->posterIdentity;
+        }
+
+        $data = array_merge($this->viewData, [
+            'category' => $category->id ?? $root->categoryId() ?? -1,
+            'catname' => $category->title ?? $root->label(),
+            'results' => $results, 'lastvisit' => $this->userdata->lastlogin,
+            'browserState' => $state, 'browserTitle' => $title, 'meta_title' => $title,
+            'filterOptions' => $browserQuery->filterOptions($state, $this->userdata),
+            'sortOptions' => $browserQuery->sortOptions($state),
+        ]);
+        if ($state->posterIdentity !== '') {
+            $context = app(PosterIdentityBrowserContext::class)->forIdentity($state->posterIdentity, $this->userdata, $request->session()->get('poster_identity_blacklist_sweep_started') === true);
+
+            return view('poster-identity.index', array_merge($data, $context));
+        }
+
+        return view('browse.index', $data);
+    }
+
     public function group(Request $request): mixed
     {
-        if ($request->has('g')) {
-            $groupInput = $request->input('g');
-            if (! is_scalar($groupInput)) {
-                return redirect()->back()->with('error', 'Group parameter is invalid');
-            }
-
-            $group = (string) $groupInput;
-            $page = $this->resolvePage($request);
-            $results = $this->getBrowsePaginator($request, $page, [-1], '', $group);
-
-            $this->viewData = array_merge($this->viewData, [
-                'results' => $results,
-                'parentcat' => $group,
-                'catname' => 'all',
-                'lastvisit' => $this->userdata->lastlogin,
-                'meta_title' => 'Browse Groups',
-                'meta_keywords' => 'browse,nzb,description,details',
-                'meta_description' => 'Browse Groups',
-            ]);
-
-            return view('browse.index', $this->viewData);
+        $group = $request->input('g');
+        if (! is_string($group) || $group === '') {
+            return redirect()->back()->with('error', 'Group parameter is required');
         }
 
-        return redirect()->back()->with('error', 'Group parameter is required');
-    }
-
-    /**
-     * @param  array<int>  $categories
-     * @return LengthAwarePaginator<int, mixed>
-     */
-    private function getBrowsePaginator(Request $request, int $page, array $categories, string $orderBy, int|string $group = -1): LengthAwarePaginator
-    {
-        $perPage = (int) config('nntmux.items_per_page');
-        $offset = $this->paginationOffset($page, $perPage);
-        $rslt = $this->releaseBrowseService->getBrowseRange(
-            $page,
-            $categories,
-            $offset,
-            $perPage,
-            $orderBy,
-            -1,
-            (array) $this->userdata->categoryexclusions,
-            $group,
-            0,
-            null,
-            $this->resolveMinCompletion($request)
-        );
-
-        return $this->paginate($rslt ?? [], $rslt[0]->_totalcount ?? 0, $perPage, $page, $request->url(), $request->query());
+        return redirect()->route('browse.all', [...$request->except('g'), 'group' => $group]);
     }
 }

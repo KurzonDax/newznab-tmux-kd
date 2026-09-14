@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Data\ReleaseBrowserState;
+use App\Enums\BrowseRoot;
 use App\Models\Category;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Releases\ReleaseSearchService;
 use App\Services\Search\Contracts\SearchServiceInterface;
+use App\Support\WebReleaseSearchResults;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Cache;
@@ -36,7 +39,13 @@ class SearchController extends BasePageController
      */
     public function search(Request $request): mixed
     {
-
+        $browserRequest = clone $request;
+        if ($request->missing('q')) {
+            $browserRequest->merge(['q' => $this->scalarInput($request, 'search', $this->scalarInput($request, 'subject', $this->scalarInput($request, 'id')))]);
+        }
+        $scopedCategories = $this->resolveCategoryIdsFromRequest($request);
+        $root = count($scopedCategories) === 1 ? BrowseRoot::fromCategoryId($scopedCategories[0]) : BrowseRoot::All;
+        $browserState = ReleaseBrowserState::fromRequest($browserRequest, $root, $this->userdata);
         $results = [];
 
         $searchType = 'basic';
@@ -45,9 +54,9 @@ class SearchController extends BasePageController
         }
 
         $ordering = $this->releaseBrowseService->getBrowseOrdering();
-        $orderBy = $this->resolveOrderBy($request, $ordering);
-        $page = $this->resolvePage($request);
-        $perPage = (int) config('nntmux.items_per_page');
+        $orderBy = $request->missing('sort') && $request->has('ob') ? $this->resolveOrderBy($request, $ordering) : ($browserState->sort === 'title' ? 'name_asc' : 'added_desc');
+        $page = $browserState->page;
+        $perPage = $browserState->per;
         $offset = $this->paginationOffset($page, $perPage);
 
         $subject = '';
@@ -56,9 +65,13 @@ class SearchController extends BasePageController
         $category = [0];
         $lastvisit = $this->userdata->lastlogin;
 
-        if ($searchType === 'basic' && ($request->filled('id') || $request->filled('subject') || $request->filled('search'))) {
+        if ($searchType === 'basic' && $request->anyFilled(['q', 'id', 'subject', 'search'])) {
             $searchString = [];
             switch (true) {
+                case $request->has('q'):
+                    $searchString['searchname'] = $this->scalarInput($request, 'q');
+                    $search = $searchString['searchname'];
+                    break;
                 case $request->filled('subject'):
                     $searchString['searchname'] = $this->scalarInput($request, 'subject');
                     $subject = $searchString['searchname'];
@@ -99,7 +112,7 @@ class SearchController extends BasePageController
                 0,
                 $this->resolveMinCompletion($request));
 
-            $results = $this->paginate($rslt ?? [], $rslt[0]->_totalrows ?? 0, $perPage, $page, $request->url(), $request->query());
+            $results = $this->paginate($rslt ?? [], $rslt instanceof WebReleaseSearchResults ? $rslt->total : ($rslt[0]->_totalrows ?? 0), $perPage, $page, $request->url(), $request->query());
             $category = $categoryID;
         } else {
             $orderByUrls = [];
@@ -141,8 +154,8 @@ class SearchController extends BasePageController
             $searchVars['searchadvsizeto'] = $this->scalarInput($request, 'maxsize');
         }
         // Map basic search field to advanced search when in advanced mode
-        if ($request->has('search') && $searchType === 'advanced') {
-            $searchVars['searchadvr'] = $this->scalarInput($request, 'search');
+        if ($request->anyFilled(['q', 'search']) && $searchType === 'advanced') {
+            $searchVars['searchadvr'] = $this->scalarInput($request, 'q', $this->scalarInput($request, 'search'));
         }
         // Map basic category field to advanced category when in advanced mode
         if ($request->has('t') && $searchType === 'advanced') {
@@ -154,7 +167,7 @@ class SearchController extends BasePageController
         $searchVars['selectedsizefrom'] = $searchVars['searchadvsizefrom'];
         $searchVars['selectedsizeto'] = $searchVars['searchadvsizeto'];
 
-        if ($searchType !== 'basic' && $request->missing('id') && $request->missing('subject') && $request->anyFilled(['searchadvr', 'searchadvsubject', 'searchadvfilename', 'searchadvposter', 'search'])) {
+        if ($searchType !== 'basic' && ($request->filled('q') || ($request->missing('id') && $request->missing('subject'))) && $request->anyFilled(['q', 'searchadvr', 'searchadvsubject', 'searchadvfilename', 'searchadvposter', 'search'])) {
             $orderByString = '';
             foreach ($searchVars as $searchVarKey => $searchVar) {
                 $orderByString .= "&$searchVarKey=".htmlentities($searchVar, ENT_QUOTES | ENT_HTML5);
@@ -194,9 +207,15 @@ class SearchController extends BasePageController
                 $this->resolveMinCompletion($request)
             );
 
-            $results = $this->paginate($rslt ?? [], $rslt[0]->_totalrows ?? 0, $perPage, $page, $request->url(), $request->query());
+            $results = $this->paginate($rslt ?? [], $rslt instanceof WebReleaseSearchResults ? $rslt->total : ($rslt[0]->_totalrows ?? 0), $perPage, $page, $request->url(), $request->query());
         }
 
+        if (is_array($results)) {
+            $results = new LengthAwarePaginator([], 0, $perPage, 1, ['path' => $request->url(), 'query' => $request->query()]);
+        }
+        if ($page > $results->lastPage()) {
+            return redirect()->to($browserState->pageUrl($request, $results->lastPage()));
+        }
         $suggestEnabled = $this->searchService->isSuggestEnabled();
         $spellSuggestion = $this->resolveSpellSuggestion($search ?: $searchVars['searchadvr'], $results, $suggestEnabled);
 
@@ -208,6 +227,7 @@ class SearchController extends BasePageController
             'covgroup' => '',
             'lastvisit' => $lastvisit,
             'results' => $results,
+            'browserState' => $browserState,
             'sadvanced' => $searchType !== 'basic',
             'catlist' => $this->getCategorySelectOptions(),
             'meta_title' => 'Search Nzbs',

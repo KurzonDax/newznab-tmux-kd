@@ -7,33 +7,18 @@
 @section('content')
 <div @if($blacklistPreview) x-data="posterIdentityBlacklist" @endif>
 <div class="surface-panel rounded-xl shadow-sm">
-    <x-breadcrumb :items="[
-        ['label' => 'Home', 'url' => url($site['home_link'] ?? '/'), 'icon' => 'fas fa-home'],
-        ['label' => 'Posted By'],
-    ]" />
-
-    <x-page-header
-        title="Posted By"
-        :description="$posterIdentity !== '' ? $posterIdentity : 'No Posted By identity supplied'"
-        icon="fas fa-user"
-    >
-        @if($posterIdentity !== '' && auth()->user()->hasRole('Admin'))
-            <x-slot:actions>
+    <x-breadcrumb :items="[['label' => 'Browse', 'url' => route('browse.all')], ['label' => 'All releases']]" />
+    <x-page-header :title="$posterIdentity !== '' ? 'Posts by '.$posterIdentity : 'No Posted By identity supplied'" icon="fas fa-user">
+        <x-slot:actions>
+            <x-button-link :href="route('browse.all')" variant="ghost" icon="fas fa-xmark">Clear filter</x-button-link>
+            @if($posterIdentity !== '' && auth()->user()->hasRole('Admin'))
                 @if($blacklistRule)
-                    <x-button-link
-                        :href="route('admin.binaryblacklist-edit', ['id' => $blacklistRule->id])"
-                        variant="muted"
-                        icon="fas fa-ban"
-                    >
-                        Blacklisted (rule #{{ $blacklistRule->id }})
-                    </x-button-link>
+                    <x-button-link :href="route('admin.binaryblacklist-edit', ['id' => $blacklistRule->id])" variant="muted" icon="fas fa-ban">Blacklisted (rule #{{ $blacklistRule->id }})</x-button-link>
                 @else
-                    <x-button type="button" variant="danger" icon="fas fa-ban" @click="openConfirmation">
-                        Blacklist this poster
-                    </x-button>
+                    <x-button type="button" variant="danger" icon="fas fa-ban" @click="openConfirmation">Blacklist this poster</x-button>
                 @endif
-            </x-slot:actions>
-        @endif
+            @endif
+        </x-slot:actions>
     </x-page-header>
 
     @if($showSweepStatus)
@@ -45,15 +30,7 @@
         </div>
     @endif
 
-    @if($results->count() > 0)
-        <x-release-results-panel :results="$results" :show-thumbs="true" date-field="adddate" :show-top-pagination="true" :show-completion-filter="false" />
-    @else
-        <x-empty-state
-            icon="fas fa-user-slash"
-            title="No releases found"
-            message="No visible releases match this exact Posted By identity."
-        />
-    @endif
+    <x-release-browser :rows="$results" :state="$browserState" />
 </div>
 
 @if($blacklistPreview)

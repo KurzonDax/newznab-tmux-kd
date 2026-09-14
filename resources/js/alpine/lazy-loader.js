@@ -43,6 +43,7 @@ const lazyComponentMap = {
     'copyToClipboard': () => import('./components/profile-edit.js'),    // same file
     'cartPage':        () => import('./components/cart-page.js'),
     'releaseMultiOps': () => import('./components/cart-page.js'),  // same file
+    'releaseBrowser':  () => import('./components/release-browser.js'),
     'seriesSeasonLoader': () => import('./components/series-season-loader.js'),
     'authPage':        () => import('./components/auth-page.js'),
     'otpInput':        () => import('./components/auth-page.js'),       // same file

@@ -32,5 +32,7 @@ final readonly class ReleaseRowData
         public ?ReleaseEntityData $entity,
         public bool $in_basket,
         public bool $watched,
+        public int $reports = 0,
+        public int $public_responses = 0,
     ) {}
 }

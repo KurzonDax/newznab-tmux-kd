@@ -15,6 +15,7 @@ use App\Services\Search\DTO\ReleaseSearchQuery;
 use App\Services\Search\DTO\SearchCursor;
 use App\Support\ReleaseCompletion;
 use App\Support\ReleaseSearchIndexDocument;
+use App\Support\WebReleaseSearchResults;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
@@ -147,7 +148,7 @@ class ReleaseSearchService
             }
 
             if (config('nntmux.mysql_search_fallback', false) !== true) {
-                return collect();
+                return new WebReleaseSearchResults(total: (int) $filtered['total']);
             }
         }
 
@@ -205,6 +206,8 @@ class ReleaseSearchService
         // Add total count for pagination
         if ($releases->isNotEmpty()) {
             $releases[0]->_totalrows = $this->getPagerCount($baseSql);
+        } elseif ($offset > 0) {
+            $releases = new WebReleaseSearchResults(total: $this->getPagerCount($baseSql));
         }
 
         // Cache results
