@@ -14,6 +14,8 @@ import Alpine from '@alpinejs/csp';
  * Each module registers itself via Alpine.data() as a side effect.
  */
 const lazyComponentMap = {
+    'searchFeed': () => import('./components/search-filters.js'),
+    'searchFilters': () => import('./components/search-filters.js'),
     'trailerModal': () => import('./components/trailer-modal.js'),
     'releaseDetails': () => import('./components/release-details.js'),
     'titleOverview': () => import('./components/title-overview.js'),

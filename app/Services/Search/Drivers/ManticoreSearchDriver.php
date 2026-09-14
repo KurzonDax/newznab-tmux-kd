@@ -1502,7 +1502,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
      * @param  array<string, mixed>  $searchArray
      * @return array<string, mixed>
      */
-    public function searchIndexes(string $rt_index, ?string $searchString, array $column = [], array $searchArray = [], int $limit = 1000): array
+    public function searchIndexes(string $rt_index, ?string $searchString, array $column = [], array $searchArray = [], int $limit = 1000, ?int $afterId = null): array
     {
         if (empty($rt_index)) {
             Log::warning('ManticoreSearch: Index name is required for search');
@@ -1533,6 +1533,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
             'array' => $searchArray,
             'limit' => $normalizedLimit,
             'profile' => $profile,
+            ...($afterId === null ? [] : ['after_id' => $afterId]),
         ]));
 
         $cached = Cache::get($cacheKey);
@@ -1578,14 +1579,16 @@ class ManticoreSearchDriver implements SearchDriverInterface
                 ->stripBadUtf8(true)
                 ->search($searchExpr);
 
-            if (! $avoidSortForIndex) {
+            if ($afterId !== null) {
+                $query->filter('id', '>', $afterId)->sort('id', 'asc');
+            } elseif (! $avoidSortForIndex) {
                 $query->sort('id', 'desc');
             }
 
             $results = $query->get();
         } catch (ResponseException $e) {
             // If we hit Manticore's "too many sort-by attributes" limit, retry once without explicit sorting
-            if (stripos($e->getMessage(), 'too many sort-by attributes') !== false) {
+            if ($afterId === null && stripos($e->getMessage(), 'too many sort-by attributes') !== false) {
                 try {
                     $query = (new Search($this->manticoreSearch))
                         ->setTable($rt_index)
@@ -2194,7 +2197,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
     /**
      * {@inheritdoc}
      */
-    public function searchMoviesByFields(array $fieldTerms, int $limit = 5000): array
+    public function searchMoviesByFields(array $fieldTerms, int $limit = 5000, ?int $afterId = null): array
     {
         $allowed = ['all' => true, 'title' => true, 'director' => true, 'actors' => true, 'plot' => true];
         $filtered = [];
@@ -2215,7 +2218,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
             $searchTerms[$selector] = $this->expandMoviePartialTerms($value);
         }
 
-        $raw = $this->searchIndexes($this->getMoviesIndex(), null, [], $searchTerms, $limit);
+        $raw = $this->searchIndexes($this->getMoviesIndex(), null, [], $searchTerms, $limit, $afterId);
         $imdbids = [];
         $movieinfoIds = [];
         $data = $raw['data'] ?? [];
@@ -2874,6 +2877,10 @@ class ManticoreSearchDriver implements SearchDriverInterface
             ];
         };
 
+        if ($hasText && ($criteria['web_force_fuzzy'] ?? false) === true) {
+            return $execute(true);
+        }
+
         if ($hasText) {
             $first = $execute(false);
             if ($first['ids'] !== [] || ($first['available'] ?? true) === false || ! $tryFuzzy || ! $this->isFuzzyEnabled() || self::queryHasNegation($phrases)) {
@@ -2943,6 +2950,9 @@ class ManticoreSearchDriver implements SearchDriverInterface
      */
     private function applyManticoreReleaseIndexFilters(Search $query, array $criteria): void
     {
+        if (isset($criteria['web_after_id'])) {
+            $query->filter('id', '>', max(0, (int) $criteria['web_after_id']));
+        }
         $releaseIds = $criteria['release_ids'] ?? null;
         if (is_array($releaseIds) && $releaseIds !== []) {
             $valid = array_values(array_filter(

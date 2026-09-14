@@ -324,7 +324,7 @@ class ManticoreSearchQueryTest extends TestCase
 
             public function __construct() {}
 
-            public function searchIndexes(string $rt_index, ?string $searchString, array $column = [], array $searchArray = [], int $limit = 1000): array
+            public function searchIndexes(string $rt_index, ?string $searchString, array $column = [], array $searchArray = [], int $limit = 1000, ?int $afterId = null): array
             {
                 $this->capturedLimit = $limit;
 
