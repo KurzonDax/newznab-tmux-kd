@@ -5,7 +5,7 @@
 @endpush
 
 @section('content')
-<div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm">
+<div class="bg-(--surface-card) dark:bg-(--surface-card-dark) rounded-xl shadow-sm">
     @php
         $crumbs = [['label' => 'Home', 'url' => url($site['home_link'] ?? '/'), 'icon' => 'fas fa-home'], ['label' => 'XXX', 'url' => url('/XXX')]];
         if (!empty($categorytitle) && $categorytitle !== 'All') {
@@ -30,7 +30,7 @@
                 <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Category:</span>
                 @foreach($catlist ?? [] as $c)
                     <a href="{{ url('/XXX/' . $c['title']) }}?t={{ $c['id'] }}"
-                       class="px-3 py-1 rounded-lg text-sm {{ (string)($category ?? '') === (string)$c['id'] ? 'bg-primary-600 dark:bg-primary-700 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600' }}">
+                       class="px-3 py-1 rounded-lg text-sm {{ (string)($category ?? '') === (string)$c['id'] ? 'bg-primary-600 dark:bg-primary-700 text-white' : 'bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-300 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark)' }}">
                         {{ $c['title'] }}
                     </a>
                 @endforeach
@@ -40,7 +40,7 @@
                 <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Order by:</span>
                 @foreach($ordering ?? [] as $ob)
                     <a href="{{ $orderByUrls['orderby'.$ob] ?? url('/XXX/' . ($categorytitle ?: 'All') . '?ob=' . $ob) }}"
-                       class="px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600">
+                       class="px-2 py-1 rounded text-xs bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-300 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark)">
                         {{ str_replace('_', ' ', $ob) }}
                     </a>
                 @endforeach
@@ -54,7 +54,7 @@
 
             <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                    <thead class="bg-gray-100 dark:bg-gray-900">
+                    <thead class="bg-(--surface-panel-alt) dark:bg-(--surface-body-dark)">
                         <tr>
                             <th class="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Name</th>
                             <th class="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Category</th>
@@ -63,12 +63,12 @@
                             <th class="px-3 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider">Action</th>
                         </tr>
                     </thead>
-                    <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    <tbody class="bg-(--surface-card) dark:bg-(--surface-card-dark) divide-y divide-gray-200 dark:divide-gray-700">
                         @foreach($results as $result)
-                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
+                            <tr class="hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark)/50 transition">
                                 <td class="px-3 py-4">
                                     <div class="flex items-start gap-3">
-                                        <div class="shrink-0 w-12 h-16 bg-gray-200 dark:bg-gray-700 rounded flex items-center justify-center">
+                                        <div class="shrink-0 w-12 h-16 bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) rounded flex items-center justify-center">
                                             <i class="fas fa-film text-gray-400 text-lg"></i>
                                         </div>
                                         <div class="flex-1 min-w-0">

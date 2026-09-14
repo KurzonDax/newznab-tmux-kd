@@ -1,4 +1,5 @@
 import { modalLifecycle } from "./modal-lifecycle.js";
+import { adminConfirmTheme } from './admin-confirm-theme.js';
 /**
  * Alpine.data('confirmModal') - Styled confirmation modal (replaces native confirm)
  * Global singleton - one per page, invoked via window.showConfirm() or $dispatch.
@@ -61,9 +62,7 @@ Alpine.data('confirmModal', () => ({
         if (this.type === 'danger') return 'fa-exclamation-triangle text-red-600 dark:text-red-400';
         if (this.type === 'warning') return 'fa-exclamation-circle text-yellow-600 dark:text-yellow-400';
         if (this.type === 'success') return 'fa-check-circle text-green-600 dark:text-green-400';
-        return this.$el?.querySelector('[data-modal-dialog]')
-            ? 'fa-info-circle text-primary-600 dark:text-primary-400'
-            : 'fa-info-circle text-blue-600 dark:text-blue-400';
+        return this.$el?.matches('[data-admin-confirm]') ? adminConfirmTheme.icon : 'fa-info-circle text-primary-600 dark:text-primary-400';
     },
 
     confirmBtnClass() {
@@ -71,7 +70,7 @@ Alpine.data('confirmModal', () => ({
         if (this.type === 'danger') return base + 'bg-red-600 dark:bg-red-700 hover:bg-red-700 dark:hover:bg-red-800';
         if (this.type === 'warning') return base + 'bg-yellow-600 dark:bg-yellow-700 hover:bg-yellow-700 dark:hover:bg-yellow-800';
         if (this.type === 'success') return base + 'bg-green-600 dark:bg-green-700 hover:bg-green-700 dark:hover:bg-green-800';
-        return base + 'bg-blue-600 dark:bg-blue-700 hover:bg-blue-700 dark:hover:bg-blue-800';
+        return base + (this.$el?.matches('[data-admin-confirm]') ? adminConfirmTheme.button : 'bg-primary-600 dark:bg-primary-700 hover:bg-primary-700 dark:hover:bg-primary-800');
     },
 
     init() {

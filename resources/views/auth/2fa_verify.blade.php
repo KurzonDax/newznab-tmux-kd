@@ -72,7 +72,7 @@
                             required
                             autofocus
                             placeholder="000000"
-                            class="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-center text-2xl tracking-widest font-mono bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
+                            class="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-center text-2xl tracking-widest font-mono bg-(--surface-card) dark:bg-(--surface-card-dark) text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
                         >
                         <p class="mt-2 text-xs text-gray-500 dark:text-gray-400 text-center">
                             Enter the 6-digit code from your authenticator app
@@ -86,7 +86,7 @@
                             name="trust_device"
                             id="trust_device"
                             value="1"
-                            class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 checked:bg-primary-600 dark:checked:bg-primary-600"
+                            class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 dark:border-gray-600 rounded bg-(--surface-card) dark:bg-(--surface-card-dark) checked:bg-primary-600 dark:checked:bg-primary-600"
                         >
                         <label for="trust_device" class="ml-2 block text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
                             Trust this device for 30 days

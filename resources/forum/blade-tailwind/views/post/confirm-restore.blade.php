@@ -12,7 +12,7 @@
             @csrf
             @method('POST')
 
-            <div class="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-md mb-3 transition-colors">
+            <div class="bg-(--surface-card) dark:bg-(--surface-card-dark) border dark:border-gray-700 rounded-md mb-3 transition-colors">
                 <div class="p-4 text-gray-900 dark:text-gray-100">
                     {{ trans('forum::general.generic_confirm') }}
                 </div>

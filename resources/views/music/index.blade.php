@@ -11,7 +11,7 @@
 
     <div class="px-6 py-4">
         <!-- Search Filters -->
-        <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 mb-6">
+        <div class="bg-(--surface-panel-alt) dark:bg-(--surface-body-dark) rounded-lg p-4 mb-6">
             <form method="get" action="{{ url('/browse/Audio/' . ($categorytitle ?: 'All')) }}">
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <!-- Artist Filter -->
@@ -22,7 +22,7 @@
                                name="artist"
                                value="{{ $artist ?? '' }}"
                                placeholder="Search by artist"
-                               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500">
+                               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-primary-500 focus:border-primary-500 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500">
                     </div>
 
                     <!-- Title Filter -->
@@ -33,7 +33,7 @@
                                name="title"
                                value="{{ $title ?? '' }}"
                                placeholder="Search by title"
-                               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500">
+                               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-primary-500 focus:border-primary-500 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500">
                     </div>
 
                     <!-- Genre Filter -->
@@ -41,7 +41,7 @@
                         <label for="genre" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Genre</label>
                         <select id="genre"
                                 name="genre"
-                                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
+                                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-primary-500 focus:border-primary-500 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100">
                             <option value="">All Genres</option>
                             @foreach($genres ?? [] as $g)
                                 <option value="{{ $g->id }}" {{ ($genre ?? '') == $g->id ? 'selected' : '' }}>
@@ -56,7 +56,7 @@
                         <label for="year" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Year</label>
                         <select id="year"
                                 name="year"
-                                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
+                                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-primary-500 focus:border-primary-500 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100">
                             <option value="">All Years</option>
                             @foreach($years ?? [] as $y)
                                 <option value="{{ $y }}" {{ ($year ?? '') == $y ? 'selected' : '' }}>
@@ -98,7 +98,7 @@
                         $totalFailed = collect($releases)->sum(fn($r) => (int)($r->failed_count ?? 0));
                     @endphp
 
-                    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden hover:shadow-lg transition-shadow">
+                    <div class="bg-(--surface-card) dark:bg-(--surface-card-dark) border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden hover:shadow-lg transition-shadow">
                         <div class="flex flex-row">
                             <!-- Album Cover -->
                             <div class="shrink-0">
@@ -111,13 +111,13 @@
                                                  loading="lazy"
                                                  data-fallback-src="{{ asset('assets/images/no-cover.png') }}">
                                         @else
-                                            <div class="w-32 h-48 bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                                            <div class="w-32 h-48 bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) flex items-center justify-center">
                                                 <i class="fas fa-music text-gray-400 text-2xl"></i>
                                             </div>
                                         @endif
                                     </a>
                                 @else
-                                    <div class="w-32 h-48 bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                                    <div class="w-32 h-48 bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) flex items-center justify-center">
                                         <i class="fas fa-music text-gray-400 text-2xl"></i>
                                     </div>
                                 @endif

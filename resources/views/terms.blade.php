@@ -3,7 +3,7 @@
 @section('content')
     <div class="container mx-auto px-4 py-6">
         <div class="max-w-4xl mx-auto">
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+            <div class="bg-(--surface-card) dark:bg-(--surface-card-dark) rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
                 <x-breadcrumb :items="[['label' => 'Home', 'url' => url('/')]]" />
                 <x-page-header title="Terms and Conditions" icon="fas fa-file-lines" />
 
@@ -85,7 +85,7 @@
                 </div>
 
                 <!-- Footer -->
-                <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-center">
+                <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-(--surface-panel-alt) dark:bg-(--surface-body-dark) text-center">
                 <span class="text-sm text-gray-600 dark:text-gray-400">
                     <i class="fas fa-calendar-alt mr-1"></i>
                     Last updated: {{ now()->format('F j, Y') }}

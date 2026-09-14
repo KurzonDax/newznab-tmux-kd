@@ -57,7 +57,7 @@
                                 value="{{ old('email') }}"
                                 required
                                 autofocus
-                                class="block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition {{ isset($errors) && $errors->has('email') ? 'border-red-500' : '' }}"
+                                class="block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-600 dark:bg-(--surface-card-dark) dark:text-white dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition {{ isset($errors) && $errors->has('email') ? 'border-red-500' : '' }}"
                                 placeholder="your@email.com"
                             >
                         </div>

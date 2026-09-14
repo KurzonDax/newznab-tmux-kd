@@ -44,7 +44,7 @@
                         maxlength="255"
                         required
                         placeholder="Work laptop, iPhone, etc."
-                        class="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-900 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                        class="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-900 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-(--surface-panel-alt-dark) dark:text-gray-100"
                     >
                     <x-button
                         type="submit"
@@ -80,7 +80,7 @@
             <template x-if="passkeys.length > 0">
                 <div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
                     <table class="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-700">
-                        <thead class="bg-gray-50 dark:bg-gray-800">
+                        <thead class="bg-(--surface-panel-alt) dark:bg-(--surface-card-dark)">
                             <tr>
                                 <th class="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Name</th>
                                 <th class="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Created</th>
@@ -88,7 +88,7 @@
                                 <th class="px-4 py-3 text-right font-semibold text-gray-700 dark:text-gray-300">Actions</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-900">
+                        <tbody class="divide-y divide-gray-200 bg-(--surface-card) dark:divide-gray-700 dark:bg-(--surface-body-dark)">
                             <template x-for="passkey in passkeys" :key="passkey.id">
                                 <tr>
                                     <td class="px-4 py-3 text-gray-900 dark:text-gray-100" x-text="passkey.name"></td>

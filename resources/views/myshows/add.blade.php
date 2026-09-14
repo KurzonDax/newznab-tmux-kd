@@ -1,5 +1,5 @@
 <div class="max-w-4xl mx-auto">
-    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700 mb-6">
+    <div class="bg-(--surface-card) dark:bg-(--surface-card-dark) rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700 mb-6">
         <x-breadcrumb :items="[
             ['label' => 'Home', 'url' => url($site['home_link'] ?? '/')],
             ['label' => 'My Shows', 'url' => url('/myshows')],
@@ -49,7 +49,7 @@
                     <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">Choose Categories:</label>
                     <div class="flex flex-wrap gap-3" id="category-container">
                         @foreach($cat_ids ?? [] as $index => $cat_id)
-                            <label class="inline-flex items-center px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer hover:bg-gray-100 dark:bg-gray-800 transition-all duration-200 has-checked:bg-primary-50 has-checked:border-primary-500 has-checked:text-primary-700">
+                            <label class="inline-flex items-center px-4 py-2 bg-(--surface-panel-alt) dark:bg-(--surface-body-dark) border border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer hover:bg-(--public-surface-hover) dark:bg-(--surface-card-dark) transition-all duration-200 has-checked:bg-primary-50 has-checked:border-primary-500 has-checked:text-primary-700">
                                 <input type="checkbox"
                                        id="category_{{ $cat_id }}"
                                        name="category[]"

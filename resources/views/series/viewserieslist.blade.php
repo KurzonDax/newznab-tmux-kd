@@ -20,9 +20,9 @@
             <div class="flex items-center flex-wrap gap-2">
                 <span class="font-semibold mr-2 text-gray-800 dark:text-gray-200">Jump to:</span>
                 <div class="flex gap-1">
-                    <a href="{{ route('series', array_merge(['id' => '0-9'], $seriesFilterQuery)) }}" class="px-3 py-1 rounded {{ $seriesletter == '0-9' ? 'bg-primary-600 dark:bg-primary-700 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600' }}">0-9</a>
+                    <a href="{{ route('series', array_merge(['id' => '0-9'], $seriesFilterQuery)) }}" class="px-3 py-1 rounded {{ $seriesletter == '0-9' ? 'bg-primary-600 dark:bg-primary-700 text-white' : 'bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-300 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark)' }}">0-9</a>
                     @foreach($seriesrange as $range)
-                        <a href="{{ route('series', array_merge(['id' => $range], $seriesFilterQuery)) }}" class="px-3 py-1 rounded {{ $range == $seriesletter ? 'bg-primary-600 dark:bg-primary-700 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600' }}">{{ $range }}</a>
+                        <a href="{{ route('series', array_merge(['id' => $range], $seriesFilterQuery)) }}" class="px-3 py-1 rounded {{ $range == $seriesletter ? 'bg-primary-600 dark:bg-primary-700 text-white' : 'bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-300 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark)' }}">{{ $range }}</a>
                     @endforeach
                 </div>
             </div>
@@ -79,7 +79,7 @@
                             </thead>
                             <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
                                 @foreach($series as $s)
-                                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                    <tr class="hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark)">
                                         <td class="px-4 py-3">
                                             <a href="{{ route('series', ['id' => $s['id']]) }}" class="flex h-16 items-center">
                                                 <img src="{{ $s['artwork_url'] }}"
@@ -107,12 +107,12 @@
                                         </td>
                                         <td class="px-4 py-3 text-center">
                                             @if(!empty($s['publisher']))
-                                                <span class="inline-block px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded">{{ $s['publisher'] }}</span>
+                                                <span class="inline-block px-2 py-1 text-xs bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-800 dark:text-gray-200 rounded">{{ $s['publisher'] }}</span>
                                             @endif
                                         </td>
                                         <td class="px-4 py-3 text-center">
                                             @if(!empty($s['countries_id']))
-                                                <span class="inline-block px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded">{{ $s['countries_id'] }}</span>
+                                                <span class="inline-block px-2 py-1 text-xs bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-800 dark:text-gray-200 rounded">{{ $s['countries_id'] }}</span>
                                             @endif
                                         </td>
                                         <td class="px-4 py-3 text-center">
@@ -136,15 +136,15 @@
                                                 </a>
                                                 @if($s['id'] > 0)
                                                     @if(!empty($s['tvdb']) && $s['tvdb'] > 0)
-                                                        <a class="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-xs"
+                                                        <a class="px-2 py-1 bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-300 rounded hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) text-xs"
                                                            title="View at TVDB" target="_blank" href="{{ $site['dereferrer_link'] }}http://thetvdb.com/?tab=series&id={{ $s['tvdb'] }}">TVDB</a>
                                                     @endif
                                                     @if(!empty($s['tvmaze']) && $s['tvmaze'] > 0)
-                                                        <a class="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-xs"
+                                                        <a class="px-2 py-1 bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-300 rounded hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) text-xs"
                                                            title="View at TVMaze" target="_blank" href="{{ $site['dereferrer_link'] }}http://tvmaze.com/shows/{{ $s['tvmaze'] }}">TVMaze</a>
                                                     @endif
                                                     @if(!empty($s['trakt']) && $s['trakt'] > 0)
-                                                        <a class="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-xs"
+                                                        <a class="px-2 py-1 bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-300 rounded hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) text-xs"
                                                            title="View at Trakt" target="_blank" href="{{ $site['dereferrer_link'] }}http://www.trakt.tv/shows/{{ $s['trakt'] }}">Trakt</a>
                                                     @endif
                                                 @endif
@@ -177,10 +177,10 @@
                                         </a>
                                         <div class="flex flex-wrap gap-1.5 mt-1">
                                             @if(!empty($s['publisher']))
-                                                <span class="px-2 py-0.5 text-xs bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded">{{ $s['publisher'] }}</span>
+                                                <span class="px-2 py-0.5 text-xs bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-800 dark:text-gray-200 rounded">{{ $s['publisher'] }}</span>
                                             @endif
                                             @if(!empty($s['countries_id']))
-                                                <span class="px-2 py-0.5 text-xs bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded">{{ $s['countries_id'] }}</span>
+                                                <span class="px-2 py-0.5 text-xs bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-800 dark:text-gray-200 rounded">{{ $s['countries_id'] }}</span>
                                             @endif
                                         </div>
                                     </div>
@@ -204,15 +204,15 @@
                                 @if($s['id'] > 0)
                                     <div class="flex flex-wrap gap-1.5">
                                         @if(!empty($s['tvdb']) && $s['tvdb'] > 0)
-                                            <a class="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-xs" target="_blank"
+                                            <a class="px-2 py-0.5 bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-300 rounded text-xs" target="_blank"
                                                href="{{ $site['dereferrer_link'] }}http://thetvdb.com/?tab=series&id={{ $s['tvdb'] }}">TVDB</a>
                                         @endif
                                         @if(!empty($s['tvmaze']) && $s['tvmaze'] > 0)
-                                            <a class="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-xs" target="_blank"
+                                            <a class="px-2 py-0.5 bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-300 rounded text-xs" target="_blank"
                                                href="{{ $site['dereferrer_link'] }}http://tvmaze.com/shows/{{ $s['tvmaze'] }}">TVMaze</a>
                                         @endif
                                         @if(!empty($s['trakt']) && $s['trakt'] > 0)
-                                            <a class="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-xs" target="_blank"
+                                            <a class="px-2 py-0.5 bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-300 rounded text-xs" target="_blank"
                                                href="{{ $site['dereferrer_link'] }}http://www.trakt.tv/shows/{{ $s['trakt'] }}">Trakt</a>
                                         @endif
                                     </div>

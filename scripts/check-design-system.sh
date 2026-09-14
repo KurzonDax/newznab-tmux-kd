@@ -63,6 +63,32 @@ if [ "$count" -gt 1 ]; then
         "$(grep -n '!important' resources/css/app.css)"
 fi
 
+# Public redesign rules. Admin templates and standalone mail/error documents
+# keep their existing contracts. Shared pagination views are presentation
+# components used by both public and admin pages, like resources/views/components.
+PUBLIC_EXCLUDE="$VIEWS_EXCLUDE|resources/views/(admin/|components/admin/|layouts/admin\\.blade\\.php|partials/admin-menu\\.blade\\.php)"
+SURFACE_EXCLUDE="$PUBLIC_EXCLUDE|resources/views/(components/|vendor/pagination/)|resources/forum/blade-tailwind/views/components/"
+
+hits=$(grep -rnE 'bg-(white|gray-[0-9]+)([^[:alnum:]_-]|$)' "${VIEW_ROOTS[@]}" --include='*.blade.php' \
+    | grep -vE "$SURFACE_EXCLUDE" || true)
+[ -n "$hits" ] && report "hardcoded surface (use semantic surface classes or tokens)" "$hits"
+
+hits=$(grep -rnE '(bg|text|border|ring|from|to|via|divide|outline|decoration|fill|stroke|accent)-(indigo|purple)-[0-9]' \
+    resources/views resources/forum/blade-tailwind/views --include='*.blade.php' \
+    | grep -vE "$PUBLIC_EXCLUDE" || true)
+[ -n "$hits" ] && report "indigo-*/purple-* accent utility (use primary-*)" "$hits"
+
+hits=$(grep -rnE 'fa-([a-z-]+-o|external-link)([^[:alnum:]_-]|$)' \
+    resources/views resources/js resources/forum/blade-tailwind \
+    --include='*.blade.php' --include='*.js' \
+    | grep -vE "$PUBLIC_EXCLUDE|resources/js/(admin/|alpine/components/admin[-/])" || true)
+[ -n "$hits" ] && report "FA4 icon name (use a current Font Awesome icon)" "$hits"
+
+hits=$(grep -rnE '(bg|text|border|ring|from|to|via|divide|outline|decoration|fill|stroke|accent)-blue-[0-9]' \
+    resources/js --include='*.js' \
+    | grep -vE 'resources/js/(admin/|alpine/components/admin[-/])' || true)
+[ -n "$hits" ] && report "JavaScript blue-* accent utility (use primary-*)" "$hits"
+
 if [ "$fail" -ne 0 ]; then
     echo "design-system: see AGENTS.md > Frontend > Design system" >&2
     exit 1

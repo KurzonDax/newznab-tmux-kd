@@ -4,7 +4,7 @@
     @extends('layouts.main')
 
     @section('content')
-    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6">
+    <div class="bg-(--surface-card) dark:bg-(--surface-card-dark) rounded-xl shadow-sm p-6">
         @php
             $nfoCrumbs = [['label' => 'Home', 'url' => url('/')]];
             if (isset($rel)) {
@@ -14,7 +14,7 @@
         <x-breadcrumb :items="$nfoCrumbs" />
         <x-page-header title="NFO File" icon="fas fa-file-lines" />
 
-        <div class="bg-gray-900 text-green-400 p-6 rounded-lg overflow-x-auto font-mono text-sm">
+        <div class="bg-(--surface-body-dark) text-green-400 p-6 rounded-lg overflow-x-auto font-mono text-sm">
             <pre class="whitespace-pre">{{ $nfo['nfoUTF'] ?? $nfo['nfo'] ?? 'NFO content not available' }}</pre>
         </div>
 

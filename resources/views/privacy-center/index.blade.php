@@ -13,7 +13,7 @@
         @endif
 
         <div class="p-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-5 bg-white dark:bg-gray-800">
+            <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-5 bg-(--surface-card) dark:bg-(--surface-card-dark)">
                 <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-3">
                     <i class="fas fa-file-export mr-2 text-primary-600 dark:text-primary-400"></i>Download Your Data
                 </h2>
@@ -23,7 +23,7 @@
                 <form method="post" action="{{ route('privacy-center.export') }}">
                     @csrf
                     <label for="export_notes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Optional notes</label>
-                    <textarea id="export_notes" name="notes" rows="3" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md" placeholder="Anything administrators should know?"></textarea>
+                    <textarea id="export_notes" name="notes" rows="3" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 rounded-md" placeholder="Anything administrators should know?"></textarea>
                     <x-button type="submit" icon="fas fa-download" class="mt-4">
                         Generate Export
                     </x-button>
@@ -40,9 +40,9 @@
                 <form method="post" action="{{ route('privacy-center.erasure') }}">
                     @csrf
                     <label for="erasure_notes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Optional notes</label>
-                    <textarea id="erasure_notes" name="notes" rows="3" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md" placeholder="Reason or additional details"></textarea>
+                    <textarea id="erasure_notes" name="notes" rows="3" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 rounded-md" placeholder="Reason or additional details"></textarea>
                     <label for="confirmation" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mt-4 mb-1">Type ERASE to confirm</label>
-                    <input id="confirmation" name="confirmation" type="text" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md" autocomplete="off">
+                    <input id="confirmation" name="confirmation" type="text" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 rounded-md" autocomplete="off">
                     <x-button type="submit" variant="danger" icon="fas fa-paper-plane" class="mt-4">
                         Submit Erasure Request
                     </x-button>
@@ -57,7 +57,7 @@
         </div>
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead class="bg-gray-50 dark:bg-gray-900">
+                <thead class="bg-(--surface-panel-alt) dark:bg-(--surface-body-dark)">
                     <tr>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Type</th>
@@ -65,13 +65,13 @@
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Result</th>
                     </tr>
                 </thead>
-                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                <tbody class="bg-(--surface-card) dark:bg-(--surface-card-dark) divide-y divide-gray-200 dark:divide-gray-700">
                     @forelse($gdprRequests as $gdprRequest)
                         <tr>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">{{ $gdprRequest->created_at?->format('Y-m-d H:i') }}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">{{ ucfirst($gdprRequest->type) }}</td>
                             <td class="px-6 py-4 whitespace-nowrap">
-                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200">{{ ucfirst($gdprRequest->status) }}</span>
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-800 dark:text-gray-200">{{ ucfirst($gdprRequest->status) }}</span>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
                                 @if($gdprRequest->isDownloadableExport())

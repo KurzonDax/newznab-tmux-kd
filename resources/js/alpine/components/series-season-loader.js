@@ -100,7 +100,7 @@ Alpine.data('seriesSeasonLoader', () => ({
         const activeClasses = ['border-primary-500', 'dark:border-primary-400', 'text-primary-600', 'dark:text-primary-400'];
         const inactiveClasses = ['border-transparent', 'text-gray-500', 'hover:text-gray-700', 'dark:text-gray-300', 'hover:border-gray-300'];
         const activeBadgeClasses = ['bg-primary-100', 'dark:bg-primary-900/40', 'text-primary-800', 'dark:text-primary-200'];
-        const inactiveBadgeClasses = ['bg-gray-100', 'dark:bg-gray-800', 'text-gray-600'];
+        const inactiveBadgeClasses = ['bg-(--surface-panel-alt)', 'dark:bg-(--surface-card-dark)', 'text-gray-600'];
 
         this.$el.querySelectorAll('[data-series-season-link]').forEach(tab => {
             const isActive = tab.dataset.season === season;

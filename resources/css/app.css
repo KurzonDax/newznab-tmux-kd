@@ -713,3 +713,10 @@ mark {
 .public-ui .page-breadcrumb {
     padding-block: 12px;
 }
+
+/* Public neutral hover fills follow each scheme's card surface. */
+:root {
+    --public-surface-hover: color-mix(in srgb, var(--surface-card), black 6%);
+    --public-surface-hover-dark: color-mix(in srgb, var(--surface-card-dark), white 10%);
+    --public-scrim: rgb(2 6 23 / 45%);
+}

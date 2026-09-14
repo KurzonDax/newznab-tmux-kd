@@ -37,7 +37,7 @@
                                     @if($show->image)
                                         <img src="{{ getImageAssetUrl('tvshows', (string) $show->id, url('/covers/tvshows/no-cover.jpg')) }}" alt="{{ $show->title }}" class="w-full md:w-64 h-96 object-cover" loading="lazy" data-fallback-src="{{ url('/covers/tvshows/no-cover.jpg') }}">
                                     @else
-                                        <div class="w-full md:w-64 h-96 bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                                        <div class="w-full md:w-64 h-96 bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) flex items-center justify-center">
                                             <i class="fas fa-tv text-gray-400 text-5xl"></i>
                                         </div>
                                     @endif
@@ -83,7 +83,7 @@
                                                 </a>
                                             @endif
                                             @if($show->tvmaze)
-                                                <a href="{{ $site['dereferrer_link'] }}https://www.tvmaze.com/shows/{{ $show->tvmaze }}" target="_blank" class="inline-flex items-center px-3 py-1.5 bg-purple-100 text-purple-800 rounded-lg hover:bg-purple-200 transition">
+                                                <a href="{{ $site['dereferrer_link'] }}https://www.tvmaze.com/shows/{{ $show->tvmaze }}" target="_blank" class="inline-flex items-center px-3 py-1.5 bg-primary-100 text-primary-800 rounded-lg hover:bg-primary-200 transition">
                                                     <i class="fas fa-tv mr-1"></i> TVMaze
                                                 </a>
                                             @endif

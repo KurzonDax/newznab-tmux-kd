@@ -31,33 +31,33 @@
                         @if (!$thread->trashed())
                             @can ('lockThreads', $category)
                                 @if ($thread->locked)
-                                    <x-forum::button-link href="#" data-open-modal="unlock-thread" class="inline-flex items-center gap-2 bg-gray-500 hover:bg-gray-400">
+                                    <x-forum::button-link href="#" data-open-modal="unlock-thread" class="inline-flex items-center gap-2 bg-(--surface-body-dark) hover:bg-(--public-surface-hover)">
                                         <i class="fas fa-unlock w-4" aria-hidden="true"></i> {{ trans('forum::threads.unlock') }}
                                     </x-forum::button-link>
                                 @else
-                                    <x-forum::button-link href="#" data-open-modal="lock-thread" class="inline-flex items-center gap-2 bg-gray-500 hover:bg-gray-400">
+                                    <x-forum::button-link href="#" data-open-modal="lock-thread" class="inline-flex items-center gap-2 bg-(--surface-body-dark) hover:bg-(--public-surface-hover)">
                                         <i class="fas fa-lock w-4" aria-hidden="true"></i> {{ trans('forum::threads.lock') }}
                                     </x-forum::button-link>
                                 @endif
                             @endcan
                             @can ('pinThreads', $category)
                                 @if ($thread->pinned)
-                                    <x-forum::button-link href="#" data-open-modal="unpin-thread" class="inline-flex items-center gap-2 bg-gray-500 hover:bg-gray-400">
+                                    <x-forum::button-link href="#" data-open-modal="unpin-thread" class="inline-flex items-center gap-2 bg-(--surface-body-dark) hover:bg-(--public-surface-hover)">
                                         <i class="fas fa-arrow-down" aria-hidden="true"></i> {{ trans('forum::threads.unpin') }}
                                     </x-forum::button-link>
                                 @else
-                                    <x-forum::button-link href="#" data-open-modal="pin-thread" class="inline-flex items-center gap-2 bg-gray-500 hover:bg-gray-400">
+                                    <x-forum::button-link href="#" data-open-modal="pin-thread" class="inline-flex items-center gap-2 bg-(--surface-body-dark) hover:bg-(--public-surface-hover)">
                                         <i class="fas fa-arrow-up w-4" aria-hidden="true"></i> {{ trans('forum::threads.pin') }}
                                     </x-forum::button-link>
                                 @endif
                             @endcan
                             @can ('rename', $thread)
-                                <x-forum::button-link href="#"  data-open-modal="rename-thread" class="inline-flex items-center gap-2 bg-gray-500 hover:bg-gray-400">
+                                <x-forum::button-link href="#"  data-open-modal="rename-thread" class="inline-flex items-center gap-2 bg-(--surface-body-dark) hover:bg-(--public-surface-hover)">
                                     <i class="fas fa-edit w-4" aria-hidden="true"></i> {{ trans('forum::general.rename') }}
                                 </x-forum::button-link>
                             @endcan
                             @can ('moveThreadsFrom', $category)
-                                <x-forum::button-link href="#" data-open-modal="move-thread" class="inline-flex items-center gap-2 bg-gray-500 hover:bg-gray-400">
+                                <x-forum::button-link href="#" data-open-modal="move-thread" class="inline-flex items-center gap-2 bg-(--surface-body-dark) hover:bg-(--public-surface-hover)">
                                     <i class="fas fa-share w-4" aria-hidden="true"></i> {{ trans('forum::general.move') }}
                                 </x-forum::button-link>
                             @endcan
@@ -111,7 +111,7 @@
                     <label for="selectAllPosts" class="text-gray-700 dark:text-gray-300">
                         {{ trans('forum::posts.select_all') }}
                     </label>
-                    <input type="checkbox" value="" id="selectAllPosts" class="align-middle rounded border-gray-300 dark:border-gray-600 text-primary-500 dark:text-primary-400 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-gray-700" @click="toggleAll" :checked="state.selectedPosts.length == posts.data.length">
+                    <input type="checkbox" value="" id="selectAllPosts" class="align-middle rounded border-gray-300 dark:border-gray-600 text-primary-500 dark:text-primary-400 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-(--surface-panel-alt-dark)" @click="toggleAll" :checked="state.selectedPosts.length == posts.data.length">
                 </div>
             </div>
         @endif
@@ -122,7 +122,7 @@
 
         @if ((count($posts) > 1 || $posts->currentPage() > 1) && (Gate::allows('deletePosts', $thread) || Gate::allows('restorePosts', $thread)) && count($selectablePosts) > 0)
                 <div v-cloak v-show="state.selectedPosts.length" class="fixed bottom-0 right-0 z-[1000] m-2">
-                    <div class="bg-white shadow-sm rounded-md min-w-96 max-w-full">
+                    <div class="bg-(--surface-card) dark:bg-(--surface-card-dark) shadow-sm rounded-md min-w-96 max-w-full">
                         <div class="border-b text-center py-4 px-6">
                             {{ trans('forum::general.with_selection') }}
                         </div>
@@ -205,7 +205,7 @@
             <div class="text-gray-900 dark:text-gray-100">
                 @if (config('forum.general.soft_deletes'))
                     <div class="form-check">
-                        <input class="form-check-input rounded border-gray-300 dark:border-gray-600 text-primary-500 dark:text-primary-400 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-gray-700" type="checkbox" name="permadelete" value="1" id="permadelete">
+                        <input class="form-check-input rounded border-gray-300 dark:border-gray-600 text-primary-500 dark:text-primary-400 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-(--surface-panel-alt-dark)" type="checkbox" name="permadelete" value="1" id="permadelete">
                         <label class="form-check-label text-gray-700 dark:text-gray-300" for="permadelete">
                             {{ trans('forum::general.perma_delete') }}
                         </label>
@@ -338,7 +338,7 @@
                     <div class="input-group-prepend">
                         <label class="input-group-text text-gray-700 dark:text-gray-300" for="category-id">{{ trans_choice('forum::categories.category', 1) }}</label>
                     </div>
-                    <select name="category_id" id="category-id" class="form-select bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600">
+                    <select name="category_id" id="category-id" class="form-select bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600">
                         @include ('forum::category.partials.options', ['hide' => $thread->category])
                     </select>
                 </div>

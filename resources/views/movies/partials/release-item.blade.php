@@ -47,7 +47,7 @@
                     @endphp
                     @if($releaseHasImage || $releaseHasVideo)
                         <button type="button"
-                                class="preview-badge inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 hover:bg-purple-200 dark:hover:bg-purple-800 transition cursor-pointer"
+                                class="preview-badge inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 hover:bg-primary-200 dark:hover:bg-primary-800 transition cursor-pointer"
                                 data-guid="{{ $release->guid }}"
                                 data-release-display-name="{{ release_display_name($release) }}"
                                 @if($releaseHasImage)

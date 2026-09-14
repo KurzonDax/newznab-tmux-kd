@@ -12,7 +12,7 @@
             </div>
         @else
             <!-- Series Info Card -->
-            <div class="series-main-card bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm mb-4">
+            <div class="series-main-card bg-(--surface-card) dark:bg-(--surface-card-dark) border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm mb-4">
                 <div class="p-6">
                     <!-- Series Stats -->
                     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
@@ -24,17 +24,17 @@
                                 </div>
                             </div>
                         @endif
-                        <div class="series-stat-card bg-linear-to-br from-purple-50 to-purple-100 rounded-lg p-4 border border-purple-200">
-                            <div class="text-xs font-semibold text-purple-600 uppercase mb-1">Total Seasons Aired</div>
-                            <div class="text-lg font-bold text-purple-900">{{ $totalSeasonsAired ?? 0 }}</div>
+                        <div class="series-stat-card bg-linear-to-br from-primary-50 to-primary-100 rounded-lg p-4 border border-primary-200">
+                            <div class="text-xs font-semibold text-primary-600 uppercase mb-1">Total Seasons Aired</div>
+                            <div class="text-lg font-bold text-primary-900">{{ $totalSeasonsAired ?? 0 }}</div>
                         </div>
                         <div class="series-stat-card bg-linear-to-br from-pink-50 to-pink-100 rounded-lg p-4 border border-pink-200">
                             <div class="text-xs font-semibold text-pink-600 uppercase mb-1">Seasons Available</div>
                             <div class="text-lg font-bold text-pink-900">{{ $totalSeasonsAvailable ?? 0 }}</div>
                         </div>
-                        <div class="series-stat-card bg-linear-to-br from-indigo-50 to-indigo-100 rounded-lg p-4 border border-indigo-200">
-                            <div class="text-xs font-semibold text-indigo-600 uppercase mb-1">Total Episodes Aired</div>
-                            <div class="text-lg font-bold text-indigo-900">{{ $totalEpisodesAired ?? 0 }}</div>
+                        <div class="series-stat-card bg-linear-to-br from-primary-50 to-primary-100 rounded-lg p-4 border border-primary-200">
+                            <div class="text-xs font-semibold text-primary-600 uppercase mb-1">Total Episodes Aired</div>
+                            <div class="text-lg font-bold text-primary-900">{{ $totalEpisodesAired ?? 0 }}</div>
                         </div>
                         <div class="series-stat-card bg-linear-to-br from-violet-50 to-violet-100 rounded-lg p-4 border border-violet-200">
                             <div class="text-xs font-semibold text-violet-600 uppercase mb-1">Episodes Available</div>
@@ -134,7 +134,7 @@
                                     @endif
 
                                     @if(!empty($show['tvmaze']) && $show['tvmaze'] > 0)
-                                        <a class="px-4 py-2 bg-purple-100 text-purple-800 rounded-lg hover:bg-purple-200 inline-flex items-center text-sm font-medium transition"
+                                        <a class="px-4 py-2 bg-primary-100 text-primary-800 rounded-lg hover:bg-primary-200 inline-flex items-center text-sm font-medium transition"
                                            target="_blank"
                                            href="{{ $site['dereferrer_link'] }}http://tvmaze.com/shows/{{ $show['tvmaze'] }}"
                                            title="View at TVMaze">
@@ -203,8 +203,8 @@
             @if(!empty($seasonTabs))
                 <div id="series-episodes" x-data="seriesSeasonLoader" data-series-season-loader>
                 <form id="nzb_multi_operations_form" method="get" x-data="releaseMultiOps">
-                <div class="series-episodes-card bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
-                    <div class="px-4 py-3 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                <div class="series-episodes-card bg-(--surface-card) dark:bg-(--surface-card-dark) border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+                    <div class="px-4 py-3 bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) border-b border-gray-200 dark:border-gray-600">
                         <div class="flex items-center justify-between">
                             <h5 class="text-lg font-semibold text-gray-800 dark:text-white">
                                 <i class="fa fa-list mr-2 text-primary-600 dark:text-primary-400"></i>
@@ -231,8 +231,8 @@
 
                     <!-- Season Tabs -->
                     <div class="border-b border-gray-200">
-                        <div class="flex items-center px-4 py-2 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
-                            <input type="checkbox" class="rounded border-gray-300 dark:border-gray-600 text-primary-600 dark:text-primary-500 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-gray-700 mr-2" id="chkSelectAll" x-model="allChecked" @change="toggleAll()">
+                        <div class="flex items-center px-4 py-2 bg-(--surface-panel-alt) dark:bg-(--surface-body-dark) border-b border-gray-200 dark:border-gray-700">
+                            <input type="checkbox" class="rounded border-gray-300 dark:border-gray-600 text-primary-600 dark:text-primary-500 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-(--surface-panel-alt-dark) mr-2" id="chkSelectAll" x-model="allChecked" @change="toggleAll()">
                             <label for="chkSelectAll" class="text-sm text-gray-700 dark:text-gray-300 cursor-pointer">Select All</label>
                         </div>
                         <nav class="flex flex-wrap -mb-px px-4" aria-label="Tabs">
@@ -243,7 +243,7 @@
                                         data-series-season-link
                                         @if($tab['active']) aria-current="page" @endif>
                                     Season {{ $tab['season'] }}
-                                    <span class="ml-2 px-2 py-0.5 rounded-full text-xs {{ $tab['active'] ? 'bg-primary-100 dark:bg-primary-900/40 text-primary-800 dark:text-primary-200' : 'bg-gray-100 dark:bg-gray-800 text-gray-600' }}">
+                                    <span class="ml-2 px-2 py-0.5 rounded-full text-xs {{ $tab['active'] ? 'bg-primary-100 dark:bg-primary-900/40 text-primary-800 dark:text-primary-200' : 'bg-(--surface-panel-alt) dark:bg-(--surface-card-dark) text-gray-600' }}">
                                         {{ $tab['count'] }}
                                     </span>
                                 </a>

@@ -13,7 +13,7 @@
             direct NZB downloads based on your preferences.
         </p>
         <p class="text-sm text-gray-600 dark:text-gray-400 mb-6">
-            RSS feed URLs require <code class="px-1 bg-gray-100 dark:bg-gray-800 rounded text-xs">api_token</code> for access by feed readers or other non-browser clients. Token errors return JSON with matching HTTP statuses:
+            RSS feed URLs require <code class="px-1 bg-(--surface-panel-alt) dark:bg-(--surface-card-dark) rounded text-xs">api_token</code> for access by feed readers or other non-browser clients. Token errors return JSON with matching HTTP statuses:
             400 for a missing token, 401 for invalid or unverified tokens, 403 for suspended accounts, and 429 for request limits.
         </p>
 
@@ -23,8 +23,8 @@
                     <i class="fa fa-key mr-2 text-gray-600 dark:text-gray-400"></i>Your API Token
                 </h4>
                 <div class="flex rounded-md shadow-sm">
-                    <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-sm focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-600 dark:border-gray-500 dark:text-white" value="api_token={{ auth()->user()->api_token }}" readonly id="apiTokenInput">
-                    <button class="inline-flex items-center px-4 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500" type="button" id="copyApiToken" title="Copy to clipboard">
+                    <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-sm focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-500 dark:text-white" value="api_token={{ auth()->user()->api_token }}" readonly id="apiTokenInput">
+                    <button class="inline-flex items-center px-4 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500" type="button" id="copyApiToken" title="Copy to clipboard">
                         <i class="fa fa-copy"></i>
                     </button>
                 </div>
@@ -36,38 +36,38 @@
         </h4>
         <div class="overflow-x-auto mb-6">
             <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead class="bg-gray-50 dark:bg-gray-900 dark:bg-gray-700">
+                <thead class="bg-(--surface-panel-alt) dark:bg-(--surface-body-dark) dark:bg-(--surface-panel-alt-dark)">
                     <tr>
                         <th scope="col" class="w-1/5 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-300">Parameter</th>
                         <th scope="col" class="w-1/2 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-300">Description</th>
                         <th scope="col" class="w-3/10 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-300">Example</th>
                     </tr>
                 </thead>
-                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:bg-gray-800 dark:divide-gray-700">
-                    <tr class="hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700">
-                        <td class="px-6 py-4"><code class="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm text-red-600 dark:bg-gray-700 dark:text-red-400">api_token</code></td>
+                <tbody class="bg-(--surface-card) dark:bg-(--surface-card-dark) divide-y divide-gray-200 dark:bg-(--surface-card-dark) dark:divide-gray-700">
+                    <tr class="hover:bg-(--public-surface-hover) dark:bg-(--surface-body-dark) dark:hover:bg-(--public-surface-hover-dark)">
+                        <td class="px-6 py-4"><code class="px-2 py-1 bg-(--surface-panel-alt) dark:bg-(--surface-card-dark) rounded text-sm text-red-600 dark:bg-(--surface-panel-alt-dark) dark:text-red-400">api_token</code></td>
                         <td class="px-6 py-4 text-gray-700 dark:text-gray-300">Add this to your feed URL to allow NZB downloads without logging in</td>
-                        <td class="px-6 py-4"><code class="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm text-red-600 dark:bg-gray-700 dark:text-red-400">&amp;api_token={{ auth()->user()->api_token ?? 'YOUR_TOKEN' }}</code></td>
+                        <td class="px-6 py-4"><code class="px-2 py-1 bg-(--surface-panel-alt) dark:bg-(--surface-card-dark) rounded text-sm text-red-600 dark:bg-(--surface-panel-alt-dark) dark:text-red-400">&amp;api_token={{ auth()->user()->api_token ?? 'YOUR_TOKEN' }}</code></td>
                     </tr>
-                    <tr class="hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700">
-                        <td class="px-6 py-4"><code class="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm text-red-600 dark:bg-gray-700 dark:text-red-400">del=1</code></td>
+                    <tr class="hover:bg-(--public-surface-hover) dark:bg-(--surface-body-dark) dark:hover:bg-(--public-surface-hover-dark)">
+                        <td class="px-6 py-4"><code class="px-2 py-1 bg-(--surface-panel-alt) dark:bg-(--surface-card-dark) rounded text-sm text-red-600 dark:bg-(--surface-panel-alt-dark) dark:text-red-400">del=1</code></td>
                         <td class="px-6 py-4 text-gray-700 dark:text-gray-300">Remove NZB from your cart after download</td>
-                        <td class="px-6 py-4"><code class="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm text-red-600 dark:bg-gray-700 dark:text-red-400">&amp;del=1</code></td>
+                        <td class="px-6 py-4"><code class="px-2 py-1 bg-(--surface-panel-alt) dark:bg-(--surface-card-dark) rounded text-sm text-red-600 dark:bg-(--surface-panel-alt-dark) dark:text-red-400">&amp;del=1</code></td>
                     </tr>
-                    <tr class="hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700">
-                        <td class="px-6 py-4"><code class="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm text-red-600 dark:bg-gray-700 dark:text-red-400">dl=1</code></td>
+                    <tr class="hover:bg-(--public-surface-hover) dark:bg-(--surface-body-dark) dark:hover:bg-(--public-surface-hover-dark)">
+                        <td class="px-6 py-4"><code class="px-2 py-1 bg-(--surface-panel-alt) dark:bg-(--surface-card-dark) rounded text-sm text-red-600 dark:bg-(--surface-panel-alt-dark) dark:text-red-400">dl=1</code></td>
                         <td class="px-6 py-4 text-gray-700 dark:text-gray-300">Change the default link to download an NZB</td>
-                        <td class="px-6 py-4"><code class="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm text-red-600 dark:bg-gray-700 dark:text-red-400">&amp;dl=1</code></td>
+                        <td class="px-6 py-4"><code class="px-2 py-1 bg-(--surface-panel-alt) dark:bg-(--surface-card-dark) rounded text-sm text-red-600 dark:bg-(--surface-panel-alt-dark) dark:text-red-400">&amp;dl=1</code></td>
                     </tr>
-                    <tr class="hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700">
-                        <td class="px-6 py-4"><code class="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm text-red-600 dark:bg-gray-700 dark:text-red-400">num=50</code></td>
+                    <tr class="hover:bg-(--public-surface-hover) dark:bg-(--surface-body-dark) dark:hover:bg-(--public-surface-hover-dark)">
+                        <td class="px-6 py-4"><code class="px-2 py-1 bg-(--surface-panel-alt) dark:bg-(--surface-card-dark) rounded text-sm text-red-600 dark:bg-(--surface-panel-alt-dark) dark:text-red-400">num=50</code></td>
                         <td class="px-6 py-4 text-gray-700 dark:text-gray-300">Change the number of results returned (default: 25, max: 100)</td>
-                        <td class="px-6 py-4"><code class="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm text-red-600 dark:bg-gray-700 dark:text-red-400">&amp;num=50</code></td>
+                        <td class="px-6 py-4"><code class="px-2 py-1 bg-(--surface-panel-alt) dark:bg-(--surface-card-dark) rounded text-sm text-red-600 dark:bg-(--surface-panel-alt-dark) dark:text-red-400">&amp;num=50</code></td>
                     </tr>
-                    <tr class="hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700">
-                        <td class="px-6 py-4"><code class="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm text-red-600 dark:bg-gray-700 dark:text-red-400">airdate=20</code></td>
+                    <tr class="hover:bg-(--public-surface-hover) dark:bg-(--surface-body-dark) dark:hover:bg-(--public-surface-hover-dark)">
+                        <td class="px-6 py-4"><code class="px-2 py-1 bg-(--surface-panel-alt) dark:bg-(--surface-card-dark) rounded text-sm text-red-600 dark:bg-(--surface-panel-alt-dark) dark:text-red-400">airdate=20</code></td>
                         <td class="px-6 py-4 text-gray-700 dark:text-gray-300">Return TV shows only aired in the last x days (default: all)</td>
-                        <td class="px-6 py-4"><code class="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm text-red-600 dark:bg-gray-700 dark:text-red-400">&amp;airdate=20</code></td>
+                        <td class="px-6 py-4"><code class="px-2 py-1 bg-(--surface-panel-alt) dark:bg-(--surface-card-dark) rounded text-sm text-red-600 dark:bg-(--surface-panel-alt-dark) dark:text-red-400">&amp;airdate=20</code></td>
                     </tr>
                 </tbody>
             </table>
@@ -81,7 +81,7 @@
         </div>
 
         <div class="surface-panel-alt border rounded-lg p-4 mb-6 text-gray-700 dark:text-gray-300">
-            <i class="fa fa-lightbulb-o mr-2 text-primary-500"></i>
+            <i class="fa fa-lightbulb mr-2 text-primary-500"></i>
             <strong>Pro Tip:</strong> If you want to chain multiple categories together or do more advanced searching, use the
             <a href="{{ url('/apihelp') }}" class="underline hover:text-primary-700 dark:hover:text-primary-300 text-primary-600 dark:text-primary-400">API</a>, which returns its data in an RSS-compatible format.
         </div>
@@ -106,8 +106,8 @@
                         <x-button-link href="{{ url('/rss/full-feed?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                     </div>
                     <div class="flex rounded-md shadow-sm">
-                        <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" value="{{ url('/rss/full-feed?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" readonly id="fullFeedUrl">
-                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="fullFeedUrl">
+                        <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600 dark:text-white" value="{{ url('/rss/full-feed?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" readonly id="fullFeedUrl">
+                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="fullFeedUrl">
                             <i class="fa fa-copy"></i>
                         </button>
                     </div>
@@ -122,8 +122,8 @@
                         <x-button-link href="{{ url('/rss/cart?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                     </div>
                     <div class="flex rounded-md shadow-sm">
-                        <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" value="{{ url('/rss/cart?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" readonly id="cartFeedUrl">
-                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="cartFeedUrl">
+                        <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600 dark:text-white" value="{{ url('/rss/cart?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" readonly id="cartFeedUrl">
+                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="cartFeedUrl">
                             <i class="fa fa-copy"></i>
                         </button>
                     </div>
@@ -137,8 +137,8 @@
                         <x-button-link href="{{ url('/rss/myshows?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                     </div>
                     <div class="flex rounded-md shadow-sm">
-                        <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" value="{{ url('/rss/myshows?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" readonly id="myShowsFeedUrl">
-                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="myShowsFeedUrl">
+                        <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600 dark:text-white" value="{{ url('/rss/myshows?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" readonly id="myShowsFeedUrl">
+                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="myShowsFeedUrl">
                             <i class="fa fa-copy"></i>
                         </button>
                     </div>
@@ -152,8 +152,8 @@
                         <x-button-link href="{{ url('/rss/mymovies?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                     </div>
                     <div class="flex rounded-md shadow-sm">
-                        <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" value="{{ url('/rss/mymovies?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" readonly id="myMoviesFeedUrl">
-                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="myMoviesFeedUrl">
+                        <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600 dark:text-white" value="{{ url('/rss/mymovies?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" readonly id="myMoviesFeedUrl">
+                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="myMoviesFeedUrl">
                             <i class="fa fa-copy"></i>
                         </button>
                     </div>
@@ -178,8 +178,8 @@
                         <x-button-link href="{{ url('/rss/trending-movies?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                     </div>
                     <div class="flex rounded-md shadow-sm">
-                        <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" value="{{ url('/rss/trending-movies?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" readonly id="trendingMoviesFeedUrl">
-                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="trendingMoviesFeedUrl">
+                        <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600 dark:text-white" value="{{ url('/rss/trending-movies?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" readonly id="trendingMoviesFeedUrl">
+                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="trendingMoviesFeedUrl">
                             <i class="fa fa-copy"></i>
                         </button>
                     </div>
@@ -187,13 +187,13 @@
                 <div class="p-4">
                     <div class="flex justify-between items-center mb-3">
                         <strong class="text-gray-900 dark:text-gray-100 dark:text-white flex items-center">
-                            <i class="fa fa-tv mr-2 text-purple-600 dark:text-purple-400"></i>Trending TV Shows
+                            <i class="fa fa-tv mr-2 text-primary-600 dark:text-primary-400"></i>Trending TV Shows
                         </strong>
                         <x-button-link href="{{ url('/rss/trending-shows?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                     </div>
                     <div class="flex rounded-md shadow-sm">
-                        <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" value="{{ url('/rss/trending-shows?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" readonly id="trendingShowsFeedUrl">
-                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="trendingShowsFeedUrl">
+                        <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600 dark:text-white" value="{{ url('/rss/trending-shows?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" readonly id="trendingShowsFeedUrl">
+                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="trendingShowsFeedUrl">
                             <i class="fa fa-copy"></i>
                         </button>
                     </div>
@@ -219,8 +219,8 @@
                                 <x-button-link href="{{ url('/rss/category?id=' . $category['id'] . '&dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                             </div>
                             <div class="flex rounded-md shadow-sm">
-                                <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" value="{{ url('/rss/category?id=' . $category['id'] . '&dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" readonly id="parentCat{{ $category['id'] }}Url">
-                                <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="parentCat{{ $category['id'] }}Url">
+                                <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600 dark:text-white" value="{{ url('/rss/category?id=' . $category['id'] . '&dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" readonly id="parentCat{{ $category['id'] }}Url">
+                                <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="parentCat{{ $category['id'] }}Url">
                                     <i class="fa fa-copy"></i>
                                 </button>
                             </div>
@@ -251,8 +251,8 @@
                                     <x-button-link href="{{ url('/rss/category?id=' . $category['id'] . '&dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                                 </div>
                                 <div class="flex rounded-md shadow-sm">
-                                    <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white" value="{{ url('/rss/category?id=' . $category['id'] . '&dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" readonly id="subCat{{ $category['id'] }}Url">
-                                    <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="subCat{{ $category['id'] }}Url">
+                                    <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600 dark:text-white" value="{{ url('/rss/category?id=' . $category['id'] . '&dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" readonly id="subCat{{ $category['id'] }}Url">
+                                    <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="subCat{{ $category['id'] }}Url">
                                         <i class="fa fa-copy"></i>
                                     </button>
                                 </div>

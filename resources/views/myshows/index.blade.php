@@ -74,7 +74,7 @@
                     </thead>
                     <tbody class="surface-panel">
                         @foreach($shows as $show)
-                            <tr class="hover:bg-primary-50 dark:hover:bg-gray-700 transition-colors duration-150">
+                            <tr class="hover:bg-primary-50 dark:hover:bg-(--public-surface-hover-dark) transition-colors duration-150">
                                 <td class="px-8 py-5">
                                     <div class="flex items-center">
                                         <div class="shrink-0 h-12 w-12 bg-primary-600 dark:bg-primary-700 rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-sm">
@@ -141,7 +141,7 @@
             <!-- Mobile Card View -->
             <div class="md:hidden">
                 @foreach($shows as $show)
-                    <div class="p-6 border-b border-gray-200 dark:border-gray-700 hover:bg-primary-50 dark:hover:bg-gray-700 transition-colors duration-150">
+                    <div class="p-6 border-b border-gray-200 dark:border-gray-700 hover:bg-primary-50 dark:hover:bg-(--public-surface-hover-dark) transition-colors duration-150">
                         <div class="flex items-start justify-between mb-4">
                             <div class="flex items-center flex-1">
                                 <div class="shrink-0 h-12 w-12 bg-primary-600 dark:bg-primary-700 rounded-lg flex items-center justify-center text-white font-bold text-xl shadow-sm">

@@ -47,7 +47,7 @@ Alpine.data('qualityFilter', () => ({
      */
     _updateButtonStyles() {
         const activeClasses = ['bg-primary-600', 'dark:bg-primary-700', 'text-white', 'hover:bg-primary-700', 'dark:hover:bg-primary-800'];
-        const inactiveClasses = ['bg-gray-200', 'dark:bg-gray-700', 'text-gray-700', 'dark:text-gray-300', 'hover:bg-gray-300', 'dark:hover:bg-gray-600'];
+        const inactiveClasses = ['bg-(--surface-panel-alt)', 'dark:bg-(--surface-panel-alt-dark)', 'text-gray-700', 'dark:text-gray-300', 'hover:bg-(--public-surface-hover)', 'dark:hover:bg-(--public-surface-hover-dark)'];
 
         for (const [attribute, selected] of [['resolution', this.activeResolution], ['source', this.activeSource]]) {
             this.$el.querySelectorAll(`[data-${attribute}]`).forEach(button => {

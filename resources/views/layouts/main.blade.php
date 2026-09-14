@@ -87,7 +87,7 @@
     <!-- Theme Toggle -->
     @php $themePreference = $userTheme; @endphp
     @guest
-        <button id="theme-toggle" class="fixed z-50 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-4 py-3 rounded-full shadow-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-all duration-200 flex items-center gap-2 touch-target bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))]"
+        <button id="theme-toggle" class="fixed z-50 bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-800 dark:text-gray-200 px-4 py-3 rounded-full shadow-lg hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) transition-all duration-200 flex items-center gap-2 touch-target bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))]"
                 title="{{ ucfirst($themePreference) }} Mode">
             <i id="theme-icon" class="fas {{ $themePreference === 'dark' ? 'fa-moon' : ($themePreference === 'system' ? 'fa-desktop' : 'fa-sun') }}"></i>
             <span id="theme-label" class="text-xs font-medium hidden sm:inline">{{ ucfirst($themePreference) }}</span>

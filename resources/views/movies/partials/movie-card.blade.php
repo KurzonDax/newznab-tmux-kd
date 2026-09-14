@@ -26,7 +26,7 @@
                              class="object-cover movie-cover rounded-lg shadow-lg"
                              loading="lazy">
                     @else
-                        <div class="bg-gray-200 dark:bg-gray-700 flex items-center justify-center movie-cover rounded-lg shadow-lg">
+                        <div class="bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) flex items-center justify-center movie-cover rounded-lg shadow-lg">
                             <i class="fas fa-film text-gray-400 text-3xl"></i>
                         </div>
                     @endif
@@ -38,7 +38,7 @@
                          class="object-cover movie-cover rounded-lg shadow-lg"
                          loading="lazy">
                 @else
-                    <div class="bg-gray-200 dark:bg-gray-700 flex items-center justify-center movie-cover rounded-lg shadow-lg">
+                    <div class="bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) flex items-center justify-center movie-cover rounded-lg shadow-lg">
                         <i class="fas fa-film text-gray-400 text-3xl"></i>
                     </div>
                 @endif
@@ -138,7 +138,7 @@
                     <div class="space-y-3">
                         @foreach($releases as $index => $release)
                             @if(($release->searchname ?? null) && ($release->guid ?? null))
-                                <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-700 shadow-sm">
+                                <div class="bg-(--surface-panel-alt) dark:bg-(--surface-body-dark) rounded-lg p-3 border border-gray-200 dark:border-gray-700 shadow-sm">
                                     <div class="release-card-container">
                                         <div class="release-info-wrapper">
                                             {{-- Release Name --}}
@@ -151,19 +151,19 @@
                                             {{-- Info Badges --}}
                                             <div class="flex flex-wrap items-center gap-2 mt-2">
                                                 @if($release->size)
-                                                    <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
+                                                    <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-(--surface-panel-alt) dark:bg-(--surface-card-dark) text-gray-700 dark:text-gray-300">
                                                         <i class="fas fa-hdd mr-1"></i>{{ number_format($release->size / 1073741824, 2) }} GB
                                                     </span>
                                                 @endif
 
                                                 @if($release->postdate)
-                                                    <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
+                                                    <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-(--surface-panel-alt) dark:bg-(--surface-card-dark) text-gray-700 dark:text-gray-300">
                                                         <i class="fas fa-calendar-alt mr-1"></i>{{ userDate($release->postdate, 'M d, Y H:i') }}
                                                     </span>
                                                 @endif
 
                                                 @if($release->adddate)
-                                                    <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
+                                                    <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-(--surface-panel-alt) dark:bg-(--surface-card-dark) text-gray-700 dark:text-gray-300">
                                                         <i class="fas fa-plus-circle mr-1"></i>{{ userDateDiffForHumans($release->adddate) }}
                                                     </span>
                                                 @endif
@@ -187,7 +187,7 @@
                                                 @endphp
                                                 @if($releaseHasImage || $releaseHasVideo)
                                                     <button type="button"
-                                                            class="preview-badge inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 hover:bg-purple-200 dark:hover:bg-purple-800 transition cursor-pointer"
+                                                            class="preview-badge inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 hover:bg-primary-200 dark:hover:bg-primary-800 transition cursor-pointer"
                                                             data-guid="{{ $release->guid }}"
                                                             data-release-display-name="{{ release_display_name($release) }}"
                                                             @if($releaseHasImage)

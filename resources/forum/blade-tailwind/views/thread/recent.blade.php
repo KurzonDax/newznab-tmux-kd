@@ -11,7 +11,7 @@
                 @endforeach
             </div>
         @else
-            <div class="bg-white dark:bg-gray-800 my-3 transition-colors">
+            <div class="bg-(--surface-card) dark:bg-(--surface-card-dark) my-3 transition-colors">
                 <div class="card-body text-center text-muted text-gray-500 dark:text-gray-400 p-6">
                     {{ trans('forum::threads.none_found') }}
                 </div>

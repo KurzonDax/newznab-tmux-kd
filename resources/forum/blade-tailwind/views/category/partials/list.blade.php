@@ -1,5 +1,5 @@
 <div class="my-4">
-    <div class="relative overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition hover:shadow-md dark:border-gray-700 dark:bg-gray-800">
+    <div class="relative overflow-hidden rounded-xl border border-gray-200 bg-(--surface-card) shadow-sm transition hover:shadow-md dark:border-gray-700 dark:bg-(--surface-card-dark)">
         <div class="flex flex-col gap-4 p-5 md:flex-row md:items-start md:justify-between md:gap-6 sm:p-6">
             <div class="md:w-3/6 text-center md:text-left">
                 <h5 class="text-lg font-semibold leading-tight">
@@ -39,7 +39,7 @@
     @if ($category->children->count() > 0)
         <div class="mt-3 space-y-3">
             @foreach ($category->children as $subcategory)
-                <div class="rounded-xl border border-gray-200 bg-gray-50 shadow-sm transition dark:border-gray-700 dark:bg-gray-900/40">
+                <div class="rounded-xl border border-gray-200 bg-(--surface-panel-alt) shadow-sm transition dark:border-gray-700 dark:bg-(--surface-body-dark)/40">
                     <div class="flex flex-col gap-4 p-5 md:flex-row md:items-start md:justify-between md:gap-6 sm:p-6">
                         <div class="md:w-3/6 text-center md:text-left">
                             <a href="{{ Forum::route('category.show', $subcategory) }}" style="color: {{ $subcategory->color_light_mode }};" class="font-medium hover:opacity-80 transition-opacity">{{ $subcategory->title }}</a>
