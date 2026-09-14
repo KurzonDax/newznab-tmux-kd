@@ -6,7 +6,13 @@
 
 @section('content')
 <div class="release-detail-page surface-panel rounded-xl shadow-sm p-6">
-    <x-breadcrumb :items="[['label' => 'Home', 'url' => url('/')], ['label' => 'Browse', 'url' => route('All')]]" />
+    @php
+        $breadcrumbs = [['label' => 'Home', 'url' => url('/')], ['label' => 'Browse', 'url' => route('All')]];
+        if (isset($titleEntity) && $titleEntity->titleUrl()) {
+            $breadcrumbs[] = ['label' => $titleEntity->title, 'url' => $titleEntity->titleUrl()];
+        }
+    @endphp
+    <x-breadcrumb :items="$breadcrumbs" />
     <x-page-header title="Release Details" :description="release_display_name($release)" icon="fas fa-circle-info" />
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">

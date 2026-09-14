@@ -14,6 +14,8 @@ import Alpine from '@alpinejs/csp';
  * Each module registers itself via Alpine.data() as a side effect.
  */
 const lazyComponentMap = {
+    'trailerModal': () => import('./components/trailer-modal.js'),
+    'titleOverview': () => import('./components/title-overview.js'),
     // --- Components only needed on specific pages ---
     'adminSubmenu':    () => import('./components/admin-submenu.js'),
     'passwordToggle':  () => import('./components/password-toggle.js'),
@@ -26,7 +28,6 @@ const lazyComponentMap = {
     'imageModal':      () => import('./components/image-modal.js'),
 
     // --- Page-specific components ---
-    'qualityFilter':   () => import('./components/quality-filter.js'),
     'contentToggle':   () => import('./components/content-toggle.js'),
     'blacklistSweep':  () => import('./components/admin/blacklist-sweep.js'),
     'settingsCard':    () => import('./components/admin/settings-card.js'),
@@ -43,7 +44,6 @@ const lazyComponentMap = {
     'cartPage':        () => import('./components/cart-page.js'),
     'releaseMultiOps': () => import('./components/cart-page.js'),  // same file
     'releaseBrowser':  () => import('./components/release-browser.js'),
-    'seriesSeasonLoader': () => import('./components/series-season-loader.js'),
     'authPage':        () => import('./components/auth-page.js'),
     'otpInput':        () => import('./components/auth-page.js'),       // same file
     'loginMode':       () => import('./components/login-mode.js'),

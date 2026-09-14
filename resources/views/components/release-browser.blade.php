@@ -17,6 +17,7 @@
         @endif
         @include('components.release-browser.pager')
     @endif
+    {{ $heading ?? '' }}
     @if($state->view === 'covers')
         @include('components.release-browser.covers')
     @elseif($state->view === 'cards')

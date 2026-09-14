@@ -9,5 +9,6 @@ Before planning or editing, find the row whose globs match the file's path and r
 | app/Services/Search/Drivers/ManticoreSearchDriver.php | .ai/rules/drivers.md |
 | ** | .ai/rules/general.md |
 | app/Services/NameFixing/** | .ai/rules/name-fixing.md |
+| resources/** | .ai/rules/resources.md |
 | app/Services/** | .ai/rules/services.md |
 | app/** | .ai/rules/settings-values.md |

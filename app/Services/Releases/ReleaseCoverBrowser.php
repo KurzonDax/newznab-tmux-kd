@@ -124,10 +124,7 @@ final class ReleaseCoverBrowser
             footerBadge: $badge, footerValue: $cover->total_releases.' releases',
             year: $entity?->year, metadata: array_values(array_filter($metadata)),
             releases: array_values($releases),
-            titleUrl: match ($root) {
-                BrowseRoot::Movies => route('movie.view', $id), BrowseRoot::Tv => route('series', $id),
-                default => route('details', $firstRow->guid ?? ''),
-            },
+            titleUrl: route('title', ['root' => $root->value, 'id' => $id]),
             watchUrl: match ($root) {
                 BrowseRoot::Movies => url('/mymovies').'?'.http_build_query(['id' => $watched ? 'edit' : 'add', 'imdb' => $id]),
                 BrowseRoot::Tv => url('/myshows').'?'.http_build_query(['action' => $watched ? 'edit' : 'add', 'id' => $id]),

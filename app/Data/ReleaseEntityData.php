@@ -15,4 +15,10 @@ final readonly class ReleaseEntityData
         public ?int $season = null,
         public ?int $episode = null,
     ) {}
+
+    public function titleUrl(): ?string
+    {
+        return in_array($this->root, ['movies', 'tv', 'audio', 'console', 'games', 'books'], true)
+            ? route('title', ['root' => $this->root, 'id' => $this->id]) : null;
+    }
 }

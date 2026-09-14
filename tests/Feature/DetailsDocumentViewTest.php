@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Data\ReleaseEntityData;
 use App\Models\Release;
 use App\View\Composers\GlobalDataComposer;
 use Illuminate\Support\Facades\Cache;
@@ -55,7 +56,10 @@ class DetailsDocumentViewTest extends TestCase
         ]);
         $release->setRelation('audioTags', null);
 
-        $html = view('details.index', ['release' => $release])->render();
+        $html = view('details.index', ['release' => $release,
+            'titleEntity' => new ReleaseEntityData('movies', '1234567', 'A Movie', '2024', null),
+        ])->render();
+        $this->assertStringContainsString('href="'.route('title', ['root' => 'movies', 'id' => '1234567']).'"', $html);
 
         $this->assertStringStartsWith('<!DOCTYPE html>', ltrim($html));
         $this->assertSame(1, substr_count($html, 'x-data="imageModal"'));

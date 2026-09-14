@@ -194,26 +194,6 @@ class ReleasePreviewImageViewTest extends TestCase
         $this->assertStringContainsString('fas fa-image', $html);
     }
 
-    public function test_movies_release_row_renders_the_video_chip(): void
-    {
-        $html = view('movies.partials.release-item', [
-            'release' => $this->release([
-                'guid' => 'movie-row-guid',
-                'haspreview' => 1,
-                'has_video_preview' => 1,
-                'video_preview_mime' => 'video/mp4',
-                'postdate' => null,
-                'adddate' => null,
-                'size' => 0,
-            ]),
-        ])->render();
-
-        $this->assertMatchesRegularExpression('/class="[^"]*\\bpreview-badge\\b/', $html);
-        $this->assertStringContainsString('data-video-url="'.route('preview.video', 'movie-row-guid').'"', $html);
-        $this->assertStringContainsString('data-video-type="video/mp4"', $html);
-        $this->assertStringContainsString('fas fa-video', $html);
-    }
-
     public function test_details_renders_the_video_chip_beside_the_preview_images(): void
     {
         file_put_contents($this->coversRoot.'/preview/details-guid_thumb.jpg', 'jpg');
