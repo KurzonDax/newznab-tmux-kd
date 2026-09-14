@@ -91,7 +91,8 @@ class DetailsDocumentViewTest extends TestCase
         $this->assertStringContainsString('No media info for this release.', $html);
         $this->assertStringContainsString('Other releases of this title', $html);
         $dialogs = $xpath->query('//*[@data-modal-dialog]');
-        $this->assertCount(7, $dialogs);
+        $this->assertCount(8, $dialogs);
+        $this->assertSame(1, $xpath->query('//*[@aria-labelledby="watchlist-modal-title"]')->length);
         foreach ($dialogs as $dialog) {
             $this->assertSame('dialog', $dialog->getAttribute('role'));
             $this->assertSame('true', $dialog->getAttribute('aria-modal'));

@@ -16,6 +16,8 @@ import Alpine from '@alpinejs/csp';
 const lazyComponentMap = {
     'searchFeed': () => import('./components/search-filters.js'),
     'searchFilters': () => import('./components/search-filters.js'),
+    'watchlistPicker': () => import('./components/watchlist.js'),
+    'watchlistPage': () => import('./components/watchlist.js'),
     'trailerModal': () => import('./components/trailer-modal.js'),
     'releaseDetails': () => import('./components/release-details.js'),
     'titleOverview': () => import('./components/title-overview.js'),

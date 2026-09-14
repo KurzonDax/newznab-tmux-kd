@@ -186,7 +186,7 @@ final class TitleControllerTest extends TestCase
         $user = $this->browserUser();
         DB::table('user_movies')->insert(['users_id' => $user->id, 'imdbid' => '0111161']);
         $response = $this->actingAs($user)->get('/title/movies/0111161')->assertOk();
-        $response->assertSee('Shawshank.1080p')->assertViewHas('watched', true)->assertSee('imdb=0111161', false);
+        $response->assertSee('Shawshank.1080p')->assertViewHas('watched', true)->assertSee('/watchlist/movies/0111161', false);
         $this->assertSame('0111161', $response->viewData('title')->entity->id);
         $this->assertSame(1, $response->viewData('results')->total());
         $this->followingRedirects()->get(route('movie.view', 'tt0111161'))->assertOk()->assertSee('The Shawshank Redemption');
@@ -258,7 +258,7 @@ final class TitleControllerTest extends TestCase
         $this->actingAs($user)->get('/title/movies/1234567')->assertOk()->assertViewHas('watched', false);
         DB::table('user_movies')->insert(['users_id' => $user->id, 'imdbid' => '1234567', 'categories' => 'NULL']);
         $response = $this->get('/title/movies/1234567')->assertOk()->assertSee('All categories')->assertViewHas('watched', true);
-        $response->assertSee('id=delete', false)->assertSee('imdb=1234567', false);
+        $response->assertSee('data-watch-remove=', false)->assertSee('/watchlist/movies/1234567', false);
         DB::table('user_movies')->update(['categories' => '2030']);
         $this->get('/title/movies/1234567')->assertOk()->assertViewHas('watchCategories', ['HD']);
     }

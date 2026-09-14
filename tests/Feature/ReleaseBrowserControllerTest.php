@@ -834,7 +834,7 @@ final class ReleaseBrowserControllerTest extends TestCase
         $xl->assertSee('Metadata title')->assertSee('data-cover-release', false)->assertSee('View all 5 releases');
         $this->assertSame(2, substr_count($xl->getContent(), 'data-cover-release='));
         $this->assertSame(2, substr_count($xl->getContent(), 'data-row-action="download"'));
-        $this->assertSame(in_array($root, ['movies', 'tv'], true) ? 1 : 0, substr_count($large->getContent(), 'data-cover-watch'));
+        $this->assertSame(in_array($root, ['movies', 'tv'], true) ? 1 : 0, preg_match_all('/\sdata-cover-watch(?:=|\s|>)/', $large->getContent()));
     }
 
     public function test_legacy_cover_pages_redirect_to_the_shared_browser_with_filters_and_category_preserved(): void

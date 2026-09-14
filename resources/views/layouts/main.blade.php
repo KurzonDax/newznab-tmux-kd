@@ -49,6 +49,7 @@
     @include('partials.toast-notifications', ['publicToasts' => true])
 
     {{-- Release-specific modals: pushed by pages that show releases --}}
+    @auth @include('partials.watchlist-picker') @endauth
     @stack('modals')
 
     @stack('scripts')

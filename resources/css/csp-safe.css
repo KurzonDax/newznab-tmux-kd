@@ -1387,3 +1387,50 @@ html.public-shell, body.public-shell { height: auto; min-height: 100%; overflow-
 @media (max-width: 640px) {
     .search-filter-form { position: fixed; left: 24px; top: 130px; width: calc(100vw - 48px); max-height: calc(100dvh - 150px); overflow-y: auto; }
 }
+
+/* Shared Watchlist page and category picker. */
+.watchlist-page { --watch-muted: var(--text-muted); --watch-border: var(--border-default); min-width: 0; }
+.dark .watchlist-page { --watch-muted: var(--text-muted-dark); --watch-border: var(--border-default-dark); }
+.watchlist-page > .page-header { padding: 0 0 16px; }
+.watchlist-page .text-muted { color: var(--watch-muted); font-size: 11px; }
+.watchlist-tabs { display: flex; align-items: center; flex-wrap: wrap; gap: 0; padding: 0 14px; border-bottom: 1px solid var(--watch-border); }
+.watchlist-tabs > a { padding: 12px 14px; color: var(--watch-muted); font-size: 13px; border-bottom: 2px solid transparent; }
+.watchlist-tabs > a[aria-current] { color: var(--color-primary-600); border-color: var(--color-primary-500); font-weight: 600; }
+.dark .watchlist-tabs > a[aria-current] { color: var(--color-primary-400); }
+.watchlist-tabs form { margin: 4px 0 4px auto; width: 260px; max-width: 100%; }
+.watchlist-found { padding: 10px 14px; border-bottom: 1px solid var(--watch-border); }
+.watchlist-page .watchlist-found h2 { color: var(--watch-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+.watchlist-found-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 13px; }
+.watchlist-found-row > .grow { min-width: 0; overflow-wrap: anywhere; }
+.watchlist-artwork { display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 56px; aspect-ratio: 2 / 3; border-radius: 6px; overflow: hidden; background: var(--surface-panel-alt); color: var(--watch-muted); }
+.dark .watchlist-artwork { background: var(--surface-panel-alt-dark); }
+.watchlist-found-row .watchlist-artwork { width: 40px; }
+.watchlist-artwork img { width: 100%; height: 100%; object-fit: cover; }
+.watchlist-entries { display: grid; gap: 10px; padding: 14px; }
+.watchlist-entry { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 12px; }
+.watchlist-entry-body { min-width: 0; }
+.watchlist-title { font-size: 13px; font-weight: 600; }
+.watchlist-latest { margin-top: 2px; overflow-wrap: anywhere; }
+.watchlist-categories { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.watchlist-entry-actions { display: flex; gap: 6px; }
+.watchlist-picker-form { display: grid; gap: 8px; font-size: 13px; }
+.watchlist-picker-form label { display: flex; gap: 8px; align-items: center; }
+.watchlist-picker-form input { accent-color: var(--color-primary-600); width: 16px; height: 16px; }
+.watchlist-button[data-watch-picker]:not([data-watch-label-kind])[data-watched="1"] { background: var(--color-primary-600); border-color: var(--color-primary-600); color: var(--color-primary-50); }
+.dark .watchlist-button[data-watch-picker]:not([data-watch-label-kind])[data-watched="1"] { background: var(--color-primary-700); border-color: var(--color-primary-700); }
+.watchlist-button[data-watch-picker]:not([data-watch-label-kind])[data-watched="0"] { background: var(--surface-card); border-color: var(--border-default); color: var(--color-gray-700); }
+.dark .watchlist-button[data-watch-picker]:not([data-watch-label-kind])[data-watched="0"] { background: var(--surface-card-dark); border-color: var(--border-default-dark); color: var(--color-gray-200); }
+.watchlist-button[data-watched="0"] .fa-chevron-down { display: none; }
+.watchlist-button[data-watch-remove], .watchlist-remove { color: var(--color-red-600); }
+.dark .watchlist-button[data-watch-remove], .dark .watchlist-remove { color: var(--color-red-400); }
+.title-followed[hidden] { display: none; }
+.watchlist-page [data-watchlist-fragment] > .text-center { padding: 36px 20px; font-size: 13px; }
+.watchlist-page [data-watchlist-fragment] > .text-center h3 { font-size: 14px; }
+.watchlist-page [data-watchlist-fragment] > .text-center > div { width: auto; height: auto; margin-bottom: 8px; background: transparent; }
+.watchlist-page [data-watchlist-fragment] > .text-center i { font-size: 28px; }
+@media (max-width: 639px) {
+    .watchlist-tabs > a { padding-inline: 8px; }
+    .watchlist-tabs form { width: 100%; margin: 6px 0 10px; }
+    .watchlist-entry { grid-template-columns: 56px minmax(0, 1fr); gap: 10px; }
+    .watchlist-entry-actions { grid-column: 2; }
+}

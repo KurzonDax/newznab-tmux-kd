@@ -21,7 +21,7 @@
                     </span>
                 </button>
                 @if($cover->watchUrl)
-                    <a class="release-cover-heart" data-cover-watch data-watched="{{ $cover->watched ? '1' : '0' }}" href="{{ $cover->watchUrl }}" aria-label="{{ $cover->watched ? 'Edit Watchlist choices for ' : 'Watch ' }}{{ $cover->title }}"><i class="{{ $cover->watched ? 'fas' : 'far' }} fa-heart" aria-hidden="true"></i></a>
+                    <x-watch-button :root="$state->root->value" :id="$cover->id" :title="$cover->title" :watched="$cover->watched" kind="heart" data-cover-watch />
                 @endif
             @endif
             @if(in_array($state->root, [\App\Enums\BrowseRoot::Movies, \App\Enums\BrowseRoot::Tv], true) && $state->sort === 'grabs')

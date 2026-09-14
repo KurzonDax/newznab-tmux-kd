@@ -9,7 +9,7 @@
                     <x-chip :href="'https://www.imdb.com/title/tt'.$cover->id.'/'">IMDb <i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i></x-chip>
                 @endif
                 @if($cover->watchUrl)
-                    <x-chip :href="$cover->watchUrl" :variant="$cover->watched ? 'primary' : 'neutral'" data-cover-watch><i class="{{ $cover->watched ? 'fas' : 'far' }} fa-heart" aria-hidden="true"></i> {{ $cover->watched ? 'Watching' : 'Watch' }}</x-chip>
+                    <x-watch-button :root="$state->root->value" :id="$cover->id" :title="$cover->title" :watched="$cover->watched" data-cover-watch />
                 @endif
             </div>
         </div>
