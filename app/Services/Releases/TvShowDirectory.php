@@ -82,10 +82,11 @@ final class TvShowDirectory
         $query = $this->browser->matchingQuery($state, $user)->where('r.videos_id', $id);
         $episodes = DB::table('tv_episodes')->where('videos_id', $id)->where('episode', '>', 0)->orderBy('series')->orderBy('episode')->orderBy('id')->get()
             ->unique(fn (object $episode): string => $episode->series.':'.$episode->episode)->keyBy('id');
+        $catalog = new TvEpisodeCatalog($episodes);
         $memberships = [];
         $packs = [];
         foreach ((clone $query)->select(['r.id', 'r.videos_id', 'r.tv_episodes_id', 'r.searchname'])->orderByDesc('r.postdate')->orderByDesc('r.id')->cursor() as $release) {
-            $member = $this->membership->resolve($release, $episodes);
+            $member = $this->membership->resolve($release, $catalog);
             if ($member['fullSeason']) {
                 $packs[$member['season']][] = $release->id;
             } else {

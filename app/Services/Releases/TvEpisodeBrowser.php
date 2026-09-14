@@ -35,12 +35,12 @@ final class TvEpisodeBrowser
         ]));
         [$episodes, $groups] = Cache::remember($cacheKey, 30, function () use ($query, $sort, $state): array {
             $episodes = $this->episodes($query);
-            $episodesByShow = $episodes->groupBy('videos_id');
+            $catalog = new TvEpisodeCatalog($episodes);
             /** @var array<int, array{count: int, value: string|int, recent: int, releases: list<\stdClass>}> $groups */
             $groups = [];
             $recentGrabs = $state->trending ? CoverBrowseScope::recentGrabs()->pluck('grabs', 'releases_id') : collect();
             foreach ((clone $query)->orderBy('r.id')->select(['r.id', 'r.videos_id', 'r.tv_episodes_id', 'r.searchname', 'r.display_name', 'r.postdate', 'r.adddate', 'r.grabs'])->lazyById(1000, 'r.id', 'id') as $release) {
-                $members = $this->membership->resolve($release, $episodesByShow->get($release->videos_id, collect()));
+                $members = $this->membership->resolve($release, $catalog);
                 $value = match ($sort) {
                     ReleaseSort::PostedNewest, ReleaseSort::PostedOldest => (string) $release->postdate,
                     ReleaseSort::AddedNewest, ReleaseSort::AddedOldest => (string) $release->adddate,
@@ -110,10 +110,10 @@ final class TvEpisodeBrowser
         $episode = DB::table('tv_episodes')->where('id', $episodeId)->first();
         abort_if($episode === null, 404);
         $query = $this->browser->matchingQuery($state, $user)->where('r.videos_id', $episode->videos_id);
-        $episodes = $this->episodes($query);
+        $catalog = new TvEpisodeCatalog($this->episodes($query));
         $ids = [];
         foreach ((clone $query)->orderByDesc('r.postdate')->orderByDesc('r.id')->select(['r.id', 'r.videos_id', 'r.tv_episodes_id', 'r.searchname'])->cursor() as $release) {
-            if (in_array($episodeId, $this->membership->resolve($release, $episodes)['episodes'], true)) {
+            if (in_array($episodeId, $this->membership->resolve($release, $catalog)['episodes'], true)) {
                 $ids[] = $release->id;
             }
         }

@@ -4,25 +4,20 @@ declare(strict_types=1);
 
 namespace App\Services\Releases;
 
-use Illuminate\Support\Collection;
-
 final class TvReleaseMembership
 {
     /**
      * Resolve only explicit declarations within a positively identified show.
      *
-     * @template TKey of array-key
-     *
-     * @param  Collection<TKey, \stdClass>  $episodes
      * @return array{episodes: list<int>, season: ?int, fullSeason: bool}
      */
-    public function resolve(object $release, Collection $episodes): array
+    public function resolve(object $release, TvEpisodeCatalog $catalog): array
     {
         $none = ['episodes' => [], 'season' => null, 'fullSeason' => false];
         if ((int) $release->videos_id <= 0) {
             return $none;
         }
-        $episodes = $episodes->where('videos_id', (int) $release->videos_id);
+        $show = (int) $release->videos_id;
         $name = str_replace(['_', '–', '—'], ['.', '-', '-'], (string) $release->searchname);
         if (preg_match('/\bS(\d{1,3})E\d{1,3}-S(\d{1,3})E\d{1,3}\b/i', $name, $range)) {
             if ((int) $range[1] !== (int) $range[2]) {
@@ -47,16 +42,16 @@ final class TvReleaseMembership
                 }
             }
 
-            return ['episodes' => $episodes->where('series', $season)->whereIn('episode', $numbers)->pluck('id')->map(intval(...))->unique()->values()->all(), 'season' => $season, 'fullSeason' => false];
+            return ['episodes' => $catalog->members($show, $season, $numbers), 'season' => $season, 'fullSeason' => false];
         }
         if (preg_match('/\b(?:S|Season[ ._-]*)(\d{1,3})[ ._-]+(?:COMPLETE|FULL(?:[ ._-]+SEASON)?|PACK)\b/i', $name, $match)
             || preg_match('/\b(?:COMPLETE|FULL)[ ._-]+(?:S|Season[ ._-]*)(\d{1,3})\b/i', $name, $match)) {
             $season = (int) $match[1];
 
-            return ['episodes' => $episodes->where('series', $season)->where('episode', '>', 0)->pluck('id')->map(intval(...))->unique()->values()->all(), 'season' => $season, 'fullSeason' => true];
+            return ['episodes' => $catalog->members($show, $season), 'season' => $season, 'fullSeason' => true];
         }
-        $episode = $episodes->firstWhere('id', (int) $release->tv_episodes_id);
+        $episode = $catalog->linked($show, (int) $release->tv_episodes_id);
 
-        return $episode === null ? $none : ['episodes' => [(int) $episode->id], 'season' => (int) $episode->series, 'fullSeason' => false];
+        return $episode === null ? $none : ['episodes' => [$episode['id']], 'season' => $episode['season'], 'fullSeason' => false];
     }
 }
