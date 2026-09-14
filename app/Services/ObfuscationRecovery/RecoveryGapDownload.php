@@ -154,6 +154,9 @@ final class RecoveryGapDownload
                 return 'obsolete';
             }
             $frontier = $claim->purpose === RecoveryFrontierRebuild::PURPOSE;
+            if (! $frontier) {
+                (new RecoveryReferences)->release('bundle', (string) $claim->bundleId);
+            }
             DB::table($frontier ? 'obfuscation_recovery_frontier_requests' : 'obfuscation_recovery_gaps')->where('bundle_id', $claim->bundleId)->update(['outcome' => $outcome, 'updated_at' => now()]);
             DB::table('obfuscation_recovery_bundles')->where('id', $claim->bundleId)->update(['state' => $frontier ? 'frontier_complete' : 'gap_complete', 'reason' => $outcome, 'updated_at' => now()]);
 

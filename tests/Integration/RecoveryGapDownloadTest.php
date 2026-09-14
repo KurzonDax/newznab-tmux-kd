@@ -12,9 +12,11 @@ use App\Services\ObfuscationRecovery\RecoveryArtifacts;
 use App\Services\ObfuscationRecovery\RecoveryBundleRefresh;
 use App\Services\ObfuscationRecovery\RecoveryCapture;
 use App\Services\ObfuscationRecovery\RecoveryCaptureBatch;
+use App\Services\ObfuscationRecovery\RecoveryCompaction;
 use App\Services\ObfuscationRecovery\RecoveryConfig;
 use App\Services\ObfuscationRecovery\RecoveryControl;
 use App\Services\ObfuscationRecovery\RecoveryDownload;
+use App\Services\ObfuscationRecovery\RecoveryEvidenceRetention;
 use App\Services\ObfuscationRecovery\RecoveryFrontierRebuild;
 use App\Services\ObfuscationRecovery\RecoveryFrontiers;
 use App\Services\ObfuscationRecovery\RecoveryGapPlanner;
@@ -151,10 +153,17 @@ final class RecoveryGapDownloadTest extends TestCase
         $this->assertSame(0, DB::table('obfuscation_recovery_headers')->count());
         $attempt = DB::table('obfuscation_recovery_attempts')->first();
         $this->assertSame('success', $attempt->outcome);
+        $this->assertSame(1, DB::table('obfuscation_recovery_references')->where('owner_type', 'bundle')->where('owner_key', (string) $claim->bundleId)->count());
         $this->travel(61)->seconds();
         $this->assertSame('captured', app(RecoveryDownload::class)->run($work->claim(RecoveryStage::Download), [$provider]));
         $this->assertSame(1, DB::table('obfuscation_recovery_headers')->count());
         $this->assertSame(1, DB::table('obfuscation_recovery_attempts')->count());
+        $this->assertEquals($attempt, DB::table('obfuscation_recovery_attempts')->first());
+        $this->assertSame(0, DB::table('obfuscation_recovery_references')->where('owner_type', 'bundle')->where('owner_key', (string) $claim->bundleId)->count());
+        $this->travel(RecoveryCompaction::DETAIL_DAYS + 1)->days();
+        $this->assertSame(1, app(RecoveryEvidenceRetention::class)->step()['artifacts']);
+        $this->assertSame(0, DB::table('obfuscation_recovery_artifacts')->count());
+        $this->assertSame(0, app(RecoveryEvidenceRetention::class)->step()['artifacts']);
         $this->assertEquals($attempt, DB::table('obfuscation_recovery_attempts')->first());
     }
 
