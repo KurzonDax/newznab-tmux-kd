@@ -96,6 +96,7 @@ use App\Http\Controllers\StatusPageController;
 use App\Http\Controllers\TermsController;
 use App\Http\Controllers\TitleController;
 use App\Http\Controllers\VideoPreviewController;
+use App\Http\Controllers\WatchlistController;
 use App\Http\Middleware\NoCacheForAuthenticatedUsers;
 use Spatie\LaravelPasskeys\Http\Controllers\GeneratePasskeyAuthenticationOptionsController;
 
@@ -194,6 +195,10 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
     });
 
     Route::get('title/{root}/{id}', [TitleController::class, 'show'])->name('title');
+    Route::get('watchlist/{root}/{id}', [WatchlistController::class, 'picker'])->name('watchlist.picker');
+    Route::post('watchlist/{root}/{id}', [WatchlistController::class, 'save'])->name('watchlist.save');
+    Route::delete('watchlist/{root}/{id}', [WatchlistController::class, 'remove'])->name('watchlist.remove');
+    Route::get('watchlist', [WatchlistController::class, 'index'])->name('watchlist');
     Route::match(['GET', 'POST'], 'details/{guid}', [DetailsController::class, 'show'])->name('details');
     Route::match(['GET', 'POST'], 'getnzb/{guid}', [GetNzbController::class, 'getNzb'])->withoutMiddleware(['auth', 'isVerified'])->name('getnzb.guid');
     Route::match(['GET', 'POST'], 'getnzb', [GetNzbController::class, 'getNzb'])->withoutMiddleware(['auth', 'isVerified'])->name('getnzb');
@@ -223,6 +228,7 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         Route::match(['GET', 'POST'], 'myshows', [MyShowsController::class, 'show'])->name('myshows');
         Route::match(['GET', 'POST'], 'myshows/browse', [MyShowsController::class, 'browse'])->name('myshows.browse');
         // Movies-related routes
+        Route::match(['GET', 'POST'], 'mymovies/browse', [MyMoviesController::class, 'browse'])->name('mymovies.browse');
         Route::match(['GET', 'POST'], 'mymovies', [MyMoviesController::class, 'show'])->name('mymovies');
     });
 

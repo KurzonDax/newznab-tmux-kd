@@ -126,8 +126,7 @@ final class ReleaseCoverBrowser
             releases: array_values($releases),
             titleUrl: route('title', ['root' => $root->value, 'id' => $id]),
             watchUrl: match ($root) {
-                BrowseRoot::Movies => url('/mymovies').'?'.http_build_query(['id' => $watched ? 'edit' : 'add', 'imdb' => $id]),
-                BrowseRoot::Tv => url('/myshows').'?'.http_build_query(['action' => $watched ? 'edit' : 'add', 'id' => $id]),
+                BrowseRoot::Movies, BrowseRoot::Tv => route('watchlist.picker', ['root' => $root->value, 'id' => $id]),
                 default => null,
             },
             watched: $watched,

@@ -53,7 +53,7 @@ final class PublicShellTest extends TestCase
         $xpath = $this->document($response->getContent());
         $this->assertSame(1, $xpath->query('//header[@data-public-header]')->length);
         $this->assertSame(1, $xpath->query('//button[@aria-controls="browse-menu" and @aria-label="Browse categories"]')->length);
-        $this->assertSame(1, $xpath->query('//*[@id="browse-menu"]//a[@href="'.route('myshows').'"]')->length);
+        $this->assertSame(1, $xpath->query('//*[@id="browse-menu"]//a[@href="'.route('watchlist', ['tab' => 'tv']).'"]')->length);
         $this->assertSame(1, $xpath->query('//*[@id="browse-menu"]//a[@href="'.route('trending-movies').'"]')->length);
         $response->assertSee('Upgrade Your Account');
         $this->assertSame(0, $xpath->query('//*[@id="sidebar" or @id="mobile-sidebar-toggle"]')->length);

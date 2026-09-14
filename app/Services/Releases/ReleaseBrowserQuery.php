@@ -109,11 +109,11 @@ final class ReleaseBrowserQuery
                         $subscription = DB::table($table.' as watched')->selectRaw('1')
                             ->where('watched.users_id', $user->id)->whereColumn('watched.'.$key, 'r.'.$key);
                         if (Schema::hasColumn($table, 'categories')) {
-                            $subscription->where(function (Builder $categories): void {
+                            $subscription->where(function (Builder $categories) use ($root): void {
                                 $membership = DB::getDriverName() === 'sqlite'
                                     ? "INSTR('|' || watched.categories || '|', '|' || r.categories_id || '|') > 0"
                                     : "LOCATE(CONCAT('|', r.categories_id, '|'), CONCAT('|', watched.categories, '|')) > 0";
-                                $categories->whereNull('watched.categories')->orWhere('watched.categories', '')->orWhereRaw($membership);
+                                $categories->whereNull('watched.categories')->orWhere('watched.categories', '')->orWhere('watched.categories', 'NULL')->orWhereRaw(str_replace('r.categories_id', '?', $membership), [$root->categoryId()])->orWhereRaw($membership);
                             });
                         }
                         $titles->whereIn('r.categories_id', DB::table('categories')->select('id')->where('root_categories_id', $root->categoryId()))

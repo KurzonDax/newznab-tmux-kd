@@ -59,11 +59,8 @@ class TitleController extends BasePageController
                     }
                 }
             }
-            $path = url($movie ? '/mymovies' : '/myshows');
-            $identity = [$movie ? 'imdb' : 'id' => $id];
-            $action = $movie ? 'id' : 'action';
-            $watchUrl = $path.'?'.http_build_query([...$identity, $action => $watched ? 'edit' : 'add']);
-            $removeWatchUrl = $path.'?'.http_build_query([...$identity, $action => 'delete']);
+            $watchUrl = route('watchlist.picker', ['root' => $root->value, 'id' => $id]);
+            $removeWatchUrl = route('watchlist.remove', ['root' => $root->value, 'id' => $id]);
         }
 
         return compact('watched', 'watchCategories', 'watchUrl', 'removeWatchUrl');

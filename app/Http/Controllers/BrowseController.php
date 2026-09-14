@@ -64,6 +64,9 @@ class BrowseController extends BasePageController
         if (in_array($root, [BrowseRoot::Movies, BrowseRoot::Tv], true) && $state->view === 'covers' && $state->sort === 'grabs') {
             $title = 'Trending '.$root->label();
         }
+        if ($state->watching && in_array($root, [BrowseRoot::Movies, BrowseRoot::Tv], true)) {
+            $title = $root->label().' you follow';
+        }
         if ($state->group !== '') {
             $title = 'Releases in '.$state->group;
         }

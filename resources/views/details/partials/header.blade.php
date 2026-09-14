@@ -16,8 +16,7 @@
             <x-button-link href="#media" data-tab="media" variant="secondary" icon="fas fa-circle-info">Media info</x-button-link>
             <x-button-link href="#files" data-tab="files" variant="secondary" icon="fas fa-folder-open">Files ({{ $row->files }})</x-button-link>
             @if($entity && in_array($entity->root, ['movies', 'tv'], true))
-                @php($watchUrl = $entity->root === 'movies' ? url('/mymovies').'?'.http_build_query(['id' => $row->watched ? 'edit' : 'add', 'imdb' => $entity->id]) : url('/myshows').'?'.http_build_query(['action' => $row->watched ? 'edit' : 'add', 'id' => $entity->id]))
-                <x-button-link :href="$watchUrl" :variant="$row->watched ? 'primary' : 'secondary'" :icon="$row->watched ? 'fas fa-heart' : 'far fa-heart'">{{ $row->watched ? 'Watching' : 'Watch' }}</x-button-link>
+                <x-watch-button :root="$entity->root" :id="$entity->id" :title="$entity->title" :watched="$row->watched" size="md" />
             @endif
             <x-button variant="ghost" icon="fas fa-flag" class="report-trigger" :data-report-release-id="$row->id" :data-release-display-name="$row->name">Report</x-button>
             @hasanyrole('Admin|Moderator')<x-button-link :href="route('admin.release-edit', ['id' => $row->guid])" variant="secondary" icon="fas fa-pen">Edit release</x-button-link>@endhasanyrole

@@ -10,9 +10,8 @@ use App\Models\Category;
 use App\Models\Content;
 use App\Models\Settings;
 use App\Models\User;
-use App\Models\UserMovie;
-use App\Models\UserSerie;
 use App\Models\UsersRelease;
+use App\Services\Releases\WatchlistService;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -51,8 +50,7 @@ class GlobalDataComposer
 
         if ($view->name() === 'layouts.main' && Auth::check()) {
             $view->with([
-                'watchlistCount' => UserMovie::query()->where('users_id', Auth::id())->distinct()->count('imdbid')
-                    + UserSerie::query()->where('users_id', Auth::id())->distinct()->count('videos_id'),
+                'watchlistCount' => array_sum(app(WatchlistService::class)->counts(Auth::user())),
                 'basketCount' => UsersRelease::query()->where('users_id', Auth::id())->count(),
             ]);
         }
