@@ -1,4 +1,4 @@
-@props(['rows', 'state', 'toolbar' => true, 'pager' => true, 'filterOptions' => [], 'sortOptions' => ['newest' => 'Newest release', 'title' => 'Title A–Z'], 'emptyTitle' => 'No releases match.', 'emptyIcon' => null, 'emptyMessage' => null])
+@props(['rows', 'state', 'toolbar' => true, 'pager' => true, 'filterOptions' => [], 'sortOptions' => ['newest' => 'Newest release', 'title' => 'Title A–Z'], 'emptyTitle' => 'No releases match.', 'emptyIcon' => null, 'emptyMessage' => null, 'clearUrl' => null])
 
 <section {{ $attributes->class(['release-browser card']) }} x-data="releaseBrowser"
          data-basket-only="{{ $state->basketOnly ? '1' : '0' }}" data-root="{{ $state->root->value }}" data-per="{{ $state->per }}"
@@ -6,6 +6,7 @@
     @if($toolbar)
         @include('components.release-browser.toolbar')
     @endif
+    {{ $beforePager ?? '' }}
     @if($pager)
         @if($state->hasLetters())
             <nav class="release-cover-letters" aria-label="Jump by initial">
@@ -33,7 +34,13 @@
         <div data-browser-empty>
             <x-empty-state :icon="$emptyIcon ?? $state->root->icon()" :title="$emptyTitle" :message="$emptyMessage" />
             @if($state->hasFilters())
-                <div class="flex justify-center pb-6"><x-button variant="secondary" icon="fas fa-xmark" @click="clearFilters">Clear filters</x-button></div>
+                <div class="flex justify-center pb-6">
+                    @if($clearUrl)
+                        <x-button-link :href="$clearUrl" variant="secondary" icon="fas fa-xmark">Clear filters</x-button-link>
+                    @else
+                        <x-button variant="secondary" icon="fas fa-xmark" @click="clearFilters">Clear filters</x-button>
+                    @endif
+                </div>
             @endif
         </div>
     @endif

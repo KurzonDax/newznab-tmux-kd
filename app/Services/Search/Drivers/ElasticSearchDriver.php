@@ -2196,7 +2196,7 @@ class ElasticSearchDriver implements SearchDriverInterface
     /**
      * {@inheritdoc}
      */
-    public function searchMoviesByFields(array $fieldTerms, int $limit = 5000): array
+    public function searchMoviesByFields(array $fieldTerms, int $limit = 5000, ?int $afterId = null): array
     {
         $allowed = ['all' => true, 'title' => true, 'director' => true, 'actors' => true, 'plot' => true];
         $filtered = [];
@@ -2232,12 +2232,16 @@ class ElasticSearchDriver implements SearchDriverInterface
         }
 
         try {
+            if ($afterId !== null) {
+                $must[] = ['range' => ['id' => ['gt' => $afterId]]];
+            }
             $client = $this->getClient();
             $response = $client->search([
                 'index' => $this->getMoviesIndex(),
                 'body' => [
                     'query' => ['bool' => ['must' => $must]],
                     'size' => min($limit, self::MAX_RESULTS),
+                    ...($afterId === null ? [] : ['sort' => [['id' => ['order' => 'asc']]]]),
                 ],
             ]);
 
@@ -3014,7 +3018,7 @@ class ElasticSearchDriver implements SearchDriverInterface
             if (! in_array($sortField, $allowedSort, true)) {
                 $sortField = 'postdate_ts';
             }
-            if ($sortField === 'id') {
+            if ($sortField === 'id' && ! isset($criteria['web_after_id'])) {
                 $sortField = 'postdate_ts';
             }
             $order = $sortDir === 'asc' ? 'asc' : 'desc';
@@ -3023,7 +3027,7 @@ class ElasticSearchDriver implements SearchDriverInterface
                 $client = $this->getClient();
                 $body = [
                     'query' => $query,
-                    'sort' => [
+                    'sort' => $sortField === 'id' ? [['id' => ['order' => $order]]] : [
                         [$sortField => ['order' => $order]],
                         ['id' => ['order' => $order]],
                     ],
@@ -3065,6 +3069,10 @@ class ElasticSearchDriver implements SearchDriverInterface
                 return ['ids' => [], 'total' => 0, 'fuzzy' => $useFuzzy, 'available' => false];
             }
         };
+
+        if ($hasText && ($criteria['web_force_fuzzy'] ?? false) === true) {
+            return $run(true);
+        }
 
         if ($hasText) {
             $first = $run(false);
@@ -3171,6 +3179,9 @@ class ElasticSearchDriver implements SearchDriverInterface
     private function buildElasticsearchReleaseFilters(array $criteria): array
     {
         $filter = [];
+        if (isset($criteria['web_after_id'])) {
+            $filter[] = ['range' => ['id' => ['gt' => max(0, (int) $criteria['web_after_id'])]]];
+        }
 
         $releaseIds = $criteria['release_ids'] ?? null;
         if (is_array($releaseIds) && $releaseIds !== []) {

@@ -11,7 +11,7 @@ final class MovieSearchQuery
     /**
      * @param  array<string, list<string>>  $terms
      */
-    private function __construct(private readonly array $terms) {}
+    private function __construct(private readonly array $terms, private readonly string $freeText) {}
 
     /**
      * @param  array<string, mixed>  $input
@@ -19,6 +19,7 @@ final class MovieSearchQuery
     public static function fromInput(array $input): self
     {
         $terms = array_fill_keys(self::FIELD_ORDER, []);
+        $freeText = [];
         $search = self::scalar($input['q'] ?? '');
 
         if ($search !== '') {
@@ -31,6 +32,9 @@ final class MovieSearchQuery
 
             foreach ($matches as $match) {
                 $field = self::normalizeField((string) ($match[1] ?? '')) ?? 'all';
+                if ($field === 'all') {
+                    $freeText[] = $match[0];
+                }
                 $value = self::firstNonEmpty($match, [2, 3, 4, 5]);
                 self::appendWords($terms[$field], $value);
             }
@@ -44,7 +48,12 @@ final class MovieSearchQuery
             }
         }
 
-        return new self($terms);
+        return new self($terms, implode(' ', $freeText));
+    }
+
+    public function freeText(): string
+    {
+        return $this->freeText;
     }
 
     public function isEmpty(): bool

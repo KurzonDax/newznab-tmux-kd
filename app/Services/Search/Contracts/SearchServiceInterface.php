@@ -261,7 +261,7 @@ interface SearchServiceInterface
      * @param  array<string, string>  $fieldTerms
      * @return array{imdbids: list<string>, movieinfo_ids: list<int>, data: list<array<string, mixed>>}
      */
-    public function searchMoviesByFields(array $fieldTerms, int $limit = 5000): array;
+    public function searchMoviesByFields(array $fieldTerms, int $limit = 5000, ?int $afterId = null): array;
 
     /**
      * Insert a TV show into the tvshows search index.

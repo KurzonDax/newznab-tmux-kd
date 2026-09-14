@@ -6,8 +6,6 @@ namespace Tests\Feature;
 
 use App\Http\Middleware\TrustedDevice2FAMiddleware;
 use App\Services\Search\Contracts\SearchDriverInterface;
-use App\Services\Search\DTO\ReleaseSearchQuery;
-use App\Services\Search\DTO\SearchPage;
 use App\Services\Search\SearchService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -328,12 +326,11 @@ final class ReleaseBrowserControllerTest extends TestCase
     {
         config(['search.default' => 'browser-test', 'nntmux.mysql_search_fallback' => false]);
         $driver = Mockery::mock(SearchDriverInterface::class);
-        $driver->shouldReceive('isAvailable')->andReturn(true);
+        $driver->shouldReceive('isFuzzyEnabled')->andReturn(false);
         $driver->shouldReceive('isSuggestEnabled')->andReturn(true);
         $driver->shouldReceive('isAutocompleteEnabled')->andReturn(false);
         $driver->shouldReceive('suggest')->with('Requested title', null)->once()->andReturn([['suggest' => 'Corrected title', 'docs' => 7]]);
-        $driver->shouldReceive('searchReleasePage')->once()->with(Mockery::on(static fn (ReleaseSearchQuery $query): bool => $query->phrases === ['searchname' => 'Requested title'] && $query->limit === 24 && $query->categoryIds === [2030] && $query->sortField === 'searchname' && $query->sortDirection === 'asc'))
-            ->andReturn(new SearchPage([], 0, false, 'browser-test'));
+        $driver->shouldReceive('searchReleasesFiltered')->once()->andReturn(['ids' => [], 'total' => 0, 'fuzzy' => false, 'available' => true, 'has_more' => false]);
         app(SearchService::class)->extend('browser-test', static fn () => $driver);
         $this->actingAs($this->browserUser())->postJson('/profile/update-view', ['root' => 'movies', 'per' => 24, 'view' => 'cards'])->assertOk();
 
@@ -346,14 +343,17 @@ final class ReleaseBrowserControllerTest extends TestCase
 
     public function test_search_page_beyond_the_end_redirects_to_the_actual_last_page(): void
     {
-        config(['search.default' => 'browser-test', 'nntmux.mysql_search_fallback' => false]);
+        config(['search.default' => 'browser-test', 'nntmux.mysql_search_fallback' => true]);
         $driver = Mockery::mock(SearchDriverInterface::class);
-        $driver->shouldReceive('isAvailable')->andReturn(true);
-        $driver->shouldReceive('searchReleasePage')->once()->andReturn(new SearchPage([], 49, false, 'browser-test'));
+        $driver->shouldReceive('searchReleasesFiltered')->once()->andReturn(['ids' => [], 'total' => 0, 'fuzzy' => false, 'available' => false]);
         app(SearchService::class)->extend('browser-test', static fn () => $driver);
-
-        $this->actingAs($this->browserUser())->get('/search?q=Title&per=24&page=999')
-            ->assertRedirect('/search?q=Title&per=24&page=3');
+        for ($index = 1; $index <= 49; $index++) {
+            $this->release('Title '.$index);
+        }
+        $response = $this->actingAs($this->browserUser())->get('/search?q=Title&per=24&page=999')->assertRedirect();
+        parse_str(parse_url($response->headers->get('Location'), PHP_URL_QUERY), $parameters);
+        $this->assertSame('3', $parameters['page']);
+        $this->assertSame('Title', $parameters['q']);
     }
 
     public function test_numeric_subcategory_and_all_browse_respect_personal_exclusions_and_root_permissions(): void
