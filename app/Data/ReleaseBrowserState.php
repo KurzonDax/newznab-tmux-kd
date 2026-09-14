@@ -29,6 +29,7 @@ final readonly class ReleaseBrowserState
         public bool $basketOnly,
         public int $minCompletion,
         public bool $tableOnly = false,
+        public string $letter = '',
     ) {}
 
     /** @return list<string> */
@@ -37,9 +38,29 @@ final readonly class ReleaseBrowserState
         return $this->tableOnly ? ['table'] : $this->root->views();
     }
 
+    public function countUnit(): string
+    {
+        if ($this->view !== 'covers') {
+            return 'releases';
+        }
+
+        return match ($this->root) {
+            BrowseRoot::Audio => 'albums',
+            BrowseRoot::Console, BrowseRoot::Games => 'games',
+            BrowseRoot::Books => 'books',
+            BrowseRoot::Adult => 'releases',
+            default => 'titles',
+        };
+    }
+
     public function hasFilters(): bool
     {
-        return $this->query !== '' || $this->group !== '' || $this->posterIdentity !== '' || $this->filters !== [] || $this->watching || $this->minCompletion > 0;
+        return $this->query !== '' || $this->group !== '' || $this->posterIdentity !== '' || $this->filters !== [] || $this->watching || $this->minCompletion > 0 || $this->letter !== '';
+    }
+
+    public function hasLetters(): bool
+    {
+        return $this->view === 'covers' && in_array($this->root, [BrowseRoot::Tv, BrowseRoot::Audio, BrowseRoot::Books], true);
     }
 
     /** @return array<string, mixed> */
@@ -72,7 +93,10 @@ final readonly class ReleaseBrowserState
         $tableOnly = $tableOnly || (is_string($group) && $group !== '') || (is_string($posterIdentity) && $posterIdentity !== '');
         $query = $request->input('q', '');
         $sort = $request->input('sort', 'newest');
-        $filters = array_filter($request->only(['year', 'genre', 'network', 'label', 'platform', 'publisher', 'author']), static fn ($value): bool => is_string($value) && $value !== '');
+        $letter = $request->input('letter', '');
+        $letter = ! $tableOnly && $view === 'covers' && in_array($root, [BrowseRoot::Tv, BrowseRoot::Audio, BrowseRoot::Books], true)
+            && is_string($letter) && preg_match('/^[A-Z#]$/', $letter) ? $letter : '';
+        $filters = array_filter($request->only(['title', 'year', 'year_from', 'year_to', 'genre', 'network', 'label', 'platform', 'publisher', 'author', 'artist', 'actor', 'actors', 'director', 'plot', 'rating']), static fn ($value): bool => is_string($value) && $value !== '');
 
         return new self(
             root: $root,
@@ -85,12 +109,13 @@ final readonly class ReleaseBrowserState
             posterIdentity: is_string($posterIdentity) ? $posterIdentity : '',
             categoryId: $categoryId,
             query: is_string($query) ? $query : '',
-            sort: in_array($sort, ['newest', 'title', 'year', 'rating', 'artist'], true) ? $sort : 'newest',
+            sort: $letter !== '' ? 'title' : (in_array($sort, ['newest', 'title', 'year', 'rating', 'artist', 'grabs'], true) ? $sort : 'newest'),
             filters: $filters,
             watching: in_array($root, [BrowseRoot::All, BrowseRoot::Movies, BrowseRoot::Tv], true) && $request->boolean('watching'),
             basketOnly: $basketOnly,
             minCompletion: ReleaseCompletion::normalizeThreshold($request->input(ReleaseCompletion::REQUEST_KEY)),
             tableOnly: $tableOnly,
+            letter: $letter,
         );
     }
 }

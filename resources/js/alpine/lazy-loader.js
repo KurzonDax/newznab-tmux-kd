@@ -26,7 +26,6 @@ const lazyComponentMap = {
     'imageModal':      () => import('./components/image-modal.js'),
 
     // --- Page-specific components ---
-    'moviesPage':      () => import('./components/movies-page.js'),
     'qualityFilter':   () => import('./components/quality-filter.js'),
     'contentToggle':   () => import('./components/content-toggle.js'),
     'blacklistSweep':  () => import('./components/admin/blacklist-sweep.js'),

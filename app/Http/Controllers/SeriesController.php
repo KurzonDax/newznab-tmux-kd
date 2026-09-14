@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\BrowseRoot;
 use App\Models\TvEpisode;
 use App\Models\UserSerie;
 use App\Models\Video;
+use App\Services\Releases\LegacyCoverRedirect;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\SeriesReleaseService;
 use App\Support\YearRange;
@@ -205,77 +207,8 @@ class SeriesController extends BasePageController
 
             return view('series.viewseries', $this->viewData);
         } else {
-            $hasLetterPath = $id !== '' && preg_match('/^(0-9|[A-Z])$/i', $id) === 1;
-            $letter = $hasLetterPath ? $id : '0-9';
-
-            $showname = $this->scalarInput($request, 'title');
-
-            if (($showname !== '' || $yearRange !== null) && ! $id) {
-                $letter = '';
-            }
-
-            $masterserieslist = Video::getSeriesList($this->userdata->id, $letter, $showname, $yearRange);
-
-            $serieslist = [];
-            foreach ($masterserieslist as $series) {
-                $series = array_merge($series, $this->seriesArtwork($series));
-                if (preg_match('/^[0-9]/', $series['title'])) {
-                    $thisrange = '0-9';
-                } elseif (preg_match('/([A-Z]).*/i', $series['title'], $hits)) {
-                    $thisrange = strtoupper($hits[1]);
-                } else {
-                    // Handle titles that don't start with a letter or number
-                    $thisrange = '#';
-                }
-                $serieslist[$thisrange][] = $series;
-            }
-            ksort($serieslist);
-
-            $this->viewData = array_merge($this->viewData, $yearViewData, [
-                'serieslist' => $serieslist,
-                'seriesrange' => range('A', 'Z'),
-                'seriesletter' => $letter,
-                'seriesfilterletter' => $hasLetterPath ? $letter : '',
-                'showname' => $showname,
-                'meta_title' => 'View Series List',
-                'meta_keywords' => 'view,series,tv,show,description,details',
-                'meta_description' => 'View Series List',
-            ]);
-
-            return view('series.viewserieslist', $this->viewData);
+            return app(LegacyCoverRedirect::class)->redirect($request, BrowseRoot::Tv, $id);
         }
-    }
-
-    /**
-     * @param  array<string, mixed>  $series
-     * @return array{artwork_url: string, artwork_kind: 'banner'|'poster'|'placeholder'}
-     */
-    private function seriesArtwork(array $series): array
-    {
-        if (! empty($series['banner'])) {
-            $bannerUrl = getImageAssetUrl('tvshows', $series['id'].'-banner');
-            if ($bannerUrl !== null) {
-                return [
-                    'artwork_url' => $bannerUrl,
-                    'artwork_kind' => 'banner',
-                ];
-            }
-        }
-
-        if (! empty($series['image'])) {
-            $posterUrl = getImageAssetUrl('tvshows', (string) $series['id']);
-            if ($posterUrl !== null) {
-                return [
-                    'artwork_url' => $posterUrl,
-                    'artwork_kind' => 'poster',
-                ];
-            }
-        }
-
-        return [
-            'artwork_url' => asset('/assets/images/no-cover.png'),
-            'artwork_kind' => 'placeholder',
-        ];
     }
 
     private function resolveSeason(Request $request): ?int

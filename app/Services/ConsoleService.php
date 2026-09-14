@@ -14,7 +14,9 @@ use App\Models\Release;
 use App\Models\Settings;
 use App\Services\IGDB\Exceptions\IgdbHttpException;
 use App\Services\MetadataProcessing\ConsoleProcessingCandidateQuery;
+use App\Services\Releases\CoverBrowseScope;
 use App\Services\Releases\ReleaseBrowseService;
+use App\Support\CoverBrowseResults;
 use App\Support\LookupThrottle;
 use App\Support\MetadataSearchLookup;
 use Illuminate\Database\Eloquent\Model;
@@ -146,12 +148,12 @@ class ConsoleService
      *
      * @throws \Exception
      */
-    public function getConsoleRange(int $page, array $cat, int $start, int $num, string $orderBy, array $excludedCats = []): mixed
+    public function getConsoleRange(int $page, array $cat, int $start, int $num, string $orderBy, array $excludedCats = [], ?CoverBrowseScope $scope = null): mixed
     {
         $page = max(1, $page);
         $start = max(0, $start);
 
-        $useIndexForTitlePlatform = Search::isAvailable()
+        $useIndexForTitlePlatform = $scope === null && Search::isAvailable()
             && (! empty($_REQUEST['title']) || ! empty($_REQUEST['platform']));
         $consoleIdsFromSearch = null;
         if ($useIndexForTitlePlatform) {
@@ -165,11 +167,11 @@ class ConsoleService
                 $consoleIdsFromSearch = Search::searchSecondary(SecondarySearchIndex::Console, $q, 5000)['id'];
             }
             if ($consoleIdsFromSearch === []) {
-                return collect();
+                return new CoverBrowseResults;
             }
         }
 
-        $browseBy = $this->getBrowseBy($useIndexForTitlePlatform);
+        $browseBy = $scope === null ? $this->getBrowseBy($useIndexForTitlePlatform) : '';
         $consoleInClause = '';
         if (is_array($consoleIdsFromSearch) && $consoleIdsFromSearch !== []) {
             $consoleInClause = ' AND con.id IN ('.implode(',', array_map('intval', $consoleIdsFromSearch)).')';
@@ -182,20 +184,21 @@ class ConsoleService
         if (\count($excludedCats) > 0) {
             $exccatlist = ' AND r.categories_id NOT IN ('.implode(',', $excludedCats).')';
         }
-        $order = $this->getConsoleOrder($orderBy);
+        $order = $scope?->order('con') ?? $this->getConsoleOrder($orderBy);
         $expiresAt = now()->addMinutes(config('nntmux.cache_expiry_medium'));
         $showPasswords = app(ReleaseBrowseService::class)->showPasswords();
 
-        $baseWhere = "con.title != '' AND con.cover = 1 "
+        $baseWhere = "con.title != '' "
             ."AND r.passwordstatus {$showPasswords} "
             .$browseBy.' '
             .$consoleInClause.' '
             .$catsrch.' '
-            .$exccatlist;
+            .$exccatlist.($scope->sql ?? '');
 
-        $cacheKey = md5('console_range_'.$baseWhere.$order[0].$order[1].$start.$num.$page);
+        $cacheKey = md5('console_range_'.$baseWhere.($scope->cacheKey ?? '').$order[0].$order[1].$start.$num.$page);
 
-        $cached = Cache::get($cacheKey);
+        $cacheable = $scope->cacheable ?? true;
+        $cached = $cacheable ? Cache::get($cacheKey) : null;
         if ($cached !== null) {
             app(ReleaseBrowseService::class)->loadCoverReleaseData($cached);
 
@@ -208,15 +211,15 @@ class ConsoleService
             .'INNER JOIN releases r ON con.id = r.consoleinfo_id '
             .'WHERE '.$baseWhere;
 
-        $totalResult = DB::select($countSql);
+        $totalResult = DB::select($countSql, $scope->bindings ?? []);
         $totalCount = $totalResult[0]->total ?? 0;
 
         if ($totalCount === 0) {
-            return collect();
+            return new CoverBrowseResults([], (int) $totalCount);
         }
 
         // Step 2: Get paginated console entity list with only needed columns
-        $consoleSql = 'SELECT con.id, con.title, con.cover, con.publisher, con.releasedate, con.review, con.url, '
+        $consoleSql = 'SELECT con.id, con.title, con.cover, con.publisher, con.releasedate, con.review, con.url, con.platform, con.esrb, '
             .'con.genres_id, genres.title AS genre, '
             .'MAX(r.postdate) AS latest_postdate, '
             .'COUNT(r.id) AS total_releases '
@@ -224,14 +227,14 @@ class ConsoleService
             .'INNER JOIN releases r ON con.id = r.consoleinfo_id '
             .'LEFT JOIN genres ON con.genres_id = genres.id '
             .'WHERE '.$baseWhere.' '
-            .'GROUP BY con.id, con.title, con.cover, con.publisher, con.releasedate, con.review, con.url, con.genres_id, genres.title '
-            ."ORDER BY {$order[0]} {$order[1]} "
+            .'GROUP BY con.id, con.title, con.cover, con.publisher, con.releasedate, con.review, con.url, con.platform, con.esrb, con.genres_id, genres.title '
+            ."ORDER BY {$order[0]} {$order[1]}, con.id ASC "
             ."LIMIT {$num} OFFSET {$start}";
 
-        $consoles = ConsoleInfo::fromQuery($consoleSql);
+        $consoles = ConsoleInfo::fromQuery($consoleSql, $scope->bindings ?? []);
 
         if ($consoles->isEmpty()) {
-            return collect();
+            return new CoverBrowseResults([], (int) $totalCount);
         }
 
         // Build list of console IDs for release query
@@ -239,13 +242,8 @@ class ConsoleService
         $inConsoleIds = implode(',', array_map('intval', $consoleIds));
 
         // Step 3: Get top 2 releases per console using ROW_NUMBER()
-        $releasesSql = 'SELECT ranked.id, ranked.consoleinfo_id, ranked.guid, ranked.searchname, ranked.display_name, ranked.completion, ranked.repair_outcome, ranked.rescan_outcome, '
-            .'ranked.size, ranked.postdate, ranked.adddate, ranked.haspreview, ranked.grabs, '
-            .'ranked.comments, ranked.totalpart, ranked.group_name, ranked.nfoid, ranked.failed_count '
-            .'FROM ( '
-            .'SELECT r.id, r.consoleinfo_id, r.guid, r.searchname, r.display_name, r.completion, r.repair_outcome, r.rescan_outcome, r.size, r.postdate, r.adddate, '
-            .'r.haspreview, r.grabs, r.comments, r.totalpart, g.name AS group_name, '
-            .'rn.releases_id AS nfoid, df.failed AS failed_count, '
+        $releasesSql = 'SELECT ranked.* FROM ( '
+            .'SELECT r.*, g.name AS group_name, rn.releases_id AS nfoid, df.failed AS failed_count, '
             .'ROW_NUMBER() OVER (PARTITION BY r.consoleinfo_id ORDER BY r.postdate DESC) AS rn '
             .'FROM releases r '
             .'LEFT JOIN usenet_groups g ON g.id = r.groups_id '
@@ -255,11 +253,12 @@ class ConsoleService
             ."AND r.passwordstatus {$showPasswords} "
             .$catsrch.' '
             .$exccatlist
+            .($scope->sql ?? '')
             .') ranked '
             .'WHERE ranked.rn <= 2 '
             .'ORDER BY ranked.consoleinfo_id, ranked.postdate DESC';
 
-        $releases = DB::select($releasesSql);
+        $releases = DB::select($releasesSql, $scope->bindings ?? []);
 
         // Group releases by consoleinfo_id for fast lookup
         $releasesByConsole = [];
@@ -277,7 +276,10 @@ class ConsoleService
             $consoles[0]->_totalcount = $totalCount; // @phpstan-ignore property.notFound
         }
 
-        Cache::put($cacheKey, $consoles, $expiresAt);
+        $consoles = new CoverBrowseResults($consoles, (int) $totalCount);
+        if ($cacheable) {
+            Cache::put($cacheKey, $consoles, $expiresAt);
+        }
         app(ReleaseBrowseService::class)->loadCoverReleaseData($consoles);
 
         return $consoles;

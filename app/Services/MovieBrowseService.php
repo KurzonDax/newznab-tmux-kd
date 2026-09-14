@@ -7,7 +7,9 @@ namespace App\Services;
 use App\Facades\Search;
 use App\Models\Category;
 use App\Models\MovieInfo;
+use App\Services\Releases\CoverBrowseScope;
 use App\Services\Releases\ReleaseBrowseService;
+use App\Support\CoverBrowseResults;
 use App\Support\MovieSearchQuery;
 use App\Support\YearRange;
 use Illuminate\Support\Facades\Cache;
@@ -33,10 +35,10 @@ class MovieBrowseService
      * 2. Paginated movie list with only needed columns
      * 3. Top 2 releases per movie using a partitioned release rank
      *
-     * @param  array<string, mixed>  $cat
+     * @param  array<int|string, mixed>  $cat
      * @param  array<string, mixed>  $excludedCats
      */
-    public function getMovieRange(int $page, array $cat, int $start, int $num, string $orderBy, int $maxAge = -1, array $excludedCats = []): mixed
+    public function getMovieRange(int $page, array $cat, int $start, int $num, string $orderBy, int $maxAge = -1, array $excludedCats = [], ?CoverBrowseScope $scope = null): mixed
     {
         $page = max(1, $page);
         $start = max(0, $start);
@@ -44,7 +46,7 @@ class MovieBrowseService
         // Build effective category filter: merge inclusion and exclusion into a single IN clause
         // to avoid redundant IN + NOT IN predicates and help the optimizer
         $catArray = [];
-        if (count($cat) > 0 && $cat[0] !== -1) { // @phpstan-ignore offsetAccess.notFound
+        if (count($cat) > 0 && $cat[0] !== -1) {
             $catArray = (array) (Category::getCategorySearch($cat, null, true) ?? []);
         }
 
@@ -60,7 +62,7 @@ class MovieBrowseService
             $whereExcluded = count($excludedCats) > 0 ? ' AND r.categories_id NOT IN ('.implode(',', $excludedCats).')' : '';
         }
 
-        $order = $this->getMovieOrder($orderBy);
+        $order = $scope?->order('m') ?? $this->getMovieOrder($orderBy);
         $expiresAt = now()->addMinutes(config('nntmux.cache_expiry_medium'));
 
         $whereAge = $maxAge > 0 ? 'AND r.postdate > NOW() - INTERVAL '.$maxAge.' DAY ' : '';
@@ -68,7 +70,7 @@ class MovieBrowseService
         $movieSearchQuery = MovieSearchQuery::fromInput(request()->all());
         $indexImdbClause = '';
         $textSearchWhere = '';
-        if (! $movieSearchQuery->isEmpty()) {
+        if ($scope === null && ! $movieSearchQuery->isEmpty()) {
             $foundImdbIds = [];
             if (Search::isAvailable()) {
                 $found = Search::searchMoviesByFields($movieSearchQuery->indexTerms(), 8000);
@@ -83,7 +85,7 @@ class MovieBrowseService
             }
         }
 
-        $browseBy = $this->getBrowseBy();
+        $browseBy = $scope === null ? $this->getBrowseBy() : '';
 
         $baseWhere = "m.title != '' AND m.imdbid IS NOT NULL AND m.imdbid != '' "
             ."AND r.passwordstatus {$this->showPasswords} "
@@ -92,12 +94,13 @@ class MovieBrowseService
             .$indexImdbClause
             .$catFilter
             .$whereAge
-            .$whereExcluded;
+            .$whereExcluded.($scope->sql ?? '');
 
         // Build a cache key from all the query parameters
-        $cacheKey = md5('movie_range_'.$baseWhere.$order[0].$order[1].$start.$num.$page);
+        $cacheKey = md5('movie_range_'.$baseWhere.($scope->cacheKey ?? '').$order[0].$order[1].$start.$num.$page);
 
-        $cached = Cache::get($cacheKey);
+        $cacheable = $scope->cacheable ?? true;
+        $cached = $cacheable ? Cache::get($cacheKey) : null;
         if ($cached !== null) {
             if (is_iterable($cached)) {
                 app(ReleaseBrowseService::class)->loadCoverReleaseData($cached);
@@ -109,8 +112,8 @@ class MovieBrowseService
         // Step 1: Count total distinct movies matching filters.
         // Cached separately with a longer TTL (30 min) since the total changes slowly
         // and this query scans all 84K+ movieinfo rows joined to releases (~0.5s).
-        $countCacheKey = md5('movie_count_'.$baseWhere);
-        $totalCount = Cache::get($countCacheKey);
+        $countCacheKey = md5('movie_count_'.$baseWhere.($scope->cacheKey ?? ''));
+        $totalCount = $cacheable ? Cache::get($countCacheKey) : null;
 
         if ($totalCount === null) {
             $countSql = 'SELECT COUNT(DISTINCT m.imdbid) AS total '
@@ -118,26 +121,31 @@ class MovieBrowseService
                 .'INNER JOIN releases r ON r.imdbid = m.imdbid '
                 .'WHERE '.$baseWhere;
 
-            $totalResult = DB::select($countSql);
+            $totalResult = DB::select($countSql, $scope->bindings ?? []);
             $totalCount = $totalResult[0]->total ?? 0;
 
-            Cache::put($countCacheKey, $totalCount, now()->addMinutes(30));
+            if ($cacheable) {
+                Cache::put($countCacheKey, $totalCount, now()->addMinutes(30));
+            }
         }
 
         if ($totalCount === 0) {
-            return collect();
+            return new CoverBrowseResults([], (int) $totalCount);
         }
 
         // Step 2: Get paginated movie list using two-phase subquery.
         // Inner query aggregates by just imdbid (small temp table, fast filesort on ~53K
         // narrow rows instead of 53K wide rows with TEXT columns like plot/genre/actors).
         // Outer query joins back to movieinfo for full details on only the top N movies.
-        $isAggregateOrder = ($order[0] === 'MAX(r.postdate)');
+        $aggregateOrder = match ($order[0]) {
+            'MAX(r.postdate)' => 'latest_postdate', 'MAX(r.adddate)' => 'latest_added',
+            'SUM(r.grabs)' => 'total_grabs', default => null,
+        };
 
-        if ($isAggregateOrder) {
-            $innerOrderBy = 'latest_postdate';
+        if ($aggregateOrder !== null) {
+            $innerOrderBy = $aggregateOrder;
             $innerExtraGroupBy = '';
-            $outerOrderBy = 'stats.latest_postdate';
+            $outerOrderBy = 'stats.'.$aggregateOrder;
         } else {
             // orderField is like 'm.title', 'm.year', 'm.rating'
             $innerOrderBy = $order[0];
@@ -149,21 +157,21 @@ class MovieBrowseService
             .'m.plot, m.genre, m.director, m.actors, m.cover, '
             .'stats.latest_postdate, stats.total_releases '
             .'FROM ('
-            .'SELECT m.imdbid, MAX(r.postdate) AS latest_postdate, COUNT(r.id) AS total_releases '
+            .'SELECT m.imdbid, MAX(r.postdate) AS latest_postdate, MAX(r.adddate) AS latest_added, SUM(r.grabs) AS total_grabs, COUNT(r.id) AS total_releases '
             .'FROM movieinfo m '
             .'INNER JOIN releases r ON r.imdbid = m.imdbid '
             .'WHERE '.$baseWhere.' '
             .'GROUP BY m.imdbid'.$innerExtraGroupBy.' '
-            ."ORDER BY {$innerOrderBy} {$order[1]} "
+            ."ORDER BY {$innerOrderBy} {$order[1]}, m.imdbid ASC "
             ."LIMIT {$num} OFFSET {$start}"
             .') stats '
             .'INNER JOIN movieinfo m ON m.imdbid = stats.imdbid '
-            ."ORDER BY {$outerOrderBy} {$order[1]}";
+            ."ORDER BY {$outerOrderBy} {$order[1]}, m.imdbid ASC";
 
-        $movies = MovieInfo::fromQuery($moviesSql);
+        $movies = MovieInfo::fromQuery($moviesSql, $scope->bindings ?? []);
 
         if ($movies->isEmpty()) {
-            return collect();
+            return new CoverBrowseResults([], (int) $totalCount);
         }
 
         // Build list of movie IMDB IDs for release query
@@ -171,7 +179,7 @@ class MovieBrowseService
 
         // Step 3: Get the top 2 releases per movie without issuing one query per movie.
         $rankedReleases = DB::table('releases as r')
-            ->select(['r.id', 'r.imdbid', 'r.guid', 'r.searchname', 'r.display_name', 'r.completion', 'r.repair_outcome', 'r.rescan_outcome', 'r.size', 'r.postdate', 'r.adddate', 'r.haspreview'])
+            ->select('r.*')
             ->selectRaw('ROW_NUMBER() OVER (PARTITION BY r.imdbid ORDER BY r.postdate DESC) AS release_rank')
             ->whereIn('r.imdbid', $movieImdbIds)
             ->whereRaw("r.passwordstatus {$this->showPasswords}");
@@ -185,6 +193,8 @@ class MovieBrowseService
         if ($maxAge > 0) {
             $rankedReleases->where('r.postdate', '>', now()->subDays($maxAge));
         }
+
+        $scope?->applyTo($rankedReleases);
 
         $releases = DB::query()
             ->fromSub($rankedReleases, 'ranked_releases')
@@ -207,7 +217,10 @@ class MovieBrowseService
             $movies[0]->_totalcount = $totalCount; // @phpstan-ignore property.notFound
         }
 
-        Cache::put($cacheKey, $movies, $expiresAt);
+        $movies = new CoverBrowseResults($movies, (int) $totalCount);
+        if ($cacheable) {
+            Cache::put($cacheKey, $movies, $expiresAt);
+        }
 
         app(ReleaseBrowseService::class)->loadCoverReleaseData($movies);
 

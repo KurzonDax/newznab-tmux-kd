@@ -16,6 +16,7 @@ use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Service for browsing and ordering releases on the frontend.
@@ -57,6 +58,16 @@ class ReleaseBrowseService
         $rows = [];
         foreach ($releases as $release) {
             $rows[] = $release;
+        }
+        if ($rows !== [] && Schema::hasTable('release_reports')) {
+            $reports = DB::table('release_reports')->whereIn('releases_id', array_column($rows, 'id'))
+                ->select('releases_id')->selectRaw('COUNT(*) AS reports')
+                ->selectRaw("SUM(CASE WHEN response_is_public = 1 AND response IS NOT NULL AND response <> '' THEN 1 ELSE 0 END) AS public_responses")
+                ->groupBy('releases_id')->get()->keyBy('releases_id');
+            foreach ($rows as $release) {
+                $release->total_report_count = (int) ($reports->get($release->id)->reports ?? 0);
+                $release->report_response_count = (int) ($reports->get($release->id)->public_responses ?? 0);
+            }
         }
         $this->previewDataLoader->load($rows);
         $this->mediaInfoAvailabilityLoader->load($rows);

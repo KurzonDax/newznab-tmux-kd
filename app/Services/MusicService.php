@@ -13,7 +13,9 @@ use App\Models\MusicInfo;
 use App\Models\Release;
 use App\Models\Settings;
 use App\Services\MusicIdentity\ResolveReleaseMusicIdentity;
+use App\Services\Releases\CoverBrowseScope;
 use App\Services\Releases\ReleaseBrowseService;
+use App\Support\CoverBrowseResults;
 use App\Support\MetadataSearchLookup;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Cache;
@@ -151,12 +153,12 @@ class MusicService
      * @param  array<int|string, mixed>  $cat  Category IDs (list or associative)
      * @param  array<string, mixed>  $excludedCats
      */
-    public function getMusicRange(int $page, array $cat, int $start, int $num, string $orderBy, array $excludedCats = []): mixed
+    public function getMusicRange(int $page, array $cat, int $start, int $num, string $orderBy, array $excludedCats = [], ?CoverBrowseScope $scope = null): mixed
     {
         $page = max(1, $page);
         $start = max(0, $start);
 
-        $useIndexForArtistTitle = Search::isAvailable()
+        $useIndexForArtistTitle = $scope === null && Search::isAvailable()
             && (! empty($_REQUEST['artist']) || ! empty($_REQUEST['title']));
         $musicIdsFromSearch = null;
         if ($useIndexForArtistTitle) {
@@ -170,11 +172,11 @@ class MusicService
                 $musicIdsFromSearch = Search::searchSecondary(SecondarySearchIndex::Music, $q, 5000)['id'];
             }
             if ($musicIdsFromSearch === []) {
-                return collect();
+                return new CoverBrowseResults;
             }
         }
 
-        $browseby = $this->getBrowseBy($useIndexForArtistTitle);
+        $browseby = $scope === null ? $this->getBrowseBy($useIndexForArtistTitle) : '';
         $musicInClause = '';
         if (is_array($musicIdsFromSearch) && $musicIdsFromSearch !== []) {
             $musicInClause = ' AND m.id IN ('.implode(',', array_map('intval', $musicIdsFromSearch)).')';
@@ -187,22 +189,23 @@ class MusicService
         if (\count($excludedCats) > 0) {
             $exccatlist = ' AND r.categories_id NOT IN ('.implode(',', $excludedCats).')';
         }
-        $order = $this->getMusicOrder($orderBy);
+        $order = $scope?->order('m') ?? $this->getMusicOrder($orderBy);
         $expiresAt = now()->addMinutes(config('nntmux.cache_expiry_medium'));
 
         $releaseBrowseService = new ReleaseBrowseService;
         $showPasswords = $releaseBrowseService->showPasswords();
 
-        $baseWhere = "m.title != '' AND m.cover = 1 "
+        $baseWhere = "m.title != '' "
             ."AND r.passwordstatus {$showPasswords} "
             .$browseby.' '
             .$musicInClause.' '
             .$catsrch.' '
-            .$exccatlist;
+            .$exccatlist.($scope->sql ?? '');
 
-        $cacheKey = md5('music_range_'.$baseWhere.$order[0].$order[1].$start.$num.$page);
+        $cacheKey = md5('music_range_'.$baseWhere.($scope->cacheKey ?? '').$order[0].$order[1].$start.$num.$page);
 
-        $cached = Cache::get($cacheKey);
+        $cacheable = $scope->cacheable ?? true;
+        $cached = $cacheable ? Cache::get($cacheKey) : null;
         if ($cached !== null) {
             app(ReleaseBrowseService::class)->loadCoverReleaseData($cached);
 
@@ -215,29 +218,30 @@ class MusicService
             .'INNER JOIN releases r ON r.musicinfo_id = m.id '
             .'WHERE '.$baseWhere;
 
-        $totalResult = DB::select($countSql);
+        $totalResult = DB::select($countSql, $scope->bindings ?? []);
         $totalCount = $totalResult[0]->total ?? 0;
 
         if ($totalCount === 0) {
-            return collect();
+            return new CoverBrowseResults([], (int) $totalCount);
         }
 
         // Step 2: Get paginated music entity list with only needed columns
         $musicSql = 'SELECT m.id, m.title, m.artist, m.cover, m.publisher, m.releasedate, m.review, m.url, m.year, '
-            .'m.genres_id, '
+            .'m.genres_id, genres.title AS genre, '
             .'MAX(r.postdate) AS latest_postdate, '
             .'COUNT(r.id) AS total_releases '
             .'FROM musicinfo m '
             .'INNER JOIN releases r ON r.musicinfo_id = m.id '
+            .'LEFT JOIN genres ON genres.id = m.genres_id '
             .'WHERE '.$baseWhere.' '
-            .'GROUP BY m.id, m.title, m.artist, m.cover, m.publisher, m.releasedate, m.review, m.url, m.year, m.genres_id '
-            ."ORDER BY {$order[0]} {$order[1]} "
+            .'GROUP BY m.id, m.title, m.artist, m.cover, m.publisher, m.releasedate, m.review, m.url, m.year, m.genres_id, genres.title '
+            ."ORDER BY {$order[0]} {$order[1]}, m.id ASC "
             ."LIMIT {$num} OFFSET {$start}";
 
-        $musicEntities = MusicInfo::fromQuery($musicSql);
+        $musicEntities = MusicInfo::fromQuery($musicSql, $scope->bindings ?? []);
 
         if ($musicEntities->isEmpty()) {
-            return collect();
+            return new CoverBrowseResults([], (int) $totalCount);
         }
 
         // Build list of music IDs for release query
@@ -245,13 +249,8 @@ class MusicService
         $inMusicIds = implode(',', array_map('intval', $musicIds));
 
         // Step 3: Get top 2 releases per music entity using ROW_NUMBER()
-        $releasesSql = 'SELECT ranked.id, ranked.musicinfo_id, ranked.guid, ranked.searchname, ranked.display_name, ranked.completion, ranked.repair_outcome, ranked.rescan_outcome, '
-            .'ranked.size, ranked.postdate, ranked.adddate, ranked.haspreview, ranked.grabs, '
-            .'ranked.comments, ranked.totalpart, ranked.group_name, ranked.nfoid, ranked.failed_count '
-            .'FROM ( '
-            .'SELECT r.id, r.musicinfo_id, r.guid, r.searchname, r.display_name, r.completion, r.repair_outcome, r.rescan_outcome, r.size, r.postdate, r.adddate, '
-            .'r.haspreview, r.grabs, r.comments, r.totalpart, g.name AS group_name, '
-            .'rn.releases_id AS nfoid, df.failed AS failed_count, '
+        $releasesSql = 'SELECT ranked.* FROM ( '
+            .'SELECT r.*, g.name AS group_name, rn.releases_id AS nfoid, df.failed AS failed_count, '
             .'ROW_NUMBER() OVER (PARTITION BY r.musicinfo_id ORDER BY r.postdate DESC) AS rn '
             .'FROM releases r '
             .'LEFT JOIN usenet_groups g ON g.id = r.groups_id '
@@ -261,11 +260,12 @@ class MusicService
             ."AND r.passwordstatus {$showPasswords} "
             .$catsrch.' '
             .$exccatlist
+            .($scope->sql ?? '')
             .') ranked '
             .'WHERE ranked.rn <= 2 '
             .'ORDER BY ranked.musicinfo_id, ranked.postdate DESC';
 
-        $releases = DB::select($releasesSql);
+        $releases = DB::select($releasesSql, $scope->bindings ?? []);
 
         // Group releases by musicinfo_id for fast lookup
         $releasesByMusic = [];
@@ -283,7 +283,10 @@ class MusicService
             $musicEntities[0]->_totalcount = $totalCount;
         }
 
-        Cache::put($cacheKey, $musicEntities, $expiresAt);
+        $musicEntities = new CoverBrowseResults($musicEntities, (int) $totalCount);
+        if ($cacheable) {
+            Cache::put($cacheKey, $musicEntities, $expiresAt);
+        }
         app(ReleaseBrowseService::class)->loadCoverReleaseData($musicEntities);
 
         return $musicEntities;

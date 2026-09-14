@@ -18,8 +18,7 @@ final class ReleaseBrowserQuery
 
     public function paginate(ReleaseBrowserState $state, User $user): ReleaseBrowserPage
     {
-        $query = $this->baseQuery($state, $user);
-        $this->metadata->filter($query, $state->root, $state->filters);
+        $query = $this->matchingQuery($state, $user);
         $displayName = $this->displayName();
         $totalBeforeEligibility = $query->count();
         $total = $totalBeforeEligibility;
@@ -39,16 +38,6 @@ final class ReleaseBrowserQuery
         }
         $rows = $query->orderByDesc('r.id')
             ->offset(($page - 1) * $state->per)->limit($state->per)->get(['r.*']);
-        if ($rows->isNotEmpty() && Schema::hasTable('release_reports')) {
-            $reports = DB::table('release_reports')->whereIn('releases_id', $rows->pluck('id'))
-                ->select('releases_id')->selectRaw('COUNT(*) AS reports')
-                ->selectRaw("SUM(CASE WHEN response_is_public = 1 AND response IS NOT NULL AND response <> '' THEN 1 ELSE 0 END) AS public_responses")
-                ->groupBy('releases_id')->get()->keyBy('releases_id');
-            foreach ($rows as $release) {
-                $release->total_report_count = (int) ($reports->get($release->id)->reports ?? 0);
-                $release->report_response_count = (int) ($reports->get($release->id)->public_responses ?? 0);
-            }
-        }
         $this->releases->loadReleaseRows($rows);
 
         return new ReleaseBrowserPage($rows, $total, $state->per, $page, [
@@ -65,7 +54,15 @@ final class ReleaseBrowserQuery
     /** @return array<string, string> */
     public function sortOptions(ReleaseBrowserState $state): array
     {
-        return $this->metadata->sorts($state->root);
+        return [...$this->metadata->sorts($state->root), ...($state->view === 'covers' && $state->root === BrowseRoot::Movies ? ['grabs' => 'Most grabbed'] : [])];
+    }
+
+    public function matchingQuery(ReleaseBrowserState $state, User $user): Builder
+    {
+        $query = $this->baseQuery($state, $user);
+        $this->metadata->filter($query, $state->root, $state->filters);
+
+        return $query;
     }
 
     private function baseQuery(ReleaseBrowserState $state, User $user): Builder
@@ -120,9 +117,20 @@ final class ReleaseBrowserQuery
             });
         }
         $displayName = $this->displayName();
-        if ($state->query !== '') {
+        if ($state->view === 'covers' && $state->root === BrowseRoot::Movies) {
+            $this->metadata->searchMovies($query, $state->query, $state->filters);
+        } elseif ($state->query !== '') {
             $pattern = '%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $state->query).'%';
-            $query->whereRaw($displayName." LIKE ? ESCAPE '!'", [$pattern]);
+            if ($state->view === 'covers' && $state->root !== BrowseRoot::Adult) {
+                $query->where(function (Builder $titles) use ($state, $pattern): void {
+                    $titles->whereRaw("m.title LIKE ? ESCAPE '!'", [$pattern]);
+                    if ($state->root === BrowseRoot::Audio) {
+                        $titles->orWhereRaw("m.artist LIKE ? ESCAPE '!'", [$pattern]);
+                    }
+                });
+            } else {
+                $query->whereRaw($displayName." LIKE ? ESCAPE '!'", [$pattern]);
+            }
         }
         $this->metadata->join($query, $state->root);
 

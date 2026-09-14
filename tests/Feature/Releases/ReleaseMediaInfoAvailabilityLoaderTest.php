@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Releases;
 
+use App\Data\ReleaseBrowserState;
+use App\Enums\BrowseRoot;
 use App\Facades\Search;
 use App\Models\Release;
+use App\Models\User;
 use App\Services\BookService;
 use App\Services\ConsoleService;
 use App\Services\GamesService;
@@ -127,16 +130,10 @@ class ReleaseMediaInfoAvailabilityLoaderTest extends TestCase
         self::assertSame('1080p · x264 · DTS-HD 5.1', $rows[1]->row_data?->media_info_summary);
         self::assertTrue($rows[1]->has_media_info ?? false);
         self::assertFalse($rows[2]->has_media_info ?? false);
-        $this->blade('<x-cover-release-list :releases="$releases" />', ['releases' => $rows->values()])
+        $this->view('components.release-browser.table', ['rows' => $rows->values(), 'state' => ReleaseBrowserState::fromRequest(request(), BrowseRoot::All, new User, tableOnly: true)])
             ->assertSee('data-release-id="1"', false)
             ->assertSee('data-release-display-name="Release 1"', false)
             ->assertDontSee('data-release-id="2"', false);
-
-        if ($service instanceof MovieBrowseService) {
-            $this->view('movies.partials.movie-card', ['result' => $results->first()])
-                ->assertSee('data-release-id="1"', false)
-                ->assertSee('data-release-display-name="Release 1"', false);
-        }
 
         DB::table('media_info_probes')->delete();
         DB::table('video_data')->delete();
@@ -153,7 +150,7 @@ class ReleaseMediaInfoAvailabilityLoaderTest extends TestCase
         self::assertSame(0, $entityQueries, 'The second request should use the cached entity page.');
         self::assertFalse($cachedRows[1]->has_media_info);
         self::assertTrue($cachedRows[2]->has_media_info);
-        $this->blade('<x-cover-release-list :releases="$releases" />', ['releases' => $cachedRows->values()])
+        $this->view('components.release-browser.table', ['rows' => $cachedRows->values(), 'state' => ReleaseBrowserState::fromRequest(request(), BrowseRoot::All, new User, tableOnly: true)])
             ->assertDontSee('data-release-id="1"', false)
             ->assertSee('data-release-id="2"', false);
     }
@@ -175,7 +172,7 @@ class ReleaseMediaInfoAvailabilityLoaderTest extends TestCase
         $this->registerSqliteFunction('YEAR', static fn (?string $date): ?string => $date === null ? null : substr($date, 0, 4));
         Schema::create($entityTable, function (Blueprint $table): void {
             $table->id();
-            foreach (['imdbid', 'tmdbid', 'traktid', 'title', 'year', 'rating', 'plot', 'genre', 'director', 'actors', 'artist', 'publisher', 'releasedate', 'review', 'url', 'genres_id', 'author', 'publishdate', 'overview'] as $column) {
+            foreach (['imdbid', 'tmdbid', 'traktid', 'title', 'year', 'rating', 'plot', 'genre', 'director', 'actors', 'artist', 'publisher', 'releasedate', 'review', 'url', 'genres_id', 'author', 'publishdate', 'overview', 'platform', 'esrb'] as $column) {
                 $table->string($column)->nullable();
             }
             $table->integer('cover')->default(1);

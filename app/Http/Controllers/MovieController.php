@@ -4,14 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
-use App\Models\Category;
+use App\Enums\BrowseRoot;
 use App\Services\MovieBrowseService;
 use App\Services\MovieService;
-use App\Support\YearRange;
+use App\Services\Releases\LegacyCoverRedirect;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 
 class MovieController extends BasePageController
 {
@@ -31,90 +28,11 @@ class MovieController extends BasePageController
      */
     public function showMovies(Request $request, string $id = ''): mixed
     {
-        $moviecats = Category::getChildren(Category::MOVIE_ROOT)->map(function ($mcat) {
-            return ['id' => $mcat->id, 'title' => $mcat->title];
-        });
-
-        $category = $request->has('imdb') ? -1 : $this->integerInput($request, 't', Category::MOVIE_ROOT);
-        if ($id && $moviecats->pluck('title')->contains($id)) {
-            $cat = Category::where(['title' => $id, 'root_categories_id' => Category::MOVIE_ROOT])->first(['id']);
-            $category = $cat !== null ? (int) $cat->id : Category::MOVIE_ROOT;
+        if ($request->filled('imdb') && is_string($request->input('imdb'))) {
+            return redirect()->route('movie.view', $request->input('imdb'));
         }
 
-        $catarray = $category !== -1 ? [$category] : [];
-
-        $page = $this->resolvePage($request);
-        $perPage = (int) config('nntmux.items_per_cover_page');
-        $offset = $this->paginationOffset($page, $perPage);
-        $ordering = $this->movieBrowseService->getMovieOrdering();
-        $orderby = $this->resolveOrderBy($request, $ordering);
-
-        $rslt = $this->movieBrowseService->getMovieRange($page, $catarray, $offset, $perPage, $orderby, -1, (array) $this->userdata->categoryexclusions);
-        $totalCount = $rslt->isNotEmpty() ? ($rslt[0]->_totalcount ?? 0) : 0;
-        $results = $this->paginate($rslt ?? [], $totalCount, $perPage, $page, $request->url(), $request->query());
-
-        $movies = $results->map(function ($result) {
-            $result->genre = makeFieldLinks($result, 'genre', 'movies');
-            $result->actors = makeFieldLinks($result, 'actors', 'movies');
-            $result->director = makeFieldLinks($result, 'director', 'movies');
-
-            // Add cover image URL using helper function
-            $result->cover = getReleaseCover($result);
-
-            return $result;
-        });
-
-        $maxYear = now()->addYear()->year;
-        $years = range(1900, $maxYear);
-        rsort($years);
-
-        $genres = $this->movieBrowseService->getGenres();
-        $ratingInput = $this->integerInput($request, 'rating', 0);
-        $genreInput = $this->scalarInput($request, 'genre');
-        $yearInput = $this->scalarInput($request, 'year');
-        $yearFromInput = $this->scalarInput($request, 'year_from');
-        $yearToInput = $this->scalarInput($request, 'year_to');
-        $yearRange = YearRange::fromInput($yearInput, $yearFromInput, $yearToInput, $maxYear);
-        $actorInput = $this->scalarInput($request, 'actor');
-        if ($actorInput === '') {
-            $actorInput = $this->scalarInput($request, 'actors');
-        }
-
-        $catname = $category === -1 ? 'All' : Category::find($category) ?? 'All';
-
-        $this->viewData = array_merge($this->viewData, [
-            'cpapi' => $this->userdata->cp_api,
-            'cpurl' => $this->userdata->cp_url,
-            'catlist' => $moviecats,
-            'category' => $category,
-            'categorytitle' => $id,
-            'q' => stripslashes($this->scalarInput($request, 'q')),
-            'title' => stripslashes($this->scalarInput($request, 'title')),
-            'actor' => stripslashes($actorInput),
-            'director' => stripslashes($this->scalarInput($request, 'director')),
-            'plot' => stripslashes($this->scalarInput($request, 'plot')),
-            'ratings' => range(1, 9),
-            'rating' => \in_array($ratingInput, range(1, 9), true) ? $ratingInput : '',
-            'genres' => $genres,
-            'genre' => \in_array($genreInput, $genres, true) ? $genreInput : '',
-            'years' => $years,
-            'year' => $yearRange !== null ? $yearInput : '',
-            'year_from' => $yearRange !== null ? $yearFromInput : '',
-            'year_to' => $yearRange !== null ? $yearToInput : '',
-            'catname' => $catname,
-            'resultsadd' => $movies,
-            'results' => $results,
-            'covgroup' => 'movies',
-            'meta_title' => 'Browse Movies',
-            'meta_keywords' => 'browse,nzb,description,details',
-            'meta_description' => 'Browse for Movies',
-            'movie_layout' => $this->userdata->movie_layout ?? 2,
-        ]);
-
-        // Return the appropriate view
-        $viewName = $request->has('imdb') ? 'movies.viewmoviefull' : 'movies.index';
-
-        return view($viewName, $this->viewData);
+        return app(LegacyCoverRedirect::class)->redirect($request, BrowseRoot::Movies, $id);
     }
 
     /**
@@ -170,91 +88,11 @@ class MovieController extends BasePageController
         return view('movies.viewmoviefull', $this->viewData);
     }
 
-    /**
-     * Show trending movies (top 15 most downloaded in last 48 hours)
-     *
-     * @throws \Exception
-     */
     public function showTrending(Request $request): mixed
     {
-
-        // Cache key for trending movies (48 hours)
-        $cacheKey = 'trending_movies_top_15_48h';
-
-        // Get trending movies from cache or calculate (refresh every hour)
-        $trendingMovies = Cache::remember($cacheKey, 3600, function () {
-            // Calculate timestamp for 48 hours ago
-            $fortyEightHoursAgo = Carbon::now()->subHours(48);
-
-            // Get movies with their download counts from last 48 hours
-            // Join with user_downloads to get actual download timestamps
-            $query = DB::table('movieinfo as m')
-                ->join('releases as r', 'm.imdbid', '=', 'r.imdbid')
-                ->leftJoin('user_downloads as ud', 'r.id', '=', 'ud.releases_id')
-                ->select([
-                    'm.imdbid',
-                    'm.title',
-                    'm.year',
-                    'm.rating',
-                    'm.plot',
-                    'm.genre',
-                    'm.cover',
-                    'm.tmdbid',
-                    'm.traktid',
-                    DB::raw('COUNT(DISTINCT ud.id) as total_downloads'),
-                    DB::raw('COUNT(DISTINCT r.id) as release_count'),
-                ])
-                ->where('m.title', '!=', '')
-                ->whereNotNull('m.imdbid')
-                ->where('m.imdbid', '!=', '')
-                ->where('ud.timestamp', '>=', $fortyEightHoursAgo)
-                ->groupBy('m.imdbid', 'm.title', 'm.year', 'm.rating', 'm.plot', 'm.genre', 'm.cover', 'm.tmdbid', 'm.traktid')
-                ->havingRaw('COUNT(DISTINCT ud.id) > 0')
-                ->orderByDesc('total_downloads')
-                ->limit(15)
-                ->get();
-
-            // Process the results
-            return $query->map(function ($item) {
-                // Add cover image URL using helper function
-                $coverArray = [
-                    'imdbid' => $item->imdbid,
-                    'tmdbid' => $item->tmdbid,
-                    'cover' => $item->cover,
-                ];
-                $item->cover = getReleaseCover($coverArray);
-
-                return $item;
-            });
-        });
-
-        $this->viewData = array_merge($this->viewData, [
-            'trendingMovies' => $trendingMovies,
-            'meta_title' => 'Trending Movies - Last 48 Hours',
-            'meta_keywords' => 'trending,movies,popular,downloads,recent',
-            'meta_description' => 'Browse the most popular and downloaded movies in the last 48 hours',
+        return redirect()->route('browse', [
+            ...$request->except(['parentCategory', 'id', '_token']),
+            'parentCategory' => 'movies', 'view' => 'covers', 'sort' => 'grabs',
         ]);
-
-        return view('movies.trending', $this->viewData);
-    }
-
-    /**
-     * Update user's movie layout preference
-     */
-    public function updateLayout(Request $request): mixed
-    {
-        $request->validate([
-            'layout' => 'required|integer|in:1,2',
-        ]);
-
-        $user = auth()->user();
-        if ($user) {
-            $user->movie_layout = (int) $request->input('layout');
-            $user->save();
-
-            return response()->json(['success' => true, 'layout' => $user->movie_layout]);
-        }
-
-        return response()->json(['success' => false, 'message' => 'User not authenticated'], 401);
     }
 }

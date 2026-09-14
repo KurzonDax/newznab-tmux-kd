@@ -10,6 +10,13 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* Color scheme: surface + accent variables. data-color-scheme set on <html>. */
+:root {
+    --surface-release-row: #eef2f7;
+    --surface-release-row-dark: #0b1220;
+    --border-release-row: #cbd5e1;
+    --border-release-row-dark: #475569;
+}
+
 :root,
 [data-color-scheme="blue"] {
     /* Surface - Blue/Slate */

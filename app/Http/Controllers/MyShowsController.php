@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
-use App\Data\ReleaseBrowserState;
 use App\Enums\BrowseRoot;
 use App\Models\Category;
 use App\Models\Settings;
 use App\Models\UserSerie;
 use App\Models\Video;
-use App\Services\Releases\ReleaseBrowserQuery;
 use Illuminate\Http\Request;
 
 class MyShowsController extends BasePageController
@@ -136,20 +134,11 @@ class MyShowsController extends BasePageController
      */
     public function browse(Request $request): mixed
     {
-        $browserRequest = clone $request;
-        $browserRequest->merge(['watching' => true]);
-        $state = ReleaseBrowserState::fromRequest($browserRequest, BrowseRoot::Tv, $this->userdata);
-        $query = app(ReleaseBrowserQuery::class);
-        $results = $query->paginate($state, $this->userdata);
-        if ($state->page > $results->lastPage()) {
-            return redirect()->to($state->pageUrl($request, $results->lastPage()));
-        }
-
-        return view('browse.index', array_merge($this->viewData, [
-            'browserState' => $state, 'browserTitle' => 'Browse My Shows', 'meta_title' => 'My Shows',
-            'results' => $results, 'filterOptions' => $query->filterOptions($state, $this->userdata),
-            'sortOptions' => $query->sortOptions($state),
-        ]));
+        return redirect()->route('browse', [
+            ...$request->except(['parentCategory', 'id', 'watching']),
+            'parentCategory' => BrowseRoot::Tv->value,
+            'watching' => 1,
+        ]);
     }
 
     /**
