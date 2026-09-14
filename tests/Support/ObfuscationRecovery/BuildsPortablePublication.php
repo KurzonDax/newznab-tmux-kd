@@ -80,6 +80,7 @@ trait BuildsPortablePublication
         $this->registerSqliteFunction('UNIX_TIMESTAMP', static fn (?string $value): int => (int) strtotime((string) $value));
         Search::shouldReceive('updateRelease')->zeroOrMoreTimes();
         DB::table('settings')->where('name', 'obfuscation_recovery_enabled')->update(['value' => 1]);
+        DB::table('settings')->updateOrInsert(['name' => 'lookuppar2'], ['value' => 0]);
         config(['nntmux_settings.path_to_nzbs' => $this->makeTempDirectory('portable-nzb')]);
     }
 
