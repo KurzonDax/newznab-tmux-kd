@@ -8,16 +8,8 @@
         <x-page-header title="Contact Us" icon="fas fa-envelope" />
 
         <div class="px-6 py-8 lg:px-12 lg:py-10">
-            @if(isset($msg) && $msg != '')
-                <div class="mb-6 p-4 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 text-green-800 dark:text-green-200 rounded-lg">
-                    <i class="fa fa-check-circle mr-2"></i>{!! $msg !!}
-                </div>
-            @endif
-
-            @if(session('success'))
-                <div class="mb-6 p-4 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 text-green-800 dark:text-green-200 rounded-lg">
-                    <i class="fa fa-check-circle mr-2"></i>{{ session('success') }}
-                </div>
+            @if(! empty($msg))
+                @php($pageFlashMessages['success'] = trim(strip_tags($msg)))
             @endif
 
             @if($errors->any())

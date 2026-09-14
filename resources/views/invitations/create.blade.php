@@ -29,15 +29,6 @@
             </x-slot:actions>
         </x-page-header>
         <div class="p-6">
-            @if(session('error'))
-                <div class="mb-4 bg-red-50 border border-red-200 text-red-800 rounded-lg p-4 dark:bg-red-900 dark:border-red-700 dark:text-red-200" role="alert">
-                    <div class="flex items-center">
-                        <i class="fa fa-exclamation-triangle mr-2"></i>
-                        <span>{{ session('error') }}</span>
-                    </div>
-                </div>
-            @endif
-
             @if($errors->any())
                 <div class="mb-4 bg-red-50 border border-red-200 text-red-800 rounded-lg p-4 dark:bg-red-900 dark:border-red-700 dark:text-red-200">
                     <ul class="list-disc list-inside mb-0">

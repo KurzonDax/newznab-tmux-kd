@@ -6,22 +6,9 @@
         <x-breadcrumb :items="[['label' => 'Profile', 'url' => route('profile')]]" />
         <x-page-header title="Edit Profile" description="Update your account settings and preferences" icon="fas fa-user-pen" />
 
-        <!-- Messages -->
-        @if(session('success'))
-            <div class="mx-6 mt-6 p-4 bg-green-50 border-l-4 border-green-500 text-green-800 rounded">
-                <i class="fas fa-check-circle mr-2"></i>{{ session('success') }}
-            </div>
-        @endif
-
-        @if($success_2fa)
-            <div class="mx-6 mt-6 p-4 bg-green-50 border-l-4 border-green-500 text-green-800 rounded">
-                <i class="fas fa-check-circle mr-2"></i>{{ $success_2fa }}
-            </div>
-        @endif
-
-        @if($error || $error_2fa)
+        @if($error)
             <div class="mx-6 mt-6 p-4 bg-red-50 border-l-4 border-red-500 text-red-800 rounded">
-                <i class="fas fa-exclamation-circle mr-2"></i>{{ $error ?: $error_2fa }}
+                <i class="fas fa-exclamation-circle mr-2"></i>{{ $error }}
             </div>
         @endif
 
