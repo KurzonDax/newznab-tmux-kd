@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace App\View\Composers;
 
+use App\Enums\BrowseRoot;
 use App\Events\UserLoggedIn;
 use App\Models\Category;
 use App\Models\Content;
 use App\Models\Settings;
 use App\Models\User;
+use App\Models\UserMovie;
+use App\Models\UserSerie;
+use App\Models\UsersRelease;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -34,11 +39,23 @@ class GlobalDataComposer
      */
     public function compose(View $view): void
     {
+        if ($view->name() === 'layouts.main' && ! Auth::check()) {
+            throw new HttpResponseException(redirect()->guest(route('login')));
+        }
+
         if (self::$resolvedData === null) {
             self::$resolvedData = $this->resolveData();
         }
 
         $view->with(self::$resolvedData);
+
+        if ($view->name() === 'layouts.main' && Auth::check()) {
+            $view->with([
+                'watchlistCount' => UserMovie::query()->where('users_id', Auth::id())->distinct()->count('imdbid')
+                    + UserSerie::query()->where('users_id', Auth::id())->distinct()->count('videos_id'),
+                'basketCount' => UsersRelease::query()->where('users_id', Auth::id())->count(),
+            ]);
+        }
     }
 
     /**
@@ -96,6 +113,7 @@ class GlobalDataComposer
                 'isadmin' => $userdata->hasRole('Admin'),
                 'ismod' => $userdata->hasRole('Moderator'),
                 'parentcatlist' => $parentcatlist,
+                'navigationRoots' => $this->navigationRoots($parentcatlist),
                 'header_menu_cat' => request()->input('t', ''),
                 'userTheme' => $userdata->theme_preference ?? 'light',
                 'userColorScheme' => $userdata->color_scheme ?? 'blue',
@@ -111,6 +129,23 @@ class GlobalDataComposer
         }
 
         return $viewData;
+    }
+
+    /**
+     * @param  array<string, mixed>  $categories
+     * @return list<array{root: BrowseRoot, categories: list<array<string, mixed>>}>
+     */
+    private function navigationRoots(array $categories): array
+    {
+        $byId = array_column($categories, null, 'id');
+        $roots = [];
+        foreach ([BrowseRoot::Movies, BrowseRoot::Tv, BrowseRoot::Audio, BrowseRoot::Console, BrowseRoot::Books, BrowseRoot::Games, BrowseRoot::Adult, BrowseRoot::Other] as $root) {
+            if (isset($byId[$root->categoryId()])) {
+                $roots[] = ['root' => $root, 'categories' => $byId[$root->categoryId()]['categories']];
+            }
+        }
+
+        return $roots;
     }
 
     /**

@@ -586,6 +586,11 @@ class SeriesControllerTest extends TestCase
             $table->string('extension');
             $table->string('mime');
         });
+        Schema::create('user_movies', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedInteger('users_id');
+            $table->string('imdbid');
+        });
         Schema::create('users_releases', function (Blueprint $table): void {
             $table->integer('users_id');
             $table->integer('releases_id');

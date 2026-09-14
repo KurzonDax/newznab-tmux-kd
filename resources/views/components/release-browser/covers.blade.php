@@ -24,7 +24,7 @@
                     <a class="release-cover-heart" data-cover-watch data-watched="{{ $cover->watched ? '1' : '0' }}" href="{{ $cover->watchUrl }}" aria-label="{{ $cover->watched ? 'Edit Watchlist choices for ' : 'Watch ' }}{{ $cover->title }}"><i class="{{ $cover->watched ? 'fas' : 'far' }} fa-heart" aria-hidden="true"></i></a>
                 @endif
             @endif
-            @if($state->root === \App\Enums\BrowseRoot::Movies && $state->sort === 'grabs')
+            @if(in_array($state->root, [\App\Enums\BrowseRoot::Movies, \App\Enums\BrowseRoot::Tv], true) && $state->sort === 'grabs')
                 <span class="release-cover-rank" aria-label="Rank {{ ($rows->currentPage() - 1) * $rows->perPage() + $loop->iteration }}">#{{ ($rows->currentPage() - 1) * $rows->perPage() + $loop->iteration }}</span>
             @endif
         </article>

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="app-shell">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="public-shell">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
@@ -32,67 +32,15 @@
     @stack('meta')
     @stack('styles')
 </head>
-<body class="public-ui app-shell font-sans antialiased text-gray-900 dark:text-gray-100">
-    <div class="h-screen flex">
-        <!-- Sidebar -->
-        @auth
-            <aside id="sidebar" class="hidden md:flex md:flex-col w-64 text-white shrink-0 h-full overflow-y-auto">
-                <div class="flex items-center justify-between p-4 border-b border-white/10 dark:border-white/5">
-                    <a href="{{ $site['home_link'] ?? url('/') }}" class="flex items-center space-x-3">
-                        <img src="{{ asset('assets/images/logo.svg') }}" alt="{{ config('app.name') }} Logo" class="w-12 h-12" aria-hidden="true">
-                        <span class="text-xl font-semibold">{{ config('app.name') }}</span>
-                    </a>
-                </div>
-
-                <nav class="flex-1 overflow-y-auto py-4">
-                    @include('partials.sidebar')
-                </nav>
-            </aside>
-        @endauth
-
-        <!-- Main Content -->
-        <div class="flex-1 flex flex-col h-full overflow-hidden">
-            <!-- Top Navigation -->
-            @auth
-                <header class="surface-header text-white shrink-0 z-10">
-                    @include('partials.header-menu')
-                </header>
-            @endauth
-
-            <!-- Page Content - This is the scrollable area -->
-            <main class="flex-1 overflow-y-auto shadow-inner ring-1 ring-black/10 dark:ring-white/5" data-scroll-container>
-                <div class="container mx-auto px-4 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-                    @yield('content')
-                    @if(isset($content) && is_string($content))
-                        {!! $content !!}
-                    @endif
-                </div>
-            </main>
-
-            <!-- Footer - Fixed at bottom -->
-            <footer class="shrink-0">
-                @include('partials.footer')
-            </footer>
-        </div>
-    </div>
-
-    <!-- Mobile Sidebar Toggle -->
-    <button id="mobile-sidebar-toggle" class="md:hidden fixed z-50 bg-primary-600 dark:bg-primary-700 text-white p-4 rounded-full shadow-lg hover:bg-primary-700 dark:hover:bg-primary-800 transition-all touch-target bottom-[max(5rem,calc(env(safe-area-inset-bottom)+4rem))] right-[max(1rem,env(safe-area-inset-right))]" aria-label="Toggle Sidebar">
-        <i class="fas fa-bars text-lg"></i>
-    </button>
-
-    <!-- Back to Top -->
-    @include('partials.back-to-top')
-
-    <!-- Theme Toggle -->
-    @php $themePreference = $userTheme; @endphp
-    @guest
-        <button id="theme-toggle" class="fixed z-50 bg-(--surface-panel-alt) dark:bg-(--surface-panel-alt-dark) text-gray-800 dark:text-gray-200 px-4 py-3 rounded-full shadow-lg hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) transition-all duration-200 flex items-center gap-2 touch-target bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))]"
-                title="{{ ucfirst($themePreference) }} Mode">
-            <i id="theme-icon" class="fas {{ $themePreference === 'dark' ? 'fa-moon' : ($themePreference === 'system' ? 'fa-desktop' : 'fa-sun') }}"></i>
-            <span id="theme-label" class="text-xs font-medium hidden sm:inline">{{ ucfirst($themePreference) }}</span>
-        </button>
-    @endguest
+<body class="public-ui public-shell font-sans antialiased text-gray-900 dark:text-gray-100">
+    @include('partials.header-menu')
+    <main class="public-page">
+        @yield('content')
+        @if(isset($content) && is_string($content))
+            {!! $content !!}
+        @endif
+    </main>
+    <footer class="public-footer">@include('partials.footer')</footer>
 
     <!-- Confirmation Modal (used on many pages) -->
     @include('partials.confirmation-modal', ['publicModal' => true])
@@ -106,7 +54,7 @@
     @stack('scripts')
 
     <!-- Theme Management Data (moved to csp-safe.js) -->
-    @php $colorScheme = $userColorScheme; @endphp
+    @php $themePreference = $userTheme; $colorScheme = $userColorScheme; @endphp
     <div id="current-theme-data"
          data-theme="{{ $themePreference }}"
          data-color-scheme="{{ $colorScheme }}"

@@ -61,8 +61,8 @@ class BrowseController extends BasePageController
             return redirect()->to($state->pageUrl($request, $results->lastPage()));
         }
         $title = $category === null ? $root->label() : $root->label().' · '.$category->title;
-        if ($root === BrowseRoot::Movies && $state->view === 'covers' && $state->sort === 'grabs') {
-            $title = 'Trending Movies';
+        if (in_array($root, [BrowseRoot::Movies, BrowseRoot::Tv], true) && $state->view === 'covers' && $state->sort === 'grabs') {
+            $title = 'Trending '.$root->label();
         }
         if ($state->group !== '') {
             $title = 'Releases in '.$state->group;

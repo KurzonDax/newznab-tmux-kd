@@ -703,10 +703,54 @@ final class ReleaseBrowserControllerTest extends TestCase
                 'adddate' => $id === 1 ? '2026-09-12 12:00:00' : '2026-09-13 12:00:00', 'grabs' => $id === 1 ? 50 : 100]);
         }
         $this->actingAs($this->browserUser());
-        foreach (['title' => 'Alpha', 'newest' => 'Alpha', ...($root === 'movies' ? ['year' => 'Alpha', 'rating' => 'Zulu', 'grabs' => 'Alpha'] : []), ...($root === 'audio' ? ['year' => 'Alpha', 'artist' => 'Zulu'] : [])] as $sort => $first) {
+        foreach (['title' => 'Alpha', 'newest' => 'Alpha', ...($root === 'movies' ? ['year' => 'Alpha', 'rating' => 'Zulu'] : []), ...($root === 'audio' ? ['year' => 'Alpha', 'artist' => 'Zulu'] : [])] as $sort => $first) {
             $response = $this->get('/browse/'.$root.'?view=covers&sort='.$sort)->assertOk();
             $this->assertSame($first, $response->viewData('results')->items()[0]->title, $root.' '.$sort);
         }
+    }
+
+    #[DataProvider('trendingRoots')]
+    public function test_trending_ranks_downloads_from_seven_days_and_keeps_all_allowed_encodings(string $root, string $table, string $key, int $category): void
+    {
+        $this->travelTo(now()->setDateTime(2026, 9, 14, 12, 0));
+        $this->createCoverCatalogSchema($table);
+        Schema::create('user_downloads', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedInteger('releases_id');
+            $table->dateTime('timestamp');
+        });
+        foreach ([1 => 'Old favorite', 2 => 'This week', 3 => 'No recent grabs'] as $id => $title) {
+            DB::table($table)->insert(['id' => $id, 'imdbid' => (string) $id, 'title' => $title]);
+            $release = $this->release($title, [$key => (string) $id, 'categories_id' => $category, 'grabs' => $id === 1 ? 9999 : 1]);
+            DB::table('user_downloads')->insert(['releases_id' => $release, 'timestamp' => '2026-09-01 12:00:00']);
+            if ($id < 3) {
+                for ($n = 0; $n < $id; $n++) {
+                    DB::table('user_downloads')->insert(['releases_id' => $release, 'timestamp' => '2026-09-07 12:00:00']);
+                }
+            }
+        }
+        $this->release('Another encoding without grabs', [$key => '2', 'categories_id' => $category]);
+        DB::table('categories')->insert(['id' => $category + 10, 'root_categories_id' => $category - 30, 'title' => 'Excluded']);
+        $excluded = $this->release('Excluded popular encoding', [$key => '1', 'categories_id' => $category + 10]);
+        for ($n = 0; $n < 8; $n++) {
+            DB::table('user_downloads')->insert(['releases_id' => $excluded, 'timestamp' => '2026-09-14 11:00:00']);
+        }
+        $user = $this->browserUser();
+        DB::table('user_excluded_categories')->insert(['users_id' => $user->id, 'categories_id' => $category + 10]);
+        $this->actingAs($user);
+        $url = '/browse/'.$root.'?view=covers&sort=grabs';
+        $response = $this->get($url)->assertOk();
+        $covers = $response->viewData('results');
+        $this->assertSame(2, $covers->total());
+        $this->assertSame(['This week', 'Old favorite'], array_map(fn ($cover) => $cover->title, $covers->items()));
+        $this->assertSame(2, $covers->items()[0]->releaseCount);
+        $response->assertSee('Rank 1')->assertSee('Rank 2')->assertDontSee('No recent grabs');
+        $this->get($url.'&_fragment=cover&cover=2')->assertOk()->assertSee('Another encoding without grabs');
+    }
+
+    public static function trendingRoots(): array
+    {
+        return [['movies', 'movieinfo', 'imdbid', 2030], ['tv', 'videos', 'videos_id', 5030]];
     }
 
     public static function letterCoverRoots(): array

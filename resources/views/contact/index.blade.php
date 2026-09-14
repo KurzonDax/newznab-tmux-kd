@@ -1,4 +1,4 @@
-@extends('layouts.main')
+@extends(auth()->check() ? 'layouts.main' : 'layouts.guest')
 
 
 @section('content')
@@ -114,4 +114,3 @@
         {!! \App\Support\CaptchaHelper::renderJs() !!}
     @endif
 @endpush
-

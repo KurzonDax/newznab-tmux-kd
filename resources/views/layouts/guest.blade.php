@@ -10,7 +10,7 @@
     {{-- Apply dark mode BEFORE any CSS loads to prevent white flash --}}
     @include('partials.theme-init')
 
-    <title>{{ config('app.name') }}</title>
+    <title>{{ $meta_title ?? config('app.name') }}</title>
 
     <!-- Styles -->
     @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -34,6 +34,9 @@
     @endif
 </head>
 <body class="public-ui font-sans antialiased text-gray-900 dark:text-gray-100 pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
+    <button type="button" id="theme-toggle" class="guest-theme-pill" x-data="themeToggle" x-on:click="cycle" aria-label="Change theme">
+        <i id="theme-icon" class="fas fa-sun" aria-hidden="true"></i><span id="theme-label">Light</span>
+    </button>
     @yield('content')
 
     @include('partials.back-to-top')
