@@ -31,7 +31,7 @@
                 @php
                     $reportedCount = (int) ($result->total_report_count ?? $result->report_count ?? 0);
                     $responseCount = (int) ($result->report_response_count ?? 0);
-                    $sizeLabel = $result->size_formatted ?? number_format(($result->size ?? 0) / 1073741824, 2) . ' GB';
+                    $sizeLabel = $result->row_data?->size ?? \App\Support\ReleaseSize::format((float) ($result->size ?? 0));
                     $dateValue = $result->{$activeDateField} ?? $result->adddate ?? $result->postdate ?? null;
                     $loadedAudioTags = $result instanceof \Illuminate\Database\Eloquent\Model && $result->relationLoaded('audioTags')
                         ? $result->getRelation('audioTags')
@@ -253,7 +253,7 @@
         @php
             $reportedCount = (int) ($result->total_report_count ?? $result->report_count ?? 0);
             $responseCount = (int) ($result->report_response_count ?? 0);
-            $sizeLabel = $result->size_formatted ?? number_format(($result->size ?? 0) / 1073741824, 2) . ' GB';
+            $sizeLabel = $result->row_data?->size ?? \App\Support\ReleaseSize::format((float) ($result->size ?? 0));
             $dateValue = $result->{$activeDateField} ?? $result->adddate ?? $result->postdate ?? null;
         @endphp
         <div class="surface-panel border rounded-xl p-4 hover:shadow-md transition">

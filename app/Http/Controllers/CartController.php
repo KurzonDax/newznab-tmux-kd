@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Release;
 use App\Models\UsersRelease;
+use App\Services\Releases\ReleaseBrowseService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -20,6 +21,7 @@ class CartController extends BasePageController
     {
         $results = UsersRelease::getCart(Auth::id())
             ->filter(fn ($item) => $item->release !== null);
+        app(ReleaseBrowseService::class)->loadReleaseRows($results->map(static fn ($item) => $item->release));
 
         $this->viewData = array_merge($this->viewData, [
             'results' => $results,

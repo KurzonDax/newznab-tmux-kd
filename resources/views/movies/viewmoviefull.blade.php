@@ -187,7 +187,7 @@
                                         </a>
                                         <div class="flex flex-wrap items-center gap-4 mt-2 text-sm text-gray-500">
                                             <span>
-                                                <i class="fas fa-hdd mr-1"></i>{{ number_format($release->size / 1073741824, 2) }} GB
+                                                <i class="fas fa-hdd mr-1"></i>{{ \App\Support\ReleaseSize::format((float) $release->size) }}
                                             </span>
                                             @if($release->postdate)
                                                 <span>

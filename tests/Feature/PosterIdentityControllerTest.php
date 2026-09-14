@@ -472,6 +472,111 @@ final class PosterIdentityControllerTest extends TestCase
         $this->assertCount(1, $audioTagQueries);
     }
 
+    public function test_poster_page_supplies_complete_release_rows_with_processing_state(): void
+    {
+        $user = $this->verifiedUser();
+        $release = $this->release('Scene.Name', 'exact <poster@example.test>', '2026-09-12 23:30:00', 'alt.binaries.movies');
+        Schema::table('releases', function (Blueprint $table): void {
+            $table->integer('isrenamed')->default(0);
+            $table->string('additional_pp_claim_token')->nullable();
+        });
+        DB::table('releases')->where('id', $release->id)->update([
+            'display_name' => 'Scene Name', 'size' => 524288000, 'isrenamed' => 1,
+            'nfostatus' => -9, 'passwordstatus' => 0,
+        ]);
+
+        $response = $this->actingAs($user)->get(route('poster-identity', ['name' => 'exact <poster@example.test>']));
+        $response->assertOk()->assertSee('500.00 MB');
+        $row = $response->viewData('results')->first()->row_data;
+        $this->assertNotNull($row);
+        $this->assertSame('Scene Name', $row->name);
+        $this->assertSame('Movies > SD', $row->category);
+        $this->assertSame('500.00 MB', $row->size);
+        $this->assertSame('Sep 12, 2026 23:30', $row->posted);
+        $this->assertSame('alt.binaries.movies', $row->group);
+        $this->assertSame('exact <poster@example.test>', $row->poster);
+        $this->assertTrue($row->renamed);
+        $this->assertTrue($row->pp_done);
+        foreach ([[-1, 0, null, false], [-8, 0, null, false], [0, -1, null, false], [1, 0, 'active-claim', false], [-10, 0, null, true], [0, 0, null, true]] as [$nfo, $password, $claim, $done]) {
+            DB::table('releases')->where('id', $release->id)->update([
+                'nfostatus' => $nfo, 'passwordstatus' => $password, 'additional_pp_claim_token' => $claim,
+            ]);
+            $response = $this->get(route('poster-identity', ['name' => 'exact <poster@example.test>']))->assertOk();
+            $this->assertSame($done, $response->viewData('results')->first()->row_data->pp_done);
+        }
+
+    }
+
+    public function test_row_entity_and_basket_state_belong_to_the_current_viewer(): void
+    {
+        $user = $this->verifiedUser();
+        $release = $this->release('Matched movie', 'movie-poster', '2026-09-12 23:30:00', 'alt.binaries.movies');
+        Schema::table('releases', function (Blueprint $table): void {
+            $table->string('imdbid')->nullable();
+        });
+        Schema::create('movieinfo', function (Blueprint $table): void {
+            $table->string('imdbid')->primary();
+            $table->string('title');
+            $table->integer('year');
+        });
+        DB::table('movieinfo')->insert(['imdbid' => '1234567', 'title' => 'Example Movie', 'year' => 2026]);
+        DB::table('releases')->where('id', $release->id)->update(['imdbid' => '1234567']);
+        DB::table('users_releases')->insert(['users_id' => $user->id, 'releases_id' => $release->id]);
+        DB::table('user_movies')->insert(['users_id' => $user->id, 'imdbid' => '1234567']);
+        $response = $this->actingAs($user)->get(route('poster-identity', ['name' => 'movie-poster']))->assertOk();
+        $row = $response->viewData('results')->first()->row_data;
+        $this->assertSame('movies', $row->entity?->root);
+        $this->assertSame('1234567', $row->entity?->id);
+        $this->assertSame('Example Movie', $row->entity?->title);
+        $this->assertSame('2026', $row->entity?->year);
+        $this->assertNull($row->entity?->artwork);
+        $this->assertTrue($row->in_basket);
+        $this->assertTrue($row->watched);
+
+        session()->flush();
+        $response = $this->actingAs($this->verifiedUser())->get(route('poster-identity', ['name' => 'movie-poster']))->assertOk();
+        $otherRow = $response->viewData('results')->first()->row_data;
+        $this->assertFalse($otherRow->in_basket);
+        $this->assertFalse($otherRow->watched);
+    }
+
+    public function test_anime_rows_use_the_matched_anidb_title_without_inventing_an_adult_entity(): void
+    {
+        $user = $this->verifiedUser();
+        $release = $this->release('Anime.Release', 'anime-poster', '2026-09-12 23:30:00');
+        Schema::table('releases', function (Blueprint $table): void {
+            $table->integer('anidbid')->nullable();
+        });
+        Schema::create('anidb_info', function (Blueprint $table): void {
+            $table->integer('anidbid')->primary();
+            $table->date('startdate')->nullable();
+        });
+        Schema::create('anidb_titles', function (Blueprint $table): void {
+            $table->integer('anidbid');
+            $table->string('type');
+            $table->string('lang');
+            $table->string('title');
+            $table->primary(['anidbid', 'type', 'lang', 'title']);
+        });
+        DB::table('anidb_info')->insert(['anidbid' => 42, 'startdate' => '2020-03-01']);
+        DB::table('anidb_titles')->insert([
+            ['anidbid' => 42, 'type' => 'official', 'lang' => 'en', 'title' => 'Example Anime'],
+            ['anidbid' => 42, 'type' => 'main', 'lang' => 'x-jat', 'title' => 'Romanized title'],
+            ['anidbid' => 42, 'type' => 'official', 'lang' => 'ja', 'title' => 'Native title'],
+        ]);
+        DB::table('releases')->where('id', $release->id)->update(['anidbid' => 42, 'categories_id' => Category::TV_ANIME]);
+        $response = $this->actingAs($user)->get(route('poster-identity', ['name' => 'anime-poster']))->assertOk();
+        $entity = $response->viewData('results')->first()->row_data->entity;
+        $this->assertNotNull($entity);
+        $this->assertSame('anime', $entity->root);
+        $this->assertSame('Example Anime', $entity->title);
+        $this->assertSame('2020', $entity->year);
+
+        DB::table('releases')->where('id', $release->id)->update(['categories_id' => Category::XXX_ROOT]);
+        $response = $this->get(route('poster-identity', ['name' => 'anime-poster']))->assertOk();
+        $this->assertNull($response->viewData('results')->first()->row_data->entity);
+    }
+
     private function verifiedUser(string $roleName = 'User'): User
     {
         $role = Role::query()->firstOrCreate(['name' => $roleName, 'guard_name' => 'web']);
@@ -568,6 +673,15 @@ final class PosterIdentityControllerTest extends TestCase
 
     private function createSchema(): void
     {
+        Schema::create('users_releases', function (Blueprint $table): void {
+            $table->integer('users_id');
+            $table->integer('releases_id');
+        });
+        Schema::create('user_movies', function (Blueprint $table): void {
+            $table->integer('users_id');
+            $table->string('imdbid');
+        });
+
         if (! Schema::hasTable('settings')) {
             Schema::create('settings', function (Blueprint $table): void {
                 $table->string('name')->primary();

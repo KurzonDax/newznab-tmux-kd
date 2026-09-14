@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Models\TvEpisode;
 use App\Models\UserSerie;
 use App\Models\Video;
+use App\Services\Releases\ReleaseBrowseService;
 use App\Services\SeriesReleaseService;
 use App\Support\YearRange;
 use Carbon\Carbon;
@@ -91,6 +92,8 @@ class SeriesController extends BasePageController
                         $categoryIds,
                         $yearRange,
                     );
+
+                    app(ReleaseBrowseService::class)->loadReleaseRows($seasonReleaseResult['releases']);
 
                     $series = [];
                     foreach ($seasonReleaseResult['releases'] as $release) {

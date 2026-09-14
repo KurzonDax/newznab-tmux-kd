@@ -194,6 +194,15 @@ class MovieControllerTest extends TestCase
 
     private function createSchema(): void
     {
+        Schema::create('users_releases', function (Blueprint $table): void {
+            $table->unsignedInteger('users_id');
+            $table->unsignedInteger('releases_id');
+        });
+        Schema::create('user_movies', function (Blueprint $table): void {
+            $table->unsignedInteger('users_id');
+            $table->unsignedInteger('imdbid');
+        });
+
         Schema::create('roles', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('name');

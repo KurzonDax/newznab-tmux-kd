@@ -95,7 +95,7 @@
                                     {{ userDateDiffForHumans($result->adddate ?? null) }}
                                 </td>
                                 <td class="px-3 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
-                                    {{ isset($result->size) ? number_format($result->size / 1073741824, 2) . ' GB' : '-' }}
+                                    {{ isset($result->size) ? \App\Support\ReleaseSize::format((float) $result->size) : '-' }}
                                 </td>
                                 <td class="px-3 py-4 whitespace-nowrap">
                                     <div class="flex items-center gap-1">

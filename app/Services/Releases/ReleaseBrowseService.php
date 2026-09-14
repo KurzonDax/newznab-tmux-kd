@@ -48,8 +48,19 @@ class ReleaseBrowseService
             }
         }
 
-        $this->previewDataLoader->load($releases);
-        $this->mediaInfoAvailabilityLoader->load($releases);
+        $this->loadReleaseRows($releases);
+    }
+
+    /** @param iterable<int, object> $releases */
+    public function loadReleaseRows(iterable $releases): void
+    {
+        $rows = [];
+        foreach ($releases as $release) {
+            $rows[] = $release;
+        }
+        $this->previewDataLoader->load($rows);
+        $this->mediaInfoAvailabilityLoader->load($rows);
+        app(ReleaseRowDataLoader::class)->load($rows);
     }
 
     /**
@@ -64,8 +75,7 @@ class ReleaseBrowseService
     {
         $releases = $this->executeBrowseQuery('browse', $page, $cat, $start, $num, $orderBy, $maxAge, $excludedCats, $groupName, $minSize, $searchTerm, $minCompletion);
         if (is_iterable($releases)) {
-            $this->previewDataLoader->load($releases);
-            $this->mediaInfoAvailabilityLoader->load($releases);
+            $this->loadReleaseRows($releases);
         }
 
         return $releases;
@@ -145,8 +155,7 @@ class ReleaseBrowseService
             ->paginate($perPage)
             ->withQueryString();
 
-        $this->previewDataLoader->load($releases);
-        $this->mediaInfoAvailabilityLoader->load($releases);
+        $this->loadReleaseRows($releases);
 
         return $releases;
     }
@@ -665,10 +674,13 @@ class ReleaseBrowseService
         $expiresAt = now()->addMinutes(config('nntmux.cache_expiry_long'));
         $result = Cache::get(md5($sql));
         if ($result !== null) {
+            $this->loadReleaseRows($result);
+
             return $result;
         }
         $result = Release::fromQuery($sql);
         Cache::put(md5($sql), $result, $expiresAt);
+        $this->loadReleaseRows($result);
 
         return $result;
     }

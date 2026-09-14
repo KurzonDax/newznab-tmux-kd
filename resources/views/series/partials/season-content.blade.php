@@ -27,7 +27,7 @@
                                     </div>
                                     <div class="text-xs text-gray-500 mt-1 flex flex-wrap gap-2">
                                         <span class="mr-3">
-                                            <i class="fas fa-hard-drive mr-1"></i>{{ formatBytes($release->size) }}
+                                            <i class="fas fa-hard-drive mr-1"></i>{{ \App\Support\ReleaseSize::format((float) $release->size) }}
                                         </span>
                                         <span>
                                             <i class="far fa-clock mr-1"></i>Added: {{ userDateDiffForHumans($release->adddate) }}

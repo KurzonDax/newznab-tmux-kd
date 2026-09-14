@@ -27,9 +27,13 @@ final class ReleaseMediaInfoAvailabilityLoader
         }
 
         $queries = [];
+        $summarySources = [];
         foreach (['media_info_probes', 'media_infos', 'video_data', 'audio_data', 'release_subtitles'] as $table) {
             if (Schema::hasTable($table)) {
                 $queries[] = $this->sourceQuery($table, array_keys($rowsByReleaseId));
+                if (in_array($table, ['video_data', 'audio_data'], true)) {
+                    $summarySources[$table] = DB::table($table)->whereIn('releases_id', array_keys($rowsByReleaseId))->get()->groupBy('releases_id');
+                }
             }
         }
         $needsAudioTagQuery = collect($rowsByReleaseId)->contains(
@@ -55,10 +59,20 @@ final class ReleaseMediaInfoAvailabilityLoader
                 ? (bool) ($release->getAttributes()['has_media_info'] ?? false)
                 : (bool) ($release->has_media_info ?? false);
             $value = $existing || isset($available[$releaseId]);
+            $video = ($summarySources['video_data'][$releaseId] ?? collect())->first();
+            $audio = ($summarySources['audio_data'][$releaseId] ?? collect())->first();
+            $summary = implode(' · ', array_filter([
+                ($video->videoheight ?? 0) > 0 ? (int) $video->videoheight.'p' : null,
+                $video->videocodec ?? $video->videoformat ?? null,
+                trim(($audio->audioformat ?? '').' '.($audio->audiochannels ?? '')),
+            ], static fn (?string $value): bool => $value !== null && $value !== ''));
+
             if ($release instanceof Model) {
                 $release->setAttribute('has_media_info', $value);
+                $release->setAttribute('media_info_summary', $summary === '' ? null : $summary);
             } else {
                 $release->has_media_info = $value;
+                $release->media_info_summary = $summary === '' ? null : $summary;
             }
         }
     }
