@@ -306,7 +306,8 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->release('Saved release');
         $this->release('Outside basket');
         $this->actingAs($user)->postJson('/cart/add', ['id' => md5('Saved release')])->assertOk();
-        $response = $this->get('/cart/index')->assertOk();
+        $this->get('/cart/index')->assertRedirect('/basket');
+        $response = $this->get('/basket')->assertOk();
         $response->assertSee('data-release-table', false)->assertSee('Saved release')->assertDontSee('Outside basket')
             ->assertSee('data-in-basket="1"', false)->assertSee('Sep 12, 2026 23:30');
         $this->assertSame(1, $response->viewData('results')->total());

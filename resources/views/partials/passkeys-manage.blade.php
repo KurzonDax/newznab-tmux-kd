@@ -33,19 +33,18 @@
     <template x-if="supported">
         <div class="mt-4 space-y-4">
             <form @submit.prevent="createBrowserPasskey()" class="space-y-3">
-                <label for="passkey_name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                <x-label for="passkey_name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
                     Passkey name
-                </label>
+                </x-label>
                 <div class="flex flex-col gap-3 sm:flex-row">
-                    <input
+                    <x-input
                         id="passkey_name"
                         x-model="name"
                         type="text"
                         maxlength="255"
                         required
                         placeholder="Work laptop, iPhone, etc."
-                        class="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-900 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-(--surface-panel-alt-dark) dark:text-gray-100"
-                    >
+                        class="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-900 focus:border-primary-500 focus:ring-2 focus:ring-primary-500 dark:border-gray-600 dark:bg-(--surface-panel-alt-dark) dark:text-gray-100" />
                     <x-button
                         type="submit"
                         ::disabled="busy || browserPasskeyBlocked()"
@@ -95,13 +94,7 @@
                                     <td class="px-4 py-3 text-gray-600 dark:text-gray-300" x-text="formatDate(passkey.created_at)"></td>
                                     <td class="px-4 py-3 text-gray-600 dark:text-gray-300" x-text="formatLastUsed(passkey.last_used_at)"></td>
                                     <td class="px-4 py-3 text-right">
-                                        <button
-                                            type="button"
-                                            @click="deletePasskey(passkey.id)"
-                                            class="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/30"
-                                        >
-                                            Delete
-                                        </button>
+                                        <x-button variant="danger" size="sm" @click="deletePasskey(passkey.id)">Remove</x-button>
                                     </td>
                                 </tr>
                             </template>

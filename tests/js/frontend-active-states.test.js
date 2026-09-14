@@ -64,28 +64,6 @@ function assertPrimaryOnly(element) {
     assert.equal([...element.classes].some(name => /(?:blue|purple|indigo)-/.test(name)), false);
 }
 
-test('profile clicks transfer the server active state including dark colors', () => {
-    const links = viewElements('profile/index.blade.php', /<a (href)="(#(?:general|preferences|api))" class="([^"]+)"/g);
-    const panels = ['general', 'preferences', 'api'].map(id => new Element({ id, class: 'tab-content' }));
-    loadComponent('tab-switcher.js', [...links, ...panels]);
-
-    links[1].click();
-    assert.equal(links[0].classes.has('bg-primary-50'), false);
-    assert.equal(links[0].classes.has('dark:text-primary-300'), false);
-    assert.equal(links[1].classes.has('bg-primary-50'), true);
-    assert.equal(links[1].classes.has('dark:bg-primary-900/20'), true);
-    assert.equal(links[1].classes.has('dark:bg-gray-900'), false);
-    assert.equal(links[1].classes.has('dark:bg-(--surface-body-dark)'), false);
-    assert.equal(links[1].classes.has('hover:bg-(--public-surface-hover)'), false);
-    assert.equal(links[0].classes.has('dark:bg-(--surface-body-dark)'), true);
-    assert.equal(panels[0].style.display, 'none');
-    assert.equal(panels[1].style.display, 'block');
-
-    links[0].click();
-    assert.equal(links[1].classes.has('bg-primary-50'), false);
-    links.forEach(assertPrimaryOnly);
-});
-
 test('generic tabs replace the initial primary state on every click', () => {
     const first = new Element({ 'data-tab-trigger': 'first', class: 'active border-primary-500 text-primary-600' });
     const second = new Element({ 'data-tab-trigger': 'second', class: 'border-transparent text-gray-500' });

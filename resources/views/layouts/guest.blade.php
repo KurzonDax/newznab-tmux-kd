@@ -4,11 +4,13 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
     <meta name="color-scheme" content="light dark">
-    <meta name="csrf-token" content="{{ csrf_token() }}">
+    @empty($standaloneError)
+        <meta name="csrf-token" content="{{ csrf_token() }}">
+    @endempty
     <meta name="theme-preference" content="system">
 
     {{-- Apply dark mode BEFORE any CSS loads to prevent white flash --}}
-    @include('partials.theme-init')
+    @include('partials.theme-init', ['localThemeOnly' => $standaloneError ?? false])
 
     <title>{{ $meta_title ?? config('app.name') }}</title>
 
@@ -17,7 +19,7 @@
     @stack('styles')
 
     <!-- Captcha Scripts -->
-    @if(\App\Support\CaptchaHelper::isEnabled())
+    @if(empty($standaloneError) && \App\Support\CaptchaHelper::isEnabled())
         @if(\App\Support\CaptchaHelper::getProvider() === 'turnstile')
             @if(function_exists('csp_nonce'))
                 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" nonce="{{ csp_nonce() }}" async defer></script>
@@ -42,7 +44,9 @@
     @include('partials.back-to-top')
     @include('partials.toast-notifications', ['publicToasts' => true])
 
-    @include('partials.flash-messages-data')
+    @empty($standaloneError)
+        @include('partials.flash-messages-data')
+    @endempty
 
     <!-- Scripts -->
     @stack('scripts')

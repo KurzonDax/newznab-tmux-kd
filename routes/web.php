@@ -11,6 +11,7 @@
 |
 */
 
+use App\Http\Controllers\AccountController;
 use App\Http\Controllers\Admin\AdminAjaxController;
 use App\Http\Controllers\Admin\AdminAnidbController;
 use App\Http\Controllers\Admin\AdminBackupsController;
@@ -172,6 +173,14 @@ Route::post('contact-us', [ContactUsController::class, 'contact']);
 Route::get('status', [StatusPageController::class, 'showStatusPage'])->name('status');
 
 Route::middleware(['auth', 'isVerified'])->group(function () {
+    Route::get('account', [AccountController::class, 'show'])->name('account');
+    Route::post('account/profile', [AccountController::class, 'profile'])->middleware('throttle:6,1')->name('account.profile');
+    Route::post('account/password', [AccountController::class, 'password'])->middleware('throttle:6,1')->name('account.password');
+    Route::post('account/categories', [AccountController::class, 'categories'])->middleware('throttle:6,1')->name('account.categories');
+    Route::post('account/api-key', [AccountController::class, 'apiKey'])->middleware('throttle:6,1')->name('account.api-key');
+    Route::post('account/sessions', [AccountController::class, 'sessions'])->middleware('throttle:6,1')->name('account.sessions');
+    Route::post('account/recovery-codes', [AccountController::class, 'recoveryCodes'])->middleware('throttle:6,1')->name('account.recovery-codes');
+
     Route::post('passkeys/register-options', [PasskeyManagementController::class, 'options'])
         ->name('passkeys.register_options');
     Route::post('passkeys', [PasskeyManagementController::class, 'store'])
@@ -188,8 +197,12 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         Route::match(['GET', 'POST'], '{parentCategory}/{id?}', [BrowseController::class, 'show'])->middleware('clearance')->name('browse');
     });
 
+    Route::get('basket', [CartController::class, 'index'])->name('basket');
+    Route::post('basket/empty', [CartController::class, 'empty'])->name('basket.empty');
+    Route::post('basket/download', [CartController::class, 'download'])->name('basket.download');
+
     Route::prefix('cart')->group(function () {
-        Route::match(['GET', 'POST'], 'index', [CartController::class, 'index'])->name('cart.index');
+        Route::match(['GET', 'POST'], 'index', [CartController::class, 'legacyIndex'])->name('cart.index');
         Route::match(['GET', 'POST'], 'add', [CartController::class, 'store'])->name('cart.add');
         Route::match(['GET', 'POST'], 'delete/{id}', [CartController::class, 'destroy'])->name('cart.delete');
     });
@@ -442,7 +455,7 @@ Route::prefix('invitations')->name('invitations.')->group(function () {
 });
 
 // Public invitation view (no auth required)
-Route::get('/invitation/{token}', [InvitationController::class, 'show'])->name('invitation.show');
+Route::get('/invitation/{token}', [InvitationController::class, 'showInvitation'])->name('invitation.show');
 
 // Admin invitation management routes
 Route::middleware(['role:Admin', '2fa'])->prefix('admin/invitations')->name('admin.invitations.')->group(function () {

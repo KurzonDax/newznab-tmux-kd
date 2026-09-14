@@ -20,29 +20,20 @@
     </form>
 
     <div x-show="supportsAutofill" x-cloak class="mt-4">
-        <label for="passkey-autofill" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+        <x-label for="passkey-autofill" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
             Username or email
-        </label>
-        <input
+        </x-label>
+        <x-input
             id="passkey-autofill"
             x-ref="browserPasskeyInput"
             type="text"
             autocomplete="username webauthn"
             inputmode="email"
             class="mt-2 block w-full rounded-lg border border-gray-300 px-3 py-3 text-sm text-gray-900 shadow-sm transition focus:border-primary-500 focus:ring-primary-500 dark:border-gray-600 dark:bg-(--surface-card-dark) dark:text-white"
-            placeholder="Choose a saved passkey"
-        >
+            placeholder="Choose a saved passkey" />
     </div>
 
-    <button
-        type="button"
-        @click="authenticate()"
-        :disabled="busy"
-        class="mt-4 flex w-full items-center justify-center rounded-lg border border-primary-600 px-4 py-3 text-sm font-medium text-primary-700 transition hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-primary-400 dark:text-primary-300 dark:hover:bg-primary-900/30"
-    >
-        <i class="fas fa-fingerprint mr-2"></i>
-        <span x-text="busy ? 'Waiting for passkey...' : 'Sign in with passkey'"></span>
-    </button>
+    <x-button variant="secondary" @click="authenticate()" ::disabled="busy" class="mt-4 w-full" icon="fas fa-fingerprint"><span x-text="busy ? 'Waiting for passkey...' : 'Sign in with passkey'"></span></x-button>
 
     <p x-show="error" x-text="error" class="mt-2 text-sm text-red-600 dark:text-red-400"></p>
 
@@ -55,7 +46,7 @@
             No passkey was found for this login on this device/browser.
         </p>
         <p class="mt-1">
-            Sign in with your password first. After login, go to your profile security settings and create a passkey.
+            Sign in with your password first. After login, go to Account → Security and create a passkey.
         </p>
 
         <div class="mt-2 flex flex-wrap gap-2">

@@ -20,7 +20,7 @@
 
         <!-- Reset Password Card -->
         <div class="auth-card rounded-xl shadow-xl overflow-hidden">
-            <div class="px-8 py-6">
+            <div class="auth-card-body">
                 <!-- Error Messages -->
                 @if($errors->any())
                     <div class="mb-4 p-4 rounded-lg bg-red-50 border border-red-200 dark:bg-red-900/30 dark:border-red-700">
@@ -45,14 +45,14 @@
 
                     <!-- Email Field (readonly) -->
                     <div>
-                        <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        <x-label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Email Address
-                        </label>
+                        </x-label>
                         <div class="relative">
                             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <i class="fas fa-envelope text-gray-400"></i>
                             </div>
-                            <input
+                            <x-input
                                 id="email"
                                 type="email"
                                 name="email"
@@ -60,28 +60,26 @@
                                 required
                                 autofocus
                                 readonly
-                                class="block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-(--surface-panel-alt) dark:bg-(--surface-body-dark) text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition"
-                            >
+                                class="block w-full auth-field-leading pr-3 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-(--surface-panel-alt) dark:bg-(--surface-body-dark) text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition" />
                         </div>
                     </div>
 
                     <!-- New Password Field -->
                     <div>
-                        <label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        <x-label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             New Password
-                        </label>
+                        </x-label>
                         <div class="relative">
                             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <i class="fas fa-lock text-gray-400"></i>
                             </div>
-                            <input
+                            <x-input
                                 id="password"
                                 type="password"
                                 name="password"
                                 required
-                                class="block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-(--surface-card) dark:bg-(--surface-card-dark) text-gray-900 dark:text-gray-100 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition @error('password') border-red-500 @enderror"
-                                placeholder="Enter your new password"
-                            >
+                                class="block w-full auth-field-leading pr-3 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-(--surface-card) dark:bg-(--surface-card-dark) text-gray-900 dark:text-gray-100 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition @error('password') border-red-500 @enderror"
+                                placeholder="Enter your new password" />
                         </div>
                         @error('password')
                             <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
@@ -91,21 +89,20 @@
 
                     <!-- Confirm Password Field -->
                     <div>
-                        <label for="password_confirmation" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        <x-label for="password_confirmation" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Confirm New Password
-                        </label>
+                        </x-label>
                         <div class="relative">
                             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <i class="fas fa-lock text-gray-400"></i>
                             </div>
-                            <input
+                            <x-input
                                 id="password_confirmation"
                                 type="password"
                                 name="password_confirmation"
                                 required
-                                class="block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-(--surface-card) dark:bg-(--surface-card-dark) text-gray-900 dark:text-gray-100 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition"
-                                placeholder="Confirm your new password"
-                            >
+                                class="block w-full auth-field-leading pr-3 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-(--surface-card) dark:bg-(--surface-card-dark) text-gray-900 dark:text-gray-100 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition"
+                                placeholder="Confirm your new password" />
                         </div>
                     </div>
 

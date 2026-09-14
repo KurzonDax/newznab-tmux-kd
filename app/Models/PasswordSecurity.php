@@ -8,9 +8,13 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/** @property list<string>|null $recovery_codes */
 class PasswordSecurity extends Model
 {
     use HasFactory; // @phpstan-ignore missingType.generics
+
+    /** @var list<string> */
+    protected $hidden = ['google2fa_secret', 'recovery_codes'];
 
     /**
      * @var array<string>
@@ -24,6 +28,7 @@ class PasswordSecurity extends Model
     {
         return [
             'google2fa_enable' => 'boolean',
+            'recovery_codes' => 'array',
         ];
     }
 

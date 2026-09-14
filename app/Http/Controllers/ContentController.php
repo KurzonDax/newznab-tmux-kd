@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\UserRole;
 use App\Models\Content;
+use App\Services\Releases\HomeDashboard;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -78,6 +79,10 @@ class ContentController extends BasePageController
             'meta_keywords' => $meta_keywords,
             'meta_description' => $meta_description,
         ]);
+
+        if ($isFront) {
+            return view('content.home', [...$this->viewData, ...app(HomeDashboard::class)->forUser($this->userdata)]);
+        }
 
         return view('content.index', $this->viewData);
     }

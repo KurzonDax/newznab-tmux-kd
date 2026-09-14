@@ -14,6 +14,8 @@ import Alpine from '@alpinejs/csp';
  * Each module registers itself via Alpine.data() as a side effect.
  */
 const lazyComponentMap = {
+    'accountPage': () => import('./components/account.js'),
+    'accountRss': () => import('./components/account.js'),
     'searchFeed': () => import('./components/search-filters.js'),
     'searchFilters': () => import('./components/search-filters.js'),
     'watchlistPicker': () => import('./components/watchlist.js'),
@@ -43,14 +45,11 @@ const lazyComponentMap = {
     'adminReleaseList': () => import('./components/admin/release-list.js'),
     'recoveredReleases': () => import('./components/admin/recovered-releases.js'),
     'showAddForm':     () => import('./components/admin/show-add.js'),
-    'profileEdit':     () => import('./components/profile-edit.js'),
-    'profilePage':     () => import('./components/profile-edit.js'),    // same file
     'copyToClipboard': () => import('./components/profile-edit.js'),    // same file
     'cartPage':        () => import('./components/cart-page.js'),
     'releaseMultiOps': () => import('./components/cart-page.js'),  // same file
     'releaseBrowser':  () => import('./components/release-browser.js'),
     'authPage':        () => import('./components/auth-page.js'),
-    'otpInput':        () => import('./components/auth-page.js'),       // same file
     'loginMode':       () => import('./components/login-mode.js'),
     'passkeyLogin':    () => import('./components/passkey-login.js'),
     'passkeyManage':   () => import('./components/passkey-manage.js'),

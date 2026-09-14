@@ -38,6 +38,10 @@ class GlobalDataComposer
      */
     public function compose(View $view): void
     {
+        if ($view->name() === 'layouts.guest' && ($view->getData()['standaloneError'] ?? false)) {
+            return;
+        }
+
         if ($view->name() === 'layouts.main' && ! Auth::check()) {
             throw new HttpResponseException(redirect()->guest(route('login')));
         }

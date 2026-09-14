@@ -1,10 +1,8 @@
 @extends('layouts.main')
 
 @section('content')
-<div class="max-w-5xl mx-auto space-y-6">
-    <div class="surface-panel rounded-xl shadow-sm overflow-hidden">
-        <x-breadcrumb :items="[['label' => 'Profile', 'url' => route('profile')]]" />
-        <x-page-header title="Privacy Center" description="Export your account data and manage GDPR requests." icon="fas fa-shield-halved" />
+<x-account-layout section="privacy">
+<div class="card account-card"><h2>Privacy</h2>
 
         @if($errors->any())
             <div class="mx-6 mt-6 p-4 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 text-red-800 dark:text-red-200 rounded">
@@ -22,8 +20,8 @@
                 </p>
                 <form method="post" action="{{ route('privacy-center.export') }}">
                     @csrf
-                    <label for="export_notes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Optional notes</label>
-                    <textarea id="export_notes" name="notes" rows="3" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 rounded-md" placeholder="Anything administrators should know?"></textarea>
+                    <x-label for="export_notes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Optional notes</x-label>
+                    <x-textarea id="export_notes" name="notes" rows="3" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 rounded-md" placeholder="Anything administrators should know?"></x-textarea>
                     <x-button type="submit" icon="fas fa-download" class="mt-4">
                         Generate Export
                     </x-button>
@@ -39,10 +37,10 @@
                 </p>
                 <form method="post" action="{{ route('privacy-center.erasure') }}">
                     @csrf
-                    <label for="erasure_notes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Optional notes</label>
-                    <textarea id="erasure_notes" name="notes" rows="3" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 rounded-md" placeholder="Reason or additional details"></textarea>
-                    <label for="confirmation" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mt-4 mb-1">Type ERASE to confirm</label>
-                    <input id="confirmation" name="confirmation" type="text" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 rounded-md" autocomplete="off">
+                    <x-label for="erasure_notes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Optional notes</x-label>
+                    <x-textarea id="erasure_notes" name="notes" rows="3" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 rounded-md" placeholder="Reason or additional details"></x-textarea>
+                    <x-label for="confirmation" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mt-4 mb-1">Type ERASE to confirm</x-label>
+                    <x-input id="confirmation" name="confirmation" type="text" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-900 dark:text-gray-100 rounded-md" autocomplete="off" />
                     <x-button type="submit" variant="danger" icon="fas fa-paper-plane" class="mt-4">
                         Submit Erasure Request
                     </x-button>
@@ -108,6 +106,6 @@
             @endforeach
         </ul>
     </div>
-</div>
+</x-account-layout>
 @endsection
 

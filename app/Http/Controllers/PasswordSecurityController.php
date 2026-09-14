@@ -8,7 +8,9 @@ use App\Http\Requests\Disable2faPasswordSecurityRequest;
 use App\Models\PasswordSecurity;
 use App\Models\TrustedDevice;
 use App\Models\User;
+use App\Services\Auth\TwoFactorRecoveryCodes;
 use App\Services\Auth\WebLoginSessionPolicy;
+use App\Support\Google2FAAuthenticator;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -45,7 +47,7 @@ class PasswordSecurityController extends Controller
             ]
         );
 
-        return redirect()->to('profileedit#security')->with('success_2fa', 'Secret Key is generated, Please scan the QR code and verify to Enable 2FA');
+        return redirect()->route('account', ['section' => 'security'])->with('success_2fa', 'Secret Key is generated, Please scan the QR code and verify to Enable 2FA');
     }
 
     /**
@@ -68,11 +70,11 @@ class PasswordSecurityController extends Controller
             $user->passwordSecurity->save();
 
             // Always redirect to profile page after enabling 2FA
-            return redirect()->to('profileedit#security')->with('success_2fa', '2FA is Enabled Successfully.');
+            return redirect()->route('account', ['section' => 'security'])->with('success_2fa', '2FA is Enabled Successfully.');
         }
 
         // Always redirect to profile page on failure as well
-        return redirect()->to('profileedit#security')->with('error_2fa', 'Invalid Verification Code, Please try again.');
+        return redirect()->route('account', ['section' => 'security'])->with('error_2fa', 'Invalid Verification Code, Please try again.');
     }
 
     public function cancelSetup(Request $request): RedirectResponse
@@ -87,10 +89,10 @@ class PasswordSecurityController extends Controller
         if ($user->passwordSecurity()->exists() && ! $user->passwordSecurity->google2fa_enable) {
             $user->passwordSecurity()->delete();
 
-            return redirect()->to('profileedit#security')->with('success_2fa', '2FA setup has been cancelled.');
+            return redirect()->route('account', ['section' => 'security'])->with('success_2fa', '2FA setup has been cancelled.');
         }
 
-        return redirect()->to('profileedit#security')->with('error_2fa', 'Unable to cancel 2FA setup.');
+        return redirect()->route('account', ['section' => 'security'])->with('error_2fa', 'Unable to cancel 2FA setup.');
     }
 
     public function disable2fa(Disable2faPasswordSecurityRequest $request): Redirector|RedirectResponse|Application
@@ -103,7 +105,7 @@ class PasswordSecurityController extends Controller
 
         if (! (Hash::check($request->get('current-password'), $user->password))) {
             // Password doesn't match - always redirect to profile page with error
-            return redirect()->to('profileedit#security')->with('error_2fa', 'Your password does not match with your account password. Please try again.');
+            return redirect()->route('account', ['section' => 'security'])->with('error_2fa', 'Your password does not match with your account password. Please try again.');
         }
 
         $validatedData = $request->validated();
@@ -114,7 +116,7 @@ class PasswordSecurityController extends Controller
         }
 
         // Always redirect to profile page after disabling 2FA
-        return redirect()->to('profileedit#security')->with('success_2fa', '2FA is now Disabled.');
+        return redirect()->route('account', ['section' => 'security'])->with('success_2fa', '2FA is now Disabled.');
     }
 
     /**
@@ -123,7 +125,7 @@ class PasswordSecurityController extends Controller
     public function verify2fa(Request $request): RedirectResponse
     {
         $request->validate([
-            'one_time_password' => 'required|numeric',
+            'one_time_password' => ['required', 'string', 'max:64'],
             'trust_device' => 'nullable|boolean',
         ]);
 
@@ -142,10 +144,10 @@ class PasswordSecurityController extends Controller
         }
 
         // Verify the OTP code
-        $valid = Google2FA::verifyKey(
-            $user->passwordSecurity->google2fa_secret,
-            $request->input('one_time_password')
-        );
+        $code = $request->string('one_time_password')->toString();
+        $valid = preg_match('/^[0-9]{6}$/D', $code) === 1
+            ? Google2FA::verifyKey($user->passwordSecurity->google2fa_secret, $code)
+            : app(TwoFactorRecoveryCodes::class)->consume($user, $code);
 
         if (! $valid) {
             return redirect()->route('2fa.verify')
@@ -162,6 +164,7 @@ class PasswordSecurityController extends Controller
 
         // Store the timestamp for determining how long the 2FA session is valid
         session([config('google2fa.session_var').'.auth.passed_at' => time()]);
+        app(Google2FAAuthenticator::class)->boot($request)->login();
 
         $passwordBreached = (bool) $request->session()->get('2fa:password_breached', false);
 

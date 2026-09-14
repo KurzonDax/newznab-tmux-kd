@@ -20,15 +20,16 @@ use Illuminate\Support\Str;
 use Illuminate\Support\ViewErrorBag;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionClass;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
-use Tests\Support\InteractsWithPublicShell;
+use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
 class AdminContentControllerTest extends TestCase
 {
-    use InteractsWithPublicShell;
+    use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
 
     /**
@@ -58,9 +59,12 @@ class AdminContentControllerTest extends TestCase
         Cache::flush();
 
         $this->createSchema();
-        $this->createPublicShellCountTables();
+        $this->createReleaseSchema();
         $this->seedSettings();
         $this->seedCategories();
+        foreach (['view movies', 'view tv'] as $permission) {
+            Permission::findOrCreate($permission, 'web');
+        }
         $this->resetGlobalComposerState();
         app(PermissionRegistrar::class)->forgetCachedPermissions();
         $this->withoutMiddleware(Google2FAMiddleware::class);
@@ -105,9 +109,11 @@ class AdminContentControllerTest extends TestCase
 
         $this->actingAs($user)->get(route('home'))
             ->assertOk()
-            ->assertViewIs('content.index')
+            ->assertViewIs('content.home')
             ->assertSee('<!DOCTYPE html>', false)
-            ->assertSee('No Content Available');
+            ->assertSee('Latest releases')
+            ->assertSee('No releases yet.')
+            ->assertDontSee('No Content Available');
     }
 
     public function test_missing_specific_content_still_returns_not_found(): void

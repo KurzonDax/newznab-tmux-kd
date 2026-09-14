@@ -20,7 +20,7 @@
 
         <!-- Register Card -->
         <div class="auth-card rounded-xl shadow-xl overflow-hidden">
-            <div class="px-5 py-5 sm:px-8 sm:py-6">
+            <div class="auth-card-body">
                 <!-- Registration Status Error Message -->
                 @if(!empty($error) && $showregister == 0)
                     <div class="p-6 rounded-lg bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-700">
@@ -74,23 +74,22 @@
 
                     <!-- Username Field -->
                     <div>
-                        <label for="username" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        <x-label for="username" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Username
-                        </label>
+                        </x-label>
                         <div class="relative">
                             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <i class="fas fa-user text-gray-400"></i>
                             </div>
-                            <input
+                            <x-input
                                 id="username"
                                 type="text"
                                 name="username"
                                 value="{{ old('username') }}"
                                 required
                                 autofocus
-                                class="block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-600 dark:bg-(--surface-card-dark) dark:text-white dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition @error('username') border-red-500 @enderror"
-                                placeholder="Choose a username"
-                            >
+                                class="block w-full auth-field-leading pr-3 py-3 border border-gray-300 dark:border-gray-600 dark:bg-(--surface-card-dark) dark:text-white dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition @error('username') border-red-500 @enderror"
+                                placeholder="Choose a username" />
                         </div>
                         @error('username')
                             <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
@@ -99,22 +98,21 @@
 
                     <!-- Email Field -->
                     <div>
-                        <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        <x-label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Email Address
-                        </label>
+                        </x-label>
                         <div class="relative">
                             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <i class="fas fa-envelope text-gray-400"></i>
                             </div>
-                            <input
+                            <x-input
                                 id="email"
                                 type="email"
                                 name="email"
                                 value="{{ old('email', $email ?? '') }}"
                                 required
-                                class="block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-600 dark:bg-(--surface-card-dark) dark:text-white dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition @error('email') border-red-500 @enderror"
-                                placeholder="your@email.com"
-                            >
+                                class="block w-full auth-field-leading pr-3 py-3 border border-gray-300 dark:border-gray-600 dark:bg-(--surface-card-dark) dark:text-white dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition @error('email') border-red-500 @enderror"
+                                placeholder="your@email.com" />
                         </div>
                         @error('email')
                             <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
@@ -123,21 +121,20 @@
 
                     <!-- Password Field -->
                     <div>
-                        <label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        <x-label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Password
-                        </label>
+                        </x-label>
                         <div class="relative">
                             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <i class="fas fa-lock text-gray-400"></i>
                             </div>
-                            <input
+                            <x-input
                                 id="password"
                                 type="password"
                                 name="password"
                                 required
-                                class="block w-full pl-10 pr-10 py-3 border border-gray-300 dark:border-gray-600 dark:bg-(--surface-card-dark) dark:text-white dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition @error('password') border-red-500 @enderror"
-                                placeholder="Create a strong password"
-                            >
+                                class="block w-full auth-field-leading auth-field-trailing py-3 border border-gray-300 dark:border-gray-600 dark:bg-(--surface-card-dark) dark:text-white dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition @error('password') border-red-500 @enderror"
+                                placeholder="Create a strong password" />
                             <button type="button" class="password-toggle-btn absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" data-field-id="password">
                                 <i class="fas fa-eye" id="password-eye"></i>
                             </button>
@@ -158,21 +155,20 @@
 
                     <!-- Confirm Password Field -->
                     <div>
-                        <label for="password_confirmation" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        <x-label for="password_confirmation" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Confirm Password
-                        </label>
+                        </x-label>
                         <div class="relative">
                             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <i class="fas fa-lock text-gray-400"></i>
                             </div>
-                            <input
+                            <x-input
                                 id="password_confirmation"
                                 type="password"
                                 name="password_confirmation"
                                 required
-                                class="block w-full pl-10 pr-10 py-3 border border-gray-300 dark:border-gray-600 dark:bg-(--surface-card-dark) dark:text-white dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition"
-                                placeholder="Confirm your password"
-                            >
+                                class="block w-full auth-field-leading auth-field-trailing py-3 border border-gray-300 dark:border-gray-600 dark:bg-(--surface-card-dark) dark:text-white dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition"
+                                placeholder="Confirm your password" />
                             <button type="button" class="password-toggle-btn absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" data-field-id="password_confirmation">
                                 <i class="fas fa-eye" id="password_confirmation-eye"></i>
                             </button>
@@ -198,12 +194,12 @@
                             required
                             class="h-4 w-4 text-primary-600 dark:text-primary-400 focus:ring-primary-500 border-gray-300 dark:border-gray-600 rounded mt-1"
                         >
-                        <label for="terms" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+                        <x-label for="terms" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">
                             I agree to the
                             <a href="{{ url('/terms-and-conditions') }}" target="_blank" class="text-primary-600 dark:text-primary-400 hover:text-primary-500">Terms and Conditions</a>
                             and
                             <a href="{{ url('/privacy-policy') }}" target="_blank" class="text-primary-600 dark:text-primary-400 hover:text-primary-500">Privacy Policy</a>
-                        </label>
+                        </x-label>
                     </div>
 
                     <!-- Submit Button -->

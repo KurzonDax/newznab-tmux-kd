@@ -27,7 +27,7 @@ class PrivacyCenterController extends BasePageController
         $requests = GdprRequest::query()
             ->where('user_id', $user->id)
             ->orderByDesc('created_at')
-            ->paginate(10);
+            ->paginate(10)->withQueryString();
 
         $this->viewData = array_merge($this->viewData, [
             'user' => $user,

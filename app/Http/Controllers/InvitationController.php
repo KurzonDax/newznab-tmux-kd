@@ -24,7 +24,7 @@ class InvitationController extends BasePageController
     ) {
         parent::__construct();
         $this->invitationService = $invitationService;
-        $this->middleware('auth')->except(['show', 'accept']);
+        $this->middleware('auth')->except(['showInvitation']);
     }
 
     /**
@@ -58,7 +58,7 @@ class InvitationController extends BasePageController
         /** @var User $user */
         $user = Auth::user();
 
-        $invitations = $this->invitationService->getUserInvitations($user->id, $status);
+        $invitations = $this->invitationService->getUserInvitations($user->id, $status)->withQueryString();
         $stats = $this->invitationService->getUserInvitationStats($user->id);
 
         // Convert paginated results to array for Blade
@@ -145,14 +145,14 @@ class InvitationController extends BasePageController
         $request->validate([
             'email' => 'required|email|unique:users,email',
             'expiry_days' => 'sometimes|integer|min:1|max:30',
-            'role' => 'sometimes|integer|in:'.implode(',', array_keys(config('nntmux.user_roles', []))),
+            'role' => 'nullable|integer|in:'.implode(',', array_keys(config('nntmux.user_roles', []))),
         ]);
 
         try {
             $expiryDays = $request->get('expiry_days', Invitation::DEFAULT_INVITE_EXPIRY_DAYS);
             $metadata = [];
 
-            if ($request->has('role')) {
+            if ($request->filled('role')) {
                 $metadata['role'] = $request->get('role');
             }
 
@@ -176,7 +176,7 @@ class InvitationController extends BasePageController
     /**
      * Display the specified invitation
      */
-    public function show(string $token): View
+    public function showInvitation(string $token): View
     {
 
         $preview = $this->invitationService->getInvitationPreview($token);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Services\Auth\WebLoginSessionPolicy;
 use App\Support\Google2FAAuthenticator;
 use Closure;
 use Illuminate\Http\Request;
@@ -51,6 +52,14 @@ class Google2FAMiddleware
 
         if ($authenticator->isAuthenticated()) {
             return $next($request);
+        }
+
+        if ($request->user()) {
+            $request->session()->put('2fa:user:id', $request->user()->id);
+            $request->session()->put('2fa:remember', (bool) $request->session()->get(WebLoginSessionPolicy::REMEMBERED_LOGIN_KEY, false));
+            if ($request->isMethod('GET')) {
+                $request->session()->put('url.intended', $request->fullUrl());
+            }
         }
 
         return $authenticator->makeRequestOneTimePasswordResponse();
