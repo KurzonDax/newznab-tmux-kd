@@ -1,6 +1,4 @@
 /**
- * Alpine.data('profileEdit') - Profile edit page (2FA toggle, theme radios)
- * Alpine.data('profilePage') - Profile page (progress bars)
  * Alpine.data('copyToClipboard') - Copy button with visual feedback
  */
 import Alpine from '@alpinejs/csp';

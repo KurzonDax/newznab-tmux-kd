@@ -44,7 +44,7 @@ export function releaseCoverBrowser() {
             this.coverRequest?.abort();
             const request = new AbortController();
             this.coverRequest = request;
-            const url = new URL(window.location.href);
+            const url = new URL(this.browserRoot.dataset.coverUrl || window.location.href);
             url.searchParams.set('view', 'covers');
             url.searchParams.set('_fragment', 'cover');
             url.searchParams.set('cover', this.coverTile.dataset.coverTile);

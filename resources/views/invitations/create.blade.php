@@ -1,168 +1,20 @@
 @extends('layouts.main')
-
 @section('content')
-<x-breadcrumb :items="[['label' => 'Home', 'url' => url($site['home_link'] ?? '/')],['label' => 'Profile', 'url' => url('/profile')],['label' => 'My Invitations', 'url' => url('/invitations')]]" />
-@unless($invite_mode)
-<x-page-header title="Invitations Disabled" icon="fas fa-ban" />
-<div class="max-w-4xl mx-auto px-4 py-3">
-    <div class="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg p-6 shadow-sm dark:bg-yellow-900 dark:border-yellow-700 dark:text-yellow-300">
-        <p class="mb-3">User invitations are currently disabled on this site. You cannot send new invitations at this time.</p>
-        <x-button-link href="{{ url('/profile') }}" variant="secondary" icon="fa fa-arrow-left">
-            Back to Profile
-        </x-button-link>
-    </div>
-</div>
-@else
-<div class="max-w-4xl mx-auto px-4 py-3">
-    <div class="bg-(--surface-card) dark:bg-(--surface-card-dark) rounded-xl shadow-sm dark:bg-(--surface-card-dark)">
-        <x-page-header title="Send New Invitation" icon="fas fa-paper-plane">
-            <x-slot:actions>
-            <div class="flex items-center gap-3">
-                <div class="px-3 py-1 rounded text-sm font-medium text-white {{ $user_invites_left > 0 ? 'bg-green-600' : 'bg-red-600' }}">
-                    <i class="fa fa-envelope mr-1"></i>
-                    {{ $user_invites_left }} invites left
-                </div>
-                <x-button-link href="{{ url('/invitations') }}" variant="secondary" size="sm" icon="fas fa-arrow-left">
-                    Back to Invitations
-                </x-button-link>
-            </div>
-            </x-slot:actions>
-        </x-page-header>
-        <div class="p-6">
-            @if($errors->any())
-                <div class="mb-4 bg-red-50 border border-red-200 text-red-800 rounded-lg p-4 dark:bg-red-900 dark:border-red-700 dark:text-red-200">
-                    <ul class="list-disc list-inside mb-0">
-                        @foreach($errors->all() as $error)
-                            <li>{{ $error }}</li>
-                        @endforeach
-                    </ul>
-                </div>
-            @endif
-
-            @unless($can_send_invites)
-                <div class="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg p-6 text-center dark:bg-yellow-900 dark:border-yellow-700 dark:text-yellow-300">
-                    <i class="fa fa-exclamation-triangle text-5xl mb-3"></i>
-                    <h5 class="text-lg font-semibold mb-2">No Invitations Available</h5>
-                    <p class="mb-4">You have used all of your available invitations. You cannot send new invitations at this time.</p>
-                    <div class="flex gap-2 justify-center">
-                        <x-button-link href="{{ url('/invitations') }}" icon="fa fa-arrow-left" class="shadow-sm">
-                            Back to My Invitations
-                        </x-button-link>
-                        <a href="{{ url('/contact') }}" class="inline-flex items-center px-4 py-2 border border-primary-300 rounded-md text-sm font-medium text-primary-700 bg-(--surface-card) dark:bg-(--surface-card-dark) hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:text-primary-400 dark:border-primary-600 dark:hover:bg-(--public-surface-hover-dark)">
-                            <i class="fa fa-envelope mr-1"></i> Contact Support
-                        </a>
-                    </div>
-                </div>
-            @else
-                <form method="POST" action="{{ url('/invitations/store') }}">
-                            @csrf
-
-                            <div class="mb-6 bg-primary-50 border border-primary-200 text-primary-800 rounded-lg p-4 dark:bg-primary-900 dark:border-primary-700 dark:text-primary-300">
-                                <div class="flex">
-                                    <i class="fa fa-info-circle text-lg mr-3 mt-1"></i>
-                                    <div>
-                                        <strong>Available Invitations:</strong> You have <strong>{{ $user_invites_left }}</strong> invitation{{ $user_invites_left != 1 ? 's' : '' }} remaining.
-                                        @if($user_invites_left == 1)
-                                            This is your last invitation, so use it wisely!
-                                        @endif
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="mb-6">
-                                <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                    <i class="fa fa-envelope mr-1"></i>Email Address <span class="text-red-600">*</span>
-                                </label>
-                                <input type="email"
-                                       class="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600 dark:text-white @error('email') border-red-500 @enderror"
-                                       id="email"
-                                       name="email"
-                                       value="{{ old('email') }}"
-                                       required
-                                       placeholder="Enter recipient's email address">
-                                @error('email')
-                                    <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
-                                @enderror
-                                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                                    <i class="fa fa-info-circle mr-1"></i>The person will receive an invitation email at this address.
-                                </p>
-                            </div>
-
-                            <div class="mb-6">
-                                <label for="expiry_days" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                    <i class="far fa-clock mr-1"></i>Expiry Period
-                                </label>
-                                <select class="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600 dark:text-white @error('expiry_days') border-red-500 @enderror"
-                                        id="expiry_days"
-                                        name="expiry_days">
-                                    <option value="1" @selected(old('expiry_days') == '1')>1 Day</option>
-                                    <option value="3" @selected(old('expiry_days') == '3')>3 Days</option>
-                                    <option value="7" @selected(old('expiry_days') == '7' || !old('expiry_days'))>1 Week (Default)</option>
-                                    <option value="14" @selected(old('expiry_days') == '14')>2 Weeks</option>
-                                    <option value="30" @selected(old('expiry_days') == '30')>1 Month</option>
-                                </select>
-                                @error('expiry_days')
-                                    <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
-                                @enderror
-                                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                                    <i class="fa fa-info-circle mr-1"></i>How long the invitation will remain valid.
-                                </p>
-                            </div>
-
-                            @if(isset($user_roles) && !empty($user_roles))
-                                <div class="mb-6">
-                                    <label for="role" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                        <i class="fa fa-user-tag mr-1"></i>Default Role <small class="text-gray-500 dark:text-gray-400">(Optional)</small>
-                                    </label>
-                                    <select class="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600 dark:text-white @error('role') border-red-500 @enderror"
-                                            id="role"
-                                            name="role">
-                                        <option value="">Use System Default</option>
-                                        @foreach($user_roles as $roleId => $roleName)
-                                            <option value="{{ $roleId }}" @selected(old('role') == $roleId)>
-                                                {{ $roleName }}
-                                            </option>
-                                        @endforeach
-                                    </select>
-                                    @error('role')
-                                        <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
-                                    @enderror
-                                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                                        <i class="fa fa-info-circle mr-1"></i>The role to assign to the user when they accept the invitation.
-                                    </p>
-                                </div>
-                            @endif
-
-                            <div class="mb-6 bg-primary-50 border border-primary-200 text-primary-800 rounded-lg p-4 dark:bg-primary-900 dark:border-primary-700 dark:text-primary-300">
-                                <div class="flex">
-                                    <i class="fa fa-lightbulb text-lg mr-3 mt-1"></i>
-                                    <div>
-                                        <strong>How it works:</strong>
-                                        <ul class="list-disc list-inside mt-2 mb-0 space-y-1">
-                                            <li>The recipient will receive an email with a secure invitation link</li>
-                                            <li>They can use this link to create their account within the specified time period</li>
-                                            <li>Once the time expires, the invitation link becomes invalid</li>
-                                            <li>You can track the status of all your invitations from the main invitations page</li>
-                                        </ul>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="flex flex-col sm:flex-row gap-2 justify-end">
-                                <x-button-link href="{{ url('/invitations') }}" variant="secondary" icon="fa fa-times" class="shadow-sm">
-                                    Cancel
-                                </x-button-link>
-                                <x-button type="submit" icon="fas fa-paper-plane" class="shadow-sm">
-                                    Send Invitation
-                                </x-button>
-                            </div>
-                        </form>
-                    @endunless
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-@endif
+<x-account-layout section="invitations">
+    <section class="card account-card">
+        <div class="home-section-heading"><h2>Send invitation</h2><a href="{{ route('account', ['section' => 'invitations']) }}">Back to invitations</a></div>
+        @if(!$invite_mode)<p class="account-muted">Invitations are currently disabled on this site.</p>
+        @elseif(!$can_send_invites)<p class="account-muted">You have no invitations available.</p>
+        @else
+            <p class="account-muted">{{ $user_invites_left }} of {{ $user_invites_total }} invitations available · {{ $user_invites_pending }} pending.</p>
+            <form method="POST" action="{{ route('invitations.store') }}" class="account-form mt-4">@csrf
+                <div><x-label for="email">Email address</x-label><x-input type="email" name="email" id="email" :value="old('email')" required autocomplete="email" /></div>
+                <div><x-label for="expiry_days">Expires after</x-label><x-select name="expiry_days" id="expiry_days">@foreach([1, 3, 7, 14, 30] as $days)<option value="{{ $days }}" @selected((int) old('expiry_days', 7) === $days)>{{ $days }} {{ $days === 1 ? 'day' : 'days' }}</option>@endforeach</x-select></div>
+                @if(!empty($user_roles))<div><x-label for="role">Role</x-label><x-select name="role" id="role"><option value="">System default</option>@foreach($user_roles as $roleId => $roleName)<option value="{{ $roleId }}" @selected((string) old('role') === (string) $roleId)>{{ $roleName }}</option>@endforeach</x-select></div>@endif
+                <p class="account-muted">The recipient will receive an email with a secure invitation link. You can track or cancel it from Invitations.</p>
+                <div><x-button type="submit" icon="fas fa-paper-plane">Send invitation</x-button></div>
+            </form>
+        @endif
+    </section>
+</x-account-layout>
 @endsection
-

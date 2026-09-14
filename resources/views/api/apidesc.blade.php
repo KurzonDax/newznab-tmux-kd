@@ -1,12 +1,9 @@
 @extends('layouts.main')
 @section('content')
-<div class="surface-panel rounded-xl shadow-sm mb-6">
-    <div class="surface-panel-alt px-6 py-4 border-b rounded-t-lg">
-        <h3 class="text-2xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
-            <i class="fa fa-code mr-2 text-primary-600 dark:text-primary-400"></i>{{ $title }}
-        </h3>
-    </div>
-    <div class="p-6">
+<div class="public-docs">
+    <x-breadcrumb :items="[['label' => $title]]" />
+    <x-page-header :title="$title" />
+    <div class="card p-4">
         <p class="text-lg text-gray-700 dark:text-gray-300 mb-6 dark:text-gray-300">
             Here lives the documentation for the API for accessing NZB and index data. API functions require your API key
             except public capabilities; direct <code class="px-1 bg-(--surface-panel-alt) dark:bg-(--surface-card-dark) rounded text-xs">/getnzb</code>
@@ -23,7 +20,7 @@
                     <i class="fa fa-key mr-2 text-gray-600 dark:text-gray-400"></i>Your API Credentials
                 </h4>
                 <div class="flex rounded-md shadow-sm" x-data="copyToClipboard()">
-                    <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-sm focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-500 dark:text-white" value="apikey={{ auth()->user()->api_token }}" readonly id="apikeyInput">
+                    <x-input type="text" class="min-w-0 flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-sm focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-500 dark:text-white" value="apikey={{ auth()->user()->api_token }}" readonly id="apikeyInput" />
                     <button class="inline-flex items-center px-4 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500" type="button" @click="copy('apikeyInput')" title="Copy to clipboard" :class="copied ? 'text-green-600' : ''">
                         <i class="fa" :class="copied ? 'fa-check' : 'fa-copy'"></i>
                     </button>

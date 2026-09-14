@@ -1,214 +1,29 @@
 @extends('layouts.main')
-
 @section('content')
-<x-breadcrumb :items="[['label' => 'Home', 'url' => url($site['home_link'] ?? '/')],['label' => 'Profile', 'url' => url('/profile')]]" />
-@unless($invite_mode)
-<x-page-header title="Invitations Disabled" icon="fas fa-ban" />
-<div class="max-w-4xl mx-auto px-4 py-3">
-    <div class="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg p-6 shadow-sm dark:bg-yellow-900 dark:border-yellow-700 dark:text-yellow-300">
-        <p class="mb-0">User invitations are currently disabled on this site. If you believe this is an error, please contact an administrator.</p>
-    </div>
-</div>
-@else
-<div class="px-4 py-3">
-    <div class="bg-(--surface-card) dark:bg-(--surface-card-dark) rounded-xl shadow-sm mb-4 dark:bg-(--surface-card-dark)">
-        <x-page-header title="My Invitations" icon="fas fa-envelope">
-            <x-slot:actions>
-            <x-button-link href="{{ url('/invitations/create') }}" variant="secondary" size="sm" icon="fas fa-plus">Send New Invitation</x-button-link>
-            </x-slot:actions>
-        </x-page-header>
-        <div class="p-6">
-            <!-- Stats Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                <div class="bg-primary-600 dark:bg-primary-700 text-white rounded-lg shadow dark:bg-primary-700">
-                    <div class="p-4 text-center">
-                        <h4 class="text-3xl font-bold mb-1">{{ $stats['total'] ?? 0 }}</h4>
-                        <small class="text-primary-100">Total Sent</small>
-                    </div>
-                </div>
-                <div class="bg-green-600 dark:bg-green-700 text-white rounded-lg shadow dark:bg-green-700">
-                    <div class="p-4 text-center">
-                        <h4 class="text-3xl font-bold mb-1">{{ $stats['used'] ?? 0 }}</h4>
-                        <small class="text-green-100">Accepted</small>
-                    </div>
-                </div>
-                <div class="bg-yellow-500 text-white rounded-lg shadow dark:bg-yellow-600">
-                    <div class="p-4 text-center">
-                        <h4 class="text-3xl font-bold mb-1">{{ $stats['pending'] ?? 0 }}</h4>
-                        <small class="text-yellow-100">Pending</small>
-                    </div>
-                </div>
-                <div class="bg-red-600 dark:bg-red-700 text-white rounded-lg shadow dark:bg-red-700">
-                    <div class="p-4 text-center">
-                        <h4 class="text-3xl font-bold mb-1">{{ $stats['expired'] ?? 0 }}</h4>
-                        <small class="text-red-100">Expired</small>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Filter Tabs -->
-            <div class="border-b border-gray-200 dark:border-gray-700 mb-4">
-                <nav class="flex flex-wrap -mb-px" aria-label="Tabs">
-                    <a href="{{ url('/invitations') }}" class="inline-flex items-center px-4 py-2 border-b-2 text-sm font-medium {{ empty($status) ? 'border-primary-500 text-primary-600 dark:text-primary-400 dark:border-primary-400 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:border-gray-600 dark:text-gray-400 dark:hover:text-gray-300' }}">
-                        <i class="fa fa-list mr-1"></i>All
-                    </a>
-                    <a href="{{ url('/invitations?status=pending') }}" class="inline-flex items-center px-4 py-2 border-b-2 text-sm font-medium {{ ($status ?? '') == 'pending' ? 'border-primary-500 text-primary-600 dark:text-primary-400 dark:border-primary-400 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:border-gray-600 dark:text-gray-400 dark:hover:text-gray-300' }}">
-                        <i class="far fa-clock mr-1"></i>Pending
-                    </a>
-                    <a href="{{ url('/invitations?status=used') }}" class="inline-flex items-center px-4 py-2 border-b-2 text-sm font-medium {{ ($status ?? '') == 'used' ? 'border-primary-500 text-primary-600 dark:text-primary-400 dark:border-primary-400 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:border-gray-600 dark:text-gray-400 dark:hover:text-gray-300' }}">
-                        <i class="fa fa-check mr-1"></i>Accepted
-                    </a>
-                    <a href="{{ url('/invitations?status=expired') }}" class="inline-flex items-center px-4 py-2 border-b-2 text-sm font-medium {{ ($status ?? '') == 'expired' ? 'border-primary-500 text-primary-600 dark:text-primary-400 dark:border-primary-400 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:border-gray-600 dark:text-gray-400 dark:hover:text-gray-300' }}">
-                        <i class="fa fa-times mr-1"></i>Expired
-                    </a>
-                </nav>
-            </div>
-
-            <!-- Invitations Table / Cards -->
+<x-account-layout section="invitations">
+    <section class="card account-card">
+        <div class="home-section-heading"><h2>Invitations</h2>@if($invite_mode)<x-button-link :href="route('invitations.create')" size="sm" icon="fas fa-plus">Send invitation</x-button-link>@endif</div>
+        @if(!$invite_mode)
+            <p class="account-muted">Invitations are currently disabled on this site.</p>
+        @else
+            <dl class="account-view-preferences">@foreach(['sent' => 'Sent', 'used' => 'Accepted', 'pending' => 'Pending', 'expired' => 'Expired'] as $key => $label)<div><dt>{{ $label }}</dt><dd>{{ $stats[$key] ?? 0 }}</dd></div>@endforeach</dl>
+            <nav class="account-invitation-tabs" aria-label="Invitation status">@foreach(['' => 'All', 'pending' => 'Pending', 'used' => 'Accepted', 'expired' => 'Expired'] as $key => $label)<a href="{{ route('account', ['section' => 'invitations', 'status' => $key]) }}" @if(($status ?? '') === $key) aria-current="page" @endif>{{ $label }}</a>@endforeach</nav>
             @forelse($invitations as $invitation)
-                @if($loop->first)
-                <!-- Desktop Table -->
-                <div class="hidden md:block overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                        <thead class="bg-(--surface-panel-alt) dark:bg-(--surface-body-dark)">
-                            <tr>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-300">Email</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-300">Status</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-300">Sent</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-300">Expires</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-300">Used By</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-300">Used Date</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-300">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-(--surface-card) dark:bg-(--surface-card-dark) divide-y divide-gray-200 dark:divide-gray-700">
-                @endif
-                            <tr class="hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark)">
-                                <td class="px-4 py-3 whitespace-nowrap">
-                                    <span class="text-sm text-gray-900 dark:text-gray-100"><i class="fa fa-envelope text-gray-400 mr-1"></i>{{ $invitation['email'] }}</span>
-                                </td>
-                                <td class="px-4 py-3 whitespace-nowrap">
-                                    @if($invitation['used_at'])
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"><i class="fa fa-check mr-1"></i>Accepted</span>
-                                    @elseif($invitation['expires_at'] < time())
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"><i class="fa fa-times mr-1"></i>Expired</span>
-                                    @elseif(!$invitation['is_active'])
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-(--surface-panel-alt) text-gray-800 dark:bg-(--surface-panel-alt-dark) dark:text-gray-300"><i class="fa fa-ban mr-1"></i>Cancelled</span>
-                                    @else
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"><i class="far fa-clock mr-1"></i>Pending</span>
-                                    @endif
-                                </td>
-                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                                    {{ date('M j, Y', $invitation['created_at']) }} <small class="text-xs text-gray-500 dark:text-gray-400">{{ date('H:i', $invitation['created_at']) }}</small>
-                                </td>
-                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                                    {{ date('M j, Y', $invitation['expires_at']) }} <small class="text-xs text-gray-500 dark:text-gray-400">{{ date('H:i', $invitation['expires_at']) }}</small>
-                                </td>
-                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                                    @if(isset($invitation['used_by_user']))
-                                        <i class="fa fa-user text-gray-400 mr-1"></i>{{ $invitation['used_by_user']['username'] ?? $invitation['used_by_user']['email'] }}
-                                    @else
-                                        <span class="text-gray-400">-</span>
-                                    @endif
-                                </td>
-                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                                    @if($invitation['used_at'])
-                                        {{ date('M j, Y', $invitation['used_at']) }} <small class="text-xs text-gray-500 dark:text-gray-400">{{ date('H:i', $invitation['used_at']) }}</small>
-                                    @else
-                                        <span class="text-gray-400">-</span>
-                                    @endif
-                                </td>
-                                <td class="px-4 py-3 whitespace-nowrap text-sm">
-                                    @if(!$invitation['used_at'] && $invitation['expires_at'] > time() && $invitation['is_active'])
-                                        <div class="flex items-center space-x-2">
-                                            <form method="POST" action="{{ url('/invitations/' . $invitation['id'] . '/resend') }}" class="inline">
-                                                @csrf
-                                                <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-primary-300 rounded text-xs font-medium text-primary-700 bg-(--surface-card) hover:bg-primary-50 dark:bg-(--surface-panel-alt-dark) dark:text-primary-400 dark:border-primary-600 dark:hover:bg-(--public-surface-hover-dark)" title="Resend"><i class="fas fa-paper-plane"></i></button>
-                                            </form>
-                                            <form method="POST" action="{{ url('/invitations/' . $invitation['id']) }}" class="inline">
-                                                @csrf
-                                                @method('DELETE')
-                                                <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-red-300 rounded text-xs font-medium text-red-700 bg-(--surface-card) hover:bg-red-50 dark:bg-(--surface-panel-alt-dark) dark:text-red-400 dark:border-red-600 dark:hover:bg-(--public-surface-hover-dark)" title="Cancel" data-confirm="Are you sure you want to cancel this invitation?"><i class="fas fa-times"></i></button>
-                                            </form>
-                                        </div>
-                                    @else
-                                        <span class="text-gray-400">-</span>
-                                    @endif
-                                </td>
-                            </tr>
-                @if($loop->last)
-                        </tbody>
-                    </table>
-                </div>
-                @endif
-            @empty
-                <div class="bg-primary-50 border border-primary-200 text-primary-800 rounded-lg p-6 text-center dark:bg-primary-900 dark:border-primary-700 dark:text-primary-300">
-                    <i class="fa fa-info-circle text-4xl mb-3"></i>
-                    <h5 class="text-lg font-semibold mb-2">No Invitations Found</h5>
-                    <p class="mb-4">You haven't sent any invitations yet.</p>
-                    <x-button-link href="{{ url('/invitations/create') }}" class="shadow-sm" icon="fas fa-plus">Send Your First Invitation</x-button-link>
-                </div>
-            @endforelse
-
-            @if(count($invitations ?? []) > 0)
-            <!-- Mobile Cards -->
-            <div class="md:hidden divide-y divide-gray-200 dark:divide-gray-700">
-                @foreach($invitations as $invitation)
-                    <div class="p-4 space-y-3">
-                        <div class="flex items-start justify-between gap-2">
-                            <div class="min-w-0">
-                                <div class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                                    <i class="fa fa-envelope text-gray-400 mr-1"></i>{{ $invitation['email'] }}
-                                </div>
-                                <div class="mt-1">
-                                    @if($invitation['used_at'])
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"><i class="fa fa-check mr-1"></i>Accepted</span>
-                                    @elseif($invitation['expires_at'] < time())
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"><i class="fa fa-times mr-1"></i>Expired</span>
-                                    @elseif(!$invitation['is_active'])
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-(--surface-panel-alt) text-gray-800 dark:bg-(--surface-panel-alt-dark) dark:text-gray-300"><i class="fa fa-ban mr-1"></i>Cancelled</span>
-                                    @else
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"><i class="far fa-clock mr-1"></i>Pending</span>
-                                    @endif
-                                </div>
-                            </div>
-                            @if(!$invitation['used_at'] && $invitation['expires_at'] > time() && $invitation['is_active'])
-                                <div class="flex gap-1 shrink-0">
-                                    <form method="POST" action="{{ url('/invitations/' . $invitation['id'] . '/resend') }}" class="inline">
-                                        @csrf
-                                        <button type="submit" class="px-2 py-1 border border-primary-300 rounded text-xs text-primary-700 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) dark:text-primary-400 dark:border-primary-600" title="Resend"><i class="fas fa-paper-plane"></i></button>
-                                    </form>
-                                    <form method="POST" action="{{ url('/invitations/' . $invitation['id']) }}" class="inline">
-                                        @csrf
-                                        @method('DELETE')
-                                        <button type="submit" class="px-2 py-1 border border-red-300 rounded text-xs text-red-700 bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) dark:text-red-400 dark:border-red-600" title="Cancel"><i class="fas fa-times"></i></button>
-                                    </form>
-                                </div>
-                            @endif
-                        </div>
-                        <div class="grid grid-cols-2 gap-2 text-xs text-gray-600 dark:text-gray-400">
-                            <div><span class="font-medium">Sent:</span> {{ date('M j, Y', $invitation['created_at']) }}</div>
-                            <div><span class="font-medium">Expires:</span> {{ date('M j, Y', $invitation['expires_at']) }}</div>
-                            @if(isset($invitation['used_by_user']))
-                                <div><span class="font-medium">Used by:</span> {{ $invitation['used_by_user']['username'] ?? $invitation['used_by_user']['email'] }}</div>
-                            @endif
-                            @if($invitation['used_at'])
-                                <div><span class="font-medium">Used:</span> {{ date('M j, Y', $invitation['used_at']) }}</div>
-                            @endif
-                        </div>
+                <article class="account-invitation">
+                    <div class="min-w-0"><h3>{{ $invitation['email'] }}</h3><p class="account-muted">Sent {{ userDate('M j, Y H:i', $invitation['created_at']) }} · Expires {{ userDate('M j, Y H:i', $invitation['expires_at']) }}</p>
+                        @if(isset($invitation['used_by_user']))<p class="account-muted">Accepted by {{ $invitation['used_by_user']['username'] ?? $invitation['used_by_user']['email'] }}{{ $invitation['used_at'] ? ' · '.userDate('M j, Y H:i', $invitation['used_at']) : '' }}</p>@endif
                     </div>
-                @endforeach
-            </div>
-            @endif
-
-            @if(isset($pagination_links))
-                <div class="mt-4">
-                    {!! $pagination_links !!}
-                </div>
-            @endif
-        </div>
-    </div>
-</div>
-@endunless
+                    @if($invitation['used_at'])<x-badge type="success">Accepted</x-badge>@elseif(!$invitation['is_active'])<x-badge type="info">Cancelled</x-badge>@elseif($invitation['expires_at'] < time())<x-badge type="danger">Expired</x-badge>@else<x-badge type="warning">Pending</x-badge>@endif
+                    @if(!$invitation['used_at'] && $invitation['expires_at'] > time() && $invitation['is_active'])
+                        <div class="flex gap-2"><form method="POST" action="{{ route('invitations.resend', $invitation['id']) }}">@csrf<x-button type="submit" variant="secondary" size="sm" icon="fas fa-paper-plane">Resend</x-button></form>
+                        <form method="POST" action="{{ route('invitations.destroy', $invitation['id']) }}" x-data="confirmForm" data-message="Cancel this invitation?" @submit.prevent="submit">@csrf @method('DELETE')<x-button type="submit" variant="danger" size="sm">Cancel</x-button></form></div>
+                    @endif
+                </article>
+            @empty
+                <x-empty-state icon="fas fa-envelope" title="No invitations found." message="Send an invitation to invite someone to join." />
+            @endforelse
+            @if(isset($pagination_links))<div class="mt-4">{!! $pagination_links !!}</div>@endif
+        @endif
+    </section>
+</x-account-layout>
 @endsection
-

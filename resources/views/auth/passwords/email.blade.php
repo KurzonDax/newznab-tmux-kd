@@ -20,7 +20,7 @@
 
         <!-- Reset Password Card -->
         <div class="auth-card rounded-xl shadow-xl overflow-hidden">
-            <div class="px-8 py-6">
+            <div class="auth-card-body">
                 <!-- Error Messages -->
                 @if(isset($errors) && $errors->any())
                     <div class="mb-4 p-4 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700">
@@ -43,23 +43,22 @@
 
                     <!-- Email Field -->
                     <div>
-                        <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        <x-label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Email Address
-                        </label>
+                        </x-label>
                         <div class="relative">
                             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <i class="fas fa-envelope text-gray-400"></i>
                             </div>
-                            <input
+                            <x-input
                                 id="email"
                                 type="email"
                                 name="email"
                                 value="{{ old('email') }}"
                                 required
                                 autofocus
-                                class="block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-600 dark:bg-(--surface-card-dark) dark:text-white dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition {{ isset($errors) && $errors->has('email') ? 'border-red-500' : '' }}"
-                                placeholder="your@email.com"
-                            >
+                                class="block w-full auth-field-leading pr-3 py-3 border border-gray-300 dark:border-gray-600 dark:bg-(--surface-card-dark) dark:text-white dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition {{ isset($errors) && $errors->has('email') ? 'border-red-500' : '' }}"
+                                placeholder="your@email.com" />
                         </div>
                         @if(isset($errors) && $errors->has('email'))
                             <p class="mt-2 text-sm text-red-600">{{ $errors->first('email') }}</p>

@@ -9,13 +9,13 @@
 (function() {
     var d = document.documentElement;
     d.setAttribute('data-loading', '');
-    @auth
+    @if(empty($localThemeOnly) && auth()->check())
         var t = '{{ auth()->user()->theme_preference ?? "light" }}';
         var scheme = '{{ auth()->user()->color_scheme ?? "blue" }}';
     @else
         var t = localStorage.getItem('theme') || 'light';
         var scheme = localStorage.getItem('color_scheme') || 'blue';
-    @endauth
+    @endif
     var isDark = t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
     if (isDark) {
         d.classList.add('dark');

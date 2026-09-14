@@ -24,6 +24,7 @@ function covers() {
     };
     const component = releaseBrowser();
     component.browserRoot = {
+        dataset: {},
         querySelectorAll: selector => selector === '[data-cover-tile]' ? tiles : [],
         querySelector: () => ({ innerHTML: '<div role="alert">Could not load releases. <button>Try again</button></div>' }),
     };
@@ -68,4 +69,16 @@ test('a failed expansion can retry and closing it cancels an in-flight reply', a
     await retry;
     assert.equal(panel.hidden, true);
     assert.equal(panel.innerHTML, '');
+});
+
+test('dashboard cover expansions use the canonical browse URL', async () => {
+    const { component, tiles } = covers();
+    window.location.href = 'https://nntmux.test/';
+    component.browserRoot.dataset.coverUrl = 'https://nntmux.test/browse/movies?view=covers&sort=grabs';
+    let fetched;
+    globalThis.fetch = async url => { fetched = new URL(url); return { ok: true, text: async () => '<table data-release-table>Latest</table>' }; };
+    await component.openCover({ currentTarget: tiles[0].button });
+    assert.equal(fetched.pathname, '/browse/movies');
+    assert.equal(fetched.searchParams.get('sort'), 'grabs');
+    assert.equal(fetched.searchParams.get('cover'), 'first');
 });

@@ -2,7 +2,7 @@
 
 @section('content')
     <div class="min-h-screen auth-page flex items-center justify-center px-4">
-        <div class="w-full max-w-md auth-card shadow-md rounded-xl p-8 space-y-6">
+        <div class="w-full max-w-md auth-card auth-card-body shadow-md rounded-xl space-y-6">
             <div class="space-y-2 text-center">
                 <h1 class="text-2xl font-semibold text-gray-900 dark:text-gray-100">Verify your email address</h1>
                 <p class="text-sm text-gray-600 dark:text-gray-300">

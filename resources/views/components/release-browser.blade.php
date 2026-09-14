@@ -47,6 +47,7 @@
     @if($pager)
         @include('components.release-browser.pager')
     @endif
+    {{ $footer ?? '' }}
     <div class="release-browser-bulk card" x-show="selectedCount" x-cloak>
         <strong><span x-text="selectedCount"></span> selected</strong>
         <span class="grow"></span>

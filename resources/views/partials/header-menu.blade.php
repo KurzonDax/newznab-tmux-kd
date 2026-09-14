@@ -47,12 +47,12 @@
             </template>
         </div>
     </form>
-    <a href="{{ route('cart.index') }}" class="public-nav-item public-basket" aria-label="Basket"><i class="fas fa-shopping-basket" aria-hidden="true"></i><span class="public-nav-label">Basket</span><span class="cart-count" data-basket-count x-text="$store.cart.count">{{ $basketCount }}</span></a>
+    <a href="{{ route('basket') }}" class="public-nav-item public-basket" aria-label="Basket"><i class="fas fa-shopping-basket" aria-hidden="true"></i><span class="public-nav-label">Basket</span><span class="cart-count" data-basket-count x-text="$store.cart.count">{{ $basketCount }}</span></a>
     <button type="button" class="public-avatar" x-ref="userTrigger" x-on:click="toggleUser" x-bind:aria-expanded="userOpen" aria-controls="user-menu" aria-label="Open user menu">{{ mb_strtoupper(mb_substr($userdata->username, 0, 1)) }}</button>
     <div id="user-menu" class="card public-menu public-user-menu" x-cloak x-show="userOpen" x-on:click="navigate">
-        <a href="{{ route('profile') }}"><i class="fas fa-user" aria-hidden="true"></i>Account</a>
+        <a href="{{ route('account') }}"><i class="fas fa-user" aria-hidden="true"></i>Account</a>
         <a href="{{ route('watchlist') }}"><i class="fas fa-heart" aria-hidden="true"></i>Watchlist <span data-watchlist-count @if($watchlistCount === 0) hidden @endif>{{ $watchlistCount }}</span></a>
-        <a href="{{ route('cart.index') }}"><i class="fas fa-shopping-basket" aria-hidden="true"></i>Basket <span data-basket-count x-text="$store.cart.count">{{ $basketCount }}</span></a>
+        <a href="{{ route('basket') }}"><i class="fas fa-shopping-basket" aria-hidden="true"></i>Basket <span data-basket-count x-text="$store.cart.count">{{ $basketCount }}</span></a>
         <div class="public-menu-divider"></div>
         <div class="public-theme-label">Theme</div>
         <div class="public-theme-options" role="group" aria-label="Theme">

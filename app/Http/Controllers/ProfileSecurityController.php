@@ -40,7 +40,7 @@ class ProfileSecurityController extends BasePageController
             }
 
             return redirect()
-                ->to('profileedit#security')
+                ->route('account', ['section' => 'security'])
                 ->with('error_2fa', 'Your password does not match. Please try again.');
         }
 
@@ -48,6 +48,7 @@ class ProfileSecurityController extends BasePageController
         $user = Auth::user();
         if ($user->passwordSecurity) {
             $user->passwordSecurity->google2fa_enable = 0;
+            $user->passwordSecurity->recovery_codes = null;
             $user->passwordSecurity->save();
 
             if ($request->expectsJson() || $request->ajax()) {
@@ -58,7 +59,7 @@ class ProfileSecurityController extends BasePageController
             }
 
             return redirect()
-                ->to('profileedit#security')
+                ->route('account', ['section' => 'security'])
                 ->with('success_2fa', '2FA has been successfully disabled.');
         }
 
@@ -70,7 +71,7 @@ class ProfileSecurityController extends BasePageController
         }
 
         return redirect()
-            ->to('profileedit#security')
+            ->route('account', ['section' => 'security'])
             ->with('error_2fa', 'No 2FA configuration found for this user.');
     }
 }

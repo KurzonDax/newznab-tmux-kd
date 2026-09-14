@@ -1,7 +1,7 @@
 @extends('layouts.guest')
 
 @section('content')
-<div class="container mx-auto px-4 py-6">
+<div class="public-docs container mx-auto px-4 py-6">
     <div class="max-w-4xl mx-auto">
         <div class="bg-(--surface-card) dark:bg-(--surface-card-dark) rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
             <x-breadcrumb :items="[['label' => 'Home', 'url' => url('/')]]" />
@@ -115,3 +115,5 @@
         </div>
     </div>
 </div>
+
+@endsection

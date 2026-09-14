@@ -416,7 +416,7 @@ class RememberMeAuthenticationTest extends TestCase
 
         $this->actingAs($user)
             ->post('/profileedit/generate2faSecret')
-            ->assertRedirect('/profileedit#security')
+            ->assertRedirect('/account?section=security')
             ->assertSessionHas('success_2fa');
 
         $this->assertDatabaseHas('password_securities', [
@@ -450,9 +450,12 @@ class RememberMeAuthenticationTest extends TestCase
 
         $this->actingAs($user)->get('/__middleware_otp_probe')
             ->assertOk()
-            ->assertSee('One Time Password')
-            ->assertSee('action="'.route('2faVerify').'"', false)
+            ->assertSee('one_time_password', false)
+            ->assertSee('action="'.route('2fa.post').'"', false)
             ->assertDontSee('verified destination');
+        Google2FA::shouldReceive('verifyKey')->once()->with('JBSWY3DPEHPK3PXP', '123456')->andReturn(true);
+        $this->post('/2fa/verify', ['one_time_password' => '123456'])->assertRedirect('/__middleware_otp_probe');
+        $this->get('/__middleware_otp_probe')->assertOk()->assertSee('verified destination');
     }
 
     protected function createSchema(): void

@@ -24,7 +24,7 @@
                 x-data="loginMode"
                 x-on:use-password-login.stop="usePassword()"
                 data-prefers-password="{{ $errors->any() ? '1' : '0' }}"
-                class="px-5 py-5 sm:px-8 sm:py-6"
+                class="auth-card-body"
             >
                 @if($errors->any())
                     <div class="mb-4 p-4 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700">
@@ -75,23 +75,22 @@
 
                         <!-- Username/Email Field -->
                         <div>
-                            <label for="username" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            <x-label for="username" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                 Username or Email
-                            </label>
+                            </x-label>
                             <div class="relative">
                                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                     <i class="fas fa-user text-gray-400"></i>
                                 </div>
-                                <input
+                                <x-input
                                     id="username"
                                     type="text"
                                     name="username"
                                     value="{{ old('username') }}"
                                     required
                                     autofocus
-                                    class="block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-600 dark:bg-(--surface-card-dark) dark:text-white dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition @error('username') border-red-500 @enderror"
-                                    placeholder="Enter your username or email"
-                                >
+                                    class="block w-full auth-field-leading pr-3 py-3 border border-gray-300 dark:border-gray-600 dark:bg-(--surface-card-dark) dark:text-white dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition @error('username') border-red-500 @enderror"
+                                    placeholder="Enter your username or email" />
                             </div>
                             @error('username')
                                 <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
@@ -100,21 +99,20 @@
 
                         <!-- Password Field -->
                         <div>
-                            <label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            <x-label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                 Password
-                            </label>
+                            </x-label>
                             <div class="relative">
                                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                     <i class="fas fa-lock text-gray-400"></i>
                                 </div>
-                                <input
+                                <x-input
                                     id="password"
                                     type="password"
                                     name="password"
                                     required
-                                    class="block w-full pl-10 pr-10 py-3 border border-gray-300 dark:border-gray-600 dark:bg-(--surface-card-dark) dark:text-white dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition @error('password') border-red-500 @enderror"
-                                    placeholder="Enter your password"
-                                >
+                                    class="block w-full auth-field-leading auth-field-trailing py-3 border border-gray-300 dark:border-gray-600 dark:bg-(--surface-card-dark) dark:text-white dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition @error('password') border-red-500 @enderror"
+                                    placeholder="Enter your password" />
                                 <button type="button" class="password-toggle-btn absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" data-field-id="password">
                                     <i class="fas fa-eye" id="password-eye"></i>
                                 </button>
@@ -134,9 +132,9 @@
                                     {{ old('rememberme') ? 'checked' : '' }}
                                     class="h-4 w-4 text-primary-600 dark:text-primary-400 focus:ring-primary-500 border-gray-300 dark:border-gray-600 rounded"
                                 >
-                                <label for="rememberme" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+                                <x-label for="rememberme" class="ml-2 block text-sm text-gray-700 dark:text-gray-300">
                                     Remember me
-                                </label>
+                                </x-label>
                             </div>
 
                             @if(Route::has('forgottenpassword'))
