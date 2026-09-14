@@ -20,29 +20,20 @@ use App\Services\GamesService;
 use App\Services\MovieService;
 use App\Services\MusicService;
 use App\Services\PopulateAniListService;
-use App\Services\ReleaseExtraService;
-use App\Services\Releases\ReleaseEntityDataLoader;
+use App\Services\Releases\RelatedReleaseBrowser;
+use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Releases\ReleaseSearchService;
+use App\Services\Releases\TitleMetadataLoader;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
 
 class DetailsController extends BasePageController
 {
-    private ReleaseSearchService $releaseSearchService;
-
-    private MovieService $movieService;
-
-    private ReleaseExtraService $releaseExtraService;
-
     public function __construct(
-        ReleaseSearchService $releaseSearchService,
-        MovieService $movieService,
-        ReleaseExtraService $releaseExtraService
+        private readonly ReleaseSearchService $releaseSearchService,
+        private readonly MovieService $movieService,
+        private readonly ReleaseBrowseService $releaseBrowseService,
     ) {
         parent::__construct();
-        $this->releaseSearchService = $releaseSearchService;
-        $this->movieService = $movieService;
-        $this->releaseExtraService = $releaseExtraService;
     }
 
     public function show(Request $request, string $guid): mixed
@@ -61,14 +52,12 @@ class DetailsController extends BasePageController
         }
 
         if ($this->isPostBack($request)) {
-            ReleaseComment::addComment((int) $data['id'], (string) $request->input('txtAddComment'), (int) $this->userdata->id, $request->ip());
+            $validated = $request->validate(['txtAddComment' => ['required', 'string', 'max:2000']]);
+            ReleaseComment::addComment((int) $data['id'], $validated['txtAddComment'], (int) $this->userdata->id, $request->ip());
 
-            return redirect()->route('details', ['guid' => $guid])->with('success', 'Comment posted successfully!');
+            return redirect(route('details', ['guid' => $guid]).'#comments')->with('success', 'Comment posted successfully!');
         }
 
-        $reVideo = $this->releaseExtraService->getVideo($data['id']);
-        $reAudio = $this->releaseExtraService->getAudio($data['id']);
-        $reSubs = $this->releaseExtraService->getSubs($data['id']);
         $comments = ReleaseComment::getComments($data['id']);
         $similars = $this->releaseSearchService->searchSimilar($data['id'], $data['searchname'], (array) $this->userdata->categoryexclusions);
         $failed = DnzbFailure::getFailedCount($data['id']);
@@ -99,6 +88,7 @@ class DetailsController extends BasePageController
         }
 
         $mov = '';
+        $movieTrailerUrl = null;
         if (imdb_id_is_valid($data['imdbid'])) {
             $mov = $this->movieService->getMovieInfo($data['imdbid']);
             if (! empty($mov['title'])) {
@@ -115,7 +105,7 @@ class DetailsController extends BasePageController
                 if (Settings::settingValue('trailers_display')) {
                     $trailer = empty($mov['trailer']) ? $this->movieService->getTrailer($data['imdbid']) : $mov['trailer'];
                     if ($trailer) {
-                        $mov['trailer'] = sprintf('<iframe width="%d" height="%d" src="%s"></iframe>', Settings::settingValue('trailers_size_x'), Settings::settingValue('trailers_size_y'), e($trailer));
+                        $movieTrailerUrl = app(TitleMetadataLoader::class)->trailerUrl($trailer);
                     }
                 }
             }
@@ -162,7 +152,7 @@ class DetailsController extends BasePageController
             }
         }
 
-        $pre = Predb::getForRelease($data['predb_id']);
+        $pre = Predb::getOne($data['predb_id'])?->toArray();
 
         // Resolve AniDB country code to a Country model/name here so the view stays query-free
         $anidbCountryCode = null;
@@ -178,17 +168,13 @@ class DetailsController extends BasePageController
             $anidbCountryName = $anidbCountryModel->name ?? $anidbCountryCode;
         }
 
-        /** @var Collection<int|string, \stdClass> $titleReleases */
-        $titleReleases = collect([(object) $data->getAttributes()]);
+        $this->releaseBrowseService->loadReleaseRows([$data]);
 
-        $this->viewData = array_merge($this->viewData, [
+        $this->viewData = array_merge($this->viewData, app(RelatedReleaseBrowser::class)->forRelease($data, $this->userdata), [
             'release' => $data,
-            'titleEntity' => app(ReleaseEntityDataLoader::class)->load($titleReleases)[(int) $data->id] ?? null,
-            'reVideo' => $reVideo,
-            'reAudio' => $reAudio,
-            'reSubs' => $reSubs,
             'show' => $showInfo,
             'movie' => $mov,
+            'movieTrailerUrl' => $movieTrailerUrl,
             'anidb' => $AniDBAPIArray,
             'anidbCountryModel' => $anidbCountryModel,
             'anidbCountryName' => $anidbCountryName,

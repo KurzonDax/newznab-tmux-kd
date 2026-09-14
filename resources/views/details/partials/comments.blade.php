@@ -1,84 +1,29 @@
-            <!-- Comments Section -->
-            <div id="comments">
-                <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-4 flex items-center">
-                    <i class="fas fa-comments mr-2 text-primary-600 dark:text-primary-400"></i>
-                    Comments ({{ isset($comments) ? $comments->total() : 0 }})
-                </h3>
-
-                <!-- Add Comment Form -->
-                @auth
-                    <div class="surface-panel rounded-lg p-4 mb-6 border shadow-sm">
-                        <form method="POST" action="{{ url('/details/' . $release->guid) }}" id="commentForm">
-                            @csrf
-                            <div class="mb-3">
-                                <label for="txtAddComment" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                    Add a Comment
-                                </label>
-                                <textarea
-                                    name="txtAddComment"
-                                    id="txtAddComment"
-                                    rows="4"
-                                    class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-(--surface-card) dark:bg-(--surface-body-dark) text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
-                                    placeholder="Share your thoughts about this release..."
-                                    required
-                                ></textarea>
-                            </div>
-                            <div class="flex justify-end">
-                                <x-button
-                                    type="submit"
-                                    class="shadow-sm"
-                                    icon="fas fa-paper-plane"
-                                >
-                                    Post Comment
-                                </x-button>
-                            </div>
-                        </form>
-                    </div>
-                @else
-                    <div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mb-6">
-                        <p class="text-sm text-yellow-800 dark:text-yellow-200">
-                            <i class="fas fa-info-circle mr-2"></i>
-                            Please <a href="{{ route('login') }}" class="font-semibold underline hover:text-yellow-900 dark:hover:text-yellow-100">log in</a> to add a comment.
-                        </p>
-                    </div>
-                @endauth
-
-                <!-- Comments List -->
-                @if(isset($comments) && count($comments) > 0)
-                    <div class="space-y-4">
-                        @foreach($comments as $comment)
-                            <div class="detail-comment-card surface-panel-alt rounded-lg p-4 border transition hover:border-gray-300 dark:hover:border-gray-600">
-                                <div class="flex items-start justify-between mb-3">
-                                    <div class="flex items-center">
-                                        <div class="w-10 h-10 bg-primary-600 dark:bg-primary-700 rounded-full flex items-center justify-center text-white font-bold mr-3 shadow-sm">
-                                            {{ strtoupper(substr($comment['username'] ?? 'U', 0, 1)) }}
-                                        </div>
-                                        <div>
-                                            <p class="font-semibold text-gray-800 dark:text-gray-200">{{ $comment['username'] ?? 'Anonymous' }}</p>
-                                            <p class="text-xs text-gray-500 dark:text-gray-400">
-                                                <i class="far fa-clock mr-1"></i>
-                                                {{ userDateDiffForHumans($comment['created_at']) }}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                                <p class="text-gray-700 dark:text-gray-300 leading-relaxed">{{ $comment['text'] ?? '' }}</p>
-                            </div>
-                        @endforeach
-                    </div>
-                @elseif(isset($comments) && $comments->total() > 0)
-                    <div class="detail-empty-comments surface-panel-alt rounded-lg p-8 border text-center">
-                        <p class="text-gray-500 dark:text-gray-400">No comments on this page.</p>
-                    </div>
-                @else
-                    <div class="detail-empty-comments surface-panel-alt rounded-lg p-8 border text-center">
-                        <i class="fas fa-comments text-4xl text-gray-400 dark:text-gray-600 mb-3"></i>
-                        <p class="text-gray-500 dark:text-gray-400">No comments yet. Be the first to comment!</p>
-                    </div>
-                @endif
-                @if(isset($comments) && $comments->total() > 0)
-                    <div class="mt-4">
-                        {{ $comments->links() }}
-                    </div>
-                @endif
-            </div>
+<h2>Comments ({{ isset($comments) ? $comments->total() : 0 }})</h2>
+@if(isset($comments) && count($comments) > 0)
+    <div class="details-comment-list">
+        @foreach($comments as $comment)
+            <article class="details-comment">
+                <div><b>{{ $comment['username'] ?? 'Anonymous' }}</b><span class="text-muted"> · {{ userDateDiffForHumans($comment['created_at']) }}</span></div>
+                <p>{{ $comment['text'] ?? '' }}</p>
+            </article>
+        @endforeach
+    </div>
+@elseif(isset($comments) && $comments->total() > 0)
+    <p class="text-muted">No comments on this page.</p>
+@else
+    <p class="text-muted">No comments yet. Be the first to comment!</p>
+@endif
+@if(isset($comments) && $comments->hasPages())<div class="mt-4">{{ $comments->links() }}</div>@endif
+@auth
+    <form method="POST" action="{{ route('details', $release->guid) }}#comments" id="commentForm" class="details-comment-form">
+        @csrf
+        <div class="grow min-w-0">
+            <x-label for="txtAddComment">Write a comment</x-label>
+            <x-textarea name="txtAddComment" id="txtAddComment" rows="2" maxlength="2000" placeholder="Write a comment…" required>{{ old('txtAddComment') }}</x-textarea>
+            @isset($errors)@error('txtAddComment')<p class="text-sm text-red-600 dark:text-red-400" role="alert">{{ $message }}</p>@enderror@endisset
+        </div>
+        <x-button type="submit" icon="fas fa-paper-plane">Post</x-button>
+    </form>
+@else
+    <p class="text-muted mt-4">Please <a href="{{ route('login') }}">log in</a> to add a comment.</p>
+@endauth

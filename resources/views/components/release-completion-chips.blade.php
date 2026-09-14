@@ -1,4 +1,4 @@
-@props(['release', 'onlyWhenIncomplete' => false])
+@props(['release', 'onlyWhenIncomplete' => false, 'showRepair' => true])
 
 @php
     use App\Support\ReleaseCompletion;
@@ -23,7 +23,7 @@
 @if($isMeasured && (! filter_var($onlyWhenIncomplete, FILTER_VALIDATE_BOOL) || $isIncomplete))
     <x-chip :variant="$variant" :icon="$percent === 100 ? 'fas fa-check' : null" class="completion-badge"
             title="{{ $percent }}% of this release's articles were seen by the indexer">{{ $percent }}%</x-chip>
-    @if($isIncomplete)
+    @if($isIncomplete && $showRepair)
         <x-chip :variant="$repairIsComplete ? 'neutral' : 'warning'" :icon="$repairIsComplete ? 'fas fa-flag-checkered' : 'fas fa-wrench'" class="repair-badge"
                 :title="$repairIsComplete ? 'Segment repair and header rescan have both finished; this is as complete as it gets' : 'Segment repair or header rescan may still recover more of this release'">{{ $repairLabel }}</x-chip>
     @endif

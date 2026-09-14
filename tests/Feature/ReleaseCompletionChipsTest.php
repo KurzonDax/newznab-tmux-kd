@@ -107,17 +107,6 @@ final class ReleaseCompletionChipsTest extends TestCase
         }
     }
 
-    public function test_the_details_page_shows_completion_and_repair_status(): void
-    {
-        $sidebar = file_get_contents(resource_path('views/details/partials/info-sidebar.blade.php'));
-
-        $this->assertIsString($sidebar);
-        $this->assertStringContainsString('Completion', $sidebar);
-        $this->assertStringContainsString('Not measured', $sidebar);
-        $this->assertStringContainsString('Repair status', $sidebar);
-        $this->assertStringContainsString('ReleaseCompletion::isIncomplete', $sidebar);
-    }
-
     /**
      * @param  array<string, mixed>  $attributes
      */

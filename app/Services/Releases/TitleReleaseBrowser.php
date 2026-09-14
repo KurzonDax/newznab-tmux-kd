@@ -9,6 +9,7 @@ use App\Enums\BrowseRoot;
 use App\Models\Category;
 use App\Models\User;
 use App\Services\EpisodeHydrationService;
+use App\Support\ReleaseQuality;
 use App\Support\YearRange;
 use Illuminate\Database\Query\JoinClause;
 use Illuminate\Http\Request;
@@ -59,7 +60,7 @@ final class TitleReleaseBrowser
             $this->hydrateSeasons($references);
         }
         foreach ($references as $reference) {
-            $reference->quality = $this->quality($root, release_display_name($reference));
+            $reference->quality = ReleaseQuality::fromName($root, release_display_name($reference));
         }
         $qualities = $references->pluck('quality')->filter()->unique()->sortBy(fn (string $quality): int => $this->qualityOrder($quality))->values()->all();
         $requestedQualities = $request->input('quality', []);
@@ -135,24 +136,6 @@ final class TitleReleaseBrowser
             '24-bit FLAC', 'FLAC', 'ALAC', 'WAV', 'MP3', 'AAC', 'OPUS', 'OGG', 'EPUB', 'PDF', 'MOBI', 'AZW3', 'AZW'];
 
         return (int) array_search($quality, $order, true);
-    }
-
-    private function quality(BrowseRoot $root, string $name): string
-    {
-        if ($root === BrowseRoot::Audio) {
-            if (preg_match('/\bFLAC\b/i', $name)) {
-                return preg_match('/\b24[ ._-]?(?:bit|bits)\b/i', $name) ? '24-bit FLAC' : 'FLAC';
-            }
-            if (preg_match('/\b(MP3|AAC|ALAC|OGG|OPUS|WAV)\b/i', $name, $match)) {
-                return strtoupper($match[1]);
-            }
-        } elseif (preg_match('/\b(2160|1080|720|576|480)[pi]\b/i', $name, $match)) {
-            return strtolower($match[0]);
-        } elseif ($root === BrowseRoot::Books && preg_match('/\b(EPUB|PDF|MOBI|AZW3?)\b/i', $name, $match)) {
-            return strtoupper($match[1]);
-        }
-
-        return '';
     }
 
     private function scalar(Request $request, string $key): string

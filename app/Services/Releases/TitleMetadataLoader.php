@@ -119,7 +119,7 @@ final class TitleMetadataLoader
         return $links;
     }
 
-    private function trailerUrl(string $trailer): ?string
+    public function trailerUrl(string $trailer): ?string
     {
         if (preg_match('/\bsrc=["\']([^"\']+)["\']/i', $trailer, $match)) {
             $trailer = html_entity_decode($match[1]);

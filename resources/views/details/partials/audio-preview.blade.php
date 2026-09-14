@@ -14,8 +14,8 @@
                         ? getImageAssetUrl('audiosample', $release->guid . '_spectrum', null, [], ['png'])
                         : null;
                 @endphp
-                <div class="surface-panel-alt rounded-lg p-6 border">
-                    <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-4 flex items-center">
+                <div class="details-metadata-section">
+                    <h3 class="text-[13px] font-semibold text-gray-800 dark:text-gray-200 mb-4 flex items-center">
                         <i class="fas fa-headphones mr-2 text-primary-600 dark:text-primary-400"></i> Audio Preview
                     </h3>
 
