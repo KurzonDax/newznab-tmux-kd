@@ -94,7 +94,9 @@ class ReleaseCreationService
                 RecoveryAlgorithm::from($publication->profile))) {
                 return 'admission_pending';
             }
-            $blocked = (new RecoveryFormationPolicy)->blockedReason($collection);
+            $policy = new RecoveryFormationPolicy;
+            $categoryId = $policy->initialCategory($collection);
+            $blocked = $policy->blockedReason($collection, $categoryId);
             if ($blocked !== null) {
                 DB::table('obfuscation_recovery_publications')->where('id', $publicationId)
                     ->update(['state' => 'policy_blocked', 'reason' => $blocked, 'updated_at' => now()]);
@@ -116,7 +118,7 @@ class ReleaseCreationService
             DB::table('obfuscation_recovery_publications')->where('id', $publicationId)
                 ->update(['state' => 'materialized', 'reason' => null, 'updated_at' => now()]);
             $this->createFromCollections((int) $collection->groups_id, 1, false,
-                new RecoveryCreationContext($publicationId, (int) $collection->id, $publication->guid));
+                new RecoveryCreationContext($publicationId, (int) $collection->id, $publication->guid, $categoryId));
 
             return DB::table('obfuscation_recovery_publications')->where('id', $publicationId)->value('state');
         }, 1);
@@ -240,7 +242,7 @@ class ReleaseCreationService
 
                 $releaseID = null;
                 if ($dupeCheck === null) {
-                    $determinedCategory = $recovery !== null ? ['categories_id' => Category::OTHER_MISC] : $categorize->determineCategory(
+                    $determinedCategory = $recovery !== null ? ['categories_id' => $recovery->categoryId] : $categorize->determineCategory(
                         $collection->groups_id,
                         $cleanedName,
                         $fromName,

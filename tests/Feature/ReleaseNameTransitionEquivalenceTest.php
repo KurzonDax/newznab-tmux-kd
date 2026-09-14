@@ -62,6 +62,16 @@ class ReleaseNameTransitionEquivalenceTest extends TestCase
             $table->tinyInteger('proc_pp')->default(0);
         });
 
+        Schema::create('usenet_groups', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->unsignedInteger('forced_root_categories_id')->nullable();
+        });
+        Schema::create('releases_groups', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id');
+            $table->unsignedInteger('groups_id');
+        });
+        DB::table('usenet_groups')->insert(['id' => 1]);
+
         Event::fake([ReleaseNameFixed::class]);
     }
 

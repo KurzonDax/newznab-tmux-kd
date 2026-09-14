@@ -19,6 +19,7 @@ use App\Services\ObfuscationRecovery\RecoveryCaptureBatch;
 use App\Services\ObfuscationRecovery\RecoveryConfig;
 use App\Services\ObfuscationRecovery\RecoveryConstructionTargets;
 use App\Services\ObfuscationRecovery\RecoveryControl;
+use App\Services\ObfuscationRecovery\RecoveryDownload;
 use App\Services\ObfuscationRecovery\RecoveryEnrichmentResume;
 use App\Services\ObfuscationRecovery\RecoveryEvidence;
 use App\Services\ObfuscationRecovery\RecoveryFilePlan;
@@ -40,6 +41,7 @@ use App\Services\ObfuscationRecovery\RecoverySlots;
 use App\Services\ObfuscationRecovery\RecoveryStage;
 use App\Services\ObfuscationRecovery\RecoveryStatus;
 use App\Services\ObfuscationRecovery\RecoveryWork;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -96,6 +98,7 @@ final class RecoveryWorkerConcurrencyTest extends TestCase
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
         (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
         (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
+        (require database_path('migrations/2026_09_14_110835_add_recovery_handoff_and_process_identity.php'))->up();
         DB::table('settings')->insert([['name' => 'categorizeforeign', 'value' => 0], ['name' => 'catwebdl', 'value' => 0], ['name' => 'running', 'value' => 1]]);
         DB::table('settings')->where('name', 'obfuscation_recovery_enabled')->update(['value' => 1]);
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.fixture', 'obfuscation_recovery_profile' => 'both']);
@@ -256,6 +259,115 @@ final class RecoveryWorkerConcurrencyTest extends TestCase
         $this->assertFalse($resume->step());
         $this->assertSame(2, DB::table('obfuscation_recovery_attempts')->count());
         $this->assertSame(131272, app(RecoveryBudget::class)->spent($owner, 'enrichment'));
+    }
+
+    #[DataProvider('enrichmentHandoffs')]
+    public function test_enrichment_handoffs_resume_under_concurrent_supervisors_without_resetting_allowances(string $boundary, bool $historical): void
+    {
+        $this->server(1, false, 0.05);
+        $this->settingsThreads(3);
+        $this->seedEnrichment();
+        $work = app(RecoveryWork::class);
+        $claim = $work->claim(RecoveryStage::Download);
+        $armed = true;
+        DB::listen(function (QueryExecuted $query) use ($boundary, &$armed): void {
+            $hit = $boundary === 'accounting'
+                ? str_starts_with($query->sql, 'update `obfuscation_recovery_attempts`') && str_contains($query->sql, '`settled_at` =')
+                : str_starts_with($query->sql, 'insert into `obfuscation_recovery_'.$boundary.'`');
+            if ($armed && $hit) {
+                $armed = false;
+                throw new \RuntimeException('handoff_interrupted');
+            }
+        });
+        try {
+            app(RecoveryDownload::class)->run($claim, [NntpProvider::fromConfig($this->providers[0])]);
+            $this->fail('Expected interruption at a real persistence boundary.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame(match ($boundary) {
+                'accounting' => 'transfer_receipt_pending', 'artifacts' => 'transfer_artifact_pending',
+                default => 'transfer_evidence_pending',
+            }, $exception->getMessage());
+        }
+        $original = DB::table('obfuscation_recovery_attempts')->first();
+        $this->assertSame($boundary === 'accounting' ? 'closed_without_counter' : 'success', $original->outcome);
+        if ($historical) {
+            $this->assertTrue($work->complete($claim, 'enrichment_limit_reached'));
+            DB::table('obfuscation_recovery_targets')->update(['status' => 'completed', 'outcome' => 'enrichment_limit_reached']);
+            if ($boundary === 'evidence') {
+                DB::table('settings')->where('name', 'obfuscation_recovery_enrichment_release_mib')->update(['value' => 1]);
+            }
+            $this->assertTrue(app(RecoveryEnrichmentResume::class)->step());
+        } else {
+            $this->assertTrue($work->defer($claim));
+            DB::table('obfuscation_recovery_work')->where('id', $claim->id)->update(['due_at' => now()->subSecond()]);
+        }
+        $workers = [$this->supervisor(), $this->supervisor()];
+        foreach ($workers as $worker) {
+            $worker->wait();
+            $this->assertTrue($worker->isSuccessful(), $worker->getErrorOutput());
+        }
+        $this->assertSame('completed', DB::table('obfuscation_recovery_targets')->value('status'));
+        $this->assertContains(DB::table('obfuscation_recovery_targets')->value('outcome'), ['cache_hit', 'downloaded']);
+        $this->assertTrue(app(RecoveryEvidence::class)->get('enrichment-1@fixture')->complete);
+        $expected = $boundary === 'evidence' ? 1 : 2;
+        $this->assertSame($expected, DB::table('obfuscation_recovery_attempts')->count());
+        $this->assertCount($expected, $this->events('request'));
+        $this->assertEquals($original, DB::table('obfuscation_recovery_attempts')->where('id', $original->id)->first());
+        $this->assertSame(0, DB::table('obfuscation_recovery_slots')->whereNotNull('worker_token')->count());
+    }
+
+    #[DataProvider('receiptOwnership')]
+    public function test_enrichment_conflict_is_finalized_only_by_the_current_claim(bool $loseClaim): void
+    {
+        $this->server(1, false, 0.01);
+        $this->seedEnrichment();
+        $work = app(RecoveryWork::class);
+        $claim = $work->claim(RecoveryStage::Download);
+        $armed = true;
+        DB::listen(function (QueryExecuted $query) use (&$armed): void {
+            if ($armed && str_starts_with($query->sql, 'insert into `obfuscation_recovery_evidence`')) {
+                $armed = false;
+                throw new \RuntimeException('stop_before_cache');
+            }
+        });
+        try {
+            app(RecoveryDownload::class)->run($claim, [NntpProvider::fromConfig($this->providers[0])]);
+            $this->fail('The transfer must stop before cache installation.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('transfer_evidence_pending', $exception->getMessage());
+        }
+        $this->assertFalse($armed);
+        $this->assertTrue($work->defer($claim, 1));
+        DB::table('obfuscation_recovery_work')->where('id', $claim->id)->update(['due_at' => now()->subSecond()]);
+        $publication = DB::table('obfuscation_recovery_publications')->first();
+        $plan = json_decode($publication->sealed_plan, true, flags: JSON_THROW_ON_ERROR);
+        $plan['files'][0]['decoded_bytes']++;
+        DB::table('obfuscation_recovery_publications')->where('id', $publication->id)->update(['sealed_plan' => json_encode($plan, JSON_THROW_ON_ERROR)]);
+        $next = $work->claim(RecoveryStage::Download);
+        $interrupted = false;
+        DB::listen(function (QueryExecuted $query) use ($loseClaim, $next, &$interrupted): void {
+            if ($loseClaim && ! $interrupted && str_starts_with($query->sql, 'select * from `obfuscation_recovery_attempts`')
+                && str_contains($query->sql, '`handoff` is not null')) {
+                $interrupted = true;
+                DB::table('obfuscation_recovery_work')->where('id', $next->id)->update(['claim_token' => (string) Str::uuid()]);
+            }
+        });
+        $result = app(RecoveryDownload::class)->run($next, [NntpProvider::fromConfig($this->providers[0])]);
+        $this->assertSame($loseClaim ? 'obsolete' : 'evidence_conflict', $result);
+        $this->assertSame($loseClaim, $interrupted);
+        $this->assertSame(! $loseClaim, (bool) DB::table('obfuscation_recovery_attempts')->value('handoff_conflict'));
+        $this->assertSame(1, DB::table('obfuscation_recovery_attempts')->count());
+        $this->assertCount(1, $this->events('request'));
+    }
+
+    public static function receiptOwnership(): array
+    {
+        return [[false], [true]];
+    }
+
+    public static function enrichmentHandoffs(): array
+    {
+        return [['accounting', false], ['artifacts', false], ['evidence', false], ['artifacts', true], ['evidence', true]];
     }
 
     #[DataProvider('frontierRaces')]

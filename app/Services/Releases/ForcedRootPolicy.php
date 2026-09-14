@@ -6,6 +6,7 @@ namespace App\Services\Releases;
 
 use App\Models\Category;
 use App\Models\UsenetGroup;
+use App\Services\XrefService;
 use Illuminate\Contracts\Database\Query\Builder as QueryBuilderContract;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -78,6 +79,28 @@ final class ForcedRootPolicy
             ->get(['id', 'forced_root_categories_id']);
 
         return $this->select($primaryGroupId, $groups);
+    }
+
+    public function selectForCollection(object $collection): ?int
+    {
+        $names = DB::table('collection_groups')->where('collections_id', $collection->id)->pluck('group_name')->all();
+        if ($names === []) {
+            $names = (new XrefService)->extractGroupNames((string) ($collection->xref ?? ''));
+        }
+
+        return $this->select($collection->groups_id, UsenetGroup::query()->where('id', $collection->groups_id)->orWhereIn('name', $names)
+            ->get(['id', 'forced_root_categories_id']));
+    }
+
+    public function categoryForRelease(int|string $primaryGroupId, int $releaseId, int $categoryId): int
+    {
+        return $this->constrainCategory($categoryId, $this->selectForRelease($primaryGroupId, $releaseId));
+    }
+
+    public function constrainCategory(int $categoryId, ?int $forcedRoot): int
+    {
+        return $forcedRoot === null || Category::rootCategoryFor($categoryId) === $forcedRoot
+            ? $categoryId : (Category::otherForRootCategory($forcedRoot) ?? $categoryId);
     }
 
     /**

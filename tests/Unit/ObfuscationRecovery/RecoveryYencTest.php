@@ -4,11 +4,25 @@ declare(strict_types=1);
 
 namespace Tests\Unit\ObfuscationRecovery;
 
+use App\Services\ObfuscationRecovery\RecoveryAlgorithm;
+use App\Services\ObfuscationRecovery\RecoveryConstructionTargets;
 use App\Services\ObfuscationRecovery\RecoveryYenc;
 use PHPUnit\Framework\TestCase;
 
 final class RecoveryYencTest extends TestCase
 {
+    public function test_anchor_alternatives_stop_after_valid_non_part_one_declarations(): void
+    {
+        foreach (RecoveryAlgorithm::cases() as $algorithm) {
+            $allowance = RecoveryConstructionTargets::allowance('anchor', $algorithm);
+            $decoder = new RecoveryYenc($allowance['decoded'], $allowance['prefix'], $allowance['declaration'], anchorOnly: true);
+            $this->assertFalse($decoder->line('=ybegin part=2 total=4 line=128 size=2867200 name=opaque'));
+            $this->assertTrue($decoder->line('=ypart begin=716801 end=1433600'));
+            $this->assertSame('', $decoder->prefix()->data);
+            $this->assertSame(2, $decoder->prefix()->part);
+        }
+    }
+
     public function test_terminal_declarations_stop_immediately_after_the_range_without_payload(): void
     {
         $decoder = new RecoveryYenc(16384, true, true);

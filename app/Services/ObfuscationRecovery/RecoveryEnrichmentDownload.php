@@ -45,8 +45,12 @@ final class RecoveryEnrichmentDownload
         if ($file === null || ! in_array($messageId, array_column($records, 'message_id'), true)) {
             return $this->finish($claim, 'unplanned_target');
         }
-        if ($this->evidence->get($messageId) !== null) {
-            return $this->finish($claim, 'cache_hit');
+        try {
+            if ($this->resume($claim, $file, $records, $messageId)) {
+                return $this->finish($claim, 'cache_hit');
+            }
+        } catch (InvalidArgumentException) {
+            return $this->finish($claim, 'evidence_conflict');
         }
         $config = RecoveryConfig::fromSettings();
         $selection = ObfuscationRecoveryProfile::tryFrom(DB::table('usenet_groups')->where('id', $bundle->groups_id)->value('obfuscation_recovery_profile') ?? '');
@@ -98,7 +102,8 @@ final class RecoveryEnrichmentDownload
             DB::table('obfuscation_recovery_attempts')->where('id', $reservation->attemptId)->where('token', $reservation->token)
                 ->update(['provider' => 'position:'.$provider->position]);
             $transfer = app(RecoveryWire::class)->observeConnections($this->budget->connectionObserver($reservation))->fetch($provider, $messageId, 1048576, false, 2097152, 65536, false);
-            $this->budget->recordTransfer($reservation, $transfer, $provider->ssl, 65536);
+            $this->evidence->receipts()->record($claim, $reservation, $transfer, $provider->ssl, 65536,
+                'article', $messageId, $transfer->article?->metadata() ?? [], $transfer->article->data ?? '');
             app(RecoveryProviderBackoff::class)->record($provider, $transfer);
             if (! $lease->owns((int) $release->id)) {
                 return 'obsolete';
@@ -106,8 +111,9 @@ final class RecoveryEnrichmentDownload
 
             if ($transfer->outcome === 'success' && $transfer->article !== null) {
                 try {
-                    $this->validate($file, $records, $messageId, $transfer->article);
-                    $this->evidence->store($messageId, $transfer->article, $reservation->attemptId);
+                    if (! $this->resume($claim, $file, $records, $messageId)) {
+                        return 'obsolete';
+                    }
                 } catch (InvalidArgumentException) {
                     return $this->finish($claim, 'evidence_conflict');
                 }
@@ -127,6 +133,43 @@ final class RecoveryEnrichmentDownload
             }
             $lease->release();
         }
+    }
+
+    /** @param list<array<string,mixed>> $records */
+    private function resume(RecoveryWorkClaim $claim, RecoveryFilePlan $file, array $records, string $messageId): bool
+    {
+        $cached = $this->evidence->get($messageId);
+        $receipt = $this->evidence->receipts()->recover($claim, 'article', $messageId);
+        $article = $cached ?? ($receipt === null ? null : RecoveryArticle::fromMetadata($receipt['metadata'], $receipt['data']));
+        if ($article === null || ! $article->complete) {
+            return false;
+        }
+        try {
+            $result = DB::transaction(function () use ($claim, $file, $records, $messageId, $article, $receipt): bool|InvalidArgumentException {
+                if ((new RecoveryOwnership)->locked($claim) === null) {
+                    return false;
+                }
+                try {
+                    $this->validate($file, $records, $messageId, $article);
+                    $this->evidence->store($messageId, $article, $receipt['attempt_id'] ?? null);
+                } catch (InvalidArgumentException $exception) {
+                    if ($receipt !== null) {
+                        DB::table('obfuscation_recovery_attempts')->where('id', $receipt['attempt_id'])->update(['handoff_conflict' => true]);
+                    }
+
+                    return $exception;
+                }
+
+                return true;
+            }, 1);
+        } catch (\Throwable $exception) {
+            throw new \RuntimeException('transfer_evidence_pending', previous: $exception);
+        }
+        if ($result instanceof InvalidArgumentException) {
+            throw $result;
+        }
+
+        return $result;
     }
 
     /** @param list<array<string,mixed>> $records */

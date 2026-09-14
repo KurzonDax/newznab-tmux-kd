@@ -110,7 +110,11 @@ jobs:
       - name: Install pinned local test clients
         run: ./sail exec -T laravel.test bash tests/Support/ObfuscationRecovery/install-clients.sh
       - name: Verify generated publications and local downloads
-        run: ./sail artisan test --compact --fail-on-skipped --fail-on-warning tests/Integration/RecoveryPortablePublicationTest.php tests/Integration/RecoveryDownloaderTest.php
+        run: ./sail artisan test --compact --fail-on-skipped --fail-on-warning --fail-on-empty-test-suite tests/Integration/RecoveryPortablePublicationTest.php tests/Integration/RecoveryDownloaderTest.php tests/Integration/RecoveryDownloadTest.php tests/Integration/RecoveryGapDownloadTest.php
+      - name: Start recovery concurrency database
+        run: ./sail up -d --wait mariadb
+      - name: Verify recovery races on MariaDB
+        run: ./sail exec -T -u sail -e CBP_INTEGRATION_DB_DATABASE=cbp_integration -e CBP_INTEGRATION_DB_USERNAME=sail -e CBP_INTEGRATION_DB_PASSWORD=password laravel.test php artisan test --compact --fail-on-skipped --fail-on-warning --fail-on-empty-test-suite tests/Integration/RecoveryBudgetMariaDbTest.php tests/Integration/RecoveryPublicationMariaDbTest.php tests/Integration/RecoveryFrontierMariaDbTest.php tests/Integration/RecoveryWorkerConcurrencyTest.php
       - name: Stop Sail
         if: always()
         run: ./sail down

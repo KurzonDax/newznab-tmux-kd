@@ -42,9 +42,17 @@ final class RecoveryLimitResume
                 $target = RecoveryConstructionTargets::find($bundle, $payload['message_id']);
                 $digest = (new RecoveryIdentity)->digest(['request', $payload['message_id']]);
                 $attempts = DB::table('obfuscation_recovery_attempts')->whereIn('budget_id', $budgets->pluck('id')->all())->where('request_digest', $digest)->get();
-                if ($target === null || $attempts->count() >= 2 || $attempts->contains('settled_at', null)
-                    || $attempts->contains('outcome', 'semantic_failure') || $attempts->contains('outcome', 'success')
-                    || RecoveryConstructionTargets::allowance($target['kind'], $algorithm)['reservation'] > $limit - $spent) {
+                if ($target === null || $attempts->contains('settled_at', null)
+                    || $attempts->contains('outcome', 'semantic_failure') || $attempts->contains('handoff_conflict', true)) {
+                    continue;
+                }
+                try {
+                    $reusable = app(RecoveryEvidence::class)->reusable($bundle, $payload['message_id'], $target['kind']);
+                } catch (\InvalidArgumentException) {
+                    continue;
+                }
+                if (! $reusable && ($attempts->count() >= 2
+                    || RecoveryConstructionTargets::allowance($target['kind'], $algorithm)['reservation'] > $limit - $spent)) {
                     continue;
                 }
                 DB::table('obfuscation_recovery_work')->where('id', $request->id)->where('status', 'completed')

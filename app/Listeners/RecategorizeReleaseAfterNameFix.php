@@ -8,6 +8,7 @@ use App\Events\ReleaseNameFixed;
 use App\Models\Release;
 use App\Services\Categorization\CategorizationService;
 use App\Services\Categorization\MediaInfoRefinementService;
+use App\Services\Releases\ForcedRootPolicy;
 use App\Services\Releases\PreviewGenerationPolicy;
 use Illuminate\Support\Facades\Log;
 
@@ -35,7 +36,7 @@ class RecategorizeReleaseAfterNameFix
         }
 
         if ($event->categoryOverride !== null) {
-            $newCategoryId = $event->categoryOverride;
+            $newCategoryId = (new ForcedRootPolicy)->categoryForRelease($release->groups_id, (int) $release->id, $event->categoryOverride);
         } else {
             $result = $this->categorization->determineCategory(
                 $release->groups_id,

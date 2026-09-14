@@ -55,6 +55,15 @@ final class RecoveryGapDownload
 
             return 'source_epoch_pending';
         }
+        $requestKey = implode(':', ['gap', $gap->source_epoch, $gap->groups_id, $gap->capture_generation, $first, $last]);
+        $receipts = app(RecoveryTransferReceipt::class);
+        if (! $frontier && ($receipt = $receipts->recover($claim, 'overview', $requestKey)) !== null) {
+            $this->capture($claim, $gap, $group->name, array_map(static fn (array $header): array => array_map(base64_decode(...), $header),
+                json_decode($receipt['data'], true, flags: JSON_THROW_ON_ERROR)));
+            if ($planner->positive($gap, $first, $last) === [[$first, $last]]) {
+                return $this->finish($claim, 'captured');
+            }
+        }
         if (! app(RecoveryProviderBackoff::class)->allows([$provider])) {
             $work->defer($claim);
 
@@ -90,17 +99,19 @@ final class RecoveryGapDownload
             DB::table('obfuscation_recovery_attempts')->where('id', $reservation->attemptId)->where('token', $reservation->token)
                 ->update(['provider' => 'position:1']);
             $result = app(RecoveryWire::class)->observeConnections($budget->connectionObserver($reservation))->overview($provider, $group->name, $first, $last);
-            $budget->recordTransfer($reservation, $result->transport, $provider->ssl, 65536);
+            if ($frontier) {
+                $budget->recordTransfer($reservation, $result->transport, $provider->ssl, 65536);
+            } else {
+                $receipts->record($claim, $reservation, $result->transport, $provider->ssl, 65536,
+                    'overview', $requestKey, [], json_encode(array_map(static fn (array $header): array => array_map(
+                        static fn (mixed $value): string => base64_encode((string) $value), $header), $result->headers), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+            }
             app(RecoveryProviderBackoff::class)->record($provider, $result->transport);
             if (! $work->heartbeat($claim)) {
                 return 'obsolete';
             }
             if ($result->transport->outcome === 'success') {
-                $policy = app(BlacklistService::class);
-                $parsed = (new HeaderParser($policy))->parse($result->headers, $group->name);
-                $context = new RecoveryScanContext((int) $gap->groups_id, $group->name, $gap->source_epoch,
-                    (int) $gap->capture_generation, $first, $last, $frontier ? HeaderScanDirection::Repair : HeaderScanDirection::Head, (string) Str::uuid());
-                $captured = (new RecoveryCapture(RecoveryConfig::fromSettings(), $policy))->capture(new RecoveryCaptureBatch($result->headers, $parsed['headers']), $context, $claim);
+                $captured = $this->capture($claim, $gap, $group->name, $result->headers);
                 if ($frontier ? $captured->coverageComplete && (new RecoveryFrontierTargets)->sufficient(DB::connection(), $bundle, $claim->payload)
                     : $planner->positive($gap, $first, $last) === [[$first, $last]]) {
                     return $this->finish($claim, $frontier ? 'frontier_rebuilt' : 'captured');
@@ -117,6 +128,23 @@ final class RecoveryGapDownload
         } finally {
             $slots->release($slot);
         }
+    }
+
+    /** @param array<int,array<string,mixed>> $headers */
+    private function capture(RecoveryWorkClaim $claim, object $gap, string $group, array $headers): RecoveryCaptureReport
+    {
+        $policy = app(BlacklistService::class);
+        $parsed = (new HeaderParser($policy))->parse($headers, $group);
+        $context = new RecoveryScanContext((int) $gap->groups_id, $group, $gap->source_epoch,
+            (int) $gap->capture_generation, (int) $gap->requested_first, (int) $gap->requested_last,
+            $claim->purpose === RecoveryFrontierRebuild::PURPOSE ? HeaderScanDirection::Repair : HeaderScanDirection::Head, (string) Str::uuid());
+
+        $result = (new RecoveryCapture(RecoveryConfig::fromSettings(), $policy))->capture(new RecoveryCaptureBatch($headers, $parsed['headers']), $context, $claim);
+        if ($result->outcome === 'capture_failed') {
+            throw new \RuntimeException('capture_handoff_pending');
+        }
+
+        return $result;
     }
 
     private function finish(RecoveryWorkClaim $claim, string $outcome): string

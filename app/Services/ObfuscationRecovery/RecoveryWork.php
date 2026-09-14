@@ -132,7 +132,7 @@ final class RecoveryWork
             $owner = RecoveryProcess::current();
             DB::table('obfuscation_recovery_work')->where('id', $row->id)->update([
                 'status' => 'claimed', 'claim_token' => $token,
-                'claim_owner_host' => $owner->host, 'claim_owner_pid' => $owner->pid, 'claim_owner_started' => $owner->started,
+                ...$owner->columns('claim_owner_'),
                 'claim_expires_at' => now()->addSeconds(90), 'reclaim_after' => null, 'updated_at' => now(),
             ]);
 
@@ -165,26 +165,35 @@ final class RecoveryWork
                 'status' => 'completed', 'result' => $result, 'claim_token' => null, 'claim_expires_at' => null, 'updated_at' => now(),
             ]) === 1;
             if ($completed && $claim->stage === RecoveryStage::Download) {
-                DB::table('obfuscation_recovery_work')->where('bundle_id', $claim->bundleId)->where('revision', $claim->revision)
-                    ->where('stage', RecoveryStage::Discover->value)->where('status', 'pending')->update(['due_at' => now(), 'updated_at' => now()]);
+                $pending = DB::table('obfuscation_recovery_work')->where('bundle_id', $claim->bundleId)->where('revision', $claim->revision)
+                    ->where('stage', RecoveryStage::Discover->value)->where('status', 'pending');
+                self::wake($pending);
+                $pending->update(['updated_at' => now()]);
             }
 
             return $completed;
         }, 1);
     }
 
-    public function defer(RecoveryWorkClaim $claim, int $seconds = 60): bool
+    /** Advance eligibility atomically without discarding the age of overdue work. */
+    public static function wake(Builder $query): void
+    {
+        (clone $query)->where('status', 'pending')->where('due_at', '>', now()->format('Y-m-d H:i:s.u'))
+            ->update(['due_at' => now()]);
+    }
+
+    public function defer(RecoveryWorkClaim $claim, int $seconds = 60, ?string $result = null): bool
     {
         if ($seconds < 1 || $seconds > 3600) {
             throw new InvalidArgumentException('invalid_work_backoff');
         }
 
-        return DB::transaction(function () use ($claim, $seconds): bool {
+        return DB::transaction(function () use ($claim, $seconds, $result): bool {
             if ((new RecoveryOwnership)->locked($claim) === null) {
                 return false;
             }
 
-            return $this->owned($claim)->update(['status' => 'pending', 'due_at' => now()->addSeconds($seconds),
+            return $this->owned($claim)->update(($result === null ? [] : ['result' => $result]) + ['status' => 'pending', 'due_at' => now()->addSeconds($seconds),
                 'claim_token' => null, 'claim_expires_at' => null, 'updated_at' => now()]) === 1;
         }, 1);
     }
@@ -208,34 +217,60 @@ final class RecoveryWork
 
     public function reclaimExpired(): int
     {
+        app(RecoverySlots::class)->reap();
         $count = 0;
         $expired = DB::table('obfuscation_recovery_work')->where('status', 'claimed')->where('claim_expires_at', '<=', now())
             ->where(fn ($query) => $query->whereNull('reclaim_after')->orWhere('reclaim_after', '<=', now()))
             ->orderBy('reclaim_after')->orderBy('id')->limit(10)->get();
         foreach ($expired as $row) {
             if ($row->claim_owner_host === null || $row->claim_owner_pid === null || $row->claim_owner_started === null
-                || ! (new RecoveryProcess($row->claim_owner_host, (int) $row->claim_owner_pid, $row->claim_owner_started))->provenDead()) {
+                || ! RecoveryProcess::fromRow($row, 'claim_owner_')->provenDead()
+                || ! app(RecoverySlots::class)->settledFor(RecoveryProcess::fromRow($row, 'claim_owner_'))) {
                 DB::table('obfuscation_recovery_work')->where('id', $row->id)->where('status', 'claimed')
                     ->where('claim_token', $row->claim_token)->where('claim_expires_at', '<=', now())
                     ->update(['reclaim_after' => now()->addMinute()]);
 
                 continue;
             }
-            $count += DB::transaction(function () use ($row): int {
-                $bundle = DB::table('obfuscation_recovery_bundles')->where('id', $row->bundle_id)->lockForUpdate()->first();
-                $obsolete = $bundle === null || (int) $bundle->revision !== (int) $row->revision || in_array($bundle->state, RecoveryOwnership::INACTIVE_STATES, true)
-                    || ! (new RecoveryOwnership)->current($bundle, RecoveryStage::from($row->stage), $row->purpose,
-                        json_decode($row->payload, true, flags: JSON_THROW_ON_ERROR));
-
-                return DB::table('obfuscation_recovery_work')->where('id', $row->id)->where('status', 'claimed')->where('claim_token', $row->claim_token)
-                    ->where('claim_expires_at', '<=', now())->update([
-                        'status' => $obsolete ? 'obsolete' : 'pending', 'due_at' => now(), 'claim_token' => null, 'claim_expires_at' => null,
-                        'claim_owner_host' => null, 'claim_owner_pid' => null, 'claim_owner_started' => null, 'updated_at' => now(),
-                    ]);
-            }, 1);
+            $count += $this->releaseExpired($row);
         }
 
         return $count;
+    }
+
+    /** An operator must first stop the exact worker and settle its slot. */
+    public function confirmStopped(int $id, string $token): bool
+    {
+        return DB::transaction(function () use ($id, $token): bool {
+            $row = DB::table('obfuscation_recovery_work')->where('id', $id)->where('claim_token', $token)
+                ->where('status', 'claimed')->where('claim_expires_at', '<=', now())->first();
+            if ($row === null) {
+                return false;
+            }
+            $owner = RecoveryProcess::fromRow($row, 'claim_owner_');
+            if ($owner->status() === 'alive' || ! app(RecoverySlots::class)->settledFor($owner)) {
+                return false;
+            }
+
+            return $this->releaseExpired($row) === 1;
+        }, 1);
+    }
+
+    private function releaseExpired(object $row): int
+    {
+        return DB::transaction(function () use ($row): int {
+            $bundle = DB::table('obfuscation_recovery_bundles')->where('id', $row->bundle_id)->lockForUpdate()->first();
+            $obsolete = $bundle === null || (int) $bundle->revision !== (int) $row->revision || in_array($bundle->state, RecoveryOwnership::INACTIVE_STATES, true)
+                || ! (new RecoveryOwnership)->current($bundle, RecoveryStage::from($row->stage), $row->purpose,
+                    json_decode($row->payload, true, flags: JSON_THROW_ON_ERROR));
+
+            return DB::table('obfuscation_recovery_work')->where('id', $row->id)->where('status', 'claimed')->where('claim_token', $row->claim_token)
+                ->where('claim_expires_at', '<=', now())->update([
+                    'status' => $obsolete ? 'obsolete' : 'pending', 'due_at' => now(), 'claim_token' => null, 'claim_expires_at' => null,
+                    'claim_owner_host' => null, 'claim_owner_pid' => null, 'claim_owner_started' => null, 'updated_at' => now(),
+                    'claim_owner_machine' => null, 'claim_owner_boot' => null, 'claim_owner_namespace' => null,
+                ]);
+        }, 1);
     }
 
     private function owned(RecoveryWorkClaim $claim): Builder

@@ -107,6 +107,12 @@ final class RecoveryConstructionTargets
         return null;
     }
 
+    public static function sufficient(string $kind, RecoveryArticle $article): bool
+    {
+        return $article->complete || $kind === 'terminal'
+            || ($kind === 'anchor' && ($article->part !== 1 || strlen($article->data) >= 16384));
+    }
+
     /** @return array{decoded:int,prefix:bool,reservation:int,close:int,declaration:bool} */
     public static function allowance(string $kind, RecoveryAlgorithm $algorithm): array
     {

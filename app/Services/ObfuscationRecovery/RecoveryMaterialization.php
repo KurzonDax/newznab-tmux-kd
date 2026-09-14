@@ -50,10 +50,18 @@ final class RecoveryMaterialization
             throw new RecoveryAdmissionPending;
         }
         if (! (new RecoveryPublicationCoverage)->ready($bundle)) {
-            $this->work->defer($claim);
+            DB::transaction(function () use ($claim): void {
+                $current = (new RecoveryOwnership)->locked($claim);
+                if ($current !== null) {
+                    (new RecoveryFrontierContinuation)->observe($current, $claim->stage, false);
+                    DB::table('obfuscation_recovery_bundles')->where('id', $current->id)->update(['reason' => 'publication_coverage_pending']);
+                    $this->work->defer($claim);
+                }
+            }, 1);
 
             return 'publication_coverage_pending';
         }
+        (new RecoveryFrontierContinuation)->consume($claim);
         $result = app(RecoveryPublications::class)->register($plan, $claim);
         if ($result->outcome === 'conflict') {
             return $this->quarantine($claim, 'recovery_publication_identity_conflict');

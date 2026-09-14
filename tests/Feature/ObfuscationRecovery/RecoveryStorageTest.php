@@ -39,6 +39,7 @@ final class RecoveryStorageTest extends TestCase
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
         (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
         (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
+        (require database_path('migrations/2026_09_14_110835_add_recovery_handoff_and_process_identity.php'))->up();
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.fixture', 'obfuscation_recovery_profile' => 'media']);
         DB::table('settings')->where('name', 'obfuscation_recovery_enabled')->update(['value' => 1]);
         DB::statement('CREATE TABLE collections (id INTEGER PRIMARY KEY, subject TEXT, fromname TEXT, date TEXT,

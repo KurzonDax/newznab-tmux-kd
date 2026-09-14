@@ -33,8 +33,7 @@ final class RecoverySlots
             }
             $token = (string) Str::uuid();
             DB::table('obfuscation_recovery_slots')->where('id', $slot->id)->update([
-                'worker_token' => $token, 'owner_host' => $owner->host, 'owner_pid' => $owner->pid,
-                'owner_started' => $owner->started, 'acquired_at' => now(), 'expires_at' => now()->addSeconds(90),
+                'worker_token' => $token, ...$owner->columns('owner_'), 'acquired_at' => now(), 'expires_at' => now()->addSeconds(90),
             ]);
 
             return new RecoverySlot((int) $slot->id, $token, $owner);
@@ -81,7 +80,7 @@ final class RecoverySlots
         $reaped = 0;
         $slots = DB::table('obfuscation_recovery_slots')->whereNotNull('worker_token')->where('expires_at', '<=', now())->get();
         foreach ($slots as $slot) {
-            $owner = new RecoveryProcess($slot->owner_host, (int) $slot->owner_pid, $slot->owner_started);
+            $owner = RecoveryProcess::fromRow($slot, 'owner_');
             if ($owner->provenDead()) {
                 $reaped += DB::transaction(function () use ($slot): int {
                     $current = DB::table('obfuscation_recovery_slots')->where('id', $slot->id)->where('worker_token', $slot->worker_token)
@@ -100,6 +99,27 @@ final class RecoverySlots
         return $reaped;
     }
 
+    /** An operator must first stop the exact worker identified by the token. */
+    public function confirmStopped(int $id, string $token): bool
+    {
+        return DB::transaction(function () use ($id, $token): bool {
+            $slot = DB::table('obfuscation_recovery_slots')->where('id', $id)->where('worker_token', $token)
+                ->where('expires_at', '<=', now())->lockForUpdate()->first();
+            if ($slot === null || RecoveryProcess::fromRow($slot, 'owner_')->status() === 'alive') {
+                return false;
+            }
+            $this->settleUnknown($slot, 'worker_lost');
+
+            return DB::table('obfuscation_recovery_slots')->where('id', $id)->where('worker_token', $token)->update($this->emptySlot()) === 1;
+        }, 1);
+    }
+
+    public function settledFor(RecoveryProcess $owner): bool
+    {
+        return ! DB::table('obfuscation_recovery_slots')->where('owner_host', $owner->host)
+            ->where('owner_pid', $owner->pid)->where('owner_started', $owner->started)->whereNotNull('worker_token')->exists();
+    }
+
     private function settleUnknown(object $slot, string $outcome): void
     {
         if ($slot->attempt_id === null) {
@@ -116,6 +136,7 @@ final class RecoverySlots
     private function emptySlot(): array
     {
         return ['worker_token' => null, 'owner_host' => null, 'owner_pid' => null, 'owner_started' => null,
+            'owner_machine' => null, 'owner_boot' => null, 'owner_namespace' => null,
             'acquired_at' => null, 'expires_at' => null, 'attempt_id' => null];
     }
 }

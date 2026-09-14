@@ -32,9 +32,10 @@ final class RecoveryYenc
 
     private ?string $fullFileCrc32 = null;
 
-    public function __construct(private readonly int $maximumDecoded, private readonly bool $prefixOnly = false, private readonly bool $declarationOnly = false)
+    public function __construct(private readonly int $maximumDecoded, private readonly bool $prefixOnly = false,
+        private readonly bool $declarationOnly = false, private readonly bool $anchorOnly = false)
     {
-        if ($maximumDecoded < 1 || $maximumDecoded > 1048576 || ($declarationOnly && ! $prefixOnly)) {
+        if ($maximumDecoded < 1 || $maximumDecoded > 1048576 || (($declarationOnly || $anchorOnly) && ! $prefixOnly)) {
             throw new InvalidArgumentException('invalid_decoded_article_cap');
         }
     }
@@ -120,7 +121,7 @@ final class RecoveryYenc
 
     private function declarationReady(): bool
     {
-        if ($this->declarationOnly && $this->state === 'data') {
+        if (($this->declarationOnly || ($this->anchorOnly && $this->part !== 1)) && $this->state === 'data') {
             $this->state = 'prefix';
 
             return true;

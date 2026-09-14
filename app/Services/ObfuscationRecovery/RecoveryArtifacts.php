@@ -80,8 +80,20 @@ final class RecoveryArtifacts
             if (! is_file($destination) && ! @link($temporary, $destination) && ! is_file($destination)) {
                 throw new RuntimeException('artifact_finalize_failed');
             }
-            foreach ($this->read($artifact) as $_) {
-                // Verify the durable object before returning a reference to it.
+            try {
+                foreach ($this->read($artifact) as $_) {
+                    // Verify the durable object before returning a reference to it.
+                }
+            } catch (RuntimeException $exception) {
+                if ($exception->getMessage() !== 'artifact_integrity_failure') {
+                    throw $exception;
+                }
+                if (! rename($temporary, $destination)) {
+                    throw new RuntimeException('artifact_finalize_failed');
+                }
+                foreach ($this->read($artifact) as $_) {
+                    // The replacement must satisfy the original content address.
+                }
             }
             $directory = fopen($this->root, 'r');
             if ($directory === false) {

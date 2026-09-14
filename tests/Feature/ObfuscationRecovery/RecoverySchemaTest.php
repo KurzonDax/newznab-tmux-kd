@@ -27,6 +27,7 @@ final class RecoverySchemaTest extends TestCase
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
         (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
         (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
+        (require database_path('migrations/2026_09_14_110835_add_recovery_handoff_and_process_identity.php'))->up();
     }
 
     protected function tearDown(): void
@@ -49,6 +50,7 @@ final class RecoverySchemaTest extends TestCase
             (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
             (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
             (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
+            (require database_path('migrations/2026_09_14_110835_add_recovery_handoff_and_process_identity.php'))->up();
             $this->test_additive_frontier_migration_preserves_legacy_facts_until_verified_replacement();
         } finally {
             DB::connection()->setTablePrefix('');

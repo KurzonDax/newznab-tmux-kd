@@ -40,6 +40,89 @@ trait ChecksRetainedFrontierRebuild
     use InteractsWithRecoveryNntpServer;
     use SeedsInheritedFrontierHistory;
 
+    #[DataProvider('continuationBacklogs')]
+    public function test_ready_polling_preserves_queue_age_and_future_retry_in_the_same_scope(int $population, int $ticks): void
+    {
+        $this->coverage(1, 100000);
+        foreach ([1, 20001, 40001, 60001, 80001] as $first) {
+            $this->window($first, $first + 19999);
+        }
+        $scope = RecoveryPositiveCoverage::scope($this->sourceEpoch(), 1, 1);
+        $frontiers = new RecoveryFrontiers;
+        $frontiers->savePoints(DB::connection(), $scope, [[50000, '2026-09-13 09:50:00'], [90000, '2026-09-13 14:10:00']], true);
+        $frontiers->saveRange(DB::connection(), $scope, 40001, 100000, [], true, true);
+        $work = app(RecoveryWork::class);
+        $turns = [];
+        for ($i = 0; $i < $population; $i++) {
+            $bundle = $this->candidate(60001 + $i * 10, 60010 + $i * 10);
+            DB::table('obfuscation_recovery_runs')->whereIn('id', json_decode($bundle->candidate_runs, true))->update([
+                'summary' => json_encode(['first_article' => 60001, 'last_article' => 60010,
+                    'first_postdate' => '2026-09-13 12:00:00', 'last_postdate' => '2026-09-13 12:00:00'], JSON_THROW_ON_ERROR),
+            ]);
+            $id = $work->enqueueForBundle(RecoveryStage::Discover, (int) $bundle->id, 1, 'prepare', []);
+            DB::table('obfuscation_recovery_work')->where('id', $id)->update(['due_at' => $i === 3 ? '2026-09-13 14:59:59' : '2026-09-13 14:58:00']);
+            $turns[$id] = 0;
+        }
+        for ($tick = 0; $tick < $ticks; $tick++) {
+            $this->travelTo(Carbon::parse('2026-09-13 15:00:00', 'UTC')->addSeconds(5 * $tick));
+            $due = DB::table('obfuscation_recovery_work')->where('stage', RecoveryStage::Discover->value)->pluck('due_at', 'id')->all();
+            (new RecoveryFrontierRebuild)->step();
+            $this->assertSame($due, DB::table('obfuscation_recovery_work')->where('stage', RecoveryStage::Discover->value)->pluck('due_at', 'id')->all());
+            $claim = $work->claim(RecoveryStage::Discover);
+            if ($claim !== null) {
+                $turns[$claim->id]++;
+                $this->assertTrue($work->defer($claim, 60));
+            }
+        }
+        $this->assertGreaterThan(0, min($turns));
+        $this->assertSame($population, DB::table('obfuscation_recovery_work')->count());
+    }
+
+    public static function continuationBacklogs(): array
+    {
+        return [[4, 60], [108, 660]];
+    }
+
+    #[DataProvider('frontierWaits')]
+    public function test_newly_satisfied_frontier_dependencies_wake_a_future_retry_once(string $wait): void
+    {
+        $bundle = $this->candidate(60001, 60010);
+        $this->coverage(1, 100000);
+        $scope = RecoveryPositiveCoverage::scope($this->sourceEpoch(), 1, 1);
+        $frontiers = new RecoveryFrontiers;
+        $points = [[50000, '2026-09-13 09:50:00'], [90000, '2026-09-13 14:10:00']];
+        $frontiers->savePoints(DB::connection(), $scope, $wait === 'quiet' ? $points : [$points[$wait === 'left' ? 1 : 0]], true);
+        $frontiers->saveRange(DB::connection(), $scope, 40001, 100000, [], true, true);
+        if ($wait === 'quiet') {
+            DB::table('obfuscation_recovery_bundles')->where('id', $bundle->id)->update(['membership_changed_at' => now()->subMinutes(119)]);
+        }
+        $work = app(RecoveryWork::class);
+        $id = $work->enqueueForBundle(RecoveryStage::Discover, (int) $bundle->id, 1, 'prepare', []);
+        DB::table('obfuscation_recovery_work')->where('id', $id)->update(['due_at' => now()->addHour()]);
+        $future = DB::table('obfuscation_recovery_work')->where('id', $id)->value('due_at');
+        (new RecoveryFrontierRebuild)->step();
+        $this->assertSame($future, DB::table('obfuscation_recovery_work')->where('id', $id)->value('due_at'));
+        $this->travel(61)->seconds();
+        $frontiers->savePoints(DB::connection(), $scope, $points, true);
+        for ($i = 0; $i < 3; $i++) {
+            (new RecoveryFrontierRebuild)->step();
+        }
+        $this->assertLessThan($future, DB::table('obfuscation_recovery_work')->where('id', $id)->value('due_at'));
+        $claim = $work->claim(RecoveryStage::Discover);
+        $this->assertSame($id, $claim->id);
+        $this->assertTrue($work->defer($claim, 60));
+        $retry = DB::table('obfuscation_recovery_work')->where('id', $id)->value('due_at');
+        for ($i = 0; $i < 3; $i++) {
+            (new RecoveryFrontierRebuild)->step();
+        }
+        $this->assertSame($retry, DB::table('obfuscation_recovery_work')->where('id', $id)->value('due_at'));
+    }
+
+    public static function frontierWaits(): array
+    {
+        return [['quiet'], ['left'], ['head']];
+    }
+
     #[DataProvider('inheritedHistories')]
     public function test_original_cutoff_histories_progress_with_preserved_spend(string $history, bool $plannerFirst): void
     {
@@ -324,6 +407,7 @@ trait ChecksRetainedFrontierRebuild
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
         (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
         (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
+        (require database_path('migrations/2026_09_14_110835_add_recovery_handoff_and_process_identity.php'))->up();
         DB::table('settings')->where('name', 'obfuscation_recovery_enabled')->update(['value' => 1]);
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.fixture', 'obfuscation_recovery_profile' => 'media']);
         $provider = NntpProvider::fromConfig(['position' => 1, 'name' => $this->sourceEpoch(), 'host' => '127.0.0.1', 'port' => 1]);

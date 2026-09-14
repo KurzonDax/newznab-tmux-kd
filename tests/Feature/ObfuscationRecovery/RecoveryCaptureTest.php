@@ -38,6 +38,7 @@ final class RecoveryCaptureTest extends TestCase
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
         (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
         (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
+        (require database_path('migrations/2026_09_14_110835_add_recovery_handoff_and_process_identity.php'))->up();
         DB::table('usenet_groups')->insert(['id' => 1, 'obfuscation_recovery_profile' => 'both']);
     }
 
@@ -82,6 +83,23 @@ final class RecoveryCaptureTest extends TestCase
         $this->assertSame($observed, DB::table('obfuscation_recovery_headers')->value('first_observed_at'));
         $this->assertSame(1, DB::table('obfuscation_recovery_headers')->count());
         $this->assertSame(1, DB::table('obfuscation_recovery_dirty')->where('capture_generation', 2)->count());
+    }
+
+    public function test_capture_accepts_zero_media_bytes_but_rejects_invalid_bytes_and_zero_rar_bytes(): void
+    {
+        $policy = new NeverBlacklistedService;
+        $raw = [];
+        foreach ([0, -1, 'not-a-number', 100] as $i => $bytes) {
+            $raw[] = [...$this->header($i + 1, '[a] - '.str_repeat('a', 32).' yEnc (1/4)'), 'Bytes' => $bytes];
+            $raw[] = [...$this->header($i + 5, '0123456789abcdefghij'), 'Bytes' => $bytes];
+        }
+        $parsed = (new HeaderParser($policy))->parse($raw, 'alt.binaries.fixture');
+        $capture = new RecoveryCapture(RecoveryConfig::fromValues(['obfuscation_recovery_enabled' => 1]), $policy);
+        $result = $capture->capture(new RecoveryCaptureBatch($raw, $parsed['headers']),
+            new RecoveryScanContext(1, 'alt.binaries.fixture', 'epoch', 1, 4000000001, 4000000008, HeaderScanDirection::Head, 'byte-controls'));
+        $this->assertSame(3, $result->captured);
+        $this->assertSame([0, 100, 100], DB::table('obfuscation_recovery_headers')->orderBy('article_number')->pluck('advertised_bytes')->map(intval(...))->all());
+        $this->assertSame(1, DB::table('obfuscation_recovery_headers')->where('profile', 'nyuu-rar-sequential-v1')->count());
     }
 
     public function test_purged_headers_cannot_restart_their_retention_window_on_recapture(): void

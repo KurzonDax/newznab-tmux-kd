@@ -67,6 +67,11 @@ final class RecoveryBundleRefresh
             $identity = new RecoveryIdentity;
             $snapshot = $identity->digest(array_map(static fn (object $run): string => $run->scope_digest.$run->membership_digest, $runs));
             $root = $owners->firstWhere('state', 'published') ?? $owners->first();
+            if ($structural === null && $owners->count() === 1 && (new RecoveryVerifiedMembership)->unchanged($root, $runs)) {
+                DB::table('obfuscation_recovery_runs')->whereIn('id', array_column($runs, 'id'))->update(['bundle_dirty' => false]);
+
+                return (int) $root->id;
+            }
             if ($root !== null && ($root->state === 'published' || in_array($root->state, RecoveryOwnership::INACTIVE_STATES, true))) {
                 if ($root->state === 'published' && $root->snapshot_digest !== $snapshot) {
                     DB::table('obfuscation_recovery_bundles')->where('id', $root->id)->update(['reason' => 'late_membership_conflict', 'updated_at' => now()]);

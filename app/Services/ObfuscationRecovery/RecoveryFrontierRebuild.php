@@ -85,10 +85,10 @@ final class RecoveryFrontierRebuild
         }
         $assessment = (new RecoverySettlement)->assess($bundle->source_epoch, (int) $bundle->groups_id, (int) $bundle->capture_generation,
             $envelope['first_article'], $envelope['last_article'], $envelope['first_postdate'], $envelope['last_postdate'], $envelope['changed_at'], $sealed, $bundle);
+        $stage = $sealed ? RecoveryStage::Publish : RecoveryStage::Discover;
+        (new RecoveryFrontierContinuation)->observe($bundle, $stage, $assessment === 'ready');
         if ($assessment === 'ready') {
-            $stage = $sealed ? RecoveryStage::Publish : RecoveryStage::Discover;
-            $workId = app(RecoveryWork::class)->enqueueForBundle($stage, (int) $bundle->id, (int) $bundle->revision, $sealed ? 'publish' : 'prepare', []);
-            DB::table('obfuscation_recovery_work')->where('id', $workId)->where('status', 'pending')->update(['due_at' => now()]);
+            app(RecoveryWork::class)->enqueueForBundle($stage, (int) $bundle->id, (int) $bundle->revision, $sealed ? 'publish' : 'prepare', []);
             if (str_starts_with($bundle->reason ?? '', 'frontier_')) {
                 DB::table('obfuscation_recovery_bundles')->where('id', $id)->update(['reason' => null, 'next_action_at' => now()]);
 

@@ -13,6 +13,7 @@ trait CreatesRecoveryReleaseSchema
 {
     private function createRecoveryReleaseSchema(): void
     {
+        Schema::table('usenet_groups', fn (Blueprint $table) => $table->unsignedInteger('forced_root_categories_id')->nullable());
         Schema::table('collections', function (Blueprint $table): void {
             $table->unsignedBigInteger('firstarticle')->nullable();
             $table->unsignedBigInteger('lastarticle')->nullable();
