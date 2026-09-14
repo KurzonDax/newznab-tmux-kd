@@ -314,12 +314,11 @@ footer {
     background-color: var(--surface-card-dark);
     border-color: var(--border-default-dark);
 }
-.release-chip {
-    @apply inline-flex items-center rounded px-2 py-0.5 text-xs font-medium;
+.release-chip:not([data-chip-variant]) {
     background-color: var(--surface-panel-alt);
     color: rgb(55 65 81);
 }
-.dark .release-chip {
+.dark .release-chip:not([data-chip-variant]) {
     background-color: var(--surface-panel-alt-dark);
     color: rgb(209 213 219);
 }
@@ -719,4 +718,42 @@ mark {
     --public-surface-hover: color-mix(in srgb, var(--surface-card), black 6%);
     --public-surface-hover-dark: color-mix(in srgb, var(--surface-card-dark), white 10%);
     --public-scrim: rgb(2 6 23 / 45%);
+}
+/* Release facts, origin links and entity links share one compact scale. */
+.release-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 20px;
+    min-height: 20px;
+    padding: 0 7px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    vertical-align: middle;
+    text-decoration: none;
+}
+
+.release-chip i { font-size: 11px; margin: 0; }
+.release-chip-pill { height: 22px; border-radius: 9999px; }
+a.release-chip, button.release-chip { cursor: pointer; }
+a.release-chip:hover, button.release-chip:hover { filter: brightness(.95); }
+a.release-chip:focus-visible, button.release-chip:focus-visible { outline: 2px solid var(--color-primary-500); outline-offset: 2px; }
+
+.release-chip[data-chip-variant="entity"] {
+    background-color: color-mix(in srgb, var(--color-primary-500) 12%, var(--surface-panel-alt));
+    border-color: color-mix(in srgb, var(--color-primary-500) 35%, var(--border-default));
+}
+.dark .release-chip[data-chip-variant="entity"] {
+    background-color: color-mix(in srgb, var(--color-primary-500) 12%, var(--surface-body-dark));
+    border-color: color-mix(in srgb, var(--color-primary-500) 35%, var(--border-default-dark));
+}
+a.release-chip:is([data-chip-variant="origin"], [data-chip-variant="entity"]):hover {
+    border-color: var(--color-primary-400);
+    color: var(--color-primary-700);
+}
+.dark a.release-chip:is([data-chip-variant="origin"], [data-chip-variant="entity"]):hover {
+    color: var(--color-primary-300);
 }

@@ -31,7 +31,6 @@ class CoverBrowseComponentsTest extends TestCase
         $this->assertStringNotContainsString('$displayReleases = array_slice', $music);
         $this->assertStringNotContainsString('$displayReleases = array_slice', $games);
 
-        $this->assertStringContainsString('nfo-badge', $component);
         $this->assertStringContainsString('add-to-cart', $component);
         $this->assertStringContainsString('chkRelease', $component);
         $this->assertStringContainsString('Available Releases', $component);

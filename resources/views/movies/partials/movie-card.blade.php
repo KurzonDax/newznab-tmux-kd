@@ -168,42 +168,7 @@
                                                     </span>
                                                 @endif
 
-                                                @if(!empty($release->has_media_info))
-                                                    <button type="button"
-                                                            class="mediainfo-badge release-action-sm release-action-primary"
-                                                            data-release-id="{{ $release->id }}"
-                                                            data-release-display-name="{{ release_display_name($release) }}"
-                                                            title="View media info">
-                                                        <i class="fas fa-info-circle mr-1"></i> Media Info
-                                                    </button>
-                                                @endif
-
-                                                @php
-                                                    $releaseHasImage = ($release->haspreview ?? 0) == 1;
-                                                    $releaseHasVideo = (bool) ($release->has_video_preview ?? false);
-                                                    // The Fullscreen view is offered only where a Full-size copy is
-                                                    // on disk (ADR 0012); the back catalog kept only its thumb.
-                                                    $releaseFullUrl = $releaseHasImage ? getImageAssetUrl('preview', $release->guid) : null;
-                                                @endphp
-                                                @if($releaseHasImage || $releaseHasVideo)
-                                                    <button type="button"
-                                                            class="preview-badge inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 hover:bg-primary-200 dark:hover:bg-primary-800 transition cursor-pointer"
-                                                            data-guid="{{ $release->guid }}"
-                                                            data-release-display-name="{{ release_display_name($release) }}"
-                                                            @if($releaseHasImage)
-                                                                data-image-url="{{ getImageAssetUrl('preview', $release->guid . '_thumb') }}"
-                                                                @if($releaseFullUrl)
-                                                                    data-full-url="{{ $releaseFullUrl }}"
-                                                                @endif
-                                                            @endif
-                                                            @if($releaseHasVideo)
-                                                                data-video-url="{{ route('preview.video', $release->guid) }}"
-                                                                data-video-type="{{ $release->video_preview_mime }}"
-                                                            @endif
-                                                            title="{{ $releaseHasVideo ? 'Watch video preview' : 'View preview image' }}">
-                                                        <i class="fas {{ $releaseHasVideo ? 'fa-video' : 'fa-image' }} mr-1"></i> Preview
-                                                    </button>
-                                                @endif
+                                                <x-release-facts :release="$release" />
                                             </div>
                                         </div>
 

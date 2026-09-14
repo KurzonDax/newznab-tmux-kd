@@ -33,38 +33,6 @@
                     $responseCount = (int) ($result->report_response_count ?? 0);
                     $sizeLabel = $result->row_data?->size ?? \App\Support\ReleaseSize::format((float) ($result->size ?? 0));
                     $dateValue = $result->{$activeDateField} ?? $result->adddate ?? $result->postdate ?? null;
-                    $loadedAudioTags = $result instanceof \Illuminate\Database\Eloquent\Model && $result->relationLoaded('audioTags')
-                        ? $result->getRelation('audioTags')
-                        : null;
-                    $loadedAudioPreviewMime = $loadedAudioTags?->playablePreviewMimeType();
-                    $audioPreviewMime = $result->audio_preview_mime ?? $loadedAudioPreviewMime;
-                    $hasAudioPreview = (bool) ($result->has_audio_preview ?? ($audioPreviewMime !== null));
-                    $audioPreviewMeta = $result->audio_preview_meta ?? ($hasAudioPreview ? $loadedAudioTags?->previewSummary() : null);
-                    $hasSpectrogram = (bool) ($result->has_spectrogram ?? $loadedAudioTags?->has_spectrogram ?? false);
-                    $isAudioRelease = \App\Models\Category::rootCategoryFor((int) ($result->categories_id ?? 0)) === \App\Models\Category::MUSIC_ROOT
-                        || $hasSpectrogram
-                        || $hasAudioPreview;
-                    $loadedVideoClip = $result instanceof \Illuminate\Database\Eloquent\Model && $result->relationLoaded('videoClip')
-                        ? $result->getRelation('videoClip')
-                        : null;
-                    $videoPreviewMime = $result->video_preview_mime ?? $loadedVideoClip?->clipMimeType();
-                    $hasVideoPreview = (bool) ($result->has_video_preview ?? ($videoPreviewMime !== null));
-                    $hasGeneratedPreview = isset($result->haspreview) && $result->haspreview == 1;
-                    $previewImageUrl = $isAudioRelease
-                        ? ($hasSpectrogram ? getImageAssetUrl('audiosample', $result->guid . '_spectrum', null, [], ['png']) : null)
-                        : ($hasGeneratedPreview ? getImageAssetUrl('preview', $result->guid . '_thumb') : null);
-                    $previewImageTitle = $hasAudioPreview ? 'Audio Preview' : ($isAudioRelease ? 'Spectrogram' : 'Preview Image');
-                    // The Fullscreen view is offered only where a Full-size copy is
-                    // on disk (ADR 0012): the back catalog and spectrograms have none.
-                    $previewFullUrl = ! $isAudioRelease && $hasGeneratedPreview
-                        ? getImageAssetUrl('preview', $result->guid)
-                        : null;
-                    $sampleFullUrl = isset($result->jpgstatus) && $result->jpgstatus == 1
-                        ? getImageAssetUrl('sample', $result->guid)
-                        : null;
-                    $showPreviewBadge = $isAudioRelease
-                        ? ($hasAudioPreview || ($hasGeneratedPreview && $hasSpectrogram && $previewImageUrl !== null))
-                        : ($hasGeneratedPreview || $hasVideoPreview);
                 @endphp
                 <tr class="hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700 transition">
                     <td class="px-3 py-4 whitespace-nowrap">
@@ -104,97 +72,26 @@
                                             <i class="fas fa-exclamation-triangle mr-1"></i> Failed ({{ $result->failed_count }})
                                         </span>
                                     @endif
-                                    @if($showPreviewBadge)
-                                        <button type="button"
-                                                class="preview-badge {{ $hasAudioPreview ? 'audio-preview-badge' : '' }} inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 hover:bg-primary-200 dark:hover:bg-primary-800 transition cursor-pointer"
-                                                data-guid="{{ $result->guid }}"
-                                                data-release-display-name="{{ release_display_name($result) }}"
-                                                data-image-url="{{ $previewImageUrl }}"
-                                                data-image-title="{{ $previewImageTitle }}"
-                                                @if($previewFullUrl)
-                                                    data-full-url="{{ $previewFullUrl }}"
-                                                @endif
-                                                @if($hasAudioPreview)
-                                                    data-audio-url="{{ route('preview.audio', $result->guid) }}"
-                                                    data-audio-type="{{ $audioPreviewMime }}"
-                                                    data-audio-meta="{{ $audioPreviewMeta }}"
-                                                    data-audio-title="{{ $result->audio_preview_title ?? $loadedAudioTags?->track_name ?? $loadedAudioTags?->album ?? release_display_name($result) }}"
-                                                    data-audio-artist="{{ $result->audio_preview_artist ?? $loadedAudioTags?->performer ?? $loadedAudioTags?->album_performer }}"
-                                                    data-audio-artwork="{{ getReleaseCover($result) }}"
-                                                @endif
-                                                @if($hasVideoPreview)
-                                                    data-video-url="{{ route('preview.video', $result->guid) }}"
-                                                    data-video-type="{{ $videoPreviewMime }}"
-                                                @endif
-                                                title="{{ $hasAudioPreview ? 'Listen to audio preview' : ($hasVideoPreview ? 'Watch video preview' : 'View preview image') }}">
-                                            <i class="fas {{ $hasAudioPreview ? 'fa-headphones' : ($hasVideoPreview ? 'fa-video' : 'fa-image') }} mr-1"></i> Preview
-                                        </button>
-                                    @endif
-                                    @if(isset($result->jpgstatus) && $result->jpgstatus == 1)
-                                        <button type="button"
-                                                class="sample-badge inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 hover:bg-green-200 dark:hover:bg-green-800 transition cursor-pointer"
-                                                data-guid="{{ $result->guid }}"
-                                                data-release-display-name="{{ release_display_name($result) }}"
-                                                data-image-url="{{ getImageAssetUrl('sample', $result->guid . '_thumb') }}"
-                                                @if($sampleFullUrl)
-                                                    data-full-url="{{ $sampleFullUrl }}"
-                                                @endif
-                                                title="View sample image">
-                                            <i class="fas fa-images mr-1"></i> Sample
-                                        </button>
-                                    @endif
-                                    @if(!empty($result->videos_id) && (int) $result->videos_id > 0)
-                                        <a href="{{ url('/series/' . $result->videos_id) }}"
-                                           class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 hover:bg-primary-200 dark:hover:bg-primary-800 transition"
-                                           title="View full series">
-                                            <i class="fas fa-tv mr-1"></i> View Series
-                                        </a>
-                                    @endif
-                                    @if(!empty($result->has_media_info))
-                                        <button type="button"
-                                                class="mediainfo-badge inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 dark:bg-primary-900/50 text-primary-800 dark:text-primary-200 hover:bg-primary-200 dark:hover:bg-primary-800 transition cursor-pointer"
-                                                data-release-id="{{ $result->id }}"
-                                                data-release-display-name="{{ release_display_name($result) }}"
-                                                title="View media info">
-                                            <i class="fas fa-info-circle mr-1"></i> Media Info
-                                        </button>
-                                    @endif
-                                    @if(isset($result->nfostatus) && $result->nfostatus == 1)
-                                        <button type="button"
-                                                class="nfo-badge inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 hover:bg-yellow-200 dark:hover:bg-yellow-800 transition cursor-pointer"
-                                                data-guid="{{ $result->guid }}"
-                                                title="View NFO file">
-                                            <i class="fas fa-file-alt mr-1"></i> NFO
-                                        </button>
-                                    @endif
-                                    <x-release-completion-chips :release="$result" />
+                                    <x-release-facts :release="$result" />
+
                                 </div>
                                 <div class="text-xs text-gray-500 dark:text-gray-400 mt-1 flex flex-wrap gap-2">
-                                    @if($result->group_name)
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
-                                            <i class="fas fa-users mr-1"></i> {{ $result->group_name }}
-                                        </span>
+                                    @if(!empty($result->videos_id) && (int) $result->videos_id > 0)
+                                        <x-entity-chip root="tv" :title="$result->row_data?->entity?->title ?? 'View Series'" :href="url('/series/' . $result->videos_id)" />
                                     @endif
+                                    <x-origin-chip kind="group" :value="$result->group_name ?? ''" />
                                     @if(!empty($result->postdate))
                                         <span class="inline-flex items-center px-2 py-0.5 rounded bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
                                             <i class="fas fa-calendar mr-1"></i> Posted: {{ userDate($result->postdate, 'M d, Y H:i') }}
                                         </span>
                                     @endif
-                                    @if(!empty($result->fromname))
-                                        <a href="{{ route('poster-identity', ['name' => $result->fromname]) }}"
-                                           class="inline-flex items-center px-2 py-0.5 rounded bg-primary-100 dark:bg-primary-900/50 text-primary-800 dark:text-primary-200 hover:bg-primary-200 dark:hover:bg-primary-800 font-mono transition"
-                                           title="All releases from this poster">
-                                            <i class="fas fa-user mr-1"></i> {{ $result->fromname }}
-                                        </a>
-                                    @endif
+                                    <x-origin-chip kind="poster" :value="$result->fromname ?? ''" />
                                 </div>
                             </div>
                         </div>
                     </td>
                     <td class="px-3 py-4 whitespace-nowrap">
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-100 dark:bg-primary-900/50 text-primary-800 dark:text-primary-200">
-                            {{ $result->category_name ?? 'Other' }}
-                        </span>
+                        <x-chip variant="primary" pill>{{ $result->category_name ?? 'Other' }}</x-chip>
                     </td>
                     <td class="px-3 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
                         {{ $dateValue ? userDateDiffForHumans($dateValue) : 'Unknown' }}
@@ -293,24 +190,16 @@
                                 <i class="fas fa-exclamation-triangle mr-1"></i> Failed ({{ $result->failed_count }})
                             </span>
                         @endif
-                        <x-release-completion-chips :release="$result" />
+                        <x-release-facts :release="$result" />
                     </div>
                     <div class="flex flex-wrap items-center gap-2 mt-2 text-sm text-gray-600 dark:text-gray-400">
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-100 dark:bg-primary-900/50 text-primary-800 dark:text-primary-200">
-                            {{ $result->category_name ?? 'Other' }}
-                        </span>
+                        <x-chip variant="primary" pill>{{ $result->category_name ?? 'Other' }}</x-chip>
                         <span><i class="fas fa-clock mr-1"></i>{{ $dateValue ? userDateDiffForHumans($dateValue) : 'Unknown' }}</span>
                         <span><i class="fas fa-hdd mr-1"></i>{{ $sizeLabel }}</span>
                         <span><i class="fas fa-file mr-1"></i>{{ $result->totalpart ?? 0 }} files</span>
                         <span title="Grabs"><i class="fas fa-download text-green-600 dark:text-green-400 mr-1"></i>{{ $result->grabs ?? 0 }}</span>
                         <span title="Comments"><i class="fas fa-comment text-primary-600 dark:text-primary-400 mr-1"></i>{{ $result->comments ?? 0 }}</span>
-                        @if(!empty($result->fromname))
-                            <a href="{{ route('poster-identity', ['name' => $result->fromname]) }}"
-                               class="inline-flex items-center px-2 py-0.5 rounded bg-primary-100 dark:bg-primary-900/50 text-primary-800 dark:text-primary-200 hover:bg-primary-200 dark:hover:bg-primary-800 text-xs font-mono transition"
-                               title="All releases from this poster">
-                                <i class="fas fa-user mr-1"></i>{{ $result->fromname }}
-                            </a>
-                        @endif
+                                    <x-origin-chip kind="poster" :value="$result->fromname ?? ''" />
                     </div>
                     <div class="mt-3 flex gap-1 flex-wrap">
                         <a href="{{ url('/getnzb/' . $result->guid) }}" class="download-nzb release-action release-action-download px-3 py-1.5" title="Download NZB">

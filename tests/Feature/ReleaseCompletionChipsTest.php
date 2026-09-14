@@ -23,10 +23,10 @@ final class ReleaseCompletionChipsTest extends TestCase
     {
         return [
             'complete is green' => [100, 'bg-green-100'],
-            'green boundary' => [95, 'bg-green-100'],
-            'just below green is yellow' => [94.99, 'bg-yellow-100'],
-            'yellow boundary' => [80, 'bg-yellow-100'],
-            'just below yellow is red' => [79.99, 'bg-red-100'],
+            'yellow upper boundary' => [99, 'bg-yellow-100'],
+            'yellow lower boundary' => [95, 'bg-yellow-100'],
+            'just below yellow is red' => [94.99, 'bg-red-100'],
+            'lower completion is red' => [79.99, 'bg-red-100'],
             'far below is red' => [5, 'bg-red-100'],
         ];
     }
@@ -72,7 +72,7 @@ final class ReleaseCompletionChipsTest extends TestCase
         ]);
 
         $this->assertStringContainsString(ReleaseCompletion::COMPLETE_LABEL, $complete);
-        $this->assertStringContainsString('bg-gray-100', $complete);
+        $this->assertStringContainsString('surface-panel-alt', $complete);
     }
 
     public function test_covers_tiles_stay_clean_art_at_full_completion(): void
