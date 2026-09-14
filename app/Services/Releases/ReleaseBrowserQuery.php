@@ -6,6 +6,7 @@ namespace App\Services\Releases;
 
 use App\Data\ReleaseBrowserState;
 use App\Enums\BrowseRoot;
+use App\Enums\ReleaseSort;
 use App\Models\User;
 use App\Support\ReleaseBrowserPage;
 use Illuminate\Database\Query\Builder;
@@ -28,14 +29,8 @@ final class ReleaseBrowserQuery
             $total = $query->count();
         }
         $page = min($state->page, max(1, (int) ceil($total / $state->per)));
-        if ($state->sort === 'title') {
-            $query->orderByRaw($displayName.' ASC');
-        } elseif (isset($this->metadata->sorts($state->root)[$state->sort])) {
-            $column = $this->metadata->fields($state->root)[$state->sort] ?? 'r.adddate';
-            $query->orderByRaw($column.($state->sort === 'artist' ? ' ASC' : ' DESC'));
-        } else {
-            $query->orderByDesc('r.adddate');
-        }
+        [$column, $direction] = ReleaseSort::resolve($state->sort)->order();
+        $query->orderByRaw($column.' '.$direction);
         $rows = $query->orderByDesc('r.id')
             ->offset(($page - 1) * $state->per)->limit($state->per)->get(['r.*']);
         $this->releases->loadReleaseRows($rows);
@@ -54,7 +49,7 @@ final class ReleaseBrowserQuery
     /** @return array<string, string> */
     public function sortOptions(ReleaseBrowserState $state): array
     {
-        return [...$this->metadata->sorts($state->root), ...($state->view === 'covers' && in_array($state->root, [BrowseRoot::Movies, BrowseRoot::Tv], true) ? ['grabs' => 'Grabs · last 7 days'] : [])];
+        return ReleaseSort::options();
     }
 
     public function matchingQuery(ReleaseBrowserState $state, User $user): Builder
@@ -62,7 +57,7 @@ final class ReleaseBrowserQuery
         $query = $this->baseQuery($state, $user);
         $this->metadata->filter($query, $state->root, $state->filters);
 
-        if ($state->view === 'covers' && $state->sort === 'grabs' && in_array($state->root, [BrowseRoot::Movies, BrowseRoot::Tv], true)) {
+        if ($state->trending && in_array($state->root, [BrowseRoot::Movies, BrowseRoot::Tv], true)) {
             $key = $state->root === BrowseRoot::Movies ? 'r.imdbid' : 'r.videos_id';
             $downloadedTitles = (clone $query)->joinSub(CoverBrowseScope::recentGrabs(), 'recent_grabs', 'recent_grabs.releases_id', '=', 'r.id')->select($key);
             $query->whereIn($key, $downloadedTitles);

@@ -113,6 +113,7 @@ export function releaseBrowser() {
 
         navigateFilter(name, value, clearLetter = false, preservePage = false) {
             const url = new URL(window.location.href);
+            if (name === 'sort') url.searchParams.delete('trending');
             if (name === 'q') ['search', 'subject', 'id', 'searchadvr'].forEach(key => url.searchParams.delete(key));
             if (value === '') url.searchParams.delete(name);
             else url.searchParams.set(name, value);

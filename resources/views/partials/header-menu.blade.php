@@ -2,7 +2,7 @@
 <header class="public-header" data-public-header x-data="publicNavigation" x-on:keydown.window="handleShortcut" x-on:click.outside="closeMenus">
     <a href="{{ url('/') }}" class="public-logo"><i class="fas fa-cubes" aria-hidden="true"></i>{{ config('app.name') }}</a>
     <nav class="public-primary-nav" aria-label="Main navigation">
-        <button type="button" class="public-nav-item" x-ref="browseTrigger" x-on:click="toggleBrowse" x-bind:aria-expanded="browseOpen" aria-controls="browse-menu" aria-label="Browse categories" @if(request()->is('browse*', 'title*', 'details*') && request('sort') !== 'grabs') aria-current="true" @endif>
+        <button type="button" class="public-nav-item" x-ref="browseTrigger" x-on:click="toggleBrowse" x-bind:aria-expanded="browseOpen" aria-controls="browse-menu" aria-label="Browse categories" @if(request()->is('browse*', 'title*', 'details*') && !request()->boolean('trending')) aria-current="true" @endif>
             <i class="fas fa-compass public-desktop-icon" aria-hidden="true"></i><i class="fas fa-bars public-mobile-icon" aria-hidden="true"></i><span class="public-nav-label">Browse</span><i class="fas fa-chevron-down public-nav-label" aria-hidden="true"></i>
         </button>
         <div id="browse-menu" class="card public-menu public-mega-menu" x-cloak x-show="browseOpen" x-on:click="navigate">
@@ -18,6 +18,7 @@
                     @endif
                     @if($root === \App\Enums\BrowseRoot::Tv)
                         <a href="{{ route('trending-tv') }}"><i class="fas fa-fire" aria-hidden="true"></i>Trending TV</a>
+                        <a href="{{ route('series') }}"><i class="fas fa-tv" aria-hidden="true"></i>TV Shows</a>
                         <a href="{{ route('watchlist', ['tab' => 'tv']) }}"><i class="fas fa-heart" aria-hidden="true"></i>My Shows</a>
                     @endif
                 </section>
@@ -27,7 +28,7 @@
             </div>
         </div>
         @if(collect($navigationRoots)->contains(fn ($item) => $item['root'] === \App\Enums\BrowseRoot::Movies))
-        <a href="{{ route('trending-movies') }}" class="public-nav-item public-wide-nav" @if(request()->is('trending*') || request('sort') === 'grabs') aria-current="page" @endif><i class="fas fa-fire" aria-hidden="true"></i>Trending</a>
+        <a href="{{ route('trending-movies') }}" class="public-nav-item public-wide-nav" @if(request()->is('trending*') || request()->boolean('trending')) aria-current="page" @endif><i class="fas fa-fire" aria-hidden="true"></i>Trending</a>
         @endif
         <a href="{{ route('watchlist') }}" class="public-nav-item public-wide-nav" @if(request()->is('mymovies*', 'myshows*', 'watchlist*')) aria-current="page" @endif><i class="fas fa-heart" aria-hidden="true"></i>Watchlist <span data-watchlist-count @if($watchlistCount === 0) hidden @endif>{{ $watchlistCount }}</span></a>
     </nav>
@@ -40,7 +41,7 @@
             @endforeach
         </x-select>
         <label class="sr-only" for="header-search-input">Search releases</label>
-        <x-input id="header-search-input" x-ref="searchInput" type="search" name="q" value="{{ is_string(request('q')) ? request('q') : '' }}" placeholder="Search releases…  ( / )" class="public-search-input" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="search-suggestions" ::aria-expanded="suggestionsOpen" ::aria-activedescendant="activeSuggestionId" x-on:input="closeSuggestions" x-on:input.debounce.350ms="fetchSuggestions" x-on:keydown="searchKey" />
+        <x-input id="header-search-input" x-ref="searchInput" type="search" name="q" value="{{ is_string(request('q')) ? request('q') : '' }}" placeholder="Search releases… (Press / to search)" class="public-search-input" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="search-suggestions" ::aria-expanded="suggestionsOpen" ::aria-activedescendant="activeSuggestionId" x-on:input="closeSuggestions" x-on:input.debounce.350ms="fetchSuggestions" x-on:keydown="searchKey" />
         <div id="search-suggestions" class="card public-menu public-search-suggestions" role="listbox" aria-label="Search suggestions" x-cloak x-show="suggestionsOpen">
             <template x-for="suggestion in suggestions" x-bind:key="suggestion.id">
                 <a x-bind:href="suggestion.url" x-bind:id="suggestion.id" x-bind:aria-selected="suggestionIndex === suggestion.index" role="option" x-text="suggestion.label"></a>
@@ -53,6 +54,9 @@
         <a href="{{ route('account') }}"><i class="fas fa-user" aria-hidden="true"></i>Account</a>
         <a href="{{ route('watchlist') }}"><i class="fas fa-heart" aria-hidden="true"></i>Watchlist <span data-watchlist-count @if($watchlistCount === 0) hidden @endif>{{ $watchlistCount }}</span></a>
         <a href="{{ route('basket') }}"><i class="fas fa-shopping-basket" aria-hidden="true"></i>Basket <span data-basket-count x-text="$store.cart.count">{{ $basketCount }}</span></a>
+        @if(auth()->user()->hasRole('Admin'))
+            <a href="{{ route('admin.index') }}"><i class="fas fa-cogs" aria-hidden="true"></i>Admin</a>
+        @endif
         <div class="public-menu-divider"></div>
         <div class="public-theme-label">Theme</div>
         <div class="public-theme-options" role="group" aria-label="Theme">

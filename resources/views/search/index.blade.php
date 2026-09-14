@@ -24,9 +24,10 @@
                     <span class="search-suggestion">Did you mean <a href="{{ $searchState->suggestionUrl($spellSuggestion) }}">{{ $spellSuggestion }}</a>?</span>
                 @endif
                 <span class="grow"></span>
-                <x-select name="sort" aria-label="Sort" @change="sortListing">
-                    <option value="newest" @selected($browserState->sort === 'newest')>Newest</option>
-                    <option value="title" @selected($browserState->sort === 'title')>Title A–Z</option>
+                <x-select width="compact" name="sort" aria-label="Sort" @change="sortListing">
+                    @foreach(\App\Enums\ReleaseSort::options() as $key => $label)
+                        <option value="{{ $key }}" @selected($browserState->sort === $key)>{{ $label }}</option>
+                    @endforeach
                 </x-select>
                 <x-button variant="secondary" size="icon" icon="fas fa-image" data-preference="thumbs" :data-value="$browserState->thumbs ? '0' : '1'" @click="changePreference" :aria-pressed="$browserState->thumbs ? 'true' : 'false'" aria-label="Thumbnails" />
             </div>

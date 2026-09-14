@@ -1043,7 +1043,7 @@ main .release-browser-table thead th.text-right { text-align: right; }
 .release-browser-table tr[data-selected="1"] { background: color-mix(in srgb, var(--color-primary-500) 8%, var(--browser-card)); }
 .release-browser-name { min-width: 320px; width: 100%; }
 .release-browser-titleline, .release-browser-origin { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
-.release-browser [data-release-title] { font-size: 14px; font-weight: 600; line-height: 1.3; color: #0f172a; overflow-wrap: anywhere; }
+.release-browser [data-release-title] { font-size: 15px; font-weight: 600; line-height: 1.3; color: #0f172a; overflow-wrap: anywhere; }
 .dark .release-browser [data-release-title] { color: #f1f5f9; }
 .release-browser [data-release-title]:hover { color: var(--color-primary-700); text-decoration: underline; }
 .dark .release-browser [data-release-title]:hover { color: var(--color-primary-300); }
@@ -1145,7 +1145,7 @@ main .release-browser-table thead th.text-right { text-align: right; }
 .release-cover-detail-releases { display: grid; gap: 10px; padding-top: 12px; margin-top: 4px; border-top: 1px solid var(--browser-border); }
 .release-cover-release { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; background: var(--surface-release-row); border: 1px solid var(--border-release-row); border-left: 4px solid var(--color-primary-500); border-radius: 8px; }
 .dark .release-cover-release { background: var(--surface-release-row-dark); border-color: var(--border-release-row-dark); border-left-color: var(--color-primary-500); }
-.release-cover-release-stats { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; font-size: 12px; color: var(--browser-muted); }
+.release-cover-release-stats { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; font-size: 13px; color: var(--browser-muted); }
 .release-cover-expanded { grid-column: 1 / -1; position: relative; background: var(--cover-panel); border: 1px solid var(--color-primary-600); border-radius: 10px; }
 .release-cover-expanded[hidden] { display: none; }
 .release-cover-backdrop { position: fixed; inset: 0; z-index: 59; background: rgb(2 6 23 / 45%); }
@@ -1212,10 +1212,12 @@ main .release-browser-table thead th.text-right { text-align: right; }
 .public-theme-options { display: flex; gap: 3px; padding: 3px; border: 1px solid var(--shell-border); border-radius: 8px; }
 .public-theme-options button { flex: 1; height: 26px; padding: 0 4px; border: 0; border-radius: 5px; background: transparent; color: inherit; font-size: 12px; cursor: pointer; }
 .public-theme-options button[aria-pressed="true"] { background: var(--color-primary-600); color: #fff; }
-.public-page { max-width: 1500px; margin: 0 auto; padding: 18px 22px 60px; }
+.public-page { width: 80vw; max-width: 80vw; margin: 0 auto; padding: 18px 0 60px; flex: 1 0 auto; min-width: 0; }
 .public-shell .release-browser-toolbar { top: 56px; }
 .public-footer { padding: 0 22px; }
-html.public-shell, body.public-shell { height: auto; min-height: 100%; overflow-x: clip; overflow-y: visible; }
+html.public-shell { height: auto; min-height: 100%; }
+body.public-shell { display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; }
+.public-shell > .public-header, .public-shell > .public-footer { flex-shrink: 0; }
 .public-shell .release-cover-backdrop { z-index: 40; }
 @media (max-width: 640px) { .public-shell .release-cover-expanded { z-index: 40; } }
 @media (max-width: 1100px) {
@@ -1236,7 +1238,7 @@ html.public-shell, body.public-shell { height: auto; min-height: 100%; overflow-
     .public-header .public-search .public-search-input { padding: 0 7px; font-size: 12px; }
     .public-header .public-basket { gap: 4px; padding: 0 4px; }
     .public-header .public-user-menu { right: 8px; }
-    .public-page { padding: 18px 12px 50px; }
+    .public-page { padding-block: 18px 50px; }
 }
 
 .guest-theme-pill { position: fixed; top: 12px; right: 12px; display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 1px solid var(--border-default); border-radius: 999px; background: var(--surface-card); color: var(--text-muted); font-size: 12px; }
@@ -1368,11 +1370,11 @@ html.public-shell, body.public-shell { height: auto; min-height: 100%; overflow-
 /* Scoped search results and constraint editor. */
 .search-results-page { min-width: 0; }
 .search-results-page > .page-header { padding: 0 0 16px; }
-.search-query-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--browser-border); }
+.search-query-chips { position: relative; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--browser-border); }
 .search-query-chips > .release-chip { min-height: 24px; height: auto; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .search-query-chips > .release-chip .fa-xmark { flex-shrink: 0; }
 .search-query-chips > select { width: auto; min-width: 110px; }
-.search-filter-menu { position: relative; }
+.search-filter-menu { position: static; }
 .search-filter-menu > summary { list-style: none; cursor: pointer; font-size: 12px; padding: 3px 6px; border-radius: 5px; }
 .search-filter-menu > summary::-webkit-details-marker { display: none; }
 .search-filter-menu > summary:focus-visible { outline: 2px solid var(--color-primary-500); outline-offset: 2px; }
@@ -1533,3 +1535,92 @@ html.public-shell, body.public-shell { height: auto; min-height: 100%; overflow-
 .dark .public-ui .public-docs thead th { background: var(--surface-panel-alt-dark); color: var(--text-muted-dark); }
 .public-ui .public-docs code, .public-ui .public-docs pre, .public-ui .public-docs .font-mono { font-family: inherit; }
 .public-ui .public-docs pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media (max-width: 700px) {
+    .public-page { width: calc(100% - 24px); max-width: calc(100% - 24px); }
+}
+
+.release-browser-toolbar { gap: 10px; padding: 12px 14px; font-size: 14px; }
+.release-browser-filters, .release-browser-view-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-width: 0; max-width: 100%; }
+.release-browser-view-controls { margin-left: auto; }
+.release-browser-toolbar .ui-control { max-width: 100%; }
+.release-browser-segment > button { font-size: 14px; }
+
+.release-browser-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-width: 0; margin-top: 4px; }
+.public-ui .release-browser-facts .release-chip { height: auto; min-height: 28px; font-size: 12px; line-height: 1.4; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.release-cover-detail-body, .release-cover-detail-releases { grid-template-columns: minmax(0, 1fr); }
+.release-cover-detail-head { flex-wrap: wrap; }
+.release-cover-detail-head > .min-w-0 { flex: 1 1 180px; }
+.release-cover-metadata { align-items: stretch; }
+.public-ui .release-cover-metadata .release-chip { min-width: 0; max-width: 100%; height: auto; min-height: 36px; white-space: normal; overflow-wrap: anywhere; line-height: 1.4; font-size: 12px; padding-block: 5px; }
+.public-ui .release-cover-metadata .watchlist-button { height: auto; min-height: 36px; white-space: nowrap; align-self: stretch; }
+.release-cover-release { flex-wrap: wrap; min-width: 0; }
+.release-cover-release > .min-w-0 { flex: 1 1 180px; }
+.release-cover-detail-releases > .ui-control { justify-self: start; max-width: 100%; height: auto; min-height: 36px; white-space: normal; }
+.release-cover-detail-title { overflow-wrap: anywhere; }
+.release-cover-detail-title a { font-size: inherit; }
+.release-cover-sub { white-space: normal; overflow-wrap: anywhere; }
+.release-cover-footer .release-chip { white-space: normal; overflow-wrap: anywhere; height: auto; min-height: 20px; }
+
+.title-cast { margin-top: 12px; font-size: 13px; overflow-wrap: anywhere; }
+.title-cast dt { color: var(--text-muted); font-size: 12px; }
+.dark .title-cast dt { color: var(--text-muted-dark); }
+
+.tv-directory-toolbar, .tv-directory-pager, .tv-directory-initials { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; font-size: 14px; }
+.tv-directory-toolbar .ui-field { width: auto; max-width: 100%; }
+.tv-directory-toolbar input[name="year"] { width: 8ch; }
+.tv-directory-initials a { padding: 3px 6px; }
+.tv-directory-initials [aria-current], .tv-directory-pager [aria-current] { font-weight: 700; text-decoration: underline; }
+.tv-directory-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 20px; padding: 18px; }
+.tv-directory-card { min-width: 0; overflow-wrap: anywhere; border: 1px solid var(--border-default); border-radius: 8px; }
+.dark .tv-directory-card { border-color: var(--border-default-dark); }
+.tv-directory-poster { position: relative; aspect-ratio: 2 / 3; }
+.tv-directory-poster > button:first-child { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; border-radius: 8px 8px 0 0; background: var(--surface-panel-alt); }
+.dark .tv-directory-poster > button:first-child { background: var(--surface-panel-alt-dark); }
+.tv-directory-poster img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.tv-directory-poster .release-cover-heart { top: 8px; right: 8px; left: auto; width: 32px; height: 32px; background: rgb(15 23 42 / 85%); }
+.tv-directory-copy { display: grid; gap: 6px; padding: 10px; font-size: 13px; }
+.tv-directory-title { text-align: left; font-size: 16px; font-weight: 600; }
+.tv-directory-badges { display: flex; flex-wrap: wrap; gap: 4px; }
+.tv-directory-copy .release-chip { max-width: 100%; height: auto; min-height: 22px; white-space: normal; font-size: 12px; line-height: 1.4; }
+.public-modal-show .public-modal-card { width: min(1050px, calc(100vw - 40px)); max-width: none; max-height: 85vh; }
+.tv-show-hero { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 16px; }
+.tv-show-artwork { display: flex; align-items: center; justify-content: center; width: 140px; height: 210px; }
+.tv-show-artwork img { width: 100%; height: 100%; object-fit: cover; }
+.tv-show-hero h2 { font-size: 24px; overflow-wrap: anywhere; }
+.tv-show-hero p { margin-top: 8px; overflow-wrap: anywhere; }
+.tv-show-seasons { display: flex; gap: 8px; overflow-x: auto; padding-block: 16px; }
+.tv-show-seasons button { white-space: nowrap; padding: 6px 10px; border-radius: 6px; }
+.tv-show-seasons [aria-pressed="true"] { background: var(--color-primary-600); color: white; }
+.tv-show-dialog details { margin-block: 8px; padding: 10px; border: 1px solid var(--border-default); border-radius: 8px; }
+.dark .tv-show-dialog details { border-color: var(--border-default-dark); }
+.tv-show-dialog summary { cursor: pointer; overflow-wrap: anywhere; }
+.tv-show-dialog .release-cover-release { margin-top: 8px; }
+.release-cover-genres { font-size: 13px; overflow-wrap: anywhere; margin-top: 4px; }
+.release-cover-art[data-root="tv"]::after { display: none; }
+@media (max-width: 700px) {
+    .tv-directory-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 12px; }
+    .tv-show-hero { grid-template-columns: 80px minmax(0, 1fr); gap: 12px; }
+    .tv-show-artwork { width: 80px; height: 120px; }
+}
+
+.release-browser[data-root="tv"] .release-cover-expanded { position: fixed; inset: 50% auto auto 50%; transform: translate(-50%, -50%); width: min(1050px, calc(100vw - 40px)); max-height: 85vh; overflow-y: auto; z-index: 41; border-radius: 10px; }
+.release-browser[data-root="tv"] .release-cover-expanded::before { display: none; }
+.episode-release-panels { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 12px; }
+.release-cover-title { white-space: normal; overflow-wrap: anywhere; }
+.release-browser[data-root="tv"] .release-cover-detail-title { font-size: 18px; }
+
+.public-header .public-nav-item, .public-menu a, .public-menu-signout, .public-menu .public-menu-root,
+.public-header .public-search .public-search-scope, .public-header .public-search .public-search-input { font-size: 14px; }
+.public-ui .page-header h1 { font-size: 24px; }
+.public-ui .details-heading h1 { font-size: 15px; line-height: 1.3; }
+.public-ui .details-subline { font-size: 13px; }
+.public-ui .release-browser { font-family: var(--font-sans); }
+
+.release-browser[data-root="tv"] .release-cover-grid[data-size="s"],
+.release-browser[data-root="tv"] .release-cover-grid[data-size="l"] { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
+.release-browser[data-root="tv"] .release-cover-grid:not([data-size="xl"]) .release-cover-tile { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; }
+.release-browser[data-root="tv"] .release-cover-grid[data-size="s"] .release-cover-detail-art { width: 96px; }
+.release-browser[data-root="tv"] .release-cover-grid[data-size="l"] .release-cover-detail-art { width: 140px; }
+.tv-directory-toolbar [data-year-picker] { max-width: 100%; }
+.tv-directory-toolbar [data-year-picker] > .ui-control { width: auto; max-width: 100%; }

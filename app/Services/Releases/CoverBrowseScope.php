@@ -6,6 +6,7 @@ namespace App\Services\Releases;
 
 use App\Data\ReleaseBrowserState;
 use App\Enums\BrowseRoot;
+use App\Enums\ReleaseSort;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -32,24 +33,11 @@ final readonly class CoverBrowseScope
     /** @return array{string, string} */
     public function order(string $alias): array
     {
-        $sort = $this->state->sort;
-        if ($sort === 'title') {
+        if ($this->state->letter !== '') {
             return [$alias.'.title', 'asc'];
         }
-        if ($sort === 'year' && in_array($this->state->root, [BrowseRoot::Movies, BrowseRoot::Audio], true)) {
-            return [$alias.'.year', 'desc'];
-        }
-        if ($sort === 'rating' && $this->state->root === BrowseRoot::Movies) {
-            return ['CAST('.$alias.'.rating AS DECIMAL(4,2))', 'desc'];
-        }
-        if ($sort === 'artist' && $this->state->root === BrowseRoot::Audio) {
-            return [$alias.'.artist', 'asc'];
-        }
-        if ($sort === 'grabs' && $this->state->root === BrowseRoot::Movies) {
-            return ['SUM(COALESCE(recent_grabs.grabs, 0))', 'desc'];
-        }
 
-        return ['MAX(r.adddate)', 'desc'];
+        return ReleaseSort::resolve($this->state->sort)->order(grouped: true);
     }
 
     public function applyTo(Builder $query): void
@@ -59,7 +47,7 @@ final readonly class CoverBrowseScope
 
     public function isTrending(): bool
     {
-        return $this->state->view === 'covers' && $this->state->sort === 'grabs'
+        return $this->state->view === 'covers' && $this->state->trending
             && in_array($this->state->root, [BrowseRoot::Movies, BrowseRoot::Tv], true);
     }
 

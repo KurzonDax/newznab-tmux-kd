@@ -3,6 +3,14 @@
 @source "../views";
 @source "../js";
 
+@font-face {
+    font-family: 'Figtree';
+    src: url('../fonts/Figtree.ttf') format('truetype');
+    font-style: normal;
+    font-weight: 300 900;
+    font-display: swap;
+}
+
 /* Tailwind v4 plugins */
 @plugin "@tailwindcss/forms";
 
@@ -223,10 +231,10 @@ footer {
 }
 
 .public-ui .ui-control {
-    height: 36px;
+    height: 42px;
     padding: 0 14px;
     border-radius: 8px;
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1.5;
 }
 
@@ -686,7 +694,7 @@ mark {
 }
 
 .public-ui .page-header-description {
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1.5;
     word-break: break-all;
 }
@@ -764,3 +772,6 @@ a.release-chip:is([data-chip-variant="origin"], [data-chip-variant="entity"]):ho
 .dark a.release-chip:is([data-chip-variant="origin"], [data-chip-variant="entity"]):hover {
     color: var(--color-primary-300);
 }
+
+.ui-select-compact { width: auto; max-width: 100%; flex: 0 1 auto; }
+.public-ui select.ui-control { padding-right: 32px; }

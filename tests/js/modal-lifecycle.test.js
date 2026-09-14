@@ -12,9 +12,9 @@ function environment() {
     };
     function control() { return { isConnected: true, disabled: false, getClientRects: () => [1], focus() { document.activeElement = this; } }; }
     const trigger = control(); trigger.focus();
-    function modal() {
+    function modal(preserve = false) {
         const first = control(), last = control();
-        const dialog = { ownerDocument: document, contains: node => node === first || node === last,
+        const dialog = { ownerDocument: document, hasAttribute: name => preserve && name === 'data-preserve-modal', contains: node => node === first || node === last,
             querySelector: () => null, querySelectorAll: () => [first, last],
         };
         let watch;
@@ -57,6 +57,20 @@ test('switching modals closes the first and restores the original external trigg
     first.instance.destroy(); second.instance.destroy();
 });
 
+
+test('a child picker returns to a preserved show dialog and its opening control', () => {
+    const env = environment(), show = env.modal(true), picker = env.modal();
+    show.show(); show.last.focus(); picker.show();
+    assert.equal(show.instance.open, true);
+    picker.instance.close();
+    assert.equal(env.document.activeElement, show.last);
+    assert.equal(env.document.body.style.overflow, 'hidden');
+    env.key({ key: 'Escape', preventDefault() {} });
+    assert.equal(show.instance.open, false);
+    assert.equal(env.document.activeElement, env.trigger);
+    assert.equal(env.document.body.style.overflow, 'auto');
+    show.instance.destroy(); picker.instance.destroy();
+});
 
 test('NFO actions copy and download the loaded text and reject a stale response', async () => {
     let factory, copied, downloaded;

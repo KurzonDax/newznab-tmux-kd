@@ -23,7 +23,7 @@ final class HomeDashboard
         $watched = DB::query()->fromSub($watchedQuery, 'watched')->where('title_rank', 1)->orderByDesc('adddate')->orderByDesc('id')->limit(5)->get();
         $this->releases->loadReleaseRows($watched);
         $trendingRoot = $user->hasDirectPermission('view movies') ? BrowseRoot::Movies : ($user->hasDirectPermission('view tv') ? BrowseRoot::Tv : null);
-        $trendingState = $trendingRoot ? $this->state($trendingRoot, 'covers', 6, sort: 'grabs') : null;
+        $trendingState = $trendingRoot ? $this->state($trendingRoot, 'covers', 6, sort: 'grabs', trending: true) : null;
 
         return [
             'latestState' => $latestState, 'latest' => $latest, 'homeWatched' => $watched,
@@ -32,12 +32,12 @@ final class HomeDashboard
         ];
     }
 
-    private function state(BrowseRoot $root, string $view, int $per, bool $watching = false, string $sort = 'newest'): ReleaseBrowserState
+    private function state(BrowseRoot $root, string $view, int $per, bool $watching = false, string $sort = 'newest', bool $trending = false): ReleaseBrowserState
     {
         return new ReleaseBrowserState(
             root: $root, view: $view, size: 's', per: $per, thumbs: true, page: 1,
             group: '', posterIdentity: '', categoryId: null, query: '', sort: $sort,
-            filters: [], watching: $watching, basketOnly: false, minCompletion: 0,
+            filters: [], watching: $watching, basketOnly: false, minCompletion: 0, trending: $trending,
         );
     }
 }

@@ -27,10 +27,11 @@
                 </div>
             @endif
             <dl class="title-metadata">
-                @foreach($title->metadata as $label => $value)<div><dt>{{ $label }}</dt><dd>{{ $value }}</dd></div>@endforeach
+                @foreach($title->metadata as $label => $value)@continue($label === 'Cast')<div><dt>{{ $label }}</dt><dd>{{ $value }}</dd></div>@endforeach
                 @if($title->root === \App\Enums\BrowseRoot::Tv && count($seasons) > 0)<div><dt>Seasons</dt><dd>{{ count(array_filter($seasons, fn ($season) => $season['number'] > 0)) }}</dd></div>@endif
             </dl>
             @if($title->overview !== '')<p class="title-plot">{{ $title->overview }}</p>@endif
+            @if(!empty($title->metadata['Cast']))<dl class="title-cast"><div><dt>Cast</dt><dd>{{ $title->metadata['Cast'] }}</dd></div></dl>@endif
             @if($title->tracks !== [])<div class="title-tracks"><h2>Tracks</h2><ol>@foreach($title->tracks as $track)<li>{{ $track }}</li>@endforeach</ol></div>@endif
             <dl class="title-stats">
                 <div><dt>Releases</dt><dd>{{ number_format($releaseCount) }}</dd></div>

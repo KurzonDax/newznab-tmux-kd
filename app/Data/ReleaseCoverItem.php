@@ -25,5 +25,7 @@ final readonly class ReleaseCoverItem
         public string $titleUrl = '',
         public ?string $watchUrl = null,
         public bool $watched = false,
+        public ?string $watchId = null,
+        public string $genres = '',
     ) {}
 }

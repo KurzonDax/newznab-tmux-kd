@@ -11,8 +11,8 @@
             <div class="min-w-0">
                 <div class="release-browser-titleline">
                     <a data-release-title href="{{ route('details', $row->guid) }}">{{ $row->name }}</a>
-                    @include('components.release-browser.facts')
                 </div>
+                @include('components.release-browser.facts')
                 @include('components.release-browser.origin')
             </div>
         </div>

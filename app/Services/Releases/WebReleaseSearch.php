@@ -7,6 +7,7 @@ namespace App\Services\Releases;
 use App\Data\ReleaseBrowserState;
 use App\Data\WebSearchState;
 use App\Enums\BrowseRoot;
+use App\Enums\ReleaseSort;
 use App\Models\User;
 use App\Support\ReleaseBrowserPage;
 use App\Support\WebSearchText;
@@ -77,11 +78,8 @@ final class WebReleaseSearch
             }
         }
         $page = min($state->page, max(1, (int) ceil($total / $state->per)));
-        if ($state->sort === 'title') {
-            $query->orderByRaw("COALESCE(NULLIF(TRIM(r.display_name), ''), r.searchname) ASC");
-        } else {
-            $query->orderByDesc('r.adddate');
-        }
+        [$column, $direction] = ReleaseSort::resolve($state->sort)->order();
+        $query->orderByRaw($column.' '.$direction);
         $rows = $query->orderByDesc('r.id')->offset(($page - 1) * $state->per)->limit($state->per)->get(['r.*']);
         $this->releases->loadReleaseRows($rows);
 

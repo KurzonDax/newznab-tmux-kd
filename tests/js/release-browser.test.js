@@ -59,7 +59,7 @@ test('per-page saves only that root preference before navigation, while sort cle
     const navigations = [], requests = [];
     globalThis.document = { querySelector: () => ({ content: 'csrf-token' }) };
     globalThis.window = {
-        location: { href: 'https://nntmux.test/browse/all?group=test&letter=A&page=3&size=l&ob=size_desc', assign: value => navigations.push(value) },
+        location: { href: 'https://nntmux.test/browse/all?group=test&letter=A&page=3&size=l&ob=size_desc&trending=1', assign: value => navigations.push(value) },
         showToast: () => {},
     };
     let finish;
@@ -85,6 +85,7 @@ test('per-page saves only that root preference before navigation, while sort cle
     assert.equal(sorted.searchParams.get('sort'), 'title');
     assert.equal(sorted.searchParams.has('letter'), false);
     assert.equal(sorted.searchParams.has('ob'), false);
+    assert.equal(sorted.searchParams.has('trending'), false);
     assert.equal(sorted.searchParams.has('page'), false);
 });
 

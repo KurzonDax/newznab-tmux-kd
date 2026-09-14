@@ -68,7 +68,7 @@
                 @if (count($selectableThreadIds) > 0)
                     @can ('manageThreads', $category)
                             <div v-cloak v-show="state.selectedThreads.length" class="fixed bottom-0 right-0 z-[1000] m-2">
-                                <div class="bg-(--surface-card) dark:bg-(--surface-card-dark) shadow-sm rounded-md min-w-96 max-w-full">
+                                <div class="bg-(--surface-card) dark:bg-(--surface-card-dark) shadow-sm rounded-md w-96 max-w-[calc(100vw-1rem)]">
                                     <div class="border-b text-center py-4 px-6">
                                         {{ trans('forum::general.with_selection') }}
                                     </div>

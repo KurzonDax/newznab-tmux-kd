@@ -1,7 +1,7 @@
 <div class="release-cover-grid" data-cover-grid data-size="{{ $state->size }}" data-shape="{{ match ($state->root) { \App\Enums\BrowseRoot::Audio => 'square', \App\Enums\BrowseRoot::Adult => 'wide', default => 'tall' } }}">
     @foreach($rows as $cover)
         <article class="release-cover-tile" data-cover-tile="{{ $cover->id }}">
-            @if($state->size === 'xl')
+            @if($state->size === 'xl' || $state->root === \App\Enums\BrowseRoot::Tv)
                 @include('components.release-browser.cover-detail')
             @else
                 <button type="button" class="release-cover-open" data-cover-open @click="openCover" aria-expanded="false" aria-controls="cover-expansion" aria-label="Show releases for {{ $cover->title }}">
@@ -21,10 +21,10 @@
                     </span>
                 </button>
                 @if($cover->watchUrl)
-                    <x-watch-button :root="$state->root->value" :id="$cover->id" :title="$cover->title" :watched="$cover->watched" kind="heart" data-cover-watch />
+                    <x-watch-button :root="$state->root->value" :id="$cover->watchId ?? $cover->id" :title="$cover->title" :watched="$cover->watched" kind="heart" data-cover-watch />
                 @endif
             @endif
-            @if(in_array($state->root, [\App\Enums\BrowseRoot::Movies, \App\Enums\BrowseRoot::Tv], true) && $state->sort === 'grabs')
+            @if(in_array($state->root, [\App\Enums\BrowseRoot::Movies, \App\Enums\BrowseRoot::Tv], true) && $state->trending)
                 <span class="release-cover-rank" aria-label="Rank {{ ($rows->currentPage() - 1) * $rows->perPage() + $loop->iteration }}">#{{ ($rows->currentPage() - 1) * $rows->perPage() + $loop->iteration }}</span>
             @endif
         </article>

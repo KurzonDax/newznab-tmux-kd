@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Releases;
 
 use App\Enums\BrowseRoot;
+use App\Enums\ReleaseSort;
 use App\Support\MovieSearchQuery;
 use App\Support\YearRange;
 use Illuminate\Database\Query\Builder;
@@ -129,16 +130,6 @@ final class ReleaseBrowserMetadata
     /** @return array<string, string> */
     public function sorts(BrowseRoot $root): array
     {
-        $sorts = ['newest' => 'Newest release', 'title' => 'Title A–Z'];
-        if (! in_array($root, [BrowseRoot::Movies, BrowseRoot::Tv, BrowseRoot::Audio], true)) {
-            return $sorts;
-        }
-        foreach (['year' => 'Year', 'rating' => 'Rating', 'artist' => 'Artist'] as $key => $label) {
-            if (isset($this->fields($root)[$key])) {
-                $sorts[$key] = $label;
-            }
-        }
-
-        return $sorts;
+        return ReleaseSort::options();
     }
 }
