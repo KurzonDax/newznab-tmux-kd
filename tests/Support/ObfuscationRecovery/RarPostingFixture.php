@@ -10,7 +10,7 @@ use DateTimeImmutable;
 final class RarPostingFixture
 {
     /** @return array{headers:list<array<string,mixed>>,cache:array<string,RecoveryArticle>,index_id:string} */
-    public static function make(bool $singleArticleFinalVolume = false): array
+    public static function make(bool $singleArticleFinalVolume = false, string $archiveName = 'Fixture'): array
     {
         $time = new DateTimeImmutable('2026-01-01T00:00:00Z');
         $timestamp = $time->getTimestamp() * 1000;
@@ -18,7 +18,7 @@ final class RarPostingFixture
         $headers = $cache = $files = [];
         $ordinal = 0;
         foreach ($volumes as $i => $volume) {
-            $files[sprintf('Fixture.part%02d.rar', $i + 1)] = $volume;
+            $files[sprintf('%s.part%02d.rar', $archiveName, $i + 1)] = $volume;
             $size = strlen($volume);
             $total = intdiv($size - 1, SyntheticPosting::ARTICLE_BYTES) + 1;
             foreach (range(1, $total) as $part) {

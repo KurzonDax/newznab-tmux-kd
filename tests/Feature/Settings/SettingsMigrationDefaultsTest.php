@@ -58,6 +58,23 @@ final class SettingsMigrationDefaultsTest extends TestCase
         $this->assertNull($this->settingValue('descriptive_title_rename'));
     }
 
+    public function test_par2_naming_defaults_on_for_fresh_and_upgraded_installs_without_overwriting_operators(): void
+    {
+        (new SettingsTableSeeder)->run();
+        $this->assertSame('1', $this->settingValue('lookuppar2'));
+
+        DB::table('settings')->where('name', 'lookuppar2')->delete();
+        $migration = $this->migration('2026_09_14_135356_add_par2_naming_setting.php');
+        $migration->up();
+        $this->assertSame('1', $this->settingValue('lookuppar2'));
+
+        foreach (['0', '1', ''] as $stored) {
+            DB::table('settings')->where('name', 'lookuppar2')->update(['value' => $stored]);
+            $migration->up();
+            $this->assertSame($stored, $this->settingValue('lookuppar2'));
+        }
+    }
+
     public function test_forced_root_pc_escape_defaults_off_for_fresh_and_existing_installs(): void
     {
         (new SettingsTableSeeder)->run();

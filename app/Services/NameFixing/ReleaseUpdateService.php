@@ -423,6 +423,7 @@ class ReleaseUpdateService
             if ($categoryOverride !== null && $current !== null) {
                 $categoryOverride = (new ForcedRootPolicy)->categoryForRelease($current->groups_id, $releaseId, $categoryOverride);
             }
+            $recoveryEvidence?->assertNamingAllowed();
             if ($nameStatus === true) {
                 $status = $this->getStatusColumnsForType($type);
 

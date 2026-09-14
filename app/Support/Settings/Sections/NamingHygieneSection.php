@@ -115,6 +115,12 @@ final class NamingHygieneSection implements SettingsSectionProvider
                             icon: 'fas fa-stopwatch',
                         ),
                         SettingDefinition::bool(
+                            'lookuppar2',
+                            'Rename from PAR2 filenames',
+                            'Use validated PAR2 filenames to identify releases, including cached recovered inventories. Enabled when unset or blank. Independent of optional file-list storage.',
+                            'fas fa-file-signature',
+                        ),
+                        SettingDefinition::bool(
                             'descriptive_title_rename',
                             'Rename from descriptive file names',
                             'Use a human-written inner video file name as the release name, but only when the current name looks obfuscated or hashed.',

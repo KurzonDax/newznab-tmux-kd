@@ -25,7 +25,7 @@ final class AdminRecoveredReleasesController extends BasePageController
         };
 
         $releases = $recovery->query()
-            ->select(['releases.id', 'releases.guid', 'releases.searchname', 'releases.size',
+            ->select(['releases.id', 'releases.guid', 'releases.searchname', 'releases.isrenamed', 'releases.size',
                 'releases.adddate', 'releases.postdate', 'recovery.id as publication_id', 'recovery.profile',
                 'recovery.identity_outcome', 'recovery.multi_media_inventory', 'recovery.enrichment_outcome',
                 'recovery.protected_files', 'recovery.sealed_plan', 'recovery.detail_retired_at',

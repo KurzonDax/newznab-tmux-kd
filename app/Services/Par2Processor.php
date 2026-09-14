@@ -73,7 +73,8 @@ class Par2Processor
         return $this->parseData($par2, $relID, $show);
     }
 
-    public function parseData(string $par2, int $relID, int $show = 0, bool $allowNaming = true, ?RecoveryInspection $inspection = null): bool
+    /** @param bool|(\Closure(): bool) $allowNaming */
+    public function parseData(string $par2, int $relID, int $show = 0, bool|\Closure $allowNaming = true, ?RecoveryInspection $inspection = null): bool
     {
         $recovery = (new RecoveryIdentityPolicy)->publication($relID);
         if ($recovery !== null) {
@@ -106,7 +107,8 @@ class Par2Processor
         return $this->applyData($par2, $relID, $show, $allowNaming);
     }
 
-    private function applyData(string $par2, int $relID, int $show, bool $allowNaming, ?RecoveryInventory $inventory = null): bool
+    /** @param bool|(\Closure(): bool) $allowNaming */
+    private function applyData(string $par2, int $relID, int $show, bool|\Closure $allowNaming, ?RecoveryInventory $inventory = null): bool
     {
         $recovery = (new RecoveryIdentityPolicy)->publication($relID);
         $query = Release::query()->where('id', $relID)
@@ -207,8 +209,10 @@ class Par2Processor
                 }
             }
             if ($recovery !== null && $inventory !== null) {
+                $policy = static fn (): bool => ($allowNaming instanceof \Closure ? $allowNaming() : $allowNaming) && Settings::isPar2NamingEnabled();
+
                 return (new RecoveryNaming)->apply($recovery, $inventory, $this->nameFixingService,
-                    $allowNaming && (int) Settings::settingValue('lookuppar2') === 1, (bool) $show);
+                    $policy(), (bool) $show, namingPolicy: $policy);
             }
             if ($foundName === true) {
                 return true;

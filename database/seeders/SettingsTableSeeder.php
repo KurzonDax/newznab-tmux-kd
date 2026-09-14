@@ -446,6 +446,10 @@ class SettingsTableSeeder extends Seeder
                 'value' => '0',
             ],
             [
+                'name' => 'lookuppar2',
+                'value' => '1',
+            ],
+            [
                 'name' => 'fix_timer',
                 'value' => '30',
             ],

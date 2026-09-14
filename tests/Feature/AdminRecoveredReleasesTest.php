@@ -30,6 +30,7 @@ final class AdminRecoveredReleasesTest extends TestCase
             $table->increments('id');
             $table->string('guid');
             $table->string('searchname');
+            $table->boolean('isrenamed')->default(false);
             $table->unsignedInteger('groups_id');
             $table->unsignedInteger('categories_id')->default(1);
             $table->unsignedBigInteger('size')->default(1024);
@@ -170,6 +171,7 @@ final class AdminRecoveredReleasesTest extends TestCase
 
     public function test_rar_partial_inspection_and_retired_or_absent_details_are_honest(): void
     {
+        DB::table('settings')->insert(['name' => 'lookuppar2', 'value' => 0]);
         $this->publication(1, 'Archive.Release', [
             'profile' => 'nyuu-rar-sequential-v1', 'identity_outcome' => 'par2_naming_disabled',
             'canonical_bundle_id' => 1, 'canonical_revision' => 2,
@@ -202,6 +204,31 @@ final class AdminRecoveredReleasesTest extends TestCase
             $this->get('/admin/recovered-releases')->assertOk()->assertSee($namingLabel)->assertSee($inspectionLabel)
                 ->assertSee('Recovered file details are no longer available.')->assertDontSee('archive.part1.rar');
         }
+    }
+
+    #[DataProvider('namingResults')]
+    public function test_naming_details_distinguish_current_names_from_historical_skips(string $outcome, bool $renamed, bool $enabled, string $label): void
+    {
+        $this->publication(1, $renamed ? 'Synthetic.Feature.2026' : 'Recovered.fixture', ['identity_outcome' => $outcome]);
+        DB::table('releases')->where('id', 1)->update(['isrenamed' => $renamed]);
+        DB::table('settings')->insert(['name' => 'lookuppar2', 'value' => (int) $enabled]);
+
+        $response = $this->actingAs($this->admin())->get('/admin/recovered-releases')->assertOk()->assertSee($label);
+        if ($renamed || $enabled) {
+            $response->assertDontSee('Naming disabled');
+        }
+    }
+
+    public static function namingResults(): array
+    {
+        return [
+            ['identified', true, true, 'Named by recovery'],
+            ['par2_naming_disabled', true, true, 'Named elsewhere'],
+            ['par2_naming_disabled', true, false, 'Named elsewhere'],
+            ['par2_naming_disabled', false, true, 'Recovery naming skipped'],
+            ['par2_naming_disabled', false, false, 'Naming disabled'],
+            ['cached_index_unavailable', false, true, 'Cached naming unavailable'],
+        ];
     }
 
     public function test_site_status_keeps_services_and_incidents_without_recovery_processing(): void
