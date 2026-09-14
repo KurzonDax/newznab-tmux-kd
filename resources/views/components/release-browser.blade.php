@@ -9,28 +9,36 @@
     @if($pager)
         @include('components.release-browser.pager')
     @endif
-    <div class="overflow-x-auto">
-        <table class="release-browser-table" data-release-table>
-            <thead>
-                <tr>
-                    <th><label><input type="checkbox" data-select-all @change="selectAll" aria-label="Select all"><span class="sr-only">Select all</span></label></th>
-                    <th>Release</th><th>Category</th><th class="text-right">Size</th><th class="text-right">Files</th>
-                    <th>Added</th><th>Posted</th><th>Stats</th><th><span class="sr-only">Actions</span></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach($rows as $release)
-                    @include('components.release-browser.row', ['row' => $release->row_data])
-                @endforeach
-            </tbody>
-        </table>
-    </div>
+    @if($state->view === 'cards')
+        <div class="release-browser-cards" data-release-cards role="list">
+            @foreach($rows as $release)
+                @include('components.release-browser.card', ['row' => $release->row_data])
+            @endforeach
+        </div>
+    @else
+        <div class="overflow-x-auto">
+            <table class="release-browser-table" data-release-table>
+                <thead>
+                    <tr>
+                        <th><label><input type="checkbox" data-select-all @change="selectAll" aria-label="Select all"><span class="sr-only">Select all</span></label></th>
+                        <th>Release</th><th>Category</th><th class="text-right">Size</th><th class="text-right">Files</th>
+                        <th>Added</th><th>Posted</th><th>Stats</th><th><span class="sr-only">Actions</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($rows as $release)
+                        @include('components.release-browser.row', ['row' => $release->row_data])
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    @endif
     @if($rows->isEmpty())
         <div data-browser-empty>
-        <x-empty-state :icon="$emptyIcon ?? $state->root->icon()" :title="$emptyTitle" :message="$emptyMessage" />
-        @if($state->hasFilters())
-            <div class="flex justify-center pb-6"><x-button variant="secondary" icon="fas fa-xmark" @click="clearFilters">Clear filters</x-button></div>
-        @endif
+            <x-empty-state :icon="$emptyIcon ?? $state->root->icon()" :title="$emptyTitle" :message="$emptyMessage" />
+            @if($state->hasFilters())
+                <div class="flex justify-center pb-6"><x-button variant="secondary" icon="fas fa-xmark" @click="clearFilters">Clear filters</x-button></div>
+            @endif
         </div>
     @endif
     @if($pager)

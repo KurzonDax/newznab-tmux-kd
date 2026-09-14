@@ -45,7 +45,7 @@ class SearchController extends BasePageController
         }
         $scopedCategories = $this->resolveCategoryIdsFromRequest($request);
         $root = count($scopedCategories) === 1 ? BrowseRoot::fromCategoryId($scopedCategories[0]) : BrowseRoot::All;
-        $browserState = ReleaseBrowserState::fromRequest($browserRequest, $root, $this->userdata);
+        $browserState = ReleaseBrowserState::fromRequest($browserRequest, $root, $this->userdata, tableOnly: true);
         $results = [];
 
         $searchType = 'basic';

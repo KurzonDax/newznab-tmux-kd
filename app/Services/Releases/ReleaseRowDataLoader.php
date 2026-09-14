@@ -8,6 +8,8 @@ use App\Data\ReleaseRowData;
 use App\Services\NfoService;
 use App\Support\ReleaseSize;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Query\Builder;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -26,6 +28,7 @@ final class ReleaseRowDataLoader
         }
 
         $stored = DB::table('releases')->whereIn('id', $rows->pluck('id'))->get()->keyBy('id');
+        $postProcessed = $this->postProcessed($stored);
         $groupIds = $stored->pluck('groups_id')->filter()->unique();
         $groups = $groupIds->isEmpty() ? collect() : DB::table('usenet_groups')->whereIn('id', $groupIds)->pluck('name', 'id');
         $categoryIds = $stored->pluck('categories_id')->filter()->unique();
@@ -78,7 +81,7 @@ final class ReleaseRowDataLoader
                 group: (string) ($groups->get($source->groups_id ?? 0) ?? $release->group_name ?? ''),
                 poster: (string) ($source->fromname ?? ''),
                 renamed: (int) ($source->isrenamed ?? 0) === 1,
-                pp_done: $this->postProcessingDone($source),
+                pp_done: $postProcessed->has($release->id),
                 entity: $entities[(int) $release->id] ?? null,
                 in_basket: in_array((int) $release->id, $basket, true),
                 watched: isset($entities[(int) $release->id]) && match ($entities[(int) $release->id]->root) {
@@ -97,12 +100,19 @@ final class ReleaseRowDataLoader
         }
     }
 
-    public function postProcessingDone(object $release): bool
+    /**
+     * Filter finished releases in SQL and in the rows already loaded for display.
+     *
+     * @template T of Builder|Collection<array-key, \stdClass>
+     *
+     * @param  T  $releases
+     * @return T
+     */
+    public function postProcessed(Builder|Collection $releases, string $prefix = ''): Builder|Collection
     {
-        $nfoStatus = (int) ($release->nfostatus ?? NfoService::NFO_UNPROC);
-
-        return ($release->additional_pp_claim_token ?? null) === null
-            && (int) ($release->passwordstatus ?? -1) >= 0
-            && ($nfoStatus >= NfoService::NFO_NONFO || $nfoStatus <= NfoService::NFO_FAILED);
+        return $releases->whereNull($prefix.'additional_pp_claim_token')
+            ->whereNotNull($prefix.'passwordstatus')->where($prefix.'passwordstatus', '>=', 0)
+            ->whereNotNull($prefix.'nfostatus')
+            ->whereNotBetween($prefix.'nfostatus', [NfoService::NFO_FAILED + 1, NfoService::NFO_NONFO - 1]);
     }
 }
