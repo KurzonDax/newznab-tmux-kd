@@ -6,15 +6,17 @@ namespace Tests\Feature;
 
 use App\Models\Release;
 use App\View\Composers\GlobalDataComposer;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Schema;
 use ReflectionProperty;
+use Tests\Support\Admin\InteractsWithAdminListPages;
+use Tests\Support\InteractsWithPublicShell;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
 class DetailsDocumentViewTest extends TestCase
 {
+    use InteractsWithAdminListPages;
+    use InteractsWithPublicShell;
     use IsolatedSqliteDatabase;
 
     protected function setUp(): void
@@ -25,12 +27,9 @@ class DetailsDocumentViewTest extends TestCase
         Cache::flush();
         (new ReflectionProperty(GlobalDataComposer::class, 'resolvedData'))->setValue(null, null);
 
-        Schema::create('content', function (Blueprint $table): void {
-            $table->id();
-            $table->integer('status');
-            $table->integer('contenttype');
-            $table->integer('ordinal');
-        });
+        $this->bootAdminListPage();
+        $this->createPublicShellCountTables();
+        $this->actingAs($this->createUserWithRole('User'));
 
         config(['nntmux_settings.covers_path' => $this->makeTempDirectory('details-covers')]);
     }
@@ -38,6 +37,7 @@ class DetailsDocumentViewTest extends TestCase
     protected function tearDown(): void
     {
         (new ReflectionProperty(GlobalDataComposer::class, 'resolvedData'))->setValue(null, null);
+        $this->tearDownAdminListPage();
         $this->tearDownIsolatedDatabase();
         parent::tearDown();
     }
@@ -69,7 +69,7 @@ class DetailsDocumentViewTest extends TestCase
         $this->assertNotNull($nfoTrigger);
         $this->assertSame('details-document', $nfoTrigger->getAttribute('data-guid'));
         $dialogs = $xpath->query('//*[@data-modal-dialog]');
-        $this->assertCount(6, $dialogs);
+        $this->assertCount(7, $dialogs);
         foreach ($dialogs as $dialog) {
             $this->assertSame('dialog', $dialog->getAttribute('role'));
             $this->assertSame('true', $dialog->getAttribute('aria-modal'));

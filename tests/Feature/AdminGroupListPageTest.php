@@ -19,6 +19,7 @@ use Illuminate\Support\Str;
 use ReflectionClass;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Support\InteractsWithPublicShell;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
@@ -35,6 +36,7 @@ use Tests\TestCase;
  */
 class AdminGroupListPageTest extends TestCase
 {
+    use InteractsWithPublicShell;
     use IsolatedSqliteDatabase;
 
     /**
@@ -65,6 +67,7 @@ class AdminGroupListPageTest extends TestCase
         Cache::flush();
 
         $this->createSchema();
+        $this->createPublicShellCountTables();
         $this->seedSettings();
         $this->seedCategories();
         $this->resetGlobalComposerState();

@@ -188,6 +188,11 @@ class MovieControllerTest extends TestCase
 
     private function createSchema(): void
     {
+        Schema::create('user_series', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedInteger('users_id');
+            $table->string('videos_id');
+        });
         Schema::create('users_releases', function (Blueprint $table): void {
             $table->unsignedInteger('users_id');
             $table->unsignedInteger('releases_id');

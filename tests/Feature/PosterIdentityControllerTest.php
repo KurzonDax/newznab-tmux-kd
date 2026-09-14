@@ -27,11 +27,13 @@ use ReflectionClass;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Support\InteractsWithPublicShell;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
 final class PosterIdentityControllerTest extends TestCase
 {
+    use InteractsWithPublicShell;
     use IsolatedSqliteDatabase;
 
     protected function setUp(): void
@@ -54,6 +56,7 @@ final class PosterIdentityControllerTest extends TestCase
         );
         Cache::flush();
         $this->createSchema();
+        $this->createPublicShellCountTables();
         $this->resetGlobalComposerState();
         app(PermissionRegistrar::class)->forgetCachedPermissions();
         $this->withoutMiddleware([

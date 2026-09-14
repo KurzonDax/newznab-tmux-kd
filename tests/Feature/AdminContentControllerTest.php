@@ -22,11 +22,13 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionClass;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Support\InteractsWithPublicShell;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
 class AdminContentControllerTest extends TestCase
 {
+    use InteractsWithPublicShell;
     use IsolatedSqliteDatabase;
 
     /**
@@ -56,6 +58,7 @@ class AdminContentControllerTest extends TestCase
         Cache::flush();
 
         $this->createSchema();
+        $this->createPublicShellCountTables();
         $this->seedSettings();
         $this->seedCategories();
         $this->resetGlobalComposerState();

@@ -142,6 +142,12 @@ class MovieBrowseService
             'SUM(r.grabs)' => 'total_grabs', default => null,
         };
 
+        $recentGrabs = $scope?->isTrending() ? CoverBrowseScope::recentGrabs() : null;
+        if ($recentGrabs !== null) {
+            $aggregateOrder = 'total_grabs';
+        }
+        $grabsExpression = $recentGrabs !== null ? 'SUM(COALESCE(recent_grabs.grabs, 0))' : 'SUM(r.grabs)';
+
         if ($aggregateOrder !== null) {
             $innerOrderBy = $aggregateOrder;
             $innerExtraGroupBy = '';
@@ -157,9 +163,10 @@ class MovieBrowseService
             .'m.plot, m.genre, m.director, m.actors, m.cover, '
             .'stats.latest_postdate, stats.total_releases '
             .'FROM ('
-            .'SELECT m.imdbid, MAX(r.postdate) AS latest_postdate, MAX(r.adddate) AS latest_added, SUM(r.grabs) AS total_grabs, COUNT(r.id) AS total_releases '
+            .'SELECT m.imdbid, MAX(r.postdate) AS latest_postdate, MAX(r.adddate) AS latest_added, '.$grabsExpression.' AS total_grabs, COUNT(r.id) AS total_releases '
             .'FROM movieinfo m '
             .'INNER JOIN releases r ON r.imdbid = m.imdbid '
+            .($recentGrabs !== null ? 'LEFT JOIN ('.$recentGrabs->toSql().') recent_grabs ON recent_grabs.releases_id = r.id ' : '')
             .'WHERE '.$baseWhere.' '
             .'GROUP BY m.imdbid'.$innerExtraGroupBy.' '
             ."ORDER BY {$innerOrderBy} {$order[1]}, m.imdbid ASC "
@@ -168,7 +175,7 @@ class MovieBrowseService
             .'INNER JOIN movieinfo m ON m.imdbid = stats.imdbid '
             ."ORDER BY {$outerOrderBy} {$order[1]}, m.imdbid ASC";
 
-        $movies = MovieInfo::fromQuery($moviesSql, $scope->bindings ?? []);
+        $movies = MovieInfo::fromQuery($moviesSql, [...($recentGrabs?->getBindings() ?? []), ...($scope->bindings ?? [])]);
 
         if ($movies->isEmpty()) {
             return new CoverBrowseResults([], (int) $totalCount);

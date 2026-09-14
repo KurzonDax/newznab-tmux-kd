@@ -1,408 +1,73 @@
-<nav class="bg-(--surface-header) dark:bg-(--surface-header-dark) relative">
-    <div class="container mx-auto px-4">
-        <div class="flex items-center justify-between h-16">
-            <!-- Mobile menu button (visible below lg) -->
-            <button type="button" class="lg:hidden text-gray-300 dark:text-gray-400 hover:text-white dark:hover:text-white focus:outline-none p-2 touch-target" id="mobile-menu-toggle" aria-expanded="false" aria-controls="mobile-nav-panel">
-                <i class="fas fa-bars text-xl" id="mobile-menu-icon-open"></i>
-                <i class="fas fa-times text-xl hidden" id="mobile-menu-icon-close"></i>
-            </button>
-
-            <!-- Desktop Navigation (visible at lg+) -->
-            <div class="hidden lg:flex lg:items-center lg:space-x-1 flex-1 min-w-0" id="desktop-nav">
-                @if(isset($parentcatlist))
-                    @foreach($parentcatlist as $parentcat)
-                        @if($parentcat['id'] == App\Models\Category::TV_ROOT)
-                            <div class="relative dropdown-container shrink-0">
-                                <button class="dropdown-toggle flex items-center px-3 py-2 text-gray-300 dark:text-gray-400 hover:text-white dark:hover:text-white hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) rounded-lg transition text-sm whitespace-nowrap">
-                                    <i class="fa fa-television mr-1.5"></i>
-                                    <span>{{ $parentcat['title'] }}</span>
-                                    <i class="fas fa-chevron-down ml-1 text-xs"></i>
-                                </button>
-                                <div class="dropdown-menu absolute left-0 top-full w-48 rounded-xl shadow-lg z-50">
-                                    <a href="{{ url('/browse/' . $parentcat['title']) }}" class="block px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">All TV</a>
-                                    <div class="border-t border-white/10 dark:border-white/5"></div>
-                                    <a href="{{ route('series') }}" class="block px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">TV Series</a>
-                                    <div class="border-t border-white/10 dark:border-white/5"></div>
-                                    @foreach($parentcat['categories'] as $subcat)
-                                        @if($subcat['id'] == App\Models\Category::TV_FOREIGN)
-                                            <div class="relative submenu-container">
-                                                <a href="{{ url('/browse/TV/' . $subcat['title']) }}" class="submenu-toggle flex items-center justify-between px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">
-                                                    <span>{{ $subcat['title'] }}</span>
-                                                    <i class="fas fa-chevron-right text-xs"></i>
-                                                </a>
-                                                <div class="submenu absolute left-full top-0 w-40 bg-(--surface-dropdown) dark:bg-(--surface-dropdown-dark) rounded-xl shadow-lg z-50 ml-0.5 hidden">
-                                                    <a href="{{ url('/browse/TV/' . $subcat['title']) }}" class="block px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">All Foreign</a>
-                                                    <div class="border-t border-white/10 dark:border-white/5"></div>
-                                                    @include('partials.foreign-language-links', ['foreignCategory' => App\Models\Category::TV_FOREIGN])
-                                                </div>
-                                            </div>
-                                        @else
-                                            <a href="{{ url('/browse/TV/' . $subcat['title']) }}" class="block px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">{{ $subcat['title'] }}</a>
-                                        @endif
-                                    @endforeach
-                                </div>
-                            </div>
-                        @elseif($parentcat['id'] == App\Models\Category::MOVIE_ROOT)
-                            <div class="relative dropdown-container shrink-0">
-                                <button class="dropdown-toggle flex items-center px-3 py-2 text-gray-300 dark:text-gray-400 hover:text-white dark:hover:text-white hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) rounded-lg transition text-sm whitespace-nowrap">
-                                    <i class="fa fa-film mr-1.5"></i>
-                                    <span>{{ $parentcat['title'] }}</span>
-                                    <i class="fas fa-chevron-down ml-1 text-xs"></i>
-                                </button>
-                                <div class="dropdown-menu absolute left-0 top-full w-48 rounded-xl shadow-lg z-50">
-                                    @if(auth()->check() && auth()->user()->movieview == "1")
-                                        <a href="{{ url('/' . $parentcat['title']) }}" class="block px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">{{ $parentcat['title'] }}</a>
-                                    @else
-                                        <a href="{{ url('/browse/' . $parentcat['title']) }}" class="block px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">{{ $parentcat['title'] }}</a>
-                                    @endif
-                                    <div class="border-t border-white/10 dark:border-white/5"></div>
-                                    <a href="{{ route('mymovies') }}" class="block px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">My Movies</a>
-                                    <div class="border-t border-white/10 dark:border-white/5"></div>
-                                    @foreach($parentcat['categories'] as $subcat)
-                                        @if($subcat['id'] == App\Models\Category::MOVIE_FOREIGN)
-                                            <div class="relative submenu-container">
-                                                @if(auth()->check() && auth()->user()->movieview == "1")
-                                                    <a href="{{ url('/' . $parentcat['title'] . '/' . $subcat['title']) }}" class="submenu-toggle flex items-center justify-between px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">
-                                                        <span>{{ $subcat['title'] }}</span>
-                                                        <i class="fas fa-chevron-right text-xs"></i>
-                                                    </a>
-                                                @else
-                                                    <a href="{{ url('/browse/' . $parentcat['title'] . '/' . $subcat['title']) }}" class="submenu-toggle flex items-center justify-between px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">
-                                                        <span>{{ $subcat['title'] }}</span>
-                                                        <i class="fas fa-chevron-right text-xs"></i>
-                                                    </a>
-                                                @endif
-                                                <div class="submenu absolute left-full top-0 w-40 bg-(--surface-dropdown) dark:bg-(--surface-dropdown-dark) rounded-xl shadow-lg z-50 ml-0.5 hidden">
-                                                    @if(auth()->check() && auth()->user()->movieview == "1")
-                                                        <a href="{{ url('/' . $parentcat['title'] . '/' . $subcat['title']) }}" class="block px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">All Foreign</a>
-                                                    @else
-                                                        <a href="{{ url('/browse/' . $parentcat['title'] . '/' . $subcat['title']) }}" class="block px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">All Foreign</a>
-                                                    @endif
-                                                    <div class="border-t border-white/10 dark:border-white/5"></div>
-                                                    @include('partials.foreign-language-links', ['foreignCategory' => App\Models\Category::MOVIE_FOREIGN])
-                                                </div>
-                                            </div>
-                                        @elseif(auth()->check() && auth()->user()->movieview == "1")
-                                            <a href="{{ url('/' . $parentcat['title'] . '/' . $subcat['title']) }}" class="block px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">{{ $subcat['title'] }}</a>
-                                        @else
-                                            <a href="{{ url('/browse/' . $parentcat['title'] . '/' . $subcat['title']) }}" class="block px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">{{ $subcat['title'] }}</a>
-                                        @endif
-                                    @endforeach
-                                </div>
-                            </div>
-                        @elseif($parentcat['id'] == App\Models\Category::GAME_ROOT)
-                            <div class="relative dropdown-container shrink-0">
-                                <button class="dropdown-toggle flex items-center px-3 py-2 text-gray-300 dark:text-gray-400 hover:text-white dark:hover:text-white hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) rounded-lg transition text-sm whitespace-nowrap">
-                                    <i class="fa fa-gamepad mr-1.5"></i>
-                                    <span>{{ $parentcat['title'] }}</span>
-                                    <i class="fas fa-chevron-down ml-1 text-xs"></i>
-                                </button>
-                                <div class="dropdown-menu absolute left-0 top-full w-48 rounded-xl shadow-lg z-50">
-                                    @if(auth()->check() && auth()->user()->consoleview == "1")
-                                        <a href="{{ url('/' . $parentcat['title']) }}" class="block px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">{{ $parentcat['title'] }}</a>
-                                    @else
-                                        <a href="{{ url('/browse/' . $parentcat['title']) }}" class="block px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">{{ $parentcat['title'] }}</a>
-                                    @endif
-                                    <div class="border-t border-white/10 dark:border-white/5"></div>
-                                    @foreach($parentcat['categories'] as $subcat)
-                                        @if(auth()->check() && auth()->user()->consoleview == "1")
-                                            <a href="{{ url('/' . $parentcat['title'] . '/' . $subcat['title']) }}" class="block px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">{{ $subcat['title'] }}</a>
-                                        @else
-                                            <a href="{{ url('/browse/' . $parentcat['title'] . '/' . $subcat['title']) }}" class="block px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">{{ $subcat['title'] }}</a>
-                                        @endif
-                                    @endforeach
-                                </div>
-                            </div>
-                        @elseif($parentcat['id'] == App\Models\Category::PC_ROOT)
-                            <div class="relative dropdown-container shrink-0">
-                                <button class="dropdown-toggle flex items-center px-3 py-2 text-gray-300 dark:text-gray-400 hover:text-white dark:hover:text-white hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) rounded-lg transition text-sm whitespace-nowrap">
-                                    <i class="fa fa-desktop mr-1.5"></i>
-                                    <span>{{ $parentcat['title'] }}</span>
-                                    <i class="fas fa-chevron-down ml-1 text-xs"></i>
-                                </button>
-                                <div class="dropdown-menu absolute left-0 top-full w-48 rounded-xl shadow-lg z-50">
-                                    <a href="{{ url('/browse/' . $parentcat['title']) }}" class="block px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">{{ $parentcat['title'] }}</a>
-                                    <div class="border-t border-white/10 dark:border-white/5"></div>
-                                    @foreach($parentcat['categories'] as $subcat)
-                                        @if(auth()->check() && auth()->user()->gameview == "1" && $subcat['id'] == App\Models\Category::PC_GAMES)
-                                            <a href="{{ url('/' . $subcat['title']) }}" class="block px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">{{ $subcat['title'] }}</a>
-                                        @else
-                                            <a href="{{ url('/browse/' . $parentcat['title'] . '/' . $subcat['title']) }}" class="block px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">{{ $subcat['title'] }}</a>
-                                        @endif
-                                    @endforeach
-                                </div>
-                            </div>
-                        @else
-                            @php
-                                $desktopIconMap = [
-                                    App\Models\Category::MUSIC_ROOT => 'fa-music',
-                                    App\Models\Category::BOOKS_ROOT => 'fa-book',
-                                    App\Models\Category::XXX_ROOT => 'fa-ban',
-                                ];
-                                $desktopIcon = $desktopIconMap[$parentcat['id']] ?? 'fa-folder';
-                            @endphp
-                            <div class="relative dropdown-container shrink-0">
-                                <button class="dropdown-toggle flex items-center px-3 py-2 text-gray-300 dark:text-gray-400 hover:text-white dark:hover:text-white hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) rounded-lg transition text-sm whitespace-nowrap">
-                                    <i class="fa {{ $desktopIcon }} mr-1.5"></i>
-                                    <span>{{ $parentcat['title'] }}</span>
-                                    <i class="fas fa-chevron-down ml-1 text-xs"></i>
-                                </button>
-                                <div class="dropdown-menu absolute left-0 top-full w-48 rounded-xl shadow-lg z-50">
-                                    <a href="{{ url('/browse/' . $parentcat['title']) }}" class="block px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">{{ $parentcat['title'] }}</a>
-                                    @if(isset($parentcat['categories']) && count($parentcat['categories']) > 0)
-                                        <div class="border-t border-white/10 dark:border-white/5"></div>
-                                        @foreach($parentcat['categories'] as $subcat)
-                                            <a href="{{ url('/browse/' . $parentcat['title'] . '/' . $subcat['title']) }}" class="block px-4 py-2 text-sm text-gray-300 dark:text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white dark:hover:text-white">{{ $subcat['title'] }}</a>
-                                        @endforeach
-                                    @endif
-                                </div>
-                            </div>
-                        @endif
+@auth
+<header class="public-header" data-public-header x-data="publicNavigation" x-on:keydown.window="handleShortcut" x-on:click.outside="closeMenus">
+    <a href="{{ url('/') }}" class="public-logo"><i class="fas fa-cubes" aria-hidden="true"></i>{{ config('app.name') }}</a>
+    <nav class="public-primary-nav" aria-label="Main navigation">
+        <button type="button" class="public-nav-item" x-ref="browseTrigger" x-on:click="toggleBrowse" x-bind:aria-expanded="browseOpen" aria-controls="browse-menu" aria-label="Browse categories" @if(request()->is('browse*', 'title*', 'details*') && request('sort') !== 'grabs') aria-current="true" @endif>
+            <i class="fas fa-compass public-desktop-icon" aria-hidden="true"></i><i class="fas fa-bars public-mobile-icon" aria-hidden="true"></i><span class="public-nav-label">Browse</span><i class="fas fa-chevron-down public-nav-label" aria-hidden="true"></i>
+        </button>
+        <div id="browse-menu" class="card public-menu public-mega-menu" x-cloak x-show="browseOpen" x-on:click="navigate">
+            @foreach($navigationRoots as $navigationRoot)
+                @php($root = $navigationRoot['root'])
+                <section>
+                    <a href="{{ url('/browse/'.$root->value) }}" data-browse-root class="public-menu-root"><i class="{{ $root->icon() }}" aria-hidden="true"></i>{{ $root->label() }}</a>
+                    @foreach($navigationRoot['categories'] as $category)
+                        <a href="{{ url('/browse/'.$root->value.'/'.$category['id']) }}">{{ $category['title'] }}</a>
                     @endforeach
-                @endif
-            </div>
-
-            <!-- Right side: Search and User Menu -->
-            <div class="flex items-center space-x-2 lg:space-x-4 ml-auto">
-                <!-- Mobile Search Toggle (visible below lg) -->
-                <button type="button" class="lg:hidden text-gray-300 hover:text-white p-2 touch-target" id="mobile-search-toggle">
-                    <i class="fa fa-search text-lg"></i>
-                </button>
-
-                <!-- Desktop Search Form with Autocomplete (visible at lg+) -->
-                <form method="GET" action="{{ route('search') }}" class="hidden lg:flex items-center relative" id="header-search-form">
-                    <select name="t" class="bg-(--surface-hover) dark:bg-(--surface-hover-dark) text-white text-sm rounded-l-lg px-3 py-2 border-r border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500">
-                        <option value="-1">All</option>
-                        @if(isset($parentcatlist))
-                            @foreach($parentcatlist as $parentcat)
-                                <option value="{{ $parentcat['id'] }}" {{ ($header_menu_cat ?? '') == $parentcat['id'] ? 'selected' : '' }} class="font-semibold">{{ $parentcat['title'] }}</option>
-                                @foreach($parentcat['categories'] as $subcat)
-                                    <option value="{{ $subcat['id'] }}" {{ ($header_menu_cat ?? '') == $subcat['id'] ? 'selected' : '' }}>&nbsp;&nbsp;{{ $subcat['title'] }}</option>
-                                @endforeach
-                            @endforeach
-                        @endif
-                    </select>
-                    <div class="relative">
-                        <input type="search"
-                               name="search"
-                               id="header-search-input"
-                               value="{{ $header_menu_search ?? '' }}"
-                               placeholder="Search..."
-                               autocomplete="off"
-                               class="bg-(--surface-hover) dark:bg-(--surface-hover-dark) text-white text-sm px-3 py-2 w-40 xl:w-48 focus:outline-none focus:ring-2 focus:ring-primary-500">
-                        <!-- Autocomplete dropdown for header -->
-                        <div id="header-autocomplete-dropdown" class="hidden absolute z-50 w-64 mt-1 bg-(--surface-card) dark:bg-(--surface-card-dark) border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-y-auto right-0">
-                        </div>
-                    </div>
-                    <button type="submit" class="bg-primary-600 dark:bg-primary-700 hover:bg-primary-700 dark:hover:bg-primary-800 text-white px-4 py-2 rounded-r-lg transition">
-                        <i class="fa fa-search"></i>
-                    </button>
-                </form>
-
-                <!-- User Menu -->
-                @auth
-                    <div class="relative dropdown-container">
-                        <button class="dropdown-toggle flex items-center space-x-2 text-gray-300 hover:text-white px-2 lg:px-3 py-2 rounded-lg hover:bg-(--surface-chrome-border) transition">
-                            <span class="w-8 h-8 bg-primary-600 dark:bg-primary-700 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                                {{ strtoupper(substr(auth()->user()->username, 0, 1)) }}
-                            </span>
-                            <span class="hidden lg:block text-sm">{{ auth()->user()->username }}</span>
-                            <i class="fas fa-chevron-down text-xs hidden lg:inline"></i>
-                        </button>
-                        <div class="dropdown-menu absolute right-0 top-full w-56 rounded-xl shadow-lg z-50">
-                            <a href="{{ url('/cart/index') }}" class="block px-4 py-2 text-sm text-gray-300 hover:bg-(--surface-chrome-border) hover:text-white">
-                                <i class="fa fa-shopping-basket fa-fw mr-2"></i>My Download Basket
-                            </a>
-                            <a href="{{ route('mymovies') }}" class="block px-4 py-2 text-sm text-gray-300 hover:bg-(--surface-chrome-border) hover:text-white">
-                                <i class="fa fa-film fa-fw mr-2"></i>My Movies
-                            </a>
-                            <a href="{{ route('myshows') }}" class="block px-4 py-2 text-sm text-gray-300 hover:bg-(--surface-chrome-border) hover:text-white">
-                                <i class="fa fa-television fa-fw mr-2"></i>My Shows
-                            </a>
-                            <a href="{{ route('invitations.index') }}" class="block px-4 py-2 text-sm text-gray-300 hover:bg-(--surface-chrome-border) hover:text-white">
-                                <i class="fa fa-envelope fa-fw mr-2"></i>My Invitations
-                            </a>
-                            <div class="border-t border-white/10"></div>
-                            <a href="{{ route('profileedit') }}" class="block px-4 py-2 text-sm text-gray-300 hover:bg-(--surface-chrome-border) hover:text-white">
-                                <i class="fa fa-cog fa-fw mr-2"></i>Account Settings
-                            </a>
-                            @if(auth()->user()->hasRole('Admin'))
-                                <a href="{{ url('/admin/index') }}" class="block px-4 py-2 text-sm text-gray-300 hover:bg-(--surface-chrome-border) hover:text-white">
-                                    <i class="fa fa-cogs fa-fw mr-2"></i>Admin
-                                </a>
-                            @endif
-                            <div class="border-t border-white/10"></div>
-                            <!-- Theme Switcher -->
-                            <div class="px-4 py-2">
-                                <span class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Theme</span>
-                                @include('partials.theme-switcher', ['switcherId' => 'dropdown-theme-switcher', 'btnClass' => 'dropdown-theme-btn', 'mobile' => false])
-                            </div>
-                            <!-- Color Scheme -->
-                            <div class="px-4 py-2">
-                                <span class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Color Scheme</span>
-                                @include('partials.scheme-switcher', ['switcherId' => 'dropdown-scheme-switcher', 'btnClass' => 'dropdown-scheme-btn', 'mobile' => false])
-                            </div>
-                            <div class="border-t border-white/10"></div>
-                            <a href="{{ route('profile') }}" class="block px-4 py-2 text-sm text-gray-300 hover:bg-(--surface-chrome-border) hover:text-white">
-                                <i class="fa fa-user fa-fw mr-2"></i>Profile
-                            </a>
-                            <a href="{{ route('logout') }}" data-logout class="block px-4 py-2 text-sm text-gray-300 hover:bg-(--surface-chrome-border) hover:text-white">
-                                <i class="fas fa-sign-out-alt fa-fw mr-2"></i>Sign Out
-                            </a>
-                            <form id="logout-form" action="{{ route('logout') }}" method="POST" class="hidden">
-                                @csrf
-                            </form>
-                        </div>
-                    </div>
-                @else
-                    <!-- Guest Links -->
-                    <div class="flex items-center space-x-2">
-                        <a href="{{ route('login') }}" class="px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-(--surface-chrome-border) rounded-lg transition">
-                            <i class="fa fa-sign-in mr-1"></i><span class="hidden sm:inline">Login</span>
-                        </a>
-                        <x-button-link href="{{ route('register') }}" icon="fa fa-user-plus"><span class="hidden sm:inline">Register</span></x-button-link>
-                    </div>
-                @endauth
+                    @if($root === \App\Enums\BrowseRoot::Movies)
+                        <a href="{{ route('trending-movies') }}"><i class="fas fa-fire" aria-hidden="true"></i>Trending Movies</a>
+                    @endif
+                    @if($root === \App\Enums\BrowseRoot::Tv)
+                        <a href="{{ route('trending-tv') }}"><i class="fas fa-fire" aria-hidden="true"></i>Trending TV</a>
+                        <a href="{{ route('myshows') }}"><i class="fas fa-heart" aria-hidden="true"></i>My Shows</a>
+                    @endif
+                </section>
+            @endforeach
+            <div class="public-menu-footer">
+                <a href="{{ route('browse.all') }}">All releases</a><a href="{{ route('browsegroup') }}">Groups</a><a href="{{ route('poster-identity') }}">Poster identities</a>
             </div>
         </div>
-    </div>
-
-    <!-- Mobile Search Form (slides down below header, visible below lg) -->
-    <div id="mobile-search-form" class="lg:hidden hidden bg-(--surface-header) dark:bg-(--surface-header-dark) border-t border-white/10 dark:border-white/5 shadow-lg z-50">
-        <div class="container mx-auto px-4 py-3">
-            <form method="GET" action="{{ route('search') }}" class="space-y-3" id="mobile-search-form-el">
-                <select name="t" class="w-full bg-(--surface-hover) dark:bg-(--surface-hover-dark) text-white text-sm rounded-lg px-3 py-3 focus:outline-none focus:ring-2 focus:ring-primary-500 touch-target">
-                    <option value="-1">All Categories</option>
-                    @if(isset($parentcatlist))
-                        @foreach($parentcatlist as $parentcat)
-                            <option value="{{ $parentcat['id'] }}" {{ ($header_menu_cat ?? '') == $parentcat['id'] ? 'selected' : '' }} class="font-semibold">{{ $parentcat['title'] }}</option>
-                            @foreach($parentcat['categories'] as $subcat)
-                                <option value="{{ $subcat['id'] }}" {{ ($header_menu_cat ?? '') == $subcat['id'] ? 'selected' : '' }}>&nbsp;&nbsp;{{ $subcat['title'] }}</option>
-                            @endforeach
-                        @endforeach
-                    @endif
-                </select>
-                <div class="relative">
-                    <input type="search"
-                           name="search"
-                           id="mobile-search-input"
-                           value="{{ $header_menu_search ?? '' }}"
-                           placeholder="Search releases..."
-                           autocomplete="off"
-                           class="w-full bg-(--surface-hover) dark:bg-(--surface-hover-dark) text-white text-sm px-3 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 touch-target">
-                    <!-- Autocomplete dropdown for mobile -->
-                    <div id="mobile-autocomplete-dropdown" class="hidden absolute z-50 w-full mt-1 bg-(--surface-card) dark:bg-(--surface-card-dark) border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                    </div>
-                </div>
-                <x-button type="submit" size="lg" class="w-full touch-target" icon="fa fa-search">Search</x-button>
-            </form>
+        @if(collect($navigationRoots)->contains(fn ($item) => $item['root'] === \App\Enums\BrowseRoot::Movies))
+        <a href="{{ route('trending-movies') }}" class="public-nav-item public-wide-nav" @if(request()->is('trending*') || request('sort') === 'grabs') aria-current="page" @endif><i class="fas fa-fire" aria-hidden="true"></i>Trending</a>
+        @endif
+        <a href="{{ route($userdata->getDirectPermissions()->contains('name', 'view movies') ? 'mymovies' : 'myshows') }}" class="public-nav-item public-wide-nav" @if(request()->is('mymovies*', 'myshows*', 'watchlist*')) aria-current="page" @endif><i class="fas fa-heart" aria-hidden="true"></i>Watchlist @if($watchlistCount > 0)<span data-watchlist-count>{{ $watchlistCount }}</span>@endif</a>
+    </nav>
+    <form action="{{ url('/search') }}" method="GET" role="search" class="public-search" x-ref="searchForm" data-suggest-url="{{ route('api.search.suggest') }}" x-on:submit="closeSuggestions">
+        <label class="sr-only" for="header-search-scope">Search scope</label>
+        <x-select id="header-search-scope" name="t" x-ref="searchScope" x-on:change="fetchSuggestions" control-size="sm" class="public-search-scope">
+            <option value="0">All</option>
+            @foreach($navigationRoots as $navigationRoot)
+                <option value="{{ $navigationRoot['root']->categoryId() }}" @selected(is_scalar(request('t')) && (string) request('t') === (string) $navigationRoot['root']->categoryId())>{{ $navigationRoot['root']->label() }}</option>
+            @endforeach
+        </x-select>
+        <label class="sr-only" for="header-search-input">Search releases</label>
+        <x-input id="header-search-input" x-ref="searchInput" type="search" name="q" value="{{ is_string(request('q')) ? request('q') : '' }}" placeholder="Search releases…  ( / )" class="public-search-input" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="search-suggestions" ::aria-expanded="suggestionsOpen" ::aria-activedescendant="activeSuggestionId" x-on:input="closeSuggestions" x-on:input.debounce.350ms="fetchSuggestions" x-on:keydown="searchKey" />
+        <div id="search-suggestions" class="card public-menu public-search-suggestions" role="listbox" aria-label="Search suggestions" x-cloak x-show="suggestionsOpen">
+            <template x-for="suggestion in suggestions" x-bind:key="suggestion.id">
+                <a x-bind:href="suggestion.url" x-bind:id="suggestion.id" x-bind:aria-selected="suggestionIndex === suggestion.index" role="option" x-text="suggestion.label"></a>
+            </template>
         </div>
-    </div>
-
-    <!-- Mobile Navigation Panel (slides down below header, visible below lg) -->
-    <div id="mobile-nav-panel" class="lg:hidden hidden bg-(--surface-header) dark:bg-(--surface-header-dark) border-t border-white/10 dark:border-white/5 shadow-lg z-50 max-h-[70vh] overflow-y-auto overscroll-contain">
-        <div class="container mx-auto px-4 py-3">
-            @if(isset($parentcatlist))
-                <div class="space-y-1">
-                    @foreach($parentcatlist as $parentcat)
-                        <div class="mobile-nav-section">
-                            @php
-                                $iconMap = [
-                                    App\Models\Category::TV_ROOT => 'fa-television',
-                                    App\Models\Category::MOVIE_ROOT => 'fa-film',
-                                    App\Models\Category::GAME_ROOT => 'fa-gamepad',
-                                    App\Models\Category::PC_ROOT => 'fa-desktop',
-                                    App\Models\Category::MUSIC_ROOT => 'fa-music',
-                                    App\Models\Category::BOOKS_ROOT => 'fa-book',
-                                    App\Models\Category::XXX_ROOT => 'fa-ban',
-                                ];
-                                $catIcon = $iconMap[$parentcat['id']] ?? 'fa-folder';
-                            @endphp
-                            <button type="button" class="mobile-nav-toggle w-full flex items-center justify-between px-4 py-3 text-gray-200 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) rounded-lg transition touch-target">
-                                <div class="flex items-center">
-                                    <i class="fa {{ $catIcon }} fa-fw mr-3 text-gray-400"></i>
-                                    <span class="font-medium">{{ $parentcat['title'] }}</span>
-                                </div>
-                                <i class="fas fa-chevron-down text-xs text-gray-400 transition-transform duration-200 mobile-nav-chevron"></i>
-                            </button>
-                            <div class="mobile-nav-submenu hidden ml-4 mt-1 space-y-0.5 pb-1">
-                                @if($parentcat['id'] == App\Models\Category::TV_ROOT)
-                                    <a href="{{ url('/browse/' . $parentcat['title']) }}" class="block px-4 py-2.5 text-sm text-gray-300 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white rounded-lg transition touch-target">All TV</a>
-                                    <a href="{{ route('series') }}" class="block px-4 py-2.5 text-sm text-gray-300 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white rounded-lg transition touch-target">TV Series</a>
-                                @elseif($parentcat['id'] == App\Models\Category::MOVIE_ROOT)
-                                    @if(auth()->check() && auth()->user()->movieview == "1")
-                                        <a href="{{ url('/' . $parentcat['title']) }}" class="block px-4 py-2.5 text-sm text-gray-300 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white rounded-lg transition touch-target">{{ $parentcat['title'] }}</a>
-                                    @else
-                                        <a href="{{ url('/browse/' . $parentcat['title']) }}" class="block px-4 py-2.5 text-sm text-gray-300 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white rounded-lg transition touch-target">{{ $parentcat['title'] }}</a>
-                                    @endif
-                                    <a href="{{ route('mymovies') }}" class="block px-4 py-2.5 text-sm text-gray-300 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white rounded-lg transition touch-target">My Movies</a>
-                                @elseif($parentcat['id'] == App\Models\Category::GAME_ROOT)
-                                    @if(auth()->check() && auth()->user()->consoleview == "1")
-                                        <a href="{{ url('/' . $parentcat['title']) }}" class="block px-4 py-2.5 text-sm text-gray-300 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white rounded-lg transition touch-target">{{ $parentcat['title'] }}</a>
-                                    @else
-                                        <a href="{{ url('/browse/' . $parentcat['title']) }}" class="block px-4 py-2.5 text-sm text-gray-300 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white rounded-lg transition touch-target">{{ $parentcat['title'] }}</a>
-                                    @endif
-                                @elseif($parentcat['id'] == App\Models\Category::PC_ROOT)
-                                    <a href="{{ url('/browse/' . $parentcat['title']) }}" class="block px-4 py-2.5 text-sm text-gray-300 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white rounded-lg transition touch-target">{{ $parentcat['title'] }}</a>
-                                @else
-                                    <a href="{{ url('/browse/' . $parentcat['title']) }}" class="block px-4 py-2.5 text-sm text-gray-300 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white rounded-lg transition touch-target">All {{ $parentcat['title'] }}</a>
-                                @endif
-
-                                @if(isset($parentcat['categories']))
-                                    @foreach($parentcat['categories'] as $subcat)
-                                        @if($parentcat['id'] == App\Models\Category::TV_ROOT)
-                                            <a href="{{ url('/browse/TV/' . $subcat['title']) }}" class="block px-4 py-2.5 text-sm text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white rounded-lg transition touch-target">{{ $subcat['title'] }}</a>
-                                        @elseif($parentcat['id'] == App\Models\Category::MOVIE_ROOT)
-                                            @if(auth()->check() && auth()->user()->movieview == "1")
-                                                <a href="{{ url('/' . $parentcat['title'] . '/' . $subcat['title']) }}" class="block px-4 py-2.5 text-sm text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white rounded-lg transition touch-target">{{ $subcat['title'] }}</a>
-                                            @else
-                                                <a href="{{ url('/browse/' . $parentcat['title'] . '/' . $subcat['title']) }}" class="block px-4 py-2.5 text-sm text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white rounded-lg transition touch-target">{{ $subcat['title'] }}</a>
-                                            @endif
-                                        @elseif($parentcat['id'] == App\Models\Category::GAME_ROOT)
-                                            @if(auth()->check() && auth()->user()->consoleview == "1")
-                                                <a href="{{ url('/' . $parentcat['title'] . '/' . $subcat['title']) }}" class="block px-4 py-2.5 text-sm text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white rounded-lg transition touch-target">{{ $subcat['title'] }}</a>
-                                            @else
-                                                <a href="{{ url('/browse/' . $parentcat['title'] . '/' . $subcat['title']) }}" class="block px-4 py-2.5 text-sm text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white rounded-lg transition touch-target">{{ $subcat['title'] }}</a>
-                                            @endif
-                                        @elseif($parentcat['id'] == App\Models\Category::PC_ROOT && auth()->check() && auth()->user()->gameview == "1" && $subcat['id'] == App\Models\Category::PC_GAMES)
-                                            <a href="{{ url('/' . $subcat['title']) }}" class="block px-4 py-2.5 text-sm text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white rounded-lg transition touch-target">{{ $subcat['title'] }}</a>
-                                        @else
-                                            <a href="{{ url('/browse/' . $parentcat['title'] . '/' . $subcat['title']) }}" class="block px-4 py-2.5 text-sm text-gray-400 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white rounded-lg transition touch-target">{{ $subcat['title'] }}</a>
-                                        @endif
-                                    @endforeach
-                                @endif
-                            </div>
-                        </div>
-                    @endforeach
-                </div>
-            @endif
-
-            <!-- Mobile User Quick Links -->
-            @auth
-                <div class="border-t border-white/10 dark:border-white/5 mt-3 pt-3 space-y-0.5">
-                    <a href="{{ url('/cart/index') }}" class="flex items-center px-4 py-2.5 text-sm text-gray-300 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white rounded-lg transition touch-target">
-                        <i class="fa fa-shopping-basket fa-fw mr-3 text-gray-400"></i>My Download Basket
-                    </a>
-                    <a href="{{ route('profileedit') }}" class="flex items-center px-4 py-2.5 text-sm text-gray-300 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white rounded-lg transition touch-target">
-                        <i class="fa fa-cog fa-fw mr-3 text-gray-400"></i>Account Settings
-                    </a>
-                    @if(auth()->user()->hasRole('Admin'))
-                        <a href="{{ url('/admin/index') }}" class="flex items-center px-4 py-2.5 text-sm text-gray-300 hover:bg-(--surface-chrome-border) dark:hover:bg-(--surface-chrome-border-dark) hover:text-white rounded-lg transition touch-target">
-                            <i class="fa fa-cogs fa-fw mr-3 text-gray-400"></i>Admin
-                        </a>
-                    @endif
-                    <!-- Mobile Theme Switcher -->
-                    <div class="px-4 py-2.5">
-                        <span class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Theme</span>
-                        @include('partials.theme-switcher', ['switcherId' => 'mobile-theme-switcher', 'btnClass' => 'mobile-theme-btn', 'mobile' => true])
-                    </div>
-                    <!-- Mobile Color Scheme -->
-                    <div class="px-4 py-2.5">
-                        <span class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Color Scheme</span>
-                        @include('partials.scheme-switcher', ['switcherId' => 'mobile-scheme-switcher', 'btnClass' => 'mobile-scheme-btn', 'mobile' => true])
-                    </div>
-                </div>
-            @endauth
+    </form>
+    <a href="{{ route('cart.index') }}" class="public-nav-item public-basket" aria-label="Basket"><i class="fas fa-shopping-basket" aria-hidden="true"></i><span class="public-nav-label">Basket</span><span class="cart-count" data-basket-count x-text="$store.cart.count">{{ $basketCount }}</span></a>
+    <button type="button" class="public-avatar" x-ref="userTrigger" x-on:click="toggleUser" x-bind:aria-expanded="userOpen" aria-controls="user-menu" aria-label="Open user menu">{{ mb_strtoupper(mb_substr($userdata->username, 0, 1)) }}</button>
+    <div id="user-menu" class="card public-menu public-user-menu" x-cloak x-show="userOpen" x-on:click="navigate">
+        <a href="{{ route('profile') }}"><i class="fas fa-user" aria-hidden="true"></i>Account</a>
+        <a href="{{ route($userdata->getDirectPermissions()->contains('name', 'view movies') ? 'mymovies' : 'myshows') }}"><i class="fas fa-heart" aria-hidden="true"></i>Watchlist @if($watchlistCount > 0)<span data-watchlist-count>{{ $watchlistCount }}</span>@endif</a>
+        <a href="{{ route('cart.index') }}"><i class="fas fa-shopping-basket" aria-hidden="true"></i>Basket <span data-basket-count x-text="$store.cart.count">{{ $basketCount }}</span></a>
+        <div class="public-menu-divider"></div>
+        <div class="public-theme-label">Theme</div>
+        <div class="public-theme-options" role="group" aria-label="Theme">
+            @foreach(['light' => 'Light', 'dark' => 'Dark', 'system' => 'System'] as $value => $label)
+                <button type="button" x-on:click="$store.theme.set('{{ $value }}')" x-bind:aria-pressed="$store.theme.current === '{{ $value }}'">{{ $label }}</button>
+            @endforeach
         </div>
+        <div class="public-theme-label">Scheme</div>
+        <div class="public-theme-options" role="group" aria-label="Color scheme">
+            @foreach(['blue' => 'Blue', 'emerald' => 'Emerald', 'violet' => 'Violet'] as $value => $label)
+                <button type="button" x-on:click="$store.theme.setScheme('{{ $value }}')" x-bind:aria-pressed="$store.theme.colorScheme === '{{ $value }}'">{{ $label }}</button>
+            @endforeach
+        </div>
+        <div class="public-menu-divider"></div>
+        <form action="{{ route('logout') }}" method="POST">@csrf<x-button type="submit" variant="ghost" size="sm" class="public-menu-signout" icon="fas fa-sign-out-alt">Sign out</x-button></form>
     </div>
-</nav>
+</header>
+@endauth

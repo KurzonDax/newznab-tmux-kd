@@ -54,13 +54,19 @@ final class ReleaseBrowserQuery
     /** @return array<string, string> */
     public function sortOptions(ReleaseBrowserState $state): array
     {
-        return [...$this->metadata->sorts($state->root), ...($state->view === 'covers' && $state->root === BrowseRoot::Movies ? ['grabs' => 'Most grabbed'] : [])];
+        return [...$this->metadata->sorts($state->root), ...($state->view === 'covers' && in_array($state->root, [BrowseRoot::Movies, BrowseRoot::Tv], true) ? ['grabs' => 'Grabs · last 7 days'] : [])];
     }
 
     public function matchingQuery(ReleaseBrowserState $state, User $user): Builder
     {
         $query = $this->baseQuery($state, $user);
         $this->metadata->filter($query, $state->root, $state->filters);
+
+        if ($state->view === 'covers' && $state->sort === 'grabs' && in_array($state->root, [BrowseRoot::Movies, BrowseRoot::Tv], true)) {
+            $key = $state->root === BrowseRoot::Movies ? 'r.imdbid' : 'r.videos_id';
+            $downloadedTitles = (clone $query)->joinSub(CoverBrowseScope::recentGrabs(), 'recent_grabs', 'recent_grabs.releases_id', '=', 'r.id')->select($key);
+            $query->whereIn($key, $downloadedTitles);
+        }
 
         return $query;
     }

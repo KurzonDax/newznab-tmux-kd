@@ -14,6 +14,7 @@ use App\Services\GamesService;
 use App\Services\MovieBrowseService;
 use App\Services\MusicService;
 use App\Support\CoverBrowseResults;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -160,11 +161,15 @@ final class ReleaseCoverBrowser
         $query = app(ReleaseBrowserQuery::class)->matchingQuery($state, $user)
             ->whereNotNull('m.id')->where('m.title', '!=', '');
         $total = (clone $query)->distinct()->count('m.id');
+        if ($state->sort === 'grabs') {
+            $query->leftJoinSub(CoverBrowseScope::recentGrabs(), 'recent_grabs', 'recent_grabs.releases_id', '=', 'r.id');
+        }
         $covers = (clone $query)->select(['m.id', 'm.title', 'm.started', 'tv_info.publisher'])
             ->selectRaw('COUNT(r.id) AS total_releases, MAX(r.adddate) AS latest_added')
+            ->when($state->sort === 'grabs', fn (Builder $query): Builder => $query->selectRaw('SUM(COALESCE(recent_grabs.grabs, 0)) AS total_grabs'))
             ->groupBy('m.id', 'm.title', 'm.started', 'tv_info.publisher')
             ->orderBy(match ($state->sort) {
-                'title' => 'm.title', 'year' => 'm.started', default => 'latest_added'
+                'title' => 'm.title', 'year' => 'm.started', 'grabs' => 'total_grabs', default => 'latest_added'
             }, $state->sort === 'title' ? 'asc' : 'desc')
             ->orderBy('m.id')
             ->offset(($state->page - 1) * $state->per)->limit($state->per)->get();
