@@ -192,7 +192,9 @@ class NzbService
                 return NzbCreationResult::deterministic("Binary {$emptyBinary->id} has no parts.", $collectionIds);
             }
 
-            $groupsByCollection = $this->loadCollectionGroups((int) $release->id, $collections);
+            $groupsByCollection = $publication === null
+                ? $this->loadCollectionGroups((int) $release->id, $collections)
+                : array_fill_keys($collectionIds, [RecoveryPlan::fromArray(json_decode($publication->sealed_plan, true, flags: JSON_THROW_ON_ERROR))->group]);
         } catch (Throwable $e) {
             return NzbCreationResult::transient('Failed to load NZB binaries or parts: '.$e->getMessage(), $collectionIds);
         }

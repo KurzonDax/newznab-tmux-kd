@@ -42,6 +42,13 @@ final class RecoveryLateCapture
             }
             unset($timestamps);
             foreach ($bundles as $bundle) {
+                if ($media && $bundles->count() === 1) {
+                    $bundle = $connection->table('obfuscation_recovery_bundles')->where('id', $bundle->id)->lockForUpdate()->first();
+                }
+                if ($media && $bundles->count() === 1 && (new RecoveryVerifiedMembership)->unrelated($connection, $bundle,
+                    array_values(array_filter($rows, static fn (array $row): bool => $row['profile'] === RecoveryAlgorithm::Media->value)))) {
+                    continue;
+                }
                 $timestamps = $family['partitions'][$media ? 'media' : $bundle->key_digest] ?? [];
                 if (self::overlaps($timestamps, max(0, (int) $bundle->start_ms - $gap), (int) $bundle->end_ms + $gap)) {
                     $affected[(int) $bundle->id] = true;

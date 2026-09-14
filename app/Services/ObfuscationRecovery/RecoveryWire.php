@@ -55,7 +55,7 @@ final class RecoveryWire
     }
 
     public function fetch(NntpProvider $provider, string $messageId, int $maximumDecoded, bool $prefixOnly,
-        int $reservedBytes, int $closeAllowance, bool $declarationOnly = false): RecoveryTransfer
+        int $reservedBytes, int $closeAllowance, bool $declarationOnly = false, bool $anchorOnly = false): RecoveryTransfer
     {
         if ($this->used || $reservedBytes > 2097152 || $closeAllowance < 32768 || $closeAllowance >= $reservedBytes
             || ($prefixOnly && ($maximumDecoded > 16384 || $reservedBytes > 196608))) {
@@ -64,7 +64,7 @@ final class RecoveryWire
         $this->used = true;
         $identity = new RecoveryIdentity;
         $messageId = $identity->messageId($messageId);
-        $decoder = new RecoveryYenc($maximumDecoded, $prefixOnly, $declarationOnly);
+        $decoder = new RecoveryYenc($maximumDecoded, $prefixOnly, $declarationOnly, $anchorOnly);
         $start = self::clock();
         $this->deadline = $start + $this->requestTimeout;
         $this->maximumPlaintext = $reservedBytes - $closeAllowance;

@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace Tests\Feature\ObfuscationRecovery;
 
+use App\Services\ObfuscationRecovery\RecoveryBudget;
 use App\Services\ObfuscationRecovery\RecoveryConfig;
+use App\Services\ObfuscationRecovery\RecoveryProcess;
 use App\Services\ObfuscationRecovery\RecoverySlots;
+use App\Services\ObfuscationRecovery\RecoveryStage;
+use App\Services\ObfuscationRecovery\RecoveryWork;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -16,6 +20,80 @@ use Tests\TestCase;
 final class RecoverySlotsTest extends TestCase
 {
     use IsolatedSqliteDatabase;
+
+    public function test_process_proof_preserves_foreign_namespaces_live_owners_and_legacy_unknowns(): void
+    {
+        $local = RecoveryProcess::current();
+        $this->assertSame('alive', $local->status());
+        $this->assertSame('dead', RecoveryProcess::inDomain($local->machine, $local->boot, $local->namespace, $local->pid, '0')->status());
+        $this->assertSame('unknown', RecoveryProcess::inDomain(hash('sha256', 'foreign'), hash('sha256', 'older'), $local->namespace, 99999999, '0')->status());
+        $this->assertSame('unknown', RecoveryProcess::inDomain($local->machine, $local->boot, hash('sha256', 'other-namespace'), 99999999, '0')->status());
+        $this->assertSame('unknown', (new RecoveryProcess(hash('sha256', 'legacy'), 99999999, '0'))->status());
+        $legacy = hash('sha256', file_get_contents('/proc/sys/kernel/random/boot_id').'|'.readlink('/proc/self/ns/pid').'|'.gethostname());
+        $this->assertSame('alive', (new RecoveryProcess($legacy, $local->pid, $local->started))->status());
+        $this->assertSame('dead', (new RecoveryProcess($legacy, 99999999, '0'))->status());
+        $this->assertSame('unknown', (new RecoveryProcess($local->host, $local->pid, $local->started, $local->machine))->status());
+    }
+
+    public function test_operator_reclamation_is_exact_expired_confirmed_and_settles_before_releasing_work(): void
+    {
+        $slots = new RecoverySlots;
+        $slot = $slots->acquire(RecoveryConfig::fromValues(['obfuscation_recovery_enabled' => 1]));
+        $work = app(RecoveryWork::class);
+        $work->enqueue(RecoveryStage::Download, 'operator-owner', 1, 'index', []);
+        $claim = $work->claim(RecoveryStage::Download);
+        $attempt = app(RecoveryBudget::class)->reserve('operator-owner', 'construction', 'unknown@local', 131072, 262144);
+        DB::table('obfuscation_recovery_slots')->where('id', $slot->id)->update(['attempt_id' => $attempt->attemptId]);
+        $args = ['kind' => 'slot', 'id' => $slot->id, 'token' => $slot->token, '--confirmed-stopped' => true];
+        $this->artisan('obfuscation:reclaim', $args)->assertFailed();
+        $this->travel(5)->minutes();
+        $this->artisan('obfuscation:reclaim', $args)->assertFailed();
+        foreach (['obfuscation_recovery_slots' => 'owner_', 'obfuscation_recovery_work' => 'claim_owner_'] as $table => $prefix) {
+            DB::table($table)->where('id', $table === 'obfuscation_recovery_slots' ? $slot->id : $claim->id)->update([
+                $prefix.'host' => hash('sha256', 'legacy-unknown'), $prefix.'machine' => null, $prefix.'boot' => null, $prefix.'namespace' => null,
+            ]);
+        }
+        $this->assertSame(0, $slots->reap());
+        $this->assertSame(0, $work->reclaimExpired());
+        $this->assertFalse($work->confirmStopped($claim->id, $claim->token));
+        $this->artisan('obfuscation:reclaim', [...$args, '--confirmed-stopped' => false])->assertExitCode(2);
+        $this->artisan('obfuscation:reclaim', [...$args, 'token' => (string) Str::uuid()])->assertFailed();
+        $this->artisan('obfuscation:reclaim', $args)->expectsOutput('reclaimed')->assertSuccessful();
+        $this->assertSame(131072, app(RecoveryBudget::class)->spent('operator-owner', 'construction'));
+        $this->assertSame('worker_lost', DB::table('obfuscation_recovery_attempts')->value('outcome'));
+        $this->assertTrue($work->confirmStopped($claim->id, $claim->token));
+        $this->assertFalse($work->confirmStopped($claim->id, $claim->token));
+        $this->assertNotNull($work->claim(RecoveryStage::Download));
+    }
+
+    public function test_a_previous_boot_reclaims_the_slot_and_claim_without_erasing_unknown_transfer_spend(): void
+    {
+        $pool = new RecoverySlots;
+        $config = RecoveryConfig::fromValues(['obfuscation_recovery_enabled' => 1, 'obfuscation_recovery_threads' => 1]);
+        $work = app(RecoveryWork::class);
+        $work->enqueue(RecoveryStage::Download, 'previous-boot', 1, 'index', []);
+        $claim = $work->claim(RecoveryStage::Download);
+        $slot = $pool->acquire($config);
+        $current = RecoveryProcess::current();
+        $old = RecoveryProcess::inDomain($current->machine, hash('sha256', 'previous-boot'), $current->namespace, $current->pid, $current->started);
+        $budget = app(RecoveryBudget::class);
+        $reservation = $budget->reserve('previous-boot', 'construction', 'index@fixture', 131072, 20971520);
+        DB::table('obfuscation_recovery_slots')->where('id', $slot->id)->update([
+            ...$old->columns('owner_'), 'expires_at' => now()->subDay(), 'attempt_id' => $reservation->attemptId,
+        ]);
+        DB::table('obfuscation_recovery_work')->where('id', $claim->id)->update([
+            ...$old->columns('claim_owner_'), 'claim_expires_at' => now()->subDay(),
+        ]);
+        $this->assertTrue($old->provenDead());
+        $this->assertSame(1, $pool->reap());
+        $this->assertSame(1, $work->reclaimExpired());
+        $this->assertSame(131072, $budget->spent('previous-boot', 'construction'));
+        $this->assertSame('worker_lost', DB::table('obfuscation_recovery_attempts')->value('outcome'));
+        $this->assertNotNull($pool->acquire($config));
+        $this->assertNotNull($work->claim(RecoveryStage::Download));
+        $this->assertSame(0, $pool->reap());
+        $this->assertSame(0, $work->reclaimExpired());
+    }
 
     protected function setUp(): void
     {
@@ -28,6 +106,7 @@ final class RecoverySlotsTest extends TestCase
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
         (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
         (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
+        (require database_path('migrations/2026_09_14_110835_add_recovery_handoff_and_process_identity.php'))->up();
     }
 
     protected function tearDown(): void

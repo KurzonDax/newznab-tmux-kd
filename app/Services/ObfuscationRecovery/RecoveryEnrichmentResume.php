@@ -51,9 +51,14 @@ final class RecoveryEnrichmentResume
                 $budgets = DB::table('obfuscation_recovery_budgets')->whereIn('owner_digest', $owners->members($bundle->owner_digest))->get();
                 $attempts = DB::table('obfuscation_recovery_attempts')->whereIn('budget_id', $budgets->pluck('id'))
                     ->where('request_digest', $target->request_digest)->get();
-                if ($attempts->count() >= 2 || $attempts->contains('settled_at', null)
+                if ($attempts->contains('settled_at', null)
                     || $attempts->contains('outcome', 'semantic_failure')
-                    || $attempts->whereIn('budget_id', $budgets->where('purpose', 'enrichment')->pluck('id'))->contains('outcome', 'success')) {
+                    || $attempts->contains('handoff_conflict', true)) {
+                    return false;
+                }
+                try {
+                    $reusable = app(RecoveryEvidence::class)->reusable($bundle, $target->message_id);
+                } catch (\InvalidArgumentException) {
                     return false;
                 }
                 $spent = (int) $budgets->where('purpose', 'enrichment')->sum('debited_bytes');
@@ -61,7 +66,7 @@ final class RecoveryEnrichmentResume
                 $fileSpent = (int) DB::table('obfuscation_recovery_attempts')->whereIn('budget_id', $budgets->where('purpose', 'enrichment')->pluck('id'))
                     ->whereIn('request_digest', $requests)->sum('debited_bytes');
                 $fileLimit = $plan->algorithm === RecoveryAlgorithm::Rar || $plan->multiMediaInventory() ? 2097152 : 4194304;
-                if ($config->enrichmentReleaseBytes - $spent < 2097152 || $fileLimit - $fileSpent < 2097152) {
+                if (! $reusable && ($attempts->count() >= 2 || $config->enrichmentReleaseBytes - $spent < 2097152 || $fileLimit - $fileSpent < 2097152)) {
                     return false;
                 }
                 $work = DB::table('obfuscation_recovery_work')->where('bundle_id', $bundle->id)->where('revision', $plan->revision)

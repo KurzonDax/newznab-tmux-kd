@@ -8,12 +8,15 @@ use App\Enums\HeaderScanDirection;
 use App\Services\Binaries\HeaderParser;
 use App\Services\BlacklistService;
 use App\Services\NNTP\NntpProvider;
+use App\Services\ObfuscationRecovery\RecoveryArtifacts;
 use App\Services\ObfuscationRecovery\RecoveryBundleRefresh;
 use App\Services\ObfuscationRecovery\RecoveryCapture;
 use App\Services\ObfuscationRecovery\RecoveryCaptureBatch;
+use App\Services\ObfuscationRecovery\RecoveryCompaction;
 use App\Services\ObfuscationRecovery\RecoveryConfig;
 use App\Services\ObfuscationRecovery\RecoveryControl;
 use App\Services\ObfuscationRecovery\RecoveryDownload;
+use App\Services\ObfuscationRecovery\RecoveryEvidenceRetention;
 use App\Services\ObfuscationRecovery\RecoveryFrontierRebuild;
 use App\Services\ObfuscationRecovery\RecoveryFrontiers;
 use App\Services\ObfuscationRecovery\RecoveryGapPlanner;
@@ -25,6 +28,7 @@ use App\Services\ObfuscationRecovery\RecoverySettlement;
 use App\Services\ObfuscationRecovery\RecoveryStage;
 use App\Services\ObfuscationRecovery\RecoveryWire;
 use App\Services\ObfuscationRecovery\RecoveryWork;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -54,6 +58,7 @@ final class RecoveryGapDownloadTest extends TestCase
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
         (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
         (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
+        (require database_path('migrations/2026_09_14_110835_add_recovery_handoff_and_process_identity.php'))->up();
         DB::table('settings')->where('name', 'obfuscation_recovery_enabled')->update(['value' => 1]);
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.fixture', 'obfuscation_recovery_profile' => 'both']);
         $this->app->instance(BlacklistService::class, new NeverBlacklistedService);
@@ -116,6 +121,55 @@ final class RecoveryGapDownloadTest extends TestCase
             $this->travel(2)->seconds();
         }
         $this->assertSame(3, DB::table('obfuscation_recovery_gaps')->count());
+    }
+
+    #[DataProvider('overviewEncodings')]
+    public function test_successful_gap_overview_survives_interruption_before_capture_without_redownloading(string $references): void
+    {
+        $provider = $this->server('', dialogue: ["GROUP alt.binaries.fixture\r\n" => "211 2 1 2 alt.binaries.fixture\r\n",
+            "XOVER 1-2\r\n" => "224 overview\r\n1\t0123456789abcdefghij\tfixture\tTue, 14 Nov 2023 22:13:20 +0000\t<m1-1700000000000@nyuu>\t\t740000\t10\r\n2\tOrdinary subject\tfixture\tTue, 14 Nov 2023 22:13:20 +0000\t<boundary@local>\t{$references}\t100\t1\r\n.\r\n"]);
+        $this->app->instance(RecoveryArtifacts::class,
+            new RecoveryArtifacts($this->makeTempDirectory('gap-receipts')));
+        (new RecoveryControl)->begin(RecoveryConfig::fromSettings(), $provider, 1, 'alt.binaries.fixture', 1, 2, HeaderScanDirection::Head, 1);
+        $this->travel(121)->seconds();
+        $this->assertSame(1, app(RecoveryGapPlanner::class)->step());
+        $work = app(RecoveryWork::class);
+        $claim = $work->claim(RecoveryStage::Download);
+        $armed = true;
+        DB::listen(function (QueryExecuted $query) use (&$armed): void {
+            if ($armed && str_starts_with($query->sql, 'insert into "obfuscation_recovery_scan_batches"')) {
+                $armed = false;
+                throw new \RuntimeException('capture_interrupted');
+            }
+        });
+        try {
+            app(RecoveryDownload::class)->run($claim, [$provider]);
+            $this->fail('The capture handoff must fail at the injected boundary.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('capture_handoff_pending', $exception->getMessage());
+        }
+        $work->defer($claim);
+        $this->assertFalse($armed);
+        $this->assertSame(0, DB::table('obfuscation_recovery_headers')->count());
+        $attempt = DB::table('obfuscation_recovery_attempts')->first();
+        $this->assertSame('success', $attempt->outcome);
+        $this->assertSame(1, DB::table('obfuscation_recovery_references')->where('owner_type', 'bundle')->where('owner_key', (string) $claim->bundleId)->count());
+        $this->travel(61)->seconds();
+        $this->assertSame('captured', app(RecoveryDownload::class)->run($work->claim(RecoveryStage::Download), [$provider]));
+        $this->assertSame(1, DB::table('obfuscation_recovery_headers')->count());
+        $this->assertSame(1, DB::table('obfuscation_recovery_attempts')->count());
+        $this->assertEquals($attempt, DB::table('obfuscation_recovery_attempts')->first());
+        $this->assertSame(0, DB::table('obfuscation_recovery_references')->where('owner_type', 'bundle')->where('owner_key', (string) $claim->bundleId)->count());
+        $this->travel(RecoveryCompaction::DETAIL_DAYS + 1)->days();
+        $this->assertSame(1, app(RecoveryEvidenceRetention::class)->step()['artifacts']);
+        $this->assertSame(0, DB::table('obfuscation_recovery_artifacts')->count());
+        $this->assertSame(0, app(RecoveryEvidenceRetention::class)->step()['artifacts']);
+        $this->assertEquals($attempt, DB::table('obfuscation_recovery_attempts')->first());
+    }
+
+    public static function overviewEncodings(): array
+    {
+        return [['fixture'], ["fixture\xff"]];
     }
 
     public function test_missing_scan_window_is_reconciled_against_the_known_ordinary_frontier_without_claiming_coverage(): void

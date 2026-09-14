@@ -7,6 +7,7 @@ namespace Tests\Feature\ObfuscationRecovery;
 use App\Enums\HeaderScanDirection;
 use App\Enums\ReleaseRepairOutcome;
 use App\Facades\Search;
+use App\Models\Category;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
@@ -42,6 +43,7 @@ use App\Services\ObfuscationRecovery\RecoveryConfig;
 use App\Services\ObfuscationRecovery\RecoveryControl;
 use App\Services\ObfuscationRecovery\RecoveryEvidence;
 use App\Services\ObfuscationRecovery\RecoveryFileRole;
+use App\Services\ObfuscationRecovery\RecoveryFrontierRebuild;
 use App\Services\ObfuscationRecovery\RecoveryHeads;
 use App\Services\ObfuscationRecovery\RecoveryIdentity;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
@@ -58,6 +60,7 @@ use App\Services\ObfuscationRecovery\RecoveryPublications;
 use App\Services\ObfuscationRecovery\RecoveryReleaseGate;
 use App\Services\ObfuscationRecovery\RecoveryRunDiscovery;
 use App\Services\ObfuscationRecovery\RecoveryRunRefresh;
+use App\Services\ObfuscationRecovery\RecoveryScanContext;
 use App\Services\ObfuscationRecovery\RecoveryStage;
 use App\Services\ObfuscationRecovery\RecoveryWork;
 use App\Services\Par2Processor;
@@ -75,6 +78,7 @@ use dariusiii\rarinfo\Par2Info;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\NeverBlacklistedService;
@@ -104,6 +108,7 @@ final class RecoveryPreparationTest extends TestCase
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
         (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
         (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
+        (require database_path('migrations/2026_09_14_110835_add_recovery_handoff_and_process_identity.php'))->up();
         DB::table('settings')->where('name', 'obfuscation_recovery_enabled')->update(['value' => 1]);
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.fixture', 'obfuscation_recovery_profile' => 'media']);
     }
@@ -133,6 +138,91 @@ final class RecoveryPreparationTest extends TestCase
         $this->assertNotNull($work->claim(RecoveryStage::Publish));
     }
 
+    #[DataProvider('verifiedMembershipCases')]
+    public function test_unrelated_interior_media_total_preserves_verified_membership_through_capture_and_refresh(string $state, string $arrival, bool $existingAuxiliary = false): void
+    {
+        [$artifacts, $cache, $bundle] = $this->captured(existingAuxiliary: $existingAuxiliary);
+        $work = app(RecoveryWork::class);
+        $this->assertSame('ready', (new RecoveryPreparation($cache, $artifacts, $work))->run($work->claim(RecoveryStage::Discover)));
+        DB::table('obfuscation_recovery_bundles')->where('id', $bundle->id)->update(['state' => $state]);
+        $before = DB::table('obfuscation_recovery_bundles')->where('id', $bundle->id)->first();
+        $policy = new NeverBlacklistedService;
+        if ($arrival === 'bridge') {
+            $neighbor = [['Subject' => '[x] - '.str_repeat('Q', 32).' yEnc (1/99)', 'From' => 'fixture@example.invalid',
+                'Date' => 'Thu, 01 Jan 2026 00:00:00 +0000', 'Message-ID' => '<neighbor-'.((int) $before->end_ms + 60000).'@nyuu>',
+                'Bytes' => 100, 'Number' => '4000000200', 'Xref' => '']];
+            $parsed = (new HeaderParser($policy))->parse($neighbor, 'alt.binaries.fixture');
+            $report = (new RecoveryCapture(RecoveryConfig::fromSettings(), $policy))->capture(new RecoveryCaptureBatch($neighbor, $parsed['headers']),
+                new RecoveryScanContext(1, 'alt.binaries.fixture', $before->source_epoch, (int) $before->capture_generation,
+                    4000000200, 4000000200, HeaderScanDirection::Head, (string) Str::uuid()));
+            $this->assertSame('captured', $report->outcome);
+            while (app(RecoveryRunRefresh::class)->step() !== null) {
+            }
+            while (app(RecoveryBundleRefresh::class)->step() !== null) {
+            }
+            $this->assertSame(2, DB::table('obfuscation_recovery_bundles')->where('kind', 'posting')->count());
+        }
+        for ($i = 0; $i < 2; $i++) {
+            $stamp = (int) $before->start_ms + 50 + $i;
+            $total = match ($arrival) {
+                'selected' => 4, 'index' => 1, default => 99
+            };
+            $headers = [['Subject' => '[x] - '.str_repeat('Q', 32).' yEnc (1/'.$total.')', 'From' => 'fixture@example.invalid',
+                'Date' => 'Thu, 01 Jan 2026 00:00:00 +0000', 'Message-ID' => '<aux-'.$stamp.'@nyuu>',
+                'Bytes' => 100, 'Number' => (string) (4000000100 + $i), 'Xref' => '']];
+            if ($arrival === 'identity') {
+                $headers[0]['Number'] = (string) DB::table('obfuscation_recovery_headers')->where('advertised_total', 4)->value('article_number');
+            }
+            if ($arrival === 'bridge') {
+                $headers[0]['Message-ID'] = '<bridge-'.((int) $before->end_ms + 30000).'@nyuu>';
+            }
+            if ($arrival === 'extension') {
+                $headers[0]['Message-ID'] = '<extension-'.((int) $before->end_ms + 1000).'@nyuu>';
+            }
+            $parsed = (new HeaderParser($policy))->parse($headers, 'alt.binaries.fixture');
+            $context = new RecoveryScanContext(1, 'alt.binaries.fixture', $before->source_epoch, (int) $before->capture_generation,
+                (int) $headers[0]['Number'], (int) $headers[0]['Number'], HeaderScanDirection::Head, (string) Str::uuid());
+            $report = (new RecoveryCapture(RecoveryConfig::fromSettings(), $policy))->capture(new RecoveryCaptureBatch($headers, $parsed['headers']), $context);
+            $this->assertSame('captured', $report->outcome);
+            if ($arrival !== 'unrelated') {
+                $after = DB::table('obfuscation_recovery_bundles')->where('id', $bundle->id)->first();
+                if ($state === 'published') {
+                    $this->assertSame('late_membership_conflict', $after->reason);
+                } else {
+                    $this->assertGreaterThan((int) $before->revision, (int) $after->revision);
+                    $this->assertNull($after->sealed_plan);
+                }
+
+                return;
+            }
+            $this->assertEquals($before, DB::table('obfuscation_recovery_bundles')->where('id', $bundle->id)->first());
+            $duplicate = (new RecoveryCapture(RecoveryConfig::fromSettings(), $policy))->capture(new RecoveryCaptureBatch($headers, $parsed['headers']),
+                new RecoveryScanContext(1, 'alt.binaries.fixture', $before->source_epoch, (int) $before->capture_generation,
+                    (int) $headers[0]['Number'], (int) $headers[0]['Number'], HeaderScanDirection::Head, (string) Str::uuid()));
+            $this->assertSame(0, $duplicate->captured);
+            $this->assertEquals($before, DB::table('obfuscation_recovery_bundles')->where('id', $bundle->id)->first());
+            while (app(RecoveryRunRefresh::class)->step() !== null) {
+            }
+            while (app(RecoveryBundleRefresh::class)->step() !== null) {
+            }
+            $this->assertEquals($before, DB::table('obfuscation_recovery_bundles')->where('id', $bundle->id)->first());
+        }
+        $this->assertNotNull($work->claim(RecoveryStage::Publish));
+    }
+
+    public static function verifiedMembershipCases(): array
+    {
+        $cases = [];
+        foreach (['ready', 'publishing', 'published'] as $state) {
+            foreach (['unrelated', 'selected', 'index', 'identity', 'extension', 'bridge'] as $arrival) {
+                $cases[] = [$state, $arrival];
+                $cases[] = [$state, $arrival, true];
+            }
+        }
+
+        return $cases;
+    }
+
     public function test_published_coverage_is_rechecked_and_only_previously_verified_expired_coverage_can_support_a_sealed_plan(): void
     {
         [$artifacts, $cache, $bundle] = $this->captured();
@@ -153,6 +243,28 @@ final class RecoveryPreparationTest extends TestCase
         DB::table('obfuscation_recovery_frontiers')->update(['head_observed' => true]);
         DB::table('obfuscation_recovery_coverage')->where('kind', 'retained')->delete();
         $this->assertFalse($gate->ready($ready));
+    }
+
+    public function test_publication_coverage_transition_wakes_only_the_blocked_revision_and_preserves_later_local_backoff(): void
+    {
+        [$artifacts, $cache, $bundle] = $this->captured();
+        $work = app(RecoveryWork::class);
+        $this->assertSame('ready', (new RecoveryPreparation($cache, $artifacts, $work))->run($work->claim(RecoveryStage::Discover)));
+        DB::table('obfuscation_recovery_frontiers')->update(['head_observed' => false]);
+        $claim = $work->claim(RecoveryStage::Publish);
+        $this->assertSame('publication_coverage_pending', (new RecoveryMaterialization($artifacts, app(HeaderStorageService::class), $work))->run($claim));
+        $future = DB::table('obfuscation_recovery_work')->where('id', $claim->id)->value('due_at');
+        DB::table('obfuscation_recovery_frontiers')->update(['head_observed' => true]);
+        app(RecoveryFrontierRebuild::class)->step();
+        $this->assertLessThan($future, DB::table('obfuscation_recovery_work')->where('id', $claim->id)->value('due_at'));
+        $next = $work->claim(RecoveryStage::Publish);
+        $this->assertNotNull($next);
+        $this->assertTrue($work->defer($next));
+        $future = DB::table('obfuscation_recovery_work')->where('id', $claim->id)->value('due_at');
+        for ($i = 0; $i < 3; $i++) {
+            app(RecoveryFrontierRebuild::class)->step();
+        }
+        $this->assertSame($future, DB::table('obfuscation_recovery_work')->where('id', $claim->id)->value('due_at'));
     }
 
     public function test_counterless_rar_capture_reaches_a_complete_volume_plan_with_all_terminal_evidence(): void
@@ -317,6 +429,82 @@ final class RecoveryPreparationTest extends TestCase
 
     }
 
+    #[DataProvider('recoveryForcedRoots')]
+    public function test_recovery_formation_and_cached_inventory_naming_honor_all_group_forces(?int $primary, array $associated, int $expected, string $gate = '', bool $naming = true): void
+    {
+        $this->createRecoveryCbpSchema();
+        $this->createRecoveryReleaseSchema();
+        $this->createIdentificationSchema();
+        $this->registerSqliteFunction('UNIX_TIMESTAMP', static fn (?string $value): int => (int) strtotime((string) $value));
+        $indexedCategories = [];
+        Search::shouldReceive('updateRelease')->zeroOrMoreTimes()->andReturnUsing(static function (int $id) use (&$indexedCategories): void {
+            $indexedCategories[] = (int) Release::query()->whereKey($id)->value('categories_id');
+        });
+        config(['nntmux_settings.path_to_nzbs' => $this->makeTempDirectory('forced-nzb'), 'nntmux_settings.add_par2' => true]);
+        $files = [];
+        foreach ([1, 2] as $episode) {
+            $files['Fixture.Show.S01E0'.$episode.'.1080p.mkv'] = "\x1a\x45\xdf\xa3\x8b\x42\x82\x88matroska"
+                .SyntheticPosting::bytes('forced-'.$episode, 716800 * $episode + 100 - 16);
+        }
+        [$artifacts, $cache, $bundle] = $this->captured(false, $files);
+        $this->app->instance(RecoveryArtifacts::class, $artifacts);
+        $this->app->instance(RecoveryEvidence::class, $cache);
+        DB::table('settings')->insert(['name' => 'lookuppar2', 'value' => (int) $naming]);
+        DB::table('usenet_groups')->where('id', 1)->update(['forced_root_categories_id' => $primary]);
+        foreach ([Category::MOVIE_OTHER, Category::TV_OTHER] as $category) {
+            DB::table('categories')->insert(['id' => $category, 'title' => 'Fallback']);
+        }
+        if ($primary !== null || $associated !== []) {
+            DB::table('categories')->where('id', Category::OTHER_MISC)->update(['status' => 0]);
+        }
+        $work = app(RecoveryWork::class);
+        $this->assertSame('ready', (new RecoveryPreparation($cache, $artifacts, $work))->run($work->claim(RecoveryStage::Discover)));
+        $claim = $work->claim(RecoveryStage::Publish);
+        $this->assertSame('materialized', app(RecoveryMaterialization::class)->run($claim));
+        $publication = DB::table('obfuscation_recovery_publications')->first();
+        foreach ($associated as $i => $force) {
+            DB::table('usenet_groups')->insert(['id' => $i + 2, 'name' => 'alt.fixture.'.$i, 'forced_root_categories_id' => $force]);
+            DB::table('collection_groups')->insert(['collections_id' => $publication->collections_id, 'group_name' => 'alt.fixture.'.$i]);
+        }
+        if ($gate !== '') {
+            DB::table('categories')->where('id', $expected)->update($gate === 'initial_category_disabled' ? ['status' => 0] : ['minsizetoformrelease' => PHP_INT_MAX]);
+            $this->assertSame('policy_blocked', app(ReleaseCreationService::class)->createRecovered($claim, (int) $publication->id));
+            $this->assertSame($gate, DB::table('obfuscation_recovery_publications')->value('reason'));
+            $this->assertSame(0, Release::query()->count());
+
+            return;
+        }
+        $this->assertSame('created', app(ReleaseCreationService::class)->createRecovered($claim, (int) $publication->id));
+        $release = Release::query()->first();
+        $this->assertSame($expected === Category::TV_OTHER && $primary === null && $associated === [] ? Category::OTHER_MISC : $expected, (int) $release->categories_id);
+        $nzbResult = app(NzbService::class)->createNzbForRelease($release);
+        $this->assertTrue($nzbResult->success, $nzbResult->reason);
+        $this->assertSame('complete', app(RecoveryBootstrap::class)->run((int) $publication->id));
+        $this->assertSame($expected, (int) $release->fresh()->categories_id);
+        $this->assertFalse((bool) $release->fresh()->is_trusted_name);
+        $this->assertSame(0, (int) $release->fresh()->videos_id);
+        if ($naming) {
+            $this->assertNotEmpty($indexedCategories);
+            $this->assertSame($expected, end($indexedCategories));
+            $this->assertStringContainsString('Fixture Show S01', $release->fresh()->searchname);
+        } else {
+            $this->assertStringStartsWith('Recovered.', $release->fresh()->searchname);
+        }
+        $this->assertSame('not_pending', app(RecoveryBootstrap::class)->run((int) $publication->id));
+        $this->assertSame($expected, (int) $release->fresh()->categories_id);
+    }
+
+    public static function recoveryForcedRoots(): array
+    {
+        return [[Category::MOVIE_ROOT, [], Category::MOVIE_OTHER], [null, [Category::MOVIE_ROOT], Category::MOVIE_OTHER],
+            [null, [Category::TV_ROOT, Category::MOVIE_ROOT], Category::MOVIE_OTHER],
+            [Category::TV_ROOT, [Category::MOVIE_ROOT], Category::TV_OTHER], [null, [], Category::TV_OTHER],
+            [Category::MOVIE_ROOT, [], Category::MOVIE_OTHER, '', false],
+            [null, [Category::TV_ROOT], Category::TV_OTHER, '', false],
+            [Category::MOVIE_ROOT, [], Category::MOVIE_OTHER, 'initial_category_disabled'],
+            [null, [Category::MOVIE_ROOT], Category::MOVIE_OTHER, 'category_minimum_size']];
+    }
+
     #[DataProvider('bundleSizes')]
     public function test_cached_bundle_naming_keeps_all_files_and_rejects_unscoped_parent_changes(int $count): void
     {
@@ -461,16 +649,23 @@ final class RecoveryPreparationTest extends TestCase
         $this->assertSame(0, DB::table('obfuscation_recovery_attempts')->count());
     }
 
-    /** @return array{RecoveryArtifacts,RecoveryEvidence,object} */
-    public function test_multiple_contained_main_videos_revoke_archive_root_naming_and_cannot_be_renamed_from_volumes(): void
+    #[DataProvider('archiveForces')]
+    public function test_multiple_contained_main_videos_revoke_archive_root_naming_and_cannot_be_renamed_from_volumes(?int $force, bool $associated): void
     {
         $this->registerSqliteFunction('UNIX_TIMESTAMP', static fn (?string $value): int => (int) strtotime((string) $value));
         $this->createRecoveryCbpSchema();
         $this->createRecoveryReleaseSchema();
         $this->createIdentificationSchema();
-        Search::shouldReceive('updateRelease')->zeroOrMoreTimes();
+        $indexedCategories = [];
+        Search::shouldReceive('updateRelease')->zeroOrMoreTimes()->andReturnUsing(static function (int $id) use (&$indexedCategories): void {
+            $indexedCategories[] = (int) Release::query()->whereKey($id)->value('categories_id');
+        });
         config(['nntmux_settings.path_to_nzbs' => $this->makeTempDirectory('archive-scope-nzb')]);
         [$artifacts, $cache, $bundle] = $this->captured(true);
+        if ($force !== null) {
+            DB::table('categories')->insert(['id' => Category::TV_OTHER, 'title' => 'TV Other']);
+            DB::table('usenet_groups')->where('id', 1)->update(['forced_root_categories_id' => $associated ? null : $force]);
+        }
         $this->app->instance(RecoveryArtifacts::class, $artifacts);
         $work = app(RecoveryWork::class);
         $work->enqueueForBundle(RecoveryStage::Discover, (int) $bundle->id, (int) $bundle->revision, 'prepare', []);
@@ -480,6 +675,10 @@ final class RecoveryPreparationTest extends TestCase
         $publication = DB::table('obfuscation_recovery_publications')->first();
         app(ReleaseCreationService::class)->createRecovered($claim, (int) $publication->id);
         $release = Release::query()->first();
+        if ($associated) {
+            DB::table('usenet_groups')->insert(['id' => 2, 'name' => 'alt.fixture.forced', 'forced_root_categories_id' => $force]);
+            DB::table('releases_groups')->insert(['releases_id' => $release->id, 'groups_id' => 2]);
+        }
         $this->assertTrue(app(NzbService::class)->createNzbForRelease($release)->success);
         DB::table('releases')->where('id', $release->id)->update([...Release::searchNameValues('Incorrect.Movie.2024'), 'isrenamed' => 1, 'is_trusted_name' => true]);
         DB::table('obfuscation_recovery_publications')->where('id', $publication->id)->update(['identity_scope' => 'archive_set', 'identity_outcome' => 'identified']);
@@ -496,11 +695,19 @@ final class RecoveryPreparationTest extends TestCase
         $this->assertFalse((bool) $release->fresh()->is_trusted_name);
         $this->assertSame(0, (int) $release->fresh()->isrenamed);
         $this->assertStringStartsWith('Recovered.', $release->fresh()->searchname);
+        $this->assertSame($force === null ? Category::OTHER_MISC : Category::TV_OTHER, (int) $release->fresh()->categories_id);
+        $this->assertNotEmpty($indexedCategories);
+        $this->assertSame($force === null ? Category::OTHER_MISC : Category::TV_OTHER, end($indexedCategories));
         $naming = \Mockery::mock(NameFixingService::class);
         $naming->shouldNotReceive('checkName');
         $inventory = (new RecoveryPar2)->parse($cache->get($publication->index_message_id)->data);
         $this->assertFalse((new RecoveryNaming)->apply($current, $inventory, $naming, true, false));
         $this->assertSame('contained_files', DB::table('obfuscation_recovery_publications')->value('identity_scope'));
+    }
+
+    public static function archiveForces(): array
+    {
+        return [[null, false], [Category::TV_ROOT, false], [Category::TV_ROOT, true]];
     }
 
     private function createIdentificationSchema(): void
@@ -632,11 +839,19 @@ final class RecoveryPreparationTest extends TestCase
         $this->assertSame(0, DB::table('obfuscation_recovery_attempts')->count());
     }
 
-    private function captured(bool $rar = false, ?array $mediaFiles = null, bool $singleArticleFinalVolume = false): array
+    private function captured(bool $rar = false, ?array $mediaFiles = null, bool $singleArticleFinalVolume = false, bool $existingAuxiliary = false): array
     {
         $this->travelTo(new \DateTimeImmutable('2026-01-01T00:00:00Z'));
         $bytes = "\x1a\x45\xdf\xa3\x8b\x42\x82\x88matroska".SyntheticPosting::bytes('media', 2250400 - 16);
         $fixture = $rar ? RarPostingFixture::make($singleArticleFinalVolume) : MediaPostingFixture::make($mediaFiles ?? ['Feature.Fixture.2026.mkv' => $bytes]);
+        if ($existingAuxiliary) {
+            $right = array_pop($fixture['headers']);
+            $fixture['headers'][] = ['Subject' => '[x] - '.str_repeat('Q', 32).' yEnc (1/99)', 'From' => 'fixture@example.invalid',
+                'Date' => 'Thu, 01 Jan 2026 00:00:00 +0000', 'Message-ID' => '<existing-1767225600050@nyuu>',
+                'Bytes' => 100, 'Number' => (string) (4000000001 + count($fixture['headers'])), 'Xref' => ''];
+            $right['Number'] = (string) (4000000001 + count($fixture['headers']));
+            $fixture['headers'][] = $right;
+        }
         if ($rar) {
             DB::table('usenet_groups')->where('id', 1)->update(['obfuscation_recovery_profile' => 'rar']);
         }

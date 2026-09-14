@@ -9,6 +9,7 @@ use App\Models\Category;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\ArchiveExtractionService;
 use App\Services\Releases\ExecutableReleaseDiscardService;
+use App\Services\Releases\ForcedRootPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use Illuminate\Support\Facades\DB;
 
@@ -84,15 +85,16 @@ final class RecoveryArchiveInspection
                     'multi_media_inventory' => true, 'identity_scope' => 'contained_files', 'identity_outcome' => 'identity_unresolved', 'updated_at' => now(),
                 ]);
                 $neutralName = 'Recovered.'.substr($publication->identity, 0, 24);
+                $category = (new ForcedRootPolicy)->categoryForRelease($release->groups_id, (int) $release->id, Category::OTHER_MISC);
                 Release::query()->whereKey($release->id)->update([
                     ...Release::searchNameValues($neutralName), 'isrenamed' => 0, 'is_trusted_name' => false,
                     'videos_id' => 0, 'tv_episodes_id' => 0, 'movieinfo_id' => null, 'imdbid' => null,
                     'musicinfo_id' => null, 'consoleinfo_id' => null, 'bookinfo_id' => null, 'anidbid' => null,
-                    'gamesinfo_id' => 0, 'predb_id' => 0, 'categories_id' => Category::OTHER_MISC, 'iscategorized' => 1,
+                    'gamesinfo_id' => 0, 'predb_id' => 0, 'categories_id' => $category, 'iscategorized' => 1,
                 ]);
                 if (! $alreadyScoped) {
                     event(new ReleaseNameFixed((int) $release->id, $release->searchname, $neutralName, (int) $release->categories_id,
-                        $release->groups_id, (string) $release->fromname, Category::OTHER_MISC));
+                        $release->groups_id, (string) $release->fromname, $category));
                     Release::syncSearchIndexAfterCommit((int) $release->id);
                 }
             }

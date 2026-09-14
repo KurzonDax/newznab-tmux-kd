@@ -25,14 +25,14 @@ final class RecoveryBudget
         };
     }
 
-    public function reserve(string $owner, string $purpose, string $request, int $bytes, int $limit): ?RecoveryReservation
+    public function reserve(string $owner, string $purpose, string $request, int $bytes, int $limit, bool $resumeMissingEvidence = false): ?RecoveryReservation
     {
         if ($bytes < 1 || $limit < 0 || ! in_array($purpose, ['construction', 'enrichment', 'gap', RecoveryFrontierRebuild::PURPOSE], true)) {
             throw new InvalidArgumentException('invalid_budget');
         }
         $requestDigest = $this->identity->digest(['request', $request]);
 
-        return DB::transaction(function () use ($owner, $purpose, $requestDigest, $bytes, $limit): ?RecoveryReservation {
+        return DB::transaction(function () use ($owner, $purpose, $requestDigest, $bytes, $limit, $resumeMissingEvidence): ?RecoveryReservation {
             $owners = new RecoveryBudgetOwners($this->identity);
             $ownerDigest = $owners->locked($owner);
             $members = $owners->members($owner);
@@ -64,13 +64,12 @@ final class RecoveryBudget
             $allBudgetIds = DB::table('obfuscation_recovery_budgets')->whereIn('owner_digest', $members)->pluck('id')->all();
             $previous = DB::table('obfuscation_recovery_attempts')->whereIn('budget_id', $allBudgetIds)
                 ->where('request_digest', $requestDigest);
-            $successful = (clone $previous)->where('outcome', 'success');
-            if ($purpose === 'enrichment') {
-                $successful->whereIn('budget_id', $budgets->pluck('id')->all());
-            }
             if ((clone $previous)->whereNull('settled_at')->exists()
                 || (clone $previous)->where('outcome', 'semantic_failure')->exists()
-                || ($purpose !== RecoveryFrontierRebuild::PURPOSE && $successful->exists())) {
+                || (clone $previous)->where('handoff_conflict', true)->exists()
+                || (! $resumeMissingEvidence && $purpose !== RecoveryFrontierRebuild::PURPOSE
+                    && (clone $previous)->where('outcome', 'success')
+                        ->when($purpose === 'enrichment', fn ($query) => $query->whereIn('budget_id', $budgets->pluck('id')))->exists())) {
                 return null;
             }
             $attempt = $previous->count() + 1;
@@ -124,7 +123,7 @@ final class RecoveryBudget
                 return null;
             }
             $limit = $algorithm === RecoveryAlgorithm::Media ? $config->mediaCandidateBytes : $config->rarCandidateBytes;
-            $reservation = $this->reserve($bundle->owner_digest, 'construction', $request, $bytes, $limit);
+            $reservation = $this->reserve($bundle->owner_digest, 'construction', $request, $bytes, $limit, true);
             if ($reservation !== null) {
                 DB::table('obfuscation_recovery_attempts')->where('id', $reservation->attemptId)->update([
                     'groups_id' => $bundle->groups_id, 'profile' => $bundle->profile,
@@ -173,7 +172,7 @@ final class RecoveryBudget
                 }
                 (new RecoveryFrontierAllowance)->grant($gap, $bundle);
             }
-            $reservation = $this->reserve($frontier ? $gap->budget_owner : $bundle->owner_digest, $claim->purpose, $request, 33554432, $frontier ? 134217728 : 67108864);
+            $reservation = $this->reserve($frontier ? $gap->budget_owner : $bundle->owner_digest, $claim->purpose, $request, 33554432, $frontier ? 134217728 : 67108864, true);
             if ($reservation !== null) {
                 if ($frontier) {
                     DB::table('obfuscation_recovery_frontier_requests')->where('id', $gap->id)->update(['reserved_attempt_id' => $reservation->attemptId]);
@@ -250,7 +249,7 @@ final class RecoveryBudget
             if ($fileSpent > $fileLimit - 2097152) {
                 return null;
             }
-            $reservation = $this->reserve($bundle->owner_digest, 'enrichment', $target->message_id, 2097152, $config->enrichmentReleaseBytes);
+            $reservation = $this->reserve($bundle->owner_digest, 'enrichment', $target->message_id, 2097152, $config->enrichmentReleaseBytes, true);
             if ($reservation !== null) {
                 DB::table('obfuscation_recovery_attempts')->where('id', $reservation->attemptId)->update([
                     'groups_id' => $bundle->groups_id, 'profile' => $bundle->profile,

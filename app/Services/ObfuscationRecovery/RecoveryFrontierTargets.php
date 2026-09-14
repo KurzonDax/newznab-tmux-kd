@@ -131,9 +131,12 @@ final class RecoveryFrontierTargets
                 $frontiers->savePoints($connection, $scope, $summary, true);
                 $frontiers->saveRange($connection, $scope, $first, $last, $summary, true, count($side) <= RecoveryFrontiers::SUMMARY_POINTS);
             }
-            $connection->table('obfuscation_recovery_frontier_targets')->where('id', $target->id)->update(['outcome' => 'examined']);
-            $connection->table('obfuscation_recovery_work')->where('bundle_id', $target->bundle_id)->where('revision', $target->revision)
-                ->where('status', 'pending')->whereIn('stage', [RecoveryStage::Discover->value, RecoveryStage::Publish->value])->update(['due_at' => now()]);
+            $installed = $connection->table('obfuscation_recovery_frontier_targets')->where('id', $target->id)
+                ->where('outcome', '!=', 'examined')->update(['outcome' => 'examined']);
+            if ($installed === 1) {
+                RecoveryWork::wake($connection->table('obfuscation_recovery_work')->where('bundle_id', $target->bundle_id)->where('revision', $target->revision)
+                    ->where('status', 'pending')->whereIn('stage', [RecoveryStage::Discover->value, RecoveryStage::Publish->value]));
+            }
         }
     }
 }

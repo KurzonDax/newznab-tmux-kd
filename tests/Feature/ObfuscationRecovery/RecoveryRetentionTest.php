@@ -10,8 +10,10 @@ use App\Services\ObfuscationRecovery\RecoveryScheduler;
 use App\Services\ObfuscationRecovery\RecoveryStage;
 use App\Services\ObfuscationRecovery\RecoveryWork;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
@@ -30,6 +32,7 @@ final class RecoveryRetentionTest extends TestCase
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
         (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
         (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
+        (require database_path('migrations/2026_09_14_110835_add_recovery_handoff_and_process_identity.php'))->up();
     }
 
     protected function tearDown(): void
@@ -103,12 +106,13 @@ final class RecoveryRetentionTest extends TestCase
         $this->assertNotNull($work->claim(RecoveryStage::Publish));
     }
 
-    public function test_unlinked_raw_rows_expire_their_discovered_candidate_before_raw_deletion(): void
+    #[DataProvider('unlinkedProfiles')]
+    public function test_unlinked_raw_rows_expire_their_discovered_candidate_before_raw_deletion(string $profile): void
     {
         $work = app(RecoveryWork::class);
         $work->enqueue(RecoveryStage::Discover, 'unlinked-owner', 1, 'discover', []);
-        DB::table('obfuscation_recovery_bundles')->update(['groups_id' => 1, 'profile' => 'nyuu-media-v1',
-            'source_epoch' => 'epoch', 'capture_generation' => 1, 'start_ms' => 1001, 'end_ms' => 1001]);
+        DB::table('obfuscation_recovery_bundles')->update(['groups_id' => 1, 'profile' => $profile,
+            'source_epoch' => 'epoch', 'capture_generation' => 1, 'key_digest' => str_repeat('a', 64), 'start_ms' => 1001, 'end_ms' => 1001]);
         DB::table('obfuscation_recovery_controls')->insert([
             ['scope' => 'primary', 'fingerprint' => str_repeat('a', 64), 'epoch' => 'epoch', 'generation' => 1, 'updated_at' => now()],
             ['scope' => 'group:1', 'fingerprint' => str_repeat('b', 64), 'epoch' => 'group', 'generation' => 1, 'updated_at' => now()],
@@ -116,6 +120,7 @@ final class RecoveryRetentionTest extends TestCase
         $claim = $work->claim(RecoveryStage::Discover);
         $this->assertNotNull($claim);
         $this->header(1, null, 145);
+        DB::table('obfuscation_recovery_headers')->update(['profile' => $profile]);
         $purger = new RecoveryRetention;
         $this->assertSame(0, $purger->purge(RecoveryConfig::fromValues([]))['headers']);
         $this->assertSame('expiry_pending', DB::table('obfuscation_recovery_bundles')->value('state'));
@@ -123,6 +128,57 @@ final class RecoveryRetentionTest extends TestCase
         $this->travel(91)->seconds();
         $this->assertSame(1, $purger->purge(RecoveryConfig::fromValues([]))['headers']);
         $this->assertSame('expired_unresolved', DB::table('obfuscation_recovery_bundles')->value('state'));
+    }
+
+    public static function unlinkedProfiles(): array
+    {
+        return [['nyuu-media-v1'], ['nyuu-rar-sequential-v1']];
+    }
+
+    #[DataProvider('unrelatedRarScopes')]
+    public function test_overlapping_rar_keys_do_not_expire_or_wait_for_an_unrelated_claim(string $different): void
+    {
+        $this->travelTo(Carbon::parse('2026-09-13 15:00:00', 'UTC'));
+        $work = app(RecoveryWork::class);
+        $owners = [];
+        foreach (['a', 'b'] as $i => $key) {
+            $id = $work->enqueue(RecoveryStage::Discover, 'rar-'.$key, 1, 'prepare', []);
+            $owners[] = (int) DB::table('obfuscation_recovery_work')->where('id', $id)->value('bundle_id');
+            $this->header($i + 1, null, $i === 0 ? 145 : 1);
+            DB::table('obfuscation_recovery_headers')->where('id', $i + 1)->update([
+                'profile' => 'nyuu-rar-sequential-v1', 'key_digest' => str_repeat($key, 64), 'embedded_timestamp_ms' => 1001,
+            ]);
+            DB::table('obfuscation_recovery_bundles')->where('id', $owners[$i])->update([
+                'groups_id' => 1, 'profile' => 'nyuu-rar-sequential-v1', 'source_epoch' => 'epoch', 'capture_generation' => 1,
+                'key_digest' => str_repeat($key, 64), 'start_ms' => 1001, 'end_ms' => 1001,
+            ]);
+        }
+        if ($different !== 'key') {
+            $difference = match ($different) {
+                'generation' => ['capture_generation' => 2], 'group' => ['groups_id' => 2], default => ['source_epoch' => 'other']
+            };
+            DB::table('obfuscation_recovery_bundles')->where('id', $owners[1])->update(['key_digest' => str_repeat('a', 64), ...$difference]);
+            DB::table('obfuscation_recovery_headers')->where('id', 2)->update(['key_digest' => str_repeat('a', 64), ...$difference]);
+        }
+        DB::table('obfuscation_recovery_work')->where('bundle_id', $owners[1])->update([
+            'status' => 'claimed', 'claim_token' => 'unrelated', 'claim_expires_at' => now()->addMinute(),
+        ]);
+        $before = DB::table('obfuscation_recovery_bundles')->where('id', $owners[1])->first();
+        $purger = new RecoveryRetention;
+        $this->assertSame(['headers' => 1, 'candidates' => 1, 'waiting' => 0], $purger->purge(RecoveryConfig::fromValues([])));
+        $this->assertEquals($before, DB::table('obfuscation_recovery_bundles')->where('id', $owners[1])->first());
+        $this->assertSame([2], DB::table('obfuscation_recovery_headers')->pluck('id')->all());
+        $expired = DB::table('obfuscation_recovery_bundles')->where('id', $owners[0])->first();
+        $this->assertSame('expired_unresolved', $expired->state);
+        $this->assertSame(2, (int) $expired->revision);
+        $this->assertSame('obsolete', DB::table('obfuscation_recovery_work')->where('bundle_id', $owners[0])->value('status'));
+        $this->assertSame(['headers' => 0, 'candidates' => 0, 'waiting' => 0], $purger->purge(RecoveryConfig::fromValues([])));
+        $this->assertSame(1, (int) DB::table('obfuscation_recovery_metrics')->where('metric', 'expired_candidates')->sum('value'));
+    }
+
+    public static function unrelatedRarScopes(): array
+    {
+        return [['key'], ['generation'], ['group'], ['epoch']];
     }
 
     private function header(int $id, ?int $bundle, int $age): void

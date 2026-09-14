@@ -38,13 +38,14 @@ final class RecoveryDownload
         }
         $allowance = RecoveryConstructionTargets::allowance($target['kind'], $algorithm);
         try {
+            $this->evidence->resume($claim, $messageId);
             $cached = $this->evidence->get($messageId, $allowance['prefix']);
         } catch (InvalidArgumentException) {
             $this->work->complete($claim, 'evidence_conflict');
 
             return 'evidence_conflict';
         }
-        if ($cached !== null && ($cached->complete || $allowance['declaration'] || strlen($cached->data) >= $allowance['decoded'])) {
+        if ($cached !== null && RecoveryConstructionTargets::sufficient($target['kind'], $cached)) {
             return $this->work->complete($claim, 'cache_hit') ? 'cache_hit' : 'obsolete';
         }
         $config = RecoveryConfig::fromSettings();
@@ -91,12 +92,13 @@ final class RecoveryDownload
             DB::table('obfuscation_recovery_attempts')->where('id', $reservation->attemptId)->where('token', $reservation->token)
                 ->update(['provider' => 'position:'.$provider->position]);
             $transfer = app(RecoveryWire::class)->observeConnections($this->budget->connectionObserver($reservation))->fetch($provider, $messageId, $allowance['decoded'], $allowance['prefix'],
-                $allowance['reservation'], $allowance['close'], $allowance['declaration']);
-            $this->budget->recordTransfer($reservation, $transfer, $provider->ssl, $allowance['close']);
+                $allowance['reservation'], $allowance['close'], $allowance['declaration'], $target['kind'] === 'anchor');
+            $this->evidence->receipts()->record($claim, $reservation, $transfer, $provider->ssl, $allowance['close'],
+                'article', $messageId, $transfer->article?->metadata() ?? [], $transfer->article->data ?? '');
             app(RecoveryProviderBackoff::class)->record($provider, $transfer);
             if ($transfer->outcome === 'success' && $transfer->article !== null) {
                 try {
-                    $this->evidence->store($messageId, $transfer->article, $reservation->attemptId);
+                    $this->evidence->resume($claim, $messageId);
                 } catch (InvalidArgumentException) {
                     $this->work->complete($claim, 'evidence_conflict');
 

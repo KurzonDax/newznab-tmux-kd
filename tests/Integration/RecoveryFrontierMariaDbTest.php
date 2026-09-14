@@ -8,6 +8,9 @@ use App\Services\NNTP\NntpProvider;
 use App\Services\ObfuscationRecovery\RecoveryBudget;
 use App\Services\ObfuscationRecovery\RecoveryConfig;
 use App\Services\ObfuscationRecovery\RecoveryFrontierRebuild;
+use App\Services\ObfuscationRecovery\RecoveryFrontiers;
+use App\Services\ObfuscationRecovery\RecoveryPositiveCoverage;
+use App\Services\ObfuscationRecovery\RecoveryProcess;
 use App\Services\ObfuscationRecovery\RecoverySlots;
 use App\Services\ObfuscationRecovery\RecoveryStage;
 use App\Services\ObfuscationRecovery\RecoveryWork;
@@ -90,6 +93,57 @@ final class RecoveryFrontierMariaDbTest extends TestCase
         $this->assertSame(1, count(array_filter($results, static fn (string $result): bool => $result === 'reserved')));
         $this->assertSame(1, DB::table('obfuscation_recovery_frontier_allowances')->count());
         $this->assertSame(3, DB::table('obfuscation_recovery_attempts')->count());
+    }
+
+    public function test_concurrent_download_completions_and_ready_polling_do_not_renew_overdue_work(): void
+    {
+        $bundle = $this->candidate(60001, 60010);
+        $this->coverage(1, 100000);
+        $scope = RecoveryPositiveCoverage::scope($this->sourceEpoch(), 1, 1);
+        $frontiers = new RecoveryFrontiers;
+        $frontiers->savePoints(DB::connection(), $scope, [[50000, '2026-09-13 09:50:00'], [90000, '2026-09-13 14:10:00']], true);
+        $frontiers->saveRange(DB::connection(), $scope, 40001, 100000, [], true, true);
+        $work = app(RecoveryWork::class);
+        $id = $work->enqueueForBundle(RecoveryStage::Discover, (int) $bundle->id, 1, 'prepare', []);
+        foreach (['2026-09-13 14:58:00', '2026-09-13 15:10:00'] as $round => $due) {
+            DB::table('obfuscation_recovery_work')->where('id', $id)->update(['due_at' => $due]);
+            for ($i = 0; $i < 6; $i++) {
+                $work->enqueueForBundle(RecoveryStage::Download, (int) $bundle->id, 1, 'index', ['message_id' => 'completed-'.$round.'-'.$i.'@fixture']);
+            }
+            $this->concurrently(static function (): string {
+                (new RecoveryFrontierRebuild)->step();
+                $work = app(RecoveryWork::class);
+                $claim = $work->claim(RecoveryStage::Download);
+
+                return $claim !== null && $work->complete($claim, 'downloaded') ? 'completed' : 'contended';
+            });
+            $this->assertSame($round === 0 ? $due : '2026-09-13 15:00:00', substr(DB::table('obfuscation_recovery_work')->where('id', $id)->value('due_at'), 0, 19));
+        }
+    }
+
+    public function test_concurrent_previous_boot_reapers_settle_once_before_reopening_capacity(): void
+    {
+        DB::table('settings')->where('name', 'obfuscation_recovery_threads')->update(['value' => 1]);
+        $work = app(RecoveryWork::class);
+        $work->enqueue(RecoveryStage::Download, 'old-worker', 1, 'index', []);
+        $claim = $work->claim(RecoveryStage::Download);
+        $slot = app(RecoverySlots::class)->acquire(RecoveryConfig::fromSettings());
+        $reservation = app(RecoveryBudget::class)->reserve('old-worker', 'construction', 'old@fixture', 131072, 262144);
+        $local = RecoveryProcess::current();
+        $prior = RecoveryProcess::inDomain($local->machine, hash('sha256', 'prior'), $local->namespace, $local->pid, $local->started);
+        DB::table('obfuscation_recovery_slots')->where('id', $slot->id)->update([
+            ...$prior->columns('owner_'), 'expires_at' => now()->subHour(), 'attempt_id' => $reservation->attemptId,
+        ]);
+        DB::table('obfuscation_recovery_work')->where('id', $claim->id)->update([
+            ...$prior->columns('claim_owner_'), 'claim_expires_at' => now()->subHour(),
+        ]);
+        $results = $this->concurrently(static fn (): string => (string) app(RecoveryWork::class)->reclaimExpired());
+        $this->assertSame(1, array_sum(array_map(intval(...), $results)));
+        $this->assertSame(131072, app(RecoveryBudget::class)->spent('old-worker', 'construction'));
+        $this->assertSame('worker_lost', DB::table('obfuscation_recovery_attempts')->value('outcome'));
+        $this->assertSame(0, DB::table('obfuscation_recovery_slots')->whereNotNull('worker_token')->count());
+        $this->assertNotNull(app(RecoverySlots::class)->acquire(RecoveryConfig::fromSettings()));
+        $this->assertNotNull($work->claim(RecoveryStage::Download));
     }
 
     public function test_concurrent_claimers_and_planners_redirect_inherited_work_once(): void

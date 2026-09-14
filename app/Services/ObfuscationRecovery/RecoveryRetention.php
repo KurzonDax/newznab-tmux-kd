@@ -27,11 +27,14 @@ final class RecoveryRetention
                 ->where('first_observed_at', '<=', $cutoff)->orderBy('first_observed_at')->orderBy('id')->lockForUpdate()->get();
             $report = ['headers' => 0, 'candidates' => 0, 'waiting' => 0];
             $waiting = [];
-            $discovered = DB::table('obfuscation_recovery_bundles as owner')->join('obfuscation_recovery_headers as raw', function ($join): void {
+            $membership = DB::table('obfuscation_recovery_bundles as owner')->join('obfuscation_recovery_headers as raw', function ($join): void {
                 $join->on('owner.groups_id', '=', 'raw.groups_id')->on('owner.source_epoch', '=', 'raw.source_epoch')
                     ->on('owner.capture_generation', '=', 'raw.capture_generation')->on('owner.profile', '=', 'raw.profile')
-                    ->on('owner.start_ms', '<=', 'raw.embedded_timestamp_ms')->on('owner.end_ms', '>=', 'raw.embedded_timestamp_ms');
-            })->whereIn('raw.id', $rows->pluck('id')->all())->where('owner.state', '!=', 'coalesced')
+                    ->on('owner.start_ms', '<=', 'raw.embedded_timestamp_ms')->on('owner.end_ms', '>=', 'raw.embedded_timestamp_ms')
+                    ->where(fn ($partition) => $partition->where('owner.profile', RecoveryAlgorithm::Media->value)
+                        ->orWhereColumn('owner.key_digest', 'raw.key_digest'));
+            })->whereIn('raw.id', $rows->pluck('id')->all())->where('owner.state', '!=', 'coalesced');
+            $discovered = (clone $membership)
                 ->distinct()->limit(1001)->get(['owner.id', 'owner.groups_id', 'owner.source_epoch', 'owner.capture_generation', 'owner.profile', 'owner.start_ms', 'owner.end_ms']);
             if ($discovered->count() > 1000) {
                 return ['headers' => 0, 'candidates' => 0, 'waiting' => 1001];
@@ -72,13 +75,10 @@ final class RecoveryRetention
                     ]);
                 }
             }
+            $waitingHeaders = array_fill_keys((clone $membership)->whereIn('owner.id', array_keys($waiting))->distinct()->pluck('raw.id')->all(), true);
             $totals = $removed = [];
             foreach ($rows as $row) {
-                $waitingForOwner = $discovered->contains(static fn (object $owner): bool => isset($waiting[$owner->id])
-                    && $owner->groups_id === $row->groups_id && $owner->source_epoch === $row->source_epoch
-                    && $owner->profile === $row->profile && (int) $owner->capture_generation === (int) $row->capture_generation
-                    && (int) $owner->start_ms <= (int) $row->embedded_timestamp_ms && (int) $owner->end_ms >= (int) $row->embedded_timestamp_ms);
-                if (($row->bundle_id !== null && isset($waiting[$row->bundle_id])) || $waitingForOwner) {
+                if (($row->bundle_id !== null && isset($waiting[$row->bundle_id])) || isset($waitingHeaders[$row->id])) {
                     continue;
                 }
                 DB::table('obfuscation_recovery_expired_headers')->insertOrIgnore([

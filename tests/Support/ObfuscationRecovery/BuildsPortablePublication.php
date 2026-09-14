@@ -63,6 +63,7 @@ trait BuildsPortablePublication
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
         (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
         (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
+        (require database_path('migrations/2026_09_14_110835_add_recovery_handoff_and_process_identity.php'))->up();
         $this->createRecoveryCbpSchema();
         $this->createRecoveryReleaseSchema();
         Schema::drop('categories');
@@ -91,13 +92,35 @@ trait BuildsPortablePublication
     }
 
     /** @return array{root:string,nzb:string,port:int} */
-    protected function buildPortablePublication(string $case, bool $tied, int $parts, int $files, int $targets, bool $substitute = false, string $frontier = 'none'): array
+    protected function buildPortablePublication(string $case, bool $tied, int $parts, int $files, int $targets, bool $substitute = false,
+        string $frontier = 'none', string $advertised = 'original'): array
     {
         $root = $this->makeTempDirectory('portable-articles');
         (new Process(['python3', base_path('tests/Support/ObfuscationRecovery/fixture_posting.py'), $root, $case, ...($tied ? ['--tied'] : []), ...($substitute ? ['--substitute'] : [])]))->setTimeout(180)->mustRun();
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.fixture', 'obfuscation_recovery_profile' => $case === 'rar4' ? 'rar' : 'media']);
         $this->travelTo(now()->setTimestamp(1700000000));
         $headers = json_decode(file_get_contents($root.'/headers.json'), true, flags: JSON_THROW_ON_ERROR);
+        if ($advertised !== 'original') {
+            $ids = [];
+            foreach ($headers as $i => &$header) {
+                if ($i === 0 || $advertised === 'all_zero') {
+                    $header['Bytes'] = 0;
+                    $ids[] = trim($header['Message-ID'], '<>');
+                }
+            }
+            unset($header);
+            $truth = json_decode(file_get_contents($root.'/truth.json'), true, flags: JSON_THROW_ON_ERROR);
+            foreach ($truth['files'] as &$file) {
+                foreach ($file['messages'] as &$message) {
+                    if (in_array($message['id'], $ids, true)) {
+                        $message['bytes'] = 0;
+                    }
+                }
+                unset($message);
+            }
+            unset($file);
+            file_put_contents($root.'/truth.json', json_encode($truth, JSON_THROW_ON_ERROR));
+        }
         $parts = $parts === 0 ? count($headers) : $parts;
         foreach ([[4000000000, -130], [4000000000 + $parts + 1, 131]] as [$number, $minutes]) {
             $headers[] = ['Number' => (string) $number, 'Subject' => 'Boundary marker', 'From' => 'fixture@example.invalid',
@@ -306,6 +329,15 @@ trait BuildsPortablePublication
             return ['root' => $root, 'nzb' => '', 'port' => $provider->port];
         }
         NzbCreationCandidateQuery::flushCapabilityCache();
+        if ($advertised === 'all_zero') {
+            DB::table('settings')->updateOrInsert(['name' => 'minsizetoformrelease'], ['value' => 1]);
+            $report = app(RecoveryScheduler::class)->local(RecoveryStage::Publish, 1, 10);
+            $this->assertSame(1, $report['policy_blocked'] ?? 0);
+            $this->assertSame('minimum_size', DB::table('obfuscation_recovery_publications')->value('reason'));
+            $this->assertSame(0, Release::query()->count());
+
+            return ['root' => $root, 'nzb' => '', 'port' => $provider->port];
+        }
         $report = app(RecoveryScheduler::class)->local(RecoveryStage::Publish, 1, 10);
         $this->assertSame(1, $report['published'] ?? 0, json_encode($report, JSON_THROW_ON_ERROR));
         $release = Release::query()->first();

@@ -5,12 +5,20 @@ declare(strict_types=1);
 namespace App\Services\ObfuscationRecovery;
 
 use App\Models\Category;
+use App\Services\Releases\ForcedRootPolicy;
 use App\Support\Data\ProcessReleasesSettings;
 use Illuminate\Support\Facades\DB;
 
 final class RecoveryFormationPolicy
 {
-    public function blockedReason(object $collection): ?string
+    public function initialCategory(object $collection): int
+    {
+        $policy = new ForcedRootPolicy;
+
+        return $policy->constrainCategory(Category::OTHER_MISC, $policy->selectForCollection($collection));
+    }
+
+    public function blockedReason(object $collection, ?int $initialCategory = null): ?string
     {
         $settings = ProcessReleasesSettings::forDatabase(DB::table('settings')->whereIn('name', [
             'minsizetoformrelease', 'maxsizetoformrelease', 'minfilestoformrelease',
@@ -28,7 +36,7 @@ final class RecoveryFormationPolicy
         if ($settings->maxSizeToFormRelease > 0 && (int) $collection->filesize > $settings->maxSizeToFormRelease) {
             return 'maximum_size';
         }
-        $category = DB::table('categories')->where('id', Category::OTHER_MISC)->first();
+        $category = DB::table('categories')->where('id', $initialCategory ?? $this->initialCategory($collection))->first();
         if ($category === null || (isset($category->status) && (int) $category->status !== 1)) {
             return 'initial_category_disabled';
         }

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Integration;
 
+use App\Services\ObfuscationRecovery\RecoveryAlgorithm;
+use App\Services\ObfuscationRecovery\RecoveryConstructionTargets;
 use App\Services\ObfuscationRecovery\RecoveryWire;
 use PHPUnit\Framework\TestCase;
 use Tests\Support\ObfuscationRecovery\InteractsWithRecoveryNntpServer;
@@ -53,6 +55,22 @@ final class RecoveryTransportTest extends TestCase
         $this->assertFalse($result->article->complete);
         $this->assertTrue($result->closed);
         $this->assertLessThan(98304, $result->plaintextReceived + $result->plaintextSent);
+    }
+
+    public function test_construction_anchor_closes_after_part_two_declarations_without_decoding_or_draining(): void
+    {
+        $body = "=ybegin part=2 total=4 line=128 size=2867200 name=opaque\r\n=ypart begin=716801 end=1433600\r\n";
+        $body .= str_repeat(str_repeat('a', 128)."\r\n", 5600)."=yend size=716800 part=2\r\n.\r\n";
+        foreach (RecoveryAlgorithm::cases() as $algorithm) {
+            $allowance = RecoveryConstructionTargets::allowance('anchor', $algorithm);
+            $result = (new RecoveryWire)->fetch($this->server("222 0 <fixture@local> body\r\n".$body), 'fixture@local',
+                $allowance['decoded'], $allowance['prefix'], $allowance['reservation'], $allowance['close'], anchorOnly: true);
+            $this->assertSame('success', $result->outcome);
+            $this->assertSame('', $result->article->data);
+            $this->assertSame(0, $result->decodedBytes);
+            $this->assertTrue($result->closed);
+            $this->assertLessThan(98304, $result->plaintextReceived + $result->plaintextSent);
+        }
     }
 
     public function test_wrong_id_and_truncated_body_are_distinct_failures(): void

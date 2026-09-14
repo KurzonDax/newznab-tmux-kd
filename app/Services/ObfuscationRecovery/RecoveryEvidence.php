@@ -11,6 +11,49 @@ final class RecoveryEvidence
 {
     public function __construct(private readonly RecoveryArtifacts $artifacts, private readonly RecoveryIdentity $identity) {}
 
+    public function receipts(): RecoveryTransferReceipt
+    {
+        return new RecoveryTransferReceipt($this->artifacts);
+    }
+
+    public function resume(RecoveryWorkClaim $claim, string $messageId): void
+    {
+        $receipt = $this->receipts()->recover($claim, 'article', $messageId);
+        if ($receipt === null) {
+            return;
+        }
+        try {
+            $conflict = DB::transaction(function () use ($claim, $messageId, $receipt): ?InvalidArgumentException {
+                if ((new RecoveryOwnership)->locked($claim) === null) {
+                    return null;
+                }
+                try {
+                    $this->store($messageId, RecoveryArticle::fromMetadata($receipt['metadata'], $receipt['data']), $receipt['attempt_id']);
+                } catch (InvalidArgumentException $exception) {
+                    DB::table('obfuscation_recovery_attempts')->where('id', $receipt['attempt_id'])->update(['handoff_conflict' => true]);
+
+                    return $exception;
+                }
+
+                return null;
+            }, 1);
+        } catch (\Throwable $exception) {
+            throw new \RuntimeException('transfer_evidence_pending', previous: $exception);
+        }
+        if ($conflict !== null) {
+            throw $conflict;
+        }
+    }
+
+    public function reusable(object $bundle, string $messageId, ?string $kind = null): bool
+    {
+        $article = $this->get($messageId, $kind !== null);
+        $receipt = $this->receipts()->available($bundle, 'article', $messageId);
+        $article ??= $receipt === null ? null : RecoveryArticle::fromMetadata($receipt['metadata'], $receipt['data']);
+
+        return $article !== null && ($kind === null ? $article->complete : RecoveryConstructionTargets::sufficient($kind, $article));
+    }
+
     public function get(string $messageId, bool $prefixOnly = false, int $minimumDecoded = 0): ?RecoveryArticle
     {
         if ($minimumDecoded < 0 || $minimumDecoded > 1048576) {
@@ -31,7 +74,7 @@ final class RecoveryEvidence
             }
             $entry = $row->full_evidence ?? ($prefixOnly ? $row->prefix_evidence : null);
 
-            $article = $entry === null ? null : $this->read(json_decode($entry, true, flags: JSON_THROW_ON_ERROR));
+            $article = $entry === null ? null : $this->usable(json_decode($entry, true, flags: JSON_THROW_ON_ERROR));
 
             return $article !== null && strlen($article->data) >= $minimumDecoded ? $article : null;
         }, 1);
@@ -68,7 +111,19 @@ final class RecoveryEvidence
                 if ($row->{$column} === null) {
                     continue;
                 }
-                $existing = $this->read(json_decode($row->{$column}, true, flags: JSON_THROW_ON_ERROR));
+                $previous = json_decode($row->{$column}, true, flags: JSON_THROW_ON_ERROR);
+                $existing = $this->usable($previous);
+                if ($existing === null) {
+                    foreach (['filename', 'file_size', 'part', 'total', 'begin', 'end'] as $property) {
+                        $conflict = $conflict || $previous['metadata'][$property] !== $entry['metadata'][$property];
+                    }
+                    if (strlen($article->data) < $previous['bytes']) {
+                        throw new InvalidArgumentException('cached_evidence_revalidation_incomplete');
+                    }
+                    $conflict = $conflict || ! hash_equals($previous['artifact'], hash('sha256', substr($article->data, 0, $previous['bytes'])));
+
+                    continue;
+                }
                 foreach (['filename', 'fileSize', 'part', 'total', 'begin', 'end'] as $property) {
                     $conflict = $conflict || $existing->{$property} !== $article->{$property};
                 }
@@ -103,6 +158,20 @@ final class RecoveryEvidence
         }
 
         return $artifact;
+    }
+
+    /** @param array<string,mixed> $entry */
+    private function usable(array $entry): ?RecoveryArticle
+    {
+        try {
+            return $this->read($entry);
+        } catch (\RuntimeException $exception) {
+            if (! in_array($exception->getMessage(), ['artifact_missing', 'artifact_integrity_failure'], true)) {
+                throw $exception;
+            }
+
+            return null;
+        }
     }
 
     /** @param array<string,mixed> $entry */

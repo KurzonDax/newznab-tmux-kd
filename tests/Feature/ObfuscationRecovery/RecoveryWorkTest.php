@@ -7,6 +7,7 @@ namespace Tests\Feature\ObfuscationRecovery;
 use App\Services\ObfuscationRecovery\RecoveryStage;
 use App\Services\ObfuscationRecovery\RecoveryWork;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\IsolatedSqliteDatabase;
@@ -27,6 +28,7 @@ final class RecoveryWorkTest extends TestCase
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
         (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
         (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
+        (require database_path('migrations/2026_09_14_110835_add_recovery_handoff_and_process_identity.php'))->up();
     }
 
     protected function tearDown(): void
@@ -168,6 +170,24 @@ final class RecoveryWorkTest extends TestCase
         $this->assertNull($work->claim(RecoveryStage::Discover));
         $this->assertTrue($work->complete($work->claim(RecoveryStage::Download), 'downloaded'));
         $this->assertSame($localId, $work->claim(RecoveryStage::Discover)->id);
+    }
+
+    public function test_repeated_download_handoffs_preserve_overdue_continuation_age(): void
+    {
+        $this->travelTo(Carbon::parse('2026-09-13 15:00:00', 'UTC'));
+        $work = app(RecoveryWork::class);
+        $id = $work->enqueue(RecoveryStage::Discover, 'handoff-age', 1, 'prepare', []);
+        $bundle = (int) DB::table('obfuscation_recovery_work')->where('id', $id)->value('bundle_id');
+        for ($i = 0; $i < 3; $i++) {
+            $work->enqueueForBundle(RecoveryStage::Download, $bundle, 1, 'anchor', ['message_id' => $i.'@fixture']);
+            $this->travel(5)->seconds();
+            $this->assertTrue($work->complete($work->claim(RecoveryStage::Download), 'downloaded'));
+            $this->assertSame('2026-09-13 15:00:00', DB::table('obfuscation_recovery_work')->where('id', $id)->value('due_at'));
+        }
+        $claim = $work->claim(RecoveryStage::Discover);
+        $this->assertSame($id, $claim->id);
+        $this->assertTrue($work->defer($claim, 60));
+        $this->assertNull($work->claim(RecoveryStage::Discover));
     }
 
     public function test_dispatch_rotates_groups_profiles_and_request_classes(): void

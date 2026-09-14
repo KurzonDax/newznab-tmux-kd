@@ -16,7 +16,7 @@ final readonly class RecoverySegment
         public int $advertisedBytes,
     ) {
         if ($fileIdentity === '' || $ordinal < 1 || $ordinal > 500000 || $articleNumber < 1
-            || $advertisedBytes < 1 || (new RecoveryIdentity)->messageId($messageId) !== $messageId) {
+            || $advertisedBytes < 0 || (new RecoveryIdentity)->messageId($messageId) !== $messageId) {
             throw new InvalidArgumentException('invalid_recovery_segment');
         }
     }

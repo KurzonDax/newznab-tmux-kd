@@ -66,9 +66,9 @@ final class RecoveryScheduler
                 $result = $stage === RecoveryStage::Discover
                     ? app(RecoveryPreparation::class)->run($claim)
                     : app(RecoveryPublisher::class)->run($claim);
-            } catch (Throwable) {
-                $work->defer($claim, 60);
-                $result = 'local_failure';
+            } catch (Throwable $exception) {
+                $result = $this->failureReason($exception, 'local_failure');
+                $work->defer($claim, 60, $result);
             }
             $report[$result] = ($report[$result] ?? 0) + 1;
         }
@@ -88,10 +88,20 @@ final class RecoveryScheduler
         }
         try {
             return app(RecoveryDownload::class)->run($claim);
-        } catch (Throwable) {
-            $work->defer($claim, 60);
+        } catch (Throwable $exception) {
+            $result = $this->failureReason($exception, 'worker_failure');
+            $work->defer($claim, 60, $result);
 
-            return 'worker_failure';
+            return $result;
         }
+    }
+
+    private function failureReason(Throwable $exception, string $fallback): string
+    {
+        return match ($exception->getMessage()) {
+            'transfer_receipt_pending', 'transfer_artifact_pending', 'transfer_evidence_pending', 'capture_handoff_pending' => $exception->getMessage(),
+            'artifact_missing', 'artifact_integrity_failure', 'artifact_read_failed', 'artifact_storage_unavailable' => 'artifact_unavailable',
+            default => $fallback,
+        };
     }
 }

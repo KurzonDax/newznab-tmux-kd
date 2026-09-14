@@ -31,8 +31,9 @@ final class RecoveryPreparation
                 min(array_column($runs, 'first_article')), max(array_column($runs, 'last_article')),
                 min(array_column($runs, 'first_postdate')), max(array_column($runs, 'last_postdate')), $bundle->membership_changed_at, false, $bundle);
             if ($settled !== 'ready') {
-                return $this->waiting($claim, $settled);
+                return $this->waiting($claim, $settled, true);
             }
+            (new RecoveryFrontierContinuation)->consume($claim);
             $nomination = null;
             if ($algorithm === RecoveryAlgorithm::Media) {
                 $indexId = (new RecoveryAssociation)->mediaIndex($runs);
@@ -88,7 +89,7 @@ final class RecoveryPreparation
             foreach ($requests as $request) {
                 $id = $request['message_id'];
                 $article = $this->evidence->get($id, true);
-                if ($article !== null && ($request['kind'] === 'terminal' || $article->complete || strlen($article->data) >= 16384)) {
+                if ($article !== null && RecoveryConstructionTargets::sufficient($request['kind'], $article)) {
                     $evidence[$id] = $article;
                 } else {
                     $missing = true;
@@ -165,11 +166,15 @@ final class RecoveryPreparation
         }, 1);
     }
 
-    private function waiting(RecoveryWorkClaim $claim, string $reason): string
+    private function waiting(RecoveryWorkClaim $claim, string $reason, bool $frontier = false): string
     {
-        return DB::transaction(function () use ($claim, $reason): string {
-            if ((new RecoveryOwnership)->locked($claim) === null) {
+        return DB::transaction(function () use ($claim, $reason, $frontier): string {
+            $bundle = (new RecoveryOwnership)->locked($claim);
+            if ($bundle === null) {
                 return 'obsolete';
+            }
+            if ($frontier) {
+                (new RecoveryFrontierContinuation)->observe($bundle, $claim->stage, false);
             }
             DB::table('obfuscation_recovery_bundles')->where('id', $claim->bundleId)->update([
                 'reason' => $reason, 'next_action_at' => now()->addMinute(), 'updated_at' => now(),
@@ -297,7 +302,12 @@ final class RecoveryPreparation
             $settled = (new RecoverySettlement)->assess($bundle->source_epoch, (int) $bundle->groups_id, (int) $bundle->capture_generation,
                 $coverage['first_article'], $coverage['last_article'], $coverage['first_postdate'], $coverage['last_postdate'], $coverage['changed_at'], false, $bundle);
             if ($settled !== 'ready') {
-                return $this->waiting($claim, $settled);
+                return $this->waiting($claim, $settled, true);
+            }
+            if ($plan->algorithm === RecoveryAlgorithm::Media) {
+                $candidateRuns = DB::table('obfuscation_recovery_runs')
+                    ->whereIn('id', json_decode($bundle->candidate_runs, true, flags: JSON_THROW_ON_ERROR))->get()->all();
+                $coverage['selected_runs'] = (new RecoveryVerifiedMembership)->selected($plan, $candidateRuns);
             }
             DB::table('obfuscation_recovery_files')->upsert($records, ['bundle_id', 'revision', 'run_digest'], ['updated_at']);
             (new RecoveryReferences)->plan('bundle', $claim->bundleId, $plan);

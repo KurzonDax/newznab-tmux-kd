@@ -15,6 +15,7 @@ use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\ObfuscationRecovery\RecoveryNameEvidence;
 use App\Services\ReleaseCleaningService;
+use App\Services\Releases\ForcedRootPolicy;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -415,9 +416,12 @@ class ReleaseUpdateService
         $releaseId = (int) ($release->releases_id ?? $release->id);
         $trustedDonorName = $this->sourceTrustPolicy($type, $method, $preId)['trusted_donor'];
         DB::transaction(function () use ($release, $releaseId, $newTitle, $type, $nameStatus, $preId, $trustedDonorName, $imdbId, $categoryOverride, $preserveBookInfo, $recoveryEvidence): void {
-            Release::query()->where('id', $releaseId)->lockForUpdate()->first();
+            $current = Release::query()->where('id', $releaseId)->lockForUpdate()->first();
             if ((! (new RecoveryIdentityPolicy)->allowsParent($releaseId, $recoveryEvidence) || ! BundleIdentity::allowsSingleTitle($releaseId))) {
                 return;
+            }
+            if ($categoryOverride !== null && $current !== null) {
+                $categoryOverride = (new ForcedRootPolicy)->categoryForRelease($current->groups_id, $releaseId, $categoryOverride);
             }
             if ($nameStatus === true) {
                 $status = $this->getStatusColumnsForType($type);
