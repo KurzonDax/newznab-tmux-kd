@@ -15,6 +15,7 @@ import Alpine from '@alpinejs/csp';
  */
 const lazyComponentMap = {
     'trailerModal': () => import('./components/trailer-modal.js'),
+    'releaseDetails': () => import('./components/release-details.js'),
     'titleOverview': () => import('./components/title-overview.js'),
     // --- Components only needed on specific pages ---
     'adminSubmenu':    () => import('./components/admin-submenu.js'),

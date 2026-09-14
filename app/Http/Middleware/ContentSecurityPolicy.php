@@ -45,7 +45,7 @@ class ContentSecurityPolicy
         // 'strict-dynamic' propagates trust from nonce-validated scripts to
         // dynamically loaded scripts. Host-based allowlists are kept as
         // fallback for older browsers.
-        $trailerFrames = $request->is('title/movies/*') ? ' https://www.youtube-nocookie.com https://v.traileraddict.com' : '';
+        $trailerFrames = $request->is('title/movies/*', 'details/*') ? ' https://www.youtube-nocookie.com https://v.traileraddict.com' : '';
         $directives = [
             "default-src 'self'",
             // 'unsafe-eval' is required because @alpinejs/csp bundles dead-code from the

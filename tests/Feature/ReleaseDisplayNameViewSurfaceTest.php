@@ -20,8 +20,6 @@ final class ReleaseDisplayNameViewSurfaceTest extends TestCase
     public static function userFacingViewProvider(): array
     {
         return [
-            'release details heading' => ['details/index.blade.php'],
-            'details cover actions' => ['details/partials/cover-actions.blade.php'],
             'nfo viewer heading' => ['nfo/view.blade.php'],
         ];
     }

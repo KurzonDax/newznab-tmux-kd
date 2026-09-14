@@ -155,6 +155,30 @@ function additionalDetails(media) {
       "</h5>" + facts(rows) + "</div>").join("") + "</details>";
 }
 
+export function renderMediaInfo(media) {
+  const container = media.container || {};
+  const identity = media.identity || {};
+  const title = identity.title || (identity.label === "Container" ? container.source_filename : null);
+  const summary = [
+    container.format,
+    container.duration_display || duration(container.duration_ms),
+    container.overall_bitrate_display || bitrate(container.overall_bitrate_bps),
+  ].filter(hasValue);
+  const streams = media.streams || { video: [], audio: [], subtitle: [] };
+  let html = '<div class="mediainfo-content"><div class="mediainfo-identity"><div class="mediainfo-eyebrow">' +
+    escapeHtml(identity.label || "Container") + "</div>";
+  if (hasValue(title)) html += '<div class="mediainfo-title">' + escapeHtml(title) + "</div>";
+  if (summary.length) html += '<div class="mediainfo-summary">' +
+    summary.map((value) => "<span>" + escapeHtml(value) + "</span>").join("") + "</div>";
+  html += "</div>";
+  html += musicTags(media.music_tags);
+  html += section("Video", "fa-video", "video", streams.video || []);
+  html += section("Audio", "fa-volume-high", "audio", streams.audio || []);
+  html += section("Subtitles", "fa-closed-captioning", "subtitle", streams.subtitle || []);
+  html += additionalDetails({ ...media, streams });
+  return html + "</div>";
+}
+
 export function mediainfoModal() {
   return {
     ...modalLifecycle(),
@@ -200,29 +224,7 @@ export function mediainfoModal() {
       this._setContent("");
     },
 
-    _buildHtml(media) {
-      const container = media.container || {};
-      const identity = media.identity || {};
-      const title = identity.title || (identity.label === "Container" ? container.source_filename : null);
-      const summary = [
-        container.format,
-        container.duration_display || duration(container.duration_ms),
-        container.overall_bitrate_display || bitrate(container.overall_bitrate_bps),
-      ].filter(hasValue);
-      const streams = media.streams || { video: [], audio: [], subtitle: [] };
-      let html = '<div class="mediainfo-content"><div class="mediainfo-identity"><div class="mediainfo-eyebrow">' +
-        escapeHtml(identity.label || "Container") + "</div>";
-      if (hasValue(title)) html += '<div class="mediainfo-title">' + escapeHtml(title) + "</div>";
-      if (summary.length) html += '<div class="mediainfo-summary">' +
-        summary.map((value) => "<span>" + escapeHtml(value) + "</span>").join("") + "</div>";
-      html += "</div>";
-      html += musicTags(media.music_tags);
-      html += section("Video", "fa-video", "video", streams.video || []);
-      html += section("Audio", "fa-volume-high", "audio", streams.audio || []);
-      html += section("Subtitles", "fa-closed-captioning", "subtitle", streams.subtitle || []);
-      html += additionalDetails({ ...media, streams });
-      return html + "</div>";
-    },
+    _buildHtml: renderMediaInfo,
 
     init() {
       this.initModal();

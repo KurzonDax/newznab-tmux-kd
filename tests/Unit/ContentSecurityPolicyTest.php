@@ -66,6 +66,8 @@ class ContentSecurityPolicyTest extends TestCase
         $movie = $middleware->handle(Request::create('/title/movies/1234567'), static fn (): Response => new Response);
         $this->assertStringContainsString('https://www.youtube-nocookie.com', (string) $movie->headers->get('Content-Security-Policy'));
         $this->assertStringContainsString('https://v.traileraddict.com', (string) $movie->headers->get('Content-Security-Policy'));
+        $details = $middleware->handle(Request::create('/details/example'), static fn (): Response => new Response);
+        $this->assertStringContainsString('https://www.youtube-nocookie.com', (string) $details->headers->get('Content-Security-Policy'));
         foreach (['/admin', '/api', '/browse/movies', '/title/tv/12'] as $path) {
             $response = $middleware->handle(Request::create($path), static fn (): Response => new Response);
             $this->assertStringNotContainsString('youtube', (string) $response->headers->get('Content-Security-Policy'));
