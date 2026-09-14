@@ -94,6 +94,7 @@ use App\Http\Controllers\SearchSuggestController;
 use App\Http\Controllers\SeriesController;
 use App\Http\Controllers\StatusPageController;
 use App\Http\Controllers\TermsController;
+use App\Http\Controllers\TitleController;
 use App\Http\Controllers\VideoPreviewController;
 use App\Http\Middleware\NoCacheForAuthenticatedUsers;
 use Spatie\LaravelPasskeys\Http\Controllers\GeneratePasskeyAuthenticationOptionsController;
@@ -192,6 +193,7 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         Route::match(['GET', 'POST'], 'delete/{id}', [CartController::class, 'destroy'])->name('cart.delete');
     });
 
+    Route::get('title/{root}/{id}', [TitleController::class, 'show'])->name('title');
     Route::match(['GET', 'POST'], 'details/{guid}', [DetailsController::class, 'show'])->name('details');
     Route::match(['GET', 'POST'], 'getnzb/{guid}', [GetNzbController::class, 'getNzb'])->withoutMiddleware(['auth', 'isVerified'])->name('getnzb.guid');
     Route::match(['GET', 'POST'], 'getnzb', [GetNzbController::class, 'getNzb'])->withoutMiddleware(['auth', 'isVerified'])->name('getnzb');

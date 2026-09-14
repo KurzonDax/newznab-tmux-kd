@@ -60,6 +60,18 @@ class ContentSecurityPolicyTest extends TestCase
         $this->assertStringNotContainsStringIgnoringCase('tiny', $csp);
     }
 
+    public function test_movie_titles_allow_the_trailer_embed_without_changing_other_page_policies(): void
+    {
+        $middleware = new ContentSecurityPolicy;
+        $movie = $middleware->handle(Request::create('/title/movies/1234567'), static fn (): Response => new Response);
+        $this->assertStringContainsString('https://www.youtube-nocookie.com', (string) $movie->headers->get('Content-Security-Policy'));
+        $this->assertStringContainsString('https://v.traileraddict.com', (string) $movie->headers->get('Content-Security-Policy'));
+        foreach (['/admin', '/api', '/browse/movies', '/title/tv/12'] as $path) {
+            $response = $middleware->handle(Request::create($path), static fn (): Response => new Response);
+            $this->assertStringNotContainsString('youtube', (string) $response->headers->get('Content-Security-Policy'));
+        }
+    }
+
     public function test_horizon_inline_assets_receive_the_csp_nonce(): void
     {
         $response = (new ContentSecurityPolicy)->handle(

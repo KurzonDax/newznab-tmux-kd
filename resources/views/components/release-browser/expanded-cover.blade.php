@@ -2,11 +2,7 @@
     $firstRow = $rows->first()->row_data;
     $entity = $firstRow->entity;
     $title = $entity?->title ?? $firstRow->name;
-    $titleUrl = match ($entity?->root) {
-        'movies' => route('movie.view', $entity->id),
-        'tv' => route('series', $entity->id),
-        default => route('details', $firstRow->guid),
-    };
+    $titleUrl = $entity?->titleUrl() ?? route('details', $firstRow->guid);
 @endphp
 <header class="release-cover-expanded-header">
     <strong>{{ $title }}</strong><span class="text-muted">· {{ $rows->count() }} releases</span>

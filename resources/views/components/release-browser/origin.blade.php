@@ -1,9 +1,5 @@
 @php
-    $entityUrl = match ($entity?->root) {
-        'movies' => route('movie.view', $entity->id),
-        'tv' => route('series', $entity->id),
-        default => route('details', $row->guid),
-    };
+    $entityUrl = $entity?->titleUrl() ?? route('details', $row->guid);
 @endphp
 <div class="release-browser-origin">
     @if($entity)

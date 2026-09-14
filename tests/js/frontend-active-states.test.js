@@ -100,61 +100,6 @@ test('generic tabs replace the initial primary state on every click', () => {
     [first, second].forEach(assertPrimaryOnly);
 });
 
-test('quality clicks clear server colors and preserve combined release filtering', () => {
-    const buttons = viewElements('movies/viewmoviefull.blade.php', /<button (data-resolution|data-source)="([^"]+)"\s+class="([^"]+)"/g);
-    const releases = ['Example.1080p.WEB-DL', 'Example.720p.Bluray'].map(name => new Element({ class: 'release-item', 'data-release-name': name }));
-    const { root, registrations } = loadComponent('quality-filter.js', [...buttons, ...releases]);
-    const component = Object.assign(registrations.qualityFilter(), { $el: root });
-    component.init();
-    const click = button => root.handlers.click({ target: button });
-    click(buttons.find(button => button.getAttribute('data-resolution') === '1080p'));
-    click(buttons.find(button => button.getAttribute('data-source') === 'web-dl'));
-
-    for (const key of ['data-resolution', 'data-source']) {
-        const all = buttons.find(button => button.getAttribute(key) === 'all');
-        assert.equal(all.classes.has('bg-primary-600'), false);
-        assert.equal(all.classes.has('text-white'), false);
-        const selected = buttons.find(button => button.getAttribute(key) === component[key === 'data-source' ? 'activeSource' : 'activeResolution']);
-        assert.equal(selected.classes.has('bg-primary-600'), true);
-        assert.equal(selected.classes.has('dark:bg-primary-700'), true);
-        assert.equal(selected.classes.has('bg-(--surface-panel-alt)'), false);
-        assert.equal(selected.classes.has('dark:bg-(--surface-panel-alt-dark)'), false);
-        assert.equal(all.classes.has('bg-(--surface-panel-alt)'), true);
-    }
-    assert.equal(component.visibleCount, 1);
-    assert.equal(releases[1].style.display, 'none');
-    buttons.forEach(assertPrimaryOnly);
-
-    buttons.filter(button => button.getAttribute('data-resolution') === 'all' || button.getAttribute('data-source') === 'all').forEach(click);
-    assert.equal(component.visibleCount, 2);
-    assert.equal(releases[1].style.display, undefined);
-});
-
-test('loading another season transfers active tab and badge colors', async () => {
-    const firstBadge = new Element({ tag: 'span', class: 'bg-primary-100 text-primary-800' });
-    const secondBadge = new Element({ tag: 'span', class: 'bg-(--surface-panel-alt) dark:bg-(--surface-card-dark) text-gray-600' });
-    const first = new Element({ 'data-series-season-link': '', 'data-season': '1', 'aria-current': 'page', class: 'border-primary-500 text-primary-600' }, [firstBadge]);
-    const second = new Element({ 'data-series-season-link': '', 'data-season': '2', class: 'border-transparent text-gray-500' }, [secondBadge]);
-    const panel = new Element({ 'data-series-season-content': '' });
-    const { root, registrations } = loadComponent('series-season-loader.js', [first, second, panel], {
-        fetch: async () => ({ ok: true, json: async () => ({ selectedSeason: 2, contentHtml: '<div>Season 2</div>' }) }),
-    });
-    const component = Object.assign(registrations.seriesSeasonLoader(), { $el: root });
-    component.init();
-    component.load({ href: 'https://indexer.test/series/1?season=2' });
-    await new Promise(setImmediate);
-
-    assert.equal(first.getAttribute('aria-current'), null);
-    assert.equal(second.getAttribute('aria-current'), 'page');
-    assert.equal(first.classes.has('text-primary-600'), false);
-    assert.equal(firstBadge.classes.has('bg-primary-100'), false);
-    assert.equal(second.classes.has('text-primary-600'), true);
-    assert.equal(secondBadge.classes.has('bg-primary-100'), true);
-    assert.equal(secondBadge.classes.has('bg-(--surface-panel-alt)'), false);
-    assert.equal(firstBadge.classes.has('bg-(--surface-panel-alt)'), true);
-    [first, second, firstBadge, secondBadge].forEach(assertPrimaryOnly);
-});
-
 test('theme selection removes the server neutral hover fill and restores it on deselection', () => {
     const view = readFileSync(new URL('../../resources/views/partials/theme-switcher.blade.php', import.meta.url), 'utf8');
     const inactive = view.match(/: '(text-gray-300[^']+)'/)[1];

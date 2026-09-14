@@ -79,16 +79,16 @@ class SeriesControllerTest extends TestCase
         $this->createMatchedRelease($videoId, 1, 1, 'Only.Season.One.S01E01.720p-GROUP');
         $this->createMatchedRelease($videoId, 2, 1, 'Only.Season.Two.S02E01.720p-GROUP');
 
-        $seasonOne = $this->actingAs($user)->get(route('series', ['id' => $videoId, 'season' => 1]));
+        $seasonOne = $this->actingAs($user)->followingRedirects()->get(route('series', ['id' => $videoId, 'season' => 1]));
         $seasonOne->assertOk();
         $seasonOne->assertSee('Only.Season.One.S01E01.720p-GROUP');
         $seasonOne->assertDontSee('Only.Season.Two.S02E01.720p-GROUP');
 
-        $seasonTwo = $this->actingAs($user)->get(route('series', ['id' => $videoId, 'season' => 2]));
+        $seasonTwo = $this->actingAs($user)->followingRedirects()->get(route('series', ['id' => $videoId, 'season' => 2]));
         $seasonTwo->assertOk();
         $seasonTwo->assertSee('Only.Season.Two.S02E01.720p-GROUP');
         $seasonTwo->assertDontSee('Only.Season.One.S01E01.720p-GROUP');
-        $row = $seasonTwo->viewData('seasons')[2][1][0]->row_data;
+        $row = $seasonTwo->viewData('results')->first()->row_data;
         $this->assertSame('tv', $row->entity?->root);
         $this->assertSame('Paged Test Show', $row->entity?->title);
         $this->assertSame(2, $row->entity?->season);
@@ -120,13 +120,13 @@ class SeriesControllerTest extends TestCase
         $this->assertTrue($row->nfo);
     }
 
-    public function test_episode_card_stays_inside_the_series_page_panel(): void
+    public function test_shared_release_table_stays_inside_the_title_page(): void
     {
         $user = $this->createUser();
         $videoId = $this->createShow();
         $this->createMatchedRelease($videoId, 1, 1, 'Nested.Show.S01E01.720p-GROUP');
 
-        $response = $this->actingAs($user)->get(route('series', ['id' => $videoId]));
+        $response = $this->actingAs($user)->followingRedirects()->get(route('series', ['id' => $videoId]));
         $response->assertOk();
 
         $document = new DOMDocument;
@@ -134,10 +134,10 @@ class SeriesControllerTest extends TestCase
         $xpath = new DOMXPath($document);
 
         $this->assertSame(1.0, $xpath->evaluate(
-            'count(//div[contains(@class, "series-detail-page")]//div[@id="series-episodes"])'
+            'count(//*[@x-data="titleOverview"]//*[@data-title-releases])'
         ));
         $this->assertSame(1.0, $xpath->evaluate(
-            'count(//div[@id="series-episodes"]//div[contains(@class, "series-episode-card")])'
+            'count(//*[@data-title-releases]//table)'
         ));
     }
 
@@ -148,7 +148,7 @@ class SeriesControllerTest extends TestCase
         $this->createMatchedRelease($videoId, 1, 1, 'Link.Test.S01E01.720p-GROUP');
         $this->createMatchedRelease($videoId, 2, 1, 'Link.Test.S02E01.720p-GROUP');
 
-        $response = $this->actingAs($user)->get(route('series', [
+        $response = $this->actingAs($user)->followingRedirects()->get(route('series', [
             'id' => $videoId,
             'season' => 1,
             'page' => 3,
@@ -163,9 +163,8 @@ class SeriesControllerTest extends TestCase
         $this->assertStringContainsString('page=1', $html);
         $this->assertStringContainsString('t=5030', $html);
         $this->assertStringContainsString('year='.now()->year, $html);
-        $this->assertStringContainsString('#series-episodes', $html);
-        $this->assertStringContainsString('x-data="seriesSeasonLoader"', $html);
-        $this->assertStringContainsString('data-series-season-link', $html);
+        $this->assertStringContainsString('x-data="titleOverview"', $html);
+        $this->assertStringContainsString('data-title-page', $html);
         $this->assertStringNotContainsString('season=2&amp;page=3', $html);
     }
 
@@ -176,22 +175,14 @@ class SeriesControllerTest extends TestCase
         $this->createMatchedRelease($videoId, 1, 1, 'Lazy.Test.S01E01.720p-GROUP');
         $this->createMatchedRelease($videoId, 2, 1, 'Lazy.Test.S02E01.720p-GROUP');
 
-        $response = $this->actingAs($user)->getJson(route('series', [
-            'id' => $videoId,
-            'season' => 2,
-            '_fragment' => 'season',
+        $response = $this->actingAs($user)->followingRedirects()->get(route('series', [
+            'id' => $videoId, 'season' => 2, '_fragment' => 'season',
         ]));
 
-        $response->assertOk();
-        $response->assertJsonPath('selectedSeason', 2);
-
-        $contentHtml = $response->json('contentHtml');
-        $this->assertIsString($contentHtml);
-        $this->assertStringContainsString('data-series-season-content', $contentHtml);
-        $this->assertStringContainsString('Lazy.Test.S02E01.720p-GROUP', $contentHtml);
-        $this->assertStringNotContainsString('Lazy.Test.S01E01.720p-GROUP', $contentHtml);
-        $this->assertStringNotContainsString('<!DOCTYPE html>', $contentHtml);
-        $this->assertStringNotContainsString('_fragment=season', (string) $response->json('url'));
+        $response->assertOk()->assertSee('data-title-releases', false)
+            ->assertSee('Lazy.Test.S02E01.720p-GROUP')->assertDontSee('Lazy.Test.S01E01.720p-GROUP')
+            ->assertDontSee('<!DOCTYPE html>', false);
+        $this->assertSame(2, $response->viewData('selectedSeason'));
     }
 
     public function test_many_releases_only_render_selected_season_page(): void
@@ -199,17 +190,18 @@ class SeriesControllerTest extends TestCase
         $user = $this->createUser();
         $videoId = $this->createShow();
 
-        for ($episode = 1; $episode <= 30; $episode++) {
+        for ($episode = 1; $episode <= 101; $episode++) {
             $this->createMatchedRelease($videoId, 1, $episode, sprintf('Paged.Show.S01E%02d.720p-GROUP', $episode));
             $this->createMatchedRelease($videoId, 2, $episode, sprintf('Paged.Show.S02E%02d.720p-GROUP', $episode));
         }
 
-        $response = $this->actingAs($user)->get(route('series', ['id' => $videoId, 'season' => 1]));
+        $response = $this->actingAs($user)->followingRedirects()->get(route('series', ['id' => $videoId, 'season' => 1]));
 
         $response->assertOk();
         $response->assertSee('Paged.Show.S01E01.720p-GROUP');
         $response->assertDontSee('Paged.Show.S02E01.720p-GROUP');
-        $this->assertSame(20, substr_count($response->getContent(), 'series-episode-card'));
+        $this->assertCount(100, $response->viewData('results'));
+        $this->assertSame(101, $response->viewData('results')->total());
     }
 
     public function test_series_list_filters_premiere_year_by_decade_and_letter(): void
@@ -294,7 +286,7 @@ class SeriesControllerTest extends TestCase
         $this->createMatchedRelease($videoId, 1, 2, 'Air.Year.2006.S01E02-GROUP', '2006-02-03');
         $this->createMatchedRelease($videoId, 2, 1, 'Other.Season.2005.S02E01-GROUP', '2005-03-04');
 
-        $response = $this->actingAs($user)->get(route('series', [
+        $response = $this->actingAs($user)->followingRedirects()->get(route('series', [
             'id' => $videoId,
             'season' => 1,
             'year' => '2005',
@@ -304,8 +296,7 @@ class SeriesControllerTest extends TestCase
         $response->assertSee('Air.Year.2005.S01E01-GROUP');
         $response->assertDontSee('Air.Year.2006.S01E02-GROUP');
         $response->assertDontSee('Other.Season.2005.S02E01-GROUP');
-        $response->assertSee('data-year-picker', false);
-        $response->assertSee('value="2005" selected', false);
+        $response->assertSee('Clear year filter');
         $this->assertStringContainsString('year=2005', $response->getContent());
         $this->assertStringContainsString('page=1', $response->getContent());
     }
@@ -317,33 +308,33 @@ class SeriesControllerTest extends TestCase
         $this->createMatchedRelease($videoId, 1, 1, 'Selected.Season.2006.S01E01-GROUP', '2006-02-03');
         $this->createMatchedRelease($videoId, 2, 1, 'Other.Season.2005.S02E01-GROUP', '2005-03-04');
 
-        $response = $this->actingAs($user)->get(route('series', [
+        $response = $this->actingAs($user)->followingRedirects()->get(route('series', [
             'id' => $videoId,
             'season' => 1,
             'year' => '2005',
         ]));
 
         $response->assertOk();
-        $response->assertSee('No releases found on this page for the selected season.');
+        $response->assertSee('No releases for this title.');
         $response->assertDontSee('Selected.Season.2006.S01E01-GROUP');
         $response->assertDontSee('Other.Season.2005.S02E01-GROUP');
         $response->assertViewHas('selectedSeason', 1);
     }
 
-    public function test_show_page_keeps_the_year_picker_available_when_no_air_year_matches(): void
+    public function test_show_page_can_clear_the_air_year_filter_when_no_releases_match(): void
     {
         $user = $this->createUser();
         $videoId = $this->createShow();
         $this->createMatchedRelease($videoId, 1, 1, 'No.Match.S01E01-GROUP', '2005-02-03');
 
-        $response = $this->actingAs($user)->get(route('series', [
+        $response = $this->actingAs($user)->followingRedirects()->get(route('series', [
             'id' => $videoId,
             'year' => '1999',
         ]));
 
         $response->assertOk();
-        $response->assertSee('data-year-picker', false);
-        $response->assertSee('No episodes/releases found for this series.');
+        $response->assertSee('Clear year filter');
+        $response->assertSee('No releases for this title.');
         $response->assertDontSee('No.Match.S01E01-GROUP');
     }
 
@@ -380,18 +371,18 @@ class SeriesControllerTest extends TestCase
     public function test_show_page_renders_available_artwork_when_the_summary_is_empty(): void
     {
         $user = $this->createUser();
-        $videoId = $this->createShow('Summaryless Show', '2023-01-01', banner: true, summary: '');
+        $videoId = $this->createShow('Summaryless Show', '2023-01-01', image: true, summary: '');
         $this->createMatchedRelease($videoId, 1, 1, 'Summaryless.Show.S01E01-GROUP');
 
         $coversRoot = $this->makeTempDirectory('series-detail-artwork');
         config(['nntmux_settings.covers_path' => $coversRoot]);
         File::ensureDirectoryExists($coversRoot.'/tvshows');
-        File::put($coversRoot.'/tvshows/'.$videoId.'-banner.webp', 'banner');
+        File::put($coversRoot.'/tvshows/'.$videoId.'.webp', 'poster');
 
-        $response = $this->actingAs($user)->get(route('series', ['id' => $videoId]));
+        $response = $this->actingAs($user)->followingRedirects()->get(route('series', ['id' => $videoId]));
 
         $response->assertOk();
-        $response->assertSee('/covers/tvshows/'.$videoId.'-banner.webp', false);
+        $response->assertSee('/covers/tvshows/'.$videoId.'.webp', false);
     }
 
     public function test_banner_changes_do_not_replace_portrait_artwork_in_cover_tiles(): void

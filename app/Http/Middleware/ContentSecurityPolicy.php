@@ -45,6 +45,7 @@ class ContentSecurityPolicy
         // 'strict-dynamic' propagates trust from nonce-validated scripts to
         // dynamically loaded scripts. Host-based allowlists are kept as
         // fallback for older browsers.
+        $trailerFrames = $request->is('title/movies/*') ? ' https://www.youtube-nocookie.com https://v.traileraddict.com' : '';
         $directives = [
             "default-src 'self'",
             // 'unsafe-eval' is required because @alpinejs/csp bundles dead-code from the
@@ -58,7 +59,7 @@ class ContentSecurityPolicy
             "font-src 'self' https://fonts.gstatic.com https://fonts.bunny.net https://cdnjs.cloudflare.com/ data:",
             "img-src 'self' data: https: blob:",
             "connect-src 'self' https://www.google.com",
-            "frame-src 'self' https://www.google.com https://www.gstatic.com https://challenges.cloudflare.com data: blob:",
+            "frame-src 'self' https://www.google.com https://www.gstatic.com https://challenges.cloudflare.com data: blob:{$trailerFrames}",
             "child-src 'self' https://www.google.com https://challenges.cloudflare.com blob:",
             "worker-src 'self' blob:",
             "object-src 'none'",

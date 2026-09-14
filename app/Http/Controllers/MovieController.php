@@ -5,24 +5,11 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Enums\BrowseRoot;
-use App\Services\MovieBrowseService;
-use App\Services\MovieService;
 use App\Services\Releases\LegacyCoverRedirect;
 use Illuminate\Http\Request;
 
 class MovieController extends BasePageController
 {
-    protected MovieBrowseService $movieBrowseService;
-
-    protected MovieService $movieService;
-
-    public function __construct(MovieBrowseService $movieBrowseService, MovieService $movieService)
-    {
-        parent::__construct();
-        $this->movieBrowseService = $movieBrowseService;
-        $this->movieService = $movieService;
-    }
-
     /**
      * @throws \Exception
      */
@@ -42,50 +29,10 @@ class MovieController extends BasePageController
      */
     public function showMovie(Request $request, string $imdbid): mixed
     {
-        // Get movie info
-        $movieInfo = $this->movieService->getMovieInfo($imdbid);
-
-        if (! $movieInfo) {
-            return redirect()->route('Movies')->with('error', 'Movie not found');
-        }
-
-        // Convert Eloquent model to array
-        $movieArray = $movieInfo->toArray();
-
-        // Ensure we have at least the basic fields
-        if (empty($movieArray['title'])) {
-            $movieArray['title'] = 'Unknown Title';
-        }
-        if (empty($movieArray['imdbid'])) {
-            $movieArray['imdbid'] = $imdbid;
-        }
-
-        // Only process fields if they exist and are not empty
-        if (! empty($movieArray['genre'])) {
-            $movieArray['genre'] = makeFieldLinks($movieArray, 'genre', 'movies');
-        }
-        if (! empty($movieArray['actors'])) {
-            $movieArray['actors'] = makeFieldLinks($movieArray, 'actors', 'movies');
-        }
-        if (! empty($movieArray['director'])) {
-            $movieArray['director'] = makeFieldLinks($movieArray, 'director', 'movies');
-        }
-
-        // Add cover image URL using helper function
-        $movieArray['cover'] = getReleaseCover($movieArray);
-
-        // Get all releases for this movie directly (no limit)
-        $releases = $this->movieBrowseService->getMovieReleases($imdbid, (array) $this->userdata->categoryexclusions);
-
-        $this->viewData = array_merge($this->viewData, [
-            'movie' => $movieArray,
-            'releases' => $releases,
-            'meta_title' => ($movieArray['title'] ?? 'Movie').' - Movie Details',
-            'meta_keywords' => 'movie,details,releases',
-            'meta_description' => 'View all releases for '.($movieArray['title'] ?? 'this movie'),
+        return redirect()->route('title', [
+            ...$request->except(['root', 'id', 'imdbid', '_token']),
+            'root' => 'movies', 'id' => preg_replace('/^tt/i', '', $imdbid),
         ]);
-
-        return view('movies.viewmoviefull', $this->viewData);
     }
 
     public function showTrending(Request $request): mixed

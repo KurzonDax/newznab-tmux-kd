@@ -21,8 +21,10 @@ use App\Services\MovieService;
 use App\Services\MusicService;
 use App\Services\PopulateAniListService;
 use App\Services\ReleaseExtraService;
+use App\Services\Releases\ReleaseEntityDataLoader;
 use App\Services\Releases\ReleaseSearchService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
 class DetailsController extends BasePageController
 {
@@ -176,8 +178,12 @@ class DetailsController extends BasePageController
             $anidbCountryName = $anidbCountryModel->name ?? $anidbCountryCode;
         }
 
+        /** @var Collection<int|string, \stdClass> $titleReleases */
+        $titleReleases = collect([(object) $data->getAttributes()]);
+
         $this->viewData = array_merge($this->viewData, [
             'release' => $data,
+            'titleEntity' => app(ReleaseEntityDataLoader::class)->load($titleReleases)[(int) $data->id] ?? null,
             'reVideo' => $reVideo,
             'reAudio' => $reAudio,
             'reSubs' => $reSubs,

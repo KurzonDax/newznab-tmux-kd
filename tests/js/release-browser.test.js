@@ -164,3 +164,49 @@ test('cover size preserves the page and initial jumps toggle off while retaining
     component.jumpLetter({ currentTarget: { dataset: { letter: 'A' } } });
     assert.equal(new URL(navigations.pop()).searchParams.has('letter'), false);
 });
+
+test('select season includes encodings beyond the visible page and clear removes the whole selection', async () => {
+    const { component, rows, header } = browser('visible-a', 'visible-b');
+    const requests = [];
+    component.$store = { cart: { setCount() {} } };
+    globalThis.window = { showToast() {} };
+    globalThis.document = { querySelector: () => ({ content: 'token' }) };
+    globalThis.fetch = async (url, options) => { requests.push(JSON.parse(options.body)); return { ok: true, json: async () => ({ success: true, cartCount: 2 }) }; };
+    component.selectTitleSeason({ currentTarget: { dataset: { seasonGuids: JSON.stringify(['visible-a', 'visible-b', 'next-page']) } } });
+    assert.equal(component.selectedCount, 3);
+    assert.equal(header.checked, true);
+    rows[0].checked = false;
+    component.selectionChanged();
+    assert.equal(component.selectedCount, 2);
+    assert.equal(header.indeterminate, true);
+    await component.addSelectedToBasket();
+    assert.deepEqual(new Set(requests[0].id.split(',')), new Set(['visible-b', 'next-page']));
+    component.clearSelection();
+    assert.equal(component.selectedCount, 0);
+    assert.deepEqual(component.selectedGuids(), []);
+    assert.equal(header.indeterminate, false);
+});
+
+
+test('an entire season downloads through POST without putting thousands of GUIDs in the URL', () => {
+    const submissions = [];
+    globalThis.document = {
+        querySelector: () => ({ content: 'season-csrf' }),
+        body: { append() {} },
+        createElement(tag) {
+            return { tag, children: [], append(child) { this.children.push(child); }, submit() { submissions.push(this); }, remove() {} };
+        },
+    };
+    const { component } = browser('first-guid');
+    const guids = ['first-guid', ...Array.from({ length: 500 }, (_, i) => 'guid-' + i)];
+    component.selectTitleSeason({ currentTarget: { dataset: { seasonGuids: JSON.stringify(guids) } } });
+    component.downloadSelected();
+    assert.equal(submissions.length, 1);
+    assert.equal(submissions[0].method, 'POST');
+    assert.equal(submissions[0].action, '/getnzb');
+    const fields = Object.fromEntries(submissions[0].children.map(input => [input.name, input.value]));
+    assert.equal(fields._token, 'season-csrf');
+    assert.equal(fields.zip, '1');
+    assert.deepEqual(new Set(fields.id.split(',')), new Set(guids));
+    assert.equal(component.selectedCount, 0);
+});

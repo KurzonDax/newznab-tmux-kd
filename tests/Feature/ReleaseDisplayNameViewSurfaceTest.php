@@ -23,9 +23,6 @@ final class ReleaseDisplayNameViewSurfaceTest extends TestCase
             'release details heading' => ['details/index.blade.php'],
             'details cover actions' => ['details/partials/cover-actions.blade.php'],
             'nfo viewer heading' => ['nfo/view.blade.php'],
-            'movie release rows' => ['movies/partials/release-item.blade.php'],
-            'single movie page' => ['movies/viewmoviefull.blade.php'],
-            'tv season listings' => ['series/partials/season-content.blade.php'],
         ];
     }
 

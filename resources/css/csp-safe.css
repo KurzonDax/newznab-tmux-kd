@@ -1275,3 +1275,58 @@ html.public-shell, body.public-shell { height: auto; min-height: 100%; overflow-
 .public-footer-useful { margin-bottom: 12px; font-size: 12px; color: #cbd5e1; }
 .public-footer-useful summary { cursor: pointer; }
 .public-footer-useful-entry { padding: 8px 0; }
+
+.title-overview { color: #334155; }
+.dark .title-overview { color: #cbd5e1; }
+.title-breadcrumb { display: flex; flex-wrap: wrap; gap: 4px; font-size: 12px; }
+.title-hero { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 20px; padding: 18px; margin-top: 8px; }
+.title-artwork { position: relative; align-self: start; aspect-ratio: 2 / 3; overflow: hidden; border-radius: 8px; background: var(--surface-panel-alt); }
+.dark .title-artwork { background: var(--surface-panel-alt-dark); }
+.title-artwork[data-root="audio"] { aspect-ratio: 1; }
+.title-artwork img { width: 100%; height: 100%; object-fit: cover; }
+.title-artwork-placeholder { display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 12px; text-align: center; font-size: 15px; }
+.title-artwork-placeholder i { font-size: 36px; opacity: .55; }
+.title-artwork[data-has-art="0"] { border: 1px solid var(--border-default); }
+.dark .title-artwork[data-has-art="0"] { border-color: var(--border-default-dark); }
+.title-artwork[data-has-art="1"] .title-artwork-placeholder, .title-artwork[data-has-art="0"] img { display: none; }
+.title-body { display: grid; align-content: start; gap: 12px; min-width: 0; }
+.title-body h1 { font-size: 20px; line-height: 1.25; font-weight: 700; }
+.title-body h1 > span { color: var(--text-muted); font-size: 16px; font-weight: 400; }
+.dark .title-body h1 > span { color: var(--text-muted-dark); }
+.title-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.title-metadata { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 18px; font-size: 13px; }
+.title-metadata dt, .title-stats dt, .title-tracks h2 { color: var(--text-muted); font-size: 11px; font-weight: 400; letter-spacing: .04em; text-transform: uppercase; }
+.dark .title-metadata dt, .dark .title-stats dt, .dark .title-tracks h2 { color: var(--text-muted-dark); }
+.title-metadata dd { font-weight: 500; }
+.title-plot { max-width: 80ch; font-size: 13px; line-height: 1.55; }
+.title-tracks ol { columns: 2; column-gap: 28px; list-style: decimal; padding-left: 20px; font-size: 13px; }
+.title-tracks li { padding: 1px 0; }
+.title-stats { display: flex; flex-wrap: wrap; gap: 22px; font-size: 13px; }
+.title-stats dd { font-weight: 600; }
+.title-releases-heading { font-size: 16px; font-weight: 700; margin: 20px 0 10px; }
+.title-quality { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 12px; padding: 10px 14px; font-size: 12px; }
+.title-quality-chip { padding: 2px 7px; border-radius: 5px; background: var(--surface-panel-alt); font-size: 11px; cursor: pointer; }
+.dark .title-quality-chip { background: var(--surface-panel-alt-dark); }
+.title-quality-chip[aria-pressed="true"] { background: var(--color-primary-600); color: #fff; }
+.title-quality-chip:focus-visible, .title-season-tabs a:focus-visible { outline: 2px solid var(--color-primary-500); outline-offset: 2px; }
+.title-season-tabs { display: flex; overflow-x: auto; padding: 0 8px; border-bottom: 1px solid var(--border-default); white-space: nowrap; }
+.dark .title-season-tabs { border-color: var(--border-default-dark); }
+.title-season-tabs a { padding: 10px 14px; font-size: 13px; color: inherit; text-decoration: none; }
+.title-season-tabs a[aria-current] { color: var(--color-primary-600); box-shadow: inset 0 -2px var(--color-primary-600); font-weight: 600; }
+.dark .title-season-tabs a[aria-current] { color: var(--color-primary-400); box-shadow: inset 0 -2px var(--color-primary-400); }
+.title-season-tabs a span { margin-left: 6px; border-radius: 999px; padding: 1px 6px; font-size: 11px; background: var(--surface-panel-alt); }
+.dark .title-season-tabs a span { background: var(--surface-panel-alt-dark); }
+.title-season-header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px; background: var(--surface-panel-alt); font-size: 12px; }
+.dark .title-season-header { background: var(--surface-panel-alt-dark); }
+.title-season-header strong { font-size: 14px; }
+.title-pagination { display: flex; flex-wrap: wrap; gap: 10px; padding: 10px 14px; margin-top: 10px; font-size: 12px; }
+.title-pagination a[aria-current] { background: var(--color-primary-600); color: #fff; border-radius: 4px; padding: 0 5px; }
+@media (max-width: 900px) { .title-hero { grid-template-columns: 120px minmax(0, 1fr); } }
+@media (max-width: 560px) { .title-tracks ol { columns: 1; } }
+
+.title-followed { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 12px; }
+.title-watched-category { border-radius: 4px; padding: 1px 5px; background: var(--color-primary-100); color: var(--color-primary-800); font-size: 11px; }
+.dark .title-watched-category { background: var(--color-primary-900); color: var(--color-primary-200); }
+
+.title-season-tabs a[aria-current] span { background: var(--color-primary-100); color: var(--color-primary-800); }
+.dark .title-season-tabs a[aria-current] span { background: var(--color-primary-900); color: var(--color-primary-200); }
