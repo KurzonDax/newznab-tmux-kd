@@ -333,10 +333,11 @@ final class ReleaseBrowserControllerTest extends TestCase
         $driver->shouldReceive('searchReleasePage')->once()->with(Mockery::on(static fn (ReleaseSearchQuery $query): bool => $query->phrases === ['searchname' => 'Requested title'] && $query->limit === 24 && $query->categoryIds === [2030] && $query->sortField === 'searchname' && $query->sortDirection === 'asc'))
             ->andReturn(new SearchPage([], 0, false, 'browser-test'));
         app(SearchService::class)->extend('browser-test', static fn () => $driver);
-        $this->actingAs($this->browserUser())->postJson('/profile/update-view', ['root' => 'movies', 'per' => 24])->assertOk();
+        $this->actingAs($this->browserUser())->postJson('/profile/update-view', ['root' => 'movies', 'per' => 24, 'view' => 'cards'])->assertOk();
 
-        $response = $this->get('/search?q=Requested%20title&t=2030&subject=Old%20title&ob=size_desc&sort=title')->assertOk();
-        $response->assertSee('data-release-table', false)->assertSee('Requested title')->assertSee('No releases match.');
+        $response = $this->get('/search?q=Requested%20title&t=2030&subject=Old%20title&ob=size_desc&sort=title&view=cards')->assertOk();
+        $response->assertSee('data-release-table', false)->assertSee('Requested title')->assertSee('No releases match.')
+            ->assertDontSee('data-value="cards"', false)->assertDontSee('renamed and post-processed only');
         $this->assertSame(24, $response->viewData('results')->perPage());
         $response->assertSee('q=Corrected%20title', false)->assertDontSee('search=Corrected', false);
     }
@@ -459,6 +460,112 @@ final class ReleaseBrowserControllerTest extends TestCase
     {
         yield 'movies' => ['movies', 2030, 'user_movies', 'imdbid'];
         yield 'tv' => ['tv', 5030, 'user_series', 'videos_id'];
+    }
+
+    #[DataProvider('cardsRoots')]
+    public function test_cards_only_include_renamed_releases_that_finished_processing(string $root, int $categoryId): void
+    {
+        $done = ['categories_id' => $categoryId, 'isrenamed' => 1, 'passwordstatus' => 0, 'nfostatus' => 1, 'additional_pp_claim_token' => null];
+        $this->release('Eligible release', $done);
+        $this->release('Original name', [...$done, 'isrenamed' => 0]);
+        $this->release('Password pending', [...$done, 'passwordstatus' => -1]);
+        $this->release('NFO pending', [...$done, 'nfostatus' => -1]);
+        $this->release('Claimed release', [...$done, 'additional_pp_claim_token' => 'active-claim']);
+        $response = $this->actingAs($this->browserUser())->get('/browse/'.$root.'?view=cards')->assertOk();
+        $this->assertSame(1, $response->viewData('results')->total());
+        $response->assertSee('data-release-cards', false)->assertSee('Eligible release')->assertDontSee('Original name')
+            ->assertDontSee('Password pending')->assertDontSee('NFO pending')->assertDontSee('Claimed release')
+            ->assertSee('renamed and post-processed only')->assertSee('(4 not shown)');
+        $this->assertSame(4, $response->viewData('results')->hiddenCount);
+        $document = new \DOMDocument;
+        @$document->loadHTML($response->getContent());
+        $xpath = new \DOMXPath($document);
+        $this->assertSame(1, $xpath->query('//*[@data-release-cards]//*[@data-release-select]')->length);
+        $this->assertSame(4, $xpath->query('//*[@data-release-cards]//*[@data-row-action]')->length);
+        $this->assertSame(0, $xpath->query('//*[@data-release-cards]//*[contains(@class,"filelist-badge")]')->length);
+        $labels = array_map(static fn (\DOMNode $node): string => trim($node->textContent), iterator_to_array($xpath->query('//*[@data-release-cards]//*[contains(@class,"release-browser-card-value")]/span')));
+        $this->assertSame(['Size', 'Added', 'Posted', 'Grabs'], $labels);
+        $this->assertSame(match ($root) {
+            'audio' => 'square', 'xxx' => 'wide', default => 'tall'
+        }, $xpath->query('//*[@data-release-cards]//*[@data-shape]/@data-shape')->item(0)->nodeValue);
+        $this->assertSame(1, $xpath->query('//button[@data-value="cards" and @aria-pressed="true"]')->length);
+        $response->assertDontSee('aria-label="Thumbnails"', false);
+        $table = $this->get('/browse/'.$root.'?view=table')->assertOk();
+        $this->assertSame(5, $table->viewData('results')->total());
+        $table->assertSee('Original name')->assertSee('data-release-table', false)->assertDontSee('renamed and post-processed only');
+    }
+
+    public static function cardsRoots(): iterable
+    {
+        yield 'movies' => ['movies', 2030];
+        yield 'tv' => ['tv', 5030];
+        yield 'audio' => ['audio', 3030];
+        yield 'console' => ['console', 1030];
+        yield 'books' => ['books', 7030];
+        yield 'adult' => ['xxx', 6030];
+    }
+
+    public function test_cards_share_the_dto_processing_decisions_and_exclude_empty_outstanding_claims(): void
+    {
+        $cases = [
+            'Found NFO' => [1, 0, null, true], 'No NFO' => [0, 0, null, true],
+            'Failed NFO' => [-9, 0, null, true], 'Skipped NFO' => [-10, 0, null, true],
+            'First retry' => [-1, 0, null, false], 'Last retry' => [-8, 0, null, false],
+            'Password unchecked' => [1, -1, null, false], 'Empty claim' => [1, 0, '', false],
+        ];
+        foreach ($cases as $name => [$nfo, $password, $claim, $done]) {
+            $this->release($name, ['isrenamed' => 1, 'nfostatus' => $nfo, 'passwordstatus' => $password, 'additional_pp_claim_token' => $claim]);
+        }
+        $table = $this->actingAs($this->browserUser())->get('/browse/movies?view=table')->assertOk();
+        foreach ($table->viewData('results') as $release) {
+            $this->assertSame($cases[$release->row_data->name][3], $release->row_data->pp_done, $release->row_data->name);
+        }
+        $cards = $this->get('/browse/movies?view=cards')->assertOk();
+        $this->assertEqualsCanonicalizing(['Found NFO', 'No NFO', 'Failed NFO', 'Skipped NFO'], $cards->viewData('results')->getCollection()->map(static fn ($release) => $release->row_data->name)->all());
+        $this->assertSame(4, $cards->viewData('results')->hiddenCount);
+    }
+
+    public function test_cards_count_and_filter_before_pagination_and_remember_the_view(): void
+    {
+        for ($index = 0; $index < 34; $index++) {
+            $this->release('Wanted '.$index, ['isrenamed' => 1, 'nfostatus' => $index < 29 ? 1 : -1]);
+        }
+        $this->release('Outside search', ['isrenamed' => 0]);
+        $this->actingAs($this->browserUser())->postJson('/profile/update-view', ['root' => 'movies', 'view' => 'cards', 'per' => 24])->assertOk();
+        $response = $this->get('/browse/movies?q=Wanted&page=2')->assertOk();
+        $this->assertSame(29, $response->viewData('results')->total());
+        $this->assertSame(5, $response->viewData('results')->hiddenCount);
+        $this->assertCount(5, $response->viewData('results')->items());
+        $response->assertSee('data-release-cards', false)->assertDontSee('Outside search')->assertSee('(5 not shown)');
+        $this->get('/browse/movies?q=Wanted&page=999')->assertRedirect('/browse/movies?q=Wanted&page=2');
+        $table = $this->get('/browse/movies?q=Wanted&view=table')->assertOk();
+        $this->assertSame(34, $table->viewData('results')->total());
+    }
+
+    public function test_cards_are_not_offered_for_all_games_other_group_or_poster_lists(): void
+    {
+        $this->actingAs($this->browserUser());
+        foreach (['/browse/all', '/browse/games', '/browse/other', '/browse/movies?group=example', '/browse/movies?poster=example'] as $path) {
+            $this->get($path.(str_contains($path, '?') ? '&' : '?').'view=cards')->assertOk()
+                ->assertSee('data-release-table', false)->assertDontSee('data-release-cards', false)
+                ->assertDontSee('data-value="cards"', false)->assertDontSee('renamed and post-processed only');
+        }
+    }
+
+    public function test_empty_cards_keep_both_pagers_and_show_the_hidden_count_and_clear_action(): void
+    {
+        $this->release('Wanted pending release', ['nfostatus' => -1]);
+        $response = $this->actingAs($this->browserUser())->get('/browse/movies?view=cards&q=Wanted')->assertOk();
+        $this->assertSame(0, $response->viewData('results')->total());
+        $this->assertSame(1, $response->viewData('results')->hiddenCount);
+        $response->assertSee('No releases match.')->assertSee('(1 not shown)')->assertSee('Clear filters');
+        $document = new \DOMDocument;
+        @$document->loadHTML($response->getContent());
+        $xpath = new \DOMXPath($document);
+        $this->assertSame(2, $xpath->query('//nav[@aria-label="Release pages"]')->length);
+        $this->assertSame(4, $xpath->query('//nav[@aria-label="Release pages"]//button[@disabled]')->length);
+        $this->assertSame(1, $xpath->query('//*[@data-browser-empty]//button')->length);
+        $this->get('/browse/movies?view=cards&q=Wanted&page=999')->assertRedirect('/browse/movies?view=cards&q=Wanted&page=1');
     }
 
     private function browserUser(): User

@@ -21,7 +21,12 @@
         @endforeach
     </x-select>
     <div class="release-browser-segment" aria-label="View">
-        <button type="button" data-preference="view" data-value="table" @click="changePreference" aria-pressed="true"><i class="fas fa-list" aria-hidden="true"></i> Table</button>
+        <button type="button" data-preference="view" data-value="table" @click="changePreference" aria-pressed="{{ $state->view !== 'cards' ? 'true' : 'false' }}"><i class="fas fa-list" aria-hidden="true"></i> Table</button>
+        @if(in_array('cards', $state->availableViews(), true))
+            <button type="button" data-preference="view" data-value="cards" @click="changePreference" aria-pressed="{{ $state->view === 'cards' ? 'true' : 'false' }}" title="Renamed, post-processed releases only"><i class="fas fa-table-cells-large" aria-hidden="true"></i> Cards</button>
+        @endif
     </div>
-    <x-button variant="secondary" size="icon" icon="fas fa-image" data-preference="thumbs" :data-value="$state->thumbs ? '0' : '1'" @click="changePreference" :aria-pressed="$state->thumbs ? 'true' : 'false'" aria-label="Thumbnails" title="Thumbnails" />
+    @if($state->view !== 'cards')
+        <x-button variant="secondary" size="icon" icon="fas fa-image" data-preference="thumbs" :data-value="$state->thumbs ? '0' : '1'" @click="changePreference" :aria-pressed="$state->thumbs ? 'true' : 'false'" aria-label="Thumbnails" title="Thumbnails" />
+    @endif
 </div>

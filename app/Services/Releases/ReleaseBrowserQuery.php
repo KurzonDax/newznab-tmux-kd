@@ -7,8 +7,8 @@ namespace App\Services\Releases;
 use App\Data\ReleaseBrowserState;
 use App\Enums\BrowseRoot;
 use App\Models\User;
+use App\Support\ReleaseBrowserPage;
 use Illuminate\Database\Query\Builder;
-use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -16,13 +16,18 @@ final class ReleaseBrowserQuery
 {
     public function __construct(private readonly ReleaseBrowseService $releases, private readonly ReleaseBrowserMetadata $metadata) {}
 
-    /** @return LengthAwarePaginator<int, \stdClass> */
-    public function paginate(ReleaseBrowserState $state, User $user): LengthAwarePaginator
+    public function paginate(ReleaseBrowserState $state, User $user): ReleaseBrowserPage
     {
         $query = $this->baseQuery($state, $user);
         $this->metadata->filter($query, $state->root, $state->filters);
         $displayName = $this->displayName();
-        $total = $query->count();
+        $totalBeforeEligibility = $query->count();
+        $total = $totalBeforeEligibility;
+        if ($state->view === 'cards') {
+            app(ReleaseRowDataLoader::class)->postProcessed($query, 'r.');
+            $query->where('r.isrenamed', 1);
+            $total = $query->count();
+        }
         $page = min($state->page, max(1, (int) ceil($total / $state->per)));
         if ($state->sort === 'title') {
             $query->orderByRaw($displayName.' ASC');
@@ -46,9 +51,9 @@ final class ReleaseBrowserQuery
         }
         $this->releases->loadReleaseRows($rows);
 
-        return new LengthAwarePaginator($rows, $total, $state->per, $page, [
+        return new ReleaseBrowserPage($rows, $total, $state->per, $page, [
             'path' => request()->url(), 'query' => $state->queryParameters(request()),
-        ]);
+        ], hiddenCount: $totalBeforeEligibility - $total);
     }
 
     /** @return array<string, list<string>> */
