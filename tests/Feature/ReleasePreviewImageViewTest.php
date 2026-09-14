@@ -44,7 +44,7 @@ class ReleasePreviewImageViewTest extends TestCase
             'musicinfo_id' => 42,
         ]));
 
-        $this->assertStringContainsString('class="preview-badge', $html);
+        $this->assertMatchesRegularExpression('/class="[^"]*\\bpreview-badge\\b/', $html);
         $this->assertStringContainsString('data-audio-url="'.route('preview.audio', 'audio-guid').'"', $html);
         $this->assertStringContainsString('data-audio-type="audio/mpeg"', $html);
         $this->assertStringContainsString('data-audio-meta="30s · MP3 · stream copy"', $html);
@@ -67,7 +67,7 @@ class ReleasePreviewImageViewTest extends TestCase
             'jpgstatus' => 1,
         ]));
 
-        $this->assertSame(2, substr_count($html, 'data-release-display-name="'.$displayName.'"'));
+        $this->assertSame(4, substr_count($html, 'data-release-display-name="'.$displayName.'"'));
         $this->assertStringNotContainsString('data-release-display-name="Wrong.Source.Name', $html);
     }
 
@@ -96,7 +96,7 @@ class ReleasePreviewImageViewTest extends TestCase
             'audio_preview_meta' => '30s · FLAC · FLAC transcode',
         ]));
 
-        $this->assertStringContainsString('class="preview-badge', $html);
+        $this->assertMatchesRegularExpression('/class="[^"]*\\bpreview-badge\\b/', $html);
         $this->assertStringContainsString('data-audio-url="'.route('preview.audio', 'audio-only-guid').'"', $html);
         $this->assertStringContainsString('data-audio-type="audio/flac"', $html);
         $this->assertStringContainsString('data-image-url=""', $html);
@@ -113,7 +113,7 @@ class ReleasePreviewImageViewTest extends TestCase
             'haspreview' => 1,
         ]));
 
-        $this->assertStringContainsString('class="preview-badge', $html);
+        $this->assertMatchesRegularExpression('/class="[^"]*\\bpreview-badge\\b/', $html);
         $this->assertStringContainsString('/covers/preview/video-guid_thumb.jpg', $html);
         $this->assertStringContainsString('data-image-title="Preview Image"', $html);
         $this->assertStringNotContainsString('data-audio-url=', $html);
@@ -137,7 +137,7 @@ class ReleasePreviewImageViewTest extends TestCase
 
         $html = $this->renderResults($release);
 
-        $this->assertStringNotContainsString('class="preview-badge', $html);
+        $this->assertDoesNotMatchRegularExpression('/class="[^"]*\\bpreview-badge\\b/', $html);
         $this->assertStringNotContainsString('data-audio-url=', $html);
     }
 
@@ -153,7 +153,7 @@ class ReleasePreviewImageViewTest extends TestCase
             'has_audio_preview' => 0,
         ]));
 
-        $this->assertStringContainsString('class="preview-badge', $html);
+        $this->assertMatchesRegularExpression('/class="[^"]*\\bpreview-badge\\b/', $html);
         $this->assertStringContainsString('/covers/audiosample/spectrogram-only-guid_spectrum.png', $html);
         $this->assertStringContainsString('data-image-title="Spectrogram"', $html);
         $this->assertStringNotContainsString('data-audio-url=', $html);
@@ -171,7 +171,7 @@ class ReleasePreviewImageViewTest extends TestCase
             'video_preview_mime' => 'video/mp4',
         ]));
 
-        $this->assertStringContainsString('class="preview-badge', $html);
+        $this->assertMatchesRegularExpression('/class="[^"]*\\bpreview-badge\\b/', $html);
         $this->assertStringContainsString('data-video-url="'.route('preview.video', 'clip-guid').'"', $html);
         $this->assertStringContainsString('data-video-type="video/mp4"', $html);
         $this->assertStringContainsString('fas fa-video', $html);
@@ -188,7 +188,7 @@ class ReleasePreviewImageViewTest extends TestCase
             'video_preview_mime' => 'video/ogg',
         ]));
 
-        $this->assertStringContainsString('class="preview-badge', $html);
+        $this->assertMatchesRegularExpression('/class="[^"]*\\bpreview-badge\\b/', $html);
         $this->assertStringContainsString('data-video-url="'.route('preview.video', 'legacy-guid').'"', $html);
         $this->assertStringContainsString('data-video-type="video/ogg"', $html);
         $this->assertStringContainsString('fas fa-video', $html);
@@ -222,7 +222,7 @@ class ReleasePreviewImageViewTest extends TestCase
             ]),
         ])->render();
 
-        $this->assertStringContainsString('class="preview-badge', $html);
+        $this->assertMatchesRegularExpression('/class="[^"]*\\bpreview-badge\\b/', $html);
         $this->assertStringContainsString('data-video-url="'.route('preview.video', 'movie-row-guid').'"', $html);
         $this->assertStringContainsString('data-video-type="video/mp4"', $html);
         $this->assertStringContainsString('fas fa-video', $html);
@@ -247,7 +247,7 @@ class ReleasePreviewImageViewTest extends TestCase
 
         $html = view('details.partials.preview-images', ['release' => $release])->render();
 
-        $this->assertStringContainsString('class="preview-badge', $html);
+        $this->assertMatchesRegularExpression('/class="[^"]*\\bpreview-badge\\b/', $html);
         $this->assertStringContainsString('data-video-url="'.route('preview.video', 'details-guid').'"', $html);
         $this->assertStringContainsString('data-video-type="video/mp4"', $html);
         $this->assertStringContainsString('fas fa-video', $html);
@@ -386,7 +386,7 @@ class ReleasePreviewImageViewTest extends TestCase
             'jpgstatus' => 1,
         ]));
 
-        $this->assertStringContainsString('class="sample-badge', $html);
+        $this->assertMatchesRegularExpression('/class="[^"]*\\bsample-badge\\b/', $html);
         $this->assertStringNotContainsString('data-full-url', $html);
     }
 

@@ -94,7 +94,7 @@ final class PosterIdentityControllerTest extends TestCase
         $firstPage->assertDontSee('Look alike');
         $firstPage->assertDontSee('Case variant');
         $firstPage->assertSee('name=user%20%3Cuser%40x.localdomain%3E', false);
-        $firstPage->assertSee('All releases from this poster');
+        $firstPage->assertSee('All posts by '.$identity);
         $firstPage->assertSee('bg-primary-100', false);
         $firstPage->assertDontSee('bg-indigo-100', false);
 
@@ -505,6 +505,20 @@ final class PosterIdentityControllerTest extends TestCase
             $this->assertSame($done, $response->viewData('results')->first()->row_data->pp_done);
         }
 
+    }
+
+    public function test_passworded_poster_rows_render_the_loaded_password_fact(): void
+    {
+        $user = $this->verifiedUser();
+        Settings::query()->updateOrCreate(['name' => 'showpasswordedrelease'], ['value' => '1']);
+        $release = $this->release('Passworded release', 'locked-poster', '2026-09-12 23:30:00');
+        DB::table('releases')->where('id', $release->id)->update(['passwordstatus' => 1]);
+
+        $response = $this->actingAs($user)->get(route('poster-identity', ['name' => 'locked-poster']))->assertOk();
+        $document = new DOMDocument;
+        @$document->loadHTML($response->getContent());
+        $chips = (new DOMXPath($document))->query('//span[@data-chip-variant="danger" and normalize-space(.)="Password"]');
+        $this->assertSame(2, $chips->length);
     }
 
     public function test_row_entity_and_basket_state_belong_to_the_current_viewer(): void
