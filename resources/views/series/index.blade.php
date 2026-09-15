@@ -4,10 +4,11 @@
     <x-page-header title="TV Shows" />
     <form action="{{ route('series') }}" method="GET" class="card tv-directory-toolbar">
         <x-input name="title" :value="request('title')" placeholder="Search TV shows" aria-label="Show title" />
-        <x-year-picker :years="$years" :selected="request('year', '')" :from="request('year_from', '')" :to="request('year_to', '')" />
+        <x-year-picker :selected="request('year', '')" :from="request('year_from', '')" :to="request('year_to', '')" />
         <x-select width="compact" name="network" aria-label="Network"><option value="">Network</option>@foreach($networks as $network)<option @selected(request('network') === $network)>{{ $network }}</option>@endforeach</x-select>
         <x-select width="compact" name="available" aria-label="Availability"><option value="0">All stored shows</option><option value="1" @selected(request()->boolean('available'))>With available releases</option></x-select>
         <label><input type="checkbox" name="watching" value="1" @checked(request()->boolean('watching'))> Only shows I follow</label>
+        <input type="hidden" name="per" value="{{ $shows->perPage() }}">
         <input type="hidden" name="initial" value="{{ $initial }}">
         <x-button type="submit">Apply</x-button><x-button-link :href="route('series')" variant="secondary">Reset</x-button-link>
     </form>

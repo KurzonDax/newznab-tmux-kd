@@ -98,6 +98,57 @@ final class TitleControllerTest extends TestCase
         $this->assertSame(0, $response->viewData('results')->total());
     }
 
+    public function test_tv_title_exposes_the_air_year_picker_in_full_pages_and_fragments(): void
+    {
+        $this->video(['id' => 12, 'title' => 'Year test', 'started' => '1950-01-01']);
+        $this->actingAs($this->browserUser());
+        foreach (['', '&_fragment=releases'] as $fragment) {
+            $response = $this->get('/title/tv/12?year=custom&year_from=1980&year_to=1970'.$fragment)->assertOk();
+            $response->assertSee('All Years')->assertSee('Air year')->assertSee('Apply year')
+                ->assertSee('name="year_from"', false)->assertSee('name="year_to"', false)
+                ->assertSee('value="1900"', false)->assertSee('value="'.(date('Y') + 1).'"', false);
+        }
+    }
+
+    public function test_directory_year_and_title_air_year_remain_distinct_through_ranges_and_legacy_links(): void
+    {
+        $years = [1969, 1970, 1975, 1979, 1980];
+        $this->actingAs($this->browserUser());
+        foreach ($years as $index => $year) {
+            $this->video(['id' => $year, 'title' => 'Premiere fixture '.$year, 'started' => $year.'-06-15']);
+            DB::table('tv_episodes')->insert(['id' => $year, 'videos_id' => 1975, 'series' => 1, 'episode' => $index + 1, 'firstaired' => $year.'-06-15']);
+            $this->release('Air fixture '.$year, ['categories_id' => 5030, 'videos_id' => 1975, 'tv_episodes_id' => $year,
+                'postdate' => '2001-01-01', 'adddate' => '2020-01-01']);
+        }
+        foreach ([
+            'year=1970s' => [1970, 1975, 1979], 'year=1975' => [1975],
+            'year=custom&year_from=1970&year_to=1975' => [1970, 1975],
+            'year=custom&year_from=1975' => [1975, 1979, 1980],
+            'year=custom&year_to=1975' => [1969, 1970, 1975],
+            'year=custom&year_from=1980&year_to=1970' => [1970, 1975, 1979, 1980],
+            'year=custom&year_from=&year_to=' => $years,
+            'year[]=broken' => $years, 'year=custom&year_from[]=1970&year_to=1975' => [1969, 1970, 1975],
+        ] as $query => $expected) {
+            $directory = $this->get('/series?'.$query)->assertOk();
+            $directory->assertSee('All Years')->assertSee('Individual Years')->assertSee('value="1900"', false)
+                ->assertSee('value="'.(date('Y') + 1).'"', false);
+            $this->assertSame(count($expected), $directory->viewData('shows')->total());
+            $legacy = $this->get('/series/1975?season=1&'.$query)->assertRedirect();
+            $title = $this->get($legacy->headers->get('Location'))->assertOk()->assertSee('Apply year');
+            $this->assertSame(count($expected), $title->viewData('results')->total());
+            $this->get('/title/tv/1975?season=1&'.$query.'&_fragment=releases')->assertOk()->assertSee('Apply year');
+            foreach ($years as $year) {
+                if (in_array($year, $expected, true)) {
+                    $directory->assertSee('Premiere fixture '.$year);
+                    $title->assertSee('Air fixture '.$year);
+                } else {
+                    $directory->assertDontSee('Premiere fixture '.$year);
+                    $title->assertDontSee('Air fixture '.$year);
+                }
+            }
+        }
+    }
+
     public function test_show_dialog_bounds_each_independent_list_and_keeps_packs_out_of_episode_variants(): void
     {
         $this->video(['id' => 1, 'title' => 'Harbor Street']);

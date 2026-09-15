@@ -1624,3 +1624,10 @@ body.public-shell { display: flex; flex-direction: column; min-height: 100vh; mi
 .release-browser[data-root="tv"] .release-cover-grid[data-size="l"] .release-cover-detail-art { width: 140px; }
 .tv-directory-toolbar [data-year-picker] { max-width: 100%; }
 .tv-directory-toolbar [data-year-picker] > .ui-control { width: auto; max-width: 100%; }
+
+.year-picker { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; min-width: 0; max-width: 100%; }
+.year-picker > div { min-width: 0; max-width: 100%; }
+.year-picker-range { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; }
+.year-picker-range.hidden { display: none; }
+.year-picker-range > div { width: 6.5rem; max-width: 100%; }
+.year-picker > a { align-self: center; white-space: nowrap; }

@@ -75,6 +75,12 @@ final readonly class YearRange
         return $decades;
     }
 
+    /** @return list<string> */
+    public static function years(): array
+    {
+        return array_map(strval(...), range((int) date('Y') + 1, self::MIN_YEAR));
+    }
+
     private static function parseYear(mixed $value, int $maxYear): ?int
     {
         if (! is_scalar($value)) {
