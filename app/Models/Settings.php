@@ -27,6 +27,7 @@ namespace App\Models;
 use App\Services\Api\ApiCapabilitiesService;
 use App\Services\ObfuscationRecovery\RecoveryControl;
 use App\Support\SettingNumber;
+use App\Support\SiteViewSettings;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Cache;
@@ -298,6 +299,8 @@ class Settings extends Model
 
     public static function forgetCachedSettings(): void
     {
+        app()->forgetInstance(SiteViewSettings::class);
+        Cache::forget(SiteViewSettings::CACHE_KEY);
         Cache::forget('site_settings');
         Cache::forget('site_settings_array');
         Cache::forget('site_settings_converted');
