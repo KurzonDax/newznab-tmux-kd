@@ -110,3 +110,29 @@ test('header and tab handlers keep querying the details root when Alpine changes
     assert.deepEqual(panels.filter(panel => !panel.hidden).map(panel => panel.id), ['nfo']);
     assert.match(contents.nfo.innerHTML, /No NFO for this release/);
 });
+
+test('file paging replaces the page and rejects older success and failure replies', async () => {
+    const { component, contents } = details();
+    const requests = [];
+    globalThis.fetch = (url, options) => new Promise((resolve, reject) => requests.push({ url, options, resolve, reject }));
+    const first = component.selectTab('files');
+    const second = component.loadFilePage(2);
+    assert.equal(requests[0].options.signal.aborted, true);
+    assert.match(requests[1].url, /\/release\/abc\/files\?page=2&per=100/);
+    requests[1].resolve({ ok: true, json: async () => ({ files: [{ index: 100, title: 'New page', size: 0 }], page: 2, per: 100, total: 201, last_page: 3 }) });
+    await second;
+    requests[0].resolve({ ok: true, json: async () => ({ files: [{ title: 'Old page', size: 1 }], page: 1, per: 100, total: 201, last_page: 3 }) });
+    await first;
+    assert.match(contents.files.innerHTML, /New page/);
+    assert.doesNotMatch(contents.files.innerHTML, /Old page/);
+    const third = component.loadFilePage(3);
+    const changed = component.filesPerChanged({ target: { value: '24' } });
+    assert.match(requests[3].url, /page=1&per=24/);
+    requests[3].resolve({ ok: true, json: async () => ({ files: [], page: 1, per: 24, total: 0, last_page: 1 }) });
+    await changed;
+    requests[2].reject(new Error('stale failure'));
+    await third;
+    assert.doesNotMatch(contents.files.innerHTML, /New page|Could not load/);
+    assert.equal(component.filesPage, 1);
+    assert.equal(component.filesPer, 24);
+});

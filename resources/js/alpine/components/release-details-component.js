@@ -1,9 +1,11 @@
+import { fileSummaryPages } from './file-summary-pages.js';
 import { renderMediaInfo } from './mediainfo-modal-component.js';
 
 const tabs = ['overview', 'files', 'media', 'nfo', 'comments'];
 
 export function releaseDetails() {
     return {
+        ...fileSummaryPages(),
         activeTab: 'overview',
         loaded: new Set(),
         pending: new Map(),
@@ -75,6 +77,7 @@ export function releaseDetails() {
         },
         async loadTab(tab) {
             if (this.loaded.has(tab) || this.destroyed) return;
+            if (tab === 'files') return this.loadFilePage(this.filesPage);
             if (this.pending.has(tab)) return this.pending.get(tab);
             const content = this.detailsRoot.querySelector('[data-tab-content="' + tab + '"]');
             const task = this.fetchTab(tab, content);
@@ -82,13 +85,21 @@ export function releaseDetails() {
             await task;
             this.pending.delete(tab);
         },
+        async loadFilePage(page = this.filesPage) {
+            const retry = this.detailsRoot.querySelector('[data-retry-tab="files"]');
+            if (retry) retry.hidden = true;
+            this.loaded.delete('files');
+            const loaded = await this.fetchFiles(this.detailsRoot.dataset.guid, this.detailsRoot.querySelector('[data-tab-content="files"]'), page);
+            if (loaded) this.loaded.add('files');
+            if (retry && !this.destroyed && !this.filesLoading && !this.loaded.has('files')) retry.hidden = false;
+        },
         async fetchTab(tab, content) {
             const retry = this.detailsRoot.querySelector('[data-retry-tab="' + tab + '"]');
             if (retry) retry.hidden = true;
             content.innerHTML = '<p class="text-muted" role="status">Loading…</p>';
             try {
                 const guid = encodeURIComponent(this.detailsRoot.dataset.guid);
-                const urls = { files: '/api/release/' + guid + '/filelist', media: '/release/' + encodeURIComponent(this.detailsRoot.dataset.releaseId) + '/mediainfo', nfo: '/nfo/' + guid + '?modal=1' };
+                const urls = { media: '/release/' + encodeURIComponent(this.detailsRoot.dataset.releaseId) + '/mediainfo', nfo: '/nfo/' + guid + '?modal=1' };
                 const response = await fetch(urls[tab], { headers: { Accept: tab === 'nfo' ? 'text/html' : 'application/json' } });
                 if (response.redirected || (!response.ok && response.status !== 404)) throw new Error('Request failed');
                 let html;
@@ -100,10 +111,6 @@ export function releaseDetails() {
                     const parsed = response.status === 404 ? null : new DOMParser().parseFromString(await response.text(), 'text/html').querySelector('pre');
                     if (response.status !== 404 && !parsed) throw new Error('Invalid NFO');
                     html = '<pre class="nfo-pane">' + escapeHtml(parsed?.textContent || 'No NFO for this release.') + '</pre>';
-                } else {
-                    const data = response.status === 404 ? { files: [] } : await response.json();
-                    if (!Array.isArray(data.files)) throw new Error('Invalid file list');
-                    html = data.files.length ? '<table class="details-files"><thead><tr><th>File name</th><th>Size</th></tr></thead><tbody>' + data.files.map(file => '<tr><td>' + escapeHtml(file.title || file.name || 'Unknown') + '</td><td>' + fileSize(file.size) + '</td></tr>').join('') + '</tbody></table>' : '<p class="text-muted">No files for this release.</p>';
                 }
                 if (this.destroyed) return;
                 content.innerHTML = html;
@@ -121,6 +128,7 @@ export function releaseDetails() {
         },
         destroy() {
             this.destroyed = true;
+            this.cancelFiles();
             window.removeEventListener('hashchange', this._hashChanged);
         },
     };
@@ -131,10 +139,3 @@ function escapeHtml(value) {
     return String(value).replace(/[&<>"']/g, character => entities[character]);
 }
 
-function fileSize(value) {
-    const bytes = Number(value);
-    if (!Number.isFinite(bytes) || bytes < 0) return 'Unknown';
-    if (bytes === 0) return '0 B';
-    const unit = Math.min(4, Math.max(0, Math.floor(Math.log(bytes) / Math.log(1024))));
-    return (bytes / (1024 ** unit)).toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' ' + ['B', 'KB', 'MB', 'GB', 'TB'][unit];
-}
