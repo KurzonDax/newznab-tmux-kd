@@ -78,7 +78,8 @@ class AdminRegistrationController extends BasePageController
             ->take(10)
             ->values();
 
-        $recentFailedAttempts = collect($this->registrationFailureLogService->recentFailures(10))
+        $failureLog = $this->registrationFailureLogService->recentFailures(10);
+        $recentFailedAttempts = collect($failureLog['entries'])
             ->map(function (array $entry): array {
                 $entry['registration_status_label'] = is_numeric($entry['registration_status'])
                     ? $this->registrationStatusService->statusLabel((int) $entry['registration_status'])
@@ -104,6 +105,7 @@ class AdminRegistrationController extends BasePageController
             'history' => $history,
             'recentSuccessfulRegistrations' => $recentSuccessfulRegistrations,
             'recentFailedAttempts' => $recentFailedAttempts,
+            'skippedFailureEntries' => $failureLog['skipped_oversized'] + $failureLog['skipped_malformed'],
         ]));
     }
 

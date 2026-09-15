@@ -431,6 +431,9 @@
                     <div class="border-b border-gray-200 px-6 py-3 dark:border-gray-700">
                         <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Failed Attempts</h3>
                     </div>
+                    @if($skippedFailureEntries > 0)
+                        <p class="px-6 py-3 text-sm text-yellow-700 dark:text-yellow-300" role="status">Some log entries could not be displayed</p>
+                    @endif
                     @forelse($recentFailedAttempts as $failure)
                         <div class="px-6 py-4">
                             <p class="font-medium text-gray-900 dark:text-gray-100">{{ $failure['reason'] ?? 'registration_failed' }}</p>

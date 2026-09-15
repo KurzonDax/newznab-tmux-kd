@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Support\ReverseLineReader;
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Facades\File;
-use SplFileObject;
+use Carbon\Exceptions\InvalidFormatException;
 
 class RegistrationFailureLogService
 {
@@ -18,35 +18,40 @@ class RegistrationFailureLogService
     }
 
     /**
-     * @return array<int, array<string, mixed>>
+     * @return array{entries: list<array<string, mixed>>, skipped_oversized: int, skipped_malformed: int}
      */
     public function recentFailures(int $limit = 10): array
     {
-        $entries = [];
+        $result = ['entries' => [], 'skipped_oversized' => 0, 'skipped_malformed' => 0];
+        if ($limit <= 0) {
+            return $result;
+        }
 
+        $reader = new ReverseLineReader;
         foreach ($this->registrationLogFiles() as $path) {
-            $lines = $this->readLines($path);
+            foreach ($reader->lines($path) as $line) {
+                if ($line === null) {
+                    $result['skipped_oversized']++;
 
-            for ($index = count($lines) - 1; $index >= 0; $index--) {
-                if (! str_contains($lines[$index], 'Registration attempt failed:')) {
                     continue;
                 }
-
-                $entry = $this->parseLine($lines[$index]);
-
+                if (! str_contains($line, 'Registration attempt failed:')) {
+                    continue;
+                }
+                $entry = $this->parseLine($line);
                 if ($entry === null) {
+                    $result['skipped_malformed']++;
+
                     continue;
                 }
-
-                $entries[] = $entry;
-
-                if (count($entries) >= $limit) {
-                    return $entries;
+                $result['entries'][] = $entry;
+                if (count($result['entries']) >= $limit) {
+                    return $result;
                 }
             }
         }
 
-        return $entries;
+        return $result;
     }
 
     /**
@@ -54,7 +59,7 @@ class RegistrationFailureLogService
      */
     private function registrationLogFiles(): array
     {
-        if (! File::isDirectory($this->logsDirectory)) {
+        if (! is_dir($this->logsDirectory)) {
             return [];
         }
 
@@ -62,31 +67,10 @@ class RegistrationFailureLogService
         $paths = array_values(array_filter($paths, static fn (string $path): bool => is_file($path) && is_readable($path)));
 
         usort($paths, static function (string $left, string $right): int {
-            return filemtime($right) <=> filemtime($left);
+            return (@filemtime($right) <=> @filemtime($left)) ?: strcmp($left, $right);
         });
 
         return $paths;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function readLines(string $path): array
-    {
-        $lines = [];
-        $file = new SplFileObject($path, 'r');
-
-        while (! $file->eof()) {
-            $line = rtrim($file->fgets(), "\r\n");
-
-            if ($line === '') {
-                continue;
-            }
-
-            $lines[] = $line;
-        }
-
-        return $lines;
     }
 
     /**
@@ -94,38 +78,36 @@ class RegistrationFailureLogService
      */
     private function parseLine(string $line): ?array
     {
-        $timestamp = null;
-        $level = 'INFO';
-        $message = $line;
-        $context = [];
-
-        if (preg_match(
-            '/^\[(?<timestamp>[^\]]+)\]\s+[A-Za-z0-9_.-]+\.(?<level>[A-Z]+):\s+(?<message>.*?)\s+(?<context>\{.*\})(?:\s+\[\])?$/',
-            $line,
-            $matches
-        )) {
-            $timestamp = $matches['timestamp'];
-            $level = $matches['level'];
-            $message = $matches['message'];
-            $decodedContext = json_decode($matches['context'], true);
-            $context = is_array($decodedContext) ? $decodedContext : [];
-        } elseif (preg_match(
-            '/^\[(?<timestamp>[^\]]+)\]\s+[A-Za-z0-9_.-]+\.(?<level>[A-Z]+):\s+(?<message>.+)$/',
-            $line,
-            $matches
-        )) {
-            $timestamp = $matches['timestamp'];
-            $level = $matches['level'];
-            $message = $matches['message'];
+        if (! preg_match('/^\[(?<timestamp>[^\]]+)\]\s+[A-Za-z0-9_.-]+\.(?<level>[A-Z]+):\s+(?<message>.+)$/', $line, $matches)) {
+            return null;
         }
 
-        if ($timestamp === null) {
+        $message = $matches['message'];
+        $context = [];
+        if (preg_match('/\s\{/', $message, $contextMatch, PREG_OFFSET_CAPTURE)) {
+            $contextStart = $contextMatch[0][1];
+            $json = substr($message, $contextStart + 1);
+            $json = preg_replace('/\s+\[\]$/', '', $json) ?? $json;
+            $context = json_decode($json, true);
+            if (! is_array($context) || json_last_error() !== JSON_ERROR_NONE) {
+                return null;
+            }
+            $message = rtrim(substr($message, 0, $contextStart));
+        }
+
+        try {
+            $timestamp = CarbonImmutable::parse($matches['timestamp']);
+            $errors = CarbonImmutable::getLastErrors();
+            if ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0)) {
+                return null;
+            }
+        } catch (InvalidFormatException) {
             return null;
         }
 
         return [
-            'timestamp' => CarbonImmutable::parse($timestamp),
-            'level' => strtolower($level),
+            'timestamp' => $timestamp,
+            'level' => strtolower($matches['level']),
             'message' => $message,
             'reason' => $context['reason'] ?? null,
             'username' => $context['username'] ?? null,

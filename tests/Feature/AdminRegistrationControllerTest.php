@@ -120,6 +120,20 @@ class AdminRegistrationControllerTest extends TestCase
         $response->assertSee('freshmember@example.com');
         $response->assertSee('invalid_or_expired_invitation');
         $response->assertSee('Temporary slowdown');
+        $response->assertDontSee('Some log entries could not be displayed');
+    }
+
+    public function test_skipped_failure_entries_show_a_warning(): void
+    {
+        $this->createRegistrationLogFile([
+            '[invalid] testing.WARNING: Registration attempt failed: invalid {} []',
+            str_repeat('x', 131073),
+        ]);
+
+        $this->actingAs($this->createUserWithRole('Admin'))
+            ->get(route('admin.registrations.index'))
+            ->assertOk()
+            ->assertSee('Some log entries could not be displayed');
     }
 
     public function test_admin_can_update_manual_registration_status_and_record_history(): void
