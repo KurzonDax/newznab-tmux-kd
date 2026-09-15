@@ -315,6 +315,11 @@ class MovieControllerTest extends TestCase
             $table->integer('videostatus')->default(0);
             $table->integer('grabs')->default(0);
             $table->string('imdbid')->nullable();
+            foreach (['totalpart', 'comments', 'nfostatus', 'jpgstatus', 'isrenamed', 'groups_id', 'videos_id', 'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid'] as $column) {
+                $table->integer($column)->nullable();
+            }
+            $table->string('fromname')->nullable();
+            $table->string('additional_pp_claim_token')->nullable();
         });
 
         Schema::create('release_audio_tags', function (Blueprint $table): void {

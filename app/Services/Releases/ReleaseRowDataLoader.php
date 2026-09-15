@@ -15,8 +15,26 @@ use Illuminate\Support\Facades\DB;
 
 final class ReleaseRowDataLoader
 {
-    /** @param iterable<int, object> $releases */
-    public function load(iterable $releases): void
+    /**
+     * Release columns consumed by the shared row DTO, facts, actions and preview partials.
+     * Computed report, media and preview attributes remain on the caller's objects.
+     *
+     * @var list<string>
+     */
+    public const REQUIRED_COLUMNS = [
+        'id', 'guid', 'searchname', 'display_name', 'categories_id', 'size', 'totalpart',
+        'adddate', 'postdate', 'grabs', 'comments', 'completion', 'repair_outcome',
+        'rescan_outcome', 'passwordstatus', 'nfostatus', 'haspreview', 'jpgstatus',
+        'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid',
+        'videos_id', 'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id',
+        'bookinfo_id', 'anidbid',
+    ];
+
+    /**
+     * @param  iterable<int, object>  $releases
+     * @return Collection<int, object> Original objects in input order, excluding unresolved partial rows.
+     */
+    public function load(iterable $releases): Collection
     {
         $items = [];
         foreach ($releases as $release) {
@@ -24,18 +42,43 @@ final class ReleaseRowDataLoader
         }
         $rows = collect($items);
         if ($rows->isEmpty()) {
-            return;
+            return $rows;
         }
 
-        $stored = DB::table('releases')->whereIn('id', $rows->pluck('id'))->get()->keyBy('id');
-        $postProcessed = $this->postProcessed($stored);
-        $groupIds = $stored->pluck('groups_id')->filter()->unique();
+        $partial = $rows->filter(fn (object $release): bool => ! $this->isComplete($release));
+        $fallback = collect();
+        foreach ($partial->pluck('id')->unique()->chunk(500) as $ids) {
+            foreach (DB::table('releases')->whereIn('id', $ids)->get(self::REQUIRED_COLUMNS) as $release) {
+                $fallback->put($release->id, $release);
+            }
+        }
+        $rows = $rows->filter(function (object $release) use ($fallback): bool {
+            if ($this->isComplete($release)) {
+                return true;
+            }
+            $source = $fallback->get($release->id);
+            if ($source === null) {
+                return false;
+            }
+            foreach (self::REQUIRED_COLUMNS as $column) {
+                if (! $this->hasColumn($release, $column)) {
+                    $release->{$column} = $source->{$column};
+                }
+            }
+
+            return true;
+        })->values();
+        /** @var Collection<int|string, object> $rowAttributes */
+        $rowAttributes = $rows->map(static fn (object $release): object => $release instanceof Model
+            ? (object) $release->getAttributes() : $release)->keyBy('id');
+        $postProcessed = $this->postProcessed($rowAttributes);
+        $groupIds = $rowAttributes->pluck('groups_id')->filter()->unique();
         $groups = $groupIds->isEmpty() ? collect() : DB::table('usenet_groups')->whereIn('id', $groupIds)->pluck('name', 'id');
-        $categoryIds = $stored->pluck('categories_id')->filter()->unique();
+        $categoryIds = $rowAttributes->pluck('categories_id')->filter()->unique();
         $categories = $categoryIds->isEmpty() ? collect() : DB::table('categories as c')
             ->leftJoin('root_categories as root', 'root.id', '=', 'c.root_categories_id')
             ->whereIn('c.id', $categoryIds)->get(['c.id', 'c.title', 'root.title as root_title'])->keyBy('id');
-        $entities = app(ReleaseEntityDataLoader::class)->load($stored);
+        $entities = app(ReleaseEntityDataLoader::class)->load($rowAttributes);
         $basket = [];
         $watchedMovies = [];
         $watchedShows = [];
@@ -51,7 +94,7 @@ final class ReleaseRowDataLoader
             }
         }
         foreach ($rows as $release) {
-            $source = $stored->get($release->id) ?? $release;
+            $source = $rowAttributes->get($release->id) ?? $release;
             $category = $categories->get($source->categories_id ?? 0);
             $row = new ReleaseRowData(
                 id: (int) $release->id,
@@ -98,12 +141,32 @@ final class ReleaseRowDataLoader
                 $release->row_data = $row;
             }
         }
+
+        return $rows;
+    }
+
+    private function isComplete(object $release): bool
+    {
+        foreach (self::REQUIRED_COLUMNS as $column) {
+            if (! $this->hasColumn($release, $column)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function hasColumn(object $release, string $column): bool
+    {
+        return $release instanceof Model
+            ? array_key_exists($column, $release->getAttributes())
+            : property_exists($release, $column);
     }
 
     /**
      * Filter finished releases in SQL and in the rows already loaded for display.
      *
-     * @template T of Builder|Collection<array-key, \stdClass>
+     * @template T of Builder|Collection<array-key, object>
      *
      * @param  T  $releases
      * @return T

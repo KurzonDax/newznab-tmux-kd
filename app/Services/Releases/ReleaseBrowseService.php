@@ -49,11 +49,25 @@ class ReleaseBrowseService
             }
         }
 
-        $this->loadReleaseRows($releases);
+        $releases = $this->loadReleaseRows($releases);
+        $retained = array_fill_keys(array_column($releases, 'id'), true);
+        foreach ($entities as $entity) {
+            /** @var iterable<int, object> $entityReleases */
+            $entityReleases = $entity->releases ?? [];
+            $entity->releases = collect($entityReleases)->filter(
+                static fn (object $release): bool => isset($retained[$release->id]),
+            )->values()->all();
+        }
     }
 
-    /** @param iterable<int, object> $releases */
-    public function loadReleaseRows(iterable $releases): void
+    /**
+     * Hydrate in place and remove unresolved rows from mutable result containers.
+     * Array callers use the returned rows to retain that filtering.
+     *
+     * @param  iterable<int, object>  $releases
+     * @return list<object>
+     */
+    public function loadReleaseRows(iterable $releases): array
     {
         $rows = [];
         foreach ($releases as $release) {
@@ -71,7 +85,19 @@ class ReleaseBrowseService
         }
         $this->previewDataLoader->load($rows);
         $this->mediaInfoAvailabilityLoader->load($rows);
-        app(ReleaseRowDataLoader::class)->load($rows);
+        $loaded = app(ReleaseRowDataLoader::class)->load($rows);
+        if ($loaded->count() !== count($rows)) {
+            $retained = array_fill_keys($loaded->pluck('id')->all(), true);
+            if ($releases instanceof LengthAwarePaginator) {
+                $releases->setCollection($releases->getCollection()->filter(
+                    static fn (object $release): bool => isset($retained[$release->id]),
+                )->values());
+            } elseif ($releases instanceof \Illuminate\Support\Collection) {
+                $releases->splice(0, $releases->count(), $loaded->all());
+            }
+        }
+
+        return $loaded->all();
     }
 
     /**
@@ -86,7 +112,10 @@ class ReleaseBrowseService
     {
         $releases = $this->executeBrowseQuery('browse', $page, $cat, $start, $num, $orderBy, $maxAge, $excludedCats, $groupName, $minSize, $searchTerm, $minCompletion);
         if (is_iterable($releases)) {
-            $this->loadReleaseRows($releases);
+            $loaded = $this->loadReleaseRows($releases);
+            if (is_array($releases)) {
+                return $loaded;
+            }
         }
 
         return $releases;
@@ -685,9 +714,9 @@ class ReleaseBrowseService
         $expiresAt = now()->addMinutes(config('nntmux.cache_expiry_long'));
         $result = Cache::get(md5($sql));
         if ($result !== null) {
-            $this->loadReleaseRows($result);
+            $loaded = $this->loadReleaseRows($result);
 
-            return $result;
+            return is_array($result) ? $loaded : $result;
         }
         $result = Release::fromQuery($sql);
         Cache::put(md5($sql), $result, $expiresAt);

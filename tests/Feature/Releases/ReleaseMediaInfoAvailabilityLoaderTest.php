@@ -106,6 +106,65 @@ class ReleaseMediaInfoAvailabilityLoaderTest extends TestCase
         self::assertLessThanOrEqual(9, $queries, 'Availability queries are bounded by source tables, not release count.');
     }
 
+    public function test_summaries_fetch_one_narrow_minimum_id_stream_while_availability_checks_all_streams(): void
+    {
+        foreach ([1, 2] as $releaseId) {
+            $videos = [];
+            $audios = [];
+            foreach (range(1000, 1) as $stream) {
+                $first = $stream === 1;
+                $id = ($releaseId - 1) * 1000 + $stream;
+                $videos[] = [
+                    'id' => $id, 'releases_id' => $releaseId,
+                    'videoheight' => $first ? null : 2160,
+                    'videocodec' => $first ? null : 'HEVC',
+                    'videoformat' => $first && $releaseId === 1 ? 'AVC' : null,
+                ];
+                $audios[] = [
+                    'id' => $id, 'releases_id' => $releaseId,
+                    'audioformat' => $first ? null : 'DTS',
+                    'audiochannels' => $first ? null : '5.1',
+                ];
+            }
+            foreach (array_chunk($videos, 100) as $chunk) {
+                DB::table('video_data')->insert($chunk);
+            }
+            foreach (array_chunk($audios, 100) as $chunk) {
+                DB::table('audio_data')->insert($chunk);
+            }
+        }
+        $rows = [(object) ['id' => 1], (new Release)->setRawAttributes(['id' => 2])];
+        $queries = [];
+        $listening = true;
+        DB::listen(static function ($query) use (&$queries, &$listening): void {
+            if ($listening && ! str_contains($query->sql, 'union')
+                && (str_contains($query->sql, 'from "video_data"') || str_contains($query->sql, 'from "audio_data"'))) {
+                $queries[] = $query;
+            }
+        });
+
+        (new ReleaseMediaInfoAvailabilityLoader)->load($rows);
+        $listening = false;
+
+        self::assertSame('AVC', $rows[0]->media_info_summary);
+        self::assertNull($rows[1]->media_info_summary);
+        self::assertTrue($rows[0]->has_media_info);
+        self::assertTrue($rows[1]->has_media_info, 'A later stream still makes media info available.');
+        self::assertCount(2, $queries);
+        foreach ($queries as $query) {
+            self::assertStringNotContainsString('*', $query->sql);
+            $records = DB::select($query->sql, $query->bindings);
+            self::assertCount(2, $records);
+            self::assertSame([1, 2], array_column($records, 'releases_id'));
+            self::assertSame(
+                str_contains($query->sql, 'video_data')
+                    ? ['releases_id', 'videoheight', 'videocodec', 'videoformat']
+                    : ['releases_id', 'audioformat', 'audiochannels'],
+                array_keys((array) $records[0]),
+            );
+        }
+    }
+
     #[DataProvider('coverListings')]
     public function test_cover_listings_load_current_media_info_and_render_the_action_on_cold_and_cached_pages(string $serviceClass, string $method, string $table, string $foreignKey): void
     {
@@ -179,10 +238,10 @@ class ReleaseMediaInfoAvailabilityLoaderTest extends TestCase
         });
         Schema::create('releases', function (Blueprint $table): void {
             $table->id();
-            foreach (['imdbid', 'musicinfo_id', 'gamesinfo_id', 'bookinfo_id', 'consoleinfo_id', 'guid', 'searchname', 'display_name', 'repair_outcome', 'rescan_outcome', 'postdate', 'adddate'] as $column) {
+            foreach (['imdbid', 'musicinfo_id', 'gamesinfo_id', 'bookinfo_id', 'consoleinfo_id', 'guid', 'searchname', 'display_name', 'repair_outcome', 'rescan_outcome', 'postdate', 'adddate', 'fromname', 'additional_pp_claim_token'] as $column) {
                 $table->string($column)->nullable();
             }
-            foreach (['size', 'haspreview', 'videostatus', 'grabs', 'comments', 'totalpart', 'groups_id', 'categories_id', 'passwordstatus'] as $column) {
+            foreach (['size', 'haspreview', 'videostatus', 'grabs', 'comments', 'totalpart', 'groups_id', 'categories_id', 'passwordstatus', 'nfostatus', 'jpgstatus', 'isrenamed', 'videos_id', 'tv_episodes_id', 'anidbid'] as $column) {
                 $table->integer($column)->default(0);
             }
             $table->integer('completion')->default(100);
