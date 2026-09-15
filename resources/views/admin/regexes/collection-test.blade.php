@@ -31,11 +31,14 @@
                     <label for="group" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         Group: <span class="text-red-500">*</span>
                     </label>
+                    @error('group')
+                        <p class="text-sm text-red-600 dark:text-red-400" role="alert">{{ $message }}</p>
+                    @enderror
                     <input type="text"
                            id="group"
                            name="group"
                            class="bg-white text-gray-900 dark:bg-gray-700 dark:text-gray-200 w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                           value="{{ $group }}"
+                           value="{{ is_scalar(old('group', $group)) ? old('group', $group) : '' }}"
                            placeholder="alt.binaries.teevee"
                            required>
                     <p class="mt-2 text-sm text-gray-500">
@@ -48,11 +51,14 @@
                     <label for="limit" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         Limit:
                     </label>
+                    @error('limit')
+                        <p class="text-sm text-red-600 dark:text-red-400" role="alert">{{ $message }}</p>
+                    @enderror
                     <input type="number"
                            id="limit"
                            name="limit"
                            class="bg-white text-gray-900 dark:bg-gray-700 dark:text-gray-200 w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                           value="{{ $limit }}"
+                           value="{{ is_scalar(old('limit', $limit)) ? old('limit', $limit) : '' }}"
                            min="1"
                            max="1000">
                     <p class="mt-2 text-sm text-gray-500">
@@ -66,12 +72,15 @@
                 <label for="regex" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Regex: <span class="text-red-500">*</span>
                 </label>
+                    @error('regex')
+                        <p class="text-sm text-red-600 dark:text-red-400" role="alert">{{ $message }}</p>
+                    @enderror
                 <textarea id="regex"
                           name="regex"
                           class="bg-white text-gray-900 dark:bg-gray-700 dark:text-gray-200 w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
                           rows="4"
                           required
-                          placeholder="/^(?P<name>.*?)([\. ]S\d{1,3}[\. ]?E\d{1,3})/i">{{ regex_display_value($regex) }}</textarea>
+                          placeholder="/^(?P<name>.*?)([\. ]S\d{1,3}[\. ]?E\d{1,3})/i">{{ is_string(old('regex', $regex)) ? old('regex', $regex) : '' }}</textarea>
                 <p class="mt-2 text-sm text-gray-500">
                     Enter the regex pattern to test. Include delimiters and flags.
                 </p>
@@ -82,12 +91,13 @@
         </form>
 
         <!-- Results Section -->
-        @if($data)
+        @if($data !== null)
             <div class="px-6 py-6 border-t border-gray-200">
                 <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-4">
                     <i class="fas fa-chart-bar mr-2"></i>Test Results:
                 </h2>
 
+                <p class="mb-4 text-gray-700 dark:text-gray-300">{{ $summary['tested'] }} binaries tested; {{ $summary['matched'] }} matched</p>
                 @if(count($data) > 0)
                     <div class="overflow-x-auto">
                         <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -131,20 +141,6 @@
                         </table>
                     </div>
 
-                    <!-- Success Summary -->
-                    <div class="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-                        <div class="flex">
-                            <i class="fas fa-check-circle text-green-500 text-xl mr-3"></i>
-                            <div>
-                                <p class="text-green-800 font-medium">
-                                    Tested {{ count($data) }} binaries
-                                </p>
-                                <p class="text-sm text-green-700 mt-1">
-                                    Review the matches above to verify your regex pattern is working correctly.
-                                </p>
-                            </div>
-                        </div>
-                    </div>
                 @else
                     <!-- No Results Warning -->
                     <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
@@ -153,7 +149,7 @@
                             <div>
                                 <p class="text-yellow-800 font-medium">No binaries found</p>
                                 <p class="text-sm text-yellow-700 mt-1">
-                                    No binaries found for the specified group or no matches found. Try a different group or regex pattern.
+                                    No binaries found for the specified group. Try a different group or regex pattern.
                                 </p>
                             </div>
                         </div>

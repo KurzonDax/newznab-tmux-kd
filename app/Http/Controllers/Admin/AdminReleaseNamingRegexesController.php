@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\BasePageController;
+use App\Http\Requests\Admin\AdminRegexTestRequest;
 use App\Models\Category;
 use App\Services\RegexService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class AdminReleaseNamingRegexesController extends BasePageController
@@ -113,19 +115,25 @@ class AdminReleaseNamingRegexesController extends BasePageController
     /**
      * @throws \Exception
      */
-    public function testRegex(Request $request): mixed
+    public function testRegex(AdminRegexTestRequest $request): mixed
     {
         $this->setAdminPrefs();
         $meta_title = $title = 'Release Naming Regex Test';
 
-        $group = trim($request->has('group') && ! empty($request->input('group')) ? $request->input('group') : '');
-        $regex = trim($request->has('regex') && ! empty($request->input('regex')) ? $request->input('regex') : '');
-        $showLimit = ($request->has('showlimit') && is_numeric($request->input('showlimit')) ? $request->input('showlimit') : 250);
-        $queryLimit = ($request->has('querylimit') && is_numeric($request->input('querylimit')) ? $request->input('querylimit') : 100000);
+        $group = (string) $request->input('group', '');
+        $regex = (string) $request->input('regex', '');
+        $showLimit = $request->integer('showlimit', 250);
+        $queryLimit = $request->integer('querylimit', 100000);
 
         $data = null;
-        if ($group && $regex) {
-            $data = (new RegexService('release_naming_regexes'))->testReleaseNamingRegex($group, $regex, $showLimit, $queryLimit);
+        $summary = null;
+        if ($request->isSubmitted()) {
+            try {
+                $summary = (new RegexService('release_naming_regexes'))->testReleaseNamingRegex($group, $regex, $showLimit, $queryLimit);
+            } catch (ValidationException $exception) {
+                throw $exception->redirectTo($request->url());
+            }
+            $data = $summary['rows'];
         }
 
         $this->viewData = array_merge($this->viewData, [
@@ -134,6 +142,7 @@ class AdminReleaseNamingRegexesController extends BasePageController
             'showlimit' => $showLimit,
             'querylimit' => $queryLimit,
             'data' => $data,
+            'summary' => $summary,
             'title' => $title,
             'meta_title' => $meta_title,
         ]);

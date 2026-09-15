@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Http\Middleware\Google2FAMiddleware;
+use App\Models\Release;
 use App\Models\User;
 use App\View\Composers\GlobalDataComposer;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use ReflectionClass;
@@ -60,6 +62,18 @@ class AdminRegexesControllerTest extends TestCase
     {
         $this->tearDownIsolatedDatabase();
         parent::tearDown();
+    }
+
+    public function test_admin_regex_test_pages_render_get_forms(): void
+    {
+        $this->actingAs($this->createUserWithRole('Admin'));
+
+        foreach (['collection', 'release_naming'] as $type) {
+            $this->get('/admin/'.$type.'_regexes-test')
+                ->assertOk()
+                ->assertSee('method="GET"', false)
+                ->assertSee('Test Regex');
+        }
     }
 
     public function test_admin_regex_edit_pages_accept_numeric_string_query_ids(): void
@@ -185,6 +199,169 @@ class AdminRegexesControllerTest extends TestCase
                 ->assertDontSee('&amp;lt;', false)
                 ->assertDontSee('&amp;gt;', false);
         }
+    }
+
+    public function test_regex_test_inputs_are_validated_before_scanning_candidates(): void
+    {
+        $this->actingAs($this->createUserWithRole('Admin'));
+        Schema::create('usenet_groups', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->string('name');
+        });
+        DB::table('usenet_groups')->insert(['name' => 'alt.binaries.example']);
+
+        foreach (['collection' => ['limit' => 1000], 'release_naming' => ['showlimit' => 1000, 'querylimit' => 500000]] as $type => $limits) {
+            $url = '/admin/'.$type.'_regexes-test';
+            $valid = ['group' => 'alt.binaries.example', 'regex' => '/(?<name>example)/'];
+            foreach ($limits as $field => $maximum) {
+                foreach ([0, -1, '1.5', 'no', $maximum + 1, ['1']] as $value) {
+                    $this->getJson($url.'?'.http_build_query($valid + [$field => $value]))
+                        ->assertUnprocessable()->assertJsonValidationErrors($field);
+                }
+            }
+            foreach (['group' => ['unknown', ['bad'], ''], 'regex' => ['/[/', ['bad'], '']] as $field => $values) {
+                foreach ($values as $value) {
+                    $this->getJson($url.'?'.http_build_query(array_replace($valid, [$field => $value])))
+                        ->assertUnprocessable()->assertJsonValidationErrors($field);
+                }
+            }
+            $this->get($url.'?'.http_build_query($valid + [array_key_first($limits) => 0]))
+                ->assertRedirect($url)->assertSessionHasErrors(array_key_first($limits));
+            $this->get($url)->assertOk()->assertSee('must be between 1 and');
+        }
+    }
+
+    public function test_collection_regex_tests_each_selected_binary_once_in_id_order(): void
+    {
+        $this->createCandidateSchema();
+        DB::table('collections')->insert([
+            ['id' => 1, 'groups_id' => 1, 'fromname' => 'poster', 'collectionhash' => 'old'],
+            ['id' => 2, 'groups_id' => 2, 'fromname' => 'other', 'collectionhash' => 'other'],
+        ]);
+        $rows = [];
+        for ($id = 1; $id <= 1200; $id++) {
+            $rows[] = ['id' => $id, 'collections_id' => $id % 2 ? 2 : 1,
+                'name' => $id % 4 === 0 ? 'Café - 02' : 'unmatched',
+                'binaryhash' => 'duplicate', 'totalparts' => 1, 'currentparts' => 1];
+        }
+        foreach (array_chunk($rows, 200) as $chunk) {
+            DB::table('binaries')->insert($chunk);
+        }
+        $queries = [];
+        DB::listen(function ($query) use (&$queries): void {
+            if (str_contains($query->sql, '"binaries"')) {
+                $queries[] = $query->sql;
+            }
+        });
+        $response = $this->actingAs($this->createUserWithRole('Admin'))
+            ->get('/admin/collection_regexes-test?'.http_build_query([
+                'group' => 'alt.binaries.example', 'regex' => '/(?<a>Café) - (?<b>02)/u', 'limit' => 550,
+            ]))->assertOk()->assertSee('550 binaries tested; 275 matched');
+        $data = $response->viewData('data');
+        $this->assertSame(range(2, 1100, 2), array_column($data, 'binaryID'));
+        $this->assertFalse($data[0]['match']);
+        $this->assertSame('Café02', $data[1]['name']);
+        $this->assertTrue($data[1]['match']);
+        $this->assertCount(2, $queries);
+        $this->assertStringContainsString('limit 500', $queries[0]);
+        $this->assertStringContainsString('limit 50', $queries[1]);
+    }
+
+    public function test_naming_regex_limits_candidates_and_reports_why_scanning_stopped(): void
+    {
+        $this->createCandidateSchema();
+        $rows = [];
+        for ($id = 1; $id <= 1200; $id++) {
+            $rows[] = ['id' => $id, 'groups_id' => $id % 2 ? 2 : 1,
+                'name' => $id % 200 === 0 ? 'Café - 02 - 99' : 'unmatched', 'searchname' => 'Old name'];
+        }
+        foreach (array_chunk($rows, 200) as $chunk) {
+            DB::table('releases')->insert($chunk);
+        }
+        $hydrated = 0;
+        Event::listen('eloquent.retrieved: '.Release::class, function () use (&$hydrated): void {
+            $hydrated++;
+        });
+        $queries = [];
+        DB::listen(function ($query) use (&$queries): void {
+            if (str_contains($query->sql, '"releases"')) {
+                $queries[] = $query->sql;
+            }
+        });
+        $this->actingAs($this->createUserWithRole('Admin'));
+        $input = ['group' => 'alt.binaries.example', 'regex' => '/(?<b>Café) - (?<a>02) - (?<reqid>99)/u'];
+        $url = '/admin/release_naming_regexes-test?';
+        $response = $this->get($url.http_build_query($input + ['showlimit' => 3]))
+            ->assertOk()->assertSee('300 releases tested; 3 matches shown')->assertSee('Stopped at the result limit');
+        $this->assertSame([200, 400, 600], array_column($response->viewData('data'), 'releaseID'));
+        $this->assertSame('02Café', $response->viewData('data')[0]['newName']);
+        $this->assertSame('Old name', $response->viewData('data')[0]['oldName']);
+        $this->get($url.http_build_query($input + ['querylimit' => 250]))
+            ->assertOk()->assertSee('250 releases tested; 2 matches shown')->assertSee('Stopped at the candidate limit');
+        $this->get($url.http_build_query($input))
+            ->assertOk()->assertSee('600 releases tested; 6 matches shown')->assertSee('Exhausted the group');
+        $this->assertSame(0, $hydrated);
+        foreach ($queries as $query) {
+            $this->assertMatchesRegularExpression('/limit (?:500|250|[1-9][0-9]?)$/', $query);
+            $this->assertStringNotContainsString('offset', $query);
+        }
+    }
+
+    public function test_regex_test_pages_show_zero_matches_and_control_pcre_runtime_errors(): void
+    {
+        $this->createCandidateSchema();
+        DB::table('collections')->insert(['id' => 1, 'groups_id' => 1, 'fromname' => 'poster', 'collectionhash' => 'old']);
+        DB::table('binaries')->insert(['id' => 1, 'collections_id' => 1, 'name' => str_repeat('a', 100).'b',
+            'binaryhash' => 'hash', 'totalparts' => 1, 'currentparts' => 1]);
+        DB::table('releases')->insert(['id' => 1, 'groups_id' => 1, 'name' => str_repeat('a', 100).'b', 'searchname' => 'Original']);
+        $this->actingAs($this->createUserWithRole('Admin'));
+        foreach (['collection', 'release_naming'] as $type) {
+            $url = '/admin/'.$type.'_regexes-test';
+            $input = ['group' => 'alt.binaries.example', 'regex' => '/(?<name>never)/'];
+            $this->get($url.'?'.http_build_query($input))->assertOk()
+                ->assertSee($type === 'collection' ? '1 binaries tested; 0 matched' : '1 releases tested; 0 matches shown');
+            $input['group'] = 'alt.binaries.other';
+            $this->get($url.'?'.http_build_query($input))->assertOk()
+                ->assertSee($type === 'collection' ? '0 binaries tested; 0 matched' : '0 releases tested; 0 matches shown');
+            $input = ['group' => 'alt.binaries.example', 'regex' => '/(*NO_JIT)(*LIMIT_MATCH=10)^(?<name>a+)+$/'];
+            $this->getJson($url.'?'.http_build_query($input))
+                ->assertUnprocessable()->assertJsonValidationErrors('regex');
+            $this->get($url.'?'.http_build_query($input))->assertRedirect($url)->assertSessionHasErrors('regex');
+            $this->get($url)->assertOk()->assertSee('Backtrack limit exhausted')->assertDontSee('Test Results:');
+        }
+        $this->assertSame('Original', DB::table('releases')->value('searchname'));
+    }
+
+    private function createCandidateSchema(): void
+    {
+        Schema::create('usenet_groups', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->string('name');
+        });
+        DB::table('usenet_groups')->insert([
+            ['id' => 1, 'name' => 'alt.binaries.example'],
+            ['id' => 2, 'name' => 'alt.binaries.other'],
+        ]);
+        Schema::create('collections', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->integer('groups_id');
+            $table->string('fromname');
+            $table->binary('collectionhash');
+        });
+        Schema::create('binaries', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->integer('collections_id');
+            $table->text('name');
+            $table->integer('totalparts');
+            $table->integer('currentparts');
+            $table->binary('binaryhash');
+        });
+        Schema::create('releases', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->integer('groups_id');
+            $table->text('name');
+            $table->text('searchname');
+        });
     }
 
     private function createSchema(): void
