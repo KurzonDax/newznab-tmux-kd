@@ -204,6 +204,83 @@ final class RecoveryWorkerConcurrencyTest extends TestCase
         $this->assertSame(3, $this->peak());
     }
 
+    public static function discoveryQueues(): array
+    {
+        return ['empty queues' => [false], 'future and overdue queues' => [true]];
+    }
+
+    #[DataProvider('discoveryQueues')]
+    public function test_independent_download_completions_do_not_deadlock_while_waking_discovery(bool $waiting): void
+    {
+        $this->seedConstruction(2);
+        $work = app(RecoveryWork::class);
+        $claims = [$work->claim(RecoveryStage::Download), $work->claim(RecoveryStage::Download)];
+        $discovery = [];
+        $overdue = now()->subHour()->format('Y-m-d H:i:s.u');
+        if ($waiting) {
+            foreach ($claims as $index => $claim) {
+                $id = $work->enqueueForBundle(RecoveryStage::Discover, $claim->bundleId, 1, 'prepare', []);
+                DB::table('obfuscation_recovery_work')->where('id', $id)->update(['due_at' => $index === 0 ? now()->addHour() : $overdue]);
+                $discovery[] = $id;
+            }
+            $claims = array_reverse($claims);
+        }
+        $directory = $this->makeTempDirectory('completion-order');
+        DB::disconnect('recovery_workers');
+        $children = [];
+        try {
+            foreach ($claims as $index => $claim) {
+                $pid = pcntl_fork();
+                $this->assertGreaterThanOrEqual(0, $pid);
+                if ($pid === 0) {
+                    pcntl_alarm(15);
+                    DB::purge('recovery_workers');
+                    try {
+                        DB::listen(function (QueryExecuted $query) use ($directory, $index): void {
+                            if (str_starts_with($query->sql, 'update `obfuscation_recovery_work`')
+                                && ($query->bindings[0] ?? null) === 'completed') {
+                                touch($directory.'/ready-'.$index);
+                                $deadline = hrtime(true) + 5000000000;
+                                while (! is_file($directory.'/ready-'.(1 - $index))) {
+                                    if (hrtime(true) >= $deadline) {
+                                        throw new \RuntimeException('completion_barrier_timeout');
+                                    }
+                                    usleep(1000);
+                                }
+                            }
+                        });
+                        $result = app(RecoveryWork::class)->complete($claim, 'downloaded');
+                        file_put_contents($directory.'/result-'.$index, $result ? 'completed' : 'lost');
+                        exit(0);
+                    } catch (\Throwable $error) {
+                        file_put_contents($directory.'/result-'.$index, (string) $error);
+                        exit(1);
+                    }
+                }
+                $children[$index] = $pid;
+            }
+            foreach ($children as $index => $pid) {
+                pcntl_waitpid($pid, $status);
+                $this->assertTrue(pcntl_wifexited($status));
+                $this->assertSame(0, pcntl_wexitstatus($status), (string) file_get_contents($directory.'/result-'.$index));
+            }
+        } finally {
+            foreach ($children as $pid) {
+                if (pcntl_waitpid($pid, $status, WNOHANG) === 0) {
+                    posix_kill($pid, SIGKILL);
+                    pcntl_waitpid($pid, $status);
+                }
+            }
+            DB::purge('recovery_workers');
+        }
+        $this->assertSame(2, DB::table('obfuscation_recovery_work')->where('result', 'downloaded')->count());
+        if ($waiting) {
+            $this->assertLessThanOrEqual(now()->format('Y-m-d H:i:s.u'), DB::table('obfuscation_recovery_work')->where('id', $discovery[0])->value('due_at'));
+            $this->assertSame($overdue, DB::table('obfuscation_recovery_work')->where('id', $discovery[1])->value('due_at'));
+            $this->assertSame(2, DB::table('obfuscation_recovery_work')->where('stage', 'discover')->where('status', 'pending')->count());
+        }
+    }
+
     public static function releaseOrders(): array
     {
         return ['arrival order' => [false], 'reverse order' => [true]];
