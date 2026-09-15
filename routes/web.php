@@ -87,6 +87,7 @@ use App\Http\Controllers\PrivacyCenterController;
 use App\Http\Controllers\PrivacyPolicyController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProfileSecurityController;
+use App\Http\Controllers\ReleaseFilesController;
 use App\Http\Controllers\ReleaseReportController;
 use App\Http\Controllers\ReleaseViewPreferencesController;
 use App\Http\Controllers\RssController;
@@ -263,6 +264,7 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
     Route::get('release-report/reasons', [ReleaseReportController::class, 'getReasons'])->name('release-report.reasons');
     Route::get('release-report/check', [ReleaseReportController::class, 'checkReported'])->name('release-report.check');
 
+    Route::get('release/{guid}/files', ReleaseFilesController::class)->name('release.files');
     Route::get('api/release/{guid}/filelist', [FileListApiController::class, 'getFileList'])->name('api.filelist');
     Route::get('release/{release}/mediainfo', [MediaInfoController::class, 'show'])
         ->middleware(['2fa', 'throttle:60,1'])

@@ -42,7 +42,8 @@
             </section>
             <section id="files" class="card details-panel" data-details-panel>
                 <h2>Files ({{ $row->files }})</h2>
-                <div data-tab-content="files"><p class="text-muted">Open this tab to load the file list.</p><noscript><a href="{{ url('/api/release/'.$row->guid.'/filelist') }}">View file list</a></noscript></div>
+                @include('partials.file-summary-controls')
+                <div data-tab-content="files"><p class="text-muted">Open this tab to load the file list.</p><noscript><a href="{{ route('release.files', ['guid' => $row->guid]) }}">View file list</a></noscript></div>
                 <x-button variant="secondary" size="sm" class="mt-2" data-retry-tab="files" hidden>Try again</x-button>
             </section>
             <section id="media" class="card details-panel" data-details-panel>
