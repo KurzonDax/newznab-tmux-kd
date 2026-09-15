@@ -58,7 +58,7 @@ class BrowseController extends BasePageController
 
                 return view('components.release-browser.episode-expanded', compact('rows', 'state'));
             }
-            $rows = app(ReleaseCoverBrowser::class)->expanded($state, $this->userdata, $id);
+            $rows = app(ReleaseCoverBrowser::class)->expanded($state, $this->userdata, $id, $request->integer('release_page', 1), $request->integer('release_per', 24));
 
             return view('components.release-browser.expanded-cover', ['rows' => $rows, 'state' => $state]);
         }

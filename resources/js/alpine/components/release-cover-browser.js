@@ -45,6 +45,7 @@ export function releaseCoverBrowser() {
 
         async fetchCover() {
             this.coverRequest?.abort();
+            this.clearSelection();
             const request = new AbortController();
             this.coverRequest = request;
             const url = new URL(this.browserRoot.dataset.coverUrl || window.location.href);
