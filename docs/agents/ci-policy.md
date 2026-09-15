@@ -67,6 +67,9 @@ regenerating. A leftover amendment cannot authorize a different branch or future
 base. #644 supplies the initial bootstrap; subsequent work uses its merged
 validator. Cheap contract tests exercise candidate policy changes while the base
 validator remains authoritative.
+Because the base validator also pins the registered workflow commands, a change
+to a registered command must land in the validator one merge before the workflow
+itself changes.
 
 This is an engineering guard against accidental expansion, not independent human
 authentication: an agent with the owner's credentials could deliberately rewrite

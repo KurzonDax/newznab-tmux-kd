@@ -161,6 +161,7 @@ def validate_workflow():
     allowed = {
         'python3 scripts/ci-preflight --base "$BASE_SHA" --github',
         './sail exec -T -u sail laravel.test timeout --kill-after=5 480 scripts/run-tests-isolated.sh scripts/ci-phpunit-shard --index "$SHARD_INDEX" --count 4',
+        './sail exec -T -u sail laravel.test scripts/run-tests-isolated.sh scripts/ci-phpunit-shard --index "$SHARD_INDEX" --count 4',
         'python3 scripts/ci-run --plan "$CI_PLAN" --lane "$LANE"',
         'python3 scripts/ci-policy result "$NEEDS_JSON"', './sail down'}
     for job in jobs.values():
