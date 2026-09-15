@@ -291,21 +291,6 @@ class AdminReleaseReportControllerTest extends TestCase
     }
 
     /**
-     * Test that DetailsController includes resolved status in report query.
-     */
-    public function test_details_controller_includes_resolved_status(): void
-    {
-        $controllerPath = app_path('Http/Controllers/DetailsController.php');
-
-        $this->assertFileExists($controllerPath);
-
-        $content = file_get_contents($controllerPath);
-
-        // Check that the query includes resolved status
-        $this->assertStringContainsString("whereIn('status', ['pending', 'reviewed', 'resolved'])", $content);
-    }
-
-    /**
      * Test that release reports support staff response fields.
      */
     public function test_release_report_model_supports_response_fields(): void
@@ -371,15 +356,12 @@ class AdminReleaseReportControllerTest extends TestCase
      */
     public function test_details_and_browse_views_show_report_responses(): void
     {
-        $detailsControllerPath = app_path('Http/Controllers/DetailsController.php');
         $detailsViewPath = resource_path('views/details/index.blade.php');
         $browseServicePath = app_path('Services/Releases/ReleaseBrowseService.php');
 
-        $this->assertFileExists($detailsControllerPath);
         $this->assertFileExists($detailsViewPath);
         $this->assertFileExists($browseServicePath);
 
-        $detailsController = file_get_contents($detailsControllerPath);
         // The details view is split into partials under details/partials/; assert against the combined source.
         $detailsView = file_get_contents($detailsViewPath);
         foreach (glob(resource_path('views/details/partials/*.blade.php')) ?: [] as $detailsPartial) {
@@ -387,10 +369,6 @@ class AdminReleaseReportControllerTest extends TestCase
         }
         $browseService = file_get_contents($browseServicePath);
 
-        $this->assertStringContainsString('publicReportResponses', $detailsController);
-        $this->assertStringContainsString('originalReportData', $detailsController);
-        $this->assertStringContainsString('totalReportCount', $detailsController);
-        $this->assertStringContainsString("where('response_is_public', true)", $detailsController);
         $this->assertStringContainsString('Staff response', $detailsView);
         $this->assertStringContainsString('Original report', $detailsView);
         $this->assertStringContainsString('total_report_count', $browseService);

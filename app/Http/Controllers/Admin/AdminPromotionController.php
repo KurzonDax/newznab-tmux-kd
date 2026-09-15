@@ -129,39 +129,25 @@ class AdminPromotionController extends BasePageController
     {
         [$startDate, $endDate] = DateRangeFilter::fromRequest($request);
 
-        // Get all promotions with their statistics
-        $promotions = RolePromotion::withCount(['statistics' => function ($query) use ($startDate, $endDate) {
+        $promotionQuery = RolePromotion::withCount(['statistics' => function ($query) use ($startDate, $endDate) {
             if ($startDate) {
                 $query->whereBetween('applied_at', [$startDate, $endDate]);
             }
-        }])
-            ->with(['statistics' => function ($query) use ($startDate, $endDate) {
-                if ($startDate) {
-                    $query->whereBetween('applied_at', [$startDate, $endDate]);
-                }
-                $query->with(['user', 'role']);
-            }])
-            ->get();
-
-        // Calculate overall statistics
+        }]);
+        $statistics = RolePromotionStat::query()
+            ->when($startDate, fn ($query) => $query->whereBetween('applied_at', [$startDate, $endDate]));
         $overallStats = [
-            'total_promotions' => $promotions->count(),
-            'active_promotions' => $promotions->where('is_active', true)->count(),
-            'total_applications' => $promotions->sum('statistics_count'),
-            'unique_users' => RolePromotionStat::query()
-                ->when($startDate, fn ($q) => $q->whereBetween('applied_at', [$startDate, $endDate]))
-                ->distinct('user_id')
-                ->count('user_id'),
-            'total_days_added' => RolePromotionStat::query()
-                ->when($startDate, fn ($q) => $q->whereBetween('applied_at', [$startDate, $endDate]))
-                ->sum('days_added'),
+            'total_promotions' => RolePromotion::query()->count(),
+            'active_promotions' => RolePromotion::query()->where('is_active', true)->count(),
+            'total_applications' => (clone $statistics)->whereHas('promotion')->count(),
+            'unique_users' => (clone $statistics)->distinct()->count('user_id'),
+            'total_days_added' => (int) (clone $statistics)->sum('days_added'),
         ];
-
-        // Get top promotions by usage
-        $topPromotions = $promotions->sortByDesc('statistics_count')->take(5);
+        $topPromotions = (clone $promotionQuery)->orderByDesc('statistics_count')->orderBy('id')->limit(5)->get();
+        $promotions = $promotionQuery->orderBy('id')->paginate(25, ['*'], 'promotions_page')->withQueryString();
 
         // Get recent activity
-        $recentActivity = RolePromotionStat::with(['user', 'promotion', 'role'])
+        $recentActivity = RolePromotionStat::with(['user:id,username', 'promotion:id,name', 'role:id,name'])
             ->when($startDate, fn ($q) => $q->whereBetween('applied_at', [$startDate, $endDate]))
             ->latest('applied_at')
             ->limit(10)

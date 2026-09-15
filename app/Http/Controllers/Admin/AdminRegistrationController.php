@@ -37,7 +37,7 @@ class AdminRegistrationController extends BasePageController
         $editingPeriod = null;
         if ($request->filled('edit_period')) {
             $editingPeriod = RegistrationPeriod::query()
-                ->with(['createdByUser', 'updatedByUser'])
+                ->with(['createdByUser:id,username', 'updatedByUser:id,username'])
                 ->find((int) $request->integer('edit_period'));
 
             if ($editingPeriod === null) {
@@ -49,18 +49,16 @@ class AdminRegistrationController extends BasePageController
 
         $status = $this->registrationStatusService->resolve($now);
         $periods = RegistrationPeriod::query()
-            ->with(['createdByUser', 'updatedByUser'])
-            ->get();
-        [$pastPeriods, $currentPeriods] = $periods->partition(
-            fn (RegistrationPeriod $period): bool => $period->hasEndedAt($now)
-        );
-
-        $currentPeriods = $currentPeriods
-            ->sortBy(fn (RegistrationPeriod $period): int => $period->starts_at?->getTimestamp() ?? PHP_INT_MAX)
-            ->values();
-        $pastPeriods = $pastPeriods
-            ->sortByDesc(fn (RegistrationPeriod $period): int => $period->ends_at?->getTimestamp() ?? 0)
-            ->values();
+            ->with(['createdByUser:id,username', 'updatedByUser:id,username']);
+        $pastPeriods = (clone $periods)
+            ->whereNotNull('ends_at')->where('ends_at', '<', $now)
+            ->orderByDesc('ends_at')->orderByDesc('id')
+            ->paginate(25, ['*'], 'past_periods_page')->withQueryString();
+        $currentPeriods = (clone $periods)
+            ->where(fn ($query) => $query->whereNull('ends_at')->orWhere('ends_at', '>=', $now))
+            ->orderByRaw('CASE WHEN starts_at IS NULL THEN 1 ELSE 0 END')
+            ->orderBy('starts_at')->orderBy('id')
+            ->paginate(25, ['*'], 'current_periods_page')->withQueryString();
 
         $history = RegistrationStatusHistory::query()
             ->with(['changedByUser', 'registrationPeriod'])
