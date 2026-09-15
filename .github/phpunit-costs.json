@@ -1,0 +1,32 @@
+{
+  "source": "Issue #659 focused recovery directory, PHP 8.5.10 Sail, 2026-09-15, base 8531ac436 with polling ticks reduced; refresh from daily PHPUNIT_FILE_SECONDS.",
+  "files": {
+    "tests/Feature/ObfuscationRecovery/RecoveryArtifactsTest.php": 0.335607,
+    "tests/Feature/ObfuscationRecovery/RecoveryBudgetTest.php": 3.854746,
+    "tests/Feature/ObfuscationRecovery/RecoveryCachedReaderTest.php": 0.421968,
+    "tests/Feature/ObfuscationRecovery/RecoveryCaptureTest.php": 3.941462,
+    "tests/Feature/ObfuscationRecovery/RecoveryCatalogTest.php": 1.455809,
+    "tests/Feature/ObfuscationRecovery/RecoveryCompactionTest.php": 0.394255,
+    "tests/Feature/ObfuscationRecovery/RecoveryComponentsTest.php": 1.024206,
+    "tests/Feature/ObfuscationRecovery/RecoveryEvidenceRetentionTest.php": 2.687935,
+    "tests/Feature/ObfuscationRecovery/RecoveryEvidenceTest.php": 3.053875,
+    "tests/Feature/ObfuscationRecovery/RecoveryFrontierRebuildTest.php": 57.797727,
+    "tests/Feature/ObfuscationRecovery/RecoveryInspectionTest.php": 0.34818,
+    "tests/Feature/ObfuscationRecovery/RecoveryManifestTest.php": 0.326208,
+    "tests/Feature/ObfuscationRecovery/RecoveryNfoTest.php": 3.156952,
+    "tests/Feature/ObfuscationRecovery/RecoveryPreparationTest.php": 92.371737,
+    "tests/Feature/ObfuscationRecovery/RecoveryPublicationsTest.php": 1.340901,
+    "tests/Feature/ObfuscationRecovery/RecoveryRetentionTest.php": 4.879546,
+    "tests/Feature/ObfuscationRecovery/RecoveryRunDiscoveryTest.php": 1.332918,
+    "tests/Feature/ObfuscationRecovery/RecoveryScannerTest.php": 1.653567,
+    "tests/Feature/ObfuscationRecovery/RecoverySchedulerTest.php": 0.924564,
+    "tests/Feature/ObfuscationRecovery/RecoverySchemaTest.php": 1.478792,
+    "tests/Feature/ObfuscationRecovery/RecoverySettingsTest.php": 0.548765,
+    "tests/Feature/ObfuscationRecovery/RecoverySettlementTest.php": 80.466767,
+    "tests/Feature/ObfuscationRecovery/RecoverySlotsTest.php": 3.020899,
+    "tests/Feature/ObfuscationRecovery/RecoveryStatusTest.php": 0.623845,
+    "tests/Feature/ObfuscationRecovery/RecoveryStorageTest.php": 1.120236,
+    "tests/Feature/ObfuscationRecovery/RecoveryTargetsTest.php": 0.940456,
+    "tests/Feature/ObfuscationRecovery/RecoveryWorkTest.php": 4.865578
+  }
+}

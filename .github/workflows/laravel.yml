@@ -68,7 +68,7 @@
           "env": {
             "SHARD_INDEX": "${{ matrix.shard }}"
           },
-          "run": "./sail exec -T -u sail laravel.test timeout --kill-after=5 480 scripts/run-tests-isolated.sh scripts/ci-phpunit-shard --index \"$SHARD_INDEX\" --count 4"
+          "run": "./sail exec -T -u sail laravel.test scripts/run-tests-isolated.sh scripts/ci-phpunit-shard --index \"$SHARD_INDEX\" --count 4"
         },
         {
           "name": "Stop Sail",

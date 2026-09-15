@@ -135,6 +135,25 @@ if pathlib.Path('mutate').exists(): pathlib.Path('tests/ExampleTest.php').write_
             with patch.dict(verifier['changed_methods'].__globals__, git=lambda *args: '@@ -5 +5 @@'):
                 self.assertEqual({'test_one'}, verifier['changed_methods'](str(test), 'HEAD'))
 
+    def test_helper_changes_require_all_bounded_cases_without_manual_acceptance(self):
+        import runpy
+        import sys
+        from unittest.mock import patch
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        verifier = runpy.run_path(str(ROOT / 'scripts/agent-verify'))
+        path = 'tests/Integration/RecoveryWorkerConcurrencyTest.php'
+        policy = runpy.run_path(str(ROOT / 'scripts/ci-policy'))
+        manifest = json.loads((ROOT / '.github/ci-policy.json').read_text())
+        methods = {name.split('::')[1] for name in policy['selected_methods'](manifest['suites']['recovery-publication'])
+                   if name.startswith(path + '::')}
+        receipt = dict(test=path, complete_methods=True, cases=[dict(name=name) for name in methods])
+        with patch.dict(verifier['measurement_covers'].__globals__, changed_methods=lambda *a: None,
+                        measurements=lambda *a: iter([receipt])):
+            self.assertTrue(verifier['measurement_covers'](path, 'HEAD', [], 'fixture'))
+            receipt['cases'].pop()
+            self.assertFalse(verifier['measurement_covers'](path, 'HEAD', [], 'fixture'))
+            self.assertFalse(verifier['measurement_covers']('tests/UnknownTest.php', 'HEAD', [], 'fixture'))
+
     def test_mutating_check_cannot_cache_success_and_staged_mismatch_fails_hook(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

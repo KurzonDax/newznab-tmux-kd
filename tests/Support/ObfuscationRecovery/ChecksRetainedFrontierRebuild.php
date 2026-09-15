@@ -80,7 +80,9 @@ trait ChecksRetainedFrontierRebuild
 
     public static function continuationBacklogs(): array
     {
-        return [[4, 60], [108, 660]];
+        // Keep 108 candidates beyond the rebuild limit(2) and claim limit(10).
+        // limit(201) bounds conflict retirement, not this candidate queue.
+        return [[4, 16], [108, 120]];
     }
 
     #[DataProvider('frontierWaits')]

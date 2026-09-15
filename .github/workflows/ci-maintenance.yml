@@ -46,7 +46,7 @@ jobs:
         run: ./sail exec -T -u sail laravel.test bash -c 'umask 0022; exec npm ci --no-audit --no-fund'
       - name: Run tests
         if: github.event_name != 'push'
-        run: ./sail test --compact
+        run: ./sail exec -T -u sail laravel.test scripts/run-tests-isolated.sh scripts/ci-phpunit-shard --index 0 --count 1
 
       - name: Run bounded correctness from the shared inventory
         if: github.event_name != 'push'

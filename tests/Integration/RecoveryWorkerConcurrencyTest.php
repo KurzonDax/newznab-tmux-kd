@@ -204,9 +204,15 @@ final class RecoveryWorkerConcurrencyTest extends TestCase
         $this->assertSame(3, $this->peak());
     }
 
-    public function test_construction_enrichment_and_gap_requests_contend_for_the_same_three_sockets(): void
+    public static function releaseOrders(): array
     {
-        $this->server(1, false, 0.6);
+        return ['arrival order' => [false], 'reverse order' => [true]];
+    }
+
+    #[DataProvider('releaseOrders')]
+    public function test_construction_enrichment_and_gap_requests_contend_for_the_same_three_sockets(bool $reverse): void
+    {
+        $this->server(1, false, 0, gateRequests: true);
         $this->settingsThreads(3);
         $this->seedConstruction(2);
         $this->seedEnrichment();
@@ -216,20 +222,33 @@ final class RecoveryWorkerConcurrencyTest extends TestCase
             100, 110, HeaderScanDirection::Head, 1);
         DB::table('obfuscation_recovery_scan_windows')->update(['next_gap_at' => now()->subSecond(), 'created_at' => now()->subMinutes(3)]);
         $this->assertSame(1, app(RecoveryGapPlanner::class)->step());
-        for ($round = 0; $round < 5 && DB::table('obfuscation_recovery_work')->where('stage', 'download')->where('status', 'pending')->exists(); $round++) {
-            $supervisors = [$this->supervisor(), $this->supervisor()];
-            foreach ($supervisors as $supervisor) {
-                $supervisor->wait();
-                $this->assertTrue($supervisor->isSuccessful(), $supervisor->getErrorOutput());
-            }
-            DB::table('obfuscation_recovery_work')->where('status', 'pending')->update(['due_at' => now()->subSecond()]);
+        $supervisors = [$this->supervisor(), $this->supervisor()];
+        $this->await(fn (): bool => count($this->events('blocked')) === 3, 8);
+        $this->assertSame(3, DB::table('obfuscation_recovery_slots')->whereNotNull('worker_token')->count(), $this->diagnostics());
+        $blocked = $this->events('blocked');
+        foreach ($reverse ? array_reverse($blocked) : $blocked as $event) {
+            touch($this->root.'/provider-1/release-'.$event['gate']);
         }
-        $this->assertSame(2, DB::table('obfuscation_recovery_work')->where('purpose', 'index')->where('result', 'downloaded')->count());
-        $this->assertSame('captured', DB::table('obfuscation_recovery_work')->where('purpose', 'gap')->value('result'));
-        $this->assertSame('downloaded', DB::table('obfuscation_recovery_work')->where('purpose', 'enrichment')->value('result'));
-        $this->assertSame(['construction', 'enrichment', 'gap'], DB::table('obfuscation_recovery_budgets')->distinct()->orderBy('purpose')->pluck('purpose')->all());
-        $this->assertSame(3, $this->peak());
-        $this->assertSame(0, DB::table('obfuscation_recovery_slots')->whereNotNull('worker_token')->count());
+        $this->await(fn (): bool => count($this->events('blocked')) === 4
+            || ! $supervisors[0]->isRunning() && ! $supervisors[1]->isRunning(), 8);
+        if (count($this->events('blocked')) === 3) {
+            $this->assertSame(1, DB::table('obfuscation_recovery_work')->where('stage', 'download')->where('status', 'pending')->count(), $this->diagnostics());
+            DB::table('obfuscation_recovery_work')->where('status', 'pending')->update(['due_at' => now()->subSecond()]);
+            $supervisors[] = $this->supervisor();
+            $this->await(fn (): bool => count($this->events('blocked')) === 4, 8);
+        }
+        $event = $this->events('blocked')[3];
+        touch($this->root.'/provider-1/release-'.$event['gate']);
+        foreach ($supervisors as $supervisor) {
+            $supervisor->wait();
+            $this->assertTrue($supervisor->isSuccessful(), $this->diagnostics());
+        }
+        $this->assertSame(2, DB::table('obfuscation_recovery_work')->where('purpose', 'index')->where('result', 'downloaded')->count(), $this->diagnostics());
+        $this->assertSame('captured', DB::table('obfuscation_recovery_work')->where('purpose', 'gap')->value('result'), $this->diagnostics());
+        $this->assertSame('downloaded', DB::table('obfuscation_recovery_work')->where('purpose', 'enrichment')->value('result'), $this->diagnostics());
+        $this->assertSame(['construction', 'enrichment', 'gap'], DB::table('obfuscation_recovery_budgets')->distinct()->orderBy('purpose')->pluck('purpose')->all(), $this->diagnostics());
+        $this->assertSame(3, $this->peak(), $this->diagnostics());
+        $this->assertSame(0, DB::table('obfuscation_recovery_slots')->whereNotNull('worker_token')->count(), $this->diagnostics());
     }
 
     public function test_optional_limit_increase_resumes_existing_targets_without_resetting_attempts(): void
@@ -774,7 +793,7 @@ final class RecoveryWorkerConcurrencyTest extends TestCase
         DB::table('obfuscation_recovery_work')->update(['due_at' => now()->subSecond()]);
     }
 
-    private function server(int $position, bool $fail, float $delay, ?array $overviewHeaders = null): void
+    private function server(int $position, bool $fail, float $delay, ?array $overviewHeaders = null, bool $gateRequests = false): void
     {
         $root = $this->root.'/provider-'.$position;
         mkdir($root, 0700);
@@ -796,7 +815,7 @@ final class RecoveryWorkerConcurrencyTest extends TestCase
         }
         file_put_contents($root.'/articles.json', json_encode($articles, JSON_THROW_ON_ERROR));
         $server = new Process(['python3', base_path('tests/Support/ObfuscationRecovery/fixture_nntp.py'), $root,
-            '--delay', (string) $delay, '--chunk-size', '1048576', ...($fail ? ['--fail-body'] : [])]);
+            '--delay', (string) $delay, '--chunk-size', '1048576', ...($fail ? ['--fail-body'] : []), ...($gateRequests ? ['--gate-requests'] : [])]);
         $server->setTimeout(180)->start();
         $this->servers[$position] = $server;
         $this->await(fn (): bool => is_file($root.'/server-port'), 5);
@@ -828,6 +847,18 @@ final class RecoveryWorkerConcurrencyTest extends TestCase
             usleep(20000);
         }
         $this->assertTrue($condition(), implode("\n", array_map(fn (Process $child): string => $child->getErrorOutput().$child->getOutput(), $this->children)).json_encode(['events' => $this->events('request'), 'work' => DB::table('obfuscation_recovery_work')->get(['status', 'result', 'purpose']), 'attempts' => DB::table('obfuscation_recovery_attempts')->get(['outcome', 'failure_phase'])], JSON_THROW_ON_ERROR));
+    }
+
+    private function diagnostics(): string
+    {
+        return json_encode([
+            'work' => DB::table('obfuscation_recovery_work')->orderBy('id')->get(),
+            'attempts' => DB::table('obfuscation_recovery_attempts')->orderBy('id')->get(),
+            'requests' => $this->events('request'),
+            'gates' => $this->events('blocked'),
+            'gate_timeouts' => $this->events('gate_timeout'),
+            'children' => array_map(fn (Process $child): string => $child->getOutput().$child->getErrorOutput(), $this->children),
+        ], JSON_THROW_ON_ERROR);
     }
 
     private function events(string $kind, ?int $provider = null): array
