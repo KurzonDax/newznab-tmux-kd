@@ -240,9 +240,8 @@ class MovieBrowseService
             .'ORDER BY r.postdate DESC';
 
         $releases = DB::select($sql);
-        app(ReleaseBrowseService::class)->loadReleaseRows($releases);
 
-        return $releases;
+        return app(ReleaseBrowseService::class)->loadReleaseRows($releases);
     }
 
     /**

@@ -1,0 +1,152 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Feature\Releases;
+
+use App\Services\Releases\ReleaseEntityDataLoader;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Support\IsolatedSqliteDatabase;
+use Tests\TestCase;
+
+final class ReleaseEntityDataLoaderTest extends TestCase
+{
+    use IsolatedSqliteDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->bootIsolatedDatabase();
+    }
+
+    protected function tearDown(): void
+    {
+        $this->tearDownIsolatedDatabase();
+        parent::tearDown();
+    }
+
+    #[DataProvider('labels')]
+    public function test_labels_fetch_only_identity_title_and_year(string $tableName, string $key, string $foreignKey, string $year, int $category, string $root): void
+    {
+        Schema::create($tableName, function (Blueprint $table) use ($key, $year): void {
+            $table->integer($key);
+            $table->string('title');
+            $table->string($year)->nullable();
+            $table->text('plot')->nullable();
+            $table->text('review')->nullable();
+        });
+        DB::table($tableName)->insert([
+            $key => 7, 'title' => 'A title', $year => '2001-02-03',
+            'plot' => str_repeat('p', 1048576), 'review' => str_repeat('r', 1048576),
+        ]);
+        if ($root === 'tv') {
+            Schema::create('tv_episodes', function (Blueprint $table): void {
+                $table->id();
+                $table->integer('videos_id');
+                $table->integer('series');
+                $table->integer('episode');
+                $table->text('summary')->nullable();
+            });
+            DB::table('tv_episodes')->insert(['id' => 3, 'videos_id' => 7, 'series' => 2, 'episode' => 4, 'summary' => 'Not a label']);
+        }
+        $queries = [];
+        $listening = true;
+        DB::listen(static function (QueryExecuted $query) use (&$queries, &$listening): void {
+            if ($listening) {
+                $queries[] = $query;
+            }
+        });
+
+        $entities = (new ReleaseEntityDataLoader)->load(collect([(object) [
+            'id' => 1, 'categories_id' => $category, $foreignKey => 7, 'tv_episodes_id' => 3,
+        ]]));
+        $listening = false;
+
+        self::assertSame('A title', $entities[1]->title);
+        self::assertSame('2001', $entities[1]->year);
+        self::assertSame('7', $entities[1]->id);
+        self::assertSame($root, $entities[1]->root);
+        self::assertSame($root === 'tv' ? 2 : null, $entities[1]->season);
+        self::assertSame($root === 'tv' ? 4 : null, $entities[1]->episode);
+        foreach ($queries as $query) {
+            self::assertStringNotContainsString('*', $query->sql);
+            self::assertStringNotContainsString('plot', $query->sql);
+            self::assertStringNotContainsString('review', $query->sql);
+            $records = DB::select($query->sql, $query->bindings);
+            self::assertCount(1, $records);
+            self::assertSame(
+                str_contains($query->sql, 'tv_episodes') ? ['id', 'series', 'episode', 'videos_id'] : [$key, 'title', $year],
+                array_keys((array) $records[0]),
+            );
+        }
+    }
+
+    public function test_anime_returns_only_the_preferred_title_for_each_identity(): void
+    {
+        Schema::create('anidb_info', function (Blueprint $table): void {
+            $table->integer('anidbid');
+            $table->string('startdate')->nullable();
+        });
+        Schema::create('anidb_titles', function (Blueprint $table): void {
+            $table->id();
+            $table->integer('anidbid');
+            $table->string('lang');
+            $table->string('type');
+            $table->string('title');
+        });
+        DB::table('anidb_info')->insert([
+            ['anidbid' => 7, 'startdate' => '2002-03-04'],
+            ['anidbid' => 8, 'startdate' => null],
+            ['anidbid' => 9, 'startdate' => null],
+        ]);
+        DB::table('anidb_titles')->insert([
+            ['id' => 8, 'anidbid' => 7, 'lang' => 'en', 'type' => 'main', 'title' => 'Chosen'],
+            ['id' => 7, 'anidbid' => 7, 'lang' => 'en', 'type' => 'main', 'title' => 'Chosen'],
+            ['id' => 6, 'anidbid' => 7, 'lang' => 'en', 'type' => 'main', 'title' => 'Zebra'],
+            ['id' => 5, 'anidbid' => 7, 'lang' => 'en', 'type' => 'official', 'title' => 'A official'],
+            ['id' => 4, 'anidbid' => 7, 'lang' => 'x-jat', 'type' => 'main', 'title' => 'A romanized'],
+            ['id' => 3, 'anidbid' => 7, 'lang' => 'ja', 'type' => 'main', 'title' => 'A native'],
+            ['id' => 2, 'anidbid' => 8, 'lang' => 'ja', 'type' => 'main', 'title' => 'Native'],
+            ['id' => 1, 'anidbid' => 8, 'lang' => 'x-jat', 'type' => 'official', 'title' => 'Romanized'],
+        ]);
+        $queries = [];
+        $listening = true;
+        DB::listen(static function (QueryExecuted $query) use (&$queries, &$listening): void {
+            if ($listening) {
+                $queries[] = $query;
+            }
+        });
+
+        $entities = (new ReleaseEntityDataLoader)->load(collect([
+            (object) ['id' => 1, 'categories_id' => 5070, 'anidbid' => 7],
+            (object) ['id' => 2, 'categories_id' => 5070, 'anidbid' => 8],
+            (object) ['id' => 3, 'categories_id' => 5070, 'anidbid' => 9],
+        ]));
+        $listening = false;
+
+        self::assertSame('Chosen', $entities[1]->title);
+        self::assertSame('2002', $entities[1]->year);
+        self::assertSame('Romanized', $entities[2]->title);
+        self::assertNull($entities[2]->year);
+        self::assertArrayNotHasKey(3, $entities);
+        self::assertCount(1, $queries);
+        self::assertCount(2, DB::select($queries[0]->sql, $queries[0]->bindings));
+        self::assertStringContainsString('titles.id', $queries[0]->sql);
+    }
+
+    public static function labels(): array
+    {
+        return [
+            'movie' => ['movieinfo', 'imdbid', 'imdbid', 'year', 2030, 'movies'],
+            'tv' => ['videos', 'id', 'videos_id', 'started', 5030, 'tv'],
+            'music' => ['musicinfo', 'id', 'musicinfo_id', 'year', 3030, 'audio'],
+            'console' => ['consoleinfo', 'id', 'consoleinfo_id', 'releasedate', 1030, 'console'],
+            'games' => ['gamesinfo', 'id', 'gamesinfo_id', 'releasedate', 4030, 'games'],
+            'book' => ['bookinfo', 'id', 'bookinfo_id', 'publishdate', 7030, 'books'],
+        ];
+    }
+}

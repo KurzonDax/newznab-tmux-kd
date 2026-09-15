@@ -1934,7 +1934,10 @@ class ReleaseSearchService
     private function withPreviewData(mixed $releases): mixed
     {
         if (is_iterable($releases)) {
-            app(ReleaseBrowseService::class)->loadReleaseRows($releases);
+            $loaded = app(ReleaseBrowseService::class)->loadReleaseRows($releases);
+            if (is_array($releases)) {
+                return $loaded;
+            }
         }
 
         return $releases;
