@@ -1,4 +1,5 @@
-                        @if(!empty($originalReportData) && $originalReportData->count() > 0)
+<div id="reports">
+                        @if(!empty($originalReportData) && $originalReportData->total() > 0)
                             <div class="mt-4 rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/20 p-4">
                                 <h3 class="text-[13px] font-semibold text-orange-800 dark:text-orange-200 mb-3 flex items-center">
                                     <i class="fas fa-flag mr-2"></i> Original report
@@ -20,9 +21,10 @@
                                         </div>
                                     @endforeach
                                 </div>
+                                {{ $originalReportData->links() }}
                             </div>
                         @endif
-                        @if(!empty($publicReportResponses) && $publicReportResponses->count() > 0)
+                        @if(!empty($publicReportResponses) && $publicReportResponses->total() > 0)
                             <div class="mt-4 rounded-lg border border-primary-200 dark:border-primary-800 bg-primary-50 dark:bg-primary-900/20 p-4">
                                 <h3 class="text-[13px] font-semibold text-primary-800 dark:text-primary-200 mb-3 flex items-center">
                                     <i class="fas fa-reply mr-2"></i> Staff response
@@ -40,5 +42,7 @@
                                         </div>
                                     @endforeach
                                 </div>
+                                {{ $publicReportResponses->links() }}
                             </div>
                         @endif
+</div>

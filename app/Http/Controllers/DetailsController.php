@@ -10,7 +10,6 @@ use App\Models\Predb;
 use App\Models\Release;
 use App\Models\ReleaseComment;
 use App\Models\ReleaseRegex;
-use App\Models\ReleaseReport;
 use App\Models\Settings;
 use App\Models\Video;
 use App\Services\AnidbService;
@@ -22,6 +21,7 @@ use App\Services\MusicService;
 use App\Services\PopulateAniListService;
 use App\Services\Releases\RelatedReleaseBrowser;
 use App\Services\Releases\ReleaseBrowseService;
+use App\Services\Releases\ReleaseReportPresentation;
 use App\Services\Releases\ReleaseSearchService;
 use App\Services\Releases\TitleMetadataLoader;
 use Illuminate\Http\Request;
@@ -61,27 +61,9 @@ class DetailsController extends BasePageController
         $comments = ReleaseComment::getComments($data['id']);
         $similars = $this->releaseSearchService->searchSimilar($data['id'], $data['searchname'], (array) $this->userdata->categoryexclusions);
         $failed = DnzbFailure::getFailedCount($data['id']);
-        $reportData = ReleaseReport::query()
-            ->with('responder')
-            ->where('releases_id', $data['id'])
-            ->whereIn('status', ['pending', 'reviewed', 'resolved'])
-            ->get();
-        $reportCount = $reportData->count();
-        $reportReasons = ReleaseReport::reasonKeysToLabels($reportData->pluck('reason')->unique()->implode(', '));
-        $originalReportData = ReleaseReport::query()
-            ->where('releases_id', $data['id'])
-            ->orderByDesc('created_at')
-            ->get();
-        $totalReportCount = $originalReportData->count();
-        $allReportReasons = ReleaseReport::reasonKeysToLabels($originalReportData->pluck('reason')->unique()->implode(', '));
-        $publicReportResponses = ReleaseReport::query()
-            ->with('responder')
-            ->where('releases_id', $data['id'])
-            ->where('response_is_public', true)
-            ->whereNotNull('response')
-            ->where('response', '!=', '')
-            ->orderByDesc('responded_at')
-            ->get();
+        $reportPresentation = app(ReleaseReportPresentation::class)->forRelease(
+            (int) $data['id'], $request->integer('reports_page', 1), $request->integer('responses_page', 1)
+        );
         $showInfo = '';
         if ($data['videos_id'] > 0) {
             $showInfo = Video::getByVideoID($data['videos_id']);
@@ -188,12 +170,7 @@ class DetailsController extends BasePageController
             'similars' => $similars !== false ? $similars : [],
             'privateprofiles' => config('nntmux_settings.private_profiles'),
             'failed' => $failed,
-            'reportCount' => $reportCount,
-            'reportReasons' => $reportReasons,
-            'originalReportData' => $originalReportData,
-            'totalReportCount' => $totalReportCount,
-            'allReportReasons' => $allReportReasons,
-            'publicReportResponses' => $publicReportResponses,
+            ...$reportPresentation,
             'regex' => $releaseRegex,
             'meta_title' => 'View NZB',
             'meta_keywords' => 'view,nzb,description,details',

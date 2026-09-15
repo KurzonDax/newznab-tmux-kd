@@ -287,6 +287,7 @@
                             @endforeach
                 </x-admin.data-table>
             @endif
+            <div class="px-6 py-4">{{ $currentPeriods->links() }}</div>
         </x-admin.card>
 
         <x-admin.card>
@@ -359,6 +360,7 @@
                             @endforeach
                 </x-admin.data-table>
             @endif
+            <div class="px-6 py-4">{{ $pastPeriods->links() }}</div>
         </x-admin.card>
     </div>
 

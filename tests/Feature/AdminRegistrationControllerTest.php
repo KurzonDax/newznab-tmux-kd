@@ -311,6 +311,37 @@ class AdminRegistrationControllerTest extends TestCase
         $response->assertSee('data-title="Delete Past Period"', false);
     }
 
+    public function test_period_pages_are_independent_and_allow_off_page_editing(): void
+    {
+        $this->travelTo(now()->startOfSecond());
+        $admin = $this->createUserWithRole('Admin');
+        for ($id = 1; $id <= 60; $id++) {
+            DB::table('registration_periods')->insert([
+                'id' => $id, 'name' => "Period {$id}",
+                'starts_at' => now()->subHour(),
+                'ends_at' => $id <= 30 ? now()->subSecond() : now(),
+                'is_enabled' => false, 'created_by' => $admin->id, 'updated_by' => $admin->id,
+            ]);
+        }
+
+        DB::table('registration_periods')->where('id', 59)->update(['starts_at' => null, 'ends_at' => null]);
+
+        $response = $this->actingAs($admin)->get(route('admin.registrations.index', [
+            'current_periods_page' => 2, 'past_periods_page' => 1, 'edit_period' => 31,
+        ]))->assertOk();
+        $current = $response->viewData('currentPeriods');
+        $past = $response->viewData('pastPeriods');
+        $this->assertSame(30, $current->total());
+        $this->assertSame([56, 57, 58, 60, 59], $current->pluck('id')->all());
+        $this->assertSame(30, $past->total());
+        $this->assertCount(25, $past);
+        $this->assertSame(30, $past->first()->id);
+        $this->assertSame(31, $response->viewData('editingPeriod')->id);
+        $this->assertStringContainsString('past_periods_page=1', $current->url(1));
+        $this->assertStringContainsString('current_periods_page=2', $past->url(2));
+        $this->assertSame(['id', 'username'], array_keys($current->first()->createdByUser->getAttributes()));
+    }
+
     private function createSchema(): void
     {
         Schema::create('settings', function (Blueprint $table): void {
@@ -418,8 +449,8 @@ class AdminRegistrationControllerTest extends TestCase
         Schema::create('registration_periods', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('name');
-            $table->dateTime('starts_at');
-            $table->dateTime('ends_at');
+            $table->dateTime('starts_at')->nullable();
+            $table->dateTime('ends_at')->nullable();
             $table->boolean('is_enabled')->default(true);
             $table->text('notes')->nullable();
             $table->unsignedInteger('created_by')->nullable();
