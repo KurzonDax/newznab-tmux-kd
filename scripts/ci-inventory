@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""Check installed PHPUnit discovery against the bounded + explicit acceptance inventory."""
+import argparse
+import json
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tempfile
+import xml.etree.ElementTree as ET
+
+
+def verify(policy, xml):
+    tree = ET.parse(xml)
+    methods = {}
+    for cls in tree.findall('.//{*}testClass'):
+        filename = Path(cls.get('file')).resolve().relative_to(Path.cwd().resolve()).as_posix()
+        for method in cls.findall('{*}testMethod'):
+            methods[method.get('id')] = (filename, method.get('name'))
+    groups = {group.get('name'): {test.get('id') for test in group.findall('{*}test')}
+              for group in tree.findall('.//{*}group')}
+    selected = {}
+    for suite_id, suite in policy['suites'].items():
+        if not suite.get('files'):
+            continue
+        count = 0
+        for identity, (filename, name) in methods.items():
+            if filename not in suite['files']:
+                continue
+            if any(identity in groups.get(group, set()) for group in suite.get('exclude_groups', [])):
+                continue
+            if suite.get('group') and identity not in groups.get(suite['group'], set()):
+                continue
+            if suite.get('filter') and not re.search(suite['filter'], identity):
+                continue
+            if identity in selected:
+                raise ValueError(f'duplicate discovered test: {identity} in {selected[identity]} and {suite_id}')
+            selected[identity] = suite_id
+            count += 1
+        if count == 0:
+            raise ValueError(f'empty discovered suite: {suite_id}')
+    missing = set(methods) - set(selected)
+    if not methods or missing:
+        raise ValueError('discovered tests absent from inventory: ' + ', '.join(sorted(missing)))
+    print(f'INVENTORY_STATUS=passed TEST_IDENTITIES={len(selected)}')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--xml')
+    args = parser.parse_args()
+    policy = json.loads(Path('.github/ci-policy.json').read_text())
+    if args.xml:
+        verify(policy, args.xml)
+        return
+    files = sorted({file for suite in policy['suites'].values() for file in suite.get('files', [])})
+    with tempfile.TemporaryDirectory(prefix='ci-inventory-') as directory:
+        xml = str(Path(directory) / 'tests.xml')
+        subprocess.run(['php', 'vendor/bin/phpunit', '--list-tests-xml', xml, *files], check=True, timeout=30)
+        verify(policy, xml)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (ValueError, OSError, subprocess.SubprocessError, ET.ParseError) as error:
+        print(f'CI inventory: {error}', file=sys.stderr)
+        sys.exit(1)

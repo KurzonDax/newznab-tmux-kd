@@ -2,17 +2,19 @@
 
 Master only moves by pull request, and every change merges through this loop — docs, one-line fixes, `/implement <issue-number>` sessions, and ad-hoc requests alike. The required `PHP 8.5 via Sail` check is strict: a pull request that falls behind the effective master tip must update its issue branch and pass the check again before merge.
 
-`Run tests` validates each PR's merge ref with four complete PHPUnit file shards and a parallel runtime/frontend job. Only the aggregate job is named `PHP 8.5 via Sail`; it passes after all execution jobs succeed. The runtime job keeps the MariaDB classes, shell regressions, representative cache-isolation pass, frontend build/JS tests, and permission checks serial within its checkout.
-
-A nonempty diff containing only documentation (`*.md` anywhere, `docs/**`, `.ai/**`, or root `LICENSE`) skips execution jobs and receives an explicit successful aggregate. Empty or uncertain diffs run full CI. Missing classification, unexpected skips, failure, or cancellation cannot pass the aggregate. Every other PR runs the entire main PHPUnit selection; intentional skips remain visible.
+Before adding tests or publishing, read [bounded verification and CI policy](ci-policy.md).
+The manifest and planner select bounded correctness suites; the accepted-base
+preflight runs before execution. Four PHP shards and two selected-suite workers
+feed the existing strict aggregate. Prose-only changes skip runtime execution;
+unknown/shared changes select all bounded correctness, never large acceptance.
 
 **Definition of done:** a coding task is complete only when `scripts/agent-issue-finish` prints `MERGE_STATUS=merged`. Pushing the issue branch, opening the pull request, and enabling auto-merge are pre-authorized — run the finish helper without asking for confirmation. This overrides any skill or prompt instruction whose final step is committing.
 
 ## The loop
 
-1. **Issue.** Work starts from an open GitHub issue labelled `ready-for-agent`. For a requested change with no issue yet, create one (`gh issue create` plus the label), then continue with it.
+1. **Issue.** Work starts from an open GitHub issue labelled `ready-for-agent`. Agree scope and implementation authorization first; creating or triaging an issue is not implementation authorization.
 2. **Start.** From the primary checkout, before changing source files, run `scripts/agent-issue-start <issue-number>`.
-3. **Work and verify.** Implement, test, run Pint and PHPStan, review, and commit on `issue/<number>` inside the worktree.
+3. **Work and verify.** Implement, run focused tests and `python3 scripts/agent-verify final`, review, and commit on `issue/<number>` inside the worktree.
 4. **Publish.** Immediately after committing, run `scripts/agent-issue-finish --publish` from the issue worktree.
 5. **Monitor to merge.** Run `scripts/agent-issue-finish --monitor` — rerun it until it prints `MERGE_STATUS=merged`.
 
@@ -111,22 +113,10 @@ Watch its Actions result under `CI maintenance`; it has a distinct check name an
 
 Parallel sessions publish and arm auto-merge freely. The strict required check makes the race safe server-side: when a peer pull request merges first, GitHub marks the later one `BEHIND` and refuses to merge it on stale CI results; `--monitor` takes the new base and re-passes CI. The cost is one extra CI run per merge collision — never a stale merge.
 
-## Manual acceptance checklist
+## Infrastructure acceptance
 
-This infrastructure uses a manual acceptance sequence rather than permanent workflow-specific CI tests. Use disposable, `ready-for-agent` issues and remove their temporary branches, worktrees, Compose projects, pull requests, and issue assignments after the exercise.
-
-Run the complete sequence twice:
-
-1. Record the primary checkout's branch, HEAD, status, and `origin/master`, then start two different disposable issues concurrently from normal Codex and Claude Code sessions.
-2. Confirm the outputs have different issue numbers, branches, absolute worktree paths, Git worktree directories, Compose project names, container IDs, networks, `vendor` directories, `node_modules` directories, and source mounts.
-3. Create a uniquely named untracked file in each worktree and confirm it is absent from the peer worktree and the primary checkout.
-4. Run focused application tests simultaneously through each worktree's `scripts/agent-sail`; confirm their reported temporary cache roots differ.
-5. Initialize Laravel Boost through each client's tracked MCP configuration and confirm a project query reports that client's worktree.
-6. Stop one issue's Compose project and confirm the peer container and network remain running; restart the stopped project for completion.
-7. Start the same third disposable issue from two processes at once and confirm exactly one acquires `issue/<number>` while the loser exits before assignment.
-8. Advance or fetch `origin/master` without updating local `master`, start another disposable issue, and confirm its branch tip equals the current remote tip.
-9. Complete two pull requests that began from the same base; confirm the later effective merge candidate is updated and its required check reruns against the new base before merge.
-10. Publish one issue with `scripts/agent-issue-finish --publish` and confirm it returns within seconds with `MERGE_STATUS=pending` and auto-merge armed; kill its first `--monitor` mid-watch, rerun `--monitor`, and confirm the rerun resumes cleanly through `MERGE_STATUS=merged`.
-11. Run `scripts/agent-issue-finish --monitor --timeout-seconds 30` against a pull request with checks still running and confirm it exits successfully with `MERGE_STATUS=pending` and a rerun instruction.
-12. Run each issue's finish helper to completion, then confirm its runtime, worktree, and branches are gone, `PRIMARY_MASTER=synced` moved the primary checkout's `master` to the new `origin/master` tip (its status and untracked files otherwise unchanged), and the peer session is unaffected.
-13. Dirty the primary checkout (or switch it off `master`), finish another disposable issue, and confirm the helper still exits with `MERGE_STATUS=merged` while reporting `PRIMARY_MASTER=skipped` and leaving that checkout untouched.
+Use the focused shell/Python contracts for policy selection, verification reuse,
+aggregate states and merge monitoring. Validate the implementation through its
+normal PR. Do not create repeated disposable full pipelines for conditions that
+can be exercised by local fixture tests. Worktree startup and strict merge
+behavior remain unchanged by the CI policy.

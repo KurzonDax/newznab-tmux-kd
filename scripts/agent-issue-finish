@@ -76,6 +76,8 @@ if [[ "$mode" != monitor ]]; then
     [[ "$ahead_count" -gt 0 ]] ||
         agent_fail 'the issue branch has no commits to publish; commit the completed work, then rerun scripts/agent-issue-finish'
 
+    python3 "$script_directory/agent-verify" final --base origin/master
+
     git -C "$AGENT_WORKTREE_ROOT" push -u "$AGENT_REMOTE" "$AGENT_ISSUE_BRANCH"
 
     if [[ -z "$pull_request_number" ]]; then

@@ -52,3 +52,6 @@ composer.lock	-binary text
 docker			-binary text
 Dockerfile		-binary text
 .mytop			-binary text
+
+scripts/ci_*.py		-binary text eol=lf
+Makefile		-binary text eol=lf

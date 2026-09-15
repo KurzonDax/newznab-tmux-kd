@@ -586,6 +586,7 @@ final class AdmissionThroughputMariaDbTest extends TestCase
         return [['delete'], ['state'], ['date']];
     }
 
+    #[Group('admission-scale')]
     public function test_bounded_callers_report_repeatable_development_benchmarks(): void
     {
         foreach (['dense', 'sparse', 'single', 'fallback', 'positive'] as $case) {

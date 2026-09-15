@@ -1,6 +1,9 @@
 # GitHub Actions CI Optimization Plan
 
-Status: ready for implementation
+Status: historical; topology, unconditional selection and verification instructions superseded by #644
+
+Current policy: [bounded verification](../agents/ci-policy.md). The evidence below
+records the earlier optimization; it does not authorize recurring CI expansion.
 Date: 2026-09-07
 Issue: [#495](https://github.com/KurzonDax/newznab-tmux-kd/issues/495)
 Repository baseline: `cd4334a936b1ed8a24cf2d89052464652a8fa895`

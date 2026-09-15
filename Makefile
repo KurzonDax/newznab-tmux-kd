@@ -172,6 +172,8 @@ test: ## Run the PHPUnit test suite (usage: make test filter=TestName)
 test-permissions: ## Run permission, Sail-wrapper, and test-isolation regressions
 	@$(SAIL) exec -u sail $(APP_SERVICE) tests/Shell/CiSailReadyTest.sh
 	@$(SAIL) exec -u sail $(APP_SERVICE) python3 tests/Shell/CiContractsTest.py
+	@$(SAIL) exec -u sail $(APP_SERVICE) python3 tests/Shell/CiPolicyTest.py
+	@$(SAIL) exec -u sail $(APP_SERVICE) python3 tests/Shell/AgentVerifyTest.py
 	@$(SAIL) exec -u sail $(APP_SERVICE) python3 tests/Shell/AgentCheckSnapshotTest.py
 	@$(SAIL) exec -u sail $(APP_SERVICE) python3 tests/Shell/AgentIssueFinishTest.py
 	@$(SAIL) exec -u sail $(APP_SERVICE) tests/Shell/RuntimePermissionsTest.sh

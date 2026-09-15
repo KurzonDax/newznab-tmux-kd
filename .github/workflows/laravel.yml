@@ -1,165 +1,148 @@
-name: Run tests
-on:
-  pull_request:
-permissions:
-  contents: read
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-jobs:
-  scope:
-    name: Classify changes
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    outputs:
-      code: ${{ steps.diff.outputs.code }}
-      dependencies: ${{ steps.diff.outputs.dependencies }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 2
-      - id: diff
-        run: scripts/ci-classify-changes >> "$GITHUB_OUTPUT"
-  php:
-    name: PHP shard ${{ matrix.shard }}
-    needs: scope
-    if: needs.scope.outputs.code == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      max-parallel: 4
-      matrix:
-        shard: [0, 1, 2, 3]
-    env:
-      COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/ci-sail
-      - name: Run complete PHPUnit file shard
-        env:
-          SHARD_INDEX: ${{ matrix.shard }}
-        run: ./sail exec -T -u sail laravel.test scripts/run-tests-isolated.sh scripts/ci-phpunit-shard --index "$SHARD_INDEX" --count 4
-      - name: Stop Sail
-        if: always()
-        run: ./sail down
-  runtime:
-    name: Runtime and frontend
-    needs: scope
-    if: needs.scope.outputs.code == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    env:
-      COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/ci-sail
-        with:
-          npm-cache: 'true'
-      - name: Run CBP MariaDB integration tests
-        run: |
-          ./sail up -d --wait mariadb
-          ./sail exec -T -e CBP_INTEGRATION_DB_DATABASE=cbp_integration -e CBP_INTEGRATION_DB_USERNAME=sail -e CBP_INTEGRATION_DB_PASSWORD=password laravel.test php artisan test --compact tests/Integration/CbpMariaDbIngestionTest.php tests/Integration/ReleaseCleanupSafetyMariaDbTest.php tests/Integration/Par2SidecarMariaDbTest.php tests/Integration/TvBrowseMemoryMariaDbTest.php
-
-      - name: Collection reconciliation concurrency
-        run: ./sail artisan test --compact --fail-on-skipped tests/Integration/ReconciliationMariaDbTest.php
-
-      - name: Run release formation concurrency regressions
-        run: ./sail artisan test --compact --fail-on-skipped --exclude-group=frontier-scale tests/Integration/RecoveryFrontierMariaDbTest.php tests/Integration/RecoveryBudgetMariaDbTest.php tests/Integration/RecoveryPublicationMariaDbTest.php tests/Integration/RecoveryWorkerConcurrencyTest.php
-
-      - name: Run bounded NNTP and synthetic archive regressions
-        run: ./sail artisan test --compact --fail-on-skipped --fail-on-warning tests/Integration/RecoveryTransportTest.php tests/Integration/RecoveryDownloadTest.php tests/Integration/RecoveryOverviewTransportTest.php tests/Integration/RecoveryGapDownloadTest.php tests/Integration/RecoveryArchiveFixtureTest.php tests/Integration/RecoveryMediaFixtureTest.php
-
-      - name: Run backup schema MariaDB integration tests
-        run: ./sail exec -T -e BACKUP_INTEGRATION_MARIADB=1 laravel.test php artisan test --compact --fail-on-skipped tests/Integration/BackupSchemaMariaDbTest.php
-
-      - name: Run permission and test-isolation regressions
-        run: make test-permissions
-
-      - name: Prove focused tests leave live caches unchanged
-        run: make test-focused-cache-isolation
-
-      - name: Build frontend and run JS tests
-        run: |
-          make npm-build-ci
-          ./sail npm run test:js
-
-      - name: Verify production permissions
-        run: |
-          make fix-permissions
-          make check-permissions
-
-      - name: Audit dependencies (informational)
-        if: needs.scope.outputs.dependencies == 'true'
-        continue-on-error: true
-        run: make deps-audit
-      - name: Stop Sail
-        if: always()
-        run: ./sail down
-  recovery:
-    name: Local downloader regressions
-    needs: scope
-    if: needs.scope.outputs.code == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    env:
-      COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/ci-sail
-      - name: Install pinned local test clients
-        run: ./sail exec -T laravel.test bash tests/Support/ObfuscationRecovery/install-clients.sh
-      - name: Verify generated publications and local downloads
-        run: ./sail artisan test --compact --fail-on-skipped --fail-on-warning --fail-on-empty-test-suite tests/Integration/RecoveryPortablePublicationTest.php tests/Integration/RecoveryDownloaderTest.php tests/Integration/RecoveryDownloadTest.php tests/Integration/RecoveryGapDownloadTest.php
-      - name: Start recovery concurrency database
-        run: ./sail up -d --wait mariadb
-      - name: Verify recovery races on MariaDB
-        run: ./sail exec -T -u sail -e CBP_INTEGRATION_DB_DATABASE=cbp_integration -e CBP_INTEGRATION_DB_USERNAME=sail -e CBP_INTEGRATION_DB_PASSWORD=password laravel.test php artisan test --compact --fail-on-skipped --fail-on-warning --fail-on-empty-test-suite tests/Integration/RecoveryBudgetMariaDbTest.php tests/Integration/RecoveryPublicationMariaDbTest.php tests/Integration/RecoveryFrontierMariaDbTest.php tests/Integration/RecoveryWorkerConcurrencyTest.php
-      - name: Stop Sail
-        if: always()
-        run: ./sail down
-  admission:
-    name: Admission development acceptance
-    needs: scope
-    if: needs.scope.outputs.code == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    env:
-      COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/ci-sail
-      - name: Start disposable MariaDB
-        run: ./sail up -d --wait mariadb
-      - name: Verify progressive publication, locks, callers, and bounded discovery
-        run: ./sail exec -T -u sail -e CBP_INTEGRATION_DB_DATABASE=cbp_integration laravel.test scripts/run-tests-isolated.sh php artisan test --compact --fail-on-skipped --fail-on-warning --fail-on-empty-test-suite tests/Integration/AdmissionThroughputMariaDbTest.php --exclude-group admission-scale
-      - name: Verify naming selection with absent and retained evidence
-        run: ./sail exec -T -u sail -e CBP_INTEGRATION_DB_DATABASE=cbp_integration -e CBP_INTEGRATION_DB_USERNAME=sail -e CBP_INTEGRATION_DB_PASSWORD=password laravel.test scripts/run-tests-isolated.sh php artisan test --compact --fail-on-skipped --fail-on-warning --fail-on-empty-test-suite tests/Integration/NamingCandidateScaleMariaDbTest.php --filter='test_generated_work_flags|test_pending_flags_without_evidence|test_consumed_flags_with_dense_retained_evidence'
-      - name: Stop Sail
-        if: always()
-        run: ./sail down
-  required:
-    name: PHP 8.5 via Sail
-    needs: [scope, php, runtime, recovery, admission]
-    if: ${{ always() }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Require local downloader results
-        env:
-          CODE: ${{ needs.scope.outputs.code }}
-          RECOVERY_RESULT: ${{ needs.recovery.result }}
-        run: test "$CODE" != true || test "$RECOVERY_RESULT" = success
-      - name: Require admission acceptance results
-        env:
-          CODE: ${{ needs.scope.outputs.code }}
-          ADMISSION_RESULT: ${{ needs.admission.result }}
-        run: test "$CODE" != true || test "$ADMISSION_RESULT" = success
-      - name: Assert required result
-        env:
-          CODE: ${{ needs.scope.outputs.code }}
-          SCOPE_RESULT: ${{ needs.scope.result }}
-          PHP_RESULT: ${{ needs.php.result }}
-          RUNTIME_RESULT: ${{ needs.runtime.result }}
-        run: scripts/ci-required-result "$CODE" "$SCOPE_RESULT" "$PHP_RESULT" "$RUNTIME_RESULT"
+{
+  "name": "Run tests",
+  "on": {
+    "pull_request": null
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "concurrency": {
+    "group": "${{ github.workflow }}-${{ github.ref }}",
+    "cancel-in-progress": true
+  },
+  "jobs": {
+    "scope": {
+      "name": "CI preflight",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 2,
+      "outputs": {
+        "php": "${{ steps.plan.outputs.php }}",
+        "specialist": "${{ steps.plan.outputs.specialist }}",
+        "plan": "${{ steps.plan.outputs.plan }}"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "with": {
+            "fetch-depth": 0
+          }
+        },
+        {
+          "id": "plan",
+          "env": {
+            "BASE_SHA": "${{ github.event.pull_request.base.sha }}"
+          },
+          "run": "python3 scripts/ci-preflight --base \"$BASE_SHA\" --github"
+        }
+      ]
+    },
+    "php": {
+      "name": "PHP shard ${{ matrix.shard }}",
+      "needs": "scope",
+      "if": "needs.scope.outputs.php == 'true'",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 10,
+      "strategy": {
+        "fail-fast": false,
+        "max-parallel": 4,
+        "matrix": {
+          "shard": [
+            0,
+            1,
+            2,
+            3
+          ]
+        }
+      },
+      "env": {
+        "COMPOSER_AUTH": "{\"github-oauth\":{\"github.com\":\"${{ secrets.GITHUB_TOKEN }}\"}}"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        },
+        {
+          "uses": "./.github/actions/ci-sail"
+        },
+        {
+          "env": {
+            "SHARD_INDEX": "${{ matrix.shard }}"
+          },
+          "run": "./sail exec -T -u sail laravel.test timeout --kill-after=5 480 scripts/run-tests-isolated.sh scripts/ci-phpunit-shard --index \"$SHARD_INDEX\" --count 4"
+        },
+        {
+          "name": "Stop Sail",
+          "if": "always()",
+          "run": "./sail down"
+        }
+      ]
+    },
+    "specialist": {
+      "name": "Selected checks ${{ matrix.lane }}",
+      "needs": "scope",
+      "if": "needs.scope.outputs.specialist == 'true'",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 17,
+      "strategy": {
+        "fail-fast": false,
+        "max-parallel": 2,
+        "matrix": {
+          "lane": [
+            0,
+            1
+          ]
+        }
+      },
+      "env": {
+        "COMPOSER_AUTH": "{\"github-oauth\":{\"github.com\":\"${{ secrets.GITHUB_TOKEN }}\"}}"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        },
+        {
+          "uses": "./.github/actions/ci-sail",
+          "with": {
+            "npm-cache": "true"
+          },
+          "id": "runtime",
+          "if": "toJSON(fromJSON(needs.scope.outputs.plan).lanes[matrix.lane]) != '[]'"
+        },
+        {
+          "env": {
+            "CI_PLAN": "${{ needs.scope.outputs.plan }}",
+            "LANE": "${{ matrix.lane }}"
+          },
+          "run": "python3 scripts/ci-run --plan \"$CI_PLAN\" --lane \"$LANE\""
+        },
+        {
+          "name": "Stop Sail",
+          "if": "always() && steps.runtime.outcome != 'skipped'",
+          "run": "./sail down"
+        }
+      ]
+    },
+    "required": {
+      "name": "PHP 8.5 via Sail",
+      "needs": [
+        "scope",
+        "php",
+        "specialist"
+      ],
+      "if": "${{ always() }}",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 2,
+      "steps": [
+        {
+          "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        },
+        {
+          "env": {
+            "NEEDS_JSON": "${{ toJSON(needs) }}"
+          },
+          "run": "python3 scripts/ci-policy result \"$NEEDS_JSON\""
+        }
+      ]
+    }
+  }
+}

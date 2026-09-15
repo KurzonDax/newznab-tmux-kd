@@ -81,3 +81,6 @@ pnpm-lock.yaml
 # Local operational runbooks — specific to this deployment's machines and
 # workflow, intentionally kept out of the public repo.
 /docs/runbooks/
+
+# Python orchestration bytecode is local, never verification input.
+__pycache__/

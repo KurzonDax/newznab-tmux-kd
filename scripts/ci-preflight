@@ -1,0 +1,26 @@
+#!/usr/bin/env python3
+"""Use the base validator, never the candidate validator, to admit ordinary PR work."""
+import argparse
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--base', default='origin/master')
+parser.add_argument('--github', action='store_true')
+args = parser.parse_args()
+base = subprocess.run(['git', 'show', f'{args.base}:scripts/ci-policy'], capture_output=True)
+if base.returncode:
+    # The only bootstrap base is the revision explicitly scoped by issue #644.
+    sha = subprocess.check_output(['git', 'rev-parse', args.base], text=True).strip()
+    if sha != '85212fd912054ba9f034a9f753e5df95646b47da':
+        sys.exit('Base validator missing: bootstrap requires a separately reviewed policy migration.')
+    base = subprocess.run(['cat', 'scripts/ci-policy'], capture_output=True, check=True)
+with tempfile.TemporaryDirectory(prefix='ci-preflight-') as directory:
+    validator = Path(directory) / 'ci-policy'
+    validator.write_bytes(base.stdout)
+    command = [sys.executable, str(validator), 'check', '--base', args.base]
+    if args.github:
+        command.append('--github')
+    sys.exit(subprocess.call(command))
