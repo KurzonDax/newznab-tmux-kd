@@ -7,12 +7,12 @@ namespace App\Services;
 use App\Models\Category;
 use App\Models\CategoryRegex;
 use App\Models\CollectionRegex;
-use App\Models\Release;
 use App\Models\ReleaseNamingRegex;
 use App\Models\UsenetGroup;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Service for managing regex patterns for collections, categories, and release naming.
@@ -166,65 +166,50 @@ class RegexService
     }
 
     /**
-     * Test a single collection regex for a group name.
+     * Test at most the requested number of binaries in one group without changing them.
      *
-     * Requires table per group to be on.
-     *
-     * @return array<string, mixed>
-     *
-     * @throws \Exception
+     * @return array{rows: list<array{binaryID: int, subject: string, match: bool, name: string, new_collection_hash: ?string, old_collection_hash: string}>, tested: int, matched: int}
      */
     public function testCollectionRegex(string $groupName, string $regex, int $limit): array
     {
         $groupID = UsenetGroup::getIDByName($groupName);
+        $data = ['rows' => [], 'tested' => 0, 'matched' => 0];
+        $lastID = 0;
 
-        if (! $groupID) {
-            return [];
-        }
+        while ($data['tested'] < $limit) {
+            $batchSize = min(500, $limit - $data['tested']);
+            $rows = DB::table('binaries as b')
+                ->join('collections as c', 'c.id', '=', 'b.collections_id')
+                ->where('c.groups_id', $groupID)
+                ->where('b.id', '>', $lastID)
+                ->orderBy('b.id')->limit($batchSize)
+                ->get(['b.id', 'b.name', 'b.totalparts', 'b.currentparts', 'b.binaryhash', 'c.fromname', 'c.collectionhash']);
 
-        $rows = DB::select(
-            'SELECT
-                    b.name, b.totalparts, b.currentparts, HEX(b.binaryhash) AS binaryhash,
-                    c.fromname, HEX(c.collectionhash) AS collectionhash
-                FROM binaries b
-                INNER JOIN collections c ON c.id = b.collections_id'
-        );
-
-        $data = [];
-        if (\count($rows) > 0) {
-            $limit--;
-            $hashes = [];
             foreach ($rows as $row) {
-                if (preg_match($regex, $row->name, $hits)) {
-                    ksort($hits);
-                    $string = $string2 = '';
-                    foreach ($hits as $key => $hit) {
-                        if (! \is_int($key)) {
-                            $string .= $hit;
-                            $string2 .= '<br/>'.$key.': '.$hit;
-                        }
-                    }
-                    $files = 0;
-                    if (preg_match('/[[(\s](\d{1,5})(\/|[\s_]of[\s_]|-)(\d{1,5})[])\s$:]/i', $row->name, $fileCount)) {
-                        $files = $fileCount[3];
-                    }
-                    $newCollectionHash = sha1($string.$row->fromname.$groupID.$files);
-                    $data['New hash: '.$newCollectionHash.$string2][$row->binaryhash] = [
-                        'new_collection_hash' => $newCollectionHash,
-                        'file_name' => $row->name,
-                        'file_total_parts' => $row->totalparts,
-                        'file_current_parts' => $row->currentparts,
-                        'collection_poster' => $row->fromname,
-                        'old_collection_hash' => $row->collectionhash,
-                    ];
-
-                    if ($limit > 0) {
-                        if (\count($hashes) > $limit) {
-                            break;
-                        }
-                        $hashes[$newCollectionHash] = '';
+                $matched = @preg_match($regex, $row->name, $hits) === 1;
+                $this->checkTestRegexError();
+                ksort($hits);
+                $name = '';
+                foreach ($hits as $key => $hit) {
+                    if (! is_int($key)) {
+                        $name .= $hit;
                     }
                 }
+                $files = preg_match('/[[(\s](\d{1,5})(\/|[\s_]of[\s_]|-)(\d{1,5})[])\s$:]/i', $row->name, $fileCount) ? $fileCount[3] : 0;
+                $data['rows'][] = [
+                    'binaryID' => (int) $row->id,
+                    'subject' => $row->name,
+                    'match' => $matched,
+                    'name' => $name,
+                    'new_collection_hash' => $matched ? sha1($name.$row->fromname.$groupID.$files) : null,
+                    'old_collection_hash' => bin2hex($row->collectionhash),
+                ];
+                $data['tested']++;
+                $data['matched'] += (int) $matched;
+                $lastID = (int) $row->id;
+            }
+            if ($rows->count() < $batchSize) {
+                break;
             }
         }
 
@@ -232,46 +217,57 @@ class RegexService
     }
 
     /**
-     * Test release naming regex against releases.
+     * Scan releases in ID order, retaining only matches and never hydrating models.
      *
-     * @return array<string, mixed>
-     *
-     * @throws \Exception
+     * @return array{rows: list<array{releaseID: int, oldName: string, newName: string, match: bool}>, tested: int, stopReason: string}
      */
-    public function testReleaseNamingRegex(mixed $groupName, mixed $regex, mixed $displayLimit, mixed $queryLimit): array
+    public function testReleaseNamingRegex(string $groupName, string $regex, int $displayLimit, int $queryLimit): array
     {
         $groupID = UsenetGroup::getIDByName($groupName);
+        $data = ['rows' => [], 'tested' => 0, 'stopReason' => 'candidate_limit'];
+        $lastID = 0;
 
-        if (! $groupID) {
-            return [];
-        }
+        while ($data['tested'] < $queryLimit) {
+            $batchSize = min(500, $queryLimit - $data['tested']);
+            $rows = DB::table('releases')->where('groups_id', $groupID)
+                ->where('id', '>', $lastID)->orderBy('id')->limit($batchSize)
+                ->get(['id', 'name', 'searchname']);
 
-        $rows = Release::query()->where('groups_id', $groupID)->select(['name', 'searchname', 'id']);
-        if ((int) $queryLimit !== 0) {
-            $rows->limit($queryLimit);
-        }
-
-        $results = $rows->get();
-
-        $data = [];
-        if ($results->isNotEmpty()) {
-            $limit = 1;
-            foreach ($results as $row) {
-                $hit = $this->_matchRegex($regex, $row['name']);
+            foreach ($rows as $row) {
+                $hit = @$this->_matchRegex($regex, $row->name);
+                $this->checkTestRegexError();
+                $data['tested']++;
+                $lastID = (int) $row->id;
                 if ($hit) {
-                    $data[$row['id']] = [
-                        'subject' => $row['name'],
-                        'old_name' => $row['searchname'],
-                        'new_name' => $hit,
+                    $data['rows'][] = [
+                        'releaseID' => (int) $row->id,
+                        'oldName' => $row->searchname,
+                        'newName' => $hit,
+                        'match' => true,
                     ];
-                    if ((int) $displayLimit > 0 && $limit++ >= (int) $displayLimit) {
-                        break;
+                    if (count($data['rows']) === $displayLimit) {
+                        $data['stopReason'] = 'result_limit';
+
+                        return $data;
                     }
                 }
+            }
+            if ($rows->count() < $batchSize) {
+                $data['stopReason'] = 'exhausted';
+                break;
             }
         }
 
         return $data;
+    }
+
+    private function checkTestRegexError(): void
+    {
+        if (preg_last_error() !== PREG_NO_ERROR) {
+            throw ValidationException::withMessages([
+                'regex' => 'The regex could not be evaluated: '.preg_last_error_msg(),
+            ]);
+        }
     }
 
     /**

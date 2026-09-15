@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\BasePageController;
+use App\Http\Requests\Admin\AdminRegexTestRequest;
 use App\Models\Category;
 use App\Services\RegexService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class AdminCollectionRegexesController extends BasePageController
@@ -110,18 +112,24 @@ class AdminCollectionRegexesController extends BasePageController
     /**
      * @throws \Exception
      */
-    public function testRegex(Request $request): mixed
+    public function testRegex(AdminRegexTestRequest $request): mixed
     {
         $this->setAdminPrefs();
         $meta_title = $title = 'Collections Regex Test';
 
-        $group = trim($request->has('group') && ! empty($request->input('group')) ? $request->input('group') : '');
-        $regex = trim($request->has('regex') && ! empty($request->input('regex')) ? $request->input('regex') : '');
-        $limit = ($request->has('limit') && is_numeric($request->input('limit')) ? $request->input('limit') : 50);
+        $group = (string) $request->input('group', '');
+        $regex = (string) $request->input('regex', '');
+        $limit = $request->integer('limit', 50);
 
         $data = null;
-        if ($group && $regex) {
-            $data = (new RegexService('collection_regexes'))->testCollectionRegex($group, $regex, $limit);
+        $summary = null;
+        if ($request->isSubmitted()) {
+            try {
+                $summary = (new RegexService('collection_regexes'))->testCollectionRegex($group, $regex, $limit);
+            } catch (ValidationException $exception) {
+                throw $exception->redirectTo($request->url());
+            }
+            $data = $summary['rows'];
         }
 
         $this->viewData = array_merge($this->viewData, [
@@ -129,6 +137,7 @@ class AdminCollectionRegexesController extends BasePageController
             'regex' => $regex,
             'limit' => $limit,
             'data' => $data,
+            'summary' => $summary,
             'title' => $title,
             'meta_title' => $meta_title,
         ]);
