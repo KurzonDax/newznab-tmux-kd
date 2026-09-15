@@ -9,99 +9,65 @@ use App\Data\ReleaseCoverItem;
 use App\Enums\ReleaseSort;
 use App\Models\User;
 use App\Support\CoverBrowseResults;
-use Illuminate\Database\Query\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
-use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 final class TvEpisodeBrowser
 {
-    public function __construct(private readonly ReleaseBrowserQuery $browser, private readonly TvReleaseMembership $membership, private readonly ReleaseBrowseService $rows) {}
-
-    /** @return Collection<int|string, \stdClass> */
-    public function episodes(Builder $query): Collection
-    {
-        return DB::table('tv_episodes')->whereIn('videos_id', (clone $query)->select('r.videos_id')->distinct())
-            ->where('episode', '>', 0)->orderBy('id')->get(['id', 'videos_id', 'series', 'episode', 'title'])->unique(fn (object $episode): string => $episode->videos_id.':'.$episode->series.':'.$episode->episode)->keyBy('id');
-    }
+    public function __construct(private readonly ReleaseBrowserQuery $browser, private readonly ReleaseBrowseService $rows) {}
 
     public function paginate(ReleaseBrowserState $state, User $user): CoverBrowseResults
     {
         $query = $this->browser->matchingQuery($state, $user)->whereNotNull('m.id')->where('m.title', '!=', '');
-        $sort = ReleaseSort::resolve($state->sort);
-        $cacheKey = 'tv-episode-groups:'.hash('sha256', serialize([
-            DB::connection()->getDatabaseName(), $query->toSql(), $query->getBindings(), $state->sort, $state->trending,
-        ]));
-        [$episodes, $groups] = Cache::remember($cacheKey, 30, function () use ($query, $sort, $state): array {
-            $episodes = $this->episodes($query);
-            $catalog = new TvEpisodeCatalog($episodes);
-            /** @var array<int, array{count: int, value: string|int, recent: int, releases: list<\stdClass>}> $groups */
-            $groups = [];
-            $recentGrabs = $state->trending ? CoverBrowseScope::recentGrabs()->pluck('grabs', 'releases_id') : collect();
-            foreach ((clone $query)->orderBy('r.id')->select(['r.id', 'r.videos_id', 'r.tv_episodes_id', 'r.searchname', 'r.display_name', 'r.postdate', 'r.adddate', 'r.grabs'])->lazyById(1000, 'r.id', 'id') as $release) {
-                $members = $this->membership->resolve($release, $catalog);
-                $value = match ($sort) {
-                    ReleaseSort::PostedNewest, ReleaseSort::PostedOldest => (string) $release->postdate,
-                    ReleaseSort::AddedNewest, ReleaseSort::AddedOldest => (string) $release->adddate,
-                    ReleaseSort::Name => release_display_name($release),
-                    ReleaseSort::Grabs => (int) $release->grabs,
-                };
-                foreach ($members['episodes'] as $id) {
-                    $groups[$id] ??= ['count' => 0, 'value' => $value, 'recent' => 0, 'releases' => []];
-                    $group = &$groups[$id];
-                    $group['count']++;
-                    $group['recent'] += (int) ($recentGrabs[$release->id] ?? 0);
-                    $comparison = $sort === ReleaseSort::Name ? strcasecmp((string) $value, (string) $group['value']) : $value <=> $group['value'];
-                    if (($sort->order()[1] === 'asc' && $comparison < 0) || ($sort->order()[1] === 'desc' && $comparison > 0)) {
-                        $group['value'] = $value;
-                    }
-                    $group['releases'][] = $release;
-                    usort($group['releases'], static fn (object $a, object $b): int => strcmp((string) $b->postdate, (string) $a->postdate) ?: $b->id <=> $a->id);
-                    $group['releases'] = array_slice($group['releases'], 0, 2);
-                    unset($group);
-                }
-            }
 
-            return [$episodes, $groups];
-        });
-        uksort($groups, static function (int $a, int $b) use (&$groups, $sort, $state): int {
+        return TvBrowseMembershipTable::read($query, function (TvBrowseMembershipTable $table) use ($state): CoverBrowseResults {
+            $sort = ReleaseSort::resolve($state->sort);
+            [$column, $direction] = $sort->order(grouped: true);
+            if ($sort === ReleaseSort::Name) {
+                $column = 'MIN(membership.sort_name)';
+            }
+            $groups = $table->members()->join('releases as r', 'r.id', '=', 'membership.release_id')
+                ->select('membership.episode_id')->selectRaw('COUNT(*) AS release_count')->groupBy('membership.episode_id');
             if ($state->trending) {
-                return ($groups[$b]['recent'] <=> $groups[$a]['recent']) ?: $a <=> $b;
+                $groups->leftJoinSub(CoverBrowseScope::recentGrabs(), 'recent', 'recent.releases_id', '=', 'r.id');
+                $column = 'SUM(COALESCE(recent.grabs, 0))';
+                $direction = 'desc';
             }
-            $comparison = $sort === ReleaseSort::Name ? strcasecmp((string) $groups[$a]['value'], (string) $groups[$b]['value']) : $groups[$a]['value'] <=> $groups[$b]['value'];
+            $total = DB::query()->fromSub(clone $groups, 'groups')->count();
+            $selected = $groups->orderByRaw($column.' '.$direction)->orderBy('membership.episode_id')
+                ->offset(($state->page - 1) * $state->per)->limit($state->per)->get();
+            $episodes = DB::table('tv_episodes')->whereIn('id', $selected->pluck('episode_id'))->get()->keyBy('id');
+            $ranked = $table->members()->join('releases as r', 'r.id', '=', 'membership.release_id')
+                ->whereIn('membership.episode_id', $selected->pluck('episode_id'))->select(['r.*', 'membership.episode_id'])
+                ->selectRaw('ROW_NUMBER() OVER (PARTITION BY membership.episode_id ORDER BY r.postdate DESC, r.id DESC) AS tile_position');
+            $rows = DB::query()->fromSub($ranked, 'ranked')->where('tile_position', '<=', 2)->orderBy('tile_position')->get();
+            $this->rows->loadReleaseRows($rows);
+            $rows = $rows->groupBy('episode_id');
+            $shows = DB::table('videos')->whereIn('id', $episodes->pluck('videos_id'))->get()->keyBy('id');
+            $networks = DB::table('tv_info')->whereIn('videos_id', $shows->keys())->pluck('publisher', 'videos_id');
+            $covers = collect();
+            foreach ($selected as $group) {
+                $id = (int) $group->episode_id;
+                $episode = $episodes->get($id);
+                $show = $shows->get($episode->videos_id);
+                $releases = $rows->get($id, collect())->all();
+                if ($show === null || $releases === []) {
+                    continue;
+                }
+                $row = $releases[0]->row_data;
+                $network = $networks[$show->id] ?? null;
+                $covers->push(new ReleaseCoverItem(
+                    id: (string) $id, title: $show->title.' · '.sprintf('S%02dE%02d', $episode->series, $episode->episode).(empty($episode->title) ? '' : ' · '.$episode->title),
+                    artwork: $row->entity?->artwork, identifyingLine: (string) ($show->genre ?? ''), releaseCount: (int) $group->release_count,
+                    metadata: $network ? [(string) $network] : [], releases: $releases,
+                    titleUrl: route('title', ['root' => 'tv', 'id' => $show->id]),
+                    watchUrl: route('watchlist.picker', ['root' => 'tv', 'id' => $show->id]), watched: $row->watched,
+                    watchId: (string) $show->id, genres: (string) ($show->genre ?? ''),
+                ));
+            }
 
-            return ($sort->order()[1] === 'asc' ? $comparison : -$comparison) ?: $a <=> $b;
+            return new CoverBrowseResults($covers, $total);
         });
-        $total = count($groups);
-        $selected = array_slice($groups, ($state->page - 1) * $state->per, $state->per, true);
-        $ids = collect($selected)->flatMap(static fn (array $group): array => array_column($group['releases'], 'id'))->unique();
-        $rows = (clone $query)->whereIn('r.id', $ids)->get(['r.*']);
-        $this->rows->loadReleaseRows($rows);
-        $rows = $rows->keyBy('id');
-        $shows = DB::table('videos')->whereIn('id', $episodes->whereIn('id', array_keys($selected))->pluck('videos_id'))->get()->keyBy('id');
-        $networks = DB::table('tv_info')->whereIn('videos_id', $shows->keys())->pluck('publisher', 'videos_id');
-        $covers = collect();
-        foreach ($selected as $id => $group) {
-            $episode = $episodes->get($id);
-            $show = $shows->get($episode->videos_id);
-            $releases = collect($group['releases'])->map(static fn (object $release): ?object => $rows->get($release->id))->filter()->values()->all();
-            if ($show === null || $releases === []) {
-                continue;
-            }
-            $row = $releases[0]->row_data;
-            $network = $networks[$show->id] ?? null;
-            $covers->push(new ReleaseCoverItem(
-                id: (string) $id, title: $show->title.' · '.sprintf('S%02dE%02d', $episode->series, $episode->episode).(empty($episode->title) ? '' : ' · '.$episode->title),
-                artwork: $row->entity?->artwork, identifyingLine: (string) ($show->genre ?? ''), releaseCount: $group['count'],
-                metadata: $network ? [(string) $network] : [], releases: $releases,
-                titleUrl: route('title', ['root' => 'tv', 'id' => $show->id]),
-                watchUrl: route('watchlist.picker', ['root' => 'tv', 'id' => $show->id]), watched: $row->watched,
-                watchId: (string) $show->id, genres: (string) ($show->genre ?? ''),
-            ));
-        }
-
-        return new CoverBrowseResults($covers, $total);
     }
 
     /** @return LengthAwarePaginator<int, \stdClass> */
@@ -110,17 +76,15 @@ final class TvEpisodeBrowser
         $episode = DB::table('tv_episodes')->where('id', $episodeId)->first();
         abort_if($episode === null, 404);
         $query = $this->browser->matchingQuery($state, $user)->where('r.videos_id', $episode->videos_id);
-        $catalog = new TvEpisodeCatalog($this->episodes($query));
-        $ids = [];
-        foreach ((clone $query)->orderByDesc('r.postdate')->orderByDesc('r.id')->select(['r.id', 'r.videos_id', 'r.tv_episodes_id', 'r.searchname'])->cursor() as $release) {
-            if (in_array($episodeId, $this->membership->resolve($release, $catalog)['episodes'], true)) {
-                $ids[] = $release->id;
-            }
-        }
-        $page = min(max(1, $page), max(1, (int) ceil(count($ids) / $per)));
-        $rows = DB::table('releases')->whereIn('id', array_slice($ids, ($page - 1) * $per, $per))->orderByDesc('postdate')->orderByDesc('id')->get();
-        $this->rows->loadReleaseRows($rows);
 
-        return new LengthAwarePaginator($rows, count($ids), $per, $page);
+        return TvBrowseMembershipTable::read($query, function (TvBrowseMembershipTable $table) use ($episodeId, $page, $per): LengthAwarePaginator {
+            $query = $table->members()->join('releases as r', 'r.id', '=', 'membership.release_id')->where('membership.episode_id', $episodeId);
+            $total = $query->count();
+            $page = min(max(1, $page), max(1, (int) ceil($total / $per)));
+            $rows = $query->orderByDesc('r.postdate')->orderByDesc('r.id')->offset(($page - 1) * $per)->limit($per)->get(['r.*']);
+            $this->rows->loadReleaseRows($rows);
+
+            return new LengthAwarePaginator($rows, $total, $per, $page);
+        });
     }
 }

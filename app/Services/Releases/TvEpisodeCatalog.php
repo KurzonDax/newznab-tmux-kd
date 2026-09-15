@@ -22,16 +22,16 @@ final class TvEpisodeCatalog
      */
     public function __construct(Collection $episodes)
     {
-        foreach ($episodes as $episode) {
+        foreach ($episodes->sortBy('id') as $episode) {
             $show = (int) $episode->videos_id;
             $season = (int) $episode->series;
             $number = (int) $episode->episode;
             $id = (int) $episode->id;
-            if ($number <= 0 || isset($this->seasons[$show][$season][$number])) {
+            if ($number <= 0) {
                 continue;
             }
-            $this->seasons[$show][$season][$number] = $id;
-            $this->links[$id] = ['id' => $id, 'show' => $show, 'season' => $season];
+            $this->seasons[$show][$season][$number] ??= $id;
+            $this->links[$id] = ['id' => $this->seasons[$show][$season][$number], 'show' => $show, 'season' => $season];
         }
     }
 
