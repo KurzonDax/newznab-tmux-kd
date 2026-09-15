@@ -165,8 +165,10 @@ final class TvBrowseMemoryMariaDbTest extends TestCase
     private function seed(PDO $pdo, int $first, int $last): void
     {
         $episodeRows = [];
+        $showRows = [];
+        $releaseRows = [];
         for ($show = $first; $show <= $last; $show++) {
-            $pdo->exec("INSERT INTO videos VALUES ({$show},'Fixture Show {$show}','','2020-01-01',0)");
+            $showRows[] = "({$show},'Fixture Show {$show}','','2020-01-01',0)";
             for ($season = 1; $season <= 10; $season++) {
                 for ($episode = 1; $episode <= 10; $episode++) {
                     $id = ($show - 1) * 100 + ($season - 1) * 10 + $episode;
@@ -181,7 +183,13 @@ final class TvBrowseMemoryMariaDbTest extends TestCase
                 $id = ($show - 1) * 3 + $index + 1;
                 $linked = $index === 1 ? ($show - 1) * 100 + 1 : 0;
                 $day = $index + 1;
-                $pdo->exec("INSERT INTO releases (id,videos_id,tv_episodes_id,searchname,postdate,adddate,grabs) VALUES ({$id},{$show},{$linked},'Fixture.Show.{$show}.{$name}','2026-01-0{$day}','2026-02-0{$day}',{$day})");
+                $releaseRows[] = "({$id},{$show},{$linked},'Fixture.Show.{$show}.{$name}','2026-01-0{$day}','2026-02-0{$day}',{$day})";
+            }
+            if (count($showRows) === 100 || $show === $last) {
+                $pdo->exec('INSERT INTO videos VALUES '.implode(',', $showRows));
+                $pdo->exec('INSERT INTO releases (id,videos_id,tv_episodes_id,searchname,postdate,adddate,grabs) VALUES '.implode(',', $releaseRows));
+                $showRows = [];
+                $releaseRows = [];
             }
         }
     }
