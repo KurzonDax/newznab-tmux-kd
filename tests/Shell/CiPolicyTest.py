@@ -159,6 +159,35 @@ class PolicyTest(unittest.TestCase):
         self.assertEqual('root', installer[installer.index('-u') + 1])
         self.assertEqual('sail', tests[tests.index('-u') + 1])
 
+    def test_shard_command_is_accepted_with_or_without_the_inner_cutoff(self):
+        import os
+        import runpy
+        shard = 'scripts/run-tests-isolated.sh scripts/ci-phpunit-shard --index "$SHARD_INDEX" --count 4'
+        cases = [('timeout --kill-after=5 480 ' + shard, None), (shard, None),
+                 ('timeout --kill-after=5 1200 ' + shard, 'unregistered PR command'),
+                 (shard + ' --count 5', 'unregistered PR command')]
+        for command, error in cases:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                shutil.copytree(ROOT / '.github', root / '.github')
+                workflow = root / '.github/workflows/laravel.yml'
+                data = json.loads(workflow.read_text())
+                steps = [step for step in data['jobs']['php']['steps'] if 'run' in step and 'ci-phpunit-shard' in step['run']]
+                self.assertEqual(1, len(steps))
+                steps[0]['run'] = './sail exec -T -u sail laravel.test ' + command
+                workflow.write_text(json.dumps(data))
+                previous = os.getcwd()
+                os.chdir(root)
+                try:
+                    validator = runpy.run_path(str(ROOT / 'scripts/ci-policy'))
+                    if error is None:
+                        validator['validate_workflow']()
+                    else:
+                        with self.assertRaisesRegex(ValueError, error):
+                            validator['validate_workflow']()
+                finally:
+                    os.chdir(previous)
+
     def test_frontend_does_not_start_database_or_downloaders(self):
         plan = self.plan('resources/js/alpine/components/content-toggle.js')
         self.assertFalse(plan['php'])

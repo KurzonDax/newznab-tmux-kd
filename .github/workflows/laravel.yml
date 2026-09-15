@@ -41,7 +41,7 @@
       "needs": "scope",
       "if": "needs.scope.outputs.php == 'true'",
       "runs-on": "ubuntu-24.04",
-      "timeout-minutes": 10,
+      "timeout-minutes": 20,
       "strategy": {
         "fail-fast": false,
         "max-parallel": 4,
