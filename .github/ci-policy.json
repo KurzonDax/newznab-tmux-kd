@@ -31,7 +31,8 @@
         [
           "scripts/check-design-system.sh"
         ]
-      ]
+      ],
+      "estimated_seconds": 20
     },
     "ingestion": {
       "category": "specialist",
@@ -57,7 +58,8 @@
       ],
       "exclude_groups": [
         "ci-scale"
-      ]
+      ],
+      "estimated_seconds": 25
     },
     "reconciliation": {
       "category": "specialist",
@@ -79,7 +81,8 @@
       "files": [
         "tests/Integration/ReconciliationMariaDbTest.php"
       ],
-      "exclude_groups": []
+      "exclude_groups": [],
+      "estimated_seconds": 15
     },
     "recovery-frontier": {
       "category": "specialist",
@@ -106,7 +109,8 @@
       ],
       "exclude_groups": [
         "ci-scale"
-      ]
+      ],
+      "estimated_seconds": 60
     },
     "recovery-publication": {
       "category": "specialist",
@@ -133,7 +137,8 @@
       ],
       "exclude_groups": [
         "frontier-scale"
-      ]
+      ],
+      "estimated_seconds": 100
     },
     "transport": {
       "category": "specialist",
@@ -162,7 +167,8 @@
         "tests/Integration/RecoveryArchiveFixtureTest.php",
         "tests/Integration/RecoveryMediaFixtureTest.php"
       ],
-      "exclude_groups": []
+      "exclude_groups": [],
+      "estimated_seconds": 10
     },
     "downloaders": {
       "category": "specialist",
@@ -187,7 +193,8 @@
         "tests/Integration/RecoveryPortablePublicationTest.php",
         "tests/Integration/RecoveryDownloaderTest.php"
       ],
-      "exclude_groups": []
+      "exclude_groups": [],
+      "estimated_seconds": 300
     },
     "admission": {
       "category": "specialist",
@@ -211,7 +218,8 @@
       ],
       "exclude_groups": [
         "admission-scale"
-      ]
+      ],
+      "estimated_seconds": 70
     },
     "naming": {
       "category": "specialist",
@@ -235,7 +243,8 @@
         "tests/Integration/NamingCandidateScaleMariaDbTest.php"
       ],
       "exclude_groups": [],
-      "filter": "test_generated_work_flags|test_pending_flags_without_evidence|test_consumed_flags_with_dense_retained_evidence"
+      "filter": "test_generated_work_flags|test_pending_flags_without_evidence|test_consumed_flags_with_dense_retained_evidence",
+      "estimated_seconds": 2
     },
     "tv-browse": {
       "category": "specialist",
@@ -250,7 +259,8 @@
         "tests/Integration/TvBrowseMemoryMariaDbTest.php"
       ],
       "exclude_groups": [],
-      "filter": "test_tv_b_membership_sorting_expansion_and_dialog_contracts"
+      "filter": "test_tv_b_membership_sorting_expansion_and_dialog_contracts",
+      "estimated_seconds": 2
     },
     "backup": {
       "category": "specialist",
@@ -263,7 +273,8 @@
       "files": [
         "tests/Integration/BackupSchemaMariaDbTest.php"
       ],
-      "exclude_groups": []
+      "exclude_groups": [],
+      "estimated_seconds": 2
     },
     "harness": {
       "category": "correctness",
@@ -294,7 +305,8 @@
           "make",
           "check-permissions"
         ]
-      ]
+      ],
+      "estimated_seconds": 25
     },
     "admission-scale": {
       "category": "acceptance",

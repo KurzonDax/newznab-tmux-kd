@@ -52,10 +52,10 @@ def plan(policy, paths):
             reasons.setdefault(key, []).append(path)
     lanes = [[], []]
     weights = [0, 0]
-    for key in sorted(selected, key=lambda key: (-policy['suites'][key]['seconds'], key)):
+    for key in sorted(selected, key=lambda key: (-policy['suites'][key]['estimated_seconds'], key)):
         lane = weights.index(min(weights))
         lanes[lane].append(key)
-        weights[lane] += policy['suites'][key]['seconds']
+        weights[lane] += policy['suites'][key]['estimated_seconds']
     return dict(php=php, suites=sorted(selected), lanes=lanes, reasons=reasons,
                 acceptance=[key for key, value in policy['suites'].items() if value['category'] == 'acceptance'])
 
@@ -92,6 +92,8 @@ def validate(policy):
         methods = selected_methods(suite)
         if suite.get('files') and not methods:
             raise ValueError(f'empty selection: {name}')
+        if suite['category'] != 'acceptance' and suite.get('estimated_seconds', 0) <= 0:
+            raise ValueError(f'bounded suite needs a measured scheduling estimate: {name}')
         if suite['category'] == 'acceptance':
             acceptance.update(methods)
             continue

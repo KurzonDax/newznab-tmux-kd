@@ -23,7 +23,7 @@ def execute(suites, policy, acceptance):
             run([sail(), 'up', '-d', '--wait', 'mariadb'], 90)
             database = True
         if suite['environment'] == 'clients' and not clients:
-            run(container_command(['bash', 'tests/Support/ObfuscationRecovery/install-clients.sh'], 90), 100)
+            run(container_command(['bash', 'tests/Support/ObfuscationRecovery/install-clients.sh'], 90, user='root'), 100)
             clients = True
         if suite.get('files'):
             env = {'CBP_INTEGRATION_DB_DATABASE': 'cbp_integration',

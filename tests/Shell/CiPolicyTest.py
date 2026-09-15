@@ -133,6 +133,32 @@ class PolicyTest(unittest.TestCase):
             self.assertNotEqual(0, result.returncode)
             self.assertIn(b'duplicate discovered test', result.stderr)
 
+    def test_scheduling_uses_observed_cost_not_timeout_headroom(self):
+        original = self.plan('.github/ci-policy.json')
+        policy = json.loads((ROOT / '.github/ci-policy.json').read_text())
+        policy['suites']['ingestion']['seconds'] = 99999
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'policy.json'; path.write_text(json.dumps(policy))
+            result = subprocess.run(['python3', str(ROOT / 'scripts/ci-policy'), 'plan', '--policy', str(path),
+                                     '--paths', '.github/ci-policy.json'], cwd=ROOT, capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(original['lanes'], json.loads(result.stdout)['lanes'])
+
+    def test_client_install_uses_root_and_client_tests_use_sail(self):
+        import runpy
+        import sys
+        from unittest.mock import patch
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        runner = runpy.run_path(str(ROOT / 'scripts/ci-run'))
+        policy = json.loads((ROOT / '.github/ci-policy.json').read_text())
+        commands = []
+        with patch.dict(runner['execute'].__globals__, run=lambda command, *a: commands.append(command)):
+            runner['execute'](['downloaders'], policy, False)
+        installer = next(c for c in commands if 'tests/Support/ObfuscationRecovery/install-clients.sh' in c)
+        tests = next(c for c in commands if 'scripts/run-tests-isolated.sh' in c)
+        self.assertEqual('root', installer[installer.index('-u') + 1])
+        self.assertEqual('sail', tests[tests.index('-u') + 1])
+
     def test_frontend_does_not_start_database_or_downloaders(self):
         plan = self.plan('resources/js/alpine/components/content-toggle.js')
         self.assertFalse(plan['php'])

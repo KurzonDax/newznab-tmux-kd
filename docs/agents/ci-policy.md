@@ -77,7 +77,9 @@ feature work. No PR code executes in a privileged event.
 ## Execution and manual acceptance
 
 The PR gate uses four PHP shards and two workers for selected suites. Each suite
-prints its name, budget, elapsed time and result. The aggregate remains
+prints its name, budget, elapsed time and result. Scheduling estimates are
+separate from timeout ceilings: initial estimates use #644 local/PR measurements
+so a generous timeout does not place several slow suites behind downloader work. The aggregate remains
 `PHP 8.5 via Sail`; failures, empty selections and unexpected skips fail it.
 The workflow files using JSON are valid YAML and permit strict standard-library
 parsing in preflight without installing a YAML parser.

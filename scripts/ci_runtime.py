@@ -33,8 +33,8 @@ def run(command, seconds, **kwargs):
     return elapsed
 
 
-def container_command(command, seconds, environment=None):
-    result = [sail(), 'exec', '-T', '-u', 'sail']
+def container_command(command, seconds, environment=None, user='sail'):
+    result = [sail(), 'exec', '-T', '-u', user]
     for key, value in (environment or {}).items():
         result += ['-e', f'{key}={value}']
     return result + ['laravel.test', 'timeout', '--signal=TERM', '--kill-after=5', str(seconds), *command]
