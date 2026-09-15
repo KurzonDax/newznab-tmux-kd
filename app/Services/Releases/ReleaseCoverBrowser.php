@@ -15,7 +15,6 @@ use App\Services\MovieBrowseService;
 use App\Services\MusicService;
 use App\Support\CoverBrowseResults;
 use Illuminate\Pagination\LengthAwarePaginator;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 final class ReleaseCoverBrowser
@@ -38,22 +37,26 @@ final class ReleaseCoverBrowser
         return (int) ceil($position / $state->per);
     }
 
-    /** @return Collection<int, \stdClass> */
-    public function expanded(ReleaseBrowserState $state, User $user, string $id): Collection
+    /** @return LengthAwarePaginator<int, \stdClass> */
+    public function expanded(ReleaseBrowserState $state, User $user, string $id, int $page = 1, int $per = 24): LengthAwarePaginator
     {
         $column = match ($state->root) {
-            BrowseRoot::Movies => 'imdbid', BrowseRoot::Tv => 'videos_id',
+            BrowseRoot::Movies => 'imdbid',
             BrowseRoot::Audio => 'musicinfo_id', BrowseRoot::Console => 'consoleinfo_id',
             BrowseRoot::Games => 'gamesinfo_id', BrowseRoot::Books => 'bookinfo_id',
             BrowseRoot::Adult => 'guid', default => null,
         };
         abort_if($state->view !== 'covers' || $column === null || $id === '', 404);
-        $rows = app(ReleaseBrowserQuery::class)->matchingQuery($state, $user)
-            ->where('r.'.$column, $id)->orderByDesc('r.adddate')->orderByDesc('r.id')->get(['r.*']);
+        $per = in_array($per, [24, 48, 100], true) ? $per : 24;
+        $query = app(ReleaseBrowserQuery::class)->matchingQuery($state, $user)->where('r.'.$column, $id);
+        $total = $query->count();
+        abort_if($total === 0, 404);
+        $page = min(max(1, $page), (int) ceil($total / $per));
+        $rows = $query->orderByDesc('r.adddate')->orderByDesc('r.id')->forPage($page, $per)->get(['r.*']);
         abort_if($rows->isEmpty(), 404);
         app(ReleaseBrowseService::class)->loadReleaseRows($rows);
 
-        return $rows;
+        return new LengthAwarePaginator($rows, $total, $per, $page, ['pageName' => 'release_page']);
     }
 
     /** @return LengthAwarePaginator<int, ReleaseCoverItem> */

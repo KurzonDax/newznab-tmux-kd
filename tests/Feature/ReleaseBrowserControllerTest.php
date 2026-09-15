@@ -9,6 +9,7 @@ use App\Http\Middleware\TrustedDevice2FAMiddleware;
 use App\Services\Search\Contracts\SearchDriverInterface;
 use App\Services\Search\SearchService;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
@@ -888,6 +889,52 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->get('/browse/'.$root.'?view=covers&_fragment=cover&cover=999')->assertNotFound();
     }
 
+    #[DataProvider('entityCoverRoots')]
+    public function test_cover_expansion_paginates_matching_encodings_without_changing_the_outer_page(string $root, string $table, string $foreignKey, int $categoryId, string $unit): void
+    {
+        $this->createCoverCatalogSchema($table);
+        DB::table($table)->insert([
+            ['id' => 1, 'imdbid' => '1', 'title' => 'Wanted title'],
+            ['id' => 2, 'imdbid' => '2', 'title' => 'Wanted title'],
+        ]);
+        DB::table('categories')->insert(['id' => $categoryId + 10, 'title' => 'Excluded', 'root_categories_id' => $categoryId - 30]);
+        $user = $this->browserUser();
+        $user->syncExcludedCategories([$categoryId + 10]);
+        $attributes = [$foreignKey => '1', 'categories_id' => $categoryId];
+        for ($id = 1; $id <= 251; $id++) {
+            $this->release(sprintf('Encoding %03d', $id), $attributes);
+        }
+        $this->release('Different identity', [...$attributes, $foreignKey => '2']);
+        $this->release('Excluded encoding', [...$attributes, 'categories_id' => $categoryId + 10]);
+        $this->release('Passworded encoding', [...$attributes, 'passwordstatus' => 2]);
+        $this->release('Incomplete encoding', [...$attributes, 'completion' => 20]);
+        $this->actingAs($user);
+        $url = '/browse/'.$root.'?view=covers&q=Wanted&minc=95&sort=title&page=3&per=48&_fragment=cover&cover=1';
+        foreach ([[null, 1, 24, 1, 251, 228], [24, 2, 24, 2, 227, 204], [48, 2, 48, 2, 203, 156], [100, 2, 100, 2, 151, 52], [100, 999, 51, 3, 51, 1], [24, 0, 24, 1, 251, 228], [500, 1, 24, 1, 251, 228]] as [$per, $page, $count, $current, $first, $last]) {
+            DB::enableQueryLog();
+            $response = $this->get($url.'&release_page='.$page.($per === null ? '' : '&release_per='.$per))->assertOk();
+            $queries = DB::getQueryLog();
+            DB::disableQueryLog();
+            DB::flushQueryLog();
+            $rowQueries = array_values(array_filter($queries, static fn (array $query): bool => str_starts_with($query['query'], 'select "r".*')));
+            $this->assertCount(1, $rowQueries);
+            $this->assertStringContainsString('limit '.(in_array($per, [24, 48, 100], true) ? $per : 24), $rowQueries[0]['query']);
+            $rows = $response->viewData('rows');
+            $this->assertInstanceOf(LengthAwarePaginator::class, $rows);
+            $this->assertSame(251, $rows->total());
+            $this->assertSame($current, $rows->currentPage());
+            $this->assertCount($count, $rows->items());
+            $this->assertSame(sprintf('Encoding %03d', $first), $rows->first()->row_data->name);
+            $this->assertSame(sprintf('Encoding %03d', $last), $rows->last()->row_data->name);
+            $this->assertSame(3, $response->viewData('state')->page);
+            $this->assertSame(48, $response->viewData('state')->per);
+            $this->assertSame($count, substr_count($response->getContent(), 'data-release-select'));
+            $response->assertSee('251 releases')->assertSee('Releases per page')->assertSee('changeCoverPage')
+                ->assertDontSee('Different identity')->assertDontSee('Excluded encoding')->assertDontSee('Passworded encoding')->assertDontSee('Incomplete encoding');
+        }
+        $this->get(str_replace('q=Wanted', 'q=Missing', $url))->assertNotFound();
+    }
+
     public function test_followed_movie_covers_refresh_membership_and_quality_restrictions_without_waiting_for_the_catalog_cache(): void
     {
         $this->createCoverCatalogSchema('movieinfo');
@@ -1037,7 +1084,10 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->assertStringContainsString('/sample/'.md5('B sample').'_thumb.jpg', $items[1]->artwork);
         $this->assertStringContainsString('/sample/'.md5('C missing preview').'_thumb.jpg', $items[2]->artwork);
         $this->assertNull($items[3]->artwork);
-        $expanded = $this->get('/browse/xxx?view=covers&_fragment=cover&cover='.md5('B sample'))->assertOk();
+        $expanded = $this->get('/browse/xxx?view=covers&_fragment=cover&release_page=999&release_per=100&cover='.md5('B sample'))->assertOk();
+        $this->assertSame(1, $expanded->viewData('rows')->total());
+        $this->assertSame(1, $expanded->viewData('rows')->currentPage());
+        $this->assertSame(100, $expanded->viewData('rows')->perPage());
         $expanded->assertSee('B sample')->assertDontSee('A preview')->assertDontSee('Title page')->assertSee('sample', false);
         $this->assertSame(1, substr_count($expanded->getContent(), 'data-release-select'));
         $this->get('/browse/xxx?view=covers&size=xl')->assertOk()->assertViewHas('browserState', static fn ($state): bool => $state->size === 's');
