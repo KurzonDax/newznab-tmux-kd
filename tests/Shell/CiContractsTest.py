@@ -115,6 +115,8 @@ if '--list-test-files' in sys.argv:
     print(pathlib.Path(os.environ['DISCOVERY']).read_text(), end='')
     sys.exit(int(os.environ.get('DISCOVERY_EXIT', '0')))
 pathlib.Path(os.environ['CAPTURE']).write_text(json.dumps(sys.argv[1:]))
+report = pathlib.Path(sys.argv[sys.argv.index('--log-junit') + 1])
+report.write_text(os.environ.get('JUNIT', '<testsuites><testsuite><testcase file="' + str(pathlib.Path.cwd() / 'tests/ZTest.php') + '" time="2.5"/></testsuite></testsuites>'))
 sys.exit(int(os.environ.get('TEST_EXIT', '0')))
 """)
         binary.chmod(0o755)
@@ -140,6 +142,45 @@ sys.exit(int(os.environ.get('TEST_EXIT', '0')))
         self.assertCountEqual(self.files, selected)
         self.assertEqual(len(selected), len(set(selected)))
         self.assertIn('tests/newTest.php', selected)
+
+    def test_measured_costs_balance_deterministically_and_ignore_stale_files(self):
+        costs = self.root / '.github/phpunit-costs.json'
+        costs.parent.mkdir()
+        costs.write_text(json.dumps({'files': {
+            self.files[0]: 80, self.files[1]: 40, self.files[2]: 20,
+            self.files[3]: 10, 'tests/deleted.php': 9999,
+        }}))
+        assignments = []
+        for index in range(4):
+            result = self.shard(index)
+            self.assertEqual(0, result.returncode, result.stderr)
+            assignments.append([arg for arg in json.loads(self.capture.read_text()) if arg.startswith('tests/')])
+        # Unknown/new and renamed files use the median of current measurements: 30.
+        self.assertEqual([[self.files[0]], [self.files[1]],
+                          ['tests/newTest.php', self.files[2]],
+                          ['tests/sub/BTest.php', self.files[3]]], assignments)
+        self.discovery.write_text('Available test files:\n' + ''.join(
+            ' - ' + str(self.root / path) + '\n' for path in reversed(self.files)))
+        self.shard(2)
+        self.assertEqual(assignments[2], [arg for arg in json.loads(self.capture.read_text()) if arg.startswith('tests/')])
+
+    def test_junit_costs_include_data_sets_and_attribute_traits_to_the_discovered_file(self):
+        self.env['JUNIT'] = ('<testsuites><testsuite file="' + str(self.root / self.files[0]) + '" time="99">'
+                             '<testsuite time="77"><testcase file="tests/Support/Trait.php" time="0.125"/>'
+                             '<testcase file="tests/Support/Trait.php" time="0.375"/></testsuite>'
+                             '</testsuite></testsuites>')
+        result = self.shard()
+        self.assertEqual(0, result.returncode, result.stderr)
+        report = next(line.split('=', 1)[1] for line in result.stdout.splitlines() if line.startswith('PHPUNIT_FILE_SECONDS='))
+        self.assertEqual({self.files[0]: 0.5}, json.loads(report))
+
+    def test_daily_serial_execution_keeps_configured_suite_order(self):
+        result = self.shard(0, 1)
+        self.assertEqual(0, result.returncode, result.stderr)
+        args = json.loads(self.capture.read_text())
+        self.assertFalse(any(arg.startswith('tests/') for arg in args),
+                         'Daily execution must let PHPUnit retain its configured suite order')
+        self.assertIn('--log-junit', args)
 
     def test_test_failure_propagates_and_isolation_is_required(self):
         self.env['TEST_EXIT'] = '7'

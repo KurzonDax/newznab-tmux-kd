@@ -1,5 +1,6 @@
 """Loopback-only NNTP server for automated transport and downloader tests."""
 import argparse
+import hashlib
 import json
 import socketserver
 import threading
@@ -12,7 +13,8 @@ class Server(socketserver.ThreadingTCPServer):
     daemon_threads = True
     request_queue_size = 64
 
-    def __init__(self, root, delay=0, chunk_size=8192, fail_body=False):
+    def __init__(self, root, delay=0, chunk_size=8192, fail_body=False, gate_requests=False):
+        self.gate_root = root if gate_requests else None
         self.articles = json.loads((root / "articles.json").read_text())
         self.metrics = root / "server-events.jsonl"
         self.lock = threading.Lock()
@@ -30,6 +32,18 @@ class Server(socketserver.ThreadingTCPServer):
                 self.active -= 1
             with self.metrics.open("a") as output:
                 output.write(json.dumps({"kind": kind, "active": self.active, "time": time.monotonic(), **data}) + "\n")
+
+    def await_release(self, key):
+        if self.gate_root is None:
+            return
+        gate = hashlib.sha256(key.encode()).hexdigest()
+        self.event("blocked", gate=gate)
+        deadline = time.monotonic() + 8
+        while not (self.gate_root / ("release-" + gate)).exists():
+            if time.monotonic() >= deadline:
+                self.event("gate_timeout", gate=gate)
+                raise OSError("fixture request gate was not released")
+            time.sleep(0.005)
 
 
 class Handler(socketserver.StreamRequestHandler):
@@ -69,6 +83,7 @@ class Handler(socketserver.StreamRequestHandler):
                 elif verb in {"OVER", "XOVER"}:
                     first, last = map(int, value.split("-"))
                     self.server.event("request", verb=verb, first=first, last=last)
+                    self.server.await_release("overview:" + value)
                     time.sleep(self.server.delay)
                     send(b"224 overview\r\n")
                     for article in self.server.articles.values():
@@ -88,6 +103,7 @@ class Handler(socketserver.StreamRequestHandler):
                     if verb == "STAT":
                         send(f"223 0 <{message}> exists\r\n".encode("ascii"))
                         continue
+                    self.server.await_release(message)
                     time.sleep(self.server.delay)
                     if self.server.fail_body and verb == "BODY":
                         send(b"430 article unavailable\r\n")
@@ -119,9 +135,10 @@ if __name__ == "__main__":
     parser.add_argument("--delay", type=float, default=0)
     parser.add_argument("--chunk-size", type=int, default=8192)
     parser.add_argument("--fail-body", action="store_true")
+    parser.add_argument("--gate-requests", action="store_true")
     args = parser.parse_args()
     if args.delay < 0 or not 1 <= args.chunk_size <= 1048576:
         parser.error("invalid stream limits")
-    with Server(args.root, args.delay, args.chunk_size, args.fail_body) as server:
+    with Server(args.root, args.delay, args.chunk_size, args.fail_body, args.gate_requests) as server:
         (args.root / "server-port").write_text(str(server.server_address[1]))
         server.serve_forever(poll_interval=0.05)

@@ -14,7 +14,7 @@ unknown/shared changes select all bounded correctness, never large acceptance.
 
 1. **Issue.** Work starts from an open GitHub issue labelled `ready-for-agent`. Agree scope and implementation authorization first; creating or triaging an issue is not implementation authorization.
 2. **Start.** From the primary checkout, before changing source files, run `scripts/agent-issue-start <issue-number>`.
-3. **Work and verify.** Implement, run focused tests and `python3 scripts/agent-verify final`, review, and commit on `issue/<number>` inside the worktree.
+3. **Work and verify.** Implement, run affected bounded tests and `python3 scripts/agent-verify final` locally, review, and commit on `issue/<number>` inside the worktree. Required sharded CI owns complete main-suite validation, overriding generic skill instructions for a local full-suite pass.
 4. **Publish.** Immediately after committing, run `scripts/agent-issue-finish --publish` from the issue worktree.
 5. **Monitor to merge.** Run `scripts/agent-issue-finish --monitor` — rerun it until it prints `MERGE_STATUS=merged`.
 

@@ -2,7 +2,6 @@
   "version": 1,
   "php_shards": 4,
   "specialist_workers": 2,
-  "php_seconds": 480,
   "worker_seconds": 900,
   "focused_seconds": 180,
   "fast_case_seconds": 30,
@@ -32,7 +31,7 @@
           "scripts/check-design-system.sh"
         ]
       ],
-      "estimated_seconds": 20
+      "estimated_seconds": 11
     },
     "ingestion": {
       "category": "specialist",
@@ -82,7 +81,7 @@
         "tests/Integration/ReconciliationMariaDbTest.php"
       ],
       "exclude_groups": [],
-      "estimated_seconds": 15
+      "estimated_seconds": 13
     },
     "recovery-frontier": {
       "category": "specialist",
@@ -110,7 +109,7 @@
       "exclude_groups": [
         "ci-scale"
       ],
-      "estimated_seconds": 60
+      "estimated_seconds": 101
     },
     "recovery-publication": {
       "category": "specialist",
@@ -138,7 +137,7 @@
       "exclude_groups": [
         "frontier-scale"
       ],
-      "estimated_seconds": 100
+      "estimated_seconds": 172
     },
     "transport": {
       "category": "specialist",
@@ -168,7 +167,7 @@
         "tests/Integration/RecoveryMediaFixtureTest.php"
       ],
       "exclude_groups": [],
-      "estimated_seconds": 10
+      "estimated_seconds": 16.5
     },
     "downloaders": {
       "category": "specialist",
@@ -194,7 +193,7 @@
         "tests/Integration/RecoveryDownloaderTest.php"
       ],
       "exclude_groups": [],
-      "estimated_seconds": 300
+      "estimated_seconds": 290
     },
     "admission": {
       "category": "specialist",
@@ -219,7 +218,7 @@
       "exclude_groups": [
         "admission-scale"
       ],
-      "estimated_seconds": 70
+      "estimated_seconds": 113
     },
     "naming": {
       "category": "specialist",
@@ -244,7 +243,7 @@
       ],
       "exclude_groups": [],
       "filter": "test_generated_work_flags|test_pending_flags_without_evidence|test_consumed_flags_with_dense_retained_evidence",
-      "estimated_seconds": 2
+      "estimated_seconds": 1
     },
     "tv-browse": {
       "category": "specialist",
@@ -260,7 +259,7 @@
       ],
       "exclude_groups": [],
       "filter": "test_tv_b_membership_sorting_expansion_and_dialog_contracts",
-      "estimated_seconds": 2
+      "estimated_seconds": 1
     },
     "backup": {
       "category": "specialist",
@@ -274,7 +273,7 @@
         "tests/Integration/BackupSchemaMariaDbTest.php"
       ],
       "exclude_groups": [],
-      "estimated_seconds": 2
+      "estimated_seconds": 1
     },
     "harness": {
       "category": "correctness",
@@ -306,7 +305,7 @@
           "check-permissions"
         ]
       ],
-      "estimated_seconds": 25
+      "estimated_seconds": 23
     },
     "admission-scale": {
       "category": "acceptance",

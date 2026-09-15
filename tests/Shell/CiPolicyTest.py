@@ -159,6 +159,18 @@ class PolicyTest(unittest.TestCase):
         self.assertEqual('root', installer[installer.index('-u') + 1])
         self.assertEqual('sail', tests[tests.index('-u') + 1])
 
+    def test_php_ceiling_protects_the_job_without_an_inner_cutoff(self):
+        workflow = json.loads((ROOT / '.github/workflows/laravel.yml').read_text())
+        job = workflow['jobs']['php']
+        self.assertEqual(20, job['timeout-minutes'])
+        command = next(step['run'] for step in job['steps'] if 'ci-phpunit-shard' in step.get('run', ''))
+        self.assertEqual('./sail exec -T -u sail laravel.test scripts/run-tests-isolated.sh '
+                         'scripts/ci-phpunit-shard --index "$SHARD_INDEX" --count 4', command)
+        self.assertEqual(4, job['strategy']['max-parallel'])
+        self.assertEqual('always()', job['steps'][-1]['if'])
+        self.assertEqual('PHP 8.5 via Sail', workflow['jobs']['required']['name'])
+        self.assertNotIn('php_seconds', json.loads((ROOT / '.github/ci-policy.json').read_text()))
+
     def test_shard_command_is_accepted_with_or_without_the_inner_cutoff(self):
         import os
         import runpy

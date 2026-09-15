@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import runpy
 from pathlib import Path
 import subprocess
 import sys
@@ -171,6 +172,15 @@ def measurement_covers(path, base, inputs, identity):
     if any(data.get('unfiltered') for data in relevant):
         return True
     required = changed_methods(path, base)
+    if required is None and path.startswith('tests/Integration/'):
+        # Helper changes cover the whole registered recurring selection. Large
+        # acceptance remains opt-in even when it shares a file with correctness.
+        policy = json.loads(Path('.github/ci-policy.json').read_text())
+        selectors = runpy.run_path('scripts/ci-policy')['selected_methods']
+        required = {method.split('::', 1)[1]
+                    for suite in policy['suites'].values() if suite['category'] != 'acceptance'
+                    and path in suite.get('files', [])
+                    for method in selectors(suite) if method.startswith(path + '::')}
     covered = {case['name'].split(' with data set')[0] for data in relevant if data.get('complete_methods') for case in data.get('cases', [])}
     return required is not None and bool(required) and required <= covered
 
@@ -210,7 +220,7 @@ def focused(args):
     key = hashlib.sha256(json.dumps(command).encode()).hexdigest()
     (directory / ('focused-' + key + '.json')).write_text(json.dumps(dict(test=args.test, command=command, success=True, seconds=elapsed, cases=measured_cases,
                                               unfiltered=not args.filter and not args.exclude_group,
-                                              complete_methods=bool(args.filter and re.fullmatch(r'test_\w+(?:\|test_\w+)*', args.filter)) and not args.exclude_group, fingerprint=before)))
+                                              complete_methods=not args.filter or bool(re.fullmatch(r'test_\w+(?:\|test_\w+)*', args.filter)), fingerprint=before)))
     print('FOCUSED_STATUS=passed')
 
 

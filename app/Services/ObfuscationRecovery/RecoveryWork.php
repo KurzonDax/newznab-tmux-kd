@@ -165,10 +165,13 @@ final class RecoveryWork
                 'status' => 'completed', 'result' => $result, 'claim_token' => null, 'claim_expires_at' => null, 'updated_at' => now(),
             ]) === 1;
             if ($completed && $claim->stage === RecoveryStage::Download) {
-                $pending = DB::table('obfuscation_recovery_work')->where('bundle_id', $claim->bundleId)->where('revision', $claim->revision)
-                    ->where('stage', RecoveryStage::Discover->value)->where('status', 'pending');
-                self::wake($pending);
-                $pending->update(['updated_at' => now()]);
+                $pendingIds = DB::table('obfuscation_recovery_work')->where('bundle_id', $claim->bundleId)->where('revision', $claim->revision)
+                    ->where('stage', RecoveryStage::Discover->value)->where('status', 'pending')->orderBy('id')->pluck('id');
+                foreach ($pendingIds as $id) {
+                    $pending = DB::table('obfuscation_recovery_work')->where('id', $id)->where('status', 'pending');
+                    self::wake($pending);
+                    $pending->update(['updated_at' => now()]);
+                }
             }
 
             return $completed;

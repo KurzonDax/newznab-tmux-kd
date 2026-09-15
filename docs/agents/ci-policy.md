@@ -6,6 +6,13 @@ live there, not in feature PRs or copied instruction lists.
 
 ## During development
 
+Local verification owns affected bounded regressions and `agent-verify final`.
+Required sharded CI owns the complete main suite, including `/implement` work;
+its generic full-suite instruction does not add a routine local serial pass.
+Daily fresh-runtime serial coverage and explicitly requested exceptional runs
+remain unchanged. The retired `php_seconds` value was a CI shard cutoff, never
+a valid timeout for the local serial suite.
+
 Run `python3 scripts/agent-verify plan` to see applicable local checks. Use
 `python3 scripts/ci-policy plan` for the remote suite selection and its reasons.
 PHP/Blade changes keep the complete fast PHP suite. Specialist suites follow
@@ -29,12 +36,22 @@ through selection contracts; it does not require rerunning a huge fixture.
 Final verification owns changed-PHP formatting/lint, applicable full-project
 PHPStan, Composer lock validation, source permissions, relevant frontend checks
 and the small CI command contracts. Format
-repairs stop verification so the agent can review/restage and rerun. Hooks and
+repairs stop verification so the agent can review the changed diff, restage and
+rerun the verifier; this is expected repair, not an application regression.
+Focused admission failures report a case exceeding its budget even when all
+assertions pass: reduce redundant setup/work at the agreed seam, then remeasure.
+A stale amendment requires review and regeneration against the current base;
+retrying tests cannot fix admission. Hooks and
 publication use the same verifier. Successful local records live in the issue's
 Git metadata directory and are reused only while the command, inputs, base and
 runtime identity match, including input file permissions. Uncertain or missing records rerun; failed results never
 cache. Stage the same content that was verified. Local records never replace
 GitHub's required merge validation.
+
+Changes to a specialist file's shared helper require all of that file's registered
+recurring cases. A focused run with the inventory's acceptance group excluded
+can satisfy this check; omitting any recurring method fails admission. Manual
+acceptance does not become routine because it shares the file.
 
 Application fixes also require affected behavioral tests even when no test file
 changes. Run the focused verifier for those tests; full-suite execution is not a
@@ -78,6 +95,28 @@ Keep agreement in the issue/session; never use amendment mode for incidental
 feature work. No PR code executes in a privileged event.
 
 ## Execution and manual acceptance
+
+### Measured scheduling and timeout headroom
+
+PHPUnit discovery remains authoritative. `scripts/ci-phpunit-shard` sorts files
+by descending measured cost then path, assigning each to the lightest shard
+(ties use the lowest index). `.github/phpunit-costs.json` contains timing data,
+not test selection or CI policy controls. Deleted entries are ignored; unknown
+or renamed files use the median of measurements for currently discovered files
+(1 second only when none exist). Every discovered file is assigned once.
+
+Shard jobs and the daily serial run print `PHPUNIT_FILE_SECONDS` from temporary
+JUnit reports, including each case's setup/teardown. When costs drift, refresh
+the data from the daily run's printed totals and record the run/revision in its
+`source`; no extra scheduled benchmark is needed. Bootstrap/discovery overhead
+is reported separately by comparing job steps and `SHARD_TEST_SECONDS`.
+Specialist estimates include material setup (downloaders include client install).
+
+The PHP job's 20-minute outer ceiling and always-run Sail cleanup protect hangs;
+there is no inner 480-second PHP cutoff. Performance targets below are separate
+from kill thresholds. Validate headroom using the observed slow-run multipliers:
+`1200 >= slowest balanced shard seconds * 4.4 + setup seconds * 1.5`.
+A tighter ceiling requires measured workload and variance evidence.
 
 The PR gate uses four PHP shards and two workers for selected suites. Each suite
 prints its name, budget, elapsed time and result. Scheduling estimates are

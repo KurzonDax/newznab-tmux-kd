@@ -2,10 +2,51 @@
 """Partition installed PHPUnit discovery without changing its configuration."""
 import argparse
 import os
+import json
+import math
+import statistics
+import tempfile
+import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 import re
 import subprocess
 import sys
+
+
+def allocate(files, count):
+    path = Path('.github/phpunit-costs.json')
+    measured = json.loads(path.read_text())['files'] if path.exists() else {}
+    measured = {name: cost for name, cost in measured.items() if name in files}
+    if any(isinstance(cost, bool) or not isinstance(cost, (int, float))
+           or not math.isfinite(cost) or cost <= 0 for cost in measured.values()):
+        raise ValueError('file costs must be positive finite seconds')
+    fallback = statistics.median(measured.values()) if measured else 1.0
+    shards, totals = [[] for _ in range(count)], [0.0] * count
+    for name in sorted(files, key=lambda name: (-measured.get(name, fallback), name)):
+        index = totals.index(min(totals))
+        shards[index].append(name)
+        totals[index] += measured.get(name, fallback)
+    return shards, totals
+
+
+def report_costs(report, root):
+    totals = {}
+    # PHPUnit records each case's setup and teardown in its time attribute.
+    # Aggregate cases, not nested suite totals (which would double count).
+    def visit(element, owner=None):
+        if element.tag == 'testsuite':
+            owner = element.get('file') or owner
+        if element.tag == 'testcase':
+            filename = owner or element.get('file')
+            if filename:
+                relative = Path(filename).resolve().relative_to(root).as_posix()
+                totals[relative] = totals.get(relative, 0.0) + float(element.get('time', '0'))
+        for child in element:
+            visit(child, owner)
+    visit(ET.parse(report).getroot())
+    print('PHPUNIT_FILE_SECONDS=' + json.dumps(
+        {name: round(seconds, 6) for name, seconds in sorted(totals.items())}, sort_keys=True), flush=True)
 
 
 def main():
@@ -43,18 +84,29 @@ def main():
         files.append(relative)
     if not header or not files:
         raise ValueError('PHPUnit discovery selected no files')
-    files.sort(key=os.fsencode)
-    selected = files[args.index::args.count]
+    shards, estimates = allocate(files, args.count)
+    selected = shards[args.index]
     if not selected:
         raise ValueError('empty shard')
     print(f'Shard {args.index + 1}/{args.count}: {len(selected)} of {len(files)} files', flush=True)
-    return subprocess.call(['php', 'artisan', 'test', '--compact',
-                            '--cache-directory', cache, '--fail-on-empty-test-suite', *selected])
+    print(f'Estimated test seconds: {estimates[args.index]:.2f}', flush=True)
+    with tempfile.TemporaryDirectory(prefix='phpunit-costs-') as directory:
+        report = str(Path(directory) / 'junit.xml')
+        started = time.monotonic()
+        result = subprocess.call(['php', 'artisan', 'test', '--compact',
+                                  '--cache-directory', cache, '--fail-on-empty-test-suite',
+                                  '--log-junit', report, *(selected if args.count > 1 else [])])
+        print(f'SHARD_TEST_SECONDS={time.monotonic() - started:.2f}', flush=True)
+        if Path(report).exists():
+            report_costs(report, root)
+        elif result == 0:
+            raise ValueError('successful test run did not produce JUnit costs')
+        return result
 
 
 if __name__ == '__main__':
     try:
         sys.exit(main())
-    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+    except (ValueError, OSError, ET.ParseError, subprocess.CalledProcessError) as error:
         print(f'PHPUnit shard failed: {error}', file=sys.stderr)
         sys.exit(1)
