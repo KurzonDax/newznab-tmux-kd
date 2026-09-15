@@ -493,10 +493,6 @@ final class PosterIdentityControllerTest extends TestCase
     {
         $user = $this->verifiedUser();
         $release = $this->release('Scene.Name', 'exact <poster@example.test>', '2026-09-12 23:30:00', 'alt.binaries.movies');
-        Schema::table('releases', function (Blueprint $table): void {
-            $table->integer('isrenamed')->default(0);
-            $table->string('additional_pp_claim_token')->nullable();
-        });
         DB::table('releases')->where('id', $release->id)->update([
             'display_name' => 'Scene Name', 'size' => 524288000, 'isrenamed' => 1,
             'nfostatus' => -9, 'passwordstatus' => 0,
@@ -542,9 +538,6 @@ final class PosterIdentityControllerTest extends TestCase
     {
         $user = $this->verifiedUser();
         $release = $this->release('Matched movie', 'movie-poster', '2026-09-12 23:30:00', 'alt.binaries.movies');
-        Schema::table('releases', function (Blueprint $table): void {
-            $table->string('imdbid')->nullable();
-        });
         Schema::create('movieinfo', function (Blueprint $table): void {
             $table->string('imdbid')->primary();
             $table->string('title');
@@ -575,9 +568,6 @@ final class PosterIdentityControllerTest extends TestCase
     {
         $user = $this->verifiedUser();
         $release = $this->release('Anime.Release', 'anime-poster', '2026-09-12 23:30:00');
-        Schema::table('releases', function (Blueprint $table): void {
-            $table->integer('anidbid')->nullable();
-        });
         Schema::create('anidb_info', function (Blueprint $table): void {
             $table->integer('anidbid')->primary();
             $table->date('startdate')->nullable();
@@ -826,6 +816,12 @@ final class PosterIdentityControllerTest extends TestCase
             $table->boolean('jpgstatus')->default(false);
             $table->boolean('nfostatus')->default(false);
             $table->integer('videostatus')->default(0);
+            $table->integer('isrenamed')->default(0);
+            $table->string('additional_pp_claim_token')->nullable();
+            $table->string('imdbid')->nullable();
+            foreach (['tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid'] as $column) {
+                $table->integer($column)->nullable();
+            }
             $table->index(['fromname', 'postdate'], 'ix_releases_fromname_postdate');
         });
         Schema::create('release_audio_tags', function (Blueprint $table): void {

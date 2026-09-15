@@ -62,7 +62,7 @@ final class ReleaseEntityDataLoader
                 ->selectRaw("ROW_NUMBER() OVER (PARTITION BY info.anidbid ORDER BY
                     CASE WHEN titles.lang = 'en' THEN 0 WHEN titles.lang = 'x-jat' THEN 1 ELSE 2 END,
                     CASE WHEN titles.type = 'main' THEN 0 WHEN titles.type = 'official' THEN 1 ELSE 2 END,
-                    titles.title, titles.id) AS title_rank");
+                    titles.title, titles.type, titles.lang) AS title_rank");
             $records = DB::query()->fromSub($ranked, 'preferred_titles')->where('title_rank', 1)
                 ->get(['anidbid', 'startdate', 'title'])->keyBy('anidbid');
             foreach ($anime as $release) {

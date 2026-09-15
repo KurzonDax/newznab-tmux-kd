@@ -92,11 +92,11 @@ final class ReleaseEntityDataLoaderTest extends TestCase
             $table->string('startdate')->nullable();
         });
         Schema::create('anidb_titles', function (Blueprint $table): void {
-            $table->id();
             $table->integer('anidbid');
             $table->string('lang');
             $table->string('type');
             $table->string('title');
+            $table->primary(['anidbid', 'type', 'lang', 'title']);
         });
         DB::table('anidb_info')->insert([
             ['anidbid' => 7, 'startdate' => '2002-03-04'],
@@ -104,14 +104,13 @@ final class ReleaseEntityDataLoaderTest extends TestCase
             ['anidbid' => 9, 'startdate' => null],
         ]);
         DB::table('anidb_titles')->insert([
-            ['id' => 8, 'anidbid' => 7, 'lang' => 'en', 'type' => 'main', 'title' => 'Chosen'],
-            ['id' => 7, 'anidbid' => 7, 'lang' => 'en', 'type' => 'main', 'title' => 'Chosen'],
-            ['id' => 6, 'anidbid' => 7, 'lang' => 'en', 'type' => 'main', 'title' => 'Zebra'],
-            ['id' => 5, 'anidbid' => 7, 'lang' => 'en', 'type' => 'official', 'title' => 'A official'],
-            ['id' => 4, 'anidbid' => 7, 'lang' => 'x-jat', 'type' => 'main', 'title' => 'A romanized'],
-            ['id' => 3, 'anidbid' => 7, 'lang' => 'ja', 'type' => 'main', 'title' => 'A native'],
-            ['id' => 2, 'anidbid' => 8, 'lang' => 'ja', 'type' => 'main', 'title' => 'Native'],
-            ['id' => 1, 'anidbid' => 8, 'lang' => 'x-jat', 'type' => 'official', 'title' => 'Romanized'],
+            ['anidbid' => 7, 'lang' => 'en', 'type' => 'main', 'title' => 'Chosen'],
+            ['anidbid' => 7, 'lang' => 'en', 'type' => 'main', 'title' => 'Zebra'],
+            ['anidbid' => 7, 'lang' => 'en', 'type' => 'official', 'title' => 'A official'],
+            ['anidbid' => 7, 'lang' => 'x-jat', 'type' => 'main', 'title' => 'A romanized'],
+            ['anidbid' => 7, 'lang' => 'ja', 'type' => 'main', 'title' => 'A native'],
+            ['anidbid' => 8, 'lang' => 'ja', 'type' => 'main', 'title' => 'Native'],
+            ['anidbid' => 8, 'lang' => 'x-jat', 'type' => 'official', 'title' => 'Romanized'],
         ]);
         $queries = [];
         $listening = true;
@@ -135,7 +134,7 @@ final class ReleaseEntityDataLoaderTest extends TestCase
         self::assertArrayNotHasKey(3, $entities);
         self::assertCount(1, $queries);
         self::assertCount(2, DB::select($queries[0]->sql, $queries[0]->bindings));
-        self::assertStringContainsString('titles.id', $queries[0]->sql);
+        self::assertStringContainsString('titles.title, titles.type, titles.lang', $queries[0]->sql);
     }
 
     public static function labels(): array

@@ -206,7 +206,6 @@ final class SearchControllerTest extends TestCase
             $table->date('startdate')->nullable();
         });
         Schema::create('anidb_titles', function (Blueprint $table): void {
-            $table->id();
             $table->integer('anidbid');
             $table->string('title');
             $table->string('lang');

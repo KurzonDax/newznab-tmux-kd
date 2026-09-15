@@ -149,7 +149,7 @@ final class TvBrowseMemoryMariaDbTest extends TestCase
             "INSERT INTO root_categories VALUES (5000,'TV')",
             'CREATE TABLE categories (id INT PRIMARY KEY, root_categories_id INT, title VARCHAR(255))',
             "INSERT INTO categories VALUES (5030,5000,'HD')",
-            'CREATE TABLE releases (id INT PRIMARY KEY, videos_id INT, tv_episodes_id INT, searchname VARCHAR(255), display_name VARCHAR(255), categories_id INT DEFAULT 5030, passwordstatus INT DEFAULT 0, completion INT DEFAULT 100, postdate DATETIME, adddate DATETIME, grabs INT, groups_id INT, guid VARCHAR(64), additional_pp_claim_token VARCHAR(64), nfostatus INT DEFAULT 0, INDEX show_id(videos_id,id))',
+            'CREATE TABLE releases (id INT PRIMARY KEY, videos_id INT, tv_episodes_id INT, searchname VARCHAR(255), display_name VARCHAR(255), categories_id INT DEFAULT 5030, passwordstatus INT DEFAULT 0, completion INT DEFAULT 100, postdate DATETIME, adddate DATETIME, grabs INT, groups_id INT, guid VARCHAR(64), additional_pp_claim_token VARCHAR(64), nfostatus INT DEFAULT 0, size BIGINT DEFAULT 0, totalpart INT DEFAULT 0, comments INT DEFAULT 0, repair_outcome VARCHAR(64), rescan_outcome VARCHAR(64), haspreview INT DEFAULT 0, jpgstatus INT DEFAULT 0, fromname VARCHAR(255), isrenamed INT DEFAULT 0, imdbid VARCHAR(20), musicinfo_id INT, consoleinfo_id INT, gamesinfo_id INT, bookinfo_id INT, anidbid INT, INDEX show_id(videos_id,id))',
             'CREATE TABLE user_series (users_id INT, videos_id INT)',
             'CREATE TABLE users_releases (users_id INT, releases_id INT)',
             'CREATE TABLE user_downloads (releases_id INT, timestamp DATETIME, INDEX release_time(releases_id,timestamp))',

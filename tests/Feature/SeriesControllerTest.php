@@ -100,12 +100,7 @@ class SeriesControllerTest extends TestCase
         $user = $this->createUser();
         $videoId = $this->createShow();
         $this->createMatchedRelease($videoId, 1, 1, 'Followed.Show.S01E01');
-        Schema::table('releases', function (Blueprint $table): void {
-            $table->boolean('haspreview')->default(false);
-            $table->boolean('jpgstatus')->default(false);
-            $table->integer('nfostatus')->default(-1);
-            $table->integer('isrenamed')->default(1);
-        });
+        DB::table('releases')->update(['nfostatus' => -1, 'isrenamed' => 1]);
         DB::table('user_series')->insert(['users_id' => $user->id, 'videos_id' => $videoId]);
         $response = $this->actingAs($user)->followingRedirects()->get(route('myshows.browse'))->assertOk();
         $row = $response->viewData('results')->first()->row_data;
@@ -559,6 +554,15 @@ class SeriesControllerTest extends TestCase
             $table->integer('comments')->default(0);
             $table->unsignedInteger('videos_id')->nullable();
             $table->integer('tv_episodes_id')->nullable();
+            $table->boolean('haspreview')->default(false);
+            $table->boolean('jpgstatus')->default(false);
+            $table->integer('nfostatus')->default(-1);
+            $table->integer('isrenamed')->default(0);
+            $table->string('additional_pp_claim_token')->nullable();
+            $table->string('imdbid')->nullable();
+            foreach (['musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid'] as $column) {
+                $table->integer($column)->nullable();
+            }
         });
 
         Schema::table('releases', function (Blueprint $table): void {
