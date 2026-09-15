@@ -13,11 +13,24 @@ final class TvReleaseMembership
      */
     public function resolve(object $release, TvEpisodeCatalog $catalog): array
     {
-        $none = ['episodes' => [], 'season' => null, 'fullSeason' => false];
+        $descriptor = $this->describe($release);
+        if ($descriptor['season'] !== null) {
+            return ['episodes' => $catalog->members((int) $release->videos_id, $descriptor['season'], $descriptor['numbers']),
+                'season' => $descriptor['season'], 'fullSeason' => $descriptor['fullSeason']];
+        }
+        $episode = $catalog->linked((int) $release->videos_id, $descriptor['linked']);
+
+        return $episode === null ? ['episodes' => [], 'season' => null, 'fullSeason' => false]
+            : ['episodes' => [$episode['id']], 'season' => $episode['season'], 'fullSeason' => false];
+    }
+
+    /** @return array{numbers: list<int>|null, season: ?int, fullSeason: bool, linked: int} */
+    public function describe(object $release): array
+    {
+        $none = ['numbers' => [], 'season' => null, 'fullSeason' => false, 'linked' => 0];
         if ((int) $release->videos_id <= 0) {
             return $none;
         }
-        $show = (int) $release->videos_id;
         $name = str_replace(['_', '–', '—'], ['.', '-', '-'], (string) $release->searchname);
         if (preg_match('/\bS(\d{1,3})E\d{1,3}-S(\d{1,3})E\d{1,3}\b/i', $name, $range)) {
             if ((int) $range[1] !== (int) $range[2]) {
@@ -42,16 +55,15 @@ final class TvReleaseMembership
                 }
             }
 
-            return ['episodes' => $catalog->members($show, $season, $numbers), 'season' => $season, 'fullSeason' => false];
+            return ['numbers' => array_values(array_unique($numbers)), 'season' => $season, 'fullSeason' => false, 'linked' => 0];
         }
         if (preg_match('/\b(?:S|Season[ ._-]*)(\d{1,3})[ ._-]+(?:COMPLETE|FULL(?:[ ._-]+SEASON)?|PACK)\b/i', $name, $match)
             || preg_match('/\b(?:COMPLETE|FULL)[ ._-]+(?:S|Season[ ._-]*)(\d{1,3})\b/i', $name, $match)) {
             $season = (int) $match[1];
 
-            return ['episodes' => $catalog->members($show, $season), 'season' => $season, 'fullSeason' => true];
+            return ['numbers' => null, 'season' => $season, 'fullSeason' => true, 'linked' => 0];
         }
-        $episode = $catalog->linked($show, (int) $release->tv_episodes_id);
 
-        return $episode === null ? $none : ['episodes' => [$episode['id']], 'season' => $episode['season'], 'fullSeason' => false];
+        return ['numbers' => [], 'season' => null, 'fullSeason' => false, 'linked' => (int) $release->tv_episodes_id];
     }
 }

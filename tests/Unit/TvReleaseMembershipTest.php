@@ -25,7 +25,7 @@ final class TvReleaseMembershipTest extends TestCase
         $this->assertSame([3], $catalog->members(20, 2));
         $this->assertSame([4], $catalog->members(10, 0));
         $this->assertNull($catalog->linked(10, 3));
-        $this->assertNull($catalog->linked(10, 2));
+        $this->assertSame(['id' => 1, 'show' => 10, 'season' => 2], $catalog->linked(10, 2));
         $this->assertSame(2, $catalog->linked(10, 1)['season']);
     }
 
