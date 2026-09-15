@@ -1,0 +1,397 @@
+{
+  "version": 1,
+  "php_shards": 4,
+  "specialist_workers": 2,
+  "php_seconds": 480,
+  "worker_seconds": 900,
+  "focused_seconds": 180,
+  "fast_case_seconds": 30,
+  "specialist_case_seconds": 120,
+  "suites": {
+    "frontend": {
+      "category": "correctness",
+      "environment": "sail",
+      "paths": [
+        "resources/**",
+        "package*.json",
+        "vite.config.*"
+      ],
+      "seconds": 90,
+      "commands": [
+        [
+          "make",
+          "npm-build-ci"
+        ],
+        [
+          "./sail",
+          "npm",
+          "run",
+          "test:js"
+        ],
+        [
+          "scripts/check-design-system.sh"
+        ]
+      ],
+      "estimated_seconds": 20
+    },
+    "ingestion": {
+      "category": "specialist",
+      "environment": "mariadb",
+      "paths": [
+        "app/Services/Binaries/**",
+        "app/Services/Collection*/**",
+        "app/Services/Collection*.php",
+        "app/Services/Release*.php",
+        "app/Services/Releases/**",
+        "app/Services/Nzb/**",
+        "app/Services/Par2*/**",
+        "app/Services/Par2*.php",
+        "app/Services/Runners/**",
+        "app/Console/Commands/**",
+        "Blacklight/**"
+      ],
+      "seconds": 360,
+      "files": [
+        "tests/Integration/CbpMariaDbIngestionTest.php",
+        "tests/Integration/ReleaseCleanupSafetyMariaDbTest.php",
+        "tests/Integration/Par2SidecarMariaDbTest.php"
+      ],
+      "exclude_groups": [
+        "ci-scale"
+      ],
+      "estimated_seconds": 25
+    },
+    "reconciliation": {
+      "category": "specialist",
+      "environment": "mariadb",
+      "paths": [
+        "app/Services/Binaries/**",
+        "app/Services/Collection*/**",
+        "app/Services/Collection*.php",
+        "app/Services/Release*.php",
+        "app/Services/Releases/**",
+        "app/Services/Nzb/**",
+        "app/Services/Par2*/**",
+        "app/Services/Par2*.php",
+        "app/Services/Runners/**",
+        "app/Console/Commands/**",
+        "Blacklight/**"
+      ],
+      "seconds": 120,
+      "files": [
+        "tests/Integration/ReconciliationMariaDbTest.php"
+      ],
+      "exclude_groups": [],
+      "estimated_seconds": 15
+    },
+    "recovery-frontier": {
+      "category": "specialist",
+      "environment": "mariadb",
+      "paths": [
+        "app/Services/ObfuscationRecovery/**",
+        "app/Services/ReleaseRepair/**",
+        "app/Services/Binaries/**",
+        "app/Services/Collection*/**",
+        "app/Services/Collection*.php",
+        "app/Services/Release*.php",
+        "app/Services/Releases/**",
+        "app/Services/Nzb/**",
+        "app/Services/Par2*/**",
+        "app/Services/Par2*.php",
+        "app/Services/Runners/**",
+        "app/Console/Commands/**",
+        "Blacklight/**"
+      ],
+      "seconds": 240,
+      "files": [
+        "tests/Integration/RecoveryFrontierMariaDbTest.php",
+        "tests/Integration/RecoveryBudgetMariaDbTest.php"
+      ],
+      "exclude_groups": [
+        "ci-scale"
+      ],
+      "estimated_seconds": 60
+    },
+    "recovery-publication": {
+      "category": "specialist",
+      "environment": "mariadb",
+      "paths": [
+        "app/Services/ObfuscationRecovery/**",
+        "app/Services/ReleaseRepair/**",
+        "app/Services/Binaries/**",
+        "app/Services/Collection*/**",
+        "app/Services/Collection*.php",
+        "app/Services/Release*.php",
+        "app/Services/Releases/**",
+        "app/Services/Nzb/**",
+        "app/Services/Par2*/**",
+        "app/Services/Par2*.php",
+        "app/Services/Runners/**",
+        "app/Console/Commands/**",
+        "Blacklight/**"
+      ],
+      "seconds": 240,
+      "files": [
+        "tests/Integration/RecoveryPublicationMariaDbTest.php",
+        "tests/Integration/RecoveryWorkerConcurrencyTest.php"
+      ],
+      "exclude_groups": [
+        "frontier-scale"
+      ],
+      "estimated_seconds": 100
+    },
+    "transport": {
+      "category": "specialist",
+      "environment": "sail",
+      "paths": [
+        "app/Services/ObfuscationRecovery/**",
+        "app/Services/ReleaseRepair/**",
+        "app/Services/Binaries/**",
+        "app/Services/Collection*/**",
+        "app/Services/Collection*.php",
+        "app/Services/Release*.php",
+        "app/Services/Releases/**",
+        "app/Services/Nzb/**",
+        "app/Services/Par2*/**",
+        "app/Services/Par2*.php",
+        "app/Services/Runners/**",
+        "app/Console/Commands/**",
+        "Blacklight/**"
+      ],
+      "seconds": 120,
+      "files": [
+        "tests/Integration/RecoveryTransportTest.php",
+        "tests/Integration/RecoveryDownloadTest.php",
+        "tests/Integration/RecoveryOverviewTransportTest.php",
+        "tests/Integration/RecoveryGapDownloadTest.php",
+        "tests/Integration/RecoveryArchiveFixtureTest.php",
+        "tests/Integration/RecoveryMediaFixtureTest.php"
+      ],
+      "exclude_groups": [],
+      "estimated_seconds": 10
+    },
+    "downloaders": {
+      "category": "specialist",
+      "environment": "clients",
+      "paths": [
+        "app/Services/ObfuscationRecovery/**",
+        "app/Services/ReleaseRepair/**",
+        "app/Services/Binaries/**",
+        "app/Services/Collection*/**",
+        "app/Services/Collection*.php",
+        "app/Services/Release*.php",
+        "app/Services/Releases/**",
+        "app/Services/Nzb/**",
+        "app/Services/Par2*/**",
+        "app/Services/Par2*.php",
+        "app/Services/Runners/**",
+        "app/Console/Commands/**",
+        "Blacklight/**"
+      ],
+      "seconds": 360,
+      "files": [
+        "tests/Integration/RecoveryPortablePublicationTest.php",
+        "tests/Integration/RecoveryDownloaderTest.php"
+      ],
+      "exclude_groups": [],
+      "estimated_seconds": 300
+    },
+    "admission": {
+      "category": "specialist",
+      "environment": "mariadb",
+      "paths": [
+        "app/Services/Binaries/**",
+        "app/Services/Collection*/**",
+        "app/Services/Collection*.php",
+        "app/Services/Release*.php",
+        "app/Services/Releases/**",
+        "app/Services/Nzb/**",
+        "app/Services/Par2*/**",
+        "app/Services/Par2*.php",
+        "app/Services/Runners/**",
+        "app/Console/Commands/**",
+        "Blacklight/**"
+      ],
+      "seconds": 240,
+      "files": [
+        "tests/Integration/AdmissionThroughputMariaDbTest.php"
+      ],
+      "exclude_groups": [
+        "admission-scale"
+      ],
+      "estimated_seconds": 70
+    },
+    "naming": {
+      "category": "specialist",
+      "environment": "mariadb",
+      "paths": [
+        "app/Services/NameFixing/**",
+        "app/Services/Binaries/**",
+        "app/Services/Collection*/**",
+        "app/Services/Collection*.php",
+        "app/Services/Release*.php",
+        "app/Services/Releases/**",
+        "app/Services/Nzb/**",
+        "app/Services/Par2*/**",
+        "app/Services/Par2*.php",
+        "app/Services/Runners/**",
+        "app/Console/Commands/**",
+        "Blacklight/**"
+      ],
+      "seconds": 120,
+      "files": [
+        "tests/Integration/NamingCandidateScaleMariaDbTest.php"
+      ],
+      "exclude_groups": [],
+      "filter": "test_generated_work_flags|test_pending_flags_without_evidence|test_consumed_flags_with_dense_retained_evidence",
+      "estimated_seconds": 2
+    },
+    "tv-browse": {
+      "category": "specialist",
+      "environment": "mariadb",
+      "paths": [
+        "app/Services/Releases/**",
+        "app/Http/Controllers/**",
+        "resources/views/**"
+      ],
+      "seconds": 120,
+      "files": [
+        "tests/Integration/TvBrowseMemoryMariaDbTest.php"
+      ],
+      "exclude_groups": [],
+      "filter": "test_tv_b_membership_sorting_expansion_and_dialog_contracts",
+      "estimated_seconds": 2
+    },
+    "backup": {
+      "category": "specialist",
+      "environment": "backup",
+      "paths": [
+        "app/Services/Backup*/**",
+        "app/Console/Commands/*Backup*"
+      ],
+      "seconds": 60,
+      "files": [
+        "tests/Integration/BackupSchemaMariaDbTest.php"
+      ],
+      "exclude_groups": [],
+      "estimated_seconds": 2
+    },
+    "harness": {
+      "category": "correctness",
+      "environment": "sail",
+      "paths": [
+        "scripts/**",
+        "tests/Shell/**",
+        "Makefile",
+        "captainhook.json",
+        ".github/**",
+        "sail"
+      ],
+      "seconds": 90,
+      "commands": [
+        [
+          "make",
+          "test-permissions"
+        ],
+        [
+          "make",
+          "test-focused-cache-isolation"
+        ],
+        [
+          "make",
+          "fix-permissions"
+        ],
+        [
+          "make",
+          "check-permissions"
+        ]
+      ],
+      "estimated_seconds": 25
+    },
+    "admission-scale": {
+      "category": "acceptance",
+      "environment": "mariadb",
+      "paths": [],
+      "seconds": 7200,
+      "files": [
+        "tests/Integration/AdmissionThroughputMariaDbTest.php"
+      ],
+      "exclude_groups": [],
+      "group": "admission-scale"
+    },
+    "frontier-scale": {
+      "category": "acceptance",
+      "environment": "mariadb",
+      "paths": [],
+      "seconds": 1800,
+      "files": [
+        "tests/Integration/RecoveryWorkerConcurrencyTest.php"
+      ],
+      "exclude_groups": [],
+      "group": "frontier-scale"
+    },
+    "tv-memory": {
+      "category": "acceptance",
+      "environment": "mariadb",
+      "paths": [],
+      "seconds": 600,
+      "files": [
+        "tests/Integration/TvBrowseMemoryMariaDbTest.php"
+      ],
+      "exclude_groups": [],
+      "filter": "test_cover_pages_stay_below_128_mib_when_the_catalogue_doubles"
+    },
+    "admission-comparison": {
+      "category": "acceptance",
+      "environment": "mariadb",
+      "paths": [],
+      "seconds": 7200,
+      "commands": [
+        [
+          "./sail",
+          "exec",
+          "-T",
+          "-u",
+          "sail",
+          "-e",
+          "CBP_INTEGRATION_DB_DATABASE=cbp_integration",
+          "laravel.test",
+          "scripts/benchmark-admission"
+        ]
+      ]
+    },
+    "ingestion-scale": {
+      "category": "acceptance",
+      "environment": "mariadb",
+      "paths": [],
+      "seconds": 1800,
+      "files": [
+        "tests/Integration/CbpMariaDbIngestionTest.php"
+      ],
+      "exclude_groups": [],
+      "filter": "test_maintenance_pages_bound_descendant_reads_and_advance_without_matches|test_admission_work_stays_local_as_background_grows"
+    },
+    "recovery-index-scale": {
+      "category": "acceptance",
+      "environment": "mariadb",
+      "paths": [],
+      "seconds": 1800,
+      "files": [
+        "tests/Integration/RecoveryBudgetMariaDbTest.php"
+      ],
+      "exclude_groups": [],
+      "filter": "test_retained_header_discovery_and_expiry_use_bounded_indexes"
+    },
+    "naming-scale": {
+      "category": "acceptance",
+      "environment": "mariadb",
+      "paths": [],
+      "seconds": 1800,
+      "files": [
+        "tests/Integration/NamingCandidateScaleMariaDbTest.php"
+      ],
+      "exclude_groups": [],
+      "filter": "test_retained_evidence_work_stays_bounded_across_all_buckets"
+    }
+  }
+}

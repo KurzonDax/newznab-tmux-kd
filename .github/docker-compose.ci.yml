@@ -17,6 +17,9 @@ services:
 
   mariadb:
     image: mariadb:11.4
+    # Disposable integration schemas: retain SQL/durability settings, avoid overlay filesystem I/O.
+    tmpfs:
+      - /var/lib/mysql
     environment:
       MARIADB_DATABASE: cbp_integration
       MARIADB_USER: sail

@@ -2,6 +2,13 @@
 
 Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
 
+## Scope and readiness
+
+Record agreed behavior and boundaries before implementation. An issue or ready
+label does not grant implementation authorization. A scoped implementation
+request does; do not ask again. Recurring CI expansion needs a separately agreed
+policy issue as described in [CI policy](ci-policy.md).
+
 ## Conventions
 
 - **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.

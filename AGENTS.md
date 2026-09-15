@@ -8,9 +8,9 @@ Master only moves by pull request, and **every change, however small — docs, o
 
 **Definition of done:** a coding task is complete only when `scripts/agent-issue-finish` prints `MERGE_STATUS=merged`. Pushing the issue branch, opening the pull request, and enabling auto-merge are pre-authorized for this repository — run the finish helper without asking for confirmation. This overrides any skill or prompt instruction whose final step is committing; ending a session with committed-but-unpublished work is an incomplete task, not a cautious one.
 
-1. **Issue.** Work starts from an open GitHub issue labelled `ready-for-agent`. For a requested change with no issue yet, create one (`gh issue create` plus the label), then continue with it.
+1. **Issue.** Work starts from an open GitHub issue labelled `ready-for-agent`. Settle the scope and implementation authorization before startup. Filing or triaging an issue does not itself authorize implementation; apply the ready label only to settled work.
 2. **Start.** From the primary checkout, **before changing source files**, run `scripts/agent-issue-start <issue-number>`. Continue the session from the helper's absolute `WORKTREE_PATH`: every later repository command uses that path as its working directory, and Laravel/Sail commands go through `scripts/agent-sail`. The helper owns all worktree, branch, Compose project, and environment creation, and leaves the primary checkout alone while work is in flight. If startup reports reserved state, report it to the user; only the issue's assigned owner resumes interrupted work with `--recover`.
-3. **Work and verify.** Implement, test, run Pint and PHPStan, review, and commit on `issue/<number>`.
+3. **Work and verify.** Follow [bounded verification and CI policy](docs/agents/ci-policy.md) before adding tests or changing CI. Run focused tests and `python3 scripts/agent-verify final`, review, and commit on `issue/<number>`.
 4. **Publish.** Immediately after committing, run `scripts/agent-issue-finish --publish` from the issue worktree. It pushes the branch, opens the single `Fixes #<number>` pull request, and arms squash auto-merge, then returns.
 5. **Monitor to merge.** Run `scripts/agent-issue-finish --monitor` (idempotent — rerun it until it prints `MERGE_STATUS=merged`; a monitor cut off by a command timeout is interrupted, not failed). It watches the strict required checks, updates the branch when master moves, and after merge removes only that issue's runtime, worktree, and branches, then fast-forwards the primary checkout's `master` when that checkout is clean and on `master` (`PRIMARY_MASTER=` in the output). Plain `scripts/agent-issue-finish` runs both phases.
 
@@ -179,32 +179,19 @@ Every admin-editable setting is declared once in the **settings registry**
 
 ## Code Formatting & Quality
 
-**After every code change, run all of the following before considering a task done:**
-
-### 1. Apply style fixes to changed PHP files
-```bash
-./vendor/bin/pint --dirty  # Format only changed files
-```
-
-> If Pint changes files, keep those changes and rerun Pint until it reports clean output.
-
-### 2. Check for static analysis errors
-```bash
-./vendor/bin/phpstan analyse --memory-limit=2G  # Run PHPStan static analysis
-```
-
-### 3. Check for syntax / lint errors
-```bash
-find app -name "*.php" | xargs php -l  # PHP syntax lint on all changed files
-```
-
-> **These steps are mandatory.** Run them before considering any task done. Do not wait for the pre-commit hook to catch formatting or type errors. If PHPStan reports new errors introduced by your changes, fix them before finishing. If you add a PHPStan baseline entry, document why.
+Before adding tests, changing recurring CI, or publishing, read
+[bounded verification and CI policy](docs/agents/ci-policy.md). Use the shared
+verifier for applicable formatting, changed-file lint, full-project PHPStan and
+frontend checks. Keep successful verification while its inputs remain unchanged;
+repeat only invalidated checks. Large scale/benchmark acceptance is explicit,
+and recurring-CI expansion requires its own agreed policy issue.
 
 ## Pre-commit (CaptainHook)
 
-Auto-runs: PHP lint, Composer lock validation, Pint formatting, and design-system checks (`scripts/check-design-system.sh`, when frontend files changed). Commit limits: 200 char subject, 72 char body.
-
-When completing a task, stage newly created project files with Git. Do not stage temporary files or planning documents.
+The hook and publish helper delegate to `scripts/agent-verify`; they reuse valid
+local results. Review/restage formatter changes before committing. Commit limits
+remain 200 characters for the subject and 72 for the body. Stage intended new
+project files, keeping temporary verification records and artifacts out of Git.
 
 ## Key Directories
 
@@ -398,7 +385,7 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 # Test Enforcement
 
-- Every change must be programmatically tested. Write a new test or update an existing test, then run the affected tests to make sure they pass.
+- Verify changed behavior at the agreed seam with a bounded regression. Use existing tests where they prove the change; follow the CI policy for infrastructure and documentation checks.
 - Run the minimum number of tests needed to ensure code quality and speed. Use `vendor/bin/sail artisan test --compact` with a specific filename or filter.
 
 === laravel/core rules ===
@@ -443,8 +430,8 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 # Laravel Pint Code Formatter
 
-- If you have modified any PHP files, you must run `vendor/bin/sail bin pint --dirty --format agent` before finalizing changes to ensure your code matches the project's expected style.
-- Do not run `vendor/bin/sail bin pint --test --format agent`, simply run `vendor/bin/sail bin pint --format agent` to fix any formatting issues.
+Use the shared verifier's changed-PHP formatting and reuse contract described in
+[CI policy](docs/agents/ci-policy.md).
 
 === phpunit/core rules ===
 
@@ -452,8 +439,8 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 - This application uses PHPUnit for testing. All tests must be written as PHPUnit classes. Use `vendor/bin/sail artisan make:test --phpunit {name}` to create a new test.
 - If you see a test using "Pest", convert it to PHPUnit.
-- Every time a test has been updated, run that singular test.
-- When the tests relating to your feature are passing, ask the user if they would like to also run the entire test suite to make sure everything is still passing.
+- Measure changed tests with the focused verifier; group-only acceptance reclassification uses selection contracts.
+- Run the applicable checks from the accepted verification plan. Do not add a full local suite or request redundant confirmation after focused verification succeeds.
 - Tests should cover all happy paths, failure paths, and edge cases.
 - You must not remove any tests or test files from the tests directory without approval. These are not temporary or helper files; these are core to the application.
 

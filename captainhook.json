@@ -20,34 +20,7 @@
         "enabled": true,
         "actions": [
             {
-                "action": "\\CaptainHook\\App\\Hook\\PHP\\Action\\Linting",
-                "options": [],
-                "conditions": []
-            },
-            {
-                "action": "\\CaptainHook\\App\\Hook\\Composer\\Action\\CheckLockFile",
-                "options": [],
-                "conditions": []
-            },
-            {
-                "action": "vendor/bin/pint",
-                "options": [],
-                "conditions": []
-            },
-            {
-                "action": "scripts/check-design-system.sh",
-                "options": [],
-                "conditions": [
-                    {
-                        "exec": "\\CaptainHook\\App\\Hook\\Condition\\FileChanged\\Any",
-                        "args": [
-                            ["resources/views/*", "resources/css/*", "resources/js/*"]
-                        ]
-                    }
-                ]
-            },
-            {
-                "action": "scripts/runtime-permissions.sh check-source",
+                "action": "python3 scripts/agent-verify hook",
                 "options": [],
                 "conditions": []
             }
@@ -77,7 +50,10 @@
                     {
                         "exec": "\\CaptainHook\\App\\Hook\\Condition\\FileChanged\\Any",
                         "args": [
-                            ["composer.json", "composer.lock"]
+                            [
+                                "composer.json",
+                                "composer.lock"
+                            ]
                         ]
                     }
                 ]
@@ -94,7 +70,10 @@
                     {
                         "exec": "\\CaptainHook\\App\\Hook\\Condition\\FileChanged\\Any",
                         "args": [
-                            ["composer.json", "composer.lock"]
+                            [
+                                "composer.json",
+                                "composer.lock"
+                            ]
                         ]
                     }
                 ]

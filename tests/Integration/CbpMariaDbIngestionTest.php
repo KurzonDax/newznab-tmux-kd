@@ -34,6 +34,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Process\Process;
 use Tests\Support\CollectionFrontierAssertions;
 use Tests\TestCase;
@@ -174,6 +175,7 @@ final class CbpMariaDbIngestionTest extends TestCase
         }
     }
 
+    #[Group('ci-scale')]
     public function test_maintenance_pages_bound_descendant_reads_and_advance_without_matches(): void
     {
         DB::statement('CREATE TABLE releases (id INT UNSIGNED PRIMARY KEY, nzbstatus INT NOT NULL)');
@@ -436,6 +438,7 @@ final class CbpMariaDbIngestionTest extends TestCase
         }
     }
 
+    #[Group('ci-scale')]
     public function test_admission_work_stays_local_as_background_grows(): void
     {
         $this->travelTo(Carbon::parse('2026-01-01 12:00:00', 'UTC'));

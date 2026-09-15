@@ -21,6 +21,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\Group;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\NeverBlacklistedService;
 use Tests\Support\ObfuscationRecovery\ChecksFrontierMigration;
@@ -244,6 +245,7 @@ final class RecoveryBudgetMariaDbTest extends TestCase
         $this->assertSame('recovery_budget_owner', $plan[0]->key);
     }
 
+    #[Group('ci-scale')]
     public function test_retained_header_discovery_and_expiry_use_bounded_indexes(): void
     {
         $table = DB::connection()->getTablePrefix().'obfuscation_recovery_headers';

@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""Plan bounded CI suites. The manifest owns selection; workflows own no test lists."""
+import argparse
+import hashlib
+import os
+import fnmatch
+import json
+import re
+from pathlib import Path
+import subprocess
+import sys
+
+ROOT = Path.cwd()
+
+
+def git(*args):
+    return subprocess.check_output(['git', *args], cwd=ROOT)
+
+
+def changed_paths(base):
+    paths = git('diff', '--name-only', '--no-renames', '-z', base).decode().split('\0')
+    paths += git('ls-files', '--others', '--exclude-standard', '-z').decode().split('\0')
+    return sorted(set(filter(None, paths)))
+
+
+def matches(path, patterns):
+    return any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)
+
+
+def plan(policy, paths):
+    selected = set()
+    php = False
+    reasons = {}
+    bounded = {key for key, value in policy['suites'].items() if value['category'] != 'acceptance'}
+    for path in paths or ['<unknown>']:
+        if path.endswith('.md') or path == 'LICENSE':
+            continue
+        php |= path.endswith('.php') or path.startswith(('app/', 'routes/', 'database/'))
+        found = {key for key in bounded if matches(path, policy['suites'][key]['paths'])
+                 or path in policy['suites'][key].get('files', [])}
+        shared = matches(path, ['bootstrap/**', 'config/**', 'database/**', 'app/Providers/**', 'app/Models/**',
+                                'composer.*', 'phpunit.xml', 'tests/Support/**', 'tests/Fixtures/**',
+                                'tests/TestCase.php', 'tests/CreatesApplication.php', '.github/**', 'docker/**'])
+        known = matches(path, ['resources/**', 'app/**', 'routes/**', 'tests/Unit/**', 'tests/Feature/**',
+                               'tests/Install/**', 'tests/Shell/**', 'scripts/**', 'package*.json', 'vite.config.*',
+                               'Makefile', 'captainhook.json', 'sail'])
+        if shared or (not found and not known):
+            found = bounded
+            php = True
+        selected.update(found)
+        for key in found:
+            reasons.setdefault(key, []).append(path)
+    lanes = [[], []]
+    weights = [0, 0]
+    for key in sorted(selected, key=lambda key: (-policy['suites'][key]['estimated_seconds'], key)):
+        lane = weights.index(min(weights))
+        lanes[lane].append(key)
+        weights[lane] += policy['suites'][key]['estimated_seconds']
+    return dict(php=php, suites=sorted(selected), lanes=lanes, reasons=reasons,
+                acceptance=[key for key, value in policy['suites'].items() if value['category'] == 'acceptance'])
+
+
+def selected_methods(suite):
+    selected = set()
+    for filename in suite.get('files', []):
+        source = (ROOT / filename).read_text()
+        methods = re.findall(r"((?:    #\[.*\]\n)*)    public function (test_\w+)\(", source)
+        if not methods:
+            raise ValueError(f'no statically discoverable tests in {filename}; use an explicit supported selector')
+        for attributes, method in methods:
+            groups = re.findall(r"Group\(['\"]([^'\"]+)", attributes)
+            if set(groups) & set(suite.get('exclude_groups', [])):
+                continue
+            if suite.get('group') and suite['group'] not in groups:
+                continue
+            if suite.get('filter') and not re.search(suite['filter'], method):
+                continue
+            selected.add(f'{filename}::{method}')
+    return selected
+
+
+def validate(policy):
+    if policy['version'] != 1 or policy['php_shards'] != 4 or policy['specialist_workers'] != 2:
+        raise ValueError('expected four PHP shards and two specialist workers')
+    seen = {}
+    acceptance = set()
+    for name, suite in policy['suites'].items():
+        if suite['category'] not in ['correctness', 'specialist', 'acceptance']:
+            raise ValueError(f'unknown category: {name}')
+        if suite['seconds'] <= 0 or not re.fullmatch(r'[a-z][a-z0-9-]*', name):
+            raise ValueError(f'invalid suite: {name}')
+        methods = selected_methods(suite)
+        if suite.get('files') and not methods:
+            raise ValueError(f'empty selection: {name}')
+        if suite['category'] != 'acceptance' and suite.get('estimated_seconds', 0) <= 0:
+            raise ValueError(f'bounded suite needs a measured scheduling estimate: {name}')
+        if suite['category'] == 'acceptance':
+            acceptance.update(methods)
+            continue
+        for method in methods:
+            if method in seen:
+                raise ValueError(f'duplicate selection: {method} in {seen[method]} and {name}')
+            seen[method] = name
+    overlap = acceptance & set(seen)
+    if overlap:
+        raise ValueError('performance acceptance selected in PR gate: ' + ', '.join(sorted(overlap)))
+
+
+def control_files(base=None):
+    paths = set(git('ls-files', '-z').decode().split('\0'))
+    if base:
+        paths.update(git('ls-tree', '-r', '--name-only', '-z', base).decode().split('\0'))
+    paths.update(git('ls-files', '--others', '--exclude-standard', '-z').decode().split('\0'))
+    return sorted(path for path in paths if matches(path, ['.github/workflows/*', '.github/actions/**',
+                  'scripts/ci-*', 'scripts/ci_*.py', 'scripts/agent-verify', 'scripts/agent-issue-finish',
+                  'captainhook.json', 'Makefile', 'phpunit.xml', '.github/ci-policy.json',
+                  'scripts/run-tests-isolated.sh', 'tests/Support/ObfuscationRecovery/install-clients.sh',
+                  '.github/docker-compose*.yml', '.github/php-ci.ini', 'docker/**']))
+
+
+def fingerprints(paths):
+    return {path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
+            if (ROOT / path).is_file() else None for path in paths}
+
+
+def check_controls(base):
+    paths = control_files(base)
+    changed = []
+    for path, digest in fingerprints(paths).items():
+        old = subprocess.run(['git', 'show', f'{base}:{path}'], capture_output=True)
+        if old.returncode or hashlib.sha256(old.stdout).hexdigest() != digest:
+            changed.append(path)
+    if not changed:
+        return
+    amendment_path = ROOT / '.github/ci-amendment.json'
+    amendment = json.loads(amendment_path.read_text()) if amendment_path.exists() else {}
+    base_sha = git('rev-parse', base).decode().strip()
+    branch = os.environ.get('GITHUB_HEAD_REF') or git('branch', '--show-current').decode().strip()
+    if (amendment.get('base') != base_sha or branch != f"issue/{amendment.get('issue')}"
+            or amendment.get('files') != fingerprints(paths)):
+        raise ValueError('recurring CI inputs changed: ' + ', '.join(changed) +
+                         '. Use a separately authorized CI-policy issue and exact amendment; see docs/agents/ci-policy.md.')
+    print(f"CI policy amendment #{amendment['issue']}: " + ', '.join(changed), file=sys.stderr)
+
+
+def validate_workflow():
+    workflow = json.loads((ROOT / '.github/workflows/laravel.yml').read_text())
+    jobs = workflow['jobs']
+    if set(jobs) != {'scope', 'php', 'specialist', 'required'}:
+        raise ValueError('unregistered PR execution job')
+    for key, output in [('php', 'php'), ('specialist', 'specialist')]:
+        job = jobs[key]
+        if job['needs'] != 'scope' or job['if'] != f"needs.scope.outputs.{output} == 'true'":
+            raise ValueError(f'{key} must depend on successful preflight selection')
+    if jobs['php']['strategy']['matrix'] != {'shard': [0, 1, 2, 3]} or jobs['php']['strategy']['max-parallel'] != 4:
+        raise ValueError('PHP fan-out changed')
+    if jobs['specialist']['strategy']['matrix'] != {'lane': [0, 1]} or jobs['specialist']['strategy']['max-parallel'] != 2:
+        raise ValueError('specialist fan-out changed')
+    if set(jobs['required']['needs']) != {'scope', 'php', 'specialist'}:
+        raise ValueError('required aggregate must await every selected job')
+    allowed = {
+        'python3 scripts/ci-preflight --base "$BASE_SHA" --github',
+        './sail exec -T -u sail laravel.test timeout --kill-after=5 480 scripts/run-tests-isolated.sh scripts/ci-phpunit-shard --index "$SHARD_INDEX" --count 4',
+        'python3 scripts/ci-run --plan "$CI_PLAN" --lane "$LANE"',
+        'python3 scripts/ci-policy result "$NEEDS_JSON"', './sail down'}
+    for job in jobs.values():
+        for step in job['steps']:
+            if 'run' in step and step['run'] not in allowed:
+                raise ValueError('unregistered PR command: ' + step['run'])
+    acceptance = json.loads((ROOT / '.github/workflows/admission-scale.yml').read_text())
+    if set(acceptance['on']) != {'workflow_dispatch'}:
+        raise ValueError('performance acceptance must be manual only')
+
+
+def required_result(needs):
+    scope = needs['scope']
+    if scope['result'] != 'success':
+        raise ValueError('preflight failed or is missing')
+    for key in ['php', 'specialist']:
+        selected = scope['outputs'][key]
+        if selected not in ['true', 'false']:
+            raise ValueError('invalid selection output')
+        expected = 'success' if selected == 'true' else 'skipped'
+        if needs[key]['result'] != expected:
+            raise ValueError(f'{key}: expected {expected}, got {needs[key]["result"]}')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('mode', choices=['plan', 'validate', 'check', 'amendment', 'result'])
+    parser.add_argument('result_json', nargs='?')
+    parser.add_argument('--github', action='store_true')
+    parser.add_argument('--issue', type=int)
+    parser.add_argument('--paths', nargs='*')
+    parser.add_argument('--base', default='origin/master')
+    parser.add_argument('--policy', default='.github/ci-policy.json')
+    args = parser.parse_args()
+    if args.mode == 'result':
+        required_result(json.loads(args.result_json))
+        return
+    policy = json.loads((ROOT / args.policy).read_text())
+    validate(policy)
+    if args.mode == 'validate':
+        print('CI policy: valid')
+        return
+    if args.mode in ['check', 'amendment']:
+        validate_workflow()
+        if args.mode == 'amendment':
+            if not args.issue or args.issue < 1:
+                raise ValueError('amendment requires the explicitly authorized issue number')
+            amendment = dict(issue=args.issue, base=git('rev-parse', args.base).decode().strip(), files=fingerprints(control_files(args.base)))
+            (ROOT / '.github/ci-amendment.json').write_text(json.dumps(amendment, indent=2) + '\n')
+            print(f'Exact CI amendment recorded for issue #{args.issue}; review the delta before publishing.')
+            return
+        check_controls(args.base)
+    paths = args.paths if args.paths is not None else changed_paths(args.base)
+    registered = {file for suite in policy['suites'].values() for file in suite.get('files', [])}
+    for path in paths:
+        if path.startswith('tests/Integration/') and path.endswith('Test.php') and (ROOT / path).is_file() and path not in registered:
+            raise ValueError(f'{path} needs an explicit bounded or acceptance inventory entry before publishing')
+    result = plan(policy, paths)
+    if args.github:
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            output.write('php=' + str(result['php']).lower() + '\n')
+            output.write('specialist=' + str(bool(result['suites'])).lower() + '\n')
+            output.write('plan=' + json.dumps(result) + '\n')
+    print(json.dumps(result))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (ValueError, KeyError, TypeError, OSError, subprocess.CalledProcessError) as error:
+        print(f'CI policy: {error}', file=sys.stderr)
+        sys.exit(1)
