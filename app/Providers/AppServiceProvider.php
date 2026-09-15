@@ -46,6 +46,7 @@ use App\Services\MusicIdentity\Persistence\IdentificationDecisionStore;
 use App\Services\NNTP\NntpProviderPool;
 use App\Services\ObfuscationRecovery\RecoveryCatalog;
 use App\Support\Settings\SettingsRegistry;
+use App\Support\SiteViewSettings;
 use App\View\Composers\AdminDataComposer;
 use App\View\Composers\GlobalDataComposer;
 use Illuminate\Auth\Events\Login;
@@ -113,6 +114,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->scoped(SiteViewSettings::class);
         // One pool per process so its circuit-breaker state (and its per-provider
         // connections) survive across the services that share a worker.
         $this->app->singleton(NntpProviderPool::class);

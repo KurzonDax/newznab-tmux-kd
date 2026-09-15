@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Models\Category;
-use App\Models\Settings;
 use App\Models\User;
 use App\Support\ReleaseCompletion;
+use App\Support\SiteViewSettings;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -20,7 +20,7 @@ use Illuminate\View\View;
 class BasePageController extends Controller
 {
     /**
-     * @var Collection<int, mixed>
+     * @var Collection<string, mixed>
      */
     public Collection $settings;
 
@@ -62,22 +62,12 @@ class BasePageController extends Controller
     {
         $this->middleware(['auth', 'web', '2fa'])->except('api', 'contact', 'showContactForm', 'callback', 'btcPayCallback', 'getNzb', 'terms', 'privacyPolicy', 'capabilities', 'movie', 'apiSearch', 'tv', 'details', 'failed', 'showRssDesc', 'fullFeedRss', 'categoryFeedRss', 'cartRss', 'myMoviesRss', 'myShowsRss', 'trendingMoviesRss', 'trendingShowsRss', 'release', 'reset', 'showLinkRequestForm', 'showStatusPage', 'showInvitation');
 
-        // Load settings as collection with caching (5 minutes)
-        $this->settings = $this->rememberWithCacheFallback('site_settings', 300, function () {
-            return Settings::query()->pluck('value', 'name');
-        });
-
-        // Initialize view data FIRST with serverroot
+        $settings = app(SiteViewSettings::class);
+        $this->settings = $settings->raw();
         $this->viewData = [
             'serverroot' => url('/'),
+            'site' => $settings->converted(),
         ];
-
-        // Then add the converted settings array as 'site' with caching
-        $this->viewData['site'] = $this->rememberWithCacheFallback('site_settings_converted', 300, function () {
-            return $this->settings->map(function ($value) {
-                return Settings::convertValue($value);
-            })->all();
-        });
 
         // Initialize userdata property for controllers that need it
         $this->middleware(function ($request, $next) {

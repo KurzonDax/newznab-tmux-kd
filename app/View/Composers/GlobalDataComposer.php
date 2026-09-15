@@ -8,10 +8,10 @@ use App\Enums\BrowseRoot;
 use App\Events\UserLoggedIn;
 use App\Models\Category;
 use App\Models\Content;
-use App\Models\Settings;
 use App\Models\User;
 use App\Models\UsersRelease;
 use App\Services\Releases\WatchlistService;
+use App\Support\SiteViewSettings;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -51,6 +51,7 @@ class GlobalDataComposer
         }
 
         $view->with(self::$resolvedData);
+        $view->with('site', app(SiteViewSettings::class)->converted());
 
         if ($view->name() === 'layouts.main' && Auth::check()) {
             $view->with([
@@ -67,18 +68,7 @@ class GlobalDataComposer
      */
     private function resolveData(): array
     {
-        // Cached site settings (shared across all requests)
-        $siteArray = $this->rememberWithCacheFallback('site_settings_array', self::CACHE_TTL, function () {
-            return Settings::query()
-                ->pluck('value', 'name')
-                ->map(fn ($value) => Settings::convertValue($value))
-                ->all();
-        });
-
-        $viewData = [
-            'serverroot' => url('/'),
-            'site' => $siteArray,
-        ];
+        $viewData = ['serverroot' => url('/')];
 
         // Cached useful links for sidebar
         $viewData['usefulLinks'] = $this->rememberWithCacheFallback('content_useful_links', self::CACHE_TTL, function () {
