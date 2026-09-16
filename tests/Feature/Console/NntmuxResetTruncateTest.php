@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Console;
 
 use App\Facades\Search;
+use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseImageService;
 use Illuminate\Database\Schema\Blueprint;
@@ -37,10 +38,12 @@ class NntmuxResetTruncateTest extends TestCase
         parent::setUp();
         $this->bootIsolatedDatabase();
         $this->createSchema();
+        NzbCreationCandidateQuery::flushCapabilityCache();
     }
 
     protected function tearDown(): void
     {
+        NzbCreationCandidateQuery::flushCapabilityCache();
         $this->tearDownIsolatedDatabase();
         parent::tearDown();
     }
