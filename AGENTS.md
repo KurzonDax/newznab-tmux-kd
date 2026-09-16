@@ -1,5 +1,9 @@
 # AGENTS.md
 
+## New Artisan commands require explicit approval
+
+**New PHP Artisan commands CANNOT be added without the user's explicit approval of the specific command.** This includes command classes, `Artisan::command()` closures, aliases, and one-off backfill, repair, maintenance, or diagnostic commands. An agent-written issue or specification, a `ready-for-agent` label, or a general request to implement an issue does not count as command-specific approval. Record the user's explicit approval in the agreed scope before scaffolding, implementing, or registering the command. Without it, use an existing approved interface or ask the user specifically before adding a command.
+
 > AI coding agent guidelines for NNTmux - a Laravel 13 Usenet indexer.
 
 ## Development workflow
@@ -133,7 +137,7 @@ PHPUnit only (no Pest). Create tests: `php artisan make:test --phpunit {name}`
 
 ### Commands
 - 80+ auto-registered in `app/Console/Commands/`
-- Create with `php artisan make:` + `--no-interaction`
+- Only after the user explicitly approves the specific new Artisan command, create it with `php artisan make:command` + `--no-interaction`. General issue implementation approval is insufficient.
 - Docker/Sail convenience targets live in `Makefile`; prefer `make artisan cmd="..."`, `make test filter=TestName`, `make pint`, and `make npm-build` when working inside containers
 - This workspace may have cached routes under `bootstrap/cache/routes-*.php`; after adding/changing routes, refresh with `php artisan route:cache` if a route appears missing
 
