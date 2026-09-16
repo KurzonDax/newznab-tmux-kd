@@ -58,7 +58,7 @@ final class RecoveryScheduler
             if ($stage === RecoveryStage::Discover) {
                 app(RecoveryLimitResume::class)->step();
                 app(RecoveryEnrichmentResume::class)->step();
-                app(RecoveryGapPlanner::class)->step();
+                app(RecoveryGapPlanner::class)->step(deadline: $deadline);
                 app(RecoveryRunRefresh::class)->step();
                 app(RecoveryBundleRefresh::class)->step();
                 foreach (app(RecoveryFrontierRebuild::class)->step() as $outcome => $count) {

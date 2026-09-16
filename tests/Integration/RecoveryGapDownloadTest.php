@@ -92,7 +92,7 @@ final class RecoveryGapDownloadTest extends TestCase
         $this->assertSame('gap', DB::table('obfuscation_recovery_budgets')->value('purpose'));
         $this->assertSame(33554432, (int) DB::table('obfuscation_recovery_attempts')->value('reserved_bytes'));
         $this->assertSame(0, DB::table('obfuscation_recovery_slots')->whereNotNull('worker_token')->count());
-        $this->travel(301)->seconds();
+        $this->travel(3601)->seconds();
         $this->assertSame(0, app(RecoveryGapPlanner::class)->step());
         $this->assertSame(1, DB::table('obfuscation_recovery_gaps')->count());
     }
@@ -107,6 +107,8 @@ final class RecoveryGapDownloadTest extends TestCase
         for ($i = 0; $i < 3; $i++) {
             $this->assertSame(1, $planner->step());
             $this->travel(2)->seconds();
+            $this->assertSame(0, $planner->step());
+            $this->travel(3599)->seconds();
         }
         $ranges = DB::table('obfuscation_recovery_gaps')->orderBy('requested_first')->get();
         $this->assertSame([[1, 20000], [20001, 40000], [40001, 45001]], $ranges->map(fn (object $row): array => [(int) $row->requested_first, (int) $row->requested_last])->all());
@@ -118,7 +120,7 @@ final class RecoveryGapDownloadTest extends TestCase
         ]);
         for ($i = 0; $i < 3; $i++) {
             $this->assertSame(0, $planner->step());
-            $this->travel(2)->seconds();
+            $this->travel(3601)->seconds();
         }
         $this->assertSame(3, DB::table('obfuscation_recovery_gaps')->count());
     }
