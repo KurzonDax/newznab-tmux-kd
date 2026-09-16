@@ -4,7 +4,6 @@ export function releaseBrowser() {
     return {
         ...releaseCoverBrowser(),
         selectedCount: 0,
-        selectedOutsidePage: [],
         browserRoot: null,
 
         init() {
@@ -13,17 +12,7 @@ export function releaseBrowser() {
             this.initCovers();
         },
 
-        selectTitleSeason(event) {
-            const guids = JSON.parse(event.currentTarget.dataset.seasonGuids);
-            const boxes = Array.from(this.browserRoot.querySelectorAll('[data-release-select]'));
-            const visible = new Set(boxes.map(box => box.value));
-            this.selectedOutsidePage = guids.filter(guid => !visible.has(guid));
-            boxes.forEach(box => { box.checked = true; });
-            this.selectionChanged();
-        },
-
         selectAll(event) {
-            this.selectedOutsidePage = [];
             this.browserRoot.querySelectorAll('[data-release-select]').forEach(box => {
                 box.checked = event.target.checked;
             });
@@ -32,7 +21,7 @@ export function releaseBrowser() {
 
         selectionChanged() {
             const boxes = Array.from(this.browserRoot.querySelectorAll('[data-release-select]'));
-            this.selectedCount = boxes.filter(box => box.checked).length + this.selectedOutsidePage.length;
+            this.selectedCount = boxes.filter(box => box.checked).length;
             boxes.forEach(box => { box.closest('[data-release-row]').dataset.selected = box.checked ? '1' : '0'; });
             this.browserRoot.querySelectorAll('[data-select-all]').forEach(header => {
                 header.checked = boxes.length > 0 && boxes.every(box => box.checked);
@@ -45,32 +34,28 @@ export function releaseBrowser() {
         },
 
         selectedGuids() {
-            return [...this.selectedOutsidePage, ...Array.from(this.browserRoot.querySelectorAll('[data-release-select]'))
-                .filter(box => box.checked).map(box => box.value)];
+            return Array.from(this.browserRoot.querySelectorAll('[data-release-select]'))
+                .filter(box => box.checked).map(box => box.value);
         },
 
         downloadSelected() {
             const guids = this.selectedGuids();
             if (!guids.length) return;
-            if (this.selectedOutsidePage.length) {
-                const form = document.createElement('form');
-                form.method = 'POST';
-                form.action = '/getnzb';
-                form.hidden = true;
-                const fields = { id: guids.join(','), zip: '1', _token: document.querySelector('meta[name="csrf-token"]')?.content ?? '' };
-                Object.entries(fields).forEach(([name, value]) => {
-                    const input = document.createElement('input');
-                    input.type = 'hidden';
-                    input.name = name;
-                    input.value = value;
-                    form.append(input);
-                });
-                document.body.append(form);
-                form.submit();
-                form.remove();
-            } else {
-                window.location.assign('/getnzb?id=' + encodeURIComponent(guids.join(',')) + '&zip=1');
-            }
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/getnzb';
+            form.hidden = true;
+            const fields = { id: guids.join(','), zip: '1', _token: document.querySelector('meta[name="csrf-token"]')?.content ?? '' };
+            Object.entries(fields).forEach(([name, value]) => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = name;
+                input.value = value;
+                form.append(input);
+            });
+            document.body.append(form);
+            form.submit();
+            form.remove();
             this.clearSelection();
         },
 

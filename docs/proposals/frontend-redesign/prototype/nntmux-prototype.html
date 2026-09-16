@@ -782,7 +782,7 @@ const HUES = [['#f59e0b','#7c2d12'],['#475569','#020617'],['#f97316','#1e1b4b'],
       let rows=e.releases.filter(r=>r.season===cur); if (S.qual.size) rows=rows.filter(r=>S.qual.has(r.res)); rows.sort((a,b)=>(a.episode||99)-(b.episode||99)||a.ageH-b.ageH);
       const eps=new Set(rows.filter(r=>r.episode).map(r=>r.episode)).size; const packs=rows.filter(r=>r.pack).length;
       body = `<div class="card"><div class="tabs season-tabs">${seasons.map(sn=>`<button class="${sn===cur?'active':''}" data-act="season" data-n="${sn}">Season ${sn}<span class="tab-count">${e.releases.filter(r=>r.season===sn).length}</span></button>`).join('')}</div>
-        <div class="season-head" style="border-radius:0"><b>Season ${cur}</b><span class="muted small">${eps} episode${eps===1?'':'s'}${packs?` · ${packs} season pack${packs>1?'s':''}`:''} · ${rows.length} release${rows.length===1?'':'s'}</span><span class="grow"></span><button class="btn secondary sm" data-act="sel-many" data-guids="${rows.map(r=>r.guid).join(',')}"><i class="far fa-square-check"></i> Select season</button></div>${table(rows)}</div>`;
+        <div class="season-head" style="border-radius:0"><b>Season ${cur}</b><span class="muted small">${eps} episode${eps===1?'':'s'}${packs?` · ${packs} season pack${packs>1?'s':''}`:''} · ${rows.length} release${rows.length===1?'':'s'}</span></div>${table(rows)}</div>`;
     } else {
       let rows = e.releases.slice(); if (S.qual.size) rows = rows.filter(r=>S.qual.has(r.res));
       body = `<div class="card">${table(rows)}</div>`;

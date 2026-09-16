@@ -22,9 +22,20 @@ function browser(...guids) {
     return { component, rows, header };
 }
 
+function captureDownloads() {
+    const submissions = [];
+    globalThis.document = {
+        querySelector: () => ({ content: 'download-csrf' }),
+        body: { append() {} },
+        createElement(tag) {
+            return { tag, children: [], append(child) { this.children.push(child); }, submit() { submissions.push(this); }, remove() {} };
+        },
+    };
+    return submissions;
+}
+
 test('select all and archive download stay within one browser and clear its selection', () => {
-    const navigations = [];
-    globalThis.window = { location: { assign: value => navigations.push(value) } };
+    const submissions = captureDownloads();
     const first = browser('guid-a', 'guid-b');
     const second = browser('guid-c');
     first.component.selectAll({ target: { checked: true } });
@@ -32,7 +43,11 @@ test('select all and archive download stay within one browser and clear its sele
     assert.equal(second.rows[0].checked, false);
     assert.equal(first.header.checked, true);
     first.component.downloadSelected();
-    assert.deepEqual(navigations, ['/getnzb?id=guid-a%2Cguid-b&zip=1']);
+    assert.equal(submissions.length, 1);
+    assert.equal(submissions[0].method, 'POST');
+    assert.equal(submissions[0].action, '/getnzb');
+    assert.deepEqual(Object.fromEntries(submissions[0].children.map(input => [input.name, input.value])),
+        { id: 'guid-a,guid-b', zip: '1', _token: 'download-csrf' });
     assert.ok(first.rows.every(row => !row.checked));
     assert.equal(first.header.checked, false);
     assert.equal(second.rows[0].checked, false);
@@ -166,48 +181,52 @@ test('cover size preserves the page and initial jumps toggle off while retaining
     assert.equal(new URL(navigations.pop()).searchParams.has('letter'), false);
 });
 
-test('select season includes encodings beyond the visible page and clear removes the whole selection', async () => {
+test('selection counts checked page rows, sends the same GUIDs to the basket and download, and clears', async () => {
     const { component, rows, header } = browser('visible-a', 'visible-b');
+    const otherPage = browser('next-page');
+    const submissions = captureDownloads();
     const requests = [];
     component.$store = { cart: { setCount() {} } };
     globalThis.window = { showToast() {} };
-    globalThis.document = { querySelector: () => ({ content: 'token' }) };
-    globalThis.fetch = async (url, options) => { requests.push(JSON.parse(options.body)); return { ok: true, json: async () => ({ success: true, cartCount: 2 }) }; };
-    component.selectTitleSeason({ currentTarget: { dataset: { seasonGuids: JSON.stringify(['visible-a', 'visible-b', 'next-page']) } } });
-    assert.equal(component.selectedCount, 3);
+    globalThis.fetch = async (url, options) => { requests.push({ url, body: JSON.parse(options.body) }); return { ok: true, json: async () => ({ success: true, cartCount: 1 }) }; };
+    component.selectAll({ target: { checked: true } });
+    assert.equal(component.selectedCount, 2);
     assert.equal(header.checked, true);
     rows[0].checked = false;
     component.selectionChanged();
-    assert.equal(component.selectedCount, 2);
+    assert.equal(component.selectedCount, 1);
     assert.equal(header.indeterminate, true);
     await component.addSelectedToBasket();
-    assert.deepEqual(new Set(requests[0].id.split(',')), new Set(['visible-b', 'next-page']));
+    assert.deepEqual(requests, [{ url: '/cart/add', body: { id: 'visible-b' } }]);
+    component.downloadSelected();
+    assert.equal(submissions[0].children.find(input => input.name === 'id').value, 'visible-b');
+    assert.equal(otherPage.rows[0].checked, false);
+    component.selectAll({ target: { checked: true } });
     component.clearSelection();
     assert.equal(component.selectedCount, 0);
     assert.deepEqual(component.selectedGuids(), []);
+    assert.ok(rows.every(row => !row.checked));
+    assert.equal(header.checked, false);
     assert.equal(header.indeterminate, false);
+    component.downloadSelected();
+    await component.addSelectedToBasket();
+    assert.equal(submissions.length, 1);
+    assert.equal(requests.length, 1);
 });
 
-
-test('an entire season downloads through POST without putting thousands of GUIDs in the URL', () => {
-    const submissions = [];
-    globalThis.document = {
-        querySelector: () => ({ content: 'season-csrf' }),
-        body: { append() {} },
-        createElement(tag) {
-            return { tag, children: [], append(child) { this.children.push(child); }, submit() { submissions.push(this); }, remove() {} };
-        },
-    };
-    const { component } = browser('first-guid');
-    const guids = ['first-guid', ...Array.from({ length: 500 }, (_, i) => 'guid-' + i)];
-    component.selectTitleSeason({ currentTarget: { dataset: { seasonGuids: JSON.stringify(guids) } } });
+test('100 checked rows download through POST without putting GUIDs in the URL', () => {
+    const submissions = captureDownloads();
+    const guids = Array.from({ length: 100 }, (_, i) => i.toString(16).padStart(40, '0'));
+    const { component } = browser(...guids);
+    component.selectAll({ target: { checked: true } });
+    assert.equal(component.selectedCount, 100);
     component.downloadSelected();
     assert.equal(submissions.length, 1);
     assert.equal(submissions[0].method, 'POST');
     assert.equal(submissions[0].action, '/getnzb');
     const fields = Object.fromEntries(submissions[0].children.map(input => [input.name, input.value]));
-    assert.equal(fields._token, 'season-csrf');
+    assert.equal(fields._token, 'download-csrf');
     assert.equal(fields.zip, '1');
-    assert.deepEqual(new Set(fields.id.split(',')), new Set(guids));
+    assert.deepEqual(fields.id.split(','), guids);
     assert.equal(component.selectedCount, 0);
 });

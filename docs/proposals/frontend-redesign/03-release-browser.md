@@ -92,7 +92,7 @@ See 04.
 
 ## Bulk actions
 
-Selecting any row (checkbox, "Select all" in the table header, "Select season" on a show page, "Select all" in an expanded covers row) shows a sticky bar at the bottom of the card: `**3 selected**` · spacer · **Add to basket** (secondary) · **Download 3 NZBs** (success) · **Clear** (ghost). Downloading selected produces one archive (existing multi-download); the bar clears afterwards.
+Selecting any row (checkbox, "Select all" in the table header, "Select all" in an expanded covers row) shows a sticky bar at the bottom of the card: `**3 selected**` · spacer · **Add to basket** (secondary) · **Download 3 NZBs** (success) · **Clear** (ghost). Selection includes only checked rows on the current page. Downloading selected produces one archive (existing multi-download); the bar clears afterwards.
 
 ## Group and poster pages
 

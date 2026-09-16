@@ -41,7 +41,7 @@ final class TitleReleaseBrowser
         $source = $this->metadata->source($root);
         $query = $this->browser->matchingQuery($state, $user)->where('r.'.$source['releaseKey'], $id);
         $year = null;
-        $columns = ['r.id', 'r.guid', 'r.searchname', 'r.display_name', 'r.adddate', 'r.tv_episodes_id'];
+        $columns = ['r.id', 'r.searchname', 'r.display_name', 'r.adddate', 'r.tv_episodes_id'];
         if ($root === BrowseRoot::Tv) {
             $query->leftJoin('tv_episodes as title_episode', function (JoinClause $join): void {
                 $join->on('title_episode.id', '=', 'r.tv_episodes_id')->on('title_episode.videos_id', '=', 'r.videos_id');
@@ -107,7 +107,6 @@ final class TitleReleaseBrowser
             'bestQuality' => $qualities[0] ?? null, 'seasonPackCount' => $root === BrowseRoot::Tv ? $references->where('series', '>', 0)->where('episode', 0)->count() : 0,
             'episodeCount' => $root === BrowseRoot::Tv ? $selected->where('episode', '>', 0)->pluck('episode')->unique()->count() : 0,
             'selectedPackCount' => $root === BrowseRoot::Tv ? $selected->where('series', '>', 0)->where('episode', 0)->count() : 0,
-            'seasonGuids' => $selected->pluck('guid')->all(),
             'yearFilter' => $year === null ? null : ($year->from === $year->to ? (string) $year->from : ($year->from ?? '…').'–'.($year->to ?? '…')),
             'clearYearUrl' => $request->fullUrlWithoutQuery(['year', 'year_from', 'year_to', 'page', '_fragment']),
         ];
