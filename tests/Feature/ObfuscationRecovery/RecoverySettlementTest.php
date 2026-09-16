@@ -112,6 +112,11 @@ final class RecoverySettlementTest extends TestCase
         $this->captureRange(101, 200, '2026-09-07 12:00:00');
         $this->captureRange(201, 300, '2026-09-07 14:10:00');
         $this->assertSame('ready', $this->assess());
+        $context = (new RecoverySettlement)->context('epoch', 1, 1, 110, 190,
+            '2026-09-07 12:00:00', '2026-09-07 12:00:00');
+        $this->assertSame(100, $context['left']);
+        $this->assertSame(201, $context['right']);
+        $this->assertSame([100, 201], $context['containing']);
         DB::table('obfuscation_recovery_scans')->where('requested_first', 101)->update(['complete' => false]);
         DB::transaction(fn () => (new RecoveryPositiveCoverage)->expire(DB::connection(), 'epoch', 1, 1, 150));
         $this->assertSame('unknown_capture_gap', $this->assess());

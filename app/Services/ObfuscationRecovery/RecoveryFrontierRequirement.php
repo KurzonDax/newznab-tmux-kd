@@ -16,9 +16,11 @@ final class RecoveryFrontierRequirement
     {
         $head = RecoveryFrontiers::witnesses($connection, $scope);
         $left = (clone $head)->where('article_number', '<', $envelope['first_article'])
-            ->where('postdate', '<=', Carbon::parse($envelope['first_postdate'], 'UTC')->subMinutes(120)->format('Y-m-d H:i:s'))->max('article_number');
+            ->where('postdate', '<=', Carbon::parse($envelope['first_postdate'], 'UTC')->subMinutes(120)->format('Y-m-d H:i:s'))
+            ->orderByDesc('article_number')->value('article_number');
         $right = (clone $head)->where('article_number', '>', $envelope['last_article'])
-            ->where('postdate', '>=', Carbon::parse($envelope['last_postdate'], 'UTC')->addMinutes(120)->format('Y-m-d H:i:s'))->min('article_number');
+            ->where('postdate', '>=', Carbon::parse($envelope['last_postdate'], 'UTC')->addMinutes(120)->format('Y-m-d H:i:s'))
+            ->orderBy('article_number')->value('article_number');
 
         return ['left' => $left === null ? null : (int) $left, 'right' => $right === null ? null : (int) $right];
     }

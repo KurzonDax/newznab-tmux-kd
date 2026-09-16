@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\ObfuscationRecovery;
 
+use App\Services\Binaries\BinariesConfig;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -95,8 +96,10 @@ final class RecoveryGapPlanner
     /** @return list<array{int,int}> */
     public function positive(object $scope, int $first, int $last): array
     {
+        $scanSpanBound = BinariesConfig::fromSettings()->messageBuffer * 4;
         $startExpression = 'CASE WHEN requested_first < '.(int) $first.' THEN '.(int) $first.' ELSE requested_first END';
         $scans = $this->scope('obfuscation_recovery_scans', $scope)->where('complete', true)->where('capture_outcome', 'captured')
+            ->where('requested_first', '>=', $first - $scanSpanBound)
             ->where('requested_first', '<=', $last)->where('requested_last', '>=', $first)
             ->selectRaw($startExpression.' AS covered_first, MAX(requested_last) AS covered_last')
             ->groupByRaw($startExpression)->orderBy('covered_first')->cursor();
