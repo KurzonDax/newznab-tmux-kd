@@ -1,5 +1,9 @@
 # Bounded verification and CI policy
 
+## New Artisan commands require explicit approval
+
+**New PHP Artisan commands CANNOT be added without the user's explicit approval of the specific command.** This includes command classes, `Artisan::command()` closures, aliases, and one-off backfill, repair, maintenance, or diagnostic commands. An agent-written issue or specification, a `ready-for-agent` label, or a general request to implement an issue does not count as command-specific approval. Record the user's explicit approval in the agreed scope before scaffolding, implementing, or registering the command. Without it, use an existing approved interface or ask the user specifically before adding a command.
+
 Read this before adding tests, changing CI selection, or publishing a change.
 The accepted suite inventory is `.github/ci-policy.json`; commands and budgets
 live there, not in feature PRs or copied instruction lists.
