@@ -4,14 +4,18 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Data\WebSearchState;
 use App\Http\Middleware\TrustedDevice2FAMiddleware;
 use App\Models\User;
 use App\Services\Search\Contracts\SearchServiceInterface;
+use App\Support\WebSearchFields;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
@@ -48,6 +52,7 @@ final class SearchControllerTest extends TestCase
         $search = Mockery::mock(SearchServiceInterface::class);
         config(['nntmux.mysql_search_fallback' => true]);
         $search->shouldReceive('searchReleasesFiltered')->andReturn(['ids' => [], 'total' => 0, 'fuzzy' => false, 'available' => false])->byDefault();
+        $search->shouldReceive('searchEntityFields')->andReturn(['ids' => [], 'keys' => [], 'available' => false, 'has_more' => false])->byDefault();
         $search->shouldReceive('searchMoviesByFields')->andReturn(['imdbids' => [], 'movieinfo_ids' => [], 'data' => []])->byDefault();
         $search->shouldReceive('isFuzzyEnabled')->andReturn(false)->byDefault();
         $search->shouldReceive('isSuggestEnabled')->andReturn(false)->byDefault();
@@ -129,28 +134,143 @@ final class SearchControllerTest extends TestCase
         $this->release('part two cam');
         $this->release('part other two');
         $search = app(SearchServiceInterface::class);
-        $search->shouldReceive('searchReleasesFiltered')->once()->withArgs(static fn (array $criteria, int $limit, int $offset): bool => $criteria['phrases'] === ['searchname' => '"part two" -cam'] && $criteria['try_fuzzy'] === false && $criteria['web_force_fuzzy'] === false && $criteria['web_after_id'] === 0 && $offset === 0)
+        $search->shouldReceive('searchReleasesFiltered')->once()->withArgs(static fn (array $criteria, int $limit, int $offset): bool => $criteria['phrases'] === ['searchname' => '"part two" -cam'] && $criteria['try_fuzzy'] === false && $criteria['web_force_fuzzy'] === false && $offset === 0)
             ->andReturn(['ids' => [$wanted], 'total' => 1, 'fuzzy' => false, 'available' => true, 'has_more' => false]);
         $response = $this->actingAs($this->browserUser())->get('/search?'.http_build_query(['q' => '"part two" -cam', 't' => '2000']))->assertOk();
         $this->assertSame([$wanted], $response->viewData('results')->pluck('id')->all());
         $this->assertSame('"part two" -cam', $response->viewData('searchState')->parameters['q']);
     }
 
-    public function test_index_pages_are_combined_before_global_sorting_counting_and_pagination(): void
+    /** @return iterable<string, array{int, int, int, int}> */
+    public static function largePages(): iterable
+    {
+        yield 'first' => [1, 24, 0, 24];
+        yield 'middle' => [57, 48, 2688, 48];
+        yield 'last full' => [100, 100, 9900, 100];
+        yield 'last partial' => [417, 24, 9984, 16];
+    }
+
+    #[DataProvider('largePages')]
+    public function test_large_search_fetches_only_the_requested_page_and_preserves_exact_total(int $page, int $per, int $offset, int $limit): void
     {
         $ids = [];
-        for ($index = 1; $index <= 550; $index++) {
-            $ids[] = $this->release(sprintf('Result %04d', 551 - $index));
+        for ($i = 0; $i < $limit; $i++) {
+            $ids[] = $this->release('Result '.$i);
         }
-        $search = app(SearchServiceInterface::class);
-        $search->shouldReceive('searchReleasesFiltered')->once()->withArgs(static fn (array $criteria): bool => $criteria['web_after_id'] === 0 && ! $criteria['web_force_fuzzy'])
-            ->andReturn(['ids' => array_slice($ids, 0, 500), 'total' => 550, 'fuzzy' => false, 'has_more' => true]);
-        $search->shouldReceive('searchReleasesFiltered')->once()->withArgs(static fn (array $criteria): bool => $criteria['web_after_id'] === 500 && ! $criteria['web_force_fuzzy'])
-            ->andReturn(['ids' => array_slice($ids, 500), 'total' => 50, 'fuzzy' => false, 'has_more' => false]);
-        $response = $this->actingAs($this->browserUser())->get('/search?q=lexical&sort=title&per=24')->assertOk();
-        $this->assertSame(550, $response->viewData('results')->total());
-        $this->assertSame('Result 0001', $response->viewData('results')->first()->row_data->name);
-        $this->assertCount(24, $response->viewData('results')->items());
+        app(SearchServiceInterface::class)->shouldReceive('searchReleasesFiltered')->once()
+            ->withArgs(static fn (array $criteria, int $requestedLimit, int $requestedOffset): bool => $requestedLimit === $limit && $requestedOffset === $offset && $criteria['sort_field'] === 'sort_name')
+            ->andReturn(['ids' => $ids, 'total' => 1000000, 'available' => true, 'has_more' => true]);
+        $this->actingAs($this->browserUser());
+        DB::enableQueryLog();
+        $response = $this->get('/search?q=lexical&sort=title&per='.$per.'&page='.$page)->assertOk();
+        $queries = DB::getQueryLog();
+        DB::disableQueryLog();
+        foreach ($queries as $query) {
+            if (str_contains($query['query'], 'from "releases"')) {
+                preg_match_all('/(?:"id"|"releases_id") in \(([^)]+)\)/i', $query['query'], $lists);
+                foreach ($lists[1] as $list) {
+                    $this->assertLessThanOrEqual($per, count(explode(',', $list)));
+                }
+            }
+        }
+        $this->assertSame(1000000, $response->viewData('results')->total());
+        $this->assertSame($page, $response->viewData('results')->currentPage());
+        $this->assertCount($limit, $response->viewData('results')->items());
+        $response->assertSee('narrower search');
+    }
+
+    public function test_repeated_quoted_prefixes_round_trip_without_losing_scope_or_growing_groups(): void
+    {
+        $user = $this->browserUser();
+        $state = WebSearchState::fromRequest(new Request(['q' => '1080p actor:"Hugh Jackman" actor:"Patrick Stewart" director:(scorsese | nolan)']), $user);
+        $canonical = $state->parameters['q'];
+        for ($i = 0; $i < 3; $i++) {
+            $state = WebSearchState::fromRequest(new Request(['q' => $state->parameters['q']]), $user);
+            $this->assertSame($canonical, $state->parameters['q']);
+            $this->assertSame('1080p', $state->terms->freeText());
+            $this->assertSame('("Hugh Jackman" "Patrick Stewart")', $state->terms->indexTerms()['actors']);
+        }
+    }
+
+    public function test_entity_exclusions_suppress_fuzzy_even_when_free_text_has_none(): void
+    {
+        app(SearchServiceInterface::class)->shouldReceive('isFuzzyEnabled')->andReturn(true);
+        app(SearchServiceInterface::class)->shouldReceive('searchEntityFields')->once()
+            ->andReturn(['ids' => [9], 'keys' => ['0123456'], 'available' => true, 'has_more' => false]);
+        app(SearchServiceInterface::class)->shouldReceive('searchReleasesFiltered')->once()
+            ->withArgs(static fn (array $criteria): bool => ! $criteria['web_force_fuzzy'])
+            ->andReturn(['ids' => [], 'total' => 0, 'available' => true]);
+        $this->actingAs($this->browserUser())->get('/search?'.http_build_query(['q' => 'wolvrine actor:(Jackman -Stewart)']))->assertOk();
+    }
+
+    public function test_poster_filter_preserves_whitespace_from_the_original_http_query(): void
+    {
+        app(SearchServiceInterface::class)->shouldReceive('searchReleasesFiltered')->once()
+            ->withArgs(static fn (array $criteria): bool => $criteria['poster'] === ' user@example.com')
+            ->andReturn(['ids' => [], 'total' => 0, 'available' => true]);
+        $this->actingAs($this->browserUser())->get('/search?poster=%20user%40example.com')->assertOk();
+    }
+
+    public function test_memory_does_not_grow_with_reported_match_count(): void
+    {
+        $ids = [];
+        for ($i = 0; $i < 24; $i++) {
+            $ids[] = $this->release('Memory fixture '.$i);
+        }
+        app(SearchServiceInterface::class)->shouldReceive('searchReleasesFiltered')->times(3)
+            ->andReturn(['ids' => $ids, 'total' => 1000000, 'available' => true], ['ids' => $ids, 'total' => 1000000, 'available' => true], ['ids' => $ids, 'total' => 1000000000, 'available' => true]);
+        $this->actingAs($this->browserUser())->get('/search?q=memory&per=24')->assertOk();
+        $peaks = [];
+        for ($i = 0; $i < 2; $i++) {
+            gc_collect_cycles();
+            memory_reset_peak_usage();
+            $start = memory_get_usage();
+            $response = $this->get('/search?q=memory&per=24')->assertOk();
+            $this->assertCount(24, $response->viewData('results'));
+            $peaks[] = memory_get_peak_usage() - $start;
+            unset($response);
+        }
+        $this->assertLessThan($peaks[0] + 2 * 1024 * 1024, $peaks[1]);
+    }
+
+    public function test_outage_has_no_zero_count_and_no_deep_page_redirect(): void
+    {
+        config(['nntmux.mysql_search_fallback' => false]);
+        $response = $this->actingAs($this->browserUser())->get('/search?q=Dune&page=999')->assertOk();
+        $response->assertSee('Search unavailable')->assertDontSee('data-browser-pager', false);
+        $this->assertFalse($response->viewData('results')->available);
+        $this->assertCount(0, $response->viewData('results'));
+    }
+
+    public function test_page_window_honors_the_configured_driver_limit(): void
+    {
+        config(['search.default' => 'manticore', 'search.drivers.manticore.max_matches' => 50]);
+        app(SearchServiceInterface::class)->shouldReceive('searchReleasesFiltered')->once()
+            ->withArgs(static fn (array $criteria, int $limit, int $offset): bool => $limit === 2 && $offset === 48)
+            ->andReturn(['ids' => [], 'total' => 1000000, 'available' => true]);
+        $response = $this->actingAs($this->browserUser())->get('/search?q=Dune&per=24&page=999')->assertRedirect();
+        $this->assertStringContainsString('page=3', $response->headers->get('Location'));
+    }
+
+    public function test_page_beyond_the_reachable_window_clamps_before_index_retrieval(): void
+    {
+        app(SearchServiceInterface::class)->shouldReceive('searchReleasesFiltered')->once()
+            ->withArgs(static fn (array $criteria, int $limit, int $offset): bool => $limit === 16 && $offset === 9984)
+            ->andReturn(['ids' => [], 'total' => 1000000, 'available' => true]);
+        $response = $this->actingAs($this->browserUser())->get('/search?q=Dune&per=24&page=999')->assertRedirect();
+        $this->assertStringContainsString('page=417', $response->headers->get('Location'));
+    }
+
+    public function test_movie_field_keys_and_free_text_are_sent_together_to_the_release_index(): void
+    {
+        $wanted = $this->release('Selected film', ['imdbid' => '0123456']);
+        app(SearchServiceInterface::class)->shouldReceive('searchEntityFields')->once()
+            ->with('movies', ['actors' => '"Hugh Jackman"', 'director' => 'scorsese'], 'imdbid', 500, 0)
+            ->andReturn(['ids' => [987], 'keys' => ['0123456'], 'available' => true, 'has_more' => false]);
+        app(SearchServiceInterface::class)->shouldReceive('searchReleasesFiltered')->once()
+            ->withArgs(static fn (array $criteria): bool => $criteria['entity_filters'] === ['imdbid' => ['0123456']] && $criteria['phrases'] === ['searchname' => '1080p -cam'])
+            ->andReturn(['ids' => [$wanted], 'total' => 1, 'available' => true]);
+        $this->actingAs($this->browserUser())->get('/search?'.http_build_query(['q' => '1080p -cam actor:"Hugh Jackman" director:scorsese']))->assertOk()->assertSee('Selected film');
     }
 
     public function test_fuzzy_matching_only_runs_after_all_exact_results_are_empty(): void
@@ -175,12 +295,35 @@ final class SearchControllerTest extends TestCase
         $first = $this->release('First indexed movie', ['imdbid' => '1234567']);
         $second = $this->release('Second indexed movie', ['imdbid' => '7654321']);
         $search = app(SearchServiceInterface::class);
-        foreach ([0 => [1], 1 => [2], 2 => []] as $after => $ids) {
-            $search->shouldReceive('searchMoviesByFields')->once()->with(['actors' => 'Chalamet'], 500, $after)
-                ->andReturn(['movieinfo_ids' => $ids, 'imdbids' => [], 'data' => []]);
-        }
+        $search->shouldReceive('searchEntityFields')->once()->with('movies', ['actors' => 'Chalamet'], 'imdbid', 500, 0)
+            ->andReturn(['ids' => [1, 2], 'keys' => ['1234567', '7654321'], 'available' => true, 'has_more' => false]);
         $response = $this->actingAs($this->browserUser())->get('/search?q=actor:Chalamet')->assertOk();
         $this->assertEqualsCanonicalizing([$first, $second], $response->viewData('results')->pluck('id')->all());
+    }
+
+    public function test_movie_index_outage_resolves_the_same_entity_keys_from_sql(): void
+    {
+        DB::table('movieinfo')->insert(['imdbid' => '0123456', 'title' => 'Film', 'actors' => 'Hugh Jackman', 'director' => 'Martin Scorsese']);
+        $wanted = $this->release('Indexed film', ['imdbid' => '0123456']);
+        app(SearchServiceInterface::class)->shouldReceive('searchEntityFields')->once()
+            ->andReturn(['ids' => [], 'keys' => [], 'available' => false, 'has_more' => false]);
+        app(SearchServiceInterface::class)->shouldReceive('searchReleasesFiltered')->once()
+            ->withArgs(static fn (array $criteria): bool => $criteria['entity_filters'] === ['imdbid' => ['0123456']] && $criteria['phrases'] === ['searchname' => '1080p -cam'])
+            ->andReturn(['ids' => [$wanted], 'total' => 1, 'available' => true]);
+        $this->actingAs($this->browserUser())->get('/search?'.http_build_query(['q' => '1080p -cam actor:"Hugh Jackman" director:scorsese']))->assertOk()->assertSee('Indexed film');
+    }
+
+    public function test_registered_show_prefix_resolves_entity_keys_without_release_candidates(): void
+    {
+        $registry = app(WebSearchFields::class);
+        $registry->register('show', 'tvshows', 'title', 'videos', 'id', 'videos_id');
+        $wanted = $this->release('Unrecognizable title', ['videos_id' => 42]);
+        app(SearchServiceInterface::class)->shouldReceive('searchEntityFields')->with('tvshows', ['title' => 'Expanse'], 'id', 500, 0)->once()
+            ->andReturn(['ids' => [42], 'keys' => [42], 'available' => true, 'has_more' => false]);
+        app(SearchServiceInterface::class)->shouldReceive('searchReleasesFiltered')->once()
+            ->withArgs(static fn (array $criteria): bool => $criteria['entity_filters'] === ['videos_id' => [42]])
+            ->andReturn(['ids' => [$wanted], 'total' => 1, 'available' => true]);
+        $this->actingAs($this->browserUser())->get('/search?q=show:Expanse')->assertOk()->assertSee('Unrecognizable title');
     }
 
     public function test_search_feed_uses_existing_api_parameters_and_explains_website_only_filters(): void
@@ -255,13 +398,13 @@ final class SearchControllerTest extends TestCase
         $this->assertEqualsCanonicalizing([$dune, $arrival, $both], $response->viewData('results')->pluck('id')->all());
     }
 
-    public function test_index_retrieval_applies_server_filters_and_reuses_ids_across_display_preferences(): void
+    public function test_index_retrieval_applies_server_filters_for_each_page(): void
     {
         $this->travelTo(now()->setDate(2026, 9, 14)->startOfDay());
         DB::table('usenet_groups')->insert(['id' => 2, 'name' => 'alt.binaries.movies']);
         $wanted = $this->release('A lexical match', ['groups_id' => 2, 'size' => 200 * 1024 * 1024, 'postdate' => now()->subDays(10)]);
         $parameters = ['q' => 'missing-literal', 't' => 2000, 'cat' => 2030, 'group' => 'alt.binaries.movies', 'minage' => 1, 'maxage' => 30, 'minsize' => 100, 'maxsize' => 600, 'minc' => 95];
-        app(SearchServiceInterface::class)->shouldReceive('searchReleasesFiltered')->once()->withArgs(static fn (array $criteria): bool => $criteria['category_ids'] === [2030] && $criteria['groups_id'] === 2 && $criteria['min_size'] === 104857600 && $criteria['max_size'] === 629145600 && $criteria['min_completion'] === 95 && $criteria['min_date'] === now()->subDays(30)->timestamp && $criteria['max_date'] === now()->subDay()->timestamp)
+        app(SearchServiceInterface::class)->shouldReceive('searchReleasesFiltered')->twice()->withArgs(static fn (array $criteria): bool => $criteria['category_ids'] === [2030] && $criteria['groups_id'] === 2 && $criteria['min_size'] === 104857600 && $criteria['max_size'] === 629145600 && $criteria['min_completion'] === 95 && $criteria['min_date'] === now()->subDays(30)->timestamp && $criteria['max_date'] === now()->subDay()->timestamp)
             ->andReturn(['ids' => [$wanted], 'total' => 1, 'fuzzy' => false, 'available' => true, 'has_more' => false]);
         $this->actingAs($this->browserUser())->get('/search?'.http_build_query($parameters))->assertOk()->assertSee('A lexical match');
         $this->get('/search?'.http_build_query([...$parameters, 'per' => 24, 'sort' => 'title']))->assertOk()->assertSee('A lexical match');

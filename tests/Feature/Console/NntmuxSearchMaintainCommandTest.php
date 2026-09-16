@@ -82,8 +82,24 @@ final class NntmuxSearchMaintainCommandTest extends SearchConsoleCommandTestCase
             ],
         ]);
 
+        DB::table('movieinfo')->insert(['id' => 9, 'imdbid' => '0123456', 'title' => 'Linked movie']);
+        foreach (['musicinfo', 'consoleinfo', 'gamesinfo', 'bookinfo'] as $table) {
+            DB::table($table)->insert(['id' => 7, 'title' => 'Linked '.$table, 'artist' => 'Linked artist']);
+        }
+        DB::table('videos')->insert(['id' => 8, 'title' => 'Linked show', 'tvdb' => 0, 'tvmaze' => 0, 'tvrage' => 0, 'trakt' => 0, 'imdb' => '', 'tmdb' => 0]);
+        DB::table('anidb_titles')->insert([['anidbid' => 5, 'title' => 'Anime main'], ['anidbid' => 5, 'title' => 'Anime alternate']]);
+        DB::table('releases')->where('id', 1)->update(['imdbid' => '0123456', 'videos_id' => 8, 'musicinfo_id' => 7, 'consoleinfo_id' => 7, 'gamesinfo_id' => 7, 'bookinfo_id' => 7, 'anidbid' => 5, 'display_name' => 'Release One Display']);
         $storedOne = ReleaseIndexProjection::forId(1);
         $this->assertNotNull($storedOne);
+        $this->assertSame('Linked show', $storedOne['show_title']);
+        $this->assertSame('Linked movie', $storedOne['movie_title']);
+        $this->assertSame('Linked musicinfo', $storedOne['album_title']);
+        $this->assertSame('Linked artist', $storedOne['artist']);
+        $this->assertSame('Linked consoleinfo', $storedOne['console_title']);
+        $this->assertSame('Linked gamesinfo', $storedOne['game_title']);
+        $this->assertSame('Linked bookinfo', $storedOne['book_title']);
+        $this->assertSame('Anime main Anime alternate', $storedOne['anime_titles']);
+        $this->assertNotEmpty($storedOne['sort_name']);
         $staleOne = $storedOne;
         $staleOne['searchname'] = 'Stale title';
 
@@ -157,6 +173,10 @@ final class NntmuxSearchMaintainCommandTest extends SearchConsoleCommandTestCase
             $table->string('guid');
             $table->string('name');
             $table->string('searchname');
+            $table->string('display_name')->nullable();
+            foreach (['musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id'] as $column) {
+                $table->integer($column)->default(0);
+            }
             $table->float('completion')->default(0);
             $table->string('repair_outcome')->nullable();
             $table->string('rescan_outcome')->nullable();
@@ -194,13 +214,27 @@ final class NntmuxSearchMaintainCommandTest extends SearchConsoleCommandTestCase
             $table->id();
             $table->string('title');
         });
+        foreach (['musicinfo', 'consoleinfo', 'gamesinfo', 'bookinfo'] as $name) {
+            Schema::create($name, function (Blueprint $table): void {
+                $table->id();
+                $table->string('title');
+                $table->string('artist')->nullable();
+            });
+        }
+        Schema::create('anidb_titles', function (Blueprint $table): void {
+            $table->integer('anidbid');
+            $table->string('title');
+        });
         Schema::create('movieinfo', function (Blueprint $table): void {
             $table->id();
-            $table->unsignedBigInteger('tmdbid');
-            $table->unsignedBigInteger('traktid');
+            $table->string('title')->nullable();
+            $table->unsignedBigInteger('tmdbid')->default(0);
+            $table->unsignedBigInteger('traktid')->default(0);
+            $table->string('imdbid')->nullable();
         });
         Schema::create('videos', function (Blueprint $table): void {
             $table->id();
+            $table->string('title')->nullable();
             $table->unsignedBigInteger('tvdb');
             $table->unsignedBigInteger('tvmaze');
             $table->unsignedBigInteger('tvrage');

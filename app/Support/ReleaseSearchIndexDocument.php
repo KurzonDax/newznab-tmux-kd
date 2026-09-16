@@ -31,6 +31,7 @@ final class ReleaseSearchIndexDocument
             'media_video_width', 'media_video_height', 'media_audio_format',
             'media_audio_channels', 'media_audio_language', 'media_subtitle_language',
             'has_media_info',
+            'movie_title', 'show_title', 'album_title', 'artist', 'console_title', 'game_title', 'book_title', 'anime_titles', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'sort_name', 'poster_identity',
         ];
     }
 
@@ -145,6 +146,20 @@ final class ReleaseSearchIndexDocument
             'media_audio_language' => (string) ($row['media_audio_language'] ?? ''),
             'media_subtitle_language' => (string) ($row['media_subtitle_language'] ?? ''),
             'has_media_info' => (int) ($row['has_media_info'] ?? 0),
+            'movie_title' => (string) ($row['movie_title'] ?? ''),
+            'show_title' => (string) ($row['show_title'] ?? ''),
+            'album_title' => (string) ($row['album_title'] ?? ''),
+            'artist' => (string) ($row['artist'] ?? ''),
+            'console_title' => (string) ($row['console_title'] ?? ''),
+            'game_title' => (string) ($row['game_title'] ?? ''),
+            'book_title' => (string) ($row['book_title'] ?? ''),
+            'anime_titles' => (string) ($row['anime_titles'] ?? ''),
+            'musicinfo_id' => (int) ($row['musicinfo_id'] ?? 0),
+            'consoleinfo_id' => (int) ($row['consoleinfo_id'] ?? 0),
+            'gamesinfo_id' => (int) ($row['gamesinfo_id'] ?? 0),
+            'bookinfo_id' => (int) ($row['bookinfo_id'] ?? 0),
+            'sort_name' => (string) ($row['sort_name'] ?? self::sortNameKey(trim((string) ($row['display_name'] ?? '')) ?: (string) ($row['searchname'] ?? ''))),
+            'poster_identity' => (string) ($row['poster_identity'] ?? hash('sha256', (string) ($row['fromname'] ?? ''))),
         ];
     }
 
@@ -161,6 +176,22 @@ final class ReleaseSearchIndexDocument
         $row['adddate'] = self::unixToDatetime((int) $row['adddate_ts']);
 
         return $row;
+    }
+
+    /** @return list<string> */
+    public static function webTextFields(): array
+    {
+        return ['searchname', 'plainsearchname', 'name', 'filename', 'fromname',
+            'movie_title', 'show_title', 'album_title', 'artist', 'console_title', 'game_title', 'book_title', 'anime_titles'];
+    }
+
+    /** Primary Unicode weights preserve case/accent-insensitive display-name ordering. */
+    private static function sortNameKey(string $name): string
+    {
+        $collator = new \Collator('root');
+        $collator->setStrength(\Collator::PRIMARY);
+
+        return bin2hex($collator->getSortKey(Utf8::clean(rtrim($name))) ?: '');
     }
 
     private static function datetimeToUnix(mixed $value): int

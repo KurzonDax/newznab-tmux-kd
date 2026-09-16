@@ -264,6 +264,12 @@ interface SearchServiceInterface
     public function searchMoviesByFields(array $fieldTerms, int $limit = 5000, ?int $afterId = null): array;
 
     /**
+     * @param  array<string, string>  $fields
+     * @return array{ids:list<int>, keys:list<int|string>, available:bool, has_more:bool}
+     */
+    public function searchEntityFields(string $index, array $fields, string $key, int $limit = 500, int $afterId = 0): array;
+
+    /**
      * Insert a TV show into the tvshows search index.
      *
      * @param  array<string, mixed>  $parameters  TV show data with id, title, tvdb, trakt, tvmaze, tvrage, imdb, tmdb, started, type
@@ -360,6 +366,9 @@ interface SearchServiceInterface
     /**
      * Filter/sort releases in the search index (category, age, size, group, password) with optional full-text.
      *
+     * Web criteria additionally accept web_search, entity_filters (release attribute => entity keys),
+     * poster, web_force_fuzzy, and sort_name ordering. Web callers request only one bounded page.
+     *
      * @param  array<string, mixed>  $criteria  Keys: phrases (string|array|null), category_ids (list<int>|null),
      *                                          excluded_category_ids (list<int>), min_size (int), max_age_days (int),
      *                                          groups_id (int|null), password_allow_rar (bool), password_status_min (int|null),
@@ -367,7 +376,7 @@ interface SearchServiceInterface
      *                                          min_video_width (int), max_video_width (int),
      *                                          min_video_height (int), max_video_height (int), min_completion (int),
      *                                          sort_field (string), sort_dir (string), try_fuzzy (bool), release_ids (list<int>|null)
-     * @return array{ids: list<int>, total: int, fuzzy: bool}
+     * @return array{ids: list<int>, total: int, fuzzy: bool, available?: bool, has_more?: bool}
      */
     public function searchReleasesFiltered(array $criteria, int $limit, int $offset = 0): array;
 

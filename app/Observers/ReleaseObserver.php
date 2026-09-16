@@ -46,6 +46,12 @@ class ReleaseObserver
             'imdbid',
             'anidbid',
             'movieinfo_id',
+            'display_name',
+            'musicinfo_id',
+            'consoleinfo_id',
+            'gamesinfo_id',
+            'bookinfo_id',
+
             'videos_id',
             'tv_episodes_id',
             'size',

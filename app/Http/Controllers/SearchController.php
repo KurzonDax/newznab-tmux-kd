@@ -24,12 +24,12 @@ class SearchController extends BasePageController
             return redirect()->to($search->url());
         }
         $results = $this->releases->paginate($search, $this->userdata);
-        if ($search->browser->page > $results->lastPage()) {
+        if ($results->available && $search->browser->page > $results->lastPage()) {
             return redirect()->to($search->url(['page' => (string) $results->lastPage()]));
         }
         $words = $search->terms->indexTerms()['all'] ?? '';
         $spellSuggestion = null;
-        if ($words !== '' && $results->total() <= 3 && $this->searchService->isSuggestEnabled()) {
+        if ($results->available && $words !== '' && $results->total() <= 3 && $this->searchService->isSuggestEnabled()) {
             $suggestions = $this->searchService->suggest($words);
             usort($suggestions, static fn (array $a, array $b): int => (int) $b['docs'] <=> (int) $a['docs']);
             $spellSuggestion = ($suggestions[0]['suggest'] ?? $words) !== $words ? $suggestions[0]['suggest'] : null;

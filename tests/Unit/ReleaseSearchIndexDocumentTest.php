@@ -11,6 +11,18 @@ use PHPUnit\Framework\TestCase;
 final class ReleaseSearchIndexDocumentTest extends TestCase
 {
     #[Test]
+    public function web_sort_and_poster_keys_preserve_their_distinct_identity_rules(): void
+    {
+        $apple = ReleaseSearchIndexDocument::normalizeForBulk(['searchname' => 'apple', 'fromname' => 'user@example.com']);
+        $accented = ReleaseSearchIndexDocument::normalizeForBulk(['searchname' => 'ÁPPLE', 'fromname' => ' user@example.com']);
+        $zoo = ReleaseSearchIndexDocument::normalizeForBulk(['searchname' => 'Zoo']);
+        self::assertSame($apple['sort_name'], $accented['sort_name']);
+        self::assertLessThan(0, strcmp($apple['sort_name'], $zoo['sort_name']));
+        self::assertNotSame($apple['poster_identity'], $accented['poster_identity']);
+        self::assertSame($accented['poster_identity'], ReleaseSearchIndexDocument::normalizeForBulk($accented)['poster_identity']);
+    }
+
+    #[Test]
     public function normalize_builds_the_complete_public_projection_without_sensitive_fields(): void
     {
         $document = ReleaseSearchIndexDocument::normalize([

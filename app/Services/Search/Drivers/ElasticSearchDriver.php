@@ -1424,8 +1424,6 @@ class ElasticSearchDriver implements SearchDriverInterface
                 continue;
             }
 
-            $searchNameDotless = $this->createPlainSearchName($release['searchname'] ?? '');
-
             $params['body'][] = [
                 'index' => [
                     '_index' => $this->getReleasesIndex(),
@@ -1433,15 +1431,7 @@ class ElasticSearchDriver implements SearchDriverInterface
                 ],
             ];
 
-            $params['body'][] = [
-                'id' => $release['id'],
-                'name' => (string) ($release['name'] ?? ''),
-                'searchname' => (string) ($release['searchname'] ?? ''),
-                'plainsearchname' => $searchNameDotless,
-                'fromname' => (string) ($release['fromname'] ?? ''),
-                'categories_id' => (int) ($release['categories_id'] ?? 0),
-                'filename' => (string) ($release['filename'] ?? ''),
-            ];
+            $params['body'][] = ReleaseSearchIndexDocument::normalizeForBulk($release);
 
             $success++;
         }
@@ -1803,16 +1793,6 @@ class ElasticSearchDriver implements SearchDriverInterface
             'index' => $this->getReleasesIndex(),
             'id' => $document['id'],
         ];
-    }
-
-    /**
-     * Create a plain search name by removing dots and dashes.
-     *
-     * @param  string  $searchName  Original search name
-     */
-    private function createPlainSearchName(string $searchName): string
-    {
-        return str_replace(['.', '-'], ' ', $searchName);
     }
 
     /**
@@ -2190,6 +2170,61 @@ class ElasticSearchDriver implements SearchDriverInterface
             Log::error('ElasticSearch searchMovies error: '.$e->getMessage());
 
             return ['id' => [], 'data' => []];
+        }
+    }
+
+    private static function prepareEntityFieldQuery(string $text): string
+    {
+        preg_match_all('/[!-]?"[^"]*"|[!-]?\(|\)|\||[^\s()|]+/u', $text, $matches);
+        $terms = [];
+        foreach ($matches[0] as $token) {
+            if (in_array($token, ['(', ')', '-(', '!(', '|'], true)) {
+                $terms[] = match ($token) {
+                    '|' => 'OR', '!(' => '-(', default => $token
+                };
+
+                continue;
+            }
+            $negative = str_starts_with($token, '-') || str_starts_with($token, '!');
+            $word = $negative ? substr($token, 1) : $token;
+            $phrase = str_starts_with($word, '"') && str_ends_with($word, '"');
+            $word = $phrase ? substr($word, 1, -1) : $word;
+            $special = ['\\', '+', '-', '=', '&', '|', '>', '<', '!', '(', ')', '{', '}', '[', ']', '^', '"', '~', '?', ':', '/'];
+            $word = str_replace($special, array_map(static fn (string $character): string => '\\'.$character, $special), $word);
+            $terms[] = ($negative ? '-' : '').($phrase ? '"'.$word.'"' : '*'.$word.'*');
+        }
+
+        return implode(' ', $terms);
+    }
+
+    /** {@inheritdoc} */
+    public function searchEntityFields(string $index, array $fields, string $key, int $limit = 500, int $afterId = 0): array
+    {
+        if (! $this->isElasticsearchAvailable()) {
+            return ['ids' => [], 'keys' => [], 'available' => false, 'has_more' => false];
+        }
+        $must = [];
+        foreach ($fields as $field => $text) {
+            $must[] = ['query_string' => ['query' => self::prepareEntityFieldQuery($text), 'fields' => [$field], 'default_operator' => 'and', 'analyze_wildcard' => true]];
+        }
+        try {
+            $response = $this->getClient()->search([
+                'index' => $this->config['indexes'][$index] ?? $index,
+                'body' => ['query' => ['bool' => ['must' => $must, 'filter' => [['range' => ['id' => ['gt' => $afterId]]]]]],
+                    'size' => $limit, 'sort' => [['id' => ['order' => 'asc']]], '_source' => [$key]],
+            ]);
+            $ids = [];
+            $keys = [];
+            foreach ($response['hits']['hits'] ?? [] as $hit) {
+                $ids[] = (int) $hit['_id'];
+                $keys[] = $key === 'id' ? (int) $hit['_id'] : (string) ($hit['_source'][$key] ?? '');
+            }
+
+            return ['ids' => $ids, 'keys' => $keys, 'available' => true, 'has_more' => count($ids) === $limit];
+        } catch (\Throwable $exception) {
+            Log::warning('Entity field search unavailable', ['index' => $index, 'error' => $exception->getMessage()]);
+
+            return ['ids' => [], 'keys' => [], 'available' => false, 'has_more' => false];
         }
     }
 
@@ -2960,7 +2995,15 @@ class ElasticSearchDriver implements SearchDriverInterface
             $must = [];
 
             if ($hasText) {
-                if (is_string($phrases)) {
+                if ($criteria['web_search'] ?? false) {
+                    $text = is_array($phrases) ? implode(' ', $phrases) : (string) $phrases;
+                    $text = preg_replace('/(^|[\s(])!/', '$1-', $text) ?? $text;
+                    if ($useFuzzy) {
+                        $must[] = ['multi_match' => ['query' => $text, 'fields' => ReleaseSearchIndexDocument::webTextFields(), 'operator' => 'and', 'fuzziness' => $this->getFuzzyConfig()['fuzziness'] ?? 'AUTO']];
+                    } else {
+                        $must[] = ['simple_query_string' => ['query' => $text, 'fields' => ReleaseSearchIndexDocument::webTextFields(), 'default_operator' => 'and']];
+                    }
+                } elseif (is_string($phrases)) {
                     $text = trim($phrases);
                     if ($text === '') {
                         return ['ids' => [], 'total' => 0, 'fuzzy' => $useFuzzy];
@@ -3014,11 +3057,11 @@ class ElasticSearchDriver implements SearchDriverInterface
 
             $sortField = (string) ($criteria['sort_field'] ?? 'postdate_ts');
             $sortDir = strtolower((string) ($criteria['sort_dir'] ?? 'desc'));
-            $allowedSort = ['postdate_ts', 'adddate_ts', 'size', 'totalpart', 'grabs', 'categories_id', 'id'];
+            $allowedSort = ['postdate_ts', 'adddate_ts', 'size', 'totalpart', 'grabs', 'categories_id', 'id', 'sort_name'];
             if (! in_array($sortField, $allowedSort, true)) {
                 $sortField = 'postdate_ts';
             }
-            if ($sortField === 'id' && ! isset($criteria['web_after_id'])) {
+            if ($sortField === 'id' && ! ($criteria['web_search'] ?? false)) {
                 $sortField = 'postdate_ts';
             }
             $order = $sortDir === 'asc' ? 'asc' : 'desc';
@@ -3029,7 +3072,7 @@ class ElasticSearchDriver implements SearchDriverInterface
                     'query' => $query,
                     'sort' => $sortField === 'id' ? [['id' => ['order' => $order]]] : [
                         [$sortField => ['order' => $order]],
-                        ['id' => ['order' => $order]],
+                        ['id' => ['order' => ($criteria['web_search'] ?? false) ? 'desc' : $order]],
                     ],
                     'size' => max(1, min($limit, self::MAX_RESULTS)),
                     'track_total_hits' => (bool) ($criteria['track_total'] ?? true),
@@ -3076,7 +3119,7 @@ class ElasticSearchDriver implements SearchDriverInterface
 
         if ($hasText) {
             $first = $run(false);
-            if ($first['ids'] !== [] || ($first['available'] ?? true) === false || ! $tryFuzzy || ! $this->isFuzzyEnabled()) {
+            if ($first['total'] > 0 || ($first['available'] ?? true) === false || ! $tryFuzzy || ! $this->isFuzzyEnabled()) {
                 return $first;
             }
 
@@ -3179,8 +3222,14 @@ class ElasticSearchDriver implements SearchDriverInterface
     private function buildElasticsearchReleaseFilters(array $criteria): array
     {
         $filter = [];
-        if (isset($criteria['web_after_id'])) {
-            $filter[] = ['range' => ['id' => ['gt' => max(0, (int) $criteria['web_after_id'])]]];
+        foreach ($criteria['entity_filters'] ?? [] as $attribute => $keys) {
+            if (! in_array($attribute, ReleaseSearchIndexDocument::fields(), true)) {
+                throw new \InvalidArgumentException('Unknown release entity attribute: '.$attribute);
+            }
+            $filter[] = ['terms' => [$attribute => $keys]];
+        }
+        if (isset($criteria['poster'])) {
+            $filter[] = ['term' => ['poster_identity' => hash('sha256', $criteria['poster'])]];
         }
 
         $releaseIds = $criteria['release_ids'] ?? null;

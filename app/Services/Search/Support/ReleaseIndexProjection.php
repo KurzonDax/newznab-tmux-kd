@@ -32,6 +32,9 @@ final class ReleaseIndexProjection
         $subtitleLanguage = $isSqlite
             ? "COALESCE((SELECT GROUP_CONCAT(rs.subslanguage, ' ') FROM release_subtitles rs WHERE rs.releases_id = r.id), '')"
             : "COALESCE((SELECT GROUP_CONCAT(rs.subslanguage SEPARATOR ' ') FROM release_subtitles rs WHERE rs.releases_id = r.id), '')";
+        $animeTitles = $isSqlite
+            ? "COALESCE((SELECT GROUP_CONCAT(at.title, ' ') FROM anidb_titles at WHERE at.anidbid = r.anidbid), '')"
+            : "COALESCE((SELECT GROUP_CONCAT(at.title SEPARATOR ' ') FROM anidb_titles at WHERE at.anidbid = r.anidbid), '')";
         $categoryName = $isSqlite
             ? "cp.title || ' > ' || c.title"
             : "CONCAT(cp.title, ' > ', c.title)";
@@ -44,6 +47,11 @@ final class ReleaseIndexProjection
                 $join->on('mi.id', '=', 'r.movieinfo_id')
                     ->where('r.movieinfo_id', '>', 0);
             })
+            ->leftJoin('movieinfo as linked_movie', 'linked_movie.imdbid', '=', 'r.imdbid')
+            ->leftJoin('musicinfo as musicinfo', 'musicinfo.id', '=', 'r.musicinfo_id')
+            ->leftJoin('consoleinfo as consoleinfo', 'consoleinfo.id', '=', 'r.consoleinfo_id')
+            ->leftJoin('gamesinfo as gamesinfo', 'gamesinfo.id', '=', 'r.gamesinfo_id')
+            ->leftJoin('bookinfo as bookinfo', 'bookinfo.id', '=', 'r.bookinfo_id')
             ->leftJoin('videos as v', function ($join): void {
                 $join->on('v.id', '=', 'r.videos_id')
                     ->where('r.videos_id', '>', 0);
@@ -56,6 +64,11 @@ final class ReleaseIndexProjection
             ->leftJoin('video_data as vd', 'vd.releases_id', '=', 'r.id')
             ->leftJoinSub($mediaInfo, 'mdi', 'mdi.releases_id', '=', 'r.id')
             ->select([
+                'r.musicinfo_id', 'r.consoleinfo_id', 'r.gamesinfo_id', 'r.bookinfo_id',
+                'linked_movie.title as movie_title', 'v.title as show_title', 'musicinfo.title as album_title', 'musicinfo.artist',
+                'consoleinfo.title as console_title', 'gamesinfo.title as game_title', 'bookinfo.title as book_title',
+                DB::raw("{$animeTitles} AS anime_titles"),
+                $isSqlite ? 'r.display_name' : DB::raw("LOWER(HEX(WEIGHT_STRING(COALESCE(NULLIF(TRIM(r.display_name), ''), r.searchname)))) AS sort_name"),
                 'r.id', 'r.guid', 'r.name', 'r.searchname', 'r.fromname', 'r.categories_id',
                 'r.groups_id', 'r.size', 'r.postdate', 'r.adddate', 'r.totalpart', 'r.grabs',
                 'r.comments', 'r.passwordstatus', 'r.nzbstatus', 'r.nfostatus', 'r.haspreview',

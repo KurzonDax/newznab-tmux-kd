@@ -14,8 +14,11 @@ final class ReleaseBrowserPage extends LengthAwarePaginator
      * @param  Collection<int, \stdClass>  $items
      * @param  array<string, mixed>  $options
      */
-    public function __construct(Collection $items, int $total, int $perPage, int $page, array $options, public readonly int $hiddenCount = 0)
+    public function __construct(Collection $items, int $total, int $perPage, int $page, array $options, public readonly int $hiddenCount = 0, public readonly bool $available = true, public readonly ?int $reachableTotal = null)
     {
         parent::__construct($items, $total, $perPage, $page, $options);
+        if ($reachableTotal !== null) {
+            $this->lastPage = max(1, (int) ceil(min($total, $reachableTotal) / $perPage));
+        }
     }
 }
