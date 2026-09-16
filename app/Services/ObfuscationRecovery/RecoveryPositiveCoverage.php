@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\ObfuscationRecovery;
 
+use App\Enums\HeaderScanDirection;
 use Illuminate\Database\Connection;
 use Illuminate\Support\Str;
 
@@ -39,9 +40,14 @@ final class RecoveryPositiveCoverage
     public function expire(Connection $connection, string $epoch, int $group, int $generation, int $article): void
     {
         $scope = $this->lock($connection, $epoch, $group, $generation);
-        $rows = $connection->table('obfuscation_recovery_coverage')->where('scope_digest', $scope)->where('kind', 'captured')
-            ->where('first_article', '<=', $article)->where('last_article', '>=', $article)->lockForUpdate()->get();
-        foreach ($rows as $row) {
+        // Ranges never overlap within a direction, so only its nearest predecessor can contain the article.
+        foreach (HeaderScanDirection::cases() as $direction) {
+            $row = $connection->table('obfuscation_recovery_coverage')->where('scope_digest', $scope)->where('kind', 'captured')
+                ->where('direction', $direction->name)->where('first_article', '<=', $article)
+                ->orderByDesc('first_article')->lockForUpdate()->first();
+            if ($row === null || (int) $row->last_article < $article) {
+                continue;
+            }
             $connection->table('obfuscation_recovery_coverage')->where('id', $row->id)->delete();
             foreach ([[(int) $row->first_article, $article - 1], [$article + 1, (int) $row->last_article]] as [$first, $last]) {
                 if ($first <= $last) {
@@ -51,6 +57,22 @@ final class RecoveryPositiveCoverage
                 }
             }
         }
+    }
+
+    public function trim(Connection $connection, string $epoch, int $group, int $generation, ?int $floor): void
+    {
+        $this->lock($connection, $epoch, $group, $generation);
+        $query = $connection->table('obfuscation_recovery_coverage')->where('source_epoch', $epoch)
+            ->where('groups_id', $group)->where('capture_generation', $generation)->where('kind', 'captured');
+        if ($floor === null) {
+            $query->delete();
+
+            return;
+        }
+        // One bulk deletion per scope; the scope index bounds work below the expired boundary.
+        $query->where('first_article', '<', $floor);
+        (clone $query)->where('last_article', '<', $floor)->delete();
+        $query->where('last_article', '>=', $floor)->update(['first_article' => $floor]);
     }
 
     private function lock(Connection $connection, string $epoch, int $group, int $generation): string

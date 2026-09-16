@@ -9,8 +9,12 @@ use InvalidArgumentException;
 
 final class RecoveryRetention
 {
-    /** @return array{headers:int,candidates:int,waiting:int} */
-    public function purge(RecoveryConfig $config, int $limit = 1000): array
+    /**
+     * Keep the default batch small to release group locks within capture's one-second wait budget.
+     *
+     * @return array{headers:int,candidates:int,waiting:int}
+     */
+    public function purge(RecoveryConfig $config, int $limit = 100): array
     {
         if ($limit < 1 || $limit > 1000) {
             throw new InvalidArgumentException('invalid_retention_batch');
@@ -89,8 +93,6 @@ final class RecoveryRetention
                 if ($deleted === 0) {
                     continue;
                 }
-                (new RecoveryPositiveCoverage)->expire(DB::connection(), $row->source_epoch, (int) $row->groups_id,
-                    (int) $row->capture_generation, (int) $row->article_number);
                 DB::table('obfuscation_recovery_scans')->where('source_epoch', $row->source_epoch)
                     ->where('groups_id', $row->groups_id)->where('capture_generation', $row->capture_generation)
                     ->where('requested_first', '<=', $row->article_number)->where('requested_last', '>=', $row->article_number)
@@ -100,6 +102,28 @@ final class RecoveryRetention
                 $totals[$key] ??= ['group' => (int) $row->groups_id, 'profile' => $row->profile, 'count' => 0];
                 $totals[$key]['count']++;
                 $report['headers']++;
+            }
+            $coverage = new RecoveryPositiveCoverage;
+            foreach (collect($removed)->groupBy(fn (array $row): string => RecoveryPositiveCoverage::scope(
+                $row['source_epoch'], (int) $row['groups_id'], (int) $row['capture_generation'])) as $scopeRows) {
+                $scope = $scopeRows->first();
+                // Read the current minimum after acquiring group locks, including other generations and live claims.
+                $floor = DB::table('obfuscation_recovery_headers')->where('source_epoch', $scope['source_epoch'])
+                    ->where('groups_id', $scope['groups_id'])->orderBy('article_number')->lockForUpdate()->value('article_number');
+                // Preserve frontier witnesses below the raw floor: only an actually expired article
+                // establishes a hole that no surviving candidate's coverage island can cross.
+                $expiredBoundary = $scopeRows->filter(fn (array $row): bool => $floor !== null
+                    && (int) $row['article_number'] < (int) $floor)->max('article_number');
+                if ($floor === null || $expiredBoundary !== null) {
+                    $coverage->trim(DB::connection(), $scope['source_epoch'], (int) $scope['groups_id'],
+                        (int) $scope['capture_generation'], $floor === null ? null : (int) $expiredBoundary + 1);
+                }
+                foreach ($scopeRows as $row) {
+                    if ($floor !== null && (int) $row['article_number'] >= (int) $floor) {
+                        $coverage->expire(DB::connection(), $row['source_epoch'], (int) $row['groups_id'],
+                            (int) $row['capture_generation'], (int) $row['article_number']);
+                    }
+                }
             }
             RecoveryDirty::mark(DB::connection(), $removed);
             foreach ($totals as $total) {

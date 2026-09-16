@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace Tests\Feature\ObfuscationRecovery;
 
+use App\Enums\HeaderScanDirection;
 use App\Services\ObfuscationRecovery\RecoveryConfig;
+use App\Services\ObfuscationRecovery\RecoveryFrontiers;
+use App\Services\ObfuscationRecovery\RecoveryPositiveCoverage;
 use App\Services\ObfuscationRecovery\RecoveryRetention;
+use App\Services\ObfuscationRecovery\RecoveryScanContext;
 use App\Services\ObfuscationRecovery\RecoveryScheduler;
+use App\Services\ObfuscationRecovery\RecoverySettlement;
 use App\Services\ObfuscationRecovery\RecoveryStage;
 use App\Services\ObfuscationRecovery\RecoveryWork;
 use Illuminate\Database\Schema\Blueprint;
@@ -56,6 +61,132 @@ final class RecoveryRetentionTest extends TestCase
         $this->assertSame(1, $purger->purge(RecoveryConfig::fromValues(['obfuscation_recovery_retention_hours' => 100]), 100)['headers']);
     }
 
+    public function test_purge_trims_dead_captured_coverage_and_preserves_live_settlement(): void
+    {
+        $this->header(50, null, 145);
+        $this->header(100, null, 1);
+        $this->coverage(1, 20);
+        $this->coverage(40, 200);
+        $this->coverage(30, 200, HeaderScanDirection::Repair);
+        $retained = DB::table('obfuscation_recovery_coverage')->where('kind', 'retained')->get()->all();
+        $settlement = new RecoverySettlement;
+        $before = $settlement->context('epoch', 1, 1, 100, 150, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
+        $this->assertSame([100, 150], $before['containing']);
+
+        $this->assertSame(1, (new RecoveryRetention)->purge(RecoveryConfig::fromValues([]))['headers']);
+
+        $captured = DB::table('obfuscation_recovery_coverage')->where('kind', 'captured')->orderBy('direction')->get();
+        $this->assertSame([[51, 200], [51, 200]], $captured->map(
+            static fn (object $row): array => [(int) $row->first_article, (int) $row->last_article])->all());
+        $this->assertSame($before, $settlement->context('epoch', 1, 1, 100, 150, '2026-01-01 00:00:00', '2026-01-01 00:00:00'));
+        $this->assertEquals($retained, DB::table('obfuscation_recovery_coverage')->where('kind', 'retained')->get()->all());
+    }
+
+    #[DataProvider('frontierCoverageCases')]
+    public function test_purge_preserves_live_candidates_left_frontier_below_the_raw_header_floor(bool $bridged): void
+    {
+        $this->header(50, null, 145);
+        $this->header(100, null, 1);
+        $this->header(150, null, 1);
+        if ($bridged) {
+            $this->coverage(40, 90);
+            $this->coverage(91, 120, HeaderScanDirection::Repair);
+            $this->coverage(121, 200, HeaderScanDirection::Tail);
+        } else {
+            $this->coverage(40, 200);
+        }
+        DB::transaction(fn () => (new RecoveryFrontiers)->record(DB::connection(), (object) [
+            'source_epoch' => 'epoch', 'groups_id' => 1, 'capture_generation' => 1,
+            'requested_first' => 40, 'requested_last' => 200, 'direction' => 'Head',
+            'evidence_version' => RecoveryFrontiers::VERSION,
+            'date_points' => json_encode([[80, '2025-12-31 21:00:00'], [180, '2026-01-01 03:00:00']], JSON_THROW_ON_ERROR),
+        ]));
+        $settlement = new RecoverySettlement;
+        $before = $settlement->context('epoch', 1, 1, 100, 150, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
+        $this->assertSame([80, 180], $before['containing']);
+        $this->assertSame('ready', $settlement->assess('epoch', 1, 1, 100, 150,
+            '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00'));
+
+        $this->assertSame(1, (new RecoveryRetention)->purge(RecoveryConfig::fromValues([]))['headers']);
+
+        $this->assertSame($before, $settlement->context('epoch', 1, 1, 100, 150, '2026-01-01 00:00:00', '2026-01-01 00:00:00'));
+        $this->assertSame('ready', $settlement->assess('epoch', 1, 1, 100, 150,
+            '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00'));
+    }
+
+    public static function frontierCoverageCases(): array
+    {
+        return ['one direction' => [false], 'bridged across all directions' => [true]];
+    }
+
+    public function test_purge_preserves_headers_below_out_of_order_expiry_and_other_coverage_scopes(): void
+    {
+        $this->header(10, null, 1);
+        $this->header(20, null, 145);
+        DB::table('obfuscation_recovery_headers')->where('id', 10)->update(['capture_generation' => 2]);
+        $this->coverage(1, 30);
+        $otherScopes = [['other', 1, 1], ['epoch', 2, 1], ['epoch', 1, 2]];
+        foreach ($otherScopes as [$epoch, $group, $generation]) {
+            DB::transaction(fn () => (new RecoveryPositiveCoverage)->record(DB::connection(),
+                new RecoveryScanContext($group, 'alt.binaries.fixture', $epoch, $generation, 1, 30,
+                    HeaderScanDirection::Head, 'other-scope')));
+        }
+        $scope = RecoveryPositiveCoverage::scope('epoch', 1, 1);
+        $others = DB::table('obfuscation_recovery_coverage')->where('scope_digest', '!=', $scope)->get()->all();
+
+        $this->assertSame(1, (new RecoveryRetention)->purge(RecoveryConfig::fromValues([]))['headers']);
+
+        $ranges = DB::table('obfuscation_recovery_coverage')->where('scope_digest', $scope)->where('kind', 'captured')
+            ->orderBy('first_article')->get()->map(static fn (object $row): array => [(int) $row->first_article, (int) $row->last_article])->all();
+        $this->assertSame([[1, 19], [21, 30]], $ranges);
+        $this->assertEquals($others, DB::table('obfuscation_recovery_coverage')->where('scope_digest', '!=', $scope)->get()->all());
+    }
+
+    public function test_default_purge_batch_leaves_backlog_for_the_next_transaction(): void
+    {
+        for ($id = 1; $id <= 101; $id++) {
+            $this->header($id, null, 145);
+        }
+        $this->assertSame(100, (new RecoveryRetention)->purge(RecoveryConfig::fromValues([]))['headers']);
+        $this->assertSame(1, DB::table('obfuscation_recovery_headers')->count());
+        $this->assertSame(1, (new RecoveryRetention)->purge(RecoveryConfig::fromValues([]))['headers']);
+    }
+
+    public function test_expiry_removes_tail_coverage_for_the_expired_article(): void
+    {
+        $this->coverage(10, 30, HeaderScanDirection::Tail);
+        DB::transaction(fn () => (new RecoveryPositiveCoverage)->expire(DB::connection(), 'epoch', 1, 1, 20));
+        $context = (new RecoverySettlement)->context('epoch', 1, 1, 15, 25, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
+        $this->assertNull($context['containing']);
+    }
+
+    #[DataProvider('coverageExpiryCases')]
+    public function test_expiry_preserves_disjoint_remainders_in_each_direction(int $article, array $expected): void
+    {
+        $this->coverage(10, 20);
+        $this->coverage(30, 40);
+        $this->coverage(15, 35, HeaderScanDirection::Repair);
+        $retained = DB::table('obfuscation_recovery_coverage')->where('kind', 'retained')->get()->all();
+        DB::transaction(fn () => (new RecoveryPositiveCoverage)->expire(DB::connection(), 'epoch', 1, 1, $article));
+        $ranges = DB::table('obfuscation_recovery_coverage')->where('kind', 'captured')
+            ->orderBy('direction')->orderBy('first_article')->get()->map(
+                static fn (object $row): array => [$row->direction, (int) $row->first_article, (int) $row->last_article])->all();
+        $this->assertSame($expected, $ranges);
+        $this->assertEquals($retained, DB::table('obfuscation_recovery_coverage')->where('kind', 'retained')->get()->all());
+    }
+
+    public static function coverageExpiryCases(): array
+    {
+        return [
+            'interior' => [18, [['Head', 10, 17], ['Head', 19, 20], ['Head', 30, 40], ['Repair', 15, 17], ['Repair', 19, 35]]],
+            'gap in Head only' => [25, [['Head', 10, 20], ['Head', 30, 40], ['Repair', 15, 24], ['Repair', 26, 35]]],
+            'before all ranges' => [5, [['Head', 10, 20], ['Head', 30, 40], ['Repair', 15, 35]]],
+            'after all ranges' => [45, [['Head', 10, 20], ['Head', 30, 40], ['Repair', 15, 35]]],
+            'left endpoint' => [10, [['Head', 11, 20], ['Head', 30, 40], ['Repair', 15, 35]]],
+            'right endpoint' => [40, [['Head', 10, 20], ['Head', 30, 39], ['Repair', 15, 35]]],
+        ];
+    }
+
     public function test_cleanup_runs_even_when_other_housekeeping_exhausts_the_local_deadline(): void
     {
         $this->header(1, null, 145);
@@ -101,8 +232,15 @@ final class RecoveryRetentionTest extends TestCase
             'state' => 'ready', 'sealed_plan' => '{}', 'manifest_verified_at' => now(),
         ]);
         $this->header(1, (int) $bundle->id, 145);
+        $this->coverage(1, 100);
+        $retained = DB::table('obfuscation_recovery_coverage')->where('kind', 'retained')->get()->all();
+        $settlement = new RecoverySettlement;
+        $before = $settlement->context('epoch', 1, 1, 1, 100, '2026-01-01 00:00:00', '2026-01-01 00:00:00', retainedPlan: true);
         $this->assertSame(1, (new RecoveryRetention)->purge(RecoveryConfig::fromValues([]))['headers']);
         $this->assertSame('ready', DB::table('obfuscation_recovery_bundles')->value('state'));
+        $this->assertSame(0, DB::table('obfuscation_recovery_coverage')->where('kind', 'captured')->count());
+        $this->assertEquals($retained, DB::table('obfuscation_recovery_coverage')->where('kind', 'retained')->get()->all());
+        $this->assertSame($before, $settlement->context('epoch', 1, 1, 1, 100, '2026-01-01 00:00:00', '2026-01-01 00:00:00', retainedPlan: true));
         $this->assertNotNull($work->claim(RecoveryStage::Publish));
     }
 
@@ -179,6 +317,12 @@ final class RecoveryRetentionTest extends TestCase
     public static function unrelatedRarScopes(): array
     {
         return [['key'], ['generation'], ['group'], ['epoch']];
+    }
+
+    private function coverage(int $first, int $last, HeaderScanDirection $direction = HeaderScanDirection::Head): void
+    {
+        DB::transaction(fn () => (new RecoveryPositiveCoverage)->record(DB::connection(),
+            new RecoveryScanContext(1, 'alt.binaries.fixture', 'epoch', 1, $first, $last, $direction, 'retention-fixture')));
     }
 
     private function header(int $id, ?int $bundle, int $age): void
