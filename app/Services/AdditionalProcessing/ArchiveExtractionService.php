@@ -55,7 +55,8 @@ class ArchiveExtractionService
     public function processCompressedData(
         string $compressedData,
         ReleaseProcessingContext $context,
-        string $tmpPath
+        string $tmpPath,
+        ?Closure $archiveRead = null,
     ): array {
         $result = [
             'success' => false,
@@ -65,6 +66,21 @@ class ArchiveExtractionService
         ];
 
         $context->compressedFilesChecked++;
+
+        if ($this->config->processPasswords && str_starts_with($compressedData, SevenZip\Inspector::SIGNATURE)) {
+            $inspection = (new SevenZip\Inspector)->inspect($archiveRead ?? static fn (int $offset, int $length): string => substr($compressedData, $offset, $length), $context->passwordInspectionBudget?->deadline);
+            $encrypted = $inspection['verdict'] === Enums\PasswordVerdict::VerifiedEncrypted;
+
+            return [
+                'success' => $inspection['files'] !== [],
+                'files' => $inspection['files'],
+                'hasPassword' => $encrypted,
+                'passwordStatus' => $encrypted ? ReleaseBrowseService::PASSWD_RAR : ReleaseBrowseService::PASSWD_NONE,
+                'verdict' => $inspection['verdict'],
+                'inspectionReason' => $inspection['reason'],
+                'dataSummary' => ['file_list' => $inspection['files']],
+            ];
+        }
 
         // Try ArchiveInfo for RAR/ZIP
         if (! $this->archiveInfo->setData($compressedData, true)) {

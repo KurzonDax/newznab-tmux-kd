@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\AdditionalProcessing\DTO;
 
+use App\Services\AdditionalProcessing\PostedFileClassifier;
+
 final readonly class AdditionalWorkPlan
 {
     /**
@@ -77,6 +79,33 @@ final readonly class AdditionalWorkPlan
             $this->archiveCandidates,
             static fn (ArchiveCandidate $candidate): bool => $candidate->sourceIndex > $anchor->sourceIndex,
         ));
+    }
+
+    /** @return list<ArchiveCandidate> */
+    public function sevenZipVolumes(string $title): array
+    {
+        $filename = PostedFileClassifier::postedFilename($title);
+        if (preg_match('/^(.*\.7z)\.(\d{3,})$/i', $filename, $match) !== 1) {
+            return array_values(array_filter($this->archiveCandidates,
+                static fn (ArchiveCandidate $candidate): bool => $candidate->title === $title));
+        }
+        $volumes = [];
+        foreach ($this->archiveCandidates as $candidate) {
+            $name = PostedFileClassifier::postedFilename($candidate->title);
+            if (preg_match('/^'.preg_quote($match[1], '/').'\.(\d{3,})$/i', $name, $part) === 1) {
+                $index = (int) $part[1];
+                if ($index < 1 || isset($volumes[$index])) {
+                    return [];
+                }
+                $volumes[$index] = $candidate;
+            }
+        }
+        ksort($volumes, SORT_NUMERIC);
+        if (array_keys($volumes) !== range(1, count($volumes))) {
+            return [];
+        }
+
+        return array_values($volumes);
     }
 
     /**

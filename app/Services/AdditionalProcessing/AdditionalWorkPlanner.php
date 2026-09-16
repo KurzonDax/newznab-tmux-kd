@@ -53,7 +53,8 @@ final readonly class AdditionalWorkPlanner
                     $bookFileCount++;
                 }
 
-                if (PostedFileClassifier::containsArchiveCandidate($title)) {
+                if (PostedFileClassifier::containsArchiveCandidate($title)
+                    || ($this->config->processPasswords && PostedFileClassifier::isSevenZip($title))) {
                     $archiveMessageIds = $this->extractSegments(
                         $segments,
                         $this->config->maximumRarSegments,
@@ -202,6 +203,10 @@ final readonly class AdditionalWorkPlanner
 
     private function isLikelyFirstVolume(string $title): bool
     {
+        if (PostedFileClassifier::isSevenZip($title)) {
+            return preg_match('/\.7z(?:\.0*1)?$/i', PostedFileClassifier::postedFilename($title)) === 1;
+        }
+
         if (preg_match('/\.part0*(\d+)/i', $title, $part) === 1) {
             return (int) $part[1] === 1;
         }

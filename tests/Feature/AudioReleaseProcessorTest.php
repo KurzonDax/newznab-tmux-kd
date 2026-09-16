@@ -675,6 +675,22 @@ class AudioReleaseProcessorTest extends TestCase
         );
     }
 
+    public function test_split_seven_zip_audio_does_not_fetch_metadata_for_a_verdict(): void
+    {
+        $release = $this->makeRelease();
+        $processor = $this->makeProcessor(
+            $this->taggedContainer(),
+            expectsPreview: false,
+            expectsExtraXml: false,
+            nzbContents: [['title' => 'Album.7z.001', 'segments' => ['<7z-head>']]],
+            archivePassworded: false,
+        );
+        $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+        $this->assertSame([['<7z-head>']], $this->downloads);
+        $this->assertSame(ReleaseBrowseService::PASSWD_NONE,
+            (int) DB::table('releases')->where('id', $release->id)->value('passwordstatus'));
+    }
+
     public function test_an_unencrypted_archive_without_audio_still_settles_not_passworded(): void
     {
         $release = $this->makeRelease();

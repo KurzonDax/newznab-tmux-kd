@@ -10,7 +10,10 @@ use App\Services\AdditionalProcessing\DTO\AdditionalWorkPlan;
 use App\Services\AdditionalProcessing\DTO\DownloadedArchive;
 use App\Services\AdditionalProcessing\DTO\Mp4TailMetrics;
 use App\Services\AdditionalProcessing\DTO\PayloadSniffMetrics;
+use App\Services\AdditionalProcessing\Enums\PasswordVerdict;
 use App\Services\AdditionalProcessing\Enums\PayloadClassification;
+use App\Services\AdditionalProcessing\SevenZip\InspectionBudget;
+use App\Services\Releases\ReleaseBrowseService;
 
 /**
  * Mutable context object that holds the processing state for a single release.
@@ -42,6 +45,15 @@ class ReleaseProcessingContext
     public bool $foundPAR2Info = false;
 
     // Password state
+    public ?PasswordVerdict $passwordVerdict = null;
+
+    public int $passwordInspectionAttempts = 0;
+
+    public ?InspectionBudget $passwordInspectionBudget = null;
+
+    /** @var array<string, true> */
+    public array $inspectedSevenZipTitles = [];
+
     public int $passwordStatus = 0;
 
     public bool $releaseHasPassword = false;
@@ -224,6 +236,10 @@ class ReleaseProcessingContext
      */
     public function reset(): void
     {
+        $this->passwordVerdict = null;
+        $this->passwordInspectionAttempts = 0;
+        $this->passwordInspectionBudget = null;
+        $this->inspectedSevenZipTitles = [];
         $this->passwordStatus = 0;
         $this->releaseHasPassword = false;
         $this->releaseDiscarded = false;
@@ -289,6 +305,24 @@ class ReleaseProcessingContext
 
         if ($classification === PayloadClassification::Unknown) {
             $this->runtimeUnsupportedReasons[] = 'unknown-payload';
+        }
+    }
+
+    public function recordPasswordVerdict(PasswordVerdict $verdict, string $reason): void
+    {
+        if ($this->passwordVerdict !== PasswordVerdict::VerifiedEncrypted) {
+            $this->passwordVerdict = match (true) {
+                $verdict === PasswordVerdict::VerifiedEncrypted => $verdict,
+                $this->passwordVerdict === PasswordVerdict::Incomplete => $this->passwordVerdict,
+                default => $verdict,
+            };
+        }
+        if ($verdict === PasswordVerdict::VerifiedEncrypted) {
+            $this->releaseHasPassword = true;
+            $this->passwordStatus = ReleaseBrowseService::PASSWD_RAR;
+        }
+        if ($verdict === PasswordVerdict::Incomplete) {
+            $this->runtimeUnsupportedReasons[] = '7z-inspection:'.$reason;
         }
     }
 
