@@ -23,6 +23,10 @@ final readonly class PayloadSniffer
             return new PayloadSniffResult(PayloadClassification::Zip, true);
         }
 
+        if (str_starts_with($payload, SevenZip\Inspector::SIGNATURE)) {
+            return new PayloadSniffResult(PayloadClassification::SevenZip, true);
+        }
+
         if (str_starts_with($payload, "PAR2\x00PKT")) {
             return new PayloadSniffResult(PayloadClassification::Par2);
         }

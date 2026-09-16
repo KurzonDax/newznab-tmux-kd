@@ -8,6 +8,7 @@ enum PayloadClassification: string
 {
     case Rar = 'rar';
     case Zip = 'zip';
+    case SevenZip = '7z';
     case Par2 = 'par2';
     case Matroska = 'matroska';
     case Mp4 = 'mp4';

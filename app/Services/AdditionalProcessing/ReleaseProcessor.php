@@ -395,6 +395,13 @@ class ReleaseProcessor
             return null;
         }
 
+        if ($context->passwordVerdict !== null) {
+            $this->releaseManager->finalizeRelease($context, $this->config->processPasswords);
+
+            return $this->result($context, ProcessingOutcome::TimedOut,
+                reason: 'Processing timed out after bounded archive inspection.');
+        }
+
         $deleted = $metrics->measure(
             ProcessingStage::TimeoutHandling,
             fn (): bool => $this->releaseManager->handleReleaseTimeout(
@@ -505,14 +512,19 @@ class ReleaseProcessor
             }
             $sidecarEvidence->queuePrefix($context, $candidate, $payload, $result['metadata'] ?? null);
 
-            if (in_array($classification, [PayloadClassification::Rar, PayloadClassification::Zip], true)) {
+            if (in_array($classification, [PayloadClassification::Rar, PayloadClassification::Zip, PayloadClassification::SevenZip], true)) {
                 $archiveCandidate = new ArchiveCandidate(
                     title: $candidate->title,
                     messageIds: [$candidate->firstMessageId],
                     likelyFirstVolume: $sniffResult->likelyFirstVolume,
                     sourceIndex: $candidate->sourceIndex,
                 );
-                if ($archiveCandidate->likelyFirstVolume) {
+                if ($classification === PayloadClassification::SevenZip && $this->config->processPasswords) {
+                    $segments = array_values($context->nzbContents[$candidate->sourceIndex]['segments'] ?? []);
+                    $archiveCandidate = new ArchiveCandidate($candidate->title, [$candidate->firstMessageId], true,
+                        $candidate->sourceIndex, array_slice($segments, 1));
+                    $this->processSevenZip($archiveCandidate, $context, true);
+                } elseif ($archiveCandidate->likelyFirstVolume) {
                     $this->processCompressedData($payload, $context, false, $archiveCandidate->title);
                 } else {
                     $deferredArchives[] = ['payload' => $payload, 'candidate' => $archiveCandidate];
@@ -941,6 +953,20 @@ class ReleaseProcessor
         bool $reverse,
         array &$triedCompressedMids
     ): void {
+        if ($this->config->processPasswords && ! $reverse) {
+            foreach ($context->workPlan->archiveCandidates ?? [] as $candidate) {
+                if (PostedFileClassifier::isSevenZip($candidate->title)) {
+                    if ($context->groupUnavailable) {
+                        $context->recordPasswordVerdict(Enums\PasswordVerdict::Incomplete, 'group-unavailable');
+                    } else {
+                        $this->processSevenZip($candidate, $context);
+                    }
+                    if ($context->releaseHasPassword || $context->releaseDiscarded) {
+                        return;
+                    }
+                }
+            }
+        }
         if ($context->groupUnavailable) {
             return;
         }
@@ -971,6 +997,10 @@ class ReleaseProcessor
 
             if (! $reverse) {
                 $triedCompressedMids = [...$triedCompressedMids, ...$archiveCandidate->messageIds];
+            }
+
+            if ($this->config->processPasswords && PostedFileClassifier::isSevenZip($archiveCandidate->title)) {
+                continue;
             }
 
             $result = $this->downloadService->download(
@@ -1363,23 +1393,69 @@ class ReleaseProcessor
         return $tmpPath.'preview-archive.part'.sprintf('%03d', $volume).'.rar';
     }
 
+    private function processSevenZip(ArchiveCandidate $anchor, ReleaseProcessingContext $context, bool $sniffed = false): void
+    {
+        if (isset($context->inspectedSevenZipTitles[$anchor->title])) {
+            return;
+        }
+        $volumes = $sniffed ? [$anchor] : ($context->workPlan?->sevenZipVolumes($anchor->title) ?? []);
+        $context->inspectedSevenZipTitles[$anchor->title] = true;
+        foreach ($volumes as $volume) {
+            $context->inspectedSevenZipTitles[$volume->title] = true;
+        }
+        $budget = $context->passwordInspectionBudget ??= new SevenZip\InspectionBudget(
+            max(1, (int) config('archive-inspection.seven_zip.max_articles', 32)),
+            max(1, (int) config('archive-inspection.seven_zip.max_bytes', 8388608)),
+            max(1, min((int) config('archive-inspection.seven_zip.max_seconds', 20),
+                $this->config->releaseProcessingTimeout > 0 ? $this->config->releaseProcessingTimeout - $context->getElapsedSeconds() : 20)),
+        );
+        $ranges = new SevenZip\ArchiveRanges(
+            $volumes,
+            function (string $id) use ($context, $budget): array {
+                $result = $this->downloadService->downloadInspectionArticle($id, $context->releaseGroupName, $budget);
+                $context->groupUnavailable = $context->groupUnavailable || $result['groupUnavailable'];
+
+                return $result;
+            },
+            $budget,
+        );
+        // The service performs validation before it can return a positive verdict.
+        $this->processCompressedData(SevenZip\Inspector::SIGNATURE, $context, false, $anchor->title, $ranges->read(...));
+    }
+
     private function processCompressedData(
         string $compressedData,
         ReleaseProcessingContext $context,
         bool $reverse,
         string $archiveTitle = '',
+        ?\Closure $archiveRead = null,
     ): bool {
-        $result = $this->archiveService->processCompressedData(
-            $compressedData,
-            $context,
-            $context->tmpPath
-        );
+        $result = $archiveRead === null
+            ? $this->archiveService->processCompressedData($compressedData, $context, $context->tmpPath)
+            : $this->archiveService->processCompressedData($compressedData, $context, $context->tmpPath, $archiveRead);
+
+        if (isset($result['verdict'])) {
+            $context->recordPasswordVerdict($result['verdict'], $result['inspectionReason']);
+            if ($result['files'] !== []) {
+                $this->releaseManager->processReleaseNameFromRar($result['dataSummary'], $context);
+            }
+            foreach ($result['files'] as $file) {
+                $this->releaseManager->addFileInfo($file, $context, $this->config->supportFileRegex);
+                if ($context->releaseDiscarded) {
+                    return false;
+                }
+            }
+        }
 
         if ($result['hasPassword']) {
             $context->releaseHasPassword = true;
             $context->passwordStatus = $result['passwordStatus'];
 
             return true;
+        }
+
+        if (isset($result['verdict'])) {
+            return $result['success'];
         }
 
         if (isset($result['standaloneVideoType'])) {

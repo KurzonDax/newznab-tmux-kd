@@ -290,6 +290,13 @@ class ReleaseFileManager
                 || $lockedRelease->additional_pp_claim_token !== $context->release->additional_pp_claim_token) {
                 throw new \RuntimeException('Additional-processing ownership changed before finalization.');
             }
+            if ($processPasswords && $context->passwordVerdict !== null) {
+                $context->passwordInspectionAttempts = (int) $lockedRelease->pp_timeout_count;
+                if ((int) $lockedRelease->passwordstatus === ReleaseBrowseService::PASSWD_RAR) {
+                    $context->releaseHasPassword = true;
+                    $context->passwordStatus = ReleaseBrowseService::PASSWD_RAR;
+                }
+            }
             $this->finalizeOwnedRelease($context, $processPasswords);
         }, 3);
 
@@ -349,6 +356,22 @@ class ReleaseFileManager
         }
 
         $updateRows = array_merge($updateRows, ReleaseClaimant::settlementValues());
+        $inspectionIncomplete = $processPasswords
+            && $context->passwordVerdict === Enums\PasswordVerdict::Incomplete
+            && ! $context->releaseHasPassword;
+        if ($inspectionIncomplete) {
+            $attempt = ++$context->passwordInspectionAttempts;
+            $terminal = $attempt >= max(1, (int) config('archive-inspection.seven_zip.max_attempts', 3));
+            $updateRows['passwordstatus'] = -1;
+            $updateRows['haspreview'] = $terminal ? ($thumbExists ? 1 : 0) : -1;
+            $updateRows['pp_timeout_count'] = $attempt;
+            Log::info('7z password inspection incomplete', [
+                'release_id' => $context->release->id,
+                'attempt' => $attempt,
+                'terminal_unknown' => $terminal,
+                'reasons' => $context->unsupportedReasons(),
+            ]);
+        }
 
         $pendingReleaseFiles = array_values($context->pendingReleaseFiles);
         $pendingParHashes = array_values($context->pendingParHashes);
@@ -361,6 +384,7 @@ class ReleaseFileManager
             $processPasswords,
             $passwordStatus,
             $previewOwedRequeue,
+            $inspectionIncomplete,
         ): int {
             (new SidecarEvidence)->flush($context);
             $inserted = $pendingReleaseFiles === []
@@ -375,7 +399,7 @@ class ReleaseFileManager
 
             $this->recordImageryDiskSkip($context);
 
-            if (! $context->releaseHasPassword && $context->nzbHasCompressedFile && $releaseFilesCount === 0) {
+            if ($inspectionIncomplete || (! $context->releaseHasPassword && $context->nzbHasCompressedFile && $releaseFilesCount === 0 && $context->passwordVerdict === null)) {
                 Release::query()->where('id', $context->release->id)->update($updateRows);
             } else {
                 if ($previewOwedRequeue) {

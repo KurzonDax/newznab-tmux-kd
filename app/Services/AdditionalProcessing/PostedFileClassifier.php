@@ -15,6 +15,11 @@ final class PostedFileClassifier
         return preg_match(self::ARCHIVE_PATTERN, $subject) === 1;
     }
 
+    public static function isSevenZip(string $subject): bool
+    {
+        return preg_match('/\.7z(?:\.\d{3,})?$/i', self::postedFilename($subject)) === 1;
+    }
+
     /**
      * @param  array<int|string, string>|null  $matches
      */

@@ -3,9 +3,12 @@
 namespace Tests\Unit\AdditionalProcessing;
 
 use App\Services\AdditionalProcessing\Enums\DownloadKind;
+use App\Services\AdditionalProcessing\SevenZip\InspectionBudget;
 use App\Services\AdditionalProcessing\UsenetDownloadService;
 use App\Services\DTO\YencArticleMetadata;
 use App\Services\NNTP\DTO\ArticleDownloadResult;
+use App\Services\NNTP\DTO\BoundedArticleResponse;
+use App\Services\NNTP\NntpProviderPool;
 use App\Services\NNTP\NNTPService;
 use Illuminate\Support\Facades\Log;
 use Mockery;
@@ -35,6 +38,37 @@ class UsenetDownloadServiceTest extends TestCase
         $this->assertSame($metadata, $first['metadata']);
         $this->assertSame($metadata, $again['metadata']);
         $this->assertSame(1, $service->finishReleaseScope()->networkRequests);
+    }
+
+    public function test_metadata_inspection_reuses_an_already_sniffed_article(): void
+    {
+        $metadata = new YencArticleMetadata(5, 1, 1, 0, 5);
+        $nntp = Mockery::mock(NNTPService::class);
+        $nntp->shouldReceive('getMessagesByMessageIDWithCrcStatus')->once()->with(['<prefix>'])
+            ->andReturn(new ArticleDownloadResult('bytes', metadata: $metadata));
+        $service = new UsenetDownloadService($this->makeConfig(), $nntp);
+        $service->beginReleaseScope();
+        $service->download(DownloadKind::PayloadSniff, ['<prefix>'], 'group');
+        $result = $service->downloadInspectionArticle('<prefix>', 'group', new InspectionBudget(1, 100, 10));
+        $this->assertSame($metadata, $result['metadata']);
+        $this->assertSame(1, $service->finishReleaseScope()->networkRequests);
+    }
+
+    public function test_metadata_inspection_passes_hard_limits_to_provider_pool_and_decodes_geometry(): void
+    {
+        $budget = new InspectionBudget(2, 1000, 10);
+        $body = "=ybegin line=128 size=3 name=fixture.7z\r\n".chr(107).chr(108).chr(109)."\r\n=yend size=3 crc32=".hash('crc32b', 'ABC')."\r\n";
+        $pool = Mockery::mock(NntpProviderPool::class);
+        $pool->shouldReceive('fetchBoundedArticle')->once()->with('<fixture>', false, 1000, $budget->deadline, $budget)
+            ->andReturn(new BoundedArticleResponse($body, strlen($body)));
+        $this->app->instance(NntpProviderPool::class, $pool);
+        $service = new UsenetDownloadService($this->makeConfig(), Mockery::mock(NNTPService::class));
+        $service->beginReleaseScope();
+        $result = $service->downloadInspectionArticle('fixture', 'group', $budget);
+        $this->assertTrue($result['success']);
+        $this->assertSame('ABC', $result['data']);
+        $this->assertSame(3, $result['metadata']->fileSize);
+        $this->assertSame(0, $result['metadata']->offset);
     }
 
     #[Test]

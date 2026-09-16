@@ -15,6 +15,7 @@ use App\Services\AdditionalProcessing\ConsoleOutputService;
 use App\Services\AdditionalProcessing\DTO\DownloadMetrics;
 use App\Services\AdditionalProcessing\DTO\UnknownPayloadCandidate;
 use App\Services\AdditionalProcessing\Enums\DownloadKind;
+use App\Services\AdditionalProcessing\Enums\PasswordVerdict;
 use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
 use App\Services\AdditionalProcessing\FreeDiskGuard;
 use App\Services\AdditionalProcessing\MediaExtractionService;
@@ -1117,6 +1118,46 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         $this->assertFileDoesNotExist($nzbPath);
         $this->assertFileDoesNotExist($audioPreviewPath);
         $this->assertFileDoesNotExist($audioSpectrogramPath);
+    }
+
+    public function test_incomplete_seven_zip_verdict_stays_pending_until_terminal_unknown(): void
+    {
+        DB::table('releases')->insert($this->releaseRow());
+        Search::shouldReceive('updateRelease')->times(3)->with(1);
+        $manager = $this->makeManager();
+        for ($attempt = 1; $attempt <= 3; $attempt++) {
+            $context = new ReleaseProcessingContext(Release::query()->findOrFail(1));
+            $context->nzbHasCompressedFile = true;
+            $context->recordPasswordVerdict(PasswordVerdict::Incomplete, 'missing-volume');
+            $manager->finalizeRelease($context, true);
+            $row = DB::table('releases')->where('id', 1)->first();
+            $this->assertSame(-1, $row->passwordstatus);
+            $this->assertSame($attempt, $row->pp_timeout_count);
+            $this->assertSame($attempt === 3 ? 0 : -1, $row->haspreview);
+        }
+    }
+
+    public function test_incomplete_seven_zip_does_not_erase_prior_positive_evidence(): void
+    {
+        DB::table('releases')->insert(array_replace($this->releaseRow(), ['passwordstatus' => 1]));
+        Search::shouldReceive('updateRelease')->once()->with(1);
+        $context = new ReleaseProcessingContext(Release::query()->findOrFail(1));
+        $context->nzbHasCompressedFile = true;
+        $context->recordPasswordVerdict(PasswordVerdict::Incomplete, 'missing-volume');
+        $this->makeManager()->finalizeRelease($context, true);
+        $this->assertSame(1, DB::table('releases')->where('id', 1)->value('passwordstatus'));
+        $this->assertSame(0, DB::table('releases')->where('id', 1)->value('haspreview'));
+    }
+
+    public function test_verified_empty_seven_zip_settles_unencrypted(): void
+    {
+        DB::table('releases')->insert($this->releaseRow());
+        Search::shouldReceive('updateRelease')->once()->with(1);
+        $context = new ReleaseProcessingContext(Release::query()->findOrFail(1));
+        $context->nzbHasCompressedFile = true;
+        $context->recordPasswordVerdict(PasswordVerdict::VerifiedUnencrypted, 'validated-header');
+        $this->makeManager()->finalizeRelease($context, true);
+        $this->assertSame(0, DB::table('releases')->where('id', 1)->value('passwordstatus'));
     }
 
     private function makeManager(?NameFixingService $nameFixing = null): ReleaseFileManager

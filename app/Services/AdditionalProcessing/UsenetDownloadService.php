@@ -8,9 +8,11 @@ use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\DTO\DownloadMetrics;
 use App\Services\AdditionalProcessing\Enums\DownloadKind;
 use App\Services\DTO\YencArticleMetadata;
+use App\Services\NNTP\NntpProviderPool;
 use App\Services\NNTP\NNTPService;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\ObfuscationRecovery\RecoveryLegacyDownload;
+use App\Services\YencService;
 use Exception;
 use Illuminate\Support\Facades\Log;
 
@@ -253,6 +255,48 @@ class UsenetDownloadService
                 'error' => $result['error'],
             ]);
         }
+
+        return $result;
+    }
+
+    /** @return array{success: bool, data: ?string, groupUnavailable: bool, error: ?string, crcFailures: int, crcFailed: bool, metadata?: ?YencArticleMetadata} */
+    public function downloadInspectionArticle(string $id, string $group, SevenZip\InspectionBudget $budget): array
+    {
+        if (microtime(true) >= $budget->deadline) {
+            return ['success' => false, 'data' => null, 'groupUnavailable' => false,
+                'error' => 'inspection-time-budget', 'crcFailures' => 0, 'crcFailed' => false];
+        }
+        $key = $this->downloadFingerprint([$id], $group);
+        $this->logicalRequests++;
+        if (isset($this->releaseCache[$key])) {
+            $cached = $this->releaseCache[$key];
+            $this->cacheHits++;
+            $this->bytesReused += strlen($cached['data'] ?? '');
+
+            return $cached;
+        }
+        $this->networkRequests++;
+        $response = app(NntpProviderPool::class)->fetchBoundedArticle(
+            '<'.trim($id, '<>').'>', false, min(2_097_152, $budget->remainingBytes()), $budget->deadline, $budget,
+        );
+        $this->bytesDownloaded += $response->bytes;
+        $result = ['success' => false, 'data' => null, 'groupUnavailable' => false,
+            'error' => $response->reason, 'crcFailures' => 0, 'crcFailed' => false];
+        if ($response->data === null) {
+            return $result;
+        }
+        $body = $response->data;
+        $decoded = app(YencService::class)->decodeWithCrcStatus($body);
+        if ($decoded->crcFailed || $decoded->metadata === null) {
+            $result['crcFailed'] = $decoded->crcFailed;
+            $result['crcFailures'] = (int) $decoded->crcFailed;
+            $this->crcFailures += $result['crcFailures'];
+
+            return $result;
+        }
+        $result = ['success' => true, 'data' => $decoded->data, 'groupUnavailable' => false,
+            'error' => null, 'crcFailures' => 0, 'crcFailed' => false, 'metadata' => $decoded->metadata];
+        $this->rememberSuccessfulDownload($key, $result, strlen($decoded->data));
 
         return $result;
     }
