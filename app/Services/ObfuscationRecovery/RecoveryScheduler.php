@@ -27,6 +27,9 @@ final class RecoveryScheduler
         }
         $retention = app(RecoveryRetention::class)->purge(RecoveryConfig::fromSettings());
         $report['expired_headers'] = $retention['headers'];
+        if ($stage === RecoveryStage::Discover) {
+            $report += app(RecoveryHistoryRetention::class)->step(RecoveryConfig::fromSettings());
+        }
         $report['compacted_attempts'] = app(RecoveryCompaction::class)->step();
         $report['compacted_catalog_requests'] = RecoveryCatalog::compact();
         $report['compacted_coverage'] = app(RecoveryCompaction::class)->coverage();
