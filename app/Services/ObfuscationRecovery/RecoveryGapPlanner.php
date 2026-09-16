@@ -5,25 +5,75 @@ declare(strict_types=1);
 namespace App\Services\ObfuscationRecovery;
 
 use App\Services\Binaries\BinariesConfig;
+use Generator;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 final class RecoveryGapPlanner
 {
-    public function step(): int
+    public function step(int $limit = 50, ?int $deadline = null): int
     {
+        $deadline ??= hrtime(true) + 60000000000;
         $config = RecoveryConfig::fromSettings();
-        if (! $config->enabled) {
+        if (! $config->enabled || $limit < 1 || hrtime(true) >= $deadline) {
             return 0;
         }
-        $window = DB::table('obfuscation_recovery_scan_windows')->where('next_gap_at', '<=', now())
-            ->orderBy('next_gap_at')->orderBy('scan_id')->first();
-        if ($window === null) {
-            return 0;
+        $queued = 0;
+        foreach ($this->windows($limit, $deadline) as [$window, $needed]) {
+            $queued += $this->plan($window, $config, $needed);
         }
 
-        return DB::transaction(function () use ($window, $config): int {
+        return $queued;
+    }
+
+    /** @return Generator<int, array{object, bool}> */
+    private function windows(int $limit, int $deadline): Generator
+    {
+        $dueAt = now();
+        $candidates = DB::table('obfuscation_recovery_bundles')->where('kind', 'posting')
+            ->whereNotIn('state', RecoveryOwnership::INACTIVE_STATES)
+            ->whereNotNull('source_epoch')->whereNotNull('groups_id')->whereNotNull('capture_generation')
+            ->orderByDesc('created_at')->orderByDesc('id')->lazy(100);
+        foreach ($candidates as $candidate) {
+            if (hrtime(true) >= $deadline) {
+                return;
+            }
+            $envelope = (new RecoveryFrontierRebuild)->envelope($candidate);
+            if ($envelope === null) {
+                continue;
+            }
+            $scope = RecoveryPositiveCoverage::scope($candidate->source_epoch, (int) $candidate->groups_id, (int) $candidate->capture_generation);
+            $witnesses = (new RecoveryFrontierRequirement)->witnesses(DB::connection(), $scope, $envelope);
+            $windows = RecoveryFrontierWindows::overlapping(DB::connection(), $candidate,
+                $witnesses['left'] ?? $envelope['first_article'], $witnesses['right'] ?? $envelope['last_article'], false)
+                ->where('next_gap_at', '<=', $dueAt)->orderBy('next_gap_at')->orderBy('scan_id')->limit($limit)->get();
+            foreach ($windows as $window) {
+                if (hrtime(true) >= $deadline) {
+                    return;
+                }
+                yield [$window, true];
+                if (--$limit === 0) {
+                    return;
+                }
+            }
+        }
+        if (hrtime(true) >= $deadline) {
+            return;
+        }
+        $windows = DB::table('obfuscation_recovery_scan_windows')->where('next_gap_at', '<=', $dueAt)
+            ->orderBy('next_gap_at')->orderBy('scan_id')->limit($limit)->get();
+        foreach ($windows as $window) {
+            if (hrtime(true) >= $deadline) {
+                return;
+            }
+            yield [$window, false];
+        }
+    }
+
+    private function plan(object $window, RecoveryConfig $config, bool $needed): int
+    {
+        return DB::transaction(function () use ($window, $config, $needed): int {
             $control = DB::table('obfuscation_recovery_controls')->where('scope', 'group:'.$window->groups_id)->lockForUpdate()->first();
             $window = DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $window->scan_id)->lockForUpdate()->first();
             $epoch = DB::table('obfuscation_recovery_controls')->where('scope', 'primary')->value('epoch');
@@ -35,10 +85,13 @@ final class RecoveryGapPlanner
 
                 return 0;
             }
+            if ($window->next_gap_at === null || $window->next_gap_at > now()) {
+                return 0;
+            }
             $selection = DB::table('usenet_groups')->where('id', $window->groups_id)->value('obfuscation_recovery_profile');
             $profile = $config->admits($selection, RecoveryAlgorithm::Media->selection()) ? RecoveryAlgorithm::Media
                 : ($config->admits($selection, RecoveryAlgorithm::Rar->selection()) ? RecoveryAlgorithm::Rar : null);
-            DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $window->scan_id)->update(['next_gap_at' => now()->addMinutes(5)]);
+            DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $window->scan_id)->update(['next_gap_at' => $needed ? now()->addMinutes(5) : now()->addHour()]);
             if ($profile === null) {
                 return 0;
             }
@@ -86,7 +139,7 @@ final class RecoveryGapPlanner
             $cursor = count($holes) > 10 ? $holes[10][0] : $last + 1;
             DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $window->scan_id)->update([
                 'gap_cursor' => $cursor > $frontier ? null : $cursor,
-                'next_gap_at' => $cursor > $frontier ? now()->addMinutes(5) : now()->addSecond(),
+                'next_gap_at' => ! $needed ? now()->addHour() : ($cursor > $frontier ? now()->addMinutes(5) : now()->addSecond()),
             ]);
 
             return $queued;
