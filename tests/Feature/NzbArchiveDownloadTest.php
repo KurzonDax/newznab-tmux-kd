@@ -69,7 +69,8 @@ final class NzbArchiveDownloadTest extends TestCase
     public function test_download_accounts_only_for_archivable_releases_and_removes_only_those_from_basket(): void
     {
         $user = $this->browserUser();
-        $user->role->update(['downloadrequests' => 3]);
+        $user->role->forceFill(['downloadrequests' => 3])->save();
+        $this->assertSame(3, (int) $user->role->fresh()->downloadrequests);
         $ids = [];
         $guids = [];
         foreach (range(1, 4) as $index) {
@@ -120,7 +121,8 @@ final class NzbArchiveDownloadTest extends TestCase
     public function test_empty_archive_returns_not_found_and_quota_rejection_does_not_charge(): void
     {
         $user = $this->browserUser();
-        $user->role->update(['downloadrequests' => 0]);
+        $user->role->forceFill(['downloadrequests' => 0])->save();
+        $this->assertSame(0, (int) $user->role->fresh()->downloadrequests);
         $guid = md5('not-on-disk');
         $this->release('Missing', ['guid' => $guid]);
         $request = Request::create('/getnzb', 'GET', ['id' => $guid, 'zip' => '1']);
