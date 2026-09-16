@@ -52,6 +52,28 @@ final class ReleaseBrowserControllerTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_browse_renders_video_summary_with_release_id_as_the_video_primary_key(): void
+    {
+        Schema::create('video_data', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id')->primary();
+            foreach (['containerformat', 'overallbitrate', 'videoduration', 'videoformat', 'videocodec', 'videoaspect', 'videolibrary'] as $column) {
+                $table->string($column)->nullable();
+            }
+            foreach (['videowidth', 'videoheight', 'videoframerate'] as $column) {
+                $table->unsignedInteger($column)->nullable();
+            }
+        });
+        $releaseId = $this->release('Video summary regression');
+        DB::table('video_data')->insert([
+            'releases_id' => $releaseId, 'videoheight' => 1080, 'videocodec' => 'x264', 'videoformat' => 'AVC',
+        ]);
+
+        $this->actingAs($this->browserUser())->get('/browse/all?view=table')
+            ->assertOk()
+            ->assertSee('Video summary regression')
+            ->assertSee('1080p · x264');
+    }
+
     public function test_year_picker_offers_complete_choices_even_without_matching_metadata(): void
     {
         $this->createCoverCatalogSchema('movieinfo');
