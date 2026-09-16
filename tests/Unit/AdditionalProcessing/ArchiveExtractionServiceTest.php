@@ -17,6 +17,25 @@ class ArchiveExtractionServiceTest extends TestCase
 {
     use CreatesProcessingConfiguration;
 
+    public function test_a_truncated_rar_manifest_cannot_be_used_for_naming(): void
+    {
+        $data = (string) file_get_contents(base_path('tests/Fixtures/audio-store.rar'));
+        $service = new ArchiveExtractionService($this->makeConfig());
+        $context = new ReleaseProcessingContext(new Release(['id' => 1]));
+        $directory = $this->makeTempDirectory('archive-manifest').'/';
+        $complete = $service->processCompressedData($data, $context, $directory);
+        $this->assertTrue($complete['manifestComplete']);
+
+        $truncated = $service->processCompressedData(substr($data, 0, 80), $context, $directory);
+        $this->assertTrue($truncated['success']);
+        $this->assertSame('00-group.nfo', $truncated['files'][0]['name']);
+        $this->assertFalse($truncated['manifestComplete']);
+
+        $volume = (string) file_get_contents(base_path('tests/Fixtures/Audio/rar-seek/store-seek.part1.rar'));
+        $incompleteSet = $service->processCompressedData($volume, $context, $directory);
+        $this->assertFalse($incompleteSet['manifestComplete']);
+    }
+
     protected function tearDown(): void
     {
         Mockery::close();
@@ -27,6 +46,7 @@ class ArchiveExtractionServiceTest extends TestCase
     public function it_returns_file_data_directly_from_archive_info_when_available(): void
     {
         $archiveInfo = Mockery::mock(ArchiveInfo::class);
+        $archiveInfo->shouldReceive('getReader')->andReturn(null);
         $archiveInfo->shouldReceive('setData')->once()->with('ARCHIVE', true)->andReturn(true);
         $archiveInfo->shouldReceive('getFileData')->once()->with('cover.jpg')->andReturn('IMAGE-DATA');
 
@@ -43,6 +63,7 @@ class ArchiveExtractionServiceTest extends TestCase
     public function it_inspects_an_archive_once_when_extracting_multiple_candidates(): void
     {
         $archiveInfo = Mockery::mock(ArchiveInfo::class);
+        $archiveInfo->shouldReceive('getReader')->andReturn(null);
         $archiveInfo->shouldReceive('setData')->once()->with('ARCHIVE', true)->andReturn(true);
         $archiveInfo->shouldReceive('getFileData')->once()->with('release.nfo')->andReturn('NFO-DATA');
         $archiveInfo->shouldReceive('getFileData')->once()->with('cover.jpg')->andReturn('IMAGE-DATA');
@@ -80,6 +101,7 @@ class ArchiveExtractionServiceTest extends TestCase
     public function it_runs_zip_extraction_non_interactively_under_the_configured_timeout(): void
     {
         $archiveInfo = Mockery::mock(ArchiveInfo::class);
+        $archiveInfo->shouldReceive('getReader')->andReturn(null);
         $archiveInfo->error = '';
         $archiveInfo->shouldReceive('setData')->once()->with('ARCHIVE', true)->andReturn(true);
         $archiveInfo->shouldReceive('getSummary')->once()->with(true)->andReturn([
@@ -126,6 +148,7 @@ class ArchiveExtractionServiceTest extends TestCase
     public function it_classifies_an_unzip_incorrect_password_exit_as_passworded(): void
     {
         $archiveInfo = Mockery::mock(ArchiveInfo::class);
+        $archiveInfo->shouldReceive('getReader')->andReturn(null);
         $archiveInfo->error = '';
         $archiveInfo->shouldReceive('setData')->once()->with('ARCHIVE', true)->andReturn(true);
         $archiveInfo->shouldReceive('getSummary')->once()->with(true)->andReturn([
@@ -165,6 +188,7 @@ class ArchiveExtractionServiceTest extends TestCase
         bool $encrypted,
     ): void {
         $archiveInfo = Mockery::mock(ArchiveInfo::class);
+        $archiveInfo->shouldReceive('getReader')->andReturn(null);
         $archiveInfo->error = '';
         $archiveInfo->shouldReceive('setData')->once()->with('ARCHIVE', true)->andReturn(true);
         $archiveInfo->shouldReceive('getSummary')->once()->with(true)->andReturn([

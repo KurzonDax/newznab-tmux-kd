@@ -105,7 +105,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
 
         $manager->finalizeRelease($context, false);
 
-        $this->assertSame(1, $nameFixing->matchPreDbFilesCalls);
+        $this->assertSame(0, $nameFixing->matchPreDbFilesCalls);
         $this->assertSame(1, DB::table('release_files')->count());
         $this->assertSame(1, DB::table('releases')->where('id', 1)->value('rarinnerfilecount'));
         $this->assertNull(DB::table('releases')->where('id', 1)->value('additional_pp_claimed_at'));
@@ -207,7 +207,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         $this->assertSame(-1, (int) DB::table('releases')->where('id', 1)->value('haspreview'));
     }
 
-    public function test_rar_inner_video_uses_the_longest_descriptive_title(): void
+    public function test_rar_inner_video_uses_the_visible_descriptive_title(): void
     {
         DB::table('releases')->insert(array_merge($this->releaseRow(Category::OTHER_HASHED), [
             'name' => '(Els1212) [02/23] - "CQPVTOVKUDJVGELG.part01.rar"',
@@ -252,7 +252,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
 
         $manager->processReleaseNameFromRar([
             'file_list' => [
-                ['name' => '2016-04-16 - Solana A - Before The Party 2.mp4'],
+                ['name' => 'Parent/.hidden/2016-04-16 - Solana A - Before The Party 2.mp4'],
                 ['name' => '2016-04-17 - Anita Bellini - Playful And Petite (4k).mp4'],
             ],
         ], $context);
@@ -260,7 +260,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
-    public function test_disabled_fallback_does_not_inspect_nested_archive_after_extractable_outer_name(): void
+    public function test_hidden_nested_archive_cannot_name_the_release(): void
     {
         DB::table('releases')->insert($this->releaseRow(Category::OTHER_HASHED));
 
@@ -279,10 +279,10 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
 
         $manager->processReleaseNameFromRar([
             'file_list' => [
-                ['name' => 'Short-AB.mkv'],
+                ['name' => 'Parent/.hidden/Short-AB.rar'],
             ],
             'archives' => [
-                'Short-AB.mkv' => [
+                'Parent/.hidden/Short-AB.rar' => [
                     'file_list' => [
                         ['name' => 'Movie.2020.1080p-GRP.mkv'],
                     ],
@@ -291,6 +291,29 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         ], $context);
 
         $this->addToAssertionCount(1);
+    }
+
+    public function test_stored_nested_file_keeps_its_hidden_archive_ancestor_for_later_name_matching(): void
+    {
+        DB::table('releases')->insert($this->releaseRow());
+        Search::shouldReceive('updateRelease')->once()->with(1);
+        Search::shouldNotReceive('searchPredb');
+        DB::table('predb')->insert(['title' => 'Hidden.Payload.2026.2160p-GROUP']);
+        $manager = $this->makeManager();
+        $context = new ReleaseProcessingContext(Release::query()->findOrFail(1));
+        $manager->addFileInfo([
+            'name' => 'Hidden.Payload.2026.2160p-GROUP.mkv',
+            'source' => 'main > Parent/.hidden/opaque.rar',
+            'size' => 1024,
+        ], $context, '\\.(?:par2|sfv|nzb)');
+        $manager->finalizeRelease($context, true);
+
+        $release = Release::query()->findOrFail(1);
+        $release['filename'] = DB::table('release_files')->value('name');
+        $release['releases_id'] = 1;
+        $this->assertSame(0, (new NameFixingService)->matchPreDbFiles($release, true, true, false));
+        $this->assertSame('Example', $release->fresh()->searchname);
+        $this->assertSame(1, $release->rarinnerfilecount);
     }
 
     public function test_database_statements_are_measured_inside_an_active_release_scope(): void
@@ -875,7 +898,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         ], $context, '\\.(?:par2|sfv|nzb)'));
 
         $this->assertFalse($manager->addFileInfo([
-            'name' => 'Fixer/Fixer.exe',
+            'name' => 'Parent/.hidden/Fixer.exe',
             'size' => 2048,
             'date' => 1_788_600_000,
         ], $context, '\\.(?:par2|sfv|nzb)'));

@@ -290,13 +290,15 @@ final class NameFixingQueryService
             default => throw new InvalidArgumentException("Unsupported release-file source [{$source}]."),
         };
 
-        return $this->selectForReleaseIds(
+        $rows = $this->selectForReleaseIds(
             'SELECT rf.releases_id, rf.name AS textstring, rf.name AS filename, rf.crc32'.$sourceColumns.'
              FROM release_files rf
              WHERE rf.releases_id IN (%s)'.$filter.'
              ORDER BY rf.releases_id, rf.name',
             $releaseIds
         );
+
+        return $this->eligibleFileRows($rows);
     }
 
     /**
@@ -397,8 +399,8 @@ final class NameFixingQueryService
      */
     public function crcDonors(array $crcs): array
     {
-        return $this->donors(
-            'SELECT rf.crc32 AS match_key, r.id AS releases_id, r.size AS relsize,
+        $donors = $this->donors(
+            'SELECT rf.crc32 AS match_key, rf.name AS filename, r.id AS releases_id, r.size AS relsize,
                     r.searchname, r.fromname, r.predb_id
              FROM release_files rf
              INNER JOIN releases r ON r.id = rf.releases_id
@@ -406,6 +408,17 @@ final class NameFixingQueryService
              AND '.self::TRUSTED_DONOR_PREDICATE.' AND '.RecoveryIdentityPolicy::singleItemSql('r.id', $this->database, donor: true),
             $crcs
         );
+
+        return array_map($this->eligibleFileRows(...), $donors);
+    }
+
+    /**
+     * @param  list<object>  $rows
+     * @return list<object>
+     */
+    private function eligibleFileRows(array $rows): array
+    {
+        return array_values(array_filter($rows, static fn (object $row): bool => ArchiveNamingPath::eligible((string) $row->filename)));
     }
 
     /**

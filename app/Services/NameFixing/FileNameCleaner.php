@@ -127,12 +127,12 @@ class FileNameCleaner
      */
     public function cleanForMatching(string $fileName): string|false
     {
-        // Strip non-printing characters
-        $fileName = preg_replace('/[[:^print:]]/', '', $fileName);
-
-        if ($fileName === '' || str_starts_with($fileName, '.')) {
+        if (! ArchiveNamingPath::eligible($fileName)) {
             return false;
         }
+
+        // Strip non-printing characters
+        $fileName = preg_replace('/[[:^print:]]/', '', $fileName);
 
         // Extract filename from path
         $fileName = $this->extractFilenameFromPath($fileName);

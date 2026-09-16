@@ -117,6 +117,9 @@ class FilePrioritizer
         ];
 
         foreach ($files as $file) {
+            if (! ArchiveNamingPath::eligible($file)) {
+                continue;
+            }
             $lowerFile = strtolower($file);
 
             // Skip junk files that do not carry release identity.

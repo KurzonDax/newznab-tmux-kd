@@ -11,16 +11,23 @@ use App\Models\Category;
 use App\Models\Predb;
 use App\Models\Release;
 use App\Models\UsenetGroup;
+use App\Services\AdditionalProcessing\ArchiveExtractionService;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
+use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\ReleaseFileManager;
+use App\Services\AdditionalProcessing\ReleaseProcessor;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
+use App\Services\AdditionalProcessing\UsenetDownloadService;
 use App\Services\Categorization\CategorizationService;
 use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\NameFixing\DowngradedNameRestorer;
 use App\Services\NameFixing\FileNameCleaner;
 use App\Services\NameFixing\ReleaseUpdateService;
+use App\Services\NNTP\DTO\ArticleDownloadResult;
+use App\Services\NNTP\NNTPService;
+use App\Services\Nzb\NzbService;
 use App\Services\Releases\PreviewGenerationPolicy;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -31,9 +38,12 @@ use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
+use Tests\Unit\AdditionalProcessing\CreatesProcessingConfiguration;
+use ZipArchive;
 
 class ReleaseNameFixedRecategorizationTest extends TestCase
 {
+    use CreatesProcessingConfiguration;
     use IsolatedSqliteDatabase;
 
     /**
@@ -688,6 +698,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             'persisted forward volume' => [[$last], [$first], [], 'Murdoch Mysteries S02'],
             'queued forward volume' => [[$last], [], [$first], 'Murdoch Mysteries S02'],
             'two episodes in one volume' => [[$last, $first], [], [], 'Murdoch Mysteries S02'],
+            'season episodes with matching sidecar' => [[$last, $first, 'Season 2/Murdoch Mysteries S02E01 Mild, Mild West.nfo'], [], [], 'Murdoch Mysteries S02'],
             'single episode in season directory' => [[$last], [], [], $episodeTitle],
             'same episode repeated' => [[$last], [$last], [], $episodeTitle],
             'different seasons' => [[$last], ['Murdoch Mysteries S01E01 Title.mkv'], [], $episodeTitle],
@@ -695,6 +706,200 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             'non-video evidence' => [[$last], ['Murdoch Mysteries S02E01 Title.nfo'], [], $episodeTitle],
             'normalized show and numeric season' => [[$last], ['Season 2\\murdoch_mysteries s2e1 Title.MKV'], [], 'Murdoch Mysteries S02'],
             'PreDB wins over season evidence' => [[$last], [$first], [], $episodeTitle, true],
+            'hidden persisted episode is not season evidence' => [[$last], ['Parent/.hidden/'.$first], [], $episodeTitle],
+            'hidden queued episode is not season evidence' => [[$last], [], ['Parent/.hidden/'.$first], $episodeTitle],
+        ];
+    }
+
+    /** @param array<string, mixed> $manifest */
+    #[DataProvider('archiveNamingManifests')]
+    public function test_archive_naming_excludes_hidden_directory_descendants_before_selecting_a_title(array $manifest, bool $rename = true): void
+    {
+        Search::shouldReceive('updateRelease')->andReturn(true);
+        Search::shouldReceive('searchPredb')->andReturn([]);
+        config(['nntmux.echocli' => false]);
+        $group = UsenetGroup::query()->create(['name' => 'alt.binaries.test']);
+        $release = Release::factory()->create([
+            'name' => '5da7b5393d4f4445ac4db1ee8e95f567',
+            'searchname' => '5da7b5393d4f4445ac4db1ee8e95f567',
+            'groups_id' => $group->id,
+            'categories_id' => Category::OTHER_HASHED,
+            'isrenamed' => 0,
+        ]);
+        DB::table('predb')->insert(['title' => 'Hidden.Payload.2026.2160p-GROUP']);
+
+        Schema::create('release_files', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id');
+            $table->string('name');
+        });
+        $manager = app(ReleaseFileManager::class);
+        $context = new ReleaseProcessingContext($release);
+        $manager->processReleaseNameFromRar($manifest, $context);
+
+        $release->refresh();
+        $this->assertSame($rename ? 'Visible.Release.2026.1080p-GROUP' : '5da7b5393d4f4445ac4db1ee8e95f567', $release->searchname);
+        $this->assertSame(0, (int) $release->predb_id);
+        $this->assertSame($rename ? 1 : 0, (int) $release->is_trusted_name);
+        $this->assertSame($rename ? 1 : 0, (int) $release->proc_files);
+        $this->assertSame($rename ? Category::MOVIE_HD : Category::OTHER_HASHED, (int) $release->categories_id);
+    }
+
+    /** @return array<string, array{array<string, mixed>, 1?: bool}> */
+    public static function archiveNamingManifests(): array
+    {
+        $hidden = ['name' => '.Hidden.Payload.2026.2160p-GROUP/Hidden.Payload.2026.2160p-GROUP.mkv', 'size' => 262144];
+        $visible = ['name' => 'Visible.Release.2026/Visible.Release.2026.1080p-GROUP.mkv', 'size' => 32768];
+        $cases = [
+            'root hidden first' => [['file_list' => [$hidden, $visible]]],
+            'matching movie sidecar' => [['file_list' => [$hidden, $visible, ['name' => 'Visible.Release.2026.1080p-GROUP.nfo']]]],
+            'hidden last' => [['file_list' => [$visible, $hidden]]],
+            'hidden only' => [['file_list' => [$hidden]], false],
+            'root dotfile policy retained' => [['file_list' => [['name' => '.Visible.Release.2026.1080p-GROUP.mkv']]], false],
+            'nested dotfile policy retained' => [['file_list' => [['name' => 'Visible/.Visible.Release.2026.1080p-GROUP.mkv']]]],
+            'unrelated visible titles' => [['file_list' => [$visible, ['name' => 'Other.Movie.2025.2160p-GROUP.mkv']]], false],
+            'unrelated descriptive titles' => [['file_list' => [['name' => 'A Wonderful Day.mkv'], ['name' => 'A Trip To The Mountains.mkv']]], false],
+            'summary error' => [['file_list' => [$visible], 'error' => 'Truncated header'], false],
+            'entry error' => [['file_list' => [$visible, ['error' => 'Unreadable entry']]], false],
+            'missing entries' => [['file_count' => 2, 'file_list' => [$visible]], false],
+            'truncated payload before later headers' => [['use_range' => '0-999', 'file_list' => [array_merge($visible, ['next_offset' => 2000])]], false],
+            'directories are not titles' => [['file_list' => [['name' => 'Other.Movie.2025-GROUP', 'is_dir' => 1], $visible]]],
+            'hidden archive cannot name through fallback' => [['file_list' => [['name' => 'Parent/.hidden/opaque.rar']], 'archives' => ['Parent/.hidden/opaque.rar' => ['file_list' => [$visible]]]], false],
+        ];
+        foreach (['Parent/', './', 'Parent/Nested/'] as $prefix) {
+            $cases['hidden ancestor '.$prefix] = [['file_list' => [array_replace($hidden, ['name' => $prefix.$hidden['name']]), $visible]]];
+        }
+        $cases['backslash paths'] = [['file_list' => array_map(static fn (array $file): array => array_replace($file, ['name' => str_replace('/', '\\', $file['name'])]), [$hidden, $visible])]];
+        $cases['leading current directory'] = [['file_list' => [$hidden, array_replace($visible, ['name' => './'.$visible['name']])]]];
+        foreach (['../', '.hidden/../', '/absolute/', 'C:\\', './C:\\', './/', "invalid\x00/"] as $prefix) {
+            $cases['invalid '.$prefix] = [['file_list' => [['name' => $prefix.'Hidden.Payload.2026.2160p-GROUP.mkv'], $visible]]];
+        }
+        $cases['nested invalid path'] = [['file_list' => [['name' => 'opaque.rar']], 'archives' => ['opaque.rar' => ['file_list' => [['name' => '/Hidden.Payload.2026.2160p-GROUP.mkv']]]]], false];
+        $manyHidden = [];
+        for ($i = 0; $i < 15; $i++) {
+            $manyHidden[] = array_replace($hidden, ['name' => '.hidden/'.$i.'/'.$hidden['name']]);
+        }
+        $cases['past storage cap'] = [['file_list' => [...$manyHidden, $visible]]];
+
+        return $cases;
+    }
+
+    #[DataProvider('generatedArchiveCases')]
+    public function test_generated_archive_names_from_visible_content_and_finalizes_idempotently(int $hiddenCount, bool $encrypted, int $priorPassword): void
+    {
+        config(['nntmux.echocli' => false]);
+        Search::shouldReceive('searchPredb')->andReturn([]);
+        $synchronized = [];
+        Search::shouldReceive('updateRelease')->andReturnUsing(function (int $id) use (&$synchronized): bool {
+            $synchronized[] = Release::query()->findOrFail($id)->searchname;
+
+            return true;
+        });
+        Schema::table('releases', function (Blueprint $table): void {
+            $table->timestamp('additional_pp_claimed_at')->nullable();
+            $table->string('additional_pp_claim_token')->nullable();
+            $table->integer('rarinnerfilecount')->default(0);
+            $table->integer('jpgstatus')->default(0);
+            $table->integer('videostatus')->default(0);
+            $table->integer('nfostatus')->default(1);
+        });
+        Schema::create('categories', function (Blueprint $table): void {
+            $table->unsignedInteger('id')->primary();
+            $table->unsignedInteger('root_categories_id');
+        });
+        DB::table('categories')->insert([
+            ['id' => Category::OTHER_HASHED, 'root_categories_id' => 1],
+            ['id' => Category::MOVIE_HD, 'root_categories_id' => 2000],
+        ]);
+        Schema::create('release_files', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id');
+            $table->string('name');
+            $table->unsignedBigInteger('size');
+            $table->string('crc32')->default('');
+            $table->boolean('passworded')->default(false);
+            $table->timestamps();
+            $table->primary(['releases_id', 'name']);
+        });
+        $group = UsenetGroup::query()->create(['name' => 'alt.binaries.test']);
+        $release = Release::factory()->create([
+            'name' => '5da7b5393d4f4445ac4db1ee8e95f567',
+            'searchname' => '5da7b5393d4f4445ac4db1ee8e95f567',
+            'groups_id' => $group->id,
+            'categories_id' => Category::OTHER_HASHED,
+            'isrenamed' => 0,
+            'passwordstatus' => $priorPassword,
+        ]);
+        DB::table('predb')->insert(['title' => 'Hidden.Payload.2026.2160p-GROUP']);
+        $payload = '';
+        for ($i = 0; $i < 8192; $i++) {
+            $payload .= hash('sha256', pack('V', $i), true);
+        }
+        $hidden = '.Hidden.Payload.2026.2160p-GROUP/Hidden.Payload.2026.2160p-GROUP.mkv';
+        $visible = 'Visible.Release.2026.1080p-GROUP/Visible.Release.2026.1080p-GROUP.mkv';
+        $archivePath = $this->makeTempPath('hidden-first', '.zip');
+        $zip = new ZipArchive;
+        $this->assertTrue($zip->open($archivePath, ZipArchive::CREATE | ZipArchive::OVERWRITE));
+        $entries = [$hidden => $payload];
+        for ($i = 1; $i < $hiddenCount; $i++) {
+            $entries['Parent/.hidden/'.$i.'/Hidden.Payload.2026.2160p-GROUP.mkv'] = substr($payload, 0, 32);
+        }
+        $entries[$visible] = substr($payload, 0, 32768);
+        foreach ($entries as $name => $bytes) {
+            $this->assertTrue($zip->addFromString($name, $bytes));
+            $this->assertTrue($zip->setCompressionName($name, ZipArchive::CM_STORE));
+        }
+        if ($encrypted) {
+            $this->assertTrue($zip->setEncryptionName($hidden, ZipArchive::EM_AES_256, 'fixture-only'));
+        }
+        $this->assertTrue($zip->close());
+        $config = $this->makeConfig(['processPasswords' => true]);
+        $this->app->instance(ProcessingConfiguration::class, $config);
+        $inspector = new ArchiveExtractionService($config);
+        $tmpPath = $this->makeTempDirectory('manifest-only').'/';
+        $archive = (string) file_get_contents($archivePath);
+        config(['nntmux_settings.path_to_nzbs' => $this->makeTempDirectory('manifest-nzbs').'/']);
+        $nzb = app(NzbService::class);
+        $nzbPath = $nzb->getNzbPath($release->guid, createIfNotExist: true);
+        file_put_contents($nzbPath, gzencode('<nzb xmlns="http://www.newzbin.com/DTD/2003/nzb"><file poster="fixture@example.invalid" date="1788600000" subject="&quot;opaque.zip&quot; yEnc (1/1)"><groups><group>alt.binaries.test</group></groups><segments><segment bytes="'.strlen($archive).'" number="1">fixture@example.invalid</segment></segments></file></nzb>'));
+        $nntp = Mockery::mock(NNTPService::class);
+        $nntp->shouldReceive('getMessagesByMessageIDWithCrcStatus')->twice()->andReturn(new ArticleDownloadResult($archive));
+        $this->app->instance(UsenetDownloadService::class, new UsenetDownloadService($config, $nntp));
+        $synchronized = [];
+        for ($pass = 0; $pass < 2; $pass++) {
+            $context = new ReleaseProcessingContext($release->fresh());
+            $context->nzbHasCompressedFile = true;
+            $result = $inspector->processCompressedData($archive, $context, $tmpPath);
+            $this->assertTrue($result['success']);
+            $this->assertFalse($result['hasPassword']);
+            $this->assertSame(array_keys($entries), array_column($result['dataSummary']['file_list'], 'name'));
+            $this->assertSame(262144, $result['files'][0]['size']);
+            $this->assertSame(32768, $result['files'][$hiddenCount]['size']);
+            $this->assertSame($encrypted ? 1 : 0, $result['files'][0]['pass']);
+
+            $this->assertTrue($result['manifestComplete']);
+            app(ReleaseProcessor::class)->process($context, $tmpPath);
+            $release->refresh();
+            $this->assertSame('Visible.Release.2026.1080p-GROUP', $release->searchname);
+            $this->assertSame(Category::MOVIE_HD, (int) $release->categories_id);
+            $this->assertSame(1, (int) $release->is_trusted_name);
+            $this->assertSame(1, (int) $release->proc_files);
+            $this->assertSame($encrypted ? 1 : $priorPassword, (int) $release->passwordstatus);
+            $this->assertSame(min(11 * ($pass + 1), $hiddenCount + 1 - (int) $encrypted), (int) $release->rarinnerfilecount);
+            $this->assertSame($hiddenCount + 1 - (int) $encrypted, $context->totalFileInfo);
+            $this->assertSame(0, (int) $release->predb_id);
+            $this->assertSame([], glob($tmpPath.'unzip/*'));
+        }
+        $this->assertNotEmpty($synchronized);
+        $this->assertSame(['Visible.Release.2026.1080p-GROUP'], array_values(array_unique($synchronized)));
+    }
+
+    /** @return array<string, array{int, bool, int}> */
+    public static function generatedArchiveCases(): array
+    {
+        return [
+            'hidden first does not imply encryption' => [1, false, 0],
+            'prior password evidence survives' => [1, false, 1],
+            'visible candidate beyond inventory cap' => [15, false, 0],
+            'hidden encrypted entry with visible headers' => [1, true, 0],
         ];
     }
 
