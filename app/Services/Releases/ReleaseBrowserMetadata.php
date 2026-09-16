@@ -6,7 +6,8 @@ namespace App\Services\Releases;
 
 use App\Enums\BrowseRoot;
 use App\Enums\ReleaseSort;
-use App\Support\MovieSearchQuery;
+use App\Support\WebSearchQuery;
+use App\Support\WebSearchText;
 use App\Support\YearRange;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -93,17 +94,19 @@ final class ReleaseBrowserMetadata
     /** @param array<string, string> $filters */
     public function searchMovies(Builder $query, string $text, array $filters): void
     {
-        $search = MovieSearchQuery::fromInput(['q' => $text, ...$filters]);
-        foreach ($search->termsByField() as $field => $terms) {
-            foreach ($terms as $term) {
-                $columns = $field === 'all' ? ['title', 'actors', 'director', 'plot'] : [$field];
-                $pattern = '%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $term).'%';
-                $query->where(function (Builder $words) use ($columns, $pattern): void {
-                    foreach ($columns as $column) {
-                        $words->orWhereRaw('m.'.$column." LIKE ? ESCAPE '!'", [$pattern]);
-                    }
-                });
-            }
+        $fields = WebSearchQuery::fromInput(['q' => $text, ...$filters])->indexTerms();
+        if ($fields === []) {
+            return;
+        }
+        $keys = app(WebSearchEntityLookup::class)->keys('movies', $fields, 'imdbid');
+        if ($keys !== []) {
+            $query->whereIn('m.imdbid', $keys);
+
+            return;
+        }
+        foreach ($fields as $field => $terms) {
+            $columns = $field === 'all' ? ['m.title', 'm.actors', 'm.director', 'm.plot'] : ['m.'.$field];
+            WebSearchText::apply($query, $columns, $terms);
         }
     }
 

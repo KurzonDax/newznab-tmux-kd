@@ -138,6 +138,23 @@ final class WebSearchDriverPaginationTest extends TestCase
         $this->assertCount(2, $this->requests);
     }
 
+    #[DataProvider('drivers')]
+    public function test_movie_cover_text_searches_all_four_movie_fields_with_shared_syntax(string $name): void
+    {
+        $driver = $this->driver($name);
+        $driver->searchEntityFields('movies', ['all' => '"part two" -cam'], 'imdbid');
+        $body = $this->requests[0];
+        if ($name === 'manticore') {
+            $query = json_encode($body['query'], JSON_THROW_ON_ERROR);
+            $this->assertStringContainsString('@(title,actors,director,plot)', $query);
+            $this->assertStringContainsString('-*cam*', $query);
+        } else {
+            $query = $body['query']['bool']['must'][0]['query_string'];
+            $this->assertSame(['title', 'actors', 'director', 'plot'], $query['fields']);
+            $this->assertSame('"part two" -*cam*', $query['query']);
+        }
+    }
+
     public function test_elasticsearch_bulk_indexing_keeps_linked_titles_and_link_attributes(): void
     {
         $driver = $this->driver('elasticsearch');

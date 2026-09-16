@@ -67,8 +67,8 @@ class MovieControllerTest extends TestCase
         ]);
 
         Search::shouldReceive('isAvailable')->byDefault()->andReturn(true);
-        Search::shouldReceive('searchMoviesByFields')->byDefault()->andReturn([
-            'imdbids' => [], 'movieinfo_ids' => [], 'data' => [],
+        Search::shouldReceive('searchEntityFields')->byDefault()->andReturn([
+            'ids' => [], 'keys' => [], 'available' => true, 'has_more' => false,
         ]);
     }
 
