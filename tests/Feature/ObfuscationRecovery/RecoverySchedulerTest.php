@@ -84,6 +84,14 @@ final class RecoverySchedulerTest extends TestCase
             $report = $scheduler->local($stage, limit: 1, seconds: 1, engine: true);
             $this->assertArrayNotHasKey('engine_stopped', $report);
             $this->assertSame(0, $report['expired_headers']);
+            foreach (['expired_scans', 'expired_scan_batches', 'compacted_incomplete_scans', 'expired_frontiers',
+                'expired_frontier_conflicts', 'expired_frontier_ranges'] as $metric) {
+                if ($stage === RecoveryStage::Discover) {
+                    $this->assertSame(0, $report[$metric]);
+                } else {
+                    $this->assertArrayNotHasKey($metric, $report);
+                }
+            }
         }
 
         DB::table('settings')->where('name', 'running')->update(['value' => 0]);
