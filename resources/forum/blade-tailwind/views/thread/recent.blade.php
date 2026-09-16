@@ -17,5 +17,8 @@
                 </div>
             </div>
         @endif
+        <div class="my-4">
+            {{ $threads->links('forum::pagination') }}
+        </div>
     </div>
 @stop

@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Http\Controllers\ForumThreadController;
 use App\Support\Forum\CategoryTreeBuilder;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
+use TeamTeaTime\Forum\Http\Controllers\Blade\ThreadController;
 use TeamTeaTime\Forum\Models\Category;
 use TeamTeaTime\Forum\Models\Post;
 
@@ -18,7 +20,7 @@ class ForumServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->bind(ThreadController::class, ForumThreadController::class);
     }
 
     /**

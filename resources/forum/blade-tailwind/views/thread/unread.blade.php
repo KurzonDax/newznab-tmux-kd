@@ -15,6 +15,9 @@
                 {{ trans('forum::threads.none_found') }}
             </div>
         @endif
+        <div class="my-4">
+            {{ $threads->links('forum::pagination') }}
+        </div>
     </div>
 
     @if (!$threads->isEmpty())
