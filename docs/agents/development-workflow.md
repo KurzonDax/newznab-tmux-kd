@@ -6,7 +6,7 @@
 
 Master only moves by pull request, and every change merges through this loop — docs, one-line fixes, `/implement <issue-number>` sessions, and ad-hoc requests alike. The required `PHP 8.5 via Sail` check is strict: a pull request that falls behind the effective master tip must update its issue branch and pass the check again before merge.
 
-Before adding tests or publishing, read [bounded verification and CI policy](ci-policy.md).
+Use [bounded verification and CI policy](ci-policy.md) to select checks for changed tests/CI or publication; reuse that context until the scope changes.
 The manifest and planner select bounded correctness suites; the accepted-base
 preflight runs before execution. Four PHP shards and two selected-suite workers
 feed the existing strict aggregate. Prose-only changes skip runtime execution;
@@ -59,13 +59,12 @@ Setup also checks the worktree's git identity, because the master ruleset requir
 
 Startup copies tracked `.env.testing` to the ignored worktree `.env`; it never copies the primary checkout's `.env` or development credentials. It starts the worktree's path-derived Compose project with `.github/docker-compose.ci.yml`, installs Composer and npm dependencies in that worktree, and verifies the container identity, source mount, testing database, PHP, Composer, and Node.
 
-Run Sail, PHP, Artisan, Composer, Node, npm, Pint, PHPStan, and tests through the worktree adapter:
+Run Git, gh, Python verification, and the workflow helpers on the host. The verifier routes application checks through the worktree adapter and records reusable results. For other PHP, Artisan, Composer, Node/npm, and Sail operations, use `scripts/agent-sail`:
 
 ```bash
-scripts/agent-sail artisan test --compact --filter=TestName
-scripts/agent-sail bin pint --dirty --format agent
-scripts/agent-sail bin phpstan analyse --memory-limit=2G
-scripts/agent-sail npm run build
+python3 scripts/agent-verify focused --test tests/Feature/ExampleTest.php --filter test_example
+python3 scripts/agent-verify final
+scripts/agent-sail artisan COMMAND --no-interaction
 ```
 
 The tracked Claude (`.mcp.json`) and Codex (`.codex/config.toml`) configurations both launch Laravel Boost through `scripts/agent-boost-mcp`, which delegates to this same isolated runtime as the container's `sail` user. MCP availability does not participate in issue locking or worktree creation.

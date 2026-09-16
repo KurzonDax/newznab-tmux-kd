@@ -8,7 +8,7 @@
         "cursor",
         "phpstorm-copilot"
     ],
-    "guidelines": true,
+    "guidelines": false,
     "mcp": true,
     "packages": [
         "revolution/laravel-boost-phpstorm-copilot",
