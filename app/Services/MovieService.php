@@ -16,6 +16,7 @@ use App\Models\VideoData;
 use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\MetadataProcessing\MovieProcessingCandidateQuery;
+use App\Services\MetadataProcessing\MovieReleaseBackfill;
 use App\Services\ObfuscationRecovery\RecoveryCatalog;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\ObfuscationRecovery\RecoveryOmdbClient;
@@ -51,6 +52,9 @@ class MovieService
     protected const YEAR_MATCH_PERCENT = 80;
 
     private bool $providerAnswered = false;
+
+    /** @var array<string, string> */
+    private array $movieProviderOutcomes = [];
 
     protected string $currentTitle = '';
 
@@ -335,6 +339,7 @@ class MovieService
             $movie = MovieInfo::query()->where('imdbid', $imdbIdForCover)->first();
             if ($movie !== null) {
                 MovieSearchIndexSync::sync($movie);
+                DB::afterCommit(fn () => app(MovieReleaseBackfill::class)->forMovie($movie));
             }
         }
 
@@ -348,6 +353,7 @@ class MovieService
      */
     public function updateMovieInfo(string $imdbId): bool
     {
+        $this->movieProviderOutcomes = ['tmdb' => 'not found', 'imdb' => 'not found', 'trakt' => 'not found', 'omdb' => 'not found'];
         if ($this->echooutput && $this->service !== '') {
             cli()->primary('Fetching IMDB info from TMDB/IMDB/Trakt/OMDB/iTunes using IMDB id: '.$imdbId);
         }
@@ -365,6 +371,11 @@ class MovieService
         $omdb = $this->fetchOmdbAPIProperties($imdbId);
 
         if (! $imdb && ! $tmdb && ! $trakt && ! $omdb) {
+            Log::warning('Movie record fetch failed.', [
+                'imdb_id' => $imdbId,
+                'providers' => $this->movieProviderOutcomes,
+            ]);
+
             return false;
         }
 
@@ -726,7 +737,8 @@ class MovieService
             return $ret;
 
         } catch (\Throwable $e) {
-            Log::warning('TMDB API error for '.$lookupId.': '.$e->getMessage());
+            $this->movieProviderOutcomes['tmdb'] = $e::class;
+            Log::warning('Movie provider fetch error.', ['imdb_id' => $imdbId, 'provider' => 'tmdb', 'error_class' => $e::class]);
             Cache::put($cacheKey, false, now()->addHours(6));
 
             return false;
@@ -817,7 +829,8 @@ class MovieService
 
             return $scraped;
         } catch (\Throwable $e) {
-            Log::warning('IMDb scrape error for '.$imdbId.': '.$e->getMessage());
+            $this->movieProviderOutcomes['imdb'] = $e::class;
+            Log::warning('Movie provider fetch error.', ['imdb_id' => $imdbId, 'provider' => 'imdb', 'error_class' => $e::class]);
             Cache::put($cacheKey, false, now()->addHours(6));
 
             return false;
@@ -894,7 +907,8 @@ class MovieService
             return $movieData;
 
         } catch (\Throwable $e) {
-            Log::warning('Trakt API error for '.$imdbId.': '.$e->getMessage());
+            $this->movieProviderOutcomes['trakt'] = $e::class;
+            Log::warning('Movie provider fetch error.', ['imdb_id' => $imdbId, 'provider' => 'trakt', 'error_class' => $e::class]);
             Cache::put($cacheKey, false, now()->addHours(6));
 
             return false;
@@ -979,7 +993,8 @@ class MovieService
             return $movieData;
 
         } catch (\Throwable $e) {
-            Log::warning('OMDB API error for '.$imdbId.': '.$e->getMessage());
+            $this->movieProviderOutcomes['omdb'] = $e::class;
+            Log::warning('Movie provider fetch error.', ['imdb_id' => $imdbId, 'provider' => 'omdb', 'error_class' => $e::class]);
             Cache::put($cacheKey, false, now()->addHours(6));
 
             return false;
@@ -1004,6 +1019,10 @@ class MovieService
         }
         $existingImdbId = Release::query()->where('id', $id)->value('imdbid');
         if ($existingImdbId !== null && imdb_id_is_valid($existingImdbId)) {
+            if ($processImdb === 1) {
+                $this->fetchAndLinkMovieRecord($id, (string) $existingImdbId);
+            }
+
             return $existingImdbId;
         }
 
@@ -1033,9 +1052,10 @@ class MovieService
                     $movCheck = $this->getMovieInfo($imdbId);
                     $thirtyDaysInSeconds = 30 * 24 * 60 * 60;
 
-                    if ($movCheck === null ||
-                        (isset($movCheck['updated_at']) &&
-                            (time() - strtotime((string) $movCheck['updated_at'])) > $thirtyDaysInSeconds)) {
+                    if ($movCheck === null) {
+                        $this->fetchAndLinkMovieRecord($id, $imdbId);
+                    } elseif (isset($movCheck['updated_at']) &&
+                            (time() - strtotime((string) $movCheck['updated_at'])) > $thirtyDaysInSeconds) {
 
                         $info = $this->updateMovieInfo($imdbId);
 
@@ -1063,6 +1083,37 @@ class MovieService
         return $imdbId;
     }
 
+    private function fetchAndLinkMovieRecord(int $releaseId, string $imdbId): void
+    {
+        $movie = MovieInfo::query()->where('imdbid', $imdbId)->first();
+        if ($movie !== null) {
+            app(MovieReleaseBackfill::class)->forMovie($movie);
+
+            return;
+        }
+
+        $claimed = Release::query()->whereKey($releaseId)->where('imdbid', $imdbId)->whereNull('movieinfo_id')
+            ->whereRaw(RecoveryIdentityPolicy::singleItemSql())->whereRaw(BundleIdentity::singleItemSql())
+            ->where(fn ($attempts) => $attempts->whereNull('movie_record_lookup_attempts')->orWhere('movie_record_lookup_attempts', '<', MovieProcessingCandidateQuery::MAX_ATTEMPTS))
+            ->where(fn ($due) => $due->whereNull('movie_record_lookup_attempted_at')->orWhere('movie_record_lookup_attempted_at', '<=', now()->subHours(MovieProcessingCandidateQuery::RETRY_HOURS)))
+            ->update([
+                'movie_record_lookup_attempts' => DB::raw('COALESCE(movie_record_lookup_attempts, 0) + 1'),
+                'movie_record_lookup_attempted_at' => now(),
+            ]);
+        if ($claimed === 0) {
+            return;
+        }
+
+        $this->currentTitle = '';
+        $this->currentYear = '';
+        if ($this->updateMovieInfo($imdbId)) {
+            $movie = MovieInfo::query()->where('imdbid', $imdbId)->first();
+            if ($movie !== null) {
+                app(MovieReleaseBackfill::class)->forMovie($movie);
+            }
+        }
+    }
+
     /**
      * Process releases with no IMDB IDs by looking up movie information from various sources.
      *
@@ -1076,7 +1127,7 @@ class MovieService
         }
 
         $query = MovieProcessingCandidateQuery::query($groupID, $guidChar, $lookupIMDB)
-            ->select(['searchname', 'id']);
+            ->select(['searchname', 'id', 'imdbid']);
 
         $res = $query->orderByDesc('id')->limit($this->movieqty)->get();
 
@@ -1089,6 +1140,12 @@ class MovieService
             }
 
             foreach ($res as $arr) {
+                if (imdb_id_is_valid($arr->imdbid)) {
+                    $this->doMovieUpdate('', 'Movie record retry', (int) $arr->id);
+
+                    continue;
+                }
+
                 if (! $this->parseMovieSearchName($arr['searchname'])) {
                     $failedIDs[] = $arr['id'];
 

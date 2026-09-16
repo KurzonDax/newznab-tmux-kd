@@ -6,8 +6,11 @@ namespace Tests\Unit\Services;
 
 use App\Enums\MovieLookupOutcome;
 use App\Facades\Search;
+use App\Models\Category;
+use App\Models\MovieInfo;
 use App\Models\Release;
 use App\Services\ImdbScraper;
+use App\Services\MetadataProcessing\MovieProcessingCandidateQuery;
 use App\Services\MovieService;
 use App\Services\TmdbClient;
 use App\Services\TraktService;
@@ -15,6 +18,7 @@ use App\Services\TvProcessing\Providers\TraktProvider;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
@@ -27,6 +31,13 @@ class MovieServiceTest extends ImdbScraperTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        Search::spy();
+        config(['nntmux_api.omdb_api_key' => '', 'nntmux_api.trakttv_api_key' => '', 'nntmux_api.fanarttv_api_key' => '']);
+        $this->mock(TmdbClient::class)->shouldReceive('isConfigured')->andReturnFalse()->byDefault();
+        $scraper = $this->mock(ImdbScraper::class);
+        $scraper->shouldReceive('fetchById')->andReturnFalse()->byDefault();
+        $scraper->shouldReceive('wasBlockedByWaf')->andReturnFalse()->byDefault();
+        $scraper->shouldReceive('getLastFailureReason', 'getLastFallbackFailureReason', 'getLastFetchSource')->andReturnNull()->byDefault();
 
         Schema::dropIfExists('movieinfo');
         Schema::create('movieinfo', function (Blueprint $table): void {
@@ -61,6 +72,177 @@ class MovieServiceTest extends ImdbScraperTestCase
             $table->unsignedTinyInteger('imdb_lookup_attempts')->nullable();
             $table->unsignedBigInteger('movieinfo_id')->nullable();
         });
+        (require database_path('migrations/2026_09_16_133405_add_movie_record_retry_state_to_releases_table.php'))->up();
+    }
+
+    #[Test]
+    public function provider_errors_are_logged_by_class_without_sensitive_messages(): void
+    {
+        Log::spy();
+        $this->mock(ImdbScraper::class)->shouldReceive('fetchById')->andThrow(new \RuntimeException('https://provider.test/?api_key=secret'));
+        $this->assertFalse((new MovieService)->updateMovieInfo('0137523'));
+        Log::shouldHaveReceived('warning')->with('Movie record fetch failed.', [
+            'imdb_id' => '0137523',
+            'providers' => ['tmdb' => 'not found', 'imdb' => \RuntimeException::class, 'trakt' => 'not found', 'omdb' => 'not found'],
+        ])->once();
+        Log::shouldNotHaveReceived('warning', [\Mockery::on(fn ($message) => str_contains($message, 'secret'))]);
+    }
+
+    #[Test]
+    public function changing_a_movie_imdb_id_backfills_after_commit_but_not_after_rollback(): void
+    {
+        $movie = MovieInfo::query()->create(['imdbid' => '1234567']);
+        Release::query()->insert(['id' => 1, 'imdbid' => '0137523']);
+        DB::beginTransaction();
+        $movie->update(['imdbid' => '0137523']);
+        $this->assertNull(Release::query()->findOrFail(1)->movieinfo_id);
+        DB::rollBack();
+        $this->assertNull(Release::query()->findOrFail(1)->movieinfo_id);
+        $movie->refresh();
+        DB::transaction(fn () => $movie->update(['imdbid' => '0137523']));
+        $this->assertSame($movie->id, Release::query()->findOrFail(1)->movieinfo_id);
+        Search::shouldHaveReceived('updateRelease')->with(1)->once();
+    }
+
+    #[Test]
+    public function an_existing_id_fetches_its_missing_record_without_name_discovery(): void
+    {
+        $scraper = $this->mock(ImdbScraper::class);
+        $scraper->shouldNotReceive('search');
+        $scraper->shouldReceive('fetchById')->with('0137523')->once()->andReturn(['title' => 'Fight Club', 'year' => '1999']);
+        $scraper->shouldReceive('getLastFetchSource')->andReturnNull();
+        config(['nntmux.echocli' => false]);
+        Release::query()->insert(['id' => 1, 'categories_id' => Category::MOVIE_HD, 'imdbid' => '0137523']);
+        (new MovieService)->processMovieReleases();
+        $movie = MovieInfo::query()->where('imdbid', '0137523')->firstOrFail();
+        $this->assertSame($movie->id, Release::query()->findOrFail(1)->movieinfo_id);
+        Search::shouldHaveReceived('updateRelease')->with(1)->once();
+    }
+
+    #[Test]
+    public function provider_success_backfills_all_releases_even_after_the_retry_limit(): void
+    {
+        Search::spy();
+        config(['nntmux.echocli' => false, 'nntmux_api.omdb_api_key' => '', 'nntmux_api.trakttv_api_key' => '', 'nntmux_api.fanarttv_api_key' => '']);
+        $this->mock(TmdbClient::class)->shouldReceive('isConfigured')->andReturnFalse();
+        $scraper = $this->mock(ImdbScraper::class);
+        $scraper->shouldReceive('fetchById')->with('0137523')->once()->andReturn(['title' => 'Fight Club', 'year' => '1999']);
+        Release::query()->insert([
+            ['id' => 1, 'imdbid' => '0137523', 'movie_record_lookup_attempts' => 4],
+            ['id' => 2, 'imdbid' => '0137523', 'movie_record_lookup_attempts' => null],
+        ]);
+
+        $this->assertTrue((new MovieService)->updateMovieInfo('0137523'));
+
+        $movie = MovieInfo::query()->where('imdbid', '0137523')->firstOrFail();
+        $this->assertSame('Fight Club', $movie->title);
+        $this->assertSame(2, Release::query()->where('movieinfo_id', $movie->id)->count());
+        Search::shouldHaveReceived('updateRelease')->with(1)->once();
+        Search::shouldHaveReceived('updateRelease')->with(2)->once();
+    }
+
+    #[Test]
+    public function record_fetch_failures_keep_the_id_and_stop_after_four_spaced_attempts(): void
+    {
+        Search::spy();
+        Log::spy();
+        config(['nntmux.echocli' => false, 'nntmux_api.omdb_api_key' => '', 'nntmux_api.trakttv_api_key' => '']);
+        $this->mock(TmdbClient::class)->shouldReceive('isConfigured')->andReturnFalse();
+        $scraper = $this->mock(ImdbScraper::class);
+        $scraper->shouldReceive('fetchById')->with('0137523')->times(4)->andReturnFalse();
+        $scraper->shouldReceive('wasBlockedByWaf')->andReturnFalse();
+        $scraper->shouldReceive('getLastFailureReason', 'getLastFallbackFailureReason', 'getLastFetchSource')->andReturnNull();
+        Release::query()->insert(['id' => 1, 'categories_id' => Category::MOVIE_HD, 'imdbid' => '0137523']);
+        $service = new MovieService;
+        foreach (range(1, 4) as $attempt) {
+            $service->processMovieReleases();
+            $release = Release::query()->findOrFail(1);
+            $this->assertSame('0137523', $release->imdbid);
+            $this->assertSame($attempt, (int) $release->movie_record_lookup_attempts);
+            $this->assertNotNull($release->movie_record_lookup_attempted_at);
+            $this->assertNull($release->movieinfo_id);
+            $this->assertFalse(MovieProcessingCandidateQuery::query(lookupMode: 1)->exists());
+            $service->doMovieUpdate('', 'retry', 1);
+            $this->assertSame($attempt, (int) $release->fresh()->movie_record_lookup_attempts);
+            $this->travel(6)->hours();
+        }
+        $this->assertFalse(MovieProcessingCandidateQuery::query(lookupMode: 1)->exists());
+        Log::shouldHaveReceived('warning')->with('Movie record fetch failed.', [
+            'imdb_id' => '0137523',
+            'providers' => ['tmdb' => 'not found', 'imdb' => 'not found', 'trakt' => 'not found', 'omdb' => 'not found'],
+        ])->times(4);
+    }
+
+    #[Test]
+    public function backfill_command_links_existing_records_without_fetching_and_is_idempotent(): void
+    {
+        Search::spy();
+        $this->mock(ImdbScraper::class)->shouldNotReceive('fetchById');
+        $this->mock(TmdbClient::class)->shouldNotReceive('getMovie');
+        DB::table('movieinfo')->insert(['id' => 10, 'imdbid' => '0137523']);
+        Release::query()->insert([
+            ['id' => 1, 'imdbid' => '0137523'],
+            ['id' => 2, 'imdbid' => '1234567'],
+        ]);
+
+        $this->artisan('movies:backfill-links')->expectsOutput('Linked 1 releases.')->assertSuccessful();
+        $this->artisan('movies:backfill-links')->expectsOutput('Linked 0 releases.')->assertSuccessful();
+
+        $this->assertSame(10, Release::query()->findOrFail(1)->movieinfo_id);
+        $this->assertNull(Release::query()->findOrFail(2)->movieinfo_id);
+        Search::shouldHaveReceived('updateRelease')->with(1)->once();
+        Search::shouldHaveReceived('updateRelease')->once();
+    }
+
+    #[Test]
+    public function creating_a_movie_backfills_only_missing_links_in_bounded_batches(): void
+    {
+        Search::spy();
+        $rows = [];
+        foreach (range(1, 501) as $id) {
+            $rows[] = ['id' => $id, 'imdbid' => '0137523'];
+        }
+        Release::query()->insert($rows);
+        Release::query()->insert(['id' => 502, 'imdbid' => '0137523', 'movieinfo_id' => 99]);
+        Release::query()->insert(['id' => 503, 'imdbid' => '1234567']);
+        $batchSizes = [];
+        DB::listen(function ($query) use (&$batchSizes): void {
+            if (str_starts_with($query->sql, 'update "releases"')) {
+                $batchSizes[] = count(array_filter($query->bindings, is_int(...))) - 1;
+            }
+        });
+
+        $movie = MovieInfo::query()->create(['imdbid' => '0137523', 'title' => 'Fight Club']);
+
+        $this->assertSame(501, Release::query()->where('movieinfo_id', $movie->id)->count());
+        $this->assertSame(99, Release::query()->findOrFail(502)->movieinfo_id);
+        $this->assertNull(Release::query()->findOrFail(503)->movieinfo_id);
+        $this->assertSame([500, 1], $batchSizes);
+        Search::shouldHaveReceived('updateRelease')->times(501);
+        foreach (range(1, 501) as $id) {
+            Search::shouldHaveReceived('updateRelease')->with($id)->once();
+        }
+    }
+
+    #[Test]
+    public function missing_movie_records_are_candidates_only_when_their_retry_is_due(): void
+    {
+        $this->travelTo(now()->startOfSecond());
+        foreach (range(1, 7) as $id) {
+            Release::query()->insert([
+                'id' => $id, 'categories_id' => Category::MOVIE_HD,
+                'imdbid' => '123456'.$id,
+            ]);
+        }
+        Release::query()->whereKey(1)->update(['imdb_lookup_attempts' => 4, 'imdb_lookup_attempted_at' => now()]);
+        DB::table('movieinfo')->insert(['imdbid' => '1234562']);
+        Release::query()->whereKey(3)->update(['movie_record_lookup_attempts' => 4]);
+        Release::query()->whereKey(4)->update(['movie_record_lookup_attempted_at' => now()->subHours(5)]);
+        Release::query()->whereKey(5)->update(['movie_record_lookup_attempts' => 3, 'movie_record_lookup_attempted_at' => now()->subHours(6)]);
+        Release::query()->whereKey(6)->update(['movieinfo_id' => 99]);
+        Release::query()->whereKey(7)->update(['imdbid' => '']);
+
+        $this->assertSame([1, 5], MovieProcessingCandidateQuery::query(lookupMode: 1)->orderBy('id')->pluck('id')->all());
     }
 
     #[Test]
@@ -256,6 +438,8 @@ class MovieServiceTest extends ImdbScraperTestCase
 
         Release::query()->insert([
             'id' => 2,
+            'imdb_lookup_attempts' => 3,
+            'imdb_lookup_attempted_at' => now(),
             'searchname' => 'Example.Movie.2024',
             'categories_id' => 2000,
             'imdbid' => null,
@@ -267,6 +451,8 @@ class MovieServiceTest extends ImdbScraperTestCase
         $this->assertSame('0137523', $result);
         $this->assertSame('0137523', Release::query()->whereKey(2)->value('imdbid'));
         $this->assertNull(Release::query()->whereKey(2)->value('movieinfo_id'));
+        $this->assertSame(3, (int) Release::query()->whereKey(2)->value('imdb_lookup_attempts'));
+        $this->assertSame(1, (int) Release::query()->whereKey(2)->value('movie_record_lookup_attempts'));
     }
 
     /**

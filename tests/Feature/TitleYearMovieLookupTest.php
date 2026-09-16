@@ -37,6 +37,9 @@ class TitleYearMovieLookupTest extends ImdbScraperTestCase
             $table->unsignedInteger('groups_id')->default(1);
             $table->integer('categories_id')->default(Category::MOVIE_HD);
             $table->string('imdbid')->nullable();
+            $table->unsignedInteger('movieinfo_id')->nullable();
+            $table->unsignedTinyInteger('movie_record_lookup_attempts')->nullable();
+            $table->timestamp('movie_record_lookup_attempted_at')->nullable();
             $table->integer('videos_id')->default(0);
             $table->integer('tv_episodes_id')->default(0);
             $table->timestamp('tv_episode_lookup_attempted_at')->nullable();
