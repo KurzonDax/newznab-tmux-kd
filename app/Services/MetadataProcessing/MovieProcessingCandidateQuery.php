@@ -40,7 +40,16 @@ final class MovieProcessingCandidateQuery
                         ->where(fn (Builder $attempts) => $attempts->whereNull('imdb_lookup_attempts')->orWhere('imdb_lookup_attempts', '<', self::MAX_ATTEMPTS))
                         ->where(fn (Builder $due) => $due->whereNull('imdb_lookup_attempted_at')->orWhere('imdb_lookup_attempted_at', '<=', now()->subHours(self::RETRY_HOURS)));
                 })
-                    ->orWhereIn('imdbid', imdb_id_pending_values());
+                    ->orWhereIn('imdbid', imdb_id_pending_values())
+                    ->orWhere(function (Builder $missing): void {
+                        $missing->whereNotNull('imdbid')->where('imdbid', '<>', '')
+                            ->whereNotIn('imdbid', imdb_id_pending_values())
+                            ->whereNull('movieinfo_id')
+                            ->whereNotExists(fn ($movie) => $movie->selectRaw('1')->from('movieinfo')
+                                ->whereColumn('movieinfo.imdbid', 'releases.imdbid'))
+                            ->where(fn (Builder $attempts) => $attempts->whereNull('movie_record_lookup_attempts')->orWhere('movie_record_lookup_attempts', '<', self::MAX_ATTEMPTS))
+                            ->where(fn (Builder $due) => $due->whereNull('movie_record_lookup_attempted_at')->orWhere('movie_record_lookup_attempted_at', '<=', now()->subHours(self::RETRY_HOURS)));
+                    });
             });
 
         if ($resolvedLookupMode <= 0) {

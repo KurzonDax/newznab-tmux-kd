@@ -6,6 +6,7 @@ namespace App\Observers;
 
 use App\Facades\Search;
 use App\Models\MovieInfo;
+use App\Services\MetadataProcessing\MovieReleaseBackfill;
 use App\Services\Search\MovieSearchIndexSync;
 use App\Support\ReleaseSearchIndexSync;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +20,7 @@ class MovieInfoObserver
     public function created(MovieInfo $movie): void
     {
         $this->syncToSearchIndex($movie);
+        DB::afterCommit(fn () => app(MovieReleaseBackfill::class)->forMovie($movie));
     }
 
     /**
@@ -27,7 +29,13 @@ class MovieInfoObserver
     public function updated(MovieInfo $movie): void
     {
         $this->syncToSearchIndex($movie);
-        DB::afterCommit(fn (): bool => $this->syncReleases($movie));
+        $identityChanged = $movie->wasChanged('imdbid');
+        DB::afterCommit(function () use ($movie, $identityChanged): void {
+            $this->syncReleases($movie);
+            if ($identityChanged) {
+                app(MovieReleaseBackfill::class)->forMovie($movie);
+            }
+        });
     }
 
     /**

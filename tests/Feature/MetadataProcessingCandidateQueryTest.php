@@ -111,6 +111,7 @@ class MetadataProcessingCandidateQueryTest extends TestCase
                 'videos_id' => $id % 3 === 0 ? 10 : 0, 'tv_episodes_id' => -4 + $id % 6,
                 'tv_episode_lookup_attempted_at' => $id % 3 === 0 ? null : now()->subHours($id % 8),
                 'postdate' => now()->subDays($id % 16), 'imdbid' => $identities[$id % 5],
+                'movieinfo_id' => $identities[$id % 5] === '1234567' ? 1 : null,
                 'imdb_lookup_attempts' => $id % 5, 'imdb_lookup_attempted_at' => $id % 3 === 0 ? null : now()->subHours($id % 8),
             ]);
         }
@@ -437,6 +438,9 @@ class MetadataProcessingCandidateQueryTest extends TestCase
             $table->integer('tv_episodes_id')->default(0);
             $table->timestamp('tv_episode_lookup_attempted_at')->nullable();
             $table->string('imdbid')->nullable();
+            $table->unsignedInteger('movieinfo_id')->nullable();
+            $table->unsignedTinyInteger('movie_record_lookup_attempts')->nullable();
+            $table->timestamp('movie_record_lookup_attempted_at')->nullable();
             $table->timestamp('imdb_lookup_attempted_at')->nullable();
             $table->unsignedTinyInteger('imdb_lookup_attempts')->nullable();
             $table->integer('musicinfo_id')->nullable();
@@ -449,6 +453,11 @@ class MetadataProcessingCandidateQueryTest extends TestCase
             $table->tinyInteger('nfostatus')->default(-1);
             $table->tinyInteger('nzbstatus')->default(1);
             $table->tinyInteger('passwordstatus')->default(0);
+        });
+
+        Schema::create('movieinfo', function (Blueprint $table): void {
+            $table->id();
+            $table->string('imdbid');
         });
 
         Schema::create('usenet_groups', function (Blueprint $table): void {
