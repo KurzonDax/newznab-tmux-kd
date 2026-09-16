@@ -1,491 +1,131 @@
 # AGENTS.md
 
-## New Artisan commands require explicit approval
+NNTmux is a Laravel Usenet indexer: it collects headers, forms releases, and enriches
+searchable metadata. These instructions define repository policy and task-specific
+entry points; source files and dependency metadata supply implementation details.
 
-**New PHP Artisan commands CANNOT be added without the user's explicit approval of the specific command.** This includes command classes, `Artisan::command()` closures, aliases, and one-off backfill, repair, maintenance, or diagnostic commands. An agent-written issue or specification, a `ready-for-agent` label, or a general request to implement an issue does not count as command-specific approval. Record the user's explicit approval in the agreed scope before scaffolding, implementing, or registering the command. Without it, use an existing approved interface or ask the user specifically before adding a command.
+## Scope and authorization
 
-> AI coding agent guidelines for NNTmux - a Laravel 13 Usenet indexer.
+Before changing project code, tests, configuration, or documentation, agree the
+behavior, boundaries, and acceptance criteria, record them in a GitHub issue, and
+confirm implementation is authorized. An explicit request to implement a scoped
+issue satisfies this gate. Investigation, filing an issue, or a ready label alone
+does not authorize implementation. State the issue number and scope before editing.
 
-## Development workflow
+**New PHP Artisan commands require explicit approval of the specific command.**
+This includes command classes, `Artisan::command()` closures, aliases, and one-off
+backfill, repair, maintenance, or diagnostic commands. General issue implementation
+approval is insufficient. Record command-specific approval in the agreed scope
+before scaffolding or registering it; otherwise use an existing approved interface.
 
-Master only moves by pull request, and **every change, however small — docs, one-line fixes, `/implement` sessions, and ad-hoc requests alike — merges through the loop below.**
+Dependency changes, new base folders, and removing tests/test files require approval.
+Create documentation only when requested. Creating database records through Tinker
+requires approval; ordinary tests use disposable fixtures.
 
-**Definition of done:** a coding task is complete only when `scripts/agent-issue-finish` prints `MERGE_STATUS=merged`. Pushing the issue branch, opening the pull request, and enabling auto-merge are pre-authorized for this repository — run the finish helper without asking for confirmation. This overrides any skill or prompt instruction whose final step is committing; ending a session with committed-but-unpublished work is an incomplete task, not a cautious one. Ordinary implementation runs affected bounded tests and the shared final verifier locally; required sharded CI owns complete main-suite validation. This overrides generic skill instructions (including `/implement`) to run a full local suite. Daily fresh-runtime serial coverage and explicitly requested exceptional full-suite runs remain available.
+## Issue-to-merge workflow
 
-1. **Issue.** Work starts from an open GitHub issue labelled `ready-for-agent`. Settle the scope and implementation authorization before startup. Filing or triaging an issue does not itself authorize implementation; apply the ready label only to settled work.
-2. **Start.** From the primary checkout, **before changing source files**, run `scripts/agent-issue-start <issue-number>`. Continue the session from the helper's absolute `WORKTREE_PATH`: every later repository command uses that path as its working directory, and Laravel/Sail commands go through `scripts/agent-sail`. The helper owns all worktree, branch, Compose project, and environment creation, and leaves the primary checkout alone while work is in flight. If startup reports reserved state, report it to the user; only the issue's assigned owner resumes interrupted work with `--recover`.
-3. **Work and verify.** Follow [bounded verification and CI policy](docs/agents/ci-policy.md) before adding tests or changing CI. Run focused tests and `python3 scripts/agent-verify final`, review, and commit on `issue/<number>`.
-4. **Publish.** Immediately after committing, run `scripts/agent-issue-finish --publish` from the issue worktree. It pushes the branch, opens the single `Fixes #<number>` pull request, and arms squash auto-merge, then returns.
-5. **Monitor to merge.** Run `scripts/agent-issue-finish --monitor` (idempotent — rerun it until it prints `MERGE_STATUS=merged`; a monitor cut off by a command timeout is interrupted, not failed). It watches the strict required checks, updates the branch when master moves, and after merge removes only that issue's runtime, worktree, and branches, then fast-forwards the primary checkout's `master` when that checkout is clean and on `master` (`PRIMARY_MASTER=` in the output). Plain `scripts/agent-issue-finish` runs both phases.
+Every change, including documentation and one-line fixes, reaches master by PR.
 
-Concurrent sessions publish freely: the required check is strict, so a pull request that falls behind master must take the new base and re-pass CI before auto-merge fires — `--monitor` performs that update. See `docs/agents/development-workflow.md` before committing anything.
+1. Start with an open, scoped issue labelled `ready-for-agent` and implementation
+   authorization. From the primary checkout run `scripts/agent-issue-start NUMBER`
+   before project edits. The helper owns the branch, worktree, environment, and runtime.
+2. Use the absolute `WORKTREE_PATH` it reports for every later repository command;
+   work on `issue/NUMBER`. Leave the primary checkout alone while work is in flight.
+   Report reserved state: only the assigned owner resumes their interrupted work
+   using `--recover` from the primary checkout.
+3. Implement, run affected bounded verification, review, and commit the intended
+   files. Review and restage formatter changes; keep temporary artifacts out of Git.
+4. Immediately run `scripts/agent-issue-finish --publish` in the issue worktree.
+5. Run `scripts/agent-issue-finish --monitor` until it prints `MERGE_STATUS=merged`.
+   A timeout interrupts monitoring; rerun it. The helper updates a branch behind
+   master, follows required CI, and cleans up only this issue after merge. It also
+   fast-forwards a clean primary checkout on master (`PRIMARY_MASTER` reports this).
 
-## Agent skills
+Pushing the branch, opening the PR, enabling squash auto-merge, and monitoring through
+merge are pre-authorized. Do not stop at a commit, open PR, or enabled auto-merge.
+For startup/recovery, concurrent work, or publish failures, consult
+[the workflow contract](docs/agents/development-workflow.md).
 
-### Issue tracker
+## Commands and testing
 
-Issues are tracked in GitHub Issues. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Triage uses the five default canonical labels. See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-Domain documentation uses the single-context layout. See `docs/agents/domain.md`.
-
-## Quick Reference
+Run Git, gh, Python verification, and workflow helpers on the host. Run PHP, Artisan,
+Composer, Node/npm, and other application commands through `scripts/agent-sail` in
+the issue worktree. Direct Sail/Makefile calls do not supply the adapter's isolation.
 
 ```bash
-scripts/agent-sail artisan test --compact --filter=TestName  # Run single test (PHPUnit only)
-scripts/agent-sail bin pint --dirty --format agent           # Format changed files
-scripts/agent-sail artisan tmux:start                         # Start processing engine
-scripts/agent-sail npm run build                              # Required after frontend changes
-scripts/agent-sail artisan route:cache                        # Refresh cached routes if new routes seem missing
+python3 scripts/agent-verify plan
+python3 scripts/agent-verify focused --test tests/Feature/ExampleTest.php --filter test_example
+python3 scripts/agent-verify final
+scripts/agent-sail artisan COMMAND --no-interaction
 ```
 
-## Architecture
+Within the helper-created worktree, run the accepted bounded checks, fix failures
+caused by the requested change, and rerun invalidated checks without asking again.
+The verifier owns applicable formatting, changed-file lint, full-project PHPStan,
+frontend builds/checks, and reusable results; avoid separate duplicate passes.
+Required sharded CI owns the complete main suite, including `/implement` work.
+Generic skill instructions do not add a full local suite. Live API tests and large
+acceptance runs need their own explicit scope; recurring CI expansion needs a
+separately agreed policy issue.
 
-NNTmux scans Usenet servers, collects headers, organizes releases, and enriches with metadata. Data flow:
+Use [CI policy](docs/agents/ci-policy.md) when selecting new/changed tests, changing
+CI, or resolving verification/publication requirements; retain that context while
+its inputs remain unchanged. Documentation changes use document/policy checks.
+For test fixtures, bootstrap, and isolation traps, see [testing rules](.ai/rules/testing.md).
+The runtime starts from tracked `.env.testing`, not the primary `.env`; default
+SQLite and registered MariaDB fixtures are disposable. This is not a blanket
+network-isolation guarantee for every test in the repository.
 
-```
-NNTP → NNTPService → BinariesRunner → ReleaseCreationService → ReleaseProcessingService → SearchService → API/Web
-```
+## Repository invariants
 
-### Key Patterns
+- External API and RSS fields, attributes, and query parameters are frozen, including
+  additive changes. Restore existing behavior only; new release data belongs in the
+  web frontend. See [API/RSS rules](.ai/rules/api-frozen.md) when touching these surfaces.
+- Admin settings are declared in `app/Support/Settings/` section providers; the
+  registry is the write whitelist. See [settings hub rules](.ai/rules/settings-hub.md).
+- Read environment variables in configuration and use `config()` in application
+  code. Every added/renamed environment key needs a sensible default and short
+  comment in `.env.example`. Configure credentials only for enabled integrations.
+- Model casts use `casts()`. Preserve explicit relationship keys in the existing
+  schema rather than inferring them from a universal naming pattern.
+- Route groups, middleware groups, and aliases are wired in `bootstrap/app.php`.
+  Inspect that registration to distinguish global from web-group middleware.
 
-| Pattern | Location | Example |
-|---------|----------|---------|
-| **Service Layer** | `app/Services/` | 50+ services with facades (`Search::`, `Categorization::`, `TvProcessing::`, `Yenc::`, `Elasticsearch::`) |
-| **Pipeline** | `*/Pipes/` | `TvProcessingPipeline` (TMDB→TVDB→TVMaze→Trakt), `CategorizationPipeline` (priority-driven; `Music` runs before `Book` for audiobook detection) |
-| **Driver** | `Search/Drivers/` | Manticore/Elasticsearch via `SEARCH_DRIVER` env var |
-| **Runners** | `Runners/` | `BinariesRunner`, `ReleasesRunner`, `BackfillRunner`, `PostProcessRunner` |
-| **DTO** | `*/DTO/`, `app/Support/DTOs/`, `app/Data/` | Internal: `NameFixResult`, `ReleaseProcessingContext`, `ReleaseCreationResult`. API responses use Spatie Laravel Data in `app/Data/Api/` (`ReleaseData`, `CategoryData`, `DetailsData`) |
-| **Enum** | `app/Enums/` | `UserRole`, `QueueType`, `FileCompletionStatus`, `SecondarySearchIndex`, `NzbImportStatus` |
-| **Observer** | `app/Observers/`, `AppServiceProvider` | `ReleaseObserver`, `MovieInfoObserver`, `RolePromotionObserver` |
-| **View Composer** | `app/View/Composers/`, `AppServiceProvider` | `GlobalDataComposer` shared across `layouts.*` and `admin.*` |
-| **Status Probe** | `app/Services/StatusProbes/` | `ServiceProbeRegistry` aggregates `DatabaseProbe`, `DiskProbe`, `NntpProbe`, `QueueProbe`, `RedisProbe`, `SearchProbe` for `StatusPageController` (`/status`) and `DegradeWhenRedisUnreachable` middleware; tune via `config/status-probes.php` |
-| **Passkey** | `app/Actions/Passkeys/`, `app/Http/Controllers/Auth/Passkey*` | Spatie Laravel Passkeys; ceremony actions (`GeneratePasskeyRegisterOptionsAction`, `FindPasskeyToAuthenticateAction`) wire into routes `passkeys.*` in `routes/web.php`. `GeneratePasskeyRegisterOptionsAction` overrides `authenticatorSelection()` (defaults: attachment=null, `residentKey=preferred`, `userVerification=preferred`) and injects WebAuthn L3 `hints` + `credProps` extension so Windows Hello / Touch ID / phone-via-QR / FIDO2 keys all appear in the browser picker on Windows domain machines. Tunable via `PASSKEY_AUTHENTICATOR_ATTACHMENT`, `PASSKEY_RESIDENT_KEY`, `PASSKEY_USER_VERIFICATION`, `PASSKEY_RELYING_PARTY_ID` (see `config/passkeys.php`) |
+## Contextual guidance
 
-## Tmux Processing Engine
+Select the relevant entries from [the rules index](.ai/rules/index.md) for the
+behavior and paths involved. Read the needed sections once; revisit when scope
+changes. Small edits do not require a repository tour or unrelated rule searches.
+Use skills available in the session when their workflows fit the task.
 
-Multi-pane terminal orchestrator at `app/Services/Tmux/`. Components: `TmuxSessionManager`, `TmuxLayoutBuilder`, `TmuxPaneManager`, `TmuxTaskRunner`, `TmuxMonitorService`.
-
-**Sequential Modes** (`Settings::settingValue('sequential')`):
-- Mode 0: Full (3 windows, parallel panes)
-- Mode 1: Basic (reduced)
-
-Any other stored value -- including a legacy `2` -- runs as full mode.
-
-**Commands**: `tmux:start`, `tmux:stop`, `tmux:attach`, `tmux:monitor`, `tmux:health-check`
-
-**Config**: `config/tmux.php` + database `settings` table
-
-**Post-process panes** (window 2: panes 2.0–2.3) run `php artisan multiprocessing:postprocess <type>`, which fans out work as multiple `postprocess:guid <type> <char>` child processes via `App\Services\Runners\PostProcessRunner`. Types: `add`/`nfo` (pane 2.0), `tv`/`ani` (2.1), `ama` + `aud` (2.2 — books+music+console+games metadata, plus audio previews), `mov` (2.3). Per-type aliases: `boo`, `mus`, `con`, `gam`.
-
-**Audio (`aud`) is a separate path, not a mode of `add`.** `App\Services\AudioProcessing\` owns it: `AudioCandidateQuery` selects music-routed releases with **no minimum size** (`minsizetopostprocess` strands them otherwise), fetches article 1, probes it, and only then pulls the rest of the head. `AudioRouting` is the single predicate deciding which path a release belongs to; `AdditionalCandidateQuery` applies it inverted, so the two partition the pending set exactly. A release the probe finds to be video is handed back by writing `AudioRouting::DECLINED_TOKEN` into `additional_pp_claim_token` — see `.ai/rules/additional-processing.md`.
-
-- **Live tmux output**: set `STREAM_FORK_OUTPUT=true` in `.env` (`config('nntmux.stream_fork_output')`). When false (default), child output is buffered per batch and the pane may look idle until a batch completes.
-- **Parallelism settings** (all default to `1` in `database/seeders/SettingsTableSeeder.php`; raise from the settings hub or the DB): `postthreads` (additional), `nfothreads` (NFO when `post=3`), `postthreadsnon` (TV/anime/movies), `postthreadsamazon` (books/music/console/games and `ama` fan-out), `postthreadsaudio` (`aud` fan-out). Raising `nfothreads` or `postthreadsaudio` opens that many parallel NNTP sessions.
-- **Audio tunables** (site settings, Settings ▸ Post-Processing ▸ Audio previews): `audio_segments_to_download` (12), `audio_max_rar_parts` (6), `audio_max_archive_mb` (1024; `0` = unlimited), `audio_preview_seconds` (30), `audio_preview_start_seconds` (10), `audio_spectrogram` (1). `saveaudiopreview` is retired.
-- **Batch sizing**: up to 16 distinct first-character GUID buckets per type per cycle (`LIMIT 16` in `PostProcessRunner`); each bucket processes its slice sequentially inside `postprocess:guid`. Additional processing also respects `maxaddprocessed` (default 25) per bucket.
-- **Direct CLI**: `update:postprocess <type>` remains available for single-process runs outside tmux; tmux panes use the multiprocessing command only.
-
-## Testing
-
-PHPUnit only (no Pest). Create tests: `php artisan make:test --phpunit {name}`
-
-- In-memory SQLite (`DB_CONNECTION=testing`)
-- App boot can hit `Settings::settingValue()` via `CategorizationPipeline` (`app/Providers/CategorizationServiceProvider.php` → `app/Services/Categorization/CategorizationPipeline.php`), even in focused controller tests
-- For isolated tests that bypass the normal app test DB setup, seed a minimal `settings` table before app bootstrap; `categorizeforeign` and `catwebdl` are the minimum keys needed for this path, and `tests/Feature/AdminContentControllerTest.php` shows the file-backed SQLite workaround when `php artisan test` would otherwise fail during startup
-- Feature tests that render shared layouts or admin pages may need to clear `App\View\Composers\GlobalDataComposer::$resolvedData`; see `resetGlobalComposerState()` helpers in `tests/Feature/AdminContentControllerTest.php`, `AdminGroupControllerTest.php`, and `NzbAndRssAccessTest.php`
-- All HTTP mocked - no real API calls
-- Suites: `Install`, `Unit`, `Feature` (also `tests/Integration/` for live API tests, not in CI)
-- Use model factories; check for custom states first
-- Mocks in `tests/Fixtures/`, `tests/mock_data/`
-- Test harnesses in `tests/Support/` (e.g., `DatabaseTestCase`, `TestBinariesHarness`)
-- Never hardcode a temp path. In a `Tests\TestCase` subclass use `makeTempPath()` / `makeTempDirectory()`, which return a unique path and remove it recursively in `tearDown()`; where `$this` is unavailable (static data providers, plain `PHPUnit\Framework\TestCase`) build the path from `sys_get_temp_dir()` and clean it up yourself
-- A test class that rewires `DB_CONNECTION`/`DB_DATABASE` must restore them in `tearDown()`; `Tests\TestCase` fails the next test naming the offender otherwise (opt out with `protected bool $allowsConnectionSwap = true`)
-- `phpunit.xml` forces `LOG_CHANNEL=stderr`, so tests never depend on `storage/logs` permissions
-- PHPUnit 12 — use `#[Test]` attributes or `test` prefix naming
-
-## Project Conventions
-
-### Models (`app/Models/`)
-- Casts in `casts()` method, not `$casts` property
-- Foreign keys: `{table}_id` (e.g., `groups_id`)
-- Key: `Release`, `Video`, `TvEpisode`, `MovieInfo`, `UsenetGroup`
-
-### API (`app/Http/Controllers/Api/`)
-- v1: XML (newznab compat) - `ApiController.php`
-- v2: JSON REST - `ApiV2Controller.php`
-- RSS feeds are separate from `/api`: edit `routes/rss.php` + `App\Http\Controllers\RssController`; `/rss/*` is mounted from `bootstrap/app.php` and `RssController::userCheck()` validates `api_token`
-
-### Config
-- App configs: `config/nntmux*.php`, `config/tmux.php`, `config/search.php`
-- Never `env()` outside config - use `config('key')`
-- **Whenever you add or rename an `env()` key — in any file, whether under `config/*.php` or anywhere else in the codebase — you MUST also add it (with a sensible default and a short comment) to `.env.example`.** Treat any new env setting without the matching `.env.example` entry as an incomplete task.
-- Runtime settings: `Settings::settingValue()`
-- Laravel 13 route/middleware wiring lives in `bootstrap/app.php`; use that file when adding route groups, aliases, or middleware (for example the `/rss` mount)
-- Custom global middleware in `app/Http/Middleware/`: `DegradeWhenRedisUnreachable` (prepended; short-circuits requests when Redis is down via `StatusProbes`), `BlockAbusiveServices` (blocks AIOStreams, Oracle Cloud, UsenetStreamer, Cloudflare WARP), `NoCacheForAuthenticatedUsers` (CDN cache busting), `ContentSecurityPolicy`, `EnforceSessionToken`, `TrustedDevice2FAMiddleware`
-- In Docker/Sail, `Makefile` exports `.env` `SEARCH_DRIVER` as `COMPOSE_PROFILES`, so only the matching Manticore/Elasticsearch service starts
-
-### Manticore `releases_rt` signed columns
-
-- In Manticore, `integer` is **unsigned 32-bit**; negative DB values (e.g. `passwordstatus = -1`, `haspreview = -1`) are stored as large positives (e.g. `4294967295`), so `passwordstatus <= 1` filters never match. The `releases_rt` schema uses **`bigint`** for `passwordstatus` and `haspreview` so values stay signed.
-- Changing column types requires dropping and recreating the RT table(s); Manticore cannot `ALTER` attribute types in place. **`php artisan manticore:create-indexes --drop`** drops and recreates **every** index defined in [`app/Console/Commands/CreateManticoreIndexes.php`](app/Console/Commands/CreateManticoreIndexes.php) (releases, predb, movies, tvshows, secondaries, etc.) as empty shells. Then repopulate what you use, e.g. **`php artisan nntmux:populate --manticore --all`** or at minimum **`--releases`** (and other index flags as needed). Prefer a maintenance window: run **`php artisan tmux:stop`** (and pause queue workers that touch search) during drop/repopulate, then **`php artisan tmux:start`**. Optionally enable MySQL search fallback via `nntmux.mysql_search_fallback` while indexes are empty.
-
-### Commands
-- 80+ auto-registered in `app/Console/Commands/`
-- Only after the user explicitly approves the specific new Artisan command, create it with `php artisan make:command` + `--no-interaction`. General issue implementation approval is insufficient.
-- Docker/Sail convenience targets live in `Makefile`; prefer `make artisan cmd="..."`, `make test filter=TestName`, `make pint`, and `make npm-build` when working inside containers
-- This workspace may have cached routes under `bootstrap/cache/routes-*.php`; after adding/changing routes, refresh with `php artisan route:cache` if a route appears missing
-
-### Admin Settings (the hub)
-
-Every admin-editable setting is declared once in the **settings registry**
-(`app/Support/Settings/`), and the registry is the only whitelist of legitimate setting keys.
-`admin/site-edit` and `admin/tmux-edit` were retired in #443 and 301 to `admin/settings`.
-
-- **Add or change a setting: edit a section provider**, not a Blade file.
-  `app/Support/Settings/Sections/*Section.php` declare the seven pages, in sidebar order:
-  Website, Engine & Monitoring, Usenet Ingest, Release Formation, Post-Processing,
-  Metadata Lookups, Naming & Hygiene. Register a new page in
-  `SettingsRegistry::SECTION_PROVIDERS`.
-- A `SettingDefinition` carries key, label, help, `SettingType`, options, unit, validation
-  rules and (for per-root toggle sets) the eligible root ids. Declared `rules` **replace** the
-  type defaults; the type's guard rules are always applied on top, so a picker can never store
-  an option it does not offer.
-- Where a rules class already exists (`RepairSettingRules`, `NzbSettingRules`,
-  `BackfillSettingRules`), the registry entry takes its rules from it rather than restating
-  them.
-- Saves are per card: `POST admin/settings/{section}/{card}` through
-  `SettingsCardUpdater`, which **rejects an unknown or cross-card key wholesale** and writes
-  nothing, and rejects out-of-range values rather than clamping. Per-root toggle sets
-  (`generate_previews`, `dynamic_preview_budget`, `generate_clips`, `discard_executables`)
-  route to `root_categories`, never to `settings`.
-- `Settings::settingsUpsert()` is the hub's write path and creates a missing row;
-  `Settings::settingsUpdate()` only updates and stays for legacy callers.
-- Tests use `Tests\Support\Settings\InteractsWithSettingsHub` for the schema and the
-  render/save helpers. `currentCardPayload()` builds a card's full payload from stored values
-  so a test can vary one field.
-- An action that belongs beside a card but posts elsewhere goes in `SettingCard::$asideView`
-  (a sibling of the card's form, because forms do not nest) — see the Breach response panel on
-  Website ▸ Sessions & access.
-
-### Admin Content
-- Admin content ordering is scoped by `contenttype`, not global: Homepage rows only reorder Homepage rows, Useful Links only reorder Useful Links
-- The admin list at `resources/views/admin/content/index.blade.php` renders one draggable table per content group and uses Alpine component `contentToggle`
-- `resources/js/alpine/components/content-toggle.js` is the integration point for admin content interactions: grouped drag ordering, enable/disable toggles, and delete confirmations all live there
-- Reorder requests go to `AdminContentController::reorder()` and must include the exact ID set for one `contenttype`; mixed-type or partial payloads are rejected
-- The ordinal field is intentionally hidden on `resources/views/admin/content/add.blade.php`; the server assigns new items to the bottom of their own group in `AdminContentController::nextBottomOrdinal()`
-- Deleting content does not renumber remaining items; gaps in per-group ordinals are expected
-
-## Code Formatting & Quality
-
-Before adding tests, changing recurring CI, or publishing, read
-[bounded verification and CI policy](docs/agents/ci-policy.md). Use the shared
-verifier for applicable formatting, changed-file lint, full-project PHPStan and
-frontend checks. Keep successful verification while its inputs remain unchanged;
-repeat only invalidated checks. Large scale/benchmark acceptance is explicit,
-and recurring-CI expansion requires its own agreed policy issue.
-
-## Pre-commit (CaptainHook)
-
-The hook and publish helper delegate to `scripts/agent-verify`; they reuse valid
-local results. Review/restage formatter changes before committing. Commit limits
-remain 200 characters for the subject and 72 for the body. Stage intended new
-project files, keeping temporary verification records and artifacts out of Git.
-
-## Key Directories
-
-| Path | Purpose |
-|------|---------|
-| `app/Services/TvProcessing/` | TV metadata pipeline |
-| `app/Services/Search/` | Manticore/ES abstraction |
-| `app/Services/NameFixing/` | Release name correction (see README.md there) |
-| `app/Services/AudioProcessing/` | Dedicated audio preview path (`aud` postprocess type) |
-| `app/Services/Tmux/` | Tmux orchestration |
-| `app/Services/StatusProbes/` | Service health probes feeding `/status` and degrade middleware |
-| `app/Services/ReleaseRepair/` | Rebuilds missing NZB segments (see `docs/architecture/release-repair.md`) |
-| `app/Facades/` | Static service accessors |
-
-## Architecture docs
-
-| Doc | Covers |
-|-----|--------|
-| `docs/architecture/indexing-pipeline.md` | Headers -> parts -> binaries -> collections -> releases -> NZB |
-| `docs/architecture/nntp-providers.md` | Provider pool, why headers are pinned to provider 1, the runbook for changing it |
-| `docs/architecture/release-repair.md` | Repair-before-delete: the completion sweep gate, the repair state machine, rollout |
-
-## External APIs
-
-Requires `.env` keys: TMDB, TVDB, TVMaze, Trakt, OMDB (TV/Movies); IGDB, GiantBomb, Steam (Games); AniList, AniDB (Anime); NNTP credentials.
+| When working on | Reference |
+| --- | --- |
+| Issue filing or triage | [Issue tracker](docs/agents/issue-tracker.md), [label mapping](docs/agents/triage-labels.md) |
+| Domain terminology or design decisions | [Domain docs](docs/agents/domain.md) |
+| Header ingestion and release formation | [Indexing pipeline](docs/architecture/indexing-pipeline.md) |
+| NNTP providers or header-provider changes | [Provider architecture](docs/architecture/nntp-providers.md) |
+| Missing segments and repair-before-delete | [Release repair](docs/architecture/release-repair.md) |
+| Release naming | [Name-fixing rules](.ai/rules/name-fixing.md), [service README](app/Services/NameFixing/README.md) |
+| Tmux scheduling or audio/additional processing | [Tmux rules](.ai/rules/tmux.md), [processing rules](.ai/rules/additional-processing.md) |
+| Manticore query/schema work | [Search rules](.ai/rules/drivers.md) |
+| Passkey chooser behavior | `app/Actions/Passkeys/GeneratePasskeyRegisterOptionsAction.php` and `config/passkeys.php`; the preferences/hints intentionally allow multiple authenticator types |
 
 ## Frontend
 
-Blade + TailwindCSS v4 + Vite bundling. Run `npm run build` after changes.
-
-- **Livewire 3**: Used only by the forum package (`resources/forum/livewire-tailwind/`) and the vendored Spatie Pulse dashboard views (`resources/views/vendor/pulse/`). All application pages (auth, profile, admin, browse, etc.) are plain Blade + Alpine.
-- **Alpine.js**: CSP-safe build with component architecture in `resources/js/alpine/`
-  - Core components loaded eagerly in `alpine/index.js`
-  - Page-specific components lazy-loaded via `alpine/lazy-loader.js`
-  - Lazy-loaded pages must declare an `x-data` name that matches a key in `alpine/lazy-loader.js`, or the component JS will never load; example: `resources/views/admin/content/index.blade.php` uses `x-data="contentToggle"` so delete/toggle handlers from `resources/js/alpine/components/content-toggle.js` are available
-  - Stores in `alpine/stores/`, components in `alpine/components/`
-- **CSS**: Main entry is `resources/css/app.css` (imports `csp-safe.css` for component styles)
-- **Vite entry points**: `resources/js/app.js`, `resources/css/app.css`, `resources/forum/blade-tailwind/js/forum.js`, `resources/forum/blade-tailwind/css/forum.css`
-
-This structure ensures Content Security Policy (CSP) compliance by using Alpine.js CSP-safe build and keeping scripts and styles in external files.
-
-### Design system
-
-`resources/css/app.css` defines the styling foundation: three color schemes (`data-color-scheme="blue|emerald|violet"` on `<html>`) providing surface variables (`--surface-body`, `--surface-card`, `--surface-panel-alt`, `--border-default`, `--text-muted`, ...) and a `--color-primary-50…950` accent ramp. Dark mode is class-based (`.dark` on the root). `scripts/check-design-system.sh` enforces the mechanical rules below on pre-commit.
-
-**Color rules**
-
-- Accents (links, primary actions, active states, focus rings, selected tabs) use `primary-*` utilities, **never** `blue-*`/`indigo-*` or another palette color — the emerald and violet schemes only retheme token-driven classes. When unsure, prefer `primary-*`: under the default blue scheme it renders identically.
-- Genuine status colors stay literal: success green, danger red, warning yellow, info cyan.
-- Surfaces/containers use the semantic classes `.card`, `.surface-panel`, `.surface-panel-alt`, `.auth-card` (or the `--surface-*` variables), not hardcoded `bg-white`/`bg-gray-*`.
-- Every color utility carries a `dark:` variant (or is inherited from a token-driven ancestor). There is no global dark-mode rescue CSS — correctness lives at the source.
-
-**Components** (in `resources/views/components/`)
-
-- Buttons: `<x-button>` / `<x-button-link>` — variants `primary|secondary|muted|success|danger|warning|ghost`, sizes `sm|md|lg|icon`, `icon` prop for a leading Font Awesome icon. Extra classes/attributes pass through; escape Alpine/Vue bindings on component tags as `::disabled` etc. so Blade doesn't eval them. The live forum preset uses its namespaced `<x-forum::button>`/`<x-forum::button-link>`/`<x-forum::button-secondary>` components. Compact release-row actions may use the semantic `release-action*` classes.
-- Forms: `<x-input>`, `<x-select>`, `<x-textarea>`, `<x-label>`; other primitives: `<x-badge>`, `<x-panel>`, `<x-page-header>`, `<x-breadcrumb>`, `<x-empty-state>`, `<x-sort-dropdown>`, `<x-view-toggle>`.
-- Legitimately bespoke (don't force into components): nav/dropdown togglers, modal close-X icons, state-conditional toggle chips/tabs, pagination, input-group-attached addons.
-- Icons: Font Awesome only (`fas`/`far`/`fab`); no feather-icons in app or forum views.
-
-**Hard rules**
-
-- No inline `style=` attributes in views: use Tailwind utilities or a class in `csp-safe.css`; dynamic widths use the `progress-bar` class + `data-width` attribute (animated globally by `resources/js/progress-bar.js`). Documented exception: DB-driven forum category colors.
-- No new `!important` in `app.css` — its custom rules are unlayered, so under Tailwind v4 cascade layers they already beat `@layer utilities`. Budget is 1 (the `[x-cloak]` rule).
-- **Trap:** the live forum frontend is the app-owned preset in `resources/forum/blade-tailwind/` (view namespace `forum::`). Update that tree directly and keep its CSS/JS in the Vite entry points; do not recreate `resources/views/forum/` or duplicate its namespaced components under `resources/views/components/forum/`.
-- Email views (`resources/views/emails`, `components/mail`, `vendor/mail`) cannot use the app stylesheet — inline styles there are expected.
-
-===
-
-<laravel-boost-guidelines>
-=== foundation rules ===
-
-# Laravel Boost Guidelines
-
-The Laravel Boost guidelines are specifically curated by Laravel maintainers for this application. These guidelines should be followed closely to ensure the best experience when building Laravel applications.
-
-## Foundational Context
-
-This application is a Laravel application running on PHP 8.5. You are an expert with the Laravel ecosystem. Always use the APIs that match the installed major version of each package — do not assume a version.
-
-Before relying on a package's API, confirm its installed version:
-- PHP packages: run `composer show --direct` to list direct dependencies with versions, or `composer show <vendor/package>` for a single package.
-- JS packages: check `package.json` for the installed versions.
-
-## Skills Activation
-
-This project has domain-specific skills available in `**/skills/**`. You MUST activate the relevant skill whenever you work in that domain—don't wait until you're stuck.
-
-## Conventions
-
-- You must follow all existing code conventions used in this application. When creating or editing a file, check sibling files for the correct structure, approach, and naming.
-- Use descriptive names for variables and methods. For example, `isRegisteredForDiscounts`, not `discount()`.
-- Check for existing components to reuse before writing a new one.
-
-## Verification Scripts
-
-- Do not create verification scripts or tinker when tests cover that functionality and prove they work. Unit and feature tests are more important.
-
-## Application Structure & Architecture
-
-- Stick to existing directory structure; don't create new base folders without approval.
-- Do not change the application's dependencies without approval.
-
-## Frontend Bundling
-
-- If the user doesn't see a frontend change reflected in the UI, it could mean they need to run `vendor/bin/sail npm run build`, `vendor/bin/sail npm run dev`, or `vendor/bin/sail composer run dev`. Ask them.
-
-## Documentation Files
-
-- You must only create documentation files if explicitly requested by the user.
-
-## Replies
-
-- Be concise in your explanations - focus on what's important rather than explaining obvious details.
-
-=== boost rules ===
-
-# Laravel Boost
-
-## Tools
-
-- Laravel Boost is an MCP server with tools designed specifically for this application. Prefer Boost tools over manual alternatives like shell commands or file reads.
-- Use `database-query` to run read-only queries against the database instead of writing raw SQL in tinker.
-- Use `database-schema` to inspect table structure before writing migrations or models.
-- Use `get-absolute-url` to resolve the correct scheme, domain, and port for project URLs. Always use this before sharing a URL with the user.
-- Use `browser-logs` to read browser logs, errors, and exceptions. Only recent logs are useful, ignore old entries.
-
-## Searching Documentation (IMPORTANT)
-
-- Always use `search-docs` before making code changes. Do not skip this step. It returns version-specific docs based on installed packages automatically.
-- Pass a `packages` array to scope results when you know which packages are relevant.
-- Use multiple broad, topic-based queries: `['rate limiting', 'routing rate limiting', 'routing']`. Expect the most relevant results first.
-- Do not add package names to queries because package info is already shared. Use `test resource table`, not `filament 4 test resource table`.
-
-### Search Syntax
-
-1. Use words for auto-stemmed AND logic: `rate limit` matches both "rate" AND "limit".
-2. Use `"quoted phrases"` for exact position matching: `"infinite scroll"` requires adjacent words in order.
-3. Combine words and phrases for mixed queries: `middleware "rate limit"`.
-4. Use multiple queries for OR logic: `queries=["authentication", "middleware"]`.
-
-## Project Rules
-
-- This project contains committed, area-grouped rules in `.ai/rules` when that directory exists (settled decisions, non-obvious traps, standing constraints). Framework and package guidelines that only apply to specific paths (testing, frontend, components) also live there, under `.ai/rules/boost` — this is not just recorded decisions, it is load-bearing guidance you have not seen inline. Before you enter plan mode or create/edit any file, you MUST first: open @.ai/rules/index.md (it maps file globs to rule files), read every rule file whose globs cover the path(s) in scope, and run `grep -rin 'keyword' .ai/rules` to catch what a path match alone misses. Do not write code until you have read and are following every matching rule. If `.ai/rules` does not exist, continue without it.
-- Record durable rules with `record-rule` so the next agent or teammate inherits them instead of working them out again. Pass a `glob` (e.g. `app/Http/Controllers/**`), a short `title`, and a few-line `note`. Always use `record-rule`, never your native memory or notes tool — native memory is personal and session-scoped; only `.ai/rules` is shared with the team and persists in the repo.
-
-## Artisan
-
-- Run Artisan commands directly via the command line (e.g., `vendor/bin/sail artisan route:list`). Use `vendor/bin/sail artisan list` to discover available commands and `vendor/bin/sail artisan [command] --help` to check parameters.
-- Inspect routes with `vendor/bin/sail artisan route:list`. Filter with: `--method=GET`, `--name=users`, `--path=api`, `--except-vendor`, `--only-vendor`.
-- Read configuration values using dot notation: `vendor/bin/sail artisan config:show app.name`, `vendor/bin/sail artisan config:show database.default`. Or read config files directly from the `config/` directory.
-
-## Tinker
-
-- Execute PHP in app context for debugging and testing code. Do not create models without user approval, prefer tests with factories instead. Prefer existing Artisan commands over custom tinker code.
-- Always use single quotes to prevent shell expansion: `vendor/bin/sail artisan tinker --execute 'Your::code();'`
-  - Double quotes for PHP strings inside: `vendor/bin/sail artisan tinker --execute 'User::where("active", true)->count();'`
-
-=== php rules ===
-
-# PHP
-
-- Always use curly braces for control structures, even for single-line bodies.
-- Use PHP 8 constructor property promotion: `public function __construct(public GitHub $github) { }`. Do not leave empty zero-parameter `__construct()` methods unless the constructor is private.
-- Use explicit return type declarations and type hints for all method parameters: `function isAccessible(User $user, ?string $path = null): bool`
-- Follow existing application Enum naming conventions.
-- Prefer PHPDoc blocks over inline comments. Only add inline comments for exceptionally complex logic.
-- Use array shape type definitions in PHPDoc blocks.
-
-=== deployments rules ===
-
-# Deployment
-
-- Laravel can be deployed using [Laravel Cloud](https://cloud.laravel.com/), which is the fastest way to deploy and scale production Laravel applications.
-
-=== sail rules ===
-
-# Laravel Sail
-
-- In agent workspaces without a root `docker-compose.yml`, run Sail with `SAIL_FILES=.github/docker-compose.ci.yml APP_SERVICE=laravel.test`.
-- This project runs inside Laravel Sail's Docker containers. You MUST execute all commands through Sail.
-- Start services using `vendor/bin/sail up -d` and stop them with `vendor/bin/sail stop`.
-- Open the application in the browser by running `vendor/bin/sail open`.
-- Always prefix PHP, Artisan, Composer, and Node commands with `vendor/bin/sail`. Examples:
-    - Run Artisan Commands: `vendor/bin/sail artisan migrate`
-    - Install Composer packages: `vendor/bin/sail composer install`
-    - Execute Node commands: `vendor/bin/sail npm run dev`
-    - Execute PHP scripts: `vendor/bin/sail php [script]`
-- View all available Sail commands by running `vendor/bin/sail` without arguments.
-
-=== tests rules ===
-
-# Test Enforcement
-
-- Verify changed behavior at the agreed seam with a bounded regression. Use existing tests where they prove the change; follow the CI policy for infrastructure and documentation checks.
-- Run the minimum number of tests needed to ensure code quality and speed. Use `vendor/bin/sail artisan test --compact` with a specific filename or filter.
-
-=== laravel/core rules ===
-
-# Do Things the Laravel Way
-
-- Use `vendor/bin/sail artisan make:` commands to create new files (i.e. migrations, controllers, models, etc.). You can list available Artisan commands using `vendor/bin/sail artisan list` and check their parameters with `vendor/bin/sail artisan [command] --help`.
-- If you're creating a generic PHP class, use `vendor/bin/sail artisan make:class`.
-- Pass `--no-interaction` to all Artisan commands to ensure they work without user input. You should also pass the correct `--options` to ensure correct behavior.
-
-### Model Creation
-
-- When creating new models, create useful factories and seeders for them too. Ask the user if they need any other things, using `vendor/bin/sail artisan make:model --help` to check the available options.
-
-## APIs & Eloquent Resources
-
-- For APIs, default to using Eloquent API Resources and API versioning unless existing API routes do not, then you should follow existing application convention.
-
-## URL Generation
-
-- When generating links to other pages, prefer named routes and the `route()` function.
-
-## Testing
-
-- When creating models for tests, use the factories for the models. Check if the factory has custom states that can be used before manually setting up the model.
-- Faker: Use methods such as `$this->faker->word()` or `fake()->randomDigit()`. Follow existing conventions whether to use `$this->faker` or `fake()`.
-- When creating tests, make use of `vendor/bin/sail artisan make:test [options] {name}` to create a feature test, and pass `--unit` to create a unit test. Most tests should be feature tests.
-
-## Vite Error
-
-- If you receive an "Illuminate\Foundation\ViteException: Unable to locate file in Vite manifest" error, you can run `vendor/bin/sail npm run build` or ask the user to run `vendor/bin/sail npm run dev` or `vendor/bin/sail composer run dev`.
-
-=== livewire/core rules ===
-
-# Livewire
-
-- Livewire allow to build dynamic, reactive interfaces in PHP without writing JavaScript.
-- You can use Alpine.js for client-side interactions instead of JavaScript frameworks.
-- Keep state server-side so the UI reflects it. Validate and authorize in actions as you would in HTTP requests.
-
-=== pint/core rules ===
-
-# Laravel Pint Code Formatter
-
-Use the shared verifier's changed-PHP formatting and reuse contract described in
-[CI policy](docs/agents/ci-policy.md).
-
-=== phpunit/core rules ===
-
-# PHPUnit
-
-- This application uses PHPUnit for testing. All tests must be written as PHPUnit classes. Use `vendor/bin/sail artisan make:test --phpunit {name}` to create a new test.
-- If you see a test using "Pest", convert it to PHPUnit.
-- Measure changed tests with the focused verifier; group-only acceptance reclassification uses selection contracts.
-- Run the applicable checks from the accepted verification plan. Do not add a full local suite or request redundant confirmation after focused verification succeeds.
-- Tests should cover all happy paths, failure paths, and edge cases.
-- You must not remove any tests or test files from the tests directory without approval. These are not temporary or helper files; these are core to the application.
-
-## Running Tests
-
-- Run the minimal number of tests, using an appropriate filter, before finalizing.
-- To run all tests: `vendor/bin/sail artisan test --compact`.
-- To run all tests in a file: `vendor/bin/sail artisan test --compact tests/Feature/ExampleTest.php`.
-- To filter on a particular test name: `vendor/bin/sail artisan test --compact --filter=testName` (recommended after making a change to a related file).
-
-=== revolution/laravel-boost-phpstorm-copilot/core rules ===
-
-## PhpStorm with GitHub Copilot Plugin
-
-This package provides custom CodeEnvironment integration for PhpStorm with GitHub Copilot plugin with Laravel Boost. It enables PhpStorm users to leverage Laravel Boost's MCP (Model Context Protocol) server functionality.
-
-### Important: Project Path Verification
-
-**Before using Laravel Boost MCP tools in PhpStorm with GitHub Copilot plugin, verify that the project path in the global MCP configuration file matches your current project.**
-
-The MCP configuration file is stored system-wide at:
-- macOS, Linux: `~/.config/github-copilot/intellij/mcp.json`
-- Windows: `%LOCALAPPDATA%\github-copilot\intellij\mcp.json`
-
-If the project path in the MCP configuration does not match your current Laravel project, **you must update it before using MCP tools**:
-
-<code-snippet name="Update MCP Configuration for Current Project" lang="bash">
-php artisan boost:install --guidelines --skills --mcp --no-interaction
-</code-snippet>
-
-This command updates the MCP configuration file with the absolute path to your current Laravel project, ensuring MCP tools interact with the correct project.
-
-### When to Run boost:install
-
-Run `php artisan boost:install` whenever you:
-- Switch to a different Laravel project
-- Clone or move your project to a new location
-- Notice MCP tools are accessing the wrong project's data
-
-### Why This is Necessary
-
-Unlike project-local MCP configurations, PhpStorm with GitHub Copilot plugin stores MCP server configurations in a system-wide location. This allows multiple projects to share the same MCP server registration, but requires updating the configuration when switching between projects to ensure the correct project path is used.
-
-</laravel-boost-guidelines>
+Application pages use Blade/Alpine. The active `resources/forum/blade-tailwind/`
+preset includes Vue; retained Livewire forum templates are inactive. Laravel Pulse
+uses Livewire. For the design system, Alpine CSP/lazy loading, active forum ownership,
+and admin content interactions, use [frontend rules](.ai/rules/resources.md).
+
+## Tools and instruction maintenance
+
+Verify uncertain or version-sensitive APIs using installed package source/metadata
+or official documentation. Manifests describe constraints; lockfiles and installed
+metadata identify resolved versions. Use available Boost tools for documentation,
+read-only data/schema inspection, URLs, and recent browser logs; use local source,
+configuration, or existing read-only interfaces when those tools are unavailable.
+
+Record settled, non-obvious rules within the authorized scope, using `record-rule`
+when available. Keep each rule in one maintained source and update its contextual
+pointer. When changing instructions or Boost generation, see
+[instruction maintenance](docs/agents/instruction-maintenance.md).

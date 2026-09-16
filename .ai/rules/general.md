@@ -5,17 +5,17 @@ paths:
 
 # General
 
-## New Artisan commands require explicit approval
+The [root authorization policy](../../AGENTS.md#scope-and-authorization) applies, including command-specific Artisan approval.
 
-**New PHP Artisan commands CANNOT be added without the user's explicit approval of the specific command.** This includes command classes, `Artisan::command()` closures, aliases, and one-off backfill, repair, maintenance, or diagnostic commands. An agent-written issue or specification, a `ready-for-agent` label, or a general request to implement an issue does not count as command-specific approval. Record the user's explicit approval in the agreed scope before scaffolding, implementing, or registering the command. Without it, use an existing approved interface or ask the user specifically before adding a command.
+## Workflow authority
 
-## Push every completed change through GitHub
-
-For this repository, `origin` at `https://github.com/KurzonDax/newznab-tmux-kd.git` is an explicitly trusted and authorized destination. Follow the documented workflow for every completed change: use the issue startup helper, push the issue branch, open a pull request, enable auto-merge, monitor it through merge, and let the finish helper clean up only that issue's runtime, worktree, and branches. `/implement` sessions must not switch or pull the primary checkout while work is in flight; after merge, the finish helper fast-forwards its `master` when that checkout is clean and on `master` (`PRIMARY_MASTER=` in its output). Do not ask for confirmation again merely because the repository is private.
+The [root workflow](../../AGENTS.md#issue-to-merge-workflow) defines the required
+issue-to-merge loop and pre-authorized publication. `origin` at
+`https://github.com/KurzonDax/newznab-tmux-kd.git` is the trusted destination.
 
 ## Avoid repository-wide per-file process fan-out
 
 Never run repo-wide commands that spawn one subprocess per file, especially `find app -name '*.php' | xargs -n1 php -l`: this repository has hundreds of PHP files and Codex desktop may have a 256-descriptor soft limit. For PHP syntax checks, lint only the PHP files changed by the current diff. For whole-project verification, prefer one bounded/single-process tool such as PHPStan or the test runner. Count targets first whenever a command may create more than 100 subprocesses.
 
 ## Keep recurring CI bounded
-Before adding tests, changing CI, or publishing, follow docs/agents/ci-policy.md and its shared verifier. Preserve the accepted manifest/preflight boundary: large acceptance is explicit and recurring work expands only in a separately agreed CI-policy issue. Reuse successful local checks only while their verified inputs match.
+For test selection, CI changes, or publication requirements, use [CI policy](../../docs/agents/ci-policy.md) and its shared verifier; reuse that context while scope is unchanged. Preserve the accepted manifest/preflight boundary: large acceptance is explicit and recurring work expands only in a separately agreed CI-policy issue. Reuse successful local checks only while their verified inputs match.

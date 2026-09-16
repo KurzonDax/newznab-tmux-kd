@@ -1,18 +1,20 @@
-# Project Rules Index
+# Project rules index
 
-## New Artisan commands require explicit approval
+The [root policies](../../AGENTS.md) apply throughout the repository. Use this map
+to select guidance for the behavior and paths involved; read relevant sections
+once and revisit when scope changes. Cross-cutting behavior can require another
+entry, but unrelated rules are not prerequisites for a small edit.
 
-**New PHP Artisan commands CANNOT be added without the user's explicit approval of the specific command.** This includes command classes, `Artisan::command()` closures, aliases, and one-off backfill, repair, maintenance, or diagnostic commands. An agent-written issue or specification, a `ready-for-agent` label, or a general request to implement an issue does not count as command-specific approval. Record the user's explicit approval in the agreed scope before scaffolding, implementing, or registering the command. Without it, use an existing approved interface or ask the user specifically before adding a command.
-
-Before planning or editing, find the row whose globs match the file's path and read that rule file.
-
-| Applies to | Rule file |
+| When working on / paths | Reference |
 | --- | --- |
-| app/Services/AdditionalProcessing/**, app/Services/AudioProcessing/** | .ai/rules/additional-processing.md |
-| app/Http/Controllers/Api/**, app/Data/Api/**, routes/rss.php, app/Http/Controllers/RssController.php | .ai/rules/api-frozen.md |
-| app/Services/Search/Drivers/ManticoreSearchDriver.php | .ai/rules/drivers.md |
-| ** | .ai/rules/general.md |
-| app/Services/NameFixing/** | .ai/rules/name-fixing.md |
-| resources/** | .ai/rules/resources.md |
-| app/Services/** | .ai/rules/services.md |
-| app/** | .ai/rules/settings-values.md |
+| Verification process or repository tooling | [General](general.md), [CI policy](../../docs/agents/ci-policy.md) |
+| Tests, fixtures, bootstrap, `tests/**`, `phpunit.xml` | [Testing](testing.md) |
+| Audio/additional processing or their dispatch: `app/Services/AdditionalProcessing/**`, `app/Services/AudioProcessing/**`, `app/Services/Runners/PostProcessRunner.php` | [Additional/audio processing](additional-processing.md) |
+| API/RSS response shapes or routing: `app/Http/Controllers/Api/**`, `app/Data/Api/**`, `app/Services/Api/**`, `app/Http/Controllers/RssController.php`, `routes/api.php`, `routes/rss.php`, relevant parts of `routes/web.php` and `bootstrap/app.php` | [Frozen API/RSS](api-frozen.md) |
+| Manticore queries/schema: `ManticoreSearchDriver`, `ManticoreIndexRegistry`, `CreateManticoreIndexes` | [Search drivers](drivers.md) |
+| Release naming: `app/Services/NameFixing/**` | [Name fixing](name-fixing.md) |
+| Frontend/CSP/design system: `resources/**`, `vite.config.js`; content ordering: `AdminContentController` | [Resources](resources.md) |
+| Release lifecycle, ingestion, TV admission, claims, categorization: relevant `app/Services/**` | [Services](services.md) |
+| Numeric settings readers in `app/**` | [Settings values](settings-values.md) |
+| Settings declaration/validation/save: `app/Support/Settings/**`, `app/Services/Settings/**`, `AdminSettingsController`, `resources/views/admin/settings/**`, settings test helpers | [Settings hub](settings-hub.md) |
+| Tmux layouts/dispatch: `app/Services/Tmux/**`, `PostProcessRunner`, `config/tmux.php` | [Tmux](tmux.md) |
