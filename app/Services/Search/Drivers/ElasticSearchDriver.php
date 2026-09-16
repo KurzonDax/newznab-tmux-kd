@@ -2205,7 +2205,8 @@ class ElasticSearchDriver implements SearchDriverInterface
         }
         $must = [];
         foreach ($fields as $field => $text) {
-            $must[] = ['query_string' => ['query' => self::prepareEntityFieldQuery($text), 'fields' => [$field], 'default_operator' => 'and', 'analyze_wildcard' => true]];
+            $columns = $index === 'movies' && $field === 'all' ? ['title', 'actors', 'director', 'plot'] : [$field];
+            $must[] = ['query_string' => ['query' => self::prepareEntityFieldQuery($text), 'fields' => $columns, 'default_operator' => 'and', 'analyze_wildcard' => true]];
         }
         try {
             $response = $this->getClient()->search([

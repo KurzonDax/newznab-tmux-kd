@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Enums\BrowseRoot;
 use App\Http\Middleware\TrustedDevice2FAMiddleware;
 use App\Services\Search\Contracts\SearchDriverInterface;
+use App\Services\Search\Contracts\SearchServiceInterface;
 use App\Services\Search\SearchService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -1149,6 +1150,101 @@ final class ReleaseBrowserControllerTest extends TestCase
         $combined->assertSee('Matrix')->assertDontSee('Matrix sequel')->assertDontSee('Another film');
     }
 
+    #[DataProvider('movieCoverQueries')]
+    public function test_movie_cover_search_uses_index_keys_once_for_results_and_filter_options(string $text, array $fields): void
+    {
+        $this->createCoverCatalogSchema('movieinfo');
+        DB::table('movieinfo')->insert([
+            ['imdbid' => '0123456', 'title' => 'Indexed match', 'year' => '2024', 'genre' => 'Drama', 'rating' => '8'],
+            ['imdbid' => '7654321', 'title' => 'Needle SQL match', 'year' => '2024', 'genre' => 'Drama', 'rating' => '8'],
+            ['imdbid' => '3', 'title' => 'Wrong year', 'year' => '2023', 'genre' => 'Drama', 'rating' => '8'],
+            ['imdbid' => '4', 'title' => 'Wrong genre', 'year' => '2024', 'genre' => 'Comedy', 'rating' => '8'],
+            ['imdbid' => '5', 'title' => 'Wrong rating', 'year' => '2024', 'genre' => 'Drama', 'rating' => '5'],
+        ]);
+        $this->release('Selected encoding', ['imdbid' => '0123456']);
+        $this->release('Unselected encoding', ['imdbid' => '7654321']);
+        foreach ([3, 4, 5] as $id) {
+            $this->release('Filtered encoding '.$id, ['imdbid' => (string) $id]);
+        }
+        $search = Mockery::mock(SearchServiceInterface::class);
+        $search->shouldReceive('searchEntityFields')->once()
+            ->with('movies', $fields, 'imdbid', 500, 0)
+            ->andReturn(['ids' => [1, 3, 4, 5], 'keys' => ['0123456', '3', '4', '5'], 'available' => true, 'has_more' => false]);
+        $this->app->instance(SearchServiceInterface::class, $search);
+
+        $response = $this->actingAs($this->browserUser())->get('/browse/movies?'.http_build_query(['view' => 'covers', 'q' => $text, 'year' => '2024', 'genre' => 'Drama', 'rating' => '7']))->assertOk();
+
+        $this->assertSame(['0123456'], array_map(static fn ($cover) => $cover->id, $response->viewData('results')->items()));
+        $this->assertSame(1, $response->viewData('results')->total());
+    }
+
+    /** @return iterable<string, array{string, array<string, string>}> */
+    public static function movieCoverQueries(): iterable
+    {
+        yield 'unqualified' => ['Needle', ['all' => 'Needle']];
+        yield 'title' => ['title:Needle', ['title' => 'Needle']];
+        yield 'actor alias' => ['actor:Needle', ['actors' => 'Needle']];
+        yield 'director' => ['director:Needle', ['director' => 'Needle']];
+        yield 'plot' => ['plot:Needle', ['plot' => 'Needle']];
+        yield 'phrases and exclusions' => ['actor:"Hugh Jackman" director:(scorsese -spielberg)', ['actors' => '"Hugh Jackman"', 'director' => '(scorsese -spielberg)']];
+    }
+
+    #[DataProvider('movieIndexAvailability')]
+    public function test_movie_cover_fallback_preserves_phrases_exclusions_and_field_constraints(bool $available): void
+    {
+        $this->createCoverCatalogSchema('movieinfo');
+        foreach ([
+            ['Part Two', 'Hugh Jackman'], ['Two Part', 'Hugh Jackman'],
+            ['Part Two cam', 'Hugh Jackman'], ['Part Two', 'Other Actor'],
+        ] as $id => [$title, $actors]) {
+            DB::table('movieinfo')->insert(['imdbid' => (string) ($id + 1), 'title' => $title, 'actors' => $actors]);
+            $this->release('Encoding '.$id, ['imdbid' => (string) ($id + 1)]);
+        }
+        $search = Mockery::mock(SearchServiceInterface::class);
+        $search->shouldReceive('searchEntityFields')->once()
+            ->with('movies', ['all' => '-cam', 'title' => '"Part Two"', 'actors' => 'Jackman'], 'imdbid', 500, 0)
+            ->andReturn(['ids' => [], 'keys' => [], 'available' => $available, 'has_more' => false]);
+        $this->app->instance(SearchServiceInterface::class, $search);
+
+        $response = $this->actingAs($this->browserUser())->get('/browse/movies?'.http_build_query([
+            'view' => 'covers', 'q' => 'title:"Part Two" actor:Jackman -cam',
+        ]))->assertOk();
+
+        $this->assertSame(['1'], array_map(static fn ($cover) => $cover->id, $response->viewData('results')->items()));
+    }
+
+    /** @return iterable<string, array{bool}> */
+    public static function movieIndexAvailability(): iterable
+    {
+        yield 'empty' => [true];
+        yield 'unavailable' => [false];
+    }
+
+    public function test_movie_cover_index_pages_are_combined_and_refreshed_for_expansion(): void
+    {
+        $this->createCoverCatalogSchema('movieinfo');
+        foreach ([1, 2] as $id) {
+            DB::table('movieinfo')->insert(['imdbid' => (string) $id, 'title' => 'Indexed movie '.$id]);
+            $this->release('Encoding '.$id, ['imdbid' => (string) $id]);
+        }
+        $search = Mockery::mock(SearchServiceInterface::class);
+        $search->shouldReceive('searchEntityFields')->twice()
+            ->with('movies', ['title' => 'Needle'], 'imdbid', 500, 0)
+            ->andReturn(
+                ['ids' => [10], 'keys' => ['1'], 'available' => true, 'has_more' => true],
+                ['ids' => [20], 'keys' => ['2'], 'available' => true, 'has_more' => false],
+            );
+        $search->shouldReceive('searchEntityFields')->once()
+            ->with('movies', ['title' => 'Needle'], 'imdbid', 500, 10)
+            ->andReturn(['ids' => [20], 'keys' => ['2'], 'available' => true, 'has_more' => false]);
+        $this->app->instance(SearchServiceInterface::class, $search);
+        $url = '/browse/movies?view=covers&q=title:Needle';
+
+        $response = $this->actingAs($this->browserUser())->get($url)->assertOk();
+        $this->assertSame(2, $response->viewData('results')->total());
+        $this->get($url.'&_fragment=cover&cover=1')->assertNotFound();
+    }
+
     public function test_legacy_cover_pages_reject_array_categories_without_a_server_error(): void
     {
         $this->actingAs($this->browserUser());
@@ -1162,6 +1258,7 @@ final class ReleaseBrowserControllerTest extends TestCase
         config(['search.default' => 'cover-test']);
         $driver = Mockery::mock(SearchDriverInterface::class);
         $driver->shouldReceive('isAvailable')->andReturn(false);
+        $driver->shouldReceive('searchEntityFields')->andReturn(['ids' => [], 'keys' => [], 'available' => false, 'has_more' => false]);
         app(SearchService::class)->extend('cover-test', static fn () => $driver);
         $this->registerSqliteFunction('YEAR', static fn (?string $date): ?string => $date === null ? null : substr($date, 0, 4));
         Schema::create($entityTable, function (Blueprint $table): void {

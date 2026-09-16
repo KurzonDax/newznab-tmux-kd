@@ -105,21 +105,7 @@ final class WebSearchIndex
         $filters = [];
         foreach ($groups as $attribute => $group) {
             $definition = $group['definition'];
-            $keys = [];
-            $after = 0;
-            do {
-                $result = $this->search->searchEntityFields($definition['index'], $group['fields'], $definition['key'], 500, $after);
-                if (! $result['available']) {
-                    $keys = [];
-                    break;
-                }
-                array_push($keys, ...$result['keys']);
-                $next = $result['ids'] === [] ? $after : max($result['ids']);
-                if ($next <= $after) {
-                    break;
-                }
-                $after = $next;
-            } while ($result['has_more']);
+            $keys = app(WebSearchEntityLookup::class)->keys($definition['index'], $group['fields'], $definition['key']);
             if ($keys === [] && Schema::hasTable($definition['table'])) {
                 $query = DB::table($definition['table']);
                 foreach ($group['fields'] as $field => $text) {

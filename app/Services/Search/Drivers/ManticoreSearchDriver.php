@@ -2225,7 +2225,8 @@ class ManticoreSearchDriver implements SearchDriverInterface
         }
         $terms = [];
         foreach ($fields as $field => $text) {
-            $terms[] = '@'.$field.' ('.self::prepareWebSearchQuery($text, partial: true).')';
+            $selector = $index === 'movies' && $field === 'all' ? '(title,actors,director,plot)' : $field;
+            $terms[] = '@'.$selector.' ('.self::prepareWebSearchQuery($text, partial: true).')';
         }
         try {
             $results = (new Search($this->manticoreSearch))
