@@ -59,6 +59,32 @@ class TrustedDonorNameFixingTest extends TestCase
         $this->assertTrustedDonorRenamesTarget('crc');
     }
 
+    #[DataProvider('hiddenCrcLocations')]
+    public function test_cached_hidden_archive_crc_cannot_name_a_release_on_a_later_pass(bool $hiddenDonor): void
+    {
+        $this->insertRelease(1, 'Hidden.Payload.2026.2160p-GROUP', Category::MOVIE_HD, trusted: true);
+        $this->insertRelease(2, 'Visible.Release.2026.1080p-GROUP', Category::MOVIE_HD, trusted: true);
+        $this->insertRelease(3, '6f0c31cb66a544c1912a0fc16e3d7b73');
+        DB::table('release_files')->insert([
+            ['releases_id' => 1, 'name' => $hiddenDonor ? 'Parent/.hidden/hidden.mkv' : 'hidden.mkv', 'crc32' => '0053CA13'],
+            ['releases_id' => 2, 'name' => 'visible.mkv', 'crc32' => '11223344'],
+            ['releases_id' => 3, 'name' => $hiddenDonor ? 'Parent/visible.mkv' : 'Parent/.hidden/hidden.mkv', 'crc32' => '0053CA13'],
+            ['releases_id' => 3, 'name' => 'Visible/visible.mkv', 'crc32' => '11223344'],
+        ]);
+        Search::shouldReceive('updateRelease')->once()->with(3);
+
+        app(NameFixingService::class)->fixNamesWithCrc(2, true, 2, true, false);
+
+        $this->assertSame('Visible.Release.2026.1080p-GROUP', Release::query()->findOrFail(3)->searchname);
+        $this->assertSame(2, DB::table('release_files')->where('releases_id', 3)->count());
+    }
+
+    /** @return array<string, array{bool}> */
+    public static function hiddenCrcLocations(): array
+    {
+        return ['hidden candidate' => [false], 'hidden donor' => [true]];
+    }
+
     public function test_media_uid_match_renames_from_trusted_donor_without_predb(): void
     {
         $this->assertTrustedDonorRenamesTarget('uid');

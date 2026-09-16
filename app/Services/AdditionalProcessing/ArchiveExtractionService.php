@@ -11,6 +11,7 @@ use Closure;
 use dariusiii\rarinfo\ArchiveInfo;
 use dariusiii\rarinfo\Par2Info;
 use dariusiii\rarinfo\RarInfo;
+use dariusiii\rarinfo\ZipInfo;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 
@@ -79,6 +80,7 @@ class ArchiveExtractionService
                 'verdict' => $inspection['verdict'],
                 'inspectionReason' => $inspection['reason'],
                 'dataSummary' => ['file_list' => $inspection['files']],
+                'manifestComplete' => $inspection['verdict'] !== Enums\PasswordVerdict::Incomplete,
             ];
         }
 
@@ -161,7 +163,42 @@ class ArchiveExtractionService
             'passwordStatus' => ReleaseBrowseService::PASSWD_NONE,
             'archiveMarker' => $extraction['marker'],
             'dataSummary' => $dataSummary,
+            'manifestComplete' => $this->hasCompleteManifest($this->archiveInfo),
         ];
+    }
+
+    private function hasCompleteManifest(ArchiveInfo $archive): bool
+    {
+        $reader = $archive->getReader();
+        $complete = false;
+        if ($reader instanceof RarInfo) {
+            if ($reader->isVolume) {
+                return false;
+            }
+            foreach ($reader->getBlocks(false) ?: [] as $block) {
+                if (in_array($block['head_type'], [RarInfo::BLOCK_ENDARC, RarInfo::R50_BLOCK_ENDARC], true)) {
+                    $complete = empty($block['more_volumes']);
+                }
+            }
+        } elseif ($reader instanceof ZipInfo) {
+            foreach ($reader->getRecords() ?: [] as $record) {
+                if ($record['type'] === ZipInfo::RECORD_ENDCENTRAL) {
+                    $complete = $record['disk_num'] === 0
+                        && $record['start_disk'] === 0
+                        && $record['entries_disk'] === $record['entries_total'];
+                }
+            }
+        }
+
+        if ($complete && $archive->containsArchive()) {
+            foreach ($archive->getArchiveList() ?: [] as $nested) {
+                if (! $nested instanceof ArchiveInfo || ! $this->hasCompleteManifest($nested)) {
+                    return false;
+                }
+            }
+        }
+
+        return $complete;
     }
 
     /**

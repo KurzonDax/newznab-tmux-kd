@@ -18,6 +18,7 @@ use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
 use App\Services\Categorization\MediaInfoRefinementService;
+use App\Services\NameFixing\ArchiveNamingPath;
 use App\Services\NameFixing\FileNameCleaner;
 use App\Services\NameFixing\FilePrioritizer;
 use App\Services\NameFixing\NameFixingService;
@@ -124,6 +125,15 @@ class ReleaseFileManager
             return false;
         }
 
+        $sources = explode(' > ', (string) ($file['source'] ?? 'main'));
+        array_shift($sources);
+        foreach ($sources as $source) {
+            if (! ArchiveNamingPath::eligible($source)) {
+                $file['name'] = implode('/', $sources).'/'.$file['name'];
+                break;
+            }
+        }
+
         // Executable check runs against every file name seen, before support-file
         // skipping and before the recorded-file cap, so nothing can bypass it.
         if ($this->discardService->shouldDiscard((string) $file['name'], (int) $context->release->categories_id)) {
@@ -134,7 +144,7 @@ class ReleaseFileManager
         }
 
         // Check for password
-        if (isset($file['pass']) && $file['pass'] === true) {
+        if (! empty($file['pass'])) {
             $context->releaseHasPassword = true;
             $context->passwordStatus = ReleaseBrowseService::PASSWD_RAR;
 
@@ -197,11 +207,6 @@ class ReleaseFileManager
                 }
                 $context->releaseHasPassword = true;
                 $context->passwordStatus = ReleaseBrowseService::PASSWD_RAR;
-            } elseif ($file['name'] !== '' && ! str_starts_with($file['name'], '.')) {
-                // Run PreDB filename check
-                $context->release['filename'] = $file['name'];
-                $context->release['releases_id'] = $context->release->id;
-                $this->nameFixingService->matchPreDbFiles($context->release, true, true, true);
             }
 
             return true;
@@ -290,7 +295,7 @@ class ReleaseFileManager
                 || $lockedRelease->additional_pp_claim_token !== $context->release->additional_pp_claim_token) {
                 throw new \RuntimeException('Additional-processing ownership changed before finalization.');
             }
-            if ($processPasswords && $context->passwordVerdict !== null) {
+            if ($processPasswords) {
                 $context->passwordInspectionAttempts = (int) $lockedRelease->pp_timeout_count;
                 if ((int) $lockedRelease->passwordstatus === ReleaseBrowseService::PASSWD_RAR) {
                     $context->releaseHasPassword = true;
@@ -836,27 +841,81 @@ class ReleaseFileManager
         array $dataSummary,
         ReleaseProcessingContext $context
     ): void {
-        $fileData = $dataSummary['file_list'] ?? [];
-        if (empty($fileData)) {
+        $fileNames = $this->manifestNamingFiles($dataSummary);
+        if ($context->releaseDiscarded || $fileNames === null || $fileNames === []) {
             return;
         }
 
-        $rarFileName = array_column($fileData, 'name');
-        if (empty($rarFileName[0])) {
+        $fileNames = $this->filePrioritizer->prioritizeForMatching($fileNames);
+        if ($this->hasUnrelatedArchiveIdentities($fileNames)) {
             return;
         }
 
-        $renamedFromOuterArchive = $this->tryRenameFromRarFileNames($rarFileName, $context);
-        if ($renamedFromOuterArchive !== null) {
+        $context->release['filename'] = implode('||', $fileNames);
+        $context->release->releases_id = $context->release->id;
+        if ($this->nameFixingService->matchPreDbFiles($context->release, true, true, true) > 0) {
             return;
         }
 
-        if (! empty($dataSummary['archives'][$rarFileName[0]]['file_list'])) {
-            // Try nested archive
-            $archiveData = $dataSummary['archives'][$rarFileName[0]]['file_list'];
-            $archiveFileName = array_column($archiveData, 'name');
-            $this->tryRenameFromRarFileNames($archiveFileName, $context);
+        $this->tryRenameFromRarFileNames($fileNames, $context);
+    }
+
+    /**
+     * @param  array<string, mixed>  $summary
+     * @return list<string>|null Null means the manifest is not complete enough to name a release.
+     */
+    private function manifestNamingFiles(array $summary, string $ancestor = ''): ?array
+    {
+        $files = $summary['file_list'] ?? null;
+        if (! empty($summary['error']) || ! is_array($files)
+            || (isset($summary['file_count']) && (int) $summary['file_count'] !== count($files))) {
+            return null;
         }
+
+        $rangeEnd = isset($summary['use_range']) ? (int) explode('-', $summary['use_range'])[1] : null;
+        $names = [];
+        foreach ($files as $file) {
+            if (! is_array($file) || ! empty($file['error']) || ! isset($file['name'])
+                || ($rangeEnd !== null && isset($file['next_offset']) && $file['next_offset'] > $rangeEnd + 1)) {
+                return null;
+            }
+            $path = $ancestor.$file['name'];
+            if (! empty($file['is_dir']) || ! ArchiveNamingPath::eligible($file['name']) || ! ArchiveNamingPath::eligible($path)) {
+                continue;
+            }
+            $names[] = $path;
+            if (isset($summary['archives'][$file['name']])) {
+                $nested = $this->manifestNamingFiles($summary['archives'][$file['name']], $path.'/');
+                if ($nested === null) {
+                    return null;
+                }
+                array_push($names, ...$nested);
+            }
+        }
+
+        return $names;
+    }
+
+    /** @param list<string> $fileNames */
+    private function hasUnrelatedArchiveIdentities(array $fileNames): bool
+    {
+        $identities = [];
+        foreach ($fileNames as $fileName) {
+            $basename = $this->fileNameCleaner->extractFilenameFromPath($fileName);
+            if (preg_match('/^(?<show>.+?)[ ._-]+S(?<season>\d{1,4})(?:E\d{1,4})?\b/i', $basename, $episode)) {
+                $show = trim(preg_replace('/[._]+/', ' ', $episode['show']) ?? $episode['show']);
+                $identity = $show.' S'.(int) $episode['season'];
+            } else {
+                $identity = $this->fileNameCleaner->cleanForMatching($fileName);
+                if ($identity === false
+                    || (! $this->isPlausibleReleaseTitle($identity) && ! $this->fileNameCleaner->isDescriptiveTitle($fileName))) {
+                    continue;
+                }
+            }
+            $identities[mb_strtolower($this->normalizeCandidateTitle($identity))] = true;
+        }
+
+        return count($identities) > 1;
     }
 
     /**
@@ -864,30 +923,34 @@ class ReleaseFileManager
      */
     private function tryRenameFromRarFileNames(array $fileNames, ReleaseProcessingContext $context): ?bool
     {
-        $extractedName = $this->extractReleaseNameFromFile($fileNames[0] ?? '');
-        if ($extractedName !== null) {
-            $preDbId = Predb::query()->where('title', $extractedName)->value('id');
-            $context->release->preid = $preDbId === null ? 0 : (int) $preDbId;
-            $candidate = $this->normalizeCandidateTitle($extractedName);
+        $extractedName = null;
+        foreach ($fileNames as $fileName) {
+            $extractedName = $this->extractReleaseNameFromFile($fileName);
+            if ($extractedName !== null) {
+                $preDbId = Predb::query()->where('title', $extractedName)->value('id');
+                $context->release->preid = $preDbId === null ? 0 : (int) $preDbId;
+                $candidate = $this->normalizeCandidateTitle($extractedName);
 
-            if ($this->isPlausibleReleaseTitle($candidate)) {
-                $this->releaseUpdateService->updateRelease(
-                    $context->release,
-                    $candidate,
-                    'RarInfo FileName Match',
-                    true,
-                    'Filenames, ',
-                    true,
-                    true,
-                    $context->release->preid
-                );
+                if ($this->isPlausibleReleaseTitle($candidate)) {
+                    $this->releaseUpdateService->updateRelease(
+                        $context->release,
+                        $candidate,
+                        'RarInfo FileName Match',
+                        true,
+                        'Filenames, ',
+                        true,
+                        true,
+                        $context->release->preid
+                    );
 
-                return true;
+                    return true;
+                }
+
+                if ($this->config->debugMode) {
+                    Log::debug('RarInfo: Ignored low-quality candidate "'.$candidate.'" from inner file name.');
+                }
             }
 
-            if ($this->config->debugMode) {
-                Log::debug('RarInfo: Ignored low-quality candidate "'.$candidate.'" from inner file name.');
-            }
         }
 
         if (! $this->descriptiveTitleRenameEnabled) {
@@ -954,6 +1017,9 @@ class ReleaseFileManager
         );
 
         foreach ($evidence as $fileName) {
+            if (! ArchiveNamingPath::eligible($fileName)) {
+                continue;
+            }
             $other = $this->parseVideoEpisode($fileName);
             if ($other !== null
                 && strcasecmp($other['show'], $episode['show']) === 0
@@ -989,7 +1055,7 @@ class ReleaseFileManager
      */
     private function extractReleaseNameFromFile(string $filename): ?string
     {
-        $basename = basename($filename);
+        $basename = $this->fileNameCleaner->extractFilenameFromPath($filename);
 
         $unwrapped = $this->fileNameCleaner->extractNzbSplitName($basename);
         if ($unwrapped !== null) {

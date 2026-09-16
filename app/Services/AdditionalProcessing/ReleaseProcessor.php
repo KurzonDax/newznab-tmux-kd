@@ -1436,7 +1436,7 @@ class ReleaseProcessor
 
         if (isset($result['verdict'])) {
             $context->recordPasswordVerdict($result['verdict'], $result['inspectionReason']);
-            if ($result['files'] !== []) {
+            if ($result['files'] !== [] && ($result['manifestComplete'] ?? false)) {
                 $this->releaseManager->processReleaseNameFromRar($result['dataSummary'], $context);
             }
             foreach ($result['files'] as $file) {
@@ -1494,15 +1494,11 @@ class ReleaseProcessor
             $this->output->echoArchiveMarker($result['archiveMarker']);
         }
 
-        if ($reverse && ! empty($result['dataSummary'])) {
+        if (! empty($result['dataSummary']) && ($result['manifestComplete'] ?? false)) {
             $this->releaseManager->processReleaseNameFromRar($result['dataSummary'], $context);
         }
 
         foreach ($result['files'] as $file) {
-            if ($context->releaseHasPassword) {
-                break;
-            }
-
             if ($this->releaseManager->addFileInfo($file, $context, $this->config->supportFileRegex)) {
                 $this->output->echoFileInfoAdded();
             }
