@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Models\Release;
+use App\Models\Settings;
 use App\Models\User;
 use App\Models\UserDownload;
 use App\Models\UsersRelease;
+use App\Services\Nzb\NzbArchiveStream;
 use App\Services\Nzb\NzbService;
 use App\Support\FilenameSanitizer;
 use Exception;
@@ -16,7 +18,6 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
-use STS\ZipStream\Builder;
 use Symfony\Component\HttpFoundation\HeaderUtils;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -33,7 +34,7 @@ class GetNzbController extends BasePageController
      *
      * @throws Exception
      */
-    public function getNzb(Request $request, ?string $guid = null): JsonResponse|Response|StreamedResponse|Builder
+    public function getNzb(Request $request, ?string $guid = null): JsonResponse|Response|StreamedResponse
     {
         // Normalize guid parameter
         $this->normalizeGuidParameter($request, $guid);
@@ -227,52 +228,47 @@ class GetNzbController extends BasePageController
         string $userName,
         int $maxDownloads,
         string $releaseId
-    ): JsonResponse|Response|StreamedResponse|Builder {
-        $guids = explode(',', $releaseId);
-        $guidCount = \count($guids);
-
-        // Check if zip download would exceed limits
-        $requests = UserDownload::getDownloadRequests($uid);
-        if ($requests + $guidCount > $maxDownloads) {
-            return showApiError(501);
-        }
-
-        $zip = getStreamingZip($guids);
-        if ($zip === '') { // @phpstan-ignore identical.alwaysFalse
+    ): JsonResponse|Response|StreamedResponse {
+        $archive = app(NzbArchiveStream::class)->prepare(explode(',', $releaseId));
+        $releaseIds = $archive['releaseIds'];
+        if ($releaseIds === []) {
             return response()->json(['message' => 'Unable to create .zip file'], 404);
         }
 
-        // Update statistics
-        $this->updateZipDownloadStatistics($request, $uid, $guids);
+        $requests = UserDownload::getDownloadRequests($uid);
+        if ($requests + \count($releaseIds) > $maxDownloads) {
+            return showApiError(501);
+        }
+
+        $this->updateZipDownloadStatistics($request, $uid, $releaseIds);
 
         Log::channel('zipped')->info("User {$userName} downloaded zipped files from site with IP: {$request->ip()}");
 
-        return $zip;
+        return $archive['response'];
     }
 
     /**
      * Update statistics for zip downloads (batched to avoid N+1 queries).
      *
-     * @param  list<string>  $guids
+     * @param  list<int>  $releaseIds
      */
-    private function updateZipDownloadStatistics(Request $request, int $uid, array $guids): void
+    private function updateZipDownloadStatistics(Request $request, int $uid, array $releaseIds): void
     {
-        if ($guids === []) {
-            return;
-        }
-
-        $guidCount = \count($guids);
-        User::incrementGrabs($uid, $guidCount);
-
-        // Resolve guids to release ids in one query for batch operations
-        $releaseIds = Release::query()->whereIn('guid', $guids)->pluck('id')->all();
-
-        Release::updateGrabsByGuids($guids);
-        UserDownload::addDownloadRequestsBatch($uid, $releaseIds);
-
+        User::incrementGrabs($uid, \count($releaseIds));
+        $updateGrabs = (int) Settings::settingValue('grabstatus') !== 0;
         $shouldDeleteFromCart = $request->has('del') && (int) $request->input('del') === 1;
-        if ($shouldDeleteFromCart && $releaseIds !== []) {
-            UsersRelease::delCartByUserAndReleases($uid, $releaseIds);
+
+        foreach (array_chunk($releaseIds, 500) as $batch) {
+            if ($updateGrabs) {
+                Release::query()->whereIn('id', $batch)->increment('grabs');
+                foreach ($batch as $id) {
+                    Release::syncSearchIndexAfterCommit($id);
+                }
+            }
+            UserDownload::addDownloadRequestsBatch($uid, $batch);
+            if ($shouldDeleteFromCart) {
+                UsersRelease::delCartByUserAndReleases($uid, $batch);
+            }
         }
     }
 

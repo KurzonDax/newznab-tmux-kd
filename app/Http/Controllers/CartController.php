@@ -13,7 +13,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
-use STS\ZipStream\Builder;
 use Symfony\Component\HttpFoundation\Response;
 
 class CartController extends BasePageController
@@ -47,7 +46,7 @@ class CartController extends BasePageController
         return redirect()->route('basket')->with('success', 'Basket emptied.');
     }
 
-    public function download(Request $request, GetNzbController $downloads): Response|Builder
+    public function download(Request $request, GetNzbController $downloads): Response
     {
         $guids = app(ReleaseBrowserQuery::class)->matchingQuery($this->basketState($request), $this->userdata)->pluck('r.guid');
         if ($guids->isEmpty()) {

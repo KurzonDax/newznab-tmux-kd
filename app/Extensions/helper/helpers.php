@@ -3,8 +3,6 @@
 declare(strict_types=1);
 
 use App\Models\Country as CountryModel;
-use App\Models\Release;
-use App\Services\Nzb\NzbService;
 use App\Support\ReleaseDisplayNameFormatter;
 use GuzzleHttp\Client;
 use GuzzleHttp\Cookie\CookieJar;
@@ -16,8 +14,6 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use STS\ZipStream\Builder;
-use STS\ZipStream\Facades\Zip as ZipStream;
 use Symfony\Component\Process\Process;
 
 if (! function_exists('getRawHtml')) {
@@ -391,35 +387,6 @@ if (! function_exists('is_it_json')) {
         json_decode($isIt, true, 512, JSON_THROW_ON_ERROR);
 
         return json_last_error() === JSON_ERROR_NONE;
-    }
-}
-
-if (! function_exists('getStreamingZip')) {
-    /**
-     * @param  list<string>  $guids
-     *
-     * @throws Exception
-     */
-    function getStreamingZip(array $guids = []): Builder
-    {
-        $nzb = app(NzbService::class);
-        $zipped = ZipStream::create(now()->format('Ymdhis').'.zip');
-        foreach ($guids as $guid) {
-            $nzbPath = $nzb->nzbPath($guid);
-            if ($nzbPath) {
-                $nzbContents = unzipGzipFile($nzbPath);
-                if ($nzbContents) {
-                    $filename = $guid;
-                    $r = Release::query()->where('guid', $guid)->first();
-                    if ($r) {
-                        $filename = $r['searchname'];
-                    }
-                    $zipped->addRaw($nzbContents, $filename.'.nzb');
-                }
-            }
-        }
-
-        return $zipped;
     }
 }
 
