@@ -40,8 +40,12 @@ class ReleaseMediaInfoAvailabilityLoaderTest extends TestCase
         $this->bootIsolatedDatabase();
         foreach (['media_info_probes', 'media_infos', 'video_data', 'audio_data', 'release_subtitles', 'release_audio_tags'] as $tableName) {
             Schema::create($tableName, function (Blueprint $table) use ($tableName): void {
-                $table->id();
-                $table->unsignedBigInteger('releases_id');
+                if ($tableName === 'video_data') {
+                    $table->unsignedInteger('releases_id')->primary();
+                } else {
+                    $table->id();
+                    $table->unsignedBigInteger('releases_id');
+                }
                 foreach (match ($tableName) {
                     'media_info_probes' => ['embedded_title', 'source_filename', 'container_format', 'music_tags'],
                     'media_infos' => ['movie_name', 'file_name'],
@@ -106,28 +110,38 @@ class ReleaseMediaInfoAvailabilityLoaderTest extends TestCase
         self::assertLessThanOrEqual(9, $queries, 'Availability queries are bounded by source tables, not release count.');
     }
 
-    public function test_summaries_fetch_one_narrow_minimum_id_stream_while_availability_checks_all_streams(): void
+    public function test_video_summaries_include_height_and_prefer_codec_with_format_as_fallback(): void
+    {
+        DB::table('video_data')->insert([
+            ['releases_id' => 1, 'videoheight' => 1080, 'videocodec' => 'x264', 'videoformat' => 'AVC'],
+            ['releases_id' => 2, 'videoheight' => 2160, 'videocodec' => null, 'videoformat' => 'HEVC'],
+        ]);
+        $rows = [(object) ['id' => 1], (new Release)->setRawAttributes(['id' => 2])];
+
+        (new ReleaseMediaInfoAvailabilityLoader)->load($rows);
+
+        self::assertSame('1080p · x264', $rows[0]->media_info_summary);
+        self::assertSame('2160p · HEVC', $rows[1]->media_info_summary);
+        self::assertTrue($rows[0]->has_media_info);
+        self::assertTrue($rows[1]->has_media_info);
+    }
+
+    public function test_summaries_load_one_video_and_the_earliest_audio_while_availability_checks_all_streams(): void
     {
         foreach ([1, 2] as $releaseId) {
-            $videos = [];
+            DB::table('video_data')->insert([
+                'releases_id' => $releaseId,
+                'videoformat' => $releaseId === 1 ? 'AVC' : null,
+            ]);
             $audios = [];
             foreach (range(1000, 1) as $stream) {
                 $first = $stream === 1;
                 $id = ($releaseId - 1) * 1000 + $stream;
-                $videos[] = [
-                    'id' => $id, 'releases_id' => $releaseId,
-                    'videoheight' => $first ? null : 2160,
-                    'videocodec' => $first ? null : 'HEVC',
-                    'videoformat' => $first && $releaseId === 1 ? 'AVC' : null,
-                ];
                 $audios[] = [
                     'id' => $id, 'releases_id' => $releaseId,
                     'audioformat' => $first ? null : 'DTS',
                     'audiochannels' => $first ? null : '5.1',
                 ];
-            }
-            foreach (array_chunk($videos, 100) as $chunk) {
-                DB::table('video_data')->insert($chunk);
             }
             foreach (array_chunk($audios, 100) as $chunk) {
                 DB::table('audio_data')->insert($chunk);

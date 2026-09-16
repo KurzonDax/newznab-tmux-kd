@@ -31,13 +31,16 @@ final class ReleaseMediaInfoAvailabilityLoader
         foreach (['media_info_probes', 'media_infos', 'video_data', 'audio_data', 'release_subtitles'] as $table) {
             if (Schema::hasTable($table)) {
                 $queries[] = $this->sourceQuery($table, array_keys($rowsByReleaseId));
-                if (in_array($table, ['video_data', 'audio_data'], true)) {
+                if ($table === 'video_data') {
+                    $summarySources[$table] = DB::table($table)
+                        ->whereIn('releases_id', array_keys($rowsByReleaseId))
+                        ->get(['releases_id', 'videoheight', 'videocodec', 'videoformat'])
+                        ->keyBy('releases_id');
+                } elseif ($table === 'audio_data') {
                     $firstIds = DB::table($table)->whereIn('releases_id', array_keys($rowsByReleaseId))
                         ->selectRaw('MIN(id)')->groupBy('releases_id');
-                    $columns = $table === 'video_data'
-                        ? ['releases_id', 'videoheight', 'videocodec', 'videoformat']
-                        : ['releases_id', 'audioformat', 'audiochannels'];
-                    $summarySources[$table] = DB::table($table)->whereIn('id', $firstIds)->get($columns)->keyBy('releases_id');
+                    $summarySources[$table] = DB::table($table)->whereIn('id', $firstIds)
+                        ->get(['releases_id', 'audioformat', 'audiochannels'])->keyBy('releases_id');
                 }
             }
         }
