@@ -58,7 +58,7 @@ Derived from the prototype's scripted checks (`prototype/test-harness.js`, `test
 **Entity pages**
 - [ ] Entity chip on every matched row (Table and Cards) opens `/title/{root}/{id}`; same page as the covers "Title page".
 - [ ] Per-root metadata rows and links as in 05; movie plot and cast; album track list; book overview; empty rows omitted.
-- [ ] TV: seasons as tabs, ascending, newest selected, count on each tab, one season table at a time, Select season feeds the bulk bar.
+- [ ] TV: seasons as tabs, ascending, newest selected, count on each tab, one season table at a time, bulk selection includes only checked rows on the current page.
 - [ ] Quality/format chips filter in place.
 
 **Details**

@@ -124,9 +124,18 @@ test('paging clears selection immediately and repeated navigation retains only t
     component.selectAll({ target: { checked: true } });
     assert.deepEqual(component.selectedGuids(), ['current-page']);
     let download;
-    window.location.assign = url => { download = url; };
+    globalThis.document = {
+        querySelector: () => ({ content: 'cover-csrf' }),
+        body: { append() {} },
+        createElement() {
+            return { children: [], append(child) { this.children.push(child); }, submit() { download = this; }, remove() {} };
+        },
+    };
     component.downloadSelected();
-    assert.equal(download, '/getnzb?id=current-page&zip=1');
+    assert.equal(download.method, 'POST');
+    assert.equal(download.action, '/getnzb');
+    assert.deepEqual(Object.fromEntries(download.children.map(input => [input.name, input.value])),
+        { id: 'current-page', zip: '1', _token: 'cover-csrf' });
 
     for (const key of ['ArrowRight', 'ArrowLeft', 'ArrowRight']) {
         component.coverKeydown({ key, target: { closest: () => null }, preventDefault() {} });

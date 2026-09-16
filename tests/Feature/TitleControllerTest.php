@@ -245,7 +245,10 @@ final class TitleControllerTest extends TestCase
         $response->assertSeeInOrder(['Season 1', 'Season 3', 'Specials'])
             ->assertSeeInOrder(['Show.S3E1.1080p', 'Show.S3E2.1080p', 'Show.S03.COMPLETE.2160p'])
             ->assertDontSee('Show.S1E1.1080p')->assertDontSee('Show.S0E1.1080p')->assertSee('2 episodes')->assertSee('1 season pack')
-            ->assertSee('A show summary.')->assertDontSee('Cast')->assertDontSee('Returning');
+            ->assertSee('A show summary.')->assertDontSee('Cast')->assertDontSee('Returning')
+            ->assertDontSee('Select season')->assertDontSee('data-season-guids', false)
+            ->assertSee('data-title-quality="1080p"', false)->assertSee('data-title-quality="2160p"', false)
+            ->assertSee('3 releases');
         $this->assertSame(3, $response->viewData('selectedSeason'));
         $this->assertCount(3, $response->viewData('results'));
     }

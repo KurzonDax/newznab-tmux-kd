@@ -20,7 +20,7 @@
                 <nav class="title-season-tabs" aria-label="Seasons">
                     @foreach($seasons as $season)<a href="{{ $season['url'] }}" data-title-page @if($season['number'] === $selectedSeason) aria-current="page" @endif>{{ $season['label'] }} <span>{{ $season['count'] }}</span></a>@endforeach
                 </nav>
-                <div class="title-season-header"><strong>{{ $selectedSeason === 0 ? 'Specials' : 'Season '.$selectedSeason }}</strong><span class="text-muted">{{ $episodeCount }} {{ Str::plural('episode', $episodeCount) }} @if($selectedPackCount > 0) · {{ $selectedPackCount }} {{ Str::plural('season pack', $selectedPackCount) }} @endif · {{ $results->total() }} {{ Str::plural('release', $results->total()) }}</span><span class="grow"></span><x-button variant="secondary" size="sm" icon="far fa-square-check" x-on:click="selectTitleSeason" :data-season-guids="json_encode($seasonGuids)">Select season</x-button></div>
+                <div class="title-season-header"><strong>{{ $selectedSeason === 0 ? 'Specials' : 'Season '.$selectedSeason }}</strong><span class="text-muted">{{ $episodeCount }} {{ Str::plural('episode', $episodeCount) }} @if($selectedPackCount > 0) · {{ $selectedPackCount }} {{ Str::plural('season pack', $selectedPackCount) }} @endif · {{ $results->total() }} {{ Str::plural('release', $results->total()) }}</span></div>
             @endif
         </x-slot:heading>
     </x-release-browser>
