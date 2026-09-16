@@ -8,29 +8,35 @@ use App\Enums\BrowseRoot;
 use App\Enums\ReleaseSort;
 use App\Models\Category;
 use App\Models\User;
-use App\Support\MovieSearchQuery;
 use App\Support\ReleaseCompletion;
+use App\Support\WebSearchQuery;
 use Illuminate\Http\Request;
 
 final readonly class WebSearchState
 {
     /** @param array<string, string> $parameters */
-    private function __construct(public ReleaseBrowserState $browser, public MovieSearchQuery $terms, public array $parameters) {}
+    private function __construct(public ReleaseBrowserState $browser, public WebSearchQuery $terms, public array $parameters) {}
 
     public static function fromRequest(Request $request, User $user): self
     {
         $input = $request->query();
+        parse_str((string) $request->server('QUERY_STRING', ''), $originalQuery);
+        foreach (['poster', 'searchadvposter'] as $posterKey) {
+            if (isset($originalQuery[$posterKey]) && is_string($originalQuery[$posterKey])) {
+                $input[$posterKey] = $originalQuery[$posterKey];
+            }
+        }
         $input['q'] = self::scalar($input['q'] ?? ($request->has('q') ? '' : ($input['search'] ?? $input['subject'] ?? $input['id'] ?? $input['searchadvr'] ?? '')));
         foreach (['minage' => 'searchadvdaysnew', 'maxage' => 'searchadvdaysold', 'minsize' => 'searchadvsizefrom', 'maxsize' => 'searchadvsizeto', 'group' => 'searchadvgroups', 'poster' => 'searchadvposter'] as $key => $legacy) {
             $input[$key] ??= $input[$legacy] ?? '';
         }
-        $terms = MovieSearchQuery::fromInput($input);
+        $terms = WebSearchQuery::fromInput($input);
         $filter = self::scalar($input['filter'] ?? '');
         $value = self::scalar($input['filter_value'] ?? '');
         if (in_array($filter, ['actors', 'director', 'title', 'plot'], true)) {
             $fields = [...$terms->indexTerms(), 'all' => $terms->freeText()];
             $fields[$filter] = $value;
-            $terms = MovieSearchQuery::fromInput(['q' => self::queryText(array_filter($fields))]);
+            $terms = WebSearchQuery::fromInput(['q' => self::queryText(array_filter($fields))]);
         } elseif (in_array($filter, ['cat', 'minc'], true)) {
             $input[$filter] = $value;
         } elseif (in_array($filter, ['age', 'size'], true)) {
@@ -43,7 +49,7 @@ final readonly class WebSearchState
         $parameters = ['q' => self::queryText([...$terms->indexTerms(), 'all' => $terms->freeText()])];
         foreach (['t', 'per', 'page', 'thumbs', 'sort', 'group', 'poster'] as $key) {
             if (($value = self::scalar($input[$key] ?? '')) !== '') {
-                $parameters[$key] = $value;
+                $parameters[$key] = $key === 'poster' ? (string) $input[$key] : $value;
             }
         }
         $scope = BrowseRoot::fromRoute($parameters['t'] ?? '');
@@ -118,7 +124,7 @@ final readonly class WebSearchState
         foreach ($fields as $field => $value) {
             $remaining = $fields;
             unset($remaining[$field]);
-            $chips[] = ['key' => $field, 'label' => $field === 'all' ? '“'.$value.'”' : ($field === 'actors' ? 'actor' : $field).': '.$value,
+            $chips[] = ['key' => $field, 'label' => $field === 'all' ? '“'.$value.'”' : ($field === 'actors' ? 'actor' : $field).': '.trim($value, '"'),
                 'url' => $this->url(['q' => self::queryText($remaining)])];
         }
         if (isset($this->parameters['t'])) {
@@ -160,7 +166,8 @@ final readonly class WebSearchState
         $query = $fields['all'] ?? '';
         foreach ($fields as $field => $value) {
             if ($field !== 'all') {
-                $query .= ' '.($field === 'actors' ? 'actor' : $field).':"'.str_replace('"', '', $value).'"';
+                $expression = ! preg_match('/\s/', $value) || preg_match('/^[!-]?(?:"[^"]*"|(\((?:[^()]|(?1))*\)))$/u', $value) ? $value : '('.$value.')';
+                $query .= ' '.($field === 'actors' ? 'actor' : $field).':'.$expression;
             }
         }
 

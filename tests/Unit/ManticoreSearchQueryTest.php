@@ -359,7 +359,7 @@ class ManticoreSearchQueryTest extends TestCase
         $driverSource = file_get_contents(__DIR__.'/../../app/Services/Search/Drivers/ManticoreSearchDriver.php');
 
         $this->assertIsString($driverSource);
-        $this->assertStringContainsString("\$query->sort('id', \$order);", $driverSource);
+        $this->assertStringContainsString("\$query->sort('id', (\$criteria['web_search'] ?? false) ? 'desc' : \$order);", $driverSource);
     }
 
     #[Test]
@@ -409,7 +409,7 @@ class ManticoreSearchQueryTest extends TestCase
 
         $this->assertIsString($driverSource);
         $this->assertStringContainsString(
-            "\$terms[] = '@@relaxed '.self::scopeReleaseSearchQuery((string) \$value, \$prepared, '@'.\$key);",
+            '$terms[] = self::scopeReleaseSearchQuery((string) $value, $prepared, $selector);',
             $driverSource
         );
         $this->assertStringNotContainsString(
@@ -440,6 +440,6 @@ class ManticoreSearchQueryTest extends TestCase
         $driverSource = file_get_contents(__DIR__.'/../../app/Services/Search/Drivers/ElasticSearchDriver.php');
 
         $this->assertIsString($driverSource);
-        $this->assertStringContainsString("['id' => ['order' => \$order]],", $driverSource);
+        $this->assertStringContainsString("['id' => ['order' => (\$criteria['web_search'] ?? false) ? 'desc' : \$order]],", $driverSource);
     }
 }

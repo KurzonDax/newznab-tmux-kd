@@ -407,6 +407,12 @@ class SearchService extends Manager implements SearchServiceInterface
             : $this->driver()->searchMoviesByFields($fieldTerms, $limit, $afterId);
     }
 
+    /** {@inheritdoc} */
+    public function searchEntityFields(string $index, array $fields, string $key, int $limit = 500, int $afterId = 0): array
+    {
+        return $this->driver()->searchEntityFields($index, $fields, $key, $limit, $afterId);
+    }
+
     /**
      * Insert a TV show into the tvshows search index.
      *

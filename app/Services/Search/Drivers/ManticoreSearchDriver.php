@@ -2194,6 +2194,60 @@ class ManticoreSearchDriver implements SearchDriverInterface
         return $this->searchIndexes($this->getMoviesIndex(), $searchString, ['title', 'actors', 'director'], []); // @phpstan-ignore argument.type
     }
 
+    private static function prepareWebSearchQuery(string $text, bool $partial = false): string
+    {
+        preg_match_all('/[!-]?"[^"]*"|[!-]?\(|\)|\||[^\s()|]+/u', $text, $matches);
+        $terms = [];
+        foreach ($matches[0] as $token) {
+            if (in_array($token, ['(', ')', '-(', '!(', '|'], true)) {
+                $terms[] = $token;
+
+                continue;
+            }
+            if ($partial && ! str_contains($token, '"') && ! str_contains($token, '*')) {
+                $negative = str_starts_with($token, '-') || str_starts_with($token, '!');
+                $token = ($negative ? $token[0] : '').'*'.($negative ? substr($token, 1) : $token).'*';
+            }
+            if (! $partial && preg_match('/^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u', $token)) {
+                $token = str_replace(['.', '_', '-'], ' ', $token);
+            }
+            $terms[] = self::prepareUserSearchQuery($token);
+        }
+
+        return implode(' ', $terms);
+    }
+
+    /** {@inheritdoc} */
+    public function searchEntityFields(string $index, array $fields, string $key, int $limit = 500, int $afterId = 0): array
+    {
+        if (! $this->isAvailable()) {
+            return ['ids' => [], 'keys' => [], 'available' => false, 'has_more' => false];
+        }
+        $terms = [];
+        foreach ($fields as $field => $text) {
+            $terms[] = '@'.$field.' ('.self::prepareWebSearchQuery($text, partial: true).')';
+        }
+        try {
+            $results = (new Search($this->manticoreSearch))
+                ->setTable($this->config['indexes'][$index] ?? $index.'_rt')
+                ->search('@@relaxed '.implode(' ', $terms))
+                ->filter('id', '>', $afterId)->sort('id', 'asc')
+                ->maxMatches($limit)->limit($limit)->get();
+            $ids = [];
+            $keys = [];
+            foreach ($results as $document) {
+                $ids[] = (int) $document->getId();
+                $keys[] = $key === 'id' ? (int) $document->getId() : (string) ($document->getData()[$key] ?? '');
+            }
+
+            return ['ids' => $ids, 'keys' => $keys, 'available' => true, 'has_more' => count($ids) === $limit];
+        } catch (\Throwable $exception) {
+            Log::warning('Entity field search unavailable', ['index' => $index, 'error' => $exception->getMessage()]);
+
+            return ['ids' => [], 'keys' => [], 'available' => false, 'has_more' => false];
+        }
+    }
+
     /**
      * {@inheritdoc}
      */
@@ -2794,6 +2848,9 @@ class ManticoreSearchDriver implements SearchDriverInterface
                         (int) ($this->getFuzzyConfig()['max_distance'] ?? 2),
                         $profile['fuzzy_distance']
                     );
+                    if ($criteria['web_search'] ?? false) {
+                        $searchString = '@('.implode(',', ReleaseSearchIndexDocument::webTextFields()).') '.$searchString;
+                    }
                     $query->search($searchString)
                         ->option('fuzzy', true)
                         ->option('distance', $distance)
@@ -2805,16 +2862,17 @@ class ManticoreSearchDriver implements SearchDriverInterface
                         if (! is_string($key) || ! in_array($key, self::RELEASE_FIELD_SEARCH_FIELDS, true) || $value === '' || $value === null) {
                             continue;
                         }
-                        $prepared = self::prepareUserSearchQuery((string) $value);
+                        $prepared = ($criteria['web_search'] ?? false) ? self::prepareWebSearchQuery((string) $value) : self::prepareUserSearchQuery((string) $value);
                         if ($prepared !== '') {
-                            $terms[] = '@@relaxed '.self::scopeReleaseSearchQuery((string) $value, $prepared, '@'.$key);
+                            $selector = ($criteria['web_search'] ?? false) ? '@('.implode(',', ReleaseSearchIndexDocument::webTextFields()).')' : '@'.$key;
+                            $terms[] = self::scopeReleaseSearchQuery((string) $value, $prepared, $selector);
                         }
                     }
                     if ($terms === []) {
                         return ['ids' => [], 'total' => 0, 'fuzzy' => false];
                     }
                     $profile = ManticoreIndexRegistry::profile('releases');
-                    $query->search(implode(' ', $terms))
+                    $query->search('@@relaxed '.implode(' ', $terms))
                         ->option('ranker', $profile['ranker'])
                         ->option('field_weights', $profile['fields']);
                 }
@@ -2824,7 +2882,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
 
             $sortField = (string) ($criteria['sort_field'] ?? 'postdate_ts');
             $sortDir = strtolower((string) ($criteria['sort_dir'] ?? 'desc'));
-            $allowedSort = ['postdate_ts', 'adddate_ts', 'size', 'totalpart', 'grabs', 'categories_id', 'id'];
+            $allowedSort = ['postdate_ts', 'adddate_ts', 'size', 'totalpart', 'grabs', 'categories_id', 'id', 'sort_name'];
             if (! in_array($sortField, $allowedSort, true)) {
                 $sortField = 'postdate_ts';
             }
@@ -2832,9 +2890,12 @@ class ManticoreSearchDriver implements SearchDriverInterface
             $query->sort($sortField, $order);
             if ($sortField !== 'id') {
                 // Stabilize ordering across pages when primary sort values are equal.
-                $query->sort('id', $order);
+                $query->sort('id', ($criteria['web_search'] ?? false) ? 'desc' : $order);
             }
 
+            if ($criteria['web_search'] ?? false) {
+                $query->option('cutoff', 0);
+            }
             $maxNeed = max(1000, $offset + $limit + 100);
             $query->maxMatches(min($maxNeed, (int) ($this->config['max_matches'] ?? 10000)));
             $query->limit(max(1, $limit));
@@ -2883,7 +2944,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
 
         if ($hasText) {
             $first = $execute(false);
-            if ($first['ids'] !== [] || ($first['available'] ?? true) === false || ! $tryFuzzy || ! $this->isFuzzyEnabled() || self::queryHasNegation($phrases)) {
+            if ($first['total'] > 0 || ($first['available'] ?? true) === false || ! $tryFuzzy || ! $this->isFuzzyEnabled() || self::queryHasNegation($phrases)) {
                 return $first;
             }
 
@@ -2950,8 +3011,18 @@ class ManticoreSearchDriver implements SearchDriverInterface
      */
     private function applyManticoreReleaseIndexFilters(Search $query, array $criteria): void
     {
-        if (isset($criteria['web_after_id'])) {
-            $query->filter('id', '>', max(0, (int) $criteria['web_after_id']));
+        foreach ($criteria['entity_filters'] ?? [] as $attribute => $keys) {
+            if (! isset(ManticoreIndexRegistry::definitions()['releases']['columns'][$attribute])) {
+                throw new \InvalidArgumentException('Unknown release entity attribute: '.$attribute);
+            }
+            if ($keys === []) {
+                $query->filter('id', '=', 0);
+            } else {
+                $query->filter($attribute, 'in', $keys);
+            }
+        }
+        if (isset($criteria['poster'])) {
+            $query->filter('poster_identity', '=', hash('sha256', $criteria['poster']));
         }
         $releaseIds = $criteria['release_ids'] ?? null;
         if (is_array($releaseIds) && $releaseIds !== []) {

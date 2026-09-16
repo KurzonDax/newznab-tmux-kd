@@ -10,8 +10,11 @@
     <x-page-header :title="$meta_title">
         <x-slot:actions>@include('search.feed-button')</x-slot:actions>
     </x-page-header>
-    <x-release-browser :rows="$results" :state="$browserState" :toolbar="false" :clear-url="$searchState->clearUrl()">
+    <x-release-browser :rows="$results" :state="$browserState" :toolbar="false" :pager="$results->available" :empty-title="$results->available ? 'No releases match.' : 'Search unavailable'" :clear-url="$searchState->clearUrl()">
         <x-slot:beforePager>
+            @if($results->available && $results->reachableTotal !== null && $results->total() > $results->reachableTotal)
+                <p class="text-muted p-4">More results are available. Use a narrower search to reach the remaining results.</p>
+            @endif
             <div class="search-query-chips" data-query-chips>
                 @foreach($queryChips as $chip)
                     <x-chip variant="primary" :href="$chip['url']" data-remove-constraint="{{ $chip['key'] }}" aria-label="Remove {{ $chip['label'] }}">{{ $chip['label'] }} <i class="fas fa-xmark" aria-hidden="true"></i></x-chip>

@@ -5,36 +5,42 @@ declare(strict_types=1);
 namespace App\Services\Releases;
 
 use App\Data\WebSearchState;
+use App\Enums\ReleaseSort;
 use App\Models\User;
 use App\Services\Search\Contracts\SearchServiceInterface;
-use Illuminate\Support\Facades\Cache;
+use App\Support\WebSearchFields;
+use App\Support\WebSearchText;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 final class WebSearchIndex
 {
     public function __construct(private readonly SearchServiceInterface $search, private readonly ReleaseBrowseService $releases) {}
 
-    /** @return list<int>|null Null means the index could not complete the search. */
-    public function releases(WebSearchState $state, User $user, bool $fuzzy = false): ?array
+    /**
+     * @param  array<string, list<int|string>>  $entityFilters
+     * @return array<string, mixed>
+     */
+    public function page(WebSearchState $state, User $user, array $entityFilters = []): array
     {
         $text = $state->terms->freeText();
-        if ($text === '' || ($fuzzy && (! $this->search->isFuzzyEnabled() || preg_match('/(?:^|[\s(])[-!]/u', $text)))) {
-            return [];
-        }
-        $parameters = array_intersect_key($state->parameters, array_flip(['t', 'cat', 'group', 'minage', 'maxage', 'minsize', 'maxsize', 'minc']));
-        ksort($parameters);
+        $parameters = $state->parameters;
+        [$column, $direction] = ReleaseSort::resolve($state->browser->sort)->order();
+        $sort = match ($column) {
+            'r.postdate' => 'postdate_ts', 'r.adddate' => 'adddate_ts', 'r.grabs' => 'grabs', default => 'sort_name',
+        };
         $criteria = [
-            'phrases' => ['searchname' => $text], 'excluded_category_ids' => (array) $user->categoryexclusions,
+            'phrases' => $text === '' ? null : ['searchname' => $text],
+            'web_search' => true, 'entity_filters' => $entityFilters,
+            'excluded_category_ids' => (array) $user->categoryexclusions,
             'password_allow_rar' => $this->releases->passwordAllowRar(), 'try_fuzzy' => false,
-            'sort_field' => 'id', 'sort_dir' => 'asc', 'web_force_fuzzy' => $fuzzy,
+            'sort_field' => $sort, 'sort_dir' => $direction, 'web_force_fuzzy' => false,
         ];
-        $cacheKey = 'web-search:ids:'.hash('sha256', serialize([
-            $parameters, $criteria, $user->id, config('search.default'), config('search.index_generation', '1'),
-            Cache::get('releases:cache_version', 1),
-        ]));
-        $cached = Cache::get($cacheKey);
-        if (is_array($cached)) {
-            return $cached;
+        if (in_array([], $entityFilters, true)) {
+            return ['ids' => [], 'total' => 0, 'available' => true];
+        }
+        if (isset($parameters['poster'])) {
+            $criteria['poster'] = $parameters['poster'];
         }
         if (isset($parameters['t']) || isset($parameters['cat'])) {
             $categories = DB::table('categories');
@@ -47,13 +53,13 @@ final class WebSearchIndex
             }
             $criteria['category_ids'] = $categories->pluck('id')->map(static fn ($id): int => (int) $id)->all();
             if ($criteria['category_ids'] === []) {
-                return [];
+                return ['ids' => [], 'total' => 0, 'available' => true];
             }
         }
         if (isset($parameters['group'])) {
             $criteria['groups_id'] = (int) DB::table('usenet_groups')->where('name', $parameters['group'])->value('id');
             if ($criteria['groups_id'] === 0) {
-                return [];
+                return ['ids' => [], 'total' => 0, 'available' => true];
             }
         }
         foreach (['minage' => 'max_date', 'maxage' => 'min_date'] as $parameter => $criterion) {
@@ -69,55 +75,61 @@ final class WebSearchIndex
         if (isset($parameters['minc'])) {
             $criteria['min_completion'] = (int) $parameters['minc'];
         }
-        $ids = [];
-        $afterId = 0;
-        do {
-            $page = $this->search->searchReleasesFiltered([...$criteria, 'web_after_id' => $afterId], 500, 0);
-            if (($page['available'] ?? true) === false) {
-                return null;
-            }
-            $batch = array_map('intval', $page['ids']);
-            if ($batch === []) {
-                break;
-            }
-            $next = max($batch);
-            if ($next <= $afterId) {
-                return null;
-            }
-            array_push($ids, ...$batch);
-            $afterId = $next;
-        } while (($page['has_more'] ?? count($batch) === 500) === true);
-        $ids = array_values(array_unique($ids));
-        Cache::put($cacheKey, $ids, 30);
+        $maximum = config('search.default') === 'elasticsearch' ? 10000 : max(1, (int) config('search.drivers.manticore.max_matches', 10000));
+        $per = $state->browser->per;
+        $page = min($state->browser->page, (int) ceil($maximum / $per));
+        $offset = ($page - 1) * $per;
+        $limit = min($per, $maximum - $offset);
+        $result = $this->search->searchReleasesFiltered($criteria, $limit, $offset);
+        if (($result['available'] ?? true) && $result['total'] === 0 && $text !== '' && $this->search->isFuzzyEnabled() && ! preg_match('/(?:^|[\s(])[-!]/u', implode(' ', $state->terms->indexTerms()))) {
+            $result = $this->search->searchReleasesFiltered([...$criteria, 'web_force_fuzzy' => true], $limit, $offset);
+        }
 
-        return $ids;
+        return [...$result, 'page' => $page, 'maximum' => $maximum];
     }
 
-    /**
-     * @param  array<string, string>  $fields
-     * @return list<int>
-     */
-    public function movies(array $fields): array
+    /** @return array<string, list<int|string>> */
+    public function entityFilters(WebSearchState $state): array
     {
-        if ($fields === []) {
-            return [];
+        $groups = [];
+        $definitions = app(WebSearchFields::class)->all();
+        foreach ($state->terms->indexTerms() as $prefix => $value) {
+            if ($prefix === 'all') {
+                continue;
+            }
+            $definition = $definitions[$prefix];
+            $group = $definition['attribute'];
+            $groups[$group]['definition'] = $definition;
+            $groups[$group]['fields'][$definition['field']] = $value;
         }
-        $ids = [];
-        $afterId = 0;
-        while (true) {
-            $page = $this->search->searchMoviesByFields($fields, 500, $afterId);
-            $batch = array_map('intval', $page['movieinfo_ids']);
-            if ($batch === []) {
-                break;
+        $filters = [];
+        foreach ($groups as $attribute => $group) {
+            $definition = $group['definition'];
+            $keys = [];
+            $after = 0;
+            do {
+                $result = $this->search->searchEntityFields($definition['index'], $group['fields'], $definition['key'], 500, $after);
+                if (! $result['available']) {
+                    $keys = [];
+                    break;
+                }
+                array_push($keys, ...$result['keys']);
+                $next = $result['ids'] === [] ? $after : max($result['ids']);
+                if ($next <= $after) {
+                    break;
+                }
+                $after = $next;
+            } while ($result['has_more']);
+            if ($keys === [] && Schema::hasTable($definition['table'])) {
+                $query = DB::table($definition['table']);
+                foreach ($group['fields'] as $field => $text) {
+                    WebSearchText::apply($query, [$field], $text);
+                }
+                $keys = $query->pluck($definition['key'])->all();
             }
-            $next = max($batch);
-            if ($next <= $afterId) {
-                return [];
-            }
-            array_push($ids, ...$batch);
-            $afterId = $next;
+            $filters[$attribute] = array_values(array_unique($keys));
         }
 
-        return array_values(array_unique($ids));
+        return $filters;
     }
 }
