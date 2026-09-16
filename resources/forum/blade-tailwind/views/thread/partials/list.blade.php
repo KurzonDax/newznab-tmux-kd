@@ -1,3 +1,6 @@
+@php
+    $readStatus = isset($threadReadStatuses) ? ($threadReadStatuses[$thread->id] ?? null) : $thread->userReadStatus;
+@endphp
 <div class="rounded-xl border border-gray-200 bg-(--surface-card) shadow-sm transition hover:shadow-md dark:border-gray-700 dark:bg-(--surface-card-dark)" :class="{ 'ring-1 ring-primary-500 dark:ring-primary-400': state.selectedThreads.includes({{ $thread->id }}) }">
     <div class="flex flex-col gap-4 p-5 md:flex-row md:items-start md:justify-between md:gap-6 sm:p-6">
         <div class="md:w-3/6 text-center md:text-left">
@@ -23,8 +26,8 @@
             @if ($thread->locked)
                 <x-forum::badge type="warning">{{ trans('forum::threads.locked') }}</x-forum::badge>
             @endif
-            @if ($thread->userReadStatus !== null && !$thread->trashed())
-                <x-forum::badge type="success">{{ trans($thread->userReadStatus) }}</x-forum::badge>
+            @if ($readStatus !== null && !$thread->trashed())
+                <x-forum::badge type="success">{{ trans($readStatus) }}</x-forum::badge>
             @endif
             @if ($thread->trashed())
                 <x-forum::badge type="danger">{{ trans('forum::general.deleted') }}</x-forum::badge>
