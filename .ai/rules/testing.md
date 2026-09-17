@@ -61,8 +61,8 @@ SQL for a raw PDO handle. Name only the production columns the test needs, or pa
 null for all. The table keeps every production primary/unique key whose columns are
 present, the auto-increment identity, SQLite type affinity, literal defaults and
 generated expressions (include their source columns). Every column is nullable.
-Unknown tables, columns and types fail by name, and a refreshed dump changes the
-table without editing the builder.
+Unknown tables, columns and types, and generated expressions SQLite cannot evaluate,
+fail by name. A refreshed dump changes the table without editing the builder.
 
 The shared test case checks live tables on already-open Laravel SQLite connections in
 `assertPostConditions()`, before isolated database teardown. It checks raw SQL,

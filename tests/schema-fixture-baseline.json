@@ -6665,23 +6665,6 @@
     },
     {
         "class": "Tests\\Feature\\NumberedMkvArchiveIngestionTest",
-        "table": "categories",
-        "rule": "R1",
-        "subject": "parent_categories_id",
-        "tests": [
-            "test_complete_postings_publish_every_file_and_segment_once with data set \"seeded archive first\"",
-            "test_complete_postings_publish_every_file_and_segment_once with data set \"seeded parity first\"",
-            "test_complete_postings_publish_every_file_and_segment_once with data set \"upgraded archive first\"",
-            "test_complete_postings_publish_every_file_and_segment_once with data set \"upgraded parity first\"",
-            "test_missing_final_segment_remains_missing_after_quiet_time_publication with data set \"seeded archive first\"",
-            "test_missing_final_segment_remains_missing_after_quiet_time_publication with data set \"seeded parity first\"",
-            "test_missing_final_segment_remains_missing_after_quiet_time_publication with data set \"upgraded archive first\"",
-            "test_missing_final_segment_remains_missing_after_quiet_time_publication with data set \"upgraded parity first\"",
-            "test_previous_rule_splits_archives_and_parity_despite_complete_headers"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\NumberedMkvArchiveIngestionTest",
         "table": "parts",
         "rule": "R1",
         "subject": "id",
