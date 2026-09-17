@@ -2,12 +2,15 @@
 
 namespace Tests;
 
+use Illuminate\Database\DatabaseManager;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Foundation\Vite as ViteManager;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\HtmlString;
+use Mockery\MockInterface;
 use Pdo\Sqlite;
+use Tests\Support\FixtureSchemaMonitor;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -44,11 +47,14 @@ abstract class TestCase extends BaseTestCase
 
     private static bool $previousTestAllowedSwap = false;
 
+    private ?DatabaseManager $fixtureDatabaseManager = null;
+
     protected function setUp(): void
     {
         $this->guardAgainstLeakedDatabaseEnvironment();
 
         parent::setUp();
+        $this->fixtureDatabaseManager = $this->app->make('db');
 
         if (is_file(public_path('build/manifest.json'))) {
             return;
@@ -64,6 +70,24 @@ abstract class TestCase extends BaseTestCase
                 return new HtmlString('');
             }
         });
+    }
+
+    /** @return list<string> Names of purpose-built tables with no production counterpart. */
+    protected function fixtureOnlyTables(): array
+    {
+        return [];
+    }
+
+    protected function assertPostConditions(): void
+    {
+        parent::assertPostConditions();
+        $managers = $this->fixtureDatabaseManager === null ? [] : [$this->fixtureDatabaseManager];
+        $current = $this->app?->make('db');
+        if ($current instanceof DatabaseManager && ! $current instanceof MockInterface && ! in_array($current, $managers, true)) {
+            $managers[] = $current;
+        }
+        $errors = FixtureSchemaMonitor::instance()->check(static::class, $this->nameWithDataSet(), $managers, $this->fixtureOnlyTables());
+        $this->assertSame([], $errors, implode(PHP_EOL, $errors));
     }
 
     protected function tearDown(): void

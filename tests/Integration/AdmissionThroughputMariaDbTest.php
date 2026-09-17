@@ -62,11 +62,6 @@ final class AdmissionThroughputMariaDbTest extends TestCase
         Search::shouldReceive('deleteRelease')->zeroOrMoreTimes();
         Schema::dropAllTables();
         DB::unprepared(file_get_contents(database_path('schema/mariadb-schema.sql')));
-        // Undo dump backports whose migrations are still recorded as pending.
-        (require database_path('migrations/2026_08_16_142055_add_name_trust_to_releases_table.php'))->down();
-        (require database_path('migrations/2026_08_16_155110_add_srrdb_name_fixing_support.php'))->down();
-        (require database_path('migrations/2026_08_25_124728_add_predb_search_lifecycle_to_predb_table.php'))->down();
-        (require database_path('migrations/2026_08_25_162248_add_tv_episode_revisit_state_to_releases_table.php'))->down();
         $this->assertSame(0, Artisan::call('migrate', ['--force' => true]), Artisan::output());
         $this->travelTo(Carbon::parse('2026-01-01 12:00:00', 'UTC'));
         DB::statement('SET timestamp = 1767268800');
