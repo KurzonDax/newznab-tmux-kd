@@ -1,0 +1,481 @@
+diff --git a/.env.example b/.env.example
+index cddabee466bf2aed9f67ff72c894d4b0c42e9cbb..bca82d3c05560bc47fd0278ba96995c5c469c067 100644
+GIT binary patch
+delta 103
+zcmccF%ebwNal=iwST1FS;MC;&yp&>vl6-}t)Y9Tqh5VwF)S}cBg^)0X<ovSKB8Aj~
+z%;Nl%R0U6$Vui%K6ri%4)I^}d<owdSl43oskg#}X|1j5}c=sUx(176hkPshRV*>*&
+E0J6m+uK)l5
+
+delta 9
+Qcmdni$9S`sal=hF02avvd;kCd
+
+diff --git a/app/Services/Releases/TvBrowseMembershipTable.php b/app/Services/Releases/TvBrowseMembershipTable.php
+index d33903241..50e10c59b 100644
+--- a/app/Services/Releases/TvBrowseMembershipTable.php
++++ b/app/Services/Releases/TvBrowseMembershipTable.php
+@@ -24,12 +24,12 @@ final class TvBrowseMembershipTable
+      * @param  Closure(self): T  $read
+      * @return T
+      */
+-    public static function read(Builder $releases, Closure $read): mixed
++    public static function read(Builder $releases, Closure $read, bool $fullCatalogue = false): mixed
+     {
+         /** @var Connection $connection */
+         $connection = $releases->getConnection();
+ 
+-        return $connection->transaction(static function () use ($connection, $releases, $read): mixed {
++        return $connection->transaction(static function () use ($connection, $releases, $read, $fullCatalogue): mixed {
+             $suffix = bin2hex(random_bytes(8));
+             $table = new self($connection, 'tv_declarations_'.$suffix, 'tv_memberships_'.$suffix);
+             $pdo = $connection->getPdo();
+@@ -42,7 +42,7 @@ final class TvBrowseMembershipTable
+             try {
+                 $pdo->exec("CREATE TEMPORARY TABLE {$declarations} (release_id BIGINT NOT NULL, show_id BIGINT NOT NULL, season INTEGER NULL, number INTEGER NULL, linked BIGINT NOT NULL, full_season INTEGER NOT NULL, sort_name {$sortNameType} NOT NULL){$engine}");
+                 $pdo->exec("CREATE TEMPORARY TABLE {$memberships} (release_id BIGINT NOT NULL, episode_id BIGINT NOT NULL, season INTEGER NOT NULL, full_season INTEGER NOT NULL, sort_name {$sortNameType} NOT NULL, PRIMARY KEY (episode_id, release_id)){$engine}");
+-                $table->populate($releases);
++                $table->populate($releases, $fullCatalogue);
+ 
+                 return $read($table);
+             } finally {
+@@ -62,32 +62,36 @@ final class TvBrowseMembershipTable
+         return $this->connection->table($this->declarations)->useWritePdo()->where('full_season', 1);
+     }
+ 
+-    private function populate(Builder $releases): void
++    private function populate(Builder $releases, bool $fullCatalogue): void
+     {
+         $resolver = new TvReleaseMembership;
+-        (clone $releases)->useWritePdo()->reorder()->select(['r.id', 'r.videos_id', 'r.tv_episodes_id', 'r.searchname', 'r.display_name'])
+-            ->chunkById(500, function (Collection $releases) use ($resolver): void {
+-                $batch = [];
+-                foreach ($releases as $release) {
+-                    $descriptor = $resolver->describe($release);
+-                    $numbers = $descriptor['numbers'] ?? [null];
+-                    if ($descriptor['linked'] > 0) {
+-                        $numbers = [null];
+-                    }
+-                    foreach ($numbers as $number) {
+-                        $batch[] = ['release_id' => $release->id, 'show_id' => $release->videos_id,
+-                            'season' => $descriptor['season'], 'number' => $number, 'linked' => $descriptor['linked'],
+-                            'full_season' => (int) $descriptor['fullSeason'], 'sort_name' => strtolower(release_display_name($release))];
+-                        if (count($batch) === 500) {
+-                            $this->connection->table($this->declarations)->insert($batch);
+-                            $batch = [];
+-                        }
+-                    }
++        $walk = (clone $releases)->useWritePdo()->reorder()
++            ->select(['r.id', 'r.videos_id', 'r.tv_episodes_id', 'r.searchname', 'r.display_name']);
++        if ($fullCatalogue && in_array($this->connection->getDriverName(), ['mysql', 'mariadb'], true)) {
++            $walk->fromRaw('`releases` as `r` FORCE INDEX (PRIMARY)');
++        }
++        $walk->chunkById(500, function (Collection $releases) use ($resolver): void {
++            $batch = [];
++            foreach ($releases as $release) {
++                $descriptor = $resolver->describe($release);
++                $numbers = $descriptor['numbers'] ?? [null];
++                if ($descriptor['linked'] > 0) {
++                    $numbers = [null];
+                 }
+-                if ($batch !== []) {
+-                    $this->connection->table($this->declarations)->insert($batch);
++                foreach ($numbers as $number) {
++                    $batch[] = ['release_id' => $release->id, 'show_id' => $release->videos_id,
++                        'season' => $descriptor['season'], 'number' => $number, 'linked' => $descriptor['linked'],
++                        'full_season' => (int) $descriptor['fullSeason'], 'sort_name' => strtolower(release_display_name($release))];
++                    if (count($batch) === 500) {
++                        $this->connection->table($this->declarations)->insert($batch);
++                        $batch = [];
++                    }
+                 }
+-            }, 'r.id', 'id');
++            }
++            if ($batch !== []) {
++                $this->connection->table($this->declarations)->insert($batch);
++            }
++        }, 'r.id', 'id');
+ 
+         $explicit = $this->connection->table($this->declarations.' as d')->join('tv_episodes as e', function (JoinClause $join): void {
+             $join->on('e.videos_id', '=', 'd.show_id')->on('e.series', '=', 'd.season')
+diff --git a/app/Services/Releases/TvEpisodeBrowser.php b/app/Services/Releases/TvEpisodeBrowser.php
+index 5ba9a53db..f380a07e7 100644
+--- a/app/Services/Releases/TvEpisodeBrowser.php
++++ b/app/Services/Releases/TvEpisodeBrowser.php
+@@ -9,8 +9,12 @@ use App\Data\ReleaseCoverItem;
+ use App\Enums\ReleaseSort;
+ use App\Models\User;
+ use App\Support\CoverBrowseResults;
++use Illuminate\Database\Connection;
++use Illuminate\Database\Query\Builder;
+ use Illuminate\Pagination\LengthAwarePaginator;
++use Illuminate\Support\Facades\Cache;
+ use Illuminate\Support\Facades\DB;
++use Pdo\Mysql;
+ 
+ final class TvEpisodeBrowser
+ {
+@@ -20,7 +24,14 @@ final class TvEpisodeBrowser
+     {
+         $query = $this->browser->matchingQuery($state, $user)->whereNotNull('m.id')->where('m.title', '!=', '');
+ 
+-        return TvBrowseMembershipTable::read($query, function (TvBrowseMembershipTable $table) use ($state): CoverBrowseResults {
++        $key = 'tv-cover-groups:'.hash('sha256', json_encode([
++            $state->root, $state->categoryId, $state->filters, $state->group,
++            $state->posterIdentity, $state->query, $state->minCompletion,
++            $state->watching, $state->basketOnly, $state->sort, $state->trending,
++            $this->rows->showPasswords(), $user->id, $user->categoryexclusions,
++        ], JSON_THROW_ON_ERROR));
++        /** @var array{total: int, groups: list<array{int, int}>} $cached */
++        $cached = Cache::remember($key, config('nntmux.tv_cover_groups_ttl', 300), fn (): array => TvBrowseMembershipTable::read($query, function (TvBrowseMembershipTable $table) use ($state): array {
+             $sort = ReleaseSort::resolve($state->sort);
+             [$column, $direction] = $sort->order(grouped: true);
+             if ($sort === ReleaseSort::Name) {
+@@ -33,12 +44,21 @@ final class TvEpisodeBrowser
+                 $column = 'SUM(COALESCE(recent.grabs, 0))';
+                 $direction = 'desc';
+             }
+-            $total = DB::query()->fromSub(clone $groups, 'groups')->count();
+-            $selected = $groups->orderByRaw($column.' '.$direction)->orderBy('membership.episode_id')
+-                ->offset(($state->page - 1) * $state->per)->limit($state->per)->get();
+-            $episodes = DB::table('tv_episodes')->whereIn('id', $selected->pluck('episode_id'))->get()->keyBy('id');
++            $ordered = $this->orderedGroups($groups->orderByRaw($column.' '.$direction)->orderBy('membership.episode_id'));
++
++            return ['total' => count($ordered), 'groups' => $ordered];
++        }, fullCatalogue: true));
++        $selected = array_slice($cached['groups'], ($state->page - 1) * $state->per, $state->per);
++        if ($selected === []) {
++            return new CoverBrowseResults(collect(), $cached['total']);
++        }
++        $episodeIds = array_column($selected, 0);
++        $episodes = DB::table('tv_episodes')->whereIn('id', $episodeIds)->get()->keyBy('id');
++        $query->whereIn('r.videos_id', $episodes->pluck('videos_id')->unique());
++
++        return TvBrowseMembershipTable::read($query, function (TvBrowseMembershipTable $table) use ($selected, $episodeIds, $episodes, $cached): CoverBrowseResults {
+             $ranked = $table->members()->join('releases as r', 'r.id', '=', 'membership.release_id')
+-                ->whereIn('membership.episode_id', $selected->pluck('episode_id'))->select(['r.*', 'membership.episode_id'])
++                ->whereIn('membership.episode_id', $episodeIds)->select(['r.*', 'membership.episode_id'])
+                 ->selectRaw('ROW_NUMBER() OVER (PARTITION BY membership.episode_id ORDER BY r.postdate DESC, r.id DESC) AS tile_position');
+             $rows = DB::query()->fromSub($ranked, 'ranked')->where('tile_position', '<=', 2)->orderBy('tile_position')->get();
+             $this->rows->loadReleaseRows($rows);
+@@ -46,10 +66,9 @@ final class TvEpisodeBrowser
+             $shows = DB::table('videos')->whereIn('id', $episodes->pluck('videos_id'))->get()->keyBy('id');
+             $networks = DB::table('tv_info')->whereIn('videos_id', $shows->keys())->pluck('publisher', 'videos_id');
+             $covers = collect();
+-            foreach ($selected as $group) {
+-                $id = (int) $group->episode_id;
++            foreach ($selected as [$id, $releaseCount]) {
+                 $episode = $episodes->get($id);
+-                $show = $shows->get($episode->videos_id);
++                $show = $shows->get($episode?->videos_id);
+                 $releases = $rows->get($id, collect())->all();
+                 if ($show === null || $releases === []) {
+                     continue;
+@@ -58,7 +77,7 @@ final class TvEpisodeBrowser
+                 $network = $networks[$show->id] ?? null;
+                 $covers->push(new ReleaseCoverItem(
+                     id: (string) $id, title: $show->title.' · '.sprintf('S%02dE%02d', $episode->series, $episode->episode).(empty($episode->title) ? '' : ' · '.$episode->title),
+-                    artwork: $row->entity?->artwork, identifyingLine: (string) ($show->genre ?? ''), releaseCount: (int) $group->release_count,
++                    artwork: $row->entity?->artwork, identifyingLine: (string) ($show->genre ?? ''), releaseCount: $releaseCount,
+                     metadata: $network ? [(string) $network] : [], releases: $releases,
+                     titleUrl: route('title', ['root' => 'tv', 'id' => $show->id]),
+                     watchUrl: route('watchlist.picker', ['root' => 'tv', 'id' => $show->id]), watched: $row->watched,
+@@ -66,10 +85,35 @@ final class TvEpisodeBrowser
+                 ));
+             }
+ 
+-            return new CoverBrowseResults($covers, $total);
++            return new CoverBrowseResults($covers, $cached['total']);
+         });
+     }
+ 
++    /** @return list<array{int, int}> */
++    private function orderedGroups(Builder $groups): array
++    {
++        /** @var Connection $connection */
++        $connection = $groups->getConnection();
++        $pdo = $connection->getPdo();
++        $mysql = in_array($connection->getDriverName(), ['mysql', 'mariadb'], true);
++        $buffered = $mysql ? $pdo->getAttribute(Mysql::ATTR_USE_BUFFERED_QUERY) : null;
++        if ($mysql) {
++            $pdo->setAttribute(Mysql::ATTR_USE_BUFFERED_QUERY, false);
++        }
++        try {
++            $ordered = [];
++            foreach ($groups->cursor() as $group) {
++                $ordered[] = [(int) $group->episode_id, (int) $group->release_count];
++            }
++
++            return $ordered;
++        } finally {
++            if ($mysql) {
++                $pdo->setAttribute(Mysql::ATTR_USE_BUFFERED_QUERY, $buffered);
++            }
++        }
++    }
++
+     /** @return LengthAwarePaginator<int, \stdClass> */
+     public function releases(ReleaseBrowserState $state, User $user, int $episodeId, int $page = 1, int $per = 24): LengthAwarePaginator
+     {
+diff --git a/config/nntmux.php b/config/nntmux.php
+index 033364328..fdd5f5bc7 100644
+--- a/config/nntmux.php
++++ b/config/nntmux.php
+@@ -10,6 +10,8 @@ return [
+     'rename_music_mediainfo' => env('RENAME_MUSIC_MEDIAINFO', true),
+     'cache_expiry_short' => (int) env('CACHE_EXPIRY_SHORT', 5),
+     'cache_expiry_medium' => (int) env('CACHE_EXPIRY_MEDIUM', 10),
++    // Seconds to reuse ordered TV cover episode IDs and release counts.
++    'tv_cover_groups_ttl' => (int) env('TV_COVER_GROUPS_TTL', 300),
+     'cache_expiry_long' => (int) env('CACHE_EXPIRY_LONG', 15),
+     'admin_username' => env('ADMIN_USER', 'admin'),
+     'admin_password' => env('ADMIN_PASS', 'admin'),
+diff --git a/tests/Feature/ReleaseBrowserControllerTest.php b/tests/Feature/ReleaseBrowserControllerTest.php
+index 0a32f9797..8e5669cae 100644
+--- a/tests/Feature/ReleaseBrowserControllerTest.php
++++ b/tests/Feature/ReleaseBrowserControllerTest.php
+@@ -11,6 +11,7 @@ use App\Services\Search\Contracts\SearchServiceInterface;
+ use App\Services\Search\SearchService;
+ use Illuminate\Database\Schema\Blueprint;
+ use Illuminate\Pagination\LengthAwarePaginator;
++use Illuminate\Support\Facades\Cache;
+ use Illuminate\Support\Facades\DB;
+ use Illuminate\Support\Facades\Schema;
+ use Mockery;
+@@ -261,6 +262,43 @@ final class ReleaseBrowserControllerTest extends TestCase
+         }
+     }
+ 
++    public function test_tv_cover_cache_separates_visibility_and_order_and_stores_only_integer_groups(): void
++    {
++        $this->createCoverCatalogSchema('videos');
++        DB::table('videos')->insert(['id' => 1, 'title' => 'Harbor', 'started' => '2024-01-01']);
++        DB::table('tv_episodes')->insert(['id' => 1, 'videos_id' => 1, 'series' => 1, 'episode' => 1, 'title' => 'First']);
++        $this->release('Harbor.S01E01', ['categories_id' => 5030, 'videos_id' => 1, 'tv_episodes_id' => 1]);
++        Schema::create('user_downloads', function (Blueprint $table): void {
++            $table->increments('id');
++            $table->unsignedInteger('releases_id');
++            $table->dateTime('timestamp');
++        });
++        $user = $this->browserUser();
++        $this->actingAs($user);
++        $entries = static fn (): array => array_filter(Cache::getStore()->all(), static fn (string $key): bool => str_starts_with($key, 'tv-cover-groups:'), ARRAY_FILTER_USE_KEY);
++        $this->get('/browse/tv?view=covers')->assertOk()->assertSee('Harbor.S01E01');
++        self::assertCount(1, $entries());
++        $payload = array_values($entries())[0]['value'];
++        self::assertSame(['total' => 1, 'groups' => [[1, 1]]], $payload);
++        array_walk_recursive($payload, static function (mixed $value): void {
++            self::assertIsInt($value);
++        });
++        $this->get('/browse/tv?view=covers&per=24&size=xl')->assertOk();
++        self::assertCount(1, $entries(), 'Page size and artwork size do not change group identity.');
++        foreach (['sort=posted', 'sort=grabs', 'sort=grabs&trending=1', 'year=2024'] as $index => $query) {
++            $this->get('/browse/tv?view=covers&'.$query)->assertOk();
++            self::assertCount($index + 2, $entries(), $query);
++        }
++        DB::table('user_excluded_categories')->insert(['users_id' => $user->id, 'categories_id' => 5030]);
++        Cache::forget($user::categoryExclusionCacheKey($user->id));
++        $this->get('/browse/tv?view=covers')->assertOk()->assertDontSee('Harbor.S01E01');
++        self::assertCount(6, $entries());
++        $other = $this->browserUser();
++        $this->flushSession();
++        $this->actingAs($other)->get('/browse/tv?view=covers')->assertOk()->assertSee('Harbor.S01E01');
++        self::assertCount(7, $entries());
++    }
++
+     public function test_cached_episode_groups_recheck_current_release_visibility(): void
+     {
+         $this->createCoverCatalogSchema('videos');
+diff --git a/tests/Integration/TvBrowseMemoryMariaDbTest.php b/tests/Integration/TvBrowseMemoryMariaDbTest.php
+index 115af3300..4d7ab40c3 100644
+--- a/tests/Integration/TvBrowseMemoryMariaDbTest.php
++++ b/tests/Integration/TvBrowseMemoryMariaDbTest.php
+@@ -22,6 +22,7 @@ final class TvBrowseMemoryMariaDbTest extends TestCase
+             $pdo = new PDO('mysql:host=mariadb;dbname='.$database, 'root', 'password', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+             $this->schema($pdo);
+             $peaks = [];
++            $cacheSizes = [];
+             foreach ([3000, 6000] as $shows) {
+                 $this->seed($pdo, $shows === 3000 ? 1 : 3001, $shows);
+                 foreach ([1, 400] as $page) {
+@@ -46,13 +47,14 @@ final class TvBrowseMemoryMariaDbTest extends TestCase
+                     $this->assertLessThan(128 * 1024 * 1024, $result['peak']);
+                     $this->assertLessThanOrEqual(4000, $result['max_bindings']);
+                     $this->assertLessThanOrEqual(64000, $result['max_sql_bytes']);
+-                    $this->assertLessThanOrEqual(128 * 1024, $result['cache_bytes']);
++                    $cacheSizes[] = $result['cache_bytes'];
+                 }
+             }
++            fwrite(STDERR, 'TV browse peak bytes: '.json_encode($peaks).PHP_EOL);
+             foreach ([1, 400] as $page) {
+                 $this->assertLessThanOrEqual(8 * 1024 * 1024, $peaks[6000][$page] - $peaks[3000][$page]);
+             }
+-            fwrite(STDERR, 'TV browse peak bytes: '.json_encode($peaks).PHP_EOL);
++            $this->assertLessThanOrEqual(128 * 1024, max($cacheSizes));
+         } finally {
+             $admin->exec("DROP DATABASE `{$database}`");
+         }
+@@ -137,6 +139,70 @@ final class TvBrowseMemoryMariaDbTest extends TestCase
+         }
+     }
+ 
++    public function test_cold_cover_request_uses_a_linear_primary_key_walk(): void
++    {
++        if (getenv('CBP_INTEGRATION_DB_DATABASE') !== 'cbp_integration') {
++            $this->markTestSkipped('Requires the isolated Sail MariaDB runtime.');
++        }
++        $admin = new PDO('mysql:host=mariadb', 'root', 'password', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
++        $database = 'tv_browse_'.bin2hex(random_bytes(8));
++        $admin->exec("CREATE DATABASE `{$database}`");
++        try {
++            $pdo = new PDO('mysql:host=mariadb;dbname='.$database, 'root', 'password', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
++            $this->schema($pdo);
++            $pdo->exec('ALTER TABLE releases DROP PRIMARY KEY, ADD PRIMARY KEY (id, categories_id), ADD INDEX ix_releases_categories_postdate_admin (categories_id, postdate)');
++            $pdo->exec('ALTER TABLE categories ADD INDEX ix_categories_parentid (root_categories_id)');
++            $pdo->exec("INSERT INTO categories VALUES (10,1,'Fixture category'),(20,1,'Fixture category'),(1010,1000,'Fixture category'),(1020,1000,'Fixture category'),(1030,1000,'Fixture category'),(1040,1000,'Fixture category'),(1050,1000,'Fixture category'),(1060,1000,'Fixture category'),(1070,1000,'Fixture category'),(1080,1000,'Fixture category'),(1110,1000,'Fixture category'),(1120,1000,'Fixture category'),(1130,1000,'Fixture category'),(1140,1000,'Fixture category'),(1180,1000,'Fixture category'),(1999,1000,'Fixture category'),(2010,2000,'Fixture category'),(2030,2000,'Fixture category'),(2040,2000,'Fixture category'),(2045,2000,'Fixture category'),(2050,2000,'Fixture category'),(2060,2000,'Fixture category'),(2070,2000,'Fixture category'),(2080,2000,'Fixture category'),(2999,2000,'Fixture category'),(3010,3000,'Fixture category'),(3020,3000,'Fixture category'),(3030,3000,'Fixture category'),(3040,3000,'Fixture category'),(3060,3000,'Fixture category'),(3999,3000,'Fixture category'),(4010,4000,'Fixture category'),(4020,4000,'Fixture category'),(4030,4000,'Fixture category'),(4050,4000,'Fixture category'),(4060,4000,'Fixture category'),(4070,4000,'Fixture category'),(4999,4000,'Fixture category'),(5010,5000,'Fixture category'),(5020,5000,'Fixture category'),(5040,5000,'Fixture category'),(5045,5000,'Fixture category'),(5060,5000,'Fixture category'),(5070,5000,'Fixture category'),(5080,5000,'Fixture category'),(5999,5000,'Fixture category'),(6010,6000,'Fixture category'),(6020,6000,'Fixture category'),(6030,6000,'Fixture category'),(6040,6000,'Fixture category'),(6041,6000,'Fixture category'),(6042,6000,'Fixture category'),(6045,6000,'Fixture category'),(6060,6000,'Fixture category'),(6050,6000,'Fixture category'),(6080,6000,'Fixture category'),(6090,6000,'Fixture category'),(6999,6000,'Fixture category'),(7010,7000,'Fixture category'),(7020,7000,'Fixture category'),(7030,7000,'Fixture category'),(7040,7000,'Fixture category'),(7060,7000,'Fixture category'),(7999,7000,'Fixture category'),(2090,2000,'Fixture category'),(5090,5000,'Fixture category'),(3050,3000,'Fixture category')");
++            $measurements = [];
++            foreach ([10000, 20000] as $shows) {
++                $this->seed($pdo, $shows === 10000 ? 1 : 10001, $shows);
++                $firstRelease = $shows === 10000 ? 1 : 30001;
++                $lastRelease = $shows * 3;
++                $pdo->exec("INSERT INTO releases (id, videos_id, searchname, categories_id) SELECT id + 3000000, 0, 'Non-TV fixture', ELT(1 + MOD(id, 20),1010,1020,1030,1040,1050,1060,1070,1080,1130,1110,1120,2010,1140,2030,2040,2050,2060,2070,3010,3020) FROM releases WHERE id BETWEEN {$firstRelease} AND {$lastRelease}");
++                $pdo->query('ANALYZE TABLE releases, categories, videos, tv_episodes')->fetchAll();
++                $process = new Process([PHP_BINARY, '-d', 'memory_limit=128M', __DIR__.'/../Support/tv-browse-memory-probe.php', $database, 'performance']);
++                $process->setTimeout(300)->run();
++                $this->assertTrue($process->isSuccessful(), 'Exit '.$process->getExitCode().': '.$process->getErrorOutput().$process->getOutput());
++                $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
++                fwrite(STDERR, 'TV browse performance '.$shows.': '.json_encode($result, JSON_THROW_ON_ERROR).PHP_EOL);
++                $measurements[$shows] = $result;
++            }
++            foreach ($measurements as $shows => $result) {
++                $this->assertSame($shows * 10, $result['cold']['total']);
++                $this->assertGreaterThanOrEqual((int) ($shows * 3 / 500), $result['cold']['walk_batches']);
++                foreach ($result['warm'] as $name => $warm) {
++                    $reference = match ($name) {
++                        'page2' => $result['page2_cold'], 'title' => $result['sort_cold'], default => $result['cold'],
++                    };
++                    foreach (['total', 'ids', 'counts'] as $field) {
++                        $this->assertSame($reference[$field], $warm[$field], $name.' '.$field);
++                    }
++                    $this->assertSame(0, $warm['unscoped_walks'], $name);
++                    $this->assertLessThan(50, $warm['query_count'], 'Warm requests need fewer than 50 page-scoped queries.');
++                }
++                $this->assertLessThanOrEqual(12 * $shows * 3, $result['cold']['walk_reads']);
++                $showPlan = array_values(array_filter($result['show_plan'], static fn (array $row): bool => $row['table'] === 'r'))[0];
++                $this->assertSame('ix_releases_videos_id', $showPlan['key']);
++                foreach ($result['plans'] as $plan) {
++                    $releasePlan = array_values(array_filter($plan, static fn (array $row): bool => $row['table'] === 'r'))[0];
++                    $this->assertSame('PRIMARY', $releasePlan['key']);
++                    $this->assertSame('range', $releasePlan['type']);
++                    foreach ($plan as $row) {
++                        $this->assertStringNotContainsString('filesort', strtolower($row['Extra']));
++                    }
++                }
++            }
++            foreach (array_keys($measurements[10000]['warm']) as $name) {
++                $reads = array_sum($measurements[10000]['warm'][$name]['handler_reads']);
++                $this->assertSame($reads, array_sum($measurements[20000]['warm'][$name]['handler_reads']), $name);
++                $this->assertLessThan(1500, $reads, 'A 48-tile warm page uses fewer than 1500 handler reads across all counters.');
++            }
++            $this->assertLessThanOrEqual(2.5 * array_sum($measurements[10000]['cold']['handler_reads']), array_sum($measurements[20000]['cold']['handler_reads']));
++        } finally {
++            $admin->exec("DROP DATABASE `{$database}`");
++        }
++    }
++
+     private function schema(PDO $pdo): void
+     {
+         $statements = [
+@@ -149,7 +215,7 @@ final class TvBrowseMemoryMariaDbTest extends TestCase
+             "INSERT INTO root_categories VALUES (5000,'TV')",
+             'CREATE TABLE categories (id INT PRIMARY KEY, root_categories_id INT, title VARCHAR(255))',
+             "INSERT INTO categories VALUES (5030,5000,'HD')",
+-            'CREATE TABLE releases (id INT PRIMARY KEY, videos_id INT, tv_episodes_id INT, searchname VARCHAR(255), display_name VARCHAR(255), categories_id INT DEFAULT 5030, passwordstatus INT DEFAULT 0, completion INT DEFAULT 100, postdate DATETIME, adddate DATETIME, grabs INT, groups_id INT, guid VARCHAR(64), additional_pp_claim_token VARCHAR(64), nfostatus INT DEFAULT 0, size BIGINT DEFAULT 0, totalpart INT DEFAULT 0, comments INT DEFAULT 0, repair_outcome VARCHAR(64), rescan_outcome VARCHAR(64), haspreview INT DEFAULT 0, jpgstatus INT DEFAULT 0, fromname VARCHAR(255), isrenamed INT DEFAULT 0, imdbid VARCHAR(20), musicinfo_id INT, consoleinfo_id INT, gamesinfo_id INT, bookinfo_id INT, anidbid INT, INDEX show_id(videos_id,id))',
++            'CREATE TABLE releases (id INT PRIMARY KEY, videos_id INT, tv_episodes_id INT, searchname VARCHAR(255), display_name VARCHAR(255), categories_id INT DEFAULT 5030, passwordstatus INT DEFAULT 0, completion INT DEFAULT 100, postdate DATETIME, adddate DATETIME, grabs INT, groups_id INT, guid VARCHAR(64), additional_pp_claim_token VARCHAR(64), nfostatus INT DEFAULT 0, size BIGINT DEFAULT 0, totalpart INT DEFAULT 0, comments INT DEFAULT 0, repair_outcome VARCHAR(64), rescan_outcome VARCHAR(64), haspreview INT DEFAULT 0, jpgstatus INT DEFAULT 0, fromname VARCHAR(255), isrenamed INT DEFAULT 0, imdbid VARCHAR(20), musicinfo_id INT, consoleinfo_id INT, gamesinfo_id INT, bookinfo_id INT, anidbid INT, INDEX ix_releases_videos_id(videos_id))',
+             'CREATE TABLE user_series (users_id INT, videos_id INT)',
+             'CREATE TABLE users_releases (users_id INT, releases_id INT)',
+             'CREATE TABLE user_downloads (releases_id INT, timestamp DATETIME, INDEX release_time(releases_id,timestamp))',
+diff --git a/tests/Support/tv-browse-memory-probe.php b/tests/Support/tv-browse-memory-probe.php
+index adc800fc5..a84f92302 100644
+--- a/tests/Support/tv-browse-memory-probe.php
++++ b/tests/Support/tv-browse-memory-probe.php
+@@ -34,6 +34,72 @@ DB::listen(static function (QueryExecuted $query) use (&$maxBindings, &$maxSqlBy
+ $user = new User;
+ $user->id = 1;
+ $user->categoryexclusions = [];
++if ($argv[2] === 'performance') {
++    $counters = static function (): array {
++        $all = DB::connection()->getPdo()->query("SHOW SESSION STATUS LIKE 'Handler_read%'")->fetchAll(PDO::FETCH_KEY_PAIR);
++
++        return array_map('intval', $all);
++    };
++    $isWalk = static fn (string $sql): bool => preg_match('/order by `r`\.`id` asc limit \d+/', $sql) === 1;
++    $walks = [];
++    $walkReads = 0;
++    $queryCount = 0;
++    $beforeWalk = [];
++    DB::connection()->beforeExecuting(static function (string $sql) use ($isWalk, $counters, &$beforeWalk): void {
++        if ($isWalk($sql)) {
++            $beforeWalk = $counters();
++        }
++    });
++    DB::listen(static function (QueryExecuted $query) use ($isWalk, $counters, &$beforeWalk, &$walks, &$walkReads, &$queryCount): void {
++        $queryCount++;
++        if ($isWalk($query->sql)) {
++            $walkReads += array_sum($counters()) - array_sum($beforeWalk);
++            $walks[] = ['sql' => $query->sql, 'bindings' => $query->bindings];
++        }
++    });
++    $measure = static function (int $page, string $sort) use ($user, $counters, &$walks, &$walkReads, &$queryCount): array {
++        $walks = [];
++        $walkReads = $queryCount = 0;
++        $state = new ReleaseBrowserState(BrowseRoot::Tv, 'covers', 'medium', 48, true, $page, '', '', null, '', $sort, [], false, false, 0);
++        $before = $counters();
++        $start = microtime(true);
++        $results = app(TvEpisodeBrowser::class)->paginate($state, $user);
++        $seconds = microtime(true) - $start;
++        $after = $counters();
++        $reads = [];
++        foreach ($before as $counter => $value) {
++            $reads[$counter] = $after[$counter] - $value;
++        }
++
++        return ['total' => $results->total, 'ids' => $results->map(static fn ($cover): int => (int) $cover->id)->all(),
++            'counts' => $results->pluck('releaseCount')->all(), 'seconds' => $seconds,
++            'walk_batches' => count($walks), 'walk_reads' => $walkReads, 'query_count' => $queryCount,
++            'handler_reads' => $reads, 'walks' => $walks];
++    };
++    Cache::flush();
++    $cold = $measure(1, 'posted_oldest');
++    $plans = [];
++    $catalogueWalks = array_values(array_filter($cold['walks'], static fn (array $walk): bool => ! str_contains($walk['sql'], '`r`.`videos_id` in')));
++    foreach ([1, intdiv(count($catalogueWalks), 2), count($catalogueWalks) - 1] as $offset) {
++        $walk = $catalogueWalks[$offset];
++        $plans[] = DB::select('EXPLAIN '.$walk['sql'], $walk['bindings']);
++    }
++    $warm = ['page2' => $measure(2, 'posted_oldest'), 'refresh' => $measure(1, 'posted_oldest')];
++    $showWalk = $warm['page2']['walks'][0];
++    $showPlan = DB::select('EXPLAIN '.$showWalk['sql'], $showWalk['bindings']);
++    Cache::flush();
++    $sortCold = $measure(1, 'title');
++    $warm['title'] = $measure(1, 'title');
++    Cache::flush();
++    $page2Cold = $measure(2, 'posted_oldest');
++    foreach ($warm as &$page) {
++        $page['unscoped_walks'] = count(array_filter($page['walks'], static fn (array $walk): bool => ! str_contains($walk['sql'], '`r`.`videos_id` in')));
++        unset($page['walks']);
++    }
++    unset($page, $cold['walks'], $sortCold['walks'], $page2Cold['walks']);
++    echo json_encode(['cold' => $cold, 'plans' => $plans, 'show_plan' => $showPlan, 'warm' => $warm, 'sort_cold' => $sortCold, 'page2_cold' => $page2Cold], JSON_THROW_ON_ERROR);
++    exit(0);
++}
+ if ($argv[2] === 'matrix') {
+     $sorts = [];
+     $state = null;
+@@ -116,5 +182,7 @@ for ($run = 0; $run < 2; $run++) {
+     $pages[] = ['total' => $results->total, 'ids' => $results->map(static fn ($cover): int => (int) $cover->id)->all(), 'counts' => $results->pluck('releaseCount')->all()];
+     unset($results);
+ }
++// Capture request memory before allocating diagnostic cache serialization.
++$requestPeak = memory_get_peak_usage(true);
+ $cacheBytes = strlen(serialize(Cache::getStore()));
+-echo json_encode(['pages' => $pages, 'peak' => memory_get_peak_usage(true), 'max_bindings' => $maxBindings, 'max_sql_bytes' => $maxSqlBytes, 'cache_bytes' => $cacheBytes], JSON_THROW_ON_ERROR);
++echo json_encode(['pages' => $pages, 'peak' => $requestPeak, 'max_bindings' => $maxBindings, 'max_sql_bytes' => $maxSqlBytes, 'cache_bytes' => $cacheBytes], JSON_THROW_ON_ERROR);

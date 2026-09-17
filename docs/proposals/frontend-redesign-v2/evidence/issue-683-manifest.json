@@ -1,0 +1,19 @@
+{
+  "archived_at": "2026-09-17T11:03:57.777131+00:00",
+  "base": "483136faba78aa0624999a37b4aa6d183ed6d4d7",
+  "files": {
+    ".env.example": "3c9ae1f72b42ccb75fa17e7fe8ad3d907769eab4d695255bf96d4c94b5ea57d3",
+    "app/Services/Releases/TvBrowseMembershipTable.php": "3ef66eb3cb959589019b05508700c250863af5ad0fc6b0df5270ca64d4da03d8",
+    "app/Services/Releases/TvEpisodeBrowser.php": "9da442d01e4a88ef50162aaa75c42b990e44173a9fa8cc966c74681c8d4a02e5",
+    "config/nntmux.php": "4b04ecf52d11c385c90642c6ae08f4fe84a0114f01a78f4f09819737fc61e856",
+    "tests/Feature/ReleaseBrowserControllerTest.php": "c07bcfd27dfa1aeef2327e71a38bd3edb225c19459defb620b821b2a8e4fc4b5",
+    "tests/Integration/TvBrowseMemoryMariaDbTest.php": "4ed264846b3cc745f22887c055ef9c22b3dc2910ccf54e868d1c104d2d168687",
+    "tests/Support/tv-browse-memory-probe.php": "0f09dee50a9ee0a8c1d848cee02c5c410e24b7747267d35d8f593363a8a47843"
+  },
+  "patch_sha256": "b15ab93860b0ad8e217784daff3246a5429bf2aac4eedcf1c8075dfa3d940ed2",
+  "evidence": {
+    "issue-683-all-handlers.txt": "89686c054fd6eacff8c930f192aa5edb82c85c50626a60be40855406f8ba0538",
+    "issue-683-baseline-all-handlers.txt": "91ffb74d5c2e859f91d963b78d680d041cd0a218c9d0077ecd6edd4d57aa5493",
+    "issue-683-memory-request.txt": "234d667d6a4823059e1ac29de5604d9c5e4b9dac728877858571c3451f72dfee"
+  }
+}
