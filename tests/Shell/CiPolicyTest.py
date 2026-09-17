@@ -25,6 +25,26 @@ class PolicyTest(unittest.TestCase):
             self.assertNotIn('tv-memory', plan['suites'])
             self.assertEqual(len(plan['suites']), len(set(sum(plan['lanes'], []))))
 
+    def test_schema_fixture_baseline_selects_only_the_fast_php_suite(self):
+        plan = self.plan('tests/schema-fixture-baseline.json')
+        self.assertTrue(plan['php'])
+        self.assertEqual([], plan['suites'])
+        policy = json.loads((ROOT / '.github/ci-policy.json').read_text())
+        bounded = sorted(key for key, suite in policy['suites'].items() if suite['category'] != 'acceptance')
+        for path in ['tests/Support/FixtureSchemaGuard.php', 'tests/unknown-baseline.json']:
+            self.assertEqual(bounded, self.plan(path)['suites'])
+
+    def test_schema_fixture_baseline_names_no_class_that_a_suite_runs(self):
+        policy = json.loads((ROOT / '.github/ci-policy.json').read_text())
+        files = {name for suite in policy['suites'].values() for name in suite.get('files', [])}
+        def registered(entries):
+            return sorted({entry['class'] for entry in entries
+                           if 'tests/' + entry['class'].removeprefix('Tests\\').replace('\\', '/') + '.php' in files})
+        baseline = json.loads((ROOT / 'tests/schema-fixture-baseline.json').read_text())
+        self.assertEqual([], registered(baseline), 'baseline edits would skip these suites')
+        self.assertEqual(['Tests\\Integration\\RecoveryDownloaderTest'],
+                         registered(baseline + [{'class': 'Tests\\Integration\\RecoveryDownloaderTest'}]))
+
     def test_docs_skip_runtime_but_blade_keeps_php(self):
         self.assertEqual([], self.plan('docs/guide.md')['suites'])
         self.assertFalse(self.plan('docs/guide.md')['php'])
