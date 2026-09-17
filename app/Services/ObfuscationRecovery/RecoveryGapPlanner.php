@@ -40,29 +40,36 @@ final class RecoveryGapPlanner
             ->orderByDesc('id');
         $remaining = (clone $candidates)->when($cursor > 0, fn (Builder $query) => $query->where('id', '<', $cursor))->lazy(100);
         $wrapped = $cursor > 0 ? (clone $candidates)->where('id', '>=', $cursor)->lazy(100) : [];
-        foreach ($remaining->concat($wrapped) as $candidate) {
-            if (hrtime(true) >= $deadline) {
-                return;
-            }
-            // Persist the rotation before planning so limits and deadlines cannot restart at newer candidates.
-            $progress->update(['cursor' => $candidate->id]);
-            $envelope = (new RecoveryFrontierRebuild)->envelope($candidate);
-            if ($envelope === null) {
-                continue;
-            }
-            $scope = RecoveryPositiveCoverage::scope($candidate->source_epoch, (int) $candidate->groups_id, (int) $candidate->capture_generation);
-            $witnesses = (new RecoveryFrontierRequirement)->witnesses(DB::connection(), $scope, $envelope);
-            $windows = RecoveryFrontierWindows::overlapping(DB::connection(), $candidate,
-                $witnesses['left'] ?? $envelope['first_article'], $witnesses['right'] ?? $envelope['last_article'], false)
-                ->where('next_gap_at', '<=', $dueAt)->orderBy('next_gap_at')->orderBy('scan_id')->limit($limit)->get();
-            foreach ($windows as $window) {
+        $lastCandidate = null;
+        try {
+            foreach ($remaining->concat($wrapped) as $candidate) {
                 if (hrtime(true) >= $deadline) {
                     return;
                 }
-                yield [$window, true];
-                if (--$limit === 0) {
-                    return;
+                $lastCandidate = (int) $candidate->id;
+                $envelope = (new RecoveryFrontierRebuild)->envelope($candidate);
+                if ($envelope === null) {
+                    continue;
                 }
+                $scope = RecoveryPositiveCoverage::scope($candidate->source_epoch, (int) $candidate->groups_id, (int) $candidate->capture_generation);
+                $witnesses = (new RecoveryFrontierRequirement)->witnesses(DB::connection(), $scope, $envelope);
+                $windows = RecoveryFrontierWindows::overlapping(DB::connection(), $candidate,
+                    $witnesses['left'] ?? $envelope['first_article'], $witnesses['right'] ?? $envelope['last_article'], false)
+                    ->where('next_gap_at', '<=', $dueAt)->orderBy('next_gap_at')->orderBy('scan_id')->limit($limit)->get();
+                foreach ($windows as $window) {
+                    if (hrtime(true) >= $deadline) {
+                        return;
+                    }
+                    yield [$window, true];
+                    if (--$limit === 0) {
+                        return;
+                    }
+                }
+            }
+        } finally {
+            // Checkpoint once per batch, including deadline and limit exits.
+            if ($lastCandidate !== null) {
+                $progress->update(['cursor' => $lastCandidate]);
             }
         }
         if (hrtime(true) >= $deadline) {
