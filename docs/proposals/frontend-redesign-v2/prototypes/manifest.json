@@ -1,0 +1,30 @@
+{
+  "source_task": "01a09c80-8201-78f1-8b1d-4d29a7e1fc0b",
+  "preserved_on": "2026-09-17",
+  "files": {
+    "toolbar-prototype.html": {
+      "sha256": "81d0a5b041cbbbe88948c30441d555046caa628f9cb7432ab5fe2201167d28f4",
+      "bytes": 40150
+    },
+    "review.html": {
+      "sha256": "b306985011f97644ad79768afe327920a0d7736ce0529fb165e8733a9843474a",
+      "bytes": 54097
+    },
+    "index.html": {
+      "sha256": "892ff7258903b8b58b723042fc175d3e25a023da9e60589eb00c9f8fe673996e",
+      "bytes": 35909
+    },
+    "fa-solid-900.woff2": {
+      "sha256": "24e5fae26b41c08b2df81c91669f5aaae71d81a84a4713fc56b5c621b78dd456",
+      "bytes": 119488
+    },
+    "fa-regular-400.woff2": {
+      "sha256": "f4722d10b9e1b41eefe3b51a026312ee1970edb7782f94b0080d3d475945734c",
+      "bytes": 19512
+    },
+    "FONT-AWESOME-LICENSE.txt": {
+      "sha256": "20c6f40715a567c97b80f6944beb8bb325835cab47ea7dcab89ee3b8e077eced",
+      "bytes": 7427
+    }
+  }
+}

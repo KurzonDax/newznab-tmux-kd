@@ -1,0 +1,24 @@
+TV browse peak bytes: {"3000":{"1":63438848,"400":63438848},"6000":{"1":71827456,"400":71827456}}
+
+  [31;1m⨯[39;22m
+  [31m────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Integration\TvBrowseMemoryMariaDbTest[22m [90m>[39m cover pages stay be…   
+[39;1m  Failed asserting that 2078103 is equal to 131072 or is less than 131072.[39;22m
+
+  at [32mtests/Integration/TvBrowseMemoryMariaDbTest.php[39m:[32m57[39m
+     53▕             fwrite(STDERR, 'TV browse peak bytes: '.json_encode($peaks).PHP_EOL);
+     54▕             foreach ([1, 400] as $page) {
+     55▕                 $this->assertLessThanOrEqual(8 * 1024 * 1024, $peaks[6000][$page] - $peaks[3000][$page]);
+     56▕             }
+  ➜  57▕             $this->assertLessThanOrEqual(128 * 1024, max($cacheSizes));
+     58▕         } finally {
+     59▕             $admin->exec("DROP DATABASE `{$database}`");
+     60▕         }
+     61▕     }
+
+  [33m1   [39m[39;1mtests/Integration/TvBrowseMemoryMariaDbTest.php[39;22m:[39;1m57[39;22m
+
+
+  [90mTests:[39m    [31;1m1 failed[39;22m[90m (58 assertions)[39m
+  [90mDuration:[39m [39m7.59s[39m
+
