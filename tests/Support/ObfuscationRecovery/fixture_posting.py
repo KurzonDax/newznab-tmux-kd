@@ -85,21 +85,25 @@ def rar_files(root):
     return files
 
 
-# '=' leads so the escape prefixes the other expansions introduce are not escaped again.
+# Expansion order is load-bearing. '=' (61) must lead, or a later pass re-escapes
+# the prefixes earlier passes wrote. The second byte an expansion emits is
+# (value + 64) & 255, one of 64, 73, 74, 77, 96, 110 or 125; every one of those
+# must stay out of this tuple for the same reason.
 ESCAPED = (61, 0, 9, 10, 13, 32, 46)
 SHIFT = bytes((value + 42) & 255 for value in range(256))
 
 
 def encoded_lines(data):
-    # Shifting is a bijection, so an escaped value in the shifted stream can only
-    # have come from a source byte that needs escaping; expanding them afterwards
-    # keeps the whole tokenisation in C instead of one Python step per byte.
+    # Shift and expand the whole buffer with C-level byte operations instead of
+    # one Python step per byte; the token stream is the same either way.
     stream = data.translate(SHIFT)
     for value in ESCAPED:
         stream = stream.replace(bytes([value]), bytes([61, (value + 64) & 255]))
     lines, start, length = [], 0, len(stream)
     while start < length:
-        # An escape pair never straddles a break, and '=' only ever starts one.
+        # Greedy 128-column packing that never splits an escape pair. Expansion
+        # leaves '=' only in prefix position, so one in the last column means the
+        # line stops a byte short. The stream cannot end on '=', hence end < length.
         end = min(start + 128, length)
         if end < length and stream[end - 1] == 61:
             end -= 1
