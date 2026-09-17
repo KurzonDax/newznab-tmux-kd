@@ -76,20 +76,103 @@ final class RecoveryGapPlannerTest extends TestCase
         $this->assertSame(301, (int) DB::table('obfuscation_recovery_gaps')->sole()->requested_first);
     }
 
-    public function test_batch_processes_needed_windows_newest_candidate_first_and_respects_its_limit(): void
+    public function test_batch_rotates_candidates_and_respects_its_limit(): void
     {
-        $this->window(1, 100);
-        $this->window(101, 200);
-        $this->window(201, 300);
-        $this->window(301, 400);
+        $this->window(1, 100, 20);
+        $this->window(101, 200, 15);
+        $this->window(201, 300, 10);
+        $this->window(301, 400, 5);
         $this->candidate(210, 290, ageMinutes: 0);
         $this->candidate(10, 90, ageMinutes: 60);
         $this->candidate(110, 190, ageMinutes: 30);
         $this->candidate(310, 390, ageMinutes: 90);
 
         $this->assertSame(3, (new RecoveryGapPlanner)->step(3, hrtime(true) + 5000000000));
-        $this->assertSame([201, 101, 1], DB::table('obfuscation_recovery_gaps')->orderBy('id')->pluck('requested_first')->all());
+        $this->assertSame([301, 101, 1], DB::table('obfuscation_recovery_gaps')->orderBy('id')->pluck('requested_first')->all());
         $this->assertSame(3, DB::table('obfuscation_recovery_work')->where('purpose', 'gap')->where('status', 'pending')->count());
+    }
+
+    public function test_older_candidate_hole_is_planned_despite_newer_windows_becoming_due_again(): void
+    {
+        $this->window(1, 100);
+        $this->candidate(10, 90, ageMinutes: 60);
+        foreach ([101, 201, 301] as $first) {
+            $this->window($first, $first + 99, 10);
+            $this->scan($first, $first + 99);
+            $this->candidate($first + 10, $first + 90);
+        }
+
+        for ($cycle = 0; $cycle < 2; $cycle++) {
+            (new RecoveryGapPlanner)->step(2);
+            $this->travel(5)->minutes();
+        }
+
+        $this->assertSame(1, (int) DB::table('obfuscation_recovery_gaps')->sole()->requested_first);
+    }
+
+    public function test_rotation_resumes_a_large_candidate_after_serving_older_candidates(): void
+    {
+        $this->window(1, 100);
+        $this->candidate(10, 90, ageMinutes: 60);
+        $this->window(101, 200, 15);
+        $this->window(201, 300, 10);
+        $this->window(301, 400, 5);
+        $this->candidate(110, 390);
+
+        $this->assertSame(2, (new RecoveryGapPlanner)->step(2));
+        $this->assertSame([101, 201], DB::table('obfuscation_recovery_gaps')->orderBy('id')->pluck('requested_first')->all());
+        $this->window(401, 500);
+        $this->candidate(410, 490);
+        $this->assertSame(1, (new RecoveryGapPlanner)->step(1));
+        $this->assertSame(1, (int) DB::table('obfuscation_recovery_gaps')->orderByDesc('id')->value('requested_first'));
+        $this->assertSame(2, (new RecoveryGapPlanner)->step(2));
+        $this->assertSame([101, 201, 1, 401, 301], DB::table('obfuscation_recovery_gaps')->orderBy('id')->pluck('requested_first')->all());
+    }
+
+    public function test_candidate_rotation_survives_a_deadline_during_selection(): void
+    {
+        $this->window(1, 100);
+        $this->candidate(10, 90, ageMinutes: 60);
+        $this->window(101, 200);
+        $this->candidate(110, 190);
+        $deadline = hrtime(true) + 1000000000;
+        DB::listen(static function (QueryExecuted $query) use ($deadline): void {
+            if (str_starts_with($query->sql, 'select * from "obfuscation_recovery_scan_windows"')) {
+                $remaining = $deadline - hrtime(true);
+                if ($remaining > 0) {
+                    usleep((int) ceil($remaining / 1000));
+                }
+            }
+        });
+
+        $this->assertSame(0, (new RecoveryGapPlanner)->step(1, $deadline));
+        $this->assertSame(1, (new RecoveryGapPlanner)->step(1));
+        $this->assertSame(1, (int) DB::table('obfuscation_recovery_gaps')->sole()->requested_first);
+    }
+
+    public function test_completed_needed_windows_go_quiet_except_for_the_advancing_frontier(): void
+    {
+        Schema::table('usenet_groups', function (Blueprint $table): void {
+            $table->unsignedBigInteger('last_record')->default(300);
+        });
+        $completed = $this->window(1, 100);
+        $pastFrontier = $this->window(101, 200);
+        $newest = $this->window(201, 300);
+        DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $pastFrontier)->update(['gap_cursor' => 201]);
+        $this->scan(1, 300);
+        $this->candidate(10, 290);
+
+        $this->assertSame(0, (new RecoveryGapPlanner)->step());
+        foreach ([$completed, $pastFrontier] as $window) {
+            $this->assertSame(now()->addHour()->toDateTimeString(), DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $window)->value('next_gap_at'));
+        }
+        $this->assertSame(now()->addMinutes(5)->toDateTimeString(), DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $newest)->value('next_gap_at'));
+
+        DB::table('usenet_groups')->where('id', 1)->update(['last_record' => 350]);
+        $this->travel(5)->minutes();
+        $this->assertSame(1, (new RecoveryGapPlanner)->step());
+        $gap = DB::table('obfuscation_recovery_gaps')->sole();
+        $this->assertSame([301, 350], [(int) $gap->requested_first, (int) $gap->requested_last]);
     }
 
     public function test_unneeded_windows_use_a_slower_cadence_even_with_more_holes_to_plan(): void
@@ -100,7 +183,7 @@ final class RecoveryGapPlannerTest extends TestCase
 
         $this->assertSame(2, (new RecoveryGapPlanner)->step());
         $this->assertSame(now()->addHour()->toDateTimeString(), DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $unneeded)->value('next_gap_at'));
-        $this->assertSame(now()->addMinutes(5)->toDateTimeString(), DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $needed)->value('next_gap_at'));
+        $this->assertSame(now()->addHour()->toDateTimeString(), DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $needed)->value('next_gap_at'));
         $this->assertSame(20001, (int) DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $unneeded)->value('gap_cursor'));
     }
 
@@ -121,7 +204,7 @@ final class RecoveryGapPlannerTest extends TestCase
 
         $this->assertSame(1, (new RecoveryGapPlanner)->step(50, $deadline));
         $this->assertSame(1, DB::table('obfuscation_recovery_gaps')->count());
-        $this->assertSame(now()->addMinutes(5)->toDateTimeString(), DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $first)->value('next_gap_at'));
+        $this->assertSame(now()->addHour()->toDateTimeString(), DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $first)->value('next_gap_at'));
         $this->assertSame(now()->subMinutes(5)->toDateTimeString(), DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $second)->value('next_gap_at'));
     }
 
@@ -149,7 +232,7 @@ final class RecoveryGapPlannerTest extends TestCase
         foreach ([$inactive, $otherScope] as $window) {
             $this->assertSame(now()->addHour()->toDateTimeString(), DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $window)->value('next_gap_at'));
         }
-        $this->assertSame(now()->addMinutes(5)->toDateTimeString(), DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $needed)->value('next_gap_at'));
+        $this->assertSame(now()->addHour()->toDateTimeString(), DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $needed)->value('next_gap_at'));
     }
 
     public function test_shared_needed_windows_are_processed_once_and_keep_the_fast_continuation(): void
