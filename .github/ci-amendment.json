@@ -1,9 +1,9 @@
 {
-  "issue": 659,
-  "base": "8531ac43668c12928fadbe927335b588fbe38c29",
+  "issue": 708,
+  "base": "c3716e2bc4aaca9ad8bfe189fca7ef7050aa9d06",
   "files": {
     ".github/actions/ci-sail/action.yml": "ff14fe059df0e8cab41e02e20c986021a434c3126b500d35a2fef14bfb8968e9",
-    ".github/ci-policy.json": "a58730b0be20b3ecd34fb8c6714b8cf67d156bd139ba918012fffe6dfe30ad79",
+    ".github/ci-policy.json": "5bd0e4c21c7d8e0f057db2748b09d33220603f3f0cd1756507078259b11681b6",
     ".github/docker-compose.ci-optimized.yml": "3d25fd37a1e4568c60e633e788b2386b3ad339cf4764a4037f1263efda3dbcfe",
     ".github/docker-compose.ci.yml": "ed7fbca18c38c566b58570f54a21b80baa7151617fcde78c465505aad40e5e04",
     ".github/php-ci.ini": "cf1c7ad36cfc32f8e1a9f2660fe3c9fd10c0e7b41799345d40ba673bf703dc56",
