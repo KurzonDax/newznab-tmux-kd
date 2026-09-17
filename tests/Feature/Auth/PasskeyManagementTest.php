@@ -15,6 +15,7 @@ use Spatie\LaravelPasskeys\Models\Concerns\HasPasskeys;
 use Spatie\LaravelPasskeys\Models\Passkey;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class PasskeyManagementTest extends TestCase
@@ -81,10 +82,7 @@ class PasskeyManagementTest extends TestCase
 
     private function createSchema(): void
     {
-        Schema::create('settings', function (Blueprint $table): void {
-            $table->string('name')->primary();
-            $table->text('value')->nullable();
-        });
+        ProductionTables::fromAuthority()->create('settings');
 
         Schema::create('roles', function (Blueprint $table): void {
             $table->increments('id');
@@ -103,22 +101,7 @@ class PasskeyManagementTest extends TestCase
             $table->timestamps();
         });
 
-        Schema::create('users', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->string('username');
-            $table->string('email')->unique();
-            $table->string('password');
-            $table->unsignedInteger('roles_id')->default(1);
-            $table->integer('rate_limit')->default(60);
-            $table->string('api_token')->nullable();
-            $table->boolean('verified')->default(true);
-            $table->boolean('can_post')->default(true);
-            $table->timestamp('email_verified_at')->nullable();
-            $table->timestamp('lastlogin')->nullable();
-            $table->rememberToken();
-            $table->timestamps();
-            $table->softDeletes();
-        });
+        ProductionTables::fromAuthority()->create('users');
 
         Schema::create('model_has_roles', function (Blueprint $table): void {
             $table->unsignedInteger('role_id');

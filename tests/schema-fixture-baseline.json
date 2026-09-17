@@ -1134,18 +1134,6 @@
         ]
     },
     {
-        "class": "Tests\\Feature\\AdminGroupControllerTest",
-        "table": "usenet_groups",
-        "rule": "R2",
-        "subject": "(name)",
-        "tests": [
-            "test_edit_submit_clears_the_forced_root_category_when_left_blank",
-            "test_edit_submit_converts_min_size_unit_to_bytes",
-            "test_edit_submit_keeps_blank_min_size_as_null",
-            "test_edit_view_exposes_group_min_size_split_into_value_and_unit"
-        ]
-    },
-    {
         "class": "Tests\\Feature\\AdminGroupListPageTest",
         "table": "categories",
         "rule": "R1",
@@ -3707,26 +3695,6 @@
             "test_stale_session_token_is_ignored_when_single_active_session_is_off",
             "test_stale_session_token_logs_out_with_an_accurate_message_when_single_active_session_is_on",
             "test_unverified_users_cannot_authenticate_with_passkeys"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\Auth\\PasskeyManagementTest",
-        "table": "users",
-        "rule": "R2",
-        "subject": "(api_token)",
-        "tests": [
-            "test_guest_cannot_hit_passkey_management_routes",
-            "test_verified_user_can_generate_options_store_and_delete_a_passkey"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\Auth\\PasskeyManagementTest",
-        "table": "users",
-        "rule": "R3",
-        "subject": "(email)",
-        "tests": [
-            "test_guest_cannot_hit_passkey_management_routes",
-            "test_verified_user_can_generate_options_store_and_delete_a_passkey"
         ]
     },
     {
@@ -9866,32 +9834,6 @@
             "test_backfill_rearms_parked_titles_in_the_covered_window_but_not_terminal_titles",
             "test_each_cycle_is_bounded_by_the_per_run_limit_times_configured_threads",
             "test_matched_and_flood_titles_are_terminal"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\PreviewGenerationPolicyTest",
-        "table": "releases",
-        "rule": "R2",
-        "subject": "(guid)",
-        "tests": [
-            "test_book_junk_recategorization_restores_an_owed_preview",
-            "test_book_magazine_recategorization_restores_an_owed_preview",
-            "test_bulk_recategorize_endpoint_service_flips_owed_previews",
-            "test_disabled_category_ids_cover_only_roots_with_generation_off",
-            "test_generation_follows_the_leaf_categories_root_toggle",
-            "test_restore_flips_skipped_releases_in_enabled_roots_back_to_pending",
-            "test_restore_ignores_empty_and_invalid_ids",
-            "test_restore_treats_rootless_categories_as_enabled",
-            "test_restore_uses_the_mode_aware_pending_password_status_when_inspection_is_off"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\PromotionStatisticsTest",
-        "table": "settings",
-        "rule": "R2",
-        "subject": "(name)",
-        "tests": [
-            "test_summary_pages_keep_complete_date_filtered_totals_and_top_five"
         ]
     },
     {

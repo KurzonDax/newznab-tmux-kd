@@ -11,13 +11,13 @@ use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use App\Services\BookService;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseManagementService;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class PreviewGenerationPolicyTest extends TestCase
@@ -215,55 +215,19 @@ class PreviewGenerationPolicyTest extends TestCase
             'categories_id' => $categoryId,
             'haspreview' => $hasPreview,
             'passwordstatus' => $passwordStatus,
+            'pp_timeout_count' => 2,
         ];
     }
 
     private function createSchema(): void
     {
         if (! Schema::hasTable('settings')) {
-            Schema::create('settings', function (Blueprint $table): void {
-                $table->string('name')->primary();
-                $table->text('value')->nullable();
-            });
+            ProductionTables::fromAuthority()->create('settings');
         }
 
-        Schema::create('root_categories', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->string('title')->default('');
-            $table->boolean('generate_previews')->default(true);
-        });
-
-        Schema::create('categories', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->string('title')->default('');
-            $table->integer('root_categories_id')->nullable();
-        });
-
-        Schema::create('releases', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->string('guid');
-            $table->unsignedInteger('groups_id')->default(0);
-            $table->integer('categories_id');
-            $table->integer('haspreview')->default(0);
-            $table->integer('passwordstatus')->default(0);
-            $table->unsignedInteger('pp_timeout_count')->default(2);
-            $table->integer('iscategorized')->default(0);
-            $table->string('searchname')->default('');
-            $table->string('searchname_normalized')->nullable();
-            $table->string('display_name')->nullable();
-            $table->integer('isrenamed')->default(0);
-            $table->integer('is_trusted_name')->default(0);
-            $table->unsignedInteger('videos_id')->default(0);
-            $table->integer('tv_episodes_id')->default(0);
-            $table->integer('movieinfo_id')->nullable();
-            $table->string('imdbid')->nullable();
-            $table->integer('musicinfo_id')->nullable();
-            $table->integer('consoleinfo_id')->nullable();
-            $table->integer('bookinfo_id')->nullable();
-            $table->integer('anidbid')->nullable();
-            $table->integer('gamesinfo_id')->default(0);
-            $table->unsignedInteger('predb_id')->default(0);
-        });
+        foreach (['root_categories', 'categories', 'releases'] as $table) {
+            ProductionTables::fromAuthority()->create($table);
+        }
 
         DB::table('root_categories')->insert([
             ['id' => 2000, 'title' => 'Movies', 'generate_previews' => 1],

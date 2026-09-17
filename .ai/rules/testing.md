@@ -53,8 +53,18 @@ freshness test checks that each file is recorded in the dump (older recorded
 migrations may legitimately have been pruned). The MySQL dump is a separate,
 legacy installation artifact and is not this guard's authority.
 
-Prefer actual migrations or fixtures derived from the authority. The shared test
-case checks live tables on already-open Laravel SQLite connections in
+Prefer actual migrations or fixtures derived from the authority. New tests should
+create production tables with
+`Tests\Support\ProductionTables::fromAuthority()->create($table, $columns, $connection)`
+rather than hand-written `Schema::create` or SQL; `createStatement()` returns the
+SQL for a raw PDO handle. Name only the production columns the test needs, or pass
+null for all. The table keeps every production primary/unique key whose columns are
+present, the auto-increment identity, SQLite type affinity, literal defaults and
+generated expressions (include their source columns). Every column is nullable.
+Unknown tables, columns and types fail by name, and a refreshed dump changes the
+table without editing the builder.
+
+The shared test case checks live tables on already-open Laravel SQLite connections in
 `assertPostConditions()`, before isolated database teardown. It checks raw SQL,
 variable table names, attached databases, primary keys and separately created
 unique indexes too. Partial fixtures may omit unrelated columns. Every included column must exist;

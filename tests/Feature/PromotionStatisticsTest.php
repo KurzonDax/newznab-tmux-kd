@@ -9,6 +9,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class PromotionStatisticsTest extends TestCase
@@ -19,15 +20,8 @@ class PromotionStatisticsTest extends TestCase
         foreach (['settings', 'role_promotions', 'role_promotion_stats', 'users', 'roles'] as $table) {
             Schema::dropIfExists($table);
         }
-        Schema::create('settings', function (Blueprint $table): void {
-            $table->string('name');
-            $table->text('value')->nullable();
-        });
-        Schema::create('users', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->string('username');
-            $table->softDeletes();
-        });
+        ProductionTables::fromAuthority()->create('settings');
+        ProductionTables::fromAuthority()->create('users', ['id', 'username', 'deleted_at']);
         Schema::create('roles', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('name');
