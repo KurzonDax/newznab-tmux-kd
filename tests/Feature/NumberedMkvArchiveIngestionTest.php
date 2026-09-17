@@ -14,6 +14,7 @@ use App\Services\ReleaseProcessingService;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\NumberedMkvArchiveTestCase;
+use Tests\Support\ProductionTables;
 
 class NumberedMkvArchiveIngestionTest extends NumberedMkvArchiveTestCase
 {
@@ -25,8 +26,8 @@ class NumberedMkvArchiveIngestionTest extends NumberedMkvArchiveTestCase
         $this->registerSqliteFunction('UNIX_TIMESTAMP', static fn (?string $value): int => strtotime((string) $value));
         NzbCreationCandidateQuery::flushCapabilityCache();
         config(['nntmux_settings.path_to_nzbs' => $this->makeTempDirectory('numbered-mkv-nzb')]);
-        DB::statement('CREATE TABLE categories (id INTEGER PRIMARY KEY, title TEXT, parent_categories_id INTEGER, root_categories_id INTEGER)');
-        DB::statement('CREATE TABLE root_categories (id INTEGER PRIMARY KEY, title TEXT)');
+        ProductionTables::fromAuthority()->create('categories', ['id', 'title', 'root_categories_id']);
+        ProductionTables::fromAuthority()->create('root_categories', ['id', 'title']);
         DB::table('root_categories')->insert(['id' => 7000, 'title' => 'Misc']);
         DB::table('categories')->insert(['id' => 7010, 'title' => 'Other', 'root_categories_id' => 7000]);
         DB::statement('CREATE TABLE predb (id INTEGER PRIMARY KEY, title TEXT, filename TEXT)');

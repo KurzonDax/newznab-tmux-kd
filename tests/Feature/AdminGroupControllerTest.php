@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 use ReflectionClass;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class AdminGroupControllerTest extends TestCase
@@ -211,10 +212,7 @@ class AdminGroupControllerTest extends TestCase
     private function createSchema(): void
     {
         if (! Schema::hasTable('settings')) {
-            Schema::create('settings', function (Blueprint $table): void {
-                $table->string('name')->primary();
-                $table->text('value')->nullable();
-            });
+            ProductionTables::fromAuthority()->create('settings');
         }
 
         if (! Schema::hasTable('content')) {
@@ -233,12 +231,7 @@ class AdminGroupControllerTest extends TestCase
         }
 
         if (! Schema::hasTable('root_categories')) {
-            Schema::create('root_categories', function (Blueprint $table): void {
-                $table->increments('id');
-                $table->string('title')->default('');
-                $table->integer('status')->default(1);
-                $table->timestamps();
-            });
+            ProductionTables::fromAuthority()->create('root_categories');
         }
     }
 
@@ -248,23 +241,7 @@ class AdminGroupControllerTest extends TestCase
             return;
         }
 
-        Schema::create('usenet_groups', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->string('name')->default('');
-            $table->string('description')->default('');
-            $table->unsignedBigInteger('first_record')->default(0);
-            $table->unsignedBigInteger('last_record')->default(0);
-            $table->dateTime('last_updated')->nullable();
-            $table->boolean('active')->default(false);
-            $table->boolean('backfill')->default(false);
-            $table->unsignedBigInteger('minsizetoformrelease')->nullable();
-            $table->unsignedBigInteger('minfilestoformrelease')->nullable();
-            $table->integer('backfill_target')->default(1);
-            $table->string('obfuscation_recovery_profile')->default('disabled');
-            $table->boolean('route_obfuscated_names')->default(false);
-            $table->unsignedInteger('obfuscated_default_root_categories_id')->nullable();
-            $table->unsignedInteger('forced_root_categories_id')->nullable();
-        });
+        ProductionTables::fromAuthority()->create('usenet_groups');
     }
 
     private function seedSettings(): void
