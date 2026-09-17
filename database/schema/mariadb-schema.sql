@@ -3492,6 +3492,7 @@ CREATE TABLE `users` (
   `deleted_at` timestamp NULL DEFAULT NULL,
   `deleted_by` varchar(255) DEFAULT NULL,
   `view_prefs` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`view_prefs`)),
+  `can_post` tinyint(1) NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
   UNIQUE KEY `ux_users_api_token` (`api_token`),
   KEY `ix_user_roles` (`roles_id`),
@@ -3874,3 +3875,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (286,'2026_09_14_09
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (287,'2026_09_14_110835_add_recovery_handoff_and_process_identity',6);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (288,'2026_09_14_135356_add_par2_naming_setting',6);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (289,'2026_09_16_133405_add_movie_record_retry_state_to_releases_table',6);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (290,'2026_09_17_170000_add_can_post_to_users_table',7);

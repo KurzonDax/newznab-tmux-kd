@@ -122,26 +122,6 @@
     {
         "class": "Tests\\Feature\\AccountControllerTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_a_recovery_code_completes_only_its_owners_pending_login_once",
-            "test_api_rotation_and_usage_are_scoped_to_the_authenticated_user",
-            "test_invitation_sections_keep_pagination_and_guest_invitation_links_work",
-            "test_legacy_disable_revokes_recovery_codes_before_reenabling",
-            "test_password_and_other_session_actions_require_the_current_password_and_preserve_this_session",
-            "test_privacy_pagination_keeps_the_account_section_and_policy_starts_with_its_document",
-            "test_profile_card_updates_only_its_fields_and_reverifies_a_changed_email",
-            "test_public_api_help_uses_shared_page_headings_and_key_fields",
-            "test_recovery_codes_require_enabled_two_factor_and_are_stored_only_as_hashes",
-            "test_sections_render_shared_controls_and_legacy_pages_redirect_to_the_account",
-            "test_themed_errors_render_without_site_database_or_authentication_queries",
-            "test_zero_quotas_are_numeric_and_invalid_category_checkboxes_write_nothing"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\AccountControllerTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -489,19 +469,6 @@
     {
         "class": "Tests\\Feature\\AdminAnidbEditTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_anidb_edit_accepts_blank_optional_fields",
-            "test_anidb_edit_does_not_rewrite_the_title_type",
-            "test_anidb_edit_leaves_the_other_language_titles_alone",
-            "test_anidb_edit_rejects_a_blank_title",
-            "test_anidb_edit_stores_the_submitted_fields"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\AdminAnidbEditTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -530,24 +497,6 @@
         "table": "user_excluded_categories",
         "rule": "R2",
         "subject": "(categories_id, users_id)",
-        "tests": [
-            "test_admin_can_save_valid_backup_settings",
-            "test_admin_page_reconciles_disk_sets_and_shows_offsite_status",
-            "test_admin_page_renders_status_and_sets_from_disk",
-            "test_non_admin_cannot_access_backups_page",
-            "test_pending_full_run_keeps_priority_over_a_daily_request",
-            "test_public_web_root_backup_location_is_rejected_inline",
-            "test_relative_backup_location_is_rejected_inline",
-            "test_run_now_is_rejected_while_backups_are_disabled",
-            "test_run_now_records_request_for_next_tick",
-            "test_unwritable_backup_location_is_rejected_inline"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\AdminBackupsControllerTest",
-        "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
         "tests": [
             "test_admin_can_save_valid_backup_settings",
             "test_admin_page_reconciles_disk_sets_and_shows_offsite_status",
@@ -602,17 +551,6 @@
         "table": "user_excluded_categories",
         "rule": "R2",
         "subject": "(categories_id, users_id)",
-        "tests": [
-            "test_admin_can_start_a_per_rule_delete_and_validation_rejects_unknown_rules",
-            "test_admin_can_start_dry_run_poll_status_and_cannot_start_a_second_run",
-            "test_sweep_routes_are_admin_and_two_factor_protected"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\AdminBlacklistSweepControllerTest",
-        "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
         "tests": [
             "test_admin_can_start_a_per_rule_delete_and_validation_rejects_unknown_rules",
             "test_admin_can_start_dry_run_poll_status_and_cannot_start_a_second_run",
@@ -692,18 +630,6 @@
     {
         "class": "Tests\\Feature\\AdminBookEditTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_book_edit_preserves_an_untouched_publish_date_including_its_time",
-            "test_book_edit_rejects_a_blank_author_rather_than_failing_on_the_constraint",
-            "test_book_edit_rejects_a_blank_title",
-            "test_book_edit_stores_a_submitted_publish_date"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\AdminBookEditTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -776,18 +702,6 @@
     {
         "class": "Tests\\Feature\\AdminConsoleEditTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_console_edit_clears_a_salesrank_and_genre_the_operator_blanked",
-            "test_console_edit_preserves_an_untouched_release_date_including_its_time",
-            "test_console_edit_rejects_a_blank_title",
-            "test_console_edit_stores_a_submitted_release_date"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\AdminConsoleEditTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -850,18 +764,6 @@
         "table": "user_excluded_categories",
         "rule": "R2",
         "subject": "(categories_id, users_id)",
-        "tests": [
-            "test_console_list_renders_a_placeholder_for_a_row_without_a_release_date",
-            "test_console_list_renders_a_row_carrying_a_release_date",
-            "test_console_list_renders_its_empty_state",
-            "test_console_list_still_paginates_newest_first"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\AdminConsoleListPageTest",
-        "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
         "tests": [
             "test_console_list_renders_a_placeholder_for_a_row_without_a_release_date",
             "test_console_list_renders_a_row_carrying_a_release_date",
@@ -1026,32 +928,6 @@
     {
         "class": "Tests\\Feature\\AdminContentControllerTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_admin_can_create_content_without_a_title",
-            "test_admin_can_delete_content_via_ajax",
-            "test_admin_can_reorder_content_within_a_group_only",
-            "test_admin_can_update_existing_content_without_a_title",
-            "test_admin_content_list_orders_by_lowest_ordinal_first_within_each_group",
-            "test_admin_content_list_uses_untitled_fallback_for_blank_titles",
-            "test_contact_page_uses_the_toast_payload_without_a_duplicate_banner",
-            "test_content_form_mounts_the_rich_text_editor",
-            "test_content_page_accepts_string_content_id_from_query",
-            "test_create_form_marks_title_as_optional",
-            "test_deleting_content_does_not_reassign_remaining_ordinals",
-            "test_edit_form_marks_title_as_optional",
-            "test_forum_action_messages_join_the_public_payload_and_keep_inline_validation",
-            "test_front_page_flash_messages_use_only_the_toast_payload with data set \"multiple errors\"",
-            "test_front_page_flash_messages_use_only_the_toast_payload with data set \"single error\"",
-            "test_home_page_renders_html_when_no_front_page_content_exists",
-            "test_missing_specific_content_still_returns_not_found",
-            "test_new_content_defaults_to_bottom_ordinal_within_its_group"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\AdminContentControllerTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -1152,18 +1028,6 @@
     {
         "class": "Tests\\Feature\\AdminGameEditTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_game_edit_preserves_an_untouched_release_date_including_its_time",
-            "test_game_edit_rejects_a_blank_title",
-            "test_game_edit_stores_a_submitted_release_date",
-            "test_game_edit_stores_an_empty_trailer_url_rather_than_null"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\AdminGameEditTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -1232,20 +1096,6 @@
         "table": "user_excluded_categories",
         "rule": "R2",
         "subject": "(categories_id, users_id)",
-        "tests": [
-            "test_game_list_pagination_keeps_the_active_search",
-            "test_game_list_renders_a_row_carrying_a_release_date_and_a_genre",
-            "test_game_list_renders_no_paginator_for_a_single_page",
-            "test_game_list_renders_one_paginator_reaching_the_second_page",
-            "test_game_list_renders_the_empty_state_without_a_paginator",
-            "test_game_list_second_page_shows_the_rows_the_first_page_did_not"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\AdminGameListPageTest",
-        "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
         "tests": [
             "test_game_list_pagination_keeps_the_active_search",
             "test_game_list_renders_a_row_carrying_a_release_date_and_a_genre",
@@ -1470,49 +1320,6 @@
     {
         "class": "Tests\\Feature\\AdminGroupListPageTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_ajax_replacement_rows_preserve_the_inactive_list_context",
-            "test_bulk_group_navigation_preserves_the_origin_and_filters",
-            "test_categorization_uses_the_persisted_group_obfuscated_routing_settings",
-            "test_edit_selected_is_closed_to_non_admins",
-            "test_edit_selected_normalizes_zero_release_floors_to_null",
-            "test_edit_selected_rejects_invalid_or_nonsensical_requests",
-            "test_edit_selected_saves_and_clears_the_forced_root_category",
-            "test_edit_selected_saves_and_surfaces_obfuscated_name_routing",
-            "test_edit_selected_updates_only_submitted_settings_and_returns_rows",
-            "test_empty_group_table_without_a_search_shows_the_add_groups_state",
-            "test_group_edit_navigation_and_save_return_to_the_origin_list",
-            "test_group_edit_rejects_a_forced_root_category_that_is_not_a_root",
-            "test_group_edit_rejects_an_unrecognized_return_origin",
-            "test_group_edit_saves_the_forced_root_category",
-            "test_group_list_edit_and_bulk_links_preserve_the_origin_and_filters",
-            "test_group_list_exposes_edit_selected_values_and_modal",
-            "test_group_list_renders_the_compact_action_bar",
-            "test_group_list_shows_a_preselected_root_while_routing_is_disabled",
-            "test_group_list_surfaces_the_forced_root_category",
-            "test_group_lists_render_app_timezone_timestamps_for_the_users_timezone",
-            "test_invalid_recovery_selection_rejects_all_selected_changes",
-            "test_numbered_pagination_appears_only_below_the_table",
-            "test_pagination_links_preserve_the_group_name_search",
-            "test_recovery_selection_saves_without_activating_normal_scanning",
-            "test_reset_selected_action_is_bound_to_the_live_selection_count",
-            "test_reset_selected_groups_is_closed_to_non_admins",
-            "test_reset_selected_groups_rejects_an_empty_payload",
-            "test_search_submit_control_is_icon_only",
-            "test_select_all_checkbox_has_an_accessible_name_and_no_competing_model",
-            "test_single_group_edit_accepts_the_same_file_size_grammar",
-            "test_single_group_edit_exposes_only_root_categories_for_obfuscated_routing",
-            "test_single_group_edit_rejects_enabled_obfuscated_routing_without_a_root",
-            "test_single_group_edit_saves_obfuscated_name_routing",
-            "test_single_group_recovery_selection_is_validated_and_preserved",
-            "test_zero_result_search_keeps_the_search_controls_editable"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\AdminGroupListPageTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -1655,19 +1462,6 @@
     {
         "class": "Tests\\Feature\\AdminLogViewerControllerTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_admin_can_open_log_viewer_and_see_available_logs",
-            "test_admin_can_search_within_selected_log_file_only",
-            "test_non_admin_user_is_forbidden_from_log_viewer",
-            "test_path_traversal_is_rejected",
-            "test_unknown_log_file_redirects_with_error"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\AdminLogViewerControllerTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -1734,25 +1528,6 @@
         "table": "user_excluded_categories",
         "rule": "R2",
         "subject": "(categories_id, users_id)",
-        "tests": [
-            "test_a_blank_movie_search_still_lists_everything",
-            "test_get_all_caches_each_search_term_independently",
-            "test_get_all_does_not_occupy_an_unnamespaced_cache_key",
-            "test_get_all_matches_a_title_substring_or_an_exact_imdb_id",
-            "test_get_all_returns_the_requested_page_rather_than_the_cached_first_page",
-            "test_get_all_still_serves_a_repeated_request_from_the_cache",
-            "test_movie_list_pagination_keeps_the_active_search",
-            "test_movie_list_renders_no_paginator_for_a_single_page",
-            "test_movie_list_renders_one_paginator_reaching_the_second_page",
-            "test_movie_list_renders_the_empty_state_without_a_paginator",
-            "test_movie_list_second_page_shows_the_rows_the_first_page_did_not"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\AdminMovieListPageTest",
-        "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
         "tests": [
             "test_a_blank_movie_search_still_lists_everything",
             "test_get_all_caches_each_search_term_independently",
@@ -1860,19 +1635,6 @@
     {
         "class": "Tests\\Feature\\AdminMusicEditTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_music_edit_clears_a_salesrank_and_genre_the_operator_blanked",
-            "test_music_edit_preserves_an_untouched_release_date_including_its_time",
-            "test_music_edit_stores_a_submitted_release_date",
-            "test_music_edit_stores_a_zero_salesrank_the_operator_typed",
-            "test_music_edit_survives_a_blank_year"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\AdminMusicEditTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -1952,23 +1714,6 @@
         "table": "user_excluded_categories",
         "rule": "R2",
         "subject": "(categories_id, users_id)",
-        "tests": [
-            "test_an_empty_music_search_still_lists_everything_newest_first",
-            "test_music_list_renders_no_paginator_for_a_single_page",
-            "test_music_list_renders_one_paginator_reaching_the_second_page",
-            "test_music_list_renders_the_empty_state_without_a_paginator",
-            "test_music_pagination_keeps_the_active_search",
-            "test_music_search_filters_the_list_through_the_like_fallback",
-            "test_music_search_matches_an_artist_through_the_like_fallback",
-            "test_music_search_matching_nothing_renders_the_empty_state",
-            "test_music_search_uses_the_secondary_index_when_it_is_available"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\AdminMusicListPageTest",
-        "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
         "tests": [
             "test_an_empty_music_search_still_lists_everything_newest_first",
             "test_music_list_renders_no_paginator_for_a_single_page",
@@ -2104,27 +1849,6 @@
         "table": "user_excluded_categories",
         "rule": "R2",
         "subject": "(categories_id, users_id)",
-        "tests": [
-            "test_get_all_caches_each_search_term_independently",
-            "test_get_all_does_not_occupy_an_unnamespaced_cache_key",
-            "test_get_all_returns_the_requested_page_rather_than_the_cached_first_page",
-            "test_get_all_still_serves_a_repeated_request_from_the_cache",
-            "test_predb_list_escapes_arbitrary_feed_text_sizes",
-            "test_predb_list_formats_each_size_with_the_shared_byte_helper",
-            "test_predb_list_links_a_matched_release",
-            "test_predb_list_renders_a_row_carrying_a_size",
-            "test_predb_list_renders_numeric_and_feed_text_sizes",
-            "test_predb_list_serves_the_requested_page_after_an_earlier_page_was_cached",
-            "test_predb_list_shows_a_placeholder_when_a_row_has_no_size",
-            "test_predb_pagination_footer_reports_the_requested_page_range",
-            "test_predb_search_result_renders_a_unit_bearing_size"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\AdminPredbPageTest",
-        "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
         "tests": [
             "test_get_all_caches_each_search_term_independently",
             "test_get_all_does_not_occupy_an_unnamespaced_cache_key",
@@ -2310,29 +2034,6 @@
     {
         "class": "Tests\\Feature\\AdminRecoveredReleasesTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_admin_navigation_and_authorization_and_invalid_filters",
-            "test_group_filter_date_sorts_counts_and_pagination_preserve_the_list",
-            "test_guests_must_log_in",
-            "test_naming_details_distinguish_current_names_from_historical_skips with data set #0",
-            "test_naming_details_distinguish_current_names_from_historical_skips with data set #1",
-            "test_naming_details_distinguish_current_names_from_historical_skips with data set #2",
-            "test_naming_details_distinguish_current_names_from_historical_skips with data set #3",
-            "test_naming_details_distinguish_current_names_from_historical_skips with data set #4",
-            "test_naming_details_distinguish_current_names_from_historical_skips with data set #5",
-            "test_non_admins_cannot_access_recovered_releases with data set \"member\"",
-            "test_non_admins_cannot_access_recovered_releases with data set \"moderator\"",
-            "test_only_current_completed_recovery_publications_are_listed_even_after_renaming",
-            "test_rar_partial_inspection_and_retired_or_absent_details_are_honest",
-            "test_recovery_details_describe_recorded_naming_and_files_without_claiming_full_verification",
-            "test_site_status_keeps_services_and_incidents_without_recovery_processing"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\AdminRecoveredReleasesTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -2464,23 +2165,6 @@
     {
         "class": "Tests\\Feature\\AdminRegexesControllerTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_admin_regex_edit_pages_accept_numeric_string_query_ids",
-            "test_admin_regex_edit_pages_decode_entity_encoded_regexes_without_double_escaping",
-            "test_admin_regex_edit_pages_return_404_for_invalid_query_ids",
-            "test_admin_regex_list_pages_decode_entity_encoded_regexes_without_double_escaping",
-            "test_admin_regex_test_pages_render_get_forms",
-            "test_collection_regex_tests_each_selected_binary_once_in_id_order",
-            "test_naming_regex_limits_candidates_and_reports_why_scanning_stopped",
-            "test_regex_test_inputs_are_validated_before_scanning_candidates",
-            "test_regex_test_pages_show_zero_matches_and_control_pcre_runtime_errors"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\AdminRegexesControllerTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -2517,20 +2201,6 @@
         "table": "user_excluded_categories",
         "rule": "R2",
         "subject": "(categories_id, users_id)",
-        "tests": [
-            "test_admin_can_manage_scheduled_periods_and_api_capabilities_follow_effective_status",
-            "test_admin_can_update_manual_registration_status_and_record_history",
-            "test_admin_can_view_registration_admin_page_with_recent_activity",
-            "test_expired_registration_periods_are_disabled_and_shown_as_done",
-            "test_period_pages_are_independent_and_allow_off_page_editing",
-            "test_skipped_failure_entries_show_a_warning"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\AdminRegistrationControllerTest",
-        "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
         "tests": [
             "test_admin_can_manage_scheduled_periods_and_api_capabilities_follow_effective_status",
             "test_admin_can_update_manual_registration_status_and_record_history",
@@ -2635,19 +2305,6 @@
     {
         "class": "Tests\\Feature\\AdminUserRoleHistoryPageTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_an_unfiltered_listing_still_paginates",
-            "test_following_a_pagination_link_keeps_the_result_set_filtered",
-            "test_pagination_links_carry_every_active_filter",
-            "test_pagination_links_carry_exactly_one_page_parameter",
-            "test_the_filter_form_still_renders_the_active_values_on_a_later_page"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\AdminUserRoleHistoryPageTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -2716,26 +2373,6 @@
         "table": "user_excluded_categories",
         "rule": "R2",
         "subject": "(categories_id, users_id)",
-        "tests": [
-            "test_admin_can_bulk_mark_selected_users_as_verified",
-            "test_admin_can_bulk_resend_verification_email_to_not_verified_users",
-            "test_admin_can_bulk_soft_delete_selected_users",
-            "test_admin_can_create_user_with_string_role_id",
-            "test_admin_can_restore_soft_deleted_user",
-            "test_admin_create_user_rejects_unknown_role_id",
-            "test_admin_restore_returns_error_for_missing_user",
-            "test_admin_user_edit_rejects_a_blank_username",
-            "test_admin_user_edit_rejects_a_username_longer_than_the_column",
-            "test_admin_user_list_can_filter_by_verified_status",
-            "test_admin_user_list_shows_restore_form_only_for_deleted_users",
-            "test_bulk_user_action_rejects_role_updates"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\Admin\\AdminUserControllerTest",
-        "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
         "tests": [
             "test_admin_can_bulk_mark_selected_users_as_verified",
             "test_admin_can_bulk_resend_verification_email_to_not_verified_users",
@@ -2927,43 +2564,6 @@
         "table": "user_excluded_categories",
         "rule": "R2",
         "subject": "(categories_id, users_id)",
-        "tests": [
-            "test_v1_book_without_query_browses_requested_categories",
-            "test_v1_caps_menu_data_includes_groups_and_genres",
-            "test_v1_invalid_apikey_returns_xml_401_error",
-            "test_v1_invalid_maxage_returns_xml_201_error",
-            "test_v1_invalid_sort_returns_xml_201_error",
-            "test_v1_movie_without_search_params_returns_recent_movie_feed",
-            "test_v1_music_and_book_without_query_default_to_their_root_categories",
-            "test_v1_music_without_query_browses_requested_categories",
-            "test_v1_nzbadd_preserves_legacy_file_fallback_and_rejects_mixed_contracts",
-            "test_v1_nzbadd_stages_differently_named_nzb_and_nfo_fields",
-            "test_v1_search_keeps_category_separator_unescaped_in_json_body",
-            "test_v1_search_reuses_cached_release_rows",
-            "test_v1_tv_without_search_params_returns_recent_tv_feed",
-            "test_v2_audio_and_books_without_id_default_to_their_root_categories",
-            "test_v2_audio_without_id_browses_requested_categories",
-            "test_v2_books_without_id_browses_requested_categories",
-            "test_v2_capabilities_includes_groups_and_genres",
-            "test_v2_details_response_shape_is_unchanged",
-            "test_v2_disabled_user_is_rejected_before_request_is_recorded",
-            "test_v2_invalid_api_token_returns_json_401_error",
-            "test_v2_invalid_maxage_returns_json_400_error",
-            "test_v2_invalid_sort_returns_json_400_error",
-            "test_v2_movie_requires_query_or_external_id",
-            "test_v2_nzbadd_ignores_an_exhausted_api_quota_without_recording_usage",
-            "test_v2_nzbadd_requires_posting_privileges",
-            "test_v2_nzbadd_stages_a_differently_named_nzb_and_nfo",
-            "test_v2_search_keeps_category_separator_unescaped_in_json_body",
-            "test_v2_search_reuses_cached_release_rows",
-            "test_v2_tv_requires_query_or_external_id"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\ApiRequestMatrixTest",
-        "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
         "tests": [
             "test_v1_book_without_query_browses_requested_categories",
             "test_v1_caps_menu_data_includes_groups_and_genres",
@@ -3966,19 +3566,6 @@
     {
         "class": "Tests\\Feature\\Auth\\ExpireAllWebLoginsTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_admin_can_enable_single_active_session_from_the_settings_hub",
-            "test_admin_can_expire_every_login_while_sparing_only_the_current_session",
-            "test_admin_can_expire_one_users_logins_without_touching_other_accounts",
-            "test_single_active_session_defaults_to_off_in_the_application_seeder",
-            "test_upgrade_migration_adds_the_single_active_session_setting_without_overwriting_it"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\Auth\\ExpireAllWebLoginsTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -4041,18 +3628,6 @@
     {
         "class": "Tests\\Feature\\Auth\\PasskeyAdminTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_admin_can_delete_single_passkey_for_another_user",
-            "test_admin_can_wipe_all_passkeys_for_target_user_only",
-            "test_admin_wipe_requires_wipe_confirmation_text",
-            "test_non_admin_cannot_delete_another_users_passkey"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\Auth\\PasskeyAdminTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -4077,18 +3652,6 @@
     {
         "class": "Tests\\Feature\\Auth\\PasskeyAuthenticationTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_passkey_authentication_does_not_consult_a_remember_field",
-            "test_passkey_authentication_is_always_remembered_and_sets_2fa_session_flag",
-            "test_passkey_authentication_without_session_options_redirects_with_message",
-            "test_unverified_users_cannot_authenticate_with_passkeys"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\Auth\\PasskeyAuthenticationTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -4113,24 +3676,6 @@
     {
         "class": "Tests\\Feature\\Auth\\PasskeyLogoutOtherDevicesTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_passkey_authentication_does_not_consult_a_remember_field",
-            "test_passkey_authentication_is_always_remembered_and_sets_2fa_session_flag",
-            "test_passkey_authentication_without_session_options_redirects_with_message",
-            "test_passkey_login_keeps_concurrent_sessions_when_single_active_session_is_off",
-            "test_passkey_login_rotates_session_token_when_single_active_session_is_on",
-            "test_session_token_web_is_adopted_when_missing",
-            "test_single_session_token_message_wins_over_password_hash_invalidation",
-            "test_stale_session_token_is_ignored_when_single_active_session_is_off",
-            "test_stale_session_token_logs_out_with_an_accurate_message_when_single_active_session_is_on",
-            "test_unverified_users_cannot_authenticate_with_passkeys"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\Auth\\PasskeyLogoutOtherDevicesTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -4167,16 +3712,6 @@
     {
         "class": "Tests\\Feature\\Auth\\PasskeyManagementTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_guest_cannot_hit_passkey_management_routes",
-            "test_verified_user_can_generate_options_store_and_delete_a_passkey"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\Auth\\PasskeyManagementTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -4192,19 +3727,6 @@
         "tests": [
             "test_guest_cannot_hit_passkey_management_routes",
             "test_verified_user_can_generate_options_store_and_delete_a_passkey"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\Auth\\PasswordResetSecurityTest",
-        "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_invalid_token_does_not_change_password_or_clear_legacy_guid",
-            "test_legacy_guid_redirects_to_secure_reset_form_and_invalidates_guid",
-            "test_legacy_reset_rejects_api_token_alias_as_reset_guid",
-            "test_password_reset_link_request_sends_tokenized_link_and_clears_legacy_guid",
-            "test_token_password_reset_updates_password_clears_guid_and_fires_event"
         ]
     },
     {
@@ -4231,32 +3753,6 @@
             "test_legacy_reset_rejects_api_token_alias_as_reset_guid",
             "test_password_reset_link_request_sends_tokenized_link_and_clears_legacy_guid",
             "test_token_password_reset_updates_password_clears_guid_and_fires_event"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\Auth\\RememberMeAuthenticationTest",
-        "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_enabled_two_factor_middleware_can_still_render_its_configured_challenge",
-            "test_guest_flash_payload_translates_verification_status_and_preserves_passkey_errors",
-            "test_password_login_invalidates_other_devices_when_single_active_session_is_on",
-            "test_password_login_preserves_other_devices_when_single_active_session_is_off",
-            "test_password_login_with_boolean_remember_me_value_queues_recaller_cookie",
-            "test_password_login_with_remember_me_queues_recaller_cookie",
-            "test_password_login_with_remember_me_restores_authentication_after_session_expires",
-            "test_password_login_without_remember_me_does_not_queue_recaller_cookie",
-            "test_profile_security_can_generate_a_secret_without_the_retired_two_factor_page",
-            "test_remember_me_checkbox_is_unchecked_by_default_and_passkeys_have_no_checkbox",
-            "test_remembered_login_window_rolls_on_each_authenticated_visit_without_a_ceiling",
-            "test_retired_frontend_routes_are_not_registered",
-            "test_trusted_device_window_remains_thirty_days",
-            "test_two_factor_login_preserves_remember_me_until_otp_success",
-            "test_two_factor_login_with_forged_trusted_device_cookie_still_requires_otp",
-            "test_two_factor_login_with_valid_trusted_device_logs_in_without_otp",
-            "test_two_factor_login_without_remember_me_does_not_queue_recaller_cookie_after_otp_success",
-            "test_web_login_session_idle_lifetime_defaults_to_twelve_hours"
         ]
     },
     {
@@ -5924,19 +5420,6 @@
     {
         "class": "Tests\\Feature\\DetailsControllerTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_comment_posts_return_to_the_comments_tab_and_blank_posts_do_not_change_the_count",
-            "test_completion_and_repair_status_stay_in_the_header_above_the_tabs",
-            "test_details_header_uses_the_shared_release_data_and_renders_each_tab",
-            "test_movie_trailers_use_the_shared_player_and_predb_and_public_reports_remain_visible",
-            "test_related_releases_keep_only_other_permitted_releases_of_the_same_title"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\DetailsControllerTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -5987,17 +5470,6 @@
         "table": "user_excluded_categories",
         "rule": "R2",
         "subject": "(categories_id, users_id)",
-        "tests": [
-            "test_anime_related_releases_paginate_when_no_title_overview_exists",
-            "test_details_renders_a_complete_document_with_one_working_image_modal",
-            "test_nfo_modal_response_preserves_plain_text_and_release_identity"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\DetailsDocumentViewTest",
-        "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
         "tests": [
             "test_anime_related_releases_paginate_when_no_title_overview_exists",
             "test_details_renders_a_complete_document_with_one_working_image_modal",
@@ -6275,19 +5747,6 @@
     {
         "class": "Tests\\Feature\\GdprComplianceTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_erasure_anonymizes_account_removes_usage_and_retains_payment_data",
-            "test_erasure_request_is_completed_and_audited",
-            "test_erasure_submission_notifies_requester_and_admin",
-            "test_expired_exports_are_purged_but_request_record_is_retained",
-            "test_export_includes_retained_payment_and_audit_records"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\GdprComplianceTest",
-        "table": "users",
         "rule": "R3",
         "subject": "(email)",
         "tests": [
@@ -6459,17 +5918,6 @@
         "table": "user_excluded_categories",
         "rule": "R2",
         "subject": "(categories_id, users_id)",
-        "tests": [
-            "test_basket_ignores_listing_filters_and_footer_actions_cover_all_pages_only_for_its_owner",
-            "test_home_limits_watched_titles_and_ranks_trending_by_downloads_in_the_last_week",
-            "test_home_shows_eight_eligible_latest_releases_and_survives_empty_content"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\HomeAndBasketTest",
-        "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
         "tests": [
             "test_basket_ignores_listing_filters_and_footer_actions_cover_all_pages_only_for_its_owner",
             "test_home_limits_watched_titles_and_ranks_trending_by_downloads_in_the_last_week",
@@ -6941,24 +6389,6 @@
         "table": "user_excluded_categories",
         "rule": "R2",
         "subject": "(categories_id, users_id)",
-        "tests": [
-            "test_advanced_fields_are_anded",
-            "test_example",
-            "test_genre_filter_uses_sql_when_the_movie_index_is_empty",
-            "test_legacy_movie_category_opens_the_shared_cover_browser",
-            "test_partial_words_use_sql_fallback_when_the_index_has_no_match",
-            "test_plain_words_use_all_movie_text_fields_with_sql_fallback",
-            "test_plot_prefix_only_matches_plot",
-            "test_prefixed_terms_are_anded_and_limited_to_their_fields",
-            "test_rating_filter_treats_integer_rows_as_a_numeric_minimum",
-            "test_year_picker_supports_decades_custom_ranges_and_single_years"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\MovieControllerTest",
-        "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
         "tests": [
             "test_advanced_fields_are_anded",
             "test_example",
@@ -8214,20 +7644,6 @@
         "table": "user_excluded_categories",
         "rule": "R2",
         "subject": "(categories_id, users_id)",
-        "tests": [
-            "test_400_half_megabyte_nzbs_stream_under_128m_with_bounded_memory_growth",
-            "test_archive_preserves_colliding_names_and_sanitizes_paths",
-            "test_basket_download_contains_all_250_entries_across_pages",
-            "test_download_accounts_only_for_archivable_releases_and_removes_only_those_from_basket",
-            "test_empty_archive_returns_not_found_and_quota_rejection_does_not_charge",
-            "test_release_resolution_queries_are_bounded_to_500_guids"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\NzbArchiveDownloadTest",
-        "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
         "tests": [
             "test_400_half_megabyte_nzbs_stream_under_128m_with_bounded_memory_growth",
             "test_archive_preserves_colliding_names_and_sanitizes_paths",
@@ -10336,35 +9752,6 @@
     {
         "class": "Tests\\Feature\\PosterIdentityControllerTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_admin_can_create_the_exact_enabled_posted_by_rule_without_starting_a_sweep",
-            "test_admin_sees_the_matching_enabled_posted_by_rule_instead_of_an_add_control",
-            "test_anime_rows_use_the_matched_anidb_title_without_inventing_an_adult_entity",
-            "test_blacklist_confirmation_shows_the_exact_read_only_rule_and_optional_sweep",
-            "test_canonical_poster_browser_preserves_the_privileged_blacklist_control",
-            "test_checked_confirmation_starts_a_single_rule_delete_sweep_and_shows_its_status",
-            "test_confirmation_saves_the_group_scope_that_was_displayed",
-            "test_disabled_generated_rule_is_reenabled_instead_of_duplicated",
-            "test_disabled_hand_written_exact_rule_is_not_modified",
-            "test_only_admins_see_the_poster_identity_blacklist_control",
-            "test_passworded_poster_rows_render_the_loaded_password_fact",
-            "test_poster_identity_page_matches_exact_identity_and_paginates_newest_first",
-            "test_poster_identity_page_requires_authentication_and_verification",
-            "test_poster_identity_page_respects_category_exclusions_and_renders_empty_state",
-            "test_poster_identity_query_uses_the_composite_index",
-            "test_poster_identity_rows_include_spectrogram_availability_without_per_release_queries",
-            "test_poster_page_supplies_complete_release_rows_with_processing_state",
-            "test_repeated_submission_does_not_duplicate_an_enabled_matching_rule",
-            "test_row_entity_and_basket_state_belong_to_the_current_viewer",
-            "test_rule_is_saved_when_another_sweep_holds_the_runner",
-            "test_tampered_regex_and_group_values_are_rejected"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\PosterIdentityControllerTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -10537,15 +9924,6 @@
     {
         "class": "Tests\\Feature\\PublicDropdownSizingTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_forum_selection_containers_and_shared_form_width_intent"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\PublicDropdownSizingTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -10603,19 +9981,6 @@
     {
         "class": "Tests\\Feature\\PublicShellTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_guests_keep_minimal_public_pages_and_cannot_render_the_authenticated_shell",
-            "test_header_uses_the_same_authorized_roots_for_browse_and_search_without_a_sidebar",
-            "test_only_administrators_have_dashboard_navigation_in_the_user_menu",
-            "test_shared_search_explains_its_keyboard_shortcut",
-            "test_watchlist_and_basket_counts_belong_to_the_current_user_and_are_fresh"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\PublicShellTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -10650,20 +10015,6 @@
             "test_only_administrators_have_dashboard_navigation_in_the_user_menu",
             "test_shared_search_explains_its_keyboard_shortcut",
             "test_watchlist_and_basket_counts_belong_to_the_current_user_and_are_fresh"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\RegisterControllerTest",
-        "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_closed_registration_rejects_even_valid_invitation",
-            "test_invite_only_registration_with_valid_invitation_succeeds",
-            "test_registration_exception_is_logged_to_registration_channel",
-            "test_registration_failure_shows_explanation_for_deactivated_account",
-            "test_scheduled_open_period_allows_registration_when_manual_status_is_closed",
-            "test_successful_registration_redirects_to_login_with_confirmation_message"
         ]
     },
     {
@@ -12912,118 +12263,6 @@
         "table": "user_excluded_categories",
         "rule": "R2",
         "subject": "(categories_id, users_id)",
-        "tests": [
-            "test_adult_covers_use_preview_then_sample_then_placeholder_and_expand_one_release",
-            "test_basket_add_and_remove_return_current_user_counts_without_changing_another_users_basket",
-            "test_basket_page_uses_the_shared_table_and_only_current_users_releases",
-            "test_browse_renders_video_summary_with_release_id_as_the_video_primary_key",
-            "test_cached_episode_groups_recheck_current_release_visibility",
-            "test_canonical_roots_and_numeric_subcategories_never_fall_back_to_all_releases",
-            "test_cards_are_not_offered_for_all_games_other_group_or_poster_lists",
-            "test_cards_count_and_filter_before_pagination_and_remember_the_view",
-            "test_cards_only_include_renamed_releases_that_finished_processing with data set \"adult\"",
-            "test_cards_only_include_renamed_releases_that_finished_processing with data set \"audio\"",
-            "test_cards_only_include_renamed_releases_that_finished_processing with data set \"books\"",
-            "test_cards_only_include_renamed_releases_that_finished_processing with data set \"console\"",
-            "test_cards_only_include_renamed_releases_that_finished_processing with data set \"movies\"",
-            "test_cards_only_include_renamed_releases_that_finished_processing with data set \"tv\"",
-            "test_cards_share_the_dto_processing_decisions_and_exclude_empty_outstanding_claims",
-            "test_cover_artwork_uses_the_entity_id_and_existing_extension with data set \"PC game id\"",
-            "test_cover_artwork_uses_the_entity_id_and_existing_extension with data set \"audio album id\"",
-            "test_cover_expansion_paginates_matching_encodings_without_changing_the_outer_page with data set \"audio\"",
-            "test_cover_expansion_paginates_matching_encodings_without_changing_the_outer_page with data set \"books\"",
-            "test_cover_expansion_paginates_matching_encodings_without_changing_the_outer_page with data set \"console\"",
-            "test_cover_expansion_paginates_matching_encodings_without_changing_the_outer_page with data set \"games\"",
-            "test_cover_expansion_paginates_matching_encodings_without_changing_the_outer_page with data set \"movies\"",
-            "test_cover_letters_jump_to_the_first_matching_title_page_without_filtering_the_catalog with data set \"audio\"",
-            "test_cover_letters_jump_to_the_first_matching_title_page_without_filtering_the_catalog with data set \"books\"",
-            "test_cover_search_and_metadata_filters_apply_before_counting_titles with data set \"audio\"",
-            "test_cover_search_and_metadata_filters_apply_before_counting_titles with data set \"books\"",
-            "test_cover_search_and_metadata_filters_apply_before_counting_titles with data set \"console\"",
-            "test_cover_search_and_metadata_filters_apply_before_counting_titles with data set \"games\"",
-            "test_cover_search_and_metadata_filters_apply_before_counting_titles with data set \"movies\"",
-            "test_cover_size_changes_layout_without_changing_title_pagination_and_saved_preferences_apply",
-            "test_cover_sorting_uses_title_and_newest_added_release_before_pagination with data set \"audio\"",
-            "test_cover_sorting_uses_title_and_newest_added_release_before_pagination with data set \"books\"",
-            "test_cover_sorting_uses_title_and_newest_added_release_before_pagination with data set \"console\"",
-            "test_cover_sorting_uses_title_and_newest_added_release_before_pagination with data set \"games\"",
-            "test_cover_sorting_uses_title_and_newest_added_release_before_pagination with data set \"movies\"",
-            "test_covers_group_releases_into_titles_and_keep_titles_without_artwork with data set \"audio\"",
-            "test_covers_group_releases_into_titles_and_keep_titles_without_artwork with data set \"books\"",
-            "test_covers_group_releases_into_titles_and_keep_titles_without_artwork with data set \"console\"",
-            "test_covers_group_releases_into_titles_and_keep_titles_without_artwork with data set \"games\"",
-            "test_covers_group_releases_into_titles_and_keep_titles_without_artwork with data set \"movies\"",
-            "test_custom_year_range_survives_pagination_sort_views_and_legacy_movie_entry",
-            "test_empty_cards_keep_both_pagers_and_show_the_hidden_count_and_clear_action",
-            "test_every_year_capable_category_uses_its_own_year_in_every_supported_view with data set \"adult\"",
-            "test_every_year_capable_category_uses_its_own_year_in_every_supported_view with data set \"audio\"",
-            "test_every_year_capable_category_uses_its_own_year_in_every_supported_view with data set \"books\"",
-            "test_every_year_capable_category_uses_its_own_year_in_every_supported_view with data set \"console\"",
-            "test_every_year_capable_category_uses_its_own_year_in_every_supported_view with data set \"games\"",
-            "test_every_year_capable_category_uses_its_own_year_in_every_supported_view with data set \"movies\"",
-            "test_every_year_capable_category_uses_its_own_year_in_every_supported_view with data set \"tv\"",
-            "test_existing_minimum_completion_links_still_filter_the_whole_result_set",
-            "test_expanding_a_cover_returns_every_allowed_release_with_shared_table_actions with data set \"audio\"",
-            "test_expanding_a_cover_returns_every_allowed_release_with_shared_table_actions with data set \"books\"",
-            "test_expanding_a_cover_returns_every_allowed_release_with_shared_table_actions with data set \"console\"",
-            "test_expanding_a_cover_returns_every_allowed_release_with_shared_table_actions with data set \"games\"",
-            "test_expanding_a_cover_returns_every_allowed_release_with_shared_table_actions with data set \"movies\"",
-            "test_followed_movie_covers_refresh_membership_and_quality_restrictions_without_waiting_for_the_catalog_cache",
-            "test_group_filter_counts_all_matching_rows_and_bounds_the_page",
-            "test_large_covers_render_entity_metadata_and_extra_large_covers_offer_all_encodings with data set \"audio\"",
-            "test_large_covers_render_entity_metadata_and_extra_large_covers_offer_all_encodings with data set \"books\"",
-            "test_large_covers_render_entity_metadata_and_extra_large_covers_offer_all_encodings with data set \"console\"",
-            "test_large_covers_render_entity_metadata_and_extra_large_covers_offer_all_encodings with data set \"games\"",
-            "test_large_covers_render_entity_metadata_and_extra_large_covers_offer_all_encodings with data set \"movies\"",
-            "test_legacy_adult_navigation_opens_the_canonical_subcategory_table",
-            "test_legacy_cover_pages_redirect_to_the_shared_browser_with_filters_and_category_preserved",
-            "test_legacy_cover_pages_reject_array_categories_without_a_server_error",
-            "test_legacy_group_link_redirects_to_the_canonical_exact_filter",
-            "test_legacy_movie_title_filter_stays_title_specific_and_combines_with_the_query",
-            "test_long_cover_metadata_preserves_complete_values_and_actions",
-            "test_movie_cover_fallback_preserves_phrases_exclusions_and_field_constraints with data set \"empty\"",
-            "test_movie_cover_fallback_preserves_phrases_exclusions_and_field_constraints with data set \"unavailable\"",
-            "test_movie_cover_index_pages_are_combined_and_refreshed_for_expansion",
-            "test_movie_cover_search_uses_index_keys_once_for_results_and_filter_options with data set \"actor alias\"",
-            "test_movie_cover_search_uses_index_keys_once_for_results_and_filter_options with data set \"director\"",
-            "test_movie_cover_search_uses_index_keys_once_for_results_and_filter_options with data set \"phrases and exclusions\"",
-            "test_movie_cover_search_uses_index_keys_once_for_results_and_filter_options with data set \"plot\"",
-            "test_movie_cover_search_uses_index_keys_once_for_results_and_filter_options with data set \"title\"",
-            "test_movie_cover_search_uses_index_keys_once_for_results_and_filter_options with data set \"unqualified\"",
-            "test_movie_filters_use_linked_metadata_before_counting_and_offer_only_available_values",
-            "test_my_shows_browse_uses_the_saved_cover_view_and_canonical_expansion",
-            "test_numeric_subcategory_and_all_browse_respect_personal_exclusions_and_root_permissions",
-            "test_other_root_filters_apply_to_metadata_and_adult_posted_year with data set \"adult year is posted year\"",
-            "test_other_root_filters_apply_to_metadata_and_adult_posted_year with data set \"audio label and year\"",
-            "test_other_root_filters_apply_to_metadata_and_adult_posted_year with data set \"books author and genre\"",
-            "test_other_root_filters_apply_to_metadata_and_adult_posted_year with data set \"console platform and publisher\"",
-            "test_other_root_filters_apply_to_metadata_and_adult_posted_year with data set \"games platform and publisher\"",
-            "test_poster_identity_filter_is_byte_exact_including_spaces_and_case",
-            "test_poster_pagination_preserves_the_untrimmed_identity",
-            "test_release_facts_are_a_separate_block_after_the_complete_name",
-            "test_search_accepts_q_and_uses_the_root_preferences_and_shared_browser",
-            "test_search_and_sort_apply_before_pagination_and_explicit_preferences_override_saved_values",
-            "test_search_page_beyond_the_end_redirects_to_the_actual_last_page",
-            "test_six_release_sorts_have_distinct_meanings",
-            "test_table_preserves_report_indicators_without_exposing_private_staff_responses",
-            "test_table_renders_one_escaped_row_with_separate_dates_and_four_native_actions",
-            "test_table_sizes_use_megabytes_below_one_gigabyte",
-            "test_table_thumbnails_use_each_rows_root_shape_and_a_placeholder_for_missing_artwork",
-            "test_toolbar_and_both_pagers_remain_available_on_empty_and_last_pages",
-            "test_trending_ranks_downloads_from_seven_days_and_keeps_all_allowed_encodings with data set #0",
-            "test_tv_covers_group_identified_episodes_and_explicit_packs_and_keep_internal_posted_order",
-            "test_tv_filters_use_year_and_network_and_watching_is_scoped_to_the_current_user",
-            "test_tv_outer_sort_uses_release_values_instead_of_show_or_episode_names",
-            "test_watching_preserves_per_title_category_choices with data set \"movies\"",
-            "test_watching_preserves_per_title_category_choices with data set \"tv\"",
-            "test_year_picker_offers_complete_choices_even_without_matching_metadata"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\ReleaseBrowserControllerTest",
-        "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
         "tests": [
             "test_adult_covers_use_preview_then_sample_then_placeholder_and_expand_one_release",
             "test_basket_add_and_remove_return_current_user_counts_without_changing_another_users_basket",
@@ -16069,24 +15308,6 @@
     {
         "class": "Tests\\Feature\\RoleUpgradeTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_add_years_applied_to_existing_role_with_future_expiry",
-            "test_add_years_applied_when_same_role_without_stacking",
-            "test_add_years_applied_when_upgrading_from_different_role",
-            "test_add_years_parameter_makes_a_difference",
-            "test_btcpay_item_description_parsing_extracts_add_years",
-            "test_btcpay_supporter_2_year_upgrade_simulation",
-            "test_role_stacking_prefers_newer_expiry_date",
-            "test_role_stacking_uses_updated_expiry_when_extended",
-            "test_role_upgrade_to_supporter_applies_two_years_correctly",
-            "test_role_upgrade_uses_default_addyears_when_parameter_is_null"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\RoleUpgradeTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -16349,39 +15570,6 @@
     {
         "class": "Tests\\Feature\\SearchControllerTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_add_filter_form_replaces_a_field_and_preserves_the_other_constraints",
-            "test_constraint_only_search_applies_ranges_and_each_chip_removes_one_filter",
-            "test_entity_exclusions_suppress_fuzzy_even_when_free_text_has_none",
-            "test_entity_matches_do_not_bypass_exclusions_or_change_free_text_or_semantics",
-            "test_fuzzy_matching_only_runs_after_all_exact_results_are_empty",
-            "test_index_retrieval_applies_server_filters_for_each_page",
-            "test_index_search_keeps_phrase_and_exclusion_syntax_when_rebuilding_chips",
-            "test_large_search_fetches_only_the_requested_page_and_preserves_exact_total with data set \"first\"",
-            "test_large_search_fetches_only_the_requested_page_and_preserves_exact_total with data set \"last full\"",
-            "test_large_search_fetches_only_the_requested_page_and_preserves_exact_total with data set \"last partial\"",
-            "test_large_search_fetches_only_the_requested_page_and_preserves_exact_total with data set \"middle\"",
-            "test_legacy_inputs_keep_constraints_and_explicit_sort_wins_over_old_ordering",
-            "test_memory_does_not_grow_with_reported_match_count",
-            "test_movie_field_keys_and_free_text_are_sent_together_to_the_release_index",
-            "test_movie_index_outage_resolves_the_same_entity_keys_from_sql",
-            "test_movie_index_pages_and_sql_fallback_preserve_structured_matching",
-            "test_outage_has_no_zero_count_and_no_deep_page_redirect",
-            "test_page_beyond_the_reachable_window_clamps_before_index_retrieval",
-            "test_page_window_honors_the_configured_driver_limit",
-            "test_poster_filter_preserves_whitespace_from_the_original_http_query",
-            "test_prefix_search_renders_removable_constraints_and_unprocessed_results",
-            "test_registered_show_prefix_resolves_entity_keys_without_release_candidates",
-            "test_repeated_quoted_prefixes_round_trip_without_losing_scope_or_growing_groups",
-            "test_search_feed_uses_existing_api_parameters_and_explains_website_only_filters",
-            "test_search_matches_album_artists_and_anime_titles_and_honors_permissions"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\SearchControllerTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -16514,28 +15702,6 @@
         "table": "user_excluded_categories",
         "rule": "R2",
         "subject": "(categories_id, users_id)",
-        "tests": [
-            "test_banner_changes_do_not_replace_portrait_artwork_in_cover_tiles",
-            "test_lazy_season_fragment_returns_only_selected_season_html",
-            "test_many_releases_only_render_selected_season_page",
-            "test_my_shows_browse_refreshes_row_processing_data_on_cached_pages",
-            "test_season_links_preserve_category_and_reset_page",
-            "test_selected_season_renders_only_that_season_releases",
-            "test_series_covers_use_posters_and_keep_missing_artwork_in_the_grid",
-            "test_series_list_filters_premiere_year_by_decade_and_letter",
-            "test_series_list_supports_single_custom_open_and_reversed_year_ranges",
-            "test_shared_release_table_stays_inside_the_title_page",
-            "test_show_page_can_clear_the_air_year_filter_when_no_releases_match",
-            "test_show_page_filters_episode_releases_by_air_year_within_the_selected_season",
-            "test_show_page_keeps_a_selected_season_that_has_no_releases_in_the_selected_year",
-            "test_show_page_renders_available_artwork_when_the_summary_is_empty"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\SeriesControllerTest",
-        "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
         "tests": [
             "test_banner_changes_do_not_replace_portrait_artwork_in_cover_tiles",
             "test_lazy_season_fragment_returns_only_selected_season_html",
@@ -21745,41 +20911,6 @@
     {
         "class": "Tests\\Feature\\TitleControllerTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_album_metadata_tracks_formats_and_artwork_use_stored_values",
-            "test_book_overview_escapes_metadata_and_uses_its_isbn_link",
-            "test_complete_long_cast_has_its_own_row_after_the_synopsis",
-            "test_directory_year_and_title_air_year_remain_distinct_through_ranges_and_legacy_links",
-            "test_every_fallback_release_remains_accessible_beyond_the_old_scan_limit",
-            "test_imdb_leading_zeroes_survive_title_release_and_watch_lookups",
-            "test_missing_titles_are_not_found_for_an_authorized_user",
-            "test_movie_alias_keeps_filters_and_links_to_the_canonical_overview",
-            "test_movie_table_uses_all_allowed_releases_and_their_display_names",
-            "test_numeric_album_track_count_does_not_invent_a_track_list_or_provider_link",
-            "test_season_and_quality_fragments_return_only_the_requested_table",
-            "test_show_dialog_bounds_each_independent_list_and_keeps_packs_out_of_episode_variants",
-            "test_show_only_matches_are_available_as_specials_without_becoming_season_packs",
-            "test_stored_trailers_open_in_a_lazy_shared_modal_with_a_safe_embed_url with data set \"Trailer Addict\"",
-            "test_stored_trailers_open_in_a_lazy_shared_modal_with_a_safe_embed_url with data set \"YouTube URL\"",
-            "test_stored_trailers_open_in_a_lazy_shared_modal_with_a_safe_embed_url with data set \"legacy iframe\"",
-            "test_title_watch_state_refreshes_and_treats_legacy_null_categories_as_unrestricted",
-            "test_titles_without_releases_render_an_overview_and_omit_missing_metadata with data set \"audio\"",
-            "test_titles_without_releases_render_an_overview_and_omit_missing_metadata with data set \"books\"",
-            "test_titles_without_releases_render_an_overview_and_omit_missing_metadata with data set \"console\"",
-            "test_titles_without_releases_render_an_overview_and_omit_missing_metadata with data set \"games\"",
-            "test_titles_without_releases_render_an_overview_and_omit_missing_metadata with data set \"movies\"",
-            "test_titles_without_releases_render_an_overview_and_omit_missing_metadata with data set \"tv\"",
-            "test_tv_directory_includes_stored_shows_without_releases_and_filters_availability",
-            "test_tv_selects_the_newest_numbered_season_and_orders_packs_after_episodes",
-            "test_tv_title_exposes_the_air_year_picker_in_full_pages_and_fragments",
-            "test_unknown_and_non_entity_roots_are_not_found_and_permissions_apply_to_titles"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\TitleControllerTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -26786,22 +25917,6 @@
     {
         "class": "Tests\\Feature\\UserExcludedCategoryTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_cached_category_exclusions_are_invalidated_when_rows_change_directly",
-            "test_cached_category_exclusions_are_invalidated_when_syncing",
-            "test_clearing_exclusions_works",
-            "test_excluded_categories_relationship",
-            "test_get_category_exclusion_by_id_includes_user_exclusions",
-            "test_sync_excluded_categories_replaces_existing",
-            "test_user_can_exclude_multiple_subcategories",
-            "test_user_can_exclude_subcategories"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\UserExcludedCategoryTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -27371,23 +26486,6 @@
         "table": "user_excluded_categories",
         "rule": "R2",
         "subject": "(categories_id, users_id)",
-        "tests": [
-            "test_header_and_action_counts_use_the_same_accessible_roots",
-            "test_last_quality_choice_carries_between_movies_and_shows",
-            "test_legacy_pages_redirect_to_tabs_or_the_title_picker",
-            "test_legacy_unrestricted_and_root_subscriptions_include_releases_in_watching_browse",
-            "test_page_finds_unfollowed_titles_without_releases_and_shows_latest_allowed_release",
-            "test_picker_add_edit_and_remove_share_categories_without_changing_another_users_list",
-            "test_picker_enforces_root_permissions_and_title_identity",
-            "test_picker_rejects_invalid_categories_and_keeps_last_choice_after_removal",
-            "test_undo_preserves_exact_legacy_categories_and_is_bound_to_the_current_user_and_title"
-        ]
-    },
-    {
-        "class": "Tests\\Feature\\WatchlistControllerTest",
-        "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
         "tests": [
             "test_header_and_action_counts_use_the_same_accessible_roots",
             "test_last_quality_choice_carries_between_movies_and_shows",
@@ -28047,30 +27145,6 @@
     {
         "class": "Tests\\Integration\\RecoveryDownloaderTest",
         "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
-        "tests": [
-            "test_pinned_clients_download_the_actual_emitted_inventory with data set \"nzbget-media1\"",
-            "test_pinned_clients_download_the_actual_emitted_inventory with data set \"nzbget-media1-tied\"",
-            "test_pinned_clients_download_the_actual_emitted_inventory with data set \"nzbget-media7\"",
-            "test_pinned_clients_download_the_actual_emitted_inventory with data set \"nzbget-mixed\"",
-            "test_pinned_clients_download_the_actual_emitted_inventory with data set \"nzbget-mkv\"",
-            "test_pinned_clients_download_the_actual_emitted_inventory with data set \"nzbget-mp4\"",
-            "test_pinned_clients_download_the_actual_emitted_inventory with data set \"nzbget-rar4\"",
-            "test_pinned_clients_download_the_actual_emitted_inventory with data set \"nzbget-rar4-tied\"",
-            "test_pinned_clients_download_the_actual_emitted_inventory with data set \"sabnzbd-media1\"",
-            "test_pinned_clients_download_the_actual_emitted_inventory with data set \"sabnzbd-media1-tied\"",
-            "test_pinned_clients_download_the_actual_emitted_inventory with data set \"sabnzbd-media7\"",
-            "test_pinned_clients_download_the_actual_emitted_inventory with data set \"sabnzbd-mixed\"",
-            "test_pinned_clients_download_the_actual_emitted_inventory with data set \"sabnzbd-mkv\"",
-            "test_pinned_clients_download_the_actual_emitted_inventory with data set \"sabnzbd-mp4\"",
-            "test_pinned_clients_download_the_actual_emitted_inventory with data set \"sabnzbd-rar4\"",
-            "test_pinned_clients_download_the_actual_emitted_inventory with data set \"sabnzbd-rar4-tied\""
-        ]
-    },
-    {
-        "class": "Tests\\Integration\\RecoveryDownloaderTest",
-        "table": "users",
         "rule": "R2",
         "subject": "(api_token)",
         "tests": [
@@ -28452,57 +27526,6 @@
         "table": "user_excluded_categories",
         "rule": "R2",
         "subject": "(categories_id, users_id)",
-        "tests": [
-            "test_all_zero_advertised_bytes_still_obey_the_existing_minimum_size",
-            "test_candidate_scoped_and_inherited_frontiers_reach_the_real_admin_release with data set #0",
-            "test_candidate_scoped_and_inherited_frontiers_reach_the_real_admin_release with data set #1",
-            "test_candidate_scoped_and_inherited_frontiers_reach_the_real_admin_release with data set #10",
-            "test_candidate_scoped_and_inherited_frontiers_reach_the_real_admin_release with data set #11",
-            "test_candidate_scoped_and_inherited_frontiers_reach_the_real_admin_release with data set #12",
-            "test_candidate_scoped_and_inherited_frontiers_reach_the_real_admin_release with data set #13",
-            "test_candidate_scoped_and_inherited_frontiers_reach_the_real_admin_release with data set #14",
-            "test_candidate_scoped_and_inherited_frontiers_reach_the_real_admin_release with data set #15",
-            "test_candidate_scoped_and_inherited_frontiers_reach_the_real_admin_release with data set #2",
-            "test_candidate_scoped_and_inherited_frontiers_reach_the_real_admin_release with data set #3",
-            "test_candidate_scoped_and_inherited_frontiers_reach_the_real_admin_release with data set #4",
-            "test_candidate_scoped_and_inherited_frontiers_reach_the_real_admin_release with data set #5",
-            "test_candidate_scoped_and_inherited_frontiers_reach_the_real_admin_release with data set #6",
-            "test_candidate_scoped_and_inherited_frontiers_reach_the_real_admin_release with data set #7",
-            "test_candidate_scoped_and_inherited_frontiers_reach_the_real_admin_release with data set #8",
-            "test_candidate_scoped_and_inherited_frontiers_reach_the_real_admin_release with data set #9",
-            "test_competing_media_and_rar_publish_after_a_killed_handoff_and_previous_boot_restart",
-            "test_generated_articles_pass_actual_capture_transport_materialization_and_nzb_output with data set #0",
-            "test_generated_articles_pass_actual_capture_transport_materialization_and_nzb_output with data set #1",
-            "test_generated_articles_pass_actual_capture_transport_materialization_and_nzb_output with data set #2",
-            "test_generated_articles_pass_actual_capture_transport_materialization_and_nzb_output with data set #3",
-            "test_generated_articles_pass_actual_capture_transport_materialization_and_nzb_output with data set #4",
-            "test_generated_articles_pass_actual_capture_transport_materialization_and_nzb_output with data set #5",
-            "test_interleaved_dates_and_retained_frontiers_reach_actual_nzb_publication with data set #0",
-            "test_interleaved_dates_and_retained_frontiers_reach_actual_nzb_publication with data set #1",
-            "test_interleaved_dates_and_retained_frontiers_reach_actual_nzb_publication with data set #10",
-            "test_interleaved_dates_and_retained_frontiers_reach_actual_nzb_publication with data set #11",
-            "test_interleaved_dates_and_retained_frontiers_reach_actual_nzb_publication with data set #2",
-            "test_interleaved_dates_and_retained_frontiers_reach_actual_nzb_publication with data set #3",
-            "test_interleaved_dates_and_retained_frontiers_reach_actual_nzb_publication with data set #4",
-            "test_interleaved_dates_and_retained_frontiers_reach_actual_nzb_publication with data set #5",
-            "test_interleaved_dates_and_retained_frontiers_reach_actual_nzb_publication with data set #6",
-            "test_interleaved_dates_and_retained_frontiers_reach_actual_nzb_publication with data set #7",
-            "test_interleaved_dates_and_retained_frontiers_reach_actual_nzb_publication with data set #8",
-            "test_interleaved_dates_and_retained_frontiers_reach_actual_nzb_publication with data set #9",
-            "test_irrelevant_legacy_context_does_not_hide_a_real_publication_blocker with data set #0",
-            "test_irrelevant_legacy_context_does_not_hide_a_real_publication_blocker with data set #1",
-            "test_retained_recovery_preserves_real_refusal_and_initialization_outcomes with data set #0",
-            "test_retained_recovery_preserves_real_refusal_and_initialization_outcomes with data set #1",
-            "test_retained_recovery_preserves_real_refusal_and_initialization_outcomes with data set #2",
-            "test_sparse_acceptance_does_not_claim_to_detect_unobserved_middle_substitution",
-            "test_zero_advertised_media_bytes_survive_preparation_publication_and_replay"
-        ]
-    },
-    {
-        "class": "Tests\\Integration\\RecoveryPortablePublicationTest",
-        "table": "users",
-        "rule": "R1",
-        "subject": "can_post",
         "tests": [
             "test_all_zero_advertised_bytes_still_obey_the_existing_minimum_size",
             "test_candidate_scoped_and_inherited_frontiers_reach_the_real_admin_release with data set #0",
