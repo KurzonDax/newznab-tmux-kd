@@ -8,7 +8,7 @@ entry, but unrelated rules are not prerequisites for a small edit.
 | When working on / paths | Reference |
 | --- | --- |
 | Verification process or repository tooling | [General](general.md), [CI policy](../../docs/agents/ci-policy.md) |
-| Tests, fixtures, bootstrap, `tests/**`, `phpunit.xml` | [Testing](testing.md) |
+| Tests, fixtures, bootstrap, query schema evidence, `tests/**`, `phpunit.xml`, `database/migrations/**`, MariaDB schema dump | [Testing](testing.md) |
 | Audio/additional processing or their dispatch: `app/Services/AdditionalProcessing/**`, `app/Services/AudioProcessing/**`, `app/Services/Runners/PostProcessRunner.php` | [Additional/audio processing](additional-processing.md) |
 | API/RSS response shapes or routing: `app/Http/Controllers/Api/**`, `app/Data/Api/**`, `app/Services/Api/**`, `app/Http/Controllers/RssController.php`, `routes/api.php`, `routes/rss.php`, relevant parts of `routes/web.php` and `bootstrap/app.php` | [Frozen API/RSS](api-frozen.md) |
 | Manticore queries/schema: `ManticoreSearchDriver`, `ManticoreIndexRegistry`, `CreateManticoreIndexes` | [Search drivers](drivers.md) |
