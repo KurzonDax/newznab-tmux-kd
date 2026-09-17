@@ -35,17 +35,17 @@ def plan(policy, paths):
     for path in paths or ['<unknown>']:
         if path.endswith('.md') or path == 'LICENSE':
             continue
-        # No suite registers a baseline class (CiPolicyTest contract), so only the fast PHP suite reads it.
-        baseline = path == 'tests/schema-fixture-baseline.json'
-        php |= baseline or path.endswith('.php') or path.startswith(('app/', 'routes/', 'database/'))
+        # Only fast-suite classes have baseline entries (CiPolicyTest contract); remove with the baseline in #697.
+        fixture_baseline = path == 'tests/schema-fixture-baseline.json'
+        php |= fixture_baseline or path.endswith('.php') or path.startswith(('app/', 'routes/', 'database/'))
         found = {key for key in bounded if matches(path, policy['suites'][key]['paths'])
                  or path in policy['suites'][key].get('files', [])}
         shared = matches(path, ['bootstrap/**', 'config/**', 'database/**', 'app/Providers/**', 'app/Models/**',
                                 'composer.*', 'phpunit.xml', 'tests/Support/**', 'tests/Fixtures/**',
                                 'tests/TestCase.php', 'tests/CreatesApplication.php', '.github/**', 'docker/**'])
-        known = baseline or matches(path, ['resources/**', 'app/**', 'routes/**', 'tests/Unit/**', 'tests/Feature/**',
+        known = matches(path, ['resources/**', 'app/**', 'routes/**', 'tests/Unit/**', 'tests/Feature/**',
                                'tests/Install/**', 'tests/Shell/**', 'scripts/**', 'package*.json', 'vite.config.*',
-                               'Makefile', 'captainhook.json', 'sail'])
+                               'Makefile', 'captainhook.json', 'sail']) or fixture_baseline
         if shared or (not found and not known):
             found = bounded
             php = True

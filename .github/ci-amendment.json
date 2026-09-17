@@ -24,7 +24,7 @@
     "scripts/ci-classify-changes": "d812ad62f471221e46ef073eb056485eeaeb198d669b3c8a1d2432ca1e95f8f5",
     "scripts/ci-inventory": "7b413e80baf67388534647bf53fee539612fa567a29f4c37b0da9be4dcce302c",
     "scripts/ci-phpunit-shard": "7f3138e751ce05807d1c178526aa74fec0cf8afe61e6db7ff718e29a74b651a5",
-    "scripts/ci-policy": "e3a1626a8834cb72ccbc35bf7836d2c9084717ba69194403a607c91976acc516",
+    "scripts/ci-policy": "1b165110f4213771bc6655c322d0a31a0ed58d0e19b59ebd80107d519f5bd04d",
     "scripts/ci-preflight": "c2f2c345c4bb5c5760ab2fb1ee503dd73e51895ded085593b7c2eca87c94adc3",
     "scripts/ci-required-result": "e771cc3641db897e8d0fa4f54cec38ad794350d35b4f68855ac5e62506a66d21",
     "scripts/ci-run": "c2c8eeffc161c1a26ebc2009e7804f72f73893adb252f65b56323fca7ddfbf33",
