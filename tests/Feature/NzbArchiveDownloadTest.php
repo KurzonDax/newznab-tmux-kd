@@ -36,10 +36,6 @@ final class NzbArchiveDownloadTest extends TestCase
         $this->bootIsolatedDatabase();
         $this->bootAdminListPage();
         $this->createReleaseSchema();
-        Schema::table('users', function (Blueprint $table): void {
-            $table->integer('grabs')->default(0);
-            $table->timestamp('lastdownload')->nullable();
-        });
         Schema::table('roles', function (Blueprint $table): void {
             $table->integer('downloadrequests')->default(1000);
         });

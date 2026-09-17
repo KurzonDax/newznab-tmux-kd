@@ -39,7 +39,7 @@ final class SearchControllerTest extends TestCase
             DB::table('root_categories')->updateOrInsert(['id' => $id], ['title' => $title]);
             DB::table('categories')->insert(['id' => $id + 30, 'title' => 'HD', 'root_categories_id' => $id]);
         }
-        foreach (['2026_09_14_011408_add_view_prefs_to_users_table', '2026_08_21_090000_create_release_audio_tags_table', '2026_08_27_150100_create_release_video_clips_table'] as $migration) {
+        foreach (['2026_08_21_090000_create_release_audio_tags_table', '2026_08_27_150100_create_release_video_clips_table'] as $migration) {
             (require database_path('migrations/'.$migration.'.php'))->up();
         }
         Schema::create('movieinfo', function (Blueprint $table): void {

@@ -40,6 +40,7 @@ use Symfony\Component\Process\Process;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\NeverBlacklistedService;
+use Tests\Support\ProductionTables;
 
 trait BuildsPortablePublication
 {
@@ -55,10 +56,7 @@ trait BuildsPortablePublication
     {
         parent::setUp();
         $this->bootIsolatedDatabase();
-        Schema::create('usenet_groups', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->string('name');
-        });
+        ProductionTables::fromAuthority()->create('usenet_groups', ['id', 'name']);
         (require database_path('migrations/2026_09_07_172435_add_obfuscation_recovery_storage.php'))->up();
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
         (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
@@ -68,7 +66,6 @@ trait BuildsPortablePublication
         $this->createRecoveryReleaseSchema();
         Schema::drop('categories');
         $this->bootAdminListPage();
-        Schema::table('categories', fn (Blueprint $table) => $table->unsignedBigInteger('minsizetoformrelease')->default(0));
         DB::table('categories')->insert(['id' => Category::OTHER_MISC, 'title' => 'Other', 'root_categories_id' => 1]);
         Schema::table('releases', fn (Blueprint $table) => $table->integer('rarinnerfilecount')->default(0));
         Schema::create('par_hashes', function (Blueprint $table): void {

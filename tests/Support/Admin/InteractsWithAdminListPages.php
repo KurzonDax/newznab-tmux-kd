@@ -17,6 +17,7 @@ use ReflectionClass;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 
 /**
  * Shared setup for feature tests that render an admin list page.
@@ -300,24 +301,7 @@ trait InteractsWithAdminListPages
             $table->timestamps();
         });
 
-        Schema::create('users', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->string('username');
-            $table->string('email')->unique();
-            $table->string('password');
-            $table->unsignedInteger('roles_id')->default(1);
-            $table->integer('rate_limit')->default(60);
-            $table->string('api_token')->nullable();
-            $table->boolean('verified')->default(true);
-            $table->boolean('can_post')->default(true);
-            $table->string('theme_preference', 10)->default('light');
-            $table->string('timezone', 50)->default('UTC');
-            $table->timestamp('email_verified_at')->nullable();
-            $table->timestamp('lastlogin')->nullable();
-            $table->rememberToken();
-            $table->timestamps();
-            $table->softDeletes();
-        });
+        ProductionTables::fromAuthority()->create('users');
 
         Schema::create('model_has_roles', function (Blueprint $table): void {
             $table->unsignedInteger('role_id');
@@ -339,11 +323,7 @@ trait InteractsWithAdminListPages
             $table->primary(['permission_id', 'role_id']);
         });
 
-        Schema::create('user_excluded_categories', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->unsignedInteger('users_id');
-            $table->unsignedInteger('categories_id');
-        });
+        ProductionTables::fromAuthority()->create('user_excluded_categories');
 
         Schema::create('root_categories', function (Blueprint $table): void {
             $table->increments('id');
@@ -352,14 +332,7 @@ trait InteractsWithAdminListPages
             $table->timestamps();
         });
 
-        Schema::create('categories', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->string('title')->default('');
-            $table->unsignedInteger('root_categories_id')->nullable();
-            $table->text('description')->nullable();
-            $table->integer('status')->default(1);
-            $table->timestamps();
-        });
+        ProductionTables::fromAuthority()->create('categories');
 
         Schema::create('user_activities', function (Blueprint $table): void {
             $table->increments('id');
@@ -395,8 +368,6 @@ trait InteractsWithAdminListPages
             'root_categories_id' => 1,
             'description' => 'General category',
             'status' => 1,
-            'created_at' => now(),
-            'updated_at' => now(),
         ]);
     }
 }
