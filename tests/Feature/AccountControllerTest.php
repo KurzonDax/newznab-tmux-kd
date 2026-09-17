@@ -44,11 +44,6 @@ final class AccountControllerTest extends TestCase
         $this->app->instance(ValidEmailDomain::class, $emailDomain);
         $this->withoutMiddleware(TrustedDevice2FAMiddleware::class);
         $this->createReleaseSchema();
-        Schema::table('users', function (Blueprint $table): void {
-            $table->string('verification_token')->nullable();
-            $table->string('color_scheme')->default('blue');
-            $table->integer('invites')->default(0);
-        });
         Schema::create('password_securities', function (Blueprint $table): void {
             $table->id();
             $table->unsignedInteger('user_id');
@@ -65,7 +60,7 @@ final class AccountControllerTest extends TestCase
                 $table->timestamp('timestamp');
             });
         }
-        foreach (['2026_03_10_000000_create_registration_periods_table', '2026_03_10_000001_create_registration_status_history_table', '2026_04_24_000000_create_passkeys_table', '2026_05_08_154620_add_session_token_to_users_table', '2026_06_10_000000_create_trusted_devices_table', '2026_06_17_000000_create_gdpr_requests_table', '2026_09_14_011408_add_view_prefs_to_users_table'] as $migration) {
+        foreach (['2026_03_10_000000_create_registration_periods_table', '2026_03_10_000001_create_registration_status_history_table', '2026_04_24_000000_create_passkeys_table', '2026_06_10_000000_create_trusted_devices_table', '2026_06_17_000000_create_gdpr_requests_table'] as $migration) {
             (require database_path('migrations/'.$migration.'.php'))->up();
         }
     }

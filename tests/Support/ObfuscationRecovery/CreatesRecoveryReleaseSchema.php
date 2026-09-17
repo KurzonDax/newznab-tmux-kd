@@ -11,6 +11,11 @@ use Illuminate\Support\Facades\Schema;
 
 trait CreatesRecoveryReleaseSchema
 {
+    /**
+     * Written by hand rather than through `Tests\Support\ProductionTables`, whose SQLite DDL the
+     * MariaDB consumer `RecoveryPublicationMariaDbTest` cannot execute. The columns and keys below
+     * still have to match `database/schema/mariadb-schema.sql`.
+     */
     private function createRecoveryReleaseSchema(): void
     {
         Schema::table('usenet_groups', fn (Blueprint $table) => $table->unsignedInteger('forced_root_categories_id')->nullable());
@@ -42,7 +47,6 @@ trait CreatesRecoveryReleaseSchema
             $table->dateTime('postdate');
             $table->double('completion')->default(0);
             $table->binary('collectionhash', 20, true)->nullable()->unique();
-            $table->string('source')->nullable();
             $table->timestamp('recovery_claimed_at')->nullable();
             $table->uuid('recovery_claim_token')->nullable();
             foreach (['repair', 'rescan'] as $stage) {
@@ -53,11 +57,13 @@ trait CreatesRecoveryReleaseSchema
             }
             $table->timestamp('nzb_creation_claimed_at')->nullable();
             $table->string('nzb_creation_claim_token')->nullable();
+            $table->unique('guid');
         });
         Schema::create('release_regexes', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
             $table->unsignedInteger('collection_regex_id');
             $table->unsignedInteger('naming_regex_id');
+            $table->primary(['releases_id', 'collection_regex_id', 'naming_regex_id']);
         });
         Schema::create('releases_groups', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');

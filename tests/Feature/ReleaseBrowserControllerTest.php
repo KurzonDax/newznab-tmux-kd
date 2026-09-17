@@ -33,14 +33,11 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->bootAdminListPage();
         $this->withoutMiddleware(TrustedDevice2FAMiddleware::class);
         $this->createReleaseSchema();
-        Schema::table('user_excluded_categories', function (Blueprint $table): void {
-            $table->timestamps();
-        });
         foreach ([1000 => 'Console', 2000 => 'Movies', 3000 => 'Audio', 4000 => 'PC', 5000 => 'TV', 6000 => 'XXX', 7000 => 'Books', 1 => 'Other'] as $id => $title) {
             DB::table('root_categories')->updateOrInsert(['id' => $id], ['title' => $title]);
             DB::table('categories')->insert(['id' => $id + 30, 'title' => 'HD', 'root_categories_id' => $id]);
         }
-        foreach (['2026_09_14_011408_add_view_prefs_to_users_table', '2026_08_21_090000_create_release_audio_tags_table', '2026_08_27_150100_create_release_video_clips_table'] as $migration) {
+        foreach (['2026_08_21_090000_create_release_audio_tags_table', '2026_08_27_150100_create_release_video_clips_table'] as $migration) {
             (require database_path('migrations/'.$migration.'.php'))->up();
         }
     }
