@@ -193,7 +193,7 @@
         "tests/Integration/RecoveryDownloaderTest.php"
       ],
       "exclude_groups": [],
-      "estimated_seconds": 290
+      "estimated_seconds": 271
     },
     "admission": {
       "category": "specialist",

@@ -85,22 +85,39 @@ def rar_files(root):
     return files
 
 
+# Expansion order is load-bearing. '=' (61) must lead, or a later pass re-escapes
+# the prefixes earlier passes wrote. The second byte an expansion emits is
+# (value + 64) & 255, one of 64, 73, 74, 77, 96, 110 or 125; every one of those
+# must stay out of this tuple for the same reason.
+ESCAPED = (61, 0, 9, 10, 13, 32, 46)
+SHIFT = bytes((value + 42) & 255 for value in range(256))
+
+
+def encoded_lines(data):
+    # Shift and expand the whole buffer with C-level byte operations instead of
+    # one Python step per byte; the token stream is the same either way.
+    stream = data.translate(SHIFT)
+    for value in ESCAPED:
+        stream = stream.replace(bytes([value]), bytes([61, (value + 64) & 255]))
+    lines, start, length = [], 0, len(stream)
+    while start < length:
+        # Greedy 128-column packing that never splits an escape pair. Expansion
+        # leaves '=' only in prefix position, so one in the last column means the
+        # line stops a byte short. The stream cannot end on '=', hence end < length.
+        end = min(start + 128, length)
+        if end < length and stream[end - 1] == 61:
+            end -= 1
+        lines.append(stream[start:end])
+        start = end
+    return lines
+
+
 def encoded_body(data, part, total, size, whole_crc):
     output = bytearray(f"=ybegin part={part} total={total} line=128 size={size} name=opaque\r\n".encode("ascii"))
     output.extend(f"=ypart begin={(part-1)*C+1} end={min(part*C,size)}\r\n".encode("ascii"))
-    table = []
-    for value in range(256):
-        x = (value + 42) & 255
-        table.append(bytes([61, (x + 64) & 255]) if x in {0, 9, 10, 13, 32, 46, 61} else bytes([x]))
-    line = bytearray()
-    for value in data:
-        token = table[value]
-        if len(line) + len(token) > 128:
-            output.extend(line + b"\r\n")
-            line.clear()
-        line.extend(token)
-    if line:
-        output.extend(line + b"\r\n")
+    for line in encoded_lines(data):
+        output.extend(line)
+        output.extend(b"\r\n")
     output.extend(f"=yend size={len(data)} part={part} pcrc32={zlib.crc32(data)&0xffffffff:08x}".encode("ascii"))
     if part == total:
         output.extend(f" crc32={whole_crc:08x}".encode("ascii"))

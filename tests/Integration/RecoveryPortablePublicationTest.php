@@ -121,7 +121,7 @@ final class RecoveryPortablePublicationTest extends TestCase
         $crashed = $late = false;
         $originalAttempt = null;
         for ($tick = 0; $tick < 660 && (new RecoveredReleaseList)->query()->count() < 2; $tick++) {
-            app(RecoveryScheduler::class)->local(RecoveryStage::Discover, 1, 10);
+            app(RecoveryScheduler::class)->local(RecoveryStage::Discover, 10, 10);
             if (! $crashed && DB::table('obfuscation_recovery_work')->where('stage', 'download')->where('status', 'pending')->exists()) {
                 DB::disconnect();
                 $pid = pcntl_fork();
@@ -157,7 +157,7 @@ final class RecoveryPortablePublicationTest extends TestCase
                 $this->captureCombinedAuxiliary($media, 0);
                 $late = true;
             }
-            $published = app(RecoveryScheduler::class)->local(RecoveryStage::Publish, 1, 10);
+            $published = app(RecoveryScheduler::class)->local(RecoveryStage::Publish, 10, 10);
             $this->assertArrayNotHasKey('nzb_pending', $published, json_encode($published, JSON_THROW_ON_ERROR));
             $this->travel(5)->seconds();
         }
