@@ -31,7 +31,7 @@ class PredbSearchLifecycleTest extends TestCase
         Schema::dropIfExists('predb');
         Schema::create('predb', function (Blueprint $table): void {
             $table->id();
-            $table->string('title');
+            $table->string('title')->unique();
             $table->dateTime('predate')->nullable();
             $table->string('source')->default('test');
             $table->tinyInteger('searched')->default(0);
@@ -40,7 +40,7 @@ class PredbSearchLifecycleTest extends TestCase
         Schema::dropIfExists('usenet_groups');
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->id();
-            $table->string('name');
+            $table->string('name')->unique();
             $table->unsignedBigInteger('first_record');
             $table->dateTime('first_record_postdate');
             $table->dateTime('backfill_settled_at')->nullable();

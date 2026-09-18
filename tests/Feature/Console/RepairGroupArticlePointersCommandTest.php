@@ -22,7 +22,7 @@ class RepairGroupArticlePointersCommandTest extends TestCase
         Schema::dropIfExists('usenet_groups');
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->id();
-            $table->string('name');
+            $table->string('name')->unique();
             $table->boolean('active')->default(1);
             $table->unsignedBigInteger('first_record')->default(0);
             $table->dateTime('first_record_postdate')->nullable();
@@ -55,7 +55,6 @@ class RepairGroupArticlePointersCommandTest extends TestCase
 
         Schema::dropIfExists('parts');
         Schema::create('parts', function (Blueprint $table): void {
-            $table->id();
             $table->unsignedBigInteger('binaries_id');
             $table->unsignedBigInteger('number');
         });
@@ -66,6 +65,7 @@ class RepairGroupArticlePointersCommandTest extends TestCase
             $table->unsignedBigInteger('numberid');
             $table->unsignedInteger('groups_id');
             $table->unsignedTinyInteger('attempts')->default(0);
+            $table->unique(['numberid', 'groups_id']);
         });
     }
 

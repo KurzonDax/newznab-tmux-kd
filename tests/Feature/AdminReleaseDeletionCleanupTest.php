@@ -149,7 +149,7 @@ class AdminReleaseDeletionCleanupTest extends TestCase
     {
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('guid', 40);
+            $table->string('guid', 40)->unique();
             $table->string('searchname');
         });
         Schema::create('release_reports', function (Blueprint $table): void {

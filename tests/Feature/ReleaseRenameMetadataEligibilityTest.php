@@ -171,7 +171,7 @@ class ReleaseRenameMetadataEligibilityTest extends TestCase
             $table->unsignedBigInteger('size');
             $table->dateTime('postdate');
             $table->dateTime('adddate');
-            $table->string('guid', 40);
+            $table->string('guid', 40)->unique();
             $table->char('leftguid', 1);
             $table->string('fromname')->nullable();
             $table->integer('categories_id');

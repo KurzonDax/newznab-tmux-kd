@@ -334,11 +334,10 @@ class NzbImportSegmentHashDedupeTest extends TestCase
     private function createTables(): void
     {
         DB::statement('CREATE TABLE settings (name VARCHAR(255) PRIMARY KEY, value TEXT)');
-        DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name VARCHAR(255))');
+        DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name VARCHAR(255) UNIQUE)');
         DB::statement('CREATE TABLE categories (
             id INTEGER PRIMARY KEY,
             title VARCHAR(255),
-            parent_categories_id INTEGER NULL,
             status INTEGER DEFAULT 1
         )');
         DB::statement('CREATE TABLE releases (
@@ -353,7 +352,7 @@ class NzbImportSegmentHashDedupeTest extends TestCase
             lastarticle INTEGER NULL,
             groups_id INTEGER,
             adddate DATETIME NULL,
-            guid VARCHAR(64),
+            guid VARCHAR(64) UNIQUE,
             leftguid VARCHAR(1),
             postdate DATETIME NULL,
             fromname VARCHAR(255),
@@ -379,11 +378,10 @@ class NzbImportSegmentHashDedupeTest extends TestCase
             is_trusted_name INTEGER DEFAULT 0,
             iscategorized INTEGER,
             predb_id INTEGER,
-            source VARCHAR(255) NULL,
             collectionhash BLOB NULL
         )');
         DB::statement('CREATE UNIQUE INDEX ux_releases_collectionhash ON releases (collectionhash)');
-        DB::statement('CREATE TABLE video_data (id INTEGER PRIMARY KEY, releases_id INTEGER)');
+        DB::statement('CREATE TABLE video_data (releases_id INTEGER PRIMARY KEY)');
         DB::statement('CREATE TABLE audio_data (id INTEGER PRIMARY KEY, releases_id INTEGER)');
         DB::statement('CREATE TABLE release_naming_regexes (
             id INTEGER PRIMARY KEY,
@@ -394,7 +392,7 @@ class NzbImportSegmentHashDedupeTest extends TestCase
         )');
         DB::statement('CREATE TABLE predb (
             id INTEGER PRIMARY KEY,
-            title VARCHAR(255),
+            title VARCHAR(255) UNIQUE,
             filename VARCHAR(255)
         )');
         DB::statement('CREATE TABLE binaryblacklist (
@@ -408,6 +406,6 @@ class NzbImportSegmentHashDedupeTest extends TestCase
             last_activity DATE NULL
         )');
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.test']);
-        DB::table('categories')->insert(['id' => 1, 'title' => 'Misc', 'parent_categories_id' => null, 'status' => 1]);
+        DB::table('categories')->insert(['id' => 1, 'title' => 'Misc', 'status' => 1]);
     }
 }

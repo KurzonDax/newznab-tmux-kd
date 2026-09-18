@@ -68,7 +68,8 @@ class NntmuxResetTruncateTest extends TestCase
             $this->releaseRow(2, nzbStatus: 0, additionalClaimedAt: now()),
             $this->releaseRow(3, nzbStatus: 1),
         ]);
-        foreach (['parts', 'missed_parts', 'binaries', 'collections'] as $table) {
+        DB::table('parts')->insert(['binaries_id' => 1, 'partnumber' => 1]);
+        foreach (['missed_parts', 'binaries', 'collections'] as $table) {
             DB::table($table)->insert(['id' => 1]);
         }
 
@@ -144,16 +145,24 @@ class NntmuxResetTruncateTest extends TestCase
         });
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('guid', 40);
+            $table->string('guid', 40)->unique();
             $table->integer('nzbstatus');
             $table->dateTime('additional_pp_claimed_at')->nullable();
             $table->dateTime('recovery_claimed_at')->nullable();
         });
-        foreach (['parts', 'missed_parts', 'binaries', 'collections'] as $table) {
+        Schema::create('parts', function (Blueprint $table): void {
+            $table->unsignedBigInteger('binaries_id');
+            $table->unsignedInteger('partnumber');
+            $table->primary(['binaries_id', 'partnumber']);
+        });
+        foreach (['missed_parts', 'binaries'] as $table) {
             Schema::create($table, function (Blueprint $table): void {
                 $table->increments('id');
-                $table->unsignedInteger('releases_id')->nullable();
             });
         }
+        Schema::create('collections', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->unsignedInteger('releases_id')->nullable();
+        });
     }
 }

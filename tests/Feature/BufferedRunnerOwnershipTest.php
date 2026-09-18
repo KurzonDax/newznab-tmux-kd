@@ -28,7 +28,7 @@ class BufferedRunnerOwnershipTest extends TestCase
             'nntmux.stream_fork_output' => false, 'nntmux.echocli' => false]);
         DB::purge();
         DB::statement('CREATE TABLE settings (name TEXT PRIMARY KEY, value TEXT)');
-        DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name TEXT, active INTEGER, backfill INTEGER)');
+        DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name TEXT UNIQUE, active INTEGER, backfill INTEGER)');
         DB::statement('CREATE TABLE collections (id INTEGER PRIMARY KEY, groups_id INTEGER)');
         DB::statement('CREATE TABLE releases (id INTEGER PRIMARY KEY, groups_id INTEGER, nzbstatus INTEGER)');
         DB::table('settings')->insert([

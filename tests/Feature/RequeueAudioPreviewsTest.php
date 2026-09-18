@@ -67,16 +67,17 @@ class RequeueAudioPreviewsTest extends TestCase
         });
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
-            $table->string('name')->default('');
+            $table->string('name')->default('')->unique();
             $table->unsignedInteger('forced_root_categories_id')->nullable();
         });
         Schema::create('releases_groups', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
             $table->unsignedInteger('groups_id');
+            $table->primary(['releases_id', 'groups_id']);
         });
         Schema::create('releases', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->char('leftguid', 1);
             $table->integer('passwordstatus')->default(0);
             $table->integer('haspreview')->default(-1);
@@ -90,7 +91,7 @@ class RequeueAudioPreviewsTest extends TestCase
         });
         Schema::create('release_audio_tags', function (Blueprint $table): void {
             $table->increments('id');
-            $table->unsignedInteger('releases_id');
+            $table->unsignedInteger('releases_id')->unique();
             $table->string('album')->nullable();
             $table->string('performer')->nullable();
             $table->unsignedTinyInteger('has_preview')->default(0);

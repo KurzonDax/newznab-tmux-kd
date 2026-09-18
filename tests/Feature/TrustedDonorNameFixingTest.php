@@ -634,7 +634,7 @@ class TrustedDonorNameFixingTest extends TestCase
             $table->unsignedInteger('groups_id');
             $table->unsignedInteger('categories_id');
             $table->unsignedBigInteger('size');
-            $table->string('guid', 40);
+            $table->string('guid', 40)->unique();
             $table->char('leftguid', 1);
             $table->dateTime('adddate')->nullable();
             $table->unsignedInteger('predb_id')->default(0);
@@ -665,6 +665,7 @@ class TrustedDonorNameFixingTest extends TestCase
             $table->unsignedInteger('releases_id');
             $table->string('name');
             $table->string('crc32')->default('');
+            $table->primary(['releases_id', 'name']);
         });
 
         Schema::create('media_infos', function (Blueprint $table): void {
@@ -679,6 +680,7 @@ class TrustedDonorNameFixingTest extends TestCase
         Schema::create('par_hashes', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
             $table->string('hash', 32);
+            $table->primary(['releases_id', 'hash']);
         });
     }
 }

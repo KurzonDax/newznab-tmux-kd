@@ -48,7 +48,7 @@ class ExtractedSampleImageStorageTest extends TestCase
 
         Schema::create('releases', function (Blueprint $table): void {
             $table->id();
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->integer('jpgstatus')->default(0);
         });
         DB::table('releases')->insert(['id' => 1, 'guid' => 'sampleguid', 'jpgstatus' => 0]);

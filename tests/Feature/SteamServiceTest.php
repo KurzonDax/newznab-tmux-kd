@@ -30,7 +30,8 @@ class SteamServiceTest extends TestCase
 
         // Create minimal steam_apps table for testing
         DB::statement('CREATE TABLE IF NOT EXISTS steam_apps (
-            appid INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            appid INTEGER,
             name VARCHAR(255)
         )');
 

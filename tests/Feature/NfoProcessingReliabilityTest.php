@@ -468,7 +468,7 @@ class NfoProcessingReliabilityTest extends TestCase
 
         DB::statement('CREATE TABLE releases (
             id INTEGER PRIMARY KEY,
-            guid VARCHAR(64) NOT NULL,
+            guid VARCHAR(64) NOT NULL UNIQUE,
             groups_id INTEGER NOT NULL,
             name VARCHAR(255) NOT NULL,
             leftguid VARCHAR(1) NOT NULL,
@@ -479,10 +479,10 @@ class NfoProcessingReliabilityTest extends TestCase
             postdate DATETIME NULL
         )');
         DB::statement('CREATE TABLE release_files (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
             releases_id INTEGER NOT NULL,
             name VARCHAR(255) NOT NULL,
-            size INTEGER NOT NULL DEFAULT 0
+            size INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (releases_id, name)
         )');
         DB::statement('CREATE TABLE release_nfos (
             releases_id INTEGER PRIMARY KEY,
@@ -490,7 +490,7 @@ class NfoProcessingReliabilityTest extends TestCase
         )');
         DB::statement('CREATE TABLE usenet_groups (
             id INTEGER PRIMARY KEY,
-            name VARCHAR(255) NOT NULL
+            name VARCHAR(255) NOT NULL UNIQUE
         )');
     }
 }

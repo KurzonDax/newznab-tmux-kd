@@ -34,7 +34,7 @@ class AudioEvidenceRecorderTest extends TestCase
 
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->string('name');
             $table->string('searchname');
             $table->unsignedInteger('categories_id');

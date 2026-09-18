@@ -86,7 +86,8 @@ class NzbCreationReliabilityTest extends TestCase
         $this->prepareFinalizationSchema();
         Carbon::setTestNow('2026-07-13 12:00:00 UTC');
         foreach (range(1, 128) as $id) {
-            $this->insertRelease($id, dechex($id), claimedAt: now());
+            // Two-digit seeds keep the padded guids unique ('1' and '11' pad to the same guid).
+            $this->insertRelease($id, sprintf('%02x', $id), claimedAt: now());
         }
         $this->insertRelease(129, 'z');
         $this->insertRelease(130, 'u');
@@ -924,7 +925,7 @@ class NzbCreationReliabilityTest extends TestCase
         DB::statement('CREATE TABLE categories (id INTEGER PRIMARY KEY, title VARCHAR(255), root_categories_id INTEGER NULL)');
         DB::statement('CREATE TABLE releases (
             id INTEGER PRIMARY KEY,
-            guid VARCHAR(64),
+            guid VARCHAR(64) UNIQUE,
             leftguid VARCHAR(1),
             name VARCHAR(255),
             searchname VARCHAR(255),
@@ -946,7 +947,7 @@ class NzbCreationReliabilityTest extends TestCase
             updated_at DATETIME NULL,
             FOREIGN KEY (releases_id) REFERENCES releases(id) ON DELETE CASCADE
         )');
-        DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name VARCHAR(255))');
+        DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name VARCHAR(255) UNIQUE)');
         DB::statement('CREATE TABLE collections (
             id INTEGER PRIMARY KEY,
             releases_id INTEGER NULL,
@@ -967,7 +968,8 @@ class NzbCreationReliabilityTest extends TestCase
             messageid VARCHAR(255) NULL,
             partnumber INTEGER NULL,
             number INTEGER NULL,
-            size INTEGER NULL
+            size INTEGER NULL,
+            PRIMARY KEY (binaries_id, partnumber)
         )');
         DB::table('root_categories')->insert(['id' => 1, 'title' => 'Other']);
         DB::table('categories')->insert(['id' => 1, 'title' => 'Misc', 'root_categories_id' => 1]);

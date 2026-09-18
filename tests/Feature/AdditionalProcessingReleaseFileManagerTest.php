@@ -1259,12 +1259,13 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
 
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
-            $table->string('name');
+            $table->string('name')->unique();
             $table->unsignedInteger('forced_root_categories_id')->nullable();
         });
         Schema::create('releases_groups', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
             $table->unsignedInteger('groups_id');
+            $table->primary(['releases_id', 'groups_id']);
         });
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.test']);
 
@@ -1297,7 +1298,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
 
         Schema::create('releases', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->string('name')->default('');
             $table->string('searchname')->default('');
             $table->unsignedBigInteger('size')->default(0);
@@ -1363,6 +1364,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
             $table->unsignedInteger('releases_id');
             $table->unsignedInteger('audioid');
             $table->string('audioformat')->nullable();
+            $table->unique(['releases_id', 'audioid']);
         });
     }
 }

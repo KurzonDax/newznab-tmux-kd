@@ -24,7 +24,7 @@ class FetchSamplesPreviewPolicyTest extends TestCase
 
         Schema::create('releases', function (Blueprint $table): void {
             $table->id();
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->unsignedInteger('categories_id');
             $table->integer('jpgstatus')->default(0);
         });

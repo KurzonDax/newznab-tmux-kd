@@ -519,7 +519,7 @@ class SrrdbNameFixingTest extends TestCase
             $table->unsignedInteger('categories_id');
             $table->unsignedBigInteger('size');
             $table->double('completion')->default(0);
-            $table->string('guid', 40);
+            $table->string('guid', 40)->unique();
             $table->char('leftguid', 1);
             $table->dateTime('adddate')->nullable();
             $table->unsignedInteger('predb_id')->default(0);
@@ -551,6 +551,7 @@ class SrrdbNameFixingTest extends TestCase
             $table->string('name');
             $table->unsignedBigInteger('size')->default(0);
             $table->string('crc32')->default('');
+            $table->primary(['releases_id', 'name']);
         });
 
         Schema::create('predb', function (Blueprint $table): void {

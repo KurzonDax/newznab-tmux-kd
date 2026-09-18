@@ -37,7 +37,7 @@ final class NzbReplaceContentsResultTest extends TestCase
         $this->guid = str_repeat('a', 36);
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('guid');
+            $table->string('guid')->unique();
         });
         DB::table('releases')->insert(['guid' => $this->guid]);
     }

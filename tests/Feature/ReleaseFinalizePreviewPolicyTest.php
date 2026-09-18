@@ -38,7 +38,7 @@ class ReleaseFinalizePreviewPolicyTest extends TestCase
 
         Schema::create('releases', function (Blueprint $table): void {
             $table->id();
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->unsignedInteger('categories_id')->default(0);
             $table->integer('haspreview')->default(0);
             $table->integer('videostatus')->default(0);
@@ -88,11 +88,13 @@ class ReleaseFinalizePreviewPolicyTest extends TestCase
             $table->string('crc32')->default('');
             $table->integer('created_at')->nullable();
             $table->integer('updated_at')->nullable();
+            $table->primary(['releases_id', 'name']);
         });
 
         Schema::create('par_hashes', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
             $table->string('hash', 32);
+            $table->primary(['releases_id', 'hash']);
         });
     }
 

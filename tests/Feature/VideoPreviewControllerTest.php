@@ -29,7 +29,7 @@ class VideoPreviewControllerTest extends TestCase
 
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->string('searchname')->default('');
             $table->integer('videostatus')->default(0);
         });

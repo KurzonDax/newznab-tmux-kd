@@ -655,7 +655,7 @@ class ReleaseRepairServiceTest extends TestCase
         DB::statement('DROP TABLE IF EXISTS audio_data');
         DB::statement('CREATE TABLE releases (
             id INTEGER PRIMARY KEY,
-            guid VARCHAR(64),
+            guid VARCHAR(64) UNIQUE,
             nzbstatus INTEGER NOT NULL DEFAULT 0,
             completion DOUBLE NOT NULL DEFAULT 0,
             repair_attempted_at DATETIME NULL,

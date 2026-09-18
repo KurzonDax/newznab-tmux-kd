@@ -18,7 +18,7 @@ class ReleasesRunnerSchedulingTest extends TestCase
             'nntmux.stream_fork_output' => true, 'nntmux.echocli' => false]);
         DB::purge();
         DB::statement('CREATE TABLE settings (name TEXT PRIMARY KEY, value TEXT)');
-        DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name TEXT, active INTEGER, backfill INTEGER)');
+        DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name TEXT UNIQUE, active INTEGER, backfill INTEGER)');
         DB::statement('CREATE TABLE collections (id INTEGER PRIMARY KEY, groups_id INTEGER)');
         DB::statement('CREATE TABLE releases (id INTEGER PRIMARY KEY, groups_id INTEGER, nzbstatus INTEGER)');
         DB::table('settings')->insert(['name' => 'releasethreads', 'value' => '2']);
@@ -64,13 +64,13 @@ class ReleasesRunnerSchedulingTest extends TestCase
             'nntmux.stream_fork_output' => true, 'nntmux.echocli' => false]);
         DB::purge();
         DB::statement('CREATE TABLE settings (name TEXT PRIMARY KEY, value TEXT)');
-        DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name TEXT, active INTEGER, backfill INTEGER)');
+        DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name TEXT UNIQUE, active INTEGER, backfill INTEGER)');
         DB::statement('CREATE TABLE collections (id INTEGER PRIMARY KEY, groups_id INTEGER)');
         DB::statement('CREATE TABLE releases (id INTEGER PRIMARY KEY, groups_id INTEGER, nzbstatus INTEGER)');
         DB::statement('CREATE TABLE reconciled_artifacts (release_id INTEGER PRIMARY KEY, search_pending INTEGER)');
         DB::statement('CREATE TABLE reconciled_artifact_operations (id TEXT PRIMARY KEY, release_id INTEGER, state TEXT)');
         DB::statement('CREATE TABLE reconciled_artifact_sources (operation_id TEXT, cleanup_pending INTEGER)');
-        DB::statement('CREATE TABLE reconciled_postings (release_id INTEGER PRIMARY KEY, state TEXT, review_digest TEXT, original_nzb TEXT)');
+        DB::statement('CREATE TABLE reconciled_postings (release_id INTEGER PRIMARY KEY, state TEXT, review_digest TEXT UNIQUE, original_nzb TEXT)');
         DB::table('settings')->insert(['name' => 'releasethreads', 'value' => '2']);
         foreach (array_merge(range(1, 12), range(100, 1099)) as $id) {
             DB::table('usenet_groups')->insert(['id' => $id, 'name' => 'synthetic.group.'.$id,
