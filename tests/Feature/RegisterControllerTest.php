@@ -72,13 +72,13 @@ class RegisterControllerTest extends TestCase
 
         Schema::create('users', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('username')->unique();
-            $table->string('email')->unique();
+            $table->string('username');
+            $table->string('email');
             $table->string('password');
             $table->unsignedInteger('roles_id')->default(1);
             $table->string('host')->nullable();
             $table->integer('grabs')->default(0);
-            $table->string('api_token');
+            $table->string('api_token')->unique();
             $table->integer('invites')->default(0);
             $table->boolean('movieview')->default(true);
             $table->boolean('xxxview')->default(false);

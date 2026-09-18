@@ -8,6 +8,7 @@ use App\Facades\Search;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class FailedReleasesControllerSecurityTest extends TestCase
@@ -79,10 +80,10 @@ class FailedReleasesControllerSecurityTest extends TestCase
         Schema::create('users', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('username');
-            $table->string('email')->unique();
+            $table->string('email');
             $table->string('password');
             $table->unsignedInteger('roles_id')->default(1);
-            $table->string('api_token')->nullable();
+            $table->string('api_token')->nullable()->unique();
             $table->boolean('verified')->default(true);
             $table->timestamp('email_verified_at')->nullable();
             $table->rememberToken();
@@ -96,12 +97,7 @@ class FailedReleasesControllerSecurityTest extends TestCase
             $table->unsignedInteger('categories_id');
             $table->timestamp('postdate')->nullable();
         });
-        Schema::create('dnzb_failures', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->unsignedInteger('release_id');
-            $table->unsignedInteger('users_id');
-            $table->boolean('failed')->default(true);
-        });
+        ProductionTables::fromAuthority()->create('dnzb_failures');
     }
 
     private function seedSettings(): void

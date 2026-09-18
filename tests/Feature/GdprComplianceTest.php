@@ -263,11 +263,11 @@ class GdprComplianceTest extends TestCase
 
         Schema::create('users', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('username')->unique();
+            $table->string('username');
             $table->string('name')->nullable();
             $table->string('firstname')->nullable();
             $table->string('lastname')->nullable();
-            $table->string('email')->unique();
+            $table->string('email');
             $table->string('password');
             $table->string('host')->default('');
             $table->unsignedInteger('roles_id')->default(1);

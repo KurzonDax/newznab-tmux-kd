@@ -69,7 +69,6 @@ final class RoleUpgradeTest extends TestCase
                 'defaultinvites' => 0,
                 'isdefault' => 1,
                 'donation' => 0,
-                'canpreview' => 0,
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
@@ -82,7 +81,6 @@ final class RoleUpgradeTest extends TestCase
                 'defaultinvites' => 5,
                 'isdefault' => 0,
                 'donation' => 10,
-                'canpreview' => 1,
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
@@ -122,13 +120,13 @@ final class RoleUpgradeTest extends TestCase
         DB::statement('CREATE TABLE users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username VARCHAR(255) NOT NULL,
-            email VARCHAR(255) NOT NULL UNIQUE,
+            email VARCHAR(255) NOT NULL,
             password VARCHAR(255) NOT NULL,
             roles_id INTEGER DEFAULT 1,
             rolechangedate DATETIME NULL,
             pending_roles_id INTEGER NULL,
             pending_role_start_date DATETIME NULL,
-            api_token VARCHAR(255) NULL,
+            api_token VARCHAR(255) NULL UNIQUE,
             grabs INTEGER DEFAULT 0,
             invites INTEGER DEFAULT 0,
             notes TEXT DEFAULT "",
@@ -158,7 +156,6 @@ final class RoleUpgradeTest extends TestCase
             defaultinvites INTEGER DEFAULT 0,
             isdefault INTEGER DEFAULT 0,
             donation INTEGER DEFAULT 0,
-            canpreview INTEGER DEFAULT 0,
             created_at DATETIME NULL,
             updated_at DATETIME NULL
         )');
@@ -717,7 +714,6 @@ final class RoleUpgradeTest extends TestCase
                 'defaultinvites' => 10,
                 'isdefault' => 0,
                 'donation' => 25,
-                'canpreview' => 1,
             ]
         );
 
