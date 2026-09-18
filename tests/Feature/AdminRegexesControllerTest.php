@@ -206,7 +206,7 @@ class AdminRegexesControllerTest extends TestCase
         $this->actingAs($this->createUserWithRole('Admin'));
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('name');
+            $table->string('name')->unique();
         });
         DB::table('usenet_groups')->insert(['name' => 'alt.binaries.example']);
 
@@ -234,15 +234,19 @@ class AdminRegexesControllerTest extends TestCase
     public function test_collection_regex_tests_each_selected_binary_once_in_id_order(): void
     {
         $this->createCandidateSchema();
-        DB::table('collections')->insert([
-            ['id' => 1, 'groups_id' => 1, 'fromname' => 'poster', 'collectionhash' => 'old'],
-            ['id' => 2, 'groups_id' => 2, 'fromname' => 'other', 'collectionhash' => 'other'],
-        ]);
+        // Every binary shares one hash so rows keyed by hash would merge; hashes
+        // are unique per collection, so each binary gets its own collection.
+        $collections = [];
         $rows = [];
         for ($id = 1; $id <= 1200; $id++) {
-            $rows[] = ['id' => $id, 'collections_id' => $id % 2 ? 2 : 1,
+            $collections[] = ['id' => $id, 'groups_id' => $id % 2 ? 2 : 1,
+                'fromname' => $id % 2 ? 'other' : 'poster', 'collectionhash' => 'collection-'.$id];
+            $rows[] = ['id' => $id, 'collections_id' => $id,
                 'name' => $id % 4 === 0 ? 'Café - 02' : 'unmatched',
                 'binaryhash' => 'duplicate', 'totalparts' => 1, 'currentparts' => 1];
+        }
+        foreach (array_chunk($collections, 200) as $chunk) {
+            DB::table('collections')->insert($chunk);
         }
         foreach (array_chunk($rows, 200) as $chunk) {
             DB::table('binaries')->insert($chunk);
@@ -336,7 +340,7 @@ class AdminRegexesControllerTest extends TestCase
     {
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('name');
+            $table->string('name')->unique();
         });
         DB::table('usenet_groups')->insert([
             ['id' => 1, 'name' => 'alt.binaries.example'],
@@ -346,7 +350,7 @@ class AdminRegexesControllerTest extends TestCase
             $table->increments('id');
             $table->integer('groups_id');
             $table->string('fromname');
-            $table->binary('collectionhash');
+            $table->binary('collectionhash')->unique();
         });
         Schema::create('binaries', function (Blueprint $table): void {
             $table->increments('id');
@@ -355,6 +359,7 @@ class AdminRegexesControllerTest extends TestCase
             $table->integer('totalparts');
             $table->integer('currentparts');
             $table->binary('binaryhash');
+            $table->unique(['collections_id', 'binaryhash']);
         });
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
@@ -393,11 +398,11 @@ class AdminRegexesControllerTest extends TestCase
         Schema::create('users', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('username');
-            $table->string('email')->unique();
+            $table->string('email');
             $table->string('password');
             $table->unsignedInteger('roles_id')->default(1);
             $table->integer('rate_limit')->default(60);
-            $table->string('api_token')->nullable();
+            $table->string('api_token')->nullable()->unique();
             $table->boolean('verified')->default(true);
             $table->boolean('can_post')->default(true);
             $table->string('theme_preference', 10)->default('light');
@@ -441,13 +446,13 @@ class AdminRegexesControllerTest extends TestCase
             $table->unsignedInteger('root_categories_id')->nullable();
             $table->text('description')->nullable();
             $table->integer('status')->default(1);
-            $table->timestamps();
         });
 
         Schema::create('user_excluded_categories', function (Blueprint $table): void {
             $table->increments('id');
             $table->unsignedInteger('users_id');
             $table->unsignedInteger('categories_id');
+            $table->unique(['users_id', 'categories_id']);
         });
 
         Schema::create('content', function (Blueprint $table): void {
@@ -519,8 +524,6 @@ class AdminRegexesControllerTest extends TestCase
             'root_categories_id' => 1,
             'description' => 'General category',
             'status' => 1,
-            'created_at' => now(),
-            'updated_at' => now(),
         ]);
     }
 

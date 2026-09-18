@@ -484,11 +484,11 @@ class NzbAndRssAccessTest extends TestCase
         if (! Schema::hasTable('users')) {
             Schema::create('users', function (Blueprint $table): void {
                 $table->increments('id');
-                $table->string('username')->unique();
-                $table->string('email')->unique();
+                $table->string('username');
+                $table->string('email');
                 $table->string('password');
                 $table->unsignedInteger('roles_id')->default(1);
-                $table->string('api_token')->nullable()->index();
+                $table->string('api_token')->nullable()->unique();
                 $table->integer('rate_limit')->default(60);
                 $table->boolean('verified')->default(true);
                 $table->timestamp('apiaccess')->nullable();

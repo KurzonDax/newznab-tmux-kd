@@ -221,11 +221,11 @@ class AdminBackupsControllerTest extends TestCase
         Schema::create('users', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('username');
-            $table->string('email')->unique();
+            $table->string('email');
             $table->string('password');
             $table->unsignedInteger('roles_id')->default(1);
             $table->integer('rate_limit')->default(60);
-            $table->string('api_token')->nullable();
+            $table->string('api_token')->nullable()->unique();
             $table->unsignedInteger('grabs')->default(0);
             $table->unsignedInteger('invites')->default(0);
             $table->text('notes')->default('');
@@ -279,6 +279,7 @@ class AdminBackupsControllerTest extends TestCase
             $table->increments('id');
             $table->unsignedInteger('users_id');
             $table->unsignedInteger('categories_id');
+            $table->unique(['users_id', 'categories_id']);
         });
         Schema::create('database_backups', function (Blueprint $table): void {
             $table->id();

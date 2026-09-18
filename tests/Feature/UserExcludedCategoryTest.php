@@ -41,7 +41,6 @@ final class UserExcludedCategoryTest extends TestCase
                 'defaultinvites' => 0,
                 'isdefault' => 1,
                 'donation' => 0,
-                'canpreview' => 0,
             ]
         );
 
@@ -77,13 +76,13 @@ final class UserExcludedCategoryTest extends TestCase
         DB::statement('CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username VARCHAR(255) NOT NULL,
-            email VARCHAR(255) NOT NULL UNIQUE,
+            email VARCHAR(255) NOT NULL,
             password VARCHAR(255) NOT NULL,
             roles_id INTEGER DEFAULT 1,
             rolechangedate DATETIME NULL,
             pending_roles_id INTEGER NULL,
             pending_role_start_date DATETIME NULL,
-            api_token VARCHAR(255) NULL,
+            api_token VARCHAR(255) NULL UNIQUE,
             grabs INTEGER DEFAULT 0,
             invites INTEGER DEFAULT 0,
             notes TEXT DEFAULT "",
@@ -113,7 +112,6 @@ final class UserExcludedCategoryTest extends TestCase
             defaultinvites INTEGER DEFAULT 0,
             isdefault INTEGER DEFAULT 0,
             donation INTEGER DEFAULT 0,
-            canpreview INTEGER DEFAULT 0,
             created_at DATETIME,
             updated_at DATETIME
         )');

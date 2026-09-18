@@ -196,6 +196,7 @@ class MovieControllerTest extends TestCase
         Schema::create('users_releases', function (Blueprint $table): void {
             $table->unsignedInteger('users_id');
             $table->unsignedInteger('releases_id');
+            $table->unique(['users_id', 'releases_id']);
         });
         Schema::create('user_movies', function (Blueprint $table): void {
             $table->unsignedInteger('users_id');
@@ -234,11 +235,11 @@ class MovieControllerTest extends TestCase
         Schema::create('users', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('username');
-            $table->string('email')->unique();
+            $table->string('email');
             $table->string('password');
             $table->unsignedInteger('roles_id')->default(1);
             $table->integer('rate_limit')->default(60);
-            $table->string('api_token')->nullable();
+            $table->string('api_token')->nullable()->unique();
             $table->boolean('verified')->default(true);
             $table->boolean('can_post')->default(true);
             $table->string('theme_preference', 10)->default('light');
@@ -255,6 +256,7 @@ class MovieControllerTest extends TestCase
             $table->increments('id');
             $table->unsignedInteger('users_id');
             $table->unsignedInteger('categories_id');
+            $table->unique(['users_id', 'categories_id']);
         });
         Schema::create('content', function (Blueprint $table): void {
             $table->increments('id');
@@ -276,7 +278,6 @@ class MovieControllerTest extends TestCase
         Schema::create('categories', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('title')->default('');
-            $table->unsignedInteger('parentid')->nullable();
             $table->unsignedInteger('root_categories_id')->nullable();
             $table->integer('status')->default(1);
             $table->text('description')->nullable();
@@ -307,7 +308,7 @@ class MovieControllerTest extends TestCase
             $table->string('display_name')->nullable();
             $table->dateTime('postdate')->nullable();
             $table->dateTime('adddate')->nullable();
-            $table->string('guid')->nullable();
+            $table->string('guid')->nullable()->unique();
             $table->unsignedInteger('categories_id')->default(Category::MOVIE_HD);
             $table->unsignedBigInteger('size')->default(0);
             $table->integer('passwordstatus')->default(0);

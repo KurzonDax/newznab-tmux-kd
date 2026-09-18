@@ -424,11 +424,11 @@ class AdminPredbPageTest extends TestCase
         Schema::create('users', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('username');
-            $table->string('email')->unique();
+            $table->string('email');
             $table->string('password');
             $table->unsignedInteger('roles_id')->default(1);
             $table->integer('rate_limit')->default(60);
-            $table->string('api_token')->nullable();
+            $table->string('api_token')->nullable()->unique();
             $table->boolean('verified')->default(true);
             $table->boolean('can_post')->default(true);
             $table->string('theme_preference', 10)->default('light');
@@ -464,6 +464,7 @@ class AdminPredbPageTest extends TestCase
             $table->increments('id');
             $table->unsignedInteger('users_id');
             $table->unsignedInteger('categories_id');
+            $table->unique(['users_id', 'categories_id']);
         });
 
         Schema::create('root_categories', function (Blueprint $table): void {
@@ -479,7 +480,6 @@ class AdminPredbPageTest extends TestCase
             $table->unsignedInteger('root_categories_id')->nullable();
             $table->text('description')->nullable();
             $table->integer('status')->default(1);
-            $table->timestamps();
         });
 
         Schema::create('user_activities', function (Blueprint $table): void {
@@ -494,7 +494,7 @@ class AdminPredbPageTest extends TestCase
 
         Schema::create('predb', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('title')->default('');
+            $table->string('title')->default('')->unique();
             $table->string('nfo')->nullable();
             $table->string('size', 50)->nullable();
             $table->string('category')->nullable();
@@ -511,7 +511,7 @@ class AdminPredbPageTest extends TestCase
 
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('guid')->nullable();
+            $table->string('guid')->nullable()->unique();
             $table->string('name')->default('');
             $table->unsignedInteger('predb_id')->default(0);
         });
@@ -543,8 +543,6 @@ class AdminPredbPageTest extends TestCase
             'root_categories_id' => 1,
             'description' => 'General category',
             'status' => 1,
-            'created_at' => now(),
-            'updated_at' => now(),
         ]);
     }
 
