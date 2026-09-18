@@ -125,7 +125,7 @@ final class ReleasesOptimizePreflightTest extends TestCase
         DB::statement('DROP TABLE IF EXISTS releases');
         DB::statement('CREATE TABLE releases (
             id INTEGER NOT NULL,
-            guid VARCHAR(40), leftguid CHAR(1), comments INTEGER DEFAULT 0,
+            guid VARCHAR(40) UNIQUE, leftguid CHAR(1), comments INTEGER DEFAULT 0,
             nzb_password VARCHAR(255), nzb_creation_attempts INTEGER DEFAULT 0,
             nzb_creation_last_error TEXT, updatetime DATETIME, gid VARCHAR(32),
             source INTEGER, proc_sorter INTEGER DEFAULT 0, audiostatus INTEGER DEFAULT 0

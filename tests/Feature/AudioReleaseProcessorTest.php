@@ -95,7 +95,7 @@ class AudioReleaseProcessorTest extends TestCase
 
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->char('leftguid', 1)->default('a');
             $table->string('name')->default('');
             $table->string('searchname')->default('');
@@ -132,6 +132,7 @@ class AudioReleaseProcessorTest extends TestCase
         Schema::create('releases_groups', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
             $table->unsignedInteger('groups_id');
+            $table->primary(['releases_id', 'groups_id']);
         });
 
         Schema::create('video_data', function (Blueprint $table): void {
@@ -144,6 +145,7 @@ class AudioReleaseProcessorTest extends TestCase
             $table->unsignedInteger('releases_id');
             $table->unsignedInteger('audioid')->default(0);
             $table->string('audioformat')->nullable();
+            $table->unique(['releases_id', 'audioid']);
         });
 
         Schema::create('root_categories', function (Blueprint $table): void {
@@ -168,7 +170,7 @@ class AudioReleaseProcessorTest extends TestCase
 
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
-            $table->string('name')->default('');
+            $table->string('name')->default('')->unique();
             $table->unsignedInteger('forced_root_categories_id')->nullable();
         });
 

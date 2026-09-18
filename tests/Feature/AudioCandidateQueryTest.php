@@ -39,13 +39,13 @@ class AudioCandidateQueryTest extends TestCase
 
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
-            $table->string('name')->default('');
+            $table->string('name')->default('')->unique();
             $table->unsignedInteger('forced_root_categories_id')->nullable();
         });
 
         Schema::create('releases', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->char('leftguid', 1);
             $table->integer('passwordstatus');
             $table->integer('haspreview');
@@ -62,6 +62,7 @@ class AudioCandidateQueryTest extends TestCase
         Schema::create('releases_groups', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
             $table->unsignedInteger('groups_id');
+            $table->primary(['releases_id', 'groups_id']);
         });
 
         Schema::create('settings', function (Blueprint $table): void {
@@ -404,17 +405,18 @@ class AudioCandidateQueryTest extends TestCase
         });
         Schema::create('reconciled_postings', static function (Blueprint $table): void {
             $table->integer('id')->primary();
-            $table->integer('release_id');
+            $table->integer('release_id')->unique();
             $table->string('state');
         });
         Schema::create('reconciled_posting_inputs', static function (Blueprint $table): void {
             $table->integer('release_id');
             $table->integer('posting_id');
+            $table->primary(['posting_id', 'release_id']);
         });
         Schema::create('par2_sidecar_operations', static function (Blueprint $table): void {
             $table->integer('id')->primary();
-            $table->integer('target_id');
-            $table->integer('source_id')->nullable();
+            $table->integer('target_id')->unique();
+            $table->integer('source_id')->nullable()->unique();
             $table->string('phase');
         });
         foreach (range(45, 52) as $id) {

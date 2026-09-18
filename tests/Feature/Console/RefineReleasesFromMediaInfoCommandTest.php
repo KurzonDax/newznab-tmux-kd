@@ -39,6 +39,7 @@ class RefineReleasesFromMediaInfoCommandTest extends TestCase
         Schema::create('releases_groups', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
             $table->unsignedInteger('groups_id');
+            $table->primary(['releases_id', 'groups_id']);
         });
         Schema::create('video_data', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id')->primary();
@@ -53,6 +54,7 @@ class RefineReleasesFromMediaInfoCommandTest extends TestCase
             $table->unsignedInteger('releases_id');
             $table->unsignedInteger('audioid')->default(1);
             $table->string('audioformat')->nullable();
+            $table->unique(['releases_id', 'audioid']);
         });
         Schema::create('root_categories', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();

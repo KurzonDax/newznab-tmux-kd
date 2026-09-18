@@ -249,7 +249,7 @@ class AdminReleasesControllerEditTest extends TestCase
         if (! Schema::hasTable('releases')) {
             Schema::create('releases', function (Blueprint $table): void {
                 $table->increments('id');
-                $table->string('guid');
+                $table->string('guid')->unique();
                 $table->string('name')->default('');
                 $table->string('searchname')->default('');
                 $table->string('searchname_normalized')->nullable();

@@ -45,7 +45,7 @@ final class ElasticsearchReleaseIndexFailureTest extends TestCase
         });
         Schema::create('releases', function (Blueprint $table): void {
             $table->id();
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->integer('totalpart')->default(0);
             $table->double('completion')->default(0);
             $table->integer('haspreview')->default(0);
@@ -63,7 +63,7 @@ final class ElasticsearchReleaseIndexFailureTest extends TestCase
             $table->integer('proc_media_movie')->default(0);
         });
         Schema::create('video_data', function (Blueprint $table): void {
-            $table->unsignedBigInteger('releases_id');
+            $table->unsignedBigInteger('releases_id')->primary();
         });
         Schema::create('audio_data', function (Blueprint $table): void {
             $table->id();

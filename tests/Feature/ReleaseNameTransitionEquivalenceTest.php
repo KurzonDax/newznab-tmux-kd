@@ -69,6 +69,7 @@ class ReleaseNameTransitionEquivalenceTest extends TestCase
         Schema::create('releases_groups', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
             $table->unsignedInteger('groups_id');
+            $table->primary(['releases_id', 'groups_id']);
         });
         DB::table('usenet_groups')->insert(['id' => 1]);
 

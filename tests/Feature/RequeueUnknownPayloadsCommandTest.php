@@ -40,7 +40,7 @@ class RequeueUnknownPayloadsCommandTest extends TestCase
             $table->string('fromname');
             $table->dateTime('postdate');
             $table->dateTime('adddate');
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->char('leftguid', 1);
             $table->unsignedInteger('categories_id');
             $table->unsignedBigInteger('size');
@@ -55,6 +55,7 @@ class RequeueUnknownPayloadsCommandTest extends TestCase
             $table->string('name');
             $table->unsignedBigInteger('size')->default(0);
             $table->timestamps();
+            $table->primary(['releases_id', 'name']);
         });
 
         DB::table('settings')->insert([

@@ -143,7 +143,7 @@ class UsenetGroupPurgeTest extends TestCase
         });
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
-            $table->string('name');
+            $table->string('name')->unique();
             $table->unsignedInteger('backfill_target')->default(1);
             $table->unsignedBigInteger('first_record')->default(0);
             $table->dateTime('first_record_postdate')->nullable();
@@ -164,20 +164,23 @@ class UsenetGroupPurgeTest extends TestCase
         Schema::create('parts', function (Blueprint $table): void {
             $table->unsignedBigInteger('binaries_id');
             $table->unsignedInteger('partnumber');
+            $table->primary(['binaries_id', 'partnumber']);
         });
         Schema::create('missed_parts', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
             $table->unsignedBigInteger('numberid');
             $table->unsignedInteger('groups_id');
+            $table->unique(['numberid', 'groups_id']);
         });
         Schema::create('releases', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->unsignedInteger('groups_id');
         });
         Schema::create('releases_groups', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
             $table->unsignedInteger('groups_id');
+            $table->primary(['releases_id', 'groups_id']);
         });
     }
 }

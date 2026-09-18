@@ -71,8 +71,7 @@ final class ReleaseDuplicateAbsorberTest extends TestCase
             $table->unsignedInteger('proc_media_movie')->default(1);
         });
         Schema::create('video_data', function (Blueprint $table): void {
-            $table->id();
-            $table->unsignedBigInteger('releases_id');
+            $table->unsignedBigInteger('releases_id')->primary();
         });
         Schema::create('audio_data', function (Blueprint $table): void {
             $table->id();

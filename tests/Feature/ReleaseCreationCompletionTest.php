@@ -403,8 +403,8 @@ class ReleaseCreationCompletionTest extends TestCase
     private function createTables(): void
     {
         DB::statement('CREATE TABLE settings (name VARCHAR(255) PRIMARY KEY, value TEXT)');
-        DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name VARCHAR(255))');
-        DB::statement('CREATE TABLE categories (id INTEGER PRIMARY KEY, title VARCHAR(255), parent_categories_id INTEGER NULL)');
+        DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name VARCHAR(255) UNIQUE)');
+        DB::statement('CREATE TABLE categories (id INTEGER PRIMARY KEY, title VARCHAR(255))');
         DB::statement('CREATE TABLE releases (
             id INTEGER PRIMARY KEY,
             name VARCHAR(255),
@@ -417,7 +417,7 @@ class ReleaseCreationCompletionTest extends TestCase
             lastarticle INTEGER NULL,
             groups_id INTEGER,
             adddate DATETIME NULL,
-            guid VARCHAR(64),
+            guid VARCHAR(64) UNIQUE,
             leftguid VARCHAR(1),
             postdate DATETIME NULL,
             fromname VARCHAR(255),
@@ -432,7 +432,6 @@ class ReleaseCreationCompletionTest extends TestCase
             is_trusted_name INTEGER DEFAULT 0,
             iscategorized INTEGER,
             predb_id INTEGER,
-            source VARCHAR(255) NULL,
             collectionhash BLOB NULL
         )');
         DB::statement('CREATE UNIQUE INDEX ux_releases_collectionhash ON releases (collectionhash)');
@@ -451,7 +450,7 @@ class ReleaseCreationCompletionTest extends TestCase
             lastarticle INTEGER NULL,
             filesize INTEGER,
             filecheck INTEGER,
-            collectionhash VARCHAR(255),
+            collectionhash VARCHAR(255) UNIQUE,
             collection_regexes_id INTEGER,
             releases_id INTEGER NULL,
             noise VARCHAR(64)
@@ -467,16 +466,19 @@ class ReleaseCreationCompletionTest extends TestCase
             number INTEGER,
             messageid VARCHAR(255),
             partnumber INTEGER,
-            size INTEGER
+            size INTEGER,
+            PRIMARY KEY (binaries_id, partnumber)
         )');
         DB::statement('CREATE TABLE release_regexes (
             releases_id INTEGER,
             collection_regex_id INTEGER,
-            naming_regex_id INTEGER
+            naming_regex_id INTEGER,
+            PRIMARY KEY (releases_id, collection_regex_id, naming_regex_id)
         )');
         DB::statement('CREATE TABLE releases_groups (
             releases_id INTEGER,
-            groups_id INTEGER
+            groups_id INTEGER,
+            PRIMARY KEY (releases_id, groups_id)
         )');
         DB::statement('CREATE TABLE release_naming_regexes (
             id INTEGER PRIMARY KEY,
@@ -494,11 +496,11 @@ class ReleaseCreationCompletionTest extends TestCase
         )');
         DB::statement('CREATE TABLE predb (
             id INTEGER PRIMARY KEY,
-            title VARCHAR(255),
+            title VARCHAR(255) UNIQUE,
             filename VARCHAR(255)
         )');
 
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.test']);
-        DB::table('categories')->insert(['id' => 10, 'title' => 'Other Misc', 'parent_categories_id' => null]);
+        DB::table('categories')->insert(['id' => 10, 'title' => 'Other Misc']);
     }
 }

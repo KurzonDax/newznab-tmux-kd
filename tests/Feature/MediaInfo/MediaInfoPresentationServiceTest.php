@@ -109,7 +109,7 @@ class MediaInfoPresentationServiceTest extends TestCase
             ],
             [
                 'releases_id' => $release->id,
-                'audioid' => 2,
+                'audioid' => 3,
                 'audioformat' => 'AAC',
                 'audiochannels' => null,
                 'audiobitrate' => null,
@@ -276,6 +276,7 @@ class MediaInfoPresentationServiceTest extends TestCase
             $table->boolean('diagnostic_filtered')->default(false);
             $table->boolean('diagnostic_truncated')->default(false);
             $table->timestamps();
+            $table->unique(['media_info_probe_id', 'type', 'track_index']);
         });
         Schema::create('media_infos', function (Blueprint $table): void {
             $table->id();
@@ -284,7 +285,7 @@ class MediaInfoPresentationServiceTest extends TestCase
             $table->string('file_name')->nullable();
         });
         Schema::create('video_data', function (Blueprint $table): void {
-            $table->unsignedBigInteger('releases_id');
+            $table->unsignedBigInteger('releases_id')->primary();
             $table->string('containerformat')->nullable();
             $table->string('overallbitrate')->nullable();
             $table->string('videoduration')->nullable();
@@ -306,16 +307,18 @@ class MediaInfoPresentationServiceTest extends TestCase
             $table->string('audiolanguage')->nullable();
             $table->string('audiosamplerate')->nullable();
             $table->string('audiotitle')->nullable();
+            $table->unique(['releases_id', 'audioid']);
         });
         Schema::create('release_subtitles', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('releases_id');
             $table->unsignedInteger('subsid')->nullable();
             $table->string('subslanguage')->nullable();
+            $table->unique(['releases_id', 'subsid']);
         });
         Schema::create('release_audio_tags', function (Blueprint $table): void {
             $table->id();
-            $table->unsignedBigInteger('releases_id');
+            $table->unsignedBigInteger('releases_id')->unique();
             $table->string('album')->nullable();
             $table->string('performer')->nullable();
             $table->string('album_performer')->nullable();

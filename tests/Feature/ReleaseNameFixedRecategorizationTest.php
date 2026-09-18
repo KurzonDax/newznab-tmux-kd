@@ -652,6 +652,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
         Schema::create('release_files', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
             $table->string('name');
+            $table->primary(['releases_id', 'name']);
         });
         $group = UsenetGroup::query()->create(['name' => 'alt.binaries.test']);
         $release = Release::factory()->create([
@@ -731,6 +732,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
         Schema::create('release_files', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
             $table->string('name');
+            $table->primary(['releases_id', 'name']);
         });
         $manager = app(ReleaseFileManager::class);
         $context = new ReleaseProcessingContext($release);
@@ -1383,7 +1385,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
                 $table->unsignedBigInteger('size')->default(0);
                 $table->dateTime('postdate')->nullable();
                 $table->dateTime('adddate')->nullable();
-                $table->string('guid', 40);
+                $table->string('guid', 40)->unique();
                 $table->char('leftguid', 1);
                 $table->string('fromname')->nullable();
                 $table->integer('categories_id')->default(Category::OTHER_MISC);
@@ -1428,6 +1430,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             Schema::create('releases_groups', function (Blueprint $table): void {
                 $table->unsignedInteger('releases_id');
                 $table->unsignedInteger('groups_id');
+                $table->primary(['releases_id', 'groups_id']);
             });
         }
 
@@ -1448,6 +1451,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
                 $table->unsignedInteger('releases_id');
                 $table->unsignedInteger('audioid');
                 $table->string('audioformat')->nullable();
+                $table->unique(['releases_id', 'audioid']);
             });
         }
     }

@@ -249,7 +249,7 @@ class MovieServiceTest extends ImdbScraperTestCase
     public function imdb_film_series_ties_use_duration_and_similarity_ignores_case(): void
     {
         Schema::create('video_data', function (Blueprint $table): void {
-            $table->unsignedInteger('releases_id');
+            $table->unsignedInteger('releases_id')->primary();
             $table->string('videoduration');
         });
         $scraper = $this->mock(ImdbScraper::class);

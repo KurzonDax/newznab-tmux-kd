@@ -24,7 +24,7 @@ class TmuxDisplaySnapshotIntegrationTest extends TestCase
             DB::statement('ALTER TABLE releases ADD '.$column.' INTEGER DEFAULT 1');
         }
         DB::statement('CREATE TABLE media_infos (releases_id INTEGER, unique_id TEXT, movie_name TEXT)');
-        DB::statement('CREATE TABLE release_files (releases_id INTEGER, name TEXT, crc32 TEXT)');
+        DB::statement('CREATE TABLE release_files (releases_id INTEGER, name TEXT, crc32 TEXT, PRIMARY KEY (releases_id, name))');
         DB::statement('CREATE TABLE collections (id INTEGER PRIMARY KEY)');
         DB::table('collections')->insert(['id' => 1]);
         DB::table('releases')->insert(['id' => 1, 'searchname' => 'first', 'adddate' => '2026-01-01 10:00:00', 'categories_id' => 5040, 'isrenamed' => 1, 'nfostatus' => 1, 'predb_id' => 1]);

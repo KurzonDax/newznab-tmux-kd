@@ -30,8 +30,8 @@ class NumberedMkvArchiveIngestionTest extends NumberedMkvArchiveTestCase
         ProductionTables::fromAuthority()->create('root_categories', ['id', 'title']);
         DB::table('root_categories')->insert(['id' => 7000, 'title' => 'Misc']);
         DB::table('categories')->insert(['id' => 7010, 'title' => 'Other', 'root_categories_id' => 7000]);
-        DB::statement('CREATE TABLE predb (id INTEGER PRIMARY KEY, title TEXT, filename TEXT)');
-        DB::statement('CREATE TABLE release_regexes (releases_id INTEGER, collection_regex_id INTEGER, naming_regex_id INTEGER)');
+        DB::statement('CREATE TABLE predb (id INTEGER PRIMARY KEY, title TEXT UNIQUE, filename TEXT)');
+        DB::statement('CREATE TABLE release_regexes (releases_id INTEGER, collection_regex_id INTEGER, naming_regex_id INTEGER, PRIMARY KEY (releases_id, collection_regex_id, naming_regex_id))');
         DB::statement('CREATE TABLE release_naming_regexes (id INTEGER PRIMARY KEY, group_regex TEXT, regex TEXT, status INTEGER, ordinal INTEGER)');
         foreach (['categorizeforeign' => '0', 'catwebdl' => '0', 'nzbsplitlevel' => '1', 'check_passworded_rars' => '0'] as $name => $value) {
             DB::table('settings')->updateOrInsert(['name' => $name], ['value' => $value]);

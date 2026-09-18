@@ -108,7 +108,7 @@ class NntmuxRemoveBadClaimsTest extends TestCase
         DB::statement('DROP TABLE IF EXISTS releases');
         DB::statement('CREATE TABLE releases (
             id INTEGER PRIMARY KEY,
-            guid VARCHAR(64),
+            guid VARCHAR(64) UNIQUE,
             passwordstatus INTEGER NOT NULL DEFAULT -1,
             nzbstatus INTEGER NOT NULL DEFAULT 1,
             additional_pp_claimed_at DATETIME NULL,

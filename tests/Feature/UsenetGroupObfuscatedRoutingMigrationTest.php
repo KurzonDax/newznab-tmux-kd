@@ -25,7 +25,7 @@ class UsenetGroupObfuscatedRoutingMigrationTest extends TestCase
 
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->id();
-            $table->string('name');
+            $table->string('name')->unique();
             $table->unsignedInteger('backfill_target')->default(1);
         });
     }

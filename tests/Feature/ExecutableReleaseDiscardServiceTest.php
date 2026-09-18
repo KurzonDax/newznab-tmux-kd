@@ -299,7 +299,7 @@ class ExecutableReleaseDiscardServiceTest extends TestCase
         Schema::create('releases', function (Blueprint $table): void {
             $table->integer('nzbstatus')->default(1);
             $table->unsignedInteger('id')->primary();
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->string('name')->default('');
             $table->string('searchname')->default('');
             $table->string('fromname')->default('');

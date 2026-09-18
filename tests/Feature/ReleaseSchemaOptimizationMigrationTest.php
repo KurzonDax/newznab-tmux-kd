@@ -77,6 +77,10 @@ final class ReleaseSchemaOptimizationMigrationTest extends TestCase
 
     public function test_rollback_backfill_restores_sparse_rows_in_batches(): void
     {
+        // down() re-adds these dropped columns before the backfill fills them.
+        DB::statement('ALTER TABLE releases ADD COLUMN nzb_password VARCHAR(255) NULL');
+        DB::statement('ALTER TABLE releases ADD COLUMN nzb_creation_attempts INTEGER NOT NULL DEFAULT 0');
+        DB::statement('ALTER TABLE releases ADD COLUMN nzb_creation_last_error TEXT NULL');
         $releases = [];
         $passwords = [];
         $failures = [];
@@ -144,9 +148,8 @@ final class ReleaseSchemaOptimizationMigrationTest extends TestCase
             DB::statement('DROP TABLE IF EXISTS '.$table);
         }
         DB::statement('CREATE TABLE releases (
-            id INTEGER PRIMARY KEY, guid VARCHAR(40) NOT NULL, leftguid CHAR(1) NOT NULL,
-            comments INTEGER NOT NULL DEFAULT 0, nzb_password VARCHAR(255) NULL,
-            nzb_creation_attempts INTEGER NOT NULL DEFAULT 0, nzb_creation_last_error TEXT NULL
+            id INTEGER PRIMARY KEY, guid VARCHAR(40) NOT NULL UNIQUE, leftguid CHAR(1) NOT NULL,
+            comments INTEGER NOT NULL DEFAULT 0
         )');
         DB::statement('CREATE TABLE release_comments (
             id INTEGER PRIMARY KEY, releases_id INTEGER NOT NULL, isvisible INTEGER NOT NULL DEFAULT 1

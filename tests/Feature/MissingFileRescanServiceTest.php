@@ -825,7 +825,7 @@ class MissingFileRescanServiceTest extends TestCase
         DB::statement('DROP TABLE IF EXISTS usenet_groups');
         DB::statement('CREATE TABLE releases (
             id INTEGER PRIMARY KEY,
-            guid VARCHAR(64),
+            guid VARCHAR(64) UNIQUE,
             groups_id INTEGER NULL,
             nzbstatus INTEGER NOT NULL DEFAULT 0,
             completion DOUBLE NOT NULL DEFAULT 0,
@@ -865,7 +865,7 @@ class MissingFileRescanServiceTest extends TestCase
         DB::statement('CREATE TABLE audio_data (id INTEGER PRIMARY KEY, releases_id INTEGER, audioformat VARCHAR(255) NULL)');
         DB::statement('CREATE TABLE usenet_groups (
             id INTEGER PRIMARY KEY,
-            name VARCHAR(255),
+            name VARCHAR(255) UNIQUE,
             first_record INTEGER NOT NULL DEFAULT 0,
             first_record_postdate DATETIME NULL,
             last_record INTEGER NOT NULL DEFAULT 0,

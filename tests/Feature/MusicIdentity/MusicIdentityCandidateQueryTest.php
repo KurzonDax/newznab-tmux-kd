@@ -38,7 +38,7 @@ final class MusicIdentityCandidateQueryTest extends TestCase
         });
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->char('leftguid', 1);
             $table->unsignedInteger('groups_id');
             $table->unsignedInteger('categories_id');
@@ -50,6 +50,7 @@ final class MusicIdentityCandidateQueryTest extends TestCase
         Schema::create('releases_groups', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
             $table->unsignedInteger('groups_id');
+            $table->primary(['releases_id', 'groups_id']);
         });
 
         $this->migration('*_create_release_audio_evidence_tables.php')->up();
@@ -185,7 +186,7 @@ final class MusicIdentityCandidateQueryTest extends TestCase
     ): void {
         DB::table('releases')->insert([
             'id' => $id,
-            'guid' => str_repeat($guidCharacter, 36),
+            'guid' => $guidCharacter.str_pad((string) $id, 35, '0', STR_PAD_LEFT),
             'leftguid' => $guidCharacter,
             'groups_id' => $groupId,
             'categories_id' => $categoryId,

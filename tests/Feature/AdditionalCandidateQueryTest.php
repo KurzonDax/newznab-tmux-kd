@@ -401,18 +401,19 @@ class AdditionalCandidateQueryTest extends TestCase
         // reaches into usenet_groups for the forced-root override.
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
-            $table->string('name')->default('');
+            $table->string('name')->default('')->unique();
             $table->unsignedInteger('forced_root_categories_id')->nullable();
         });
 
         Schema::create('releases_groups', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
             $table->unsignedInteger('groups_id');
+            $table->primary(['releases_id', 'groups_id']);
         });
 
         Schema::create('releases', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->char('leftguid', 1);
             $table->integer('passwordstatus');
             $table->integer('haspreview');

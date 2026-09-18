@@ -43,7 +43,7 @@ class AudioEvidenceSynthesizerTest extends TestCase
 
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->string('name');
             $table->string('searchname');
             $table->unsignedInteger('categories_id');
@@ -58,6 +58,7 @@ class AudioEvidenceSynthesizerTest extends TestCase
             $table->boolean('passworded')->default(false);
             $table->string('crc32', 8)->default('');
             $table->timestamps();
+            $table->primary(['releases_id', 'name']);
         });
 
         $this->migration('*_create_release_audio_tags_table.php')->up();

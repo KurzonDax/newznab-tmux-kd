@@ -291,7 +291,7 @@ final class NzbImportServiceTest extends TestCase
         ]);
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('guid', 40);
+            $table->string('guid', 40)->unique();
         });
 
         Search::shouldReceive('updateRelease')->once()->with(7);

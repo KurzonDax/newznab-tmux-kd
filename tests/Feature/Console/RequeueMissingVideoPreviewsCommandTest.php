@@ -32,7 +32,7 @@ class RequeueMissingVideoPreviewsCommandTest extends TestCase
             $table->string('fromname');
             $table->dateTime('postdate');
             $table->dateTime('adddate');
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->char('leftguid', 1);
             $table->unsignedInteger('categories_id');
             $table->integer('nzbstatus');

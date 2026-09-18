@@ -52,7 +52,7 @@ class ReleaseRemoverBatchingTest extends TestCase
 
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('name');
+            $table->string('name')->unique();
         });
         Schema::create('binaryblacklist', function (Blueprint $table): void {
             $table->increments('id');
@@ -64,7 +64,7 @@ class ReleaseRemoverBatchingTest extends TestCase
         });
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('guid', 40);
+            $table->string('guid', 40)->unique();
             $table->string('searchname');
             $table->integer('nzbstatus')->default(NzbService::NZB_ADDED);
             $table->dateTime('nzb_creation_claimed_at')->nullable();
@@ -78,6 +78,7 @@ class ReleaseRemoverBatchingTest extends TestCase
         Schema::create('release_files', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
             $table->string('name');
+            $table->primary(['releases_id', 'name']);
         });
         Schema::dropIfExists('collections');
         Schema::create('collections', function (Blueprint $table): void {

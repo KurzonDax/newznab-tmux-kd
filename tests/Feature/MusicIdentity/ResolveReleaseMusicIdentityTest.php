@@ -82,7 +82,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
         DB::table('usenet_groups')->insert(['id' => 1, 'forced_root_categories_id' => null]);
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->char('leftguid', 1);
             $table->string('name');
             $table->string('searchname');
@@ -97,6 +97,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
         Schema::create('releases_groups', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
             $table->unsignedInteger('groups_id');
+            $table->primary(['releases_id', 'groups_id']);
         });
         Schema::create('release_files', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
@@ -105,6 +106,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
             $table->boolean('passworded')->default(false);
             $table->string('crc32', 8)->default('');
             $table->timestamps();
+            $table->primary(['releases_id', 'name']);
         });
 
         $this->migration('*_create_release_audio_tags_table.php')->up();

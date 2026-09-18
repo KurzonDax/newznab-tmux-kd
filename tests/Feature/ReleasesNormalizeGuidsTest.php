@@ -159,7 +159,7 @@ final class ReleasesNormalizeGuidsTest extends TestCase
         DB::statement('DROP TABLE IF EXISTS releases');
         DB::statement('CREATE TABLE releases (
             id INTEGER PRIMARY KEY,
-            guid VARCHAR(40) NOT NULL,
+            guid VARCHAR(40) NOT NULL UNIQUE,
             leftguid CHAR(1) NOT NULL,
             name VARCHAR(255) NOT NULL DEFAULT ""
         )');

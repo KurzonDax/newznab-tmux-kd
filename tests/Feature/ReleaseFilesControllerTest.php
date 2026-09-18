@@ -25,7 +25,7 @@ class ReleaseFilesControllerTest extends TestCase
         $this->withoutMiddleware();
         Schema::create('releases', function (Blueprint $table): void {
             $table->id();
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->string('searchname');
         });
         DB::table('releases')->insert(['guid' => 'abc', 'searchname' => 'Example']);

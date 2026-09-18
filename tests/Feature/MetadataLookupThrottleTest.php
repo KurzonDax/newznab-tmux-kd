@@ -230,7 +230,7 @@ class MetadataLookupThrottleTest extends TestCase
             $table->unsignedBigInteger('size')->default(0);
             $table->dateTime('postdate')->nullable();
             $table->dateTime('adddate')->nullable();
-            $table->string('guid', 40);
+            $table->string('guid', 40)->unique();
             $table->char('leftguid', 1);
             $table->string('fromname')->nullable();
             $table->integer('categories_id')->default(Category::OTHER_MISC);

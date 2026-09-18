@@ -22,7 +22,7 @@ class PcCategorizerBoundaryTest extends TestCase
 
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('name')->default('');
+            $table->string('name')->default('')->unique();
             $table->boolean('route_obfuscated_names')->default(false);
             $table->unsignedInteger('obfuscated_default_root_categories_id')->nullable();
             $table->unsignedInteger('forced_root_categories_id')->nullable();

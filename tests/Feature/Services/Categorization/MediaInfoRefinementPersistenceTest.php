@@ -217,7 +217,7 @@ class MediaInfoRefinementPersistenceTest extends TestCase
         if (! Schema::hasTable('usenet_groups')) {
             Schema::create('usenet_groups', function (Blueprint $table): void {
                 $table->increments('id');
-                $table->string('name')->default('');
+                $table->string('name')->default('')->unique();
                 $table->unsignedInteger('forced_root_categories_id')->nullable();
             });
         }
@@ -226,6 +226,7 @@ class MediaInfoRefinementPersistenceTest extends TestCase
             Schema::create('releases_groups', function (Blueprint $table): void {
                 $table->unsignedInteger('releases_id');
                 $table->unsignedInteger('groups_id');
+                $table->primary(['releases_id', 'groups_id']);
             });
         }
 
@@ -246,6 +247,7 @@ class MediaInfoRefinementPersistenceTest extends TestCase
                 $table->unsignedInteger('releases_id');
                 $table->unsignedInteger('audioid');
                 $table->string('audioformat')->nullable();
+                $table->unique(['releases_id', 'audioid']);
             });
         }
     }
