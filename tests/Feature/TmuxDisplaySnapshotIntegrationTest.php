@@ -37,6 +37,7 @@ class TmuxDisplaySnapshotIntegrationTest extends TestCase
             $this->assertSame(0, $first['counts']['processrenames']);
             DB::table('collections')->insert(['id' => 2]);
             DB::table('releases')->insert(['id' => 2, 'searchname' => 'second', 'adddate' => '2026-01-01 12:00:01', 'categories_id' => 2000, 'isrenamed' => 0, 'nfostatus' => 0, 'predb_id' => 0, 'proc_files' => 0]);
+            DB::table('release_files')->insert(['releases_id' => 2, 'name' => 'second.mkv', 'crc32' => null]);
             $this->travel(1)->seconds();
             $fresh = $monitor->operational();
             $this->assertSame('second', $fresh['timers']['newOld']['newestrelname']);

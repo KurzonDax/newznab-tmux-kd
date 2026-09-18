@@ -187,14 +187,14 @@ final class NameFixingQueryService
     {
         $sources = [
             '(r.nfostatus = 1 AND r.proc_nfo = 0)',
-            'r.proc_files = 0',
+            '(r.proc_files = 0 AND '.self::SOURCE_EXISTS[self::SOURCE_FILES].')',
             '(r.proc_xxx = 0 AND '.self::SOURCE_EXISTS[self::SOURCE_XXX].')',
             '(r.proc_uid = 0 AND '.self::SOURCE_EXISTS[self::SOURCE_UID].')',
             '(r.proc_media_movie = 0 AND '.self::SOURCE_EXISTS[self::SOURCE_MEDIA_MOVIE].')',
             '(r.nzbstatus = 1 AND r.proc_par2 = 0)',
-            'r.proc_srr = 0',
+            '(r.proc_srr = 0 AND '.self::SOURCE_EXISTS[self::SOURCE_SRR].')',
             'r.proc_hash16k = 0',
-            'r.proc_crc32 = 0',
+            '(r.proc_crc32 = 0 AND '.self::SOURCE_EXISTS[self::SOURCE_CRC].')',
         ];
 
         if ($this->srrdbEnabled()) {

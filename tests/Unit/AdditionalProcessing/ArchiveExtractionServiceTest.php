@@ -11,6 +11,7 @@ use dariusiii\rarinfo\Par2Info;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Support\ObfuscationRecovery\SyntheticPosting;
 use Tests\TestCase;
 
 class ArchiveExtractionServiceTest extends TestCase
@@ -31,9 +32,32 @@ class ArchiveExtractionServiceTest extends TestCase
         $this->assertSame('00-group.nfo', $truncated['files'][0]['name']);
         $this->assertFalse($truncated['manifestComplete']);
 
-        $volume = (string) file_get_contents(base_path('tests/Fixtures/Audio/rar-seek/store-seek.part1.rar'));
-        $incompleteSet = $service->processCompressedData($volume, $context, $directory);
-        $this->assertFalse($incompleteSet['manifestComplete']);
+    }
+
+    public function test_a_volume_listing_ending_in_a_continued_entry_is_complete_for_naming(): void
+    {
+        $service = new ArchiveExtractionService($this->makeConfig());
+        $context = new ReleaseProcessingContext(new Release(['id' => 1]));
+        $directory = $this->makeTempDirectory('volume-manifest').'/';
+        $audio = (string) file_get_contents(base_path('tests/Fixtures/audio-store.rar'));
+        $first = (string) file_get_contents(base_path('tests/Fixtures/Audio/rar-seek/store-seek.part1.rar'));
+        $last = (string) file_get_contents(base_path('tests/Fixtures/Audio/rar-seek/store-seek.part6.rar'));
+        $set = SyntheticPosting::rar([400000, 400000, 100000], 'Visible.Release.2026.1080p-GROUP.mkv');
+        $inner = SyntheticPosting::rar([899796], 'Visible.Release.2026.1080p-GROUP.mkv')['volumes'][0];
+        $nested = SyntheticPosting::rar([400000, 400000, 100000], 'inner.rar', $inner);
+        foreach ([
+            [$audio, true, '00-group.nfo'], [substr($audio, 0, 80), false, '00-group.nfo'],
+            [$first, true, '00-artwork.png'], [substr($first, 0, 184320), true, '00-artwork.png'],
+            [$last, true, '01-track.flac'],
+            [substr($set['volumes'][0], 0, 200000), true, 'Visible.Release.2026.1080p-GROUP.mkv'],
+            [substr($set['volumes'][2], 0, 50000), false, 'Visible.Release.2026.1080p-GROUP.mkv'],
+            [substr($nested['volumes'][0], 0, 200000), false, 'inner.rar'],
+        ] as [$data, $complete, $name]) {
+            $result = $service->processCompressedData($data, $context, $directory);
+            $this->assertTrue($result['success']);
+            $this->assertSame($name, $result['files'][0]['name']);
+            $this->assertSame($complete, $result['manifestComplete'], $name.' ('.strlen($data).' bytes)');
+        }
     }
 
     protected function tearDown(): void

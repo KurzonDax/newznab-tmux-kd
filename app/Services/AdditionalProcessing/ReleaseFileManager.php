@@ -876,7 +876,7 @@ class ReleaseFileManager
         $names = [];
         foreach ($files as $file) {
             if (! is_array($file) || ! empty($file['error']) || ! isset($file['name'])
-                || ($rangeEnd !== null && isset($file['next_offset']) && $file['next_offset'] > $rangeEnd + 1)) {
+                || ($rangeEnd !== null && isset($file['next_offset']) && $file['next_offset'] > $rangeEnd + 1 && empty($file['split_after']))) {
                 return null;
             }
             $path = $ancestor.$file['name'];

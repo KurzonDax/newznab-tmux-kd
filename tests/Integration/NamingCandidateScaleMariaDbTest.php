@@ -117,6 +117,7 @@ final class NamingCandidateScaleMariaDbTest extends TestCase
     {
         $migration = require database_path('migrations/2026_09_10_231728_add_name_direct_work_index_to_releases.php');
         $migration->up();
+        (require database_path('migrations/2026_09_19_000000_gate_release_file_name_sources_on_evidence.php'))->up();
         $terminal = array_fill_keys(['proc_nfo', 'proc_files', 'proc_par2', 'proc_srr', 'proc_hash16k', 'proc_crc32',
             'proc_uid', 'proc_media_movie', 'proc_xxx', 'proc_srrdb'], 1);
         DB::table('releases')->insert($terminal + ['id' => 1, 'name' => 'fixture', 'searchname' => 'fixture',
@@ -126,7 +127,7 @@ final class NamingCandidateScaleMariaDbTest extends TestCase
         foreach (array_keys($terminal) as $flag) {
             DB::table('releases')->update($terminal);
             DB::table('releases')->update([$flag => 0]);
-            $evidence = in_array($flag, ['proc_uid', 'proc_media_movie', 'proc_xxx', 'proc_srrdb'], true);
+            $evidence = in_array($flag, ['proc_uid', 'proc_media_movie', 'proc_xxx', 'proc_srrdb', 'proc_files', 'proc_srr', 'proc_crc32'], true);
             $this->assertSame((int) ! $evidence, (int) DB::table('releases')->value('name_direct_work_pending'), $flag);
             $this->assertSame((int) $evidence, (int) DB::table('releases')->value('name_evidence_work_pending'), $flag);
         }
@@ -164,6 +165,7 @@ final class NamingCandidateScaleMariaDbTest extends TestCase
             $writeBefore = $this->measureReleaseWrites();
             $start = microtime(true);
             $migration->up();
+            (require database_path('migrations/2026_09_19_000000_gate_release_file_name_sources_on_evidence.php'))->up();
             $build = microtime(true) - $start;
             $writeAfter = $this->measureReleaseWrites();
             $indexBytes = (int) DB::selectOne('SELECT INDEX_LENGTH AS bytes FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?', [DB::connection()->getDatabaseName(), $r])->bytes;
@@ -207,6 +209,7 @@ final class NamingCandidateScaleMariaDbTest extends TestCase
     {
         $migration = require database_path('migrations/2026_09_10_231728_add_name_direct_work_index_to_releases.php');
         $migration->up();
+        (require database_path('migrations/2026_09_19_000000_gate_release_file_name_sources_on_evidence.php'))->up();
         $r = DB::getTablePrefix().'releases';
         $m = DB::getTablePrefix().'media_infos';
         $f = DB::getTablePrefix().'release_files';
@@ -217,7 +220,7 @@ final class NamingCandidateScaleMariaDbTest extends TestCase
                 nfostatus,nzbstatus,isrenamed,predb_id,proc_nfo,proc_files,proc_par2,proc_srr,proc_hash16k,proc_crc32,
                 proc_uid,proc_media_movie,proc_xxx,proc_srrdb)
                 SELECT seq,'fixture','fixture','neutral',SHA1(CONCAT('release:',seq)),SUBSTRING('0123456789abcdef',MOD(seq,16)+1,1),
-                1,7000,100,'2026-01-01',1,1,0,0,1,1,1,1,1,1,0,0,0,0 FROM seq_1_to_$size");
+                1,7000,100,'2026-01-01',1,1,0,0,1,0,1,0,1,0,0,0,0,0 FROM seq_1_to_$size");
             DB::statement("ANALYZE TABLE `$r`, `$m`, `$f`");
             $service = new NameFixingQueryService;
             $before = $this->reads();
@@ -241,13 +244,14 @@ final class NamingCandidateScaleMariaDbTest extends TestCase
             ['releases_id' => 9998, 'name' => 'SDPORN.fixture.rar', 'crc32' => null],
             ['releases_id' => 9997, 'name' => 'archive.rar', 'crc32' => '1234ABCD'],
         ]);
+        DB::table('releases')->where('id', 9997)->update(['proc_files' => 1, 'proc_crc32' => 1]);
         $this->assertSame(4, $service->standardCandidateCount());
         $this->assertSame([9999], array_map(static fn (object $row): int => (int) $row->id, $service->standardCandidateBatch('f', 1)));
         $this->assertSame([9999, 9983], array_map(static fn (object $row): int => (int) $row->id, $service->standardCandidateBatch('f', 100)));
         $this->assertTrue($service->hasStandardCandidates());
         config(['nntmux_srrdb.enabled' => false]);
         $this->assertSame(3, $service->standardCandidateCount());
-        DB::table('releases')->update(['proc_files' => 0]);
+        DB::table('releases')->update(['proc_hash16k' => 0]);
         $before = $this->reads();
         $this->assertTrue($service->hasStandardCandidates());
         $this->assertLessThan(50, $this->reads() - $before, 'A wake-up must stop at the first direct candidate.');
@@ -257,6 +261,7 @@ final class NamingCandidateScaleMariaDbTest extends TestCase
     {
         $migration = require database_path('migrations/2026_09_10_231728_add_name_direct_work_index_to_releases.php');
         $migration->up();
+        (require database_path('migrations/2026_09_19_000000_gate_release_file_name_sources_on_evidence.php'))->up();
         $r = DB::getTablePrefix().'releases';
         $m = DB::getTablePrefix().'media_infos';
         $f = DB::getTablePrefix().'release_files';
@@ -321,10 +326,11 @@ final class NamingCandidateScaleMariaDbTest extends TestCase
                 'leftguid' => dechex($offset % 16), 'isrenamed' => 0, $flags[($offset - 1) % 10] => 0]);
             DB::table('releases')->insert($row);
             DB::table('media_infos')->insert(['releases_id' => $id, 'unique_id' => 'pending uid', 'movie_name' => 'pending title']);
-            DB::table('release_files')->insert(['releases_id' => $id, 'name' => 'SDPORN.pending.rar', 'crc32' => sprintf('%08x', $offset)]);
+            DB::table('release_files')->insert(['releases_id' => $id, 'name' => 'SDPORN.pending.srr', 'crc32' => sprintf('%08x', $offset)]);
             $actual = DB::table('releases')->where('id', $id)->first();
-            $this->assertSame(($offset - 1) % 10 < 6 ? 1 : 0, (int) $actual->name_direct_work_pending);
-            $this->assertSame(($offset - 1) % 10 >= 6 ? 1 : 0, (int) $actual->name_evidence_work_pending);
+            $direct = in_array(($offset - 1) % 10, [0, 2, 4], true);
+            $this->assertSame($direct ? 1 : 0, (int) $actual->name_direct_work_pending);
+            $this->assertSame($direct ? 0 : 1, (int) $actual->name_evidence_work_pending);
         }
         $service = new NameFixingQueryService;
         $samples = [];

@@ -212,6 +212,7 @@ class ReleaseLifecycleEligibilityGapTest extends TestCase
         DB::statement('CREATE TABLE release_files (
             releases_id INTEGER NOT NULL,
             name VARCHAR(255) NOT NULL,
+            crc32 VARCHAR(8),
             PRIMARY KEY (releases_id, name)
         )');
 

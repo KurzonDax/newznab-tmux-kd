@@ -35,7 +35,7 @@ class NameFixingBatchTest extends TestCase
     {
         $database = $this->mockCandidateConnection();
         $database->method('getSchemaBuilder')->willReturn($this->createMock(Builder::class));
-        $database->expects($this->exactly(5))
+        $database->expects($this->exactly(6))
             ->method('select')
             ->willReturnCallback(function (string $sql): array {
                 $sql = str_replace('"', '', $sql);
@@ -347,6 +347,43 @@ class NameFixingBatchTest extends TestCase
         DB::extend('namefix_batch', static fn () => $database);
 
         return $database;
+    }
+
+    #[Test]
+    public function the_sweep_leaves_release_file_sources_pending_until_a_release_file_exists(): void
+    {
+        $release = $this->processedRelease(100);
+        $release->proc_files = $release->proc_srr = $release->proc_crc32 = 0;
+        $database = $this->mockCandidateConnection();
+        $database->method('getSchemaBuilder')->willReturn($this->createMock(Builder::class));
+        $database->method('select')->willReturnCallback(static fn (string $sql): array => str_contains(str_replace('"', '', $sql), 'r.proc_xxx') ? [$release] : []);
+        $updates = $this->createPartialMock(ReleaseUpdateService::class, ['updateSingleColumn']);
+        $updates->expects($this->never())->method('updateSingleColumn');
+        $this->assertSame(['checked' => 1, 'fixed' => 0], $this->serviceWith($database, $updates)->processStandardBatch('a', 100, false));
+    }
+
+    #[Test]
+    public function the_sweep_settles_release_file_sources_once_a_release_file_exists(): void
+    {
+        $release = $this->processedRelease(100);
+        $release->proc_files = $release->proc_srr = $release->proc_crc32 = 0;
+        $database = $this->mockCandidateConnection();
+        $database->method('getSchemaBuilder')->willReturn($this->createMock(Builder::class));
+        $database->method('select')->willReturnCallback(static function (string $sql) use ($release): array {
+            $sql = str_replace('"', '', $sql);
+            if (str_contains($sql, 'r.proc_xxx')) {
+                return [$release];
+            }
+
+            return str_contains($sql, 'SELECT DISTINCT rf.releases_id') ? [(object) ['releases_id' => 100]] : [];
+        });
+        $calls = [];
+        $updates = $this->createPartialMock(ReleaseUpdateService::class, ['updateSingleColumn']);
+        $updates->method('updateSingleColumn')->willReturnCallback(static function ($column, $value, $id) use (&$calls): void {
+            $calls[] = [$column, $value, $id];
+        });
+        $this->assertSame(['checked' => 1, 'fixed' => 0], $this->serviceWith($database, $updates)->processStandardBatch('a', 100, false));
+        $this->assertSame([['proc_crc32', 1, 100], ['proc_srr', 1, 100], ['proc_files', 1, 100]], $calls);
     }
 
     private function serviceWith(

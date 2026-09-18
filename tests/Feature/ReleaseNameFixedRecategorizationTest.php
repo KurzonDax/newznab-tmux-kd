@@ -37,6 +37,8 @@ use Illuminate\Support\Facades\Schema;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ObfuscationRecovery\SyntheticPosting;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 use Tests\Unit\AdditionalProcessing\CreatesProcessingConfiguration;
 use ZipArchive;
@@ -746,6 +748,30 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
         $this->assertSame($rename ? Category::MOVIE_HD : Category::OTHER_HASHED, (int) $release->categories_id);
     }
 
+    public function test_a_truncated_first_rar_volume_names_an_obfuscated_release(): void
+    {
+        Search::shouldReceive('updateRelease')->andReturn(true);
+        Search::shouldReceive('searchPredb')->andReturn([]);
+        config(['nntmux.echocli' => false]);
+        $group = UsenetGroup::query()->create(['name' => 'alt.binaries.test']);
+        $release = Release::factory()->create([
+            'name' => '5da7b5393d4f4445ac4db1ee8e95f567',
+            'searchname' => '5da7b5393d4f4445ac4db1ee8e95f567',
+            'groups_id' => $group->id, 'categories_id' => Category::OTHER_HASHED, 'isrenamed' => 0,
+        ]);
+        ProductionTables::fromAuthority()->create('release_files', ['releases_id', 'name']);
+        $set = SyntheticPosting::rar([400000, 400000, 100000], 'Visible.Release.2026.1080p-GROUP.mkv');
+        $context = new ReleaseProcessingContext($release);
+        $result = (new ArchiveExtractionService($this->makeConfig()))->processCompressedData(substr($set['volumes'][0], 0, 200000), $context, $this->makeTempDirectory('volume-naming').'/');
+        $this->assertTrue($result['manifestComplete']);
+        app(ReleaseFileManager::class)->processReleaseNameFromRar($result['dataSummary'], $context);
+        $release->refresh();
+        $this->assertSame('Visible.Release.2026.1080p-GROUP', $release->searchname);
+        $this->assertSame(1, (int) $release->is_trusted_name);
+        $this->assertSame(1, (int) $release->proc_files);
+        $this->assertSame(Category::MOVIE_HD, (int) $release->categories_id);
+    }
+
     /** @return array<string, array{array<string, mixed>, 1?: bool}> */
     public static function archiveNamingManifests(): array
     {
@@ -763,6 +789,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             'summary error' => [['file_list' => [$visible], 'error' => 'Truncated header'], false],
             'entry error' => [['file_list' => [$visible, ['error' => 'Unreadable entry']]], false],
             'missing entries' => [['file_count' => 2, 'file_list' => [$visible]], false],
+            'payload continues into the next volume' => [['use_range' => '0-999', 'file_list' => [array_merge($visible, ['next_offset' => 2000, 'split_after' => 1])]]],
             'truncated payload before later headers' => [['use_range' => '0-999', 'file_list' => [array_merge($visible, ['next_offset' => 2000])]], false],
             'directories are not titles' => [['file_list' => [['name' => 'Other.Movie.2025-GROUP', 'is_dir' => 1], $visible]]],
             'hidden archive cannot name through fallback' => [['file_list' => [['name' => 'Parent/.hidden/opaque.rar']], 'archives' => ['Parent/.hidden/opaque.rar' => ['file_list' => [$visible]]]], false],

@@ -172,14 +172,16 @@ class ArchiveExtractionService
         $reader = $archive->getReader();
         $complete = false;
         if ($reader instanceof RarInfo) {
-            if ($reader->isVolume) {
-                return false;
-            }
+            $lastFile = null;
             foreach ($reader->getBlocks(false) ?: [] as $block) {
                 if (in_array($block['head_type'], [RarInfo::BLOCK_ENDARC, RarInfo::R50_BLOCK_ENDARC], true)) {
-                    $complete = empty($block['more_volumes']);
+                    $complete = true;
+                }
+                if (in_array($block['head_type'], [RarInfo::BLOCK_FILE, RarInfo::R50_BLOCK_FILE], true)) {
+                    $lastFile = $block;
                 }
             }
+            $complete = $complete || ! empty($lastFile['split_after']);
         } elseif ($reader instanceof ZipInfo) {
             foreach ($reader->getRecords() ?: [] as $record) {
                 if ($record['type'] === ZipInfo::RECORD_ENDCENTRAL) {
