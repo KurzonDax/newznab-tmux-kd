@@ -22,6 +22,11 @@ class SchemaCapabilitiesTest extends TestCase
         $this->bootIsolatedDatabase();
     }
 
+    protected function fixtureOnlyTables(): array
+    {
+        return ['capability_probe'];
+    }
+
     protected function tearDown(): void
     {
         $this->tearDownIsolatedDatabase();

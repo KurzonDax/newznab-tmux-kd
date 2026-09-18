@@ -13,10 +13,10 @@ use App\Services\CollectionReconciliation\ArtifactSourceRevision;
 use App\Services\CollectionReconciliation\CollectionOwnership;
 use App\Services\Nzb\NzbParserService;
 use App\Services\Nzb\NzbService;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Support\ProductionTables;
 use Tests\Support\Reconciliation\CreatesPostingSchema;
 use Tests\TestCase;
 
@@ -44,6 +44,18 @@ class ArtifactPublicationTest extends TestCase
         $nzbs = app(NzbService::class);
         file_put_contents($nzbs->getNzbPath($this->guid, $nzbs->getNzbSplitLevel(), true), gzencode($this->original));
         Search::shouldReceive('updateRelease')->zeroOrMoreTimes();
+    }
+
+    /** The prefixed data sets rename every production table the fixture holds. */
+    protected function fixtureOnlyTables(): array
+    {
+        return array_map(static fn (string $table): string => 'artifact_'.$table, [
+            'binaries', 'collection_groups', 'collection_regexes', 'collections', 'missed_parts', 'parts',
+            'reconciled_artifact_operations', 'reconciled_artifact_sources', 'reconciled_artifacts',
+            'reconciled_posting_inputs', 'reconciled_postings', 'reconciled_proof_revisions', 'reconciled_sources',
+            'reconciliation_claims', 'reconciliation_evidence', 'reconciliation_traffic',
+            'releases', 'releases_groups', 'settings', 'usenet_groups',
+        ]);
     }
 
     #[DataProvider('duplicateChanges')]
@@ -180,13 +192,7 @@ class ArtifactPublicationTest extends TestCase
 
     public function test_recovery_owned_neighbor_is_excluded_consistently_during_preparation_and_execution(): void
     {
-        Schema::create('obfuscation_recovery_publications', function (Blueprint $table): void {
-            $table->id();
-            $table->unsignedBigInteger('collections_id');
-            $table->unsignedInteger('releases_id')->nullable();
-            $table->string('guid')->nullable();
-            $table->string('state');
-        });
+        ProductionTables::fromAuthority()->create('obfuscation_recovery_publications', ['id', 'collections_id', 'releases_id', 'guid', 'state']);
         $source = ['groups_id' => 1, 'fromname' => 'Poster', 'declaredfiles' => 2, 'date' => '2026-01-01 12:00:00'];
         DB::table('collections')->insert([['id' => 1, ...$source], ['id' => 2, ...$source]]);
         DB::table('obfuscation_recovery_publications')->insert(['collections_id' => 2, 'state' => 'prepared']);
@@ -200,13 +206,7 @@ class ArtifactPublicationTest extends TestCase
 
     public function test_dense_recovery_owned_population_defers_without_publication_and_retries_after_shrinking(): void
     {
-        Schema::create('obfuscation_recovery_publications', function (Blueprint $table): void {
-            $table->id();
-            $table->unsignedBigInteger('collections_id');
-            $table->unsignedInteger('releases_id')->nullable();
-            $table->string('guid')->nullable();
-            $table->string('state');
-        });
+        ProductionTables::fromAuthority()->create('obfuscation_recovery_publications', ['id', 'collections_id', 'releases_id', 'guid', 'state']);
         $source = ['groups_id' => 1, 'fromname' => 'Poster', 'declaredfiles' => 2, 'date' => '2026-01-01 12:00:00'];
         DB::table('collections')->insert([['id' => 1, ...$source], ['id' => 2, ...$source]]);
         DB::table('obfuscation_recovery_publications')->insert(['collections_id' => 2, 'state' => 'prepared']);

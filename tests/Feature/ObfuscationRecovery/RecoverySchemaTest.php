@@ -30,6 +30,29 @@ final class RecoverySchemaTest extends TestCase
         (require database_path('migrations/2026_09_14_110835_add_recovery_handoff_and_process_identity.php'))->up();
     }
 
+    /** The table-prefix test rebuilds these production tables under the fixture_ prefix. */
+    protected function fixtureOnlyTables(): array
+    {
+        return array_map(static fn (string $table): string => 'fixture_'.$table, [
+            'settings', 'usenet_groups', 'obfuscation_recovery_artifacts', 'obfuscation_recovery_attempts',
+            'obfuscation_recovery_budget_owners', 'obfuscation_recovery_budgets', 'obfuscation_recovery_bundles',
+            'obfuscation_recovery_catalog', 'obfuscation_recovery_controls', 'obfuscation_recovery_coverage',
+            'obfuscation_recovery_dirty', 'obfuscation_recovery_dispatch', 'obfuscation_recovery_evidence',
+            'obfuscation_recovery_expired_headers', 'obfuscation_recovery_files',
+            'obfuscation_recovery_frontier_allowances', 'obfuscation_recovery_frontier_conflicts',
+            'obfuscation_recovery_frontier_installs', 'obfuscation_recovery_frontier_members',
+            'obfuscation_recovery_frontier_policy', 'obfuscation_recovery_frontier_progress',
+            'obfuscation_recovery_frontier_ranges', 'obfuscation_recovery_frontier_requests',
+            'obfuscation_recovery_frontier_targets', 'obfuscation_recovery_frontiers', 'obfuscation_recovery_gaps',
+            'obfuscation_recovery_headers', 'obfuscation_recovery_housekeeping', 'obfuscation_recovery_index_owners',
+            'obfuscation_recovery_metrics', 'obfuscation_recovery_provider_backoff',
+            'obfuscation_recovery_publications', 'obfuscation_recovery_references', 'obfuscation_recovery_runs',
+            'obfuscation_recovery_scan_batches', 'obfuscation_recovery_scan_windows', 'obfuscation_recovery_scans',
+            'obfuscation_recovery_slots', 'obfuscation_recovery_targets', 'obfuscation_recovery_traffic',
+            'obfuscation_recovery_work',
+        ]);
+    }
+
     protected function tearDown(): void
     {
         $this->tearDownIsolatedDatabase();
