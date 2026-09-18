@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Services\ObfuscationRecovery\RecoveryConfig;
+use App\Services\ObfuscationRecovery\RecoveryPaneText;
 use App\Services\ObfuscationRecovery\RecoveryProcess;
 use App\Services\ObfuscationRecovery\RecoveryScheduler;
 use App\Services\ObfuscationRecovery\RecoverySlots;
 use App\Services\ObfuscationRecovery\RecoveryWork;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 
 final class ObfuscationDownload extends Command
@@ -19,19 +21,26 @@ final class ObfuscationDownload extends Command
 
     protected $description = 'Run a bounded recovery download supervisor or serial worker';
 
-    public function handle(RecoveryScheduler $scheduler): int
+    public function handle(RecoveryScheduler $scheduler, RecoveryPaneText $text): int
     {
         $engine = (bool) $this->option('engine');
         if ($this->option('worker')) {
-            $this->line($scheduler->download($engine));
+            $details = $scheduler->downloadDetailed($engine);
+            $group = $details['bundle_id'] === null ? null : DB::table('obfuscation_recovery_bundles as b')
+                ->join('usenet_groups as g', 'g.id', '=', 'b.groups_id')->where('b.id', $details['bundle_id'])->value('g.name');
+            $this->line(json_encode(['outcome' => $details['outcome'], 'bundle_id' => $details['bundle_id'], 'purpose' => $details['purpose'],
+                'group' => $group, 'first' => is_int($details['payload']['first'] ?? null) ? $details['payload']['first'] : null,
+                'last' => is_int($details['payload']['last'] ?? null) ? $details['payload']['last'] : null,
+                'seconds' => $details['seconds']], JSON_THROW_ON_ERROR));
 
             return self::SUCCESS;
         }
         if (! $scheduler->allowed($engine) || ! ($config = RecoveryConfig::fromSettings())->enabled) {
-            $this->line('admission_pending');
+            $text->say('Recovery downloads: engine stopped or recovery disabled.', 'warning');
 
             return self::SUCCESS;
         }
+        $text->say($text->title('downloads', $config->threads), 'header');
         app(RecoverySlots::class)->reap();
         app(RecoveryWork::class)->reclaimExpired();
         foreach (['slot' => ['obfuscation_recovery_slots', 'owner_', 'worker_token', 'expires_at'],
@@ -59,7 +68,11 @@ final class ObfuscationDownload extends Command
                 foreach ($children as $child) {
                     if ($child->isRunning()) {
                         $running = true;
-                        $child->checkTimeout();
+                        try {
+                            $child->checkTimeout();
+                        } catch (ProcessTimedOutException) {
+                            // checkTimeout stops the child; report its failed result below.
+                        }
                     }
                 }
                 if ($running) {
@@ -74,11 +87,22 @@ final class ObfuscationDownload extends Command
             }
             $this->untrap();
         }
+        $idle = 0;
         foreach ($children as $child) {
-            $result = trim($child->getOutput());
-            $this->line($child->isSuccessful() && preg_match('/^[a-z_]{1,48}$/D', $result) === 1 ? $result : 'worker_failed');
+            $result = json_decode(trim($child->getOutput()), true);
+            if (! $child->isSuccessful() || ! is_array($result) || ! is_string($result['outcome'] ?? null)
+                || preg_match('/^[a-z_]{1,48}$/D', $result['outcome']) !== 1) {
+                $text->say('Worker failed: no result within 45 s or invalid output', 'error');
+            } elseif ($result['outcome'] === 'idle') {
+                $idle++;
+            } else {
+                $text->say($text->workerLine($result), $text->level($result['outcome']));
+            }
         }
-        $this->line('slice_complete');
+        if ($idle > 0) {
+            $text->say(number_format($idle).' workers idle');
+        }
+        $text->say($text->queueLine());
 
         return self::SUCCESS;
     }

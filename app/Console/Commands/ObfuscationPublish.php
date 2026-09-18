@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Models\Release;
 use App\Services\ObfuscationRecovery\RecoveryNzbRestore;
+use App\Services\ObfuscationRecovery\RecoveryPaneText;
 use App\Services\ObfuscationRecovery\RecoveryScheduler;
 use App\Services\ObfuscationRecovery\RecoveryStage;
 use Illuminate\Console\Command;
@@ -16,7 +17,7 @@ final class ObfuscationPublish extends Command
 
     protected $description = 'Run one bounded recovery publish slice';
 
-    public function handle(RecoveryScheduler $scheduler): int
+    public function handle(RecoveryScheduler $scheduler, RecoveryPaneText $text): int
     {
         if ((int) $this->option('restore') > 0) {
             $release = Release::query()->find((int) $this->option('restore'));
@@ -24,8 +25,10 @@ final class ObfuscationPublish extends Command
 
             return self::SUCCESS;
         }
-        $this->line(json_encode($scheduler->local(RecoveryStage::Publish, (int) $this->option('limit'),
-            (int) $this->option('seconds'), (bool) $this->option('engine')), JSON_THROW_ON_ERROR));
+        $text->say($text->title('publish'), 'header');
+        $scheduler->local(RecoveryStage::Publish, (int) $this->option('limit'),
+            (int) $this->option('seconds'), (bool) $this->option('engine'),
+            fn (string $event, array $data) => $text->observe(RecoveryStage::Publish, $event, $data));
 
         return self::SUCCESS;
     }
