@@ -99,6 +99,7 @@ final class RecoveryWorkerConcurrencyTest extends TestCase
         (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
         (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
         (require database_path('migrations/2026_09_14_110835_add_recovery_handoff_and_process_identity.php'))->up();
+        (require database_path('migrations/2026_09_18_120000_bucket_obfuscation_recovery_dirty_marks.php'))->up();
         DB::table('settings')->insert([['name' => 'categorizeforeign', 'value' => 0], ['name' => 'catwebdl', 'value' => 0], ['name' => 'running', 'value' => 1]]);
         DB::table('settings')->where('name', 'obfuscation_recovery_enabled')->update(['value' => 1]);
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.fixture', 'obfuscation_recovery_profile' => 'both']);

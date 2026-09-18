@@ -40,6 +40,7 @@ final class RecoveryEvidenceTest extends TestCase
         (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
         (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
         (require database_path('migrations/2026_09_14_110835_add_recovery_handoff_and_process_identity.php'))->up();
+        (require database_path('migrations/2026_09_18_120000_bucket_obfuscation_recovery_dirty_marks.php'))->up();
         $this->artifactRoot = $this->makeTempDirectory('recovery-cache');
         $this->cache = new RecoveryEvidence(new RecoveryArtifacts($this->artifactRoot), new RecoveryIdentity);
     }
