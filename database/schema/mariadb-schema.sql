@@ -1309,6 +1309,7 @@ CREATE TABLE `obfuscation_recovery_gaps` (
   `requested_first` bigint(20) unsigned NOT NULL,
   `requested_last` bigint(20) unsigned NOT NULL,
   `outcome` varchar(48) NOT NULL DEFAULT 'pending',
+  `retries` tinyint(3) unsigned NOT NULL DEFAULT 0,
   `expires_at` timestamp(6) NOT NULL,
   `created_at` timestamp(6) NULL DEFAULT NULL,
   `updated_at` timestamp(6) NULL DEFAULT NULL,
@@ -3878,3 +3879,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (288,'2026_09_14_13
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (289,'2026_09_16_133405_add_movie_record_retry_state_to_releases_table',6);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (290,'2026_09_17_170000_add_can_post_to_users_table',7);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (291,'2026_09_18_120000_bucket_obfuscation_recovery_dirty_marks',8);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (292,'2026_09_18_180000_add_retries_to_obfuscation_recovery_gaps',9);

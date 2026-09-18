@@ -126,6 +126,7 @@ final class RecoveryGapPlanner
             }
             $positive = $this->positive($window, $first, $last);
             $ranges = DB::table('obfuscation_recovery_gaps')->where('groups_id', $window->groups_id)->where('source_epoch', $window->source_epoch)->where('requested_first', '<=', $last)->where('requested_last', '>=', $first)
+                ->whereIn('outcome', ['pending', 'captured', 'reused_capture'])
                 ->limit(20001)->get(['requested_first', 'requested_last']);
             if ($ranges->count() > 20000) {
                 return 0;
@@ -136,8 +137,18 @@ final class RecoveryGapPlanner
             $holes = RecoveryCoverage::holes($first, $last, $positive);
             $queued = 0;
             foreach (array_slice($holes, 0, 10) as [$start, $end]) {
-                $owner = (new RecoveryIdentity)->digest(['gap', $window->source_epoch, (string) $window->groups_id,
-                    (string) $window->capture_generation, (string) $start, (string) $end]);
+                $gap = $this->scope('obfuscation_recovery_gaps', $window)
+                    ->where('requested_first', $start)->where('requested_last', $end)->lockForUpdate()->first();
+                $retry = $gap !== null && in_array($gap->outcome, ['gap_limit_reached', 'gap_unresolved', 'expired_unresolved'], true);
+                if ($retry && $gap->updated_at > now()->subHours(6)) {
+                    continue;
+                }
+                $identity = ['gap', $window->source_epoch, (string) $window->groups_id,
+                    (string) $window->capture_generation, (string) $start, (string) $end];
+                if ($retry) {
+                    $identity = [...$identity, 'retry', (string) ((int) $gap->retries + 1)];
+                }
+                $owner = (new RecoveryIdentity)->digest($identity);
                 $ownerDigest = (new RecoveryIdentity)->digest(['work-owner', $owner]);
                 DB::table('obfuscation_recovery_bundles')->insertOrIgnore([
                     'owner_digest' => $ownerDigest, 'revision' => 1, 'kind' => 'gap', 'groups_id' => $window->groups_id,
@@ -146,11 +157,18 @@ final class RecoveryGapPlanner
                 ]);
                 $bundleId = (int) DB::table('obfuscation_recovery_bundles')->where('owner_digest', $ownerDigest)->value('id');
                 app(RecoveryWork::class)->enqueueForBundle(RecoveryStage::Download, $bundleId, 1, 'gap', ['first' => $start, 'last' => $end]);
-                DB::table('obfuscation_recovery_gaps')->insertOrIgnore([
-                    'bundle_id' => $bundleId, 'groups_id' => $window->groups_id, 'source_epoch' => $window->source_epoch,
-                    'capture_generation' => $window->capture_generation, 'requested_first' => $start, 'requested_last' => $end,
-                    'expires_at' => $window->expires_at, 'created_at' => now(), 'updated_at' => now(),
-                ]);
+                if ($retry) {
+                    DB::table('obfuscation_recovery_gaps')->where('id', $gap->id)->update([
+                        'bundle_id' => $bundleId, 'outcome' => 'pending', 'retries' => (int) $gap->retries + 1,
+                        'expires_at' => $window->expires_at, 'updated_at' => now(),
+                    ]);
+                } else {
+                    DB::table('obfuscation_recovery_gaps')->insertOrIgnore([
+                        'bundle_id' => $bundleId, 'groups_id' => $window->groups_id, 'source_epoch' => $window->source_epoch,
+                        'capture_generation' => $window->capture_generation, 'requested_first' => $start, 'requested_last' => $end,
+                        'expires_at' => $window->expires_at, 'created_at' => now(), 'updated_at' => now(),
+                    ]);
+                }
                 $queued++;
             }
             $cursor = count($holes) > 10 ? $holes[10][0] : $last + 1;
