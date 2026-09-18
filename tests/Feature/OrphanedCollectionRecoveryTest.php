@@ -22,7 +22,7 @@ class OrphanedCollectionRecoveryTest extends TestCase
         $this->bootIsolatedDatabase();
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
-            $table->binary('collectionhash')->nullable();
+            $table->binary('collectionhash')->nullable()->unique();
             $table->string('name')->default('');
             $table->string('searchname')->default('');
         });
@@ -32,7 +32,7 @@ class OrphanedCollectionRecoveryTest extends TestCase
         Schema::create('collections', function (Blueprint $table): void {
             $table->increments('id');
             $table->unsignedInteger('releases_id')->nullable();
-            $table->binary('collectionhash');
+            $table->binary('collectionhash')->unique();
             $table->integer('groups_id');
             $table->string('subject');
             $table->integer('filecheck');
@@ -50,11 +50,11 @@ class OrphanedCollectionRecoveryTest extends TestCase
             $table->integer('totalparts');
         });
         Schema::create('parts', function (Blueprint $table): void {
-            $table->increments('id');
             $table->integer('binaries_id');
             $table->integer('partnumber');
             $table->integer('size');
             $table->string('messageid');
+            $table->primary(['binaries_id', 'partnumber']);
         });
         DB::table('usenet_groups')->insert(['id' => 1]);
         DB::table('collections')->insert([

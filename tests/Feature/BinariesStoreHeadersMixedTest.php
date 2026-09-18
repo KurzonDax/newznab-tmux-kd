@@ -17,12 +17,8 @@ class BinariesStoreHeadersMixedTest extends TestCase
 
         // Minimal tables.
         DB::statement('CREATE TABLE settings (
-            section TEXT NULL,
-            subsection TEXT NULL,
             name TEXT PRIMARY KEY,
-            value TEXT NULL,
-            hint TEXT NULL,
-            setting TEXT NULL
+            value TEXT NULL
         )');
         $defaults = [
             'maxmssgs' => '20000',
@@ -77,7 +73,6 @@ class BinariesStoreHeadersMixedTest extends TestCase
         )');
 
         DB::statement('CREATE TABLE parts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
             binaries_id INT,
             number INT,
             messageid VARCHAR(255),

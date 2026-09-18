@@ -104,7 +104,7 @@ final class RecoveryPreparationTest extends TestCase
         $this->bootIsolatedDatabase();
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('name');
+            $table->string('name')->unique();
         });
         (require database_path('migrations/2026_09_07_172435_add_obfuscation_recovery_storage.php'))->up();
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
@@ -730,7 +730,7 @@ final class RecoveryPreparationTest extends TestCase
         $this->createIdentificationSchema();
         Schema::create('predb', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('title');
+            $table->string('title')->unique();
         });
         Schema::create('root_categories', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();

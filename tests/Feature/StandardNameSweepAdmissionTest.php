@@ -529,7 +529,7 @@ class StandardNameSweepAdmissionTest extends TestCase
             name VARCHAR(255) NOT NULL,
             searchname VARCHAR(255) NOT NULL,
             fromname VARCHAR(255) NOT NULL,
-            guid VARCHAR(64) NOT NULL,
+            guid VARCHAR(64) NOT NULL UNIQUE,
             leftguid VARCHAR(1) NOT NULL,
             groups_id INTEGER NOT NULL,
             categories_id INTEGER NOT NULL,
@@ -556,11 +556,11 @@ class StandardNameSweepAdmissionTest extends TestCase
 
         DB::statement('DROP TABLE IF EXISTS release_files');
         DB::statement('CREATE TABLE release_files (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
             releases_id INTEGER NOT NULL,
             name VARCHAR(255) NOT NULL,
             crc32 VARCHAR(8) NULL,
-            size INTEGER NOT NULL DEFAULT 0
+            size INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (releases_id, name)
         )');
 
         DB::statement('DROP TABLE IF EXISTS media_infos');

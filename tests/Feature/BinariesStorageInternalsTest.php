@@ -114,13 +114,13 @@ class BinariesStorageInternalsTest extends TestCase
 
     public function test_sqlite_rollback_cleanup_keeps_unrelated_parts_with_same_article_number(): void
     {
-        DB::statement('CREATE TABLE collections (id INTEGER PRIMARY KEY, collectionhash VARCHAR(40), noise VARCHAR(64))');
+        DB::statement('CREATE TABLE collections (id INTEGER PRIMARY KEY, collectionhash VARCHAR(40) UNIQUE, noise VARCHAR(64))');
         DB::statement('CREATE TABLE binaries (id INTEGER PRIMARY KEY, collections_id INT)');
-        DB::statement('CREATE TABLE parts (binaries_id INT, number INT, messageid VARCHAR(255), UNIQUE(binaries_id, number))');
+        DB::statement('CREATE TABLE parts (binaries_id INT, number INT, messageid VARCHAR(255), partnumber INT, UNIQUE(binaries_id, partnumber))');
 
         DB::table('collections')->insert(['id' => 1, 'collectionhash' => 'keep', 'noise' => '']);
         DB::table('binaries')->insert(['id' => 1, 'collections_id' => 1]);
-        DB::table('parts')->insert(['binaries_id' => 1, 'number' => 777, 'messageid' => '<keep@example>']);
+        DB::table('parts')->insert(['binaries_id' => 1, 'number' => 777, 'messageid' => '<keep@example>', 'partnumber' => 1]);
 
         $collectionHandler = new CollectionHandler;
         $binaryHandler = new BinaryHandler;
@@ -130,7 +130,7 @@ class BinariesStorageInternalsTest extends TestCase
         $transaction->begin();
         DB::table('collections')->insert(['id' => 2, 'collectionhash' => 'rollback', 'noise' => $transaction->getBatchNoise()]);
         DB::table('binaries')->insert(['id' => 2, 'collections_id' => 2]);
-        DB::table('parts')->insert(['binaries_id' => 2, 'number' => 777, 'messageid' => '<rollback@example>']);
+        DB::table('parts')->insert(['binaries_id' => 2, 'number' => 777, 'messageid' => '<rollback@example>', 'partnumber' => 1]);
         $this->setPrivateProperty($collectionHandler, 'insertedCollectionIds', [2 => true]);
         $this->setPrivateProperty($binaryHandler, 'insertedBinaryIds', [2 => true]);
         $transaction->markError();

@@ -21,7 +21,7 @@ final class RecoveryInspectionTest extends TestCase
         $this->bootIsolatedDatabase();
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->timestamp('recovery_claimed_at')->nullable();
             $table->uuid('recovery_claim_token')->nullable();
             $table->timestamp('additional_pp_claimed_at')->nullable();
@@ -34,7 +34,8 @@ final class RecoveryInspectionTest extends TestCase
             $table->string('state');
             $table->timestamp('deleted_at')->nullable();
             $table->text('sealed_plan');
-            $table->integer('writes')->default(0);
+            // A production counter that RecoveryInspection never touches; the tests count guarded writes in it.
+            $table->unsignedBigInteger('materialized_parts')->default(0);
         });
         DB::table('releases')->insert(['id' => 1, 'guid' => 'fixture']);
         DB::table('obfuscation_recovery_publications')->insert(['id' => 1, 'releases_id' => 1, 'guid' => 'fixture', 'state' => 'published', 'sealed_plan' => '{}']);
@@ -51,19 +52,19 @@ final class RecoveryInspectionTest extends TestCase
         $publication = DB::table('obfuscation_recovery_publications')->first();
         $old = RecoveryInspection::acquire($publication);
         $this->assertNotNull($old);
-        $old->mutate(fn (): int => DB::table('obfuscation_recovery_publications')->increment('writes'));
+        $old->mutate(fn (): int => DB::table('obfuscation_recovery_publications')->increment('materialized_parts'));
         DB::table('releases')->update(['recovery_claimed_at' => null, 'recovery_claim_token' => null]);
         $new = RecoveryInspection::acquire($publication);
         $this->assertNotNull($new);
         try {
-            $old->mutate(fn (): int => DB::table('obfuscation_recovery_publications')->increment('writes'));
+            $old->mutate(fn (): int => DB::table('obfuscation_recovery_publications')->increment('materialized_parts'));
             $this->fail('A replaced worker must not save cached observations.');
         } catch (\RuntimeException $error) {
             $this->assertSame('recovery_inspection_claim_lost', $error->getMessage());
         }
         $old->release();
-        $new->mutate(fn (): int => DB::table('obfuscation_recovery_publications')->increment('writes'));
-        $this->assertSame(2, (int) DB::table('obfuscation_recovery_publications')->value('writes'));
+        $new->mutate(fn (): int => DB::table('obfuscation_recovery_publications')->increment('materialized_parts'));
+        $this->assertSame(2, (int) DB::table('obfuscation_recovery_publications')->value('materialized_parts'));
         $new->release();
     }
 
@@ -77,12 +78,12 @@ final class RecoveryInspectionTest extends TestCase
         $this->assertNotNull($inspection);
         DB::table('releases')->update(['additional_pp_claim_token' => 'replacement']);
         try {
-            $inspection->mutate(fn (): int => DB::table('obfuscation_recovery_publications')->increment('writes'));
+            $inspection->mutate(fn (): int => DB::table('obfuscation_recovery_publications')->increment('materialized_parts'));
             $this->fail('A replaced additional worker must not save observations.');
         } catch (\RuntimeException $error) {
             $this->assertSame('recovery_inspection_claim_lost', $error->getMessage());
         }
-        $this->assertSame(0, (int) DB::table('obfuscation_recovery_publications')->value('writes'));
+        $this->assertSame(0, (int) DB::table('obfuscation_recovery_publications')->value('materialized_parts'));
         $inspection->release();
     }
 
@@ -109,7 +110,7 @@ final class RecoveryInspectionTest extends TestCase
             $inspection = RecoveryInspection::acquire(DB::table('obfuscation_recovery_publications')->first());
             DB::table('obfuscation_recovery_publications')->update($change);
             try {
-                $inspection->mutate(fn (): int => DB::table('obfuscation_recovery_publications')->increment('writes'));
+                $inspection->mutate(fn (): int => DB::table('obfuscation_recovery_publications')->increment('materialized_parts'));
                 $this->fail('Changed publication ownership must stop mutations.');
             } catch (\RuntimeException $error) {
                 $this->assertSame('recovery_inspection_claim_lost', $error->getMessage());
@@ -117,6 +118,6 @@ final class RecoveryInspectionTest extends TestCase
                 $inspection->release();
             }
         }
-        $this->assertSame(0, (int) DB::table('obfuscation_recovery_publications')->value('writes'));
+        $this->assertSame(0, (int) DB::table('obfuscation_recovery_publications')->value('materialized_parts'));
     }
 }

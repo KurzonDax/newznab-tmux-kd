@@ -61,7 +61,7 @@ class Par2SidecarWorkflowTest extends TestCase
         $this->bootIsolatedDatabase();
         Schema::create('releases', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
-            $table->string('guid')->default('target');
+            $table->string('guid')->default('target')->unique();
             foreach (['name', 'searchname', 'searchname_normalized', 'display_name', 'fromname', 'leftguid'] as $column) {
                 $table->string($column)->default('');
             }
@@ -88,7 +88,7 @@ class Par2SidecarWorkflowTest extends TestCase
         (require database_path('migrations/2026_09_08_205107_create_par2_sidecar_evidence_tables.php'))->up();
         Schema::create('predb', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('title');
+            $table->string('title')->unique();
         });
         Schema::create('par_hashes', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
@@ -148,7 +148,7 @@ class Par2SidecarWorkflowTest extends TestCase
         $this->seedPostingPair($sourceFirst, $addFiles, capture: false);
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
-            $table->string('name');
+            $table->string('name')->unique();
         });
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.test']);
         Schema::create('categories', function (Blueprint $table): void {
