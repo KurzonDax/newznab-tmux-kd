@@ -205,14 +205,15 @@ final class NameFixingQueryService
         if ($indexed) {
             $direct->forceIndex('releases_name_direct_work')->where('r.name_direct_work_pending', 1);
         } else {
-            $direct->whereRaw($this->standardSql('((r.nfostatus = 1 AND r.proc_nfo = 0) OR r.proc_files = 0
-                OR (r.nzbstatus = 1 AND r.proc_par2 = 0) OR r.proc_srr = 0
-                OR r.proc_hash16k = 0 OR r.proc_crc32 = 0)'));
+            $direct->whereRaw($this->standardSql('((r.nfostatus = 1 AND r.proc_nfo = 0) OR (r.nzbstatus = 1 AND r.proc_par2 = 0) OR r.proc_hash16k = 0)'));
         }
 
         $sources = [$direct];
         $evidence = [
             ['release_files', 'proc_xxx', "e.name LIKE '%SDPORN%'"],
+            ['release_files', 'proc_files', null],
+            ['release_files', 'proc_srr', "(e.name LIKE '%.srr' OR e.name LIKE '%.srs')"],
+            ['release_files', 'proc_crc32', "e.crc32 IS NOT NULL AND e.crc32 != ''"],
             ['media_infos', 'proc_uid', "e.unique_id IS NOT NULL AND e.unique_id != ''"],
             ['media_infos', 'proc_media_movie', "e.movie_name IS NOT NULL AND e.movie_name != ''"],
         ];
@@ -225,12 +226,31 @@ final class NameFixingQueryService
             if ($indexed) {
                 $arm->where('r.name_evidence_work_pending', 1);
             }
-            $arm->where('r.'.$flag, 0)->whereRaw($this->standardSql($predicate));
+            $arm->where('r.'.$flag, 0);
+            if ($predicate !== null) {
+                $arm->whereRaw($this->standardSql($predicate));
+            }
             $this->standardBase($arm, $leftGuid);
             $sources[] = $arm;
         }
 
         return $sources;
+    }
+
+    /**
+     * Batch releases with at least one stored release_files row, whether or not any row is eligible for naming.
+     *
+     * @param  list<int>  $releaseIds
+     * @return array<int, true>
+     */
+    public function releaseIdsWithFiles(array $releaseIds): array
+    {
+        $ids = [];
+        foreach ($this->selectForReleaseIds('SELECT DISTINCT rf.releases_id FROM release_files rf WHERE rf.releases_id IN (%s)', $releaseIds) as $row) {
+            $ids[(int) $row->releases_id] = true;
+        }
+
+        return $ids;
     }
 
     private function standardSql(string $sql): string

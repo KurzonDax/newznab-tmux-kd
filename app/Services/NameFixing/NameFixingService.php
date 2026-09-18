@@ -1064,6 +1064,7 @@ class NameFixingService
         $releaseIds = $this->releaseIds($releases);
         $nfos = $this->queries->groupByReleaseId($this->queries->nfoRows($releaseIds));
         $files = $this->queries->groupByReleaseId($this->queries->fileRows($releaseIds));
+        $releasesWithFiles = $this->queries->releaseIdsWithFiles($releaseIds);
         $media = $this->queries->groupByReleaseId($this->queries->mediaRows($releaseIds));
         $hashes = $this->queries->groupByReleaseId($this->queries->hashRows($releaseIds));
         $srrdbFiles = $this->standardBatchSrrdbFiles($releases, $releaseIds);
@@ -1125,7 +1126,7 @@ class NameFixingService
                 continue;
             }
 
-            if ((int) $release->proc_crc32 === self::PROC_CRC_NONE) {
+            if ((int) $release->proc_crc32 === self::PROC_CRC_NONE && isset($releasesWithFiles[$releaseId])) {
                 $this->updateService->reset();
                 $prioritizedCrcs = [];
                 foreach ($releaseFiles as $file) {
@@ -1156,7 +1157,7 @@ class NameFixingService
                 continue;
             }
 
-            if ((int) $release->proc_srr === self::PROC_SRR_NONE) {
+            if ((int) $release->proc_srr === self::PROC_SRR_NONE && isset($releasesWithFiles[$releaseId])) {
                 $this->updateService->reset();
                 foreach ($releaseFiles as $file) {
                     $candidate = clone $release;
@@ -1227,7 +1228,7 @@ class NameFixingService
                 continue;
             }
 
-            if ((int) $release->proc_files === self::PROC_FILES_NONE) {
+            if ((int) $release->proc_files === self::PROC_FILES_NONE && isset($releasesWithFiles[$releaseId])) {
                 $this->processFileCandidates($release, $releaseFiles, true, true, $show, false, false);
             }
 

@@ -19,7 +19,7 @@ restriction and no cross-source gate -- a pending or terminally failed NFO
 lookup and an unsettled `passwordstatus` must not hide another source's
 evidence. The NFO term requires `nfostatus = 1`, PAR2 requires `nzbstatus = 1`,
 and the dedicated XXX and media-movie terms require their corresponding file or
-media-info evidence. Other built-in terms are bare `proc_* = 0` checks.
+media-info evidence. The filename, SRR and CRC32 terms require a stored `release_files` row (any row, an `.srr`/`.srs` name, a non-empty CRC), because additional processing stores that evidence after the release exists, and the worker runs those legs only for releases with a stored file row. The PAR2-hash term is still a bare `proc_hash16k = 0` check.
 
 SRRDB also carries readiness in its term, because
 `processStandardBatch()` declines to settle `proc_srrdb` when the source is

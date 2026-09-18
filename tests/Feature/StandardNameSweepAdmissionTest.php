@@ -141,10 +141,28 @@ class StandardNameSweepAdmissionTest extends TestCase
     }
 
     #[Test]
+    public function release_file_sources_are_not_admitted_before_their_evidence_exists(): void
+    {
+        $this->insertRelease(1, ['proc_files' => 0]);
+        $this->insertRelease(2, ['proc_srr' => 0]);
+        $this->insertRelease(3, ['proc_crc32' => 0]);
+        $this->assertSame([], $this->candidateIds());
+        $this->assertSame(0, (new NameFixingQueryService)->standardCandidateCount());
+        $this->insertReleaseFile(2, 'Some.Release-GRP.rar', '');
+        $this->insertReleaseFile(3, 'Some.Release-GRP.rar', '');
+        $this->assertSame([], $this->candidateIds());
+        $this->insertReleaseFile(1, 'Some.Release-GRP.rar', '');
+        $this->insertReleaseFile(2, 'Some.Release-GRP.srr', '');
+        $this->insertReleaseFile(3, 'Some.Release-GRP.sfv', 'A1B2C3D4');
+        $this->assertSame([3, 2, 1], $this->candidateIds());
+    }
+
+    #[Test]
     #[DataProvider('terminalNfoStatuses')]
     public function ready_non_nfo_evidence_is_admitted_whatever_the_nfo_status_is(int $nfostatus): void
     {
         $this->insertRelease(1, ['nfostatus' => $nfostatus, 'proc_files' => 0]);
+        $this->insertReleaseFile(1, 'Some.Release-GRP.rar', '');
 
         $this->assertSame([1], $this->candidateIds());
     }
@@ -178,6 +196,9 @@ class StandardNameSweepAdmissionTest extends TestCase
         $this->insertRelease(1, ['categories_id' => Category::OTHER_MISC, 'proc_files' => 0]);
         $this->insertRelease(2, ['categories_id' => Category::MUSIC_LOSSLESS, 'proc_files' => 0]);
         $this->insertRelease(3, ['categories_id' => Category::MOVIE_HD, 'proc_crc32' => 0]);
+        $this->insertReleaseFile(1, 'Some.Release-GRP.rar', '');
+        $this->insertReleaseFile(2, 'Some.Release-GRP.rar', '');
+        $this->insertReleaseFile(3, 'Some.Release-GRP.rar', 'A1B2C3D4');
 
         // Newest first, as the sweep orders.
         $this->assertSame([3, 2, 1], $this->candidateIds());
@@ -303,7 +324,9 @@ class StandardNameSweepAdmissionTest extends TestCase
         }
 
         $this->insertRelease(1, $overrides);
-        $fileName = $column === 'proc_xxx' ? 'Some.SDPORN.Release-GRP.rar' : 'Some.Release-GRP.rar';
+        $fileName = match ($column) {
+            'proc_xxx' => 'Some.SDPORN.Release-GRP.rar', 'proc_srr' => 'Some.Release-GRP.srr', default => 'Some.Release-GRP.rar'
+        };
         $this->insertReleaseFile(1, $fileName, 'A1B2C3D4');
         if (in_array($column, ['proc_uid', 'proc_media_movie'], true)) {
             $this->insertMediaInfo(1);
@@ -379,6 +402,7 @@ class StandardNameSweepAdmissionTest extends TestCase
             $id = $mask + 1;
             $this->insertRelease($id, $overrides);
             $this->insertReleaseFile($id, "release-{$id}.SDPORN.rar", 'A1B2C3D4');
+            $this->insertReleaseFile($id, "release-{$id}.srr", '');
             $this->insertMediaInfo($id);
         }
 
@@ -440,6 +464,7 @@ class StandardNameSweepAdmissionTest extends TestCase
             releases_id INTEGER, state TEXT, initialization_state TEXT,
             enrichment_outcome TEXT, enrichment_next_attempt_at TEXT)');
         $this->insertRelease(1, ['proc_files' => 0]);
+        $this->insertReleaseFile(1, 'Some.Release-GRP.rar', '');
         $this->insertRelease(2, ['proc_uid' => 0]);
         $this->insertMediaInfo(2);
         foreach ([1, 2] as $id) {
