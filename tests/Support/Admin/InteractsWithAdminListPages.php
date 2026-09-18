@@ -141,7 +141,7 @@ trait InteractsWithAdminListPages
         Schema::create('consoleinfo', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('title');
-            $table->string('asin', 128)->nullable();
+            $table->string('asin', 128)->nullable()->unique();
             $table->string('url', 1000)->nullable();
             $table->unsignedInteger('salesrank')->nullable();
             $table->string('platform')->nullable();
@@ -163,7 +163,7 @@ trait InteractsWithAdminListPages
         Schema::create('gamesinfo', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('title');
-            $table->string('asin', 128)->nullable();
+            $table->string('asin', 128)->nullable()->unique();
             $table->string('url', 1000)->nullable();
             $table->string('publisher')->nullable();
             $table->integer('genres_id')->nullable();
@@ -186,7 +186,7 @@ trait InteractsWithAdminListPages
         Schema::create('musicinfo', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('title');
-            $table->string('asin', 128)->nullable();
+            $table->string('asin', 128)->nullable()->unique();
             $table->string('url', 1000)->nullable();
             $table->unsignedInteger('salesrank')->nullable();
             $table->string('artist')->nullable();
@@ -210,7 +210,7 @@ trait InteractsWithAdminListPages
             $table->increments('id');
             $table->string('title');
             $table->string('author');
-            $table->string('asin', 128)->nullable();
+            $table->string('asin', 128)->nullable()->unique();
             $table->string('url', 1000)->nullable();
             $table->string('publisher')->nullable();
             $table->unsignedInteger('salesrank')->nullable();

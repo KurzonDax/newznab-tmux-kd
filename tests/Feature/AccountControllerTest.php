@@ -25,6 +25,7 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 final class AccountControllerTest extends TestCase
@@ -52,14 +53,8 @@ final class AccountControllerTest extends TestCase
             $table->json('recovery_codes')->nullable();
             $table->timestamps();
         });
-        foreach (['user_downloads', 'user_requests'] as $name) {
-            Schema::create($name, function (Blueprint $table): void {
-                $table->id();
-                $table->unsignedInteger('users_id');
-                $table->unsignedInteger('releases_id')->nullable();
-                $table->timestamp('timestamp');
-            });
-        }
+        ProductionTables::fromAuthority()->create('user_downloads', ['id', 'users_id', 'releases_id', 'timestamp']);
+        ProductionTables::fromAuthority()->create('user_requests', ['id', 'users_id', 'timestamp']);
         foreach (['2026_03_10_000000_create_registration_periods_table', '2026_03_10_000001_create_registration_status_history_table', '2026_04_24_000000_create_passkeys_table', '2026_06_10_000000_create_trusted_devices_table', '2026_06_17_000000_create_gdpr_requests_table'] as $migration) {
             (require database_path('migrations/'.$migration.'.php'))->up();
         }

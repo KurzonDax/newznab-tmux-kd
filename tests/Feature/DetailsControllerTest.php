@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Schema;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 final class DetailsControllerTest extends TestCase
@@ -31,39 +32,21 @@ final class DetailsControllerTest extends TestCase
         $this->createReleaseSchema();
         Schema::table('releases', function (Blueprint $table): void {
             $table->unsignedInteger('predb_id')->nullable();
-            $table->string('password')->nullable();
         });
         DB::table('root_categories')->insert(['id' => 2000, 'title' => 'Movies']);
         DB::table('categories')->insert(['id' => 2030, 'title' => 'HD', 'root_categories_id' => 2000]);
         foreach (['2026_02_01_000000_create_release_reports_table', '2026_06_08_000000_add_response_fields_to_release_reports_table', '2026_08_21_090000_create_release_audio_tags_table', '2026_08_27_150100_create_release_video_clips_table'] as $migration) {
             (require database_path('migrations/'.$migration.'.php'))->up();
         }
-        Schema::create('releases_groups', function (Blueprint $table): void {
-            $table->unsignedInteger('releases_id');
-            $table->unsignedInteger('groups_id');
-        });
-        Schema::create('release_regexes', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->unsignedInteger('releases_id');
-        });
+        ProductionTables::fromAuthority()->create('releases_groups');
+        ProductionTables::fromAuthority()->create('release_regexes');
         Schema::create('dnzb_failures', function (Blueprint $table): void {
             $table->unsignedInteger('release_id');
             $table->unsignedInteger('failed');
         });
-        Schema::create('predb', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->string('title');
-        });
+        ProductionTables::fromAuthority()->create('predb', ['id', 'title']);
         DB::statement('CREATE TABLE release_comments (id INTEGER PRIMARY KEY AUTOINCREMENT, releases_id INTEGER NOT NULL, text VARCHAR(2000), isvisible INTEGER DEFAULT 1, username VARCHAR(255), users_id INTEGER, created_at DATETIME, updated_at DATETIME, host VARCHAR(45))');
-        Schema::create('movieinfo', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->string('imdbid');
-            $table->string('title');
-            $table->string('year')->nullable();
-            $table->string('genre')->nullable();
-            $table->string('rating')->nullable();
-            $table->text('trailer')->nullable();
-        });
+        ProductionTables::fromAuthority()->create('movieinfo', ['id', 'imdbid', 'title', 'year', 'genre', 'rating', 'trailer']);
         config(['nntmux_settings.covers_path' => $this->makeTempDirectory('details-artwork')]);
         $this->mock(ReleaseSearchService::class)->shouldReceive('searchSimilar')->andReturn([]);
     }

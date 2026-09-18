@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Schema;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 final class HomeAndBasketTest extends TestCase
@@ -35,25 +36,9 @@ final class HomeAndBasketTest extends TestCase
             DB::table('categories')->insert(['id' => $id + 30, 'title' => 'HD', 'root_categories_id' => $id]);
         }
         foreach (['movieinfo', 'videos'] as $name) {
-            Schema::create($name, function (Blueprint $table): void {
-                $table->increments('id');
-                $table->string('title');
-                $table->string('imdbid')->nullable();
-                $table->string('year')->nullable();
-                $table->string('genre')->nullable();
-                $table->string('rating')->nullable();
-                foreach (['tmdbid', 'traktid', 'plot', 'director', 'actors'] as $column) {
-                    $table->string($column)->nullable();
-                }
-                $table->string('started')->nullable();
-                $table->boolean('cover')->default(false);
-            });
+            ProductionTables::fromAuthority()->create($name);
         }
-        Schema::create('tv_info', function (Blueprint $table): void {
-            $table->integer('videos_id');
-            $table->string('publisher')->nullable();
-            $table->boolean('image')->default(false);
-        });
+        ProductionTables::fromAuthority()->create('tv_info', ['videos_id', 'publisher', 'image']);
         Schema::create('user_downloads', function (Blueprint $table): void {
             $table->id();
             $table->integer('users_id');

@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Schema;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 final class WatchlistControllerTest extends TestCase
@@ -37,14 +38,7 @@ final class WatchlistControllerTest extends TestCase
         foreach (self::entityRoots() as [$root, $table, $key, $category]) {
             DB::table('root_categories')->insert(['id' => $category - 30, 'title' => ucfirst($root)]);
             DB::table('categories')->insert(['id' => $category, 'title' => 'HD', 'root_categories_id' => $category - 30]);
-            Schema::create($table, function (Blueprint $table): void {
-                $table->increments('id');
-                foreach (['imdbid', 'tmdbid', 'traktid', 'title', 'year', 'rating', 'plot', 'genre', 'director', 'actors', 'artist', 'publisher', 'releasedate', 'review', 'url', 'author', 'publishdate', 'overview', 'platform', 'esrb', 'started', 'tracks', 'isbn', 'pages', 'trailer', 'classused', 'tvdb', 'tvmaze', 'trakt', 'imdb', 'tmdb'] as $column) {
-                    $table->string($column)->nullable();
-                }
-                $table->integer('genres_id')->nullable();
-                $table->boolean('cover')->default(false);
-            });
+            ProductionTables::fromAuthority()->create($table);
         }
         Schema::create('tv_info', function (Blueprint $table): void {
             $table->unsignedInteger('videos_id')->primary();
@@ -52,13 +46,7 @@ final class WatchlistControllerTest extends TestCase
             $table->text('summary')->nullable();
             $table->boolean('image')->default(false);
         });
-        Schema::create('tv_episodes', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->unsignedInteger('videos_id');
-            $table->integer('series');
-            $table->integer('episode');
-            $table->string('firstaired')->nullable();
-        });
+        ProductionTables::fromAuthority()->create('tv_episodes', ['id', 'videos_id', 'series', 'episode', 'firstaired']);
         foreach (['user_movies', 'user_series'] as $name) {
             Schema::table($name, fn (Blueprint $table) => $table->timestamps());
         }

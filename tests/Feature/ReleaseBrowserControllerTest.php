@@ -18,6 +18,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 final class ReleaseBrowserControllerTest extends TestCase
@@ -88,16 +89,11 @@ final class ReleaseBrowserControllerTest extends TestCase
         if ($table !== '') {
             $this->createCoverCatalogSchema($table);
         }
-        if ($root === 'tv') {
-            Schema::table('tv_episodes', function (Blueprint $table): void {
-                $table->string('firstaired')->nullable();
-            });
-        }
         DB::table('usenet_groups')->insert([['id' => 1, 'name' => 'alt.year.test'], ['id' => 2, 'name' => 'alt.year.other']]);
         $years = [1969, 1970, 1975, 1979, 1980];
         foreach ($years as $year) {
             if ($table !== '') {
-                DB::table($table)->insert(['id' => $year, 'imdbid' => (string) $year, 'title' => 'Year fixture '.$year,
+                $this->insertTitles($table, ['id' => $year, 'imdbid' => (string) $year, 'title' => 'Year fixture '.$year,
                     'year' => (string) $year, 'started' => $year.'-06-15', 'releasedate' => $year.'-06-15', 'publishdate' => $year.'-06-15']);
             }
             if ($root === 'tv') {
@@ -215,7 +211,7 @@ final class ReleaseBrowserControllerTest extends TestCase
     public function test_tv_covers_group_identified_episodes_and_explicit_packs_and_keep_internal_posted_order(): void
     {
         $this->createCoverCatalogSchema('videos');
-        DB::table('videos')->insert(['id' => 1, 'title' => 'Harbor Street', 'started' => '2024-01-01', 'genre' => 'Drama, Mystery']);
+        DB::table('videos')->insert(['id' => 1, 'title' => 'Harbor Street', 'started' => '2024-01-01']);
         DB::table('tv_info')->insert(['videos_id' => 1, 'publisher' => 'Harbor Network']);
         foreach ([1, 2, 3] as $number) {
             DB::table('tv_episodes')->insert(['id' => $number, 'videos_id' => 1, 'series' => 2, 'episode' => $number, 'title' => 'Episode '.$number]);
@@ -434,15 +430,7 @@ final class ReleaseBrowserControllerTest extends TestCase
 
     public function test_movie_filters_use_linked_metadata_before_counting_and_offer_only_available_values(): void
     {
-        Schema::create('movieinfo', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->string('imdbid');
-            $table->string('title');
-            $table->string('year');
-            $table->string('genre');
-            $table->string('rating');
-            $table->boolean('cover')->default(false);
-        });
+        ProductionTables::fromAuthority()->create('movieinfo', ['id', 'imdbid', 'title', 'year', 'genre', 'rating', 'cover']);
         DB::table('movieinfo')->insert([
             ['imdbid' => '1234567', 'title' => 'Recent drama', 'year' => '2026', 'genre' => 'Drama, Mystery', 'rating' => '8.2'],
             ['imdbid' => '1234568', 'title' => 'Old drama', 'year' => '2020', 'genre' => 'Drama', 'rating' => '9.0'],
@@ -679,21 +667,13 @@ final class ReleaseBrowserControllerTest extends TestCase
     #[DataProvider('watchedRoots')]
     public function test_watching_preserves_per_title_category_choices(string $root, int $categoryId, string $table, string $key): void
     {
-        Schema::create('movieinfo', function (Blueprint $table): void {
-            $table->increments('id');
-            foreach (['imdbid', 'title', 'year', 'genre', 'rating'] as $column) {
-                $table->string($column)->nullable();
-            }
-        });
+        ProductionTables::fromAuthority()->create('movieinfo', ['id', 'imdbid', 'title', 'year', 'genre', 'rating']);
         Schema::create('videos', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('title');
             $table->string('started')->nullable();
         });
-        Schema::create('tv_info', function (Blueprint $table): void {
-            $table->integer('videos_id');
-            $table->string('publisher')->nullable();
-        });
+        ProductionTables::fromAuthority()->create('tv_info', ['videos_id', 'publisher']);
         DB::table('categories')->insert(['id' => $categoryId + 10, 'title' => 'Excluded quality', 'root_categories_id' => $categoryId - 30]);
         $user = $this->browserUser();
         DB::table($table)->insert([
@@ -781,10 +761,10 @@ final class ReleaseBrowserControllerTest extends TestCase
     public function test_covers_group_releases_into_titles_and_keep_titles_without_artwork(string $root, string $table, string $foreignKey, int $categoryId, string $unit): void
     {
         $this->createCoverCatalogSchema($table);
-        DB::table($table)->insert([
+        $this->insertTitles($table,
             ['id' => 1234567, 'imdbid' => '1234567', 'title' => 'A title without artwork', 'year' => '2024', 'rating' => '8.7'],
             ['id' => 1234568, 'imdbid' => '1234568', 'title' => 'Another title', 'year' => '2025', 'rating' => '7.1'],
-        ]);
+        );
         $this->release('First encoding', [$foreignKey => '1234567', 'categories_id' => $categoryId, 'isrenamed' => 0, 'nfostatus' => -1]);
         $this->release('Second encoding', [$foreignKey => '1234567', 'categories_id' => $categoryId]);
         $this->release('Third encoding', [$foreignKey => '1234568', 'categories_id' => $categoryId]);
@@ -862,7 +842,7 @@ final class ReleaseBrowserControllerTest extends TestCase
     {
         $this->createCoverCatalogSchema($table);
         foreach ([1 => ['Wanted title', '2024'], 2 => ['Wanted older title', '2023'], 3 => ['Outside title', '2024']] as $id => [$title, $year]) {
-            DB::table($table)->insert([
+            $this->insertTitles($table, [
                 'id' => $id, 'imdbid' => (string) $id, 'title' => $title, 'year' => $year,
                 'releasedate' => $year.'-01-01', 'publishdate' => $year.'-01-01', 'started' => $year.'-01-01',
             ]);
@@ -883,7 +863,7 @@ final class ReleaseBrowserControllerTest extends TestCase
     public function test_expanding_a_cover_returns_every_allowed_release_with_shared_table_actions(string $root, string $table, string $foreignKey, int $categoryId, string $unit): void
     {
         $this->createCoverCatalogSchema($table);
-        DB::table($table)->insert(['id' => 1, 'imdbid' => '1', 'title' => 'Wanted title']);
+        $this->insertTitles($table, ['id' => 1, 'imdbid' => '1', 'title' => 'Wanted title']);
         DB::table('categories')->insert(['id' => $categoryId + 10, 'title' => 'Excluded quality', 'root_categories_id' => $categoryId - 30]);
         $user = $this->browserUser();
         $user->syncExcludedCategories([$categoryId + 10]);
@@ -913,10 +893,10 @@ final class ReleaseBrowserControllerTest extends TestCase
     public function test_cover_expansion_paginates_matching_encodings_without_changing_the_outer_page(string $root, string $table, string $foreignKey, int $categoryId, string $unit): void
     {
         $this->createCoverCatalogSchema($table);
-        DB::table($table)->insert([
+        $this->insertTitles($table,
             ['id' => 1, 'imdbid' => '1', 'title' => 'Wanted title'],
             ['id' => 2, 'imdbid' => '2', 'title' => 'Wanted title'],
-        ]);
+        );
         DB::table('categories')->insert(['id' => $categoryId + 10, 'title' => 'Excluded', 'root_categories_id' => $categoryId - 30]);
         $user = $this->browserUser();
         $user->syncExcludedCategories([$categoryId + 10]);
@@ -992,7 +972,7 @@ final class ReleaseBrowserControllerTest extends TestCase
     {
         $this->createCoverCatalogSchema($table);
         foreach ([1 => ['Zulu', '2024', '9.2', 'Alpha artist'], 2 => ['Alpha', '2025', '8.1', 'Zulu artist']] as $id => [$title, $year, $rating, $artist]) {
-            DB::table($table)->insert([
+            $this->insertTitles($table, [
                 'id' => $id, 'imdbid' => (string) $id, 'title' => $title, 'year' => $year,
                 'rating' => $rating, 'artist' => $artist, 'started' => $year.'-01-01',
             ]);
@@ -1117,7 +1097,7 @@ final class ReleaseBrowserControllerTest extends TestCase
     public function test_large_covers_render_entity_metadata_and_extra_large_covers_offer_all_encodings(string $root, string $table, string $foreignKey, int $categoryId, string $unit): void
     {
         $this->createCoverCatalogSchema($table);
-        DB::table($table)->insert(['id' => 1, 'imdbid' => '1', 'title' => 'Metadata title', 'year' => '2024', 'rating' => '8.7',
+        $this->insertTitles($table, ['id' => 1, 'imdbid' => '1', 'title' => 'Metadata title', 'year' => '2024', 'rating' => '8.7',
             'genre' => 'Mystery', 'artist' => 'An artist', 'author' => 'An author', 'publisher' => 'A publisher',
             'platform' => 'PS5', 'esrb' => 'T', 'releasedate' => '2024-01-01', 'publishdate' => '2024-01-01', 'genres_id' => 1]);
         DB::table('genres')->insert(['id' => 1, 'title' => 'Mystery']);
@@ -1280,38 +1260,25 @@ final class ReleaseBrowserControllerTest extends TestCase
         $driver->shouldReceive('searchEntityFields')->andReturn(['ids' => [], 'keys' => [], 'available' => false, 'has_more' => false]);
         app(SearchService::class)->extend('cover-test', static fn () => $driver);
         $this->registerSqliteFunction('YEAR', static fn (?string $date): ?string => $date === null ? null : substr($date, 0, 4));
-        Schema::create($entityTable, function (Blueprint $table): void {
-            $table->increments('id');
-            foreach (['imdbid', 'tmdbid', 'traktid', 'title', 'year', 'rating', 'plot', 'genre', 'director', 'actors', 'artist', 'publisher', 'releasedate', 'review', 'url', 'author', 'publishdate', 'overview', 'platform', 'esrb', 'started'] as $column) {
-                $table->string($column)->nullable();
-            }
-            $table->integer('genres_id')->nullable();
-            $table->boolean('cover')->default(false);
-        });
+        ProductionTables::fromAuthority()->create($entityTable);
         $this->createGenresTable();
-        foreach (['release_nfos' => ['releases_id'], 'dnzb_failures' => ['release_id', 'failed']] as $name => $columns) {
-            Schema::create($name, function (Blueprint $table) use ($columns): void {
-                $table->increments('id');
-                foreach ($columns as $column) {
-                    $table->integer($column)->default(0);
-                }
-            });
-        }
+        ProductionTables::fromAuthority()->create('release_nfos', ['releases_id']);
+        ProductionTables::fromAuthority()->create('dnzb_failures', ['release_id', 'failed']);
         if ($entityTable === 'videos') {
-            Schema::create('tv_episodes', function (Blueprint $table): void {
-                $table->id();
-                $table->integer('videos_id');
-                $table->integer('series');
-                $table->integer('episode');
-                $table->string('title');
-            });
-
-            Schema::create('tv_info', function (Blueprint $table): void {
-                $table->integer('videos_id');
-                $table->string('publisher')->nullable();
-                $table->boolean('image')->default(false);
-            });
+            ProductionTables::fromAuthority()->create('tv_episodes', ['id', 'videos_id', 'series', 'episode', 'title', 'firstaired']);
+            ProductionTables::fromAuthority()->create('tv_info', ['videos_id', 'publisher', 'image']);
         }
+    }
+
+    /**
+     * Insert title rows shared by several catalog tables, keeping the columns this table has.
+     *
+     * @param  array<string, mixed>  ...$rows
+     */
+    private function insertTitles(string $table, array ...$rows): void
+    {
+        $columns = array_flip(Schema::getColumnListing($table));
+        DB::table($table)->insert(array_map(static fn (array $row): array => array_intersect_key($row, $columns), $rows));
     }
 
     public function test_cards_share_the_dto_processing_decisions_and_exclude_empty_outstanding_claims(): void
