@@ -413,7 +413,7 @@ class MetadataProcessingCandidateQueryTest extends TestCase
             'size' => 2_000_000,
             'postdate' => now(),
             'adddate' => now(),
-            'guid' => $leftGuid.str_repeat('0', 39),
+            'guid' => $leftGuid.str_pad((string) $id, 39, '0', STR_PAD_LEFT),
             'leftguid' => $leftGuid,
             'categories_id' => $categoryId,
             'isrenamed' => $renamed,
@@ -431,7 +431,7 @@ class MetadataProcessingCandidateQueryTest extends TestCase
             $table->unsignedBigInteger('size');
             $table->dateTime('postdate');
             $table->dateTime('adddate');
-            $table->string('guid', 40);
+            $table->string('guid', 40)->unique();
             $table->char('leftguid', 1);
             $table->integer('categories_id');
             $table->unsignedInteger('videos_id')->default(0);
@@ -457,12 +457,12 @@ class MetadataProcessingCandidateQueryTest extends TestCase
 
         Schema::create('movieinfo', function (Blueprint $table): void {
             $table->id();
-            $table->string('imdbid');
+            $table->string('imdbid')->unique();
         });
 
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('name')->nullable();
+            $table->string('name')->nullable()->unique();
             $table->tinyInteger('active')->default(1);
         });
     }

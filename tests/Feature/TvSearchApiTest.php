@@ -206,11 +206,11 @@ final class TvSearchApiTest extends TestCase
 
         Schema::create('users', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('username')->unique();
-            $table->string('email')->unique();
+            $table->string('username');
+            $table->string('email');
             $table->string('password');
             $table->unsignedInteger('roles_id')->default(1);
-            $table->string('api_token')->nullable()->index();
+            $table->string('api_token')->nullable()->unique();
             $table->string('host')->nullable();
             $table->timestamp('apiaccess')->nullable();
             $table->boolean('verified')->default(true);
@@ -264,6 +264,7 @@ final class TvSearchApiTest extends TestCase
             $table->increments('id');
             $table->unsignedInteger('users_id');
             $table->unsignedInteger('categories_id');
+            $table->unique(['users_id', 'categories_id']);
         });
 
         Schema::create('settings', function (Blueprint $table): void {
@@ -287,7 +288,7 @@ final class TvSearchApiTest extends TestCase
 
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('name');
+            $table->string('name')->unique();
             $table->boolean('active')->default(true);
             $table->string('description')->nullable();
             $table->timestamp('last_updated')->nullable();
@@ -307,6 +308,7 @@ final class TvSearchApiTest extends TestCase
             $table->integer('tvmaze')->default(0);
             $table->integer('tvrage')->default(0);
             $table->integer('source')->default(0);
+            $table->unique(['title', 'type', 'started', 'countries_id']);
         });
 
         Schema::create('tv_episodes', function (Blueprint $table): void {
@@ -318,6 +320,7 @@ final class TvSearchApiTest extends TestCase
             $table->string('title')->default('');
             $table->string('firstaired')->nullable();
             $table->text('summary')->nullable();
+            $table->unique(['videos_id', 'series', 'episode', 'firstaired']);
         });
 
         Schema::create('releases', function (Blueprint $table): void {
@@ -331,7 +334,7 @@ final class TvSearchApiTest extends TestCase
             $table->string('fromname')->nullable();
             $table->string('postdate')->nullable();
             $table->string('adddate')->nullable();
-            $table->string('guid')->nullable();
+            $table->string('guid')->nullable()->unique();
             $table->unsignedInteger('categories_id')->default(5030);
             $table->unsignedInteger('groups_id')->nullable();
             $table->unsignedBigInteger('size')->default(0);

@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Support\ProductionTables;
 use Tests\Unit\ImdbScraperTestCase;
 
 class TitleYearMovieLookupTest extends ImdbScraperTestCase
@@ -33,7 +34,7 @@ class TitleYearMovieLookupTest extends ImdbScraperTestCase
             $table->id();
             $table->string('searchname');
             $table->string('name')->default('');
-            $table->string('guid')->default('a');
+            $table->string('guid')->default('a')->unique();
             $table->unsignedInteger('groups_id')->default(1);
             $table->integer('categories_id')->default(Category::MOVIE_HD);
             $table->string('imdbid')->nullable();
@@ -52,7 +53,7 @@ class TitleYearMovieLookupTest extends ImdbScraperTestCase
             $table->id();
             $table->string('title');
             $table->string('year');
-            $table->string('imdbid');
+            $table->string('imdbid')->unique();
         });
         Schema::create('videos', function (Blueprint $table): void {
             $table->id();
@@ -61,13 +62,9 @@ class TitleYearMovieLookupTest extends ImdbScraperTestCase
             $table->integer('type')->default(0);
             $table->integer('source')->default(0);
         });
-        Schema::create('videos_aliases', function (Blueprint $table): void {
-            $table->id();
-            $table->unsignedInteger('videos_id');
-            $table->string('title');
-        });
+        ProductionTables::fromAuthority()->create('videos_aliases', ['videos_id', 'title']);
         Schema::create('video_data', function (Blueprint $table): void {
-            $table->unsignedInteger('releases_id');
+            $table->unsignedInteger('releases_id')->primary();
             $table->string('videoduration')->nullable();
             $table->string('videoformat')->default('AVC');
             $table->string('videocodec')->default('AVC');
@@ -79,6 +76,7 @@ class TitleYearMovieLookupTest extends ImdbScraperTestCase
             $table->unsignedInteger('releases_id');
             $table->integer('audioid');
             $table->string('audioformat');
+            $table->unique(['releases_id', 'audioid']);
         });
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->id();
@@ -88,6 +86,7 @@ class TitleYearMovieLookupTest extends ImdbScraperTestCase
         Schema::create('releases_groups', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
             $table->unsignedInteger('groups_id');
+            $table->primary(['releases_id', 'groups_id']);
         });
         Schema::create('root_categories', function (Blueprint $table): void {
             $table->id();
@@ -227,7 +226,7 @@ class TitleYearMovieLookupTest extends ImdbScraperTestCase
 
     private function release(string $name, int $id = 1): void
     {
-        DB::table('releases')->insert(['id' => $id, 'searchname' => $name, 'postdate' => now()]);
+        DB::table('releases')->insert(['id' => $id, 'guid' => 'release-'.$id, 'searchname' => $name, 'postdate' => now()]);
     }
 
     private function seriesResponse(): void

@@ -204,7 +204,7 @@ final class MovieSearchApiTest extends TestCase
 
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('name');
+            $table->string('name')->unique();
             $table->boolean('active')->default(true);
             $table->string('description')->nullable();
             $table->timestamp('last_updated')->nullable();
@@ -212,7 +212,7 @@ final class MovieSearchApiTest extends TestCase
 
         Schema::create('movieinfo', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('imdbid')->nullable();
+            $table->string('imdbid')->nullable()->unique();
             $table->unsignedInteger('tmdbid')->default(0);
             $table->unsignedInteger('traktid')->default(0);
             $table->string('title')->default('');
@@ -229,7 +229,7 @@ final class MovieSearchApiTest extends TestCase
             $table->string('fromname')->nullable();
             $table->string('postdate')->nullable();
             $table->string('adddate')->nullable();
-            $table->string('guid')->nullable();
+            $table->string('guid')->nullable()->unique();
             $table->unsignedInteger('categories_id')->default(2030);
             $table->unsignedInteger('groups_id')->nullable();
             $table->unsignedBigInteger('size')->default(0);

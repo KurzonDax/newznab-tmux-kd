@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
+use Tests\Support\ProductionTables;
 
 final class NntmuxSearchMaintainCommandTest extends SearchConsoleCommandTestCase
 {
@@ -84,7 +85,7 @@ final class NntmuxSearchMaintainCommandTest extends SearchConsoleCommandTestCase
 
         DB::table('movieinfo')->insert(['id' => 9, 'imdbid' => '0123456', 'title' => 'Linked movie']);
         foreach (['musicinfo', 'consoleinfo', 'gamesinfo', 'bookinfo'] as $table) {
-            DB::table($table)->insert(['id' => 7, 'title' => 'Linked '.$table, 'artist' => 'Linked artist']);
+            DB::table($table)->insert(['id' => 7, 'title' => 'Linked '.$table, ...($table === 'musicinfo' ? ['artist' => 'Linked artist'] : [])]);
         }
         DB::table('videos')->insert(['id' => 8, 'title' => 'Linked show', 'tvdb' => 0, 'tvmaze' => 0, 'tvrage' => 0, 'trakt' => 0, 'imdb' => '', 'tmdb' => 0]);
         DB::table('anidb_titles')->insert([['anidbid' => 5, 'title' => 'Anime main'], ['anidbid' => 5, 'title' => 'Anime alternate']]);
@@ -170,7 +171,7 @@ final class NntmuxSearchMaintainCommandTest extends SearchConsoleCommandTestCase
     {
         Schema::create('releases', function (Blueprint $table): void {
             $table->unsignedBigInteger('id')->primary();
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->string('name');
             $table->string('searchname');
             $table->string('display_name')->nullable();
@@ -203,7 +204,7 @@ final class NntmuxSearchMaintainCommandTest extends SearchConsoleCommandTestCase
 
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->id();
-            $table->string('name');
+            $table->string('name')->unique();
         });
         Schema::create('categories', function (Blueprint $table): void {
             $table->id();
@@ -214,12 +215,8 @@ final class NntmuxSearchMaintainCommandTest extends SearchConsoleCommandTestCase
             $table->id();
             $table->string('title');
         });
-        foreach (['musicinfo', 'consoleinfo', 'gamesinfo', 'bookinfo'] as $name) {
-            Schema::create($name, function (Blueprint $table): void {
-                $table->id();
-                $table->string('title');
-                $table->string('artist')->nullable();
-            });
+        foreach (['musicinfo' => ['id', 'title', 'artist'], 'consoleinfo' => ['id', 'title'], 'gamesinfo' => ['id', 'title'], 'bookinfo' => ['id', 'title']] as $name => $columns) {
+            ProductionTables::fromAuthority()->create($name, $columns);
         }
         Schema::create('anidb_titles', function (Blueprint $table): void {
             $table->integer('anidbid');
@@ -230,7 +227,7 @@ final class NntmuxSearchMaintainCommandTest extends SearchConsoleCommandTestCase
             $table->string('title')->nullable();
             $table->unsignedBigInteger('tmdbid')->default(0);
             $table->unsignedBigInteger('traktid')->default(0);
-            $table->string('imdbid')->nullable();
+            $table->string('imdbid')->nullable()->unique();
         });
         Schema::create('videos', function (Blueprint $table): void {
             $table->id();
@@ -250,10 +247,10 @@ final class NntmuxSearchMaintainCommandTest extends SearchConsoleCommandTestCase
             $table->dateTime('firstaired')->nullable();
         });
         Schema::create('release_nfos', function (Blueprint $table): void {
-            $table->unsignedBigInteger('releases_id');
+            $table->unsignedBigInteger('releases_id')->primary();
         });
         Schema::create('video_data', function (Blueprint $table): void {
-            $table->unsignedBigInteger('releases_id');
+            $table->unsignedBigInteger('releases_id')->primary();
             $table->string('containerformat')->nullable();
             $table->string('overallbitrate')->nullable();
             $table->string('videoduration')->nullable();
@@ -275,6 +272,7 @@ final class NntmuxSearchMaintainCommandTest extends SearchConsoleCommandTestCase
         Schema::create('release_files', function (Blueprint $table): void {
             $table->unsignedBigInteger('releases_id');
             $table->string('name');
+            $table->primary(['releases_id', 'name']);
         });
         Schema::create('audio_data', function (Blueprint $table): void {
             $table->unsignedBigInteger('releases_id');
@@ -285,11 +283,13 @@ final class NntmuxSearchMaintainCommandTest extends SearchConsoleCommandTestCase
             $table->string('audiosamplerate')->nullable();
             $table->string('audiolanguage')->nullable();
             $table->string('audiotitle')->nullable();
+            $table->unique(['releases_id', 'audioid']);
         });
         Schema::create('release_subtitles', function (Blueprint $table): void {
             $table->unsignedBigInteger('releases_id');
             $table->unsignedBigInteger('subsid')->nullable();
             $table->string('subslanguage')->nullable();
+            $table->unique(['releases_id', 'subsid']);
         });
         Schema::create('media_info_probes', function (Blueprint $table): void {
             $table->id();
@@ -305,7 +305,7 @@ final class NntmuxSearchMaintainCommandTest extends SearchConsoleCommandTestCase
             $table->unsignedBigInteger('media_info_probe_id');
         });
         Schema::create('release_audio_tags', function (Blueprint $table): void {
-            $table->unsignedBigInteger('releases_id');
+            $table->unsignedBigInteger('releases_id')->unique();
             $table->string('album')->nullable();
             $table->string('performer')->nullable();
             $table->string('album_performer')->nullable();

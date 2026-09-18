@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 /**
@@ -48,11 +49,7 @@ final class EpisodeTitleFallbackWithinBoundShowTest extends TestCase
             $table->dateTime('started');
             $table->tinyInteger('source')->default(0);
         });
-        Schema::create('videos_aliases', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->unsignedInteger('videos_id');
-            $table->string('title');
-        });
+        ProductionTables::fromAuthority()->create('videos_aliases', ['videos_id', 'title']);
         Schema::create('tv_episodes', function (Blueprint $table): void {
             $table->increments('id');
             $table->unsignedInteger('videos_id');
@@ -60,6 +57,7 @@ final class EpisodeTitleFallbackWithinBoundShowTest extends TestCase
             $table->unsignedInteger('episode');
             $table->string('title')->default('');
             $table->string('firstaired')->default('');
+            $table->unique(['videos_id', 'series', 'episode', 'firstaired']);
         });
 
         $this->videoId = $this->createVideo('Batman The Animated Series', '1992-09-05');
