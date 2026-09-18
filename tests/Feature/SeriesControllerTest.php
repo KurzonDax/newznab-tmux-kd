@@ -449,11 +449,11 @@ class SeriesControllerTest extends TestCase
         Schema::create('users', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('username');
-            $table->string('email')->unique();
+            $table->string('email');
             $table->string('password');
             $table->unsignedInteger('roles_id')->default(1);
             $table->integer('rate_limit')->default(60);
-            $table->string('api_token')->nullable();
+            $table->string('api_token')->nullable()->unique();
             $table->boolean('verified')->default(true);
             $table->boolean('can_post')->default(true);
             $table->string('theme_preference', 10)->default('light');
@@ -469,6 +469,7 @@ class SeriesControllerTest extends TestCase
             $table->increments('id');
             $table->unsignedInteger('users_id');
             $table->unsignedInteger('categories_id');
+            $table->unique(['users_id', 'categories_id']);
         });
 
         Schema::create('content', function (Blueprint $table): void {
@@ -512,6 +513,7 @@ class SeriesControllerTest extends TestCase
             $table->integer('tvmaze')->default(0);
             $table->integer('tvrage')->default(0);
             $table->integer('source')->default(0);
+            $table->unique(['title', 'type', 'started', 'countries_id']);
         });
 
         Schema::create('tv_info', function (Blueprint $table): void {
@@ -531,6 +533,7 @@ class SeriesControllerTest extends TestCase
             $table->string('title')->default('');
             $table->string('firstaired')->nullable();
             $table->text('summary')->nullable();
+            $table->unique(['videos_id', 'series', 'episode', 'firstaired']);
         });
 
         Schema::create('releases', function (Blueprint $table): void {
@@ -544,7 +547,7 @@ class SeriesControllerTest extends TestCase
             $table->string('fromname')->nullable();
             $table->dateTime('postdate')->nullable();
             $table->dateTime('adddate')->nullable();
-            $table->string('guid')->nullable();
+            $table->string('guid')->nullable()->unique();
             $table->unsignedInteger('categories_id')->default(Category::TV_SD);
             $table->unsignedInteger('groups_id')->nullable();
             $table->unsignedBigInteger('size')->default(0);
@@ -589,6 +592,7 @@ class SeriesControllerTest extends TestCase
         Schema::create('users_releases', function (Blueprint $table): void {
             $table->integer('users_id');
             $table->integer('releases_id');
+            $table->unique(['users_id', 'releases_id']);
         });
 
         Schema::create('dnzb_failures', function (Blueprint $table): void {

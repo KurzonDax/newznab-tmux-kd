@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 final class ReleaseEntityDataLoaderTest extends TestCase
@@ -29,19 +30,14 @@ final class ReleaseEntityDataLoaderTest extends TestCase
         parent::tearDown();
     }
 
+    /** @param  list<string>  $longTextColumns  The table's long text columns, which labels must not fetch. */
     #[DataProvider('labels')]
-    public function test_labels_fetch_only_identity_title_and_year(string $tableName, string $key, string $foreignKey, string $year, int $category, string $root): void
+    public function test_labels_fetch_only_identity_title_and_year(string $tableName, string $key, string $foreignKey, string $year, int $category, string $root, array $longTextColumns): void
     {
-        Schema::create($tableName, function (Blueprint $table) use ($key, $year): void {
-            $table->integer($key);
-            $table->string('title');
-            $table->string($year)->nullable();
-            $table->text('plot')->nullable();
-            $table->text('review')->nullable();
-        });
+        ProductionTables::fromAuthority()->create($tableName, [$key, 'title', $year, ...$longTextColumns]);
         DB::table($tableName)->insert([
             $key => 7, 'title' => 'A title', $year => '2001-02-03',
-            'plot' => str_repeat('p', 1048576), 'review' => str_repeat('r', 1048576),
+            ...array_fill_keys($longTextColumns, str_repeat('t', 1048576)),
         ]);
         if ($root === 'tv') {
             Schema::create('tv_episodes', function (Blueprint $table): void {
@@ -87,10 +83,7 @@ final class ReleaseEntityDataLoaderTest extends TestCase
 
     public function test_anime_returns_only_the_preferred_title_for_each_identity(): void
     {
-        Schema::create('anidb_info', function (Blueprint $table): void {
-            $table->integer('anidbid');
-            $table->string('startdate')->nullable();
-        });
+        ProductionTables::fromAuthority()->create('anidb_info', ['anidbid', 'startdate']);
         Schema::create('anidb_titles', function (Blueprint $table): void {
             $table->integer('anidbid');
             $table->string('lang');
@@ -140,12 +133,12 @@ final class ReleaseEntityDataLoaderTest extends TestCase
     public static function labels(): array
     {
         return [
-            'movie' => ['movieinfo', 'imdbid', 'imdbid', 'year', 2030, 'movies'],
-            'tv' => ['videos', 'id', 'videos_id', 'started', 5030, 'tv'],
-            'music' => ['musicinfo', 'id', 'musicinfo_id', 'year', 3030, 'audio'],
-            'console' => ['consoleinfo', 'id', 'consoleinfo_id', 'releasedate', 1030, 'console'],
-            'games' => ['gamesinfo', 'id', 'gamesinfo_id', 'releasedate', 4030, 'games'],
-            'book' => ['bookinfo', 'id', 'bookinfo_id', 'publishdate', 7030, 'books'],
+            'movie' => ['movieinfo', 'imdbid', 'imdbid', 'year', 2030, 'movies', ['plot']],
+            'tv' => ['videos', 'id', 'videos_id', 'started', 5030, 'tv', []],
+            'music' => ['musicinfo', 'id', 'musicinfo_id', 'year', 3030, 'audio', ['review']],
+            'console' => ['consoleinfo', 'id', 'consoleinfo_id', 'releasedate', 1030, 'console', ['review']],
+            'games' => ['gamesinfo', 'id', 'gamesinfo_id', 'releasedate', 4030, 'games', ['review']],
+            'book' => ['bookinfo', 'id', 'bookinfo_id', 'publishdate', 7030, 'books', ['overview']],
         ];
     }
 }

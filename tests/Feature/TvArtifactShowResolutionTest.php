@@ -11,6 +11,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 final class TvArtifactShowResolutionTest extends TestCase
@@ -39,11 +40,7 @@ final class TvArtifactShowResolutionTest extends TestCase
             $table->unsignedInteger('tvmaze')->default(0);
             $table->unsignedInteger('tvrage')->default(0);
         });
-        Schema::create('videos_aliases', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->unsignedInteger('videos_id');
-            $table->string('title');
-        });
+        ProductionTables::fromAuthority()->create('videos_aliases', ['videos_id', 'title']);
         Schema::create('tv_episodes', function (Blueprint $table): void {
             $table->increments('id');
             $table->unsignedInteger('videos_id');
@@ -51,10 +48,12 @@ final class TvArtifactShowResolutionTest extends TestCase
             $table->unsignedInteger('episode');
             $table->string('title')->default('');
             $table->string('firstaired')->default('');
+            $table->unique(['videos_id', 'series', 'episode', 'firstaired']);
         });
         Schema::create('release_files', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
             $table->string('name');
+            $table->primary(['releases_id', 'name']);
         });
         Schema::create('media_infos', function (Blueprint $table): void {
             $table->increments('id');

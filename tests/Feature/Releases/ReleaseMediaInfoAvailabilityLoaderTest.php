@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use stdClass;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class ReleaseMediaInfoAvailabilityLoaderTest extends TestCase
@@ -38,35 +39,15 @@ class ReleaseMediaInfoAvailabilityLoaderTest extends TestCase
     {
         parent::setUp();
         $this->bootIsolatedDatabase();
-        foreach (['media_info_probes', 'media_infos', 'video_data', 'audio_data', 'release_subtitles', 'release_audio_tags'] as $tableName) {
-            Schema::create($tableName, function (Blueprint $table) use ($tableName): void {
-                if ($tableName === 'video_data') {
-                    $table->unsignedInteger('releases_id')->primary();
-                } else {
-                    $table->id();
-                    $table->unsignedBigInteger('releases_id');
-                }
-                foreach (match ($tableName) {
-                    'media_info_probes' => ['embedded_title', 'source_filename', 'container_format', 'music_tags'],
-                    'media_infos' => ['movie_name', 'file_name'],
-                    'video_data' => ['containerformat', 'overallbitrate', 'videoduration', 'videoformat', 'videocodec', 'videoaspect', 'videolibrary'],
-                    'audio_data' => ['audioformat', 'audiobitrate', 'audiochannels', 'audiosamplerate', 'audiolanguage', 'audiotitle'],
-                    'release_subtitles' => ['subslanguage'],
-                    'release_audio_tags' => ['album', 'performer', 'album_performer', 'genre', 'recorded_date', 'track_name', 'musicbrainz_album_id', 'musicbrainz_track_id', 'audio_format'],
-                } as $column) {
-                    $table->string($column)->nullable();
-                }
-                foreach (match ($tableName) {
-                    'media_info_probes' => ['duration_ms', 'overall_bitrate_bps'],
-                    'video_data' => ['videowidth', 'videoheight', 'videoframerate'],
-                    'audio_data' => ['audioid'],
-                    'release_subtitles' => ['subsid'],
-                    'release_audio_tags' => ['track_position', 'track_position_total'],
-                    default => [],
-                } as $column) {
-                    $table->unsignedBigInteger($column)->nullable();
-                }
-            });
+        foreach ([
+            'media_info_probes' => ['id', 'releases_id', 'embedded_title', 'source_filename', 'container_format', 'music_tags', 'duration_ms', 'overall_bitrate_bps'],
+            'media_infos' => ['id', 'releases_id', 'movie_name', 'file_name'],
+            'video_data' => ['releases_id', 'containerformat', 'overallbitrate', 'videoduration', 'videoformat', 'videocodec', 'videoaspect', 'videolibrary', 'videowidth', 'videoheight', 'videoframerate'],
+            'audio_data' => ['id', 'releases_id', 'audioformat', 'audiobitrate', 'audiochannels', 'audiosamplerate', 'audiolanguage', 'audiotitle', 'audioid'],
+            'release_subtitles' => ['id', 'releases_id', 'subslanguage', 'subsid'],
+            'release_audio_tags' => ['id', 'releases_id', 'album', 'performer', 'album_performer', 'genre', 'recorded_date', 'track_name', 'musicbrainz_album_id', 'musicbrainz_track_id', 'audio_format', 'track_position', 'track_position_total'],
+        ] as $tableName => $columns) {
+            ProductionTables::fromAuthority()->create($tableName, $columns);
         }
         Schema::create('media_info_tracks', function (Blueprint $table): void {
             $table->id();
@@ -187,7 +168,7 @@ class ReleaseMediaInfoAvailabilityLoaderTest extends TestCase
         Search::shouldReceive('isAvailable')->andReturn(false);
         config(['nntmux.echocli' => false]);
         foreach ([1, 2] as $id) {
-            DB::table($table)->insert(['id' => $id, 'imdbid' => (string) $id, 'title' => 'Title '.$id, 'cover' => 1]);
+            DB::table($table)->insert(['id' => $id, 'title' => 'Title '.$id, 'cover' => 1, ...($table === 'movieinfo' ? ['imdbid' => (string) $id] : [])]);
             DB::table('releases')->insert(Release::factory()->make([
                 'id' => $id, $foreignKey => $id, 'guid' => 'release-'.$id,
                 'searchname' => 'Release '.$id, 'postdate' => '2026-09-13 12:00:00',
@@ -243,13 +224,7 @@ class ReleaseMediaInfoAvailabilityLoaderTest extends TestCase
     private function createBrowseSchema(string $entityTable): void
     {
         $this->registerSqliteFunction('YEAR', static fn (?string $date): ?string => $date === null ? null : substr($date, 0, 4));
-        Schema::create($entityTable, function (Blueprint $table): void {
-            $table->id();
-            foreach (['imdbid', 'tmdbid', 'traktid', 'title', 'year', 'rating', 'plot', 'genre', 'director', 'actors', 'artist', 'publisher', 'releasedate', 'review', 'url', 'genres_id', 'author', 'publishdate', 'overview', 'platform', 'esrb'] as $column) {
-                $table->string($column)->nullable();
-            }
-            $table->integer('cover')->default(1);
-        });
+        ProductionTables::fromAuthority()->create($entityTable);
         Schema::create('releases', function (Blueprint $table): void {
             $table->id();
             foreach (['imdbid', 'musicinfo_id', 'gamesinfo_id', 'bookinfo_id', 'consoleinfo_id', 'guid', 'searchname', 'display_name', 'repair_outcome', 'rescan_outcome', 'postdate', 'adddate', 'fromname', 'additional_pp_claim_token'] as $column) {
@@ -259,14 +234,16 @@ class ReleaseMediaInfoAvailabilityLoaderTest extends TestCase
                 $table->integer($column)->default(0);
             }
             $table->integer('completion')->default(100);
+            $table->unique('guid');
         });
-        foreach (['usenet_groups' => ['name'], 'release_nfos' => ['releases_id'], 'dnzb_failures' => ['release_id', 'failed'], 'genres' => ['title'], 'release_video_clips' => ['releases_id', 'extension', 'mime']] as $name => $columns) {
-            Schema::create($name, function (Blueprint $table) use ($columns): void {
-                $table->id();
-                foreach ($columns as $column) {
-                    $table->string($column)->nullable();
-                }
-            });
+        foreach ([
+            'usenet_groups' => ['id', 'name'],
+            'release_nfos' => ['releases_id'],
+            'dnzb_failures' => ['release_id', 'failed'],
+            'genres' => ['id', 'title'],
+            'release_video_clips' => ['id', 'releases_id', 'extension', 'mime'],
+        ] as $name => $columns) {
+            ProductionTables::fromAuthority()->create($name, $columns);
         }
         Schema::table('release_audio_tags', function (Blueprint $table): void {
             foreach (['preview_extension', 'preview_mime', 'preview_seconds'] as $column) {

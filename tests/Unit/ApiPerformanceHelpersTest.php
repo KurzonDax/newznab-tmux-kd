@@ -246,7 +246,7 @@ class ApiPerformanceHelpersTest extends TestCase
         });
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
-            $table->string('name');
+            $table->string('name')->unique();
         });
         Schema::create('videos', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
@@ -266,14 +266,14 @@ class ApiPerformanceHelpersTest extends TestCase
         });
         Schema::create('movieinfo', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
-            $table->string('imdbid')->nullable();
+            $table->string('imdbid')->nullable()->unique();
             $table->unsignedInteger('tmdbid')->nullable();
             $table->unsignedInteger('traktid')->nullable();
         });
         Schema::create('releases', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
             $table->string('searchname');
-            $table->string('guid')->index();
+            $table->string('guid')->unique();
             $table->dateTime('postdate');
             $table->unsignedInteger('categories_id');
             $table->unsignedBigInteger('size');

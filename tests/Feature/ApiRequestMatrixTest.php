@@ -831,11 +831,11 @@ class ApiRequestMatrixTest extends TestCase
 
         Schema::create('users', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('username')->unique();
-            $table->string('email')->unique();
+            $table->string('username');
+            $table->string('email');
             $table->string('password');
             $table->unsignedInteger('roles_id')->default(1);
-            $table->string('api_token')->nullable()->index();
+            $table->string('api_token')->nullable()->unique();
             $table->string('host')->nullable();
             $table->timestamp('apiaccess')->nullable();
             $table->boolean('verified')->default(true);
@@ -896,6 +896,7 @@ class ApiRequestMatrixTest extends TestCase
             $table->increments('id');
             $table->unsignedInteger('users_id');
             $table->unsignedInteger('categories_id');
+            $table->unique(['users_id', 'categories_id']);
         });
 
         Schema::create('user_requests', function (Blueprint $table): void {
@@ -931,7 +932,7 @@ class ApiRequestMatrixTest extends TestCase
 
         Schema::create('movieinfo', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
-            $table->string('imdbid')->nullable();
+            $table->string('imdbid')->nullable()->unique();
             $table->unsignedInteger('tmdbid')->nullable();
             $table->unsignedInteger('traktid')->nullable();
         });
@@ -939,7 +940,7 @@ class ApiRequestMatrixTest extends TestCase
         Schema::create('releases', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
             $table->string('searchname');
-            $table->string('guid')->index();
+            $table->string('guid')->unique();
             $table->dateTime('postdate');
             $table->unsignedInteger('categories_id');
             $table->unsignedBigInteger('size');
@@ -961,7 +962,7 @@ class ApiRequestMatrixTest extends TestCase
 
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('name');
+            $table->string('name')->unique();
             $table->boolean('active')->default(true);
             $table->string('description')->nullable();
             $table->timestamp('last_updated')->nullable();

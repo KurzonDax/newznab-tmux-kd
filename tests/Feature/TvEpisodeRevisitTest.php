@@ -33,6 +33,7 @@ use PHPUnit\Framework\Attributes\Test;
 use ReflectionMethod;
 use ReflectionProperty;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class TvEpisodeRevisitTest extends TestCase
@@ -76,9 +77,10 @@ class TvEpisodeRevisitTest extends TestCase
         config(['tmdb.api_key' => 'test-key', 'services.trakt.client_id' => '']);
         Schema::table('videos', function (Blueprint $table): void {
             $table->string('countries_id')->default('');
+            $table->unique(['title', 'type', 'started', 'countries_id']);
         });
         Schema::create('tv_info', function (Blueprint $table): void {
-            $table->unsignedInteger('videos_id');
+            $table->unsignedInteger('videos_id')->primary();
             $table->text('summary');
             $table->string('publisher');
             $table->string('localzone');
@@ -711,7 +713,7 @@ class TvEpisodeRevisitTest extends TestCase
             'size' => 2_000_000,
             'postdate' => now()->subDay(),
             'adddate' => now()->subDay(),
-            'guid' => 'a'.str_pad((string) $id, 39, '0'),
+            'guid' => 'a'.str_pad((string) $id, 39, '0', STR_PAD_LEFT),
             'leftguid' => 'a',
             'categories_id' => Category::TV_HD,
             'videos_id' => 0,
@@ -734,7 +736,7 @@ class TvEpisodeRevisitTest extends TestCase
             $table->unsignedBigInteger('size');
             $table->dateTime('postdate');
             $table->dateTime('adddate');
-            $table->string('guid', 40);
+            $table->string('guid', 40)->unique();
             $table->char('leftguid', 1);
             $table->integer('categories_id');
             $table->unsignedInteger('videos_id')->default(0);
@@ -760,11 +762,7 @@ class TvEpisodeRevisitTest extends TestCase
             $table->unsignedInteger('tvrage')->default(0);
         });
 
-        Schema::create('videos_aliases', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->unsignedInteger('videos_id');
-            $table->string('title');
-        });
+        ProductionTables::fromAuthority()->create('videos_aliases', ['videos_id', 'title']);
 
         Schema::create('tv_episodes', function (Blueprint $table): void {
             $table->increments('id');
@@ -773,11 +771,13 @@ class TvEpisodeRevisitTest extends TestCase
             $table->unsignedInteger('episode')->default(0);
             $table->string('title')->default('');
             $table->dateTime('firstaired')->nullable();
+            $table->unique(['videos_id', 'series', 'episode', 'firstaired']);
         });
 
         Schema::create('release_files', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
             $table->string('name');
+            $table->primary(['releases_id', 'name']);
         });
 
         Schema::create('media_infos', function (Blueprint $table): void {

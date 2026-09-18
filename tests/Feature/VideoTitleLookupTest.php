@@ -10,6 +10,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 final class VideoTitleLookupTest extends TestCase
@@ -32,11 +33,7 @@ final class VideoTitleLookupTest extends TestCase
             $table->dateTime('started');
             $table->tinyInteger('source')->default(0);
         });
-        Schema::create('videos_aliases', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->unsignedInteger('videos_id');
-            $table->string('title');
-        });
+        ProductionTables::fromAuthority()->create('videos_aliases', ['videos_id', 'title']);
     }
 
     #[Test]
