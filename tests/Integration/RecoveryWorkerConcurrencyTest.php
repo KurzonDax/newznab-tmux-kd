@@ -158,6 +158,10 @@ final class RecoveryWorkerConcurrencyTest extends TestCase
             foreach ($supervisors as $supervisor) {
                 $supervisor->wait();
                 $this->assertTrue($supervisor->isSuccessful(), $supervisor->getErrorOutput());
+                $this->assertStringContainsString('Recovery downloads at ', $supervisor->getOutput());
+                $this->assertStringContainsString('Queue: ', $supervisor->getOutput());
+                $this->assertStringNotContainsString('slice_complete', $supervisor->getOutput());
+                $this->assertStringNotContainsString('{', $supervisor->getOutput());
             }
             DB::table('obfuscation_recovery_work')->where('status', 'pending')->update(['due_at' => now()->subSecond()]);
         }
@@ -192,7 +196,7 @@ final class RecoveryWorkerConcurrencyTest extends TestCase
         $stopped = $this->supervisor(true);
         $stopped->wait();
         $this->assertTrue($stopped->isSuccessful(), $stopped->getErrorOutput());
-        $this->assertSame('admission_pending', trim($stopped->getOutput()));
+        $this->assertStringContainsString('engine stopped or recovery disabled', $stopped->getOutput());
         $this->assertCount(3, $this->events('open'));
         DB::table('obfuscation_recovery_slots')->whereNotNull('worker_token')->update(['expires_at' => now()->subSecond()]);
         DB::table('obfuscation_recovery_work')->where('status', 'claimed')->update(['claim_expires_at' => now()->subSecond()]);
