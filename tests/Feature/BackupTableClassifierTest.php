@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class BackupTableClassifierTest extends TestCase
@@ -25,13 +26,23 @@ class BackupTableClassifierTest extends TestCase
         DB::statement("ATTACH DATABASE ':memory:' AS research");
         $this->researchAttached = true;
 
-        foreach (['users', 'collections', 'multigroup_parts_12', 'cache', 'pulse_entries', 'custom_Important'] as $table) {
+        foreach (['users' => 'id', 'collections' => 'id', 'cache' => 'key', 'pulse_entries' => 'id'] as $table => $column) {
+            ProductionTables::fromAuthority()->create($table, [$column]);
+        }
+
+        foreach (['multigroup_parts_12', 'custom_Important'] as $table) {
             Schema::create($table, fn (Blueprint $blueprint) => $blueprint->id());
         }
 
         foreach (['articles', 'capture_runs', 'users'] as $table) {
             Schema::create('research.'.$table, fn (Blueprint $blueprint) => $blueprint->id());
         }
+    }
+
+    /** Per-group, custom, research-schema and dotted names that only exercise the classifier. */
+    protected function fixtureOnlyTables(): array
+    {
+        return ['Archive.v1', 'articles', 'capture_runs', 'custom_Important', 'multigroup_parts_12'];
     }
 
     protected function tearDown(): void

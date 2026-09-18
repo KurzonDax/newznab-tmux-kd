@@ -20,6 +20,9 @@ trait ChecksFrontierMigration
         DB::table('obfuscation_recovery_frontier_conflicts')->insert(['identity' => hash('sha256', 'legacy-migration'),
             'scope_digest' => $scope, 'kind' => 'unknown', 'first_article' => 1, 'last_article' => 10]);
         $migration->up();
+        // The round trip recreates frontier requests/targets as first shipped; reapply the rerunnable
+        // attribution migration so the replacement below runs against the current keys.
+        (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
         $this->assertSame(1, (int) DB::table('obfuscation_recovery_frontiers')->value('evidence_version'));
         $this->assertSame('2026-09-07 09:50:00', DB::table('obfuscation_recovery_frontiers')->value('postdate'));
         $this->assertSame(1, DB::table('obfuscation_recovery_frontier_conflicts')->count());

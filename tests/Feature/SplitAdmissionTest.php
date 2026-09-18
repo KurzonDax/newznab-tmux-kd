@@ -676,7 +676,7 @@ class SplitAdmissionTest extends TestCase
         if ($latePart) {
             $binary = DB::table('binaries')->where('collections_id', 2)->orderBy('id')->value('id');
             $part = (array) DB::table('parts')->where('binaries_id', $binary)->first();
-            DB::table('parts')->where('id', $part['id'])->delete();
+            DB::table('parts')->where('binaries_id', $part['binaries_id'])->where('partnumber', $part['partnumber'])->delete();
             $this->app['events']->listen(TransactionBeginning::class, static function () use ($part, &$arrived): void {
                 if (! $arrived) {
                     $arrived = true;

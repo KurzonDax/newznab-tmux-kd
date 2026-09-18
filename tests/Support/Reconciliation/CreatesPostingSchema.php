@@ -5,20 +5,14 @@ declare(strict_types=1);
 namespace Tests\Support\Reconciliation;
 
 use Illuminate\Support\Facades\DB;
+use Tests\Support\ProductionTables;
 
 trait CreatesPostingSchema
 {
     private function createPostingSchema(): void
     {
         // Minimal tables.
-        DB::statement('CREATE TABLE settings (
-            section TEXT NULL,
-            subsection TEXT NULL,
-            name TEXT PRIMARY KEY,
-            value TEXT NULL,
-            hint TEXT NULL,
-            setting TEXT NULL
-        )');
+        ProductionTables::fromAuthority()->create('settings');
         // Seed the settings queried in Binaries constructor.
         $defaults = [
             'maxmssgs' => '20000',
@@ -74,15 +68,7 @@ trait CreatesPostingSchema
             UNIQUE(binaryhash, collections_id)
         )');
 
-        DB::statement('CREATE TABLE parts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            binaries_id INT,
-            number INT,
-            messageid VARCHAR(255),
-            partnumber INT,
-            size INT,
-            UNIQUE(binaries_id, partnumber)
-        )');
+        ProductionTables::fromAuthority()->create('parts');
 
         DB::statement('CREATE TABLE missed_parts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -112,7 +98,7 @@ trait CreatesPostingSchema
             lastarticle INTEGER NULL,
             groups_id INTEGER,
             adddate DATETIME NULL,
-            guid VARCHAR(64),
+            guid VARCHAR(64) UNIQUE,
             leftguid VARCHAR(1),
             postdate DATETIME NULL,
             fromname VARCHAR(255),
@@ -127,7 +113,6 @@ trait CreatesPostingSchema
             is_trusted_name INTEGER DEFAULT 0,
             iscategorized INTEGER,
             predb_id INTEGER,
-            source VARCHAR(255) NULL,
             movieinfo_id INTEGER DEFAULT 0, imdbid INTEGER DEFAULT 0, videos_id INTEGER DEFAULT 0, tv_episodes_id INTEGER DEFAULT 0,
             additional_pp_claimed_at DATETIME NULL, recovery_claimed_at DATETIME NULL, recovery_claim_token TEXT NULL,
             nzb_creation_claimed_at DATETIME NULL, nzb_creation_claim_token TEXT NULL,
@@ -137,7 +122,7 @@ trait CreatesPostingSchema
 
         DB::statement('ALTER TABLE collections ADD releases_id INTEGER NULL');
         DB::statement('ALTER TABLE collections ADD added DATETIME NULL');
-        DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name TEXT, active INTEGER DEFAULT 1,
+        DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name TEXT UNIQUE, active INTEGER DEFAULT 1,
             backfill INTEGER DEFAULT 0, last_record_postdate DATETIME, first_record_postdate DATETIME,
             backfill_settled_at DATETIME, minsizetoformrelease INTEGER DEFAULT 0, minfilestoformrelease INTEGER DEFAULT 0)');
         DB::statement('CREATE TABLE releases_groups (releases_id INTEGER, groups_id INTEGER, UNIQUE(releases_id, groups_id))');
