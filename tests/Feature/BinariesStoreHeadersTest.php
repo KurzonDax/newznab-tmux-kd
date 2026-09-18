@@ -33,12 +33,8 @@ class BinariesStoreHeadersTest extends TestCase
 
         // Minimal tables.
         DB::statement('CREATE TABLE settings (
-            section TEXT NULL,
-            subsection TEXT NULL,
             name TEXT PRIMARY KEY,
-            value TEXT NULL,
-            hint TEXT NULL,
-            setting TEXT NULL
+            value TEXT NULL
         )');
         // Seed the settings queried in Binaries constructor.
         $defaults = [
@@ -96,7 +92,6 @@ class BinariesStoreHeadersTest extends TestCase
         )');
 
         DB::statement('CREATE TABLE parts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
             binaries_id INT,
             number INT,
             messageid VARCHAR(255),
@@ -147,7 +142,7 @@ class BinariesStoreHeadersTest extends TestCase
     #[DataProvider('rangeDirections')]
     public function test_range_command_stamps_direction_from_mode(string $mode, int $safePartRepair): void
     {
-        DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name TEXT, first_record INTEGER, last_record INTEGER,
+        DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name TEXT UNIQUE, first_record INTEGER, last_record INTEGER,
             first_record_postdate DATETIME, last_record_postdate DATETIME, backfill_settled_at DATETIME, last_updated DATETIME)');
         DB::table('usenet_groups')->insert([
             'id' => 1, 'name' => 'alt.test', 'first_record' => 9000, 'last_record' => 8000,
@@ -178,7 +173,7 @@ class BinariesStoreHeadersTest extends TestCase
     #[DataProvider('repairCapacities')]
     public function test_failed_range_only_advances_with_available_repair_capacity(int $limit, int $attempts, bool $enabled, int $expectedLast): void
     {
-        DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name TEXT, first_record INTEGER, last_record INTEGER,
+        DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name TEXT UNIQUE, first_record INTEGER, last_record INTEGER,
             first_record_postdate DATETIME, last_record_postdate DATETIME, backfill_settled_at DATETIME, last_updated DATETIME)');
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.test', 'first_record' => 1, 'last_record' => 8000]);
         (require database_path('migrations/2026_09_05_213352_create_usenet_group_ingested_ranges_table.php'))->up();
@@ -304,11 +299,6 @@ class BinariesStoreHeadersTest extends TestCase
 
     public function test_duplicate_collection_and_binary_reuse(): void
     {
-        // Skip this test when using SQLite as it doesn't support REGEXP function
-        if (DB::getDriverName() === 'sqlite') {
-            $this->markTestSkipped('This test requires MySQL REGEXP function which is not available in SQLite.');
-        }
-
         $harness = new TestBinariesHarness;
 
         $headers = [
@@ -332,11 +322,6 @@ class BinariesStoreHeadersTest extends TestCase
 
     public function test_raw_message_id_stored_unmodified(): void
     {
-        // Skip this test when using SQLite as it doesn't support REGEXP function
-        if (DB::getDriverName() === 'sqlite') {
-            $this->markTestSkipped('This test requires MySQL REGEXP function which is not available in SQLite.');
-        }
-
         $harness = new TestBinariesHarness;
         $headers = [$this->makeHeader(3001, 1, 1, 123)];
         $harness->publicStoreHeaders($headers);

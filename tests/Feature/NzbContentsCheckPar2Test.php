@@ -201,7 +201,7 @@ class NzbContentsCheckPar2Test extends TestCase
         DB::statement('DROP TABLE IF EXISTS releases');
         DB::statement('CREATE TABLE releases (
             id INTEGER PRIMARY KEY,
-            guid VARCHAR(64),
+            guid VARCHAR(64) UNIQUE,
             nzbstatus INTEGER NOT NULL DEFAULT 0,
             nfostatus INTEGER NOT NULL DEFAULT -1,
             proc_par2 INTEGER NOT NULL DEFAULT 0,

@@ -422,7 +422,6 @@ class CbpCleanupServiceTest extends TestCase
             'isrenamed' => 1,
             'iscategorized' => 1,
             'predb_id' => 0,
-            'source' => null,
         ]);
 
         DB::table('collections')->insert([
@@ -494,7 +493,6 @@ class CbpCleanupServiceTest extends TestCase
             'isrenamed' => 1,
             'iscategorized' => 1,
             'predb_id' => 0,
-            'source' => null,
         ]);
 
         DB::table('collections')->insert([
@@ -653,7 +651,6 @@ class CbpCleanupServiceTest extends TestCase
             'isrenamed' => 1,
             'iscategorized' => 1,
             'predb_id' => 0,
-            'source' => null,
         ]);
 
         $finder = app(ReleaseDuplicateFinder::class);
@@ -690,7 +687,6 @@ class CbpCleanupServiceTest extends TestCase
             'isrenamed' => 1,
             'iscategorized' => 1,
             'predb_id' => 9001,
-            'source' => null,
         ]);
 
         $finder = app(ReleaseDuplicateFinder::class);
@@ -729,7 +725,6 @@ class CbpCleanupServiceTest extends TestCase
             'isrenamed' => 1,
             'iscategorized' => 1,
             'predb_id' => 0,
-            'source' => null,
         ]);
 
         $finder = app(ReleaseDuplicateFinder::class);
@@ -760,7 +755,6 @@ class CbpCleanupServiceTest extends TestCase
             'isrenamed' => 1,
             'iscategorized' => 1,
             'predb_id' => 0,
-            'source' => null,
         ]);
 
         $finder = app(ReleaseDuplicateFinder::class);
@@ -975,7 +969,6 @@ class CbpCleanupServiceTest extends TestCase
             'isrenamed' => 1,
             'iscategorized' => 1,
             'predb_id' => 0,
-            'source' => null,
         ]);
     }
 
@@ -1105,7 +1098,7 @@ class CbpCleanupServiceTest extends TestCase
         DB::statement('CREATE TABLE settings (name VARCHAR(255) PRIMARY KEY, value TEXT)');
         DB::statement('CREATE TABLE usenet_groups (
             id INTEGER PRIMARY KEY,
-            name VARCHAR(255),
+            name VARCHAR(255) UNIQUE,
             active INTEGER NOT NULL DEFAULT 1,
             backfill INTEGER NOT NULL DEFAULT 1,
             last_record_postdate DATETIME NULL,
@@ -1114,7 +1107,7 @@ class CbpCleanupServiceTest extends TestCase
             minsizetoformrelease INTEGER NULL,
             minfilestoformrelease INTEGER NULL
         )');
-        DB::statement('CREATE TABLE categories (id INTEGER PRIMARY KEY, title VARCHAR(255), parent_categories_id INTEGER NULL)');
+        DB::statement('CREATE TABLE categories (id INTEGER PRIMARY KEY, title VARCHAR(255))');
         DB::statement('CREATE TABLE releases (
             id INTEGER PRIMARY KEY,
             name VARCHAR(255),
@@ -1127,7 +1120,7 @@ class CbpCleanupServiceTest extends TestCase
             lastarticle INTEGER NULL,
             groups_id INTEGER,
             adddate DATETIME NULL,
-            guid VARCHAR(64),
+            guid VARCHAR(64) UNIQUE,
             leftguid VARCHAR(1),
             postdate DATETIME NULL,
             fromname VARCHAR(255),
@@ -1152,8 +1145,7 @@ class CbpCleanupServiceTest extends TestCase
             isrenamed INTEGER,
             is_trusted_name INTEGER NOT NULL DEFAULT 0,
             iscategorized INTEGER,
-            predb_id INTEGER,
-            source VARCHAR(255) NULL
+            predb_id INTEGER
         )');
         DB::statement('CREATE TABLE collections (
             id INTEGER PRIMARY KEY,
@@ -1173,7 +1165,7 @@ class CbpCleanupServiceTest extends TestCase
             lastarticle INT NULL,
             filesize INTEGER,
             filecheck INTEGER,
-            collectionhash VARCHAR(255),
+            collectionhash VARCHAR(255) UNIQUE,
             collection_regexes_id INTEGER,
             releases_id INTEGER NULL,
             noise VARCHAR(64)
@@ -1192,9 +1184,10 @@ class CbpCleanupServiceTest extends TestCase
             number INTEGER,
             messageid VARCHAR(255),
             partnumber INTEGER,
-            size INTEGER
+            size INTEGER,
+            UNIQUE(binaries_id, partnumber)
         )');
-        DB::statement('CREATE TABLE video_data (id INTEGER PRIMARY KEY, releases_id INTEGER)');
+        DB::statement('CREATE TABLE video_data (releases_id INTEGER PRIMARY KEY)');
         DB::statement('CREATE TABLE audio_data (id INTEGER PRIMARY KEY, releases_id INTEGER)');
         DB::statement('CREATE TABLE release_naming_regexes (
             id INTEGER PRIMARY KEY,
@@ -1212,11 +1205,11 @@ class CbpCleanupServiceTest extends TestCase
         )');
         DB::statement('CREATE TABLE predb (
             id INTEGER PRIMARY KEY,
-            title VARCHAR(255),
+            title VARCHAR(255) UNIQUE,
             filename VARCHAR(255)
         )');
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.test']);
-        DB::table('categories')->insert(['id' => 1, 'title' => 'Misc', 'parent_categories_id' => null]);
+        DB::table('categories')->insert(['id' => 1, 'title' => 'Misc']);
     }
 
     private function useChicagoApplicationClock(): void

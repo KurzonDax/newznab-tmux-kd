@@ -403,7 +403,7 @@ trait ChecksRetainedFrontierRebuild
         $this->travelTo(Carbon::parse('2026-09-13 15:00:00', 'UTC'));
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('name');
+            $table->string('name')->unique();
         });
         (require database_path('migrations/2026_09_07_172435_add_obfuscation_recovery_storage.php'))->up();
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();

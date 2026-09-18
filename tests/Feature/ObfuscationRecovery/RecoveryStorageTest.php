@@ -33,7 +33,7 @@ final class RecoveryStorageTest extends TestCase
         $this->bootIsolatedDatabase();
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('name');
+            $table->string('name')->unique();
         });
         (require database_path('migrations/2026_09_07_172435_add_obfuscation_recovery_storage.php'))->up();
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
@@ -51,7 +51,7 @@ final class RecoveryStorageTest extends TestCase
         DB::statement('CREATE TABLE binaries (id INTEGER PRIMARY KEY, binaryhash BLOB, name TEXT, collections_id INTEGER,
             totalparts INTEGER, currentparts INTEGER, filenumber INTEGER, partsize INTEGER, partcheck INTEGER DEFAULT 0,
             UNIQUE(binaryhash, collections_id))');
-        DB::statement('CREATE TABLE parts (id INTEGER PRIMARY KEY, binaries_id INTEGER, number INTEGER, messageid TEXT,
+        DB::statement('CREATE TABLE parts (binaries_id INTEGER, number INTEGER, messageid TEXT,
             partnumber INTEGER, size INTEGER, UNIQUE(binaries_id, partnumber))');
     }
 

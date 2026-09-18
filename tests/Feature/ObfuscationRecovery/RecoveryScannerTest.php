@@ -27,7 +27,7 @@ final class RecoveryScannerTest extends TestCase
         $this->registerSqliteFunction('regexp', static fn (string $pattern, string $value): int => (int) preg_match('/'.$pattern.'/', $value));
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('name');
+            $table->string('name')->unique();
         });
         Schema::create('binaryblacklist', function (Blueprint $table): void {
             $table->id();
@@ -85,7 +85,6 @@ final class RecoveryScannerTest extends TestCase
             UNIQUE(binaryhash, collections_id)
         )');
         DB::statement('CREATE TABLE parts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
             binaries_id INT,
             number INT,
             messageid VARCHAR(255),

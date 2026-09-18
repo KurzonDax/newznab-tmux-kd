@@ -42,7 +42,7 @@ final class RecoveryNfoTest extends TestCase
         (require database_path('migrations/2026_09_14_110835_add_recovery_handoff_and_process_identity.php'))->up();
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->string('name')->default('fixture');
             $table->unsignedInteger('groups_id')->default(1);
             $table->unsignedBigInteger('size')->default(1024);
@@ -60,10 +60,10 @@ final class RecoveryNfoTest extends TestCase
             $table->binary('nfo');
         });
         Schema::create('release_files', function (Blueprint $table): void {
-            $table->id();
             $table->unsignedInteger('releases_id');
             $table->string('name');
             $table->unsignedBigInteger('size');
+            $table->primary(['releases_id', 'name']);
         });
         config(['filesystems.disks.recovery.root' => $this->makeTempDirectory('nfo-evidence'), 'nntmux.tmp_unrar_path' => $this->makeTempDirectory('nfo-inspection')]);
     }

@@ -38,7 +38,7 @@ final class RecoverySettingsTest extends TestCase
     {
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('name');
+            $table->string('name')->unique();
             $table->boolean('active')->default(false);
         });
         DB::table('usenet_groups')->insert(['name' => 'alt.binaries.fixture', 'active' => false]);

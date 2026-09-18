@@ -37,7 +37,7 @@ class BinariesRejectedScanBatchTest extends TestCase
         Schema::dropIfExists('usenet_groups');
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->id();
-            $table->string('name');
+            $table->string('name')->unique();
             $table->unsignedBigInteger('first_record')->default(0);
             $table->dateTime('first_record_postdate')->nullable();
             $table->dateTime('backfill_settled_at')->nullable();

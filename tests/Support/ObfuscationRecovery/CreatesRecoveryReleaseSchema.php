@@ -27,7 +27,6 @@ trait CreatesRecoveryReleaseSchema
         Schema::create('categories', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
             $table->string('title');
-            $table->unsignedInteger('parent_categories_id')->nullable();
             $table->unsignedTinyInteger('status')->default(1);
             $table->unsignedBigInteger('minsizetoformrelease')->default(0);
         });
