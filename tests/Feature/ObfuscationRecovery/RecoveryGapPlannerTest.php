@@ -14,6 +14,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
@@ -33,6 +34,7 @@ final class RecoveryGapPlannerTest extends TestCase
         (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
         (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
         (require database_path('migrations/2026_09_18_120000_bucket_obfuscation_recovery_dirty_marks.php'))->up();
+        (require database_path('migrations/2026_09_18_180000_add_retries_to_obfuscation_recovery_gaps.php'))->up();
         $this->travelTo(now()->setDate(2026, 9, 16)->setTime(18, 0));
         Settings::settingsUpsert(['obfuscation_recovery_enabled' => '1']);
         DB::table('usenet_groups')->insert(['id' => 1, 'obfuscation_recovery_profile' => 'both']);
@@ -247,6 +249,124 @@ final class RecoveryGapPlannerTest extends TestCase
         $this->assertSame(1, DB::table('obfuscation_recovery_work')->count());
         $this->assertSame(20001, (int) DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $window)->value('gap_cursor'));
         $this->assertSame(now()->addSecond()->toDateTimeString(), DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $window)->value('next_gap_at'));
+    }
+
+    #[DataProvider('deadOutcomes')]
+    public function test_dead_gap_retries_on_a_fresh_bundle_after_six_hours(string $outcome): void
+    {
+        $this->window(1, 100);
+        $planner = new RecoveryGapPlanner;
+        $this->assertSame(1, $planner->step());
+        $gap = DB::table('obfuscation_recovery_gaps')->sole();
+        DB::table('obfuscation_recovery_gaps')->where('id', $gap->id)->update(['outcome' => $outcome, 'expires_at' => now()->subHour()]);
+        DB::table('obfuscation_recovery_bundles')->where('id', $gap->bundle_id)->update(['state' => 'gap_complete']);
+        DB::table('obfuscation_recovery_work')->where('bundle_id', $gap->bundle_id)->update(['status' => 'completed']);
+        $oldBundle = DB::table('obfuscation_recovery_bundles')->sole();
+        $oldWork = DB::table('obfuscation_recovery_work')->sole();
+        $this->travel(6)->hours();
+
+        $this->assertSame(1, $planner->step());
+
+        $retry = DB::table('obfuscation_recovery_gaps')->sole();
+        $this->assertSame($gap->id, $retry->id);
+        $this->assertSame('pending', $retry->outcome);
+        $this->assertSame(1, (int) $retry->retries);
+        $this->assertSame(DB::table('obfuscation_recovery_scan_windows')->sole()->expires_at, $retry->expires_at);
+        $this->assertNotSame($gap->bundle_id, $retry->bundle_id);
+        $bundle = DB::table('obfuscation_recovery_bundles')->where('id', $retry->bundle_id)->sole();
+        $this->assertNotSame($oldBundle->owner_digest, $bundle->owner_digest);
+        $this->assertSame('gap_pending', $bundle->state);
+        $work = DB::table('obfuscation_recovery_work')->where('bundle_id', $retry->bundle_id)->sole();
+        $this->assertSame('pending', $work->status);
+        $this->assertSame('gap', $work->purpose);
+        $this->assertEquals($oldBundle, DB::table('obfuscation_recovery_bundles')->where('id', $gap->bundle_id)->sole());
+        $this->assertEquals($oldWork, DB::table('obfuscation_recovery_work')->where('id', $oldWork->id)->sole());
+    }
+
+    /** @return array<string, array{string}> */
+    public static function deadOutcomes(): array
+    {
+        return [
+            'limit reached' => ['gap_limit_reached'],
+            'unresolved' => ['gap_unresolved'],
+            'expired' => ['expired_unresolved'],
+        ];
+    }
+
+    #[DataProvider('deadOutcomes')]
+    public function test_dead_gap_waits_for_six_hours(string $outcome): void
+    {
+        $this->window(1, 100);
+        $planner = new RecoveryGapPlanner;
+        $planner->step();
+        DB::table('obfuscation_recovery_gaps')->update(['outcome' => $outcome]);
+        $gap = DB::table('obfuscation_recovery_gaps')->sole();
+        $this->travel(1)->hours();
+
+        $this->assertSame(0, $planner->step());
+        $this->assertEquals($gap, DB::table('obfuscation_recovery_gaps')->sole());
+        $this->assertSame(1, DB::table('obfuscation_recovery_bundles')->count());
+        $this->assertSame(1, DB::table('obfuscation_recovery_work')->count());
+    }
+
+    /** @return array<string, array{string}> */
+    public static function coveredOutcomes(): array
+    {
+        return [
+            'captured' => ['captured'],
+            'reused capture' => ['reused_capture'],
+            'pending' => ['pending'],
+        ];
+    }
+
+    #[DataProvider('coveredOutcomes')]
+    public function test_captured_or_in_flight_gap_is_not_retried(string $outcome): void
+    {
+        $this->window(1, 100);
+        $planner = new RecoveryGapPlanner;
+        $planner->step();
+        DB::table('obfuscation_recovery_gaps')->update(['outcome' => $outcome]);
+        $gap = DB::table('obfuscation_recovery_gaps')->sole();
+        $this->travel(7)->hours();
+
+        $this->assertSame(0, $planner->step());
+        $this->assertEquals($gap, DB::table('obfuscation_recovery_gaps')->sole());
+        $this->assertSame(1, DB::table('obfuscation_recovery_work')->count());
+    }
+
+    public function test_a_second_dead_outcome_gets_a_third_distinct_bundle(): void
+    {
+        $this->window(1, 100);
+        $planner = new RecoveryGapPlanner;
+        $planner->step();
+        for ($retry = 1; $retry <= 2; $retry++) {
+            $gap = DB::table('obfuscation_recovery_gaps')->sole();
+            DB::table('obfuscation_recovery_gaps')->where('id', $gap->id)->update(['outcome' => 'gap_unresolved', 'updated_at' => now()]);
+            DB::table('obfuscation_recovery_bundles')->where('id', $gap->bundle_id)->update(['state' => 'gap_complete']);
+            DB::table('obfuscation_recovery_work')->where('bundle_id', $gap->bundle_id)->update(['status' => 'completed']);
+            $this->travel(6)->hours();
+
+            $this->assertSame(1, $planner->step());
+            $this->assertSame($retry, (int) DB::table('obfuscation_recovery_gaps')->sole()->retries);
+        }
+        $this->assertSame(3, DB::table('obfuscation_recovery_bundles')->distinct()->count('owner_digest'));
+        $this->assertSame(3, DB::table('obfuscation_recovery_work')->distinct()->count('bundle_id'));
+    }
+
+    #[DataProvider('deadOutcomes')]
+    public function test_expired_window_does_not_retry_a_dead_gap(string $outcome): void
+    {
+        $this->window(1, 100);
+        $planner = new RecoveryGapPlanner;
+        $planner->step();
+        DB::table('obfuscation_recovery_gaps')->update(['outcome' => $outcome]);
+        $gap = DB::table('obfuscation_recovery_gaps')->sole();
+        $this->travel(1)->days();
+
+        $this->assertSame(0, $planner->step());
+        $this->assertEquals($gap, DB::table('obfuscation_recovery_gaps')->sole());
+        $this->assertNull(DB::table('obfuscation_recovery_scan_windows')->sole()->next_gap_at);
+        $this->assertSame(1, DB::table('obfuscation_recovery_work')->count());
     }
 
     private function window(int $first, int $last, int $overdueMinutes = 5): string
