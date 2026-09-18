@@ -255,8 +255,8 @@ final class RecoveryCapture
 
                 return new RecoveryCaptureReport('captured', $captured, $duplicates, $complete, $exclusions);
             }, 1);
-        } catch (\Throwable) {
-            Log::warning('Recovery capture storage is unavailable; coverage remains unknown.', ['group_id' => $context->groupId]);
+        } catch (\Throwable $exception) {
+            Log::warning('Recovery capture storage is unavailable; coverage remains unknown.', ['group_id' => $context->groupId, 'exception' => $exception::class, 'reason' => substr($exception->getMessage(), 0, 200)]);
 
             return new RecoveryCaptureReport('capture_failed');
         } finally {
