@@ -19,6 +19,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 final class SearchControllerTest extends TestCase
@@ -42,13 +43,7 @@ final class SearchControllerTest extends TestCase
         foreach (['2026_08_21_090000_create_release_audio_tags_table', '2026_08_27_150100_create_release_video_clips_table'] as $migration) {
             (require database_path('migrations/'.$migration.'.php'))->up();
         }
-        Schema::create('movieinfo', function (Blueprint $table): void {
-            $table->increments('id');
-            foreach (['imdbid', 'title', 'year', 'rating', 'genre', 'actors', 'director', 'plot'] as $column) {
-                $table->string($column)->nullable();
-            }
-            $table->boolean('cover')->default(false);
-        });
+        ProductionTables::fromAuthority()->create('movieinfo', ['id', 'imdbid', 'title', 'year', 'rating', 'genre', 'actors', 'director', 'plot', 'cover']);
         $search = Mockery::mock(SearchServiceInterface::class);
         config(['nntmux.mysql_search_fallback' => true]);
         $search->shouldReceive('searchReleasesFiltered')->andReturn(['ids' => [], 'total' => 0, 'fuzzy' => false, 'available' => false])->byDefault();
@@ -344,16 +339,8 @@ final class SearchControllerTest extends TestCase
             $table->string('year')->nullable();
             $table->boolean('cover')->default(false);
         });
-        Schema::create('anidb_info', function (Blueprint $table): void {
-            $table->integer('anidbid');
-            $table->date('startdate')->nullable();
-        });
-        Schema::create('anidb_titles', function (Blueprint $table): void {
-            $table->integer('anidbid');
-            $table->string('title');
-            $table->string('lang');
-            $table->string('type');
-        });
+        ProductionTables::fromAuthority()->create('anidb_info', ['anidbid', 'startdate']);
+        ProductionTables::fromAuthority()->create('anidb_titles');
         DB::table('musicinfo')->insert(['id' => 1, 'title' => 'In Rainbows', 'artist' => 'Radiohead']);
         DB::table('anidb_info')->insert(['anidbid' => 12]);
         DB::table('anidb_titles')->insert(['anidbid' => 12, 'title' => 'Radiohead Adventure', 'lang' => 'en', 'type' => 'main']);

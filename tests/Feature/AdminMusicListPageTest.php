@@ -246,7 +246,7 @@ class AdminMusicListPageTest extends TestCase
         Schema::create('musicinfo', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('title');
-            $table->string('asin', 128)->nullable();
+            $table->string('asin', 128)->nullable()->unique();
             $table->string('url', 1000)->nullable();
             $table->unsignedInteger('salesrank')->nullable();
             $table->string('artist')->nullable();

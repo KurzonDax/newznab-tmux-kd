@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 trait InteractsWithPublicShell
@@ -16,11 +15,7 @@ trait InteractsWithPublicShell
                 continue;
             }
 
-            Schema::create($name, function (Blueprint $table) use ($identity): void {
-                $table->id();
-                $table->unsignedInteger('users_id');
-                $table->string($identity);
-            });
+            ProductionTables::fromAuthority()->create($name, ['id', 'users_id', $identity]);
         }
     }
 }

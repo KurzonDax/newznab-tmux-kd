@@ -14,6 +14,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 final class TitleControllerTest extends TestCase
@@ -38,14 +39,7 @@ final class TitleControllerTest extends TestCase
         foreach (self::entityRoots() as [$root, $table, $key, $category]) {
             DB::table('root_categories')->insert(['id' => $category - 30, 'title' => ucfirst($root)]);
             DB::table('categories')->insert(['id' => $category, 'title' => 'HD', 'root_categories_id' => $category - 30]);
-            Schema::create($table, function (Blueprint $table): void {
-                $table->increments('id');
-                foreach (['imdbid', 'tmdbid', 'traktid', 'title', 'year', 'rating', 'plot', 'genre', 'director', 'actors', 'artist', 'publisher', 'releasedate', 'review', 'url', 'author', 'publishdate', 'overview', 'platform', 'esrb', 'started', 'tracks', 'isbn', 'pages', 'trailer', 'classused', 'tvdb', 'tvmaze', 'trakt', 'imdb', 'tmdb'] as $column) {
-                    $table->string($column)->nullable();
-                }
-                $table->integer('genres_id')->nullable();
-                $table->boolean('cover')->default(false);
-            });
+            ProductionTables::fromAuthority()->create($table);
         }
         Schema::create('tv_info', function (Blueprint $table): void {
             $table->unsignedInteger('videos_id')->primary();
@@ -53,13 +47,7 @@ final class TitleControllerTest extends TestCase
             $table->text('summary')->nullable();
             $table->boolean('image')->default(false);
         });
-        Schema::create('tv_episodes', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->unsignedInteger('videos_id');
-            $table->integer('series');
-            $table->integer('episode');
-            $table->string('firstaired')->nullable();
-        });
+        ProductionTables::fromAuthority()->create('tv_episodes', ['id', 'videos_id', 'series', 'episode', 'firstaired']);
         config(['nntmux_settings.covers_path' => $this->makeTempDirectory('title-artwork')]);
     }
 
@@ -85,7 +73,7 @@ final class TitleControllerTest extends TestCase
     #[DataProvider('entityRoots')]
     public function test_titles_without_releases_render_an_overview_and_omit_missing_metadata(string $root, string $table, string $key, int $category): void
     {
-        $record = ['id' => 12, 'imdbid' => '1234567', 'title' => 'A <quiet> title'];
+        $record = ['id' => 12, 'title' => 'A <quiet> title', ...($root === 'movies' ? ['imdbid' => '1234567'] : [])];
         if ($root === 'tv') {
             $this->video($record);
         } else {

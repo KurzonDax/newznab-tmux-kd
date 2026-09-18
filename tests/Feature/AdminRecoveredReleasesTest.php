@@ -24,11 +24,11 @@ final class AdminRecoveredReleasesTest extends TestCase
         $this->bootAdminListPage(itemsPerPage: 2);
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('name');
+            $table->string('name')->unique();
         });
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->string('searchname');
             $table->boolean('isrenamed')->default(false);
             $table->unsignedInteger('groups_id');
@@ -235,6 +235,8 @@ final class AdminRecoveredReleasesTest extends TestCase
     {
         (require database_path('migrations/2026_04_01_000000_create_service_statuses_table.php'))->up();
         (require database_path('migrations/2026_04_01_000001_create_service_incidents_table.php'))->up();
+        (require database_path('migrations/2026_04_01_120000_service_incidents_many_services.php'))->up();
+        (require database_path('migrations/2026_04_01_130001_add_is_auto_to_service_incidents.php'))->up();
         Schema::drop('obfuscation_recovery_publications');
         $this->actingAs($this->admin())->get(route('admin.status.index'))->assertOk()
             ->assertSee('Service health')->assertSee('API')->assertSee('No incidents yet.')

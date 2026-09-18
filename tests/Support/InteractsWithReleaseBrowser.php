@@ -53,10 +53,11 @@ trait InteractsWithReleaseBrowser
             $table->float('completion')->default(100);
             $table->dateTime('adddate')->nullable();
             $table->dateTime('postdate')->nullable();
+            $table->unique('guid');
         });
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('name');
+            $table->string('name')->unique();
         });
         Schema::create('users_releases', function (Blueprint $table): void {
             $table->increments('id');
