@@ -13,11 +13,13 @@ use App\Services\ObfuscationRecovery\RecoveryCapture;
 use App\Services\ObfuscationRecovery\RecoveryCaptureBatch;
 use App\Services\ObfuscationRecovery\RecoveryConfig;
 use App\Services\ObfuscationRecovery\RecoveryControl;
+use App\Services\ObfuscationRecovery\RecoveryCoverage;
 use App\Services\ObfuscationRecovery\RecoveryIdentity;
 use App\Services\ObfuscationRecovery\RecoveryRetention;
 use App\Services\ObfuscationRecovery\RecoveryScanContext;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\NeverBlacklistedService;
@@ -68,6 +70,60 @@ final class RecoveryCaptureTest extends TestCase
         $this->assertSame(0, $replay->captured);
         $this->assertSame(2, $replay->duplicates);
         $this->assertSame(2, DB::table('obfuscation_recovery_headers')->count());
+    }
+
+    public function test_capture_survives_a_subject_that_is_not_valid_utf8(): void
+    {
+        $raw = [
+            $this->header(1, '[a] - '.str_repeat('a', 32).' yEnc (1/4)'),
+            $this->header(2, "Les.Ma\xEEtres.De.L.Univers.1987 [009/181] - \"Les.Ma\xEEtres.mkv\" yEnc (1/4)"),
+        ];
+        $policy = new NeverBlacklistedService;
+        $parsed = (new HeaderParser($policy))->parse($raw, 'alt.binaries.fixture');
+        $capture = new RecoveryCapture(RecoveryConfig::fromValues(['obfuscation_recovery_enabled' => 1]), $policy);
+        $context = new RecoveryScanContext(1, 'alt.binaries.fixture', 'epoch', 1, 4000000001, 4000000002, HeaderScanDirection::Head, 'scan-utf8');
+
+        $report = $capture->capture(new RecoveryCaptureBatch($raw, $parsed['headers']), $context);
+
+        $this->assertSame('captured', $report->outcome);
+        $this->assertSame(1, $report->captured);
+        $this->assertTrue($report->coverageComplete);
+        $scan = DB::table('obfuscation_recovery_scans')->where('scan_id', 'scan-utf8')->first();
+        $this->assertNotNull($scan);
+        $this->assertSame('[[4000000001,4000000002]]', $scan->returned_ranges);
+        $this->assertSame('[]', $scan->missing_ranges);
+        $this->assertTrue((bool) $scan->complete);
+        $this->assertSame(1, DB::table('obfuscation_recovery_headers')->count());
+    }
+
+    public function test_observation_digest_is_unchanged_for_valid_utf8_and_defined_for_invalid_bytes(): void
+    {
+        foreach (['plain ascii', 'Les.Maîtres'] as $subject) {
+            $this->assertSame(
+                hash('sha256', json_encode(['m1-1700000000000@nyuu', $subject, 'fixture@example.invalid', '740000'], JSON_THROW_ON_ERROR)),
+                RecoveryCoverage::observationDigest($this->header(1, $subject)),
+            );
+        }
+
+        $this->assertSame(
+            RecoveryCoverage::observationDigest($this->header(1, "Les.Ma\u{FFFD}tres")),
+            RecoveryCoverage::observationDigest($this->header(1, "Les.Ma\xEEtres")),
+        );
+    }
+
+    public function test_capture_failure_warning_names_the_exception(): void
+    {
+        Log::spy();
+        $capture = new RecoveryCapture(RecoveryConfig::fromValues(['obfuscation_recovery_enabled' => 1]), new NeverBlacklistedService);
+        $context = new RecoveryScanContext(1, 'alt.binaries.fixture', 'epoch', 1, 4000000001, 4000000001, HeaderScanDirection::Head, 'scan-log');
+
+        $report = $capture->capture(new RecoveryCaptureBatch([$this->header(2, 'ordinary')], []), $context);
+
+        $this->assertSame('capture_failed', $report->outcome);
+        Log::shouldHaveReceived('warning')->once()->with(
+            'Recovery capture storage is unavailable; coverage remains unknown.',
+            ['group_id' => 1, 'exception' => \InvalidArgumentException::class, 'reason' => 'invalid_overview_range'],
+        );
     }
 
     public function test_fresh_capture_generation_reuses_identity_without_refreshing_retention(): void

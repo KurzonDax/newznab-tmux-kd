@@ -60,7 +60,7 @@ final class RecoveryCoverage
     public static function observationDigest(array $header): ?string
     {
         return isset($header['Message-ID'], $header['Subject'], $header['From'], $header['Bytes'])
-            ? hash('sha256', json_encode([$header['Message-ID'], $header['Subject'], $header['From'], (string) $header['Bytes']], JSON_THROW_ON_ERROR)) : null;
+            ? hash('sha256', json_encode([$header['Message-ID'], $header['Subject'], $header['From'], (string) $header['Bytes']], JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE)) : null;
     }
 
     public static function sourceDate(mixed $raw): ?string
