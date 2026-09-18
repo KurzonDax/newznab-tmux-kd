@@ -301,10 +301,10 @@ class ReleaseCollectionHashDedupeTest extends TestCase
 
     public function test_migration_adds_nullable_unique_collectionhash_on_sqlite(): void
     {
-        DB::statement('CREATE TABLE migration_probe_releases (id INTEGER PRIMARY KEY, guid VARCHAR(40))');
+        DB::statement('CREATE TABLE migration_probe_releases (id INTEGER PRIMARY KEY, guid VARCHAR(40) UNIQUE)');
+        DB::statement('ALTER TABLE releases RENAME TO releases_backup');
         // SQLite index names are database-global; free the name for the migration.
         DB::statement('DROP INDEX ux_releases_collectionhash');
-        DB::statement('ALTER TABLE releases RENAME TO releases_backup');
         DB::statement('ALTER TABLE migration_probe_releases RENAME TO releases');
 
         try {

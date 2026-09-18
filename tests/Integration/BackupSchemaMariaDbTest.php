@@ -17,6 +17,9 @@ use Throwable;
 
 final class BackupSchemaMariaDbTest extends TestCase
 {
+    /** Production-named tables keep a production shape and carry the marker in one of their real columns. */
+    private const array MARKER_COLUMNS = ['users' => 'username', 'collections' => 'subject', 'cache' => 'key', 'pulse_entries' => 'type'];
+
     /**
      * @param  list<string>  $expectedTables
      */
@@ -97,14 +100,14 @@ final class BackupSchemaMariaDbTest extends TestCase
             $this->assertTrue($import->successful(), $import->errorOutput());
             $this->assertEqualsCanonicalizing($expectedTables, $restore->getSchemaBuilder()->getTableListing([$databases['restore']], false));
             foreach ($expectedTables as $table) {
-                $this->assertSame(['local-'.$table], $restore->table($table)->pluck('marker')->all());
+                $this->assertSame(['local-'.$table], $restore->table($table)->pluck(self::MARKER_COLUMNS[$table] ?? 'marker')->all());
             }
 
             $this->assertEqualsCanonicalizing(['articles', 'capture_runs', 'users'], $research->getSchemaBuilder()->getTableListing([$databases['research']], false));
             foreach (['articles', 'capture_runs', 'users'] as $table) {
-                $this->assertSame(['research-'.$table], $research->table($table)->pluck('marker')->all());
+                $this->assertSame(['research-'.$table], $research->table($table)->pluck(self::MARKER_COLUMNS[$table] ?? 'marker')->all());
             }
-            $this->assertSame(['local-users'], $local->table('users')->pluck('marker')->all());
+            $this->assertSame(['local-users'], $local->table('users')->pluck('username')->all());
         } finally {
             $cleanupError = null;
             foreach (array_reverse($createdDatabases) as $database) {
@@ -147,11 +150,18 @@ final class BackupSchemaMariaDbTest extends TestCase
     private function createMarkerTables(Connection $connection, array $tables, string $origin): void
     {
         foreach ($tables as $table) {
-            $connection->getSchemaBuilder()->create($table, function (Blueprint $blueprint): void {
+            $column = self::MARKER_COLUMNS[$table] ?? 'marker';
+            $connection->getSchemaBuilder()->create($table, function (Blueprint $blueprint) use ($column): void {
+                // cache is keyed by its unique key column alone.
+                if ($column === 'key') {
+                    $blueprint->string($column)->unique();
+
+                    return;
+                }
                 $blueprint->id();
-                $blueprint->string('marker');
+                $blueprint->string($column);
             });
-            $connection->table($table)->insert(['marker' => $origin.'-'.$table]);
+            $connection->table($table)->insert([$column => $origin.'-'.$table]);
         }
     }
 }

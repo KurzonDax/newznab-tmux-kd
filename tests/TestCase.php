@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\HtmlString;
 use Mockery\MockInterface;
 use Pdo\Sqlite;
+use PHPUnit\Framework\Attributes\After;
 use Tests\Support\FixtureSchemaMonitor;
 
 abstract class TestCase extends BaseTestCase
@@ -49,8 +50,11 @@ abstract class TestCase extends BaseTestCase
 
     private ?DatabaseManager $fixtureDatabaseManager = null;
 
+    private bool $fixtureSchemaChecked = false;
+
     protected function setUp(): void
     {
+        FixtureSchemaMonitor::instance()->begin();
         $this->guardAgainstLeakedDatabaseEnvironment();
 
         parent::setUp();
@@ -78,15 +82,46 @@ abstract class TestCase extends BaseTestCase
         return [];
     }
 
+    /**
+     * Production tables this test deliberately builds in their shape from before one
+     * migration, which the code under test runs ahead of or reverses. Name the migration
+     * file in database/migrations; the guard skips R1-R3 for exactly these tables.
+     *
+     * @return array{migration: string, tables: list<string>}|null
+     */
+    protected function historicalSchema(): ?array
+    {
+        return null;
+    }
+
     protected function assertPostConditions(): void
     {
         parent::assertPostConditions();
+        $this->assertFixtureSchema();
+    }
+
+    /** A skipped test never reaches its postconditions, but setUp() may have built tables. */
+    #[After(priority: 1000)]
+    protected function assertFixtureSchemaOfSkippedTest(): void
+    {
+        try {
+            if (! $this->fixtureSchemaChecked && ($this->status()->isSkipped() || $this->status()->isIncomplete())) {
+                $this->assertFixtureSchema();
+            }
+        } finally {
+            FixtureSchemaMonitor::instance()->end();
+        }
+    }
+
+    private function assertFixtureSchema(): void
+    {
+        $this->fixtureSchemaChecked = true;
         $managers = $this->fixtureDatabaseManager === null ? [] : [$this->fixtureDatabaseManager];
         $current = $this->app?->make('db');
         if ($current instanceof DatabaseManager && ! $current instanceof MockInterface && ! in_array($current, $managers, true)) {
             $managers[] = $current;
         }
-        $errors = FixtureSchemaMonitor::instance()->check(static::class, $this->nameWithDataSet(), $managers, $this->fixtureOnlyTables());
+        $errors = FixtureSchemaMonitor::instance()->check(static::class, $this->nameWithDataSet(), $managers, $this->fixtureOnlyTables(), $this->historicalSchema());
         $this->assertSame([], $errors, implode(PHP_EOL, $errors));
     }
 

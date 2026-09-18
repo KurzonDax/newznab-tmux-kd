@@ -91,6 +91,47 @@ final class FixtureSchemaGuardTest extends TestCase
         self::assertSame([], $guard->inspect($pdo));
     }
 
+    public function test_reads_which_tables_a_statement_destroys_creates_and_reshapes(): void
+    {
+        foreach ([
+            'DROP TABLE video_data' => [[[null, 'video_data']], [], []],
+            'drop table if exists "main"."video_data"' => [[['main', 'video_data']], [], []],
+            'DROP TEMPORARY TABLE IF EXISTS `x_releases`, `x_parts`' => [[[null, 'x_releases'], [null, 'x_parts']], [], []],
+            'alter table "__temp__releases" rename to "releases"' => [[[null, '__temp__releases']], ['releases'], ['__temp__releases']],
+            'ALTER TABLE releases RENAME COLUMN guid TO old_guid' => [[], [], ['releases']],
+            'RENAME TABLE a TO b, `fixture`.c TO d' => [[[null, 'a'], ['fixture', 'c']], ['b', 'd'], []],
+            'create table if not exists "main"."video_data" ("releases_id" integer)' => [[], ['video_data'], []],
+            'CREATE OR REPLACE TEMPORARY TABLE `x_releases` (id INT)' => [[[null, 'x_releases']], ['x_releases'], []],
+            'CREATE UNIQUE INDEX video_identity ON video_data(releases_id)' => [[], [], ['video_data']],
+            'DROP INDEX video_identity ON `video_data`' => [[], [], ['video_data']],
+            'DROP INDEX video_identity' => [[], [], []],
+            'DROP DATABASE IF EXISTS `tv_browse_0123`' => [[['tv_browse_0123', null]], [], []],
+            'DETACH DATABASE research' => [[['research', null]], [], []],
+            "delete from \"main\".sqlite_master where type in ('table', 'index', 'trigger')" => [[['main', null]], [], []],
+            "SET NAMES utf8mb4;\nDROP TABLE IF EXISTS `anidb_info`;\nCREATE TABLE `anidb_info` (id INT)" => [[[null, 'anidb_info']], ['anidb_info'], []],
+            'SELECT * FROM releases WHERE name = "drop table releases"' => [[], [], []],
+        ] as $sql => [$destroyed, $created, $reshaped]) {
+            self::assertSame([
+                'destroyed' => array_map(static fn (array $target): array => ['database' => $target[0], 'table' => $target[1]], $destroyed),
+                'created' => $created,
+                'reshaped' => $reshaped,
+            ], FixtureSchemaGuard::schemaChanges($sql), $sql);
+        }
+    }
+
+    public function test_compares_prefixed_tables_by_their_production_name(): void
+    {
+        $guard = new FixtureSchemaGuard((new SchemaAuthority(dirname(__DIR__, 2).'/database/schema/mariadb-schema.sql'))->tables());
+        $pdo = new PDO('sqlite::memory:');
+        $pdo->exec('CREATE TABLE fixture_video_data (id INTEGER PRIMARY KEY, releases_id INTEGER)');
+        $pdo->exec('CREATE TABLE fixture_audio_data (id INTEGER PRIMARY KEY, releases_id INTEGER)');
+        $result = $guard->examine($pdo, 'fixture_');
+        self::assertSame(['audio_data', 'video_data'], $result['tables']);
+        self::assertSame(['R1', 'R2', 'R3'], array_column($result['violations'], 'rule'));
+        self::assertSame([], $guard->examine($pdo, 'fixture_', ['audio_data'])['violations']);
+        self::assertSame(['R4', 'R4'], array_column($guard->examine($pdo)['violations'], 'rule'));
+    }
+
     public function test_attached_databases_cannot_hide_production_or_unknown_tables(): void
     {
         $guard = new FixtureSchemaGuard((new SchemaAuthority(dirname(__DIR__, 2).'/database/schema/mariadb-schema.sql'))->tables());

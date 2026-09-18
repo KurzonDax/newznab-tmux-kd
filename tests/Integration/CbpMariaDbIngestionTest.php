@@ -90,7 +90,7 @@ final class CbpMariaDbIngestionTest extends TestCase
         }
         DB::statement('SET FOREIGN_KEY_CHECKS=1');
         DB::statement('CREATE TABLE settings (name VARCHAR(255) PRIMARY KEY, value TEXT NULL) ENGINE=InnoDB');
-        DB::statement('CREATE TABLE usenet_groups (id INT UNSIGNED PRIMARY KEY, first_record BIGINT DEFAULT 0, last_record BIGINT DEFAULT 0, last_updated DATETIME NULL, name VARCHAR(255) NOT NULL, active TINYINT DEFAULT 1, backfill TINYINT DEFAULT 1, last_record_postdate DATETIME NULL, first_record_postdate DATETIME NULL, backfill_settled_at DATETIME NULL) ENGINE=InnoDB');
+        DB::statement('CREATE TABLE usenet_groups (id INT UNSIGNED PRIMARY KEY, first_record BIGINT DEFAULT 0, last_record BIGINT DEFAULT 0, last_updated DATETIME NULL, name VARCHAR(255) NOT NULL UNIQUE, active TINYINT DEFAULT 1, backfill TINYINT DEFAULT 1, last_record_postdate DATETIME NULL, first_record_postdate DATETIME NULL, backfill_settled_at DATETIME NULL) ENGINE=InnoDB');
         (require database_path('migrations/2026_09_05_213352_create_usenet_group_ingested_ranges_table.php'))->up();
         (require database_path('migrations/2026_09_10_224820_create_collection_sweep_cursors_table.php'))->up();
         DB::statement('CREATE TABLE collection_regexes (id INT PRIMARY KEY, group_regex VARCHAR(255), regex VARCHAR(255), status TINYINT DEFAULT 1, ordinal INT DEFAULT 0) ENGINE=InnoDB');
@@ -151,6 +151,20 @@ final class CbpMariaDbIngestionTest extends TestCase
             $this->setEnvironmentValue($key, $value === false ? null : $value);
         }
         $this->originalEnvironment = [];
+    }
+
+    /** The storage-upgrade test rebuilds the legacy parts shape for this migration to rewrite. */
+    protected function historicalSchema(): ?array
+    {
+        return $this->name() === 'test_reingestion_is_idempotent_and_hot_lookups_use_indexes'
+            ? ['migration' => '2026_08_03_000001_finalize_cbp_binary_hash_storage.php', 'tables' => ['parts']]
+            : null;
+    }
+
+    /** The storage optimizer that migration runs keeps its checkpoints in a working table. */
+    protected function fixtureOnlyTables(): array
+    {
+        return $this->name() === 'test_reingestion_is_idempotent_and_hot_lookups_use_indexes' ? ['cbp_optimization_checkpoints'] : [];
     }
 
     public function test_every_dense_live_state_yields_after_257_raw_members(): void

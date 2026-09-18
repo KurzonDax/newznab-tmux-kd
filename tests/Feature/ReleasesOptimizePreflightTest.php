@@ -27,6 +27,12 @@ final class ReleasesOptimizePreflightTest extends TestCase
         parent::tearDown();
     }
 
+    /** The preflight runs before this migration, against the tables it rewrites. */
+    protected function historicalSchema(): array
+    {
+        return ['migration' => '2026_08_13_001652_normalize_and_optimize_releases_table.php', 'tables' => ['releases', 'release_comments']];
+    }
+
     public function test_valid_data_reports_storage_and_every_migration_data_category(): void
     {
         $this->insertRelease(1, '01234567-89ab-cdef-0123-456789abcdef', '0', [

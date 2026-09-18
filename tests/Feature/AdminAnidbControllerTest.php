@@ -84,6 +84,7 @@ final class AdminAnidbControllerTest extends TestCase
             $table->string('type');
             $table->string('lang');
             $table->string('title');
+            $table->primary(['anidbid', 'type', 'lang', 'title']);
         });
         Schema::create('anidb_info', static function (Blueprint $table): void {
             $table->unsignedInteger('anidbid')->primary();

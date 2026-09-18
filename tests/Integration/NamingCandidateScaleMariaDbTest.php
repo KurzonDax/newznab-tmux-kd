@@ -57,7 +57,7 @@ final class NamingCandidateScaleMariaDbTest extends TestCase
             name VARCHAR(255) NOT NULL,
             searchname VARCHAR(255) NOT NULL,
             fromname VARCHAR(255) NOT NULL,
-            guid VARCHAR(64) NOT NULL,
+            guid VARCHAR(64) NOT NULL UNIQUE,
             leftguid VARCHAR(1) NOT NULL,
             groups_id INTEGER NOT NULL,
             categories_id INTEGER NOT NULL,
@@ -83,11 +83,11 @@ final class NamingCandidateScaleMariaDbTest extends TestCase
         )');
 
         DB::statement('CREATE TABLE '.DB::getTablePrefix().'release_files (
-            id INTEGER PRIMARY KEY AUTO_INCREMENT,
             releases_id INTEGER NOT NULL,
             name VARCHAR(255) NOT NULL,
             crc32 VARCHAR(8) NULL,
-            size INTEGER NOT NULL DEFAULT 0, KEY release_files_release (releases_id)
+            size INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (releases_id, name)
         )');
 
         DB::statement('CREATE TABLE '.DB::getTablePrefix().'media_infos (
