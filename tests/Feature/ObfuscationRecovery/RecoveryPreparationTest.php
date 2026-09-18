@@ -42,6 +42,7 @@ use App\Services\ObfuscationRecovery\RecoveryCompaction;
 use App\Services\ObfuscationRecovery\RecoveryComponents;
 use App\Services\ObfuscationRecovery\RecoveryConfig;
 use App\Services\ObfuscationRecovery\RecoveryControl;
+use App\Services\ObfuscationRecovery\RecoveryDirty;
 use App\Services\ObfuscationRecovery\RecoveryEvidence;
 use App\Services\ObfuscationRecovery\RecoveryFileRole;
 use App\Services\ObfuscationRecovery\RecoveryFrontierRebuild;
@@ -111,6 +112,7 @@ final class RecoveryPreparationTest extends TestCase
         (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
         (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
         (require database_path('migrations/2026_09_14_110835_add_recovery_handoff_and_process_identity.php'))->up();
+        (require database_path('migrations/2026_09_18_120000_bucket_obfuscation_recovery_dirty_marks.php'))->up();
         DB::table('settings')->where('name', 'obfuscation_recovery_enabled')->update(['value' => 1]);
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.fixture', 'obfuscation_recovery_profile' => 'media']);
     }
@@ -119,6 +121,32 @@ final class RecoveryPreparationTest extends TestCase
     {
         $this->tearDownIsolatedDatabase();
         parent::tearDown();
+    }
+
+    #[DataProvider('dirtyMinuteCases')]
+    public function test_sealing_ignores_distant_dirty_minutes_but_waits_for_nearby_marks(int $offset, string $expected): void
+    {
+        [$artifacts, $cache, $bundle] = $this->captured();
+        $header = (array) DB::table('obfuscation_recovery_headers')->first();
+        $header['embedded_timestamp_ms'] = (int) $bundle->start_ms + $offset;
+        // Media sealing must see nearby marks even in a different partition.
+        $header['advertised_total'] = 999;
+        RecoveryDirty::mark(DB::connection(), [$header]);
+        $work = app(RecoveryWork::class);
+        $result = (new RecoveryPreparation($cache, $artifacts, $work))->run($work->claim(RecoveryStage::Discover));
+        $this->assertSame($expected, $result);
+        $after = DB::table('obfuscation_recovery_bundles')->where('id', $bundle->id)->first();
+        if ($expected === 'ready') {
+            $this->assertNotNull($after->sealed_plan);
+        } else {
+            $this->assertNull($after->sealed_plan);
+            $this->assertSame('dirty_candidate_snapshot', $after->reason);
+        }
+    }
+
+    public static function dirtyMinuteCases(): array
+    {
+        return ['two hours away' => [7200000, 'ready'], 'within margin' => [20000, 'dirty_candidate_snapshot']];
     }
 
     public function test_captured_media_reaches_a_verified_plan_using_cached_inventory_and_anchor_evidence(): void

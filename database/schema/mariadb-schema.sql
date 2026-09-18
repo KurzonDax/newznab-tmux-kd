@@ -1043,6 +1043,7 @@ CREATE TABLE `obfuscation_recovery_dirty` (
   `capture_generation` bigint(20) unsigned NOT NULL,
   `profile` varchar(40) NOT NULL,
   `partition_value` varchar(64) NOT NULL,
+  `bucket` bigint(20) unsigned NOT NULL DEFAULT 0,
   `first_ms` bigint(20) unsigned NOT NULL,
   `last_ms` bigint(20) unsigned NOT NULL,
   `version` bigint(20) unsigned NOT NULL DEFAULT 1,
@@ -1051,7 +1052,7 @@ CREATE TABLE `obfuscation_recovery_dirty` (
   `claim_token` uuid DEFAULT NULL,
   `claim_expires_at` timestamp(6) NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `obfuscation_recovery_dirty_scope_digest_unique` (`scope_digest`),
+  UNIQUE KEY `recovery_dirty_cell` (`scope_digest`,`bucket`),
   KEY `recovery_dirty_due` (`next_action_at`,`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -3876,3 +3877,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (287,'2026_09_14_11
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (288,'2026_09_14_135356_add_par2_naming_setting',6);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (289,'2026_09_16_133405_add_movie_record_retry_state_to_releases_table',6);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (290,'2026_09_17_170000_add_can_post_to_users_table',7);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (291,'2026_09_18_120000_bucket_obfuscation_recovery_dirty_marks',8);

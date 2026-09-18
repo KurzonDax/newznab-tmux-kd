@@ -40,6 +40,7 @@ final class RecoveryNfoTest extends TestCase
         (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
         (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
         (require database_path('migrations/2026_09_14_110835_add_recovery_handoff_and_process_identity.php'))->up();
+        (require database_path('migrations/2026_09_18_120000_bucket_obfuscation_recovery_dirty_marks.php'))->up();
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('guid')->unique();

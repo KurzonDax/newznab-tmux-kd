@@ -30,6 +30,7 @@ final class RecoveryRunDiscoveryTest extends TestCase
         (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
         (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
         (require database_path('migrations/2026_09_14_110835_add_recovery_handoff_and_process_identity.php'))->up();
+        (require database_path('migrations/2026_09_18_120000_bucket_obfuscation_recovery_dirty_marks.php'))->up();
     }
 
     protected function tearDown(): void
@@ -97,6 +98,92 @@ final class RecoveryRunDiscoveryTest extends TestCase
         $this->assertSame(['count_exact', 'short'], DB::table('obfuscation_recovery_runs')->orderBy('start_ms')->pluck('state')->all());
         $this->assertNull($refresh->step());
         $this->assertSame(0, DB::table('obfuscation_recovery_attempts')->count());
+    }
+
+    public function test_dirty_marks_keep_distant_minutes_separate_and_widen_only_the_same_minute(): void
+    {
+        $this->header(1, 1000, 4);
+        $this->header(2, 7201000, 4);
+        $rows = DB::table('obfuscation_recovery_headers')->orderBy('id')->get()->map(static fn (object $row): array => (array) $row)->all();
+        RecoveryDirty::mark(DB::connection(), [$rows[0]]);
+        RecoveryDirty::mark(DB::connection(), [$rows[1]]);
+        $this->assertSame(2, DB::table('obfuscation_recovery_dirty')->count());
+        $rows[0]['embedded_timestamp_ms'] = 59000;
+        RecoveryDirty::mark(DB::connection(), [$rows[0]]);
+        $cells = DB::table('obfuscation_recovery_dirty')->orderBy('first_ms')->get();
+        $this->assertCount(2, $cells);
+        $this->assertSame(0, (int) $cells[0]->bucket);
+        $this->assertSame(1000, (int) $cells[0]->first_ms);
+        $this->assertSame(59000, (int) $cells[0]->last_ms);
+        $this->assertSame(2, (int) $cells[0]->version);
+        $this->assertSame(120, (int) $cells[1]->bucket);
+        $this->assertSame(7201000, (int) $cells[1]->first_ms);
+        $this->assertSame(7201000, (int) $cells[1]->last_ms);
+        $this->assertSame(1, (int) $cells[1]->version);
+    }
+
+    public function test_refresh_batch_honors_the_limit_and_deadline(): void
+    {
+        DB::table('settings')->where('name', 'obfuscation_recovery_enabled')->update(['value' => 1]);
+        DB::table('usenet_groups')->insert(['id' => 1, 'obfuscation_recovery_profile' => 'media']);
+        DB::table('obfuscation_recovery_controls')->insert([
+            ['scope' => 'primary', 'fingerprint' => str_repeat('a', 64), 'epoch' => 'epoch', 'generation' => 1, 'updated_at' => now()],
+            ['scope' => 'group:1', 'fingerprint' => str_repeat('b', 64), 'epoch' => 'group', 'generation' => 1, 'updated_at' => now()],
+        ]);
+        foreach ([1000, 61000, 121000] as $i => $time) {
+            $this->header($i + 1, $time, 1);
+        }
+        RecoveryDirty::mark(DB::connection(), DB::table('obfuscation_recovery_headers')->get()->map(static fn (object $row): array => (array) $row)->all());
+        $refresh = new RecoveryRunRefresh(new RecoveryRunDiscovery);
+        $this->assertSame(0, $refresh->batch(deadline: hrtime(true) - 1));
+        $this->assertSame(3, DB::table('obfuscation_recovery_dirty')->count());
+        $this->assertSame(2, $refresh->batch(2));
+        $this->assertSame(1, DB::table('obfuscation_recovery_dirty')->count());
+        $this->assertSame(2, DB::table('obfuscation_recovery_runs')->count());
+        $this->assertSame(1, $refresh->batch());
+        $this->assertSame(0, $refresh->batch());
+        $this->assertNull($refresh->step());
+    }
+
+    public function test_dirty_migration_rebuilds_only_occupied_scope_minutes_and_collapses_on_rollback(): void
+    {
+        $migration = require database_path('migrations/2026_09_18_120000_bucket_obfuscation_recovery_dirty_marks.php');
+        $migration->down();
+        foreach ([1000, 59000, 3601000, 1801000, 7201000] as $i => $time) {
+            $this->header($i + 1, $time, $i === 3 ? 9 : 4);
+        }
+        $changed = now()->subHour()->format('Y-m-d H:i:s.u');
+        DB::table('obfuscation_recovery_dirty')->insert([
+            'scope_digest' => str_repeat('c', 64), 'source_epoch' => 'epoch', 'groups_id' => 1,
+            'capture_generation' => 1, 'profile' => RecoveryAlgorithm::Media->value, 'partition_value' => '4',
+            'first_ms' => 1000, 'last_ms' => 3601000, 'version' => 9, 'membership_changed_at' => $changed,
+            'next_action_at' => now()->addHour(), 'claim_token' => 'old-claim', 'claim_expires_at' => now()->addHour(),
+        ]);
+        $migration->up();
+        $cells = DB::table('obfuscation_recovery_dirty')->orderBy('bucket')->get();
+        $this->assertSame([0, 60], $cells->pluck('bucket')->all());
+        $this->assertSame([1000, 3601000], $cells->pluck('first_ms')->all());
+        $this->assertSame([59000, 3601000], $cells->pluck('last_ms')->all());
+        foreach ($cells as $cell) {
+            $this->assertSame(1, (int) $cell->version);
+            $this->assertSame($changed, $cell->membership_changed_at);
+            $this->assertNull($cell->claim_token);
+            $this->assertNull($cell->claim_expires_at);
+            $this->assertLessThanOrEqual(now(), new \DateTimeImmutable($cell->next_action_at));
+        }
+        DB::table('obfuscation_recovery_dirty')->where('bucket', 60)->update([
+            'version' => 3, 'membership_changed_at' => now(), 'next_action_at' => now()->subMinute(),
+        ]);
+        $migration->down();
+        $this->assertFalse(Schema::hasColumn('obfuscation_recovery_dirty', 'bucket'));
+        $this->assertSame(1, DB::table('obfuscation_recovery_dirty')->count());
+        $row = DB::table('obfuscation_recovery_dirty')->first();
+        $this->assertSame(1000, (int) $row->first_ms);
+        $this->assertSame(3601000, (int) $row->last_ms);
+        $this->assertSame(3, (int) $row->version);
+        $this->assertNull($row->claim_token);
+        $this->assertNull($row->claim_expires_at);
+        $migration->up();
     }
 
     private function header(int $id, int $timestamp, int $total, int $generation = 1): void

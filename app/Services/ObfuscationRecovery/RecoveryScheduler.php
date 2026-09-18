@@ -59,7 +59,7 @@ final class RecoveryScheduler
                 app(RecoveryLimitResume::class)->step();
                 app(RecoveryEnrichmentResume::class)->step();
                 app(RecoveryGapPlanner::class)->step(deadline: $deadline);
-                app(RecoveryRunRefresh::class)->step();
+                app(RecoveryRunRefresh::class)->batch(deadline: $deadline);
                 app(RecoveryBundleRefresh::class)->step();
                 foreach (app(RecoveryFrontierRebuild::class)->step() as $outcome => $count) {
                     $report[$outcome] = ($report[$outcome] ?? 0) + $count;

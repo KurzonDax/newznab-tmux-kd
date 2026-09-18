@@ -11,6 +11,17 @@ final class RecoveryRunRefresh
 {
     public function __construct(private readonly RecoveryRunDiscovery $discovery) {}
 
+    public function batch(int $limit = 25, ?int $deadline = null): int
+    {
+        $deadline ??= hrtime(true) + 60000000000;
+        $refreshed = 0;
+        while ($refreshed < $limit && hrtime(true) < $deadline && $this->step() !== null) {
+            $refreshed++;
+        }
+
+        return $refreshed;
+    }
+
     public function step(): ?int
     {
         $claim = $this->claim();
