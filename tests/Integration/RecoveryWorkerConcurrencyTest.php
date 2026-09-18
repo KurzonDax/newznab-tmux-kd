@@ -92,7 +92,7 @@ final class RecoveryWorkerConcurrencyTest extends TestCase
         });
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('name');
+            $table->string('name')->unique();
         });
         (require database_path('migrations/2026_09_07_172435_add_obfuscation_recovery_storage.php'))->up();
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
@@ -785,7 +785,7 @@ final class RecoveryWorkerConcurrencyTest extends TestCase
     {
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('guid');
+            $table->string('guid')->unique();
             $table->timestamp('recovery_claimed_at')->nullable();
             $table->uuid('recovery_claim_token')->nullable();
             $table->timestamp('additional_pp_claimed_at')->nullable();

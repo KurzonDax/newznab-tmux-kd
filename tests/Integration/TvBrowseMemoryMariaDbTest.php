@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Integration;
 
+use Illuminate\Database\Connection;
+use Illuminate\Support\Facades\DB;
 use PDO;
-use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
+use Tests\TestCase;
 
 final class TvBrowseMemoryMariaDbTest extends TestCase
 {
@@ -15,15 +17,15 @@ final class TvBrowseMemoryMariaDbTest extends TestCase
         if (getenv('CBP_INTEGRATION_DB_DATABASE') !== 'cbp_integration') {
             $this->markTestSkipped('Requires the isolated Sail MariaDB runtime.');
         }
-        $admin = new PDO('mysql:host=mariadb', 'root', 'password', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+        $admin = $this->connect(null);
         $database = 'tv_browse_'.bin2hex(random_bytes(8));
-        $admin->exec("CREATE DATABASE `{$database}`");
+        $admin->statement("CREATE DATABASE `{$database}`");
         try {
-            $pdo = new PDO('mysql:host=mariadb;dbname='.$database, 'root', 'password', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+            $pdo = $this->connect($database)->getPdo();
             $this->schema($pdo);
             $peaks = [];
             foreach ([3000, 6000] as $shows) {
-                $this->seed($pdo, $shows === 3000 ? 1 : 3001, $shows);
+                $this->seedCatalogue($pdo, $shows === 3000 ? 1 : 3001, $shows);
                 foreach ([1, 400] as $page) {
                     $process = new Process([PHP_BINARY, '-d', 'memory_limit=128M', __DIR__.'/../Support/tv-browse-memory-probe.php', $database, (string) $page]);
                     $process->setTimeout(300);
@@ -54,7 +56,7 @@ final class TvBrowseMemoryMariaDbTest extends TestCase
             }
             fwrite(STDERR, 'TV browse peak bytes: '.json_encode($peaks).PHP_EOL);
         } finally {
-            $admin->exec("DROP DATABASE `{$database}`");
+            $admin->statement("DROP DATABASE `{$database}`");
         }
     }
 
@@ -63,13 +65,13 @@ final class TvBrowseMemoryMariaDbTest extends TestCase
         if (getenv('CBP_INTEGRATION_DB_DATABASE') !== 'cbp_integration') {
             $this->markTestSkipped('Requires the isolated Sail MariaDB runtime.');
         }
-        $admin = new PDO('mysql:host=mariadb', 'root', 'password', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+        $admin = $this->connect(null);
         $database = 'tv_browse_'.bin2hex(random_bytes(8));
-        $admin->exec("CREATE DATABASE `{$database}`");
+        $admin->statement("CREATE DATABASE `{$database}`");
         try {
-            $pdo = new PDO('mysql:host=mariadb;dbname='.$database, 'root', 'password', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+            $pdo = $this->connect($database)->getPdo();
             $this->schema($pdo);
-            $pdo->exec("INSERT INTO videos VALUES (1,'Same title','','2020-01-01',0),(2,'Same title','','2020-01-01',0)");
+            $pdo->exec("INSERT INTO videos VALUES (1,'Same title','2020-01-01',0),(2,'Same title','2020-01-01',0)");
             $pdo->exec("INSERT INTO tv_episodes VALUES (1,1,2,1,'First'),(2,1,2,2,'Second'),(3,1,2,3,'Third'),(4,1,0,1,'Special'),(9,1,2,1,'Duplicate'),(11,2,2,1,'Other show'),(20,1,3,1,'Next season')");
             $releases = [
                 [1, 1, 20, 'S02E01-E03', 1, 9, 3, 'Zulu'],
@@ -133,8 +135,18 @@ final class TvBrowseMemoryMariaDbTest extends TestCase
                 $this->assertStringContainsString(' in ', strtolower($query['sql']));
             }
         } finally {
-            $admin->exec("DROP DATABASE `{$database}`");
+            $admin->statement("DROP DATABASE `{$database}`");
         }
+    }
+
+    /** Laravel connections, so the schema guard inspects the fixture before its database is dropped. */
+    private function connect(?string $database): Connection
+    {
+        $name = $database === null ? 'tv_browse_admin' : 'tv_browse';
+        config(['database.connections.'.$name => ['driver' => 'mariadb', 'host' => 'mariadb', 'port' => 3306,
+            'database' => $database, 'username' => 'root', 'password' => 'password', 'prefix' => '']]);
+
+        return DB::connection($name);
     }
 
     private function schema(PDO $pdo): void
@@ -142,33 +154,33 @@ final class TvBrowseMemoryMariaDbTest extends TestCase
         $statements = [
             'CREATE TABLE settings (name VARCHAR(255) PRIMARY KEY, value TEXT)',
             "INSERT INTO settings VALUES ('categorizeforeign','0'),('catwebdl','0'),('showpasswordedrelease','0')",
-            'CREATE TABLE videos (id INT PRIMARY KEY, title VARCHAR(255), genre VARCHAR(255), started VARCHAR(20), type INT DEFAULT 0)',
+            'CREATE TABLE videos (id INT PRIMARY KEY, title VARCHAR(255), started VARCHAR(20), type INT DEFAULT 0)',
             'CREATE TABLE tv_episodes (id INT PRIMARY KEY, videos_id INT, series INT, episode INT, title VARCHAR(255), INDEX identity_tuple(videos_id,series,episode,id))',
             'CREATE TABLE tv_info (videos_id INT PRIMARY KEY, publisher VARCHAR(255), image INT DEFAULT 0)',
             'CREATE TABLE root_categories (id INT PRIMARY KEY, title VARCHAR(255))',
             "INSERT INTO root_categories VALUES (5000,'TV')",
             'CREATE TABLE categories (id INT PRIMARY KEY, root_categories_id INT, title VARCHAR(255))',
             "INSERT INTO categories VALUES (5030,5000,'HD')",
-            'CREATE TABLE releases (id INT PRIMARY KEY, videos_id INT, tv_episodes_id INT, searchname VARCHAR(255), display_name VARCHAR(255), categories_id INT DEFAULT 5030, passwordstatus INT DEFAULT 0, completion INT DEFAULT 100, postdate DATETIME, adddate DATETIME, grabs INT, groups_id INT, guid VARCHAR(64), additional_pp_claim_token VARCHAR(64), nfostatus INT DEFAULT 0, size BIGINT DEFAULT 0, totalpart INT DEFAULT 0, comments INT DEFAULT 0, repair_outcome VARCHAR(64), rescan_outcome VARCHAR(64), haspreview INT DEFAULT 0, jpgstatus INT DEFAULT 0, fromname VARCHAR(255), isrenamed INT DEFAULT 0, imdbid VARCHAR(20), musicinfo_id INT, consoleinfo_id INT, gamesinfo_id INT, bookinfo_id INT, anidbid INT, INDEX show_id(videos_id,id))',
+            'CREATE TABLE releases (id INT PRIMARY KEY, videos_id INT, tv_episodes_id INT, searchname VARCHAR(255), display_name VARCHAR(255), categories_id INT DEFAULT 5030, passwordstatus INT DEFAULT 0, completion INT DEFAULT 100, postdate DATETIME, adddate DATETIME, grabs INT, groups_id INT, guid VARCHAR(64) UNIQUE, additional_pp_claim_token VARCHAR(64), nfostatus INT DEFAULT 0, size BIGINT DEFAULT 0, totalpart INT DEFAULT 0, comments INT DEFAULT 0, repair_outcome VARCHAR(64), rescan_outcome VARCHAR(64), haspreview INT DEFAULT 0, jpgstatus INT DEFAULT 0, fromname VARCHAR(255), isrenamed INT DEFAULT 0, imdbid VARCHAR(20), musicinfo_id INT, consoleinfo_id INT, gamesinfo_id INT, bookinfo_id INT, anidbid INT, INDEX show_id(videos_id,id))',
             'CREATE TABLE user_series (users_id INT, videos_id INT)',
-            'CREATE TABLE users_releases (users_id INT, releases_id INT)',
+            'CREATE TABLE users_releases (users_id INT, releases_id INT, UNIQUE (users_id, releases_id))',
             'CREATE TABLE user_downloads (releases_id INT, timestamp DATETIME, INDEX release_time(releases_id,timestamp))',
         ];
-        $statements[] = 'CREATE TABLE release_audio_tags (releases_id INT, '.implode(',', array_map(static fn (string $name): string => $name.' VARCHAR(255)', ['album', 'album_performer', 'performer', 'genre', 'recorded_date', 'track_name', 'track_position', 'track_position_total', 'musicbrainz_album_id', 'musicbrainz_track_id', 'audio_format', 'has_preview', 'preview_extension', 'preview_mime', 'preview_seconds', 'has_spectrogram'])).')';
-        $statements[] = 'CREATE TABLE release_video_clips (releases_id INT, extension VARCHAR(10), mime VARCHAR(255))';
+        $statements[] = 'CREATE TABLE release_audio_tags (releases_id INT, '.implode(',', array_map(static fn (string $name): string => $name.' VARCHAR(255)', ['album', 'album_performer', 'performer', 'genre', 'recorded_date', 'track_name', 'track_position', 'track_position_total', 'musicbrainz_album_id', 'musicbrainz_track_id', 'audio_format', 'has_preview', 'preview_extension', 'preview_mime', 'preview_seconds', 'has_spectrogram'])).', UNIQUE (releases_id))';
+        $statements[] = 'CREATE TABLE release_video_clips (releases_id INT UNIQUE, extension VARCHAR(10), mime VARCHAR(255))';
         $statements[] = 'ALTER TABLE releases ADD videostatus INT DEFAULT 0';
         foreach ($statements as $sql) {
             $pdo->exec($sql);
         }
     }
 
-    private function seed(PDO $pdo, int $first, int $last): void
+    private function seedCatalogue(PDO $pdo, int $first, int $last): void
     {
         $episodeRows = [];
         $showRows = [];
         $releaseRows = [];
         for ($show = $first; $show <= $last; $show++) {
-            $showRows[] = "({$show},'Fixture Show {$show}','','2020-01-01',0)";
+            $showRows[] = "({$show},'Fixture Show {$show}','2020-01-01',0)";
             for ($season = 1; $season <= 10; $season++) {
                 for ($episode = 1; $episode <= 10; $episode++) {
                     $id = ($show - 1) * 100 + ($season - 1) * 10 + $episode;

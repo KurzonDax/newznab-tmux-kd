@@ -20,6 +20,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\Process\Process;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
@@ -71,7 +72,7 @@ final class ReconciliationMariaDbTest extends TestCase
         });
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
-            $table->string('name');
+            $table->string('name')->unique();
         });
         Schema::create('collections', function (Blueprint $table): void {
             $table->unsignedBigInteger('id')->primary();
@@ -183,7 +184,7 @@ final class ReconciliationMariaDbTest extends TestCase
     {
         Schema::create('releases', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
-            $table->string('guid', 40);
+            $table->string('guid', 40)->unique();
             $table->integer('groups_id')->nullable();
             $table->integer('nzbstatus')->default(1);
             $table->double('completion')->default(0);
@@ -332,7 +333,7 @@ final class ReconciliationMariaDbTest extends TestCase
         });
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->unsignedInteger('id')->primary();
-            $table->string('name');
+            $table->string('name')->unique();
         });
         Schema::create('binaries', function (Blueprint $table): void {
             $table->unsignedBigInteger('id')->primary();
@@ -345,6 +346,7 @@ final class ReconciliationMariaDbTest extends TestCase
             $table->integer('partnumber');
             $table->string('messageid');
             $table->integer('size');
+            $table->primary(['binaries_id', 'partnumber']);
         });
         try {
             DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.boneless']);
@@ -390,5 +392,29 @@ final class ReconciliationMariaDbTest extends TestCase
             DB::disconnect('reconciliation_peer');
         }
         $this->assertSame(0, DB::table('reconciliation_claims')->insertOrIgnore(['collection_id' => 1, 'deadline' => now()->addMinutes(15)]));
+    }
+
+    /** @return array<string, array{string, int, string}> */
+    public static function schemaGuardCases(): array
+    {
+        return [
+            'hand-built table' => ['test_checks_hand_built_tables', 1, 'table=usenet_groups R2 (name)'],
+            'dropped table' => ['test_checks_tables_dropped_before_the_test_ends', 1, 'table=usenet_groups R2 (name) (inspected before: drop table `usenet_groups`)'],
+            'temporary table' => ['test_checks_temporary_tables', 1, 'table=video_data R1 id'],
+            'schema dump' => ['test_accepts_the_schema_dump', 0, 'OK ('],
+            'migrated tables' => ['test_accepts_migrated_tables', 0, 'OK ('],
+        ];
+    }
+
+    /** The shared schema guard reads MariaDB fixtures through information_schema, like SQLite ones. */
+    #[DataProvider('schemaGuardCases')]
+    public function test_the_schema_guard_checks_mariadb_fixtures(string $method, int $exitCode, string $diagnostic): void
+    {
+        $process = new Process([PHP_BINARY, 'vendor/bin/phpunit', '--colors=never', '--filter', $method, 'tests/Fixtures/SchemaGuardMariaDbFixture.php'], base_path());
+        $process->setTimeout(60);
+        $process->run();
+        $output = $process->getOutput().$process->getErrorOutput();
+        $this->assertSame($exitCode, $process->getExitCode(), $output);
+        $this->assertStringContainsString($diagnostic, $output);
     }
 }

@@ -40,6 +40,14 @@ final class ReleaseSchemaOptimizationMigrationTest extends TestCase
         parent::tearDown();
     }
 
+    /** The rollback test re-adds the columns this migration moved out of releases. */
+    protected function historicalSchema(): ?array
+    {
+        return $this->name() === 'test_rollback_backfill_restores_sparse_rows_in_batches'
+            ? ['migration' => '2026_08_13_001652_normalize_and_optimize_releases_table.php', 'tables' => ['releases']]
+            : null;
+    }
+
     public function test_comment_recount_spans_multiple_chunks_and_skips_correct_rows(): void
     {
         $releases = [];

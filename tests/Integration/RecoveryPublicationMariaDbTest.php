@@ -80,7 +80,7 @@ final class RecoveryPublicationMariaDbTest extends TestCase
         });
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->increments('id');
-            $table->string('name');
+            $table->string('name')->unique();
         });
         (require database_path('migrations/2026_09_07_172435_add_obfuscation_recovery_storage.php'))->up();
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
@@ -649,6 +649,7 @@ final class RecoveryPublicationMariaDbTest extends TestCase
             $table->unsignedBigInteger('numberid');
             $table->unsignedInteger('groups_id');
             $table->integer('attempts')->default(0);
+            $table->unique(['numberid', 'groups_id']);
         });
         DB::table('binaryblacklist')->insert(['id' => 1, 'groupname' => '.*', 'regex' => '^012345']);
         $headers = [];
