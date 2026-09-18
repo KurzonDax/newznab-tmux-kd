@@ -28,6 +28,13 @@ final class RecoverySettingsTest extends TestCase
         Cache::flush();
     }
 
+    protected function historicalSchema(): ?array
+    {
+        return $this->name() === 'test_upgrade_preserves_existing_settings_and_disables_group_admission'
+            ? ['migration' => '2026_09_18_120000_bucket_obfuscation_recovery_dirty_marks.php', 'tables' => ['obfuscation_recovery_dirty']]
+            : null;
+    }
+
     protected function tearDown(): void
     {
         $this->tearDownIsolatedDatabase();
