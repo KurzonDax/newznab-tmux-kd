@@ -58,7 +58,7 @@ class FileNameExtractor
         }
 
         // Generic TV - SxxExx format with quality/source info
-        if (preg_match('/^(\\\\|\/)?(.+(\\\\|\/))*(.+?S\d{1,3}[.-_ ]?E\d{1,3}(?:[.-_ ]?E\d{1,3})?[.-_ ].+?(?:720p|1080p|2160p|4K|HDTV|WEB-?DL|WEB-?RIP|BluRay|AMZN|HMAX|NF|DSNP).+?)\.(.+)$/iu', $filename, $result)) {
+        if (preg_match('/^(\\\\|\/)?(.+(\\\\|\/))*(.+?S\d{1,3}[.-_ ]?E\d{1,3}(?:[.-_ ]?E\d{1,3})?[.-_ ].+?(?:720p|1080p|2160p|4K|HDTV|WEB-?DL|WEB-?RIP|BluRay|AMZN|HMAX|NF|DSNP).+?)\.([^.]+)$/iu', $filename, $result)) {
             return NameFixResult::fromMatch($result[4], 'TV SxxExx with quality', 'File');
         }
 
@@ -68,12 +68,12 @@ class FileNameExtractor
         }
 
         // 4K/UHD Movies - modern formats
-        if (preg_match('/^(\\\\|\/)?(.+(\\\\|\/))*(.+?[\.\-_ ](19|20)\d\d[\.\-_ ].+?(2160p|4K|UHD).+?(HDR10?\+?|DV|Dolby[\.\-_ ]?Vision)?.+?(HEVC|x265|H\.?265).+?)\.(.+)$/iu', $filename, $result)) {
+        if (preg_match('/^(\\\\|\/)?(.+(\\\\|\/))*(.+?[\.\-_ ](19|20)\d\d[\.\-_ ].+?(2160p|4K|UHD).+?(HDR10?\+?|DV|Dolby[\.\-_ ]?Vision)?.+?(HEVC|x265|H\.?265).+?)\.([^.]+)$/iu', $filename, $result)) {
             return NameFixResult::fromMatch($result[4], '4K/UHD Movie', 'File');
         }
 
         // HD Movies with modern codecs
-        if (preg_match('/^(\\\\|\/)?(.+(\\\\|\/))*(.+?[\.\-_ ](19|20)\d\d[\.\-_ ].+?(720p|1080p).+?(BluRay|WEB-?DL|WEB-?RIP|BDRip|REMUX).+?(x264|x265|HEVC|H\.?264|H\.?265|AVC).+?)\.(.+)$/iu', $filename, $result)) {
+        if (preg_match('/^(\\\\|\/)?(.+(\\\\|\/))*(.+?[\.\-_ ](19|20)\d\d[\.\-_ ].+?(720p|1080p).+?(BluRay|WEB-?DL|WEB-?RIP|BDRip|REMUX).+?(x264|x265|HEVC|H\.?264|H\.?265|AVC).+?)\.([^.]+)$/iu', $filename, $result)) {
             return NameFixResult::fromMatch($result[4], 'HD Movie modern codec', 'File');
         }
 
@@ -87,7 +87,7 @@ class FileNameExtractor
         }
 
         // Streaming service releases
-        if (preg_match('/^([A-Za-z0-9\.\-_]+[\.\-_ ](AMZN|ATVP|DSNP|HMAX|HULU|iT|NF|PMTP|PCOK|ROKU|STAN|TVNZ|VUDU)[\.\-_ ].+?(WEB-?DL|WEB-?RIP).+?)\.(.+)$/i', $filename, $result)) {
+        if (preg_match('/^([A-Za-z0-9\.\-_]+[\.\-_ ](AMZN|ATVP|DSNP|HMAX|HULU|iT|NF|PMTP|PCOK|ROKU|STAN|TVNZ|VUDU)[\.\-_ ].+?(WEB-?DL|WEB-?RIP).+?)\.([^.]+)$/i', $filename, $result)) {
             return NameFixResult::fromMatch($result[1], 'Streaming service release', 'File');
         }
 

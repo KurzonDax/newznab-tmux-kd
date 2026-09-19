@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use App\Services\NameFixing\Extractors\FileNameExtractor;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class FileNameExtractorTest extends TestCase
@@ -69,5 +70,64 @@ class FileNameExtractorTest extends TestCase
         $this->assertNotNull($result);
         $this->assertSame('Title Here (2016)', $result->newName);
         $this->assertSame('Folder name', $result->method);
+    }
+
+    #[DataProvider('lazyQualityPatternProvider')]
+    public function test_lazy_quality_patterns_capture_up_to_the_last_dot(string $filename, string $expectedName, string $expectedMethod): void
+    {
+        $result = (new FileNameExtractor)->extractFromFile($filename);
+
+        $this->assertNotNull($result);
+        $this->assertSame($expectedName, $result->newName);
+        $this->assertSame($expectedMethod, $result->method);
+    }
+
+    /**
+     * @return array<string, array{string, string, string}>
+     */
+    public static function lazyQualityPatternProvider(): array
+    {
+        return [
+            'TV dotted audio and codec' => [
+                'Visible.Show.S01E02.1080p.AMZN.WEB-DL.DDP5.1.H.264-GROUP.mkv',
+                'Visible.Show.S01E02.1080p.AMZN.WEB-DL.DDP5.1.H.264-GROUP',
+                'TV SxxExx with quality',
+            ],
+            'TV parenthesized title' => [
+                'Visible Show (2026) S01E05 (1080p DSNP WEB-DL H265 SDR DDP 5.1 English - GROUP).mkv',
+                'Visible Show (2026) S01E05 (1080p DSNP WEB-DL H265 SDR DDP 5.1 English - GROUP)',
+                'TV SxxExx with quality',
+            ],
+            'TV nested path' => [
+                'Visible.Show.S01E02.1080p.WEB-DL.DDP5.1.H.264-GROUP/Visible.Show.S01E02.1080p.WEB-DL.DDP5.1.H.264-GROUP.mkv',
+                'Visible.Show.S01E02.1080p.WEB-DL.DDP5.1.H.264-GROUP',
+                'TV SxxExx with quality',
+            ],
+            'TV multipart archive' => [
+                'Visible.Show.S01E02.1080p.WEB-DL.DDP5.1.H.264-GROUP.part01.rar',
+                'Visible.Show.S01E02.1080p.WEB-DL.DDP5.1.H.264-GROUP.part01',
+                'TV SxxExx with quality',
+            ],
+            'UHD movie dotted audio' => [
+                'Visible.Release.2026.2160p.UHD.BluRay.HDR.HEVC.DTS-HD.MA.7.1-GROUP.mkv',
+                'Visible.Release.2026.2160p.UHD.BluRay.HDR.HEVC.DTS-HD.MA.7.1-GROUP',
+                '4K/UHD Movie',
+            ],
+            'HD movie dotted audio' => [
+                'Visible.Release.2026.REPACK.1080p.BluRay.x264.DTS-HD.MA.5.1-GROUP.mkv',
+                'Visible.Release.2026.REPACK.1080p.BluRay.x264.DTS-HD.MA.5.1-GROUP',
+                'HD Movie modern codec',
+            ],
+            'Streaming dotted audio and codec' => [
+                'Visible.Docu.AMZN.1080p.WEB-DL.DDP5.1.H.264-GROUP.mkv',
+                'Visible.Docu.AMZN.1080p.WEB-DL.DDP5.1.H.264-GROUP',
+                'Streaming service release',
+            ],
+            'TV unchanged simple suffix' => [
+                'Visible.Show.S01E02.720p.HDTV.x264-GROUP.mkv',
+                'Visible.Show.S01E02.720p.HDTV.x264-GROUP',
+                'TV SxxExx with quality',
+            ],
+        ];
     }
 }
