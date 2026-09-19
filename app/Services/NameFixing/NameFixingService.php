@@ -26,6 +26,10 @@ use RuntimeException;
  */
 class NameFixingService
 {
+    private const CONTENT_MEDIA_EXTENSIONS = '/\.(mkv|avi|mp4|m4v|wmv|mpg|mpeg|mov|ts|m2ts|vob|divx|flv|webm|mp3|flac|m4a|aac|ogg|wav|wma|ape|opus|mka|ac3|dts|wv)$/i';
+
+    private const NUMBERED_TRACK_PREFIX = '/^(?:\d{1,4}|[A-Ha-h]\d{1,2}|\d{1,2}-\d{1,2})[\s._)-]/';
+
     // Constants for name fixing status
     public const PROC_NFO_NONE = 0;
 
@@ -954,7 +958,8 @@ class NameFixingService
             $candidate->textstring = $filename;
             $fileResult = $this->fileExtractor->extractFromFile($filename);
             $isGuardedFolderFallback = $fileResult?->method === 'Folder name'
-                && $this->fileNameCleaner->isDescriptiveTitle($filename);
+                && ($this->fileNameCleaner->isDescriptiveTitle($filename)
+                    || ! $this->fileNameStandsForRelease($release, $filename, $files));
 
             if ($fileResult !== null && ! $isGuardedFolderFallback) {
                 $this->updateService->updateRelease(
@@ -999,6 +1004,64 @@ class NameFixingService
         if ($showProgress) {
             $this->echoRenamed($show);
         }
+    }
+
+    /**
+     * An inner file's own name stands for the release when
+     *  - the poster's subject already contains it; or
+     *  - the posted name says nothing about it and the file is the release's content (or a sidecar named after it); or
+     *  - it is the content and says everything the posted name says, plus more.
+     * A posted name with title words the file lacks is the better description: keep it.
+     *
+     * @param  list<object>  $files
+     */
+    private function fileNameStandsForRelease(object $release, string $filename, array $files): bool
+    {
+        $basenameOf = fn (string $path): string => $this->fileNameCleaner->extractFilenameFromPath($path);
+        $flat = static fn (string $text): string => (string) preg_replace('/[^a-z0-9]+/', '', strtolower($text));
+        $isMedia = static fn (string $basename): bool => preg_match(self::CONTENT_MEDIA_EXTENSIONS, $basename) === 1
+            && preg_match(self::NUMBERED_TRACK_PREFIX, $basename) !== 1;
+
+        $basename = $basenameOf($filename);
+        $name = (string) pathinfo($basename, PATHINFO_FILENAME);
+        $subject = (string) ($release->name ?? $release->searchname ?? '');
+        if ($flat($name) !== '' && str_contains($flat($subject), $flat($name))) {
+            return true;
+        }
+
+        // The file is the content: files of the same title (over CDs, discs, parts) cover 80% of the release,
+        // the identicalCrcDonors() threshold, or it is a video or audio file that is not a numbered track.
+        $stem = static fn (string $path): string => $flat((string) preg_replace('/[\s._-]*(?:cd|disc|disk|dvd|part)[\s._-]*\d{1,2}$/i', '', (string) pathinfo(basename(str_replace('\\', '/', $path)), PATHINFO_FILENAME)));
+        $payload = 0;
+        $namedAfterMedia = false;
+        foreach ($files as $file) {
+            $other = (string) $file->textstring;
+            if ($stem($other) === $stem($filename)) {
+                $payload += (int) ($file->size ?? 0);
+            }
+            $otherName = $flat((string) pathinfo($basenameOf($other), PATHINFO_FILENAME));
+            $namedAfterMedia = $namedAfterMedia
+                || ($other !== $filename && $otherName !== '' && $isMedia($basenameOf($other)) && str_starts_with($flat($name), $otherName));
+        }
+        $releaseSize = (int) ($release->relsize ?? 0);
+        $isContent = ($releaseSize > 0 && $payload * 5 >= $releaseSize * 4) || $isMedia($basename);
+
+        // The posted file name is the poster's description; counters, site tags and archive suffixes are not.
+        $posted = preg_match('/"([^"]+)"/', $subject, $quoted) === 1 ? $quoted[1] : (string) preg_replace('/[\[(]\d+\/\d+[\])]|\byEnc\b.*$/i', '', $subject);
+        $posted = (string) preg_replace('/(?:\.part\d+)?(?:\.vol\d+\+\d+)?\.(?:par2|rar|r\d{2,3}|\d{3}|nzb|7z|zip)$|\.part\d+$/i', '', trim($posted));
+        $postedWords = $this->predbMatchSelector->meaningfulTokens($posted);
+        $nameWords = $this->predbMatchSelector->meaningfulTokens($name);
+
+        if (array_intersect($postedWords, $nameWords) === []) {
+            return $isContent || $namedAfterMedia;
+        }
+
+        $postedTitleWords = array_filter($postedWords, static fn (string $word): bool => ! ctype_digit($word));
+
+        return $isContent
+            && $postedTitleWords !== []
+            && array_diff($postedTitleWords, $nameWords) === []
+            && array_diff($nameWords, $postedWords) !== [];
     }
 
     protected function markProcessed(bool $echo, bool $nameStatus, string $column, int $releaseId): void

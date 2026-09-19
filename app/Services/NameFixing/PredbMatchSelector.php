@@ -219,6 +219,14 @@ class PredbMatchSelector
     /**
      * @return list<string>
      */
+    public function meaningfulTokens(string $text): array
+    {
+        return $this->extractMeaningfulTokens(trim((string) preg_replace('/[^a-z0-9]+/', ' ', strtolower($text))));
+    }
+
+    /**
+     * @return list<string>
+     */
     protected function extractMeaningfulTokens(string $normalizedValue): array
     {
         $tokens = preg_split('/\s+/u', $normalizedValue) ?: [];
