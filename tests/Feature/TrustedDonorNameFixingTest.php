@@ -186,6 +186,49 @@ class TrustedDonorNameFixingTest extends TestCase
         $this->assertSame(1, (int) $release->is_trusted_name);
     }
 
+    #[DataProvider('partialMediaTitles')]
+    public function test_a_partial_media_title_match_is_not_used_as_a_name(string $title): void
+    {
+        $hash = '5da7b5393d4f4445ac4db1ee8e95f567';
+        $this->insertRelease(1, $hash);
+        DB::table('media_infos')->insert(['releases_id' => 1, 'movie_name' => $title]);
+
+        Search::shouldReceive('updateRelease')->never();
+        app(NameFixingService::class)->fixNamesWithMediaMovieName(2, true, 2, true, false);
+
+        $release = Release::query()->findOrFail(1);
+        $this->assertSame($hash, $release->searchname);
+        $this->assertSame(0, (int) $release->is_trusted_name);
+        $this->assertSame(1, (int) $release->proc_media_movie);
+    }
+
+    /** @return array<string, array{string}> */
+    public static function partialMediaTitles(): array
+    {
+        return [
+            'multiple audio tracks' => ['Visible Release (2026) 1080p BluRay x265 [Hindi DDP 5.1 + English AAC 2.0] ESub ~ GROUP'],
+            'trailing language and group' => ['Visible Show (2026) S01E05 (1080p BluRay x265 SDR DDP 5.1 English - GROUP)'],
+            'punctuation within group' => ['Visible.Show.S01E02.1080p.AMZN.WEB-DL.DDP2.0.H.264-gro@p'],
+        ];
+    }
+
+    public function test_a_scene_name_after_an_advert_prefix_still_names_the_release(): void
+    {
+        $this->insertRelease(1, '5da7b5393d4f4445ac4db1ee8e95f567');
+        DB::table('media_infos')->insert([
+            'releases_id' => 1,
+            'movie_name' => 'Example.site | Visible.Release.2026.1080p.10bit.WEBRip.6CH.x265.HEVC-GROUP',
+        ]);
+
+        Search::shouldReceive('updateRelease')->once()->with(1);
+        app(NameFixingService::class)->fixNamesWithMediaMovieName(2, true, 2, true, false);
+
+        $this->assertSame(
+            'Visible.Release.2026.1080p.10bit.WEBRip.6CH.x265.HEVC-GROUP',
+            Release::query()->findOrFail(1)->searchname,
+        );
+    }
+
     #[DataProvider('mediaInfoMovieNameDowngrades')]
     public function test_media_info_movie_name_does_not_replace_a_richer_readable_name(
         string $currentName,

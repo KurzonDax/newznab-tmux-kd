@@ -1567,8 +1567,24 @@ class NameFixingService
                 return $this->updateService->matched;
             }
 
-            if (preg_match(ReleaseUpdateService::PREDB_REGEX, $release->movie_name, $hit)) {
-                $newName = $hit[1];
+            $title = trim($release->movie_name);
+            if (preg_match(ReleaseUpdateService::PREDB_REGEX, $title, $hit, PREG_OFFSET_CAPTURE)) {
+                [$capture, $offset] = $hit[1];
+                $tail = substr($title, $offset + strlen($capture));
+                $isWholeTitle = $capture === $title;
+                $isSceneNameAfterPrefix = preg_match('/\s/', $capture) !== 1
+                    && preg_match('/[\p{L}\p{N}]/u', $tail) !== 1
+                    && preg_match('/-[A-Za-z0-9]{2,15}$/', $capture) === 1
+                    && $this->fileNameCleaner->isPlausibleReleaseTitle(
+                        $this->fileNameCleaner->normalizeCandidateTitle($capture)
+                    );
+
+                // A fragment of a title is not a name. Decline, so the release keeps its current name.
+                if (! $isWholeTitle && ! $isSceneNameAfterPrefix) {
+                    return false;
+                }
+
+                $newName = $capture;
             } elseif (preg_match('/(.+),(\sRMZ\.cr)?$/i', $release->movie_name, $hit)) {
                 $newName = $hit[1];
             } else {
