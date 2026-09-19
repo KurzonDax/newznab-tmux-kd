@@ -297,7 +297,7 @@ class NameFixingService
                 ksort($prioritized);
                 foreach ($prioritized as $values) {
                     foreach ($values as $crc) {
-                        if ($this->applyDonorMatch($release, $donors[$crc] ?? [], 5, 'crcCheck: CRC32', $type, $echo, $nameStatus, $show)) {
+                        if ($this->applyDonorMatch($release, $this->identicalCrcDonors($release, $files[(int) $release->releases_id] ?? [], $donors, $crc), 5, 'crcCheck: CRC32', $type, $echo, $nameStatus, $show)) {
                             break 2;
                         }
                     }
@@ -848,6 +848,45 @@ class NameFixingService
     }
 
     /**
+     * CRC32 donors whose content is the release's content: files identical in checksum and size
+     * that add up to at least 80% of the release.
+     *
+     * @param  list<object>  $releaseFiles  rows from fileRows(…, SOURCE_CRC)
+     * @param  array<string, list<object>>  $crcDonors
+     * @return list<object>
+     */
+    private function identicalCrcDonors(object $release, array $releaseFiles, array $crcDonors, string $crc): array
+    {
+        $releaseSize = (int) $release->relsize;
+        if ($releaseSize <= 0) {
+            return [];
+        }
+
+        $identical = [];
+        foreach ($releaseFiles as $file) {
+            $fileCrc = (string) ($file->crc32 ?? '');
+            $fileSize = (int) ($file->size ?? 0);
+            if ($fileCrc === '' || $fileSize <= 0) {
+                continue;
+            }
+
+            $seen = [];
+            foreach ($crcDonors[$fileCrc] ?? [] as $donor) {
+                $donorId = (int) $donor->releases_id;
+                if (! isset($seen[$donorId]) && (int) ($donor->file_size ?? 0) === $fileSize) {
+                    $seen[$donorId] = true;
+                    $identical[$donorId] = ($identical[$donorId] ?? 0) + $fileSize;
+                }
+            }
+        }
+
+        return array_values(array_filter(
+            $crcDonors[$crc] ?? [],
+            static fn (object $donor): bool => ($identical[(int) $donor->releases_id] ?? 0) * 5 >= $releaseSize * 4
+        ));
+    }
+
+    /**
      * @param  list<object>  $donors
      */
     protected function applyDonorMatch(
@@ -1069,6 +1108,13 @@ class NameFixingService
         $hashes = $this->queries->groupByReleaseId($this->queries->hashRows($releaseIds));
         $srrdbFiles = $this->standardBatchSrrdbFiles($releases, $releaseIds);
         $crcDonors = $this->queries->crcDonors($this->distinctValues($files, 'crc32'));
+        $crcFiles = $this->queries->groupByReleaseId($this->queries->fileRows(
+            $this->releaseIds(array_values(array_filter(
+                $releases,
+                static fn (object $release): bool => (int) $release->proc_crc32 === self::PROC_CRC_NONE
+            ))),
+            NameFixingQueryService::SOURCE_CRC
+        ));
         $hashDonors = $this->queries->hashDonors($this->distinctValues($hashes, 'hash'));
         $fixedBefore = $this->updateService->fixed;
         $uidRenamedReleaseIds = [];
@@ -1129,7 +1175,7 @@ class NameFixingService
             if ((int) $release->proc_crc32 === self::PROC_CRC_NONE && isset($releasesWithFiles[$releaseId])) {
                 $this->updateService->reset();
                 $prioritizedCrcs = [];
-                foreach ($releaseFiles as $file) {
+                foreach ($crcFiles[$releaseId] ?? [] as $file) {
                     $crc = (string) ($file->crc32 ?? '');
                     if ($crc === '') {
                         continue;
@@ -1142,7 +1188,7 @@ class NameFixingService
 
                 foreach ($prioritizedCrcs as $crcs) {
                     foreach ($crcs as $crc) {
-                        if ($this->applyDonorMatch($release, $crcDonors[$crc] ?? [], 5, 'crcCheck: CRC32', 'CRC32, ', true, true, $show)) {
+                        if ($this->applyDonorMatch($release, $this->identicalCrcDonors($release, $crcFiles[$releaseId] ?? [], $crcDonors, $crc), 5, 'crcCheck: CRC32', 'CRC32, ', true, true, $show)) {
                             break 2;
                         }
                     }

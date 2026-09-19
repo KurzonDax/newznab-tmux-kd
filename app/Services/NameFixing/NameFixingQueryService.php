@@ -300,7 +300,7 @@ final class NameFixingQueryService
      */
     public function fileRows(array $releaseIds, string $source = self::SOURCE_FILES): array
     {
-        $sourceColumns = $source === self::SOURCE_SRRDB ? ', rf.size' : '';
+        $sourceColumns = in_array($source, [self::SOURCE_SRRDB, self::SOURCE_CRC], true) ? ', rf.size' : '';
         $filter = match ($source) {
             self::SOURCE_FILES => '',
             self::SOURCE_SRR => " AND (rf.name LIKE '%.srr' OR rf.name LIKE '%.srs')",
@@ -420,7 +420,7 @@ final class NameFixingQueryService
     public function crcDonors(array $crcs): array
     {
         $donors = $this->donors(
-            'SELECT rf.crc32 AS match_key, rf.name AS filename, r.id AS releases_id, r.size AS relsize,
+            'SELECT rf.crc32 AS match_key, rf.name AS filename, rf.size AS file_size, r.id AS releases_id, r.size AS relsize,
                     r.searchname, r.fromname, r.predb_id
              FROM release_files rf
              INNER JOIN releases r ON r.id = rf.releases_id

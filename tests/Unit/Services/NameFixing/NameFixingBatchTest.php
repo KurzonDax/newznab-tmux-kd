@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\NameFixing;
 
+use App\Services\NameFixing\DonorMatchSelector;
 use App\Services\NameFixing\FileNameCleaner;
 use App\Services\NameFixing\FilePrioritizer;
 use App\Services\NameFixing\NameFixingQueryService;
@@ -301,6 +302,60 @@ class NameFixingBatchTest extends TestCase
     }
 
     #[Test]
+    public function the_sweep_does_not_rename_from_a_crc_match_on_a_minor_file(): void
+    {
+        $release = $this->processedRelease(90);
+        $release->proc_crc32 = NameFixingService::PROC_CRC_NONE;
+
+        $database = $this->mockCandidateConnection();
+        $database->method('getSchemaBuilder')->willReturn($this->createMock(Builder::class));
+        $database->method('select')->willReturnCallback(static function (string $sql) use ($release): array {
+            $sql = str_replace('"', '', $sql);
+            if (str_contains($sql, 'match_key')) {
+                return [(object) [
+                    'match_key' => 'AABBCCDD',
+                    'filename' => 'Provider.url',
+                    'file_size' => 2,
+                    'releases_id' => 91,
+                    'relsize' => 1000,
+                    'searchname' => 'Canonical.Release.2026.1080p-GROUP',
+                    'fromname' => 'poster',
+                    'predb_id' => 0,
+                ]];
+            }
+
+            if (str_contains($sql, 'SELECT DISTINCT rf.releases_id')) {
+                return [(object) ['releases_id' => 90]];
+            }
+
+            if (str_contains($sql, 'r.proc_xxx')) {
+                return [$release];
+            }
+
+            if (str_contains($sql, 'FROM release_files rf')) {
+                return [(object) [
+                    'releases_id' => 90,
+                    'textstring' => 'Provider.url',
+                    'filename' => 'Provider.url',
+                    'crc32' => 'AABBCCDD',
+                    'size' => 2,
+                ]];
+            }
+
+            return [];
+        });
+
+        $updateService = $this->createPartialMock(ReleaseUpdateService::class, ['updateSingleColumn', 'updateRelease']);
+        $updateService->expects($this->never())->method('updateRelease');
+        $updateService->expects($this->once())->method('updateSingleColumn')
+            ->with('proc_crc32', NameFixingService::PROC_CRC_DONE, 90);
+
+        $service = $this->serviceWith($database, $updateService);
+
+        $this->assertSame(['checked' => 1, 'fixed' => 0], $service->processStandardBatch('a', 100, false));
+    }
+
+    #[Test]
     public function the_sweep_records_a_media_movie_miss_without_consuming_uid(): void
     {
         $release = $this->processedRelease(90);
@@ -396,6 +451,7 @@ class NameFixingBatchTest extends TestCase
         $reflection->getProperty('updateService')->setValue($service, $updateService);
         $reflection->getProperty('srrdbLookupService')->setValue($service, new SrrdbLookupService);
         $reflection->getProperty('filePrioritizer')->setValue($service, new FilePrioritizer);
+        $reflection->getProperty('donorMatchSelector')->setValue($service, new DonorMatchSelector);
         $reflection->getProperty('fileNameCleaner')->setValue($service, new FileNameCleaner);
         $reflection->getProperty('descriptiveTitleRenameEnabled')->setValue($service, true);
 
