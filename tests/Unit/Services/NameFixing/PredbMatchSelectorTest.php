@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\Services\NameFixing;
 
 use App\Services\NameFixing\PredbMatchSelector;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class PredbMatchSelectorTest extends TestCase
@@ -60,7 +61,7 @@ class PredbMatchSelectorTest extends TestCase
         $this->assertNull($bestMatch);
     }
 
-    public function test_it_can_match_cover_style_queries_when_the_title_tokens_line_up(): void
+    public function test_a_cover_style_query_does_not_identify_a_release(): void
     {
         $selector = new PredbMatchSelector;
 
@@ -77,8 +78,61 @@ class PredbMatchSelectorTest extends TestCase
             ],
         ]);
 
-        $this->assertNotNull($bestMatch);
-        $this->assertSame(2, $bestMatch['id']);
+        $this->assertNull($bestMatch);
+    }
+
+    #[DataProvider('releaseIdentificationCases')]
+    public function test_a_file_name_must_identify_the_predb_release(string $query, string $title, ?int $expectedId): void
+    {
+        $selector = new PredbMatchSelector;
+
+        $bestMatch = $selector->selectBestMatch($query, [['id' => 9, 'title' => $title]]);
+
+        if ($expectedId === null) {
+            $this->assertNull($bestMatch);
+        } else {
+            $this->assertNotNull($bestMatch);
+            $this->assertSame($expectedId, $bestMatch['id']);
+        }
+    }
+
+    /**
+     * @return array<string, array{string, string, int|null}>
+     */
+    public static function releaseIdentificationCases(): array
+    {
+        return [
+            'generic instructions' => [
+                'Instructions!',
+                'Fetti_Mac_And_OsoSuckaK-Player_Instructions-WEB-2026-RAGEMP3',
+                null,
+            ],
+            'short descriptive name' => [
+                'Hot Stuff',
+                'Hot.Stuff.1979.1080p.WEB.H264-OUTPOST31',
+                null,
+            ],
+            'work title and year only' => [
+                'Visible Release (2026)',
+                'Visible.Release.2026.1080p.BluRay.x264-GRP',
+                null,
+            ],
+            'group tag without enough identifying words' => [
+                'The Grp Release',
+                'Visible.Release.2026.German.DL.1080p.BluRay.x264-GRP',
+                null,
+            ],
+            'full name without group' => [
+                'Visible.Release.2026.1080p.BluRay.x264',
+                'Visible.Release.2026.1080p.BluRay.x264-GRP',
+                9,
+            ],
+            'scene abbreviation with leading group' => [
+                'grp-visible.release-1080p',
+                'Visible.Release.2026.German.DL.1080p.BluRay.x264-GRP',
+                9,
+            ],
+        ];
     }
 
     public function test_it_rejects_unrelated_release_sharing_only_date_and_resolution(): void
