@@ -7,7 +7,9 @@ namespace App\Services\NameFixing;
 use App\Events\ReleaseNameFixed;
 use App\Models\Category;
 use App\Models\Release;
+use App\Models\ReleaseFile;
 use App\Models\UsenetGroup;
+use App\Services\AdditionalProcessing\PostedFileClassifier;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\Categorization\CategorizationService;
@@ -18,6 +20,7 @@ use App\Services\ReleaseCleaningService;
 use App\Services\Releases\ForcedRootPolicy;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
 
 /**
@@ -218,6 +221,13 @@ class ReleaseUpdateService
 
             $newTitle = $this->finalizeCandidate($release, $name, $type, $descriptiveMediaTitle);
 
+            // An episode's title is not the name of a release that holds more than that episode.
+            if ($this->namesOneEpisodeOfLargerRelease($release, $newTitle)) {
+                $this->done = true;
+
+                return;
+            }
+
             // Determine if the source is trusted enough to bypass plausibility checks
             $sourceTrust = $this->sourceTrustPolicy($type, $method, $preId);
             $trustedSource = $sourceTrust['bypass_plausibility'];
@@ -283,6 +293,63 @@ class ReleaseUpdateService
             }
         }
         $this->done = true;
+    }
+
+    private const string EPISODE_TOKEN_REGEX = '/(?<![A-Za-z0-9])S(\d{1,4})[._ -]?E(\d{1,4})(?!\d)/i';
+
+    /**
+     * An episode title stands for a whole release only when the release is that one episode:
+     * no known inner file names another episode, and the episode's own video is not the
+     * smaller part of the release. Without such evidence the candidate is judged as before.
+     */
+    private function namesOneEpisodeOfLargerRelease(object $release, string $title): bool
+    {
+        $episode = $this->soleEpisode($title);
+        if ($episode === null) {
+            return false;
+        }
+
+        $sizes = [];
+        if (Schema::hasTable('release_files')) {
+            foreach (ReleaseFile::query()->where('releases_id', (int) $release->releases_id)->get() as $file) {
+                $sizes[(string) $file->name] = (int) ($file->size ?? 0);
+            }
+        }
+        // Files the archive inspector has listed but not yet stored.
+        foreach ($release->knownFiles ?? [] as $file) {
+            $sizes[(string) $file['name']] = (int) ($file['size'] ?? 0);
+        }
+
+        $episodeSize = 0;
+        foreach ($sizes as $fileName => $size) {
+            $fileName = (string) $fileName;
+            if (! ArchiveNamingPath::eligible($fileName)
+                || ! preg_match_all(self::EPISODE_TOKEN_REGEX, $fileName, $named, PREG_SET_ORDER)) {
+                continue;
+            }
+            $episodes = array_map(static fn (array $hit): string => (int) $hit[1].'x'.(int) $hit[2], $named);
+            if (! in_array($episode, $episodes, true)) {
+                return true;
+            }
+            if (preg_match('/'.PostedFileClassifier::VIDEO_FILE_REGEX.'$/i', $fileName)
+                && ! preg_match('~(?:^|[\\\\/._ -])sample(?:[\\\\/._ -]|$)~i', $fileName)) {
+                $episodeSize += $size;
+            }
+        }
+
+        return $episodeSize > 0 && $episodeSize * 2 < (int) ($release->relsize ?? $release->size ?? 0);
+    }
+
+    /** The one episode a title names, or null when it names none, several, or a range. */
+    private function soleEpisode(string $title): ?string
+    {
+        if (! preg_match_all(self::EPISODE_TOKEN_REGEX, $title, $named, PREG_SET_ORDER)
+            || preg_match('/(?<![A-Za-z0-9])S\d{1,4}[._ -]?E\d{1,4}(?:[._ -]?E\d|\s?-\s?E?\d{1,3}(?![\dpi])|\s?[&+])/i', $title)) {
+            return null;
+        }
+        $episodes = array_unique(array_map(static fn (array $hit): string => (int) $hit[1].'x'.(int) $hit[2], $named));
+
+        return count($episodes) === 1 ? $episodes[0] : null;
     }
 
     private function finalizeCandidate(
