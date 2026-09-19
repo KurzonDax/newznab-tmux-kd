@@ -45,6 +45,21 @@ class NameFixingQueryServiceTest extends TestCase
         $service->candidateBatch(NameFixingQueryService::SOURCE_FILES, 2, 2, 0, 100);
     }
 
+    public function test_default_file_rows_select_the_file_size(): void
+    {
+        $database = $this->createMock(Connection::class);
+        $database->expects($this->once())
+            ->method('select')
+            ->with(
+                $this->callback(static fn (string $sql): bool => str_contains($sql, 'FROM release_files rf')
+                    && str_contains($sql, 'rf.crc32, rf.size')),
+                [10],
+            )
+            ->willReturn([]);
+
+        (new NameFixingQueryService($database))->fileRows([10]);
+    }
+
     public function test_uid_candidates_only_use_media_infos(): void
     {
         $database = $this->createMock(Connection::class);

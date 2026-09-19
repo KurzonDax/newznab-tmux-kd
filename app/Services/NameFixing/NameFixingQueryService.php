@@ -300,7 +300,7 @@ final class NameFixingQueryService
      */
     public function fileRows(array $releaseIds, string $source = self::SOURCE_FILES): array
     {
-        $sourceColumns = in_array($source, [self::SOURCE_SRRDB, self::SOURCE_CRC], true) ? ', rf.size' : '';
+        $sourceColumns = in_array($source, [self::SOURCE_FILES, self::SOURCE_SRRDB, self::SOURCE_CRC], true) ? ', rf.size' : '';
         $filter = match ($source) {
             self::SOURCE_FILES => '',
             self::SOURCE_SRR => " AND (rf.name LIKE '%.srr' OR rf.name LIKE '%.srs')",
