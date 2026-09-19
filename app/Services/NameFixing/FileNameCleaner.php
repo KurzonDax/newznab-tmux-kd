@@ -329,7 +329,9 @@ class FileNameCleaner
             && $replacement['quality_source'] === $current['quality_source']
             && $replacement['tv'] === $current['tv'];
 
-        return $sameSignals && $replacement['tokens'] < $current['tokens'];
+        return $sameSignals
+            && $replacement['tokens'] < $current['tokens']
+            && ! ($this->isRawUsenetSubject($currentName) && $this->isContainedIn($candidate, $currentName));
     }
 
     /**
@@ -511,6 +513,22 @@ class FileNameCleaner
             'tv' => (bool) preg_match(self::TV_SIGNAL, $name),
             'tokens' => preg_match_all('/[A-Za-z0-9]{2,}/', $name),
         ];
+    }
+
+    /** The creation-time fallback searchname: a multipart counter plus a quoted filename. */
+    private function isRawUsenetSubject(string $name): bool
+    {
+        return preg_match('/[\[(]\d+\/\d+[\])]/', $name) === 1
+            && preg_match('/"[^"]+"/', $name) === 1;
+    }
+
+    /** Whether the candidate's letters and digits appear, in order and unbroken, inside the current name. */
+    private function isContainedIn(string $candidate, string $currentName): bool
+    {
+        $needle = preg_replace('/[^a-z0-9]+/', '', strtolower($candidate)) ?? '';
+        $haystack = preg_replace('/[^a-z0-9]+/', '', strtolower($currentName)) ?? '';
+
+        return $needle !== '' && str_contains($haystack, $needle);
     }
 
     /**
