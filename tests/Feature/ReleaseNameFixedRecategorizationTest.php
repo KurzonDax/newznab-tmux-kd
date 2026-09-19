@@ -1017,6 +1017,162 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
         $this->assertSame(0, (int) $release->isrenamed);
     }
 
+    public function test_a_raw_usenet_subject_accepts_its_inner_file_title(): void
+    {
+        Search::shouldReceive('updateRelease')->andReturn(true);
+
+        $group = UsenetGroup::query()->create([
+            'name' => 'alt.binaries.test',
+            'active' => 1,
+            'backfill' => 0,
+        ]);
+        $subject = '(Poster) - Visible.Release.2026.1080p - [19/57] - "Visible.Release.2026.1080p.part17.rar"';
+        $release = Release::factory()->create([
+            'name' => $subject.' yEnc',
+            'searchname' => $subject,
+            'groups_id' => $group->id,
+            'categories_id' => Category::MOVIE_HD,
+            'isrenamed' => 0,
+            'proc_files' => 0,
+            'is_trusted_name' => 0,
+        ]);
+
+        app(ReleaseUpdateService::class)->updateRelease(
+            $release->fresh(),
+            'Visible.Release.2026.1080p.mkv',
+            'fileCheck: Descriptive title',
+            true,
+            'Filenames, ',
+            true,
+            false,
+            descriptiveTitleCandidate: true,
+        );
+
+        $release->refresh();
+
+        $this->assertSame('Visible.Release.2026.1080p', $release->searchname);
+        $this->assertSame(1, (int) $release->isrenamed);
+        $this->assertSame(1, (int) $release->proc_files);
+        $this->assertSame(0, (int) $release->is_trusted_name);
+    }
+
+    public function test_an_archive_listing_replaces_a_raw_usenet_subject_with_a_trusted_name(): void
+    {
+        Search::shouldReceive('updateRelease')->andReturn(true);
+
+        $group = UsenetGroup::query()->create([
+            'name' => 'alt.binaries.test',
+            'active' => 1,
+            'backfill' => 0,
+        ]);
+        $subject = '(Poster) - Visible.Release.2026.1080p - [19/57] - "Visible.Release.2026.1080p.part17.rar"';
+        $release = Release::factory()->create([
+            'name' => $subject.' yEnc',
+            'searchname' => $subject,
+            'groups_id' => $group->id,
+            'categories_id' => Category::MOVIE_HD,
+            'isrenamed' => 0,
+            'proc_files' => 0,
+            'is_trusted_name' => 0,
+        ]);
+
+        app(ReleaseUpdateService::class)->updateRelease(
+            $release->fresh(),
+            'Visible.Release.2026.1080p',
+            'RarInfo FileName Match',
+            true,
+            'Filenames, ',
+            true,
+            false,
+            preId: 0,
+        );
+
+        $release->refresh();
+
+        $this->assertSame('Visible.Release.2026.1080p', $release->searchname);
+        $this->assertSame(1, (int) $release->isrenamed);
+        $this->assertSame(1, (int) $release->proc_files);
+        $this->assertSame(1, (int) $release->is_trusted_name);
+    }
+
+    public function test_a_raw_usenet_subject_still_refuses_a_candidate_that_drops_its_episode(): void
+    {
+        Search::shouldReceive('updateRelease')->andReturn(true);
+
+        $group = UsenetGroup::query()->create([
+            'name' => 'alt.binaries.test',
+            'active' => 1,
+            'backfill' => 0,
+        ]);
+        $subject = '(Poster) - Visible.Show.S01E02.1080p - [01/20] - "Visible.Show.S01E02.1080p.part01.rar"';
+        $release = Release::factory()->create([
+            'name' => $subject.' yEnc',
+            'searchname' => $subject,
+            'groups_id' => $group->id,
+            'categories_id' => Category::MOVIE_HD,
+            'isrenamed' => 0,
+            'proc_files' => 0,
+            'is_trusted_name' => 0,
+        ]);
+
+        app(ReleaseUpdateService::class)->updateRelease(
+            $release->fresh(),
+            'Visible.Show.1080p.mkv',
+            'fileCheck: Descriptive title',
+            true,
+            'Filenames, ',
+            true,
+            false,
+            descriptiveTitleCandidate: true,
+        );
+
+        $release->refresh();
+
+        $this->assertSame($subject, $release->searchname);
+        $this->assertSame(0, (int) $release->isrenamed);
+        $this->assertSame(0, (int) $release->proc_files);
+        $this->assertSame(0, (int) $release->is_trusted_name);
+    }
+
+    public function test_a_raw_usenet_subject_still_refuses_an_abbreviated_inner_name(): void
+    {
+        Search::shouldReceive('updateRelease')->andReturn(true);
+
+        $group = UsenetGroup::query()->create([
+            'name' => 'alt.binaries.test',
+            'active' => 1,
+            'backfill' => 0,
+        ]);
+        $subject = '(Poster) - Visible.Release.2026.1080p.BluRay.x264-GROUP - [19/57] - "Visible.Release.2026.1080p.BluRay.x264-GROUP.part17.rar"';
+        $release = Release::factory()->create([
+            'name' => $subject.' yEnc',
+            'searchname' => $subject,
+            'groups_id' => $group->id,
+            'categories_id' => Category::MOVIE_HD,
+            'isrenamed' => 0,
+            'proc_files' => 0,
+            'is_trusted_name' => 0,
+        ]);
+
+        app(ReleaseUpdateService::class)->updateRelease(
+            $release->fresh(),
+            'grp-vr.2026.1080p',
+            'RarInfo FileName Match',
+            true,
+            'Filenames, ',
+            true,
+            false,
+            preId: 0,
+        );
+
+        $release->refresh();
+
+        $this->assertSame($subject, $release->searchname);
+        $this->assertSame(0, (int) $release->isrenamed);
+        $this->assertSame(0, (int) $release->proc_files);
+        $this->assertSame(0, (int) $release->is_trusted_name);
+    }
+
     public function test_name_fix_listener_refines_an_other_category_from_existing_media_info(): void
     {
         $release = Release::factory()->create([

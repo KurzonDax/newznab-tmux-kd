@@ -191,6 +191,22 @@ class FileNameCleanerTest extends TestCase
         ));
     }
 
+    public function test_less_informative_guard_lets_a_raw_usenet_subject_take_a_title_it_contains(): void
+    {
+        $cleaner = new FileNameCleaner;
+        $movieSubject = '(Poster) - Visible.Release.2026.1080p - [19/57] - "Visible.Release.2026.1080p.part17.rar"';
+        $tvSubject = '(Poster) - Visible.Show.S01E02.1080p - [01/20] - "Visible.Show.S01E02.1080p.part01.rar"';
+        $sceneSubject = '(Poster) - Visible.Release.2026.1080p.BluRay.x264-GROUP - [19/57] - "Visible.Release.2026.1080p.BluRay.x264-GROUP.part17.rar"';
+
+        $this->assertFalse($cleaner->isLessInformativeThan('Visible.Release.2026.1080p', $movieSubject));
+        $this->assertTrue($cleaner->isLessInformativeThan('Visible.Show.1080p', $tvSubject));
+        $this->assertTrue($cleaner->isLessInformativeThan('grp-vr.2026.1080p', $sceneSubject));
+        $this->assertTrue($cleaner->isLessInformativeThan(
+            'Visible.Release.2026.1080p',
+            'Visible Release 2026 1080p Directors Cut Extended',
+        ));
+    }
+
     public function test_less_informative_guard_rejects_same_signal_name_with_fewer_tokens(): void
     {
         $cleaner = new FileNameCleaner;
