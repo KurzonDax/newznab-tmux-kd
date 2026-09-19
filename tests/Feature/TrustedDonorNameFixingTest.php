@@ -59,6 +59,83 @@ class TrustedDonorNameFixingTest extends TestCase
         $this->assertTrustedDonorRenamesTarget('crc');
     }
 
+    public function test_a_crc_match_on_a_minor_shared_file_does_not_rename(): void
+    {
+        $this->insertRelease(1, 'Canonical.Release.2026.1080p-GROUP', Category::MOVIE_HD, trusted: true);
+        $this->insertRelease(2, '6f0c31cb66a544c1912a0fc16e3d7b73');
+        DB::table('release_files')->insert([
+            ['releases_id' => 1, 'name' => 'donor.mkv', 'crc32' => '0053CA13', 'size' => 900_000],
+            ['releases_id' => 1, 'name' => 'Provider.url', 'crc32' => 'AABBCCDD', 'size' => 200],
+            ['releases_id' => 2, 'name' => 'target.mkv', 'crc32' => '11223344', 'size' => 900_000],
+            ['releases_id' => 2, 'name' => 'Provider.url', 'crc32' => 'AABBCCDD', 'size' => 200],
+        ]);
+        Search::shouldReceive('updateRelease')->never();
+
+        app(NameFixingService::class)->fixNamesWithCrc(2, true, 2, true, false);
+
+        $target = Release::query()->findOrFail(2);
+        $this->assertSame('6f0c31cb66a544c1912a0fc16e3d7b73', $target->searchname);
+        $this->assertSame(0, (int) $target->isrenamed);
+        $this->assertSame(1, (int) $target->proc_crc32);
+    }
+
+    public function test_identical_files_add_up_to_an_identical_release(): void
+    {
+        $this->insertRelease(1, 'Canonical.Release.2026.1080p-GROUP', Category::MOVIE_HD, trusted: true);
+        $this->insertRelease(2, '6f0c31cb66a544c1912a0fc16e3d7b73');
+        DB::table('release_files')->insert([
+            ['releases_id' => 1, 'name' => 'a.bin', 'crc32' => 'AAAA0001', 'size' => 450_000],
+            ['releases_id' => 1, 'name' => 'b.bin', 'crc32' => 'AAAA0002', 'size' => 450_000],
+            ['releases_id' => 2, 'name' => 'a.bin', 'crc32' => 'AAAA0001', 'size' => 450_000],
+            ['releases_id' => 2, 'name' => 'b.bin', 'crc32' => 'AAAA0002', 'size' => 450_000],
+        ]);
+        Search::shouldReceive('updateRelease')->once()->with(2);
+
+        app(NameFixingService::class)->fixNamesWithCrc(2, true, 2, true, false);
+
+        $target = Release::query()->findOrFail(2);
+        $this->assertSame('Canonical.Release.2026.1080p-GROUP', $target->searchname);
+        $this->assertSame(1, (int) $target->isrenamed);
+        $this->assertSame(1, (int) $target->is_trusted_name);
+    }
+
+    public function test_a_release_that_is_only_partly_identical_does_not_rename(): void
+    {
+        $this->insertRelease(1, 'Canonical.Release.2026.1080p-GROUP', Category::MOVIE_HD, trusted: true);
+        $this->insertRelease(2, '6f0c31cb66a544c1912a0fc16e3d7b73');
+        DB::table('release_files')->insert([
+            ['releases_id' => 1, 'name' => 'a.bin', 'crc32' => 'AAAA0001', 'size' => 700_000],
+            ['releases_id' => 2, 'name' => 'a.bin', 'crc32' => 'AAAA0001', 'size' => 700_000],
+            ['releases_id' => 2, 'name' => 'c.bin', 'crc32' => 'AAAA0003', 'size' => 200_000],
+        ]);
+        Search::shouldReceive('updateRelease')->never();
+
+        app(NameFixingService::class)->fixNamesWithCrc(2, true, 2, true, false);
+
+        $target = Release::query()->findOrFail(2);
+        $this->assertSame('6f0c31cb66a544c1912a0fc16e3d7b73', $target->searchname);
+        $this->assertSame(0, (int) $target->isrenamed);
+        $this->assertSame(1, (int) $target->proc_crc32);
+    }
+
+    public function test_the_same_checksum_with_a_different_size_does_not_rename(): void
+    {
+        $this->insertRelease(1, 'Canonical.Release.2026.1080p-GROUP', Category::MOVIE_HD, trusted: true);
+        $this->insertRelease(2, '6f0c31cb66a544c1912a0fc16e3d7b73');
+        DB::table('release_files')->insert([
+            ['releases_id' => 1, 'name' => 'movie.mkv', 'crc32' => '0053CA13', 'size' => 850_000],
+            ['releases_id' => 2, 'name' => 'movie.mkv', 'crc32' => '0053CA13', 'size' => 900_000],
+        ]);
+        Search::shouldReceive('updateRelease')->never();
+
+        app(NameFixingService::class)->fixNamesWithCrc(2, true, 2, true, false);
+
+        $target = Release::query()->findOrFail(2);
+        $this->assertSame('6f0c31cb66a544c1912a0fc16e3d7b73', $target->searchname);
+        $this->assertSame(0, (int) $target->isrenamed);
+        $this->assertSame(1, (int) $target->proc_crc32);
+    }
+
     #[DataProvider('hiddenCrcLocations')]
     public function test_cached_hidden_archive_crc_cannot_name_a_release_on_a_later_pass(bool $hiddenDonor): void
     {
@@ -66,10 +143,10 @@ class TrustedDonorNameFixingTest extends TestCase
         $this->insertRelease(2, 'Visible.Release.2026.1080p-GROUP', Category::MOVIE_HD, trusted: true);
         $this->insertRelease(3, '6f0c31cb66a544c1912a0fc16e3d7b73');
         DB::table('release_files')->insert([
-            ['releases_id' => 1, 'name' => $hiddenDonor ? 'Parent/.hidden/hidden.mkv' : 'hidden.mkv', 'crc32' => '0053CA13'],
-            ['releases_id' => 2, 'name' => 'visible.mkv', 'crc32' => '11223344'],
-            ['releases_id' => 3, 'name' => $hiddenDonor ? 'Parent/visible.mkv' : 'Parent/.hidden/hidden.mkv', 'crc32' => '0053CA13'],
-            ['releases_id' => 3, 'name' => 'Visible/visible.mkv', 'crc32' => '11223344'],
+            ['releases_id' => 1, 'name' => $hiddenDonor ? 'Parent/.hidden/hidden.mkv' : 'hidden.mkv', 'crc32' => '0053CA13', 'size' => 900_000],
+            ['releases_id' => 2, 'name' => 'visible.mkv', 'crc32' => '11223344', 'size' => 900_000],
+            ['releases_id' => 3, 'name' => $hiddenDonor ? 'Parent/visible.mkv' : 'Parent/.hidden/hidden.mkv', 'crc32' => '0053CA13', 'size' => 900_000],
+            ['releases_id' => 3, 'name' => 'Visible/visible.mkv', 'crc32' => '11223344', 'size' => 900_000],
         ]);
         Search::shouldReceive('updateRelease')->once()->with(3);
 
@@ -469,8 +546,8 @@ class TrustedDonorNameFixingTest extends TestCase
         $this->insertRelease(1, '6e4f6e56f38e480985f6d22f9e2ad52e', Category::MOVIE_HD);
         $this->insertRelease(2, '5da7b5393d4f4445ac4db1ee8e95f567');
         DB::table('release_files')->insert([
-            ['releases_id' => 1, 'name' => 'movie.mkv', 'crc32' => '0053CA13'],
-            ['releases_id' => 2, 'name' => 'movie.mkv', 'crc32' => '0053CA13'],
+            ['releases_id' => 1, 'name' => 'movie.mkv', 'crc32' => '0053CA13', 'size' => 900_000],
+            ['releases_id' => 2, 'name' => 'movie.mkv', 'crc32' => '0053CA13', 'size' => 900_000],
         ]);
 
         Search::shouldReceive('updateRelease')->once()->with(1);
@@ -514,8 +591,8 @@ class TrustedDonorNameFixingTest extends TestCase
         $this->insertRelease(1, 'Canonical.Release.2026.1080p-GROUP', Category::MOVIE_HD, predbId: 77);
         $this->insertRelease(2, 'Canonical.Release.2026.1080p-GROUP');
         DB::table('release_files')->insert([
-            ['releases_id' => 1, 'name' => 'movie.mkv', 'crc32' => 'AABBCCDD'],
-            ['releases_id' => 2, 'name' => 'movie.mkv', 'crc32' => 'AABBCCDD'],
+            ['releases_id' => 1, 'name' => 'movie.mkv', 'crc32' => 'AABBCCDD', 'size' => 900_000],
+            ['releases_id' => 2, 'name' => 'movie.mkv', 'crc32' => 'AABBCCDD', 'size' => 900_000],
         ]);
 
         Search::shouldReceive('updateRelease')->once()->with(2);
@@ -561,8 +638,8 @@ class TrustedDonorNameFixingTest extends TestCase
         $this->insertRelease(1, 'Canonical.Release.2026.1080p-GROUP', Category::MOVIE_HD, trusted: true);
         $this->insertRelease(2, 'Canonical.Release.2026.1080p-GROUP');
         DB::table('release_files')->insert([
-            ['releases_id' => 1, 'name' => 'movie.mkv', 'crc32' => '11223344'],
-            ['releases_id' => 2, 'name' => 'movie.mkv', 'crc32' => '11223344'],
+            ['releases_id' => 1, 'name' => 'movie.mkv', 'crc32' => '11223344', 'size' => 900_000],
+            ['releases_id' => 2, 'name' => 'movie.mkv', 'crc32' => '11223344', 'size' => 900_000],
         ]);
 
         Search::shouldReceive('updateRelease')->never();
@@ -577,8 +654,8 @@ class TrustedDonorNameFixingTest extends TestCase
         $this->insertRelease(1, $canonicalName, Category::MOVIE_HD, trusted: true);
         $this->insertRelease(2, '6f0c31cb66a544c1912a0fc16e3d7b73');
         DB::table('release_files')->insert([
-            ['releases_id' => 1, 'name' => 'first.mkv', 'crc32' => 'AABBCCDD'],
-            ['releases_id' => 2, 'name' => 'first.mkv', 'crc32' => 'AABBCCDD'],
+            ['releases_id' => 1, 'name' => 'first.mkv', 'crc32' => 'AABBCCDD', 'size' => 900_000],
+            ['releases_id' => 2, 'name' => 'first.mkv', 'crc32' => 'AABBCCDD', 'size' => 900_000],
         ]);
 
         Search::shouldReceive('updateRelease')->once()->with(2);
@@ -586,8 +663,8 @@ class TrustedDonorNameFixingTest extends TestCase
 
         $this->insertRelease(3, '5da7b5393d4f4445ac4db1ee8e95f567');
         DB::table('release_files')->insert([
-            ['releases_id' => 2, 'name' => 'second.mkv', 'crc32' => '11223344'],
-            ['releases_id' => 3, 'name' => 'second.mkv', 'crc32' => '11223344'],
+            ['releases_id' => 2, 'name' => 'second.mkv', 'crc32' => '11223344', 'size' => 900_000],
+            ['releases_id' => 3, 'name' => 'second.mkv', 'crc32' => '11223344', 'size' => 900_000],
         ]);
 
         Search::shouldReceive('updateRelease')->once()->with(3);
@@ -609,8 +686,8 @@ class TrustedDonorNameFixingTest extends TestCase
 
         if ($source === 'crc') {
             DB::table('release_files')->insert([
-                ['releases_id' => 1, 'name' => 'movie.mkv', 'crc32' => '0053CA13'],
-                ['releases_id' => 2, 'name' => 'movie.mkv', 'crc32' => '0053CA13'],
+                ['releases_id' => 1, 'name' => 'movie.mkv', 'crc32' => '0053CA13', 'size' => 900_000],
+                ['releases_id' => 2, 'name' => 'movie.mkv', 'crc32' => '0053CA13', 'size' => 900_000],
             ]);
         } elseif ($source === 'uid') {
             DB::table('media_infos')->insert([
@@ -708,6 +785,7 @@ class TrustedDonorNameFixingTest extends TestCase
             $table->unsignedInteger('releases_id');
             $table->string('name');
             $table->string('crc32')->default('');
+            $table->unsignedBigInteger('size')->default(0);
             $table->primary(['releases_id', 'name']);
         });
 
