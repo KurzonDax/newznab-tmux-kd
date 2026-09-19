@@ -68,6 +68,9 @@ class PredbMatchSelector
 
         foreach (array_slice($hits, 0, self::MAX_RESULTS_TO_SCORE) as $hit) {
             $hitData = is_array($hit) ? $hit : (array) $hit;
+            if (! $this->identifiesRelease($queryTokens, $hitData)) {
+                continue;
+            }
             $score = $this->scoreHit($normalizedQuery, $queryTokens, $hitData);
 
             if ($score > $bestScore) {
@@ -81,6 +84,33 @@ class PredbMatchSelector
         }
 
         return $bestMatch;
+    }
+
+    /**
+     * A PreDB title names one specific release. A file name identifies it only when it accounts for
+     * the title, or when it is the scene's abbreviated form: group tag first, every word found in the title.
+     *
+     * @param  list<string>  $queryTokens
+     * @param  array<string, mixed>  $hit
+     */
+    protected function identifiesRelease(array $queryTokens, array $hit): bool
+    {
+        $rawTitle = trim((string) ($hit['title'] ?? ''));
+        $titleTokens = $this->extractMeaningfulTokens($this->normalizeForComparison($rawTitle));
+        if ($titleTokens === []) {
+            return false;
+        }
+
+        if (count(array_intersect($titleTokens, $queryTokens)) * 4 >= count($titleTokens) * 3) {
+            return true;
+        }
+
+        if (count($queryTokens) < 3 || preg_match('/-([A-Za-z0-9]+)$/', $rawTitle, $group) !== 1) {
+            return false;
+        }
+
+        return $queryTokens[0] === mb_strtolower($group[1])
+            && array_diff($queryTokens, $titleTokens) === [];
     }
 
     /**
