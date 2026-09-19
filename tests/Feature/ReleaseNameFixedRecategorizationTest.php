@@ -635,6 +635,55 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
         $this->assertSame(1, (int) $release->isrenamed);
     }
 
+    /** @param list<array{string, int}> $files */
+    #[DataProvider('episodeReleaseEvidence')]
+    public function test_an_episode_title_does_not_name_a_release_that_holds_more(string $current, int $size, string $candidate, string $method, array $files, string $expected): void
+    {
+        Search::shouldReceive('updateRelease')->andReturn(true);
+        config(['nntmux.echocli' => false]);
+        ProductionTables::fromAuthority()->create('release_files', ['releases_id', 'name', 'size']);
+        $group = UsenetGroup::query()->create(['name' => 'alt.binaries.test']);
+        $release = Release::factory()->create([
+            'name' => $current, 'searchname' => $current, 'size' => $size,
+            'groups_id' => $group->id, 'categories_id' => Category::OTHER_HASHED, 'isrenamed' => 0,
+        ]);
+        foreach ($files as [$name, $fileSize]) {
+            DB::table('release_files')->insert(['releases_id' => $release->id, 'name' => $name, 'size' => $fileSize]);
+        }
+
+        app(ReleaseUpdateService::class)->updateRelease($release->fresh(), $candidate, $method, true, 'Filenames, ', true, false);
+
+        $release->refresh();
+        $this->assertSame($expected, $release->searchname);
+        $this->assertSame($expected === $current ? 0 : 1, (int) $release->isrenamed);
+    }
+
+    /** @return array<string, array{string, int, string, string, list<array{string, int}>, string}> */
+    public static function episodeReleaseEvidence(): array
+    {
+        $hash = '5da7b5393d4f4445ac4db1ee8e95f567';
+        $season = 'Visible.Show.S01.1080p.WEB-DL.x264-GROUP';
+        $episode = static fn (int $number): string => sprintf('Visible.Show.S01E%02d.1080p.WEB-DL.x264-GROUP', $number);
+        $first = $episode(1);
+        $method = 'fileCheck: TV SxxExx with quality';
+        $range = 'Visible.Show.S01E01-E02.1080p.WEB-DL.x264-GROUP';
+        $movie = 'Visible.Release.2026.1080p.BluRay.x264-GROUP';
+
+        return [
+            'two episodes known' => [$season, 10_000_000_000, $first, $method, [[$first.'.mkv', 1_000_000_000], [$episode(10).'.mkv', 1_000_000_000]], $season],
+            'one episode at ten percent' => [$season, 10_000_000_000, $first, $method, [[$first.'.mkv', 1_000_000_000]], $season],
+            'trusted inspector method' => [$hash, 10_000_000_000, $first, 'RarInfo FileName Match', [[$first.'.mkv', 1_000_000_000]], $hash],
+            'just under half' => [$hash, 10_000_000_000, $first, $method, [[$first.'.mkv', 4_999_999_999]], $hash],
+            'exactly half' => [$hash, 10_000_000_000, $first, $method, [[$first.'.mkv', 5_000_000_000]], $first],
+            'single at ninety percent' => [$hash, 10_000_000_000, $first, $method, [[$first.'.mkv', 9_000_000_000]], $first],
+            'only sample and nfo known' => [$hash, 1_000_000_000, $first, $method, [['Sample/sample-'.$first.'.mkv', 20_000_000], [$first.'.nfo', 5_000]], $first],
+            'no stored files' => [$hash, 10_000_000_000, $first, $method, [], $first],
+            'other episode under hidden directory' => [$hash, 3_000_000_000, $episode(2), $method, [[$episode(2).'.mkv', 2_700_000_000], ['Parent/.hidden/'.$first.'.mkv', 2_600_000_000]], $episode(2)],
+            'range title' => [$hash, 2_000_000_000, $range, $method, [[$range.'.mkv', 1_700_000_000], [$episode(3).'.mkv', 100_000_000]], $range],
+            'non-TV candidate' => [$hash, 9_000_000_000, $movie, 'RarInfo FileName Match', [[$movie.'.mkv', 1_000_000_000], ['Extras/'.$first.'.mkv', 500_000_000]], $movie],
+        ];
+    }
+
     /**
      * @param  list<string>  $currentFiles
      * @param  list<string>  $persistedFiles
@@ -668,7 +717,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             DB::table('release_files')->insert(['releases_id' => $release->id, 'name' => $fileName]);
         }
         $preDbId = $preDbMatch
-            ? DB::table('predb')->insertGetId(['title' => $expected])
+            ? DB::table('predb')->insertGetId(['title' => 'Murdoch Mysteries S02E13 Anything You Can Do'])
             : 0;
         $context = new ReleaseProcessingContext($release);
         $manager = app(ReleaseFileManager::class);
@@ -682,10 +731,11 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
 
         $release->refresh();
         $this->assertSame($expected, $release->searchname);
-        $this->assertSame(1, (int) $release->proc_files);
-        $this->assertSame(1, (int) $release->isrenamed);
-        $this->assertSame($preDbMatch ? 1 : 0, (int) $release->is_trusted_name);
-        $this->assertSame($preDbId, (int) $release->predb_id);
+        $renamed = $expected !== '(mm02nl) [000/280]';
+        $this->assertSame($renamed ? 1 : 0, (int) $release->proc_files);
+        $this->assertSame($renamed ? 1 : 0, (int) $release->isrenamed);
+        $this->assertSame($renamed && $preDbMatch ? 1 : 0, (int) $release->is_trusted_name);
+        $this->assertSame($renamed ? $preDbId : 0, (int) $release->predb_id);
     }
 
     /**
@@ -704,13 +754,49 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             'season episodes with matching sidecar' => [[$last, $first, 'Season 2/Murdoch Mysteries S02E01 Mild, Mild West.nfo'], [], [], 'Murdoch Mysteries S02'],
             'single episode in season directory' => [[$last], [], [], $episodeTitle],
             'same episode repeated' => [[$last], [$last], [], $episodeTitle],
-            'different seasons' => [[$last], ['Murdoch Mysteries S01E01 Title.mkv'], [], $episodeTitle],
-            'different shows' => [[$last], ['Other Mysteries S02E01 Title.mkv'], [], $episodeTitle],
-            'non-video evidence' => [[$last], ['Murdoch Mysteries S02E01 Title.nfo'], [], $episodeTitle],
+            'different seasons' => [[$last], ['Murdoch Mysteries S01E01 Title.mkv'], [], '(mm02nl) [000/280]'],
+            'different shows' => [[$last], ['Other Mysteries S02E01 Title.mkv'], [], '(mm02nl) [000/280]'],
+            'non-video evidence' => [[$last], ['Murdoch Mysteries S02E01 Title.nfo'], [], '(mm02nl) [000/280]'],
             'normalized show and numeric season' => [[$last], ['Season 2\\murdoch_mysteries s2e1 Title.MKV'], [], 'Murdoch Mysteries S02'],
-            'PreDB wins over season evidence' => [[$last], [$first], [], $episodeTitle, true],
+            'PreDB wins over season evidence' => [[$last], [$first], [], '(mm02nl) [000/280]', true],
             'hidden persisted episode is not season evidence' => [[$last], ['Parent/.hidden/'.$first], [], $episodeTitle],
             'hidden queued episode is not season evidence' => [[$last], [], ['Parent/.hidden/'.$first], $episodeTitle],
+        ];
+    }
+
+    #[DataProvider('archiveEpisodeVolumes')]
+    public function test_the_archive_inspector_does_not_name_a_pack_after_its_first_volume(int $fileSize, bool $secondEpisode, bool $rename): void
+    {
+        Search::shouldReceive('updateRelease')->andReturn(true);
+        Search::shouldReceive('searchPredb')->andReturn([]);
+        config(['nntmux.echocli' => false]);
+        $hash = '5da7b5393d4f4445ac4db1ee8e95f567';
+        $group = UsenetGroup::query()->create(['name' => 'alt.binaries.test']);
+        $release = Release::factory()->create([
+            'name' => $hash, 'searchname' => $hash, 'size' => 10_000_000_000,
+            'groups_id' => $group->id, 'categories_id' => Category::OTHER_HASHED, 'isrenamed' => 0,
+        ]);
+        ProductionTables::fromAuthority()->create('release_files', ['releases_id', 'name', 'size']);
+        $files = [['name' => 'Visible.Show.S01/Visible.Show.S01E01.1080p.WEB-DL.x264-GROUP.mkv', 'size' => $fileSize]];
+        if ($secondEpisode) {
+            $files[] = ['name' => 'Visible.Show.S01/Visible.Show.S01E02.1080p.WEB-DL.x264-GROUP.mkv', 'size' => 1_000_000_000];
+        }
+
+        app(ReleaseFileManager::class)->processReleaseNameFromRar(['file_list' => $files], new ReleaseProcessingContext($release));
+
+        $release->refresh();
+        $this->assertSame($rename ? 'Visible.Show.S01E01.1080p.WEB-DL.X264-GROUP' : $hash, $release->searchname);
+        $this->assertSame($rename ? 1 : 0, (int) $release->isrenamed);
+        $this->assertSame($rename ? 1 : 0, (int) $release->is_trusted_name);
+    }
+
+    /** @return array<string, array{int, bool, bool}> */
+    public static function archiveEpisodeVolumes(): array
+    {
+        return [
+            'first volume of pack' => [1_000_000_000, false, false],
+            'single episode' => [9_000_000_000, false, true],
+            'two listed episodes' => [1_000_000_000, true, false],
         ];
     }
 
