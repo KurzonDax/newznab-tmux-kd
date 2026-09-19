@@ -41,6 +41,65 @@ class FileNameCleanerTest extends TestCase
         $this->assertSame('WOB Klassik 4.25', $cleaner->normalizeCandidateTitle('WOB Klassik 4.25.Pdf'));
     }
 
+    #[DataProvider('codecAndSplitFileSuffixes')]
+    public function test_codec_numbers_are_not_stripped_as_split_file_suffixes(
+        string $input,
+        string $normalized,
+        string $formatted,
+        string $matching,
+    ): void {
+        $cleaner = new FileNameCleaner;
+
+        $this->assertSame($normalized, $cleaner->normalizeCandidateTitle($input));
+        $this->assertSame($formatted, $cleaner->formatSearchName($input));
+        $this->assertSame($matching, $cleaner->cleanForMatching($input));
+    }
+
+    /**
+     * @return array<string, array{string, string, string, string}>
+     */
+    public static function codecAndSplitFileSuffixes(): array
+    {
+        return [
+            'H.264 with video extension' => [
+                'Visible.Show.S01E02.1080p.WEB-DL.DDP5.1.H.264.mkv',
+                'Visible.Show.S01E02.1080p.WEB-DL.DDP5.1.H.264',
+                'Visible.Show.S01E02.1080p.WEB-DL.DDP5.1.H.264',
+                'Visible.Show.S01E02.1080p.WEB-DL.DDP5.1.H.264',
+            ],
+            'H.265' => [
+                'Visible.Show.S01E02.1080p.WEB-DL.DDP5.1.H.265',
+                'Visible.Show.S01E02.1080p.WEB-DL.DDP5.1.H.265',
+                'Visible.Show.S01E02.1080p.WEB-DL.DDP5.1.H.265',
+                'Visible.Show.S01E02.1080p.WEB-DL.DDP5.1.H.265',
+            ],
+            'lowercase h.264' => [
+                'Visible Show S01E02 1080p WEB-DL h.264',
+                'Visible Show S01E02 1080p WEB-DL h.264',
+                'Visible Show S01E02 1080p WEB-DL h.264',
+                'Visible Show S01E02 1080p WEB-DL h.264',
+            ],
+            'split archive' => [
+                'Visible.Archive.2026.7z.001',
+                'Visible.Archive.2026.7z',
+                'Visible.Archive.2026.7z',
+                'Visible.Archive.2026',
+            ],
+            'split release' => [
+                'Visible.Release.2026.1080p.BluRay.x264-GROUP.001',
+                'Visible.Release.2026.1080p.BluRay.x264-GROUP',
+                'Visible.Release.2026.1080p.BluRay.x264-GROUP',
+                'Visible.Release.2026.1080p.BluRay.x264-GROUP',
+            ],
+            'split video' => [
+                'Visible.Release.2026.1080p.BluRay.x264-GROUP.mkv.001',
+                'Visible.Release.2026.1080p.BluRay.x264-GROUP.mkv',
+                'Visible.Release.2026.1080p.BluRay.x264-GROUP.mkv',
+                'Visible.Release.2026.1080p.BluRay.x264-GROUP',
+            ],
+        ];
+    }
+
     public function test_format_search_name_keeps_scene_titles_dotted(): void
     {
         $cleaner = new FileNameCleaner;

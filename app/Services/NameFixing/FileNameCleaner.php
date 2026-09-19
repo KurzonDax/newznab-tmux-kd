@@ -49,7 +49,7 @@ class FileNameCleaner
         '/\.vol\d+[\+\-]\d+\.par2?$/i',
         '/\.par2?$/i',
         '/\.(tar|gz|bz2|xz|lz|lzma|cab|arj|ace|arc)$/i',
-        '/\.\d{3}$/i',
+        '/(?<![Hh])\.\d{3}$/i',
     ];
 
     /**
@@ -207,7 +207,7 @@ class FileNameCleaner
 
         // Remove archive, metadata, and common document/file extensions
         $t = preg_replace(
-            '/\.(par2?|nfo|sfv|nzb|rar|zip|7z|gz|tar|bz2|xz|r\d{2,3}|\d{3}|pkg|exe|msi|jpe?g|png|gif|bmp|pdf|epub|mobi|azw3?|djvu|cbr|cbz|fb2|lit|prc|opf|txt|log)$/i',
+            '/\.(par2?|nfo|sfv|nzb|rar|zip|7z|gz|tar|bz2|xz|r\d{2,3}|(?<![Hh]\.)\d{3}|pkg|exe|msi|jpe?g|png|gif|bmp|pdf|epub|mobi|azw3?|djvu|cbr|cbz|fb2|lit|prc|opf|txt|log)$/i',
             '',
             $t
         ) ?? $t;
