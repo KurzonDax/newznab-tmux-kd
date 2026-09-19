@@ -852,6 +852,11 @@ class ReleaseFileManager
         }
 
         $context->release['filename'] = implode('||', $fileNames);
+        // Listed but not yet stored: the update service weighs an episode title against these.
+        $context->release['knownFiles'] = array_merge(
+            array_values($context->pendingReleaseFiles),
+            array_values(array_filter($dataSummary['file_list'], is_array(...))),
+        );
         $context->release->releases_id = $context->release->id;
         if ($this->nameFixingService->matchPreDbFiles($context->release, true, true, true) > 0) {
             return;
