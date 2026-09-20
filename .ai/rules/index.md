@@ -14,6 +14,7 @@ entry, but unrelated rules are not prerequisites for a small edit.
 | Manticore queries/schema: `ManticoreSearchDriver`, `ManticoreIndexRegistry`, `CreateManticoreIndexes` | [Search drivers](drivers.md) |
 | Release naming: `app/Services/NameFixing/**` | [Name fixing](name-fixing.md) |
 | Frontend/CSP/design system: `resources/**`, `vite.config.js`; content ordering: `AdminContentController` | [Resources](resources.md) |
+| Visual design system tokens, type scale, component inventory: `resources/css/**`, `resources/views/components/**` | [DESIGN.md](../../DESIGN.md), [Resources](resources.md) |
 | Release lifecycle, ingestion, TV admission, claims, categorization: relevant `app/Services/**` | [Services](services.md) |
 | Numeric settings readers in `app/**` | [Settings values](settings-values.md) |
 | Settings declaration/validation/save: `app/Support/Settings/**`, `app/Services/Settings/**`, `AdminSettingsController`, `resources/views/admin/settings/**`, settings test helpers | [Settings hub](settings-hub.md) |
