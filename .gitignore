@@ -89,3 +89,4 @@ __pycache__/
 /.claude/settings.local.json
 /.impeccable/*
 !/.impeccable/config.json
+!/.impeccable/design.json
