@@ -32,7 +32,7 @@ editor/MCP reinstall to refresh prose.
 
 Validate changes in the issue runtime. Boost registers its commands in local mode;
 use the same per-process `APP_ENV=local` / `APP_DEBUG=true` overrides as
-`scripts/agent-boost-mcp` via `scripts/agent-sail exec -T -u sail`. Keep the tracked
+development mode in `scripts/agent-boost-mcp` via `scripts/agent-sail exec -T -u sail`. Keep the tracked
 testing database configuration; do not replace the worktree environment file:
 
 - Check ordinary `boost:update --no-discover --ignore-skills --no-interaction`
@@ -44,3 +44,15 @@ testing database configuration; do not replace the worktree environment file:
 - Check Markdown links, scoped paths, and contradictions against the changed guidance,
   then run the applicable shared final verifier. Prose edits do not need invented
   application tests or new recurring CI work.
+
+## Diagnostic MCP configuration
+
+Both clients retain the shared repository launcher. Follow
+[Boost MCP runtime selection](development-workflow.md#boost-mcp-runtime-selection)
+for the required initial clone-local choice and the development/canary boundaries.
+Canary applies its tool policy in memory after deployed configuration loads and
+revalidates every child through the diagnostic bootstrap; cached permissive Boost
+settings cannot enable extra tools. It neither enables browser ingestion nor
+changes the served application's environment/debug configuration. Guideline
+updates and explicit generation remain development-runtime operations under the
+policy above; canary provides no rule-writing or generation tools.

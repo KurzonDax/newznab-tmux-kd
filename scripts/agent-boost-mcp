@@ -5,6 +5,25 @@ set -euo pipefail
 script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
 cd "$script_directory/.."
-exec "$script_directory/agent-sail" exec -T -u sail \
-    -e APP_ENV=local -e APP_DEBUG=true \
-    laravel.test php artisan mcp:start laravel-boost
+# Preserve trailing newlines so duplicate/empty values cannot collapse into a mode.
+mode="$(git config --local --get-all nntmux.boostMode || true; printf '.')"
+case "$mode" in
+    $'development\n.')
+        exec "$script_directory/agent-sail" exec -T -u sail \
+            -e APP_ENV=local -e APP_DEBUG=true \
+            laravel.test php artisan mcp:start laravel-boost
+        ;;
+    $'canary\n.')
+        if ! command -v php >/dev/null 2>&1; then
+            echo 'Boost canary requires an installed PHP CLI on PATH; startup installs nothing.' >&2
+            exit 2
+        fi
+        exec php "$script_directory/agent-boost-canary.php" mcp:start laravel-boost
+        ;;
+    *)
+        echo 'Select exactly one clone-local Boost mode before startup:' >&2
+        echo '  git config --local nntmux.boostMode development' >&2
+        echo '  git config --local nntmux.boostMode canary' >&2
+        exit 2
+        ;;
+esac
