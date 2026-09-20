@@ -131,9 +131,64 @@ python3 scripts/agent-verify final
 scripts/agent-sail artisan COMMAND --no-interaction
 ```
 
-The runtime-backed `agent-boost-mcp` launcher changes to its own checkout before
-using the adapter. It needs the owning task's session identity for a managed
-checkout, just like other application commands.
+### Boost MCP runtime selection
+
+Codex (`.codex/config.toml`) and Claude Code (`.mcp.json`) both use
+`scripts/agent-boost-mcp`. Before the first connection in every clone, including
+existing clones, explicitly select one mode. Run from that clone's checkout.
+
+For managed development:
+
+```bash
+git config --local nntmux.boostMode development
+```
+
+For canary diagnostics against the installed application:
+
+```bash
+git config --local nntmux.boostMode canary
+```
+
+The clone-local Git setting is shared by linked worktrees, survives ordinary
+pulls, and is independent of other clones. Exactly one value is required;
+missing, empty, invalid, or duplicate values stop startup before application
+bootstrap. Resolve duplicate entries in local Git configuration before reconnecting.
+Branch, environment, hostname, and client identity never select a mode.
+
+Development uses the existing isolated adapter, tracked testing configuration,
+and ordinary development tools. Its issue-branch and task-ownership requirements
+still apply, and dependencies/runtime setup remain deferred until needed.
+
+Canary uses local PHP, installed Boost dependencies, and deployed configuration,
+including the effective configuration cache. It works on `master` without checkout
+ownership. Its dedicated CLI bootstrap activates console diagnostics without
+changing the application environment/debug flag or web provider registration.
+Each tool child returns through that bootstrap, independently checks canary mode
+and the allowed command/tool, and reapplies the policy after configuration loads.
+Only the existing `mcp:start` and `boost:execute-tool` commands are used.
+
+The canary allowlist is ApplicationInfo, DatabaseConnections, DatabaseSchema,
+DatabaseQuery, LastError, ReadLogEntries, BrowserLogs, GetAbsoluteUrl, and SearchDocs.
+Tinker, RecordRule, extra configured tools, and newly installed tools are excluded.
+Use bounded queries and targeted schema requests. Boost's read-query validation
+is retained; it is not a database permission boundary. A separately provisioned
+read-only database account is optional. BrowserLogs reads existing logs; a missing
+log is an ordinary result, and diagnostic startup adds no browser collection.
+Documentation searches must use generic technical terms, never private log content,
+credentials, hostnames, paths, or user data.
+
+Both modes use local stdio. Canary startup installs nothing and does not prepare
+testing containers, migrate/seed, rebuild assets/caches, or restart services.
+Missing PHP or Boost dependencies require preparation through the existing release
+process. Diagnostic access does not authorize source edits, repairs, or data/runtime
+mutations on the deployment host.
+
+Build and test fixtures in the development environment. Validate actual Codex and
+Claude Code startup, tool discovery, and diagnostic calls separately from protocol
+harness coverage. After the merged release reaches a deployment, use each client
+for application-info, a targeted schema read, `SELECT 1 AS diagnostic_ok`, and a
+bounded existing-log read. Do not create probe data, development checkouts, worktrees,
+or containers on the deployment host for this check.
 
 ## Public commit identity
 
