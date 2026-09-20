@@ -50,8 +50,8 @@ Every change reaches master by PR. The following issue workflow applies to agent
    Rerun interrupted monitoring. Primary stays in place and returns to updated
    `master`; optional-worktree cleanup removes only its own checkout/runtime.
 
-Pushing the branch, opening the PR, enabling squash auto-merge, and monitoring through
-merge are pre-authorized. Do not stop at a commit, open PR, or enabled auto-merge.
+Pushing the branch, opening the PR, and monitoring required checks through the
+squash merge are pre-authorized. Do not stop at a commit or an open PR.
 For startup/recovery, concurrent work, or publish failures, consult
 [the workflow contract](docs/agents/development-workflow.md).
 

@@ -1,6 +1,6 @@
 {
-  "issue": 757,
-  "base": "c25417588e85cb03ed399364d6d46adce717567f",
+  "issue": 768,
+  "base": "b268919d8b088036cc7dbb4f420f19d0a2aea6f8",
   "files": {
     ".github/actions/ci-sail/action.yml": "4924453805b5e7e15165c48e28fa19d4bc532d7069048d6d337b3139252eb259",
     ".github/ci-policy.json": "5bd0e4c21c7d8e0f057db2748b09d33220603f3f0cd1756507078259b11681b6",
@@ -19,7 +19,7 @@
     "docker/8.5/start-container": "b4df5f179530831843d432fe2c3707aa861f346aab396ff715974a02f1cfa8b9",
     "docker/8.5/supervisord.conf": "100641fa7453c27fefaa23c0399ece338ad4a9078e194021b202d2d65682b92e",
     "phpunit.xml": "7a78296d1c75778f5908b9653350e6b21bd2dffe3ddfb7c582e40815842bbc30",
-    "scripts/agent-issue-finish": "ba878143a83469de427919760fe45c18c0cfc5b0c5671688914ff00c42206773",
+    "scripts/agent-issue-finish": "ebd222b8431e7265d90fb1405ec981d2b2390c370405797f17798089b706407c",
     "scripts/agent-verify": "c06a4d5d2277b60c0e314f39890a21ea3131b0973cc23613753fdf3003496786",
     "scripts/ci-classify-changes": "d812ad62f471221e46ef073eb056485eeaeb198d669b3c8a1d2432ca1e95f8f5",
     "scripts/ci-inventory": "7b413e80baf67388534647bf53fee539612fa567a29f4c37b0da9be4dcce302c",

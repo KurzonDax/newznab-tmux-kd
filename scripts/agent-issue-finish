@@ -6,11 +6,12 @@ script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 # shellcheck source=agent-workflow-lib
 source "$script_directory/agent-workflow-lib"
 
-usage='usage: scripts/agent-issue-finish [--publish | --monitor [--timeout-seconds <n>]]'
+usage='usage: scripts/agent-issue-finish [--publish | --monitor [--timeout-seconds <n>]] [--no-merge]'
 
 mode=full
 timeout_seconds=''
 expect_timeout_value=false
+merge_when_green=true
 
 for argument in "$@"; do
     if [[ "$expect_timeout_value" == true ]]; then
@@ -32,6 +33,9 @@ for argument in "$@"; do
             ;;
         --timeout-seconds=*)
             timeout_seconds="${argument#--timeout-seconds=}"
+            ;;
+        --no-merge)
+            merge_when_green=false
             ;;
         *)
             agent_fail "$usage"
@@ -117,22 +121,33 @@ printf '%s\n' "$pull_request_body" | grep -Eq "(^|[[:space:]])Fixes[[:space:]]+#
 
 pull_request_state="$(gh pr view "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
     --json state --jq .state)"
+# Reject an unsafe outgoing commit before the monitor loop rather than at the
+# merge call, so a rejection never depends on checks reaching success first.
 if [[ "$pull_request_state" == OPEN ]]; then
     agent_require_outgoing_identities
-    gh pr merge "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" --auto --squash \
-        --author-email "$AGENT_APPROVED_EMAIL" --match-head-commit "$(git rev-parse HEAD)"
 fi
 
-if [[ "$mode" == publish ]]; then
+# An already merged request has nothing to opt out of, so --no-merge must not
+# strand its cleanup; only publication still stops on a merged request.
+if [[ ("$merge_when_green" == false && "$pull_request_state" != MERGED) || "$mode" == publish ]]; then
     if [[ "$pull_request_state" == MERGED ]]; then
         print_pull_request_status merged
         printf 'The pull request is already merged. Run scripts/agent-issue-finish --monitor to clean up the runtime and worktree.\n'
+    elif [[ "$merge_when_green" == false ]]; then
+        print_pull_request_status pending
+        # A leading --option would be read as a printf flag, so print it as data.
+        printf '%s\n' '--no-merge stopped this run at the open pull request. Rerun scripts/agent-issue-finish --monitor without it to merge and clean up.'
     else
         print_pull_request_status pending
-        printf 'Auto-merge is armed. Run scripts/agent-issue-finish --monitor until it prints MERGE_STATUS=merged.\n'
+        printf 'The pull request is open and unmerged. Run scripts/agent-issue-finish --monitor until it prints MERGE_STATUS=merged.\n'
     fi
     exit 0
 fi
+
+# GitHub can still be recomputing mergeability behind a green check result, so
+# an unattributable refusal is retried before it becomes the maintainer's problem.
+merge_refusal_limit=3
+merge_refusals=0
 
 monitor_deadline=''
 if [[ -n "$timeout_seconds" ]]; then
@@ -151,9 +166,9 @@ while true; do
     pull_request_snapshot="$("$script_directory/agent-check-snapshot" "$AGENT_EXPECTED_REPOSITORY" "$pull_request_number")" ||
         agent_fail "could not read a consistent required-check snapshot for pull request #$pull_request_number; check the GitHub API error above, then rerun scripts/agent-issue-finish --monitor"
     snapshot_fields="$(printf '%s' "$pull_request_snapshot" | jq -er \
-        '[.state, .mergeStateStatus, .reviewDecision, .checksStatus] | @tsv')" ||
+        '[.state, .mergeStateStatus, .reviewDecision, .checksStatus, .headRefOid] | @tsv')" ||
         agent_fail 'invalid required-check snapshot; rerun scripts/agent-issue-finish --monitor'
-    IFS=$'\t' read -r pull_request_state merge_state review_decision checks_status <<<"$snapshot_fields"
+    IFS=$'\t' read -r pull_request_state merge_state review_decision checks_status snapshot_head <<<"$snapshot_fields"
 
     if [[ "$pull_request_state" == MERGED ]]; then
         break
@@ -193,7 +208,30 @@ while true; do
             sleep 10
             ;;
         success)
-            # Only GitHub's MERGED state permits cleanup, even after checks pass.
+            agent_require_outgoing_identities
+            if gh pr merge "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" --squash \
+                --author-email "$AGENT_APPROVED_EMAIL" \
+                --match-head-commit "$(git -C "$AGENT_WORKTREE_ROOT" rev-parse HEAD)"; then
+                merge_refusals=0
+            else
+                # A peer pull request can merge between the green snapshot and
+                # this call, leaving this one BEHIND on stale checks. Classify
+                # the refusal from the re-read state, never from gh's wording.
+                refusal_fields="$(gh pr view "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
+                    --json state,mergeStateStatus,headRefOid --jq '[.state, .mergeStateStatus, .headRefOid] | @tsv')" ||
+                    agent_fail "could not merge pull request #$pull_request_number, and could not re-read its state to classify the refusal; check the GitHub API error above, then rerun scripts/agent-issue-finish --monitor"
+                IFS=$'\t' read -r refused_state refused_merge_state refused_head <<<"$refusal_fields"
+                if [[ "$refused_state" != OPEN || "$refused_head" != "$snapshot_head" ||
+                    "$refused_merge_state" == BEHIND || "$refused_merge_state" == DIRTY ]]; then
+                    # The request moved on; the loop's own cases own the new state.
+                    merge_refusals=0
+                else
+                    merge_refusals=$((merge_refusals + 1))
+                    [[ "$merge_refusals" -lt "$merge_refusal_limit" ]] ||
+                        agent_fail "GitHub refused to merge pull request #$pull_request_number $merge_refusals times while it stayed $refused_merge_state on an unchanged head; read the merge error above, resolve it on GitHub, then rerun scripts/agent-issue-finish --monitor"
+                fi
+            fi
+            # Only GitHub's MERGED state permits cleanup, even after a merge call.
             sleep 5
             ;;
         *)

@@ -12,7 +12,7 @@ preflight runs before execution. Four PHP shards and two selected-suite workers
 feed the existing strict aggregate. Prose-only changes skip runtime execution;
 unknown/shared changes select all bounded correctness, never large acceptance.
 
-**Definition of done:** a coding task is complete only when `scripts/agent-issue-finish` prints `MERGE_STATUS=merged`. Pushing the issue branch, opening the pull request, and enabling auto-merge are pre-authorized — run the finish helper without asking for confirmation. This overrides any skill or prompt instruction whose final step is committing.
+**Definition of done:** a coding task is complete only when `scripts/agent-issue-finish` prints `MERGE_STATUS=merged`. Pushing the issue branch, opening the pull request, and merging it once required checks pass are pre-authorized — run the finish helper without asking for confirmation. This overrides any skill or prompt instruction whose final step is committing.
 
 ## Human prose edits
 
@@ -196,15 +196,16 @@ The managed workflow requires `KurzonDax` and
 `5052775+KurzonDax@users.noreply.github.com` for both author and committer of
 outgoing commits. Startup and workflow-generated branch updates check Git's
 effective identity, including environment overrides. Publication checks every
-commit in `origin/master..HEAD` before each push and before enabling auto-merge;
-a safe tip does not excuse an earlier unsafe commit. Rejections identify the
+commit in `origin/master..HEAD` before each push and before the merge; a safe
+tip does not excuse an earlier unsafe commit. Rejections identify the
 commit and field without printing the rejected value. Existing commits are never
 rewritten automatically.
 
 Local Git configuration does not select the author email of GitHub's new squash
 commit. The finish helper explicitly supplies the approved noreply email and pins
-the request to the checked local head. Resuming an armed request disables it and
-re-enables squash auto-merge with that email; failures stop the workflow. After
+the merge to the checked local head. Resuming a pull request that still carries a
+previously armed auto-merge request disables it first, so only a monitored merge
+carrying that email can complete it; failures stop the workflow. After
 GitHub confirms merge, the helper verifies the actual server-created author
 before cleanup. GitHub's service committer is distinct from the maintainer author
 and is not subject to the outgoing local-committer check.
@@ -248,14 +249,20 @@ scripts/agent-issue-finish --publish
 scripts/agent-issue-finish --monitor
 ```
 
-Publication pushes only the issue branch, creates/resumes one PR containing
-`Fixes #NUMBER`, and enables squash auto-merge. Keep monitoring until
-`MERGE_STATUS=merged`; `--timeout-seconds N` bounds an invocation, not the task.
-Current failures/reviews need action. API errors, absent aggregate checks and
-changing-head snapshots never count as success. When behind master, the helper
-merges current `origin/master`, pushes and follows the replacement required CI.
-Conflicts remain available for explicit resolution. Existing strict-base rules
-and superseded-run cancellation are unchanged.
+Publication pushes only the issue branch and creates/resumes one PR containing
+`Fixes #NUMBER`; it does not merge. Monitoring squash-merges that PR itself on a
+green current-head snapshot, supplying the approved author email and the checked
+local head. Keep monitoring until `MERGE_STATUS=merged`; `--timeout-seconds N`
+bounds an invocation, not the task. Current failures/reviews need action. API
+errors, absent aggregate checks and changing-head snapshots never count as
+success. When behind master, the helper merges current `origin/master`, pushes
+and follows the replacement required CI. A merge GitHub refuses because the
+request moved on continues the same loop; one refused while nothing observable
+changes is retried a bounded number of times, because mergeability can still be
+recomputing behind a green check, and then stops the run for a decision. Conflicts remain available for explicit
+resolution. Existing strict-base rules and superseded-run cancellation are
+unchanged. Add `--no-merge` only when the maintainer asked for the run to stop at
+the open pull request; it is never the default and skips merge and cleanup.
 
 Cleanup requires GitHub-confirmed merge and rechecks local state. It stops only
 the selected runtime, removes that remote branch if present, and removes a linked
@@ -283,7 +290,7 @@ Watch its Actions result under `CI maintenance`; it has a distinct check name an
 
 ## Concurrent sessions
 
-Parallel sessions publish and arm auto-merge freely. The strict required check makes the race safe server-side: when a peer pull request merges first, GitHub marks the later one `BEHIND` and refuses to merge it on stale CI results; `--monitor` takes the new base and re-passes CI. The cost is one extra CI run per merge collision — never a stale merge.
+Parallel sessions publish and monitor freely; each merges only its own pull request, and only from a green snapshot of its current head. The strict required check keeps the race safe server-side: when a peer pull request merges first, the later one becomes `BEHIND` and GitHub refuses to merge it on stale CI results — either at the mergeability read or at the merge call itself, whichever observes the change first. A refusal there is a loop continuation, not a failure: `--monitor` takes the new base, re-passes CI and merges then. The cost is one extra CI run per merge collision — never a stale merge.
 
 ## Infrastructure acceptance
 
