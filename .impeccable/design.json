@@ -315,6 +315,76 @@
       "Don't assume slate neutrals. Emerald and violet tint their borders and muted text.",
       "Don't reach for shadow where a border would do.",
       "Don't extend font-extrabold, and don't add border weights beyond 1px."
-    ]
+    ],
+    "enforcement": {
+      "script": "scripts/check-design-system.sh",
+      "runsIn": "frontend verification lane; scripts/agent-verify gates it behind `if frontend:`, and it is a required CI command in .github/ci-policy.json",
+      "guardedBy": "tests/Unit/DesignSystemLintTest.php",
+      "scope": [
+        "resources/views",
+        "resources/forum/blade-tailwind/views",
+        "resources/js",
+        "resources/css/app.css"
+      ],
+      "notScanned": [
+        "docs/ (prototypes)",
+        "email views",
+        "error pages",
+        "unused forum presets",
+        "admin templates"
+      ],
+      "principle": "Every check inspects class names, not values. The rules constrain how a value is reached, never what the value is. A redesign that replaces palette, type scale, spacing and component language passes all of them untouched, provided it routes through the token layer. See the script's own comment at line 26.",
+      "indirectionRules": [
+        {
+          "line": 27,
+          "rule": "no literal blue-* accent utility in views; use primary-*"
+        },
+        {
+          "line": 32,
+          "rule": "forum primary-* utilities need an explicit dark: treatment"
+        },
+        {
+          "line": 72,
+          "rule": "no hardcoded bg-white / bg-gray-N in public views; use semantic surfaces or tokens"
+        },
+        {
+          "line": 76,
+          "rule": "no indigo-*/purple-* accent utilities in public views; use primary-*"
+        },
+        {
+          "line": 87,
+          "rule": "no blue-* accent utility assigned from JavaScript; use primary-*"
+        }
+      ],
+      "hygieneRules": [
+        {
+          "line": 37,
+          "rule": "no Bootstrap btn shim; use x-button / x-button-link"
+        },
+        {
+          "line": 42,
+          "rule": "Font Awesome is the only icon library (no feather)",
+          "open": "whether a replacement design keeps this constraint is deliberately unsettled"
+        },
+        {
+          "line": 49,
+          "rule": "no inline style attributes; CSP constraint, not a preference"
+        },
+        {
+          "line": 54,
+          "rule": "fixed Vue action panels need v-cloak"
+        },
+        {
+          "line": 60,
+          "rule": "app.css !important budget is 1 (the [x-cloak] rule)"
+        },
+        {
+          "line": 81,
+          "rule": "no FA4 icon names",
+          "open": "tied to the icon-library question above"
+        }
+      ],
+      "descriptiveOnly": "narrative.dos and narrative.donts below, and everything else in DESIGN.md, are description rather than law. No check inspects them and a redesign may overturn any of them."
+    }
   }
 }

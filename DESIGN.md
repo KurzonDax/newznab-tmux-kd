@@ -271,20 +271,41 @@ The forum (`resources/forum/blade-tailwind/`) is a separate preset with its own 
 
 ## Do's and Don'ts
 
-**Do**
+The rules below fall into two groups that behave very differently when the design changes. Read the distinction before treating any of them as fixed.
 
-- Use `primary-*` for accent, links, focus rings and selected states.
-- Give every colour utility a `dark:` counterpart unless a token or ancestor already handles it.
-- Reuse `x-button`, the input/select/textarea/label set, and the semantic surface classes.
-- Put styles in `csp-safe.css` or utilities — never inline `style` attributes in views; the Alpine CSP build rejects them.
-- Keep status colour literal and semantic.
+### Enforced: the indirection, not the vocabulary
 
-**Don't**
+`scripts/check-design-system.sh` mechanically rejects these. It runs in the frontend verification lane (`scripts/agent-verify` gates it behind `if frontend:`, so a change touching no frontend path does not trigger it) and is a required CI command. Its guard is `tests/Unit/DesignSystemLintTest.php`.
 
-- Don't hardcode an accent hex. Three schemes break at once.
-- Don't introduce a second text family or a second icon library.
-- Don't assume slate neutrals. Emerald and violet tint their borders and muted text.
+- Use `primary-*` for accent, links, focus rings and selected states. Literal `blue-*` in views (`:27`) or assigned from JavaScript (`:87`), and `indigo-*`/`purple-*` anywhere public (`:76`), are rejected.
+- Use semantic surface classes or tokens. Literal `bg-white` and `bg-gray-N` in public views are rejected (`:72`).
+- In the forum, every `primary-*` utility needs an explicit `dark:` treatment (`:32`).
+
+**These rules constrain how a value is reached, never what the value is.** Every check inspects class names, not colours. A redesign that replaces the entire palette, type scale, spacing and component language passes all of them untouched, provided it routes through the token layer. The script says so itself at line 26: "Emerald/violet color schemes only retheme token-driven classes."
+
+That is the point of them. Because views say `primary-600` and `--surface-card` rather than `#2563eb` and `#ffffff`, the whole vocabulary can be replaced by editing `resources/css/app.css`. Hardcoded values would make the same replacement a repository-wide search with no way to prove it was complete.
+
+**Enforcement scope**: `resources/views`, `resources/forum/blade-tailwind/views`, `resources/js` and `resources/css/app.css`. Email views, error pages, unused forum presets and admin templates are excluded by the script itself. Prototype HTML under `docs/` is not scanned at all — explore freely there.
+
+### Enforced: hygiene and platform constraints
+
+Also mechanical, but orthogonal to visual taste. These survive a redesign because none of them is an aesthetic choice.
+
+- Never use inline `style` attributes in views (`:49`). This is a **CSP constraint** — the Alpine CSP build rejects them — not a preference. Use utilities or `csp-safe.css`; dynamic widths use `progress-bar` with `data-width`.
+- Use `<x-button>`/`<x-button-link>`; the Bootstrap `btn` shim is gone and must not return (`:37`).
+- Font Awesome is the only icon library (`:42`), and FA4 names such as `fa-clock-o` are rejected (`:81`). *Whether a replacement design keeps this constraint is an open question, deliberately not settled here.*
+- Fixed Vue action panels in the forum need `v-cloak` (`:54`).
+- `app.css` has an `!important` budget of one — the `[x-cloak]` rule (`:60`).
+
+### Not enforced: the vocabulary this record describes
+
+Everything else in this document is description, not law. No check inspects it, and a redesign may overturn any of it.
+
+- Keep status colour literal and semantic, distinct from the accent.
+- Don't hardcode an accent hex — three schemes break at once.
+- Don't assume slate neutrals; emerald and violet tint their borders and muted text.
 - Don't reach for shadow where a border would do.
+- Don't introduce a second text family.
 - Don't extend `font-extrabold`, and don't add border weights beyond 1px.
 
 **Known gap, recorded not prescribed**
