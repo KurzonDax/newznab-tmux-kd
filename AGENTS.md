@@ -8,8 +8,11 @@ entry points; source files and dependency metadata supply implementation details
 
 Before changing project code, tests, configuration, or documentation, agree the
 behavior, boundaries, and acceptance criteria, record them in a GitHub issue, and
-confirm implementation is authorized. An explicit request to implement a scoped
-issue satisfies this gate. Investigation, filing an issue, or a ready label alone
+confirm implementation is authorized. Human prose-only edits may use ordinary
+branches, maintained Git hooks, and PRs without an issue or agent setup; see the
+manual path in [the workflow contract](docs/agents/development-workflow.md).
+Agent edits and human application/configuration changes retain the issue gate.
+An explicit request to implement a scoped issue satisfies this gate. Investigation, filing an issue, or a ready label alone
 does not authorize implementation. State the issue number and scope before editing.
 
 **New PHP Artisan commands require explicit approval of the specific command.**
@@ -24,22 +27,28 @@ requires approval; ordinary tests use disposable fixtures.
 
 ## Issue-to-merge workflow
 
-Every change, including documentation and one-line fixes, reaches master by PR.
+Every change reaches master by PR. The following issue workflow applies to agents.
 
 1. Start with an open, scoped issue labelled `ready-for-agent` and implementation
-   authorization. From the primary checkout run `scripts/agent-issue-start NUMBER`
-   before project edits. The helper owns the branch, worktree, environment, and runtime.
-2. Use the absolute `WORKTREE_PATH` it reports for every later repository command;
-   work on `issue/NUMBER`. Leave the primary checkout alone while work is in flight.
-   Report reserved state: only the assigned owner resumes their interrupted work
-   using `--recover` from the primary checkout.
-3. Implement, run affected bounded verification, review, and commit the intended
-   files. Review and restage formatter changes; keep temporary artifacts out of Git.
-4. Immediately run `scripts/agent-issue-finish --publish` in the issue worktree.
-5. Run `scripts/agent-issue-finish --monitor` until it prints `MERGE_STATUS=merged`.
-   A timeout interrupts monitoring; rerun it. The helper updates a branch behind
-   master, follows required CI, and cleans up only this issue after merge. It also
-   fast-forwards a clean primary checkout on master (`PRIMARY_MASTER` reports this).
+   authorization. From primary run `scripts/agent-issue-start NUMBER`. It reserves
+   primary on `issue/NUMBER`; `--worktree` explicitly requests a parallel checkout.
+   Keep the task's session identity for interrupted recovery. One task owns each
+   checkout until completion; a shared GitHub account is not session identity.
+2. Use the absolute `WORKTREE_PATH` reported by startup for every later repository
+   command (this is primary by default). The maintainer waits until the task finishes
+   before editing that checkout. Preserve dirty files and unexpected Git state.
+3. Use CodeGraph for code exploration. Startup and verification synchronize or
+   repair its checkout-specific index; rerun `scripts/agent-codegraph` after source
+   edits or branch changes before further exploration. If repair fails, stop and ask
+   whether to wait or approve continuing without CodeGraph for this task. Only an
+   explicit answer authorizes the documented task-specific exception.
+4. Implement, run affected bounded verification, review, and commit intended files.
+   Application checks prepare isolated runtime/dependencies on demand; primary
+   `.env` is preserved. Review/restage formatter changes; keep scratch files out of Git.
+5. Immediately run `scripts/agent-issue-finish --publish`, then
+   `scripts/agent-issue-finish --monitor` until it prints `MERGE_STATUS=merged`.
+   Rerun interrupted monitoring. Primary stays in place and returns to updated
+   `master`; optional-worktree cleanup removes only its own checkout/runtime.
 
 Pushing the branch, opening the PR, enabling squash auto-merge, and monitoring through
 merge are pre-authorized. Do not stop at a commit, open PR, or enabled auto-merge.
@@ -50,7 +59,7 @@ For startup/recovery, concurrent work, or publish failures, consult
 
 Run Git, gh, Python verification, and workflow helpers on the host. Run PHP, Artisan,
 Composer, Node/npm, and other application commands through `scripts/agent-sail` in
-the issue worktree. Direct Sail/Makefile calls do not supply the adapter's isolation.
+the reserved checkout. Direct Sail/Makefile calls do not supply the adapter's isolation.
 
 ```bash
 python3 scripts/agent-verify plan
@@ -59,7 +68,7 @@ python3 scripts/agent-verify final
 scripts/agent-sail artisan COMMAND --no-interaction
 ```
 
-Within the helper-created worktree, run the accepted bounded checks, fix failures
+Within the reserved checkout, run the accepted bounded checks, fix failures
 caused by the requested change, and rerun invalidated checks without asking again.
 The verifier owns applicable formatting, changed-file lint, full-project PHPStan,
 frontend builds/checks, and reusable results; avoid separate duplicate passes.
@@ -72,7 +81,7 @@ Use [CI policy](docs/agents/ci-policy.md) when selecting new/changed tests, chan
 CI, or resolving verification/publication requirements; retain that context while
 its inputs remain unchanged. Documentation changes use document/policy checks.
 For test fixtures, bootstrap, and isolation traps, see [testing rules](.ai/rules/testing.md).
-The runtime starts from tracked `.env.testing`, not the primary `.env`; default
+The runtime mounts tracked `.env.testing`, with separate dependency/cache volumes; default
 SQLite and registered MariaDB fixtures are disposable. This is not a blanket
 network-isolation guarantee for every test in the repository.
 
@@ -114,7 +123,12 @@ Use skills available in the session when their workflows fit the task.
 
 Application pages use Blade/Alpine. The active `resources/forum/blade-tailwind/`
 preset includes Vue; retained Livewire forum templates are inactive. Laravel Pulse
-uses Livewire. For the design system, Alpine CSP/lazy loading, active forum ownership,
+uses Livewire. When visual approval is requested, keep it as a gate: an accessible interactive
+prototype can satisfy proposed-design approval; implemented-result approval needs
+the actual changed app running via `scripts/agent-preview start`. Require both only
+when requested. See the workflow contract for review access and cleanup.
+
+For the design system, Alpine CSP/lazy loading, active forum ownership,
 and admin content interactions, use [frontend rules](.ai/rules/resources.md).
 
 ## Tools and instruction maintenance

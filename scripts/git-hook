@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+"""Git hooks: prose classification uses staged blobs, modes and paths, never PHP."""
+from pathlib import Path
+import subprocess
+import sys
+
+
+def git(*args):
+    return subprocess.check_output(['git', *args])
+
+
+def prose_only():
+    records = git('diff', '--cached', '--raw', '--no-renames', '-z').split(b'\0')
+    for index in range(0, len(records) - 1, 2):
+        header, name = records[index:index + 2]
+        path = name.decode()
+        old_mode, new_mode, *_ = header.decode().lstrip(':').split()
+        if not (path.endswith('.md') or path == 'LICENSE'):
+            return False
+        if old_mode not in ('000000', '100644') or new_mode not in ('000000', '100644'):
+            return False
+        if new_mode != '000000':
+            content = git('show', ':' + path)
+            if b'\0' in content or content.startswith(b'#!'):
+                return False
+    return True
+
+
+def main():
+    event = sys.argv[1]
+    if event in ('post-checkout', 'post-merge', 'pre-push', 'prepare-commit-msg', 'post-commit'):
+        # Runtime fingerprints and CodeGraph sync handle changes on demand.
+        return
+    if event == 'commit-msg':
+        lines = Path(sys.argv[2]).read_text().splitlines()
+        if not lines or not lines[0].strip() or len(lines[0]) > 200:
+            raise ValueError('commit subject must contain 1–200 characters')
+        if len(lines) > 1 and lines[1].strip():
+            raise ValueError('separate the subject and body with a blank line')
+        if any(len(line) > 72 for line in lines[2:] if not line.startswith('#')):
+            raise ValueError('commit body lines must be at most 72 characters')
+        return
+    if event != 'pre-commit':
+        raise ValueError('unsupported hook: ' + event)
+    # Managed checkouts keep ownership rules even for an agent's prose changes.
+    common = Path(git('rev-parse', '--git-common-dir').decode().strip()).resolve()
+    import hashlib
+    owner = common / 'agent-checkouts' / hashlib.sha256(str(Path.cwd().resolve()).encode()).hexdigest()
+    if prose_only() and not owner.exists():
+        return
+    subprocess.run(['bash', '-c', 'script_directory="$PWD/scripts"; source scripts/agent-workflow-lib; agent_load_issue_worktree_context .'], check=True)
+    subprocess.run(['scripts/agent-codegraph'], check=True)
+    subprocess.run(['python3', 'scripts/agent-verify', 'hook'], check=True)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+        sys.exit(f'Git hook: {error}')

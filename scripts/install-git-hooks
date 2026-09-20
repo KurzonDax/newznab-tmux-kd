@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# One-time, dependency-free hook installation, shared by this clone's checkouts.
+set -euo pipefail
+root="$(git rev-parse --show-toplevel)"
+common="$(git rev-parse --git-common-dir)"
+common="$(cd "$common" && pwd -P)"
+destination="$common/agent-hooks"
+configured="$(git config --get core.hooksPath || true)"
+if [[ -n "$configured" && "$configured" != "$destination" ]]; then
+    printf 'Existing custom hooksPath preserved: %s. Reconcile it before installing maintained hooks.\n' "$configured" >&2
+    exit 2
+fi
+mkdir -p "$destination"
+for event in pre-commit commit-msg post-checkout post-merge pre-push prepare-commit-msg post-commit; do
+    cat > "$destination/$event" <<'HOOK'
+#!/usr/bin/env bash
+set -euo pipefail
+root="$(git rev-parse --show-toplevel)"
+event="$(basename "$0")"
+if [[ ! -f "$root/scripts/git-hook" ]]; then
+    case "$event" in post-*) exit 0 ;; esac
+    echo 'This branch lacks scripts/git-hook; update the branch before committing.' >&2
+    exit 2
+fi
+exec python3 "$root/scripts/git-hook" "$event" "$@"
+HOOK
+    chmod 0755 "$destination/$event"
+done
+git config core.hooksPath "$destination"
+printf 'HOOKS_STATUS=ready\n'

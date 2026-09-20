@@ -47,6 +47,7 @@ if [[ -n "$timeout_seconds" ]]; then
 fi
 
 agent_load_issue_worktree_context .
+agent_require_no_git_operation "$AGENT_WORKTREE_ROOT"
 
 print_pull_request_status() {
     printf 'PR_NUMBER=%s\n' "$pull_request_number"
@@ -127,6 +128,8 @@ if [[ -n "$timeout_seconds" ]]; then
 fi
 
 while true; do
+    agent_load_issue_worktree_context .
+    agent_require_no_git_operation "$AGENT_WORKTREE_ROOT"
     if [[ -n "$monitor_deadline" && "$SECONDS" -ge "$monitor_deadline" ]]; then
         print_pull_request_status pending
         printf 'The monitor window elapsed before merge. Rerun scripts/agent-issue-finish --monitor until it prints MERGE_STATUS=merged.\n'
@@ -154,11 +157,11 @@ while true; do
 
     case "$merge_state" in
         BEHIND)
+            agent_require_clean_checkout "$AGENT_WORKTREE_ROOT"
             agent_fetch_origin_master "$AGENT_WORKTREE_ROOT" ||
                 agent_fail 'could not refresh origin/master; check network access, then rerun scripts/agent-issue-finish --monitor rather than ending the session'
             if ! git -C "$AGENT_WORKTREE_ROOT" merge --no-edit origin/master; then
-                git -C "$AGENT_WORKTREE_ROOT" merge --abort >/dev/null 2>&1 || true
-                agent_fail 'origin/master conflicts with the issue branch; merge origin/master in the issue worktree, resolve the conflicts, commit, then rerun scripts/agent-issue-finish --monitor'
+                    agent_fail 'origin/master conflicts with the issue branch; merge origin/master in the issue worktree, resolve the conflicts, commit, then rerun scripts/agent-issue-finish --monitor'
             fi
             git -C "$AGENT_WORKTREE_ROOT" push "$AGENT_REMOTE" "$AGENT_ISSUE_BRANCH"
             continue
@@ -187,15 +190,32 @@ done
 
 # Cleanup is deliberately scoped to this worktree's Compose label, remote branch,
 # registered linked worktree, and local issue branch.
-scripts/agent-sail down --remove-orphans
+# Deferred prose-only tasks may never have started Docker.
+if [[ -d "$(git rev-parse --git-path agent-runtime)" ]] ||
+    { [[ "$AGENT_CHECKOUT_MODE" == worktree ]] && ! agent_has_checkout_owner "$AGENT_WORKTREE_ROOT" "$AGENT_COMMON_GIT_DIRECTORY"; }; then
+    scripts/agent-sail down --remove-orphans --volumes
+fi
 if agent_remote_branch_exists "$AGENT_WORKTREE_ROOT" "$AGENT_ISSUE_BRANCH"; then
     git -C "$AGENT_WORKTREE_ROOT" push "$AGENT_REMOTE" --delete "$AGENT_ISSUE_BRANCH"
 fi
 
-cleanup_parent="$(dirname "$AGENT_WORKTREE_ROOT")"
-cd "$cleanup_parent"
-git --git-dir="$AGENT_COMMON_GIT_DIRECTORY" worktree remove "$AGENT_WORKTREE_ROOT"
+# Recheck immediately before cleanup; never discard user edits made while monitoring.
+agent_require_clean_checkout "$AGENT_WORKTREE_ROOT"
+owned=false
+if agent_has_checkout_owner "$AGENT_WORKTREE_ROOT" "$AGENT_COMMON_GIT_DIRECTORY"; then
+    owned=true
+fi
+if [[ "$AGENT_CHECKOUT_MODE" == primary ]]; then
+    git -C "$AGENT_WORKTREE_ROOT" -c core.hooksPath=/dev/null switch master
+else
+    cleanup_parent="$(dirname "$AGENT_WORKTREE_ROOT")"
+    cd "$cleanup_parent"
+    git --git-dir="$AGENT_COMMON_GIT_DIRECTORY" worktree remove "$AGENT_WORKTREE_ROOT"
+fi
 git --git-dir="$AGENT_COMMON_GIT_DIRECTORY" branch -D "$AGENT_ISSUE_BRANCH"
+if [[ "$owned" == true ]]; then
+    python3 "$AGENT_PRIMARY_CHECKOUT/scripts/agent-checkout" release "$AGENT_WORKTREE_ROOT" "$AGENT_COMMON_GIT_DIRECTORY" "$AGENT_ISSUE_NUMBER"
+fi
 
 # The merge is done, so a failed or skipped sync must never fail the finish.
 primary_master_status=skipped
@@ -209,7 +229,11 @@ if [[ "$(git -C "$AGENT_PRIMARY_CHECKOUT" symbolic-ref --quiet --short HEAD 2>/d
 fi
 
 print_pull_request_status merged
-printf 'REMOVED_WORKTREE=%s\n' "$AGENT_WORKTREE_ROOT"
+if [[ "$AGENT_CHECKOUT_MODE" == worktree ]]; then
+    printf 'REMOVED_WORKTREE=%s\n' "$AGENT_WORKTREE_ROOT"
+else
+    printf 'PRESERVED_CHECKOUT=%s\n' "$AGENT_WORKTREE_ROOT"
+fi
 printf 'REMOVED_BRANCH=%s\n' "$AGENT_ISSUE_BRANCH"
 printf 'PRIMARY_MASTER=%s\n' "$primary_master_status"
 if [[ "$primary_master_status" != synced ]]; then

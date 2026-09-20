@@ -1,6 +1,6 @@
 {
-  "issue": 697,
-  "base": "42e0bf54c9de00600af6fcb7a58ca87082be4406",
+  "issue": 752,
+  "base": "cb1cbdd264867f95e07486faf435d09d024c314c",
   "files": {
     ".github/actions/ci-sail/action.yml": "ff14fe059df0e8cab41e02e20c986021a434c3126b500d35a2fef14bfb8968e9",
     ".github/ci-policy.json": "5bd0e4c21c7d8e0f057db2748b09d33220603f3f0cd1756507078259b11681b6",
@@ -11,7 +11,7 @@
     ".github/workflows/ci-maintenance.yml": "5b6efdfeb288d153b13f7452f64855fc8a6847685cfa1f6dee81ba24bca92260",
     ".github/workflows/laravel.yml": "4283b7606d13f56eb10df963191b5c7151c7e0ff9058e1b5430f7e378218420b",
     "Makefile": "d0a0879e09e7222915753c8d6da91887d2dad7f072289c5c0f5ebdf8d2e47258",
-    "captainhook.json": "1525fedcbd2a25700abe952e11e02cd6644c2b858ad206c1b85431b3ebe0a5c7",
+    "captainhook.json": "795f55d4fd4ff7d848d04e6441078be2eed9db2b9d0832d6145771dbdb440a06",
     "docker/8.5/Dockerfile": "7d2fa32cfcb638209845fb721988014b2e245c30a17d6047fa0e8c67f6e23ab5",
     "docker/8.5/nginx.conf": "8276f8c62527dcb3991e82423040cdcae35c2c597a67e1373b377be8011d6ec7",
     "docker/8.5/php.ini": "fd8434374c99489dfaaec4f5178e666aab4672ada348a9ed56316cf016be5714",
@@ -19,8 +19,8 @@
     "docker/8.5/start-container": "b4df5f179530831843d432fe2c3707aa861f346aab396ff715974a02f1cfa8b9",
     "docker/8.5/supervisord.conf": "100641fa7453c27fefaa23c0399ece338ad4a9078e194021b202d2d65682b92e",
     "phpunit.xml": "7a78296d1c75778f5908b9653350e6b21bd2dffe3ddfb7c582e40815842bbc30",
-    "scripts/agent-issue-finish": "53a386305c2247ef9db48802b9f0bbdb0dc8cfab2ba6d05c9c4124f2080139b4",
-    "scripts/agent-verify": "9644d77b720333489ff3a12d650f08821981d0efaa449efaf185336bfd4e1f33",
+    "scripts/agent-issue-finish": "356ac6f28a9949ea3680d9cb68d91203615b12cfb4215448d57f0d17833e1861",
+    "scripts/agent-verify": "c06a4d5d2277b60c0e314f39890a21ea3131b0973cc23613753fdf3003496786",
     "scripts/ci-classify-changes": "d812ad62f471221e46ef073eb056485eeaeb198d669b3c8a1d2432ca1e95f8f5",
     "scripts/ci-inventory": "7b413e80baf67388534647bf53fee539612fa567a29f4c37b0da9be4dcce302c",
     "scripts/ci-phpunit-shard": "7f3138e751ce05807d1c178526aa74fec0cf8afe61e6db7ff718e29a74b651a5",

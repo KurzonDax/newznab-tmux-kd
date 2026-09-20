@@ -7,21 +7,25 @@ script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$script_directory/agent-workflow-lib"
 
 recover=false
+use_worktree=false
 issue_number=''
 
 for argument in "$@"; do
     case "$argument" in
+        --worktree)
+            use_worktree=true
+            ;;
         --recover)
             recover=true
             ;;
         *)
-            [[ -z "$issue_number" ]] || agent_fail 'usage: scripts/agent-issue-start [--recover] <issue-number>'
+            [[ -z "$issue_number" ]] || agent_fail 'usage: scripts/agent-issue-start [--worktree] [--recover] <issue-number>'
             issue_number="$argument"
             ;;
     esac
 done
 
-[[ -n "$issue_number" ]] || agent_fail 'usage: scripts/agent-issue-start [--recover] <issue-number>'
+[[ -n "$issue_number" ]] || agent_fail 'usage: scripts/agent-issue-start [--worktree] [--recover] <issue-number>'
 agent_require_issue_number "$issue_number"
 
 script_repository_root="$(agent_repository_root "$script_directory/..")" || agent_fail 'startup helper is not in a Git repository; run scripts/agent-issue-start from the primary checkout root'
@@ -39,7 +43,41 @@ agent_validate_origin "$primary_checkout"
 branch="issue/$issue_number"
 worktree_path="$(agent_expected_worktree_path "$primary_checkout" "$issue_number")" ||
     agent_fail 'could not derive the issue worktree path; report the repository state to the user'
+if [[ "$recover" == true ]]; then
+    recovered_path="$(agent_branch_worktree_path "$common_git_directory" "$branch")"
+    if [[ "$recovered_path" == "$primary_checkout" ]]; then
+        use_worktree=false
+    elif [[ -n "$recovered_path" ]]; then
+        use_worktree=true
+    fi
+fi
+if [[ "$use_worktree" == false ]]; then
+    worktree_path="$primary_checkout"
+fi
 worktrees_parent="$(dirname "$worktree_path")"
+# Inspect existing ownership early, but reserve only after issue validation.
+# A rejected issue must not lock an otherwise available checkout.
+legacy_recovery=false
+ownership_reserved=false
+if [[ "$recover" == true && "$use_worktree" == true && -f "$worktree_path/.git" ]] &&
+    ! agent_has_checkout_owner "$worktree_path" "$common_git_directory"; then
+    legacy_recovery=true
+elif [[ "$recover" == true ]]; then
+    python3 "$script_directory/agent-checkout" check "$worktree_path" "$common_git_directory" "$issue_number"
+    ownership_reserved=true
+elif agent_has_checkout_owner "$worktree_path" "$common_git_directory"; then
+    agent_fail 'checkout is owned; recover only its interrupted task, or use an independent worktree'
+fi
+if [[ "$use_worktree" == false ]]; then
+    agent_require_no_git_operation "$primary_checkout"
+    current_branch="$(git -C "$primary_checkout" symbolic-ref --short HEAD)"
+    if [[ "$recover" == false ]]; then
+        agent_require_clean_checkout "$primary_checkout"
+        [[ "$current_branch" == master ]] || agent_fail 'primary must be on master before startup; preserve and report the current branch'
+    else
+        [[ "$current_branch" == "$branch" || "$current_branch" == master ]] || agent_fail 'unexpected branch transition; preserve and report the checkout'
+    fi
+fi
 current_login="$(gh api user --jq .login)" || agent_fail 'could not resolve the authenticated GitHub user; verify gh auth status, then rerun scripts/agent-issue-start'
 
 # Read all ownership and readiness signals before the first GitHub write.
@@ -67,7 +105,7 @@ pull_request_count="$(gh pr list --repo "$AGENT_EXPECTED_REPOSITORY" --state all
     agent_fail "multiple pull requests exist for $branch; ask the user which one to keep, close the others, then rerun scripts/agent-issue-start"
 
 if [[ "$recover" == true ]]; then
-    [[ "$assignee_count" -eq 1 && "$current_user_assignment_count" -eq 1 ]] ||
+    [[ ( "$assignee_count" -eq 1 && "$current_user_assignment_count" -eq 1 ) || ( "$legacy_recovery" == false && "$assignee_count" -eq 0 ) ]] ||
         agent_fail "recovery requires issue #$issue_number to be assigned only to $current_login; report the ownership mismatch to the user"
 else
     [[ "$assignee_count" -eq 0 ]] ||
@@ -87,32 +125,43 @@ fi
 if agent_remote_branch_exists "$primary_checkout" "$branch"; then
     remote_branch_exists=true
 fi
-if [[ -e "$worktree_path" || -L "$worktree_path" ]]; then
+if [[ "$use_worktree" == true && ( -e "$worktree_path" || -L "$worktree_path" ) ]]; then
     path_exists=true
 fi
 
+if [[ "$recover" == true && "$local_branch_exists" == false && "$remote_branch_exists" == false && "$path_exists" == false && -z "$existing_worktree_path" && "$pull_request_count" -eq 0 && "$legacy_recovery" == false ]]; then
+    recover=false
+fi
 if [[ "$recover" == false ]]; then
     if [[ "$local_branch_exists" == true || "$remote_branch_exists" == true || "$path_exists" == true ||
         -n "$existing_worktree_path" || "$pull_request_count" -gt 0 ]]; then
         agent_fail "issue #$issue_number already has reserved state; report it to the user: only the assigned owner may inspect it and rerun with --recover"
     fi
 
-    mkdir -p "$worktrees_parent"
-    if ! git -C "$primary_checkout" -c core.hooksPath=/dev/null worktree add -b "$branch" \
-        "$worktree_path" origin/master; then
-        if agent_local_branch_exists "$common_git_directory" "$branch"; then
-            agent_fail "another session acquired the branch lock for issue #$issue_number; pick a different issue"
+    if [[ "$ownership_reserved" == false ]]; then
+        python3 "$script_directory/agent-checkout" reserve "$worktree_path" "$common_git_directory" "$issue_number"
+    fi
+    if [[ "$use_worktree" == false ]]; then
+        agent_require_clean_checkout "$primary_checkout"
+        [[ "$(git -C "$primary_checkout" branch --show-current)" == master ]] || agent_fail 'primary changed branches during startup; preserve and report its state'
+        git -C "$primary_checkout" -c core.hooksPath=/dev/null switch -c "$branch" origin/master
+    else
+        mkdir -p "$worktrees_parent"
+        if ! git -C "$primary_checkout" -c core.hooksPath=/dev/null worktree add -b "$branch" \
+            "$worktree_path" origin/master; then
+            if agent_local_branch_exists "$common_git_directory" "$branch"; then
+                agent_fail "another session acquired the branch lock for issue #$issue_number; pick a different issue"
+            fi
+            agent_fail "could not reserve the worktree for issue #$issue_number; inspect the git error above, then rerun scripts/agent-issue-start $issue_number"
         fi
-        agent_fail "could not reserve the worktree for issue #$issue_number; inspect the git error above, then rerun scripts/agent-issue-start $issue_number"
+
     fi
 
     assignment_attempt=1
     while ! gh issue edit "$issue_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
         --add-assignee "$current_login" >/dev/null; do
         if [[ "$assignment_attempt" -ge 4 ]]; then
-            git -C "$primary_checkout" worktree remove "$worktree_path"
-            git --git-dir="$common_git_directory" branch -D "$branch"
-            agent_fail "could not assign issue #$issue_number; reservation released, rerun scripts/agent-issue-start $issue_number"
+            agent_fail "could not assign issue #$issue_number; reservation preserved; inspect assignment and recover this task"
         fi
         assignment_attempt=$((assignment_attempt + 1))
         sleep "$assignment_attempt"
@@ -126,7 +175,13 @@ else
         agent_fail "the issue branch is checked out at an unexpected path: $existing_worktree_path; report it to the user before touching that checkout"
     fi
 
-    if [[ "$path_exists" == true ]]; then
+    if [[ "$use_worktree" == false ]]; then
+        [[ "$existing_worktree_path" == "$primary_checkout" || -z "$existing_worktree_path" ]] || agent_fail 'issue branch belongs to a different checkout'
+        if [[ "$current_branch" != "$branch" ]]; then
+            agent_require_clean_checkout "$primary_checkout"
+            git -C "$primary_checkout" -c core.hooksPath=/dev/null switch "$branch"
+        fi
+    elif [[ "$path_exists" == true ]]; then
         [[ "$existing_worktree_path" == "$worktree_path" ]] ||
             agent_fail "the recovery path exists but is not the registered issue worktree: $worktree_path; report it to the user before touching that path"
     elif [[ "$local_branch_exists" == true ]]; then
@@ -142,7 +197,11 @@ else
     fi
 fi
 
-if ! (cd "$worktree_path" && scripts/agent-worktree-setup); then
+if [[ "$assignee_count" -eq 0 && "$recover" == true ]]; then
+    gh issue edit "$issue_number" --repo "$AGENT_EXPECTED_REPOSITORY" --add-assignee "$current_login" >/dev/null
+fi
+agent_require_no_git_operation "$worktree_path"
+if ! (cd "$worktree_path" && scripts/agent-identity && scripts/agent-codegraph); then
     printf 'Setup failed after reservation. Preserved recovery state:\n' >&2
     printf 'ISSUE_NUMBER=%s\nBRANCH=%s\nWORKTREE_PATH=%s\n' \
         "$issue_number" "$branch" "$worktree_path" >&2
