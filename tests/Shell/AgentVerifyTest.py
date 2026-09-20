@@ -31,6 +31,33 @@ class VerifyTest(unittest.TestCase):
             subprocess.run(command, cwd=root, check=True, capture_output=True)
             self.assertEqual('xxx', (root / 'count').read_text())
 
+    def test_hook_environment_cannot_redirect_fixture_git_to_calling_repository(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            outer = root / 'outer'
+            fixture = root / 'fixture'
+            outer.mkdir(); fixture.mkdir()
+            def git(*args):
+                return subprocess.check_output(['git', '-C', str(outer), *args], text=True).strip()
+            git('init', '-q')
+            git('config', 'user.name', 'Original owner')
+            (outer / 'original').write_text('preserve staged content')
+            git('add', 'original')
+            original_index = (outer / '.git/index').read_bytes()
+            (fixture / 'fixture').write_text('fixture content')
+            env = dict(os.environ, GIT_DIR=str(outer / '.git'), GIT_INDEX_FILE=str(outer / '.git/index'))
+            child = ('import subprocess; '
+                     f'subprocess.run(["git", "init", "-q", {str(fixture)!r}], check=True); '
+                     f'subprocess.run(["git", "-C", {str(fixture)!r}, "config", "user.name", "Fixture owner"], check=True); '
+                     f'subprocess.run(["git", "-C", {str(fixture)!r}, "add", "."], check=True)')
+            command = ['python3', str(ROOT / 'scripts/agent-verify'), 'run', '--key', 'hook-fixture',
+                       '--seconds', '5', '--', 'python3', '-c', child]
+            result = subprocess.run(command, cwd=outer, env=env, capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual('Original owner', git('config', 'user.name'))
+            self.assertEqual(original_index, (outer / '.git/index').read_bytes())
+            self.assertTrue((fixture / '.git').is_dir())
+
     def test_failure_is_never_cached_and_timeout_ends_child_processes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

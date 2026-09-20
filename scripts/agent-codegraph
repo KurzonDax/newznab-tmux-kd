@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Task-local approval is supplied only after the maintainer explicitly grants it.
+set -euo pipefail
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+usable() {
+    codegraph status --json "$root" | python3 -c '
+import json, pathlib, sys
+try:
+    state=json.load(sys.stdin)
+    valid=(state.get("initialized") and pathlib.Path(state.get("projectPath", "")).resolve() == pathlib.Path.cwd()
+           and state.get("fileCount", 0) > 0 and not state.get("worktreeMismatch")
+           and state.get("index", {}).get("state") == "complete"
+           and not state.get("index", {}).get("reindexRecommended")
+           and not any(state.get("pendingChanges", {}).values()))
+    sys.exit(0 if valid else 1)
+except (ValueError, TypeError): sys.exit(1)
+'
+}
+if command -v codegraph >/dev/null; then
+    if [[ -d .codegraph ]]; then
+        codegraph sync "$root" || true
+    else
+        codegraph init "$root" || true
+    fi
+    if ! usable; then
+        codegraph index "$root" || true
+    fi
+    if usable && codegraph explore 'scripts/ci_runtime.py'; then
+        printf 'CODEGRAPH_STATUS=ready\n'
+        exit 0
+    fi
+fi
+if [[ "${AGENT_CODEGRAPH_APPROVED_ISSUE:-}" == "$(git branch --show-current)" ]]; then
+    printf 'CODEGRAPH_STATUS=maintainer-approved-exception\n'
+    exit 0
+fi
+printf 'CODEGRAPH_STATUS=approval-required\nCodeGraph setup/repair failed. Stop implementation and ask the maintainer to approve continuing without CodeGraph for this task or wait for repair.\n' >&2
+exit 2

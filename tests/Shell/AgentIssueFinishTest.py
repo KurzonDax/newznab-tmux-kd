@@ -12,14 +12,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class FinishTest(unittest.TestCase):
-    def exercise(self, scenario, expected):
+    def exercise(self, scenario, expected, primary_mode=False, managed_worktree=False):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             primary = root / 'primary'
             primary.mkdir()
             scripts = primary / 'scripts'
             scripts.mkdir()
-            for name in ('agent-issue-finish', 'agent-check-snapshot', 'agent-workflow-lib'):
+            for name in ('agent-issue-finish', 'agent-check-snapshot', 'agent-workflow-lib', 'agent-checkout'):
                 shutil.copy2(ROOT / 'scripts' / name, scripts / name)
             (scripts / 'agent-sail').write_text('#!/usr/bin/env bash\nprintf "sail %s\\n" "$*" >> "$OPERATIONS"\n')
             (scripts / 'agent-sail').chmod(0o755)
@@ -35,7 +35,16 @@ class FinishTest(unittest.TestCase):
             git('remote', 'add', 'origin', 'https://github.com/KurzonDax/newznab-tmux-kd.git')
             git('update-ref', 'refs/remotes/origin/master', 'HEAD')
             worktree = root / 'worktrees' / 'issue-123'
-            git('worktree', 'add', '-qb', 'issue/123', str(worktree))
+            if primary_mode:
+                worktree = primary
+                git('switch', '-qc', 'issue/123')
+                subprocess.run(['python3', str(scripts / 'agent-checkout'), 'reserve', str(primary), str(primary / '.git'), '123'],
+                               check=True, env=dict(os.environ, AGENT_SESSION_ID='fixture'), capture_output=True)
+            else:
+                git('worktree', 'add', '-qb', 'issue/123', str(worktree))
+                if managed_worktree:
+                    subprocess.run(['python3', str(scripts / 'agent-checkout'), 'reserve', str(worktree), str(primary / '.git'), '123'],
+                                   check=True, env=dict(os.environ, AGENT_SESSION_ID='fixture'), capture_output=True)
             fake = root / 'bin'
             fake.mkdir()
             (fake / 'git').write_text('''#!/usr/bin/env python3
@@ -82,7 +91,7 @@ else: sys.exit('Unexpected gh: ' + repr(args))
                 path.chmod(0o755)
             operations = root / 'operations'
             env = dict(os.environ, PATH=str(fake) + os.pathsep + os.environ['PATH'],
-                        OPERATIONS=str(operations), REAL_GIT=real_git, SCENARIO=scenario, COUNTER=str(root / 'counter'))
+                        AGENT_SESSION_ID='fixture', OPERATIONS=str(operations), REAL_GIT=real_git, SCENARIO=scenario, COUNTER=str(root / 'counter'))
             result = subprocess.run(['scripts/agent-issue-finish', '--monitor', '--timeout-seconds', '5'],
                                     cwd=worktree, env=env, capture_output=True, text=True)
             self.assertEqual(expected, result.returncode, result.stderr + result.stdout)
@@ -90,9 +99,17 @@ else: sys.exit('Unexpected gh: ' + repr(args))
             self.assertIn('auto-merge armed', calls)
             if expected == 0:
                 self.assertIn('MERGE_STATUS=merged', result.stdout)
-                self.assertIn('sail down --remove-orphans', calls)
-                self.assertFalse(worktree.exists())
+                if not primary_mode and not managed_worktree:
+                    self.assertIn('sail down --remove-orphans', calls)
+                if primary_mode:
+                    self.assertTrue(worktree.exists())
+                    self.assertEqual(b'master\n', git('branch', '--show-current').stdout)
+                    self.assertEqual([], list((primary / '.git/agent-checkouts').iterdir()))
+                else:
+                    self.assertFalse(worktree.exists())
                 self.assertTrue(primary.exists())
+                if primary_mode or managed_worktree:
+                    self.assertNotIn('sail down', calls)
             else:
                 self.assertNotIn('sail down', calls)
                 self.assertTrue(worktree.exists())
@@ -104,6 +121,12 @@ else: sys.exit('Unexpected gh: ' + repr(args))
         for scenario in ('merged', 'success', 'base-update', 'head-change'):
             with self.subTest(scenario=scenario):
                 self.exercise(scenario, 0)
+
+    def test_unused_optional_runtime_does_not_require_docker_for_cleanup(self):
+        self.exercise('merged', 0, managed_worktree=True)
+
+    def test_primary_cleanup_preserves_checkout_and_returns_to_master(self):
+        self.exercise('merged', 0, primary_mode=True)
 
     def test_current_failure_and_review_preserve_the_worktree(self):
         for scenario in ('failure', 'review'):

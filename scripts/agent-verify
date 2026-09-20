@@ -26,7 +26,7 @@ def files():
 
 
 def digest(command, inputs, identity):
-    value = hashlib.sha256(json.dumps([command, identity], sort_keys=True).encode())
+    value = hashlib.sha256(json.dumps([command, identity, str(Path.cwd().resolve()), git('branch', '--show-current')], sort_keys=True).encode())
     for filename in sorted(set(inputs)):
         path = Path(filename)
         value.update(filename.encode() + b'\0')
@@ -52,7 +52,12 @@ def checked(key, command, seconds, inputs, identity='', container=False):
         return
     receipt.unlink(missing_ok=True)
     execute = container_command(command, seconds) if container and not Path('/.dockerenv').exists() else command
-    elapsed = run(execute, seconds + (10 if container else 0))
+    # Git exports repository selectors to hooks. Fixture commands must discover
+    # their own repositories from cwd, rather than mutate the caller's metadata.
+    environment = os.environ.copy()
+    for name in git('rev-parse', '--local-env-vars').splitlines():
+        environment.pop(name, None)
+    elapsed = run(execute, seconds + (10 if container else 0), env=environment)
     if fingerprint != digest(command, inputs, identity):
         raise ValueError(f'{key} changed its inputs; review/restage changes and run verification again')
     temporary = receipt.with_suffix('.tmp')
@@ -82,6 +87,8 @@ def final_checks(args):
     if args.mode == 'plan':
         print(json.dumps(plan))
         return
+    if args.mode != 'hook' and Path('scripts/agent-codegraph').exists():
+        subprocess.run(['scripts/agent-codegraph'], check=True, stdout=subprocess.DEVNULL)
     subprocess.run([sys.executable, 'scripts/ci-preflight', '--base', args.base], check=True, stdout=subprocess.DEVNULL)
     if args.mode == 'hook':
         staged = set(subprocess.check_output(['git', 'diff', '--cached', '--name-only', '-z']).decode().split('\0'))
@@ -89,7 +96,7 @@ def final_checks(args):
         if (staged & unstaged) - {''}:
             raise ValueError('staged/unstaged versions differ; stage the intended verified version before committing')
     inputs = [p for p in files() if not p.endswith('.md') and not p.startswith('docs/')]
-    inputs += ['.env', '.env.testing']
+    inputs += ['.env.testing']
     php_affecting = any(p.endswith('.php') or p in ['composer.json', 'composer.lock', 'phpunit.xml'] or p.startswith(('bootstrap/', 'config/')) for p in paths)
     identity = runtime_identity() if php_affecting or frontend else sys.version
     identity += git('rev-parse', args.base)
@@ -188,7 +195,7 @@ def measurement_covers(path, base, inputs, identity):
 def focused(args):
     if not args.test or not Path(args.test).is_file():
         raise ValueError('focused requires an existing --test file')
-    inputs = [p for p in files() if not p.endswith('.md') and not p.startswith('docs/')] + ['.env', '.env.testing']
+    inputs = [p for p in files() if not p.endswith('.md') and not p.startswith('docs/')] + ['.env.testing']
     identity = runtime_identity() + git('rev-parse', args.base)
     specialist = args.test.startswith('tests/Integration/')
     limit = 120 if specialist else 30
@@ -242,7 +249,7 @@ def main():
             raise ValueError('run requires --key and -- command')
         checked(args.key, argv[split + 1:], args.seconds, args.inputs, sys.version)
     elif args.mode == 'evidence':
-        inputs = [p for p in files() if not p.endswith('.md') and not p.startswith('docs/')] + ['.env', '.env.testing']
+        inputs = [p for p in files() if not p.endswith('.md') and not p.startswith('docs/')] + ['.env.testing']
         identity = runtime_identity() + git('rev-parse', args.base)
         if not measurement_covers(args.test, args.base, inputs, identity):
             raise ValueError('changed tests have not all been measured')

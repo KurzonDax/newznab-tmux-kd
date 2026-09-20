@@ -1,0 +1,20 @@
+#!/usr/bin/env python3
+"""Fingerprint branch-specific runtime inputs without reading development secrets."""
+import hashlib
+from pathlib import Path
+import subprocess
+import sys
+
+kind = sys.argv[1]
+paths = ['composer.json', 'composer.lock', 'package.json', 'package-lock.json']
+if kind == 'runtime':
+    paths += ['.env.testing', '.github/docker-compose.ci.yml', 'scripts/agent-sail', 'scripts/agent-worktree-setup']
+    for directory in ('docker/8.5', 'bootstrap', 'config', 'routes', 'app/Providers'):
+        paths += [str(path) for path in Path(directory).rglob('*') if path.is_file() and 'cache' not in path.parts]
+value = hashlib.sha256()
+value.update(str(Path.cwd().resolve()).encode())
+value.update(subprocess.check_output(['git', 'branch', '--show-current']))
+for name in sorted(paths):
+    path = Path(name)
+    value.update(name.encode() + b'\0' + (path.read_bytes() if path.is_file() else b'<missing>'))
+print(value.hexdigest())

@@ -41,43 +41,11 @@
         "actions": []
     },
     "post-merge": {
-        "enabled": true,
-        "actions": [
-            {
-                "action": "composer install",
-                "options": {},
-                "conditions": [
-                    {
-                        "exec": "\\CaptainHook\\App\\Hook\\Condition\\FileChanged\\Any",
-                        "args": [
-                            [
-                                "composer.json",
-                                "composer.lock"
-                            ]
-                        ]
-                    }
-                ]
-            }
-        ]
+        "enabled": false,
+        "actions": []
     },
     "post-checkout": {
-        "enabled": true,
-        "actions": [
-            {
-                "action": "composer install",
-                "options": {},
-                "conditions": [
-                    {
-                        "exec": "\\CaptainHook\\App\\Hook\\Condition\\FileChanged\\Any",
-                        "args": [
-                            [
-                                "composer.json",
-                                "composer.lock"
-                            ]
-                        ]
-                    }
-                ]
-            }
-        ]
+        "enabled": false,
+        "actions": []
     }
 }

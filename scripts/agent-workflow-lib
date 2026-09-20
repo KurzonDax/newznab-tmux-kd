@@ -149,8 +149,6 @@ agent_load_issue_worktree_context() {
         agent_fail 'could not resolve worktree root; report the checkout state to the user'
     [[ "$(pwd -P)" == "$AGENT_WORKTREE_ROOT" ]] ||
         agent_fail 'run this command from the issue worktree root'
-    [[ -f "$AGENT_WORKTREE_ROOT/.git" ]] ||
-        agent_fail 'the current checkout is not a linked worktree; run this command from the issue worktree created by scripts/agent-issue-start'
 
     AGENT_ISSUE_BRANCH="$(git -C "$AGENT_WORKTREE_ROOT" symbolic-ref --quiet --short HEAD 2>/dev/null)" ||
         agent_fail 'the issue worktree must have a checked-out branch; switch it back to its issue/<number> branch, or report the state to the user'
@@ -169,11 +167,38 @@ agent_load_issue_worktree_context() {
 
     expected_worktree="$(agent_expected_worktree_path "$AGENT_PRIMARY_CHECKOUT" "$AGENT_ISSUE_NUMBER")" ||
         agent_fail 'could not derive the issue worktree path; report the repository state to the user'
-    [[ "$AGENT_WORKTREE_ROOT" == "$expected_worktree" ]] ||
+    [[ "$AGENT_WORKTREE_ROOT" == "$expected_worktree" || "$AGENT_WORKTREE_ROOT" == "$AGENT_PRIMARY_CHECKOUT" ]] ||
         agent_fail "unexpected issue worktree path: $AGENT_WORKTREE_ROOT; report it to the user before touching this checkout"
 
+    AGENT_CHECKOUT_MODE=worktree
+    [[ "$AGENT_WORKTREE_ROOT" != "$AGENT_PRIMARY_CHECKOUT" ]] || AGENT_CHECKOUT_MODE=primary
+    if [[ "$AGENT_CHECKOUT_MODE" == primary ]] || agent_has_checkout_owner "$AGENT_WORKTREE_ROOT" "$AGENT_COMMON_GIT_DIRECTORY"; then
+        python3 "$script_directory/agent-checkout" check "$AGENT_WORKTREE_ROOT" "$AGENT_COMMON_GIT_DIRECTORY" "$AGENT_ISSUE_NUMBER" >/dev/null
+    fi
     agent_validate_origin "$AGENT_WORKTREE_ROOT"
     # shellcheck disable=SC2034
     AGENT_COMPOSE_PROJECT_NAME="$(agent_compose_project_name "$AGENT_WORKTREE_ROOT")" ||
         agent_fail 'could not derive the Compose project name; report the worktree path to the user'
+}
+
+agent_has_checkout_owner() {
+    python3 - "$1" "$2" <<'PYTHON'
+import hashlib, pathlib, sys
+path = pathlib.Path(sys.argv[2]) / 'agent-checkouts' / hashlib.sha256(str(pathlib.Path(sys.argv[1]).resolve()).encode()).hexdigest()
+sys.exit(0 if path.exists() else 1)
+PYTHON
+}
+
+agent_require_no_git_operation() {
+    local root="$1" state
+    for state in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply BISECT_START index.lock; do
+        [[ ! -e "$(git -C "$root" rev-parse --git-path "$state")" ]] ||
+            agent_fail "interrupted Git operation ($state); preserve and report the checkout"
+    done
+}
+
+agent_require_clean_checkout() {
+    agent_require_no_git_operation "$1"
+    [[ -z "$(git -C "$1" status --porcelain --untracked-files=normal)" ]] ||
+        agent_fail 'checkout has dirty files; preserve and report them before startup'
 }

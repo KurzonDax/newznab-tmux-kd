@@ -8,6 +8,16 @@ source "$script_directory/agent-workflow-lib"
 
 agent_load_issue_worktree_context .
 
+# Sail loads .env.testing explicitly; development .env is never sourced.
+export APP_ENV=testing
+case "${1:-}" in
+    down|stop|ps|logs|config) ;;
+    *)
+        if [[ "${AGENT_RUNTIME_SETUP:-}" != 1 ]]; then
+            scripts/agent-worktree-setup >&2
+        fi
+        ;;
+esac
 export COMPOSE_PROJECT_NAME="$AGENT_COMPOSE_PROJECT_NAME"
 export APP_SERVICE='laravel.test'
 export AGENT_COMMON_GIT_DIRECTORY
@@ -20,13 +30,83 @@ trap 'rm -f -- "$compose_override"' EXIT
 cat >"$compose_override" <<'YAML'
 services:
   laravel.test:
+    env_file:
+      - ${AGENT_WORKTREE_ROOT}/.env.testing
+    environment:
+      APP_CONFIG_CACHE: /tmp/agent-cache/config.php
+      APP_ROUTES_CACHE: /tmp/agent-cache/routes.php
+      APP_EVENTS_CACHE: /tmp/agent-cache/events.php
+      APP_PACKAGES_CACHE: /tmp/agent-cache/packages.php
+      APP_SERVICES_CACHE: /tmp/agent-cache/services.php
+      VIEW_COMPILED_PATH: /tmp/agent-cache/views
     volumes:
+      - type: bind
+        source: ${AGENT_WORKTREE_ROOT}/.env.testing
+        target: /var/www/html/.env
+        read_only: true
+      - agent-vendor:/var/www/html/vendor
+      - agent-node:/var/www/html/node_modules
+      - agent-framework:/var/www/html/storage/framework
+      - agent-logs:/var/www/html/storage/logs
       - type: bind
         source: ${AGENT_COMMON_GIT_DIRECTORY}
         target: ${AGENT_COMMON_GIT_DIRECTORY}
       - type: bind
         source: ${AGENT_WORKTREE_ROOT}
         target: ${AGENT_WORKTREE_ROOT}
+  review-db:
+    image: mariadb:11.4
+    profiles: [review]
+    tmpfs:
+      - /var/lib/mysql
+    environment:
+      MARIADB_DATABASE: agent_review
+      MARIADB_USER: sail
+      MARIADB_PASSWORD: password
+      MARIADB_ROOT_PASSWORD: password
+    healthcheck:
+      test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+  review:
+    image: nntmux-ci/php85
+    extends:
+      service: laravel.test
+    profiles: [review]
+    environment:
+      WWWUSER: ${WWWUSER}
+      APP_ENV: testing
+      DB_CONNECTION: mariadb
+      DB_HOST: review-db
+      DB_PORT: 3306
+      DB_DATABASE: agent_review
+      DB_USERNAME: sail
+      DB_PASSWORD: password
+      APP_KEY: base64:MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=
+      SESSION_DRIVER: file
+      APP_CONFIG_CACHE: /tmp/review-cache/config.php
+      APP_ROUTES_CACHE: /tmp/review-cache/routes.php
+      APP_EVENTS_CACHE: /tmp/review-cache/events.php
+      APP_PACKAGES_CACHE: /tmp/review-cache/packages.php
+      APP_SERVICES_CACHE: /tmp/review-cache/services.php
+      VIEW_COMPILED_PATH: /tmp/review-cache/views
+    ports:
+      - "127.0.0.1::8000"
+    command: [bash, -c, 'mkdir -p /tmp/review-cache/views storage/framework/cache storage/framework/sessions storage/framework/views; php artisan serve --host=0.0.0.0 --port=8000 --no-reload']
+    volumes:
+      - type: bind
+        source: ${AGENT_WORKTREE_ROOT}
+        target: /var/www/html
+      - agent-review-framework:/var/www/html/storage/framework
+      - agent-review-logs:/var/www/html/storage/logs
+volumes:
+  agent-review-framework:
+  agent-review-logs:
+  agent-vendor:
+  agent-node:
+  agent-framework:
+  agent-logs:
 YAML
 
 export SAIL_FILES=".github/docker-compose.ci.yml:$compose_override"

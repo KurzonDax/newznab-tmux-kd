@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# On-demand implemented-result review against disposable local data.
+set -euo pipefail
+script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+source "$script_directory/agent-workflow-lib"
+agent_load_issue_worktree_context .
+case "${1:-}" in
+    start)
+        scripts/agent-worktree-setup
+        scripts/agent-sail --profile review up -d --wait review-db
+        scripts/agent-sail --profile review run --rm --no-deps -u root --entrypoint bash review -c \
+            'mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views; chown -R "$WWWUSER" storage/framework storage/logs'
+        scripts/agent-sail --profile review run --rm --no-deps review bash -c \
+            'mkdir -p /tmp/review-cache/views; php artisan migrate --force --no-interaction && php artisan db:seed --force --no-interaction'
+        scripts/agent-sail npm run build
+        scripts/agent-sail --profile review up -d review
+        address="$(scripts/agent-sail --profile review port review 8000)"
+        for attempt in {1..30}; do
+            if curl --fail --silent "http://$address/up" >/dev/null; then
+                printf 'PREVIEW_URL=http://%s\n' "$address"
+                printf 'PREVIEW_STATUS=ready\nStop and remove review data with scripts/agent-preview stop.\n'
+                exit 0
+            fi
+            sleep 1
+        done
+        agent_fail 'review application did not become healthy; inspect scripts/agent-sail --profile review logs review'
+        ;;
+    stop)
+        # Bypass readiness: stopping a preview must not install/start dependencies.
+        AGENT_RUNTIME_SETUP=1 scripts/agent-sail --profile review rm --stop --force review review-db
+        printf 'PREVIEW_STATUS=stopped\n'
+        ;;
+    *) agent_fail 'usage: scripts/agent-preview start|stop' ;;
+esac

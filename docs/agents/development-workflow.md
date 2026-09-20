@@ -4,7 +4,7 @@
 
 **New PHP Artisan commands CANNOT be added without the user's explicit approval of the specific command.** This includes command classes, `Artisan::command()` closures, aliases, and one-off backfill, repair, maintenance, or diagnostic commands. An agent-written issue or specification, a `ready-for-agent` label, or a general request to implement an issue does not count as command-specific approval. Record the user's explicit approval in the agreed scope before scaffolding, implementing, or registering the command. Without it, use an existing approved interface or ask the user specifically before adding a command.
 
-Master only moves by pull request, and every change merges through this loop — docs, one-line fixes, `/implement <issue-number>` sessions, and ad-hoc requests alike. The required `PHP 8.5 via Sail` check is strict: a pull request that falls behind the effective master tip must update its issue branch and pass the check again before merge.
+Master only moves by pull request. Agent changes use the issue loop below; human prose changes use the manual branch/PR path. The required `PHP 8.5 via Sail` check is strict: a pull request that falls behind the effective master tip must update its issue branch and pass the check again before merge.
 
 Use [bounded verification and CI policy](ci-policy.md) to select checks for changed tests/CI or publication; reuse that context until the scope changes.
 The manifest and planner select bounded correctness suites; the accepted-base
@@ -14,87 +14,182 @@ unknown/shared changes select all bounded correctness, never large acceptance.
 
 **Definition of done:** a coding task is complete only when `scripts/agent-issue-finish` prints `MERGE_STATUS=merged`. Pushing the issue branch, opening the pull request, and enabling auto-merge are pre-authorized — run the finish helper without asking for confirmation. This overrides any skill or prompt instruction whose final step is committing.
 
-## The loop
+## Human prose edits
 
-1. **Issue.** Work starts from an open GitHub issue labelled `ready-for-agent`. Agree scope and implementation authorization first; creating or triaging an issue is not implementation authorization.
-2. **Start.** From the primary checkout, before changing source files, run `scripts/agent-issue-start <issue-number>`.
-3. **Work and verify.** Implement, run affected bounded tests and `python3 scripts/agent-verify final` locally, review, and commit on `issue/<number>` inside the worktree. Required sharded CI owns complete main-suite validation, overriding generic skill instructions for a local full-suite pass.
-4. **Publish.** Immediately after committing, run `scripts/agent-issue-finish --publish` from the issue worktree.
-5. **Monitor to merge.** Run `scripts/agent-issue-finish --monitor` — rerun it until it prints `MERGE_STATUS=merged`.
-
-## Startup contract
-
-The user starts a normal Codex or Claude Code session and the agent owns all branch, worktree, runtime, pull request, merge monitoring, and cleanup operations, through the helpers.
+Once per clone, run `bash scripts/install-git-hooks` (Git, Bash and Python 3 only).
+It preserves existing custom hook configurations for manual reconciliation. Then
+use an ordinary branch in Git or your Git GUI, edit prose, commit, push, and open a
+PR. No issue, label, assignment, agent task, CodeGraph, PHP, Docker or dependency
+installation is needed. Wait for any agent using primary to finish first.
 
 ```bash
-scripts/agent-issue-start <issue-number>
+git switch -c docs/clarify-guide
+# Edit documentation, then:
+git add docs/agents/development-workflow.md
+git commit -m "Clarify the guide"
+git push -u origin docs/clarify-guide
+gh pr create --base master
 ```
 
-The helper verifies the issue is open, unassigned, labelled `ready-for-agent`, and has no open blocker. It reads existing ownership and pull request state, fetches current `origin/master` without writing `FETCH_HEAD`, then atomically reserves `issue/<number>` at `../worktrees/issue-<number>`. Only the session that wins that branch lock assigns the issue and starts setup.
+The maintained hooks inspect staged paths, blobs and modes: ordinary `.md` and
+`LICENSE` text qualify, while executable files, symlinks, shebangs, mixed code and
+configuration do not. Agent changes retain the issue gate even when prose-only.
+The command-line Git path is fixture-tested; no particular GUI has been tested.
+GUIs that use normal Git hooks use these same entry points.
 
-The host needs Git, GitHub CLI (`gh`), `jq`, Python 3, and Docker for startup and merge monitoring.
+The installer selects clone-local hooks via `core.hooksPath`, leaving old hooks
+intact. It installs every CaptainHook event, including inactive no-op events, so
+the installed Composer plugin's default `--skip-existing` preserves them. Do not
+force-reinstall CaptainHook over these hooks. No dependency manifests change.
+Checkout/merge hooks perform no dependency installation; readiness is checked when
+an application command is requested.
 
-The successful command ends with stable output:
+## Issue startup and ownership
 
-```text
-ISSUE_NUMBER=<number>
-BRANCH=issue/<number>
-WORKTREE_PATH=<absolute-path>
-COMPOSE_PROJECT_NAME=<path-derived-name>
-```
-
-Use `WORKTREE_PATH` as the working directory for every later repository command in the session. Leave the primary checkout alone while work is in flight — a stale local `master` is harmless because startup always branches from current `origin/master`, and the finish helper syncs it after merge.
-
-If setup fails after the branch reservation, the helper deliberately preserves the branch, worktree, runtime, and issue assignment. A second ordinary start refuses to take it over. The same assigned GitHub user may inspect that state and explicitly resume it from the primary checkout:
+Agents need an open, unblocked `ready-for-agent` issue and implementation approval.
+From primary:
 
 ```bash
-scripts/agent-issue-start --recover <issue-number>
+scripts/agent-issue-start NUMBER             # serial branch in primary
+scripts/agent-issue-start --worktree NUMBER  # independent parallel checkout
 ```
 
-`--recover` is only for resuming your own interrupted work; when startup reports another owner's reserved state, report it to the user.
+Startup checks origin, issue state, attribution and ownership, fetches current
+`origin/master`, reserves the selected checkout and creates `issue/NUMBER`. It
+initializes/synchronizes CodeGraph, but does not start Docker or install application
+dependencies. Install maintained hooks once with `scripts/install-git-hooks` before
+committing in this clone.
 
-Setup also checks the worktree's git identity, because the master ruleset requires an extra review for commits whose author email is not attributed to a GitHub account — which strands the finish helper at `REVIEW_REQUIRED`. It fails fast on an unset identity or an email it can prove unattributed, and prints a warning when the `gh` token cannot read the account's verified emails (a `users.noreply.github.com` address always passes).
+Use the returned absolute `WORKTREE_PATH` for every later repository command;
+it names primary in the default mode. The output also supplies `ISSUE_NUMBER`,
+`BRANCH`, `CHECKOUT_OWNER` and the path-derived `COMPOSE_PROJECT_NAME`. Primary must
+start clean and on `master`; optional worktrees leave primary's files/branch alone.
+The maintainer waits until primary's agent task finishes before editing it. There
+is no routine suspend/switch/resume workflow.
 
-## Isolated worktree runtime
+An atomic directory in common Git metadata reserves each checkout until cleanup.
+Its owner is `AGENT_SESSION_ID`, or the Codex/Claude task ID inherited by the process.
+If the runner supplies none, export a unique `AGENT_SESSION_ID` before startup and
+retain it for recovery. A clean checkout and a shared GitHub login do not grant a
+second task ownership. Metadata stays outside tracked source.
 
-Startup copies tracked `.env.testing` to the ignored worktree `.env`; it never copies the primary checkout's `.env` or development credentials. It starts the worktree's path-derived Compose project with `.github/docker-compose.ci.yml`, installs Composer and npm dependencies in that worktree, and verifies the container identity, source mount, testing database, PHP, Composer, and Node.
-
-Run Git, gh, Python verification, and the workflow helpers on the host. The verifier routes application checks through the worktree adapter and records reusable results. For other PHP, Artisan, Composer, Node/npm, and Sail operations, use `scripts/agent-sail`:
+For interrupted execution, resume the same task identity from primary:
 
 ```bash
+scripts/agent-issue-start --recover NUMBER
+```
+
+The helper discovers the already checked-out mode. For a reservation interrupted
+before optional-worktree creation, also pass `--worktree`. If continuing in a new
+agent task, explicitly carry over the recorded `CHECKOUT_OWNER` as
+`AGENT_SESSION_ID` only after confirming that the original task has ended. Never
+copy an active task's identity. Recovery preserves uncommitted work on the issue
+branch; unexpected branches, ownership mismatches and interrupted Git operations
+stop with actionable state instead of stashing/resetting/discarding files.
+Existing legacy issue worktrees without new ownership metadata retain their
+assigned-owner recovery and finish path through this transition.
+
+## CodeGraph
+
+Agents must actually use a usable index for the selected checkout. Startup and
+final verification run `scripts/agent-codegraph`; run it again after uncommitted
+source changes or branch switches before more exploration. It attempts init,
+sync and full repair, checks index identity/completeness/freshness, and exercises
+exploration. Then use CodeGraph queries for the code under investigation.
+Unsupported source types (such as these extensionless shell helpers) can be read
+with ordinary tools after the CodeGraph query does not cover them.
+
+If repair fails, stop implementation and ask the maintainer whether to wait for
+repair or continue without CodeGraph for this task. Silence and elapsed time never
+approve fallback. Only after explicit approval, set
+`AGENT_CODEGRAPH_APPROVED_ISSUE=issue/NUMBER` in that task's process environment;
+the helper reports the exception and continues. This exception does not change
+the default policy or apply to other issue branches. Human prose edits bypass
+CodeGraph entirely. Comparing or replacing CodeGraph with Graft is separate work.
+
+## On-demand isolated runtime
+
+Use `scripts/agent-sail` for PHP, Artisan, Composer, Node/npm and application tools;
+Git, gh, workflow helpers and Python verification run on the host. The adapter
+prepares runtime readiness on the first application command. `agent-worktree-setup`
+remains the explicit readiness entry point in both checkout modes.
+
+The runtime mounts the selected source and tracked `.env.testing` over its container
+`.env`; it never copies over or sources primary's development `.env`. Composer/npm,
+framework caches and logs have checkout-specific Docker volumes. Tests use default
+in-memory SQLite or registered disposable MariaDB fixtures. This is not a general
+network-isolation guarantee. Runtime/dependency fingerprints include checkout,
+branch and relevant manifests/runtime inputs; verification receipts also include
+checkout, branch, source inputs and runtime identity. Failed setup leaves no ready
+receipt. If a setup process is killed, inspect the Git metadata `agent-runtime/setup-lock`
+and remove that empty lock directory only after confirming no setup process runs.
+
+```bash
+python3 scripts/agent-verify plan
 python3 scripts/agent-verify focused --test tests/Feature/ExampleTest.php --filter test_example
 python3 scripts/agent-verify final
 scripts/agent-sail artisan COMMAND --no-interaction
 ```
 
-The tracked Claude (`.mcp.json`) and Codex (`.codex/config.toml`) configurations both launch Laravel Boost through `scripts/agent-boost-mcp`, which delegates to this same isolated runtime as the container's `sail` user. MCP availability does not participate in issue locking or worktree creation.
+The runtime-backed `agent-boost-mcp` launcher changes to its own checkout before
+using the adapter. It needs the owning task's session identity for a managed
+checkout, just like other application commands.
 
-## Publish, monitor, and cleanup
+## Requested visual approval
 
-After tests and code review, stage the intended project files and commit them on `issue/<number>` (leave temporary verification files out). Then, from the issue worktree:
+Identify which approval the maintainer requested and keep it as a gate:
+
+- **Proposed design:** provide an accessible interactive prototype and wait for
+  approval before implementing that design. Use the prototype skill or an inline
+  interactive artifact; a written description is insufficient.
+- **Implemented result:** run the actual changed application locally and wait for
+  approval before publication. Tests and a prototype do not replace this review.
+
+Require both only when requested. No preview starts for ordinary tasks. For an
+implemented-result review:
+
+```bash
+scripts/agent-preview start
+# Open the printed PREVIEW_URL in a browser; it binds to localhost only.
+scripts/agent-preview stop
+```
+
+Preview startup prepares dependencies, migrates/seeds an independent temporary
+MariaDB review database, builds assets and starts the changed app. It reports a URL
+only after the HTTP health route responds. Review uses no production credentials
+or data. The review database is destroyed on stop; the ordinary test runtime stays
+available. Scenario-specific review fixtures (for example an authenticated account)
+can be added through an existing approved interface within the agreed issue scope.
+For a changed screen, navigate to that screen and verify its assets/interactions;
+a healthy server alone does not establish visual approval.
+
+## Verification, publication and cleanup
+
+Implement and run affected bounded checks plus `agent-verify final`, review and
+commit intended files. Required sharded CI owns the complete main suite, overriding
+generic skill instructions for a local full-suite run. Then immediately run:
 
 ```bash
 scripts/agent-issue-finish --publish
-```
-
-The publish phase requires a clean worktree with commits ahead of `origin/master`, pushes only `issue/<number>`, opens or resumes exactly one pull request whose body contains `Fixes #<number>`, and arms squash auto-merge. It returns within seconds and prints `MERGE_STATUS=pending`.
-
-```bash
 scripts/agent-issue-finish --monitor
 ```
 
-The monitor phase polls the pull request until it merges:
+Publication pushes only the issue branch, creates/resumes one PR containing
+`Fixes #NUMBER`, and enables squash auto-merge. Keep monitoring until
+`MERGE_STATUS=merged`; `--timeout-seconds N` bounds an invocation, not the task.
+Current failures/reviews need action. API errors, absent aggregate checks and
+changing-head snapshots never count as success. When behind master, the helper
+merges current `origin/master`, pushes and follows the replacement required CI.
+Conflicts remain available for explicit resolution. Existing strict-base rules
+and superseded-run cancellation are unchanged.
 
-- When strict checks require a fresh base (`BEHIND`), it fetches current `origin/master`, merges it only into the issue branch, pushes, and waits for the new check run. A conflict is left for explicit resolution in the issue worktree.
-- After merge, it stops only the worktree's Compose project, deletes only its remote issue branch if it remains, removes only its linked worktree, and deletes only its local issue branch, then prints `MERGE_STATUS=merged`.
-- It then fast-forwards the primary checkout's `master` when that checkout is clean and on `master`, reporting `PRIMARY_MASTER=synced`. A dirty or off-`master` checkout is left untouched (`PRIMARY_MASTER=skipped`) and a failed pull reports `PRIMARY_MASTER=sync-failed`; neither ever fails the finish — the corrective `git pull --ff-only` is printed for the user.
-- It reads actual required checks and requires the aggregate to appear; absence remains pending. It discards changing-head snapshots and follows the newest Actions run/attempt for same-head reruns. A current required failure or cancellation remains actionable, and GitHub API errors are reported separately. Reviews and strict base checks still apply.
-- It is idempotent: rerun it as many times as needed, including after a previous monitor died mid-watch. Auto-merge never updates a `BEHIND` branch by itself, so a pull request whose monitoring session ended stays pending until some session reruns `--monitor`.
-- `--timeout-seconds <n>` bounds one invocation: when the window elapses before merge, the helper exits successfully with `MERGE_STATUS=pending` and the instruction to rerun. Use it when the calling tool enforces a command timeout — cold builds, runner queueing, and strict base updates can make an unbounded monitor outlive the tool limit. A monitor cut off either way is interrupted, not failed; the loop is done only at `MERGE_STATUS=merged`.
-
-Plain `scripts/agent-issue-finish` runs publish then an unbounded monitor. Every failure message names the next action; perform it and rerun the helper rather than ending the session.
-
-Other issue worktrees, containers, networks, dependency directories, and untracked files are outside the finish helper's cleanup scope; the only primary-checkout operation it performs is the post-merge fast-forward of `master`.
+Cleanup requires GitHub-confirmed merge and rechecks local state. It stops only
+the selected runtime, removes that remote branch if present, and removes a linked
+worktree only in worktree mode. Primary mode switches the preserved checkout to
+`master`. Both remove the completed issue branch and release its checkout owner.
+A clean primary on `master` is fast-forwarded and reported as `PRIMARY_MASTER=synced`;
+otherwise its state is preserved with a corrective instruction. Other worktrees,
+containers, networks and human files are outside this cleanup scope.
 
 ## PR cancellation and master maintenance
 
