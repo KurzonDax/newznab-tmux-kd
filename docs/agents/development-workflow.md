@@ -54,7 +54,7 @@ scripts/agent-issue-start NUMBER             # serial branch in primary
 scripts/agent-issue-start --worktree NUMBER  # independent parallel checkout
 ```
 
-Startup checks origin, issue state, attribution and ownership, fetches current
+Startup checks origin, issue state, effective Git identity and ownership, fetches current
 `origin/master`, reserves the selected checkout and creates `issue/NUMBER`. It
 initializes/synchronizes CodeGraph, but does not start Docker or install application
 dependencies. Install maintained hooks once with `scripts/install-git-hooks` before
@@ -134,6 +134,25 @@ scripts/agent-sail artisan COMMAND --no-interaction
 The runtime-backed `agent-boost-mcp` launcher changes to its own checkout before
 using the adapter. It needs the owning task's session identity for a managed
 checkout, just like other application commands.
+
+## Public commit identity
+
+The managed workflow requires `KurzonDax` and
+`5052775+KurzonDax@users.noreply.github.com` for both author and committer of
+outgoing commits. Startup and workflow-generated branch updates check Git's
+effective identity, including environment overrides. Publication checks every
+commit in `origin/master..HEAD` before each push and before enabling auto-merge;
+a safe tip does not excuse an earlier unsafe commit. Rejections identify the
+commit and field without printing the rejected value. Existing commits are never
+rewritten automatically.
+
+Local Git configuration does not select the author email of GitHub's new squash
+commit. The finish helper explicitly supplies the approved noreply email and pins
+the request to the checked local head. Resuming an armed request disables it and
+re-enables squash auto-merge with that email; failures stop the workflow. After
+GitHub confirms merge, the helper verifies the actual server-created author
+before cleanup. GitHub's service committer is distinct from the maintainer author
+and is not subject to the outgoing local-committer check.
 
 ## Requested visual approval
 

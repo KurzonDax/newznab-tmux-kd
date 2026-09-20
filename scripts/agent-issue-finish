@@ -72,6 +72,19 @@ pull_request_count="$(gh pr list --repo "$AGENT_EXPECTED_REPOSITORY" --state all
 pull_request_number="$(gh pr list --repo "$AGENT_EXPECTED_REPOSITORY" --state all \
     --head "$AGENT_ISSUE_BRANCH" --json number --jq '.[0].number // empty')"
 
+# An old request must not be able to merge a newly pushed head using an unknown
+# email. Disarm it before publication, including recovery of an existing PR.
+if [[ -n "$pull_request_number" ]]; then
+    existing_state="$(gh pr view "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" --json state --jq .state)"
+    if [[ "$existing_state" == OPEN ]]; then
+        auto_merge_armed="$(gh pr view "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
+            --json autoMergeRequest --jq '.autoMergeRequest != null')"
+        if [[ "$auto_merge_armed" == true ]]; then
+            gh pr merge "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" --disable-auto
+        fi
+    fi
+fi
+
 if [[ "$mode" != monitor ]]; then
     ahead_count="$(git -C "$AGENT_WORKTREE_ROOT" rev-list --count origin/master..HEAD)"
     [[ "$ahead_count" -gt 0 ]] ||
@@ -79,6 +92,7 @@ if [[ "$mode" != monitor ]]; then
 
     python3 "$script_directory/agent-verify" final --base origin/master
 
+    agent_require_outgoing_identities
     git -C "$AGENT_WORKTREE_ROOT" push -u "$AGENT_REMOTE" "$AGENT_ISSUE_BRANCH"
 
     if [[ -z "$pull_request_number" ]]; then
@@ -104,11 +118,9 @@ printf '%s\n' "$pull_request_body" | grep -Eq "(^|[[:space:]])Fixes[[:space:]]+#
 pull_request_state="$(gh pr view "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
     --json state --jq .state)"
 if [[ "$pull_request_state" == OPEN ]]; then
-    auto_merge_armed="$(gh pr view "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" \
-        --json autoMergeRequest --jq '.autoMergeRequest != null')"
-    if [[ "$auto_merge_armed" != true ]]; then
-        gh pr merge "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" --auto --squash
-    fi
+    agent_require_outgoing_identities
+    gh pr merge "$pull_request_number" --repo "$AGENT_EXPECTED_REPOSITORY" --auto --squash \
+        --author-email "$AGENT_APPROVED_EMAIL" --match-head-commit "$(git rev-parse HEAD)"
 fi
 
 if [[ "$mode" == publish ]]; then
@@ -160,9 +172,11 @@ while true; do
             agent_require_clean_checkout "$AGENT_WORKTREE_ROOT"
             agent_fetch_origin_master "$AGENT_WORKTREE_ROOT" ||
                 agent_fail 'could not refresh origin/master; check network access, then rerun scripts/agent-issue-finish --monitor rather than ending the session'
+            agent_require_effective_identity
             if ! git -C "$AGENT_WORKTREE_ROOT" merge --no-edit origin/master; then
                     agent_fail 'origin/master conflicts with the issue branch; merge origin/master in the issue worktree, resolve the conflicts, commit, then rerun scripts/agent-issue-finish --monitor'
             fi
+            agent_require_outgoing_identities
             git -C "$AGENT_WORKTREE_ROOT" push "$AGENT_REMOTE" "$AGENT_ISSUE_BRANCH"
             continue
             ;;
@@ -187,6 +201,22 @@ while true; do
             ;;
     esac
 done
+
+# Verify the server-created author before cleanup. GitHub's service committer is
+# separate from the maintainer author and must not pass the local-commit policy.
+merge_commit="$(gh api "repos/$AGENT_EXPECTED_REPOSITORY/pulls/$pull_request_number" \
+    --jq .merge_commit_sha 2>/dev/null)" || agent_fail 'could not resolve merged commit for identity verification'
+[[ "$merge_commit" =~ ^[0-9a-f]{40}$ ]] || agent_fail 'invalid merged commit identifier'
+for field in name email; do
+    expected="$AGENT_APPROVED_NAME"
+    [[ "$field" != email ]] || expected="$AGENT_APPROVED_EMAIL"
+    server_author_approved="$(gh api "repos/$AGENT_EXPECTED_REPOSITORY/commits/$merge_commit" \
+        --jq ".commit.author.$field == \"$expected\"" 2>/dev/null)" ||
+        agent_fail "could not verify commit $merge_commit author.$field (value redacted)"
+    [[ "$server_author_approved" == true ]] ||
+        agent_fail "commit $merge_commit has unapproved author.$field (value redacted); checkout preserved for investigation"
+done
+printf 'MERGE_AUTHOR=approved\n'
 
 # Cleanup is deliberately scoped to this worktree's Compose label, remote branch,
 # registered linked worktree, and local issue branch.
