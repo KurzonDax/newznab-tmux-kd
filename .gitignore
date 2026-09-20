@@ -84,3 +84,8 @@ pnpm-lock.yaml
 
 # Python orchestration bytecode is local, never verification input.
 __pycache__/
+
+# Agent hook consent, local settings, and detector runtime state stay private.
+/.claude/settings.local.json
+/.impeccable/*
+!/.impeccable/config.json

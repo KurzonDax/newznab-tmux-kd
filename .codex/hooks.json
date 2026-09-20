@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -x \"$HOME/.agents/skills/impeccable/scripts/impeccable\" ]; then exec \"$HOME/.agents/skills/impeccable/scripts/impeccable\" hook; else printf \"%s\\n\" \"Impeccable hook skipped: install the global skill for this client.\" >&2; fi",
+            "timeout": 5,
+            "statusMessage": "Checking UI changes"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -x \"$HOME/.agents/skills/impeccable/scripts/impeccable\" ]; then exec \"$HOME/.agents/skills/impeccable/scripts/impeccable\" hook; else printf \"%s\\n\" \"Impeccable hook skipped: install the global skill for this client.\" >&2; fi",
+            "timeout": 30,
+            "statusMessage": "Design deep pass"
+          }
+        ]
+      }
+    ]
+  }
+}
