@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class FinishTest(unittest.TestCase):
-    def exercise(self, scenario, expected, primary_mode=False, managed_worktree=False, unsafe_field=None, publish=False, override=None):
+    def exercise(self, scenario, expected, primary_mode=False, managed_worktree=False, unsafe_field=None, publish=False, override=None, no_merge=False):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             primary = root / 'primary'
@@ -84,8 +84,16 @@ elif args[:2] == ['pr', 'create']:
 elif args[:2] == ['pr', 'merge']:
     with open(os.environ['OPERATIONS'], 'a') as out: out.write('merge ' + ' '.join(args) + '\\n')
     if '--disable-auto' not in args:
+        assert '--auto' not in args
+        assert '--squash' in args
         assert args[args.index('--author-email') + 1] == '5052775+KurzonDax@users.noreply.github.com'
-        with open(os.environ['OPERATIONS'], 'a') as out: out.write('auto-merge armed\\n')
+        assert len(args[args.index('--match-head-commit') + 1]) == 40
+        merges = pathlib.Path(os.environ['MERGES'])
+        attempt = int(merges.read_text()) if merges.exists() else 0
+        merges.write_text(str(attempt + 1))
+        if scenario == 'merge-blocked' or (scenario in ('merge-race', 'merge-retry') and attempt == 0):
+            sys.exit('failed to merge: Pull request is not mergeable')
+        with open(os.environ['OPERATIONS'], 'a') as out: out.write('merge requested\\n')
 elif args[:2] == ['api', 'repos/KurzonDax/newznab-tmux-kd/pulls/123']:
     print('a' * 40)
 elif args[:2] == ['api', 'repos/KurzonDax/newznab-tmux-kd/commits/' + 'a' * 40]:
@@ -99,16 +107,19 @@ elif args[:2] == ['pr', 'view']:
     elif fields == 'body': print('Fixes #123')
     elif fields == 'state': print('OPEN')
     elif fields == 'autoMergeRequest': print('true' if scenario == 'resumed' else 'false')
+    elif fields == 'state,mergeStateStatus,headRefOid':
+        print('\\t'.join(['OPEN', 'BEHIND' if scenario == 'merge-race' else 'BLOCKED', 'a']))
     else:
         assert fields == 'state,mergeStateStatus,reviewDecision,headRefOid', fields
         counter = pathlib.Path(os.environ['COUNTER'])
         count = int(counter.read_text()) if counter.exists() else 0
         counter.write_text(str(count + 1))
         merged = (scenario in ('merged', 'bad-server-author-name', 'bad-server-author-email') or (scenario == 'success' and count >= 3) or
-                  (scenario == 'base-update' and count >= 1) or (scenario == 'head-change' and count >= 2))
+                  (scenario == 'base-update' and count >= 1) or (scenario == 'head-change' and count >= 2) or
+                  (scenario == 'merge-race' and count >= 7) or (scenario == 'merge-retry' and count >= 6))
         print(json.dumps(dict(state='MERGED' if merged else 'OPEN',
             headRefOid='b' if scenario == 'head-change' and count >= 1 else 'a',
-            mergeStateStatus='BEHIND' if scenario == 'base-update' and count == 0 else 'BLOCKED',
+            mergeStateStatus='BEHIND' if (scenario == 'base-update' and count == 0) or (scenario == 'merge-race' and count == 3) else 'BLOCKED',
             reviewDecision='REVIEW_REQUIRED' if scenario == 'review' else '')))
 else: sys.exit('Unexpected gh: ' + repr(args))
 ''')
@@ -117,31 +128,52 @@ else: sys.exit('Unexpected gh: ' + repr(args))
                 path.chmod(0o755)
             operations = root / 'operations'
             env = dict(os.environ, PATH=str(fake) + os.pathsep + os.environ['PATH'],
-                        AGENT_SESSION_ID='fixture', OPERATIONS=str(operations), REAL_GIT=real_git, SCENARIO=scenario, COUNTER=str(root / 'counter'))
+                        AGENT_SESSION_ID='fixture', OPERATIONS=str(operations), REAL_GIT=real_git, SCENARIO=scenario,
+                        COUNTER=str(root / 'counter'), MERGES=str(root / 'merges'))
             if override:
                 env[override] = 'rejected@example.test'
-            arguments = ['--publish'] if publish else ['--monitor', '--timeout-seconds', '5']
+            arguments = ['--publish'] if publish else ['--monitor', '--timeout-seconds', '60']
+            if no_merge:
+                arguments.append('--no-merge')
             result = subprocess.run(['scripts/agent-issue-finish', *arguments],
                                     cwd=worktree, env=env, capture_output=True, text=True)
             self.assertEqual(expected, result.returncode, result.stderr + result.stdout)
             calls = operations.read_text()
+            self.assertNotIn(' --auto', calls)
             if unsafe_field:
-                self.assertNotIn('auto-merge armed', calls)
+                self.assertNotIn('merge requested', calls)
                 self.assertNotIn('push', calls)
                 self.assertNotIn('rejected@example.test', result.stderr + result.stdout)
                 self.assertIn('commit', result.stderr)
                 return result
-            self.assertIn('auto-merge armed', calls)
             if scenario == 'resumed':
                 self.assertLess(calls.index('--disable-auto'), calls.index('push -u'))
-                self.assertLess(calls.index('--disable-auto'), calls.index('--author-email'))
             if override:
                 self.assertNotIn('push', calls)
                 self.assertNotIn('rejected@example.test', result.stderr + result.stdout)
                 return result
+            if no_merge:
+                self.assertNotIn('merge requested', calls)
+                self.assertIn('MERGE_STATUS=pending', result.stdout)
+                self.assertTrue(worktree.exists())
+                if publish:
+                    self.assertIn('push -u origin issue/123', calls)
+                return result
             if publish:
                 self.assertIn('push -u origin issue/123', calls)
+                self.assertNotIn('merge requested', calls)
                 return result
+            if scenario in ('success', 'merge-race', 'merge-retry'):
+                self.assertIn('merge requested', calls)
+                for flag in ('--squash', '--author-email', '--match-head-commit'):
+                    self.assertIn(flag, calls)
+            if scenario in ('merge-race', 'merge-retry'):
+                self.assertEqual(2, calls.count('merge pr merge 123'))
+                self.assertEqual(1, calls.count('merge requested'))
+            if scenario == 'merge-blocked':
+                # Bounded, so an unexplained refusal neither spins nor fails first try.
+                self.assertEqual(3, calls.count('merge pr merge 123'))
+                self.assertNotIn('merge requested', calls)
             if expected == 0:
                 self.assertIn('MERGE_STATUS=merged', result.stdout)
                 if not primary_mode and not managed_worktree:
@@ -158,7 +190,7 @@ else: sys.exit('Unexpected gh: ' + repr(args))
             else:
                 self.assertNotIn('sail down', calls)
                 self.assertTrue(worktree.exists())
-            if scenario == 'base-update':
+            if scenario in ('base-update', 'merge-race'):
                 self.assertIn('push origin issue/123', calls)
             return result
 
@@ -181,6 +213,23 @@ else: sys.exit('Unexpected gh: ' + repr(args))
         for field in ('name', 'email'):
             result = self.exercise('bad-server-author-' + field, 2)
             self.assertIn('author.' + field, result.stderr)
+
+    def test_monitor_merges_the_green_pull_request(self):
+        self.exercise('success', 0)
+
+    def test_merge_refused_by_a_peer_merge_updates_the_branch_and_retries(self):
+        self.exercise('merge-race', 0)
+
+    def test_merge_refused_while_mergeability_recomputes_is_retried(self):
+        self.exercise('merge-retry', 0)
+
+    def test_merge_refused_past_the_retry_limit_preserves_the_worktree(self):
+        result = self.exercise('merge-blocked', 2)
+        self.assertIn('BLOCKED', result.stderr)
+
+    def test_opt_out_stops_at_the_open_pull_request(self):
+        self.exercise('initial', 0, publish=True, no_merge=True)
+        self.exercise('success', 0, no_merge=True)
 
     def test_only_confirmed_merge_cleans_up(self):
         for scenario in ('merged', 'success', 'base-update', 'head-change'):
