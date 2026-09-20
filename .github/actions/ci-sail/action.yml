@@ -45,8 +45,8 @@ runs:
       id: npm
       with:
         path: ${{ runner.temp }}/nntmux-ci-cache/npm/_cacache
-        key: downloads-v1-${{ runner.os }}-${{ runner.arch }}-node22-${{ hashFiles('package-lock.json') }}
-        restore-keys: downloads-v1-${{ runner.os }}-${{ runner.arch }}-node22-
+        key: downloads-v1-${{ runner.os }}-${{ runner.arch }}-node24-${{ hashFiles('package-lock.json') }}
+        restore-keys: downloads-v1-${{ runner.os }}-${{ runner.arch }}-node24-
     - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
     - name: Build and load runtime
       id: build
