@@ -12,23 +12,24 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class FinishTest(unittest.TestCase):
-    def exercise(self, scenario, expected, primary_mode=False, managed_worktree=False):
+    def exercise(self, scenario, expected, primary_mode=False, managed_worktree=False, unsafe_field=None, publish=False, override=None):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             primary = root / 'primary'
             primary.mkdir()
             scripts = primary / 'scripts'
             scripts.mkdir()
-            for name in ('agent-issue-finish', 'agent-check-snapshot', 'agent-workflow-lib', 'agent-checkout'):
+            for name in ('agent-issue-finish', 'agent-check-snapshot', 'agent-workflow-lib', 'agent-checkout', 'agent-identity'):
                 shutil.copy2(ROOT / 'scripts' / name, scripts / name)
             (scripts / 'agent-sail').write_text('#!/usr/bin/env bash\nprintf "sail %s\\n" "$*" >> "$OPERATIONS"\n')
             (scripts / 'agent-sail').chmod(0o755)
+            (scripts / 'agent-verify').write_text('import sys\nsys.exit(0)\n')
             real_git = shutil.which('git')
             def git(*args):
                 return subprocess.run([real_git, '-C', str(primary), *args], check=True, capture_output=True)
             git('init', '-q', '-b', 'master')
-            git('config', 'user.name', 'CI fixture')
-            git('config', 'user.email', 'ci@example.test')
+            git('config', 'user.name', 'KurzonDax')
+            git('config', 'user.email', '5052775+KurzonDax@users.noreply.github.com')
             git('config', 'core.hooksPath', '/dev/null')
             git('add', '.')
             git('commit', '-qm', 'fixture')
@@ -45,6 +46,20 @@ class FinishTest(unittest.TestCase):
                 if managed_worktree:
                     subprocess.run(['python3', str(scripts / 'agent-checkout'), 'reserve', str(worktree), str(primary / '.git'), '123'],
                                    check=True, env=dict(os.environ, AGENT_SESSION_ID='fixture'), capture_output=True)
+            if unsafe_field:
+                commit_env = dict(os.environ, **{unsafe_field: 'rejected@example.test'})
+                subprocess.run([real_git, '-C', str(worktree), 'commit', '--allow-empty', '-qm', 'unsafe fixture'],
+                               env=commit_env, check=True, capture_output=True)
+                subprocess.run([real_git, '-C', str(worktree), 'commit', '--allow-empty', '-qm', 'safe tip'],
+                               check=True, capture_output=True)
+            if (publish or scenario == 'base-update') and not unsafe_field:
+                subprocess.run([real_git, '-C', str(worktree), 'commit', '--allow-empty', '-qm', 'safe change'],
+                               check=True, capture_output=True)
+            if scenario == 'base-update':
+                base = git('rev-parse', 'origin/master').stdout.decode().strip()
+                tree = git('rev-parse', 'origin/master^{tree}').stdout.decode().strip()
+                updated = git('commit-tree', tree, '-p', base, '-m', 'upstream change').stdout.decode().strip()
+                git('update-ref', 'refs/remotes/origin/master', updated)
             fake = root / 'bin'
             fake.mkdir()
             (fake / 'git').write_text('''#!/usr/bin/env python3
@@ -61,9 +76,20 @@ import json, os, pathlib, sys
 args = sys.argv[1:]
 scenario = os.environ['SCENARIO']
 if args[:2] == ['pr', 'list']:
-    print('1' if args[-1] == 'length' else '123')
+    print(('0' if args[-1] == 'length' else '') if scenario == 'initial' else ('1' if args[-1] == 'length' else '123'))
+elif args[:2] == ['issue', 'view']:
+    print('Fixture issue')
+elif args[:2] == ['pr', 'create']:
+    print('https://github.com/KurzonDax/newznab-tmux-kd/pull/123')
 elif args[:2] == ['pr', 'merge']:
-    with open(os.environ['OPERATIONS'], 'a') as out: out.write('auto-merge armed\\n')
+    with open(os.environ['OPERATIONS'], 'a') as out: out.write('merge ' + ' '.join(args) + '\\n')
+    if '--disable-auto' not in args:
+        assert args[args.index('--author-email') + 1] == '5052775+KurzonDax@users.noreply.github.com'
+        with open(os.environ['OPERATIONS'], 'a') as out: out.write('auto-merge armed\\n')
+elif args[:2] == ['api', 'repos/KurzonDax/newznab-tmux-kd/pulls/123']:
+    print('a' * 40)
+elif args[:2] == ['api', 'repos/KurzonDax/newznab-tmux-kd/commits/' + 'a' * 40]:
+    print('false' if scenario == 'bad-server-author-' + ('email' if '.email' in args[-1] else 'name') else 'true')
 elif args[:2] == ['pr', 'checks']:
     assert '--required' in args
     print(json.dumps([dict(name='PHP 8.5 via Sail', state='CANCELLED' if scenario in ('failure', 'head-change') else 'SUCCESS', bucket='pass', link='', workflow='Run tests')]))
@@ -72,13 +98,13 @@ elif args[:2] == ['pr', 'view']:
     if fields == 'url': print('https://github.com/KurzonDax/newznab-tmux-kd/pull/123')
     elif fields == 'body': print('Fixes #123')
     elif fields == 'state': print('OPEN')
-    elif fields == 'autoMergeRequest': print('false')
+    elif fields == 'autoMergeRequest': print('true' if scenario == 'resumed' else 'false')
     else:
         assert fields == 'state,mergeStateStatus,reviewDecision,headRefOid', fields
         counter = pathlib.Path(os.environ['COUNTER'])
         count = int(counter.read_text()) if counter.exists() else 0
         counter.write_text(str(count + 1))
-        merged = (scenario == 'merged' or (scenario == 'success' and count >= 3) or
+        merged = (scenario in ('merged', 'bad-server-author-name', 'bad-server-author-email') or (scenario == 'success' and count >= 3) or
                   (scenario == 'base-update' and count >= 1) or (scenario == 'head-change' and count >= 2))
         print(json.dumps(dict(state='MERGED' if merged else 'OPEN',
             headRefOid='b' if scenario == 'head-change' and count >= 1 else 'a',
@@ -92,11 +118,30 @@ else: sys.exit('Unexpected gh: ' + repr(args))
             operations = root / 'operations'
             env = dict(os.environ, PATH=str(fake) + os.pathsep + os.environ['PATH'],
                         AGENT_SESSION_ID='fixture', OPERATIONS=str(operations), REAL_GIT=real_git, SCENARIO=scenario, COUNTER=str(root / 'counter'))
-            result = subprocess.run(['scripts/agent-issue-finish', '--monitor', '--timeout-seconds', '5'],
+            if override:
+                env[override] = 'rejected@example.test'
+            arguments = ['--publish'] if publish else ['--monitor', '--timeout-seconds', '5']
+            result = subprocess.run(['scripts/agent-issue-finish', *arguments],
                                     cwd=worktree, env=env, capture_output=True, text=True)
             self.assertEqual(expected, result.returncode, result.stderr + result.stdout)
             calls = operations.read_text()
+            if unsafe_field:
+                self.assertNotIn('auto-merge armed', calls)
+                self.assertNotIn('push', calls)
+                self.assertNotIn('rejected@example.test', result.stderr + result.stdout)
+                self.assertIn('commit', result.stderr)
+                return result
             self.assertIn('auto-merge armed', calls)
+            if scenario == 'resumed':
+                self.assertLess(calls.index('--disable-auto'), calls.index('push -u'))
+                self.assertLess(calls.index('--disable-auto'), calls.index('--author-email'))
+            if override:
+                self.assertNotIn('push', calls)
+                self.assertNotIn('rejected@example.test', result.stderr + result.stdout)
+                return result
+            if publish:
+                self.assertIn('push -u origin issue/123', calls)
+                return result
             if expected == 0:
                 self.assertIn('MERGE_STATUS=merged', result.stdout)
                 if not primary_mode and not managed_worktree:
@@ -116,6 +161,26 @@ else: sys.exit('Unexpected gh: ' + repr(args))
             if scenario == 'base-update':
                 self.assertIn('push origin issue/123', calls)
             return result
+
+    def test_unsafe_earlier_commit_blocks_merge_enablement(self):
+        for field in ('GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL'):
+            with self.subTest(field=field):
+                self.exercise('merged', 2, unsafe_field=field)
+
+    def test_publication_checks_all_commits_and_explicit_merge_email(self):
+        self.exercise('initial', 0, publish=True)
+        self.exercise('resumed', 0, publish=True)
+        for field in ('GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL'):
+            self.exercise('merged', 2, publish=True, unsafe_field=field)
+
+    def test_branch_update_rejects_effective_environment_overrides(self):
+        for field in ('GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL'):
+            self.exercise('base-update', 2, override=field)
+
+    def test_server_author_mismatch_preserves_checkout(self):
+        for field in ('name', 'email'):
+            result = self.exercise('bad-server-author-' + field, 2)
+            self.assertIn('author.' + field, result.stderr)
 
     def test_only_confirmed_merge_cleans_up(self):
         for scenario in ('merged', 'success', 'base-update', 'head-change'):

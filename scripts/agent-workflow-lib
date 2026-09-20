@@ -202,3 +202,37 @@ agent_require_clean_checkout() {
     [[ -z "$(git -C "$1" status --porcelain --untracked-files=normal)" ]] ||
         agent_fail 'checkout has dirty files; preserve and report them before startup'
 }
+
+# These are the approved public identities, not account/profile defaults.
+AGENT_APPROVED_NAME='KurzonDax'
+AGENT_APPROVED_EMAIL='5052775+KurzonDax@users.noreply.github.com'
+
+agent_require_effective_identity() {
+    local role identity
+    for role in AUTHOR COMMITTER; do
+        identity="$(git -C "$AGENT_WORKTREE_ROOT" var "GIT_${role}_IDENT" 2>/dev/null)" ||
+            agent_fail "could not resolve effective $role identity (value redacted)"
+        [[ "$identity" == "$AGENT_APPROVED_NAME <$AGENT_APPROVED_EMAIL> "* ]] ||
+            agent_fail "unapproved effective $role identity (value redacted); correct Git configuration and environment overrides"
+    done
+}
+
+agent_require_outgoing_identities() {
+    local commits commit field format expected actual
+    commits="$(GIT_NO_REPLACE_OBJECTS=1 git -C "$AGENT_WORKTREE_ROOT" rev-list origin/master..HEAD)" ||
+        agent_fail 'could not enumerate outgoing commits'
+    for commit in $commits; do
+        for field in author.name author.email committer.name committer.email; do
+            case "$field" in
+                author.name) format=%an; expected="$AGENT_APPROVED_NAME" ;;
+                author.email) format=%ae; expected="$AGENT_APPROVED_EMAIL" ;;
+                committer.name) format=%cn; expected="$AGENT_APPROVED_NAME" ;;
+                committer.email) format=%ce; expected="$AGENT_APPROVED_EMAIL" ;;
+            esac
+            actual="$(GIT_NO_REPLACE_OBJECTS=1 git -C "$AGENT_WORKTREE_ROOT" show -s --format="$format" "$commit")" ||
+                agent_fail "could not inspect commit $commit $field"
+            [[ "$actual" == "$expected" ]] ||
+                agent_fail "commit $commit has unapproved $field (value redacted); existing commits are never rewritten automatically"
+        done
+    done
+}
