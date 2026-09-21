@@ -1,0 +1,252 @@
+{
+ "props": [
+  "fontFamily",
+  "fontSize",
+  "fontWeight",
+  "lineHeight",
+  "letterSpacing",
+  "color",
+  "backgroundColor",
+  "borderRadius",
+  "borderTopWidth",
+  "borderTopColor",
+  "borderBottomWidth",
+  "borderBottomColor",
+  "boxShadow",
+  "paddingTop",
+  "paddingRight",
+  "paddingBottom",
+  "paddingLeft",
+  "gap",
+  "width",
+  "height",
+  "maxWidth"
+ ],
+ "colorProps": [
+  "color",
+  "backgroundColor",
+  "borderTopColor",
+  "borderBottomColor"
+ ],
+ "parts": {
+  "page ground and body text": "body",
+  "content width wrapper": ".wrap",
+  "page title": ".filters h1",
+  "view switch, current": ".seg a[aria-pressed=true]",
+  "view switch, other": ".seg a[aria-pressed=false]",
+  "filter menu button": ".msel:not(.set) .mbtn",
+  "filter menu button, set": ".msel.set .mbtn",
+  "filter menu panel": ".mmenu",
+  "filter menu item": ".mitem",
+  "filter menu checkbox, ticked": ".mitem[aria-checked=true] .box",
+  "sort dropdown": ".filters .sel select",
+  "showing line": ".pager.slim .sum",
+  "page x of y": ".pager.slim .pg",
+  "pager arrow": ".pager.slim a, .pager.slim .off",
+  "releases table header cell": "table.feed th",
+  "release row cell": "table.feed tbody tr:first-child td",
+  "row poster": ".feed td.art img, .feed td.art .np",
+  "release name": ".feed a.rname",
+  "show line under the name": ".feed .showlink",
+  "chip base": ".feed .rc",
+  "completion chip": ".rc.comp",
+  "media info chip": ".rc.k-mi",
+  "NFO chip": ".rc.k-nfo",
+  "Preview chip": ".rc.k-pv",
+  "resolution chip 4K": ".res.r-4k",
+  "resolution chip 1080p": ".res.r-1080",
+  "resolution chip 720p": ".res.r-720",
+  "resolution chip SD": ".res.r-sd",
+  "resolution chip Unknown": ".res.r-unk",
+  "row action button": ".iconacts .ia:not(.dl)",
+  "row action: download": ".iconacts .ia.dl",
+  "file count button": ".filesbtn",
+  "batch expander": ".moreof button",
+  "selection bar": ".bulk",
+  "selection bar primary button": ".bulk .btn:not(.sec)",
+  "bottom pager current page": "nav.pager [aria-current]",
+  "show tile": ".tile",
+  "show tile art": ".tile .art",
+  "show tile title": ".tile b",
+  "show tile line 1": ".tile .what",
+  "shows filter button": ".sfm .mbtn",
+  "starring chip": ".person",
+  "search field": "#q",
+  "search results panel": "#results",
+  "show page title": ".showhead h1",
+  "show page poster": ".showhead .art",
+  "show meta line": ".showhead .meta",
+  "genre tag (link)": "a.tag",
+  "plain tag": ".tag.plain",
+  "starring line": ".starring",
+  "season tab bar": ".bar2",
+  "season tab": ".stabs a:not([aria-current])",
+  "season tab, current": ".stabs a[aria-current]",
+  "episode row": ".ep>button",
+  "episode number": ".ep .no",
+  "episode title": ".ep .ti",
+  "releases button, closed": ".ep:not([open-]) .relbtn",
+  "releases button, open": ".ep[open-] .relbtn",
+  "episode release table header": "table.rt th",
+  "episode release table cell": "table.rt tbody tr:first-child td",
+  "details heading": ".dhead h1",
+  "details release name": ".relname",
+  "details poster": ".dhead .art",
+  "details primary button": ".dacts .btn:not(.sec)",
+  "details secondary button": ".dacts .btn.sec",
+  "tab": ".tabs button[aria-selected=false]",
+  "tab, current": ".tabs button[aria-selected=true]",
+  "facts label": "dl.vals dt",
+  "facts value": "dl.vals dd",
+  "about the show heading": ".aboutshow h2",
+  "episode releases heading": ".sibs h2",
+  "current release row": ".sibs tr.me td",
+  "current release label": ".sibs .this",
+  "dialog": ".dlg",
+  "dialog title": ".dlg header h2",
+  "dialog close button": ".dlg header .ia",
+  "media info glance value": ".mi2 .glance dd",
+  "media info section chip: video": ".hue.hv",
+  "media info section chip: audio": ".hue.ha",
+  "media info section chip: subtitles": ".hue.hs",
+  "media info table header": ".mi2 th",
+  "media info table cell": ".mi2 tbody tr:first-child td"
+ },
+ "states": [
+  {
+   "name": "releases",
+   "prototypeRoute": "#/",
+   "fullPage": false
+  },
+  {
+   "name": "releases-category-menu",
+   "prototypeRoute": "#/",
+   "fullPage": false
+  },
+  {
+   "name": "releases-resolution-menu",
+   "prototypeRoute": "#/",
+   "fullPage": false
+  },
+  {
+   "name": "releases-selection",
+   "prototypeRoute": "#/",
+   "fullPage": false
+  },
+  {
+   "name": "releases-batch-expanded",
+   "prototypeRoute": "#/",
+   "fullPage": true
+  },
+  {
+   "name": "releases-empty",
+   "prototypeRoute": "#/",
+   "fullPage": false
+  },
+  {
+   "name": "releases-last-page",
+   "prototypeRoute": "#/",
+   "fullPage": true
+  },
+  {
+   "name": "shows",
+   "prototypeRoute": "#/shows",
+   "fullPage": false
+  },
+  {
+   "name": "shows-filters-set",
+   "prototypeRoute": "#/shows",
+   "fullPage": false
+  },
+  {
+   "name": "shows-person",
+   "prototypeRoute": "#/shows",
+   "fullPage": false
+  },
+  {
+   "name": "shows-empty",
+   "prototypeRoute": "#/shows",
+   "fullPage": false
+  },
+  {
+   "name": "search-results",
+   "prototypeRoute": "#/",
+   "fullPage": false
+  },
+  {
+   "name": "show",
+   "prototypeRoute": "#/show/9001/1",
+   "fullPage": false
+  },
+  {
+   "name": "show-episode-open-selected",
+   "prototypeRoute": "#/show/9001/1",
+   "fullPage": true
+  },
+  {
+   "name": "show-24-seasons",
+   "prototypeRoute": "#/show/9002/3",
+   "fullPage": false
+  },
+  {
+   "name": "show-by-air-date",
+   "prototypeRoute": "#/show/9005",
+   "fullPage": false
+  },
+  {
+   "name": "show-thin-no-poster-no-details",
+   "prototypeRoute": "#/show/9004",
+   "fullPage": false
+  },
+  {
+   "name": "show-filter-empty",
+   "prototypeRoute": "#/show/9001/1",
+   "fullPage": false
+  },
+  {
+   "name": "details-overview",
+   "prototypeRoute": "#/release/500318",
+   "fullPage": true
+  },
+  {
+   "name": "details-media-info",
+   "prototypeRoute": "#/release/500318",
+   "fullPage": true
+  },
+  {
+   "name": "details-files",
+   "prototypeRoute": "#/release/500318",
+   "fullPage": false
+  },
+  {
+   "name": "details-nfo",
+   "prototypeRoute": "#/",
+   "fullPage": false
+  },
+  {
+   "name": "dialog-media-info",
+   "prototypeRoute": "#/",
+   "fullPage": false
+  },
+  {
+   "name": "dialog-nfo",
+   "prototypeRoute": "#/",
+   "fullPage": false
+  },
+  {
+   "name": "dialog-files",
+   "prototypeRoute": "#/release/500318",
+   "fullPage": false
+  },
+  {
+   "name": "dialog-image-fit",
+   "prototypeRoute": "#/release/500321",
+   "fullPage": false
+  },
+  {
+   "name": "dialog-image-full-size",
+   "prototypeRoute": "#/release/500321",
+   "fullPage": false
+  }
+ ]
+}

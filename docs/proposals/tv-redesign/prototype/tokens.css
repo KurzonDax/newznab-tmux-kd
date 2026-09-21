@@ -1,0 +1,72 @@
+/* Extracted verbatim from tv.html on 2026-09-20. Dark theme first, light theme second. */
+:root{
+  --k-mi-bg:oklch(0.31 0.06 275);
+  --k-mi-fg:oklch(0.87 0.08 275);
+  --k-nfo-bg:oklch(0.31 0.07 345);
+  --k-nfo-fg:oklch(0.87 0.09 345);
+  --k-pv-bg:oklch(0.31 0.05 215);
+  --k-pv-fg:oklch(0.88 0.08 210);
+  --k-sm-bg:oklch(0.33 0.06 110);
+  --k-sm-fg:oklch(0.89 0.10 108);
+  --c-ok-bg:oklch(0.30 0.045 150);
+  --c-ok-fg:oklch(0.86 0.10 150);
+  --c-mid-bg:oklch(0.32 0.05 65);
+  --c-mid-fg:oklch(0.87 0.10 72);
+  --c-low-bg:oklch(0.30 0.055 22);
+  --c-low-fg:oklch(0.84 0.09 22);
+  --r4k-bg:oklch(0.44 0.17 318);
+  --r4k-fg:oklch(0.96 0.04 318);
+  --r1080-bg:oklch(0.44 0.13 255);
+  --r1080-fg:oklch(0.96 0.03 255);
+  --r720-bg:oklch(0.44 0.085 192);
+  --r720-fg:oklch(0.96 0.03 192);
+  --rsd-bg:oklch(0.34 0.012 265);
+  --rsd-fg:oklch(0.86 0.012 265);
+  --bg:#0f1014;
+  --panel:#181a21;
+  --panel2:#20232c;
+  --line:#2b2f3a;
+  --ink:#f4f4f6;
+  --dim:#a4a8b4;
+  --acc:#ff5a3c;
+  --accink:#1d0a05;
+  --ok:#5fd38d;
+  --warn:#f0b755;
+  --bad:#ff7a7a;
+  --shadow:0 18px 40px -14px rgb(0 0 0/.7)}
+
+:root[data-theme=light]{
+  --k-mi-bg:oklch(0.93 0.035 275);
+  --k-mi-fg:oklch(0.40 0.13 275);
+  --k-nfo-bg:oklch(0.93 0.04 345);
+  --k-nfo-fg:oklch(0.42 0.14 350);
+  --k-pv-bg:oklch(0.93 0.04 215);
+  --k-pv-fg:oklch(0.40 0.09 225);
+  --k-sm-bg:oklch(0.93 0.06 108);
+  --k-sm-fg:oklch(0.42 0.09 105);
+  --c-ok-bg:oklch(0.93 0.04 150);
+  --c-ok-fg:oklch(0.38 0.09 150);
+  --c-mid-bg:oklch(0.93 0.045 72);
+  --c-mid-fg:oklch(0.42 0.09 60);
+  --c-low-bg:oklch(0.93 0.035 22);
+  --c-low-fg:oklch(0.42 0.12 25);
+  --r4k-bg:oklch(0.90 0.07 318);
+  --r4k-fg:oklch(0.34 0.16 318);
+  --r1080-bg:oklch(0.90 0.055 255);
+  --r1080-fg:oklch(0.34 0.13 255);
+  --r720-bg:oklch(0.90 0.05 192);
+  --r720-fg:oklch(0.33 0.08 192);
+  --rsd-bg:oklch(0.89 0.008 265);
+  --rsd-fg:oklch(0.36 0.012 265);
+  --bg:#f5f5f2;
+  --panel:#fff;
+  --panel2:#e4e4dd;
+  --line:#d3d3cb;
+  --ink:#17181c;
+  --dim:#5c606b;
+  --acc:#c8331a;
+  --accink:#fff;
+  --ok:#1d7d47;
+  --warn:#8f5d00;
+  --bad:#b3261e;
+  --shadow:0 14px 30px -14px rgb(30 30 20/.35)}
