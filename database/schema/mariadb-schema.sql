@@ -2704,6 +2704,19 @@ CREATE TABLE `release_subtitles` (
   CONSTRAINT `FK_rs_releases` FOREIGN KEY (`releases_id`) REFERENCES `releases` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `release_tv_episodes`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `release_tv_episodes` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `releases_id` int(10) unsigned NOT NULL,
+  `season` smallint(5) unsigned NOT NULL COMMENT '0 = Specials',
+  `episode` smallint(5) unsigned DEFAULT NULL COMMENT 'As declared, 0 included; NULL = the whole season',
+  PRIMARY KEY (`id`),
+  KEY `ix_release_tv_episodes_releases_id` (`releases_id`),
+  CONSTRAINT `fk_release_tv_episodes_releases_id` FOREIGN KEY (`releases_id`) REFERENCES `releases` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `release_unique`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -3890,3 +3903,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (292,'2026_09_18_18
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (293,'2026_09_19_000000_gate_release_file_name_sources_on_evidence',10);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (294,'2026_09_24_000000_add_resolution_and_source_to_releases',11);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (295,'2026_09_24_100000_drop_color_scheme_from_users_table',12);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (296,'2026_09_24_200000_create_release_tv_episodes_table',13);

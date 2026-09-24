@@ -63,6 +63,9 @@ final class ElasticsearchReleaseIndexFailureTest extends TestCase
             $table->integer('proc_xxx')->default(0);
             $table->integer('proc_media_movie')->default(0);
             $table->string('searchname')->default('');
+            $table->integer('categories_id')->default(0);
+            $table->integer('videos_id')->default(0);
+            $table->integer('tv_episodes_id')->default(0);
             $table->unsignedTinyInteger('resolution')->default(0);
             $table->unsignedTinyInteger('source')->default(0);
         });
@@ -73,6 +76,7 @@ final class ElasticsearchReleaseIndexFailureTest extends TestCase
         });
         ProductionTables::fromAuthority()->create('media_info_probes');
         ProductionTables::fromAuthority()->create('media_info_tracks');
+        ProductionTables::fromAuthority()->create('release_tv_episodes');
         Schema::create('audio_data', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('releases_id');

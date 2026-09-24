@@ -121,8 +121,8 @@ trait CreatesPostingSchema
             resolution INTEGER NOT NULL DEFAULT 0, source INTEGER NOT NULL DEFAULT 0
         )');
         DB::statement('CREATE UNIQUE INDEX ux_releases_collectionhash ON releases (collectionhash)');
-        // Search::updateRelease() reads these to keep resolution and source in step.
-        foreach (['video_data', 'media_info_probes', 'media_info_tracks'] as $table) {
+        // Search::updateRelease() reads these to keep resolution, source and the TV episodes in step.
+        foreach (['video_data', 'media_info_probes', 'media_info_tracks', 'release_tv_episodes'] as $table) {
             if (! Schema::hasTable($table)) {
                 ProductionTables::fromAuthority()->create($table);
             }

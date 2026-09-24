@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Enums\ReleaseResolution;
 use App\Enums\ReleaseSource;
 use App\Facades\Search;
+use App\Services\Releases\ReleaseDerivedFacts;
 use App\Services\Search\Contracts\SearchDriverInterface;
 use App\Services\Search\SearchService;
 use Illuminate\Database\Events\QueryExecuted;
@@ -15,7 +16,7 @@ use Mockery;
 use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
-/** Every release change reaches SearchService::updateRelease(), which keeps resolution and source in step. */
+/** Every release change reaches SearchService::updateRelease(), which keeps resolution, source and release_tv_episodes in step. */
 final class ReleaseDerivedFactsTest extends TestCase
 {
     /** @var list<array{int, int}> What the search driver saw in `releases` when it was called. */
@@ -25,7 +26,9 @@ final class ReleaseDerivedFactsTest extends TestCase
     {
         parent::setUp();
         $tables = ProductionTables::fromAuthority();
-        $tables->create('releases', ['id', 'searchname', 'categories_id', 'resolution', 'source']);
+        $tables->create('releases', ['id', 'searchname', 'categories_id', 'videos_id', 'tv_episodes_id', 'resolution', 'source']);
+        $tables->create('tv_episodes', ['id', 'videos_id', 'series', 'episode']);
+        $tables->create('release_tv_episodes');
         $tables->create('video_data', ['releases_id', 'videowidth', 'videoheight']);
         $tables->create('media_info_probes');
         $tables->create('media_info_tracks');
@@ -85,14 +88,105 @@ final class ReleaseDerivedFactsTest extends TestCase
         $this->insertRelease(1, 'Show.S01E01.1080p.WEB-DL-GRP');
         Search::updateRelease(1);
 
-        $writes = 0;
-        DB::listen(function (QueryExecuted $query) use (&$writes): void {
-            $writes += (int) preg_match('/^\s*update\b/i', $query->sql);
-        });
+        $this->assertSame(0, $this->writesDuring(fn () => Search::updateRelease(1)));
+        $this->assertCount(2, $this->indexed);
+    }
+
+    public function test_a_release_stores_every_episode_it_names(): void
+    {
+        $this->insertRelease(1, 'Show.S01E01E02.1080p.WEB-DL-GRP', videosId: 7);
+        $this->insertRelease(2, 'Show.S02E03-E05.720p.HDTV-GRP', videosId: 7);
+        $this->insertRelease(3, 'Show.S03E00.Special.1080p.WEB-DL-GRP', videosId: 7);
+
+        foreach ([1, 2, 3] as $id) {
+            Search::updateRelease($id);
+        }
+
+        $this->assertSame([[1, 1], [1, 2]], $this->episodes(1));
+        $this->assertSame([[2, 3], [2, 4], [2, 5]], $this->episodes(2));
+        $this->assertSame([[3, 0]], $this->episodes(3));
+    }
+
+    public function test_a_season_pack_stores_one_row_with_no_episode(): void
+    {
+        $this->insertRelease(1, 'Show.S02.COMPLETE.1080p.WEB-DL-GRP', videosId: 7);
+
         Search::updateRelease(1);
 
-        $this->assertSame(0, $writes);
-        $this->assertCount(2, $this->indexed);
+        $this->assertSame([[2, null]], $this->episodes(1));
+    }
+
+    public function test_a_linked_release_that_names_nothing_takes_its_numbers_from_the_episode(): void
+    {
+        DB::table('tv_episodes')->insert(['id' => 40, 'videos_id' => 7, 'series' => 2024, 'episode' => 117]);
+        $this->insertRelease(1, 'Daily.Show.2024.05.01.1080p.WEB-DL-GRP', videosId: 7, tvEpisodesId: 40);
+        $this->insertRelease(2, 'Daily.Show.2024.05.02.1080p.WEB-DL-GRP', videosId: 7);
+
+        Search::updateRelease(1);
+        Search::updateRelease(2);
+
+        $this->assertSame([[2024, 117]], $this->episodes(1));
+        $this->assertSame([], $this->episodes(2));
+    }
+
+    public function test_renaming_matching_and_unmatching_keep_the_rows_correct(): void
+    {
+        $this->insertRelease(1, 'a1b2c3d4e5f6');
+        Search::updateRelease(1);
+        $this->assertSame([], $this->episodes(1));
+
+        DB::table('releases')->where('id', 1)->update(['searchname' => 'Show.S01E04.1080p.WEB-DL-GRP', 'videos_id' => 7]);
+        Search::updateRelease(1);
+        $this->assertSame([[1, 4]], $this->episodes(1));
+
+        DB::table('releases')->where('id', 1)->update(['searchname' => 'Show.S01.COMPLETE.1080p.WEB-DL-GRP']);
+        Search::updateRelease(1);
+        $this->assertSame([[1, null]], $this->episodes(1));
+
+        DB::table('releases')->where('id', 1)->update(['searchname' => 'Show.S01E00.1080p.WEB-DL-GRP']);
+        Search::updateRelease(1);
+        $this->assertSame([[1, 0]], $this->episodes(1));
+
+        DB::table('releases')->where('id', 1)->update(['videos_id' => 0]);
+        Search::updateRelease(1);
+        $this->assertSame([], $this->episodes(1));
+
+        DB::table('releases')->where('id', 1)->update(['videos_id' => 7, 'categories_id' => 2040]);
+        Search::updateRelease(1);
+        $this->assertSame([], $this->episodes(1));
+
+        DB::table('releases')->where('id', 1)->update(['categories_id' => 5040]);
+        Search::updateRelease(1);
+        $this->assertSame([[1, 0]], $this->episodes(1));
+    }
+
+    public function test_an_unchanged_pack_is_not_rewritten(): void
+    {
+        $this->insertRelease(1, 'Show.S02.COMPLETE.1080p.WEB-DL-GRP', videosId: 7);
+        Search::updateRelease(1);
+
+        $this->assertSame(0, $this->writesDuring(fn () => Search::updateRelease(1)));
+        $this->assertSame([[2, null]], $this->episodes(1));
+    }
+
+    public function test_the_fill_writes_every_tv_release_with_a_show_and_can_be_rerun(): void
+    {
+        DB::table('tv_episodes')->insert(['id' => 40, 'videos_id' => 7, 'series' => 3, 'episode' => 9]);
+        $this->insertRelease(1, 'Show.S01E01E02.1080p.WEB-DL-GRP', videosId: 7);
+        $this->insertRelease(2, 'Show.S02.COMPLETE.1080p.WEB-DL-GRP', videosId: 7);
+        $this->insertRelease(3, 'Show.Name.720p.HDTV-GRP', videosId: 7, tvEpisodesId: 40);
+        $this->insertRelease(4, 'Show.S01E05.1080p.WEB-DL-GRP');
+        $this->insertRelease(5, 'Show.S01E06.1080p.WEB-DL-GRP', videosId: 7, categoriesId: 2040);
+        $this->insertRelease(6, 'Show.Name.720p.HDTV-GRP', videosId: 7);
+
+        $facts = app(ReleaseDerivedFacts::class);
+        $this->assertSame(4, $facts->fillTvEpisodes());
+        $this->assertSame(4, $facts->fillTvEpisodes());
+
+        $this->assertSame([[1, 1], [1, 2]], $this->episodes(1));
+        $this->assertSame([[2, null]], $this->episodes(2));
+        $this->assertSame([[3, 9]], $this->episodes(3));
+        $this->assertSame(4, DB::table('release_tv_episodes')->count());
     }
 
     public function test_a_missing_release_is_still_handed_to_the_driver(): void
@@ -103,9 +197,31 @@ final class ReleaseDerivedFactsTest extends TestCase
         $this->assertCount(1, $this->indexed);
     }
 
-    private function insertRelease(int $id, string $searchname): void
+    private function insertRelease(int $id, string $searchname, int $videosId = 0, int $tvEpisodesId = 0, int $categoriesId = 5040): void
     {
-        DB::table('releases')->insert(['id' => $id, 'searchname' => $searchname, 'categories_id' => 5040, 'resolution' => 0, 'source' => 0]);
+        DB::table('releases')->insert([
+            'id' => $id, 'searchname' => $searchname, 'categories_id' => $categoriesId, 'videos_id' => $videosId,
+            'tv_episodes_id' => $tvEpisodesId, 'resolution' => 0, 'source' => 0,
+        ]);
+    }
+
+    private function writesDuring(callable $action): int
+    {
+        $writes = 0;
+        DB::listen(function (QueryExecuted $query) use (&$writes): void {
+            $writes += (int) preg_match('/^\s*(update|insert|delete)\b/i', $query->sql);
+        });
+        $action();
+
+        return $writes;
+    }
+
+    /** @return list<array{int, ?int}> */
+    private function episodes(int $releaseId): array
+    {
+        return DB::table('release_tv_episodes')->where('releases_id', $releaseId)->orderBy('id')->get(['season', 'episode'])
+            ->map(static fn (object $row): array => [(int) $row->season, $row->episode === null ? null : (int) $row->episode])
+            ->all();
     }
 
     private function insertProbe(int $id, int $releaseId, string $capturedAt, string $completeness, int $width, int $height): void
