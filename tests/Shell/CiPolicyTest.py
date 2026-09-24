@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise CI planning and admission through its CLI, without Docker or network."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import shutil
@@ -29,6 +30,29 @@ class PolicyTest(unittest.TestCase):
         self.assertEqual([], self.plan('docs/guide.md')['suites'])
         self.assertFalse(self.plan('docs/guide.md')['php'])
         self.assertTrue(self.plan('resources/views/browse.blade.php')['php'])
+
+    def test_many_non_markdown_docs_skip_all_runtime_checks(self):
+        paths = [f'docs/proposals/tv-redesign/asset-{index}.webp' for index in range(500)]
+        paths += ['docs/proposals/tv-redesign/data.json', '.ai/rules/example.html']
+        planned = self.plan(*paths)
+        self.assertFalse(planned['php'])
+        self.assertEqual([], planned['suites'])
+        self.assertEqual([[], []], planned['lanes'])
+
+    def test_large_selected_change_keeps_lane_plan_below_environment_limit(self):
+        paths = [f'unknown/{index:04d}-' + 'x' * 100 + '.json' for index in range(500)]
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'github-output'
+            result = subprocess.run(['python3', str(ROOT / 'scripts/ci-policy'), 'plan',
+                                     '--github', '--paths', *paths], cwd=ROOT, text=True,
+                                    capture_output=True, env={**os.environ, 'GITHUB_OUTPUT': str(output)})
+            self.assertEqual(0, result.returncode, result.stderr)
+            lane_plan = json.loads(next(line.removeprefix('plan=') for line in output.read_text().splitlines()
+                                        if line.startswith('plan=')))
+            self.assertTrue(lane_plan['suites'])
+            self.assertLess(len(json.dumps(lane_plan).encode()), 131072)
+            self.assertNotIn('reasons', lane_plan)
+            self.assertIn('reasons', json.loads(result.stdout))
 
     def test_duplicate_and_scale_selection_are_rejected(self):
         original = json.loads((ROOT / '.github/ci-policy.json').read_text())
