@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class MediaInfoRefinementPersistenceTest extends TestCase
@@ -211,7 +212,16 @@ class MediaInfoRefinementPersistenceTest extends TestCase
                 $table->unsignedInteger('categories_id');
                 $table->unsignedInteger('groups_id')->default(0);
                 $table->boolean('iscategorized')->default(false);
+                $table->string('searchname')->default('');
+                $table->unsignedTinyInteger('resolution')->default(0);
+                $table->unsignedTinyInteger('source')->default(0);
             });
+        }
+
+        foreach (['media_info_probes', 'media_info_tracks'] as $table) {
+            if (! Schema::hasTable($table)) {
+                ProductionTables::fromAuthority()->create($table);
+            }
         }
 
         if (! Schema::hasTable('usenet_groups')) {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Categorization;
 
+use App\Enums\ReleaseResolution;
 use App\Models\AudioData;
 use App\Models\Category;
 use App\Models\Release;
@@ -153,7 +154,7 @@ final class MediaInfoRefinementService
         $format = $this->normalized((string) ($video['videoformat'] ?? ''));
         $codec = $this->normalized((string) ($video['videocodec'] ?? ''));
 
-        if ($width >= 3800 || $height >= 2100) {
+        if ($width >= ReleaseResolution::UHD_MIN_WIDTH || $height >= ReleaseResolution::UHD_MIN_HEIGHT) {
             return new MediaInfoRefinementDecision(match ($currentCategoryId) {
                 Category::MOVIE_OTHER => Category::MOVIE_UHD,
                 Category::TV_OTHER => Category::TV_UHD,
@@ -196,7 +197,7 @@ final class MediaInfoRefinementService
             return null;
         }
 
-        $isHighDefinition = $width >= 1280 || $height >= 720;
+        $isHighDefinition = $width >= ReleaseResolution::HD_MIN_WIDTH || $height >= ReleaseResolution::HD_MIN_HEIGHT;
 
         return new MediaInfoRefinementDecision(match ($currentCategoryId) {
             Category::MOVIE_OTHER => $isHighDefinition ? Category::MOVIE_HD : Category::MOVIE_SD,

@@ -2809,6 +2809,9 @@ CREATE TABLE `releases` (
   `movie_record_lookup_attempts` tinyint(3) unsigned DEFAULT NULL,
   `name_direct_work_pending` tinyint(1) GENERATED ALWAYS AS (`nfostatus` = 1 and `proc_nfo` = 0 or `nzbstatus` = 1 and `proc_par2` = 0 or `proc_hash16k` = 0) VIRTUAL,
   `name_evidence_work_pending` tinyint(1) GENERATED ALWAYS AS (`proc_xxx` = 0 or `proc_uid` = 0 or `proc_media_movie` = 0 or `proc_srrdb` = 0 or `proc_files` = 0 or `proc_srr` = 0 or `proc_crc32` = 0) VIRTUAL,
+  `resolution` tinyint(3) unsigned NOT NULL DEFAULT 0 COMMENT 'App\\Enums\\ReleaseResolution: measured video size, else the name; 0 unknown',
+  `source` tinyint(3) unsigned NOT NULL DEFAULT 0 COMMENT 'App\\Enums\\ReleaseSource: from the name; 0 unknown',
+  `category_band` int(11) GENERATED ALWAYS AS (floor(`categories_id` / 1000) * 1000) VIRTUAL COMMENT 'Thousand-band of categories_id: 5000 for every TV category',
   PRIMARY KEY (`id`),
   UNIQUE KEY `ux_releases_guid` (`guid`),
   UNIQUE KEY `ux_releases_collectionhash` (`collectionhash`),
@@ -2849,7 +2852,12 @@ CREATE TABLE `releases` (
   KEY `ix_releases_pp_declined_size` (`additional_pp_claim_token`,`passwordstatus`,`haspreview`,`nzbstatus`,`size`) COMMENT 'nntmux:post-processing-candidates:523',
   KEY `releases_formation_queue` (`groups_id`,`nzbstatus`,`id`),
   KEY `releases_name_evidence_work` (`name_evidence_work_pending`,`isrenamed`,`predb_id`,`leftguid`,`id`),
-  KEY `releases_name_direct_work` (`name_direct_work_pending`,`isrenamed`,`predb_id`,`leftguid`,`id`)
+  KEY `releases_name_direct_work` (`name_direct_work_pending`,`isrenamed`,`predb_id`,`leftguid`,`id`),
+  KEY `ix_releases_band_posted` (`category_band`,`postdate`,`id`,`resolution`,`source`,`categories_id`,`passwordstatus`),
+  KEY `ix_releases_band_added` (`category_band`,`adddate`,`id`,`resolution`,`source`,`categories_id`,`passwordstatus`),
+  KEY `ix_releases_band_count` (`category_band`,`resolution`,`source`,`categories_id`,`passwordstatus`),
+  KEY `ix_releases_videos_posted` (`videos_id`,`postdate`),
+  KEY `ix_releases_videos_added` (`videos_id`,`adddate`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `releases_groups`;
@@ -3881,3 +3889,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (290,'2026_09_17_17
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (291,'2026_09_18_120000_bucket_obfuscation_recovery_dirty_marks',8);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (292,'2026_09_18_180000_add_retries_to_obfuscation_recovery_gaps',9);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (293,'2026_09_19_000000_gate_release_file_name_sources_on_evidence',10);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (294,'2026_09_24_000000_add_resolution_and_source_to_releases',11);

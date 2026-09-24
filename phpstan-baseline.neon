@@ -421,7 +421,7 @@ parameters:
 			path: app/Models/Release.php
 
 		-
-			message: '#^Property App\\Models\\Release\:\:\$source \(int\<0, max\>\|null\) does not accept bool\|null\.$#'
+			message: '#^Property App\\Models\\Release\:\:\$source \(int\<0, max\>\) does not accept bool\|null\.$#'
 			identifier: assign.propertyType
 			count: 1
 			path: app/Models/Release.php
