@@ -24,6 +24,8 @@ class ReleaseQualityTest extends TestCase
             'name 480i' => [null, null, 'Show.480i.DVD', ReleaseResolution::Sd],
             'name without a token' => [null, null, 'Some.Album.FLAC', ReleaseResolution::Unknown],
             'name token must stand alone' => [null, null, 'Show.x1080p', ReleaseResolution::Unknown],
+            'underscores separate tokens' => [null, null, 'Show_S01E01_1080p_WEB', ReleaseResolution::FullHd],
+            'underscore before a lower-case token' => [null, null, 'show_720p', ReleaseResolution::Hd],
             'leftmost name token wins' => [null, null, 'Show.720p.from.1080p', ReleaseResolution::Hd],
             'measured beats the name' => [1280, 720, 'Show.S01E01.2160p.WEB', ReleaseResolution::Hd],
             'measured without a name token' => [3840, 2160, 'Show.S01E01', ReleaseResolution::Uhd],
@@ -59,7 +61,12 @@ class ReleaseQualityTest extends TestCase
             'bdrip' => ['Movie.2020.BDRip.x264', ReleaseSource::BluRay],
             'brrip' => ['Movie.2020.BRRip.x264', ReleaseSource::BluRay],
             'dvdrip' => ['Show.S01E01.DVDRip.XviD', ReleaseSource::Dvd],
-            'dvd' => ['Show.S01.DVD9', ReleaseSource::Unknown],
+            'dvd9' => ['Show.S01.DVD9', ReleaseSource::Dvd],
+            'dvd5' => ['Show.S01.DVD5', ReleaseSource::Dvd],
+            'dvd9 between underscores' => ['Show_DVD9_x', ReleaseSource::Dvd],
+            'other dvd numbers are not dvd' => ['Show.DVD7', ReleaseSource::Unknown],
+            'underscores separate source tokens' => ['Show_S01E01_1080p_WEB', ReleaseSource::Web],
+            'underscore remux' => ['Movie_BluRay_REMUX', ReleaseSource::Remux],
             'dvd alone' => ['Show.S01.DVD.x264', ReleaseSource::Dvd],
             'hdtv' => ['Show.S01E01.720p.HDTV.x264', ReleaseSource::Hdtv],
             'pdtv' => ['Show.S01E01.PDTV.XviD', ReleaseSource::Hdtv],
@@ -71,6 +78,7 @@ class ReleaseQualityTest extends TestCase
             'case insensitive' => ['show.s01e01.webrip', ReleaseSource::Web],
             'nothing' => ['Some.Album.FLAC', ReleaseSource::Unknown],
             'token must stand alone' => ['Show.WEBX.HDTVX', ReleaseSource::Unknown],
+            'a letter or digit still joins a token' => ['Show.xWEB.HDTV2', ReleaseSource::Unknown],
         ];
     }
 
@@ -85,6 +93,7 @@ class ReleaseQualityTest extends TestCase
         $this->assertSame('1080p · WEB-DL', ReleaseQuality::label(BrowseRoot::Tv, 'Show.S01E01.1080p.WEB.DL-GRP'));
         $this->assertSame('2160p · BluRay', ReleaseQuality::label(BrowseRoot::Movies, 'Movie.2160p.BluRay.REMUX'));
         $this->assertSame('24-bit FLAC', ReleaseQuality::label(BrowseRoot::Audio, 'Album.24bit.FLAC'));
+        $this->assertSame('1080p · WEB', ReleaseQuality::label(BrowseRoot::Tv, 'Show_S01E01_1080p_WEB_GRP'));
     }
 
     public function test_enum_values_and_labels_are_the_stored_contract(): void
