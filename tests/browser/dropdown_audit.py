@@ -57,9 +57,9 @@ with sync_playwright() as pw:
         for width,height in [(390,844),(768,1024),(1869,1280),(2560,1440)]:
             page.set_viewport_size({'width':width,'height':height})
             page.goto('http://localhost/fixture',wait_until='networkidle')
-            for scheme in ['blue','emerald','violet']:
+            for scheme in ['coral']:
                 for dark in [False,True]:
-                    page.evaluate('([s,d])=>{document.documentElement.dataset.colorScheme=s;document.documentElement.classList.toggle("dark",d)}',[scheme,dark])
+                    page.evaluate('([s,d])=>{document.documentElement.classList.toggle("dark",d)}',[scheme,dark])
                     measure('default',width,scheme,dark)
                     if page.locator('#feed-type').count():
                         page.locator('#feed-type').select_option('category')

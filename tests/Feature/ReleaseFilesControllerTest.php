@@ -74,7 +74,7 @@ class ReleaseFilesControllerTest extends TestCase
     {
         $this->withoutVite();
         $this->mock(GlobalDataComposer::class)->shouldReceive('compose')->andReturnUsing(static function (View $view): void {
-            $view->with(['userTheme' => 'light', 'userColorScheme' => 'blue', 'loggedin' => false, 'isadmin' => false, 'usefulLinks' => collect(), 'site' => []]);
+            $view->with(['userTheme' => 'light', 'loggedin' => false, 'isadmin' => false, 'usefulLinks' => collect(), 'site' => []]);
         });
         $this->nzb('<nzb>'.str_repeat('<file subject="&lt;script&gt;"/>', 25).'</nzb>');
         $this->get('/release/abc/files?per=24')->assertOk()->assertViewIs('details.files')

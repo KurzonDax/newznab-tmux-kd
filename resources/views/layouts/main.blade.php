@@ -19,7 +19,6 @@
 
     <!-- Theme Preference - Set via meta tag for CSP compliance -->
     <meta name="theme-preference" content="{{ $userTheme }}">
-    <meta name="color-scheme-preference" content="{{ $userColorScheme }}">
     <!-- CSP Nonce for dynamic script loading -->
     <meta name="csp-nonce" content="{{ csp_nonce() }}">
     @auth
@@ -55,10 +54,9 @@
     @stack('scripts')
 
     <!-- Theme Management Data (moved to csp-safe.js) -->
-    @php $themePreference = $userTheme; $colorScheme = $userColorScheme; @endphp
+    @php $themePreference = $userTheme; @endphp
     <div id="current-theme-data"
          data-theme="{{ $themePreference }}"
-         data-color-scheme="{{ $colorScheme }}"
          data-authenticated="{{ $loggedin ? 'true' : 'false' }}"
          data-update-url="{{ route('profile.update-theme') }}"
          class="hidden">

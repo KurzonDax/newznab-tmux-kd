@@ -40,7 +40,7 @@
                                     </div>
                                 </div>
                                 <div class="flex items-center space-x-2">
-                                    <span class="px-4 py-2 bg-primary-500 text-white rounded-full text-sm font-bold shadow-md">
+                                    <span class="px-4 py-2 bg-accent-surface text-accent-on rounded-full text-sm font-bold shadow-md dark:bg-accent-surface-dark dark:text-accent-on-dark">
                                         {{ number_format($grab['grabs']) }}
                                     </span>
                                 </div>

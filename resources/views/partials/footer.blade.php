@@ -31,22 +31,22 @@
         </details>
     @endif
     <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
-        <p class="text-gray-300 dark:text-gray-400">
+        <p class="text-(--text-muted) dark:text-(--text-muted-dark)">
             &copy; {{ now()->year }}
-            <a href="https://github.com/NNTmux/newznab-tmux" class="text-primary-400 hover:text-primary-300 transition">NNTmux</a>
+            <a href="https://github.com/NNTmux/newznab-tmux" class="text-primary-700 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300 transition">NNTmux</a>
         </p>
 
         <div class="flex items-center gap-4">
-            <a href="{{ url('/terms-and-conditions') }}" class="text-gray-300 dark:text-gray-400 hover:text-white transition">Terms</a>
-            <a href="{{ url('/privacy-policy') }}" class="text-gray-300 dark:text-gray-400 hover:text-white transition">Privacy</a>
-            <a href="{{ route('contact-us') }}" class="text-gray-300 dark:text-gray-400 hover:text-white transition">Contact</a>
+            <a href="{{ url('/terms-and-conditions') }}" class="text-(--text-muted) dark:text-(--text-muted-dark) hover:text-(--text-default) dark:hover:text-(--text-default-dark) transition">Terms</a>
+            <a href="{{ url('/privacy-policy') }}" class="text-(--text-muted) dark:text-(--text-muted-dark) hover:text-(--text-default) dark:hover:text-(--text-default-dark) transition">Privacy</a>
+            <a href="{{ route('contact-us') }}" class="text-(--text-muted) dark:text-(--text-muted-dark) hover:text-(--text-default) dark:hover:text-(--text-default-dark) transition">Contact</a>
         </div>
 
         <div class="flex items-center gap-3">
-            <a href="https://github.com/NNTmux/newznab-tmux" class="text-gray-300 dark:text-gray-400 hover:text-white transition" title="GitHub">
+            <a href="https://github.com/NNTmux/newznab-tmux" class="text-(--text-muted) dark:text-(--text-muted-dark) hover:text-(--text-default) dark:hover:text-(--text-default-dark) transition" title="GitHub">
                 <i class="fab fa-github text-lg"></i>
             </a>
-            <a href="{{ url('/rss') }}" class="text-gray-300 dark:text-gray-400 hover:text-white transition" title="RSS Feeds">
+            <a href="{{ url('/rss') }}" class="text-(--text-muted) dark:text-(--text-muted-dark) hover:text-(--text-default) dark:hover:text-(--text-default-dark) transition" title="RSS Feeds">
                 <i class="fas fa-rss text-lg"></i>
             </a>
         </div>

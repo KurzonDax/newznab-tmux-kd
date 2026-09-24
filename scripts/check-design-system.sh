@@ -23,7 +23,7 @@ VIEWS_EXCLUDE='resources/views/(emails|components/mail|vendor/mail|errors)/'
 VIEW_ROOTS=(resources/views resources/forum/blade-tailwind/views)
 
 # 1. Accents must use the primary-* theme ramp, not hardcoded blue-*.
-#    (Emerald/violet color schemes only retheme token-driven classes.)
+#    (Views reach the accent through tokens so app.css can replace it.)
 hits=$(grep -rnE '[":[:space:]][a-z:-]*(bg|text|border|ring|from|to|via|divide|outline|decoration|fill|stroke|accent)-blue-[0-9]' \
     "${VIEW_ROOTS[@]}" --include='*.blade.php' | grep -vE "$VIEWS_EXCLUDE" || true)
 [ -n "$hits" ] && report "hardcoded blue-* accent utility (use primary-*)" "$hits"
@@ -88,6 +88,12 @@ hits=$(grep -rnE '(bg|text|border|ring|from|to|via|divide|outline|decoration|fil
     resources/js --include='*.js' \
     | grep -vE 'resources/js/(admin/|alpine/components/admin[-/])' || true)
 [ -n "$hits" ] && report "JavaScript blue-* accent utility (use primary-*)" "$hits"
+
+# Coral is the only accent: nothing may select or store a colour scheme.
+hits=$(grep -rnE 'data-color-scheme|color-scheme-preference|colorScheme|color_scheme|setScheme' \
+    "${VIEW_ROOTS[@]}" resources/js --include='*.blade.php' --include='*.js' \
+    | grep -vE "$VIEWS_EXCLUDE" || true)
+[ -n "$hits" ] && report "colour scheme reference (coral is the only accent)" "$hits"
 
 if [ "$fail" -ne 0 ]; then
     echo "design-system: see AGENTS.md > Frontend > Design system" >&2

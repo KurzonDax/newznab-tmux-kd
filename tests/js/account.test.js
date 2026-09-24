@@ -24,11 +24,11 @@ test('RSS controls keep their container data when Alpine changes the event eleme
     assert.equal(new URL(component.url).searchParams.has('limit'), false);
 });
 
-test('appearance controls apply theme and scheme through the existing store', () => {
+test('appearance controls apply the theme through the existing store; there is no scheme control', () => {
     const applied = [];
     const component = accountPage();
-    component.$store = { theme: { set: value => applied.push(['theme', value]), setScheme: value => applied.push(['scheme', value]) } };
+    component.$store = { theme: { set: value => applied.push(['theme', value]) } };
     component.setTheme({ currentTarget: { dataset: { theme: 'system' } } });
-    component.setScheme({ currentTarget: { dataset: { scheme: 'violet' } } });
-    assert.deepEqual(applied, [['theme', 'system'], ['scheme', 'violet']]);
+    assert.deepEqual(applied, [['theme', 'system']]);
+    assert.equal('setScheme' in component, false);
 });

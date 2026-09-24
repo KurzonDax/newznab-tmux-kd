@@ -8,7 +8,6 @@ const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
 Alpine.store('theme', {
     current: 'light',
-    colorScheme: 'blue',
 
     init() {
         const meta = document.querySelector('meta[name="theme-preference"]');
@@ -17,34 +16,8 @@ Alpine.store('theme', {
             ? (meta ? meta.content : 'light')
             : (localStorage.getItem('theme') || 'light');
 
-        const schemeMeta = document.querySelector('meta[name="color-scheme-preference"]');
-        const schemeData = document.getElementById('current-theme-data');
-        this.colorScheme = (isAuth && isAuth.content === 'true')
-            ? (schemeMeta ? schemeMeta.content : (schemeData?.dataset?.colorScheme || 'blue'))
-            : (localStorage.getItem('color_scheme') || 'blue');
-
         this.apply();
-        this.applyScheme();
         this._listenOS();
-    },
-
-    /** Set and persist color scheme (blue, emerald, violet) */
-    setScheme(scheme) {
-        if (!['blue', 'emerald', 'violet'].includes(scheme)) return;
-        this.colorScheme = scheme;
-        this.applyScheme();
-        this._save();
-    },
-
-    /** Apply color scheme to <html> and meta */
-    applyScheme() {
-        const html = document.documentElement;
-        html.setAttribute('data-color-scheme', this.colorScheme);
-        const meta = document.querySelector('meta[name="color-scheme-preference"]');
-        if (meta) meta.content = this.colorScheme;
-        const dataEl = document.getElementById('current-theme-data');
-        if (dataEl) dataEl.dataset.colorScheme = this.colorScheme;
-        this._updateUI();
     },
 
     /** Cycle light -> dark -> system -> light */
@@ -105,15 +78,6 @@ Alpine.store('theme', {
                 btn.classList.add('text-gray-300', 'hover:text-white', 'hover:bg-(--surface-chrome-border)', 'dark:hover:bg-(--surface-chrome-border-dark)');
             }
         });
-
-        // Update color scheme swatch buttons
-        document.querySelectorAll('.dropdown-scheme-btn, .mobile-scheme-btn').forEach(function(btn) {
-            var isActive = btn.dataset.scheme === self.colorScheme;
-            btn.classList.remove('ring-2', 'ring-offset-2', 'ring-offset-gray-900', 'ring-primary-500', 'ring-white');
-            if (isActive) {
-                btn.classList.add('ring-2', 'ring-offset-2', 'ring-offset-gray-900', 'ring-primary-500', 'dark:ring-offset-gray-950');
-            }
-        });
     },
 
     icon() {
@@ -138,12 +102,12 @@ Alpine.store('theme', {
         });
     },
 
-    /** Persist theme and color scheme to server (authenticated) or localStorage (guest) */
+    /** Persist theme to server (authenticated) or localStorage (guest) */
     _save() {
         const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
         const url = document.querySelector('meta[name="update-theme-url"]')?.content;
         const isAuth = document.querySelector('meta[name="user-authenticated"]');
-        const payload = { theme_preference: this.current, color_scheme: this.colorScheme };
+        const payload = { theme_preference: this.current };
 
         if (isAuth && isAuth.content === 'true' && url && csrf) {
             fetch(url, {
@@ -153,7 +117,6 @@ Alpine.store('theme', {
             }).catch(err => console.error('Error saving theme:', err));
         } else {
             localStorage.setItem('theme', this.current);
-            localStorage.setItem('color_scheme', this.colorScheme);
         }
     }
 });

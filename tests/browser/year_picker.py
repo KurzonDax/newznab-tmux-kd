@@ -113,9 +113,9 @@ with sync_playwright() as pw:
         count(2)
         for width in [390, 639, 640, 641, 699, 700, 701, 768, 1024, 1099, 1100, 1101, 1869, 2560]:
             page.set_viewport_size({'width': width, 'height': 1000})
-            for scheme in ['blue', 'emerald', 'violet']:
+            for scheme in ['coral']:
                 for dark in [False, True]:
-                    page.evaluate('([s,d])=>{document.documentElement.dataset.colorScheme=s;document.documentElement.classList.toggle("dark",d)}', [scheme, dark])
+                    page.evaluate('([s,d])=>{document.documentElement.classList.toggle("dark",d)}', [scheme, dark])
                     for control in picker().locator('select,input,button').all():
                         box = control.bounding_box()
                         assert box and box['x'] >= 0 and box['x'] + box['width'] <= width + 1, (path, view, width, box)

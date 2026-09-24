@@ -17,7 +17,7 @@
             : 'border border-slate-400/30 bg-slate-600 text-white shadow-sm dark:border-slate-300/20 dark:bg-slate-500 dark:text-slate-950';
     };
     $periodDoneClasses = 'border border-cyan-500/30 bg-cyan-600 text-white shadow-sm dark:border-cyan-300/20 dark:bg-cyan-500 dark:text-slate-950';
-    $primaryButtonClasses = 'inline-flex items-center rounded-lg border border-primary-700 bg-primary-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:border-primary-300/20 dark:bg-primary-500 dark:text-white dark:hover:bg-primary-400 dark:focus:ring-offset-gray-900';
+    $primaryButtonClasses = 'inline-flex items-center rounded-lg border border-accent-surface bg-accent-surface px-4 py-2 text-sm font-medium text-accent-on shadow-sm transition hover:bg-primary-800 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:border-primary-300/20 dark:bg-accent-surface-dark dark:hover:bg-primary-400 dark:focus:ring-offset-gray-900 dark:text-accent-on-dark';
     $secondaryButtonClasses = 'inline-flex items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600 dark:focus:ring-offset-gray-900';
     $editButtonClasses = 'inline-flex items-center rounded-md border border-sky-700 bg-sky-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 dark:border-sky-300/20 dark:bg-sky-500 dark:text-white dark:hover:bg-sky-400 dark:focus:ring-offset-gray-900';
     $toggleButtonClasses = 'inline-flex items-center rounded-md border border-amber-500/40 bg-amber-500 px-3 py-1.5 text-xs font-medium text-slate-950 shadow-sm transition hover:bg-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 dark:border-amber-200/20 dark:bg-amber-400 dark:text-slate-950 dark:hover:bg-amber-300 dark:focus:ring-offset-gray-900';
@@ -51,7 +51,7 @@
                         {{ $registrationStatus['effective_status_label'] }}
                     </span>
                     @if($registrationStatus['scheduled_override_active'])
-                        <span class="inline-flex items-center justify-center rounded-full border border-primary-500/30 bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm dark:border-primary-300/20 dark:bg-primary-500 dark:text-white">
+                        <span class="inline-flex items-center justify-center rounded-full border border-primary-500/30 bg-accent-surface px-3 py-1.5 text-xs font-semibold text-accent-on shadow-sm dark:border-primary-300/20 dark:bg-accent-surface-dark dark:text-accent-on-dark">
                             Scheduled Override
                         </span>
                     @endif
@@ -222,7 +222,7 @@
                                     <td class="px-6 py-4 align-top">
                                         <p class="font-medium text-gray-900 dark:text-gray-100">{{ $period->name }}</p>
                                         @if($registrationStatus['active_period'] && $registrationStatus['active_period']->id === $period->id)
-                                            <span class="mt-2 inline-flex items-center justify-center rounded-full border border-primary-500/30 bg-primary-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm dark:border-primary-300/20 dark:bg-primary-500 dark:text-white">
+                                            <span class="mt-2 inline-flex items-center justify-center rounded-full border border-primary-500/30 bg-accent-surface px-2.5 py-1.5 text-xs font-semibold text-accent-on shadow-sm dark:border-primary-300/20 dark:bg-accent-surface-dark dark:text-accent-on-dark">
                                                 Active Right Now
                                             </span>
                                         @endif

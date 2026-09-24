@@ -18,7 +18,7 @@
     ];
 
     $variants = [
-        'primary' => 'border-primary-600 bg-primary-600 text-white hover:bg-primary-700 dark:border-primary-700 dark:bg-primary-700 dark:hover:bg-primary-800',
+        'primary' => 'border-accent-surface bg-accent-surface text-accent-on hover:bg-primary-800 dark:border-accent-surface-dark dark:bg-accent-surface-dark dark:hover:bg-primary-400 dark:text-accent-on-dark',
         'secondary' => 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700',
         'muted' => 'border-transparent bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600',
         'success' => 'border-green-600 bg-green-600 text-white hover:bg-green-700 dark:border-green-700 dark:bg-green-700 dark:hover:bg-green-800',

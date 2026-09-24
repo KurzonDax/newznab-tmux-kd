@@ -32,7 +32,9 @@ frontend checks; a separate successful build does not populate its reuse record.
 ## Design system
 
 - Accent actions, links, focus rings, and selected states use `primary-*` tokens
-  so blue, emerald, and violet schemes work. Literal green/red/yellow/cyan remain
+  so `resources/css/app.css` can replace the accent (coral is the only one).
+  Filled accent controls use the `--accent-surface` / `--accent-on` pair, not
+  `primary-*` with white text. Literal green/red/yellow/cyan remain
   appropriate for success/danger/warning/info status.
 - Containers use semantic surfaces such as `.card`, `.surface-panel`,
   `.surface-panel-alt`, `.auth-card`, or the `--surface-*` variables. Give color

@@ -200,7 +200,7 @@
                     </span>
                     <span data-registration="scheduled-override"
                           @class([
-                              'inline-flex items-center justify-center rounded-full border border-primary-500/30 bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm dark:border-primary-300/20 dark:bg-primary-500 dark:text-white',
+                              'inline-flex items-center justify-center rounded-full border border-primary-500/30 bg-accent-surface px-3 py-1.5 text-xs font-semibold text-accent-on shadow-sm dark:border-primary-300/20 dark:bg-accent-surface-dark dark:text-accent-on-dark',
                               'hidden' => ! $registrationStatus['scheduled_override_active'],
                           ])>
                         Scheduled Override

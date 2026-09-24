@@ -22,7 +22,7 @@
             @foreach($sortOptions as $sortKey => $sortData)
                 <a
                     href="{{ $sortUrls[$sortKey] }}"
-                    class="flex items-center gap-3 px-4 py-2 text-sm transition {{ $currentSort === $sortKey ? 'bg-primary-100 dark:bg-primary-600 text-primary-800 dark:text-white font-medium' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600' }}"
+                    class="flex items-center gap-3 px-4 py-2 text-sm transition {{ $currentSort === $sortKey ? 'bg-primary-100 dark:bg-accent-surface-dark text-primary-800 font-medium dark:text-accent-on-dark' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600' }}"
                 >
                     <i class="fas {{ $sortData['icon'] }} w-4 text-center {{ $currentSort === $sortKey ? 'text-primary-600 dark:text-primary-200' : 'text-gray-400 dark:text-gray-400' }}"></i>
                     <span class="flex-1">{{ $sortData['label'] }}</span>

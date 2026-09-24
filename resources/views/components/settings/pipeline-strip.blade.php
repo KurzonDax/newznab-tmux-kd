@@ -16,7 +16,7 @@
         @endif
         <span @class([
             'rounded-full px-3 py-1',
-            'bg-primary-600 text-white dark:bg-primary-500' => $current === $stage,
+            'bg-accent-surface text-accent-on dark:bg-accent-surface-dark dark:text-accent-on-dark' => $current === $stage,
             'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400' => $current !== $stage,
         ]) @if($current === $stage) aria-current="step" @endif>{{ $stage->label() }}</span>
     @endforeach

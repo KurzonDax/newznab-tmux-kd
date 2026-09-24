@@ -33,7 +33,6 @@ final class AdminAnidbControllerTest extends TestCase
             'ismod' => false,
             'loggedin' => false,
             'userTheme' => 'light',
-            'userColorScheme' => 'blue',
         ]);
     }
 

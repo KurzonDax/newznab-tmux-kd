@@ -7,7 +7,6 @@ export function accountPage() {
             }
         },
         setTheme(event) { this.$store.theme.set(event.currentTarget.dataset.theme); },
-        setScheme(event) { this.$store.theme.setScheme(event.currentTarget.dataset.scheme); },
     };
 }
 

@@ -74,9 +74,9 @@ with sync_playwright() as pw:
         dialog.locator('[data-season-host] > section > nav [data-list-page="1"]').click()
         expect(dialog.locator('[data-episode-section="1"] [data-kind="episode"]')).to_have_attribute('data-page','2')
         expect(dialog.locator('[data-kind="packs"]')).to_have_attribute('data-page','2')
-        for scheme in ['blue','emerald','violet']:
+        for scheme in ['coral']:
             for dark in [False,True]:
-                page.evaluate('([scheme,dark])=>{document.documentElement.dataset.colorScheme=scheme;document.documentElement.classList.toggle("dark",dark)}',[scheme,dark])
+                page.evaluate('([scheme,dark])=>{document.documentElement.classList.toggle("dark",dark)}',[scheme,dark])
                 bounds=dialog.locator('.public-modal-card').bounding_box()
                 assert bounds['width']<=min(1050,width-40)+1 and bounds['height']<=height*.85+1, bounds
                 assert page.evaluate('document.documentElement.scrollWidth')<=width

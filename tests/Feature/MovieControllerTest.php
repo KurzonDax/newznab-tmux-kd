@@ -243,7 +243,6 @@ class MovieControllerTest extends TestCase
             $table->boolean('verified')->default(true);
             $table->boolean('can_post')->default(true);
             $table->string('theme_preference', 10)->default('light');
-            $table->string('color_scheme', 10)->default('blue');
             $table->integer('movie_layout')->default(2);
             $table->string('session_token')->nullable();
             $table->timestamp('email_verified_at')->nullable();
@@ -387,7 +386,7 @@ class MovieControllerTest extends TestCase
             'username' => 'movie-user', 'email' => 'movies-'.uniqid().'@example.test',
             'password' => bcrypt('secret'), 'roles_id' => 1, 'api_token' => 'movie-token',
             'verified' => true, 'can_post' => true, 'theme_preference' => 'light',
-            'color_scheme' => 'blue', 'movie_layout' => 2, 'email_verified_at' => now(),
+            'movie_layout' => 2, 'email_verified_at' => now(),
             'lastlogin' => now(), 'created_at' => now(), 'updated_at' => now(),
         ]);
         DB::table('model_has_roles')->insert(['role_id' => 1, 'model_type' => User::class, 'model_id' => $userId]);

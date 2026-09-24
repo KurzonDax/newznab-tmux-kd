@@ -40,7 +40,7 @@
                 <a href="{{ route('admin.settings.section', ['section' => $navSection->id]) }}"
                    @class([
                        'flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition',
-                       'bg-primary-600 font-semibold text-white dark:bg-primary-500' => $navSection->id === $section->id,
+                       'bg-accent-surface font-semibold text-accent-on dark:bg-accent-surface-dark dark:text-accent-on-dark' => $navSection->id === $section->id,
                        'text-gray-700 hover:bg-primary-50 dark:text-gray-300 dark:hover:bg-primary-900/20' => $navSection->id !== $section->id,
                    ])
                    @if($navSection->id === $section->id) aria-current="page" @endif>

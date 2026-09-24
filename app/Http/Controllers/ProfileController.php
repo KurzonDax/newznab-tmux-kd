@@ -39,9 +39,6 @@ class ProfileController extends BasePageController
         if ($request->has('theme_preference')) {
             $user->theme_preference = $request->input('theme_preference');
         }
-        if ($request->has('color_scheme')) {
-            $user->color_scheme = $request->input('color_scheme');
-        }
         $user->save();
 
         // Keep the composer's cached per-user data in sync with theme changes
@@ -50,7 +47,6 @@ class ProfileController extends BasePageController
         return response()->json([
             'success' => true,
             'theme_preference' => $user->theme_preference,
-            'color_scheme' => $user->color_scheme,
         ]);
     }
 }

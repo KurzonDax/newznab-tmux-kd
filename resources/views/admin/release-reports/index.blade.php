@@ -37,7 +37,7 @@
                         <i class="fas fa-clock mr-1"></i> Pending ({{ $statusCounts['pending'] }})
                     </a>
                     <a href="{{ route('admin.release-reports', ['status' => 'reviewed']) }}"
-                       class="px-3 py-1.5 rounded-full text-sm font-medium transition {{ $status === 'reviewed' ? 'bg-primary-500 text-white' : 'bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 hover:bg-primary-200 dark:hover:bg-primary-800' }}">
+                       class="px-3 py-1.5 rounded-full text-sm font-medium transition {{ $status === 'reviewed' ? 'bg-accent-surface text-accent-on dark:bg-accent-surface-dark dark:text-accent-on-dark' : 'bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 hover:bg-primary-200 dark:hover:bg-primary-800' }}">
                         <i class="fas fa-eye mr-1"></i> Reviewed ({{ $statusCounts['reviewed'] }})
                     </a>
                     <a href="{{ route('admin.release-reports', ['status' => 'resolved']) }}"

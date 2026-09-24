@@ -20,7 +20,6 @@ class UpdateProfileRequest extends FormRequest
             'email' => ['nullable', 'string', 'email', 'max:255', 'unique:users,email,'.$userId, new ValidEmailDomain],
             'password' => ['nullable', 'string', 'min:8', 'confirmed', 'regex:/^(?=.*?[A-Z])(?=.*?[a-z])(?=.*?[0-9])(?=.*?[#?!@$%^&*-]).{8,}$/'],
             'theme_preference' => ['sometimes', 'in:light,dark,system'],
-            'color_scheme' => ['sometimes', 'in:blue,emerald,violet'],
         ];
     }
 }

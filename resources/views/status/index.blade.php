@@ -9,7 +9,7 @@
     $overallBanner = match ($overallStatus) {
         ServiceStatusEnum::Operational => 'border-green-500/50 bg-green-600 text-white dark:bg-green-900 dark:text-green-200',
         ServiceStatusEnum::Degraded => 'border-yellow-500/50 bg-yellow-500 text-yellow-950 dark:bg-yellow-900 dark:text-yellow-200',
-        ServiceStatusEnum::Maintenance => 'border-primary-500/50 bg-primary-600 text-white dark:bg-primary-900 dark:text-primary-200',
+        ServiceStatusEnum::Maintenance => 'border-primary-500/50 bg-accent-surface text-accent-on dark:bg-primary-900 dark:text-primary-200',
         ServiceStatusEnum::PartialOutage => 'border-orange-500/50 bg-orange-600 text-white dark:bg-orange-900 dark:text-orange-200',
         ServiceStatusEnum::MajorOutage => 'border-red-500/50 bg-red-600 text-white dark:bg-red-900 dark:text-red-200',
     };

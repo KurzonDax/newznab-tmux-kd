@@ -46,9 +46,9 @@ with sync_playwright() as pw:
             page.set_viewport_size({'width':width,'height':height})
             page.goto('http://nntmux.test/fixture', wait_until='networkidle')
             page.evaluate('document.fonts.ready')
-            for scheme in ['blue','emerald','violet']:
+            for scheme in ['coral']:
                 for dark in [False,True]:
-                    page.evaluate('([scheme,dark])=>{document.documentElement.dataset.colorScheme=scheme;document.documentElement.classList.toggle("dark",dark)}', [scheme,dark])
+                    page.evaluate('([scheme,dark])=>{document.documentElement.classList.toggle("dark",dark)}', [scheme,dark])
                     measurements = page.evaluate('''() => {
                         const box=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height}};
                         const visible=e=>e.checkVisibility({checkVisibilityCSS:true});
@@ -69,7 +69,7 @@ with sync_playwright() as pw:
                         });
                         const controls=[...document.querySelectorAll('select')].filter(visible).map(e=>({label:e.ariaLabel||e.id||e.name,container:e.parentElement.className,rule:getComputedStyle(e).width,...box(e),containerWidth:box(e.parentElement).width,font:getComputedStyle(e).fontSize}));
                         controls.forEach(c=>{if(c.width>c.containerWidth+1)errors.push('select exceeds container: '+c.label)});
-                        return {main:main?box(main):null,footer:footer?box(footer):null,scrollWidth:document.documentElement.scrollWidth,scrollHeight:document.documentElement.scrollHeight,controls,errors,fontLoaded:document.fonts.check('14px Figtree')};
+                        return {main:main?box(main):null,footer:footer?box(footer):null,scrollWidth:document.documentElement.scrollWidth,scrollHeight:document.documentElement.scrollHeight,controls,errors,fontLoaded:document.fonts.check('14px Manrope')};
                     }''')
                     errors=measurements['errors']
                     if measurements['main']:
@@ -78,7 +78,7 @@ with sync_playwright() as pw:
                         if abs(measurements['main']['left']-(width-expected)/2)>1: errors.append('page centering')
                     if measurements['scrollWidth']>width+1: errors.append('horizontal page overflow')
                     if measurements['footer'] and measurements['footer']['bottom']<height-1: errors.append('footer above viewport bottom')
-                    if not measurements['fontLoaded']: errors.append('Figtree missing')
+                    if not measurements['fontLoaded']: errors.append('Manrope missing')
                     record={'test':fixture['test'],'uri':fixture['uri'],'viewport':[width,height],'scheme':scheme,'dark':dark,**measurements}
                     reports.append(record)
                     if errors: failures.append({k:record[k] for k in ['test','uri','viewport','scheme','dark','errors']})

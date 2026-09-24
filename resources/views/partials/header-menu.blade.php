@@ -64,12 +64,6 @@
                 <button type="button" x-on:click="$store.theme.set('{{ $value }}')" x-bind:aria-pressed="$store.theme.current === '{{ $value }}'">{{ $label }}</button>
             @endforeach
         </div>
-        <div class="public-theme-label">Scheme</div>
-        <div class="public-theme-options" role="group" aria-label="Color scheme">
-            @foreach(['blue' => 'Blue', 'emerald' => 'Emerald', 'violet' => 'Violet'] as $value => $label)
-                <button type="button" x-on:click="$store.theme.setScheme('{{ $value }}')" x-bind:aria-pressed="$store.theme.colorScheme === '{{ $value }}'">{{ $label }}</button>
-            @endforeach
-        </div>
         <div class="public-menu-divider"></div>
         <form action="{{ route('logout') }}" method="POST">@csrf<x-button type="submit" variant="ghost" size="sm" class="public-menu-signout" icon="fas fa-sign-out-alt">Sign out</x-button></form>
     </div>
