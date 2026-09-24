@@ -33,7 +33,7 @@ def plan(policy, paths):
     reasons = {}
     bounded = {key for key, value in policy['suites'].items() if value['category'] != 'acceptance'}
     for path in paths or ['<unknown>']:
-        if path.endswith('.md') or path == 'LICENSE':
+        if path.startswith(('docs/', '.ai/')) or path.endswith('.md') or path == 'LICENSE':
             continue
         php |= path.endswith('.php') or path.startswith(('app/', 'routes/', 'database/'))
         found = {key for key in bounded if matches(path, policy['suites'][key]['paths'])
@@ -221,10 +221,11 @@ def main():
             raise ValueError(f'{path} needs an explicit bounded or acceptance inventory entry before publishing')
     result = plan(policy, paths)
     if args.github:
+        lane_plan = {key: value for key, value in result.items() if key != 'reasons'}
         with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
             output.write('php=' + str(result['php']).lower() + '\n')
             output.write('specialist=' + str(bool(result['suites'])).lower() + '\n')
-            output.write('plan=' + json.dumps(result) + '\n')
+            output.write('plan=' + json.dumps(lane_plan) + '\n')
     print(json.dumps(result))
 
 
