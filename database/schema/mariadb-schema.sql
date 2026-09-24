@@ -3484,7 +3484,6 @@ CREATE TABLE `users` (
   `rate_limit` int(11) NOT NULL DEFAULT 60,
   `notes` varchar(255) DEFAULT NULL,
   `theme_preference` varchar(10) NOT NULL DEFAULT 'light',
-  `color_scheme` varchar(20) NOT NULL DEFAULT 'blue',
   `style` varchar(255) DEFAULT NULL,
   `rolechangedate` datetime DEFAULT NULL COMMENT 'When does the role expire',
   `pending_role_start_date` datetime DEFAULT NULL COMMENT 'When the pending role change takes effect',
@@ -3890,3 +3889,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (291,'2026_09_18_12
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (292,'2026_09_18_180000_add_retries_to_obfuscation_recovery_gaps',9);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (293,'2026_09_19_000000_gate_release_file_name_sources_on_evidence',10);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (294,'2026_09_24_000000_add_resolution_and_source_to_releases',11);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (295,'2026_09_24_100000_drop_color_scheme_from_users_table',12);

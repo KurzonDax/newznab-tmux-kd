@@ -66,11 +66,11 @@ Alpine.data('confirmModal', () => ({
     },
 
     confirmBtnClass() {
-        const base = 'px-4 py-2 text-white rounded-lg transition font-medium ';
-        if (this.type === 'danger') return base + 'bg-red-600 dark:bg-red-700 hover:bg-red-700 dark:hover:bg-red-800';
-        if (this.type === 'warning') return base + 'bg-yellow-600 dark:bg-yellow-700 hover:bg-yellow-700 dark:hover:bg-yellow-800';
-        if (this.type === 'success') return base + 'bg-green-600 dark:bg-green-700 hover:bg-green-700 dark:hover:bg-green-800';
-        return base + (this.$el?.matches('[data-admin-confirm]') ? adminConfirmTheme.button : 'bg-primary-600 dark:bg-primary-700 hover:bg-primary-700 dark:hover:bg-primary-800');
+        const base = 'px-4 py-2 rounded-lg transition font-medium ';
+        if (this.type === 'danger') return base + 'text-white bg-red-600 dark:bg-red-700 hover:bg-red-700 dark:hover:bg-red-800';
+        if (this.type === 'warning') return base + 'text-white bg-yellow-600 dark:bg-yellow-700 hover:bg-yellow-700 dark:hover:bg-yellow-800';
+        if (this.type === 'success') return base + 'text-white bg-green-600 dark:bg-green-700 hover:bg-green-700 dark:hover:bg-green-800';
+        return base + (this.$el?.matches('[data-admin-confirm]') ? 'text-white ' + adminConfirmTheme.button : 'bg-accent-surface text-accent-on dark:bg-accent-surface-dark dark:text-accent-on-dark hover:bg-primary-800 dark:hover:bg-primary-400');
     },
 
     init() {

@@ -52,6 +52,8 @@ class DesignSystemLintTest extends TestCase
             'FA4 clock' => ['resources/views/browse/index.blade.php', '<i class="fas fa-clock-o"></i>', 'FA4'],
             'FA4 external link' => ['resources/views/browse/index.blade.php', '<i class="fas fa-external-link"></i>', 'FA4'],
             'JS active palette' => ['resources/js/alpine/components/example.js', "button.classList.add('bg-blue-600');", 'JavaScript blue-*'],
+            'colour scheme attribute' => ['resources/views/layouts/main.blade.php', '<html data-color-scheme="{{ $scheme }}">', 'colour scheme reference'],
+            'colour scheme store' => ['resources/js/alpine/stores/theme.js', "this.\$store.theme.setScheme('violet');", 'colour scheme reference'],
         ];
     }
 

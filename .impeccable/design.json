@@ -1,103 +1,87 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-20T00:00:00Z",
+  "generatedAt": "2026-09-24T00:00:00Z",
   "title": "Design System: NNTmux",
   "extensions": {
     "colorMeta": {
       "primary-500": {
         "role": "primary",
-        "displayName": "Signal Blue",
-        "note": "Default scheme (:root and [data-color-scheme=\"blue\"]). Canonical in the frontmatter.",
+        "displayName": "Coral",
+        "note": "The only accent: primary action or on-state. Ramp pinned at 500 #ff5a3c and 700 #c8331a, derived in OKLCH at their hue.",
         "tonalRamp": [
-          "#eff6ff",
-          "#dbeafe",
-          "#bfdbfe",
-          "#93c5fd",
-          "#60a5fa",
-          "#3b82f6",
-          "#2563eb",
-          "#1d4ed8",
-          "#1e40af",
-          "#1e3a8a",
-          "#172554"
+          "#fef3f0",
+          "#fde7e2",
+          "#ffd0c6",
+          "#ffb1a0",
+          "#fd8d77",
+          "#ff5a3c",
+          "#e5462c",
+          "#c8331a",
+          "#9a2b19",
+          "#782416",
+          "#471108"
         ]
       },
-      "primary-500-emerald": {
+      "accent-surface": {
         "role": "primary",
-        "displayName": "Signal Emerald",
-        "note": "Alternate runtime scheme [data-color-scheme=\"emerald\"]. Full ramp, not a tint of blue.",
-        "tonalRamp": [
-          "#ecfdf5",
-          "#d1fae5",
-          "#a7f3d0",
-          "#6ee7b7",
-          "#34d399",
-          "#10b981",
-          "#059669",
-          "#047857",
-          "#065f46",
-          "#064e3b",
-          "#022c22"
-        ]
-      },
-      "primary-500-violet": {
-        "role": "primary",
-        "displayName": "Signal Violet",
-        "note": "Alternate runtime scheme [data-color-scheme=\"violet\"]. Full ramp, not a tint of blue.",
-        "tonalRamp": [
-          "#f5f3ff",
-          "#ede9fe",
-          "#ddd6fe",
-          "#c4b5fd",
-          "#a78bfa",
-          "#8b5cf6",
-          "#7c3aed",
-          "#6d28d9",
-          "#5b21b6",
-          "#4c1d95",
-          "#2e1065"
-        ]
+        "displayName": "Accent Surface",
+        "note": "Fill of filled accent controls, paired with accent-on. Light #c8331a with #ffffff (5.3:1); dark #ff5a3c with #1d0a05 (6.2:1). White on #ff5a3c is 3.1:1 and fails."
       },
       "surface-body": {
         "role": "neutral",
         "displayName": "Paper",
-        "note": "Page body. Per scheme: blue #f8fafc/#0f172a, emerald #f0fdf4/#071a12, violet #faf5ff/#120b20 (light/dark)."
+        "note": "Page ground. #f5f5f2 / #0f1014 (light/dark)."
       },
       "surface-card": {
         "role": "neutral",
         "displayName": "Card",
-        "note": "Raised reading surface. Light is #ffffff in all three schemes; dark differs: blue #1e293b, emerald #0f2e24, violet #1e1b4b."
+        "note": "Raised reading surface and menus (also surface-dropdown). #ffffff / #181a21."
       },
       "surface-panel-alt": {
         "role": "neutral",
         "displayName": "Panel Alt",
-        "note": "Toolbars and filter bars. blue #f1f5f9/#1e293b, emerald #ecfdf5/#14332a, violet #f5f3ff/#2d1f4e."
+        "note": "Toolbars and filter bars. #e4e4dd / #20232c."
       },
       "surface-chrome": {
         "role": "neutral",
         "displayName": "Chrome",
-        "note": "Sidebar, header, footer, dropdown. Dark in both modes. blue #1e293b/#020617, emerald #14332a/#020c09, violet #2d1f4e/#0f0620."
+        "note": "surface-header, surface-footer, surface-sidebar: the page ground, divided by a border-default rule."
+      },
+      "surface-hover": {
+        "role": "neutral",
+        "displayName": "Hover",
+        "note": "Hover fill of neutral controls and rows. #d3d3cb / #2b2f3a."
       },
       "border-default": {
         "role": "neutral",
         "displayName": "Hairline",
-        "note": "Defines every surface edge. Tinted per scheme: blue #e2e8f0/#334155, emerald #bbf7d0/#14532d, violet #e9d5ff/#6b21a8."
+        "note": "Defines every surface edge. #d3d3cb / #2b2f3a."
+      },
+      "text-default": {
+        "role": "neutral",
+        "displayName": "Text",
+        "note": "Body text. #17181c / #f4f4f6."
       },
       "text-muted": {
         "role": "neutral",
         "displayName": "Muted Text",
-        "note": "Secondary copy and metadata. Tinted per scheme: blue #64748b/#94a3b8, emerald #047857/#6ee7b7, violet #6d28d9/#c4b5fd."
+        "note": "Secondary copy and metadata. #5c606b / #a4a8b4; at least 4.5:1 on the page ground and on a card."
       },
       "surface-release-row": {
         "role": "neutral",
         "displayName": "Release Row",
-        "note": "Listing row surface, tuned separately from cards because it repeats hundreds of times. Scheme-independent (:root only)."
+        "note": "Transparent: rows are hairline-divided (border-release-row = border-default), not filled."
+      },
+      "chips": {
+        "role": "status",
+        "displayName": "Chip tokens",
+        "note": "--chip-<kind>-bg/-fg with -dark twins: media, nfo, preview, sample, completion-ok/-mid/-low, res-4k/-1080/-720/-sd, mi-* media-info hues. From docs/proposals/tv-redesign/prototype/reference/tokens.json. Status colours, never the accent."
       }
     },
     "typographyMeta": {
       "display": {
         "displayName": "Display",
-        "purpose": "Page titles at sm and above. Rare."
+        "purpose": "Page titles at sm and above; weight 800. Rare."
       },
       "headline": {
         "displayName": "Headline",
@@ -116,23 +100,6 @@
         "purpose": "Chips, badges, metadata, table headers, small controls."
       }
     },
-    "colorSchemes": [
-      {
-        "name": "blue",
-        "selector": ":root, [data-color-scheme=\"blue\"]",
-        "default": true
-      },
-      {
-        "name": "emerald",
-        "selector": "[data-color-scheme=\"emerald\"]",
-        "default": false
-      },
-      {
-        "name": "violet",
-        "selector": "[data-color-scheme=\"violet\"]",
-        "default": false
-      }
-    ],
     "modes": [
       {
         "name": "light",
@@ -141,7 +108,7 @@
       {
         "name": "dark",
         "selector": "html.dark",
-        "note": "Class-based: @custom-variant dark (&:where(.dark, .dark *)). Independent of colorScheme; 3 schemes x 2 modes = 6 realisations."
+        "note": "Class-based: @custom-variant dark (&:where(.dark, .dark *)). A per-user choice; each token has a -dark twin."
       }
     ],
     "shadows": [
@@ -159,6 +126,12 @@
         "name": "modal",
         "value": "0 24px 60px -16px rgb(2 6 23 / 55%)",
         "purpose": "Dialogs, the deepest level in the stack."
+      },
+      {
+        "name": "floating",
+        "value": "0 14px 30px -14px rgb(30 30 20 / 35%)",
+        "darkValue": "0 18px 40px -14px rgb(0 0 0 / 70%)",
+        "purpose": "--shadow-floating: menus, dialogs, search results and the selection bar on redesigned screens, with no border."
       }
     ],
     "motion": [
@@ -234,9 +207,9 @@
       "name": "Primary Button",
       "kind": "button",
       "refersTo": "button-primary",
-      "description": "Default action. Bordered even though filled, so the shape holds on any surface.",
+      "description": "Default action: the accent pair (accent-surface with accent-on). Bordered even though filled, so the shape holds on any surface.",
       "html": "<button class=\"ds-btn ds-btn-primary\">Download NZB</button>",
-      "css": ".ds-btn { display:inline-flex; align-items:center; justify-content:center; gap:0.5rem; height:42px; padding:0.5rem 1rem; border-radius:0.5rem; border:1px solid transparent; font-family:Figtree,ui-sans-serif,system-ui,sans-serif; font-size:0.875rem; font-weight:600; line-height:1.5; cursor:pointer; transition:background-color 150ms cubic-bezier(0.4,0,0.2,1); } .ds-btn:focus-visible { outline:none; box-shadow:0 0 0 2px #fff,0 0 0 4px var(--color-primary-500,#3b82f6); } .ds-btn-primary { background:var(--color-primary-600,#2563eb); border-color:var(--color-primary-600,#2563eb); color:#fff; } .ds-btn-primary:hover { background:var(--color-primary-700,#1d4ed8); }"
+      "css": ".ds-btn { display:inline-flex; align-items:center; justify-content:center; gap:0.5rem; height:42px; padding:0.5rem 1rem; border-radius:0.5rem; border:1px solid transparent; font-family:Manrope,ui-sans-serif,system-ui,sans-serif; font-size:0.875rem; font-weight:600; line-height:1.5; cursor:pointer; transition:background-color 150ms cubic-bezier(0.4,0,0.2,1); } .ds-btn:focus-visible { outline:none; box-shadow:0 0 0 2px #fff,0 0 0 4px var(--color-primary-500,#ff5a3c); } .ds-btn-primary { background:var(--accent-surface,#c8331a); border-color:var(--accent-surface,#c8331a); color:var(--accent-on,#fff); } .ds-btn-primary:hover { background:var(--color-primary-800,#9a2b19); }"
     },
     {
       "name": "Secondary Button",
@@ -252,7 +225,7 @@
       "refersTo": "input-control",
       "description": "The shared public control scale: 42px tall, 8px radius, 14px text. Applies where the control is inside .public-ui; outside it, x-input's own utility baseline renders instead.",
       "html": "<input class=\"ds-control\" type=\"text\" placeholder=\"Search releases\" />",
-      "css": ".ds-control { height:42px; padding:0 14px; border-radius:8px; border:1px solid var(--border-default,#e2e8f0); background:var(--surface-card,#fff); color:#374151; font-family:Figtree,ui-sans-serif,system-ui,sans-serif; font-size:14px; line-height:1.5; } .ds-control:focus { outline:none; border-color:var(--color-primary-500,#3b82f6); box-shadow:0 0 0 1px var(--color-primary-500,#3b82f6); }"
+      "css": ".ds-control { height:42px; padding:0 14px; border-radius:8px; border:1px solid var(--border-default,#d3d3cb); background:var(--surface-card,#fff); color:#374151; font-family:Manrope,ui-sans-serif,system-ui,sans-serif; font-size:14px; line-height:1.5; } .ds-control:focus { outline:none; border-color:var(--color-primary-500,#ff5a3c); box-shadow:0 0 0 1px var(--color-primary-500,#ff5a3c); }"
     },
     {
       "name": "Card",
@@ -260,7 +233,7 @@
       "refersTo": "card",
       "description": "The raised reading surface. Border defines it; shadow lifts it slightly. .card owns no padding in the source — the 1.5rem here exists only so the snippet renders.",
       "html": "<div class=\"ds-card\"><h3 class=\"ds-card-title\">Release</h3><p class=\"ds-card-body\">Border leads, shadow is secondary.</p></div>",
-      "css": ".ds-card { background:var(--surface-card,#fff); border:1px solid var(--border-default,#e2e8f0); border-radius:0.75rem; box-shadow:0 4px 6px -1px rgb(0 0 0 / 0.1),0 2px 4px -2px rgb(0 0 0 / 0.1); padding:1.5rem; font-family:Figtree,ui-sans-serif,system-ui,sans-serif; } .ds-card-title { margin:0 0 0.5rem; font-size:1.125rem; font-weight:600; color:#111827; } .ds-card-body { margin:0; font-size:0.875rem; color:var(--text-muted,#64748b); }"
+      "css": ".ds-card { background:var(--surface-card,#fff); border:1px solid var(--border-default,#d3d3cb); border-radius:0.75rem; box-shadow:0 4px 6px -1px rgb(0 0 0 / 0.1),0 2px 4px -2px rgb(0 0 0 / 0.1); padding:1.5rem; font-family:Manrope,ui-sans-serif,system-ui,sans-serif; } .ds-card-title { margin:0 0 0.5rem; font-size:1.125rem; font-weight:600; color:#111827; } .ds-card-body { margin:0; font-size:0.875rem; color:var(--text-muted,#5c606b); }"
     },
     {
       "name": "Chip",
@@ -268,7 +241,7 @@
       "refersTo": "chip-neutral",
       "description": "A readout, not decoration. Reports completion, preview availability, origin or category.",
       "html": "<span class=\"ds-chip\">98%</span> <span class=\"ds-chip ds-chip-success\">Complete</span>",
-      "css": ".ds-chip { display:inline-flex; align-items:center; gap:0.25rem; background:var(--surface-panel-alt,#f1f5f9); color:#374151; border-radius:0.5rem; padding:0.125rem 0.5rem; font-family:Figtree,ui-sans-serif,system-ui,sans-serif; font-size:0.75rem; font-weight:500; line-height:1.5; } .ds-chip-success { background:#dcfce7; color:#166534; }"
+      "css": ".ds-chip { display:inline-flex; align-items:center; gap:0.25rem; background:var(--surface-panel-alt,#e4e4dd); color:#374151; border-radius:0.5rem; padding:0.125rem 0.5rem; font-family:Manrope,ui-sans-serif,system-ui,sans-serif; font-size:0.75rem; font-weight:500; line-height:1.5; } .ds-chip-success { background:#dcfce7; color:#166534; }"
     },
     {
       "name": "Badge",
@@ -276,25 +249,26 @@
       "refersTo": "badge-default",
       "description": "The pill form. Five tones, three sizes, always fully rounded.",
       "html": "<span class=\"ds-badge\">Movies</span>",
-      "css": ".ds-badge { display:inline-flex; align-items:center; background:var(--color-primary-100,#dbeafe); color:var(--color-primary-800,#1e40af); border-radius:9999px; padding:0.125rem 0.625rem; font-family:Figtree,ui-sans-serif,system-ui,sans-serif; font-size:0.75rem; font-weight:500; }"
+      "css": ".ds-badge { display:inline-flex; align-items:center; background:var(--color-primary-100,#fde7e2); color:var(--color-primary-800,#9a2b19); border-radius:9999px; padding:0.125rem 0.625rem; font-family:Manrope,ui-sans-serif,system-ui,sans-serif; font-size:0.75rem; font-weight:500; }"
     }
   ],
   "narrative": {
     "northStar": "The Well-Lit Catalog",
     "maintainerStatement": "Visually appealing, easy to navigate, and easy to absorb the information being shown.",
-    "overview": "NNTmux is a catalogue you retrieve from, lit well enough that you can read it. The collection is enormous and mostly machine-generated, so the interface's job is to make a wall of releases legible: what this thing is, whether it is complete, whether it is worth taking. Chips are the instrumentation and they are read at a glance rather than studied. The system serves two audiences on one chassis: the public side browses, searches and evaluates; the admin side operates the indexer that fills it. Its defining structural fact is that the palette is not fixed. Three accent schemes are selectable at runtime, each with its own complete eleven-step ramp, each crossing an independent light/dark axis.",
+    "overview": "NNTmux is a catalogue you retrieve from, lit well enough that you can read it. The collection is enormous and mostly machine-generated, so the interface's job is to make a wall of releases legible: what this thing is, whether it is complete, whether it is worth taking. Chips are the instrumentation and they are read at a glance rather than studied. The system serves two audiences on one chassis: the public side browses, searches and evaluates; the admin side operates the indexer that fills it. There is one accent, coral, meaning the primary action or 'this is on'; light and dark are a per-user choice. Every value is reached through tokens, so the vocabulary is replaced by editing resources/css/app.css.",
     "keyCharacteristics": [
-      "Runtime-swappable accent across three schemes; class-based dark mode on top",
-      "A 14px body baseline: the app reads dense even where controls are comfortable",
-      "One text family, Figtree, carrying the whole hierarchy by weight and size",
+      "One coral accent; light and dark themes, chosen per user",
+      "Warm-neutral grounds; header, footer and admin sidebar sit on the page ground behind a hairline",
+      "A 14px body baseline on existing pages: the app reads dense even where controls are comfortable",
+      "One text family, Manrope, carrying the whole hierarchy by weight and size",
       "Borders define surfaces; shadow is a gentle secondary lift",
-      "Status colour is semantic and literal; the accent belongs to actions and navigation"
+      "Status colour is semantic and literal; the accent belongs to actions, navigation and on-states"
     ],
     "rules": [
       {
-        "name": "The Borrowed Accent Rule",
+        "name": "The One Accent Rule",
         "section": "colors",
-        "body": "The accent is on loan from the user. Any component that bakes in a blue, emerald or violet value has broken two of the three schemes. Use primary-* utilities; if a value must be literal, it is a status colour and should say so."
+        "body": "Coral means primary action or this-is-on, on every screen. No decorative coral and no second accent. Reach it through primary-* or the accent pair; a literal value is a status colour and should say so."
       },
       {
         "name": "The Chip Is a Readout Rule",
@@ -303,18 +277,19 @@
       }
     ],
     "dos": [
-      "Use primary-* for accent, links, focus rings and selected states.",
+      "Use primary-* for accent text, links, focus rings and tinted selected states.",
+      "Fill accent controls with --accent-surface and --accent-on, never primary-* with white.",
       "Give every colour utility a dark: counterpart unless a token or ancestor handles it.",
       "Reuse x-button, the input/select/textarea/label set, and the semantic surface classes.",
       "Put styles in csp-safe.css or utilities; the Alpine CSP build rejects inline style attributes.",
       "Keep status colour literal and semantic."
     ],
     "donts": [
-      "Don't hardcode an accent hex. Three schemes break at once.",
+      "Don't hardcode an accent hex.",
+      "Don't reintroduce a colour-scheme choice; coral is the only accent.",
       "Don't introduce a second text family or a second icon library.",
-      "Don't assume slate neutrals. Emerald and violet tint their borders and muted text.",
-      "Don't reach for shadow where a border would do.",
-      "Don't extend font-extrabold, and don't add border weights beyond 1px."
+      "Don't reach for shadow where a border would do, outside the floating layers of redesigned screens.",
+      "Don't add border weights beyond 1px."
     ],
     "enforcement": {
       "script": "scripts/check-design-system.sh",
@@ -333,7 +308,7 @@
         "unused forum presets",
         "admin templates"
       ],
-      "principle": "Every check inspects class names, not values. The rules constrain how a value is reached, never what the value is. A redesign that replaces palette, type scale, spacing and component language passes all of them untouched, provided it routes through the token layer. See the script's own comment at line 26.",
+      "principle": "Every check inspects class names, not values. The rules constrain how a value is reached, never what the value is. A redesign that replaces palette, type scale, spacing and component language passes all of them untouched, provided it routes through the token layer. See the script's own comment at line 26: views reach the accent through tokens so app.css can replace it.",
       "indirectionRules": [
         {
           "line": 27,
@@ -354,6 +329,10 @@
         {
           "line": 87,
           "rule": "no blue-* accent utility assigned from JavaScript; use primary-*"
+        },
+        {
+          "line": 93,
+          "rule": "nothing selects or stores a colour scheme (data-color-scheme, colorScheme, color_scheme, setScheme)"
         }
       ],
       "hygieneRules": [

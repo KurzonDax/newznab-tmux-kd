@@ -27,8 +27,8 @@
 <body class="app-shell font-sans antialiased text-gray-900 dark:text-gray-100">
     <div class="h-screen flex">
         <!-- Admin Sidebar -->
-        <aside id="sidebar" class="hidden md:flex md:flex-col w-64 text-white shrink-0 h-full overflow-y-auto">
-            <div class="flex items-center justify-between p-4 border-b border-white/10 dark:border-white/5">
+        <aside id="sidebar" class="hidden md:flex md:flex-col w-64 text-(--text-default) dark:text-(--text-default-dark) border-r border-(--border-default) dark:border-(--border-default-dark) shrink-0 h-full overflow-y-auto">
+            <div class="flex items-center justify-between p-4 border-b border-(--border-default) dark:border-(--border-default-dark)">
                 <a href="{{ route('admin.index') }}" class="flex items-center space-x-2">
                     <i class="fas fa-cog text-2xl text-primary-500 dark:text-primary-400"></i>
                     <span class="text-xl font-semibold">Admin Panel</span>
@@ -43,9 +43,9 @@
         <!-- Main Content -->
         <div class="flex-1 flex flex-col h-full overflow-hidden">
             <!-- Top Bar -->
-            <header class="surface-header text-white shrink-0 z-10">
+            <header class="surface-header text-(--text-default) dark:text-(--text-default-dark) border-b border-(--border-default) dark:border-(--border-default-dark) shrink-0 z-10">
                 <div class="flex items-center justify-between px-6 py-4">
-                    <h1 class="text-lg font-semibold text-gray-200">{{ $page_title ?? 'Admin Dashboard' }}</h1>
+                    <h1 class="text-lg font-semibold">{{ $page_title ?? 'Admin Dashboard' }}</h1>
                     <div class="flex items-center space-x-4">
                         <button id="theme-toggle" class="bg-gray-700 dark:bg-gray-800 text-gray-100 dark:text-gray-200 px-3 py-2 rounded-lg shadow hover:bg-gray-600 dark:hover:bg-gray-700 transition-all duration-200 flex items-center gap-2 touch-target"
                                 title="{{ ucfirst($userTheme) }} Mode">
@@ -62,12 +62,12 @@
                                 {{ ucfirst($userTheme) }}
                             </span>
                         </button>
-                        <a href="{{ url('/') }}" class="text-gray-300 dark:text-gray-400 hover:text-white transition">
+                        <a href="{{ url('/') }}" class="text-(--text-muted) dark:text-(--text-muted-dark) hover:text-(--text-default) dark:hover:text-(--text-default-dark) transition">
                             <i class="fas fa-home mr-1"></i> Back to Site
                         </a>
                         <a href="{{ route('logout') }}"
                            data-logout
-                           class="text-red-400 hover:text-red-300 transition">
+                           class="text-red-700 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 transition">
                             <i class="fas fa-sign-out-alt mr-1"></i> Logout
                         </a>
                         <form id="logout-form" action="{{ route('logout') }}" method="POST" class="hidden">
@@ -105,8 +105,8 @@
             <!-- Admin Footer - Fixed at bottom -->
             <footer class="shrink-0">
                 <div class="px-6 py-3">
-                    <div class="flex flex-wrap items-center justify-between gap-2 text-sm text-gray-300 dark:text-gray-400">
-                        <p>&copy; {{ now()->year }} <a href="https://github.com/NNTmux/newznab-tmux" class="text-primary-400 hover:text-primary-300 transition">NNTmux</a> Admin Panel</p>
+                    <div class="flex flex-wrap items-center justify-between gap-2 text-sm text-(--text-muted) dark:text-(--text-muted-dark)">
+                        <p>&copy; {{ now()->year }} <a href="https://github.com/NNTmux/newznab-tmux" class="text-primary-700 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300 transition">NNTmux</a> Admin Panel</p>
                         <p>{{ config('app.name') }} v{{ config('nntmux.versions.git.tag') ?? '1.0.0' }}</p>
                     </div>
                 </div>

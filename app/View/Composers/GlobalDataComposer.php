@@ -108,7 +108,6 @@ class GlobalDataComposer
                 'navigationRoots' => $this->navigationRoots($parentcatlist),
                 'header_menu_cat' => request()->input('t', ''),
                 'userTheme' => $userdata->theme_preference ?? 'light',
-                'userColorScheme' => $userdata->color_scheme ?? 'blue',
             ]);
         } else {
             $viewData = array_merge($viewData, [
@@ -116,7 +115,6 @@ class GlobalDataComposer
                 'ismod' => false,
                 'loggedin' => false,
                 'userTheme' => 'light',
-                'userColorScheme' => 'blue',
             ]);
         }
 

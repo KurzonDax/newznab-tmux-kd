@@ -4,10 +4,10 @@
 @source "../js";
 
 @font-face {
-    font-family: 'Figtree';
-    src: url('../fonts/Figtree.ttf') format('truetype');
+    font-family: 'Manrope';
+    src: url('../fonts/Manrope.ttf') format('truetype');
     font-style: normal;
-    font-weight: 300 900;
+    font-weight: 400 800;
     font-display: swap;
 }
 
@@ -17,140 +17,175 @@
 /* Dark mode: class-based strategy (replaces darkMode: 'class' in tailwind.config.js) */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Color scheme: surface + accent variables. data-color-scheme set on <html>. */
+/* Design tokens: a light value and a -dark twin per variable; .dark on <html> selects the twin. */
 :root {
-    --surface-release-row: #eef2f7;
-    --surface-release-row-dark: #0b1220;
-    --border-release-row: #cbd5e1;
-    --border-release-row-dark: #475569;
-}
-
-:root,
-[data-color-scheme="blue"] {
-    /* Surface - Blue/Slate */
-    --surface-body: #f8fafc;
-    --surface-body-dark: #0f172a;
-    --surface-sidebar: #1e293b;
-    --surface-sidebar-dark: #020617;
-    --surface-header: #1e293b;
-    --surface-header-dark: #020617;
+    /* Grounds */
+    --surface-body: #f5f5f2;
+    --surface-body-dark: #0f1014;
     --surface-card: #ffffff;
-    --surface-card-dark: #1e293b;
-    --surface-dropdown: #0f172a;
-    --surface-dropdown-dark: #020617;
-    --surface-footer: #1e293b;
-    --surface-footer-dark: #020617;
-    --surface-hover: #334155;
-    --surface-hover-dark: #1e293b;
-    --border-default: #e2e8f0;
-    --border-default-dark: #334155;
-    --text-muted: #64748b;
-    --text-muted-dark: #94a3b8;
-    --surface-panel-alt: #f1f5f9;
-    --surface-panel-alt-dark: #1e293b;
-    --surface-chrome-border: rgba(255,255,255,0.08);
-    --surface-chrome-border-dark: rgba(255,255,255,0.05);
-    /* Accent - Blue */
-    --color-primary-50: #eff6ff;
-    --color-primary-100: #dbeafe;
-    --color-primary-200: #bfdbfe;
-    --color-primary-300: #93c5fd;
-    --color-primary-400: #60a5fa;
-    --color-primary-500: #3b82f6;
-    --color-primary-600: #2563eb;
-    --color-primary-700: #1d4ed8;
-    --color-primary-800: #1e40af;
-    --color-primary-900: #1e3a8a;
-    --color-primary-950: #172554;
-}
+    --surface-card-dark: #181a21;
+    --surface-dropdown: #ffffff;
+    --surface-dropdown-dark: #181a21;
+    --surface-panel-alt: #e4e4dd;
+    --surface-panel-alt-dark: #20232c;
+    --surface-hover: #d3d3cb;
+    --surface-hover-dark: #2b2f3a;
+    /* The bar, footer and sidebar sit on the page ground with a --border-default rule. */
+    --surface-header: #f5f5f2;
+    --surface-header-dark: #0f1014;
+    --surface-footer: #f5f5f2;
+    --surface-footer-dark: #0f1014;
+    --surface-sidebar: #f5f5f2;
+    --surface-sidebar-dark: #0f1014;
+    --surface-chrome-border: rgb(23 24 28 / 6%);
+    --surface-chrome-border-dark: rgb(244 244 246 / 6%);
+    /* Rows are hairline-divided, not filled. */
+    --surface-release-row: transparent;
+    --surface-release-row-dark: transparent;
+    --border-default: #d3d3cb;
+    --border-default-dark: #2b2f3a;
+    --border-release-row: #d3d3cb;
+    --border-release-row-dark: #2b2f3a;
 
-[data-color-scheme="emerald"] {
-    --surface-body: #f0fdf4;
-    --surface-body-dark: #071a12;
-    --surface-sidebar: #14332a;
-    --surface-sidebar-dark: #020c09;
-    --surface-header: #14332a;
-    --surface-header-dark: #020c09;
-    --surface-card: #ffffff;
-    --surface-card-dark: #0f2e24;
-    --surface-dropdown: #0d281f;
-    --surface-dropdown-dark: #020c09;
-    --surface-footer: #14332a;
-    --surface-footer-dark: #020c09;
-    --surface-hover: #166534;
-    --surface-hover-dark: #14532d;
-    --border-default: #bbf7d0;
-    --border-default-dark: #14532d;
-    --text-muted: #047857;
-    --text-muted-dark: #6ee7b7;
-    --surface-panel-alt: #ecfdf5;
-    --surface-panel-alt-dark: #14332a;
-    --surface-chrome-border: rgba(255,255,255,0.08);
-    --surface-chrome-border-dark: rgba(255,255,255,0.05);
-    --color-primary-50: #ecfdf5;
-    --color-primary-100: #d1fae5;
-    --color-primary-200: #a7f3d0;
-    --color-primary-300: #6ee7b7;
-    --color-primary-400: #34d399;
-    --color-primary-500: #10b981;
-    --color-primary-600: #059669;
-    --color-primary-700: #047857;
-    --color-primary-800: #065f46;
-    --color-primary-900: #064e3b;
-    --color-primary-950: #022c22;
-}
+    /* Text */
+    --text-default: #17181c;
+    --text-default-dark: #f4f4f6;
+    --text-muted: #5c606b;
+    --text-muted-dark: #a4a8b4;
 
-[data-color-scheme="violet"] {
-    --surface-body: #faf5ff;
-    --surface-body-dark: #120b20;
-    --surface-sidebar: #2d1f4e;
-    --surface-sidebar-dark: #0f0620;
-    --surface-header: #2d1f4e;
-    --surface-header-dark: #0f0620;
-    --surface-card: #ffffff;
-    --surface-card-dark: #1e1b4b;
-    --surface-dropdown: #1e1b4b;
-    --surface-dropdown-dark: #0f0620;
-    --surface-footer: #2d1f4e;
-    --surface-footer-dark: #0f0620;
-    --surface-hover: #5b21b6;
-    --surface-hover-dark: #3b0764;
-    --border-default: #e9d5ff;
-    --border-default-dark: #6b21a8;
-    --text-muted: #6d28d9;
-    --text-muted-dark: #c4b5fd;
-    --surface-panel-alt: #f5f3ff;
-    --surface-panel-alt-dark: #2d1f4e;
-    --surface-chrome-border: rgba(255,255,255,0.08);
-    --surface-chrome-border-dark: rgba(255,255,255,0.05);
-    --color-primary-50: #f5f3ff;
-    --color-primary-100: #ede9fe;
-    --color-primary-200: #ddd6fe;
-    --color-primary-300: #c4b5fd;
-    --color-primary-400: #a78bfa;
-    --color-primary-500: #8b5cf6;
-    --color-primary-600: #7c3aed;
-    --color-primary-700: #6d28d9;
-    --color-primary-800: #5b21b6;
-    --color-primary-900: #4c1d95;
-    --color-primary-950: #2e1065;
+    /* Filled accent controls: white on #ff5a3c fails contrast, so each theme has its own pair. */
+    --accent-surface: #c8331a;
+    --accent-surface-dark: #ff5a3c;
+    --accent-on: #ffffff;
+    --accent-on-dark: #1d0a05;
+
+    /* Floating layers (menus, dialogs, search results, selection bar): shadow, no border. */
+    --shadow-floating: 0 14px 30px -14px rgb(30 30 20 / 35%);
+    --shadow-floating-dark: 0 18px 40px -14px rgb(0 0 0 / 70%);
+
+    /* Chips: tinted ground + coloured text. Status colours, never the accent. */
+    --chip-media-bg: oklch(0.93 0.035 275);
+    --chip-media-bg-dark: oklch(0.31 0.06 275);
+    --chip-media-fg: oklch(0.40 0.13 275);
+    --chip-media-fg-dark: oklch(0.87 0.08 275);
+    --chip-nfo-bg: oklch(0.93 0.04 345);
+    --chip-nfo-bg-dark: oklch(0.31 0.07 345);
+    --chip-nfo-fg: oklch(0.42 0.14 350);
+    --chip-nfo-fg-dark: oklch(0.87 0.09 345);
+    --chip-preview-bg: oklch(0.93 0.04 215);
+    --chip-preview-bg-dark: oklch(0.31 0.05 215);
+    --chip-preview-fg: oklch(0.40 0.09 225);
+    --chip-preview-fg-dark: oklch(0.88 0.08 210);
+    --chip-sample-bg: oklch(0.93 0.06 108);
+    --chip-sample-bg-dark: oklch(0.33 0.06 110);
+    --chip-sample-fg: oklch(0.42 0.09 105);
+    --chip-sample-fg-dark: oklch(0.89 0.10 108);
+    --chip-completion-ok-bg: oklch(0.93 0.04 150);
+    --chip-completion-ok-bg-dark: oklch(0.30 0.045 150);
+    --chip-completion-ok-fg: oklch(0.38 0.09 150);
+    --chip-completion-ok-fg-dark: oklch(0.86 0.10 150);
+    --chip-completion-mid-bg: oklch(0.93 0.045 72);
+    --chip-completion-mid-bg-dark: oklch(0.32 0.05 65);
+    --chip-completion-mid-fg: oklch(0.42 0.09 60);
+    --chip-completion-mid-fg-dark: oklch(0.87 0.10 72);
+    --chip-completion-low-bg: oklch(0.93 0.035 22);
+    --chip-completion-low-bg-dark: oklch(0.30 0.055 22);
+    --chip-completion-low-fg: oklch(0.42 0.12 25);
+    --chip-completion-low-fg-dark: oklch(0.84 0.09 22);
+    --chip-res-4k-bg: oklch(0.90 0.07 318);
+    --chip-res-4k-bg-dark: oklch(0.44 0.17 318);
+    --chip-res-4k-fg: oklch(0.34 0.16 318);
+    --chip-res-4k-fg-dark: oklch(0.96 0.04 318);
+    --chip-res-1080-bg: oklch(0.90 0.055 255);
+    --chip-res-1080-bg-dark: oklch(0.44 0.13 255);
+    --chip-res-1080-fg: oklch(0.34 0.13 255);
+    --chip-res-1080-fg-dark: oklch(0.96 0.03 255);
+    --chip-res-720-bg: oklch(0.90 0.05 192);
+    --chip-res-720-bg-dark: oklch(0.44 0.085 192);
+    --chip-res-720-fg: oklch(0.33 0.08 192);
+    --chip-res-720-fg-dark: oklch(0.96 0.03 192);
+    --chip-res-sd-bg: oklch(0.89 0.008 265);
+    --chip-res-sd-bg-dark: oklch(0.34 0.012 265);
+    --chip-res-sd-fg: oklch(0.36 0.012 265);
+    --chip-res-sd-fg-dark: oklch(0.86 0.012 265);
+    --chip-mi-video-bg: #e1e7ff;
+    --chip-mi-video-bg-dark: #282d4e;
+    --chip-mi-video-fg: #363d8c;
+    --chip-mi-video-fg-dark: #c4d1ff;
+    --chip-mi-audio-bg: #cff0eb;
+    --chip-mi-audio-bg-dark: #003a34;
+    --chip-mi-audio-fg: #005c51;
+    --chip-mi-audio-fg-dark: #96e6db;
+    --chip-mi-subtitles-bg: #f3e7ce;
+    --chip-mi-subtitles-bg-dark: #3e2d04;
+    --chip-mi-subtitles-fg: #673e00;
+    --chip-mi-subtitles-fg-dark: #ecd198;
+    --chip-mi-dv-bg: #f9dfef;
+    --chip-mi-dv-bg-dark: #44233a;
+    --chip-mi-dv-fg: #72235d;
+    --chip-mi-dv-fg-dark: #f9c0e5;
+    --chip-mi-hdr10plus-bg: #fae3d1;
+    --chip-mi-hdr10plus-bg-dark: #46280c;
+    --chip-mi-hdr10plus-fg: #773000;
+    --chip-mi-hdr10plus-fg-dark: #fcc89f;
+    --chip-mi-hdr-bg: #efe8ce;
+    --chip-mi-hdr-bg-dark: #3a3004;
+    --chip-mi-hdr-fg: #5e4400;
+    --chip-mi-hdr-fg-dark: #e4d498;
+    --chip-mi-atmos-bg: #ebe3fc;
+    --chip-mi-atmos-bg-dark: #35294a;
+    --chip-mi-atmos-fg: #543282;
+    --chip-mi-atmos-fg-dark: #dcc9ff;
+    --chip-mi-7-1-bg: #ebe3fc;
+    --chip-mi-7-1-bg-dark: #35294a;
+    --chip-mi-7-1-fg: #543282;
+    --chip-mi-7-1-fg-dark: #dcc9ff;
+    --chip-mi-5-1-bg: #d7eaff;
+    --chip-mi-5-1-bg-dark: #16324d;
+    --chip-mi-5-1-fg: #00488a;
+    --chip-mi-5-1-fg-dark: #add9ff;
+    --chip-mi-2-0-bg: #cff0eb;
+    --chip-mi-2-0-bg-dark: #003a34;
+    --chip-mi-2-0-fg: #005c51;
+    --chip-mi-2-0-fg-dark: #96e6db;
+    --chip-mi-default-bg: #d8efdc;
+    --chip-mi-default-bg-dark: #173920;
+    --chip-mi-default-fg: #005a1c;
+    --chip-mi-default-fg-dark: #afe4b9;
+    --chip-mi-forced-bg: #fde1d5;
+    --chip-mi-forced-bg-dark: #492615;
+    --chip-mi-forced-fg: #7d2800;
+    --chip-mi-forced-fg-dark: #ffc4a9;
+    --chip-mi-sdh-bg: #cfeef7;
+    --chip-mi-sdh-bg-dark: #003843;
+    --chip-mi-sdh-fg: #005673;
+    --chip-mi-sdh-fg-dark: #95e2f5;
+    --chip-mi-image-subs-bg: #e9ead0;
+    --chip-mi-image-subs-bg-dark: #323308;
+    --chip-mi-image-subs-fg: #4d4c00;
+    --chip-mi-image-subs-fg-dark: #d7d99c;
 }
 
 /* Theme customization (replaces theme.extend in tailwind.config.js) */
 @theme {
-    --font-sans: "Figtree", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
     --radius-card: 0.75rem;
-    --color-primary-50: var(--color-primary-50);
-    --color-primary-100: var(--color-primary-100);
-    --color-primary-200: var(--color-primary-200);
-    --color-primary-300: var(--color-primary-300);
-    --color-primary-400: var(--color-primary-400);
-    --color-primary-500: var(--color-primary-500);
-    --color-primary-600: var(--color-primary-600);
-    --color-primary-700: var(--color-primary-700);
-    --color-primary-800: var(--color-primary-800);
-    --color-primary-900: var(--color-primary-900);
-    --color-primary-950: var(--color-primary-950);
+    /* Coral, the only accent: pinned at 500 and 700, derived in OKLCH at their hue. */
+    --color-primary-50: #fef3f0;
+    --color-primary-100: #fde7e2;
+    --color-primary-200: #ffd0c6;
+    --color-primary-300: #ffb1a0;
+    --color-primary-400: #fd8d77;
+    --color-primary-500: #ff5a3c;
+    --color-primary-600: #e5462c;
+    --color-primary-700: #c8331a;
+    --color-primary-800: #9a2b19;
+    --color-primary-900: #782416;
+    --color-primary-950: #471108;
+    --color-accent-surface: var(--accent-surface);
+    --color-accent-surface-dark: var(--accent-surface-dark);
+    --color-accent-on: var(--accent-on);
+    --color-accent-on-dark: var(--accent-on-dark);
 }
 
 /* Import FontAwesome — only the weights we use (skips v4-compat font + shims) */
@@ -180,13 +215,15 @@ body.app-shell {
     overflow: hidden;
 }
 
-/* Structural surfaces: color scheme variables applied to main chrome */
+/* Structural surfaces: tokens applied to main chrome */
 body {
     background-color: var(--surface-body);
+    color: var(--text-default);
     transition: background-color 200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .dark body {
     background-color: var(--surface-body-dark);
+    color: var(--text-default-dark);
 }
 #sidebar {
     background-color: var(--surface-sidebar);
@@ -211,11 +248,11 @@ header.surface-header nav {
 }
 footer {
     background-color: var(--surface-footer);
-    color: white;
+    border-top: 1px solid var(--border-default);
 }
 .dark footer {
     background-color: var(--surface-footer-dark);
-    color: white;
+    border-top-color: var(--border-default-dark);
 }
 
 /* Dark mode renders native UI (scrollbars, form controls) in dark */
@@ -347,7 +384,7 @@ footer {
     @apply bg-green-600 text-white hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-800;
 }
 .release-action-primary {
-    @apply bg-primary-600 text-white hover:bg-primary-700 dark:bg-primary-700 dark:hover:bg-primary-800;
+    @apply bg-accent-surface text-accent-on hover:bg-primary-800 dark:bg-accent-surface-dark dark:text-accent-on-dark dark:hover:bg-primary-400;
 }
 .release-action-muted {
     @apply bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600;

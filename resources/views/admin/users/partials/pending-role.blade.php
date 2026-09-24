@@ -9,7 +9,7 @@
                                 <label class="text-sm font-semibold text-primary-700 dark:text-primary-300 flex items-center">
                                     <i class="fas fa-layer-group mr-2 text-lg"></i>
                                     Pending Stacked Role{{ $allPendingRoles->count() > 1 ? 's' : '' }}
-                                    <span class="ml-2 px-2 py-0.5 bg-primary-600 text-white text-xs rounded-full">{{ $allPendingRoles->count() }}</span>
+                                    <span class="ml-2 px-2 py-0.5 bg-accent-surface text-accent-on text-xs rounded-full dark:bg-accent-surface-dark dark:text-accent-on-dark">{{ $allPendingRoles->count() }}</span>
                                 </label>
                                 <span class="px-3 py-1 inline-flex items-center text-xs leading-5 font-bold rounded-full bg-primary-200 dark:bg-primary-800 text-primary-800 dark:text-primary-100 animate-pulse">
                                     <i class="fas fa-clock mr-1"></i> SCHEDULED
@@ -20,7 +20,7 @@
                                 @foreach($allPendingRoles as $index => $pendingRoleInfo)
                                     <div class="bg-white dark:bg-gray-700 rounded-md p-3 border border-primary-200 dark:border-primary-700 @if(!$loop->last) mb-2 @endif">
                                         <div class="flex items-center mb-2">
-                                            <span class="flex items-center justify-center w-6 h-6 bg-primary-600 text-white text-xs font-bold rounded-full mr-2">
+                                            <span class="flex items-center justify-center w-6 h-6 bg-accent-surface text-accent-on text-xs font-bold rounded-full mr-2 dark:bg-accent-surface-dark dark:text-accent-on-dark">
                                                 {{ $index + 1 }}
                                             </span>
                                             <span class="text-sm font-bold text-primary-700 dark:text-primary-300">{{ $pendingRoleInfo['role_name'] }}</span>

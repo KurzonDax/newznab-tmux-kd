@@ -46,9 +46,9 @@ with sync_playwright() as pw:
             page.set_viewport_size({'width':width,'height':height})
             page.goto('http://nntmux.test/fixture', wait_until='networkidle')
             page.evaluate('document.fonts.ready')
-            for scheme in ['blue','emerald','violet']:
+            for scheme in ['coral']:
                 for dark in [False,True]:
-                    page.evaluate('([scheme,dark])=>{document.documentElement.dataset.colorScheme=scheme;document.documentElement.classList.toggle("dark",dark)}', [scheme,dark])
+                    page.evaluate('([scheme,dark])=>{document.documentElement.classList.toggle("dark",dark)}', [scheme,dark])
                     measurements = page.evaluate('''() => {
                         const box=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height}};
                         const visible=e=>e.checkVisibility({checkVisibilityCSS:true});
