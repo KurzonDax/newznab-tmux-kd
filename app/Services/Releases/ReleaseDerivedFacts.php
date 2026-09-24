@@ -60,8 +60,8 @@ final class ReleaseDerivedFacts
     {
         $declared = [];
         if ($this->isTvWithShow($release)) {
-            $linked = (int) $release->tv_episodes_id;
-            $declared = $this->declaredEpisodes($release, $linked > 0 ? $this->linkedEpisodes([$linked]) : []);
+            $linkedId = (int) $release->tv_episodes_id;
+            $declared = $this->declaredEpisodes($release, $linkedId > 0 ? $this->linkedEpisodes([$linkedId]) : []);
         }
         $stored = DB::table('release_tv_episodes')->where('releases_id', $releaseId)->orderBy('id')->get(['season', 'episode'])
             ->map(static fn (object $row): array => ['season' => (int) $row->season, 'episode' => $row->episode === null ? null : (int) $row->episode])
@@ -113,9 +113,9 @@ final class ReleaseDerivedFacts
 
     /**
      * The parser's declaration as rows; a name that declares nothing falls back to the
-     * linked `tv_episodes` row.
+     * linked `tv_episodes` row, only when that episode belongs to the release's show.
      *
-     * @param  array<int, array{season: int, episode: int}>  $linked  Linked episodes by `tv_episodes.id`.
+     * @param  array<int, array{show: int, season: int, episode: int}>  $linked  Linked episodes by `tv_episodes.id`.
      * @return list<array{season: int, episode: ?int}>
      */
     private function declaredEpisodes(object $release, array $linked): array
@@ -129,12 +129,17 @@ final class ReleaseDerivedFacts
                 $declaration['numbers'] ?? []);
         }
 
-        return isset($linked[$declaration['linked']]) ? [$linked[$declaration['linked']]] : [];
+        $episode = $linked[$declaration['linked']] ?? null;
+        if ($episode === null || $episode['show'] !== (int) $release->videos_id) {
+            return [];
+        }
+
+        return [['season' => $episode['season'], 'episode' => $episode['episode']]];
     }
 
     /**
      * @param  list<int>  $ids
-     * @return array<int, array{season: int, episode: int}>
+     * @return array<int, array{show: int, season: int, episode: int}>
      */
     private function linkedEpisodes(array $ids): array
     {
@@ -142,8 +147,10 @@ final class ReleaseDerivedFacts
             return [];
         }
 
-        return DB::table('tv_episodes')->whereIn('id', $ids)->get(['id', 'series', 'episode'])
-            ->mapWithKeys(static fn (object $row): array => [(int) $row->id => ['season' => (int) $row->series, 'episode' => (int) $row->episode]])
+        return DB::table('tv_episodes')->whereIn('id', $ids)->get(['id', 'videos_id', 'series', 'episode'])
+            ->mapWithKeys(static fn (object $row): array => [(int) $row->id => [
+                'show' => (int) $row->videos_id, 'season' => (int) $row->series, 'episode' => (int) $row->episode,
+            ]])
             ->all();
     }
 

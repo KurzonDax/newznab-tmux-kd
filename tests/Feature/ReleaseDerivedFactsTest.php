@@ -116,17 +116,23 @@ final class ReleaseDerivedFactsTest extends TestCase
         $this->assertSame([[2, null]], $this->episodes(1));
     }
 
-    public function test_a_linked_release_that_names_nothing_takes_its_numbers_from_the_episode(): void
+    public function test_a_linked_release_that_names_nothing_takes_its_numbers_from_its_own_shows_episode(): void
     {
-        DB::table('tv_episodes')->insert(['id' => 40, 'videos_id' => 7, 'series' => 2024, 'episode' => 117]);
+        DB::table('tv_episodes')->insert([
+            ['id' => 40, 'videos_id' => 7, 'series' => 2024, 'episode' => 117],
+            ['id' => 41, 'videos_id' => 8, 'series' => 3, 'episode' => 9],
+        ]);
         $this->insertRelease(1, 'Daily.Show.2024.05.01.1080p.WEB-DL-GRP', videosId: 7, tvEpisodesId: 40);
         $this->insertRelease(2, 'Daily.Show.2024.05.02.1080p.WEB-DL-GRP', videosId: 7);
+        $this->insertRelease(3, 'Daily.Show.2024.05.03.1080p.WEB-DL-GRP', videosId: 7, tvEpisodesId: 41);
 
-        Search::updateRelease(1);
-        Search::updateRelease(2);
+        foreach ([1, 2, 3] as $id) {
+            Search::updateRelease($id);
+        }
 
         $this->assertSame([[2024, 117]], $this->episodes(1));
         $this->assertSame([], $this->episodes(2));
+        $this->assertSame([], $this->episodes(3), 'An episode of another show is no link.');
     }
 
     public function test_renaming_matching_and_unmatching_keep_the_rows_correct(): void
@@ -171,13 +177,17 @@ final class ReleaseDerivedFactsTest extends TestCase
 
     public function test_the_fill_writes_every_tv_release_with_a_show_and_can_be_rerun(): void
     {
-        DB::table('tv_episodes')->insert(['id' => 40, 'videos_id' => 7, 'series' => 3, 'episode' => 9]);
+        DB::table('tv_episodes')->insert([
+            ['id' => 40, 'videos_id' => 7, 'series' => 3, 'episode' => 9],
+            ['id' => 41, 'videos_id' => 8, 'series' => 4, 'episode' => 1],
+        ]);
         $this->insertRelease(1, 'Show.S01E01E02.1080p.WEB-DL-GRP', videosId: 7);
         $this->insertRelease(2, 'Show.S02.COMPLETE.1080p.WEB-DL-GRP', videosId: 7);
         $this->insertRelease(3, 'Show.Name.720p.HDTV-GRP', videosId: 7, tvEpisodesId: 40);
         $this->insertRelease(4, 'Show.S01E05.1080p.WEB-DL-GRP');
         $this->insertRelease(5, 'Show.S01E06.1080p.WEB-DL-GRP', videosId: 7, categoriesId: 2040);
         $this->insertRelease(6, 'Show.Name.720p.HDTV-GRP', videosId: 7);
+        $this->insertRelease(7, 'Show.Name.1080p.HDTV-GRP', videosId: 7, tvEpisodesId: 41);
 
         $facts = app(ReleaseDerivedFacts::class);
         $this->assertSame(4, $facts->fillTvEpisodes());
