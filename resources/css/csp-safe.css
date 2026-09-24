@@ -1122,7 +1122,8 @@ main .release-browser-table thead th.text-right { text-align: right; }
 .release-cover-heart { position: absolute; top: 6px; left: 6px; z-index: 2; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 999px; background: rgb(15 23 42 / 60%); color: #fff; font-size: 11px; }
 .release-cover-heart[data-watched="1"] { background: var(--accent-surface); color: var(--accent-on); }
 .dark .release-cover-heart[data-watched="1"] { background: var(--accent-surface-dark); color: var(--accent-on-dark); }
-.release-cover-heart:hover { background: var(--color-primary-700); }
+.release-cover-heart:hover { background: var(--color-primary-800); }
+.dark .release-cover-heart[data-watched="1"]:hover { background: var(--color-primary-400); }
 .release-cover-art-tag { position: absolute; top: 6px; right: 6px; z-index: 2; padding: 2px 6px; border-radius: 4px; background: rgb(15 23 42 / 70%); color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .06em; }
 .release-cover-body { display: flex; flex-direction: column; flex: 1; gap: 2px; min-width: 0; width: 100%; padding: 6px 7px 7px; }
 .release-cover-title { display: block; font-size: 13px; font-weight: 600; line-height: 1.25; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
