@@ -88,7 +88,7 @@ final class ReleaseQualityFillTest extends TestCase
             8 => ['Movie.BDRemux', null, [], R::Unknown, S::Remux],
             9 => ['Show.HDTV.WEBRip', null, [], R::Unknown, S::Web],
             10 => ['Some.Album.FLAC', null, [], R::Unknown, S::Unknown],
-            11 => ['Show.x1080p.WEBX.DVD9', null, [], R::Unknown, S::Unknown],
+            11 => ['Show.x1080p.WEBX.DVD9', null, [], R::Unknown, S::Dvd],
             // Measured beats the name; zeros are not a measurement.
             12 => ['Show.S01E01.2160p', [1280, 720], [], R::Hd, S::Unknown],
             13 => ['Show.S01E01.1080p', [0, 0], [], R::FullHd, S::Unknown],
@@ -115,6 +115,12 @@ final class ReleaseQualityFillTest extends TestCase
             23 => ['Show.1080p', null, [['2026-01-01 00:00:00', 'complete', [['audio', null, null], $video(0, 0), $video(1280, 720)]]], R::Hd, S::Unknown],
             24 => ['Show.1080p', [720, 576], [['2026-01-01 00:00:00', 'complete', [['audio', null, null], $video(0, null)]]], R::Sd, S::Unknown],
             25 => ['Show.2160p', null, [['2026-01-01 00:00:00', 'unknown', [$video(null, null)]]], R::Uhd, S::Unknown],
+            // Underscores separate tokens; DVD5 and DVD9 are DVD.
+            26 => ['Show_S01E01_1080p_WEB_GRP', null, [], R::FullHd, S::Web],
+            27 => ['SHOW_720P_HDTV', null, [], R::Hd, S::Hdtv],
+            28 => ['Movie_2160p_BluRay_REMUX', null, [], R::Uhd, S::Remux],
+            29 => ['Show_S01_DVD5', null, [], R::Unknown, S::Dvd],
+            30 => ['Show.DVD7.xWEB', null, [], R::Unknown, S::Unknown],
         ];
     }
 }

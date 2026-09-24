@@ -10,8 +10,16 @@ use App\Enums\ReleaseSource;
 
 final class ReleaseQuality
 {
-    /** Video resolution name token. Written so MariaDB REGEXP reads it the same way. */
-    public const RESOLUTION_PATTERN = '(?i)\b(2160|1080|720|576|480)[pi]\b';
+    /**
+     * A resolution or source token stands alone when no letter or digit touches it, so
+     * `.`, `-`, ` ` and `_` all separate. Written so MariaDB REGEXP reads it the same way.
+     */
+    private const TOKEN_START = '(?i)(?<![a-z0-9])';
+
+    private const TOKEN_END = '(?![a-z0-9])';
+
+    /** Video resolution name token. */
+    public const RESOLUTION_PATTERN = self::TOKEN_START.'(2160|1080|720|576|480)[pi]'.self::TOKEN_END;
 
     public static function fromName(BrowseRoot $root, string $name): string
     {
@@ -55,7 +63,7 @@ final class ReleaseQuality
         $tokens = $source?->nameTokens()
             ?? implode('|', array_map(fn (ReleaseSource $known): string => $known->nameTokens(), ReleaseSource::precedence()));
 
-        return '(?i)\b('.$tokens.')\b';
+        return self::TOKEN_START.'('.$tokens.')'.self::TOKEN_END;
     }
 
     /** Measured video size when there is one (zeros are not a measurement), else the name. */

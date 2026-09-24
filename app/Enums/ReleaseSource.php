@@ -29,7 +29,7 @@ enum ReleaseSource: int
             self::Remux => 'REMUX|BDRemux',
             self::Web => 'WEB[ ._-]?DL|WEBRip|WEB',
             self::BluRay => 'BluRay|Blu-Ray|BDRip|BRRip',
-            self::Dvd => 'DVDRip|DVD',
+            self::Dvd => 'DVDRip|DVD[59]|DVD',
             self::Hdtv => 'HDTV|PDTV|SDTV|DSR|TVRip',
         };
     }
