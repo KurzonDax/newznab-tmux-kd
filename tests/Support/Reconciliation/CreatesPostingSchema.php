@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Support\Reconciliation;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\Support\ProductionTables;
 
 trait CreatesPostingSchema
@@ -116,9 +117,16 @@ trait CreatesPostingSchema
             movieinfo_id INTEGER DEFAULT 0, imdbid INTEGER DEFAULT 0, videos_id INTEGER DEFAULT 0, tv_episodes_id INTEGER DEFAULT 0,
             additional_pp_claimed_at DATETIME NULL, recovery_claimed_at DATETIME NULL, recovery_claim_token TEXT NULL,
             nzb_creation_claimed_at DATETIME NULL, nzb_creation_claim_token TEXT NULL,
-            collectionhash BLOB NULL
+            collectionhash BLOB NULL,
+            resolution INTEGER NOT NULL DEFAULT 0, source INTEGER NOT NULL DEFAULT 0
         )');
         DB::statement('CREATE UNIQUE INDEX ux_releases_collectionhash ON releases (collectionhash)');
+        // Search::updateRelease() reads these to keep resolution and source in step.
+        foreach (['video_data', 'media_info_probes', 'media_info_tracks'] as $table) {
+            if (! Schema::hasTable($table)) {
+                ProductionTables::fromAuthority()->create($table);
+            }
+        }
 
         DB::statement('ALTER TABLE collections ADD releases_id INTEGER NULL');
         DB::statement('ALTER TABLE collections ADD added DATETIME NULL');
