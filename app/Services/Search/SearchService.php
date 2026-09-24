@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Search;
 
 use App\Enums\SecondarySearchIndex;
+use App\Services\Releases\ReleaseDerivedFacts;
 use App\Services\Search\Contracts\SearchDriverInterface;
 use App\Services\Search\Contracts\SearchServiceInterface;
 use App\Services\Search\Drivers\ElasticSearchDriver;
@@ -152,10 +153,12 @@ class SearchService extends Manager implements SearchServiceInterface
     }
 
     /**
-     * Update a release in the search index.
+     * Update a release in the search index. Every release change ends here, so the
+     * release's derived facts are brought up to date first, whatever the driver.
      */
     public function updateRelease(int|string $releaseID): void
     {
+        $this->container->make(ReleaseDerivedFacts::class)->refresh((int) $releaseID);
         $this->driver()->updateRelease($releaseID);
     }
 

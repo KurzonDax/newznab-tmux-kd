@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
 use ReflectionClass;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 final class ElasticsearchReleaseIndexFailureTest extends TestCase
@@ -61,10 +62,17 @@ final class ElasticsearchReleaseIndexFailureTest extends TestCase
             $table->integer('proc_srrdb')->default(0);
             $table->integer('proc_xxx')->default(0);
             $table->integer('proc_media_movie')->default(0);
+            $table->string('searchname')->default('');
+            $table->unsignedTinyInteger('resolution')->default(0);
+            $table->unsignedTinyInteger('source')->default(0);
         });
         Schema::create('video_data', function (Blueprint $table): void {
             $table->unsignedBigInteger('releases_id')->primary();
+            $table->integer('videowidth')->nullable();
+            $table->integer('videoheight')->nullable();
         });
+        ProductionTables::fromAuthority()->create('media_info_probes');
+        ProductionTables::fromAuthority()->create('media_info_tracks');
         Schema::create('audio_data', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('releases_id');
