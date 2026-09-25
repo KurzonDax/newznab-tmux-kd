@@ -98,7 +98,7 @@ final class TitleControllerTest extends TestCase
         }
     }
 
-    public function test_directory_year_and_title_air_year_remain_distinct_through_ranges_and_legacy_links(): void
+    public function test_title_air_year_ranges_survive_legacy_links(): void
     {
         $years = [1969, 1970, 1975, 1979, 1980];
         $this->actingAs($this->browserUser());
@@ -117,20 +117,14 @@ final class TitleControllerTest extends TestCase
             'year=custom&year_from=&year_to=' => $years,
             'year[]=broken' => $years, 'year=custom&year_from[]=1970&year_to=1975' => [1969, 1970, 1975],
         ] as $query => $expected) {
-            $directory = $this->get('/series?'.$query)->assertOk();
-            $directory->assertSee('All Years')->assertSee('Individual Years')->assertSee('value="1900"', false)
-                ->assertSee('value="'.(date('Y') + 1).'"', false);
-            $this->assertSame(count($expected), $directory->viewData('shows')->total());
             $legacy = $this->get('/series/1975?season=1&'.$query)->assertRedirect();
             $title = $this->get($legacy->headers->get('Location'))->assertOk()->assertSee('Apply year');
             $this->assertSame(count($expected), $title->viewData('results')->total());
             $this->get('/title/tv/1975?season=1&'.$query.'&_fragment=releases')->assertOk()->assertSee('Apply year');
             foreach ($years as $year) {
                 if (in_array($year, $expected, true)) {
-                    $directory->assertSee('Premiere fixture '.$year);
                     $title->assertSee('Air fixture '.$year);
                 } else {
-                    $directory->assertDontSee('Premiere fixture '.$year);
                     $title->assertDontSee('Air fixture '.$year);
                 }
             }
@@ -153,7 +147,6 @@ final class TitleControllerTest extends TestCase
             $this->release('Harbor.Street.S04.COMPLETE.Pack.'.$pack, ['categories_id' => 5030, 'videos_id' => 1, 'tv_episodes_id' => 0]);
         }
         $this->actingAs($this->browserUser());
-        $this->get('/series')->assertOk();
         $show = $this->get('/series?_fragment=show&show=1')->assertOk();
         $this->assertSame(4, $show->viewData('season'));
         $this->assertSame(30, $show->viewData('results')->total());
@@ -176,17 +169,6 @@ final class TitleControllerTest extends TestCase
         }
         $this->get('/series?_fragment=list&show=1&season=4&kind=episode&episode=1&page=3&per=24')->assertOk()
             ->assertViewHas('results', static fn ($rows): bool => $rows->count() === 12 && $rows->total() === 60);
-    }
-
-    public function test_tv_directory_includes_stored_shows_without_releases_and_filters_availability(): void
-    {
-        $this->video(['id' => 1, 'title' => 'Harbor Street']);
-        $this->video(['id' => 2, 'title' => 'Quiet Harbor']);
-        $this->release('Harbor.S01E01', ['categories_id' => 5030, 'videos_id' => 1]);
-        $this->actingAs($this->browserUser());
-        $this->get('/series')->assertOk()->assertSee('Harbor Street')->assertSee('Quiet Harbor')->assertSee('No releases available');
-        $this->get('/series?available=1')->assertOk()->assertSee('Harbor Street')->assertDontSee('Quiet Harbor');
-        $this->get('/series?title=Quiet')->assertOk()->assertSee('Quiet Harbor')->assertDontSee('Harbor Street');
     }
 
     public function test_complete_long_cast_has_its_own_row_after_the_synopsis(): void

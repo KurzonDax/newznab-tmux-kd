@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests;
 
 use App\Data\TvReleaseFilters;
+use App\Data\TvShowFilters;
 use App\Enums\BrowseRoot;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -24,10 +25,11 @@ final class UpdateReleaseViewRequest extends FormRequest
             'per' => ['sometimes', 'integer', 'in:24,48,100'],
             'thumbs' => ['sometimes', 'boolean'],
             'sort' => ['sometimes', 'string', Rule::in($root === BrowseRoot::Tv ? array_keys(TvReleaseFilters::SORTS) : [])],
+            'shows_sort' => ['sometimes', 'string', Rule::in($root === BrowseRoot::Tv ? array_keys(TvShowFilters::SORTS) : [])],
         ];
     }
 
-    /** @return array{view?: string, size?: string, per?: int, thumbs?: bool, sort?: string} */
+    /** @return array{view?: string, size?: string, per?: int, thumbs?: bool, sort?: string, shows_sort?: string} */
     public function preferences(): array
     {
         $preferences = $this->safe()->except('root');

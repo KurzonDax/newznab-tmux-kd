@@ -62,6 +62,12 @@
 .checkbox-menu-item[aria-checked="true"] .checkbox-menu-box { border-color: var(--tv-accent); background: var(--tv-accent); color: var(--tv-accent-on); }
 .checkbox-menu-item[aria-checked="true"] .checkbox-menu-box i { visibility: visible; }
 
+/* Shows wall menus: one width whatever is ticked, the panel opening right under the sticky top bar */
+.checkbox-menu.is-fixed .checkbox-menu-button { justify-content: space-between; gap: 6px; width: clamp(132px, calc((100vw - 540px) / 6), 176px); padding: 0 12px 0 14px; }
+.checkbox-menu.is-fixed .checkbox-menu-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.checkbox-menu.is-fixed .checkbox-menu-button i { flex: none; }
+.checkbox-menu.is-fixed .checkbox-menu-panel { right: auto; left: 0; z-index: 15; max-height: min(420px, 60vh); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--tv-line) transparent; }
+
 /* Sort */
 .tv-sort { position: relative; display: inline-flex; align-items: center; }
 .tv-sort select { appearance: none; height: 38px; padding: 0 36px 0 16px; border: 0; border-radius: 19px; background: var(--tv-panel-alt); background-image: none; color: var(--tv-ink); font-size: 13.5px; font-weight: 600; line-height: normal; cursor: pointer; box-shadow: none; }
@@ -168,3 +174,44 @@
 
 /* Off-screen buffer for copying where the Clipboard API is unavailable (plain http). */
 .tv-copy-buffer { position: fixed; top: 0; left: 0; opacity: 0; pointer-events: none; }
+
+/* TV search: the toolbar field and its two-group results */
+.tv-search { position: relative; width: 320px; }
+.tv-search label { display: flex; align-items: center; gap: 8px; height: 38px; margin: 0; padding: 0 16px; border-radius: 19px; background: var(--tv-panel-alt); color: var(--tv-dim); cursor: text; }
+.tv-search label:focus-within { box-shadow: 0 0 0 2px var(--tv-accent); }
+.tv-search label i { flex: none; width: 16.5px; font-size: 14px; text-align: center; }
+.tv-search input { flex: 1; min-width: 0; height: auto; padding: 1px 2px; border: 0; background: none; color: var(--tv-ink); caret-color: var(--tv-accent); font-size: 13.5px; font-weight: 400; line-height: 1.5; box-shadow: none; }
+.tv-search input:focus, .tv-search input:focus-visible { outline: 0; box-shadow: none; }
+.tv-search input::placeholder { color: var(--tv-dim); opacity: 1; }
+.tv-search-results { position: absolute; top: 44px; right: 0; left: 0; z-index: 12; max-height: 420px; overflow: auto; padding: 6px; border: 1px solid var(--tv-line); border-radius: 14px; background: var(--tv-panel); box-shadow: var(--tv-shadow); }
+.tv-search-results h4 { margin: 0; padding: 8px 10px 4px; color: var(--tv-dim); font-size: 12.5px; font-weight: 600; line-height: 1; }
+.tv-search-results a { display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: center; padding: 6px 10px; border-radius: 9px; }
+.tv-search-results a:hover, .tv-search-results a.is-highlighted { background: var(--tv-panel-alt); }
+.tv-search-results a.is-person { grid-template-columns: 1fr; padding: 9px 10px; }
+.tv-search-results img, .tv-search-card { display: block; width: 34px; height: 50px; border-radius: 5px; background: var(--tv-panel-alt); object-fit: cover; }
+.tv-search-results b { display: block; font-size: 14px; font-weight: 700; }
+.tv-search-results b + span { color: var(--tv-dim); font-size: 12.5px; }
+.tv-search-results p { margin: 0; padding: 12px; color: var(--tv-dim); font-size: 14px; }
+
+/* TV shows wall */
+.tv-show-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 14px 0 0; }
+.tv-person { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 8px 0 16px; border-radius: 19px; background: var(--tv-accent); color: var(--tv-accent-on); font-size: 13.5px; font-weight: 600; line-height: 1.5; }
+.tv-person a { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 12px; background: rgb(0 0 0 / 22%); font-size: 12px; }
+.tv-person a:hover { background: rgb(0 0 0 / 40%); }
+.tv-clear-all { padding: 2px 0 0; color: var(--tv-accent); font-size: 14px; font-weight: 500; }
+.tv-clear-all:hover { text-decoration: underline; text-underline-offset: 3px; }
+.tv-clear-all.is-hidden { visibility: hidden; }
+.tv-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(178px, 1fr)); gap: 24px 18px; margin-top: 4px; }
+.tv-tile { display: block; }
+.tv-tile-art { position: relative; display: block; aspect-ratio: 2 / 3; overflow: hidden; border-radius: 12px; background: var(--tv-panel-alt); transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s; }
+.tv-tile:hover .tv-tile-art { box-shadow: var(--tv-shadow); transform: translateY(-5px); }
+.tv-tile-art img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.tv-tile-card { display: grid; place-items: center; width: 100%; height: 100%; padding: 14px; background: var(--tv-panel-alt); color: var(--tv-dim); font-size: 15px; font-weight: 800; line-height: 1.2; text-align: center; }
+.tv-tile b { display: -webkit-box; margin-top: 10px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 15px; font-weight: 700; line-height: 1.25; }
+.tv-tile-what { display: block; margin-top: 2px; color: var(--tv-dim); font-size: 13.5px; }
+.tv-tile-more { display: block; margin-top: 2px; color: var(--tv-dim); font-size: 12.5px; }
+
+@media (prefers-reduced-motion: reduce) {
+    .tv-tile-art { transition: none; }
+    .tv-tile:hover .tv-tile-art { transform: none; }
+}

@@ -21,14 +21,14 @@ class SeriesController extends BasePageController
         }
 
         abort_if($id !== '' && preg_match('/^(0-9|[A-Z])$/i', $id) !== 1, 404);
-        $directory = app(TvShowDirectory::class);
         if ($request->has('_fragment')) {
-            $data = $directory->show($request, $this->userdata, $request->integer('show'));
+            $data = app(TvShowDirectory::class)->show($request, $this->userdata, $request->integer('show'));
 
             return view($request->input('_fragment') === 'show' ? 'series.dialog' : 'series.list', $data);
         }
 
-        return view('series.index', [...$this->viewData, ...$directory->directory($request, $this->userdata, $id), 'meta_title' => 'TV Shows']);
+        // The A-to-Z directory is replaced by the TV shows wall (#778).
+        return redirect()->route('tv.shows');
     }
 
     public function showTrending(Request $request): mixed

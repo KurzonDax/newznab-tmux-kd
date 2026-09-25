@@ -1,3 +1,5 @@
+import { fetchList, filterUrl, firstPageUrl, postJson } from './tv-list.js';
+
 const COPIED = 'NZB link copied. It contains your API key, so only paste it into your own downloader.';
 
 /**
@@ -120,19 +122,6 @@ export function tvReleases() {
             button.copiedTimer = setTimeout(() => icon.classList.replace('fa-check', 'fa-link'), 1600);
         },
 
-        async post(url, body) {
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json', Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content ?? '',
-                },
-                body: JSON.stringify(body),
-            });
-            if (!response.ok) throw new Error('Request failed');
-            return response.json();
-        },
-
         markCart(guids, inCart) {
             this.screen.querySelectorAll('[data-cart]').forEach(button => {
                 if (!guids.includes(button.dataset.cart)) return;
@@ -147,7 +136,7 @@ export function tvReleases() {
             const guid = button.dataset.cart, removing = button.getAttribute('aria-pressed') === 'true';
             button.disabled = true;
             try {
-                const result = await this.post(removing ? '/cart/delete/' + encodeURIComponent(guid) : '/cart/add', { id: guid });
+                const result = await postJson(removing ? '/cart/delete/' + encodeURIComponent(guid) : '/cart/add', { id: guid });
                 if (!result.success) throw new Error('Cart update failed');
                 this.markCart([guid], !removing);
                 if (result.cartCount !== undefined) this.$store.cart.setCount(result.cartCount);
@@ -163,7 +152,7 @@ export function tvReleases() {
             const guids = this.selectedGuids();
             if (!guids.length) return;
             try {
-                const result = await this.post('/cart/add', { id: guids.join(',') });
+                const result = await postJson('/cart/add', { id: guids.join(',') });
                 if (!result.success) throw new Error('Cart update failed');
                 this.markCart(guids, true);
                 if (result.cartCount !== undefined) this.$store.cart.setCount(result.cartCount);
@@ -197,22 +186,17 @@ export function tvReleases() {
 
         async changeSort(event) {
             try {
-                await this.post(this.screen.dataset.preferenceUrl, { root: 'tv', sort: event.target.value });
+                await postJson(this.screen.dataset.preferenceUrl, { root: 'tv', sort: event.target.value });
             } catch {
                 window.showToast('Could not save your sort order. Please try again.', 'error');
                 return;
             }
-            const url = new URL(window.location.href);
-            url.searchParams.delete('page');
-            window.location.assign(url.toString());
+            window.location.assign(firstPageUrl(window.location.href).toString());
         },
 
         async applyFilter(event) {
             const { name, values } = event.detail;
-            const url = new URL(window.location.href);
-            [...url.searchParams.keys()].filter(key => key === name || key.startsWith(name + '[')).forEach(key => url.searchParams.delete(key));
-            values.forEach(value => url.searchParams.append(name + '[]', value));
-            url.searchParams.delete('page');
+            const url = filterUrl(window.location.href, name, values);
             window.history.replaceState(null, '', url.toString());
             await this.reloadList(url);
         },
@@ -221,12 +205,8 @@ export function tvReleases() {
             this.request?.abort();
             const request = new AbortController();
             this.request = request;
-            const fragment = new URL(url.toString());
-            fragment.searchParams.set('_fragment', 'list');
             try {
-                const response = await fetch(fragment.toString(), { signal: request.signal, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-                if (!response.ok || response.redirected) throw new Error('Could not load the releases');
-                const html = await response.text();
+                const html = await fetchList(url, request.signal);
                 if (request.signal.aborted) return;
                 this.$refs.list.innerHTML = html;
                 this.selectionChanged();
