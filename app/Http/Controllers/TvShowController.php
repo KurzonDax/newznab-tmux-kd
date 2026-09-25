@@ -29,8 +29,9 @@ final class TvShowController extends BasePageController
         $load = static fn (array $ids): array => $rows->load($ids, false);
 
         if ($fragment === 'episode') {
+            // An episode belongs to the season in the URL; never answer for the fallback season.
             $episode = $request->query('episode');
-            abort_unless($current !== null && is_string($episode) && ctype_digit($episode), 404);
+            abort_unless($current !== null && (int) $season === $current && is_string($episode) && ctype_digit($episode), 404);
 
             return view('tv.show.releases', ['rows' => $load($page->episodeReleaseIds($id, $current, (int) $episode, $filters, $exclusions)), 'pick' => true, 'parts' => false]);
         }

@@ -22,7 +22,7 @@ use Illuminate\Support\Facades\DB;
 final class TvShowPage
 {
     /** The Starring line names at most this many people, in TMDB's order. */
-    public const STARRING = 8;
+    public const STARRING_LIMIT = 8;
 
     public function __construct(private readonly ReleaseBrowseService $releases) {}
 
@@ -62,7 +62,7 @@ final class TvShowPage
                 $status === false ? '' : TvShowFilters::STATUS_LABELS[$status],
             ], static fn (string $tag): bool => $tag !== '')),
             starring: DB::table('video_people as vp')->join('people as p', 'p.id', '=', 'vp.people_id')->where('vp.videos_id', $videosId)
-                ->orderBy('vp.position')->limit(self::STARRING)->pluck('p.name', 'p.id')->map(static fn (mixed $name): string => (string) $name)->all(),
+                ->orderBy('vp.position')->limit(self::STARRING_LIMIT)->pluck('p.name', 'p.id')->map(static fn (mixed $name): string => (string) $name)->all(),
         );
     }
 

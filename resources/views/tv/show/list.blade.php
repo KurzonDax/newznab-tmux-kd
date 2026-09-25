@@ -9,7 +9,8 @@
     @php
         $isOpen = array_key_exists($episode->number, $open);
         $buttonPart = null;
-        if ($isOpen && ! $openPartTaken) {
+        $firstOpen = $isOpen && ! $openPartTaken;
+        if ($firstOpen) {
             $buttonPart = 'releases button, open';
             $openPartTaken = true;
         } elseif (! $isOpen && ! $closedPartTaken) {
@@ -30,7 +31,7 @@
             <span class="tv-releases-button" @if($buttonPart !== null) data-part="{{ $buttonPart }}" @endif>{{ $episode->releases }} {{ $episode->releases === 1 ? 'release' : 'releases' }}<i class="fas fa-chevron-down" aria-hidden="true"></i></span>
         </button>
         {{-- Nothing inside while closed, so :empty hides the padding. --}}
-        <div class="tv-episode-releases">@if($isOpen)@include('tv.show.releases', ['rows' => $open[$episode->number], 'pick' => true, 'parts' => $buttonPart === 'releases button, open'])@endif</div>
+        <div class="tv-episode-releases">@if($isOpen)@include('tv.show.releases', ['rows' => $open[$episode->number], 'pick' => true, 'parts' => $firstOpen])@endif</div>
     </div>
 @endforeach
 @if($episodes === [] && $packs === [] && $others === [])

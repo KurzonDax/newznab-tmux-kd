@@ -180,6 +180,7 @@ final class TvShowPageTest extends TestCase
         $small = $this->tv(1, 2, size: 100 * 1048576, name: 'Same.Name.S01E02');
         $big = $this->tv(1, 2, size: 3 * self::GB, name: 'Same.Name.S01E02', fromname: 'poster@example.invalid');
         $this->tv(1, 1);
+        DB::table('releases')->where('id', $small)->update(['completion' => 94.4]);
 
         $response = $this->page('/tv/show/'.self::SHOW.'/1?open=2')->assertOk();
         $open = $this->episodeRow($response, 2);
@@ -190,6 +191,9 @@ final class TvShowPageTest extends TestCase
         $this->assertSame(2, substr_count($open, 'data-select value="'));
         $this->assertStringContainsString('Same name posted more than once · this copy by poster@example.invalid in unknown group', $open);
         $this->assertStringContainsString('<th class="tv-num" aria-sort="descending"><button type="button" data-sort="size">', $open);
+        $this->assertStringContainsString('<a class="tv-release-name" href="'.route('details', DB::table('releases')->where('id', $big)->value('guid')).'"', $open);
+        $this->assertMatchesRegularExpression('/>\s*94% complete · still repairing\s*</', $open);
+        $this->assertMatchesRegularExpression('/<td>\s*<span class="resolution-chip resolution-chip-1080"\s*>1080p<\/span>\s*<\/td>\s*<td class="tv-nowrap">WEB<\/td>\s*<td class="tv-num">3\.00 GB<\/td>/', $open);
         $this->assertStringNotContainsString('data-open', $this->episodeRow($response, 1));
         $response->assertDontSee('data-select-all', false);
 
@@ -197,6 +201,8 @@ final class TvShowPageTest extends TestCase
         $this->assertStringStartsWith('<table class="tv-release-table is-pick">', trim((string) $fragment));
         $this->assertSame([$big, $small], $this->rowIds((string) $fragment));
         $this->page('/tv/show/'.self::SHOW.'/1?_fragment=episode&episode=x')->assertNotFound();
+        $this->page('/tv/show/'.self::SHOW.'/5?_fragment=episode&episode=2')->assertNotFound();
+        $this->page('/tv/show/'.self::SHOW.'?_fragment=episode&episode=2')->assertNotFound();
     }
 
     public function test_packs_and_other_releases_sit_under_the_episodes_on_every_season_tab(): void

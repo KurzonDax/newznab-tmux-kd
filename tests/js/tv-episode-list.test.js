@@ -135,6 +135,26 @@ test('the selection is kept per show, so it carries across episodes, seasons and
     assert.deepEqual(onSecondSeason.map(item => item.checked), [false, false]);
 });
 
+test('the bar adds the whole selection to the cart, and Clear selection empties it on every season', async () => {
+    const { requests, session } = browser();
+    const boxes = [box('a'), box('b')];
+    const { component } = page({ boxes });
+    boxes.forEach(item => { item.checked = true; component.handleChange({ target: item }); });
+    await component.addSelectedToCart();
+    assert.equal(requests[0].url, '/cart/add');
+    assert.deepEqual(JSON.parse(requests[0].body), { id: 'a,b' });
+    assert.equal(component.$store.cart.count, 3);
+    assert.equal(component.selectedCount, 0);
+    assert.equal(session.values[selectionKey('7')], undefined);
+
+    boxes[0].checked = true;
+    component.handleChange({ target: boxes[0] });
+    component.clearSelection();
+    assert.equal(component.selectedCount, 0);
+    assert.deepEqual(boxes.map(item => item.checked), [false, false]);
+    assert.equal(session.values[selectionKey('7')], undefined);
+});
+
 test('an episode row opens its releases in place and closes again, the row itself staying put', async () => {
     const { requests } = browser({ href: 'https://nntmux.test/tv/show/7/1?resolution%5B%5D=4k&open=3' });
     const second = episode(2);
