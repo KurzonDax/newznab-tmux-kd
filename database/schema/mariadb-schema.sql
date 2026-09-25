@@ -855,6 +855,16 @@ CREATE TABLE `musicinfo` (
   FULLTEXT KEY `ix_musicinfo_artist_title_ft` (`artist`,`title`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `networks`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `networks` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(80) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_networks_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `obfuscation_recovery_artifacts`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -1894,6 +1904,17 @@ CREATE TABLE `paypal_payments` (
   `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `ix_paypal_payments_users_id` (`users_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `people`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `people` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(120) NOT NULL,
+  `tmdb_id` int(10) unsigned DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_people_tmdb_id` (`tmdb_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `permissions`;
@@ -3250,9 +3271,18 @@ CREATE TABLE `tv_info` (
   `localzone` varchar(50) NOT NULL DEFAULT '' COMMENT 'The linux tz style identifier',
   `image` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Does the video have a cover image?',
   `banner` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Does the video have a series banner?',
+  `original_language` varchar(8) NOT NULL DEFAULT '' COMMENT 'TMDB original_language (ISO 639-1)',
+  `status` tinyint(3) unsigned NOT NULL DEFAULT 0 COMMENT '0 unknown, 1 running, 2 ended',
+  `content_rating_us` varchar(8) NOT NULL DEFAULT '' COMMENT 'TMDB US content rating',
+  `premiered` date DEFAULT NULL COMMENT 'TMDB first_air_date',
+  `networks_id` int(10) unsigned DEFAULT NULL,
+  `details_refreshed_at` timestamp NULL DEFAULT NULL COMMENT 'When TMDB details were last fetched; NULL = never',
   PRIMARY KEY (`videos_id`),
   KEY `ix_tv_info_image` (`image`),
-  KEY `ix_tv_info_banner` (`banner`)
+  KEY `ix_tv_info_banner` (`banner`),
+  KEY `ix_tv_info_premiered` (`premiered`,`videos_id`),
+  KEY `tv_info_networks_id_foreign` (`networks_id`),
+  CONSTRAINT `tv_info_networks_id_foreign` FOREIGN KEY (`networks_id`) REFERENCES `networks` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `usenet_group_ingested_ranges`;
@@ -3565,6 +3595,29 @@ CREATE TABLE `video_data` (
   PRIMARY KEY (`releases_id`),
   CONSTRAINT `FK_vd_releases` FOREIGN KEY (`releases_id`) REFERENCES `releases` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `video_genres`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `video_genres` (
+  `videos_id` int(10) unsigned NOT NULL,
+  `genres_id` int(10) unsigned NOT NULL,
+  PRIMARY KEY (`genres_id`,`videos_id`),
+  KEY `ix_video_genres_video` (`videos_id`),
+  CONSTRAINT `fk_video_genres_genres_id` FOREIGN KEY (`genres_id`) REFERENCES `genres` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `video_people`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `video_people` (
+  `videos_id` int(10) unsigned NOT NULL,
+  `people_id` int(10) unsigned NOT NULL,
+  `position` tinyint(3) unsigned NOT NULL COMMENT '0-based cast rank in TMDB order',
+  PRIMARY KEY (`people_id`,`videos_id`),
+  KEY `ix_video_people_video` (`videos_id`,`position`),
+  CONSTRAINT `fk_video_people_people_id` FOREIGN KEY (`people_id`) REFERENCES `people` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `videos`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -3904,3 +3957,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (293,'2026_09_19_00
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (294,'2026_09_24_000000_add_resolution_and_source_to_releases',11);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (295,'2026_09_24_100000_drop_color_scheme_from_users_table',12);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (296,'2026_09_24_200000_create_release_tv_episodes_table',13);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (297,'2026_09_25_000000_add_show_details_to_tv_info',14);

@@ -29,6 +29,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Sleep;
 use PHPUnit\Framework\Attributes\Test;
 use ReflectionMethod;
 use ReflectionProperty;
@@ -84,7 +85,17 @@ class TvEpisodeRevisitTest extends TestCase
             $table->text('summary');
             $table->string('publisher');
             $table->string('localzone');
+            $table->string('original_language', 8)->default('');
+            $table->unsignedTinyInteger('status')->default(0);
+            $table->string('content_rating_us', 8)->default('');
+            $table->date('premiered')->nullable();
+            $table->unsignedInteger('networks_id')->nullable();
+            $table->timestamp('details_refreshed_at')->nullable();
         });
+        foreach (['networks', 'people', 'genres', 'video_genres', 'video_people'] as $table) {
+            ProductionTables::fromAuthority()->create($table);
+        }
+        Sleep::fake();
         Http::preventStrayRequests();
         Http::fake([
             '*search/tv*' => Http::response(['results' => [[
@@ -93,6 +104,7 @@ class TvEpisodeRevisitTest extends TestCase
             ]]]),
             '*tv/200/alternative_titles*' => Http::response(['results' => []]),
             '*tv/200/external_ids*' => Http::response([]),
+            '*tv/200?*' => Http::response(['id' => 200, 'original_language' => 'en', 'genres' => [['name' => 'Drama']]]),
         ]);
         $this->insertRelease(1, ['searchname' => 'Sterling Point (2026)']);
         $pipeline = new TvProcessingPipeline([
@@ -103,6 +115,7 @@ class TvEpisodeRevisitTest extends TestCase
         $this->assertSame('Sterling Point', DB::table('videos')->where('id', $result['video_id'])->value('title'));
         $this->assertSame($result['video_id'], DB::table('releases')->find(1)->videos_id);
         $this->assertSame(-6, DB::table('releases')->find(1)->tv_episodes_id);
+        $this->assertSame('en', DB::table('tv_info')->where('videos_id', $result['video_id'])->value('original_language'));
         Http::assertNotSent(fn ($request) => str_contains($request->url(), '/season/') || str_contains($request->url(), '/episode/'));
     }
 
