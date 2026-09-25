@@ -14,8 +14,8 @@
     <div class="tv-wrap" data-part="content width wrapper">
         <div class="tv-filters">
             <h1 data-part="page title">TV releases</h1>
-            <x-segmented :items="['Releases' => route('tv.releases'), 'Shows' => url('/tv/shows')]" current="Releases" />
-            {{-- The shows-and-people search field (#778) sits here, right of the switch. --}}
+            <x-segmented :items="['Releases' => route('tv.releases'), 'Shows' => route('tv.shows')]" current="Releases" />
+            <x-tv-search />
             <span class="tv-grow"></span>
             <x-checkbox-menu name="category" label="Category" :options="$categoryMenu" :selected="$filters->categories" />
             <x-checkbox-menu name="resolution" label="Resolution" kind="resolution" :options="\App\Data\TvReleaseFilters::resolutionOptions()" :selected="$filters->resolutions" />
