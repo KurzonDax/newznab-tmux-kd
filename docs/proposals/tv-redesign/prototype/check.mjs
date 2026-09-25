@@ -27,7 +27,8 @@ const setF = async (k, v) => { await pickF(k, 'Any'); if (v !== 'Any') await pic
 // RELEASES VIEW (front page)
 ok('front page is the releases table', await js(`!!document.querySelector('table.feed')`) && (await js(`document.querySelector('.filters h1').textContent`)) === 'TV releases');
 const rows0 = await js(`document.querySelectorAll('.feed tbody tr:not(.dayrow):not(.moreof)').length`); ok('release rows listed', rows0 >= 10, rows0 + ' rows');
-ok('every row has poster, show name, res, size', await js(`[...document.querySelectorAll('.feed tbody tr:not(.dayrow):not(.moreof)')].every(r=>r.querySelector('td.art img, td.art .np')&&r.querySelector('td.what a').textContent.trim()&&/GB|MB/.test(r.children[5].textContent))`));
+ok('every row has res and size; rows with a show have poster and show name', await js(`[...document.querySelectorAll('.feed tbody tr:not(.dayrow):not(.moreof)')].every(r=>/GB|MB/.test(r.children[5].textContent)&&(r.hasAttribute('data-noshow')?!r.querySelector('td.art *')&&!r.querySelector('.showlink')&&!r.querySelector('[data-watch]'):r.querySelector('td.art img, td.art .np')&&r.querySelector('.showlink').textContent.trim()))`));
+ok('a release with no matched show is listed without poster, show line or watch button', await js(`!!document.querySelector('.feed tbody tr[data-noshow]')`));
 ok('newest first', await js(`(()=>{const ids=[...document.querySelectorAll('.feed [data-nzb]')].map(b=>REL.find(r=>r.id==b.dataset.nzb).t);return ids.every((t,i)=>i===0||ids[i-1]>=t||true)&&ids[0]===NOW;})()`));
 await setF('res', '4K');
 ok('4K filter: every row is 4K', await js(`[...document.querySelectorAll('.feed tbody tr:not(.dayrow):not(.moreof)')].every(r=>r.children[3].textContent.trim()==='4K')`) && await js(`document.querySelectorAll('.feed [data-nzb]').length`) > 0);
@@ -263,11 +264,13 @@ await js(`document.querySelector('[data-dummy]').click()`); ok('Movies link expl
 // search
 await js(`(()=>{const q=document.querySelector('#q');q.focus();q.value='${FX.searchQuery}';q.dispatchEvent(new Event('input'));})()`);
 ok('search lists the show', (await js(`document.querySelector('#results').textContent`)).includes(FX.searchTitle));
+await js(`(()=>{const q=document.querySelector('#q');q.value='zzzz';q.dispatchEvent(new Event('input'));})()`);
+ok('search no-result message', (await js(`document.querySelector('#results').textContent`)).includes('Nothing called'));
+ok('the TV search sits in the toolbar beside the Releases / Shows switch', await js(`!!document.querySelector('.filters .search #q')`));
+await js(`(()=>{const q=document.querySelector('#q');q.value='${FX.searchQuery}';q.dispatchEvent(new Event('input'));})()`);
 await js(`document.querySelector('#q').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))`); await sleep(300);
 ok('Enter opens the show', (await js(`location.hash`)).startsWith('#/show/') && (await js(`document.querySelector('.showhead h1').textContent`)).includes(FX.searchTitle));
-await js(`(()=>{const q=document.querySelector('#q');q.focus();q.value='zzzz';q.dispatchEvent(new Event('input'));})()`);
-ok('search no-result message', (await js(`document.querySelector('#results').textContent`)).includes('Nothing called'));
-await js(`document.body.click()`);
+ok('the TV search lives on the releases screen and the shows wall, not on a show page', !(await js(`!!document.querySelector('#q')`)));
 // SHOW
 ok('show page lists genres, language and cast', await js(`document.querySelectorAll('.showhead .tag').length`) >= 2 && await js(`document.querySelectorAll('.starring a').length`) >= 3);
 ok('show page: year sits beside the network under the title, no Premiered tag', await js(`/\\b(19|20)\\d\\d\\b/.test(document.querySelector('.showhead .meta').textContent)&&!/Premiered/.test(document.querySelector('.showhead .tags').textContent)`));
@@ -343,4 +346,4 @@ await js(`location.hash='#/show/${FX.longShow}/1'`); await sleep(400); await js(
 ok('no JS errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 for (const r of results) console.log(r.join('  '));
 console.log(results.filter(r => r[0] === 'FAIL').length + ' failures of ' + results.length);
-ws.close(); chrome.kill();
+ws.close(); chrome.kill('SIGKILL');

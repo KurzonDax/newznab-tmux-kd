@@ -189,11 +189,6 @@
    "fullPage": false
   },
   {
-   "name": "show-by-air-date",
-   "prototypeRoute": "#/show/9005",
-   "fullPage": false
-  },
-  {
    "name": "show-thin-no-poster-no-details",
    "prototypeRoute": "#/show/9004",
    "fullPage": false

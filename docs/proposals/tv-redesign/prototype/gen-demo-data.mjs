@@ -45,7 +45,7 @@ const FIX = {
   manySeasons: 9002, // 24 seasons + specials
   tenSeasons: 9003, // exactly 10 seasons
   thinShow: 9004, // no poster, no metadata, episodes without titles, some same-size pairs
-  dailyShow: 9005, // date-named releases -> "By air date"
+  dailyShow: 9005, // date-named releases under the year season their episode records carry
   mergedNetwork: 'jbn', mergedNetworkCount: 16,
 };
 const specs = [];
@@ -107,7 +107,9 @@ for (const spec of specs) {
   shows[spec.id] = {t: spec.t, y: spec.thin ? '2014' : String(spec.prem || ''), n: spec.thin ? '' : spec.n || '', s: SUMMARY[spec.id % SUMMARY.length].replace('%s', THING[spec.id % THING.length]), p: spec.thin || spec.noPoster ? 0 : 1};
   if (!thin) meta[spec.id] = {g: spec.g, type: 'Scripted', st: spec.st, prem: String(spec.prem), end: '', lang: spec.lang, rate: null, cast: sample(PEOPLE, int(4, 12)), us: spec.rating};
   const showAge = int(0, 5) * DAY;
-  if (spec.daily) { for (let d = 0; d < spec.daily; d++) { const dt = new Date((NOW - showAge - d * DAY) * 1000).toISOString().slice(0, 10); for (let k = 0; k < int(1, 2); k++) addRelease(spec, -1, null, null, dt, NOW - showAge - d * DAY - int(0, 7200)); } continue; }
+  if (spec.daily) { for (let d = 0; d < spec.daily; d++) { const dt = new Date((NOW - showAge - d * DAY) * 1000).toISOString().slice(0, 10), epId = nextEp++, yr = +dt.slice(0, 4);
+    eps[epId] = [spec.id, yr, spec.daily - d, new Date(dt + 'T12:00:00').toLocaleDateString('en-US', {month: 'long', day: 'numeric', year: 'numeric'}), dt];
+    for (let k = 0; k < int(1, 2); k++) addRelease(spec, epId, yr, spec.daily - d, dt, NOW - showAge - d * DAY - int(0, 7200)); } continue; }
   for (const s of spec.seasons) {
     const n = s === 0 ? 3 : spec.perSeason, last = s === spec.seasons[spec.seasons.length - 1];
     for (let e = 1; e <= n; e++) {
@@ -139,6 +141,8 @@ rx.x[newest[0]][4] = 1; nfo[newest[0]] = nfo[newest[0]] || `General\r\nComplete 
 { const byT = [...rel].sort((a, b) => b[5] - a[5]); rx.x[byT[0][0]][3] = byT[0][5] + 600; rx.x[byT[1][0]][3] = byT[0][5] + 12 * 3600; }
 // the first episode of the long show has incomplete releases (completion chip in an episode table)
 for (const r of rel) if (r[1] === FIX.longShow && /S01E01\./.test(r[3])) r[6] = 93.4;
+// the release that opens the details checks (the newest on the list, after the flood is added) must have media info
+{ const top = [...rel].sort((x, y) => y[5] - x[5] || x[0] - y[0])[0][0]; if (!media[top]) { const donor = Object.keys(media).find(k => media[k].a.length >= 1 && media[k].v.length); media[top] = JSON.parse(JSON.stringify(media[donor])); rx.summ[top] = rx.summ[donor]; } rx.x[top][4] = 1; nfo[top] = nfo[top] || 'General\r\nInvented sample NFO text for the prototype, long enough to fill the dialog and the NFO tab with a\r\nrealistic amount of monospaced content so its layout can be judged.\r\n'; }
 Object.assign(FIX, {searchQuery: 'glass mer', searchTitle: 'Glass Meridian'});
 
 const w = (f, d) => writeFileSync(`${out}/${f}`, JSON.stringify(d));

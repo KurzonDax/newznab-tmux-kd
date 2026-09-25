@@ -94,6 +94,10 @@ prototype (`prototype/tv.html`) and its reference set (`VISUAL-CONTRACT.md`).
   that episode open; one line of chips), resolution chip, source, size, files (opens the file
   list dialog), posted / added, grabs, four round buttons in this order: **Download NZB**
   (coral), **Copy NZB link**, **Add to cart**, **Watch this show**.
+- **Releases with no matched show** (`videos_id = 0`; 10,464 visible ones on the production
+  copy) are listed in date order like the rest: the poster cell is empty, there is no grey
+  show line, and the watch button is absent (an invisible slot keeps the other three buttons
+  aligned). Such a row never joins a same-show batch. Decided 2026-09-24.
 - Select-all in the header (with a partial state) selects the rows visible on the page.
   Selecting brings up a floating bar: `15 selected · Download NZBs · Add to cart · Clear selection`.
 - Same-show batch expander: consecutive releases of one show posted the same day collapse to
@@ -115,8 +119,13 @@ prototype (`prototype/tv.html`) and its reference set (`VISUAL-CONTRACT.md`).
 - The same "Showing 1–42 of N shows" line and pagers. 42 per page.
 - Tile: poster (a title card when there is none), bold title, `Year · Genre, Genre`,
   `Language · Rating`. No release counts, no resolution chips.
-- Search (top bar, every screen) finds **shows and people**, grouped. Picking a person filters
-  the wall to their shows with a removable "Starring <name>" chip.
+- Search: a **"Search shows or actors" field in the toolbar** of the TV releases screen and
+  the TV shows wall, immediately right of the Releases / Shows switch, finds **shows and
+  people**, grouped (Shows, then People) in a panel dropping from the field. Picking a person
+  filters the wall to their shows with a removable "Starring <name>" chip. The show page and
+  the release details page carry no TV search. **The site's top-bar search is not touched**: it
+  stays the shared release search with its scope select. Decided 2026-09-24, replacing
+  "top bar, every screen".
 
 ### 3.3 Show page
 
@@ -129,8 +138,11 @@ prototype (`prototype/tv.html`) and its reference set (`VISUAL-CONTRACT.md`).
   page's tab style (coral underline on the current one), with Resolution and Source menus at
   the right of the same row. From 9 seasons up the row reads `Season  Specials 1 2 3 … 24`.
   The tab row never wraps (it scrolls sideways if it must), so the bar's height never
-  changes. Date-named daily shows get a "By air date" tab. Numeric tabs carry the accessible
-  name "Season 22".
+  changes. **There is no "By air date" tab** (dropped 2026-09-24): a dated daily release gets
+  its season and episode from its episode record, and providers number daily shows in
+  ordinary seasons (SmackDown is season 28 on the production copy), so daily shows list under
+  those seasons with the air date on each episode row. Numeric tabs carry the accessible name
+  "Season 22".
 - Episode row: number, title, aired date, resolution chips present, size range (one size
   when all releases are the same size), and a button-shaped **`4 releases ⌄`** control at
   the right. The whole row is the click target; the arrow flips and the button turns coral
@@ -142,6 +154,10 @@ prototype (`prototype/tv.html`) and its reference set (`VISUAL-CONTRACT.md`).
   naming poster and group. The same floating selection bar; the selection carries across
   episodes and seasons.
 - "Whole-season packs" section per season.
+- **"Other releases"** section under the packs on every season tab, omitted when empty: the
+  show's releases that declare no season or episode and have no episode link. A show with no
+  seasons at all shows only the filter row and this section, and its header omits
+  "N seasons on site".
 - Empty filter result: "No releases in this season match SD." and nothing moves.
 
 ### 3.4 Release details
@@ -156,7 +172,12 @@ prototype (`prototype/tv.html`) and its reference set (`VISUAL-CONTRACT.md`).
   "All seasons and episodes" link. Rows with nothing to show are omitted.
 - Underneath, full width: **"All N releases of this episode"** as the same release table as
   the show page, **without checkboxes**; the release being viewed has a tinted row, the words
-  "The release on this page", and its name is not a link.
+  "The release on this page", and its name is not a link. The set is the show's visible
+  releases that share any of this release's `(season, episode)` rows (NULL matches NULL);
+  for a pack the heading reads "… of this season pack"; a release with no row shows no table.
+- **A TV release with no matched show** (`videos_id = 0`): the release name is the heading,
+  there is no poster, no show crumb or link, no "Watch show" button, no "About the show"
+  aside (the tabs and facts span the full width) and no episode table. Decided 2026-09-24.
 
 ### 3.5 Dialogs
 
@@ -211,7 +232,8 @@ Specified exactly in **`DATA-CONTRACT.md`**; in short:
   the measured video size when the site has one, else the resolution in the name, else
   unknown. Source comes from the name (media info cannot tell a source). Nothing is copied to
   side tables, and no counts or per-show aggregates are stored.
-- The season and episode numbers a release **declares** are stored in a child table, so the
+- What a release **declares** (its episode numbers, or a whole season) is stored in a child
+  table (`episode = 0` is a real special; NULL means the whole season), so the
   show page no longer re-parses every name on every view, and releases whose episode has no
   `tv_episodes` row (11% in production) are still listed.
 - Show details (genres, cast, original language, US rating, Running / Ended, premiere date,
@@ -241,10 +263,12 @@ met (the unfiltered count and the exact middle page) are named there with their 
 1. **Very large episodes are bad data, not a design case.** One episode in production holds
    933 releases because of a name-fixing fault that is being investigated separately; the next
    biggest has 31. The unpaged episode table stands.
-2. **Whole-season packs**: how a pack is recognised and linked to a season. Only 15 releases
-   are stored as packs in the lab's membership data; the prototype infers packs from names.
-3. **Releases whose named episode has no `tv_episodes` row** (about 12%): where they appear on
-   the show page.
+2. **Whole-season packs**: settled. A pack is a name with `Sxx COMPLETE|FULL|PACK|COMBINED`
+   or a bare `Sxx` with no episode token (#774, widened by #792); it is a row with `episode`
+   NULL and appears in the season's "Whole-season packs" section.
+3. **Releases whose named episode has no `tv_episodes` row**: settled. They are listed under
+   the episode number their name declares, titled "Episode N" (#774). Releases that declare
+   nothing and have no link sit in "Other releases" (3.3).
 4. **Network spellings**: the merge rule for 591 distinct values.
 5. **Overall bit rate**: the stored number does not match size ÷ duration in any unit (checked
    on 2,847 complete releases); the media info block leaves it out until that is understood.

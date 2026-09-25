@@ -27,14 +27,22 @@ svg.i{width:1.1em;height:1.1em;fill:none;stroke:currentColor;stroke-width:1.8;st
 .brand{font-weight:800;font-size:20px;letter-spacing:-.02em}
 .nav a.l{color:var(--dim);font-size:15px}
 .nav a.l:hover,.nav a.l.on{color:var(--ink)}
-.search{position:relative;margin-left:auto;width:340px}
+.sitesearch{display:flex;align-items:center;margin-left:auto;height:42px;border-radius:21px;background:var(--panel2);color:var(--dim)}
+.sitesearch .scope{position:relative;display:flex;align-items:center;height:42px;padding:0 10px 0 16px;border-right:1px solid var(--line)}
+.sitesearch .scope select{appearance:none;background:none;border:0;outline:0;color:var(--ink);font:600 14px Manrope,sans-serif;padding-right:18px}
+.sitesearch .scope .i{position:absolute;right:8px;width:14px;height:14px;pointer-events:none;transform:rotate(90deg)}
+.sitesearch .field{display:flex;align-items:center;gap:8px;height:42px;width:250px;padding:0 16px 0 12px}
+.sitesearch input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--ink);caret-color:var(--acc)}
+.sitesearch input::placeholder{color:var(--dim)}
+.sitesearch:focus-within{box-shadow:0 0 0 2px var(--acc)}
+.search{position:relative;width:320px}
 .search label{display:flex;align-items:center;gap:8px;height:42px;padding:0 16px;border-radius:21px;background:var(--panel2);color:var(--dim)}
 .search input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--ink);caret-color:var(--acc)}
 .search input::placeholder{color:var(--dim)}
 .search label:focus-within{box-shadow:0 0 0 2px var(--acc)}
-.results{position:absolute;top:48px;left:0;right:0;background:var(--panel2);border-radius:14px;box-shadow:var(--shadow);padding:6px;max-height:420px;overflow:auto}
-.results a{display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:center;padding:6px 8px;border-radius:9px}
-.results a:hover,.results a.hl{background:var(--line)}
+.results{position:absolute;top:48px;left:0;right:0;background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:6px;max-height:420px;overflow:auto}
+.results a{display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:center;padding:6px 10px;border-radius:9px}
+.results a:hover,.results a.hl{background:var(--panel2)}
 .results img,.results .np{width:34px;height:50px;border-radius:5px;object-fit:cover}
 .results b{display:block;font-weight:700;font-size:14px}
 .results span{font-size:12.5px;color:var(--dim)}
@@ -47,6 +55,9 @@ svg.i{width:1.1em;height:1.1em;fill:none;stroke:currentColor;stroke-width:1.8;st
 .filters{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:22px 0 6px}
 .filters h1{font:800 30px/1.1 Manrope,sans-serif;letter-spacing:-.025em;margin-right:6px}
 .filters .grow{flex:1}
+.filters .search label{height:38px;border-radius:19px}
+.filters .search input{font-size:13.5px}
+.filters .results{top:44px;z-index:12}
 .bar2 h2{margin-right:auto}
 .fg{display:flex;align-items:center;gap:6px}
 .fg span{font-size:13px;color:var(--dim);margin-right:4px}
@@ -82,7 +93,7 @@ a.tag:hover{background:var(--line)}
 .starring{margin-top:14px;font-size:14px;color:var(--dim);max-width:80ch;line-height:1.9}
 .starring a{white-space:nowrap;color:var(--ink);font-weight:400;border-bottom:1px solid var(--line)}
 .starring a:hover{color:var(--acc);border-color:var(--acc)}
-.results h4{padding:8px 10px 4px;font:700 11.5px/1 Manrope,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+.results h4{padding:8px 10px 4px;font:600 12.5px/1 Manrope,sans-serif;color:var(--dim)}
 .results a.p{grid-template-columns:1fr;padding:9px 10px}
 .msel{position:relative;display:inline-block}
 .mbtn{display:inline-flex;align-items:center;gap:10px;height:38px;padding:0 14px 0 16px;border-radius:19px;background:var(--panel2);font-weight:600;font-size:13.5px;white-space:nowrap}
@@ -133,9 +144,11 @@ button.rc:hover,a.rc:hover{filter:brightness(1.18)}
 .rc.origin:hover{color:var(--ink)}
 .rname{font-weight:700;font-size:15.5px;line-height:1.3}
 .feed .rchips{margin-top:12px;gap:8px}
+.feed .rchips:empty{display:none}
 .dhead .rname{overflow-wrap:anywhere}
 a.rname:hover{color:var(--acc)}
 .iconacts{display:flex;gap:4px;justify-content:flex-end}
+.iconacts .slot{visibility:hidden}
 .ia{display:grid;place-items:center;width:32px;height:32px;border-radius:16px;background:var(--panel2);font-size:15px}
 .ia:hover{background:var(--line)}
 .ia.dl{background:var(--acc);color:var(--accink)}
@@ -226,6 +239,9 @@ input[type=checkbox]{width:16px;height:16px;accent-color:var(--acc);cursor:point
 .dacts{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
 .dacts .btn{height:40px;padding:0 18px;border-radius:20px;font-size:14px}
 .dcols{display:grid;grid-template-columns:1fr 360px;gap:34px;margin:26px 0 34px;align-items:start}
+.dcols.noshow{grid-template-columns:1fr}
+.dhead.noshow{grid-template-columns:1fr}
+.dhead h1.relonly{font-size:24px;overflow-wrap:anywhere}
 .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line)}
 .tabs button{padding:12px 16px;font-weight:600;font-size:14px;color:var(--dim);border-bottom:2px solid transparent;margin-bottom:-1px}
 .tabs button:hover{color:var(--ink)}
@@ -364,6 +380,7 @@ td.num{text-align:right;white-space:nowrap} th.num{text-align:right}
 .btn.sec{background:var(--panel2);color:var(--ink)}
 .btn.sec[aria-pressed=true]{background:var(--acc);color:var(--accink)}
 .packs{margin:26px 0 70px}
+.packs:has(+ .packs){margin-bottom:26px}
 .packs h3{font:800 17px/1 Manrope,sans-serif;margin-bottom:6px}
 .packs .rels{padding-left:0}
 .toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,20px);opacity:0;background:var(--ink);color:var(--bg);padding:12px 20px;border-radius:24px;font-weight:700;font-size:14px;transition:all .3s cubic-bezier(.16,1,.3,1);pointer-events:none;z-index:50}
@@ -401,7 +418,7 @@ td.num{text-align:right;white-space:nowrap} th.num{text-align:right}
 <header class="nav"><div class="wrap">
   <a class="brand" href="#/">NNTmux</a>
   <a class="l" href="#/" data-dummy>Movies</a><a class="l on" href="#/">TV</a><a class="l" href="#/" data-dummy>Music</a><a class="l" href="#/" data-dummy>Books</a>
-  <div class="search"><label><svg class="i"><use href="#i-search"/></svg><input id="q" placeholder="Search shows or actors" autocomplete="off" aria-label="Search shows or actors"></label><div class="results" id="results" hidden></div></div>
+  <form class="sitesearch" role="search" aria-label="Site search"><label class="scope"><select aria-label="Search scope"><option>All</option><option>Movies</option><option selected>TV</option><option>Music</option><option>Books</option></select><svg class="i"><use href="#i-chev"/></svg></label><label class="field"><svg class="i"><use href="#i-search"/></svg><input type="search" placeholder="Search releases…" aria-label="Search releases"></label></form>
   <button class="iconbtn" id="cartbtn" aria-label="Cart"><svg class="i"><use href="#i-cart"/></svg><span class="lbl">Cart</span> <em id="cartn">0</em></button>
   <button class="iconbtn" id="theme" aria-label="Switch light or dark"><svg class="i"><use href="#i-sun"/></svg></button>
 </div></header>
@@ -427,12 +444,19 @@ function parse(name){
   if(/remux|blu-?ray|bdrip|brrip/i.test(n))src='Blu-ray';else if(/web-?dl|webrip|\bweb\b/i.test(n))src='WEB';else if(/dvd/i.test(n))src='DVD';else if(/[hps]dtv/i.test(n))src='HDTV';
   if(/x265|h\.?265|hevc/i.test(n))codec='H.265';else if(/x264|h\.?264|avc/i.test(n))codec='H.264';else if(/\bav1\b/i.test(n))codec='AV1';else if(/xvid/i.test(n))codec='XviD';
   const remux=/remux/i.test(n), g=(n.replace(/\.(mkv|mp4|avi)$/i,'').match(/-([A-Za-z0-9_]+)$/)||[])[1]||'';
-  const se=n.match(/S(\d{1,2})(?:E(\d{1,3}))?/i), dm=n.match(/\b((?:19|20)\d{2})[.\- ](\d{2})[.\- ](\d{2})\b/);
-  return {res,src,codec,remux,group:g,ps:se?+se[1]:null,pe:se&&se[2]?+se[2]:null,date:!se&&dm?`${dm[1]}-${dm[2]}-${dm[3]}`:null};
+  // mirrors the app's TvReleaseMembership::describe() after #792: SxxEyy with an optional separator, 4-digit seasons,
+  // a bare Sxx (no episode token anywhere) or Sxx COMBINED/COMPLETE/FULL/PACK is a whole-season pack
+  const m=n.replace(/_/g,'.'), se=m.match(/\bS(\d{1,4})[ ._-]?EP?(\d{1,3})\b/i);
+  let ps=null,pe=null;
+  if(se){ps=+se[1];pe=+se[2];}
+  else{const sp=m.match(/\bS(\d{1,4})\b/i);
+    if(sp&&(/\bS\d{1,4}[ ._-]+(COMPLETE|FULL|PACK|COMBINED)\b/i.test(m)||!/\bEP?[ ._-]?\d{1,3}\b|\b(Part|Pt)[ ._-]?\d|\b\d{1,2}x\d{2}\b|[ ._-]-[ ._-]\d{1,3}[ ._-]/i.test(m)))ps=+sp[1];}
+  return {res,src,codec,remux,group:g,ps,pe};
 }
-const sOf=r=>r.s??r.ps??-1, eOf=r=>r.e??r.pe??(sOf(r)===-1?r.date:null);
-const seasonName=n=>n===-1?'By air date':n===0?'Specials':'Season '+n;
-const epNo=e=>typeof e==='string'?new Date(e+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'E'+pad(e);
+const sOf=r=>r.s??r.ps??null, eOf=r=>sOf(r)==null?null:(r.e??r.pe??null);
+const showHref=r=>'#/show/'+r.v+(sOf(r)==null?'':'/'+sOf(r)), openKey=r=>sOf(r)==null?'':`${r.v}-${sOf(r)}-${eOf(r)}`;
+const seasonName=n=>n===0?'Specials':'Season '+n;
+const epNo=e=>'E'+pad(e);
 const resChip=v=>`<span class="res r-${{'4K':'4k','1080p':'1080','720p':'720','SD':'sd'}[v]||'unk'}">${v}</span>`;
 const srcLabel=r=>r.remux?'Remux':r.src;
 const gb=b=>b>=1073741824?(b/1073741824).toFixed(b>=10737418240?1:2)+' GB':b>=1048576?Math.round(b/1048576)+' MB':Math.max(1,Math.round(b/1024))+' KB';
@@ -451,7 +475,8 @@ const filterDD=(k,label,opts)=>{const all=k==='cat'?opts:[...opts,'Unknown'],on=
   return `<div class="msel ${on.length?'set':''}" data-msel="${k}"><button class="mbtn" data-ddtoggle="${k}" aria-haspopup="true" aria-expanded="${open}">${label}: ${on.length?esc(on.join(', ')):'any'}${ic('chev')}</button>
   ${open?`<div class="mmenu" role="group" aria-label="${label}"><button class="mitem" data-ddany="${k}" role="menuitemcheckbox" aria-checked="${!on.length}"><span class="box">${!on.length?ic('check'):''}</span>Any ${label.toLowerCase()}</button>${all.map(v=>`<button class="mitem" data-ddpick="${k}" data-v="${v}" role="menuitemcheckbox" aria-checked="${state[k].has(v)}"><span class="box">${state[k].has(v)?ic('check'):''}</span>${k==='res'?resChip(v):esc(v)}</button>`).join('')}</div>`:''}</div>`;};
 function placeMenu(top){const m=$('.sfm .mmenu');if(!m)return;if(top!=null)m.scrollTop=top;m.style.left='';const over=m.getBoundingClientRect().right-(document.documentElement.clientWidth-16);if(over>0)m.style.left=-over+'px';}
-function filterBar(title,view){const seg=`<div class="seg" role="group" aria-label="View"><a href="#/" aria-pressed="${view==='releases'}">Releases</a><a href="#/shows" aria-pressed="${view==='shows'}">Shows</a></div>`;
+const tvSearch=()=>`<div class="search"><label><svg class="i"><use href="#i-search"/></svg><input id="q" placeholder="Search shows or actors" autocomplete="off" aria-label="Search shows or actors"></label><div class="results" id="results" hidden></div></div>`;
+function filterBar(title,view){const seg=`<div class="seg" role="group" aria-label="View"><a href="#/" aria-pressed="${view==='releases'}">Releases</a><a href="#/shows" aria-pressed="${view==='shows'}">Shows</a></div>`+tvSearch();
   if(view==='shows')return `<div class="filters"><h1>${title}</h1>${seg}<span class="grow"></span></div>`;
   const dd=(k,label,opts)=>`<label class="sel ${state[k]!=='Any'?'set':''}"><select data-fsel="${k}" aria-label="${label}"><option value="Any">${label}: any</option>${opts.map(o=>`<option ${state[k]===o?'selected':''}>${o}</option>`).join('')}</select>${ic('chev')}</label>`;
   if(view==='releases')return `<div class="filters"><h1>${title}</h1>${seg}<span class="grow"></span>${filterDD('cat','Category',CATS)}${filterDD('res','Resolution',RES)}${filterDD('src','Source',SRC)}<label class="sel"><select data-rsort aria-label="Sort releases">${[['posted_desc','Posted: newest first'],['posted_asc','Posted: oldest first'],['added_desc','Added: newest first'],['added_asc','Added: oldest first']].map(([k,l])=>`<option value="${k}" ${state.rsort===k?'selected':''}>${l}</option>`).join('')}</select>${ic('chev')}</label></div>`;
@@ -465,11 +490,10 @@ const filterText=withCat=>[withCat?ordered('cat').join(' or '):'',ordered('res')
 
 /* ---------- home ---------- */
 function spanText(rs){
-  const eps=new Map();rs.forEach(r=>{const s=sOf(r),e=eOf(r);if(s!==-1||e!=null)eps.set(s+'x'+(e??'p'+r.id),[s,e]);});
+  const eps=new Map();rs.forEach(r=>{const s=sOf(r),e=eOf(r);if(s!=null)eps.set(s+'x'+(e??'p'+r.id),[s,e]);});
   const list=[...eps.values()];if(!list.length)return rs.length===1?'1 release':rs.length+' releases';
-  if(list.every(x=>x[0]===-1))return list.length===1?'Aired '+epNo(list[0][1]):list.length+' dated episodes';
-  const seasons=[...new Set(list.map(x=>x[0]).filter(x=>x!==-1))].sort((a,b)=>a-b);
-  if(list.length===1){const [s,e]=list[0];return e==null?`Season ${s} pack`:typeof e==='string'?'Aired '+epNo(e):`S${pad(s)}E${pad(e)}`;}
+  const seasons=[...new Set(list.map(x=>x[0]))].sort((a,b)=>a-b);
+  if(list.length===1){const [s,e]=list[0];return e==null?`Season ${s} pack`:`S${pad(s)}E${pad(e)}`;}
   if(seasons.length===1)return `Season ${seasons[0]} · ${list.length} episodes`;
   return `Seasons ${seasons[0]}–${seasons[seasons.length-1]} · ${list.length} episodes`;
 }
@@ -477,7 +501,7 @@ const X=r=>{const a=RX.x[r.id]||[];return {guid:a[0]||'',group:a[1]||'',poster:a
 const niceCodec=c=>({'V_MPEG4/ISO/AVC':'H.264','AVC':'H.264','V_MPEGH/ISO/HEVC':'H.265','HEVC':'H.265','V_AV1':'AV1','V_MPEG2':'MPEG-2','MPEG Video':'MPEG-2'}[c]||c);
 const niceCh=c=>({'1':'1.0','2':'2.0','6':'5.1','8':'7.1'}[String(c)]||c);
 function miSummary(r,short){const sm=RX.summ[r.id];if(sm==null)return null;if(short){const f=miSummary(r).split(' · ');return (/^\d+p$/.test(f[0])?f.slice(1):f).join(' · ')||'Media info';}const p=sm.split(' · ');return p.map((x,i)=>{if(i===1)return niceCodec(x);if(i===2){const m=x.match(/^(.*?)\s+(\d+)$/);return m?m[1]+' '+niceCh(m[2]):x;}return x;}).join(' · ')||'Media Info';}
-const epLabel=x=>{const s=sOf(x),e=eOf(x);return e==null?(s===-1?'':'Season '+s+' pack'):typeof e==='string'?'Aired '+epNo(e):`S${pad(s)}E${pad(e)}`;};
+const epLabel=x=>{const s=sOf(x),e=eOf(x);return s==null?'':e==null?'Season '+s+' pack':`S${pad(s)}E${pad(e)}`;};
 function chips(r,compact){const x=X(r),pc=Math.floor(r.comp),mi=miSummary(r,compact),small=(cls,icon,label,msg)=>compact?`<button class="rc ${cls}" data-stub="${msg}" title="${label}" aria-label="${label}">${ic(icon)}</button>`:`<button class="rc ${cls}" data-stub="${msg}">${ic(icon)}${label}</button>`;
   return (pc>=100?'':`<span class="rc comp ${pc>=95?'c-ok':pc>=75?'c-mid':'c-low'}" title="${pc}% of this release's articles were seen by the indexer. ${REPAIRDONE.has(r.id)?'Repair has finished: this is as complete as it will get.':'The site may still recover more of it.'}">${pc}% complete${REPAIRDONE.has(r.id)?'':' · still repairing'}</span>`)
    +(x.pw?`<span class="rc">${ic('lock')}Password</span>`:'')
@@ -487,12 +511,12 @@ function chips(r,compact){const x=X(r),pc=Math.floor(r.comp),mi=miSummary(r,comp
    +(x.jpg?`<button class="rc k-sm" data-img="${r.id}" data-kind="sample" title="View sample image">Sample</button>`:'');}
 function origin(r,withShow,showOnly){const x=X(r),lbl=epLabel(r);
   if(showOnly)x.group=x.poster='';
-  return (withShow?`<a class="rc" href="#/show/${r.v}/${sOf(r)}" data-open="${r.v}-${sOf(r)}-${eOf(r)}" title="Go to the show">${ic('tv')}${esc(DB.shows[r.v].t)}${lbl?' · '+lbl:''}</a>`:'')
+  return (withShow&&r.v?`<a class="rc" href="${showHref(r)}" data-open="${openKey(r)}" title="Go to the show">${ic('tv')}${esc(DB.shows[r.v].t)}${lbl?' · '+lbl:''}</a>`:'')
    +(x.group?`<button class="rc origin" data-stub="All releases in ${esc(x.group)}" title="All releases in ${esc(x.group)}">${ic('users')}${esc(x.group.replace('alt.binaries.','a.b.'))}</button>`:'')
    +(x.poster?`<button class="rc origin" data-stub="All posts by ${esc(x.poster)}" title="All posts by ${esc(x.poster)}">${ic('user')}${esc(x.poster.length>26?x.poster.slice(0,25)+'…':x.poster)}</button>`:'');}
 function rowActions(r){const inC=state.cart.has(r.id),w=state.watch.has(r.v);
   return `<div class="iconacts"><button class="ia dl" data-nzb="${r.id}" title="Download NZB" aria-label="Download NZB">${ic('down')}</button><button class="ia" data-copynzb="${r.id}" title="Copy NZB link for SABnzbd or NZBGet" aria-label="Copy NZB link for SABnzbd or NZBGet">${ic('link')}</button><button class="ia" data-cart="${r.id}" aria-pressed="${inC}" title="${inC?'In cart · click to remove':'Add to cart'}" aria-label="${inC?'Remove from cart':'Add to cart'}">${ic('cart')}</button>
-   <button class="ia" data-watch="${r.v}" aria-pressed="${w}" title="${w?'Watching this show · click to stop':'Watch this show'}" aria-label="${w?'Stop watching show':'Watch show'}">${ic('eye')}</button></div>`;}
+   ${r.v?`<button class="ia" data-watch="${r.v}" aria-pressed="${w}" title="${w?'Watching this show · click to stop':'Watch this show'}" aria-label="${w?'Stop watching show':'Watch show'}">${ic('eye')}</button>`:'<span class="ia slot" aria-hidden="true"></span>'}</div>`;}
 function pager(base,page,pages,total,noun,bottom){
   if(!bottom){const href=n=>n===1?base:(base==='#/'?'#/p/'+n:base+'/p/'+n);
     {const per=base==='#/'?state.per:state.sper,from=total?(page-1)*per+1:0,to=Math.min(page*per,total);
@@ -522,12 +546,12 @@ function releasesView(){
   let day='',i=0;
   while(i<page.length){
     const r=page[i],d=dayKey(tk(r));
-    let j=i;while(j<page.length&&page[j].v===r.v&&dayKey(tk(page[j]))===d)j++;
+    let j=i;while(j<page.length&&r.v&&page[j].v===r.v&&dayKey(tk(page[j]))===d)j++;if(j===i)j=i+1;
     const run=page.slice(i,j),key=r.v+'|'+d+'|'+r.id,open=state.expanded.has(key),showN=open||run.length<=4?run.length:3;
     run.slice(0,showN).forEach(x=>{const xx=X(x);
-      h+=`<tr><td><input type="checkbox" data-select="${x.id}" ${state.sel.has(x.id)?'checked':''} aria-label="Select ${esc(x.name)}"></td>
-      <td class="art"><a href="#/release/${x.id}" tabindex="-1" aria-hidden="true" data-t="${esc(DB.shows[x.v].t)}">${poster(x.v,'',true)}</a></td>
-      <td class="what"><a class="rname" href="#/release/${x.id}" title="${esc(x.name)}">${esc(x.name)}</a><a class="showlink" href="#/show/${x.v}/${sOf(x)}" data-open="${x.v}-${sOf(x)}-${eOf(x)}" title="Go to the show">${esc(DB.shows[x.v].t)}${epLabel(x)?' · '+epLabel(x):''}${x.title?' · '+esc(x.title):''}</a><div class="rchips">${chips(x,true)}</div></td>
+      h+=`<tr${x.v?'':' data-noshow'}><td><input type="checkbox" data-select="${x.id}" ${state.sel.has(x.id)?'checked':''} aria-label="Select ${esc(x.name)}"></td>
+      <td class="art">${x.v?`<a href="#/release/${x.id}" tabindex="-1" aria-hidden="true" data-t="${esc(DB.shows[x.v].t)}">${poster(x.v,'',true)}</a>`:''}</td>
+      <td class="what"><a class="rname" href="#/release/${x.id}" title="${esc(x.name)}">${esc(x.name)}</a>${x.v?`<a class="showlink" href="${showHref(x)}" data-open="${openKey(x)}" title="Go to the show">${esc(DB.shows[x.v].t)}${epLabel(x)?' · '+epLabel(x):''}${x.title?' · '+esc(x.title):''}</a>`:''}<div class="rchips">${chips(x,true)}</div></td>
       <td>${resChip(x.res)}</td><td>${srcLabel(x)}</td><td class="num">${gb(x.size)}</td>
       <td class="num"><button class="filesbtn" data-files="${x.id}" title="View file list">${xx.files}</button></td><td class="num" title="Posted ${new Date(x.t*1000).toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'})} · Added ${new Date(xx.added*1000).toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'})}">${ago(tk(x))}</td><td class="num" title="${x.grabs} grabs · ${xx.cm} comments">${x.grabs}</td>
       <td>${rowActions(x)}</td></tr>`;});
@@ -538,7 +562,7 @@ function releasesView(){
   syncSelectAll();
 }
 const M=id=>META[id]||{g:[],cast:[],lang:'',us:'',st:'',prem:''};
-const premOf=id=>+(M(id).prem||DB.shows[id].y)||0, decadeOf=id=>{const y=premOf(id);return y?Math.floor(y/10)*10+'s':'';};
+const premOf=id=>+(M(id).prem||DB.shows[id]?.y)||0, decadeOf=id=>{const y=premOf(id);return y?Math.floor(y/10)*10+'s':'';};
 let NETNAME={};const netOf=id=>{const n=(DB.shows[id].n||'').trim();return n?NETNAME[n.toLowerCase()]||n:'';};
 const RATINGS=['TV-Y','TV-Y7','TV-G','TV-PG','TV-14','TV-MA'];
 function showMatches(id){const f=state.sf,m=M(id);
@@ -579,26 +603,27 @@ function relTable(rs,key,cur,pick){
 }
 function show(id,season){
   const s=DB.shows[id];if(!s){location.hash='#/';return;}
-  const all=BYSHOW[id]||[], seasons=[...new Set(all.map(sOf))].sort((a,b)=>(a===-1)-(b===-1)||a-b);
-  if(season==null||!seasons.includes(season)){const latest=[...all].sort((a,b)=>b.t-a.t)[0];season=latest?sOf(latest):seasons[0];}
+  const all=BYSHOW[id]||[], seasons=[...new Set(all.map(sOf).filter(s=>s!=null))].sort((a,b)=>a-b), other=all.filter(r=>sOf(r)==null);
+  if(season==null||!seasons.includes(season)){const latest=all.filter(r=>sOf(r)!=null).sort((a,b)=>b.t-a.t)[0];season=latest?sOf(latest):seasons[0];}
   const inSeason=all.filter(r=>sOf(r)===season), epRel=inSeason.filter(r=>eOf(r)!=null), packs=inSeason.filter(r=>eOf(r)==null);
   const eps=new Map();epRel.forEach(r=>{const e=eOf(r);(eps.get(e)||eps.set(e,{e,title:r.title,aired:r.aired,rs:[]}).get(e)).rs.push(r);});
   const hiddenCount=inSeason.filter(r=>!match(r)).length;
   const many=seasons.length>8;
   let h=`<a class="back" href="${state.list}">${ic('back')}${state.list==='#/'?'Releases':'Shows'}</a>
-  <div class="showhead"><div class="art">${poster(id,s.t+' poster')}</div><div><h1>${esc(s.t)}</h1><div class="meta">${[s.n,s.y&&s.y!=='NULL'?s.y:(M(id).prem||''),seasons.length+' season'+(seasons.length===1?'':'s')+' on site',all.length+' releases'].filter(Boolean).map(esc).join(' · ')}</div>${s.s?`<p>${esc(s.s)}</p>`:''}
+  <div class="showhead"><div class="art">${poster(id,s.t+' poster')}</div><div><h1>${esc(s.t)}</h1><div class="meta">${[s.n,s.y&&s.y!=='NULL'?s.y:(M(id).prem||''),seasons.length?seasons.length+' season'+(seasons.length===1?'':'s')+' on site':'',all.length+' releases'].filter(Boolean).map(esc).join(' · ')}</div>${s.s?`<p>${esc(s.s)}</p>`:''}
   <div class="tags">${M(id).g.map(g=>`<a class="tag" href="#/shows" data-setsf="genre" data-v="${esc(g)}">${esc(g)}</a>`).join('')}${[M(id).lang,M(id).us&&M(id).us!=='NR'?M(id).us:'',M(id).st].filter(Boolean).map(x=>`<span class="tag plain">${esc(x)}</span>`).join('')}</div>
   ${M(id).cast.length?`<div class="starring">Starring ${M(id).cast.slice(0,8).map(n=>`<a href="#/shows" data-setsf="person" data-v="${esc(n)}">${esc(n)}</a>`).join(', ')}</div>`:''}</div></div>
-  <div class="bar2 hastabs"><h2 class="vh">${seasonName(season)}</h2><nav class="stabs ${many?'many':''}" aria-label="Seasons">${many?'<span class="lbl">Season</span>':''}${seasons.map(n=>`<a href="#/show/${id}/${n}" ${n===season?'aria-current="page"':''} title="${seasonName(n)}" aria-label="${seasonName(n)}">${many&&n>0?n:seasonName(n)}</a>`).join('')}</nav>
+  <div class="bar2 hastabs"><h2 class="vh">${season==null?'Releases':seasonName(season)}</h2>${seasons.length?`<nav class="stabs ${many?'many':''}" aria-label="Seasons">${many?'<span class="lbl">Season</span>':''}${seasons.map(n=>`<a href="#/show/${id}/${n}" ${n===season?'aria-current="page"':''} title="${seasonName(n)}" aria-label="${seasonName(n)}">${many&&n>0?n:seasonName(n)}</a>`).join('')}</nav>`:''}
    <div class="sfil">${filterDD('res','Resolution',RES)}${filterDD('src','Source',SRC)}</div></div>`;
-  const list=[...eps.values()].sort((a,b)=>typeof a.e==='string'?String(b.e).localeCompare(String(a.e)):b.e-a.e);
+  const list=[...eps.values()].sort((a,b)=>b.e-a.e);
   list.forEach(ep=>{const rs=ep.rs.filter(match);if(!rs.length)return;const key=id+'-'+season+'-'+ep.e,open=state.open.has(key),res=RES.filter(x=>rs.some(r=>r.res===x)),sz=rs.map(r=>r.size);
-    h+=`<div class="ep" ${open?'open-':''}><button data-ep="${key}" aria-expanded="${open}"><span class="no">${epNo(ep.e)}</span><span class="ti">${esc(ep.title||(typeof ep.e==='string'?'Episode aired '+new Date(ep.e+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',day:'numeric',month:'long',year:'numeric'}):'Episode '+ep.e))}${ep.aired?`<small>Aired ${esc(ep.aired)}</small>`:''}</span>
+    h+=`<div class="ep" ${open?'open-':''}><button data-ep="${key}" aria-expanded="${open}"><span class="no">${epNo(ep.e)}</span><span class="ti">${esc(ep.title||'Episode '+ep.e)}${ep.aired?`<small>Aired ${esc(ep.aired)}</small>`:''}</span>
      <span class="facts fc">${res.map(x=>`${resChip(x)}`).join('')}</span><span class="n">${gb(Math.min(...sz))}${gb(Math.max(...sz))!==gb(Math.min(...sz))?' – '+gb(Math.max(...sz)):''}</span><span class="relbtn">${rs.length} release${rs.length===1?'':'s'}${ic('chev')}</span></button>
      ${open?`<div class="rels">${relTable(rs,key,null,true)}</div>`:''}</div>`;});
-  if(!list.some(ep=>ep.rs.some(match))&&!packs.some(match))h+=`<p class="empty">No releases in this season match ${esc(filterText())}.</p>`;
+  if(!list.some(ep=>ep.rs.some(match))&&!packs.some(match)&&!other.some(match))h+=`<p class="empty">No releases${season==null?'':' in this season'} match ${esc(filterText())}.</p>`;
   const pk=packs.filter(match);
-  h+=`<div class="packs"><h3>${season===-1?'Other releases':'Whole-season packs'}</h3>${pk.length?`<div class="rels">${relTable(pk,'pack',null,true)}</div>`:`<p class="note">None on site for this season${filtered()?' with your filter':''}.</p>`}</div>`;
+  if(season!=null)h+=`<div class="packs"><h3>Whole-season packs</h3>${pk.length?`<div class="rels">${relTable(pk,'pack',null,true)}</div>`:`<p class="note">None on site for this season${filtered()?' with your filter':''}.</p>`}</div>`;
+  const ot=other.filter(match);if(ot.length)h+=`<div class="packs other"><h3>Other releases</h3><div class="rels">${relTable(ot,'other',null,true)}</div></div>`;
   if(state.sel.size)h+=`<div class="bulk"><span>${state.sel.size} selected</span><button class="btn" data-bulk="nzb">${ic('down')}Download NZBs</button><button class="btn sec" data-bulk="cart">${ic('cart')}Add to cart</button><button class="btn sec" data-bulk="clear">Clear selection</button></div>`;
   $('#app').innerHTML=h;
 }
@@ -669,29 +694,29 @@ const needFiles=()=>FILES?Promise.resolve():fetch('files.json'+NOCACHE).then(r=>
 /* ---------- release details ---------- */
 function release(id){
   const r=BYID[id];if(!r){location.hash='#/';return;}
-  const s=DB.shows[r.v],x=X(r),lbl=epLabel(r),sib=(BYSHOW[r.v]||[]).filter(o=>sOf(o)===sOf(r)&&String(eOf(o))===String(eOf(r))).sort((a,b)=>b.size-a.size);
+  const s=DB.shows[r.v]||null,x=X(r),lbl=s?epLabel(r):'',sib=!s||sOf(r)==null?[]:(BYSHOW[r.v]||[]).filter(o=>sOf(o)===sOf(r)&&eOf(o)===eOf(r)).sort((a,b)=>b.size-a.size);
   const tabs=[['overview','Overview'],['files','Files ('+x.files+')'],['media','Media info'],['nfo','NFO'],['comments','Comments ('+x.cm+')']];
-  const m=M(r.v),kind=eOf(r)==null?'pack':'episode',nSeasons=new Set((BYSHOW[r.v]||[]).map(sOf)).size;
+  const m=M(r.v),kind=eOf(r)==null?'season pack':'episode',nSeasons=new Set((BYSHOW[r.v]||[]).map(sOf).filter(s=>s!=null)).size;
   const tags=m.g.map(g=>`<a class="tag" href="#/shows" data-setsf="genre" data-v="${esc(g)}">${esc(g)}</a>`).join('')+[m.lang,m.us&&m.us!=='NR'?m.us:'',m.st,decadeOf(r.v)?'Premiered '+premOf(r.v):''].filter(Boolean).map(v=>`<span class="tag plain">${esc(v)}</span>`).join('');
-  const about=`<div class="meta">${[s.n,nSeasons+' season'+(nSeasons===1?'':'s')+' on site'].filter(Boolean).map(esc).join(' · ')}</div>
+  const aboutMeta=!s?'':[s.n,nSeasons?nSeasons+' season'+(nSeasons===1?'':'s')+' on site':''].filter(Boolean).map(esc).join(' · ');const about=!s?'':`${aboutMeta?`<div class="meta">${aboutMeta}</div>`:''}
    ${tags?`<div class="tags">${tags}</div>`:''}
    ${m.cast.length?`<div class="starring">Starring ${m.cast.slice(0,8).map(n=>`<a href="#/shows" data-setsf="person" data-v="${esc(n)}">${esc(n)}</a>`).join(', ')}</div>`:''}
-   <a class="toshow" href="#/show/${r.v}/${sOf(r)}" data-open="${r.v}-${sOf(r)}-${eOf(r)}">All seasons and episodes</a>`;
+   <a class="toshow" href="${showHref(r)}" data-open="${openKey(r)}">${sOf(r)==null?'All releases of this show':'All seasons and episodes'}</a>`;
   let panel='';
-  if(state.tab==='overview')panel=`${x.pv&&imgFor(r,'preview')?`<button class="pvthumb" data-img="${r.id}" data-kind="preview" aria-label="View preview image"><img src="${imgFor(r,'preview')}" alt="Preview image"></button>`:''}<div class="epbox">${r.aired?`<span>Aired ${esc(r.aired)}</span>`:''}${s.s?`<span>${esc(s.s)}</span>`:''}</div>
+  if(state.tab==='overview')panel=`${x.pv&&imgFor(r,'preview')?`<button class="pvthumb" data-img="${r.id}" data-kind="preview" aria-label="View preview image"><img src="${imgFor(r,'preview')}" alt="Preview image"></button>`:''}${r.aired||(s&&s.s)?`<div class="epbox">${r.aired?`<span>Aired ${esc(r.aired)}</span>`:''}${s&&s.s?`<span>${esc(s.s)}</span>`:''}</div>`:''}
     <dl class="vals">${[['Category',x.cat],['Size',gb(r.size)],['Files',x.files],['Completion',Math.floor(r.comp)+'%'],['Posted',new Date(r.t*1000).toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'})],['Added',new Date(x.added*1000).toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'})],['Grabs',r.grabs],['Group',x.group||'—'],['Poster',x.poster||'—'],['Password status',!x.pwChecked?'Not checked':x.pw?'Detected':'None detected']].map(([k,v])=>`<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>`;
   else if(state.tab==='files')panel=FILES?filesHtml(r):'<p class="note">Loading the file list…</p>';
   else if(state.tab==='media')panel=MEDIA?mediaHtml(r):'<p class="note">Loading media info…</p>';
   else if(state.tab==='nfo')panel=NFO||!x.nfo?nfoHtml(r):'<p class="note">Loading the NFO…</p>';
   else panel=`<p class="note">${x.cm?x.cm+' comment'+(x.cm===1?'':'s')+' — comment text was not copied into this prototype.':'No comments yet.'}</p>`;
-  $('#app').innerHTML=`<nav class="crumbs" aria-label="Breadcrumb"><a href="#/">TV releases</a><span>›</span><a href="#/show/${r.v}/${sOf(r)}" data-open="${r.v}-${sOf(r)}-${eOf(r)}">${esc(s.t)}</a><span>›</span><span>${esc(x.cat)}</span></nav>
-  <div class="dhead"><a class="art" href="#/show/${r.v}">${poster(r.v,s.t+' poster')}</a><div><h1><a href="#/show/${r.v}/${sOf(r)}" data-open="${r.v}-${sOf(r)}-${eOf(r)}">${esc(s.t)}</a>${lbl?' · '+lbl:''}${r.title?' — '+esc(r.title):''}</h1>
-   <div class="relname">${esc(r.name)}</div>
+  $('#app').innerHTML=`<nav class="crumbs" aria-label="Breadcrumb"><a href="#/">TV releases</a><span>›</span>${s?`<a href="${showHref(r)}" data-open="${openKey(r)}">${esc(s.t)}</a><span>›</span>`:''}<span>${esc(x.cat)}</span></nav>
+  <div class="dhead${s?'':' noshow'}">${s?`<a class="art" href="#/show/${r.v}">${poster(r.v,s.t+' poster')}</a>`:''}<div>${s?`<h1><a href="${showHref(r)}" data-open="${openKey(r)}">${esc(s.t)}</a>${lbl?' · '+lbl:''}${r.title?' — '+esc(r.title):''}</h1>
+   <div class="relname">${esc(r.name)}</div>`:`<h1 class="relonly">${esc(r.name)}</h1>`}
    <div class="rchips" style="margin-top:12px">${resChip(r.res)}<span class="chip src">${srcLabel(r)}</span>${chips(r)}</div><div class="rchips">${origin(r,false)}</div>
-   <div class="dacts"><button class="btn" data-nzb="${r.id}">${ic('down')}Download NZB</button><button class="btn sec" data-copynzb="${r.id}">${ic('link')}Copy NZB link</button><button class="btn sec" data-cart="${r.id}" aria-pressed="${state.cart.has(r.id)}">${ic(state.cart.has(r.id)?'check':'cart')}${state.cart.has(r.id)?'In cart':'Add to cart'}</button><button class="btn sec" data-watch="${r.v}" aria-pressed="${state.watch.has(r.v)}">${ic('eye')}${state.watch.has(r.v)?'Watching show':'Watch show'}</button></div></div></div>
-  <div class="dcols"><div><div class="tabs" role="tablist">${tabs.map(([k,l])=>`<button role="tab" data-tab="${k}" aria-selected="${state.tab===k}">${l}</button>`).join('')}</div><div class="panel" role="tabpanel">${panel}</div></div>
-   <aside class="aboutshow"><h2>About the show</h2>${about}</aside></div>
-  <section class="sibs"><h2>${sib.length>1?'All '+sib.length+' releases of this '+kind:'The only release of this '+kind}</h2>${relTable(sib,'sib',r.id)}</section>`;
+   <div class="dacts"><button class="btn" data-nzb="${r.id}">${ic('down')}Download NZB</button><button class="btn sec" data-copynzb="${r.id}">${ic('link')}Copy NZB link</button><button class="btn sec" data-cart="${r.id}" aria-pressed="${state.cart.has(r.id)}">${ic(state.cart.has(r.id)?'check':'cart')}${state.cart.has(r.id)?'In cart':'Add to cart'}</button>${s?`<button class="btn sec" data-watch="${r.v}" aria-pressed="${state.watch.has(r.v)}">${ic('eye')}${state.watch.has(r.v)?'Watching show':'Watch show'}</button>`:''}</div></div></div>
+  <div class="dcols${s?'':' noshow'}"><div><div class="tabs" role="tablist">${tabs.map(([k,l])=>`<button role="tab" data-tab="${k}" aria-selected="${state.tab===k}">${l}</button>`).join('')}</div><div class="panel" role="tabpanel">${panel}</div></div>
+   ${s?`<aside class="aboutshow"><h2>About the show</h2>${about}</aside>`:''}</div>
+  ${sib.length?`<section class="sibs"><h2>${sib.length>1?'All '+sib.length+' releases of this '+kind:'The only release of this '+kind}</h2>${relTable(sib,'sib',r.id)}</section>`:''}`;
   if(state.tab==='nfo'&&!NFO&&x.nfo)needNfo().then(()=>{if(location.hash==='#/release/'+id)release(id);});
   if(state.tab==='media'&&!MEDIA)needMedia().then(()=>{if(location.hash==='#/release/'+id)release(id);});
   if(state.tab==='files'&&!FILES)needFiles().then(()=>{if(location.hash==='#/release/'+id)release(id);});
@@ -702,6 +727,7 @@ function route(){const rm=location.hash.match(/^#\/release\/(\d+)/);if(rm){relea
   const m=location.hash.match(/^#\/show\/(\d+)(?:\/(-?\d+))?/);if(m){show(+m[1],m[2]!=null?+m[2]:null);return;}
   const sp=location.hash.match(/^#\/shows(?:\/p\/(\d+))?$/);if(sp){state.spage=+(sp[1]||1);home();return;}
   const rp=location.hash.match(/^#\/p\/(\d+)$/);state.page=rp?+rp[1]:1;releasesView();}
+const _route=route;route=function(){_route();bindSearch();};
 function firstPage(){const h=location.hash;if(/^#\/show\//.test(h)){route();return;}const t=/^#\/shows/.test(h)?'#/shows':'#/';state.page=state.spage=1;if(h!==t&&!(t==='#/'&&h===''))location.hash=t;else route();}
 let lastHash='';
 addEventListener('hashchange',()=>{state.dd=null;if(/^#\/(p\/|shows|$)/.test(location.hash)||location.hash==='')scrollTo(0,0);if(/^#\/release\//.test(location.hash)&&lastHash!==location.hash)state.tab='overview';closeDialog();const base=h=>h.split('/').slice(0,3).join('/');if(base(lastHash)!==base(location.hash))scrollTo(0,0);lastHash=location.hash;const fromTab=!!document.activeElement?.closest?.('.stabs');route();if(fromTab)$('.stabs a[aria-current]')?.focus({preventScroll:true});});
@@ -749,8 +775,8 @@ document.addEventListener('change',e=>{const t=e.target;if(t.dataset.selectall!=
 document.addEventListener('submit',e=>{const f=e.target.closest('[data-goto]');if(!f)return;e.preventDefault();const n=Math.min(+f.dataset.pages,Math.max(1,parseInt(f.querySelector('input').value,10)||0));if(!n)return;const b=f.dataset.goto;location.hash=n===1?b:(b==='#/'?'#/p/'+n:b+'/p/'+n);});
 $('#cartbtn').addEventListener('click',()=>toast(state.cart.size?state.cart.size+' release'+(state.cart.size===1?'':'s')+' in the cart':'The cart is empty'));
 $('#theme').addEventListener('click',()=>{const r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark';});
-const q=$('#q'),box=$('#results');let hl=0;
-function search(){const v=q.value.trim().toLowerCase();if(!v){box.hidden=true;return;}
+let hl=0;const qEl=()=>$('#q'),boxEl=()=>$('#results');
+function search(){const q=qEl(),box=boxEl();if(!q||!box)return;const v=q.value.trim().toLowerCase();if(!v){box.hidden=true;return;}
   const hits=Object.entries(DB.shows).filter(([id,s])=>BYSHOW[id]&&s.t.toLowerCase().includes(v)).sort((a,b)=>a[1].t.toLowerCase().indexOf(v)-b[1].t.toLowerCase().indexOf(v)||a[1].t.localeCompare(b[1].t)).slice(0,6);
   const ppl=v.length<2?[]:Object.entries(PEOPLE).filter(([n])=>n.toLowerCase().includes(v)).sort((a,b)=>b[1].length-a[1].length||a[0].localeCompare(b[0])).slice(0,5);
   const n=hits.length+ppl.length;hl=Math.min(hl,Math.max(0,n-1));let i=0;
@@ -758,11 +784,12 @@ function search(){const v=q.value.trim().toLowerCase();if(!v){box.hidden=true;re
     +(ppl.length?`<h4>People</h4>`+ppl.map(([name,ids])=>`<a href="#/shows" class="p ${i++===hl?'hl':''}" data-setsf="person" data-v="${esc(name)}"><div><b>${esc(name)}</b><span>${ids.length} show${ids.length===1?'':'s'}: ${esc(ids.slice(0,3).map(x=>DB.shows[x].t).join(', '))}</span></div></a>`).join(''):'')
     :`<p>Nothing called “${esc(q.value)}” here. This prototype only holds the ${Object.keys(BYSHOW).length} shows that arrived most recently, and their casts.</p>`;
   box.hidden=false;}
-q.addEventListener('input',()=>{hl=0;search();});q.addEventListener('focus',search);
-q.addEventListener('keydown',e=>{const n=$$('a',box).length;if(e.key==='ArrowDown'){e.preventDefault();hl=Math.min(n-1,hl+1);search();}else if(e.key==='ArrowUp'){e.preventDefault();hl=Math.max(0,hl-1);search();}
-  else if(e.key==='Enter'){const a=$$('a',box)[hl];if(a){a.click();q.value='';box.hidden=true;q.blur();}}else if(e.key==='Escape'){box.hidden=true;q.blur();}});
-box.addEventListener('click',()=>{q.value='';box.hidden=true;});
-document.addEventListener('click',e=>{if(!e.target.closest('.search'))box.hidden=true;});
+function bindSearch(){const q=qEl();if(!q||q.dataset.bound)return;q.dataset.bound='1';q.addEventListener('input',()=>{hl=0;search();});q.addEventListener('focus',search);
+  q.addEventListener('keydown',e=>{const box=boxEl();const n=$$('a',box).length;if(e.key==='ArrowDown'){e.preventDefault();hl=Math.min(n-1,hl+1);search();}else if(e.key==='ArrowUp'){e.preventDefault();hl=Math.max(0,hl-1);search();}
+    else if(e.key==='Enter'){const a=$$('a',box)[hl];if(a){a.click();q.value='';box.hidden=true;q.blur();}}else if(e.key==='Escape'){box.hidden=true;q.blur();}});}
+document.addEventListener('click',e=>{const box=boxEl();if(box&&e.target.closest('#results')){qEl().value='';box.hidden=true;}});
+document.addEventListener('click',e=>{const box=boxEl();if(box&&!e.target.closest('.search'))box.hidden=true;});
+document.addEventListener('submit',e=>{if(e.target.closest('.sitesearch')){e.preventDefault();toast('The site-wide release search stays as it is; only the TV section is in this prototype');}});
 document.addEventListener('focusout',e=>{const m=e.target.closest?.('.msel');if(!m||!state.dd||!e.relatedTarget||m.contains(e.relatedTarget))return;state.dd=null;m.querySelector('.mmenu')?.remove();m.querySelector('[data-ddtoggle]')?.setAttribute('aria-expanded','false');});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#modal').innerHTML){closeDialog();return;}if(e.key==='Escape'&&state.dd){const k=state.dd;state.dd=null;const y=scrollY;route();scrollTo(0,y);$(`[data-ddtoggle="${k}"]`)?.focus();return;}if(e.key==='/'&&document.activeElement!==q){e.preventDefault();q.focus();}});
 
@@ -771,7 +798,11 @@ Promise.all([fetch('data.json'+NOCACHE).then(r=>r.json()),fetch('meta.json'+NOCA
   Object.entries(META).forEach(([id,m])=>{m.g=[...new Set(m.g.flatMap(g=>G[g]||[g]))];if(m.st==='To Be Determined')m.st='Running';m.cast.forEach(n=>(PEOPLE[n]||(PEOPLE[n]=[])).push(id));});
   REL=d.rel.map(a=>{const ep=d.eps[a[2]],p=parse(a[3]);return {id:a[0],v:a[1],name:a[3],size:a[4],t:a[5],comp:a[6],grabs:a[7],s:ep?ep[1]:null,e:ep?ep[2]:null,title:ep?ep[3]:'',aired:ep?ep[4]:'',...p};});
   {const c={};Object.values(DB.shows).forEach(s=>{const n=(s.n||'').trim();if(n){const k=n.toLowerCase();(c[k]||(c[k]={}))[n]=(c[k][n]||0)+1;}});Object.entries(c).forEach(([k,v])=>{NETNAME[k]=Object.entries(v).sort((a,b)=>b[1]-a[1]||(a[0]<b[0]?-1:1))[0][0];});}
-  REL.forEach(r=>{(BYSHOW[r.v]||(BYSHOW[r.v]=[])).push(r);BYID[r.id]=r;});{const have=new Set(REL.map(catOf));CATS=['HD','UHD','SD','WEB-DL','X265','Foreign','Anime','Sport','Documentary','Other'].filter(c=>have.has(c));}NOW=Math.max(...REL.map(r=>r.t));NOWALL=Math.max(NOW,...REL.map(r=>X(r).added));{const r=store.get('rsort','posted_desc'),ss=store.get('ssort','recent');if(['posted_desc','posted_asc','added_desc','added_asc'].includes(r))state.rsort=r;if(['recent','newsite','prem','az'].includes(ss))state.ssort=ss;}
+  {// releases in a TV category that no show was matched to (10,464 of them are visible on the production copy): listed like any other, with no show
+  const names=['Landesschau.Baden-Wuerttemberg.2026.09.21.German.1080p.WEB.h264-RTS','Morning.Joe.2026.09.22.1080p.WEB.h264-CLOWNS','Grand.Designs.NZ.S10E03.1080p.HDTV.H264-FTV','Ridiculousness.S45E19.1080p.WEB.h264-BTN','Sister.Wives.S20E01.Trust.Fall.1080p.WEB.h264-BTN','Kamen.Rider.Zeztz.E02.1080p.WEB-DL.AAC2.0.H.264-Lulz','Diners.Drive-Ins.and.Dives.S51E08.720p.WEB.h264-KOMPOST','Die.Anstalt.2026.09.16.German.720p.WEB.h264-UNiVERSUM','Tagesschau.20.Uhr.2026.09.22.German.1080p.WEB.h264-WvF','Bargain.Hunt.S72E11.1080p.HDTV.H264-DARKFLiX','PBS.NewsHour.2026.09.22.1080p.WEB.h264-BAE','Unforgotten.Night.S01E07.720p.WEB-DL.AAC2.0.H.264-Lulz','Big.Brother.US.S27E33.1080p.WEB.h264-BAE','Dancing.With.The.Stars.US.S34E02.1080p.WEB.h264-BAE'];
+  const base=Math.max(...REL.map(r=>r.t));
+  names.forEach((name,i)=>{const p=parse(name),id=9000001+i,t0=base-i*6100-1800;REL.push({id,v:0,name,size:Math.round([1.9,2.4,1.6,3.3,1.2][i%5]*1073741824),t:t0,comp:100,grabs:i%3,s:null,e:null,title:'',aired:'',...p});RX.x[id]=['',['alt.binaries.teevee','alt.binaries.multimedia','alt.binaries.hdtv'][i%3],['bob <bob@example.com>','user <user@4.localdomain>','tv <tv@post.invalid>'][i%3],t0+2400,0,0,0,0,0,[2,1,3,2,4][i%5],/German/.test(name)?'TV > Foreign':/720p/.test(name)?'TV > SD':'TV > HD'];});}
+  REL.forEach(r=>{if(r.v)(BYSHOW[r.v]||(BYSHOW[r.v]=[])).push(r);BYID[r.id]=r;});{const have=new Set(REL.map(catOf));CATS=['HD','UHD','SD','WEB-DL','X265','Foreign','Anime','Sport','Documentary','Other'].filter(c=>have.has(c));}NOW=Math.max(...REL.map(r=>r.t));NOWALL=Math.max(NOW,...REL.map(r=>X(r).added));{const r=store.get('rsort','posted_desc'),ss=store.get('ssort','recent');if(['posted_desc','posted_asc','added_desc','added_asc'].includes(r))state.rsort=r;if(['recent','newsite','prem','az'].includes(ss))state.ssort=ss;}
   lastHash=location.hash;route();window.READY=true;});
 </script>
 </body>

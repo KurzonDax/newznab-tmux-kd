@@ -15,7 +15,7 @@ if (!base) { console.error('usage: node compare.mjs --base URL (--pages pages.js
 const ref = JSON.parse(readFileSync(`${refDir}/measurements.json`, 'utf8')), meta = JSON.parse(readFileSync(`${refDir}/parts.json`, 'utf8'));
 const pages = proto ? Object.fromEntries(meta.states.map(s => [s.name, s.prototypeRoute])) : JSON.parse(readFileSync(arg('pages'), 'utf8'));
 const PORT = 9391, [W, H] = ref.viewport;
-const chrome = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', ['--headless=new', '--disable-gpu', '--hide-scrollbars', `--remote-debugging-port=${PORT}`, `--user-data-dir=${mkdtempSync(tmpdir() + '/cdp-')}`, `--window-size=${W},${H}`, 'about:blank']);
+const chrome = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', ['--headless=new', '--disable-gpu', '--hide-scrollbars', `--remote-debugging-port=${PORT}`, `--user-data-dir=${mkdtempSync(tmpdir() + '/cdp-')}`, `--window-size=${W},${H}`, 'about:blank'], {stdio: 'ignore'});
 const sleep = ms => new Promise(r => setTimeout(r, ms)); let ws, seq = 0; const pending = new Map();
 for (let i = 0; i < 40; i++) { try { const t = await (await fetch(`http://127.0.0.1:${PORT}/json`)).json(); const p = t.find(x => x.type === 'page'); if (p) { ws = new WebSocket(p.webSocketDebuggerUrl); await new Promise(r => ws.onopen = r); break; } } catch (e) {} await sleep(250); }
 ws.onmessage = m => { const d = JSON.parse(m.data); if (d.id && pending.has(d.id)) { pending.get(d.id)(d.result); pending.delete(d.id); } };
@@ -49,4 +49,4 @@ const missing = Object.keys(meta.parts).filter(n => !seen.dark.has(n));
 for (const d of diffs) console.log(`DIFF  [${d[0]}] ${d[1]} · ${d[2]} · ${d[3]}: want ${d[4]}, got ${d[5]}`);
 for (const m of missing) console.log(`MISSING  no element found for part "${m}"`);
 console.log(`${diffs.length} differences, ${missing.length} parts not found, ${seen.dark.size} parts compared`);
-chrome.kill(); process.exit(diffs.length || missing.length ? 1 : 0);
+chrome.kill('SIGKILL'); process.exit(diffs.length || missing.length ? 1 : 0);

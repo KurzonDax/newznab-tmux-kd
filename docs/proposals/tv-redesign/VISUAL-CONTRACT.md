@@ -12,8 +12,8 @@ under `docs/proposals/tv-redesign/prototype/`:
 |---|---|
 | `tv.html`, `tokens.css` | the approved prototype, byte-for-byte the one Randall reviewed |
 | `data.json` … `repair.json`, `posters/`, `previews/`, `fixtures.json` | the invented dataset (`gen-demo-data.mjs`, `make-demo-art.mjs` regenerate it) |
-| `check.mjs` | 204 behaviour checks; `0 failures` on this dataset |
-| `reference/<state>-<dark|light>.webp` | 27 screen states × 2 themes at 1600 × 1000 |
+| `check.mjs` | 207 behaviour checks; `0 failures` on this dataset |
+| `reference/<state>-<dark|light>.webp` | 26 screen states × 2 themes at 1600 × 1000 |
 | `reference/measurements.json` | computed type, colour, radius, padding and size of 82 named parts, per theme |
 | `reference/tokens.json` | the resolved value of every colour token and chip hue, per theme |
 | `reference/parts.json` | the part names, the properties compared, and the list of states |
@@ -54,8 +54,10 @@ designed, not built and not reviewed, by Randall's decision.
    prototype's stroke icons are a stand-in; section 5 maps each one. This is the one place an
    implementation will not be pixel-identical to the reference screenshots, and it is accepted.
 5. **The top bar in the prototype is a stand-in for the app's existing `partials/header-menu`.**
-   It is not redesigned here. The one thing the TV section needs from it is a search that, in
-   the TV section, returns **shows and people** in two groups (`SPEC.md` 3.2).
+   It is not redesigned and not changed at all (decided 2026-09-24): the prototype draws it as
+   the app has it, scope select plus release search, as a dummy. The TV section's
+   shows-and-people search is its own field in the toolbar of the releases screen and the
+   wall (`SPEC.md` 3.2), a new component, not the header's suggest list.
 
 ---
 
@@ -124,7 +126,8 @@ Exact values for every part are in `reference/measurements.json`; the rules behi
 
 | Prototype part | In the app | Change |
 |---|---|---|
-| Top bar | `partials/header-menu`, `public-navigation-component.js` | unchanged except the TV search groups (decision 5) |
+| Top bar | `partials/header-menu`, `public-navigation-component.js` | unchanged (decision 5) |
+| TV search field and results panel | new `x-tv-search` + Alpine component `tvSearch` registered in `lazy-loader.js`; endpoint `GET /tv/search` (`DATA-CONTRACT.md` 4) | new; rendered in the toolbar of the releases screen and the wall only, right of `x-segmented` |
 | Theme toggle | `theme-toggle.js`, `partials/theme-switcher` | scheme half removed (decision 2) |
 | Releases / Shows switch | new `x-segmented` (two links, `aria-current`) | new |
 | Category, Resolution, Source and the six Shows menus | **new** `x-checkbox-menu` + Alpine component `checkboxMenu` registered in `resources/js/alpine/lazy-loader.js` | new. One component for all nine. Behaviour rules are `SPEC.md` section 2 rule 10 and `check.mjs` |
@@ -188,14 +191,18 @@ An implementation is accepted when all four hold. None of them is a judgement ca
      --ref docs/proposals/tv-redesign/prototype/reference
    ```
 
-   `pages.json` maps page names to paths (`{"releases": "/browse/TV", "shows": "…",
-   "show": "/title/tv/<id>", "details": "/details/<guid>"}`). It must end with
-   **`0 differences, 0 parts not found`**. Tolerances: lengths ±1px (font size ±0.5px), colours
+   `pages.json` maps page names to paths (`{"releases": "/tv", "shows": "/tv/shows",
+   "show": "/tv/show/<id>/<season>", "details": "/details/<guid>"}`; several entries per page
+   are allowed, e.g. the four fixture shows #779 names). It must end with **`0 differences`**;
+   the tool visits each page with no interaction, so parts that exist only in an interaction
+   state (open menus, the selection bar, "releases button, open", the dialogs and media-info
+   parts: 17 of the 82) are reported as not found even against the prototype itself, and
+   those MISSING lines are expected. Every part found on a page must match. Tolerances: lengths ±1px (font size ±0.5px), colours
    exact after normalising to rgba, first font family, exact weight; fixed-size parts (chips,
    buttons, posters, tabs) also match in height. The tool is proven both ways: 0 differences
    against the prototype itself, and it reports every changed part on a copy with a different
    accent and a larger release name.
-3. **States**: for each of the 27 states in `reference/parts.json`, a screenshot of the app in
+3. **States**: for each of the 26 states in `reference/parts.json`, a screenshot of the app in
    that state, dark and light, at 1600 × 1000, attached to the PR beside the reference image.
    Data differs, so this is reviewed by a person (Randall); the part comparison above is what
    makes that review short.

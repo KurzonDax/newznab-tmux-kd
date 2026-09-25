@@ -10,7 +10,7 @@ const URL_ = process.env.TV_URL || 'http://127.0.0.1:8766/tv.html', out = (proce
 const MAIN = process.argv[1] && process.argv[1].endsWith('reference.mjs');
 if (MAIN) mkdirSync(out, {recursive: true});
 const FX = !MAIN ? {} : await (await fetch(new URL('fixtures.json', URL_))).json();
-const chrome = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', ['--headless=new', '--disable-gpu', '--hide-scrollbars', `--remote-debugging-port=${PORT}`, `--user-data-dir=${mkdtempSync(tmpdir() + '/cdp-')}`, `--window-size=${W},${H}`, 'about:blank']);
+const chrome = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', ['--headless=new', '--disable-gpu', '--hide-scrollbars', `--remote-debugging-port=${PORT}`, `--user-data-dir=${mkdtempSync(tmpdir() + '/cdp-')}`, `--window-size=${W},${H}`, 'about:blank'], {stdio: 'ignore'});
 const sleep = ms => new Promise(r => setTimeout(r, ms)); let ws, seq = 0; const pending = new Map(), errors = [];
 for (let i = 0; i < 40; i++) { try { const t = await (await fetch(`http://127.0.0.1:${PORT}/json`)).json(); const p = t.find(x => x.type === 'page'); if (p) { ws = new WebSocket(p.webSocketDebuggerUrl); await new Promise(r => ws.onopen = r); break; } } catch (e) {} await sleep(250); }
 ws.onmessage = m => { const d = JSON.parse(m.data); if (d.id && pending.has(d.id)) { pending.get(d.id)(d.result); pending.delete(d.id); } if (d.method === 'Runtime.exceptionThrown') errors.push(d.params.exceptionDetails.exception?.description); };
@@ -40,7 +40,6 @@ const STATES = [
   ['show', `#/show/${FX.longShow}/1`, async () => {}],
   ['show-episode-open-selected', `#/show/${FX.longShow}/1`, async () => { await js(`document.querySelectorAll('.ep>button')[1].click()`); await sleep(350); await js(`document.querySelectorAll('.ep[open-] [data-select]')[0].click()`); await sleep(250); await js(`document.querySelectorAll('.ep[open-] [data-select]')[1].click()`); await sleep(300); }, true],
   ['show-24-seasons', `#/show/${FX.manySeasons}/3`, async () => {}],
-  ['show-by-air-date', `#/show/${FX.dailyShow}`, async () => {}],
   ['show-thin-no-poster-no-details', `#/show/${FX.thinShow}`, async () => {}],
   ['show-filter-empty', `#/show/${FX.longShow}/1`, async () => { await js(`state.res.add('Unknown');state.src.add('DVD');route()`); await sleep(300); }],
   ['details-overview', `#/release/${FX.filesRelease}`, async () => {}, true],
@@ -96,4 +95,4 @@ writeFileSync(`${out}/tokens.json`, JSON.stringify(tokens, null, 1));
 writeFileSync(`${out}/parts.json`, JSON.stringify({props: PROPS, colorProps: COLOR_PROPS, parts: PARTS, states: STATES.map(([n, route, , full]) => ({name: n, prototypeRoute: route, fullPage: !!full}))}, null, 1));
 const missing = Object.keys(PARTS).filter(n => !measurements.dark[n]);
 console.log(`states ${STATES.length} × 2 themes, parts measured ${Object.keys(measurements.dark).length}/${Object.keys(PARTS).length}${missing.length ? ', NOT FOUND: ' + missing.join('; ') : ''}, errors ${errors.length ? JSON.stringify(errors.slice(0, 5)) : 'none'}`);
-chrome.kill(); process.exit(errors.length || missing.length ? 1 : 0);
+chrome.kill('SIGKILL'); process.exit(errors.length || missing.length ? 1 : 0);
