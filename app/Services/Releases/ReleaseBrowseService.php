@@ -781,6 +781,12 @@ class ReleaseBrowseService
 
     private function getCacheVersion(): int
     {
+        return self::cacheVersion();
+    }
+
+    /** The version every browse cache key carries; bumpCacheVersion() retires them all. */
+    public static function cacheVersion(): int
+    {
         return (int) Cache::get(self::CACHE_VERSION_KEY, 1);
     }
 

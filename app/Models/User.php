@@ -205,7 +205,7 @@ final class User extends Authenticatable implements CanResetPasswordContract, Ha
         ];
     }
 
-    /** @return array{view: string, size: string, per: int, thumbs: bool} */
+    /** @return array{view: string, size: string, per: int, thumbs: bool, sort?: string} */
     public function releaseViewPreferences(string $root): array
     {
         return array_replace(

@@ -96,12 +96,9 @@ final class ReleaseBrowserControllerTest extends TestCase
                 $this->insertTitles($table, ['id' => $year, 'imdbid' => (string) $year, 'title' => 'Year fixture '.$year,
                     'year' => (string) $year, 'started' => $year.'-06-15', 'releasedate' => $year.'-06-15', 'publishdate' => $year.'-06-15']);
             }
-            if ($root === 'tv') {
-                DB::table('tv_episodes')->insert(['id' => $year, 'videos_id' => $year, 'series' => 1, 'episode' => 1, 'title' => 'Episode '.$year, 'firstaired' => '2005-01-01']);
-            }
             $this->release('Year fixture '.$year, ['categories_id' => $category, 'isrenamed' => 1, 'nfostatus' => 1,
                 'postdate' => ($root === 'xxx' ? $year : 2001).'-06-15', 'adddate' => '2020-01-01', 'groups_id' => 1, 'fromname' => 'Year poster',
-                ...($foreignKey !== '' ? [$foreignKey => $year] : []), 'tv_episodes_id' => $root === 'tv' ? $year : 0]);
+                ...($foreignKey !== '' ? [$foreignKey => $year] : [])]);
         }
         $user = $this->browserUser();
         $this->actingAs($user);
@@ -141,8 +138,8 @@ final class ReleaseBrowserControllerTest extends TestCase
             $this->assertSame('table', $page->viewData('browserState')->view);
             $this->assertSame(2, $page->viewData('results')->total());
         }
-        if (in_array($root, ['movies', 'tv'], true)) {
-            DB::table($root === 'movies' ? 'user_movies' : 'user_series')->insert(['users_id' => $user->id, $foreignKey => 1970]);
+        if ($root === 'movies') {
+            DB::table('user_movies')->insert(['users_id' => $user->id, $foreignKey => 1970]);
             foreach ($views as $view) {
                 $page = $this->get('/browse/'.$root.'?view='.$view.'&year=1970s&watching=1')->assertOk();
                 $this->assertSame(1, $page->viewData('results')->total());
@@ -183,7 +180,6 @@ final class ReleaseBrowserControllerTest extends TestCase
     public static function yearContexts(): iterable
     {
         yield 'movies' => ['movies', 'movieinfo', 'imdbid', 2030];
-        yield 'tv' => ['tv', 'videos', 'videos_id', 5030];
         yield 'audio' => ['audio', 'musicinfo', 'musicinfo_id', 3030];
         yield 'console' => ['console', 'consoleinfo', 'consoleinfo_id', 1030];
         yield 'games' => ['games', 'gamesinfo', 'gamesinfo_id', 4030];
@@ -206,64 +202,6 @@ final class ReleaseBrowserControllerTest extends TestCase
                 $response->assertSee($publisher)->assertSee('data-row-action="download"', false)->assertSee('data-row-action="basket"', false);
             }
         }
-    }
-
-    public function test_tv_covers_group_identified_episodes_and_explicit_packs_and_keep_internal_posted_order(): void
-    {
-        $this->createCoverCatalogSchema('videos');
-        DB::table('videos')->insert(['id' => 1, 'title' => 'Harbor Street', 'started' => '2024-01-01']);
-        DB::table('tv_info')->insert(['videos_id' => 1, 'publisher' => 'Harbor Network']);
-        foreach ([1, 2, 3] as $number) {
-            DB::table('tv_episodes')->insert(['id' => $number, 'videos_id' => 1, 'series' => 2, 'episode' => $number, 'title' => 'Episode '.$number]);
-        }
-        $this->release('Harbor.Street.S02E01.New', ['videos_id' => 1, 'tv_episodes_id' => 1, 'categories_id' => 5030, 'postdate' => '2026-09-13', 'adddate' => '2026-09-10']);
-        $this->release('Harbor.Street.S02E01.Old', ['videos_id' => 1, 'tv_episodes_id' => 1, 'categories_id' => 5030, 'postdate' => '2026-09-09', 'grabs' => 999]);
-        $this->release('Harbor.Street.S02E01-E02', ['videos_id' => 1, 'tv_episodes_id' => 1, 'categories_id' => 5030, 'postdate' => '2026-09-11']);
-        $this->release('Harbor.Street.S02.COMPLETE', ['videos_id' => 1, 'tv_episodes_id' => 0, 'categories_id' => 5030, 'postdate' => '2026-09-12']);
-        $this->release('Unidentified.S02E01', ['categories_id' => 5030]);
-        $this->actingAs($this->browserUser());
-        foreach (['s', 'l', 'xl'] as $size) {
-            $this->get('/browse/tv?view=covers&size='.$size)->assertOk()->assertSee('Harbor Network')->assertSee('Harbor.Street.S02E01.New')->assertSee('Harbor.Street.S02.COMPLETE');
-        }
-        foreach (['posted', 'posted_oldest', 'newest', 'oldest', 'title', 'grabs'] as $sort) {
-            $response = $this->get('/browse/tv?view=covers&size=xl&sort='.$sort.'&letter=Z')->assertOk();
-            $response->assertDontSee('Jump by initial')->assertDontSee('Unidentified');
-            $page = $response->viewData('results');
-            $this->assertSame(3, $page->total());
-            $covers = $page->getCollection()->keyBy('id');
-            $this->assertSame(4, $covers['1']->releaseCount);
-            $this->assertSame(2, $covers['2']->releaseCount);
-            $this->assertSame(1, $covers['3']->releaseCount);
-            $this->assertSame('Harbor.Street.S02E01.New', $covers['1']->releases[0]->row_data->name, $sort);
-            $this->assertSame('Harbor.Street.S02.COMPLETE', $covers['1']->releases[1]->row_data->name, $sort);
-        }
-    }
-
-    public function test_tv_outer_sort_uses_release_values_instead_of_show_or_episode_names(): void
-    {
-        $this->createCoverCatalogSchema('videos');
-        DB::table('videos')->insert(['id' => 1, 'title' => 'Harbor']);
-        foreach ([1 => ['Zulu', '2026-09-13', '2026-09-10', 2], 2 => ['Alpha', '2026-09-11', '2026-09-12', 8], 3 => ['Middle', '2026-09-12', '2026-09-11', 1]] as $id => [$name, $posted, $added, $grabs]) {
-            DB::table('tv_episodes')->insert(['id' => $id, 'videos_id' => 1, 'series' => 1, 'episode' => $id, 'title' => 'Episode '.$id]);
-            $this->release($name, ['categories_id' => 5030, 'videos_id' => 1, 'tv_episodes_id' => $id, 'postdate' => $posted, 'adddate' => $added, 'grabs' => $grabs]);
-        }
-        $this->actingAs($this->browserUser());
-        foreach (['posted' => '1', 'posted_oldest' => '2', 'newest' => '2', 'oldest' => '1', 'title' => '2', 'grabs' => '2'] as $sort => $first) {
-            $page = $this->get('/browse/tv?view=covers&sort='.$sort)->assertOk()->viewData('results');
-            $this->assertSame($first, $page->first()->id, $sort);
-        }
-    }
-
-    public function test_cached_episode_groups_recheck_current_release_visibility(): void
-    {
-        $this->createCoverCatalogSchema('videos');
-        DB::table('videos')->insert(['id' => 1, 'title' => 'Harbor']);
-        DB::table('tv_episodes')->insert(['id' => 1, 'videos_id' => 1, 'series' => 1, 'episode' => 1, 'title' => 'First']);
-        $id = $this->release('Harbor.S01E01', ['categories_id' => 5030, 'videos_id' => 1, 'tv_episodes_id' => 1]);
-        $this->actingAs($this->browserUser());
-        $this->get('/browse/tv?view=covers')->assertOk()->assertSee('Harbor.S01E01');
-        DB::table('releases')->where('id', $id)->update(['passwordstatus' => 2]);
-        $this->get('/browse/tv?view=covers')->assertOk()->assertDontSee('Harbor.S01E01');
     }
 
     public function test_release_facts_are_a_separate_block_after_the_complete_name(): void
@@ -329,7 +267,7 @@ final class ReleaseBrowserControllerTest extends TestCase
 
     public function test_canonical_roots_and_numeric_subcategories_never_fall_back_to_all_releases(): void
     {
-        $roots = ['console' => 1030, 'movies' => 2030, 'audio' => 3030, 'games' => 4030, 'tv' => 5030, 'xxx' => 6030, 'books' => 7030, 'other' => 31];
+        $roots = ['console' => 1030, 'movies' => 2030, 'audio' => 3030, 'games' => 4030, 'xxx' => 6030, 'books' => 7030, 'other' => 31];
         foreach ($roots as $root => $categoryId) {
             $this->release($root.' release', ['categories_id' => $categoryId]);
         }
@@ -341,6 +279,8 @@ final class ReleaseBrowserControllerTest extends TestCase
                 $response->assertSee($root.' release');
             }
         }
+        $this->get('/browse/tv')->assertRedirect(route('tv.releases'));
+        $this->get('/browse/tv/5030')->assertRedirect(route('tv.releases', ['category' => [5030]]));
         $this->get('/browse/movies/3030')->assertNotFound();
         $this->get('/browse/movies/9999')->assertNotFound();
         $this->get('/browse/not-a-root')->assertNotFound();
@@ -449,41 +389,6 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->assertSame('newest', $sorted->viewData('browserState')->sort);
         $this->assertSame('Unmatched', $sorted->viewData('results')->items()[0]->row_data->name);
         $this->assertSame(5, substr_count($response->getContent(), 'data-row-action='));
-    }
-
-    public function test_tv_filters_use_year_and_network_and_watching_is_scoped_to_the_current_user(): void
-    {
-        Schema::create('videos', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->string('title');
-            $table->date('started');
-        });
-        Schema::create('tv_info', function (Blueprint $table): void {
-            $table->unsignedInteger('videos_id')->primary();
-            $table->string('publisher');
-        });
-        DB::table('videos')->insert([
-            ['id' => 1, 'title' => 'Followed show', 'started' => '2026-01-01'],
-            ['id' => 2, 'title' => 'Another show', 'started' => '2026-01-01'],
-            ['id' => 3, 'title' => 'Older show', 'started' => '2020-01-01'],
-        ]);
-        DB::table('tv_info')->insert([
-            ['videos_id' => 1, 'publisher' => 'Network A'], ['videos_id' => 2, 'publisher' => 'Network B'], ['videos_id' => 3, 'publisher' => 'Network A'],
-        ]);
-        foreach ([1, 2, 3] as $id) {
-            $this->release('Episode '.$id, ['categories_id' => 5030, 'videos_id' => $id]);
-        }
-        $user = $this->browserUser();
-        DB::table('user_series')->insert([
-            ['users_id' => $user->id, 'videos_id' => 1], ['users_id' => $user->id + 1, 'videos_id' => 2],
-        ]);
-        $response = $this->actingAs($user)->get('/browse/tv?year=2026&network=Network%20A')->assertOk();
-        $this->assertSame(1, $response->viewData('results')->total());
-        $response->assertSee('Episode 1')->assertDontSee('Episode 2')->assertDontSee('Episode 3')
-            ->assertDontSee('aria-label="Genre"', false)->assertDontSee('value="rating"', false);
-        $watching = $this->get('/browse/tv?watching=1')->assertOk();
-        $this->assertSame(1, $watching->viewData('results')->total());
-        $watching->assertSee('Episode 1')->assertDontSee('Episode 2');
     }
 
     #[DataProvider('metadataRoots')]
@@ -686,32 +591,18 @@ final class ReleaseBrowserControllerTest extends TestCase
         $response = $this->actingAs($user)->get('/browse/'.$root.'?watching=1')->assertOk();
         $this->assertSame(2, $response->viewData('results')->total());
         $response->assertSee('Selected quality')->assertSee('Unrestricted title')->assertDontSee('Unwanted quality');
-        if ($root === 'tv') {
-            $this->followingRedirects()->get('/myshows/browse')->assertOk()->assertSee('Selected quality')->assertDontSee('Unwanted quality');
-        }
     }
 
     public static function watchedRoots(): iterable
     {
         yield 'movies' => ['movies', 2030, 'user_movies', 'imdbid'];
-        yield 'tv' => ['tv', 5030, 'user_series', 'videos_id'];
     }
 
-    public function test_my_shows_browse_uses_the_saved_cover_view_and_canonical_expansion(): void
+    public function test_my_shows_browse_now_leads_to_the_tv_releases_screen(): void
     {
-        $this->createCoverCatalogSchema('videos');
-        $user = $this->browserUser();
-        DB::table('videos')->insert(['id' => 1, 'title' => 'Followed show']);
-        DB::table('user_series')->insert(['users_id' => $user->id, 'videos_id' => 1]);
-        DB::table('tv_episodes')->insert(['id' => 1, 'videos_id' => 1, 'series' => 1, 'episode' => 1, 'title' => 'Pilot']);
-        $this->release('Followed encoding', ['videos_id' => 1, 'tv_episodes_id' => 1, 'categories_id' => 5030]);
-        $this->actingAs($user)->postJson('/profile/update-view', ['root' => 'tv', 'view' => 'covers'])->assertOk();
-
+        $this->actingAs($this->browserUser());
         $this->get('/myshows/browse?q=Followed&watching=0')->assertRedirect('/browse/tv?q=Followed&watching=1');
-        $response = $this->followingRedirects()->get('/myshows/browse?q=Followed')->assertOk();
-        $response->assertSee('data-cover-tile="1"', false)->assertSee('Followed show');
-        $this->followingRedirects()->get('/myshows/browse?view=covers&_fragment=cover&cover=1')->assertOk()
-            ->assertSee('data-episode-releases', false)->assertSee('Followed encoding');
+        $this->get('/browse/tv?q=Followed&watching=1')->assertRedirect(route('tv.releases'));
     }
 
     #[DataProvider('cardsRoots')]
@@ -750,7 +641,6 @@ final class ReleaseBrowserControllerTest extends TestCase
     public static function cardsRoots(): iterable
     {
         yield 'movies' => ['movies', 2030];
-        yield 'tv' => ['tv', 5030];
         yield 'audio' => ['audio', 3030];
         yield 'console' => ['console', 1030];
         yield 'books' => ['books', 7030];

@@ -196,6 +196,7 @@
 
 /* Import custom CSP-safe styles */
 @import './csp-safe.css';
+@import './tv.css';
 
 /* Alpine.js x-cloak - hide elements until Alpine initializes */
 [x-cloak] {
@@ -809,6 +810,24 @@ a.release-chip:is([data-chip-variant="origin"], [data-chip-variant="entity"]):ho
 .dark a.release-chip:is([data-chip-variant="origin"], [data-chip-variant="entity"]):hover {
     color: var(--color-primary-300);
 }
+
+/* x-chip tones of the redesigned release rows: tinted ground + coloured text, never the accent. */
+.chip-tone-media { background-color: var(--chip-media-bg); color: var(--chip-media-fg); }
+.chip-tone-nfo { background-color: var(--chip-nfo-bg); color: var(--chip-nfo-fg); letter-spacing: 0.04em; }
+.chip-tone-preview { background-color: var(--chip-preview-bg); color: var(--chip-preview-fg); }
+.chip-tone-sample { background-color: var(--chip-sample-bg); color: var(--chip-sample-fg); }
+.chip-tone-password { background-color: var(--surface-panel-alt); color: var(--text-default); }
+.chip-tone-completion-ok { background-color: var(--chip-completion-ok-bg); color: var(--chip-completion-ok-fg); }
+.chip-tone-completion-mid { background-color: var(--chip-completion-mid-bg); color: var(--chip-completion-mid-fg); }
+.chip-tone-completion-low { background-color: var(--chip-completion-low-bg); color: var(--chip-completion-low-fg); }
+.dark .chip-tone-media { background-color: var(--chip-media-bg-dark); color: var(--chip-media-fg-dark); }
+.dark .chip-tone-nfo { background-color: var(--chip-nfo-bg-dark); color: var(--chip-nfo-fg-dark); }
+.dark .chip-tone-preview { background-color: var(--chip-preview-bg-dark); color: var(--chip-preview-fg-dark); }
+.dark .chip-tone-sample { background-color: var(--chip-sample-bg-dark); color: var(--chip-sample-fg-dark); }
+.dark .chip-tone-password { background-color: var(--surface-panel-alt-dark); color: var(--text-default-dark); }
+.dark .chip-tone-completion-ok { background-color: var(--chip-completion-ok-bg-dark); color: var(--chip-completion-ok-fg-dark); }
+.dark .chip-tone-completion-mid { background-color: var(--chip-completion-mid-bg-dark); color: var(--chip-completion-mid-fg-dark); }
+.dark .chip-tone-completion-low { background-color: var(--chip-completion-low-bg-dark); color: var(--chip-completion-low-fg-dark); }
 
 .ui-select-compact { width: auto; max-width: 100%; flex: 0 1 auto; }
 .public-ui select.ui-control { padding-right: 32px; }

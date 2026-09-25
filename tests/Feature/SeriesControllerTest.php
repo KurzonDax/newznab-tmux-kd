@@ -95,24 +95,11 @@ class SeriesControllerTest extends TestCase
         $this->assertSame(1, $row->entity?->episode);
     }
 
-    public function test_my_shows_browse_refreshes_row_processing_data_on_cached_pages(): void
+    public function test_my_shows_browse_leads_to_the_tv_releases_screen(): void
     {
-        $user = $this->createUser();
-        $videoId = $this->createShow();
-        $this->createMatchedRelease($videoId, 1, 1, 'Followed.Show.S01E01');
-        DB::table('releases')->update(['nfostatus' => -1, 'isrenamed' => 1]);
-        DB::table('user_series')->insert(['users_id' => $user->id, 'videos_id' => $videoId]);
-        $response = $this->actingAs($user)->followingRedirects()->get(route('myshows.browse'))->assertOk();
-        $row = $response->viewData('results')->first()->row_data;
-        $this->assertTrue($row->watched);
-        $this->assertFalse($row->pp_done);
-        $this->assertSame('Paged Test Show', $row->entity?->title);
-
-        DB::table('releases')->update(['nfostatus' => 1]);
-        $response = $this->followingRedirects()->get(route('myshows.browse'))->assertOk();
-        $row = $response->viewData('results')->first()->row_data;
-        $this->assertTrue($row->pp_done);
-        $this->assertTrue($row->nfo);
+        $this->actingAs($this->createUser());
+        $this->get(route('myshows.browse'))->assertRedirect('/browse/tv?watching=1');
+        $this->get('/browse/tv?watching=1')->assertRedirect(route('tv.releases'));
     }
 
     public function test_shared_release_table_stays_inside_the_title_page(): void

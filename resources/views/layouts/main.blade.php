@@ -33,7 +33,7 @@
 </head>
 <body class="public-ui public-shell font-sans antialiased text-gray-900 dark:text-gray-100">
     @include('partials.header-menu')
-    <main class="public-page">
+    <main class="public-page @yield('main_class')">
         @yield('content')
         @if(isset($content) && is_string($content))
             {!! $content !!}

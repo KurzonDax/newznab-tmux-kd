@@ -567,7 +567,7 @@ class Category extends Model
     }
 
     /**
-     * @param  array<string, mixed>  $excludedCats
+     * @param  array<int, int|string>  $excludedCats  excluded category ids
      * @return array<string, mixed>
      */
     public static function getForMenu(array $excludedCats = []): array
