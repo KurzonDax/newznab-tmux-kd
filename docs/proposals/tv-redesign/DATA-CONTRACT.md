@@ -136,21 +136,23 @@ Production result for TV: 4K 20,379 · 1080p 135,359 · 720p 9,914 · SD 5,632 �
 (1.1%); source unknown 8,583 (5.0%). For movies only 55,367 of 575,109 have a known
 resolution today, which matters when Movies is designed (section 4).
 
-### 2.2 `release_tv_episodes`: the season and episode numbers a release declares
+### 2.2 `release_tv_episodes`: what a release declares
 
-One release can name several episodes or a whole season, so this is a real one-to-many child
-of `releases`. It is TV by nature, as `tv_episodes` is; no other category has an equivalent.
+One release can name several episodes, or contain a whole season, so this is a plain
+one-to-many child of `releases`. It is TV by nature, as `tv_episodes` is.
 
 | Column | Type | Meaning |
 |---|---|---|
+| `id` | auto-increment primary key | |
 | `releases_id` | `unsignedInteger`, FK → `releases.id` `cascadeOnDelete` | |
-| `season` | `unsignedSmallInteger` | 0 = Specials |
-| `episode` | `unsignedSmallInteger` | 0 = the whole season (a pack) |
+| `season` | `unsignedSmallInteger` | as declared; 0 = the Specials season |
+| `episode` | `unsignedSmallInteger`, **nullable** | as declared, 0 included (a season's special); **NULL = the release contains the whole season** |
 
-Primary key `(releases_id, season, episode)`. The show is **not** stored here: it is
-`releases.videos_id`. Every read starts from a show, so reads enter through
-`ix_releases_videos_posted` and join this table on its primary key (section 4). No
-`is_full_season` column: `episode = 0` says it.
+One index, `ix_release_tv_episodes_release (releases_id)`. No uniqueness rule: the writer
+replaces a release's rows wholesale. **No sentinel values**: `episode = 0` is a real episode
+(27 production releases declare `SxxE00`) and `season = 0` is the Specials season (10,155
+`tv_episodes` rows). The show is not stored here: it is `releases.videos_id`; every read
+starts from a show through `ix_releases_videos_posted` and joins on `releases_id`.
 
 Values come from **the existing parser unchanged**, `TvReleaseMembership::describe()`
 (`app/Services/Releases/TvReleaseMembership.php:28-71`): `SxxEyy`, multi-episode ranges,
@@ -216,7 +218,14 @@ One service: **`App\Services\Releases\ReleaseDerivedFacts`**, one method:
 2. Compute `resolution` and `source`. Update `releases` **only if a value changed**, with a
    query-builder update of those two columns (no model event, no recursion).
 3. If the release is in a TV category and `videos_id > 0`: replace its `release_tv_episodes`
-   rows with what `TvReleaseMembership::describe()` returns. Otherwise delete its rows.
+   rows with what `TvReleaseMembership::describe()` returns (one row per number, or one row
+   with `episode` NULL for a full season). When the name declares nothing and
+   `tv_episodes_id > 0`, take `(series, episode)` from that `tv_episodes` row **only if its
+   `videos_id` equals the release's**; otherwise the release has no row (776 releases on the
+   production copy are linked to another show's episode through the `addEpisode()` fault,
+   #790). Otherwise delete its rows. The shapes `describe()` must read are widened by #792
+   (`S01 E06`, `S1940E09`, bare `Sxx` and `COMBINED` packs), with a migration that re-runs the
+   fill.
 
 **Called from exactly one place: `SearchService::updateRelease()`**
 (`app/Services/Search/SearchService.php:157-160`), before the driver call and whatever search
@@ -263,14 +272,17 @@ categories_id NOT IN (:userExclusions)`. No `nzbstatus` test. Every list filters
 | Screen | Query | Measured |
 |---|---|---|
 | TV releases, page N | `SELECT id FROM releases FORCE INDEX (ix_releases_band_posted | _added) WHERE category_band = 5000 AND V [AND categories_id IN (…)] [AND resolution IN (…)] [AND source IN (…)] ORDER BY postdate|adddate, id LIMIT 50 OFFSET n`; past the middle of the list run the mirrored order from the other end (offset `N − n − 50`) and reverse the rows; then load those 50 by primary key with the existing row loader | page 1 **0.4 ms / 101 entries**; page 200 **1.7–2.2 ms / 11–13 thousand**; exact middle of the list **12 ms / 88 thousand** |
+| TV releases, rows with `videos_id = 0` | included by the page query above (no `videos_id` predicate; 10,464 visible on the production copy); rendered without poster, show line or watch button and never batched (`SPEC.md` 3.1) | no extra query |
 | "Showing X–Y of N" | `SELECT COUNT(*) … WHERE category_band = 5000 AND V [AND …]` on `ix_releases_band_count`, cached under the existing browse cache version (`ReleaseBrowseService::bumpCacheVersion()`, `:776-780`) keyed by filters + exclusions + password setting | selective filter **0.4 ms**; unfiltered **15 ms**, reading all 173 thousand TV index entries. This and the exact-middle page are the two places his "thousands, not hundreds of thousands" rule is not met; it is the price of counts that are right for every user with nothing stored twice. |
 | TV shows wall, "Newest releases first" / "Newest to the site first" | shows (`videos.type = 0` ⨝ `tv_info`, filters as `IN`, genre and person as `EXISTS` on the link tables) joined to `SELECT videos_id, MAX(postdate)` (or `MIN(adddate)`) `FROM releases WHERE videos_id > 0 GROUP BY videos_id`, which MariaDB answers from `ix_releases_videos_posted` as an index-only group-by | the group-by alone **5.8 ms / 17 thousand entries**; with all six filters, page 1 **6.6 ms**; no filter, last page **8.4 ms** |
 | Wall, "Newest premiere first", "A to Z" | `ix_tv_info_premiered` / the `videos` title index, `WHERE EXISTS (release for this show)` | **0.4 ms** |
 | Wall count, search box, filter option lists | counted / `LIKE` on 5,648 shows and 23 thousand people | 0.5–4 ms (`evidence/tv-shows-wall.md`) |
-| Show page: header counts, season tabs | `releases` (`videos_id = ?`, via `ix_releases_videos_posted`) ⨝ `release_tv_episodes` on its primary key | **1.3 ms / 4,336 rows** (biggest show, 38 seasons, 1,416 releases) |
-| Show page: episode rows | same join `AND season = ? AND episode > 0` and V and filters, `GROUP BY episode`: count, `BIT_OR(1 << resolution)`, `MIN/MAX(size)`; titles and air dates from `tv_episodes` by `MIN(id)` | biggest season **3.0 ms / 5,067 rows**; a 118-episode season **1.2 ms** |
+| Show page: header counts, season tabs | `releases` (`videos_id = ?`, via `ix_releases_videos_posted`) ⨝ `release_tv_episodes` on `releases_id`; tabs = distinct `season` | **1.3 ms / 4,336 rows** (biggest show, 38 seasons, 1,416 releases) |
+| Show page: episode rows | same join `AND season = ? AND episode IS NOT NULL` and V and filters, `GROUP BY episode` (episode 0 is a row like any other): count, `BIT_OR(1 << resolution)`, `MIN/MAX(size)`; titles and air dates from `tv_episodes` by `MIN(id)` | biggest season **3.0 ms / 5,067 rows**; a 118-episode season **1.2 ms** |
 | Open an episode; details page "All N releases of this episode" | same join `AND season = ? AND episode = ?` | 933-release episode **3.1 ms**; typical under 1 ms |
-| Whole-season packs | same, `episode = 0` | < 1 ms |
+| Whole-season packs | same join `AND season = ? AND episode IS NULL` | < 1 ms |
+| "Other releases" (every season tab) | `releases WHERE videos_id = ? AND category_band = 5000 AND V AND NOT EXISTS (SELECT 1 FROM release_tv_episodes WHERE releases_id = releases.id)`; ordered by the table's sort; omitted when empty | < 1 ms |
+| TV search (toolbar field on the releases screen and the wall) | `GET /tv/search?q=` → `{shows: [{id, title, year, genres, poster}], people: [{id, name, shows: [titles]}]}`; shows from 1 character, people from 2; at most 6 shows then 5 people; shows ordered by match position then title, people by show count; `LIKE` on `videos.title` (type 0, with releases) and `people.name` ⨝ `video_people` | 0.5–4 ms (`evidence/tv-shows-wall.md`) |
 
 **For when Movies is designed (not part of this build):** the same columns and band indexes
 serve it, but a *selective* filter on a big band is slow in date order: "1080p movies, page
@@ -328,14 +340,18 @@ Downtime is not a concern, so the migrations fill what they add. No command.
    recategorise into and out of TV, match, unmatch, media info arriving later; each leaves the
    two columns and `release_tv_episodes` correct; an unchanged release causes no write.
 3. Deleting a release through each of the four delete sites leaves no `release_tv_episodes`
-   row. (Foreign keys need MariaDB: an Integration suite, which per
-   `docs/agents/ci-policy.md:70-90` needs its own CI-policy issue and inventory entry.)
+   row: an ordinary Feature test on the SQLite `testing` connection, which enforces foreign
+   keys (`config/database.php:33`, `'foreign_key_constraints' => true`; precedent
+   `tests/Feature/ExecutableReleaseDiscardServiceTest.php:316`). No new Integration file and
+   no CI inventory entry; a MariaDB method, if wanted, goes into the already-registered
+   `tests/Integration/ReleaseCleanupSafetyMariaDbTest.php`.
 4. Visibility: a user excluding a TV sub-category sees neither those rows nor their count;
    `showpasswordedrelease` 0 and 1; the Category menu omits excluded sub-categories.
 5. Paging: page 1, a deep page, the mirrored half, the last page, an empty filter, one page;
    "Showing X–Y of N" agrees with the rows each time.
-6. Declarations: multi-episode, season pack, linked-only daily show, nothing declared; an
-   episode with no `tv_episodes` row still lists its releases.
+6. Declarations: multi-episode, a `SxxE00` special (a row with `episode = 0`), a season pack
+   (one row with `episode` NULL), linked-only daily show, nothing declared; an episode with no
+   `tv_episodes` row still lists its releases.
 7. `TvShowDetails::refreshIfDue()`: first match fetches; a second within 24 hours does not;
    TMDB failure leaves `details_refreshed_at` untouched; no TMDB id resolves through TVDB then
    IMDb; genres mapped; cast capped at 12 and de-duplicated by `tmdb_id`; two network
@@ -358,3 +374,10 @@ Downtime is not a concern, so the migrations fill what they add. No command.
 - 2026-09-21: resolution = measured, else the name; source = the name; show details from TMDB
   first, saved on first match, refreshed only when a new release arrives and not within 24
   hours; no background refresh.
+- 2026-09-24: `release_tv_episodes` has `id`, `releases_id`, `season`, nullable `episode`
+  (NULL = whole season; 0 = a real special); no sentinel, no second table.
+- 2026-09-24 (approved on the prototype): no "By air date" tab; releases with no matched show
+  are listed; the shows-and-people search is a field in the TV toolbar and the site's top bar
+  is untouched; genres reuse the existing `genres` table with `type = 5000` (#775); the linked
+  episode counts only when it belongs to the release's show; the parser shapes are widened
+  (#792).
