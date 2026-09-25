@@ -199,6 +199,28 @@ final class ReleaseDerivedFactsTest extends TestCase
         $this->assertSame(4, DB::table('release_tv_episodes')->count());
     }
 
+    public function test_the_refill_migration_stores_every_widened_season_and_episode_shape(): void
+    {
+        $this->insertRelease(1, 'Supernatural.S01.E19.Provenance.1080p.WEB-DL-GRP', videosId: 7);
+        $this->insertRelease(2, 'Popeye the Sailor (1933) - S1940E09 - Popeye Presents Eugene the Jeep', videosId: 7);
+        $this->insertRelease(3, 'Regular Show (2010) S01 1080p BluRay 8bit', videosId: 7);
+        $this->insertRelease(4, 'Radioactive.Emergency.S01.COMBiNED.720p.WEB-DL-GRP', videosId: 7);
+        $this->insertRelease(5, '[Erai-raws] Title S3 - 13 [1080p]', videosId: 7);
+        $this->insertRelease(6, 'Bigg Boss S13 - Season 13 - Episode 47.01 Title 1080 x 1920', videosId: 7);
+        $this->insertRelease(7, 'The.Show.S7_D2.1080p.DVDR-GRP', videosId: 7);
+        DB::table('release_tv_episodes')->insert(['releases_id' => 3, 'season' => 9, 'episode' => 9]);
+
+        (require database_path('migrations/2026_09_25_100000_refill_release_tv_episodes.php'))->up();
+
+        $this->assertSame([[1, 19]], $this->episodes(1));
+        $this->assertSame([[1940, 9]], $this->episodes(2));
+        $this->assertSame([[1, null]], $this->episodes(3));
+        $this->assertSame([[1, null]], $this->episodes(4));
+        $this->assertSame([[3, 13]], $this->episodes(5));
+        $this->assertSame([[13, 47]], $this->episodes(6));
+        $this->assertSame([], $this->episodes(7));
+    }
+
     public function test_a_missing_release_is_still_handed_to_the_driver(): void
     {
         Search::updateRelease(99);
