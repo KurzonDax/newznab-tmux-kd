@@ -11,6 +11,15 @@
         'warning' => 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200',
         'danger' => 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200',
         'info' => 'bg-cyan-100 dark:bg-cyan-900 text-cyan-800 dark:text-cyan-200',
+        // Redesigned release rows: tinted ground + coloured text from the chip tokens.
+        'media' => 'chip-tone-media',
+        'nfo' => 'chip-tone-nfo',
+        'preview' => 'chip-tone-preview',
+        'sample' => 'chip-tone-sample',
+        'password' => 'chip-tone-password',
+        'completion-ok' => 'chip-tone-completion-ok',
+        'completion-mid' => 'chip-tone-completion-mid',
+        'completion-low' => 'chip-tone-completion-low',
     ];
     $chipAttributes = $attributes->merge(['data-chip-variant' => $variant])->class(['release-chip', 'release-chip-pill' => $pill, $tones[$variant] ?? $tones['neutral']]);
 @endphp

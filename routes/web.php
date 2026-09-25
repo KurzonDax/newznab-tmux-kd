@@ -97,6 +97,7 @@ use App\Http\Controllers\SeriesController;
 use App\Http\Controllers\StatusPageController;
 use App\Http\Controllers\TermsController;
 use App\Http\Controllers\TitleController;
+use App\Http\Controllers\TvReleasesController;
 use App\Http\Controllers\VideoPreviewController;
 use App\Http\Controllers\WatchlistController;
 use App\Http\Middleware\NoCacheForAuthenticatedUsers;
@@ -237,6 +238,7 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         Route::match(['GET', 'POST'], 'XXX/{id?}', [AdultController::class, 'show'])->name('XXX');
         Route::match(['GET', 'POST'], 'Books/{id?}', [BooksController::class, 'index'])->name('Books');
         // TV-related routes
+        Route::get('tv', [TvReleasesController::class, 'index'])->name('tv.releases');
         Route::match(['GET', 'POST'], 'series/{id?}', [SeriesController::class, 'index'])->name('series');
         Route::match(['GET', 'POST'], 'trending-tv', [SeriesController::class, 'showTrending'])->name('trending-tv');
         Route::match(['GET', 'POST'], 'myshows', [MyShowsController::class, 'show'])->name('myshows');

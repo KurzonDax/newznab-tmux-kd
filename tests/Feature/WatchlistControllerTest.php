@@ -133,7 +133,7 @@ final class WatchlistControllerTest extends TestCase
     {
         $this->actingAs($this->browserUser());
         $this->get('/browse/movies')->assertOk()->assertSee('Only titles I follow');
-        $this->get('/browse/tv')->assertOk()->assertSee('Only titles I follow');
+        $this->get('/browse/tv')->assertRedirect(route('tv.releases'));
         $this->get('/mymovies')->assertRedirect('/watchlist?tab=movies');
         $this->get('/myshows')->assertRedirect('/watchlist?tab=tv');
         $this->get('/mymovies?id=add&imdb=0137523')->assertRedirect('/title/movies/0137523?watch=1');

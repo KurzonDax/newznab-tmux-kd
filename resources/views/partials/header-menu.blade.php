@@ -2,16 +2,17 @@
 <header class="public-header" data-public-header x-data="publicNavigation" x-on:keydown.window="handleShortcut" x-on:click.outside="closeMenus">
     <a href="{{ url('/') }}" class="public-logo"><i class="fas fa-cubes" aria-hidden="true"></i>{{ config('app.name') }}</a>
     <nav class="public-primary-nav" aria-label="Main navigation">
-        <button type="button" class="public-nav-item" x-ref="browseTrigger" x-on:click="toggleBrowse" x-bind:aria-expanded="browseOpen" aria-controls="browse-menu" aria-label="Browse categories" @if(request()->is('browse*', 'title*', 'details*') && !request()->boolean('trending')) aria-current="true" @endif>
+        <button type="button" class="public-nav-item" x-ref="browseTrigger" x-on:click="toggleBrowse" x-bind:aria-expanded="browseOpen" aria-controls="browse-menu" aria-label="Browse categories" @if(request()->is('browse*', 'tv', 'tv/*', 'title*', 'details*') && !request()->boolean('trending')) aria-current="true" @endif>
             <i class="fas fa-compass public-desktop-icon" aria-hidden="true"></i><i class="fas fa-bars public-mobile-icon" aria-hidden="true"></i><span class="public-nav-label">Browse</span><i class="fas fa-chevron-down public-nav-label" aria-hidden="true"></i>
         </button>
         <div id="browse-menu" class="card public-menu public-mega-menu" x-cloak x-show="browseOpen" x-on:click="navigate">
             @foreach($navigationRoots as $navigationRoot)
                 @php($root = $navigationRoot['root'])
                 <section>
-                    <a href="{{ url('/browse/'.$root->value) }}" data-browse-root class="public-menu-root"><i class="{{ $root->icon() }}" aria-hidden="true"></i>{{ $root->label() }}</a>
+                    @php($isTv = $root === \App\Enums\BrowseRoot::Tv)
+                    <a href="{{ $isTv ? route('tv.releases') : url('/browse/'.$root->value) }}" data-browse-root class="public-menu-root"><i class="{{ $root->icon() }}" aria-hidden="true"></i>{{ $root->label() }}</a>
                     @foreach($navigationRoot['categories'] as $category)
-                        <a href="{{ url('/browse/'.$root->value.'/'.$category['id']) }}">{{ $category['title'] }}</a>
+                        <a href="{{ $isTv ? route('tv.releases', ['category' => [$category['id']]]) : url('/browse/'.$root->value.'/'.$category['id']) }}">{{ $category['title'] }}</a>
                     @endforeach
                     @if($root === \App\Enums\BrowseRoot::Movies)
                         <a href="{{ route('trending-movies') }}"><i class="fas fa-fire" aria-hidden="true"></i>Trending Movies</a>

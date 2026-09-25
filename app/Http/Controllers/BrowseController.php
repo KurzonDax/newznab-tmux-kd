@@ -35,6 +35,9 @@ class BrowseController extends BasePageController
                 : $query->where('title', $id)->firstOrFail();
             abort_if(in_array((int) $category->id, (array) $this->userdata->categoryexclusions), 403);
         }
+        if ($root === BrowseRoot::Tv) {
+            return redirect()->route('tv.releases', $category === null ? [] : ['category' => [(int) $category->id]]);
+        }
 
         return $this->renderBrowser($request, $root, $category);
     }
