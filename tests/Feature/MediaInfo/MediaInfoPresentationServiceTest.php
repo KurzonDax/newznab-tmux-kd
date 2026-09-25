@@ -215,7 +215,7 @@ class MediaInfoPresentationServiceTest extends TestCase
         self::assertSame('1080p', $payload['resolution']);
         self::assertSame('H.265', $streams['video'][0]['codec_name']);
         self::assertSame([['label' => 'Dolby Vision · profile 5', 'kind' => 'dv']], $streams['video'][0]['hdr']);
-        self::assertSame(['Dolby Digital Plus with Atmos', 'E-AC-3', true, '5.1', 'English'], [$streams['audio'][0]['format_name'], $streams['audio'][0]['format_short'], $streams['audio'][0]['atmos'], $streams['audio'][0]['channels_name'], $streams['audio'][0]['language_name']]);
+        self::assertSame(['Dolby Digital Plus with Atmos', 'E-AC-3 Atmos', true, '5.1', 'English'], [$streams['audio'][0]['format_name'], $streams['audio'][0]['format_short'], $streams['audio'][0]['atmos'], $streams['audio'][0]['channels_name'], $streams['audio'][0]['language_name']]);
         self::assertSame([null, null, false, 'Stereo', 'Portuguese (BR)'], [$streams['audio'][1]['format_name'], $streams['audio'][1]['format_short'], $streams['audio'][1]['atmos'], $streams['audio'][1]['channels_name'], $streams['audio'][1]['language_name']]);
         self::assertSame(['PGS', true, 'French'], [$streams['subtitle'][0]['format_name'], $streams['subtitle'][0]['picture'], $streams['subtitle'][0]['language_name']]);
         self::assertSame([null, false], [$streams['subtitle'][1]['format_name'], $streams['subtitle'][1]['picture']]);

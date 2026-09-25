@@ -1,4 +1,4 @@
-import { renderMediaInfo } from './media-info-block.js';
+import { escapeHtml, renderMediaInfo } from './media-info-block.js';
 import { fileTable, loadAllFiles } from './tv-files.js';
 import { nextSort, sortRows } from './tv-episode-list-component.js';
 import { rowActions } from './tv-row-actions.js';
@@ -9,11 +9,6 @@ export const TABS = ['overview', 'files', 'media', 'nfo', 'comments'];
 export function tabFromHash(hash) {
     const tab = String(hash || '').replace(/^#/, '');
     return TABS.includes(tab) ? tab : 'overview';
-}
-
-function escapeHtml(value) {
-    const entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
-    return String(value).replace(/[&<>"']/g, character => entities[character]);
 }
 
 /**
@@ -123,23 +118,7 @@ export function tvReleaseDetails() {
 
         ...rowActions(),
 
-        /** Also turns the header's cart button into "In cart" and back. */
-        markCart(guids, inCart) {
-            this.screen.querySelectorAll('[data-cart]').forEach(button => {
-                if (!guids.includes(button.dataset.cart)) return;
-                button.setAttribute('aria-pressed', inCart ? 'true' : 'false');
-                if (button.hasAttribute('data-cart-label')) {
-                    button.querySelector('span').textContent = inCart ? 'In cart' : 'Add to cart';
-                    const icon = button.querySelector('i');
-                    icon.classList.toggle('fa-check', inCart);
-                    icon.classList.toggle('fa-cart-shopping', !inCart);
-                    return;
-                }
-                button.setAttribute('title', inCart ? 'In cart · click to remove' : 'Add to cart');
-                button.setAttribute('aria-label', inCart ? 'Remove from cart' : 'Add to cart');
-            });
-        },
-
+        /** The page has no selection: the row actions' bulk half never runs here. */
         selectedGuids() {
             return [];
         },

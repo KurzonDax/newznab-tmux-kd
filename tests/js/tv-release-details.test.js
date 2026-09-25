@@ -154,7 +154,7 @@ test('the header cart button reads "In cart" with a tick once added, and back', 
     const icon = { classList: new Set(['fa-cart-shopping']) };
     icon.classList.toggle = function (name, on) { if (on) this.add(name); else this.delete(name); };
     const label = { textContent: 'Add to cart' };
-    const button = { dataset: { cart: 'abc' }, ...attributes({ 'data-cart-label': '' }), querySelector: selector => (selector === 'span' ? label : icon) };
+    const button = { dataset: { cart: 'abc', cartLabel: '' }, ...attributes(), querySelector: selector => (selector === 'span' ? label : icon) };
     const { component } = detailsPage();
     component.screen.querySelectorAll = selector => (selector === '[data-cart]' ? [button] : []);
     component.markCart(['abc'], true);

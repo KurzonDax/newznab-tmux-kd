@@ -32,7 +32,7 @@ final class MediaInfoNames
 
     /** Audio: the short name used in the glance row. */
     public const AUDIO_SHORT = [
-        'E-AC-3' => 'E-AC-3', 'E-AC-3 JOC' => 'E-AC-3', 'AC-3' => 'AC-3', 'AAC LC' => 'AAC',
+        'E-AC-3' => 'E-AC-3', 'E-AC-3 JOC' => 'E-AC-3 Atmos', 'AC-3' => 'AC-3', 'AAC LC' => 'AAC',
         'AAC LC SBR' => 'HE-AAC', 'DTS XLL' => 'DTS-HD MA', 'MLP FBA' => 'TrueHD',
     ];
 
@@ -61,7 +61,9 @@ final class MediaInfoNames
 
     public static function video(?string $format, ?string $codec): ?string
     {
-        return self::VIDEO[(string) $format] ?? self::VIDEO_CODEC_IDS[(string) $codec] ?? self::filled($format);
+        $format = self::filled($format);
+
+        return $format === null ? self::VIDEO_CODEC_IDS[(string) $codec] ?? null : self::VIDEO[$format] ?? $format;
     }
 
     /** @return array{name: string, short: string}|null */
@@ -120,11 +122,8 @@ final class MediaInfoNames
     /** @return array{name: string, picture: bool}|null */
     public static function subtitle(?string $format, ?string $codec): ?array
     {
-        $key = self::filled($format) ?? self::filled($codec);
-        if ($key === null) {
-            return null;
-        }
-        $name = self::SUBTITLES[$key] ?? self::SUBTITLES[(string) $codec] ?? self::filled($format);
+        $format = self::filled($format);
+        $name = $format === null ? self::SUBTITLES[(string) $codec] ?? null : self::SUBTITLES[$format] ?? $format;
 
         return $name === null ? null : ['name' => $name, 'picture' => in_array($format, self::PICTURE_SUBTITLES, true)];
     }

@@ -87,7 +87,7 @@ final class TvReleaseDetailsPageTest extends TestCase
         $response = $this->details($id)->assertOk();
         $html = (string) $response->getContent();
 
-        $response->assertSee('<h1 data-part="details heading">The Glass Meridian · S07E05 — Shift Ends</h1>', false)
+        $response->assertSee('<h1 data-part="details heading"><a href="'.url('/tv/show/'.self::SHOW.'/7?open=5').'">The Glass Meridian</a> · S07E05 — Shift Ends</h1>', false)
             ->assertSee('<div class="tv-details-name" data-part="details release name">The.Glass.Meridian.S07E05.720p.WEB-DL.DDP5.1.H.264-PLAiD</div>', false)
             ->assertSee('resolution-chip-720', false)->assertSee('<span class="tv-source-chip">WEB</span>', false)
             ->assertSee('class="tv-details-art" href="'.route('tv.show', ['videosId' => self::SHOW]).'"', false)
@@ -96,6 +96,8 @@ final class TvReleaseDetailsPageTest extends TestCase
             ->assertSee('href="'.route('browse.all', ['poster' => 'paperboat <pb@example.invalid>']).'"', false)
             ->assertSee('nfo-badge', false)->assertSee('data-has-nfo="1"', false)->assertDontSee('Report')->assertDontSee('style="', false);
         $this->assertSame(['Download NZB', 'Copy NZB link', 'Add to cart', 'Watch show'], $this->buttons($html));
+        $response->assertSee('<span class="tv-watch-off">Watch show</span><span class="tv-watch-on">Watching show</span>', false)
+            ->assertSee('x-on:click.self="close()"', false)->assertSee('aria-label="Close"', false);
         $this->assertSame(['Overview', 'Files (1)', 'Media info', 'NFO', 'Comments (0)'], $this->tabs($html));
         $this->assertSame([
             'Category' => 'TV &gt; HD', 'Size' => '1.00 GB', 'Files' => '1', 'Completion' => '100%', 'Posted' => 'Sep 20, 2026, 10:00 AM',
@@ -152,10 +154,10 @@ final class TvReleaseDetailsPageTest extends TestCase
         $this->tv(7, 5);
         $none = $this->tv(null, null);
 
-        $this->details($pack)->assertSee('All 2 releases of this season pack')->assertSee('The Glass Meridian · Season 7 pack</h1>', false);
+        $this->details($pack)->assertSee('All 2 releases of this season pack')->assertSee('The Glass Meridian</a> · Season 7 pack</h1>', false);
         $this->details($none)->assertDontSee('tv-siblings')->assertSee('>All releases of this show</a>', false)
-            ->assertSee('<h1 data-part="details heading">The Glass Meridian</h1>', false);
-        $this->details($this->tv(8, 1))->assertSee('The only release of this episode')->assertSee('The Glass Meridian · S08E01</h1>', false);
+            ->assertSee('<h1 data-part="details heading"><a href="'.url('/tv/show/'.self::SHOW).'">The Glass Meridian</a></h1>', false);
+        $this->details($this->tv(8, 1))->assertSee('The only release of this episode')->assertSee('The Glass Meridian</a> · S08E01</h1>', false);
     }
 
     public function test_a_release_with_no_matched_show_has_no_show_parts(): void
@@ -231,7 +233,7 @@ final class TvReleaseDetailsPageTest extends TestCase
     private function buttons(string $html): array
     {
         preg_match('/<div class="tv-details-actions">(.*?)<\/div>/s', $html, $match);
-        preg_match_all('/<\/i>(?:<span>)?([^<]+)(?:<\/span>)?<\/(?:a|button)>/', $match[1] ?? '', $labels);
+        preg_match_all('/<\/i>(?:<span[^>]*>)?([^<]+)/', $match[1] ?? '', $labels);
 
         return array_map('trim', $labels[1]);
     }

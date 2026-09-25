@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data;
 
 use App\Enums\ReleaseResolution;
+use App\Services\Releases\TvReleaseRows;
 
 /** One release row of the TV screens (the releases list and the show page's release tables), ready to render. */
 final readonly class TvReleaseRow
@@ -55,6 +56,16 @@ final readonly class TvReleaseRow
     public function hasChips(): bool
     {
         return $this->completion !== null || $this->passworded || $this->mediaInfo !== null || $this->nfo || $this->preview !== null || $this->sample !== null;
+    }
+
+    /** The details header's media info chip: the row's summary led by the release's resolution when both are known. */
+    public function mediaInfoWithResolution(): ?string
+    {
+        if ($this->mediaInfo === null || $this->mediaInfo === TvReleaseRows::MEDIA_INFO_FALLBACK || $this->resolution === ReleaseResolution::Unknown) {
+            return $this->mediaInfo;
+        }
+
+        return $this->resolution->label().' · '.$this->mediaInfo;
     }
 
     /** `Show · S01E02 · Episode title`, or just the show when the release declares nothing. */

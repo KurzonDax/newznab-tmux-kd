@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services\Releases;
 
 use App\Data\TvReleaseRow;
-use App\Data\TvShowHeader;
 use App\Models\Release;
 use App\Support\ReleaseCompletion;
 use Illuminate\Support\Facades\DB;
@@ -33,14 +32,14 @@ final class TvReleaseDetails
         abort_if($row === null, 404);
         $videosId = (int) $release->videos_id;
         $show = $videosId > 0 ? $this->shows->header($videosId, $exclusions) : null;
-        $declared = $this->declared($id);
+        $declared = $this->firstDeclaration($id);
         $episode = $show === null || $declared === null ? null : $this->episode($videosId, $declared['season'], $declared['episode']);
         $siblings = $show === null || $declared === null ? [] : $this->rows->load($this->shows->siblingReleaseIds($videosId, $id, $exclusions), false);
 
         return [
             'row' => $row,
             'show' => $show,
-            'heading' => $show === null ? $row->name : $this->heading($show, $declared, $episode['title'] ?? ''),
+            'headingSuffix' => $show === null ? '' : $this->headingSuffix($declared, $episode['title'] ?? ''),
             'aired' => $episode['aired'] ?? '',
             'about' => $show?->about(count($this->shows->seasons($videosId, $exclusions))) ?? '',
             'showTags' => $show === null ? [] : [...$show->tags, ...($show->year === null ? [] : ['Premiered '.$show->year])],
@@ -56,7 +55,7 @@ final class TvReleaseDetails
      *
      * @return array{season: int, episode: ?int}|null
      */
-    private function declared(int $releaseId): ?array
+    private function firstDeclaration(int $releaseId): ?array
     {
         $row = DB::table('release_tv_episodes')->where('releases_id', $releaseId)
             ->orderBy('season')->orderByRaw('episode IS NOT NULL')->orderBy('episode')->first(['season', 'episode']);
@@ -81,18 +80,19 @@ final class TvReleaseDetails
     }
 
     /**
-     * `Show · S01E02 — Episode title`, `Show · Season 3 pack`, or just the show.
+     * What follows the show's name (a link) in the heading: ` · S01E02 — Episode title`,
+     * ` · Season 3 pack`, or nothing.
      *
      * @param  array{season: int, episode: ?int}|null  $declared
      */
-    private function heading(TvShowHeader $show, ?array $declared, string $title): string
+    private function headingSuffix(?array $declared, string $title): string
     {
         if ($declared === null) {
-            return $show->title;
+            return '';
         }
         $label = $declared['episode'] === null ? 'Season '.$declared['season'].' pack' : sprintf('S%02dE%02d', $declared['season'], $declared['episode']);
 
-        return $show->title.' · '.$label.($title === '' ? '' : ' — '.$title);
+        return ' · '.$label.($title === '' ? '' : ' — '.$title);
     }
 
     /** @return list<array{string, string}> */

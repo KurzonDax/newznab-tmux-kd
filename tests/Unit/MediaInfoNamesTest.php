@@ -25,6 +25,7 @@ final class MediaInfoNamesTest extends TestCase
         yield 'codec id only, MPEG-2' => [null, 'V_MPEG2', 'MPEG-2'];
         yield 'unmapped shows the format' => ['VC-1', 'V_MS/VFW/FOURCC / WVC1', 'VC-1'];
         yield 'unmapped codec id alone shows nothing' => [null, 'V_MS/VFW/FOURCC / WVC1', null];
+        yield 'an unmapped format wins over a mapped codec id' => ['Other Video', 'V_MPEGH/ISO/HEVC', 'Other Video'];
     }
 
     #[DataProvider('videoCodecs')]
@@ -37,7 +38,7 @@ final class MediaInfoNamesTest extends TestCase
     public static function audioFormats(): iterable
     {
         yield 'E-AC-3' => ['E-AC-3', 'Dolby Digital Plus', 'E-AC-3', false];
-        yield 'E-AC-3 JOC' => ['E-AC-3 JOC', 'Dolby Digital Plus with Atmos', 'E-AC-3', true];
+        yield 'E-AC-3 JOC' => ['E-AC-3 JOC', 'Dolby Digital Plus with Atmos', 'E-AC-3 Atmos', true];
         yield 'AC-3' => ['AC-3', 'Dolby Digital', 'AC-3', false];
         yield 'AAC LC' => ['AAC LC', 'AAC', 'AAC', false];
         yield 'AAC LC SBR' => ['AAC LC SBR', 'HE-AAC', 'HE-AAC', false];
@@ -122,6 +123,7 @@ final class MediaInfoNamesTest extends TestCase
         yield 'WebVTT by codec id' => [null, 'S_TEXT/WEBVTT', ['name' => 'WebVTT', 'picture' => false]];
         yield 'VobSub is a picture' => ['VobSub', 'S_VOBSUB', ['name' => 'VobSub', 'picture' => true]];
         yield 'unmapped codec id alone shows nothing' => [null, 'S_TEXT/UTF8', null];
+        yield 'an unmapped format wins over a mapped codec id' => ['Other Text', 'S_TEXT/WEBVTT', ['name' => 'Other Text', 'picture' => false]];
         yield 'nothing' => [null, null, null];
     }
 

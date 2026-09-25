@@ -299,6 +299,9 @@ a.tv-tag:hover { background: var(--tv-line); }
 .tv-details-art img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .tv-details-head h1 { margin: 0; color: var(--tv-ink); font-size: 30px; font-weight: 800; line-height: 1.15; letter-spacing: -0.02em; text-wrap: balance; }
 .tv-details-head h1.is-release-name { font-size: 24px; overflow-wrap: anywhere; }
+.tv-details-head h1 a:hover { color: var(--tv-accent); }
+.tv-details-button .tv-watch-on, .tv-details-button[data-watched="1"] .tv-watch-off { display: none; }
+.tv-details-button[data-watched="1"] .tv-watch-on { display: inline; }
 .tv-details-name { margin-top: 10px; font-size: 15.5px; font-weight: 700; overflow-wrap: anywhere; }
 .tv-details-head .tv-chips { gap: 5px; margin-top: 6px; }
 .tv-details-head .tv-details-chips { margin-top: 12px; }

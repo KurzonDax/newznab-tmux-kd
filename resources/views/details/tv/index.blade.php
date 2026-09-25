@@ -17,8 +17,7 @@
      */
     $commentCount = $comments->total();
     $tabs = ['overview' => 'Overview', 'files' => 'Files ('.$row->files.')', 'media' => 'Media info', 'nfo' => 'NFO', 'comments' => 'Comments ('.$commentCount.')'];
-    $mediaSummary = $row->mediaInfo === null ? null
-        : ($row->resolution === \App\Enums\ReleaseResolution::Unknown || $row->mediaInfo === 'Media info' ? $row->mediaInfo : $row->resolution->label().' · '.$row->mediaInfo);
+    $mediaSummary = $row->mediaInfoWithResolution();
     $group = str_starts_with($row->group, 'alt.binaries.') ? 'a.b.'.substr($row->group, 13) : $row->group;
     $uploader = mb_strlen($row->uploader) > 26 ? mb_substr($row->uploader, 0, 25).'…' : $row->uploader;
 @endphp
@@ -47,7 +46,7 @@
             @endif
             <div>
                 @if($show !== null)
-                    <h1 data-part="details heading">{{ $heading }}</h1>
+                    <h1 data-part="details heading"><a href="{{ $row->showUrl }}">{{ $show->title }}</a>{{ $headingSuffix }}</h1>
                     <div class="tv-details-name" data-part="details release name">{{ $row->name }}</div>
                 @else
                     <h1 class="is-release-name" data-part="details heading">{{ $row->name }}</h1>
@@ -92,7 +91,7 @@
                     <button type="button" class="tv-details-button is-secondary" data-copy-nzb="{{ $row->guid }}" data-part="details secondary button"><i class="fas fa-link" aria-hidden="true"></i>Copy NZB link</button>
                     <button type="button" class="tv-details-button is-secondary" data-cart="{{ $row->guid }}" data-cart-label aria-pressed="{{ $row->inCart ? 'true' : 'false' }}"><i @class(['fas', 'fa-check' => $row->inCart, 'fa-cart-shopping' => ! $row->inCart]) aria-hidden="true"></i><span>{{ $row->inCart ? 'In cart' : 'Add to cart' }}</span></button>
                     @if($show !== null)
-                        <button type="button" class="tv-details-button is-secondary" data-watch-picker="{{ route('watchlist.picker', ['root' => 'tv', 'id' => $show->id]) }}" data-watch-key="tv:{{ $show->id }}" data-watch-title="{{ $show->title }}" data-watched="{{ $row->watched ? '1' : '0' }}"><i class="fas fa-eye" aria-hidden="true"></i>Watch show</button>
+                        <button type="button" class="tv-details-button is-secondary" data-watch-picker="{{ route('watchlist.picker', ['root' => 'tv', 'id' => $show->id]) }}" data-watch-key="tv:{{ $show->id }}" data-watch-title="{{ $show->title }}" data-watched="{{ $row->watched ? '1' : '0' }}"><i class="fas fa-eye" aria-hidden="true"></i><span class="tv-watch-off">Watch show</span><span class="tv-watch-on">Watching show</span></button>
                     @endif
                 </div>
             </div>

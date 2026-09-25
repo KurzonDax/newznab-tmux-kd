@@ -29,6 +29,9 @@ final class TvReleaseRows
 
     private const CHANNELS = ['1' => '1.0', '2' => '2.0', '6' => '5.1', '8' => '7.1'];
 
+    /** The chip's words when media info exists but has no codec or audio to name. */
+    public const MEDIA_INFO_FALLBACK = 'Media info';
+
     public function __construct(private readonly ReleaseBrowseService $releases) {}
 
     /**
@@ -143,7 +146,7 @@ final class TvReleaseRows
             return preg_replace_callback('/^(.*\S)\s+(\d+)$/', static fn (array $match): string => $match[1].' '.(self::CHANNELS[$match[2]] ?? $match[2]), $part) ?? $part;
         }, $parts);
 
-        return $parts === [] ? 'Media info' : implode(' · ', $parts);
+        return $parts === [] ? self::MEDIA_INFO_FALLBACK : implode(' · ', $parts);
     }
 
     private function date(?string $value, CarbonImmutable $now): string

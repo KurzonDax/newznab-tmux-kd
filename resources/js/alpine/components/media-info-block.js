@@ -131,7 +131,7 @@ function glance(media, resolution) {
         const heading = audioLanguages.length ? few(audioLanguages) : plural(audio.length, 'track');
         const atmos = audio.some(track => track.atmos) ? hue('Atmos', 'atmos') : '';
         cells.push(['Audio', escapeHtml(heading) + channelChip(best) + atmos,
-            (best.format_short || '') + (audio.length > 1 ? ' · ' + plural(audio.length, 'track') : '')]);
+            (best.format_short || '').replace(' Atmos', '') + (audio.length > 1 ? ' · ' + plural(audio.length, 'track') : '')]);
     } else {
         cells.push(['Audio', 'None', '']);
     }
