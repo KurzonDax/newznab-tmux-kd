@@ -54,6 +54,7 @@ const lazyComponentMap = {
     'checkboxMenu':    () => import('./components/checkbox-menu.js'),
     'tvShows':         () => import('./components/tv-shows.js'),
     'tvSearch':        () => import('./components/tv-search.js'),
+    'tvEpisodeList':   () => import('./components/tv-episode-list.js'),
     'authPage':        () => import('./components/auth-page.js'),
     'loginMode':       () => import('./components/login-mode.js'),
     'passkeyLogin':    () => import('./components/passkey-login.js'),

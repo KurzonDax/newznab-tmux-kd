@@ -6,7 +6,7 @@ namespace App\Data;
 
 use App\Enums\ReleaseResolution;
 
-/** One row of the TV releases screen, ready to render. */
+/** One release row of the TV screens (the releases list and the show page's release tables), ready to render. */
 final readonly class TvReleaseRow
 {
     /**
@@ -40,6 +40,11 @@ final readonly class TvReleaseRow
         public ?array $sample,
         public bool $inCart,
         public bool $watched,
+        public float $bytes,
+        public int $postedAt,
+        public string $postedOn,
+        public string $group,
+        public string $uploader,
     ) {}
 
     public function hasShow(): bool

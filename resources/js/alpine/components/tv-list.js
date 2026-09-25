@@ -31,10 +31,10 @@ export function firstPageUrl(href) {
     return url;
 }
 
-/** Fetches the list fragment (?_fragment=list) of a URL; throws when it fails or redirects. */
-export async function fetchList(url, signal) {
+/** Fetches a fragment (?_fragment=list by default) of a URL; throws when it fails or redirects. */
+export async function fetchList(url, signal, name = 'list') {
     const fragment = new URL(url.toString());
-    fragment.searchParams.set('_fragment', 'list');
+    fragment.searchParams.set('_fragment', name);
     const response = await fetch(fragment.toString(), { signal, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
     if (!response.ok || response.redirected) throw new Error('Could not load the list');
     return response.text();

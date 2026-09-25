@@ -112,6 +112,11 @@ final class TvReleaseRows
                 sample: (int) $release->jpgstatus === 1 ? ['thumb' => getImageAssetUrl('sample', $row->guid.'_thumb'), 'full' => getImageAssetUrl('sample', $row->guid)] : null,
                 inCart: $row->in_basket,
                 watched: $row->watched,
+                bytes: (float) $release->size,
+                postedAt: $release->postdate === null ? 0 : CarbonImmutable::parse($release->postdate, config('app.timezone', 'UTC'))->getTimestamp(),
+                postedOn: $release->postdate === null ? '' : userDate($release->postdate, 'M j, Y'),
+                group: $row->group,
+                uploader: $row->poster,
             );
         }, $ordered);
     }
