@@ -38,7 +38,7 @@ test('media tab shows the shared stream rendering, caches success, and retries f
     assert.equal(retries.media.hidden, false);
     globalThis.fetch = async url => { requests.push(url); return { ok: true, json: async () => ({ media: { identity: { title: 'Movie <title>' }, container: { format: 'Matroska' }, streams: { video: [{ format: 'HEVC', width: 3840, height: 2160 }], audio: [], subtitle: [] } } }) }; };
     await component.selectTab('media');
-    assert.match(contents.media.innerHTML, /Movie &lt;title&gt;/);
+    assert.match(contents.media.innerHTML, /class="mi-block"/);
     assert.match(contents.media.innerHTML, /3840 × 2160/);
     await component.selectTab('overview');
     await component.selectTab('media');

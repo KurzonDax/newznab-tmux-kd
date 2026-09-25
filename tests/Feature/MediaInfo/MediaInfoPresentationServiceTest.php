@@ -83,6 +83,7 @@ class MediaInfoPresentationServiceTest extends TestCase
         self::assertSame('<b>Embedded title</b>', $payload['media']['identity']['title']);
         self::assertSame('Matroska', $payload['media']['container']['format']);
         self::assertSame('HEVC', $payload['media']['streams']['video'][0]['format']);
+        self::assertSame('H.265', $payload['media']['streams']['video'][0]['codec_name']);
         self::assertSame([], $payload['media']['streams']['audio']);
         self::assertStringNotContainsString('diagnostic', json_encode($payload, JSON_THROW_ON_ERROR));
         self::assertStringNotContainsString('Legacy AVI', json_encode($payload, JSON_THROW_ON_ERROR));
@@ -178,14 +179,64 @@ class MediaInfoPresentationServiceTest extends TestCase
 
         self::assertSame([
             'release_name' => 'Empty.Release',
+            'resolution' => null,
             'media' => null,
         ], (new MediaInfoPresentationService)->forRelease($release));
+    }
+
+    public function test_every_stream_carries_its_plain_names_and_never_a_codec_id(): void
+    {
+        $release = $this->release('Named.Release', null, 2);
+        $probeId = DB::table('media_info_probes')->insertGetId([
+            'releases_id' => $release->id,
+            'captured_at' => '2026-09-06 10:00:00',
+            'source_kind' => 'additional-processing',
+            'source_completeness' => 'complete',
+            'schema_version' => 1,
+            'container_format' => 'Matroska',
+            'diagnostic_filtered' => false,
+            'diagnostic_truncated' => false,
+        ]);
+        $track = static fn (string $type, int $index, array $values): array => [
+            'media_info_probe_id' => $probeId, 'type' => $type, 'track_index' => $index, 'diagnostic_filtered' => false, 'diagnostic_truncated' => false,
+            'language' => null, 'format' => null, 'codec' => null, 'hdr_format' => null, 'channels' => null, 'channel_layout' => null, ...$values,
+        ];
+        DB::table('media_info_tracks')->insert([
+            $track('video', 0, ['format' => 'HEVC', 'codec' => 'V_MPEGH/ISO/HEVC', 'hdr_format' => 'Dolby Vision, Version 1.0, Profile 5, dvhe.05.06, BL+RPU']),
+            $track('audio', 0, ['language' => 'en', 'format' => 'E-AC-3 JOC', 'codec' => 'A_EAC3', 'channels' => 6, 'channel_layout' => '3/2/0.1']),
+            $track('audio', 1, ['language' => 'pt-BR', 'format' => null, 'codec' => 'A_AAC-2', 'channels' => null, 'channel_layout' => '2/0/0']),
+            $track('subtitle', 0, ['language' => 'fr', 'format' => 'PGS', 'codec' => 'S_HDMV/PGS']),
+            $track('subtitle', 1, ['language' => 'de', 'format' => null, 'codec' => 'S_TEXT/UTF8']),
+        ]);
+
+        $payload = (new MediaInfoPresentationService)->forRelease($release);
+        $streams = $payload['media']['streams'];
+
+        self::assertSame('1080p', $payload['resolution']);
+        self::assertSame('H.265', $streams['video'][0]['codec_name']);
+        self::assertSame([['label' => 'Dolby Vision · profile 5', 'kind' => 'dv']], $streams['video'][0]['hdr']);
+        self::assertSame(['Dolby Digital Plus with Atmos', 'E-AC-3', true, '5.1', 'English'], [$streams['audio'][0]['format_name'], $streams['audio'][0]['format_short'], $streams['audio'][0]['atmos'], $streams['audio'][0]['channels_name'], $streams['audio'][0]['language_name']]);
+        self::assertSame([null, null, false, 'Stereo', 'Portuguese (BR)'], [$streams['audio'][1]['format_name'], $streams['audio'][1]['format_short'], $streams['audio'][1]['atmos'], $streams['audio'][1]['channels_name'], $streams['audio'][1]['language_name']]);
+        self::assertSame(['PGS', true, 'French'], [$streams['subtitle'][0]['format_name'], $streams['subtitle'][0]['picture'], $streams['subtitle'][0]['language_name']]);
+        self::assertSame([null, false], [$streams['subtitle'][1]['format_name'], $streams['subtitle'][1]['picture']]);
+    }
+
+    public function test_legacy_rows_carry_plain_names_too(): void
+    {
+        $release = $this->release('Legacy.Named', null);
+        DB::table('video_data')->insert(['releases_id' => $release->id, 'videoformat' => 'AVC', 'videocodec' => 'avc1']);
+        DB::table('audio_data')->insert(['releases_id' => $release->id, 'audioid' => 1, 'audioformat' => 'AC-3', 'audiochannels' => '6', 'audiolanguage' => 'English']);
+
+        $streams = (new MediaInfoPresentationService)->forRelease($release)['media']['streams'];
+
+        self::assertSame('H.264', $streams['video'][0]['codec_name']);
+        self::assertSame(['Dolby Digital', '5.1', 'English'], [$streams['audio'][0]['format_name'], $streams['audio'][0]['channels_name'], $streams['audio'][0]['language_name']]);
     }
 
     public function test_web_endpoint_returns_the_curated_shape_without_changing_the_public_api_route(): void
     {
         $this->withoutMiddleware();
-        $release = $this->release('Web.Release', 'Web Release');
+        $release = $this->release('Web.Release', 'Web Release', 3);
         DB::table('audio_data')->insert([
             'releases_id' => $release->id,
             'audioid' => 1,
@@ -196,6 +247,7 @@ class MediaInfoPresentationServiceTest extends TestCase
         $this->getJson(route('release.mediainfo', ['release' => $release->id]))
             ->assertOk()
             ->assertJsonPath('release_name', 'Web Release')
+            ->assertJsonPath('resolution', '720p')
             ->assertJsonPath('media.streams.audio.0.title', 'Track title')
             ->assertJsonMissingPath('media.provenance')
             ->assertJsonMissingPath('media.diagnostic_raw');
@@ -209,11 +261,12 @@ class MediaInfoPresentationServiceTest extends TestCase
         );
     }
 
-    private function release(string $searchName, ?string $displayName): Release
+    private function release(string $searchName, ?string $displayName, int $resolution = 0): Release
     {
         $id = DB::table('releases')->insertGetId([
             'searchname' => $searchName,
             'display_name' => $displayName,
+            'resolution' => $resolution,
         ]);
 
         return Release::query()->findOrFail($id);
@@ -225,6 +278,7 @@ class MediaInfoPresentationServiceTest extends TestCase
             $table->id();
             $table->string('searchname');
             $table->string('display_name')->nullable();
+            $table->unsignedTinyInteger('resolution')->default(0);
         });
         Schema::create('media_info_probes', function (Blueprint $table): void {
             $table->id();

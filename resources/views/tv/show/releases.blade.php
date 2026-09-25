@@ -3,6 +3,8 @@
      * The show page's release table (SPEC 3.3): the releases row minus the artwork, a select box per
      * row when $pick (never a check-all box), and Resolution / Size / Posted / Grabs headers that sort
      * in the browser, Size largest first to begin with. $parts marks this table's first header and cell.
+     * On a details page $current is the guid of the release on that page: its row is tinted, labelled
+     * and not a link to itself.
      *
      * @var list<\App\Data\TvReleaseRow> $rows
      */
@@ -10,7 +12,8 @@
     $sortable = ['resolution' => 'Resolution', 'size' => 'Size', 'posted' => 'Posted', 'grabs' => 'Grabs'];
     $header = static fn (string $key): string => '<button type="button" data-sort="'.$key.'">'.e($sortable[$key]).'<i class="fas fa-sort" aria-hidden="true"></i></button>';
     $chipPart = static fn (string $name): ?string => null;
-@endphp
+    $current ??= null;
+    @endphp
 <table @class(['tv-release-table', 'is-pick' => $pick])>
     <colgroup>@if($pick)<col class="tv-col-select">@endif<col><col class="tv-col-resolution"><col class="tv-col-source"><col class="tv-col-size"><col class="tv-col-files"><col class="tv-col-posted"><col class="tv-col-count"><col class="tv-col-actions"></colgroup>
     <thead>
@@ -32,14 +35,20 @@
         @foreach($rows as $row)
             @php
                 $cellPart = $parts && $loop->first;
+                $isCurrent = $current !== null && $row->guid === $current;
             @endphp
-            <tr data-release-row data-size="{{ (int) $row->bytes }}" data-posted="{{ $row->postedAt }}" data-grabs="{{ $row->grabs }}"
+            <tr @class(['is-current' => $isCurrent]) @if($isCurrent) aria-current="true" @endif data-release-row data-size="{{ (int) $row->bytes }}" data-posted="{{ $row->postedAt }}" data-grabs="{{ $row->grabs }}"
                 data-resolution="{{ $row->resolution === \App\Enums\ReleaseResolution::Unknown ? 9 : $row->resolution->value - 1 }}">
                 @if($pick)
                     <td class="tv-select-cell" @if($cellPart) data-part="episode release table cell" @endif><input type="checkbox" data-select value="{{ $row->guid }}" aria-label="Select {{ $row->name }}"></td>
                 @endif
-                <td class="tv-what" @if($cellPart && ! $pick) data-part="episode release table cell" @endif>
-                    <a class="tv-release-name" href="{{ route('details', $row->guid) }}" title="{{ $row->name }}">{{ $row->name }}</a>
+                <td class="tv-what" @if($cellPart && ! $pick) data-part="episode release table cell" @elseif($isCurrent) data-part="current release row" @endif>
+                    @if($isCurrent)
+                        <span class="tv-release-name" title="{{ $row->name }}">{{ $row->name }}</span>
+                        <div class="tv-this-release" data-part="current release label">The release on this page</div>
+                    @else
+                        <a class="tv-release-name" href="{{ route('details', $row->guid) }}" title="{{ $row->name }}">{{ $row->name }}</a>
+                    @endif
                     @if($names[$row->name] > 1)
                         <div class="tv-same-name">Same name posted more than once · this copy by {{ $row->uploader === '' ? 'unknown poster' : $row->uploader }} in {{ $row->group === '' ? 'unknown group' : $row->group }}</div>
                     @endif

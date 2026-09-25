@@ -35,4 +35,13 @@ final readonly class TvShowHeader
             number_format($this->releases).' '.($this->releases === 1 ? 'release' : 'releases'),
         ], static fn (string $part): bool => $part !== ''));
     }
+
+    /** The details page's "About the show" line: Network · N seasons on site (no year: the Premiered tag carries it). */
+    public function about(int $seasons): string
+    {
+        return implode(' · ', array_filter([
+            $this->network,
+            $seasons === 0 ? '' : $seasons.' '.($seasons === 1 ? 'season' : 'seasons').' on site',
+        ], static fn (string $part): bool => $part !== ''));
+    }
 }

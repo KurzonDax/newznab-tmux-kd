@@ -106,7 +106,7 @@ export function releaseDetails() {
                 if (tab === 'media') {
                     const data = response.status === 404 ? { media: null } : await response.json();
                     if (!Object.hasOwn(data, 'media')) throw new Error('Invalid media info');
-                    html = data.media ? renderMediaInfo(data.media) : '<p class="text-muted">No media info for this release.</p>';
+                    html = data.media ? renderMediaInfo(data.media, data.resolution ?? null) : '<p class="text-muted">No media info for this release.</p>';
                 } else if (tab === 'nfo') {
                     const parsed = response.status === 404 ? null : new DOMParser().parseFromString(await response.text(), 'text/html').querySelector('pre');
                     if (response.status !== 404 && !parsed) throw new Error('Invalid NFO');
