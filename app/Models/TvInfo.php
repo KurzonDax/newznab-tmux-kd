@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /**
  * App\Models\TvInfo.
@@ -15,6 +16,12 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $localzone The linux tz style identifier
  * @property bool $image Does the video have a cover image?
  * @property bool $banner Does the video have a series banner?
+ * @property string $original_language TMDB original_language (ISO 639-1).
+ * @property int $status 0 unknown, 1 running, 2 ended.
+ * @property string $content_rating_us TMDB US content rating.
+ * @property Carbon|null $premiered TMDB first_air_date.
+ * @property int|null $networks_id FK to networks.id
+ * @property Carbon|null $details_refreshed_at When TMDB details were last fetched.
  *
  * @method static \Illuminate\Database\Eloquent\Builder|\App\Models\TvInfo whereImage($value)
  * @method static \Illuminate\Database\Eloquent\Builder|\App\Models\TvInfo whereLocalzone($value)
@@ -65,6 +72,8 @@ class TvInfo extends Model
         return [
             'image' => 'boolean',
             'banner' => 'boolean',
+            'premiered' => 'date',
+            'details_refreshed_at' => 'datetime',
         ];
     }
 

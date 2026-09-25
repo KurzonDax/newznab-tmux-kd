@@ -14,6 +14,7 @@ use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\TvProcessing\TvProcessingCandidateQuery;
+use App\Services\TvProcessing\TvShowDetails;
 use App\Support\TitleYearName;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -158,10 +159,10 @@ abstract class AbstractTvProvider extends BaseVideoProvider
 
     public function setVideoIdFound(int $videoId, int $releaseId, int $episodeId): void
     {
-        DB::transaction(function () use ($videoId, $releaseId, $episodeId): void {
+        $saved = DB::transaction(function () use ($videoId, $releaseId, $episodeId): bool {
             $release = Release::query()->where('id', $releaseId)->lockForUpdate()->first();
             if ($release === null || (! (new RecoveryIdentityPolicy)->allowsSingleItemMetadata($releaseId) || ! BundleIdentity::allowsSingleTitle($releaseId))) {
-                return;
+                return false;
             }
             $release->videos_id = $videoId;
             $release->tv_episodes_id = $episodeId;
@@ -169,9 +170,16 @@ abstract class AbstractTvProvider extends BaseVideoProvider
                 $release->tv_episode_lookup_attempted_at = null;
             }
             $release->save();
+
+            return true;
         });
 
         ReleaseBrowseService::bumpCacheVersion();
+
+        // A network call: only after the match has committed, never while it holds the row lock.
+        if ($saved) {
+            app(TvShowDetails::class)->refreshIfDue($videoId);
+        }
     }
 
     /**
