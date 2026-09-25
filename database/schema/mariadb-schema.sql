@@ -3958,3 +3958,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (294,'2026_09_24_00
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (295,'2026_09_24_100000_drop_color_scheme_from_users_table',12);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (296,'2026_09_24_200000_create_release_tv_episodes_table',13);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (297,'2026_09_25_000000_add_show_details_to_tv_info',14);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (298,'2026_09_25_100000_refill_release_tv_episodes',15);
