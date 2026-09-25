@@ -19,6 +19,7 @@ use App\Support\TitleYearName;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -262,27 +263,67 @@ abstract class AbstractTvProvider extends BaseVideoProvider
     }
 
     /**
+     * Returns the id of the tv_episodes row that now holds this episode, or false.
+     *
+     * The exact-key lookup covers what getBySeasonEp() cannot: a special without an air
+     * date, or an unparseable one. It must run before the insert because the unique key
+     * treats a NULL firstaired as distinct, so a duplicate would not be rejected.
+     *
      * @param  array<string, mixed>  $episode
      */
-    public function addEpisode(int $videoId, array $episode = []): bool|int
+    public function addEpisode(int $videoId, array $episode = []): int|false
     {
         $episodeId = $this->getBySeasonEp($videoId, $episode['series'], $episode['episode'], $episode['firstaired']);
-
-        if ($episodeId === false) {
-            $episodeId = TvEpisode::query()->insertOrIgnore(
-                [
-                    'videos_id' => $videoId,
-                    'series' => $episode['series'],
-                    'episode' => $episode['episode'],
-                    'se_complete' => $episode['se_complete'],
-                    'title' => $episode['title'],
-                    'firstaired' => $episode['firstaired'] !== '' ? $episode['firstaired'] : null,
-                    'summary' => $episode['summary'],
-                ]
-            );
+        if (is_int($episodeId)) {
+            return $episodeId;
         }
 
-        return $episodeId;
+        $episodeId = $this->findEpisodeIdByKey($videoId, $episode);
+        if ($episodeId !== false) {
+            return $episodeId;
+        }
+
+        try {
+            return TvEpisode::query()->insertGetId([
+                'videos_id' => $videoId,
+                'series' => $episode['series'],
+                'episode' => $episode['episode'],
+                'se_complete' => $episode['se_complete'],
+                'title' => $episode['title'],
+                'firstaired' => $this->storedFirstAired($episode),
+                'summary' => $episode['summary'],
+            ]);
+        } catch (UniqueConstraintViolationException) {
+            return $this->findEpisodeIdByKey($videoId, $episode);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $episode
+     */
+    private function findEpisodeIdByKey(int $videoId, array $episode): int|false
+    {
+        $firstAired = $this->storedFirstAired($episode);
+        $episodeId = TvEpisode::query()
+            ->where('videos_id', $videoId)
+            ->where('series', (int) $episode['series'])
+            ->where('episode', (int) $episode['episode'])
+            ->when(
+                $firstAired === null,
+                fn (Builder $query) => $query->whereNull('firstaired'),
+                fn (Builder $query) => $query->where('firstaired', $firstAired),
+            )
+            ->value('id');
+
+        return $episodeId !== null ? (int) $episodeId : false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $episode
+     */
+    private function storedFirstAired(array $episode): ?string
+    {
+        return $episode['firstaired'] !== '' ? $episode['firstaired'] : null;
     }
 
     /**
