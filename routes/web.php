@@ -98,6 +98,7 @@ use App\Http\Controllers\StatusPageController;
 use App\Http\Controllers\TermsController;
 use App\Http\Controllers\TitleController;
 use App\Http\Controllers\TvReleasesController;
+use App\Http\Controllers\TvShowController;
 use App\Http\Controllers\TvShowsController;
 use App\Http\Controllers\VideoPreviewController;
 use App\Http\Controllers\WatchlistController;
@@ -242,6 +243,7 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         Route::get('tv', [TvReleasesController::class, 'index'])->name('tv.releases');
         Route::get('tv/shows', [TvShowsController::class, 'index'])->name('tv.shows');
         Route::get('tv/search', [TvShowsController::class, 'search'])->name('tv.search');
+        Route::get('tv/show/{videosId}/{season?}', [TvShowController::class, 'show'])->whereNumber(['videosId', 'season'])->name('tv.show');
         Route::match(['GET', 'POST'], 'series/{id?}', [SeriesController::class, 'index'])->name('series');
         Route::match(['GET', 'POST'], 'trending-tv', [SeriesController::class, 'showTrending'])->name('trending-tv');
         Route::match(['GET', 'POST'], 'myshows', [MyShowsController::class, 'show'])->name('myshows');

@@ -217,3 +217,75 @@
     .tv-tile-art { transition: none; }
     .tv-tile:hover .tv-tile-art { transform: none; }
 }
+
+/* Show page: header */
+.tv-back { display: inline-flex; align-items: center; gap: 8px; margin-top: 22px; color: var(--tv-dim); font-size: 14px; font-weight: 600; }
+.tv-back:hover { color: var(--tv-ink); }
+.tv-show-head { display: grid; grid-template-columns: 200px 1fr; gap: 34px; align-items: start; margin-top: 16px; }
+.tv-show-art { width: 200px; aspect-ratio: 2 / 3; overflow: hidden; border-radius: 14px; background: var(--tv-panel-alt); box-shadow: var(--tv-shadow); }
+.tv-show-art img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.tv-show-card { display: grid; place-items: center; width: 100%; height: 100%; padding: 14px; color: var(--tv-dim); font-size: 15px; font-weight: 800; line-height: 1.2; text-align: center; }
+.tv-show-head h1 { margin: 0; color: var(--tv-ink); font-size: 44px; font-weight: 800; line-height: 1.04; letter-spacing: -0.03em; text-wrap: balance; }
+.tv-show-meta { margin-top: 10px; color: var(--tv-dim); }
+.tv-show-head p { max-width: 640px; margin: 14px 0 0; line-height: 1.6; }
+.tv-show-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.tv-tag { display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border-radius: 14px; background: var(--tv-panel-alt); color: var(--tv-ink); font-size: 12.5px; font-weight: 500; }
+a.tv-tag:hover { background: var(--tv-line); }
+.tv-tag-plain { border: 1px solid var(--tv-line); background: none; }
+.tv-starring { max-width: 80ch; margin-top: 14px; color: var(--tv-dim); font-size: 14px; line-height: 1.9; }
+.tv-starring a { border-bottom: 1px solid var(--tv-line); color: var(--tv-ink); font-weight: 400; white-space: nowrap; }
+.tv-starring a:hover { border-color: var(--tv-accent); color: var(--tv-accent); }
+
+/* Show page: season tabs on a sticky bar with the Resolution and Source menus; the row never wraps */
+.tv-season-bar { position: sticky; top: 56px; z-index: 10; display: flex; flex-wrap: nowrap; align-items: flex-end; gap: 0 26px; margin-top: 26px; padding: 8px 0 0; border-bottom: 1px solid var(--tv-line); background: var(--tv-ground); }
+.tv-season-tabs { display: flex; flex-wrap: nowrap; align-items: flex-end; gap: 0 4px; min-width: 0; margin: 0 auto -1px 0; overflow-x: auto; overflow-y: hidden; scrollbar-color: var(--tv-line) transparent; scrollbar-width: thin; }
+.tv-season-tabs a, .tv-season-label { padding: 12px 16px; border-bottom: 2px solid transparent; color: var(--tv-dim); font-size: 15px; font-weight: 600; white-space: nowrap; }
+.tv-season-tabs a:hover { color: var(--tv-ink); }
+.tv-season-tabs a[aria-current] { border-bottom-color: var(--tv-accent); color: var(--tv-ink); }
+.tv-season-label { padding: 12px 8px 12px 0; }
+.tv-season-tabs.is-many { gap: 0; }
+.tv-season-tabs.is-many a { min-width: 30px; padding: 12px 8px; text-align: center; font-variant-numeric: tabular-nums; }
+.tv-season-filters { display: flex; flex: none; gap: 10px; margin-left: auto; padding-bottom: 9px; }
+
+/* Show page: episode rows; the whole row opens its releases */
+.tv-episode { border-bottom: 1px solid var(--tv-line); }
+.tv-episode > button { display: grid; grid-template-columns: 62px minmax(0, 460px) 120px 1fr auto; gap: 16px; align-items: center; width: 100%; padding: 14px 6px; border: 0; background: none; color: var(--tv-ink); font-size: 15px; font-weight: 400; line-height: 1.5; text-align: left; cursor: pointer; }
+.tv-episode > button:hover { background: var(--tv-panel); }
+.tv-episode-number { color: var(--tv-dim); font-weight: 600; font-variant-numeric: tabular-nums; }
+.tv-episode-title { font-weight: 600; }
+.tv-episode-title small { display: block; color: var(--tv-dim); font-size: 13px; font-weight: 500; }
+.tv-episode-resolutions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
+.tv-episode-sizes { color: var(--tv-dim); font-size: 13.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tv-releases-button { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px 0 14px; border-radius: 17px; background: var(--tv-panel-alt); color: var(--tv-ink); font-size: 13.5px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tv-releases-button i { color: var(--tv-dim); font-size: 11px; transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+.tv-episode > button:hover .tv-releases-button { background: var(--tv-line); }
+.tv-episode[data-open] .tv-releases-button, .tv-episode[data-open] > button:hover .tv-releases-button { background: var(--tv-accent); color: var(--tv-accent-on); }
+.tv-episode[data-open] .tv-releases-button i { color: var(--tv-accent-on); transform: rotate(180deg); }
+.tv-episode-releases { padding: 2px 6px 18px 76px; }
+.tv-episode-releases:empty { display: none; }
+
+/* Show page: release tables (an open episode, whole-season packs, other releases) */
+.tv-release-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13.5px; line-height: 1.5; }
+.tv-col-posted { width: 124px; }
+.tv-col-count { width: 76px; }
+.tv-screen .tv-release-table, .tv-screen .tv-release-table thead th, .tv-screen .tv-release-table tbody, .tv-screen .tv-release-table tbody tr { background-color: transparent; }
+.tv-release-table th { padding: 8px 10px; border-bottom: 1px solid var(--tv-line); color: var(--tv-dim); font-size: 12px; font-weight: 600; text-align: left; white-space: nowrap; }
+.tv-release-table th button { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: inherit; font-size: 12px; font-weight: 600; line-height: 1.5; cursor: pointer; }
+.tv-release-table th button:hover, .tv-release-table th[aria-sort] button { color: var(--tv-ink); }
+.tv-release-table th button i { font-size: 10px; }
+.tv-release-table td { padding: 12px 10px; border-bottom: 1px solid var(--tv-line); color: var(--tv-ink); vertical-align: middle; font-variant-numeric: tabular-nums; }
+.tv-release-table tbody tr:last-child td { border-bottom: 0; }
+.tv-release-table .tv-select-cell { padding-right: 4px; padding-left: 4px; }
+.tv-release-table .tv-num { text-align: right; white-space: nowrap; }
+.tv-release-table .tv-nowrap { white-space: nowrap; }
+.tv-release-table .tv-chips { gap: 5px; margin-top: 6px; }
+.tv-same-name { margin-top: 4px; color: var(--tv-dim); font-size: 12.5px; }
+.tv-packs { margin: 26px 0 70px; }
+.tv-packs:has(+ .tv-packs) { margin-bottom: 26px; }
+.tv-packs h3 { margin: 0 0 6px; color: var(--tv-ink); font-size: 17px; font-weight: 800; line-height: 1; }
+.tv-packs .tv-releases { padding: 2px 6px 18px 0; }
+.tv-note { margin: 0; padding: 2px 0 0; color: var(--tv-dim); font-size: 14px; }
+
+@media (prefers-reduced-motion: reduce) {
+    .tv-releases-button i { transition: none; }
+}

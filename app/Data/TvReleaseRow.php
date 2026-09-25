@@ -40,6 +40,11 @@ final readonly class TvReleaseRow
         public ?array $sample,
         public bool $inCart,
         public bool $watched,
+        public float $bytes = 0.0,
+        public int $postedAt = 0,
+        public string $postedOn = '',
+        public string $group = '',
+        public string $uploader = '',
     ) {}
 
     public function hasShow(): bool
