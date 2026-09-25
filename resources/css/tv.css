@@ -15,6 +15,8 @@
     --tv-accent-on: var(--accent-on);
     --tv-shadow: var(--shadow-floating);
     --tv-poster-shadow: 0 6px 14px -6px rgb(0 0 0 / 55%);
+    --tv-on-accent-button: rgb(0 0 0 / 22%);
+    --tv-on-accent-button-hover: rgb(0 0 0 / 40%);
 }
 .dark {
     --tv-ground: var(--surface-body-dark);
@@ -196,8 +198,8 @@
 /* TV shows wall */
 .tv-show-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 14px 0 0; }
 .tv-person { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 8px 0 16px; border-radius: 19px; background: var(--tv-accent); color: var(--tv-accent-on); font-size: 13.5px; font-weight: 600; line-height: 1.5; }
-.tv-person a { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 12px; background: rgb(0 0 0 / 22%); font-size: 12px; }
-.tv-person a:hover { background: rgb(0 0 0 / 40%); }
+.tv-person a { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 12px; background: var(--tv-on-accent-button); font-size: 12px; }
+.tv-person a:hover { background: var(--tv-on-accent-button-hover); }
 .tv-clear-all { padding: 2px 0 0; color: var(--tv-accent); font-size: 14px; font-weight: 500; }
 .tv-clear-all:hover { text-decoration: underline; text-underline-offset: 3px; }
 .tv-clear-all.is-hidden { visibility: hidden; }

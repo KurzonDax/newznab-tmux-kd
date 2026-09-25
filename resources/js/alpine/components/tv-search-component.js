@@ -77,17 +77,24 @@ export function tvSearch() {
             box.replaceChildren();
             if (!this.items.length) {
                 const empty = document.createElement('p');
+                empty.setAttribute('role', 'status');
                 empty.textContent = 'Nothing called “' + text + '” here.';
                 box.append(empty);
                 return;
             }
             let group = null;
             this.items.forEach((item, index) => {
-                if (item.kind !== group) {
-                    group = item.kind;
+                if (group === null || item.kind !== group.dataset.kind) {
+                    const name = item.kind === 'show' ? 'Shows' : 'People';
+                    group = document.createElement('div');
+                    group.dataset.kind = item.kind;
+                    group.setAttribute('role', 'group');
+                    group.setAttribute('aria-label', name);
                     const heading = document.createElement('h4');
-                    heading.textContent = group === 'show' ? 'Shows' : 'People';
-                    box.append(heading);
+                    heading.setAttribute('aria-hidden', 'true');
+                    heading.textContent = name;
+                    group.append(heading);
+                    box.append(group);
                 }
                 const link = document.createElement('a');
                 link.href = item.href;
@@ -112,7 +119,7 @@ export function tvSearch() {
                 detail.textContent = item.detail;
                 words.append(title, detail);
                 link.append(words);
-                box.append(link);
+                group.append(link);
             });
             this.mark();
         },

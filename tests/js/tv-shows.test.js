@@ -161,3 +161,65 @@ test('an empty field closes the results and Escape closes them and leaves the fi
     assert.equal(component.open, false);
     assert.equal(field.blurred, true);
 });
+
+test('removing the person keeps the filters ticked since the page loaded', async () => {
+    browser('https://nntmux.test/tv/shows?person=7');
+    const { component } = wall();
+    const link = attributes({ href: 'https://nntmux.test/tv/shows' });
+    const clearAll = component.screen.querySelector('[data-clear-all]');
+    component.screen.querySelector = selector => (selector === '[data-remove-person]' ? link : selector === '[data-clear-all]' ? clearAll : null);
+    await component.applyFilter({ detail: { name: 'genre', values: ['2'] } });
+    const href = new URL(link.getAttribute('href'));
+    assert.equal(href.searchParams.get('person'), null);
+    assert.deepEqual(href.searchParams.getAll('genre[]'), ['2']);
+});
+
+function element(tag) {
+    const node = {
+        tag, children: [], attributes: {}, dataset: {}, className: '', textContent: '',
+        classList: { values: new Set(), add(name) { this.values.add(name); }, toggle(name, on) { if (on) this.values.add(name); else this.values.delete(name); } },
+        setAttribute(name, value) { this.attributes[name] = String(value); },
+        append(...nodes) { node.children.push(...nodes); },
+        replaceChildren() { node.children = []; },
+        querySelectorAll(selector) {
+            const found = [];
+            const walk = parent => parent.children.forEach(child => { if (child.tag === selector) found.push(child); walk(child); });
+            walk(node);
+            return found;
+        },
+    };
+    return node;
+}
+
+test('results render as a Shows group then a People group, and nothing found says so', () => {
+    globalThis.document = { createElement: element };
+    const field = { value: 'gla', ...attributes() };
+    const results = element('div');
+    const component = tvSearch();
+    component.$el = { dataset: {} };
+    component.$refs = { field, results };
+    component.init();
+    component.items = resultItems({ shows: [{ id: 4, title: 'Glass', year: 2003, genres: [], poster: null }], people: [{ id: 7, name: 'Ada', shows: ['Glass'] }] }, urls);
+    component.render('gla');
+    assert.deepEqual(results.children.map(group => [group.attributes.role, group.attributes['aria-label'], group.children[0].textContent, group.children.length]), [['group', 'Shows', 'Shows', 2], ['group', 'People', 'People', 2]]);
+    assert.equal(results.children[0].children[1].attributes['aria-selected'], 'true');
+    assert.equal(field.getAttribute('aria-activedescendant'), 'tv-search-option-0');
+
+    component.items = [];
+    component.render('zzzz');
+    assert.equal(results.children.length, 1);
+    assert.equal(results.children[0].textContent, 'Nothing called “zzzz” here.');
+});
+
+test('a fixed-width menu near the right edge shifts left to stay 16px inside the window', () => {
+    globalThis.document = { documentElement: { clientWidth: 1600 } };
+    for (const [fixed, right, expected] of [[true, 1700, '-116px'], [true, 1500, ''], [false, 1700, '']]) {
+        const panel = { style: { left: 'stale' }, getBoundingClientRect: () => ({ right }) };
+        const component = checkboxMenu();
+        component.$el = { dataset: {}, classList: { contains: name => name === 'is-fixed' && fixed } };
+        component.$refs = { panel };
+        component.init();
+        component.place();
+        assert.equal(panel.style.left, fixed ? expected : 'stale');
+    }
+});

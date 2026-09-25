@@ -3,7 +3,7 @@
 @endphp
 <x-pager-line :page="$filters->page" :last-page="$lastPage" :total="$total" :per-page="\App\Data\TvShowFilters::PER_PAGE" noun="show" :url="$pageUrl" />
 @if($tiles === [])
-    <p class="tv-empty">{{ $filters->any() ? 'No shows match. Try removing one of the choices above.' : 'There are no TV shows yet.' }}</p>
+    <p class="tv-empty">No shows match. Try removing one of the choices above.</p>
 @else
     <div class="tv-tiles">
         @foreach($tiles as $tile)

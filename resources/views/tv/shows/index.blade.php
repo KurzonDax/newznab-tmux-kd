@@ -14,7 +14,7 @@
         </div>
         <div class="tv-show-filters">
             @if($person !== null)
-                <span class="tv-person" data-part="starring chip">Starring {{ $person }}<a href="{{ route('tv.shows', $filters->withoutPerson()->query(1)) }}" aria-label="Remove {{ $person }}"><i class="fas fa-xmark" aria-hidden="true"></i></a></span>
+                <span class="tv-person" data-part="starring chip">Starring {{ $person }}<a href="{{ route('tv.shows', $filters->withoutPerson()->query(1)) }}" data-remove-person aria-label="Remove {{ $person }}"><i class="fas fa-xmark" aria-hidden="true"></i></a></span>
             @endif
             <x-checkbox-menu name="genre" label="Genre" any="Any genre" summary="count" fixed part="shows filter button" :options="$options['genre']" :selected="$filters->genres" />
             <x-checkbox-menu name="decade" label="Premiered" any="Any decade" summary="count" fixed :part="false" :options="$options['decade']" :selected="$filters->decades" />

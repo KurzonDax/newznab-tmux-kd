@@ -82,7 +82,7 @@ final class TvShowWall
                 'language' => array_column($names, 'name', 'code'),
                 'network' => $networkNames,
                 'rating' => array_combine($ratingOptions, $ratingOptions),
-                'status' => ['running' => 'Running', 'ended' => 'Ended'],
+                'status' => TvShowFilters::STATUS_LABELS,
             ];
         });
     }

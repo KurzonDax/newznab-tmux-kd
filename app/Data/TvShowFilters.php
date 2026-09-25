@@ -24,6 +24,9 @@ final readonly class TvShowFilters
     /** Status menu: URL value => tv_info.status. */
     public const STATUSES = ['running' => 1, 'ended' => 2];
 
+    /** Status menu: URL value => label. */
+    public const STATUS_LABELS = ['running' => 'Running', 'ended' => 'Ended'];
+
     /**
      * @param  list<int>  $genres  genres.id
      * @param  list<int>  $decades  first year of each decade, e.g. 2000

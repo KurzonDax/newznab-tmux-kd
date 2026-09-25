@@ -26,6 +26,7 @@ export function tvShows() {
             const url = filterUrl(window.location.href, name, values);
             window.history.replaceState(null, '', url.toString());
             this.showClearAll(hasFilters(url));
+            this.keepPersonLink(url);
             await this.reloadList(url);
         },
 
@@ -36,6 +37,15 @@ export function tvShows() {
             link.setAttribute('aria-hidden', on ? 'false' : 'true');
             if (on) link.removeAttribute('tabindex');
             else link.setAttribute('tabindex', '-1');
+        },
+
+        /** The Starring chip's remove link keeps the filters ticked since the page loaded. */
+        keepPersonLink(url) {
+            const link = this.screen.querySelector('[data-remove-person]');
+            if (!link) return;
+            const without = new URL(url.toString());
+            without.searchParams.delete('person');
+            link.setAttribute('href', without.toString());
         },
 
         async changeSort(event) {

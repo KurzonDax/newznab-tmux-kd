@@ -193,12 +193,12 @@ final class TvShowsPageTest extends TestCase
         DB::table('video_people')->insert([['videos_id' => 1, 'people_id' => 7, 'position' => 0], ['videos_id' => 2, 'people_id' => 7, 'position' => 3]]);
 
         $response = $this->page('/tv/shows?person=7')->assertOk()->assertSee('Starring Ada Quill')
-            ->assertSee('href="'.route('tv.shows').'" aria-label="Remove Ada Quill"', false)
+            ->assertSee('href="'.route('tv.shows').'" data-remove-person aria-label="Remove Ada Quill"', false)
             ->assertSee('data-clear-all aria-hidden="false"', false);
         $this->assertSame([1, 2], $this->sortedTileIds($response));
         $this->assertSame([2], $this->sortedTileIds($this->page('/tv/shows?person=7&genre[]='.self::DRAMA)));
         $this->page('/tv/shows?person=7&genre[]='.self::DRAMA)
-            ->assertSee('href="'.route('tv.shows', ['genre' => [self::DRAMA]]).'" aria-label="Remove Ada Quill"', false);
+            ->assertSee('href="'.route('tv.shows', ['genre' => [self::DRAMA]]).'" data-remove-person aria-label="Remove Ada Quill"', false);
         $this->page('/tv/shows?person=999')->assertDontSee('Starring')->assertSee('Showing 1–3 of 3 shows');
     }
 

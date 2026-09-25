@@ -10,5 +10,5 @@
         <input x-ref="field" placeholder="Search shows or actors" autocomplete="off" aria-label="Search shows or actors" data-part="search field"
                role="combobox" aria-autocomplete="list" aria-controls="tv-search-results" x-bind:aria-expanded="open" x-on:input="changed" x-on:focus="reopen">
     </label>
-    <div class="tv-search-results" id="tv-search-results" x-ref="results" x-show="open" x-cloak x-on:click="picked" data-part="search results panel"></div>
+    <div class="tv-search-results" id="tv-search-results" role="listbox" aria-label="Shows and people" x-ref="results" x-show="open" x-cloak x-on:click="picked" data-part="search results panel"></div>
 </div>
