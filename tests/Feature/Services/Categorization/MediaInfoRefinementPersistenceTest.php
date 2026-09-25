@@ -213,12 +213,14 @@ class MediaInfoRefinementPersistenceTest extends TestCase
                 $table->unsignedInteger('groups_id')->default(0);
                 $table->boolean('iscategorized')->default(false);
                 $table->string('searchname')->default('');
+                $table->unsignedInteger('videos_id')->default(0);
+                $table->integer('tv_episodes_id')->default(0);
                 $table->unsignedTinyInteger('resolution')->default(0);
                 $table->unsignedTinyInteger('source')->default(0);
             });
         }
 
-        foreach (['media_info_probes', 'media_info_tracks'] as $table) {
+        foreach (['media_info_probes', 'media_info_tracks', 'release_tv_episodes'] as $table) {
             if (! Schema::hasTable($table)) {
                 ProductionTables::fromAuthority()->create($table);
             }

@@ -6,27 +6,39 @@ namespace App\Services\Releases;
 
 use App\Enums\ReleaseResolution;
 use App\Enums\ReleaseSource;
+use App\Models\Category;
 use App\Services\MediaInfo\Enums\MediaInfoSourceCompleteness;
 use App\Services\MediaInfo\MediaInfoSnapshotService;
 use App\Support\ReleaseQuality;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Keeps the per-release facts derived from other release data (`resolution`, `source`)
- * in step. Called only from SearchService::updateRelease(), which every release change
- * already reaches.
+ * Keeps the per-release facts derived from other release data (`resolution`, `source`,
+ * the `release_tv_episodes` rows) in step. Called only from SearchService::updateRelease(),
+ * which every release change already reaches.
  */
 final class ReleaseDerivedFacts
 {
-    public function __construct(private readonly MediaInfoSnapshotService $snapshots) {}
+    public function __construct(
+        private readonly MediaInfoSnapshotService $snapshots,
+        private readonly TvReleaseMembership $membership,
+    ) {}
 
     public function refresh(int $releaseId): void
     {
-        $release = DB::table('releases')->where('id', $releaseId)->first(['searchname', 'resolution', 'source']);
+        $release = DB::table('releases')->where('id', $releaseId)
+            ->first(['searchname', 'categories_id', 'videos_id', 'tv_episodes_id', 'resolution', 'source']);
         if ($release === null) {
             return;
         }
 
+        $this->refreshQuality($releaseId, $release);
+        $this->refreshTvEpisodes($releaseId, $release);
+    }
+
+    private function refreshQuality(int $releaseId, object $release): void
+    {
         $name = (string) $release->searchname;
         [$width, $height] = $this->measuredSize($releaseId);
         $facts = [
@@ -38,6 +50,108 @@ final class ReleaseDerivedFacts
         }
 
         DB::table('releases')->where('id', $releaseId)->update($facts);
+    }
+
+    /**
+     * Replaces the release's `release_tv_episodes` rows with what it declares, only when
+     * they differ. A NULL `episode` is the whole season, never episode 0.
+     */
+    private function refreshTvEpisodes(int $releaseId, object $release): void
+    {
+        $declared = [];
+        if ($this->isTvWithShow($release)) {
+            $linkedId = (int) $release->tv_episodes_id;
+            $declared = $this->declaredEpisodes($release, $linkedId > 0 ? $this->linkedEpisodes([$linkedId]) : []);
+        }
+        $stored = DB::table('release_tv_episodes')->where('releases_id', $releaseId)->orderBy('id')->get(['season', 'episode'])
+            ->map(static fn (object $row): array => ['season' => (int) $row->season, 'episode' => $row->episode === null ? null : (int) $row->episode])
+            ->all();
+        if ($stored === $declared) {
+            return;
+        }
+
+        DB::transaction(static function () use ($releaseId, $declared): void {
+            DB::table('release_tv_episodes')->where('releases_id', $releaseId)->delete();
+            DB::table('release_tv_episodes')->insert(array_map(
+                static fn (array $row): array => ['releases_id' => $releaseId] + $row, $declared));
+        });
+    }
+
+    /**
+     * Writes `release_tv_episodes` for every TV release with a show, in primary-key chunks,
+     * for the migration that adds the table. Each chunk replaces its releases' rows, so it
+     * can be re-run.
+     */
+    public function fillTvEpisodes(): int
+    {
+        $written = 0;
+        DB::table('releases')->whereBetween('categories_id', [Category::TV_ROOT, Category::TV_ROOT + 999])->where('videos_id', '>', 0)
+            ->select(['id', 'searchname', 'categories_id', 'videos_id', 'tv_episodes_id'])
+            ->chunkById(500, function (Collection $releases) use (&$written): void {
+                $linked = $this->linkedEpisodes($releases->pluck('tv_episodes_id')->map(static fn (mixed $id): int => (int) $id)
+                    ->filter(static fn (int $id): bool => $id > 0)->unique()->values()->all());
+                $rows = [];
+                foreach ($releases as $release) {
+                    foreach ($this->declaredEpisodes($release, $linked) as $row) {
+                        $rows[] = ['releases_id' => (int) $release->id] + $row;
+                    }
+                }
+                DB::transaction(static function () use ($releases, $rows): void {
+                    DB::table('release_tv_episodes')->whereIn('releases_id', $releases->pluck('id')->all())->delete();
+                    DB::table('release_tv_episodes')->insert($rows);
+                });
+                $written += count($rows);
+            });
+
+        return $written;
+    }
+
+    private function isTvWithShow(object $release): bool
+    {
+        return intdiv((int) $release->categories_id, 1000) * 1000 === Category::TV_ROOT && (int) $release->videos_id > 0;
+    }
+
+    /**
+     * The parser's declaration as rows; a name that declares nothing falls back to the
+     * linked `tv_episodes` row, only when that episode belongs to the release's show.
+     *
+     * @param  array<int, array{show: int, season: int, episode: int}>  $linked  Linked episodes by `tv_episodes.id`.
+     * @return list<array{season: int, episode: ?int}>
+     */
+    private function declaredEpisodes(object $release, array $linked): array
+    {
+        $declaration = $this->membership->describe($release);
+        if ($declaration['fullSeason']) {
+            return [['season' => (int) $declaration['season'], 'episode' => null]];
+        }
+        if ($declaration['season'] !== null) {
+            return array_map(static fn (int $episode): array => ['season' => $declaration['season'], 'episode' => $episode],
+                $declaration['numbers'] ?? []);
+        }
+
+        $episode = $linked[$declaration['linked']] ?? null;
+        if ($episode === null || $episode['show'] !== (int) $release->videos_id) {
+            return [];
+        }
+
+        return [['season' => $episode['season'], 'episode' => $episode['episode']]];
+    }
+
+    /**
+     * @param  list<int>  $ids
+     * @return array<int, array{show: int, season: int, episode: int}>
+     */
+    private function linkedEpisodes(array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+
+        return DB::table('tv_episodes')->whereIn('id', $ids)->get(['id', 'videos_id', 'series', 'episode'])
+            ->mapWithKeys(static fn (object $row): array => [(int) $row->id => [
+                'show' => (int) $row->videos_id, 'season' => (int) $row->series, 'episode' => (int) $row->episode,
+            ]])
+            ->all();
     }
 
     /**

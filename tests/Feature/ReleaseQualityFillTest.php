@@ -21,10 +21,11 @@ final class ReleaseQualityFillTest extends TestCase
         $this->registerSqliteFunction('regexp', fn (string $pattern, ?string $subject): int => (int) preg_match('~'.$pattern.'~', (string) $subject), 2);
         $this->registerSqliteFunction('regexp_substr', fn (?string $subject, string $pattern): string => preg_match('~'.$pattern.'~', (string) $subject, $match) ? $match[0] : '', 2);
         $tables = ProductionTables::fromAuthority();
-        $tables->create('releases', ['id', 'searchname', 'categories_id', 'resolution', 'source']);
+        $tables->create('releases', ['id', 'searchname', 'categories_id', 'videos_id', 'tv_episodes_id', 'resolution', 'source']);
         $tables->create('video_data', ['releases_id', 'videowidth', 'videoheight']);
         $tables->create('media_info_probes');
         $tables->create('media_info_tracks');
+        $tables->create('release_tv_episodes');
     }
 
     public function test_the_fill_statement_and_the_php_rule_agree(): void
