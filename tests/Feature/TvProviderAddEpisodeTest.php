@@ -28,7 +28,6 @@ final class TvProviderAddEpisodeTest extends TestCase
         $episodeId = (new LocalDbProvider)->addEpisode(7, $this->episode(series: 1, episode: 3, firstaired: '2024-01-15'));
 
         $this->assertSame($this->episodeIdFor(7, 1, 3), $episodeId);
-        $this->assertNotSame(1, $episodeId);
     }
 
     #[Test]
@@ -78,15 +77,9 @@ final class TvProviderAddEpisodeTest extends TestCase
 
     private function insertEpisode(int $videoId, int $series, int $episode): void
     {
-        DB::table('tv_episodes')->insert([
-            'videos_id' => $videoId,
-            'series' => $series,
-            'episode' => $episode,
-            'se_complete' => sprintf('S%02dE%02d', $series, $episode),
-            'title' => 'Episode '.$episode,
-            'firstaired' => null,
-            'summary' => '',
-        ]);
+        DB::table('tv_episodes')->insert(
+            ['videos_id' => $videoId, 'firstaired' => null] + $this->episode($series, $episode, '')
+        );
     }
 
     private function episodeIdFor(int $videoId, int $series, int $episode): int

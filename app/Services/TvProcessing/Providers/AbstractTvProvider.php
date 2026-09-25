@@ -278,8 +278,7 @@ abstract class AbstractTvProvider extends BaseVideoProvider
             return $episodeId;
         }
 
-        $firstAired = $episode['firstaired'] !== '' ? $episode['firstaired'] : null;
-        $episodeId = $this->findEpisodeIdByKey($videoId, $episode, $firstAired);
+        $episodeId = $this->findEpisodeIdByKey($videoId, $episode);
         if ($episodeId !== false) {
             return $episodeId;
         }
@@ -291,19 +290,20 @@ abstract class AbstractTvProvider extends BaseVideoProvider
                 'episode' => $episode['episode'],
                 'se_complete' => $episode['se_complete'],
                 'title' => $episode['title'],
-                'firstaired' => $firstAired,
+                'firstaired' => $this->storedFirstAired($episode),
                 'summary' => $episode['summary'],
             ]);
         } catch (UniqueConstraintViolationException) {
-            return $this->findEpisodeIdByKey($videoId, $episode, $firstAired);
+            return $this->findEpisodeIdByKey($videoId, $episode);
         }
     }
 
     /**
      * @param  array<string, mixed>  $episode
      */
-    private function findEpisodeIdByKey(int $videoId, array $episode, mixed $firstAired): int|false
+    private function findEpisodeIdByKey(int $videoId, array $episode): int|false
     {
+        $firstAired = $this->storedFirstAired($episode);
         $episodeId = TvEpisode::query()
             ->where('videos_id', $videoId)
             ->where('series', (int) $episode['series'])
@@ -316,6 +316,14 @@ abstract class AbstractTvProvider extends BaseVideoProvider
             ->value('id');
 
         return $episodeId !== null ? (int) $episodeId : false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $episode
+     */
+    private function storedFirstAired(array $episode): ?string
+    {
+        return $episode['firstaired'] !== '' ? $episode['firstaired'] : null;
     }
 
     /**
