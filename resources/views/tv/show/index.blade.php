@@ -3,7 +3,7 @@
 @section('main_class', 'tv-page')
 
 @push('modals')
-    @include('partials.release-modals')
+    @include('tv.partials.dialogs')
 @endpush
 
 @php

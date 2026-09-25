@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Data\ReleaseRowData;
+use App\Enums\BrowseRoot;
 use App\Models\Country;
 use App\Models\DnzbFailure;
 use App\Models\Predb;
@@ -24,7 +26,9 @@ use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Releases\ReleaseReportPresentation;
 use App\Services\Releases\ReleaseSearchService;
 use App\Services\Releases\TitleMetadataLoader;
+use App\Services\Releases\TvReleaseDetails;
 use Illuminate\Http\Request;
+use Illuminate\View\View;
 
 class DetailsController extends BasePageController
 {
@@ -59,6 +63,9 @@ class DetailsController extends BasePageController
         }
 
         $comments = ReleaseComment::getComments($data['id']);
+        if (BrowseRoot::fromCategoryId((int) $data['categories_id']) === BrowseRoot::Tv) {
+            return $this->showTv($data, $comments);
+        }
         $similars = $this->releaseSearchService->searchSimilar($data['id'], $data['searchname'], (array) $this->userdata->categoryexclusions);
         $failed = DnzbFailure::getFailedCount($data['id']);
         $reportPresentation = app(ReleaseReportPresentation::class)->forRelease(
@@ -178,5 +185,24 @@ class DetailsController extends BasePageController
         ]);
 
         return view('details.index', $this->viewData);
+    }
+
+    /** TV releases get their own page (docs/proposals/tv-redesign/SPEC.md 3.4); comments post back here as before. */
+    private function showTv(Release $release, mixed $comments): View
+    {
+        $this->releaseBrowseService->loadReleaseRows([$release]);
+        /** @var ReleaseRowData $row */
+        $row = $release->getAttribute('row_data');
+        $exclusions = array_values(array_map('intval', (array) $this->userdata->categoryexclusions));
+
+        return view('details.tv.index', array_merge($this->viewData, app(TvReleaseDetails::class)->forRelease($release, $row->category, $exclusions), [
+            'release' => $release,
+            'comments' => $comments,
+            'nzbLinkBase' => url('/api/v1/api'),
+            'apiToken' => (string) $this->userdata->api_token,
+            'meta_title' => 'View NZB',
+            'meta_keywords' => 'view,nzb,description,details',
+            'meta_description' => 'View NZB for '.$release['searchname'],
+        ]));
     }
 }

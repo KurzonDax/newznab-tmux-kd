@@ -78,6 +78,34 @@ test("music tags use the shared card, retain distinct artist meanings, and do no
   assert.doesNotMatch(html, /Subtitles|file-completeness|probe history/i);
 });
 
+test("the site dialog shows the plain names beside the stored format, never the codec id when a name exists", () => {
+  const html = mediainfoModal()._buildHtml({
+    identity: { label: "Container", title: null },
+    container: { format: "Matroska" },
+    streams: {
+      video: [{ type: "video", index: 0, format: "HEVC", codec: "V_MPEGH/ISO/HEVC", codec_name: "H.265" }],
+      audio: [{ type: "audio", index: 0, format: "E-AC-3", codec: "A_EAC3", format_name: "Dolby Digital Plus", language: "en", language_name: "English", channels: 6, channels_name: "5.1" }],
+      subtitle: [],
+    },
+  });
+
+  assert.match(html, /H\.265 · HEVC/);
+  assert.match(html, /Dolby Digital Plus · E-AC-3/);
+  assert.match(html, /Language:<\/span> <b>English<\/b>/);
+  assert.match(html, /Channels:<\/span> <b>5\.1<\/b>/);
+  assert.doesNotMatch(html, /V_MPEGH|A_EAC3/);
+});
+
+test("the TV screens' dialog renders the redesigned block", () => {
+  const component = mediainfoModal();
+  component.$el = { hasAttribute: (name) => name === "data-media-info-block", querySelector: () => null };
+  component.$watch = () => {};
+  globalThis.document = { addEventListener() {}, removeEventListener() {} };
+  globalThis.window = globalThis.window || {};
+  component.init();
+  assert.match(component._buildHtml({ container: {}, streams: { video: [], audio: [], subtitle: [] } }, null), /class="mi-block"/);
+});
+
 test("rapid switching ignores a late response and updates heading with the matching release", async () => {
   const pending = [];
   globalThis.fetch = (url) =>

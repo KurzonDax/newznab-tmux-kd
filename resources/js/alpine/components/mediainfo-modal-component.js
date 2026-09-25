@@ -1,4 +1,5 @@
 import { modalLifecycle } from "./modal-lifecycle.js";
+import { renderMediaInfo as renderMediaInfoBlock } from "./media-info-block.js";
 function escapeHtml(value) {
   const map = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" };
   return String(value).replace(/[&<>"']/g, (character) => map[character]);
@@ -56,9 +57,11 @@ function facts(entries) {
   return content ? '<div class="mediainfo-facts">' + content + "</div>" : "";
 }
 
+/** The plain name from the server's MediaInfoNames beside the stored format; the codec id only when no name exists. */
 function codec(stream) {
-  const values = [stream.format, stream.codec].filter(hasValue);
-  return [...new Set(values)].join(" · ");
+  const name = stream.codec_name || stream.format_name;
+  const values = hasValue(name) ? [name, stream.format] : [stream.format, stream.codec];
+  return [...new Set(values.filter(hasValue))].join(" · ");
 }
 
 function identifier(stream) {
@@ -74,7 +77,7 @@ function streamCard(type, stream) {
   let primary = [];
   if (type === "video") {
     primary = [
-      ["Language", stream.language],
+      ["Language", stream.language_name || stream.language],
       ["Resolution", hasValue(stream.width) && hasValue(stream.height) ? stream.width + " × " + stream.height : null],
       ["Aspect ratio", stream.aspect_ratio],
       ["Frame rate", hasValue(stream.frame_rate) ? stream.frame_rate + " fps" : null],
@@ -82,15 +85,15 @@ function streamCard(type, stream) {
     ];
   } else if (type === "audio") {
     primary = [
-      ["Language", stream.language],
-      ["Channels", stream.channel_layout || stream.channels_display || (hasValue(stream.channels) ? stream.channels + " channels" : null)],
+      ["Language", stream.language_name || stream.language],
+      ["Channels", stream.channels_name || stream.channel_layout || stream.channels_display || (hasValue(stream.channels) ? stream.channels + " channels" : null)],
       ["Sample rate", stream.sample_rate_display || sampleRate(stream.sample_rate_hz)],
       ["Bit depth", hasValue(stream.bit_depth) ? stream.bit_depth + "-bit" : null],
       ["Bit rate", stream.bitrate_display || bitrate(stream.bitrate_bps)],
       ["Duration", stream.duration_display || duration(stream.duration_ms)],
     ];
   } else {
-    primary = [["Language", stream.language]];
+    primary = [["Language", stream.language_name || stream.language]];
   }
 
   let flags = "";
@@ -206,7 +209,7 @@ export function mediainfoModal() {
         .then((data) => {
           if (version !== this.requestVersion) return;
           this.releaseName = data.release_name || this.releaseName;
-          this._setContent(data.media ? this._buildHtml(data.media) : '<p class="mediainfo-message">No media information available</p>');
+          this._setContent(data.media ? this._buildHtml(data.media, data.resolution ?? null) : '<p class="mediainfo-message">No media information available</p>');
           this.loading = false;
         })
         .catch(() => {
@@ -227,6 +230,8 @@ export function mediainfoModal() {
     _buildHtml: renderMediaInfo,
 
     init() {
+      // The TV screens' dialog (tv/partials/dialogs) shows the redesigned media info block.
+      if (this.$el?.hasAttribute?.("data-media-info-block")) this._buildHtml = renderMediaInfoBlock;
       this.initModal();
       const self = this;
       window.showMediainfo = (id, name) => self.show(id, name);

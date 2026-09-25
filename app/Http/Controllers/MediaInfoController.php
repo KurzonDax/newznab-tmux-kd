@@ -12,7 +12,7 @@ final class MediaInfoController extends Controller
 {
     public function show(int $release, MediaInfoPresentationService $mediaInfo): JsonResponse
     {
-        $model = Release::query()->findOrFail($release, ['id', 'searchname', 'display_name']);
+        $model = Release::query()->findOrFail($release, ['id', 'searchname', 'display_name', 'resolution']);
 
         return response()->json($mediaInfo->forRelease($model));
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\MediaInfo;
 
+use App\Enums\ReleaseResolution;
 use App\Models\AudioData;
 use App\Models\MediaInfo;
 use App\Models\Release;
@@ -19,19 +20,60 @@ final class MediaInfoPresentationService
     ) {}
 
     /**
-     * @return array{release_name: string, media: array<string, mixed>|null}
+     * The media info block's data: the stored streams plus their plain names (MediaInfoNames),
+     * and the release's own resolution (null when unknown or not loaded).
+     *
+     * @return array{release_name: string, resolution: string|null, media: array<string, mixed>|null}
      */
     public function forRelease(Release $release): array
     {
         $releaseId = (int) $release->id;
         $snapshot = $this->snapshots->selectedForRelease($releaseId);
+        $media = $snapshot === null
+            ? $this->legacyMedia($releaseId)
+            : $this->snapshotMedia($snapshot->container, $snapshot->streams);
+        if ($media !== null) {
+            $media['streams'] = $this->named($media['streams']);
+        }
+        $resolution = ReleaseResolution::tryFrom((int) $release->getAttribute('resolution')) ?? ReleaseResolution::Unknown;
 
         return [
             'release_name' => ReleaseDisplayNameFormatter::displayFor($release),
-            'media' => $snapshot === null
-                ? $this->legacyMedia($releaseId)
-                : $this->snapshotMedia($snapshot->container, $snapshot->streams),
+            'resolution' => $resolution === ReleaseResolution::Unknown ? null : $resolution->label(),
+            'media' => $media,
         ];
+    }
+
+    /**
+     * @param  array{video: list<array<string, mixed>>, audio: list<array<string, mixed>>, subtitle: list<array<string, mixed>>}  $streams
+     * @return array{video: list<array<string, mixed>>, audio: list<array<string, mixed>>, subtitle: list<array<string, mixed>>}
+     */
+    private function named(array $streams): array
+    {
+        $text = static fn (mixed $value): ?string => is_scalar($value) ? (string) $value : null;
+        foreach ($streams as $type => $list) {
+            foreach ($list as $index => $stream) {
+                $stream['language_name'] = MediaInfoNames::language($text($stream['language'] ?? null));
+                if ($type === 'video') {
+                    $stream['codec_name'] = MediaInfoNames::video($text($stream['format'] ?? null), $text($stream['codec'] ?? null));
+                    $stream['hdr'] = MediaInfoNames::hdr($text($stream['hdr_format'] ?? null));
+                } elseif ($type === 'audio') {
+                    $format = MediaInfoNames::audio($text($stream['format'] ?? null));
+                    $stream['format_name'] = $format['name'] ?? null;
+                    $stream['format_short'] = $format['short'] ?? null;
+                    $stream['atmos'] = MediaInfoNames::atmos($text($stream['format'] ?? null));
+                    $channels = $stream['channels'] ?? $stream['channels_display'] ?? null;
+                    $stream['channels_name'] = MediaInfoNames::channels(is_int($channels) ? $channels : $text($channels), $text($stream['channel_layout'] ?? null));
+                } else {
+                    $format = MediaInfoNames::subtitle($text($stream['format'] ?? null), $text($stream['codec'] ?? null));
+                    $stream['format_name'] = $format['name'] ?? null;
+                    $stream['picture'] = $format['picture'] ?? false;
+                }
+                $streams[$type][$index] = $stream;
+            }
+        }
+
+        return $streams;
     }
 
     /**

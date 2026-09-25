@@ -164,6 +164,13 @@
     --chip-mi-image-subs-bg-dark: #323308;
     --chip-mi-image-subs-fg: #4d4c00;
     --chip-mi-image-subs-fg-dark: #d7d99c;
+    /* Media info section rules (the line under each section's heading); one value serves both themes. */
+    --mi-rule-video: oklch(0.6 0.12 275);
+    --mi-rule-video-dark: oklch(0.6 0.12 275);
+    --mi-rule-audio: oklch(0.6 0.1 185);
+    --mi-rule-audio-dark: oklch(0.6 0.1 185);
+    --mi-rule-subtitles: oklch(0.6 0.11 85);
+    --mi-rule-subtitles-dark: oklch(0.6 0.11 85);
 }
 
 /* Theme customization (replaces theme.extend in tailwind.config.js) */
@@ -197,6 +204,7 @@
 /* Import custom CSP-safe styles */
 @import './csp-safe.css';
 @import './tv.css';
+@import './media-info.css';
 
 /* Alpine.js x-cloak - hide elements until Alpine initializes */
 [x-cloak] {

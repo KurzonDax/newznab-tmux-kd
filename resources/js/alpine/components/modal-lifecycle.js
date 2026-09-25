@@ -64,5 +64,10 @@ export function modalLifecycle() {
         destroy() {
             this._modalTeardown?.();
         },
+
+        /** A data-part name that exists only while the dialog is open, so closed dialogs are not measured. */
+        partWhenOpen(name) {
+            return this.open ? name : null;
+        },
     };
 }

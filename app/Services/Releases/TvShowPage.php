@@ -11,6 +11,7 @@ use App\Data\TvShowHeader;
 use App\Enums\ReleaseResolution;
 use App\Models\Category;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Database\Query\JoinClause;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -167,6 +168,24 @@ final class TvShowPage
     {
         return $this->ids($this->filtered($videosId, $filters, $exclusions)
             ->whereNotExists(static fn (Builder $declared) => $declared->selectRaw('1')->from('release_tv_episodes as e')->whereColumn('e.releases_id', 'r.id')));
+    }
+
+    /**
+     * The details page's "All N releases of this episode": the show's visible releases that
+     * declare any of the (season, episode) rows this release declares, a whole-season row (NULL)
+     * matching only another whole-season row. Empty when the release declares nothing.
+     *
+     * @param  list<int>  $exclusions
+     * @return list<int>
+     */
+    public function siblingReleaseIds(int $videosId, int $releaseId, array $exclusions): array
+    {
+        return $this->ids($this->declared($this->visible($videosId, $exclusions))
+            ->join('release_tv_episodes as mine', static function (JoinClause $join) use ($releaseId): void {
+                $join->on('mine.season', '=', 'e.season')->where('mine.releases_id', '=', $releaseId)
+                    ->where(static fn (Builder $same) => $same->whereColumn('mine.episode', 'e.episode')
+                        ->orWhere(static fn (Builder $pack) => $pack->whereNull('mine.episode')->whereNull('e.episode')));
+            }));
     }
 
     /**

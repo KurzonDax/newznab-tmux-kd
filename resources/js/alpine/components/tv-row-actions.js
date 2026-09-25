@@ -60,10 +60,18 @@ export function rowActions() {
             button.copiedTimer = setTimeout(() => icon.classList.replace('fa-check', 'fa-link'), 1600);
         },
 
+        /** Round cart buttons change their tooltip; a labelled one (the details header's) its words and icon. */
         markCart(guids, inCart) {
             this.screen.querySelectorAll('[data-cart]').forEach(button => {
                 if (!guids.includes(button.dataset.cart)) return;
                 button.setAttribute('aria-pressed', inCart ? 'true' : 'false');
+                if (button.dataset.cartLabel !== undefined) {
+                    button.querySelector('span').textContent = inCart ? 'In cart' : 'Add to cart';
+                    const icon = button.querySelector('i');
+                    icon.classList.toggle('fa-check', inCart);
+                    icon.classList.toggle('fa-cart-shopping', !inCart);
+                    return;
+                }
                 button.setAttribute('title', inCart ? 'In cart · click to remove' : 'Add to cart');
                 button.setAttribute('aria-label', inCart ? 'Remove from cart' : 'Add to cart');
             });
