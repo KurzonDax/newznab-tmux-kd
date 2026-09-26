@@ -15,6 +15,7 @@
 @section('content')
 <div class="tv-screen" data-part="page ground and body text" x-data="tvEpisodeList"
      data-show="{{ $show->id }}" data-nzb-link-base="{{ $nzbLinkBase }}" data-api-token="{{ $apiToken }}"
+     data-page-url="{{ route('tv.show', ['videosId' => $show->id, 'season' => $season, ...$filters->query(1)]) }}"
      x-on:click="handleClick" x-on:change="handleChange" x-on:checkbox-menu-change="applyFilter">
     <div class="tv-wrap" data-part="content width wrapper">
         <a class="tv-back" href="{{ $back['url'] }}"><i class="fas fa-arrow-left" aria-hidden="true"></i>{{ $back['label'] }}</a>

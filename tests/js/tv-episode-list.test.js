@@ -62,10 +62,10 @@ function episode(number, open = false) {
     return { button, row, releases };
 }
 
-function page({ show = '7', boxes = [], tables = [], episodes = [], tabs = [], currentTab = null } = {}) {
+function page({ show = '7', boxes = [], tables = [], episodes = [], tabs = [], currentTab = null, pageUrl } = {}) {
     const list = { innerHTML: '', querySelectorAll: selector => (selector === '.tv-release-table' ? tables : []) };
     const root = {
-        dataset: { show, nzbLinkBase: 'https://nntmux.test/api/v1/api', apiToken: 'secret-key' },
+        dataset: { show, nzbLinkBase: 'https://nntmux.test/api/v1/api', apiToken: 'secret-key', ...(pageUrl === undefined ? {} : { pageUrl }) },
         querySelectorAll(selector) {
             if (selector === '[data-select]') return boxes;
             if (selector === '.tv-episode[data-open]') return episodes.filter(item => item.row.hasAttribute('data-open')).map(item => item.row);
@@ -200,6 +200,43 @@ test('a filter change keeps the open episodes open, carries the filter onto ever
     assert.deepEqual(url.searchParams.getAll('open[]'), ['2']);
     assert.equal(list.innerHTML, '<table>releases</table>');
     assert.equal(listUrl('https://nntmux.test/tv/show/7?open=4', [5, 6]).search, '?open%5B%5D=5&open%5B%5D=6');
+});
+
+test('an episode on a page opened without a season asks for the season the page rendered', async () => {
+    const { requests } = browser({ href: 'https://nntmux.test/tv/show/9' });
+    const fifth = episode(5);
+    const { component } = page({ episodes: [fifth], pageUrl: 'https://nntmux.test/tv/show/9/3?resolution%5B%5D=4k' });
+    await component.toggleEpisode(fifth.button);
+    const url = new URL(requests[0].url);
+    assert.equal(url.pathname, '/tv/show/9/3');
+    assert.equal(url.searchParams.get('episode'), '5');
+    assert.equal(url.searchParams.get('_fragment'), 'episode');
+    assert.deepEqual(url.searchParams.getAll('resolution[]'), ['4k']);
+});
+
+test('filter changes build on the season the page rendered and on each other, and an episode opened after them carries both', async () => {
+    const { history, requests } = browser({ href: 'https://nntmux.test/tv/show/9' });
+    const fifth = episode(5);
+    const { component } = page({ episodes: [fifth], pageUrl: 'https://nntmux.test/tv/show/9/3' });
+    await component.applyFilter({ detail: { name: 'resolution', values: ['1080p'] } });
+    const first = new URL(requests[0].url);
+    assert.equal(first.pathname, '/tv/show/9/3');
+    assert.equal(first.searchParams.get('_fragment'), 'list');
+    assert.equal(new URL(history[0]).pathname, '/tv/show/9/3');
+
+    await component.applyFilter({ detail: { name: 'source', values: ['web'] } });
+    for (const url of [new URL(history[1]), new URL(requests[1].url)]) {
+        assert.equal(url.pathname, '/tv/show/9/3');
+        assert.deepEqual(url.searchParams.getAll('resolution[]'), ['1080p']);
+        assert.deepEqual(url.searchParams.getAll('source[]'), ['web']);
+    }
+
+    await component.toggleEpisode(fifth.button);
+    const opened = new URL(requests[2].url);
+    assert.equal(opened.pathname, '/tv/show/9/3');
+    assert.equal(opened.searchParams.get('_fragment'), 'episode');
+    assert.deepEqual(opened.searchParams.getAll('resolution[]'), ['1080p']);
+    assert.deepEqual(opened.searchParams.getAll('source[]'), ['web']);
 });
 
 test('a season tab keeps keyboard focus and the scroll position across its page load', () => {
