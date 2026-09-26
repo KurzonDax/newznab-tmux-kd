@@ -3,12 +3,19 @@
  *
  * Scans the DOM for x-data attributes that match known lazy components.
  * Only imports the JS modules for components actually present on the page.
- * Once every needed module has loaded or failed, calls Alpine.start(); roots of a
- * component whose module failed are marked x-ignore first so Alpine skips them.
+ * Once every needed module has loaded or failed, or the load budget expires, calls
+ * Alpine.start(); roots of a component whose module failed or is still loading are
+ * marked x-ignore first so Alpine skips them. A module that arrives after the
+ * budget brings its roots to life then.
  *
  * Dynamic import() is CSP-compliant (no eval / new Function).
  */
 import Alpine from '@alpinejs/csp';
+
+/**
+ * How long Alpine waits for lazy modules before starting without the ones still loading.
+ */
+const LOAD_BUDGET_MS = 4000;
 
 /**
  * Map of Alpine component name → dynamic import function.
@@ -101,9 +108,9 @@ function getUsedComponentNames() {
 }
 
 /**
- * Mark every root of a component whose module failed to load with x-ignore, so
- * Alpine skips it (and its subtree) instead of evaluating an undefined component
- * and removing the x-cloak that keeps its dialog frame hidden.
+ * Mark every root of a component whose module failed or is still loading with
+ * x-ignore, so Alpine skips it (and its subtree) instead of evaluating an undefined
+ * component and removing the x-cloak that keeps its dialog frame hidden.
  */
 function ignoreRoots(name) {
     document.querySelectorAll('[x-data]').forEach(el => {
@@ -112,8 +119,25 @@ function ignoreRoots(name) {
 }
 
 /**
+ * Bring the ignored roots of a component whose module arrived after Alpine started
+ * to life. Alpine's x-ignore sets an internal flag that removing the attribute does
+ * not clear until its MutationObserver runs, and initTree returns while the flag is
+ * set, so destroyTree clears it first.
+ */
+function initLateRoots(name) {
+    document.querySelectorAll('[x-data]').forEach(el => {
+        if (componentName(el) !== name || !el.hasAttribute('x-ignore')) return;
+        Alpine.destroyTree(el);
+        el.removeAttribute('x-ignore');
+        Alpine.initTree(el);
+    });
+}
+
+/**
  * Load only the lazy components found on the current page, then start Alpine.
  * A component whose module fails to load stays uninitialised; the rest start normally.
+ * Alpine starts without modules still loading after LOAD_BUDGET_MS and initialises
+ * them when they arrive.
  * Returns a promise that settles once Alpine has started (awaited by the tests).
  */
 export function loadAndStart() {
@@ -125,18 +149,44 @@ export function loadAndStart() {
         return Promise.resolve();
     }
 
-    // Load all needed modules in parallel, then start Alpine
-    return Promise.allSettled(names.map(name => lazyComponentMap[name]()))
-        .then(results => {
-            results.forEach((result, i) => {
-                if (result.status === 'rejected') {
-                    console.error(`[lazy-loader] Failed to load component ${names[i]}:`, result.reason);
-                    ignoreRoots(names[i]);
-                }
-            });
+    // Load all needed modules in parallel; start Alpine when all have settled or the budget expires
+    return new Promise(resolve => {
+        const loading = new Set(names);
+        let started = false;
+
+        const start = () => {
+            started = true;
+            clearTimeout(budgetTimer);
             Alpine.start();
             enableTransitions();
+            resolve();
+        };
+
+        const budgetTimer = setTimeout(() => {
+            loading.forEach(name => {
+                console.warn(`[lazy-loader] Component ${name} still loading after ${LOAD_BUDGET_MS} ms; starting without it`);
+                ignoreRoots(name);
+            });
+            start();
+        }, LOAD_BUDGET_MS);
+
+        names.forEach(name => {
+            lazyComponentMap[name]().then(
+                () => {
+                    loading.delete(name);
+                    if (started) initLateRoots(name);
+                    else if (loading.size === 0) start();
+                },
+                error => {
+                    loading.delete(name);
+                    console.error(`[lazy-loader] Failed to load component ${name}:`, error);
+                    if (started) return;
+                    ignoreRoots(name);
+                    if (loading.size === 0) start();
+                },
+            );
         });
+    });
 }
 
 function enableTransitions() {
