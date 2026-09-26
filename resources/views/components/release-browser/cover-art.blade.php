@@ -5,7 +5,7 @@
     @else
         <i class="{{ $state->root->icon() }}" data-no-artwork aria-hidden="true"></i>
     @endif
-    @if($state->root !== \App\Enums\BrowseRoot::Tv)<span class="release-cover-art-title">{{ $cover->title }}</span>@endif
+    <span class="release-cover-art-title">{{ $cover->title }}</span>
     @if($cover->artworkTag !== '')
         <span class="release-cover-art-tag">{{ $cover->artworkTag }}</span>
     @endif

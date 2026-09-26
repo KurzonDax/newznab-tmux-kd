@@ -5,11 +5,8 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Http\Middleware\TrustedDevice2FAMiddleware;
-use Database\Factories\VideoFactory;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\InteractsWithReleaseBrowser;
@@ -41,13 +38,6 @@ final class TitleControllerTest extends TestCase
             DB::table('categories')->insert(['id' => $category, 'title' => 'HD', 'root_categories_id' => $category - 30]);
             ProductionTables::fromAuthority()->create($table);
         }
-        Schema::create('tv_info', function (Blueprint $table): void {
-            $table->unsignedInteger('videos_id')->primary();
-            $table->string('publisher')->nullable();
-            $table->text('summary')->nullable();
-            $table->boolean('image')->default(false);
-        });
-        ProductionTables::fromAuthority()->create('tv_episodes', ['id', 'videos_id', 'series', 'episode', 'firstaired']);
         config(['nntmux_settings.covers_path' => $this->makeTempDirectory('title-artwork')]);
     }
 
@@ -63,7 +53,6 @@ final class TitleControllerTest extends TestCase
     public static function entityRoots(): iterable
     {
         yield 'movies' => ['movies', 'movieinfo', 'imdbid', 2030];
-        yield 'tv' => ['tv', 'videos', 'videos_id', 5030];
         yield 'audio' => ['audio', 'musicinfo', 'musicinfo_id', 3030];
         yield 'console' => ['console', 'consoleinfo', 'consoleinfo_id', 1030];
         yield 'games' => ['games', 'gamesinfo', 'gamesinfo_id', 4030];
@@ -73,102 +62,12 @@ final class TitleControllerTest extends TestCase
     #[DataProvider('entityRoots')]
     public function test_titles_without_releases_render_an_overview_and_omit_missing_metadata(string $root, string $table, string $key, int $category): void
     {
-        $record = ['id' => 12, 'title' => 'A <quiet> title', ...($root === 'movies' ? ['imdbid' => '1234567'] : [])];
-        if ($root === 'tv') {
-            $this->video($record);
-        } else {
-            DB::table($table)->insert($record);
-        }
+        DB::table($table)->insert(['id' => 12, 'title' => 'A <quiet> title', ...($root === 'movies' ? ['imdbid' => '1234567'] : [])]);
         $id = $root === 'movies' ? '1234567' : '12';
         $response = $this->actingAs($this->browserUser())->get('/title/'.$root.'/'.$id)->assertOk();
         $response->assertSee('A &lt;quiet&gt; title', false)->assertSee('No releases for this title.')
             ->assertSee('data-no-artwork', false)->assertDontSee('Unknown Director')->assertDontSee('aria-label="Release pages"', false);
         $this->assertSame(0, $response->viewData('results')->total());
-    }
-
-    public function test_tv_title_exposes_the_air_year_picker_in_full_pages_and_fragments(): void
-    {
-        $this->video(['id' => 12, 'title' => 'Year test', 'started' => '1950-01-01']);
-        $this->actingAs($this->browserUser());
-        foreach (['', '&_fragment=releases'] as $fragment) {
-            $response = $this->get('/title/tv/12?year=custom&year_from=1980&year_to=1970'.$fragment)->assertOk();
-            $response->assertSee('All Years')->assertSee('Air year')->assertSee('Apply year')
-                ->assertSee('name="year_from"', false)->assertSee('name="year_to"', false)
-                ->assertSee('value="1900"', false)->assertSee('value="'.(date('Y') + 1).'"', false);
-        }
-    }
-
-    public function test_title_air_year_ranges_survive_legacy_links(): void
-    {
-        $years = [1969, 1970, 1975, 1979, 1980];
-        $this->actingAs($this->browserUser());
-        foreach ($years as $index => $year) {
-            $this->video(['id' => $year, 'title' => 'Premiere fixture '.$year, 'started' => $year.'-06-15']);
-            DB::table('tv_episodes')->insert(['id' => $year, 'videos_id' => 1975, 'series' => 1, 'episode' => $index + 1, 'firstaired' => $year.'-06-15']);
-            $this->release('Air fixture '.$year, ['categories_id' => 5030, 'videos_id' => 1975, 'tv_episodes_id' => $year,
-                'postdate' => '2001-01-01', 'adddate' => '2020-01-01']);
-        }
-        foreach ([
-            'year=1970s' => [1970, 1975, 1979], 'year=1975' => [1975],
-            'year=custom&year_from=1970&year_to=1975' => [1970, 1975],
-            'year=custom&year_from=1975' => [1975, 1979, 1980],
-            'year=custom&year_to=1975' => [1969, 1970, 1975],
-            'year=custom&year_from=1980&year_to=1970' => [1970, 1975, 1979, 1980],
-            'year=custom&year_from=&year_to=' => $years,
-            'year[]=broken' => $years, 'year=custom&year_from[]=1970&year_to=1975' => [1969, 1970, 1975],
-        ] as $query => $expected) {
-            $legacy = $this->get('/series/1975?season=1&'.$query)->assertRedirect();
-            $title = $this->get($legacy->headers->get('Location'))->assertOk()->assertSee('Apply year');
-            $this->assertSame(count($expected), $title->viewData('results')->total());
-            $this->get('/title/tv/1975?season=1&'.$query.'&_fragment=releases')->assertOk()->assertSee('Apply year');
-            foreach ($years as $year) {
-                if (in_array($year, $expected, true)) {
-                    $title->assertSee('Air fixture '.$year);
-                } else {
-                    $title->assertDontSee('Air fixture '.$year);
-                }
-            }
-        }
-    }
-
-    public function test_show_dialog_bounds_each_independent_list_and_keeps_packs_out_of_episode_variants(): void
-    {
-        $this->video(['id' => 1, 'title' => 'Harbor Street']);
-        DB::table('tv_info')->insert(['videos_id' => 1, 'publisher' => 'Harbor Network', 'summary' => 'An ensemble mystery along a fictional coast.']);
-        DB::table('tv_episodes')->insert(['id' => 100, 'videos_id' => 1, 'series' => 3, 'episode' => 1]);
-        DB::table('tv_episodes')->insert(['id' => 101, 'videos_id' => 1, 'series' => 0, 'episode' => 1]);
-        for ($episode = 1; $episode <= 30; $episode++) {
-            DB::table('tv_episodes')->insert(['id' => $episode, 'videos_id' => 1, 'series' => 4, 'episode' => $episode]);
-        }
-        for ($variant = 1; $variant <= 60; $variant++) {
-            $this->release('Harbor.Street.S04E01.Variant.'.$variant, ['categories_id' => 5030, 'videos_id' => 1, 'tv_episodes_id' => 1]);
-        }
-        for ($pack = 1; $pack <= 40; $pack++) {
-            $this->release('Harbor.Street.S04.COMPLETE.Pack.'.$pack, ['categories_id' => 5030, 'videos_id' => 1, 'tv_episodes_id' => 0]);
-        }
-        $this->actingAs($this->browserUser());
-        $show = $this->get('/series?_fragment=show&show=1')->assertOk();
-        $this->assertSame(4, $show->viewData('season'));
-        $this->assertSame(30, $show->viewData('results')->total());
-        $this->assertCount(24, $show->viewData('results')->items());
-        foreach (['season' => [30, 6], 'episode' => [60, 24], 'packs' => [40, 16]] as $kind => [$total, $count]) {
-            $page = $this->get('/series?_fragment=list&show=1&season=4&kind='.$kind.'&episode=1&page=2&per=24')->assertOk();
-            $this->assertSame($total, $page->viewData('results')->total());
-            $this->assertCount($count, $page->viewData('results')->items());
-            if ($kind === 'episode') {
-                $page->assertDontSee('COMPLETE');
-            }
-        }
-        foreach ([0, 3] as $season) {
-            $this->get('/series?_fragment=list&show=1&season='.$season.'&kind=season&page=1&per=24')->assertOk();
-        }
-        foreach (['season', 'episode', 'packs'] as $kind) {
-            foreach ([24, 48, 100] as $per) {
-                $this->get('/series?_fragment=list&show=1&season=4&kind='.$kind.'&episode=1&page=1&per='.$per)->assertOk();
-            }
-        }
-        $this->get('/series?_fragment=list&show=1&season=4&kind=episode&episode=1&page=3&per=24')->assertOk()
-            ->assertViewHas('results', static fn ($rows): bool => $rows->count() === 12 && $rows->total() === 60);
     }
 
     public function test_complete_long_cast_has_its_own_row_after_the_synopsis(): void
@@ -200,51 +99,6 @@ final class TitleControllerTest extends TestCase
             ->assertSee('https://www.themoviedb.org/movie/42', false)->assertDontSee('Runtime');
         $this->assertSame(1, $response->viewData('results')->total());
         $this->assertSame('A Movie', $response->viewData('results')->first()->row_data->entity->title);
-    }
-
-    public function test_tv_selects_the_newest_numbered_season_and_orders_packs_after_episodes(): void
-    {
-        $this->video(['id' => 12, 'title' => 'A Show', 'started' => '2022-01-01']);
-        DB::table('tv_info')->insert(['videos_id' => 12, 'publisher' => 'FX', 'summary' => 'A show summary.']);
-        foreach ([[1, 1], [3, 2], [3, 1], [0, 1]] as [$season, $episode]) {
-            $episodeId = DB::table('tv_episodes')->insertGetId(['videos_id' => 12, 'series' => $season, 'episode' => $episode]);
-            $this->release('Show.S'.$season.'E'.$episode.'.1080p', ['categories_id' => 5030, 'videos_id' => 12, 'tv_episodes_id' => $episodeId]);
-        }
-        $this->release('Show.S03.COMPLETE.2160p', ['categories_id' => 5030, 'videos_id' => 12]);
-        $response = $this->actingAs($this->browserUser())->get('/title/tv/12')->assertOk();
-        $response->assertSeeInOrder(['Season 1', 'Season 3', 'Specials'])
-            ->assertSeeInOrder(['Show.S3E1.1080p', 'Show.S3E2.1080p', 'Show.S03.COMPLETE.2160p'])
-            ->assertDontSee('Show.S1E1.1080p')->assertDontSee('Show.S0E1.1080p')->assertSee('2 episodes')->assertSee('1 season pack')
-            ->assertSee('A show summary.')->assertDontSee('Cast')->assertDontSee('Returning')
-            ->assertDontSee('Select season')->assertDontSee('data-season-guids', false)
-            ->assertSee('data-title-quality="1080p"', false)->assertSee('data-title-quality="2160p"', false)
-            ->assertSee('3 releases');
-        $this->assertSame(3, $response->viewData('selectedSeason'));
-        $this->assertCount(3, $response->viewData('results'));
-    }
-
-    public function test_season_and_quality_fragments_return_only_the_requested_table(): void
-    {
-        $this->video(['id' => 12, 'title' => 'A Show']);
-        foreach (['S01E01.720p', 'S02E01.1080p', 'S02E02.2160p'] as $name) {
-            $this->release('Show.'.$name, ['categories_id' => 5030, 'videos_id' => 12]);
-        }
-        $response = $this->actingAs($this->browserUser())->get('/title/tv/12?season=2&quality[]=2160p&_fragment=releases')->assertOk();
-        $response->assertSee('Show.S02E02.2160p')->assertDontSee('Show.S02E01.1080p')->assertDontSee('Show.S01E01.720p')
-            ->assertDontSee('<!DOCTYPE html>', false);
-        $this->assertSame(1, $response->viewData('results')->total());
-    }
-
-    public function test_every_fallback_release_remains_accessible_beyond_the_old_scan_limit(): void
-    {
-        $this->video(['id' => 12, 'title' => 'A Long Show']);
-        for ($episode = 1; $episode <= 501; $episode++) {
-            $this->release(sprintf('Long.Show.S01E%03d.1080p', $episode), ['categories_id' => 5030, 'videos_id' => 12]);
-        }
-        $response = $this->actingAs($this->browserUser())->get('/title/tv/12?page=6')->assertOk();
-        $response->assertSee('Long.Show.S01E501.1080p')->assertSee('aria-label="Release pages"', false);
-        $this->assertSame(501, $response->viewData('results')->total());
-        $this->assertCount(1, $response->viewData('results'));
     }
 
     /** @return iterable<string, array{string, string}> */
@@ -329,17 +183,6 @@ final class TitleControllerTest extends TestCase
             ->assertSee('A &lt;quiet&gt; story.', false)->assertDontSee('<quiet>', false)->assertSee('/title/books/12', false);
     }
 
-    public function test_show_only_matches_are_available_as_specials_without_becoming_season_packs(): void
-    {
-        $this->video(['id' => 12, 'title' => 'Sterling Point']);
-        $this->release('Sterling Point (2026)', ['categories_id' => 5030, 'videos_id' => 12, 'tv_episodes_id' => -6]);
-        $response = $this->actingAs($this->browserUser())->get('/title/tv/12')->assertOk();
-        $response->assertSee('Sterling Point (2026)')->assertSee('Specials');
-        $this->assertSame(0, $response->viewData('seasonPackCount'));
-        $this->assertSame(0, $response->viewData('selectedPackCount'));
-        $this->assertSame(1, $response->viewData('results')->total());
-    }
-
     public function test_title_watch_state_refreshes_and_treats_legacy_null_categories_as_unrestricted(): void
     {
         DB::table('movieinfo')->insert(['id' => 12, 'imdbid' => '1234567', 'title' => 'A Movie']);
@@ -352,19 +195,10 @@ final class TitleControllerTest extends TestCase
         $this->get('/title/movies/1234567')->assertOk()->assertViewHas('watchCategories', ['HD']);
     }
 
-    /** @param array<string, mixed> $attributes */
-    private function video(array $attributes): void
-    {
-        DB::table('videos')->insert(array_intersect_key(
-            VideoFactory::new()->raw(['started' => null, ...$attributes]),
-            array_flip(Schema::getColumnListing('videos')),
-        ));
-    }
-
     public function test_unknown_and_non_entity_roots_are_not_found_and_permissions_apply_to_titles(): void
     {
         $this->actingAs($this->createUserWithRole('User'));
-        foreach (['all', 'xxx', 'other', 'unknown'] as $root) {
+        foreach (['all', 'tv', 'xxx', 'other', 'unknown'] as $root) {
             $this->get('/title/'.$root.'/12')->assertNotFound();
         }
         $this->get('/title/movies/1234567')->assertForbidden();

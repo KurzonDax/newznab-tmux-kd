@@ -10,12 +10,9 @@ use App\Http\Middleware\TrustedDevice2FAMiddleware;
 use App\Models\Category;
 use App\Models\User;
 use App\View\Composers\GlobalDataComposer;
-use DOMDocument;
-use DOMXPath;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
 use ReflectionClass;
 use Spatie\Permission\PermissionRegistrar;
@@ -71,195 +68,11 @@ class SeriesControllerTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_selected_season_renders_only_that_season_releases(): void
-    {
-        $user = $this->createUser();
-        $videoId = $this->createShow();
-        $this->createMatchedRelease($videoId, 1, 1, 'Only.Season.One.S01E01.720p-GROUP');
-        $this->createMatchedRelease($videoId, 2, 1, 'Only.Season.Two.S02E01.720p-GROUP');
-
-        $seasonOne = $this->actingAs($user)->followingRedirects()->get(route('series', ['id' => $videoId, 'season' => 1]));
-        $seasonOne->assertOk();
-        $seasonOne->assertSee('Only.Season.One.S01E01.720p-GROUP');
-        $seasonOne->assertDontSee('Only.Season.Two.S02E01.720p-GROUP');
-
-        $seasonTwo = $this->actingAs($user)->followingRedirects()->get(route('series', ['id' => $videoId, 'season' => 2]));
-        $seasonTwo->assertOk();
-        $seasonTwo->assertSee('Only.Season.Two.S02E01.720p-GROUP');
-        $seasonTwo->assertDontSee('Only.Season.One.S01E01.720p-GROUP');
-        $row = $seasonTwo->viewData('results')->first()->row_data;
-        $this->assertSame('tv', $row->entity?->root);
-        $this->assertSame('Paged Test Show', $row->entity?->title);
-        $this->assertSame(2, $row->entity?->season);
-        $this->assertSame(1, $row->entity?->episode);
-    }
-
     public function test_my_shows_browse_leads_to_the_tv_releases_screen(): void
     {
         $this->actingAs($this->createUser());
         $this->get(route('myshows.browse'))->assertRedirect('/browse/tv?watching=1');
         $this->get('/browse/tv?watching=1')->assertRedirect(route('tv.releases'));
-    }
-
-    public function test_shared_release_table_stays_inside_the_title_page(): void
-    {
-        $user = $this->createUser();
-        $videoId = $this->createShow();
-        $this->createMatchedRelease($videoId, 1, 1, 'Nested.Show.S01E01.720p-GROUP');
-
-        $response = $this->actingAs($user)->followingRedirects()->get(route('series', ['id' => $videoId]));
-        $response->assertOk();
-
-        $document = new DOMDocument;
-        $document->loadHTML($response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
-        $xpath = new DOMXPath($document);
-
-        $this->assertSame(1.0, $xpath->evaluate(
-            'count(//*[@x-data="titleOverview"]//*[@data-title-releases])'
-        ));
-        $this->assertSame(1.0, $xpath->evaluate(
-            'count(//*[@data-title-releases]//table)'
-        ));
-    }
-
-    public function test_season_links_preserve_category_and_reset_page(): void
-    {
-        $user = $this->createUser();
-        $videoId = $this->createShow();
-        $this->createMatchedRelease($videoId, 1, 1, 'Link.Test.S01E01.720p-GROUP');
-        $this->createMatchedRelease($videoId, 2, 1, 'Link.Test.S02E01.720p-GROUP');
-
-        $response = $this->actingAs($user)->followingRedirects()->get(route('series', [
-            'id' => $videoId,
-            'season' => 1,
-            'page' => 3,
-            't' => Category::TV_SD,
-            'year' => now()->year,
-        ]));
-
-        $response->assertOk();
-        $html = $response->getContent();
-
-        $this->assertStringContainsString('season=2', $html);
-        $this->assertStringContainsString('page=1', $html);
-        $this->assertStringContainsString('t=5030', $html);
-        $this->assertStringContainsString('year='.now()->year, $html);
-        $this->assertStringContainsString('x-data="titleOverview"', $html);
-        $this->assertStringContainsString('data-title-page', $html);
-        $this->assertStringNotContainsString('season=2&amp;page=3', $html);
-    }
-
-    public function test_lazy_season_fragment_returns_only_selected_season_html(): void
-    {
-        $user = $this->createUser();
-        $videoId = $this->createShow();
-        $this->createMatchedRelease($videoId, 1, 1, 'Lazy.Test.S01E01.720p-GROUP');
-        $this->createMatchedRelease($videoId, 2, 1, 'Lazy.Test.S02E01.720p-GROUP');
-
-        $response = $this->actingAs($user)->followingRedirects()->get(route('series', [
-            'id' => $videoId, 'season' => 2, '_fragment' => 'season',
-        ]));
-
-        $response->assertOk()->assertSee('data-title-releases', false)
-            ->assertSee('Lazy.Test.S02E01.720p-GROUP')->assertDontSee('Lazy.Test.S01E01.720p-GROUP')
-            ->assertDontSee('<!DOCTYPE html>', false);
-        $this->assertSame(2, $response->viewData('selectedSeason'));
-    }
-
-    public function test_many_releases_only_render_selected_season_page(): void
-    {
-        $user = $this->createUser();
-        $videoId = $this->createShow();
-
-        for ($episode = 1; $episode <= 101; $episode++) {
-            $this->createMatchedRelease($videoId, 1, $episode, sprintf('Paged.Show.S01E%02d.720p-GROUP', $episode));
-            $this->createMatchedRelease($videoId, 2, $episode, sprintf('Paged.Show.S02E%02d.720p-GROUP', $episode));
-        }
-
-        $response = $this->actingAs($user)->followingRedirects()->get(route('series', ['id' => $videoId, 'season' => 1]));
-
-        $response->assertOk();
-        $response->assertSee('Paged.Show.S01E01.720p-GROUP');
-        $response->assertDontSee('Paged.Show.S02E01.720p-GROUP');
-        $this->assertCount(100, $response->viewData('results'));
-        $this->assertSame(101, $response->viewData('results')->total());
-    }
-
-    public function test_show_page_filters_episode_releases_by_air_year_within_the_selected_season(): void
-    {
-        $user = $this->createUser();
-        $videoId = $this->createShow();
-        $this->createMatchedRelease($videoId, 1, 1, 'Air.Year.2005.S01E01-GROUP', '2005-02-03');
-        $this->createMatchedRelease($videoId, 1, 2, 'Air.Year.2006.S01E02-GROUP', '2006-02-03');
-        $this->createMatchedRelease($videoId, 2, 1, 'Other.Season.2005.S02E01-GROUP', '2005-03-04');
-
-        $response = $this->actingAs($user)->followingRedirects()->get(route('series', [
-            'id' => $videoId,
-            'season' => 1,
-            'year' => '2005',
-        ]));
-
-        $response->assertOk();
-        $response->assertSee('Air.Year.2005.S01E01-GROUP');
-        $response->assertDontSee('Air.Year.2006.S01E02-GROUP');
-        $response->assertDontSee('Other.Season.2005.S02E01-GROUP');
-        $response->assertSee('Clear year filter');
-        $this->assertStringContainsString('year=2005', $response->getContent());
-        $this->assertStringContainsString('page=1', $response->getContent());
-    }
-
-    public function test_show_page_keeps_a_selected_season_that_has_no_releases_in_the_selected_year(): void
-    {
-        $user = $this->createUser();
-        $videoId = $this->createShow();
-        $this->createMatchedRelease($videoId, 1, 1, 'Selected.Season.2006.S01E01-GROUP', '2006-02-03');
-        $this->createMatchedRelease($videoId, 2, 1, 'Other.Season.2005.S02E01-GROUP', '2005-03-04');
-
-        $response = $this->actingAs($user)->followingRedirects()->get(route('series', [
-            'id' => $videoId,
-            'season' => 1,
-            'year' => '2005',
-        ]));
-
-        $response->assertOk();
-        $response->assertSee('No releases for this title.');
-        $response->assertDontSee('Selected.Season.2006.S01E01-GROUP');
-        $response->assertDontSee('Other.Season.2005.S02E01-GROUP');
-        $response->assertViewHas('selectedSeason', 1);
-    }
-
-    public function test_show_page_can_clear_the_air_year_filter_when_no_releases_match(): void
-    {
-        $user = $this->createUser();
-        $videoId = $this->createShow();
-        $this->createMatchedRelease($videoId, 1, 1, 'No.Match.S01E01-GROUP', '2005-02-03');
-
-        $response = $this->actingAs($user)->followingRedirects()->get(route('series', [
-            'id' => $videoId,
-            'year' => '1999',
-        ]));
-
-        $response->assertOk();
-        $response->assertSee('Clear year filter');
-        $response->assertSee('No releases for this title.');
-        $response->assertDontSee('No.Match.S01E01-GROUP');
-    }
-
-    public function test_show_page_renders_available_artwork_when_the_summary_is_empty(): void
-    {
-        $user = $this->createUser();
-        $videoId = $this->createShow('Summaryless Show', '2023-01-01', image: true, summary: '');
-        $this->createMatchedRelease($videoId, 1, 1, 'Summaryless.Show.S01E01-GROUP');
-
-        $coversRoot = $this->makeTempDirectory('series-detail-artwork');
-        config(['nntmux_settings.covers_path' => $coversRoot]);
-        File::ensureDirectoryExists($coversRoot.'/tvshows');
-        File::put($coversRoot.'/tvshows/'.$videoId.'.webp', 'poster');
-
-        $response = $this->actingAs($user)->followingRedirects()->get(route('series', ['id' => $videoId]));
-
-        $response->assertOk();
-        $response->assertSee('/covers/tvshows/'.$videoId.'.webp', false);
     }
 
     private function createSchema(): void
@@ -536,67 +349,6 @@ class SeriesControllerTest extends TestCase
         ]);
 
         return User::query()->findOrFail($userId);
-    }
-
-    private function createShow(
-        string $title = 'Paged Test Show',
-        string $started = '2024-01-01',
-        bool $image = false,
-        bool $banner = false,
-        string $summary = 'A test show.',
-    ): int {
-        $videoId = DB::table('videos')->insertGetId([
-            'type' => 0,
-            'title' => $title,
-            'started' => $started,
-            'countries_id' => 'US',
-        ]);
-
-        DB::table('tv_info')->insert([
-            'videos_id' => $videoId,
-            'summary' => $summary,
-            'publisher' => 'Test Network',
-            'image' => $image,
-            'banner' => $banner,
-        ]);
-
-        return (int) $videoId;
-    }
-
-    private function createMatchedRelease(
-        int $videoId,
-        int $season,
-        int $episode,
-        string $searchName,
-        ?string $firstAired = null,
-    ): void {
-        $episodeId = DB::table('tv_episodes')->insertGetId([
-            'videos_id' => $videoId,
-            'series' => $season,
-            'episode' => $episode,
-            'se_complete' => sprintf('S%02dE%02d', $season, $episode),
-            'title' => 'Episode '.$episode,
-            'firstaired' => $firstAired ?? now()->subDays($episode)->toDateString(),
-            'summary' => 'Episode summary.',
-        ]);
-
-        DB::table('releases')->insert([
-            'name' => $searchName,
-            'searchname' => $searchName,
-            'fromname' => 'poster@example.test',
-            'postdate' => now()->subMinutes($episode),
-            'adddate' => now()->subMinutes($episode),
-            'guid' => sha1($searchName),
-            'categories_id' => Category::TV_SD,
-            'groups_id' => null,
-            'size' => 1024,
-            'totalpart' => 1,
-            'passwordstatus' => 0,
-            'grabs' => 0,
-            'comments' => 0,
-            'videos_id' => $videoId,
-            'tv_episodes_id' => $episodeId,
-        ]);
     }
 
     private function resetGlobalComposerState(): void

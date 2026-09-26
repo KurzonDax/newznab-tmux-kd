@@ -245,22 +245,6 @@
       "filter": "test_generated_work_flags|test_pending_flags_without_evidence|test_consumed_flags_with_dense_retained_evidence",
       "estimated_seconds": 1
     },
-    "tv-browse": {
-      "category": "specialist",
-      "environment": "mariadb",
-      "paths": [
-        "app/Services/Releases/**",
-        "app/Http/Controllers/**",
-        "resources/views/**"
-      ],
-      "seconds": 120,
-      "files": [
-        "tests/Integration/TvBrowseMemoryMariaDbTest.php"
-      ],
-      "exclude_groups": [],
-      "filter": "test_tv_b_membership_sorting_expansion_and_dialog_contracts",
-      "estimated_seconds": 1
-    },
     "backup": {
       "category": "specialist",
       "environment": "backup",
@@ -328,17 +312,6 @@
       ],
       "exclude_groups": [],
       "group": "frontier-scale"
-    },
-    "tv-memory": {
-      "category": "acceptance",
-      "environment": "mariadb",
-      "paths": [],
-      "seconds": 600,
-      "files": [
-        "tests/Integration/TvBrowseMemoryMariaDbTest.php"
-      ],
-      "exclude_groups": [],
-      "filter": "test_cover_pages_stay_below_128_mib_when_the_catalogue_doubles"
     },
     "admission-comparison": {
       "category": "acceptance",

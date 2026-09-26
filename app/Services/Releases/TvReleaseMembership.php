@@ -6,24 +6,6 @@ namespace App\Services\Releases;
 
 final class TvReleaseMembership
 {
-    /**
-     * Resolve only explicit declarations within a positively identified show.
-     *
-     * @return array{episodes: list<int>, season: ?int, fullSeason: bool}
-     */
-    public function resolve(object $release, TvEpisodeCatalog $catalog): array
-    {
-        $descriptor = $this->describe($release);
-        if ($descriptor['season'] !== null) {
-            return ['episodes' => $catalog->members((int) $release->videos_id, $descriptor['season'], $descriptor['numbers']),
-                'season' => $descriptor['season'], 'fullSeason' => $descriptor['fullSeason']];
-        }
-        $episode = $catalog->linked((int) $release->videos_id, $descriptor['linked']);
-
-        return $episode === null ? ['episodes' => [], 'season' => null, 'fullSeason' => false]
-            : ['episodes' => [$episode['id']], 'season' => $episode['season'], 'fullSeason' => false];
-    }
-
     /** @return array{numbers: list<int>|null, season: ?int, fullSeason: bool, linked: int} */
     public function describe(object $release): array
     {

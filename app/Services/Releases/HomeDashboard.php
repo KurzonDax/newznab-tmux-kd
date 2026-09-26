@@ -22,8 +22,7 @@ final class HomeDashboard
             ->select('r.*')->selectRaw("ROW_NUMBER() OVER (PARTITION BY CASE WHEN r.categories_id BETWEEN 2000 AND 2999 THEN r.imdbid ELSE CAST(r.videos_id AS CHAR) END, CASE WHEN r.categories_id BETWEEN 2000 AND 2999 THEN 'movie' ELSE 'tv' END ORDER BY r.adddate DESC, r.id DESC) AS title_rank");
         $watched = DB::query()->fromSub($watchedQuery, 'watched')->where('title_rank', 1)->orderByDesc('adddate')->orderByDesc('id')->limit(5)->get();
         $this->releases->loadReleaseRows($watched);
-        $trendingRoot = $user->hasDirectPermission('view movies') ? BrowseRoot::Movies : ($user->hasDirectPermission('view tv') ? BrowseRoot::Tv : null);
-        $trendingState = $trendingRoot ? $this->state($trendingRoot, 'covers', 6, sort: 'grabs', trending: true) : null;
+        $trendingState = $user->hasDirectPermission('view movies') ? $this->state(BrowseRoot::Movies, 'covers', 6, sort: 'grabs', trending: true) : null;
 
         return [
             'latestState' => $latestState, 'latest' => $latest, 'homeWatched' => $watched,

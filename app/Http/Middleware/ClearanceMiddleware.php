@@ -128,8 +128,6 @@ class ClearanceMiddleware
 
         // TV category
         if ($this->matchesCategoryPath($path, 'TV')
-            || $this->matchesCategoryPath($path, 'series')
-            || $this->matchesCategoryPath($path, 'trending-tv')
             || $this->matchesCategoryPath($path, 'myshows')) {
             if (! $user->hasDirectPermission('view tv')) {
                 return $this->abortCategoryDisabled('TV');

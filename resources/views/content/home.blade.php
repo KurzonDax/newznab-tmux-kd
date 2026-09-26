@@ -20,7 +20,7 @@
         @endforelse
     </section>
     <section class="home-section home-trending">
-        <div class="home-section-heading"><h2>Trending this week</h2><div>@can('view movies')<a href="{{ route('trending-movies') }}">Movies</a>@endcan @can('view tv')<a href="{{ route('trending-tv') }}">TV</a>@endcan</div></div>
+        <div class="home-section-heading"><h2>Trending this week</h2><div>@can('view movies')<a href="{{ route('trending-movies') }}">Movies</a>@endcan</div></div>
         @if($homeTrending)
             <x-release-browser :rows="$homeTrending" :state="$trendingState" :toolbar="false" :pager="false" :data-cover-url="route('browse', ['parentCategory' => $trendingState->root->value, 'view' => 'covers', 'sort' => 'grabs'])" empty-title="No trending titles yet." empty-message="Titles downloaded this week will appear here." />
         @else

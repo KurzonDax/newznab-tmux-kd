@@ -16,7 +16,7 @@ class MyShowsController extends BasePageController
             return $this->browse($request);
         }
         if (in_array($action, ['add', 'edit', 'doadd', 'doedit', 'delete'], true) && ctype_digit($id) && (int) $id > 0) {
-            return redirect()->route('title', ['root' => 'tv', 'id' => $id, 'watch' => 1]);
+            return redirect()->route('tv.show', ['videosId' => (int) $id]);
         }
 
         return redirect()->route('watchlist', ['tab' => 'tv']);

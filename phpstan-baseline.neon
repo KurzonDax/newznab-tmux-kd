@@ -451,12 +451,6 @@ parameters:
 			path: app/Models/UserActivityStat.php
 
 		-
-			message: '#^Method App\\Models\\Video\:\:getSeriesListUncached\(\) return type has no value type specified in iterable type array\.$#'
-			identifier: missingType.iterableValue
-			count: 1
-			path: app/Models/Video.php
-
-		-
 			message: '#^Access to an undefined property TeamTeaTime\\Forum\\Models\\Post\:\:\$author_id\.$#'
 			identifier: property.notFound
 			count: 1

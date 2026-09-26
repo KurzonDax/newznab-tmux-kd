@@ -16,7 +16,7 @@ class TitleController extends BasePageController
     public function show(Request $request, string $root, string $id, TitleMetadataLoader $metadata, TitleReleaseBrowser $browser): mixed
     {
         $category = BrowseRoot::fromRoute($root);
-        abort_unless(in_array($category, [BrowseRoot::Movies, BrowseRoot::Tv, BrowseRoot::Audio, BrowseRoot::Console, BrowseRoot::Games, BrowseRoot::Books], true), 404);
+        abort_unless(in_array($category, [BrowseRoot::Movies, BrowseRoot::Audio, BrowseRoot::Console, BrowseRoot::Games, BrowseRoot::Books], true), 404);
         $permission = 'view '.($category === BrowseRoot::Games ? 'pc' : $category->value);
         abort_unless($this->userdata->getDirectPermissions()->contains('name', $permission), 403);
         $id = $category === BrowseRoot::Movies ? preg_replace('/^tt/i', '', $id) : $id;
@@ -42,10 +42,8 @@ class TitleController extends BasePageController
         $watched = false;
         $watchCategories = [];
         $watchUrl = $removeWatchUrl = null;
-        if (in_array($root, [BrowseRoot::Movies, BrowseRoot::Tv], true)) {
-            $movie = $root === BrowseRoot::Movies;
-            $record = DB::table($movie ? 'user_movies' : 'user_series')->where('users_id', $this->userdata->id)
-                ->where($movie ? 'imdbid' : 'videos_id', $id)->first();
+        if ($root === BrowseRoot::Movies) {
+            $record = DB::table('user_movies')->where('users_id', $this->userdata->id)->where('imdbid', $id)->first();
             $watched = $record !== null;
             $saved = (string) ($record->categories ?? '');
             if ($watched) {

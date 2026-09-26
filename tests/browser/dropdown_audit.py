@@ -18,9 +18,6 @@ selected=[]
 for match in ['dropdown-sizing-fixture','section=api','section=profile','/invitations/create','prefix_search_renders','size=s','size=l','size=xl']:
     fixture=next((f for f in fixtures if match in f['uri'] or match in f['test']),None)
     if fixture and fixture not in selected:selected.append(fixture)
-for size in ['s','l','xl']:
-    fixture=next(f for f in fixtures if f['uri']=='/browse/tv?view=covers&size='+size)
-    selected.append(fixture)
 if args.match: selected=[f for f in selected if args.match in f['uri']]
 records=[]
 with sync_playwright() as pw:
@@ -41,17 +38,6 @@ with sync_playwright() as pw:
             assert control['width']<=control['containerWidth']+1,control
             assert control['left']>=-1 and control['right']<=width+1,control
         assert page.evaluate('document.documentElement.scrollWidth')<=width+1
-        if current['uri'].startswith('/browse/tv'):
-            if width==1869:
-                controls=page.locator('.release-browser-toolbar').first.locator('input[name=q],select[name=year],select[name=network],select[name=sort]')
-                assert controls.count()==4
-                tops=controls.evaluate_all('(els)=>els.map(e=>e.getBoundingClientRect().top)')
-                assert max(tops)-min(tops)<1,tops
-            for row in page.locator('.release-cover-metadata').all():
-                badge=row.locator('.release-chip').first.bounding_box()
-                watch=row.locator('.watchlist-button').first.bounding_box()
-                if badge and watch and abs(badge['y']-watch['y'])<1:
-                    assert abs(badge['height']-watch['height'])<1 and badge['height']>=36,(badge,watch)
         records.append({'fixture':current['uri'],'stage':stage,'viewport':width,'scheme':scheme,'dark':dark,'controls':result})
     for current in selected:
         for width,height in [(390,844),(768,1024),(1869,1280),(2560,1440)]:

@@ -93,7 +93,6 @@ use App\Http\Controllers\ReleaseViewPreferencesController;
 use App\Http\Controllers\RssController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SearchSuggestController;
-use App\Http\Controllers\SeriesController;
 use App\Http\Controllers\StatusPageController;
 use App\Http\Controllers\TermsController;
 use App\Http\Controllers\TitleController;
@@ -244,8 +243,6 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         Route::get('tv/shows', [TvShowsController::class, 'index'])->name('tv.shows');
         Route::get('tv/search', [TvShowsController::class, 'search'])->name('tv.search');
         Route::get('tv/show/{videosId}/{season?}', [TvShowController::class, 'show'])->whereNumber(['videosId', 'season'])->name('tv.show');
-        Route::match(['GET', 'POST'], 'series/{id?}', [SeriesController::class, 'index'])->name('series');
-        Route::match(['GET', 'POST'], 'trending-tv', [SeriesController::class, 'showTrending'])->name('trending-tv');
         Route::match(['GET', 'POST'], 'myshows', [MyShowsController::class, 'show'])->name('myshows');
         Route::match(['GET', 'POST'], 'myshows/browse', [MyShowsController::class, 'browse'])->name('myshows.browse');
         // Movies-related routes

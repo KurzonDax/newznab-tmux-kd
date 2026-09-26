@@ -64,9 +64,8 @@ with sync_playwright() as pw:
     context.route('**/*', respond)
     page = context.new_page()
     page.on('pageerror', lambda error: errors.append(str(error)))
-    contexts = [(f'/browse/{category}', view) for category in ['movies', 'tv', 'audio', 'console', 'games', 'books', 'xxx']
+    contexts = [(f'/browse/{category}', view) for category in ['movies', 'audio', 'console', 'games', 'books', 'xxx']
                 for view in (['table', 'covers'] if category == 'games' else ['table', 'cards', 'covers'])]
-    contexts += [('/series', 'table'), ('/title/tv/1975', 'table')]
     if args.match: contexts = [item for item in contexts if args.match in item[0]]
     for path, view in contexts:
         page.set_viewport_size({'width': 390, 'height': 844})
@@ -74,23 +73,17 @@ with sync_playwright() as pw:
             page.goto('http://localhost' + path + '?view=' + view + '&year=1970s', wait_until='networkidle')
             page.wait_for_function('window.Alpine !== undefined')
         def count(expected):
-            selector = '.tv-directory-card' if path == '/series' else ('[data-cover-tile]' if view == 'covers' else '[data-release-row]')
+            selector = '[data-cover-tile]' if view == 'covers' else '[data-release-row]'
             expect(page.locator(selector)).to_have_count(expected)
         def picker(): return page.locator('[data-year-picker]').first
         def submit():
-            if path == '/series': page.locator('form.tv-directory-toolbar button[type=submit]').click()
-            else: picker().locator('[data-year-apply]').click()
+            picker().locator('[data-year-apply]').click()
             page.wait_for_load_state('networkidle')
         load()
         count(3)
-        if path.startswith('/title/'):
-            with page.expect_response(lambda response: '_fragment=releases' in response.url):
-                page.locator('.title-season-tabs a[data-title-page]').first.click()
-            page.wait_for_function('document.querySelector("[data-year-picker] select").value === "1970s" && !Alpine.$data(document.querySelector("[x-data=titleOverview]")).loading')
         expect(picker().locator('option[value="1900"]')).to_have_count(1)
         expect(picker().locator('option[value="1900s"]')).to_have_count(1)
         picker().locator('select').select_option('1975')
-        if path == '/series': submit()
         page.wait_for_load_state('networkidle')
         count(1)
         for start, end, expected in [('1970', '1975', 2), ('1975', '', 3), ('', '1975', 3), ('1980', '1970', 4), ('', '', 5)]:
@@ -130,7 +123,6 @@ with sync_playwright() as pw:
         picker().locator('[name=year_to]').fill('1975')
         submit()
         picker().locator('select').select_option('')
-        if path == '/series': submit()
         page.wait_for_load_state('networkidle')
         count(5)
         assert not any(name in parse_qs(urlparse(page.url).query) for name in ['year', 'year_from', 'year_to'])

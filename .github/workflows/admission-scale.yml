@@ -10,7 +10,6 @@
           "options": [
             "admission-scale",
             "frontier-scale",
-            "tv-memory",
             "admission-comparison",
             "ingestion-scale",
             "recovery-index-scale",

@@ -23,7 +23,7 @@ class PolicyTest(unittest.TestCase):
             plan = self.plan(path)
             self.assertTrue(plan['php'])
             self.assertIn('ingestion', plan['suites'])
-            self.assertNotIn('tv-memory', plan['suites'])
+            self.assertNotIn('frontier-scale', plan['suites'])
             self.assertEqual(len(plan['suites']), len(set(sum(plan['lanes'], []))))
 
     def test_docs_skip_runtime_but_blade_keeps_php(self):

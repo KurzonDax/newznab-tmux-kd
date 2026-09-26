@@ -64,7 +64,7 @@ export function releaseCoverBrowser() {
                 if (!response.ok || response.redirected) throw new Error('Could not load releases');
                 const html = await response.text();
                 if (request.signal.aborted || this.coverRequest !== request) return;
-                if (!html.includes('data-release-table') && !html.includes('data-episode-releases')) throw new Error('Unexpected response');
+                if (!html.includes('data-release-table')) throw new Error('Unexpected response');
                 this.setCoverContent(html);
                 this.selectionChanged();
                 this.$nextTick(() => {
@@ -109,7 +109,7 @@ export function releaseCoverBrowser() {
             const tileBounds = this.coverTile.getBoundingClientRect();
             const panelBounds = this.coverPanel.getBoundingClientRect();
             this.coverPanel.style.setProperty('--cover-pointer', (tileBounds.left + tileBounds.width / 2 - panelBounds.left) + 'px');
-            this.open = this.browserRoot.dataset.root === 'tv' || window.matchMedia('(max-width: 640px)').matches;
+            this.open = window.matchMedia('(max-width: 640px)').matches;
             this.coverPanel.setAttribute('role', this.open ? 'dialog' : 'region');
             if (this.open) this.coverPanel.setAttribute('aria-modal', 'true');
             else this.coverPanel.removeAttribute('aria-modal');
