@@ -134,6 +134,16 @@ final class TvShowPageTest extends TestCase
             ->assertSee('href="'.route('tv.show', ['videosId' => self::SHOW, 'season' => 1, 'resolution' => ['sd']]).'"', false);
     }
 
+    public function test_a_page_opened_without_a_season_tells_its_script_the_season_it_rendered(): void
+    {
+        $this->tv(1, 1, posted: '2026-09-01 00:00:00');
+        $this->tv(2, 1, posted: '2026-09-20 00:00:00');
+        $this->tv(3, 1, posted: '2026-09-10 00:00:00');
+
+        $root = $this->between($this->page('/tv/show/'.self::SHOW.'?resolution[]=sd')->assertOk(), 'x-data="tvEpisodeList"', '>');
+        $this->assertStringContainsString('data-page-url="'.e(route('tv.show', ['videosId' => self::SHOW, 'season' => 2, 'resolution' => ['sd']])).'"', $root);
+    }
+
     public function test_from_nine_seasons_the_row_reads_season_then_numbers_named_season_n(): void
     {
         foreach (range(0, 8) as $season) {

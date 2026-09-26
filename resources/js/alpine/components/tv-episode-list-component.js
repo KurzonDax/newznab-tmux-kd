@@ -61,6 +61,7 @@ export function tvEpisodeList() {
         selectedCount: 0,
         screen: null,
         show: '',
+        pageUrl: '',
         selection: new Set(),
         sort: { key: 'size', dir: -1 },
         request: null,
@@ -68,6 +69,8 @@ export function tvEpisodeList() {
         init() {
             this.screen = this.$el;
             this.show = this.screen.dataset.show;
+            // The URL of what the page rendered, season included, even when the address bar has none.
+            this.pageUrl = this.screen.dataset.pageUrl ?? window.location.href;
             this.selection = new Set(readJson(selectionKey(this.show)) ?? []);
             this.syncBoxes();
             const leaving = readJson(SWITCH_KEY);
@@ -134,7 +137,7 @@ export function tvEpisodeList() {
             row.setAttribute('data-open', '');
             button.setAttribute('aria-expanded', 'true');
             try {
-                const html = await fetchList(episodeUrl(window.location.href, button.dataset.ep), undefined, 'episode');
+                const html = await fetchList(episodeUrl(this.pageUrl, button.dataset.ep), undefined, 'episode');
                 if (!row.hasAttribute('data-open')) return;
                 releases.innerHTML = html;
                 this.arrange(releases);
@@ -170,8 +173,9 @@ export function tvEpisodeList() {
 
         async applyFilter(event) {
             const { name, values } = event.detail;
-            const url = listUrl(filterUrl(window.location.href, name, values).toString(), []);
-            window.history.replaceState(null, '', url.toString());
+            const url = listUrl(filterUrl(this.pageUrl, name, values).toString(), []);
+            this.pageUrl = url.toString();
+            window.history.replaceState(null, '', this.pageUrl);
             this.screen.querySelectorAll('.tv-season-tabs a').forEach(tab => {
                 tab.setAttribute('href', filterUrl(tab.href, name, values).toString());
             });
