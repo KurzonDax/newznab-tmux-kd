@@ -3,7 +3,8 @@
  *
  * Scans the DOM for x-data attributes that match known lazy components.
  * Only imports the JS modules for components actually present on the page.
- * After all needed modules are loaded, calls Alpine.start().
+ * Once every needed module has loaded or failed, calls Alpine.start(); roots of a
+ * component whose module failed are marked x-ignore first so Alpine skips them.
  *
  * Dynamic import() is CSP-compliant (no eval / new Function).
  */
@@ -78,49 +79,61 @@ const lazyComponentMap = {
 };
 
 /**
+ * The Alpine component name an x-data root uses, or null.
+ * Handles: x-data="componentName", x-data="componentName()", x-data="{ ... }" (null).
+ */
+function componentName(el) {
+    // Extract identifier before ( or whitespace; inline objects like { show: true } don't match
+    const match = (el.getAttribute('x-data') || '').trim().match(/^([a-zA-Z_$][a-zA-Z0-9_$]*)/);
+    return match ? match[1] : null;
+}
+
+/**
  * Extract Alpine component names from all x-data attributes in the DOM.
- * Handles: x-data="componentName", x-data="componentName()", x-data="{ ... }" (skipped).
  */
 function getUsedComponentNames() {
     const names = new Set();
     document.querySelectorAll('[x-data]').forEach(el => {
-        const raw = (el.getAttribute('x-data') || '').trim();
-        // Skip inline objects like { show: true }
-        if (!raw || raw.startsWith('{')) return;
-        // Extract identifier before ( or whitespace
-        const match = raw.match(/^([a-zA-Z_$][a-zA-Z0-9_$]*)/);
-        if (match) names.add(match[1]);
+        const name = componentName(el);
+        if (name) names.add(name);
     });
     return names;
 }
 
 /**
+ * Mark every root of a component whose module failed to load with x-ignore, so
+ * Alpine skips it (and its subtree) instead of evaluating an undefined component
+ * and removing the x-cloak that keeps its dialog frame hidden.
+ */
+function ignoreRoots(name) {
+    document.querySelectorAll('[x-data]').forEach(el => {
+        if (componentName(el) === name) el.setAttribute('x-ignore', '');
+    });
+}
+
+/**
  * Load only the lazy components found on the current page, then start Alpine.
+ * A component whose module fails to load stays uninitialised; the rest start normally.
+ * Returns a promise that settles once Alpine has started (awaited by the tests).
  */
 export function loadAndStart() {
-    const usedNames = getUsedComponentNames();
-    const imports = new Set(); // deduplicate (multiple names → same file)
+    const names = [...getUsedComponentNames()].filter(name => lazyComponentMap[name]);
 
-    for (const name of usedNames) {
-        if (lazyComponentMap[name]) {
-            imports.add(lazyComponentMap[name]);
-        }
-    }
-
-    if (imports.size === 0) {
+    if (names.length === 0) {
         Alpine.start();
         enableTransitions();
-        return;
+        return Promise.resolve();
     }
 
     // Load all needed modules in parallel, then start Alpine
-    Promise.all([...imports].map(fn => fn()))
-        .then(() => {
-            Alpine.start();
-            enableTransitions();
-        })
-        .catch(err => {
-            console.error('[lazy-loader] Failed to load component:', err);
+    return Promise.allSettled(names.map(name => lazyComponentMap[name]()))
+        .then(results => {
+            results.forEach((result, i) => {
+                if (result.status === 'rejected') {
+                    console.error(`[lazy-loader] Failed to load component ${names[i]}:`, result.reason);
+                    ignoreRoots(names[i]);
+                }
+            });
             Alpine.start();
             enableTransitions();
         });
