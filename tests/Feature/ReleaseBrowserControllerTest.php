@@ -573,12 +573,6 @@ final class ReleaseBrowserControllerTest extends TestCase
     public function test_watching_preserves_per_title_category_choices(string $root, int $categoryId, string $table, string $key): void
     {
         ProductionTables::fromAuthority()->create('movieinfo', ['id', 'imdbid', 'title', 'year', 'genre', 'rating']);
-        Schema::create('videos', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->string('title');
-            $table->string('started')->nullable();
-        });
-        ProductionTables::fromAuthority()->create('tv_info', ['videos_id', 'publisher']);
         DB::table('categories')->insert(['id' => $categoryId + 10, 'title' => 'Excluded quality', 'root_categories_id' => $categoryId - 30]);
         $user = $this->browserUser();
         DB::table($table)->insert([
@@ -774,7 +768,7 @@ final class ReleaseBrowserControllerTest extends TestCase
         @$document->loadHTML($expanded->getContent());
         $xpath = new \DOMXPath($document);
         $this->assertSame(5, $xpath->query('//*[@data-release-select]')->length);
-        $this->assertSame(in_array($root, ['movies', 'tv'], true) ? 25 : 20, $xpath->query('//*[@data-row-action]')->length);
+        $this->assertSame($root === 'movies' ? 25 : 20, $xpath->query('//*[@data-row-action]')->length);
         $this->assertSame(5, $xpath->query('//*[contains(@class,"nfo-badge")]')->length);
         $this->get('/browse/'.$root.'?view=covers&_fragment=cover&cover=999')->assertNotFound();
     }
@@ -991,22 +985,17 @@ final class ReleaseBrowserControllerTest extends TestCase
             'genre' => 'Mystery', 'artist' => 'An artist', 'author' => 'An author', 'publisher' => 'A publisher',
             'platform' => 'PS5', 'esrb' => 'T', 'releasedate' => '2024-01-01', 'publishdate' => '2024-01-01', 'genres_id' => 1]);
         DB::table('genres')->insert(['id' => 1, 'title' => 'Mystery']);
-        if ($root === 'tv') {
-            DB::table('tv_info')->insert(['videos_id' => 1, 'publisher' => 'A network']);
-        }
         for ($id = 1; $id <= 5; $id++) {
             $this->release('Encoding '.$id, [$foreignKey => '1', 'categories_id' => $categoryId, 'nfostatus' => 1]);
         }
         $this->actingAs($this->browserUser());
         $large = $this->get('/browse/'.$root.'?view=covers&size=l')->assertOk();
-        $large->assertSee('5 releases')->assertDontSee('Encoding 1')->assertSee(match ($root) {
-            'tv' => 'A network', 'console' => 'PS5', default => 'Mystery'
-        });
+        $large->assertSee('5 releases')->assertDontSee('Encoding 1')->assertSee($root === 'console' ? 'PS5' : 'Mystery');
         $xl = $this->get('/browse/'.$root.'?view=covers&size=xl')->assertOk();
         $xl->assertSee('Metadata title')->assertSee('data-cover-release', false)->assertSee('View all 5 releases');
         $this->assertSame(2, substr_count($xl->getContent(), 'data-cover-release='));
         $this->assertSame(2, substr_count($xl->getContent(), 'data-row-action="download"'));
-        $this->assertSame(in_array($root, ['movies', 'tv'], true) ? 1 : 0, preg_match_all('/\sdata-cover-watch(?:=|\s|>)/', $large->getContent()));
+        $this->assertSame($root === 'movies' ? 1 : 0, preg_match_all('/\sdata-cover-watch(?:=|\s|>)/', $large->getContent()));
     }
 
     public function test_legacy_cover_pages_redirect_to_the_shared_browser_with_filters_and_category_preserved(): void
@@ -1154,10 +1143,6 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->createGenresTable();
         ProductionTables::fromAuthority()->create('release_nfos', ['releases_id']);
         ProductionTables::fromAuthority()->create('dnzb_failures', ['release_id', 'failed']);
-        if ($entityTable === 'videos') {
-            ProductionTables::fromAuthority()->create('tv_episodes', ['id', 'videos_id', 'series', 'episode', 'title', 'firstaired']);
-            ProductionTables::fromAuthority()->create('tv_info', ['videos_id', 'publisher', 'image']);
-        }
     }
 
     /**

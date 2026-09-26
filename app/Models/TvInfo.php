@@ -94,10 +94,6 @@ class TvInfo extends Model
             ->where($column, false)
             ->update([$column => true]);
 
-        if ($updated > 0) {
-            Video::invalidateSeriesListCache();
-        }
-
         return $updated > 0;
     }
 }

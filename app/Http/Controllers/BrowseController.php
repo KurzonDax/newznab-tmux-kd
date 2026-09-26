@@ -10,7 +10,6 @@ use App\Models\Category;
 use App\Services\PosterIdentityBrowserContext;
 use App\Services\Releases\ReleaseBrowserQuery;
 use App\Services\Releases\ReleaseCoverBrowser;
-use App\Services\Releases\TvEpisodeBrowser;
 use Illuminate\Http\Request;
 
 class BrowseController extends BasePageController
@@ -53,14 +52,6 @@ class BrowseController extends BasePageController
         if ($request->input('_fragment') === 'cover') {
             $id = $request->input('cover');
             abort_unless(is_string($id), 404);
-            if ($root === BrowseRoot::Tv && $state->view === 'covers') {
-                abort_unless(ctype_digit($id), 404);
-                $per = $request->integer('release_per', 24);
-                $rows = app(TvEpisodeBrowser::class)->releases($state, $this->userdata, (int) $id, $request->integer('release_page', 1), in_array($per, [24, 48, 100], true) ? $per : 24);
-                abort_if($rows->total() === 0, 404);
-
-                return view('components.release-browser.episode-expanded', compact('rows', 'state'));
-            }
             $rows = app(ReleaseCoverBrowser::class)->expanded($state, $this->userdata, $id, $request->integer('release_page', 1), $request->integer('release_per', 24));
 
             return view('components.release-browser.expanded-cover', ['rows' => $rows, 'state' => $state]);
@@ -73,10 +64,10 @@ class BrowseController extends BasePageController
             return redirect()->to($state->pageUrl($request, $results->lastPage()));
         }
         $title = $category === null ? $root->label() : $root->label().' · '.$category->title;
-        if (in_array($root, [BrowseRoot::Movies, BrowseRoot::Tv], true) && $state->view === 'covers' && $state->trending) {
+        if ($root === BrowseRoot::Movies && $state->view === 'covers' && $state->trending) {
             $title = 'Trending '.$root->label();
         }
-        if ($state->watching && in_array($root, [BrowseRoot::Movies, BrowseRoot::Tv], true)) {
+        if ($state->watching && $root === BrowseRoot::Movies) {
             $title = $root->label().' you follow';
         }
         if ($state->group !== '') {

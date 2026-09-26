@@ -4,15 +4,11 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Facades\Search;
-use App\Support\YearRange;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 
 /**
  * App\Models\Video.
@@ -56,8 +52,6 @@ use Illuminate\Support\Facades\DB;
  */
 class Video extends Model
 {
-    private const SERIES_LIST_CACHE_VERSION_KEY = 'video_series_list:version';
-
     protected $dateFormat = false;
 
     /**
@@ -145,114 +139,5 @@ class Video extends Model
         }
 
         return $res->count('videos.id');
-    }
-
-    /**
-     * Retrieves and returns a list of shows with eligible releases.
-     *
-     * @return array<string, mixed>
-     */
-    public static function getSeriesList(mixed $uid, string $letter = '', string $showname = '', ?YearRange $yearRange = null): array
-    {
-        $cacheVersion = (string) Cache::get(self::SERIES_LIST_CACHE_VERSION_KEY, '0');
-        $cacheKey = 'video_series_list:'.md5(serialize([$cacheVersion, (string) $uid, $letter, $showname, $yearRange?->from, $yearRange?->to]));
-
-        return Cache::remember($cacheKey, now()->addMinutes((int) config('nntmux.cache_expiry_medium', 60)), function () use ($uid, $letter, $showname, $yearRange): array {
-            return self::getSeriesListUncached($uid, $letter, $showname, $yearRange);
-        });
-    }
-
-    public static function invalidateSeriesListCache(): void
-    {
-        Cache::forever(self::SERIES_LIST_CACHE_VERSION_KEY, bin2hex(random_bytes(16)));
-    }
-
-    /**
-     * @internal Used by {@see getSeriesList} with cache wrapper.
-     */
-    private static function getSeriesListUncached(mixed $uid, string $letter = '', string $showname = '', ?YearRange $yearRange = null): array
-    {
-        $params = [
-            'uid' => $uid,
-            'tv_root' => Category::TV_ROOT,
-            'tv_other' => Category::TV_OTHER,
-            'now' => now()->toDateTimeString(),
-        ];
-
-        $letterCondition = '';
-        if ($letter !== '') {
-            if ($letter === '0-9' || $letter === '[0-9]') {
-                $letterCondition = "AND videos.title REGEXP '^[0-9]'";
-            } else {
-                $letterCondition = 'AND videos.title LIKE :letter';
-                $params['letter'] = $letter.'%';
-            }
-        }
-
-        $shownameCondition = '';
-        if ($showname !== '') {
-            if (Search::isAvailable()) {
-                $hits = Search::searchTvShows($showname, 800);
-                $vids = array_values(array_filter(array_map(static fn ($id): int => (int) $id, $hits['id'] ?? [])));
-                if ($vids === []) {
-                    return [];
-                }
-                $shownameCondition = 'AND videos.id IN ('.implode(',', $vids).')';
-            } else {
-                $shownameCondition = 'AND videos.title LIKE :showname';
-                $params['showname'] = '%'.$showname.'%';
-            }
-        }
-
-        $yearCondition = '';
-        if (($startDate = $yearRange?->startDate()) !== null) {
-            $yearCondition .= ' AND videos.started >= :started_from';
-            $params['started_from'] = $startDate;
-        }
-        if (($endDate = $yearRange?->endDate()) !== null) {
-            $yearCondition .= ' AND videos.started <= :started_to';
-            $params['started_to'] = $endDate;
-        }
-
-        $sql = "
-            SELECT
-                videos.*,
-                tve.firstaired AS prevdate,
-                tve.title AS previnfo,
-                tvi.publisher,
-                tvi.image,
-                tvi.banner,
-                us.id AS userseriesid
-            FROM videos
-            INNER JOIN tv_info AS tvi ON videos.id = tvi.videos_id
-            INNER JOIN (
-                SELECT videos_id, MAX(firstaired) AS max_firstaired
-                FROM tv_episodes
-                WHERE firstaired < :now
-                GROUP BY videos_id
-            ) AS latest_ep ON videos.id = latest_ep.videos_id
-            INNER JOIN tv_episodes AS tve
-                ON videos.id = tve.videos_id
-                AND tve.firstaired = latest_ep.max_firstaired
-            LEFT JOIN user_series AS us
-                ON videos.id = us.videos_id
-                AND us.users_id = :uid
-            WHERE EXISTS (
-                SELECT 1
-                FROM releases AS r
-                WHERE r.videos_id = videos.id
-                AND r.categories_id BETWEEN :tv_root AND :tv_other
-            )
-            {$letterCondition}
-            {$shownameCondition}
-            {$yearCondition}
-            GROUP BY videos.id
-            ORDER BY videos.title ASC
-        ";
-
-        $results = DB::select($sql, $params);
-
-        // Convert stdClass objects to arrays for backward compatibility
-        return array_map(fn ($row) => (array) $row, $results);
     }
 }

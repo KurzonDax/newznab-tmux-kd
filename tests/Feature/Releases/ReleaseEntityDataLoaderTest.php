@@ -68,6 +68,7 @@ final class ReleaseEntityDataLoaderTest extends TestCase
         self::assertSame($root, $entities[1]->root);
         self::assertSame($root === 'tv' ? 2 : null, $entities[1]->season);
         self::assertSame($root === 'tv' ? 4 : null, $entities[1]->episode);
+        self::assertSame($root === 'tv' ? route('tv.show', ['videosId' => 7]) : route('title', ['root' => $root, 'id' => '7']), $entities[1]->titleUrl());
         foreach ($queries as $query) {
             self::assertStringNotContainsString('*', $query->sql);
             self::assertStringNotContainsString('plot', $query->sql);

@@ -137,7 +137,7 @@ final class WatchlistControllerTest extends TestCase
         $this->get('/mymovies')->assertRedirect('/watchlist?tab=movies');
         $this->get('/myshows')->assertRedirect('/watchlist?tab=tv');
         $this->get('/mymovies?id=add&imdb=0137523')->assertRedirect('/title/movies/0137523?watch=1');
-        $this->get('/myshows?action=add&id=12')->assertRedirect('/title/tv/12?watch=1');
+        $this->get('/myshows?action=add&id=12')->assertRedirect(route('tv.show', ['videosId' => 12]));
         $this->get('/mymovies/browse')->assertRedirect('/browse/movies?watching=1');
         $this->get('/mymovies?id=browse')->assertRedirect('/browse/movies?watching=1');
         $this->get('/myshows/browse')->assertRedirect('/browse/tv?watching=1');
@@ -191,7 +191,7 @@ final class WatchlistControllerTest extends TestCase
         $this->postJson('/watchlist/movies/0137523', ['categories' => [2040]])->assertOk();
         $this->getJson('/watchlist/tv/12')->assertOk()->assertJsonPath('selected', [5040]);
         $this->postJson('/watchlist/tv/12', ['categories' => [5040]])->assertOk();
-        $this->get('/watchlist?tab=tv')->assertOk()->assertSee('Show')->assertSee('UHD');
+        $this->get('/watchlist?tab=tv')->assertOk()->assertSee('Show')->assertSee('UHD')->assertSee('href="'.route('tv.show', ['videosId' => 12]).'"', false);
     }
 
     public function test_header_and_action_counts_use_the_same_accessible_roots(): void

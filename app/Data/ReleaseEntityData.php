@@ -18,7 +18,10 @@ final readonly class ReleaseEntityData
 
     public function titleUrl(): ?string
     {
-        return in_array($this->root, ['movies', 'tv', 'audio', 'console', 'games', 'books'], true)
-            ? route('title', ['root' => $this->root, 'id' => $this->id]) : null;
+        return match (true) {
+            $this->root === 'tv' => route('tv.show', ['videosId' => $this->id]),
+            in_array($this->root, ['movies', 'audio', 'console', 'games', 'books'], true) => route('title', ['root' => $this->root, 'id' => $this->id]),
+            default => null,
+        };
     }
 }

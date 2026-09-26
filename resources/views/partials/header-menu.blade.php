@@ -18,7 +18,6 @@
                         <a href="{{ route('trending-movies') }}"><i class="fas fa-fire" aria-hidden="true"></i>Trending Movies</a>
                     @endif
                     @if($root === \App\Enums\BrowseRoot::Tv)
-                        <a href="{{ route('trending-tv') }}"><i class="fas fa-fire" aria-hidden="true"></i>Trending TV</a>
                         <a href="{{ route('tv.shows') }}"><i class="fas fa-tv" aria-hidden="true"></i>TV Shows</a>
                         <a href="{{ route('watchlist', ['tab' => 'tv']) }}"><i class="fas fa-heart" aria-hidden="true"></i>My Shows</a>
                     @endif

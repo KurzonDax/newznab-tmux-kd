@@ -73,7 +73,6 @@ final class ReleaseCoverBrowser
             BrowseRoot::Console => app(ConsoleService::class)->getConsoleRange($state->page, $categories, $offset, $state->per, $order, $excluded, scope: $scope),
             BrowseRoot::Games => app(GamesService::class)->getGamesRange($state->page, $categories, $offset, $state->per, $order, excludedCats: $excluded, scope: $scope),
             BrowseRoot::Books => app(BookService::class)->getBookRange($state->page, $categories, $offset, $state->per, $order, $excluded, scope: $scope),
-            BrowseRoot::Tv => app(TvEpisodeBrowser::class)->paginate($state, $user),
             BrowseRoot::Adult => $this->adult($state, $user),
             default => collect(),
         };
@@ -94,7 +93,6 @@ final class ReleaseCoverBrowser
         $entity = $firstRow?->entity;
         $line = match ($root) {
             BrowseRoot::Movies => [$cover->year ?? '', empty($cover->rating) ? '' : '★ '.$cover->rating],
-            BrowseRoot::Tv => [$cover->publisher ?? ''],
             BrowseRoot::Audio => [$cover->artist ?? '', $cover->year ?? ''],
             BrowseRoot::Console => [$cover->platform ?? '', substr((string) ($cover->releasedate ?? ''), 0, 4)],
             BrowseRoot::Games => ['PC', substr((string) ($cover->releasedate ?? ''), 0, 4)],
@@ -103,12 +101,10 @@ final class ReleaseCoverBrowser
         };
         $badge = (string) match ($root) {
             BrowseRoot::Console => $cover->esrb ?? '',
-            BrowseRoot::Tv => '',
             default => $cover->genre ?? '',
         };
         $metadata = match ($root) {
             BrowseRoot::Movies => [empty($cover->rating) ? '' : '★ '.$cover->rating, $badge],
-            BrowseRoot::Tv => [$cover->publisher ?? ''],
             BrowseRoot::Audio => [$cover->artist ?? '', $badge, $cover->publisher ?? ''],
             BrowseRoot::Console => [$cover->platform ?? '', $cover->publisher ?? '', $badge],
             BrowseRoot::Games => ['PC', $cover->publisher ?? '', $badge],
@@ -127,10 +123,7 @@ final class ReleaseCoverBrowser
             year: $entity?->year, metadata: array_values(array_filter($metadata)),
             releases: array_values($releases),
             titleUrl: route('title', ['root' => $root->value, 'id' => $id]),
-            watchUrl: match ($root) {
-                BrowseRoot::Movies, BrowseRoot::Tv => route('watchlist.picker', ['root' => $root->value, 'id' => $id]),
-                default => null,
-            },
+            watchUrl: $root === BrowseRoot::Movies ? route('watchlist.picker', ['root' => $root->value, 'id' => $id]) : null,
             watched: $watched,
         );
     }

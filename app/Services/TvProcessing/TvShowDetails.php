@@ -9,7 +9,6 @@ use App\Models\Genre;
 use App\Models\Network;
 use App\Models\Person;
 use App\Models\TvInfo;
-use App\Models\Video;
 use App\Services\TmdbClient;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Sleep;
@@ -111,7 +110,6 @@ final class TvShowDetails
         }
 
         DB::transaction(fn () => $this->store($videosId, $show));
-        Video::invalidateSeriesListCache();
     }
 
     private function resolveTmdbId(object $video): ?int

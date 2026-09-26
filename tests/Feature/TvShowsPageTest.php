@@ -325,10 +325,11 @@ final class TvShowsPageTest extends TestCase
         }
     }
 
-    public function test_the_old_directory_and_header_link_lead_to_the_wall(): void
+    public function test_the_old_directory_is_gone_and_the_header_link_leads_to_the_wall(): void
     {
-        $this->page('/series')->assertRedirect(route('tv.shows'));
-        $this->page('/series/M?year=1970s')->assertRedirect(route('tv.shows'));
+        foreach (['/series', '/series/M?year=1970s', '/series/12', '/trending-tv'] as $uri) {
+            $this->page($uri)->assertNotFound();
+        }
         $this->page('/tv/shows')->assertSee('href="'.route('tv.shows').'"><i class="fas fa-tv" aria-hidden="true"></i>TV Shows</a>', false);
     }
 

@@ -18,8 +18,8 @@ cases = {
     'DetailsControllerTest': 'details_header_uses',
     'PublicDropdownSizingTest': 'forum_selection',
     'SearchControllerTest': 'prefix_search_renders',
-    'ReleaseBrowserControllerTest': 'long_cover_metadata|tv_covers_group_identified|large_covers_render|other_root_filters|table_renders|toolbar_and_both|poster_identity_filter|movie_filters|search_accepts',
-    'TitleControllerTest': 'show_dialog_bounds|tv_directory|complete_long_cast|titles_without',
+    'ReleaseBrowserControllerTest': 'long_cover_metadata|large_covers_render|other_root_filters|table_renders|toolbar_and_both|poster_identity_filter|movie_filters|search_accepts',
+    'TitleControllerTest': 'complete_long_cast|titles_without',
     'PublicShellTest': 'only_administrators|shared_search',
     'AccountControllerTest': 'sections_render|invitation_sections|public_api_help|themed_errors',
 }

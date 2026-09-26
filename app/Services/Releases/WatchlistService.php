@@ -185,7 +185,7 @@ final class WatchlistService
                 year: substr((string) ($root === BrowseRoot::Movies ? ($title->year ?? '') : ($title->started ?? '')), 0, 4),
                 network: (string) ($title->network ?? ''), latest: $latest->get($id),
                 artwork: getImageAssetUrl($source['art'], $root === BrowseRoot::Movies ? $id.'-cover' : $id),
-                url: route('title', ['root' => $root->value, 'id' => $id]),
+                url: $root === BrowseRoot::Tv ? route('tv.show', ['videosId' => $id]) : route('title', ['root' => $root->value, 'id' => $id]),
                 categories: array_values(array_intersect_key($categories, array_flip($selected))),
             );
         });

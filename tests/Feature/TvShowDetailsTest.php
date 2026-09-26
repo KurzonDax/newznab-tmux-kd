@@ -5,12 +5,10 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Models\Category;
-use App\Models\Video;
 use App\Services\TvProcessing\Providers\TmdbProvider;
 use App\Services\TvProcessing\TvShowDetails;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
@@ -21,9 +19,6 @@ use Tests\TestCase;
 /** Show details come from TMDB on a show's first match and on later matches at most once a day. */
 final class TvShowDetailsTest extends TestCase
 {
-    /** {@see Video::invalidateSeriesListCache()} writes this key. */
-    private const string SERIES_LIST_CACHE_KEY = 'video_series_list:version';
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -52,7 +47,6 @@ final class TvShowDetailsTest extends TestCase
     {
         $this->insertShow(1, tmdb: 200, publisher: 'Home Box Office');
         Http::fake(['*tv/200?*' => Http::response($this->show())]);
-        $cacheVersion = Cache::get(self::SERIES_LIST_CACHE_KEY);
 
         $this->details()->refreshIfDue(1);
 
@@ -66,7 +60,6 @@ final class TvShowDetailsTest extends TestCase
         $this->assertSame('Home Box Office', $info->publisher);
         $this->assertSame(['Children', 'Drama', 'Fantasy', 'Sci-Fi'], $this->genreTitles(1));
         $this->assertSame(['Bryan', 'Aaron'], $this->castNames(1));
-        $this->assertNotSame($cacheVersion, Cache::get(self::SERIES_LIST_CACHE_KEY));
         Http::assertSent(fn (Request $request): bool => str_contains($request->url(), 'append_to_response=content_ratings%2Ccredits'));
         Sleep::assertSleptTimes(1);
     }
