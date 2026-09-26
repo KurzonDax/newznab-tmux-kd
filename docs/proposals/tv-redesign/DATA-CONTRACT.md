@@ -275,6 +275,7 @@ categories_id NOT IN (:userExclusions)`. No `nzbstatus` test. Every list filters
 | TV releases, rows with `videos_id = 0` | included by the page query above (no `videos_id` predicate; 10,464 visible on the production copy); rendered without poster, show line or watch button and never batched (`SPEC.md` 3.1) | no extra query |
 | "Showing X–Y of N" | `SELECT COUNT(*) … WHERE category_band = 5000 AND V [AND …]` on `ix_releases_band_count`, cached under the existing browse cache version (`ReleaseBrowseService::bumpCacheVersion()`, `:776-780`) keyed by filters + exclusions + password setting | selective filter **0.4 ms**; unfiltered **15 ms**, reading all 173 thousand TV index entries. This and the exact-middle page are the two places his "thousands, not hundreds of thousands" rule is not met; it is the price of counts that are right for every user with nothing stored twice. |
 | TV shows wall, "Newest releases first" / "Newest to the site first" | shows (`videos.type = 0` ⨝ `tv_info`, filters as `IN`, genre and person as `EXISTS` on the link tables) joined to `SELECT videos_id, MAX(postdate)` (or `MIN(adddate)`) `FROM releases WHERE videos_id > 0 GROUP BY videos_id`, which MariaDB answers from `ix_releases_videos_posted` as an index-only group-by | the group-by alone **5.8 ms / 17 thousand entries**; with all six filters, page 1 **6.6 ms**; no filter, last page **8.4 ms** |
+| Wall, per-user visibility (2026-09-25) | the group-by above, then `WHERE EXISTS (SELECT 1 FROM releases r WHERE r.videos_id = g.videos_id AND r.category_band = 5000 AND V)`; the count of shows the same way, cached under the browse cache version keyed by exclusions + password setting | page **6 ms**, count **24 ms** (lab, catalogue-sized table); the exact form, V inside the group-by, **90 ms** each, rejected |
 | Wall, "Newest premiere first", "A to Z" | `ix_tv_info_premiered` / the `videos` title index, `WHERE EXISTS (release for this show)` | **0.4 ms** |
 | Wall count, search box, filter option lists | counted / `LIKE` on 5,648 shows and 23 thousand people | 0.5–4 ms (`evidence/tv-shows-wall.md`) |
 | Show page: header counts, season tabs | `releases` (`videos_id = ?`, via `ix_releases_videos_posted`) ⨝ `release_tv_episodes` on `releases_id`; tabs = distinct `season` | **1.3 ms / 4,336 rows** (biggest show, 38 seasons, 1,416 releases) |
@@ -376,6 +377,11 @@ Downtime is not a concern, so the migrations fill what they add. No command.
   hours; no background refresh.
 - 2026-09-24: `release_tv_episodes` has `id`, `releases_id`, `season`, nullable `episode`
   (NULL = whole season; 0 = a real special); no sentinel, no second table.
+- 2026-09-25: the shows wall applies per-user visibility the cheap way: sort key from the
+  index-only group-by, then `EXISTS` one visible release per show (page 6 ms, count 24 ms);
+  the exact form (visibility inside the group-by, 90 ms) was rejected; a show's position
+  under "Newest releases first" may come from a hidden release. Season tabs on the show page
+  are page loads with the selection kept in `sessionStorage` per show.
 - 2026-09-24 (approved on the prototype): no "By air date" tab; releases with no matched show
   are listed; the shows-and-people search is a field in the TV toolbar and the site's top bar
   is untouched; genres reuse the existing `genres` table with `type = 5000` (#775); the linked

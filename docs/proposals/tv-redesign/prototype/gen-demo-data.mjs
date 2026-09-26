@@ -26,7 +26,7 @@ const LANGS = [['English', 40], ['Korean', 22], ['Portuguese', 8], ['Japanese', 
 const NETS = ['Northlight TV', 'Kanal Nio', 'Harbor+', 'Meridian One', 'Public Six', 'Tessera', 'Lumen Play', 'Ostrava Net', 'Seabird', 'Atlas Prime', 'Paperhouse', 'Station 12', 'Verdant', 'Kite Stream', 'Halcyon', 'Red Pier', 'Borealis', 'Quarto', 'JBN'];
 const RATINGS = ['TV-Y', 'TV-Y7', 'TV-G', 'TV-PG', 'TV-14', 'TV-MA'];
 const RLS = ['NTX', 'KOGi', 'PLAiD', 'FLUX', 'OTTER', 'HALO9', 'MiNT', 'BRASS', 'SPRUCE', 'QUILL', 'EMBER', 'TiDE', 'VOLT', 'PiNE'];
-const GROUPS = ['alt.binaries.example.tv', 'alt.binaries.example.hd', 'alt.binaries.example.uhd', 'alt.binaries.example.misc', 'alt.binaries.example.foreign'];
+const GROUPS = ['alt.binaries.example.tv', 'alt.binaries.example.hd', 'alt.binaries.example.uhd', 'alt.binaries.example.misc', 'alt.binaries.example.intl'];
 const POSTERS = ['courier <courier@example.invalid>', 'nightshift <ns@example.invalid>', 'Kestrel <k@example.invalid>', 'uploader7 <u7@example.invalid>', 'paperboat <pb@example.invalid>', 'anon <anon@example.invalid>'];
 const WORDS = ['The', 'Long', 'Way', 'Back', 'House', 'Rules', 'Small', 'Fires', 'Open', 'Water', 'Night', 'Shift', 'Cold', 'Start', 'Good', 'Neighbors', 'Old', 'Debts', 'New', 'Money', 'Second', 'Chances', 'Dead', 'Reckoning', 'Home', 'Truths', 'Fair', 'Warning', 'Late', 'Arrivals', 'Loose', 'Ends'];
 const epTitle = () => sample(WORDS, int(2, 4)).join(' ');

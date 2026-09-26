@@ -12,7 +12,7 @@ under `docs/proposals/tv-redesign/prototype/`:
 |---|---|
 | `tv.html`, `tokens.css` | the approved prototype, byte-for-byte the one Randall reviewed |
 | `data.json` … `repair.json`, `posters/`, `previews/`, `fixtures.json` | the invented dataset (`gen-demo-data.mjs`, `make-demo-art.mjs` regenerate it) |
-| `check.mjs` | 207 behaviour checks; `0 failures` on this dataset |
+| `check.mjs` | 225 behaviour checks; `0 failures` on this dataset |
 | `reference/<state>-<dark|light>.webp` | 26 screen states × 2 themes at 1600 × 1000 |
 | `reference/measurements.json` | computed type, colour, radius, padding and size of 82 named parts, per theme |
 | `reference/tokens.json` | the resolved value of every colour token and chip hue, per theme |
@@ -98,6 +98,23 @@ Two semantic tokens carry the rule the ramp alone cannot: **`--accent-surface`**
 the solid resolution chips, and under `hues` the media info block's section and value chips).
 These are status colours in `DESIGN.md`'s sense: literal and reserved, never the accent.
 
+**Releases-list row button tokens** (new 2026-09-26, on the maintainer's review; `SPEC.md`
+3.1 and appendix A). One hue per button, in OKLCH: Copy NZB link 235, Add to cart 150, Watch
+300 (the prototype's `--b-cp`, `--b-ct`, `--b-w`). With `h` the button's hue:
+
+| State | Dark ground / icon | Light ground / icon |
+|---|---|---|
+| off | `oklch(0.31 0.06 h)` / `oklch(0.86 0.11 h)` | `oklch(0.92 0.045 h)` / `oklch(0.45 0.14 h)` |
+| off, hover | ground `oklch(0.37 0.08 h)` | ground `oklch(0.87 0.07 h)` |
+| on (Cart, Watch only) | `oklch(0.72 0.15 h)` / `oklch(0.18 0.04 h)` | `oklch(0.50 0.15 h)` / `#ffffff` |
+| on, hover | ground `oklch(0.78 0.13 h)` | ground `oklch(0.44 0.15 h)` |
+
+Download keeps `--accent-surface` / `--accent-on` and has no on state; Copy link has no on
+state. The focus ring on Copy link, Cart and Watch is `--text-default`. Every icon is at
+least 3:1 on its ground, off and on, in both themes (`check.mjs`). These apply to the
+releases list only; the show page and details tables keep the neutral round button with a
+coral pressed state.
+
 **Shadows**: floating layers (menus, dialogs, search results, selection bar) use shadow and
 **no border**: light `0 14px 30px -14px rgb(30 30 20 / .35)`, dark `0 18px 40px -14px rgb(0 0 0 / .7)`.
 
@@ -118,7 +135,19 @@ Exact values for every part are in `reference/measurements.json`; the rules behi
   (72 × 26px, fixed width so they form a column).
 - Content column: max 1500px with 40px gutters (`.wrap`).
 - Releases table: `table-layout: fixed`, column widths in `measurements.json`
-  → `releasesTableColumns` (34, 116, auto, 100, 80, 82, 64, 112, 68, 168 px).
+  → `releasesTableColumns` (34, 116, auto, 100, 80, 82, 112, 96 px: select, poster,
+  release, Resolution, Source, Size, Posted / Added, the 2 × 2 buttons). There is no Files
+  and no Grabs column (changed 2026-09-26 on the maintainer's review; the release column is
+  800 px at a 1600 px window). The show page and details release tables are unchanged: they
+  keep Files 64 and Grabs 76 and the one-line buttons (168 px).
+- Releases-list row buttons: a 2 × 2 grid of 32 px round buttons with 6 px gaps, Download and
+  Copy link on top, Cart and Watch below.
+- Group and poster chips on a releases-list row: the outline chip (`.rc.origin`: no fill,
+  1 px `--border-default` border, `--text-muted` text, `--text-default` on hover), 8 px apart,
+  as one unit (`inline-flex`, minimum 190 px) whose poster chip shortens with an ellipsis.
+- No-poster placeholder: the poster's 88 × 132 box on `--surface-panel-alt`; the name card
+  in 11 px weight 500 `--text-muted`, clamped to 4 lines, with the episode or date below in
+  tabular numerals; the tile a 30 px TV icon over "No poster" in 11 px.
 
 ---
 
@@ -134,8 +163,10 @@ Exact values for every part are in `reference/measurements.json`; the rules behi
 | Sort | `x-sort-dropdown`, `sort-dropdown.js` | restyled to the pill; writes `users.view_prefs` |
 | "Showing X–Y of N" line and bottom pager | new `x-pager-line`, `x-pager` | new; never omitted, never moves |
 | Release name / show line / chips | `x-release-facts`, `x-chip`, `x-release-completion-chips` | `x-chip` gains the tones `media`, `nfo`, `preview`, `sample`, `clip`, `listen`, `password`, `completion-ok / -mid / -low`; the separate repair chip and the Reported / Response chips are removed (`SPEC.md` 4) |
+| Group and poster chips on releases-list rows (2026-09-26) | `x-origin-chip` (`kind="group"` / `"poster"`, `href` `route('browse.all', ['group' => …])` / `['poster' => …]`, as `release-browser/origin` passes it) | at the end of the chip line on every releases-list row, wrapped together so the pair never splits and the poster name shortens with an ellipsis; the group label reads `a.b.` for `alt.binaries.`, the full name stays in the title; not on the show page or details release tables |
+| No-poster placeholder (2026-09-26) | new, in the releases list row | name card or "No poster" tile for releases with no matched show; the name is parsed per `SPEC.md` appendix A (the prototype's `showName()`) |
 | Resolution chip | new `x-resolution-chip` | new, fed by `releases.resolution` |
-| Row actions | `release-action*`, `cart-button.js`, `x-watch-button` (keeps today's picker behaviour) | restyled round; Report and Details buttons removed; **Copy NZB link** is new (`copyNzbLink` Alpine component, clipboard with an `execCommand` fallback, toast through `toast-notification.js`) |
+| Row actions | `release-action*`, `cart-button.js`, `x-watch-button` (keeps today's picker behaviour) | restyled round; Report and Details buttons removed; **Copy NZB link** is new (`copyNzbLink` Alpine component, clipboard with an `execCommand` fallback, toast through `toast-notification.js`). On the **releases list** (2026-09-26): 2 × 2 (Download + Copy link on top, Cart + Watch below; Cart alone when there is no Watch), Copy link / Cart / Watch in their own tinted hue and a pressed Cart / Watch filled in that hue (section 2), Download unchanged. The show page and details tables keep the one-line row with a coral pressed state |
 | Row selection and the floating bar | `release-browser-component.js` | restyled; the bar floats (fixed), it does not push the list |
 | Same-show batch expander | new, inside the releases list component | new |
 | Shows wall tile | `tv-show-directory-component.js` | rebuilt to the tile in the reference |

@@ -61,8 +61,12 @@ Each is a test, not a preference.
 7. **Colour is wanted**: different kinds of chip get different hues, low-key. Words on chips,
    not cryptic icons.
 8. **Coral (the accent) means the primary action or "this is on / open / current"**: download,
-   current view / tab / page, a set filter, an open episode's releases button, a pressed
-   cart / watch button, a pressed Full size button. Spend it on nothing else.
+   current view / tab / page, a set filter, an open episode's releases button, a pressed Full
+   size button. Spend it on nothing else. Download NZB and Copy NZB link are actions with no
+   on / off state. On the releases list a pressed Cart or Watch fills in the button's own hue,
+   not coral ("Why would pressing a button make it stay coral?"); the show page and the details
+   page were not part of that review and keep a coral pressed cart / watch for now.
+   *Changed 2026-09-26 on the maintainer's review.*
 9. No Report button anywhere. No separate details button in rows: the release name is the link.
 10. A checkbox menu closes when focus leaves it, on Escape, and on a click outside; it stays
     open while ticking and keeps its scroll position; keyboard focus stays on the control
@@ -91,13 +95,43 @@ prototype (`prototype/tv.html`) and its reference set (`VISUAL-CONTRACT.md`).
   results reads `Showing 0 releases`. Full pager with "Go to page" at the bottom. 50 per page.
 - Table with fixed column widths: select, poster 88×132 (links to details), release cell
   (bold name → that release's details; grey `Show · S01E02 · Episode title` → show page with
-  that episode open; one line of chips), resolution chip, source, size, files (opens the file
-  list dialog), posted / added, grabs, four round buttons in this order: **Download NZB**
-  (coral), **Copy NZB link**, **Add to cart**, **Watch this show**.
+  that episode open; one line of chips), resolution chip, source, size, posted / added, and
+  the row buttons. **No Files and no Grabs column** on this list ("Neither are really that
+  beneficial ... If the user wants to know the files, they can click on the release"): the
+  file list is on the details page. Dropping them widens the release column so the chips fit
+  on one line. The show page and details tables keep both columns. *Changed 2026-09-26 on
+  the maintainer's review.*
+- **Chip line**: the release chips (section 4), then the **group and poster chips**, outline
+  style as on the details page, on every row that has a group or a poster. The group reads
+  `a.b.` for `alt.binaries.`. They are same-tab links to `/browse/all?group=<group>` and
+  `/browse/all?poster=<poster>`, titled "All releases in <group>" and "All posts by
+  <poster>", as today's row chips link (appendix A). The two are **one unit that never
+  splits** across lines ("I absolutely hate the inconsistent wrapping"): when room is short
+  the poster name shortens with an ellipsis, and the pair moves to a line of its own only when
+  less than 190 px is left. Measured: group and poster on the one chip line on 100% of TV rows
+  at 1366–1600 px wide. *Changed 2026-09-26 on the maintainer's review* (they were details
+  page only).
+- **Row buttons, 2 × 2**: **Download NZB** and **Copy NZB link** on top, **Add to cart** and
+  **Watch this show** below; with no Watch button, Cart sits alone under Download. Download
+  is unchanged (coral). Copy link, Cart and Watch have a tinted ground and a coloured icon,
+  each in its own hue (appendix A); a pressed Cart or Watch fills solid in its own hue, not
+  coral. Download and Copy link have no on / off state. Keyboard focus on Copy link, Cart and
+  Watch is drawn in the ink colour. The show page and details tables keep the four buttons on
+  one line. *Changed 2026-09-26 on the maintainer's review.*
 - **Releases with no matched show** (`videos_id = 0`; 10,464 visible ones on the production
-  copy) are listed in date order like the rest: the poster cell is empty, there is no grey
-  show line, and the watch button is absent (an invisible slot keeps the other three buttons
-  aligned). Such a row never joins a same-show batch. Decided 2026-09-24.
+  copy) are listed in date order like the rest: there is no grey show line, the watch button
+  is absent (Cart sits alone under Download) and the row never joins a same-show batch.
+  Decided 2026-09-24.
+- Their poster cell holds a **poster-sized placeholder** linking to the details page like a
+  poster: a **name card** with the show name and the episode or air date read from the
+  release name (`S01E02`, a double episode `S01E01–E02`, four-digit episodes such as
+  `S59E1234`, a bare `E12`, or a date such as `2026-09-22` from `2026.09.22`), else a tile
+  with the TV icon and "No poster". The rule is in appendix A. Whatever title the name states
+  gets a card, short numeric ones such as "24" and "911" included, and site tags in the name
+  are not stripped: "I honestly don't care if sometimes the placeholder name card has trash
+  in it." On the production copy (counted 2026-09-26) 9,005 of the 12,977 visible
+  TV releases with no matched show get a name card. *Changed 2026-09-26 on the maintainer's
+  review* (the cell was empty).
 - Select-all in the header (with a partial state) selects the rows visible on the page.
   Selecting brings up a floating bar: `15 selected · Download NZBs · Add to cart · Clear selection`.
 - Same-show batch expander: consecutive releases of one show posted the same day collapse to
@@ -148,9 +182,11 @@ prototype (`prototype/tv.html`) and its reference set (`VISUAL-CONTRACT.md`).
   the right. The whole row is the click target; the arrow flips and the button turns coral
   while the row is open. Nothing is open on arrival, except the episode the user arrived
   from.
-- An open episode shows a release table: the Releases-page row minus the artwork, with a
-  **select checkbox per row and no check-all box**, sortable Resolution / Size / Posted /
-  Grabs headers, the same chips and four buttons. Identical release names get a grey line
+- An open episode shows a release table: name, the chips (without group and poster),
+  Resolution, Source, Size, Files, Posted, Grabs and the four round buttons on one line
+  (a pressed cart / watch in coral), with a **select checkbox per row and no check-all box**
+  and sortable Resolution / Size / Posted / Grabs headers. The releases list's changes of
+  2026-09-26 (3.1) do not apply to this table. Identical release names get a grey line
   naming poster and group. The same floating selection bar; the selection carries across
   episodes and seasons.
 - "Whole-season packs" section per season.
@@ -218,9 +254,14 @@ Chip line under a release name (tinted ground + coloured text), in this order:
 | Sample | has a sample image | image dialog |
 | Clip, Listen | when those features apply to the category | the image dialog with a player |
 
+Then, on the releases list, the **group and poster chips** (outline, one unit that never
+splits, links as in appendix A; 3.1). The details page shows them under its other chips. The
+show page and details release tables do not carry them. *Changed 2026-09-26 on the
+maintainer's review*: until then they appeared on the details page only.
+
 Dropped from today's row: the separate repair chip (folded in above), "Reported" and
-"Response" chips, the comments count, the details (info) button, the Report button. Group and
-poster chips appear on the details page only. All chip colours pass 4.5:1 in both themes.
+"Response" chips, the comments count, the details (info) button, the Report button. All chip
+colours pass 4.5:1 in both themes.
 
 ---
 
@@ -305,7 +346,7 @@ Storage and write paths are specified in `DATA-CONTRACT.md`; the numbers below f
    and the old TV Covers / Table / Cards views.
 
 Screens 4–7 can be built against fixtures once 1–3 define the stored shapes. Each screen's
-acceptance test is the matching block of `check.mjs` (199 checks), ported to the
+acceptance test is the matching block of `check.mjs` (225 checks), ported to the
 application's test tooling, plus rule 5 ("nothing shifts") measured, not eyeballed.
 
 ---
@@ -325,11 +366,32 @@ application's test tooling, plus rule 5 ("nothing shifts") measured, not eyeball
   "Show fewer from <show>". It is an expander inside the list, not pagination.
 - The date column's heading and values follow the sort (Posted / Added); hovering a date shows
   both. Under a day old a date reads "2 hr ago", after that a date.
-- Tooltips name each round action. Cart and Watch show a pressed (coral) state.
+- Tooltips name each round action. Cart and Watch show a pressed state; Download and Copy link
+  have none.
+- **Releases-list button colours** (changed 2026-09-26 on the maintainer's review): Download
+  keeps the accent pair (coral). Copy link, Cart and Watch each have a hue, Copy link 235
+  (blue), Cart 150 (green), Watch 300 (violet) in OKLCH: off is a tinted ground with the icon
+  in the same hue; on (in the cart, watching) is a solid fill in that hue. Exact values are in
+  `VISUAL-CONTRACT.md` section 2. Every icon is at least 3:1 on its button, off and on, in both
+  themes. The focus ring on those three uses the ink colour. Cart's green sitting near the
+  completion chip's green was accepted. The show page and details page keep a coral pressed
+  cart / watch for now.
 - A release name links to **that release's** details page, never to the show. The grey line
   under it links to the show page with that episode already open.
-- Group and poster chips (details page) link to the existing cross-category pages for that
-  group and that poster. They are not TV filters.
+- Group and poster chips (releases list and details page) link, in the same tab, to the
+  existing cross-category pages for that group and that poster, `/browse/all?group=<group>` and
+  `/browse/all?poster=<poster>` with the value URL-encoded, exactly as today's row chips do
+  (`origin.blade.php`). Titles: "All releases in <group>", "All posts by <poster>". The group
+  chip shows `a.b.` for `alt.binaries.`; the full name is in the title. They are not TV filters.
+- **No-poster placeholder** (releases with no matched show, 3.1): the name is read as a title,
+  a separator (`.` `_` `-` or space), then an episode token: `S` + 1–4 digits and `E` + 1–4
+  digits (an optional separator between them), with an optional second `E` + digits
+  for a double episode (shown `S01E01–E02`); or a date `YYYY.MM.DD` with any of those
+  separators (shown `YYYY-MM-DD`); or a bare `E` + 2–4 digits. The token must be followed by a
+  separator or the end of the name. The title is the text before it with dots and underscores
+  as spaces; tokens are shown upper-case. Names that contain `.rar` or `.partN`, or begin with
+  a quote or bracket, never get a card. No match gives the TV-icon tile reading "No poster".
+  The prototype's `showName()` is the reference implementation.
 - Of today's browse controls, only the TV sub-category filter carries over. Dropped by decision:
   minimum completion, "only watching", the in-list text filter, the page-size choice, the Title
   and Grabs sorts, "only my cart".
@@ -348,5 +410,7 @@ Preview / Sample chips; "Text" chips on subtitle formats; instruction text such 
 show releases"; opening the newest episode automatically; a tree-style arrow at the left of
 episode rows; a "check all" box on the show page; 16:9 episode stills instead of show posters;
 a weekly or any scheduled refresh of show details; a TV-only side table of copied release
-columns; phone layouts.
+columns; phone layouts. Added 2026-09-26 on the maintainer's review: Files and Grabs columns
+on the releases list; coral for a pressed Cart / Watch on the releases list; coloured-outline row buttons;
+stripping site tags from, or a letter rule for, the names on no-poster placeholder cards.
 
