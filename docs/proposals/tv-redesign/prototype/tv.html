@@ -72,6 +72,7 @@ svg.i{width:1.1em;height:1.1em;fill:none;stroke:currentColor;stroke-width:1.8;st
 .seg a,.seg button{display:inline-flex;align-items:center;height:32px;padding:0 16px;border-radius:16px;font-weight:600;font-size:13.5px;color:var(--dim)}
 .seg a:hover,.seg button:hover{color:var(--ink)}
 .seg [aria-pressed=true]{background:var(--acc);color:var(--accink)}
+.seg [aria-pressed=true]:hover{color:var(--accink)}
 .sub{display:flex;align-items:center;gap:12px;padding:10px 0 0;color:var(--dim);font-size:14px}
 /* show discovery filters */
 .dfilters{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:14px 0 0}
@@ -298,6 +299,15 @@ dl.vals dd{margin-top:3px;font-weight:500;font-variant-numeric:tabular-nums}
 .feed tr.moreof button:hover{color:var(--ink)}
 .feed tbody tr:not(.dayrow):not(.moreof):hover{background:var(--panel)}
 
+/* no-poster placeholder for releases with no matched show: a name card when the name states show + episode or air date, else the TV tile (2026-09-26, from the Movies decision) */
+.feed td.art a.ph{display:grid;place-items:center;align-content:center;gap:8px;background:var(--panel2);color:var(--dim);text-align:center}
+.feed td.art a.ph::before{content:none}
+.feed td.art a.ph svg{width:30px;height:30px;stroke-width:1.4;opacity:.8}
+.feed td.art a.ph small{font-size:11px;line-height:1.2}
+.feed td.art a.ph.card{padding:8px 4px;gap:4px}
+.feed td.art a.ph.card b{font-size:11px;line-height:1.25;font-weight:500;color:var(--dim);display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;justify-self:stretch;min-width:0}
+.feed td.art a.ph.card small{font-variant-numeric:tabular-nums}
+
 /* home */
 .day{margin-top:30px}
 .day h2{font:800 19px/1 Manrope,sans-serif;letter-spacing:-.01em;display:flex;align-items:baseline;gap:10px}
@@ -387,6 +397,30 @@ td.num{text-align:right;white-space:nowrap} th.num{text-align:right}
 .toast.on{opacity:1;transform:translate(-50%,0)}
 @media (max-width:900px){.wrap{padding:0 16px}.nav .wrap{gap:10px}.iconbtn .lbl{display:none}.iconbtn{padding:0 12px}.search{min-width:0}.fg{flex-wrap:wrap}.filters h1{flex-basis:100%}.bar2{position:static}.bar2 h2{flex-basis:100%}.ep .n{white-space:normal;text-align:right;font-size:12.5px}.nav a.l{display:none}.search{width:auto;flex:1}.showhead{grid-template-columns:110px 1fr;gap:16px}.showhead .art{width:110px}.showhead h1{font-size:28px}.rels{padding-left:0;overflow-x:auto}.tiles{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}.ep>button{grid-template-columns:40px 1fr auto 18px}.ep .fc{display:none}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* group + poster: one unit that never splits; the poster name shortens with an ellipsis to the room left (2026-09-26) */
+.rchips .orig{display:inline-flex;gap:5px;min-width:0;max-width:100%}
+.rchips .orig .rc{flex:none}
+.rchips .orig .rc:last-child{flex:0 1 auto;min-width:0}
+.rchips .orig .rc .ot{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rchips .orig{flex:1 1 0;min-width:190px}
+.feed .rchips .orig{gap:8px}
+/* releases list only: the four round actions as 2 × 2 (download + copy link on top, cart + watch below; cart alone when there is no watch) (2026-09-26) */
+.iconacts.stack{display:grid;grid-template-columns:repeat(2,32px);gap:6px;justify-content:end}
+.iconacts.stack .slot{display:none}
+/* release-list buttons in colour (2026-09-26): coral stays on Download only; Copy link blue, Cart green, Watch violet.
+   Tinted ground + coloured icon (he chose A). On (in cart / watching) = solid fill of the button's own hue. */
+:root{--b-cp:235;--b-ct:150;--b-w:300}
+.iconacts.stack .ia[data-copynzb]{--h:var(--b-cp)}.iconacts.stack .ia[data-cart]{--h:var(--b-ct)}.iconacts.stack .ia[data-watch]{--h:var(--b-w)}
+.iconacts.stack .ia:not(.dl){background:oklch(0.31 0.06 var(--h));color:oklch(0.86 0.11 var(--h))}
+.iconacts.stack .ia:not(.dl):hover{background:oklch(0.37 0.08 var(--h))}
+:root[data-theme=light] .iconacts.stack .ia:not(.dl){background:oklch(0.92 0.045 var(--h));color:oklch(0.45 0.14 var(--h))}
+:root[data-theme=light] .iconacts.stack .ia:not(.dl):hover{background:oklch(0.87 0.07 var(--h))}
+.iconacts.stack .ia:not(.dl)[aria-pressed=true]{background:oklch(0.72 0.15 var(--h));color:oklch(0.18 0.04 var(--h))}
+.iconacts.stack .ia:not(.dl)[aria-pressed=true]:hover{background:oklch(0.78 0.13 var(--h))}
+:root[data-theme=light] .iconacts.stack .ia:not(.dl)[aria-pressed=true]{background:oklch(0.50 0.15 var(--h));color:#fff}
+:root[data-theme=light] .iconacts.stack .ia:not(.dl)[aria-pressed=true]:hover{background:oklch(0.44 0.15 var(--h))}
+.iconacts.stack .ia:not(.dl):focus-visible{outline-color:var(--ink);outline-offset:1px}
 </style>
 </head>
 <body>
@@ -468,6 +502,9 @@ const shortDate=t=>new Date(t*1000).toLocaleDateString('en-US',{day:'numeric',mo
 const match=r=>(!state.res.size||state.res.has(r.res))&&(!state.src.size||state.src.has(r.src));
 // the TV sub-category filter belongs to the Releases list only
 let CATS=[];const catOf=r=>X(r).cat.replace(/^TV > /,''),matchRel=r=>match(r)&&(!state.cat.size||state.cat.has(catOf(r)));
+// the show and episode (or air date) a release name with no matched show states, or null
+const showName=n=>{if(/\.rar|\.part\d|^["'(\[]/i.test(n))return null;const m=n.match(/^(.+?)[._ \-]+(?:(S\d{1,4})[ ._-]?(E\d{1,4})(?:-?(E\d{1,4}))?|(\d{4})[._ \-](\d{2})[._ \-](\d{2})|(E\d{2,4}))(?=[._ \-]|$)/i);if(!m)return null;const t=m[1].replace(/[._]+/g,' ').replace(/[\s\-]+$/g,'').trim();if(!t)return null;return {t,e:m[2]?(m[2]+m[3]+(m[4]?'–'+m[4]:'')).toUpperCase():m[5]?m[5]+'-'+m[6]+'-'+m[7]:m[8].toUpperCase()};};
+const noPoster=x=>{const nt=showName(x.name);return nt?`<a class="ph card" href="#/release/${x.id}" tabindex="-1" aria-hidden="true"><b>${esc(nt.t)}</b><small>${esc(nt.e)}</small></a>`:`<a class="ph" href="#/release/${x.id}" tabindex="-1" aria-hidden="true">${ic('tv')}<small>No poster</small></a>`;};
 const poster=(id,alt='',eager)=>DB.shows[id].p?`<img src="posters/${id}.webp" alt="${esc(alt)}" loading="${eager?'eager':'lazy'}">`:`<div class="np">${esc(DB.shows[id].t)}</div>`;
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('on'),2200);}
 
@@ -514,8 +551,15 @@ function origin(r,withShow,showOnly){const x=X(r),lbl=epLabel(r);
   return (withShow&&r.v?`<a class="rc" href="${showHref(r)}" data-open="${openKey(r)}" title="Go to the show">${ic('tv')}${esc(DB.shows[r.v].t)}${lbl?' · '+lbl:''}</a>`:'')
    +(x.group?`<button class="rc origin" data-stub="All releases in ${esc(x.group)}" title="All releases in ${esc(x.group)}">${ic('users')}${esc(x.group.replace('alt.binaries.','a.b.'))}</button>`:'')
    +(x.poster?`<button class="rc origin" data-stub="All posts by ${esc(x.poster)}" title="All posts by ${esc(x.poster)}">${ic('user')}${esc(x.poster.length>26?x.poster.slice(0,25)+'…':x.poster)}</button>`:'');}
-function rowActions(r){const inC=state.cart.has(r.id),w=state.watch.has(r.v);
-  return `<div class="iconacts"><button class="ia dl" data-nzb="${r.id}" title="Download NZB" aria-label="Download NZB">${ic('down')}</button><button class="ia" data-copynzb="${r.id}" title="Copy NZB link for SABnzbd or NZBGet" aria-label="Copy NZB link for SABnzbd or NZBGet">${ic('link')}</button><button class="ia" data-cart="${r.id}" aria-pressed="${inC}" title="${inC?'In cart · click to remove':'Add to cart'}" aria-label="${inC?'Remove from cart':'Add to cart'}">${ic('cart')}</button>
+
+// group and poster chips on a release row; og = 'a' (outline, as on the details page) or 'b' (a hue per kind)
+function rowOrigin(r){const x=X(r),cls=()=>'rc origin';
+  // the same links the current site's row chips use (origin.blade.php): the all-categories list for that group / poster, same tab
+  const link=(k,href,t,icon,label,cut)=>`<a class="${cls(k)}" href="${href}" data-applink="${href}" title="${esc(t)}">${ic(icon)}${cut?`<span class="ot">${esc(label)}</span>`:esc(label)}</a>`;
+  return `<span class="orig">`+(x.group?link('k-grp','/browse/all?group='+encodeURIComponent(x.group),'All releases in '+x.group,'users',x.group.replace('alt.binaries.','a.b.')):'')
+   +(x.poster?link('k-pst','/browse/all?poster='+encodeURIComponent(x.poster),'All posts by '+x.poster,'user',x.poster,true):'')+`</span>`;}
+function rowActions(r,stack){const inC=state.cart.has(r.id),w=state.watch.has(r.v);
+  return `<div class="iconacts${stack?' stack':''}"><button class="ia dl" data-nzb="${r.id}" title="Download NZB" aria-label="Download NZB">${ic('down')}</button><button class="ia" data-copynzb="${r.id}" title="Copy NZB link for SABnzbd or NZBGet" aria-label="Copy NZB link for SABnzbd or NZBGet">${ic('link')}</button><button class="ia" data-cart="${r.id}" aria-pressed="${inC}" title="${inC?'In cart · click to remove':'Add to cart'}" aria-label="${inC?'Remove from cart':'Add to cart'}">${ic('cart')}</button>
    ${r.v?`<button class="ia" data-watch="${r.v}" aria-pressed="${w}" title="${w?'Watching this show · click to stop':'Watch this show'}" aria-label="${w?'Stop watching show':'Watch show'}">${ic('eye')}</button>`:'<span class="ia slot" aria-hidden="true"></span>'}</div>`;}
 function pager(base,page,pages,total,noun,bottom){
   if(!bottom){const href=n=>n===1?base:(base==='#/'?'#/p/'+n:base+'/p/'+n);
@@ -542,7 +586,7 @@ function releasesView(){
   if(!page.length){$('#app').innerHTML=h+pg(false)+`<p class="empty">Nothing matches ${esc(filterText(true))}.</p>`;return;}
   if(state.sel.size)h+=`<div class="bulk"><span>${state.sel.size} selected</span><button class="btn" data-bulk="nzb">${ic('down')}Download NZBs</button><button class="btn sec" data-bulk="cart">${ic('cart')}Add to cart</button><button class="btn sec" data-bulk="clear">Clear selection</button></div>`;
   h+=pg(false);
-  h+=`<table class="feed"><colgroup><col style="width:34px"><col style="width:116px"><col><col style="width:100px"><col style="width:80px"><col style="width:82px"><col style="width:64px"><col style="width:112px"><col style="width:68px"><col style="width:168px"></colgroup><thead><tr><th class="selall"><input type="checkbox" data-selectall aria-label="Select all releases on this page"></th><th colspan="2">Release</th><th>Resolution</th><th>Source</th><th class="num">Size</th><th class="num">Files</th><th class="num">${sk==='added'?'Added':'Posted'}</th><th class="num">Grabs</th><th></th></tr></thead><tbody>`;
+  h+=`<table class="feed"><colgroup><col style="width:34px"><col style="width:116px"><col><col style="width:100px"><col style="width:80px"><col style="width:82px"><col style="width:112px"><col style="width:96px"></colgroup><thead><tr><th class="selall"><input type="checkbox" data-selectall aria-label="Select all releases on this page"></th><th colspan="2">Release</th><th>Resolution</th><th>Source</th><th class="num">Size</th><th class="num">${sk==='added'?'Added':'Posted'}</th><th></th></tr></thead><tbody>`;
   let day='',i=0;
   while(i<page.length){
     const r=page[i],d=dayKey(tk(r));
@@ -550,12 +594,12 @@ function releasesView(){
     const run=page.slice(i,j),key=r.v+'|'+d+'|'+r.id,open=state.expanded.has(key),showN=open||run.length<=4?run.length:3;
     run.slice(0,showN).forEach(x=>{const xx=X(x);
       h+=`<tr${x.v?'':' data-noshow'}><td><input type="checkbox" data-select="${x.id}" ${state.sel.has(x.id)?'checked':''} aria-label="Select ${esc(x.name)}"></td>
-      <td class="art">${x.v?`<a href="#/release/${x.id}" tabindex="-1" aria-hidden="true" data-t="${esc(DB.shows[x.v].t)}">${poster(x.v,'',true)}</a>`:''}</td>
-      <td class="what"><a class="rname" href="#/release/${x.id}" title="${esc(x.name)}">${esc(x.name)}</a>${x.v?`<a class="showlink" href="${showHref(x)}" data-open="${openKey(x)}" title="Go to the show">${esc(DB.shows[x.v].t)}${epLabel(x)?' · '+epLabel(x):''}${x.title?' · '+esc(x.title):''}</a>`:''}<div class="rchips">${chips(x,true)}</div></td>
+      <td class="art">${x.v?`<a href="#/release/${x.id}" tabindex="-1" aria-hidden="true" data-t="${esc(DB.shows[x.v].t)}">${poster(x.v,'',true)}</a>`:noPoster(x)}</td>
+      <td class="what"><a class="rname" href="#/release/${x.id}" title="${esc(x.name)}">${esc(x.name)}</a>${x.v?`<a class="showlink" href="${showHref(x)}" data-open="${openKey(x)}" title="Go to the show">${esc(DB.shows[x.v].t)}${epLabel(x)?' · '+epLabel(x):''}${x.title?' · '+esc(x.title):''}</a>`:''}<div class="rchips">${chips(x,true)}${rowOrigin(x)}</div></td>
       <td>${resChip(x.res)}</td><td>${srcLabel(x)}</td><td class="num">${gb(x.size)}</td>
-      <td class="num"><button class="filesbtn" data-files="${x.id}" title="View file list">${xx.files}</button></td><td class="num" title="Posted ${new Date(x.t*1000).toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'})} · Added ${new Date(xx.added*1000).toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'})}">${ago(tk(x))}</td><td class="num" title="${x.grabs} grabs · ${xx.cm} comments">${x.grabs}</td>
-      <td>${rowActions(x)}</td></tr>`;});
-    if(run.length>4)h+=`<tr class="moreof"><td colspan="10"><div><button data-expand="${key}" aria-expanded="${open}">${ic('chev').replace('<svg','<svg style="transform:rotate('+(open?'-90':'90')+'deg)"')}${open?'Show fewer from '+esc(DB.shows[r.v].t):'Show '+(run.length-3)+' more from '+esc(DB.shows[r.v].t)+' posted in the same batch'}</button></div></td></tr>`;
+      <td class="num" title="Posted ${new Date(x.t*1000).toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'})} · Added ${new Date(xx.added*1000).toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'})}">${ago(tk(x))}</td>
+      <td>${rowActions(x,true)}</td></tr>`;});
+    if(run.length>4)h+=`<tr class="moreof"><td colspan="8"><div><button data-expand="${key}" aria-expanded="${open}">${ic('chev').replace('<svg','<svg style="transform:rotate('+(open?'-90':'90')+'deg)"')}${open?'Show fewer from '+esc(DB.shows[r.v].t):'Show '+(run.length-3)+' more from '+esc(DB.shows[r.v].t)+' posted in the same batch'}</button></div></td></tr>`;
     i=j;}
   h+='</tbody></table>'+pg(true);
   $('#app').innerHTML=h;
@@ -732,6 +776,7 @@ function firstPage(){const h=location.hash;if(/^#\/show\//.test(h)){route();retu
 let lastHash='';
 addEventListener('hashchange',()=>{state.dd=null;if(/^#\/(p\/|shows|$)/.test(location.hash)||location.hash==='')scrollTo(0,0);if(/^#\/release\//.test(location.hash)&&lastHash!==location.hash)state.tab='overview';closeDialog();const base=h=>h.split('/').slice(0,3).join('/');if(base(lastHash)!==base(location.hash))scrollTo(0,0);lastHash=location.hash;const fromTab=!!document.activeElement?.closest?.('.stabs');route();if(fromTab)$('.stabs a[aria-current]')?.focus({preventScroll:true});});
 document.addEventListener('click',e=>{
+  const al=e.target.closest('[data-applink]');if(al){e.preventDefault();toast('Opens '+decodeURIComponent(al.dataset.applink)+', the existing list of all releases for it (not part of this prototype)');return;}
   const o=e.target.closest('[data-open]');if(o)state.open.add(o.dataset.open);
   if(e.target.closest('[data-full]')){toggleFull();return;}
   const dd=e.target.closest('[data-ddtoggle],[data-ddany],[data-ddpick]');
