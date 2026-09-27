@@ -1,0 +1,1037 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NNTmux Movies</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--k-mi-bg:oklch(0.31 0.06 275);--k-mi-fg:oklch(0.87 0.08 275);--k-nfo-bg:oklch(0.31 0.07 345);--k-nfo-fg:oklch(0.87 0.09 345);--k-pv-bg:oklch(0.31 0.05 215);--k-pv-fg:oklch(0.88 0.08 210);--k-sm-bg:oklch(0.33 0.06 110);--k-sm-fg:oklch(0.89 0.10 108);--c-ok-bg:oklch(0.30 0.045 150);--c-ok-fg:oklch(0.86 0.10 150);--c-mid-bg:oklch(0.32 0.05 65);--c-mid-fg:oklch(0.87 0.10 72);--c-low-bg:oklch(0.30 0.055 22);--c-low-fg:oklch(0.84 0.09 22);--r4k-bg:oklch(0.44 0.17 318);--r4k-fg:oklch(0.96 0.04 318);--r1080-bg:oklch(0.44 0.13 255);--r1080-fg:oklch(0.96 0.03 255);--r720-bg:oklch(0.44 0.085 192);--r720-fg:oklch(0.96 0.03 192);--rsd-bg:oklch(0.34 0.012 265);--rsd-fg:oklch(0.86 0.012 265);--bg:#0f1014;--panel:#181a21;--panel2:#20232c;--line:#2b2f3a;--ink:#f4f4f6;--dim:#a4a8b4;--acc:#ff5a3c;--accink:#1d0a05;--ok:#5fd38d;--warn:#f0b755;--bad:#ff7a7a;--shadow:0 18px 40px -14px rgb(0 0 0/.7)}
+:root[data-theme=light]{--k-mi-bg:oklch(0.93 0.035 275);--k-mi-fg:oklch(0.40 0.13 275);--k-nfo-bg:oklch(0.93 0.04 345);--k-nfo-fg:oklch(0.42 0.14 350);--k-pv-bg:oklch(0.93 0.04 215);--k-pv-fg:oklch(0.40 0.09 225);--k-sm-bg:oklch(0.93 0.06 108);--k-sm-fg:oklch(0.42 0.09 105);--c-ok-bg:oklch(0.93 0.04 150);--c-ok-fg:oklch(0.38 0.09 150);--c-mid-bg:oklch(0.93 0.045 72);--c-mid-fg:oklch(0.42 0.09 60);--c-low-bg:oklch(0.93 0.035 22);--c-low-fg:oklch(0.42 0.12 25);--r4k-bg:oklch(0.90 0.07 318);--r4k-fg:oklch(0.34 0.16 318);--r1080-bg:oklch(0.90 0.055 255);--r1080-fg:oklch(0.34 0.13 255);--r720-bg:oklch(0.90 0.05 192);--r720-fg:oklch(0.33 0.08 192);--rsd-bg:oklch(0.89 0.008 265);--rsd-fg:oklch(0.36 0.012 265);--bg:#f5f5f2;--panel:#fff;--panel2:#e4e4dd;--line:#d3d3cb;--ink:#17181c;--dim:#5c606b;--acc:#c8331a;--accink:#fff;--ok:#1d7d47;--warn:#8f5d00;--bad:#b3261e;--shadow:0 14px 30px -14px rgb(30 30 20/.35)}
+*{box-sizing:border-box;margin:0}
+html{scrollbar-color:var(--line) var(--bg)}
+body{background:var(--bg);color:var(--ink);font:400 15px/1.5 Manrope,system-ui,sans-serif;min-height:100vh}
+::selection{background:var(--acc);color:var(--accink)}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none}
+a{color:inherit;text-decoration:none}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px;border-radius:6px}
+svg.i{width:1.1em;height:1.1em;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.wrap{max-width:1500px;margin:0 auto;padding:0 40px}
+
+/* nav */
+.nav{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--line)}
+.nav .wrap{display:flex;align-items:center;gap:26px;height:68px}
+.brand{font-weight:800;font-size:20px;letter-spacing:-.02em}
+.nav a.l{color:var(--dim);font-size:15px}
+.nav a.l:hover,.nav a.l.on{color:var(--ink)}
+.sitesearch{display:flex;align-items:center;margin-left:auto;height:42px;border-radius:21px;background:var(--panel2);color:var(--dim)}
+.sitesearch .scope{position:relative;display:flex;align-items:center;height:42px;padding:0 10px 0 16px;border-right:1px solid var(--line)}
+.sitesearch .scope select{appearance:none;background:none;border:0;outline:0;color:var(--ink);font:600 14px Manrope,sans-serif;padding-right:18px}
+.sitesearch .scope .i{position:absolute;right:8px;width:14px;height:14px;pointer-events:none;transform:rotate(90deg)}
+.sitesearch .field{display:flex;align-items:center;gap:8px;height:42px;width:250px;padding:0 16px 0 12px}
+.sitesearch input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--ink);caret-color:var(--acc)}
+.sitesearch input::placeholder{color:var(--dim)}
+.sitesearch:focus-within{box-shadow:0 0 0 2px var(--acc)}
+.search{position:relative;width:320px}
+.search label{display:flex;align-items:center;gap:8px;height:42px;padding:0 16px;border-radius:21px;background:var(--panel2);color:var(--dim)}
+.search input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--ink);caret-color:var(--acc)}
+.search input::placeholder{color:var(--dim)}
+.search label:focus-within{box-shadow:0 0 0 2px var(--acc)}
+.results{position:absolute;top:48px;left:0;right:0;background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:6px;max-height:420px;overflow:auto}
+.results a{display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:center;padding:6px 10px;border-radius:9px}
+.results a:hover,.results a.hl{background:var(--panel2)}
+.results img,.results .np{width:34px;height:50px;border-radius:5px;object-fit:cover}
+.results b{display:block;font-weight:700;font-size:14px}
+.results span{font-size:12.5px;color:var(--dim)}
+.results p{padding:12px;color:var(--dim);font-size:14px}
+.iconbtn{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 14px;border-radius:21px;background:var(--panel2);font-weight:600;font-size:14px}
+.iconbtn:hover{background:var(--line)}
+.iconbtn em{font-style:normal;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:var(--acc);color:var(--accink);font-size:12px;line-height:20px;text-align:center}
+
+/* filter bar */
+.filters{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:22px 0 6px}
+.filters h1{font:800 30px/1.1 Manrope,sans-serif;letter-spacing:-.025em;margin-right:6px}
+.filters .grow{flex:1}
+.filters .search label{height:38px;border-radius:19px}
+.filters .search input{font-size:13.5px}
+.filters .results{top:44px;z-index:12}
+.bar2 h2{margin-right:auto}
+.fg{display:flex;align-items:center;gap:6px}
+.fg span{font-size:13px;color:var(--dim);margin-right:4px}
+.pill{display:inline-flex;align-items:center;height:34px;padding:0 14px;border-radius:17px;background:var(--panel2);font-weight:600;font-size:13.5px;color:var(--dim)}
+.pill:hover{color:var(--ink)}
+.pill[aria-pressed=true]{background:var(--acc);color:var(--accink)}
+.note{color:var(--dim);font-size:14px;padding:2px 0 0}
+.note button{color:var(--acc);font-weight:500}
+
+/* view switch */
+.seg{display:inline-flex;padding:3px;border-radius:20px;background:var(--panel2)}
+.seg a,.seg button{display:inline-flex;align-items:center;height:32px;padding:0 16px;border-radius:16px;font-weight:600;font-size:13.5px;color:var(--dim)}
+.seg a:hover,.seg button:hover{color:var(--ink)}
+.seg [aria-pressed=true],.seg [aria-current=page]{background:var(--acc);color:var(--accink)}
+.seg [aria-pressed=true]:hover,.seg [aria-current=page]:hover{color:var(--accink)}
+.sub{display:flex;align-items:center;gap:12px;padding:10px 0 0;color:var(--dim);font-size:14px}
+/* show discovery filters */
+.dfilters{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:14px 0 0}
+.sel{position:relative;display:inline-flex;align-items:center}
+.sel select{appearance:none;-webkit-appearance:none;height:38px;padding:0 36px 0 16px;border-radius:19px;border:0;background:var(--panel2);color:var(--ink);font:600 13.5px Manrope,sans-serif;cursor:pointer}
+.sel select:hover{background:var(--line)}
+.sel.set select{background:var(--acc);color:var(--accink)}
+.sel svg{position:absolute;right:13px;pointer-events:none;transform:rotate(90deg);font-size:13px}
+.sel.set svg{color:var(--accink)}
+.dfilters .count{margin-left:auto;color:var(--dim);font-size:14px}
+.person{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 8px 0 16px;border-radius:19px;background:var(--acc);color:var(--accink);font-weight:600;font-size:13.5px}
+.person button{display:grid;place-items:center;width:24px;height:24px;border-radius:12px;background:rgb(0 0 0/.22);font-size:12px}
+.person button:hover{background:rgb(0 0 0/.4)}
+.tile .m2{margin-top:2px;font-size:12.5px;color:var(--dim)}
+.showhead .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+.tag{display:inline-flex;align-items:center;height:28px;padding:0 12px;border-radius:14px;background:var(--panel2);font-weight:500;font-size:12.5px}
+a.tag:hover{background:var(--line)}
+.tag.plain{background:none;border:1px solid var(--line)}
+.starring{margin-top:14px;font-size:14px;color:var(--dim);max-width:80ch;line-height:1.9}
+.starring a{white-space:nowrap;color:var(--ink);font-weight:400;border-bottom:1px solid var(--line)}
+.starring a:hover{color:var(--acc);border-color:var(--acc)}
+.results h4{padding:8px 10px 4px;font:600 12.5px/1 Manrope,sans-serif;color:var(--dim)}
+.results a.p{grid-template-columns:1fr;padding:9px 10px}
+.msel{position:relative;display:inline-block}
+.mbtn{display:inline-flex;align-items:center;gap:10px;height:38px;padding:0 14px 0 16px;border-radius:19px;background:var(--panel2);font-weight:600;font-size:13.5px;white-space:nowrap}
+.mbtn:hover{background:var(--line)}
+.mbtn svg{transform:rotate(90deg);font-size:13px}
+.msel.set .mbtn{background:var(--acc);color:var(--accink)}
+.sfm .mmenu{z-index:15;left:0;right:auto;max-height:min(420px,60vh);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+.sfm .mbtn{width:clamp(132px,calc((100vw - 540px)/6),176px);justify-content:space-between;gap:6px;padding:0 12px 0 14px}
+.sfm .mbtn .lab{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;text-align:left}
+.sfm .mbtn svg{flex:none}
+.mmenu{position:absolute;right:0;top:44px;z-index:30;min-width:210px;padding:6px;border-radius:14px;background:var(--panel);box-shadow:var(--shadow)}
+.mitem{display:flex;align-items:center;gap:12px;width:100%;height:40px;padding:0 10px;border-radius:9px;text-align:left;font-size:14px}
+.mitem:hover{background:var(--panel2)}
+.mitem .box{display:grid;place-items:center;width:18px;height:18px;border-radius:5px;border:1.5px solid var(--dim);font-size:13px;flex:none}
+.mitem[aria-checked=true] .box{background:var(--acc);border-color:var(--acc);color:var(--accink)}
+/* pager */
+.pager{display:flex;align-items:center;gap:6px;margin:22px 0;font-variant-numeric:tabular-nums}
+.pager.bottom{margin:26px 0 70px}
+.pager a,.pager span.cur,.pager span.gap,.pager .off{display:inline-flex;align-items:center;justify-content:center;min-width:38px;height:38px;padding:0 12px;border-radius:19px;font-weight:600;font-size:14px}
+.pager a{background:var(--panel2)}
+.pager a:hover{background:var(--line)}
+.pager span.cur{background:var(--acc);color:var(--accink)}
+.pager span.gap{color:var(--dim);min-width:20px;padding:0}
+.pager .off{background:var(--panel2);color:var(--dim);opacity:.45;cursor:default}
+.pager .sum{margin-left:auto;color:var(--dim);font-size:14px;font-weight:400}
+.pager.slim{margin:4px 0 0;gap:6px}
+.pager.slim .sum{margin:0 auto 0 0}
+.pager.slim .pg{padding:0 10px;font-size:14px;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.pager.slim a,.pager.slim .off{min-width:34px;height:34px;padding:0}
+.pager form{display:flex;align-items:center;gap:8px;margin-left:14px;color:var(--dim);font-size:14px}
+.pager input{width:64px;height:38px;border-radius:19px;border:0;background:var(--panel2);text-align:center;font-weight:700;color:var(--ink)}
+/* release chips */
+.rchips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.rc{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 11px;border-radius:8px;font-weight:500;font-size:13px;white-space:nowrap;background:var(--panel2);color:var(--ink)}
+.rc svg{font-size:12px}
+button.rc,a.rc{cursor:pointer}
+button.rc:hover,a.rc:hover{filter:brightness(1.18)}
+:root[data-theme=light] button.rc:hover,:root[data-theme=light] a.rc:hover{filter:brightness(.94)}
+.rc.info{background:var(--panel2);color:var(--ink)}
+.rc.k-mi{background:var(--k-mi-bg);color:var(--k-mi-fg)}
+.rc.k-nfo{background:var(--k-nfo-bg);color:var(--k-nfo-fg);letter-spacing:.04em}
+.rc.k-pv{background:var(--k-pv-bg);color:var(--k-pv-fg)}
+.rc.k-sm{background:var(--k-sm-bg);color:var(--k-sm-fg)}
+.rc.comp.c-ok{background:var(--c-ok-bg);color:var(--c-ok-fg)}
+.rc.comp.c-mid{background:var(--c-mid-bg);color:var(--c-mid-fg)}
+.rc.comp.c-low{background:var(--c-low-bg);color:var(--c-low-fg)}
+.rc.origin{background:none;border:1px solid var(--line);color:var(--dim)}
+.rc.origin:hover{color:var(--ink)}
+.rname{font-weight:700;font-size:15.5px;line-height:1.3}
+.feed .rchips{margin-top:12px;gap:8px}
+.feed .rchips:empty{display:none}
+.dhead .rname{overflow-wrap:anywhere}
+a.rname:hover{color:var(--acc)}
+.iconacts{display:flex;gap:4px;justify-content:flex-end}
+.iconacts .slot{visibility:hidden}
+.ia{display:grid;place-items:center;width:32px;height:32px;border-radius:16px;background:var(--panel2);font-size:15px}
+.ia:hover{background:var(--line)}
+.ia.dl{background:var(--acc);color:var(--accink)}
+.ia.dl[aria-pressed]{background:var(--acc)}
+.ia.dl:hover{filter:brightness(1.1)}
+.ia[aria-pressed=true]{background:var(--acc);color:var(--accink)}
+.filesbtn{color:inherit;font-weight:400;text-decoration:underline dotted;text-underline-offset:4px}
+.filesbtn:hover{color:var(--ink);text-decoration:underline}
+.bulk{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:40;display:flex;align-items:center;gap:12px;padding:10px 12px 10px 20px;border-radius:28px;background:var(--panel2);box-shadow:var(--shadow);font-weight:500;font-size:14px}
+.bulk .btn.sec{background:var(--line)}
+input[type=checkbox]{width:16px;height:16px;accent-color:var(--acc);cursor:pointer}
+/* dialog */
+.scrim{position:fixed;inset:0;z-index:60;background:rgb(5 5 8/.66);display:grid;place-items:center;padding:30px}
+.dlg{width:min(860px,100%);max-height:86vh;display:flex;flex-direction:column;background:var(--panel);border-radius:18px;box-shadow:var(--shadow)}
+.dlg .dlghead{display:flex;align-items:flex-start;gap:14px;padding:20px 22px 14px;border-bottom:1px solid var(--line)}
+.dlg .dlghead h2{font:800 19px/1.2 Manrope,sans-serif}
+.dlg .dlghead p{margin-top:4px;font-size:13px;line-height:1.4;color:var(--dim);overflow-wrap:anywhere}
+.dlg .dlghead button{margin-left:auto}
+.dlg .body{padding:6px 22px 22px;overflow:auto}
+/* ---- colour: one hue per section, one hue per kind of value; coral stays reserved for actions ---- */
+.hue{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:7px;font-size:12.5px;font-weight:600;white-space:nowrap;background:oklch(0.31 0.06 var(--h));color:oklch(0.87 0.08 var(--h))}
+:root[data-theme=light] .hue{background:oklch(0.93 0.035 var(--h));color:oklch(0.40 0.13 var(--h))}
+.hue.grey{background:var(--panel2);color:var(--ink)}
+.hv{--h:275}.ha{--h:185}.hs{--h:85}
+.k-dv{--h:340}.k-hdrp{--h:60}.k-hdr{--h:95}.k-atmos{--h:300}
+.k-71{--h:300}.k-51{--h:250}.k-20{--h:185}
+.k-def{--h:150}.k-forced{--h:45}.k-sdh{--h:215}.k-img{--h:110}
+.mi2.col .glance dd{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}
+.mi2.col .glance dd small{flex-basis:100%;margin-top:0}
+.mi2.col h3{margin-bottom:8px;align-items:center}
+.mi2.col .chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.mi2.col .vgrid.hv{border-top-color:oklch(0.6 0.12 275)}
+.mi2.col table.ha thead th{border-bottom-color:oklch(0.6 0.1 185)}
+.mi2.col table.hs thead th,.mi2.col .langs.hs{border-color:oklch(0.6 0.11 85)}
+.mi2.col .langs.hs div{border-bottom-color:var(--line)}
+/* ---- the proposed media info block ---- */
+.mi2 .glance{display:grid;grid-template-columns:repeat(4,1fr);gap:20px 28px}
+.mi2 .glance dt{font-size:12.5px;font-weight:600;color:var(--dim)}
+.mi2 .glance dd{margin-top:4px;font-size:16px;font-weight:600;line-height:1.3}
+.mi2 .glance dd small{display:block;margin-top:3px;font-size:13px;font-weight:400;color:var(--dim)}
+.mi2 h3{display:flex;align-items:baseline;gap:8px;margin:34px 0 4px;font:800 15px/1.2 Manrope,sans-serif}
+.mi2 h3 small{font:500 12.5px/1 Manrope,sans-serif;color:var(--dim)}
+.mi2 table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:13.5px;font-variant-numeric:tabular-nums}
+.mi2 th{text-align:left;font-weight:600;font-size:12px;color:var(--dim);padding:8px 12px 8px 0;border-bottom:1px solid var(--line);white-space:nowrap}
+.mi2 td{padding:10px 12px 10px 0;border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere}
+.mi2 tr:last-child td{border-bottom:0}
+.mi2 td.n,.mi2 th.n{width:34px;color:var(--dim)}
+.mi2 td.lead{font-weight:600;font-size:14px}
+.mi2 td .sub{display:block;padding:0;color:var(--dim);font-weight:400;font-size:12.5px;margin-top:1px}
+.mi2 .num{text-align:right;padding-right:0}
+.mi2 .flag{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:11px;font-size:12px;font-weight:600;margin-right:5px;background:var(--k-mi-bg);color:var(--k-mi-fg)}
+.mi2 .flag.f{background:var(--c-mid-bg);color:var(--c-mid-fg)}
+.mi2 .flag.h{background:var(--k-pv-bg);color:var(--k-pv-fg)}
+.mi2 .vgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px 28px;padding-top:12px;border-top:1px solid var(--line)}
+.mi2 .vgrid dt{font-size:12.5px;font-weight:600;color:var(--dim)}
+.mi2 .vgrid dd{margin-top:3px;font-weight:500;font-variant-numeric:tabular-nums}
+.mi2 .langs{display:grid;grid-template-columns:repeat(4,1fr);gap:0 28px;padding-top:6px;border-top:1px solid var(--line);font-size:13.5px}
+.mi2 .langs div{display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid var(--line)}
+.mi2 .langs span{color:var(--dim);font-variant-numeric:tabular-nums}
+.dlg .mi2 .glance,.dlg .mi2 .vgrid{gap:16px 20px}
+.dlg .mi2 .langs{grid-template-columns:repeat(3,1fr)}
+.dlg .mi2{padding-top:14px}
+.nfo{margin:14px 0 0;padding:16px;border-radius:12px;background:var(--bg);font:400 12.5px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre;overflow:auto;max-height:62vh;color:var(--ink)}
+.pvimg{display:block;max-width:100%;max-height:70vh;margin:0 auto;border-radius:10px}
+.pvbar{display:flex;align-items:center;gap:12px;min-height:32px;margin:12px 0 10px;color:var(--dim);font-size:13px;font-variant-numeric:tabular-nums}
+.pvbar .btn{margin-left:auto;background:var(--line)}
+.pvbar .btn[aria-pressed=true]{background:var(--acc);color:var(--accink)}
+.pvwrap{display:block;width:100%;cursor:default}
+.dlg.canfull .pvwrap{cursor:zoom-in}
+.dlg.full{width:auto;max-width:calc(100vw - 60px);max-height:calc(100vh - 60px)}
+.dlg.full .pvwrap{cursor:zoom-out;width:auto}
+.dlg.full .pvimg{max-width:none;max-height:none}
+.pvthumb{display:block;margin-bottom:18px;border-radius:12px;overflow:hidden}
+.pvthumb img{display:block;max-width:100%;max-height:260px}
+.pvthumb:hover{filter:brightness(1.08)}
+/* release details page */
+.crumbs{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:22px;color:var(--dim);font-size:14px;font-weight:600}
+.crumbs a:hover{color:var(--ink)}
+.dhead{display:grid;grid-template-columns:190px 1fr;gap:28px;margin-top:16px;align-items:start}
+.dhead .art{width:190px;aspect-ratio:2/3;border-radius:12px;overflow:hidden;background:var(--panel2);box-shadow:var(--shadow)}
+.dhead .art img{width:100%;height:100%;object-fit:cover;display:block}
+.dhead h1{font:800 30px/1.15 Manrope,sans-serif;letter-spacing:-.02em;text-wrap:balance}
+.dhead h1 a:hover{color:var(--acc)}
+.relname{margin-top:10px;font-weight:700;font-size:15.5px;overflow-wrap:anywhere}
+.dhead .for{margin-top:8px;color:var(--dim)}
+.dhead .for a{color:var(--ink);font-weight:700;border-bottom:1px solid var(--line)}
+.dhead .for a:hover{color:var(--acc)}
+.dacts{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.dacts .btn{height:40px;padding:0 18px;border-radius:20px;font-size:14px}
+.dcols{display:grid;grid-template-columns:1fr 360px;gap:34px;margin:26px 0 34px;align-items:start}
+.dcols.noshow{grid-template-columns:1fr}
+.dhead.noshow{grid-template-columns:1fr}
+.dhead h1.relonly{font-size:24px;overflow-wrap:anywhere}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line)}
+.tabs button{padding:12px 16px;font-weight:600;font-size:14px;color:var(--dim);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs button:hover{color:var(--ink)}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--acc)}
+.panel{padding:20px 0}
+dl.vals{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px 24px;margin-top:6px}
+dl.vals dt{font-size:12.5px;color:var(--dim);font-weight:600}
+dl.vals dd{margin-top:3px;font-weight:500;font-variant-numeric:tabular-nums}
+.epbox{display:grid;grid-template-columns:1fr;gap:4px;padding:16px 18px;border-radius:14px;background:var(--panel);border:1px solid var(--line);margin-bottom:22px}
+.epbox b{font-size:16px;font-weight:600}
+.epbox span{color:var(--dim);font-size:14px}
+.aboutshow h2,.sibs h2{font:800 17px/1.2 Manrope,sans-serif}
+.aboutshow h2{margin-top:12px}
+.aboutshow .meta{margin-top:8px;color:var(--dim);font-size:14px}
+.aboutshow .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+.aboutshow .starring{font-size:13.5px}
+.aboutshow .toshow{display:inline-block;margin-top:16px;font-weight:600;font-size:14px;border-bottom:1px solid var(--line)}
+.aboutshow .toshow:hover{color:var(--acc);border-color:var(--acc)}
+.sibs{margin:0 0 70px}
+.sibs h2{margin-bottom:6px}
+.sibs tr.me td{background:var(--panel)}
+.sibs tr.me td:first-child{border-radius:10px 0 0 10px}
+.sibs tr.me td:last-child{border-radius:0 10px 10px 0}
+.sibs .this{color:var(--acc);font-size:12.5px;font-weight:600;margin-top:4px}
+.filelist td{padding:7px 10px;font:500 12.5px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
+/* releases feed */
+.feed{margin-top:18px}
+.feed td{padding:12px 12px;vertical-align:middle}
+.feed td:first-child,.feed th.selall{padding-left:4px;padding-right:4px}
+.rt .selcol{padding-left:4px;padding-right:4px}
+.feed tbody td.num,.feed tbody td:nth-child(5){color:var(--dim)}
+.feed tbody td:nth-child(6){color:var(--ink)}
+.feed td.art{width:88px;padding-left:6px;padding-right:14px}
+.feed tr:hover td.art a{transform:scale(1.04)}
+.feed td.art a{display:block;width:88px;height:132px;border-radius:10px;border:1px solid var(--line);box-shadow:0 6px 14px -6px rgb(0 0 0/.55);transition:transform .25s cubic-bezier(.16,1,.3,1);overflow:hidden;background:var(--panel2)}
+.feed td.art a{position:relative;overflow:hidden}
+.feed td.art a::before{content:attr(data-t);position:absolute;inset:0;display:grid;place-items:center;padding:6px;text-align:center;font-size:11px;line-height:1.25;color:var(--dim)}
+.feed td.art img{position:relative;width:100%;height:100%;object-fit:cover;display:block}
+.feed td.art .np{font-size:10px;padding:4px}
+.feed{table-layout:fixed;width:100%}
+.feed td.what{overflow:hidden}
+.feed td:nth-child(5){white-space:nowrap}
+.feed td.what .rname,td.name .rname{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.showlink{display:inline-block;margin-top:6px;color:var(--dim);font-size:13.5px}
+.showlink:hover{color:var(--ink);text-decoration:underline;text-underline-offset:3px}
+
+.feed td.what .epl{font-weight:500;color:var(--dim);font-size:13.5px}
+.feed td.what code{display:block;margin-top:2px;font:500 12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--dim);overflow-wrap:anywhere}
+.feed tr.dayrow td{padding:38px 0 12px;border-bottom:1px solid var(--line);font:800 19px/1 Manrope,sans-serif;letter-spacing:-.01em}
+.feed tr.dayrow small{font:500 14px/1 Manrope,sans-serif;color:var(--dim);margin-left:10px}
+.feed tr.moreof td{padding:0 10px 0 0}
+.feed tr.moreof td div{display:flex;align-items:center;gap:14px;margin-left:120px;padding:14px 0 16px;border-left:1px solid var(--line);padding-left:20px}
+.feed tr.moreof button{color:var(--dim);font-weight:500;font-size:13.5px;display:inline-flex;align-items:center;gap:8px}
+.feed tr.moreof button:hover{color:var(--ink)}
+.feed tbody tr:not(.dayrow):not(.moreof):hover{background:var(--panel)}
+
+/* home */
+.day{margin-top:30px}
+.day h2{font:800 19px/1 Manrope,sans-serif;letter-spacing:-.01em;display:flex;align-items:baseline;gap:10px}
+.day h2 small{font:500 14px/1 Manrope,sans-serif;color:var(--dim)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(178px,1fr));gap:24px 18px;margin-top:14px}
+.tile{display:block}
+.tile .art{position:relative;aspect-ratio:2/3;border-radius:12px;overflow:hidden;background:var(--panel2);transition:transform .3s cubic-bezier(.16,1,.3,1),box-shadow .3s}
+.tile:hover .art{transform:translateY(-5px);box-shadow:var(--shadow)}
+.tile img{width:100%;height:100%;object-fit:cover;display:block}
+.np{display:grid;place-items:center;padding:14px;text-align:center;font-weight:800;font-size:15px;line-height:1.2;color:var(--dim);background:var(--panel2);width:100%;height:100%}
+.tile .count{position:absolute;right:8px;top:8px;padding:3px 9px;border-radius:12px;background:rgb(10 10 14/.82);color:#fff;font-weight:500;font-size:12px}
+.tile b{display:block;margin-top:10px;font-weight:700;font-size:15px;line-height:1.25;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.tile .what{margin-top:2px;font-size:13.5px;color:var(--dim)}
+.facts{display:flex;flex-wrap:wrap;gap:4px;margin-top:7px}
+.chip{display:inline-block;padding:1px 8px;border-radius:6px;border:1px solid var(--line);font-weight:500;font-size:12.5px;line-height:18px;white-space:nowrap}
+.res{display:inline-block;width:72px;height:26px;line-height:26px;text-align:center;border-radius:7px;font-weight:500;font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.res.r-4k{background:var(--r4k-bg);color:var(--r4k-fg)}
+.res.r-1080{background:var(--r1080-bg);color:var(--r1080-fg)}
+.res.r-720{background:var(--r720-bg);color:var(--r720-fg)}
+.res.r-sd{background:var(--rsd-bg);color:var(--rsd-fg)}
+.res.r-unk{width:72px;background:none;color:var(--dim);outline:1px dashed var(--line);outline-offset:-1px}
+
+
+.chip.src{background:var(--panel2);border-color:transparent}
+.tile .size{margin-top:6px;font-size:12.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+.more{display:block;margin:34px auto 60px;height:46px;padding:0 26px;border-radius:23px;background:var(--panel2);font-weight:700}
+.more:hover{background:var(--line)}
+.empty{margin:60px 0;text-align:center;color:var(--dim)}
+
+/* show page */
+.back{display:inline-flex;align-items:center;gap:8px;margin-top:22px;color:var(--dim);font-weight:600;font-size:14px}
+.back:hover{color:var(--ink)}
+.showhead{display:grid;grid-template-columns:200px 1fr;gap:34px;margin-top:16px;align-items:start}
+.showhead .art{width:200px;aspect-ratio:2/3;border-radius:14px;overflow:hidden;box-shadow:var(--shadow);background:var(--panel2)}
+.showhead img{width:100%;height:100%;object-fit:cover;display:block}
+.showhead h1{font:800 44px/1.04 Manrope,sans-serif;letter-spacing:-.03em;text-wrap:balance}
+.showhead .meta{margin-top:10px;color:var(--dim)}
+.showhead p{margin-top:14px;max-width:640px;line-height:1.6}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.bar2.hastabs{align-items:flex-end;padding:8px 0 0;gap:0 26px;flex-wrap:nowrap}
+.stabs{display:flex;flex-wrap:nowrap;align-items:flex-end;gap:0 4px;margin:0 auto -1px 0;min-width:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+.stabs a{padding:12px 16px;font-weight:600;font-size:15px;color:var(--dim);border-bottom:2px solid transparent;white-space:nowrap}
+.stabs a:hover{color:var(--ink)}
+.stabs a[aria-current]{color:var(--ink);border-bottom-color:var(--acc)}
+.stabs .lbl{padding:12px 8px 12px 0;font-weight:600;font-size:15px;color:var(--dim);border-bottom:2px solid transparent}
+.stabs.many{gap:0}
+.stabs.many a{padding:12px 8px;min-width:30px;text-align:center;font-variant-numeric:tabular-nums}
+.sfil{display:flex;gap:10px;padding-bottom:9px;flex:none}
+.bar2{position:sticky;top:68px;z-index:10;background:var(--bg);display:flex;flex-wrap:wrap;align-items:center;gap:10px 26px;padding:14px 0;margin-top:26px;border-bottom:1px solid var(--line)}
+.bar2 h2{font:800 21px/1 Manrope,sans-serif;letter-spacing:-.015em;margin-right:auto}
+.ep{border-bottom:1px solid var(--line)}
+.ep>button{display:grid;grid-template-columns:62px minmax(0,460px) 120px 1fr auto;gap:16px;align-items:center;width:100%;padding:14px 6px;text-align:left}
+.ep>button:hover{background:var(--panel)}
+.ep .no{font-weight:600;color:var(--dim);font-variant-numeric:tabular-nums}
+.ep .ti{font-weight:600}
+.ep .ti small{display:block;font-weight:500;font-size:13px;color:var(--dim)}
+.ep .n{font-size:13.5px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap;text-align:left}
+.relbtn{display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 10px 0 14px;border-radius:17px;background:var(--panel2);color:var(--ink);font-weight:600;font-size:13.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.relbtn .i{transform:rotate(90deg);transition:transform .25s cubic-bezier(.16,1,.3,1);color:var(--dim)}
+.ep>button:hover .relbtn{background:var(--line)}
+.ep[open-] .relbtn,.ep[open-]>button:hover .relbtn{background:var(--acc);color:var(--accink)}
+.ep[open-] .relbtn .i{transform:rotate(-90deg);color:var(--accink)}
+.rels{padding:2px 6px 18px 76px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font-weight:600;font-size:12px;color:var(--dim);padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th button{font-weight:600;display:inline-flex;align-items:center;gap:4px}
+th button:hover{color:var(--ink)}
+th button[aria-sort],th[aria-sort] button{color:var(--ink)}
+td{padding:12px 10px;border-bottom:1px solid var(--line);vertical-align:middle;font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:0}
+table.rt{table-layout:fixed;width:100%}
+td.name{overflow:hidden}
+td.nw{white-space:nowrap;min-width:96px}
+td.name b{display:block;font:700 13.5px/1.3 Manrope,sans-serif;color:var(--ink);margin-bottom:2px}
+td.num{text-align:right;white-space:nowrap} th.num{text-align:right}
+.acts{display:flex;gap:6px;justify-content:flex-end;white-space:nowrap}
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:16px;font-weight:600;font-size:13px;background:var(--acc);color:var(--accink)}
+.btn:hover{filter:brightness(1.1)}
+.btn.sec{background:var(--panel2);color:var(--ink)}
+.btn.sec[aria-pressed=true]{background:var(--acc);color:var(--accink)}
+.packs{margin:26px 0 70px}
+.packs:has(+ .packs){margin-bottom:26px}
+.packs h3{font:800 17px/1 Manrope,sans-serif;margin-bottom:6px}
+.packs .rels{padding-left:0}
+.toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,20px);opacity:0;background:var(--ink);color:var(--bg);padding:12px 20px;border-radius:24px;font-weight:700;font-size:14px;transition:all .3s cubic-bezier(.16,1,.3,1);pointer-events:none;z-index:50}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+@media (max-width:900px){.wrap{padding:0 16px}.nav .wrap{gap:10px}.iconbtn .lbl{display:none}.iconbtn{padding:0 12px}.search{min-width:0}.fg{flex-wrap:wrap}.filters h1{flex-basis:100%}.bar2{position:static}.bar2 h2{flex-basis:100%}.ep .n{white-space:normal;text-align:right;font-size:12.5px}.nav a.l{display:none}.search{width:auto;flex:1}.showhead{grid-template-columns:110px 1fr;gap:16px}.showhead .art{width:110px}.showhead h1{font-size:28px}.rels{padding-left:0;overflow-x:auto}.tiles{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}.ep>button{grid-template-columns:40px 1fr auto 18px}.ep .fc{display:none}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ---- Movies: the releases list's second filter row (seven menus, one fixed width each, never wraps) ---- */
+.mrow{display:flex;flex-wrap:nowrap;align-items:center;gap:10px;padding:14px 0 0}
+.mfilters{display:flex;flex-wrap:nowrap;align-items:center;gap:10px}
+.mfilters .sfm .mbtn{width:clamp(128px,calc((min(100vw,1500px) - 80px - 134px)/7),183px)}
+/* Audio + Language (2026-09-26): the release's menus, then the film's menus on a second row (he chose B) */
+.mrow.two{padding-top:10px}
+/* ---- filter look (2026-09-26): he chose C, grouped panels: each row a named panel of menus; the name regular, the value semibold ---- */
+.mfilters .grp{display:block;flex:none;width:58px;font-size:12.5px;font-weight:600;color:var(--dim)}
+.sfm .mbtn .v.any{font-weight:500}
+.mfilters{padding:6px 6px 6px 18px;border-radius:26px;background:var(--panel2)}
+.mfilters .sfm:not(.set) .mbtn{background:var(--panel)}
+.mfilters .sfm:not(.set) .mbtn:hover{background:var(--line)}
+.sfm .mbtn .k{font-weight:500;color:var(--dim)}
+.sfm .mbtn .sep{color:var(--dim)}
+.sfm .mbtn .v.any{color:var(--dim)}
+.msel.set .mbtn .k,.msel.set .mbtn .sep{color:var(--accink)}
+.mrow .clearall{flex:none;width:64px;text-align:left;color:var(--acc);font-weight:500;font-size:14px;white-space:nowrap}
+.mrow .clearall:hover{text-decoration:underline;text-underline-offset:3px}
+.mrow .clearall[aria-hidden=true]{visibility:hidden}
+.filters .sel.sortsel{margin-left:0}
+/* year: one choice (decade, range or single year), so round markers instead of boxes */
+.mitem .dot{display:grid;place-items:center;width:18px;height:18px;border-radius:9px;border:1.5px solid var(--dim);flex:none}
+.mitem[aria-checked=true] .dot{border-color:var(--acc)}
+.mitem[aria-checked=true] .dot::after{content:"";width:8px;height:8px;border-radius:4px;background:var(--acc)}
+.mhead{padding:10px 10px 4px;font-size:12px;font-weight:600;color:var(--dim)}
+.msep{height:1px;margin:6px 4px;background:var(--line)}
+.yrange{display:flex;align-items:center;gap:8px;padding:4px 10px 8px}
+.yrange input{width:72px;height:34px;border-radius:17px;border:0;background:var(--panel2);text-align:center;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink);caret-color:var(--acc)}
+.yrange input:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.yrange span{color:var(--dim);font-size:13px}
+.yrange .btn{height:34px;margin-left:auto}
+.yrange .btn[disabled]{opacity:.45;cursor:default;filter:none}
+.mhead.yerr{color:var(--bad)}
+.ymenu{width:290px}
+.ymenu .years{display:grid;grid-template-columns:repeat(3,1fr);gap:2px}
+.ymenu .years .mitem{height:36px;gap:8px;padding:0 8px;font-variant-numeric:tabular-nums}
+.mitem .sub2{margin-left:auto;color:var(--dim);font-size:12.5px;font-variant-numeric:tabular-nums}
+/* no-poster placeholder in the releases list: a name card when the release name states Title.Year.quality, else the film tile (he chose B, 2026-09-26) */
+.feed td.art a.ph{display:grid;place-items:center;align-content:center;gap:8px;background:var(--panel2);color:var(--dim);text-align:center}
+.feed td.art a.ph::before{content:none}
+.feed td.art a.ph svg{width:30px;height:30px;stroke-width:1.4;opacity:.8}
+.feed td.art a.ph small{font-size:11px;line-height:1.2}
+.feed td.art a.ph.card{padding:8px 4px;gap:4px}
+.feed td.art a.ph.card b{font-size:11px;line-height:1.25;font-weight:500;color:var(--dim);display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;justify-self:stretch;min-width:0}
+.feed td.art a.ph.card small{font-variant-numeric:tabular-nums}
+.feed td.art .np{font-weight:500}
+/* placeholder for screens not designed yet */
+.later{margin:80px auto;max-width:560px;text-align:center;color:var(--dim)}
+.later h1{font:800 26px/1.2 Manrope,sans-serif;color:var(--ink);margin-bottom:10px}
+.later a{color:var(--ink);font-weight:600;border-bottom:1px solid var(--line)}
+.later a:hover{color:var(--acc);border-color:var(--acc)}
+
+/* group + poster: one unit that never splits; the poster name shortens with an ellipsis to the room left (2026-09-26) */
+.rchips .orig{display:inline-flex;gap:5px;min-width:0;max-width:100%}
+.rchips .orig .rc{flex:none}
+.rchips .orig .rc:last-child{flex:0 1 auto;min-width:0}
+.rchips .orig .rc .ot{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rchips .orig{flex:1 1 0;min-width:190px}
+.feed .rchips .orig{gap:8px}
+/* releases list only: the four round actions as 2 × 2 (download + copy link on top, cart + watch below; cart alone when there is no watch) (2026-09-26) */
+.iconacts.stack{display:grid;grid-template-columns:repeat(2,32px);gap:6px;justify-content:end}
+.iconacts.stack .slot{display:none}
+/* release-list buttons in colour (2026-09-26): coral stays on Download only; Copy link blue, Cart green, Watch violet.
+   Tinted ground + coloured icon (he chose A). On (in cart / following) = solid fill of the button's own hue. */
+:root{--b-cp:235;--b-ct:150;--b-w:300}
+.iconacts.stack .ia[data-copynzb]{--h:var(--b-cp)}.iconacts.stack .ia[data-cart]{--h:var(--b-ct)}.iconacts.stack .ia[data-watch]{--h:var(--b-w)}
+.iconacts.stack .ia:not(.dl){background:oklch(0.31 0.06 var(--h));color:oklch(0.86 0.11 var(--h))}
+.iconacts.stack .ia:not(.dl):hover{background:oklch(0.37 0.08 var(--h))}
+:root[data-theme=light] .iconacts.stack .ia:not(.dl){background:oklch(0.92 0.045 var(--h));color:oklch(0.45 0.14 var(--h))}
+:root[data-theme=light] .iconacts.stack .ia:not(.dl):hover{background:oklch(0.87 0.07 var(--h))}
+.iconacts.stack .ia:not(.dl)[aria-pressed=true]{background:oklch(0.72 0.15 var(--h));color:oklch(0.18 0.04 var(--h))}
+.iconacts.stack .ia:not(.dl)[aria-pressed=true]:hover{background:oklch(0.78 0.13 var(--h))}
+:root[data-theme=light] .iconacts.stack .ia:not(.dl)[aria-pressed=true]{background:oklch(0.50 0.15 var(--h));color:#fff}
+:root[data-theme=light] .iconacts.stack .ia:not(.dl)[aria-pressed=true]:hover{background:oklch(0.44 0.15 var(--h))}
+.iconacts.stack .ia:not(.dl):focus-visible{outline-color:var(--ink);outline-offset:1px}
+/* ---- Film page (2026-09-27): the TV show page's header, then ONE release table (not grouped) under a two-cell filter bar,
+   then Similar films. Buttons in the table are the releases list's tinted hues on one line; a pressed Cart / Watch fills in
+   its own hue, never coral (his rule). ---- */
+.fhead .meta{display:flex;flex-wrap:wrap;align-items:center;gap:0 7px;font-variant-numeric:tabular-nums}
+.fhead .meta .res{margin-left:3px}
+.fhead .starring+.starring{margin-top:2px}
+.fhead .dacts{margin-top:20px}
+.fhead .ph{display:grid;place-items:center;align-content:center;gap:8px;width:100%;height:100%;padding:22px 16px;background:var(--panel2);color:var(--dim);text-align:center}
+.fhead .ph .t{font-weight:500;font-size:17px;line-height:1.3;overflow-wrap:anywhere}
+.fhead .ph small{font-size:14px;font-variant-numeric:tabular-nums}
+.btn.ext .i{width:14px;height:14px;opacity:.75}
+.btn.wat{--h:var(--b-w);background:oklch(0.31 0.06 var(--h));color:oklch(0.86 0.11 var(--h))}
+.btn.wat:hover{filter:none;background:oklch(0.37 0.08 var(--h))}
+:root[data-theme=light] .btn.wat{background:oklch(0.92 0.045 var(--h));color:oklch(0.45 0.14 var(--h))}
+:root[data-theme=light] .btn.wat:hover{background:oklch(0.87 0.07 var(--h))}
+.btn.wat[aria-pressed=true]{background:oklch(0.72 0.15 var(--h));color:oklch(0.18 0.04 var(--h))}
+.btn.wat[aria-pressed=true]:hover{background:oklch(0.78 0.13 var(--h))}
+:root[data-theme=light] .btn.wat[aria-pressed=true]{background:oklch(0.50 0.15 var(--h));color:#fff}
+:root[data-theme=light] .btn.wat[aria-pressed=true]:hover{background:oklch(0.44 0.15 var(--h))}
+/* the two labels share one cell so the button keeps the wider one's width: nothing moves when it is pressed */
+.btn.wat .wl{display:grid}.btn.wat .wl>span{grid-area:1/1}.btn.wat .wl>span[hidden]{display:block;visibility:hidden}
+.btn.wat:focus-visible{outline-color:var(--ink);outline-offset:1px}
+.frel{margin-top:40px;scroll-margin-top:84px}
+.frel>h2,.simf>h2{font:800 21px/1.1 Manrope,sans-serif;letter-spacing:-.015em}
+.frel .mrow{padding-top:14px}
+/* two cells, each as wide as a cell of the Movie releases list's bars */
+.fbar.pf .fseg.rel{flex:0 0 calc(((100% - 12px) / 2 - 8px) * 2 / 5 + 8px)}
+.frel .pager.slim{margin-top:10px}
+.frel table.rt{margin-top:6px}
+.frel .rt .selcol{width:34px}
+.simf{margin:44px 0 80px}
+/* six tiles as wide as the Films wall's tiles at the same window width (seven to a row there) */
+.simf .tiles{grid-template-columns:repeat(6,calc((100% - 108px) / 7));margin-top:14px}
+.loadnote{margin:80px 0;text-align:center;color:var(--dim)}
+/* ---- Films wall (2026-09-26): the TV wall's tile; lines "Year · Genre, Genre", "Score · Certificate", and the release count as a grey line (he chose A) ---- */
+.wall .tiles{margin-top:4px}
+.tile .what,.tile .m2,.tile .m3{font-variant-numeric:tabular-nums}
+.tile .m3{margin-top:2px;font-size:12.5px;color:var(--dim)}
+.tile .art .ph{display:grid;place-items:center;align-content:center;gap:8px;width:100%;height:100%;padding:18px 14px;background:var(--panel2);color:var(--dim);text-align:center}
+.tile .art .ph .t{font-weight:500;font-size:15px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.tile .art .ph small{font-size:13px;font-variant-numeric:tabular-nums}
+.wall .tile .gn{white-space:nowrap}
+/* the top pager's arrows never move as the page count changes */
+.wall .pager.slim .pg{min-width:calc(13ch + 20px);text-align:center}
+.mrow .person{flex:none}
+
+/* ---- filter bar (2026-09-26, on trial against the grouped-panels fallback): the release's filters and the film's filters each one
+   continuous bar of cells (name above value, hairline dividers), like a booking site's search bar; the open cell lifts out of the bar;
+   a set filter is marked by a coral line under its value; long lists search and scroll inside their own menu ---- */
+.varsel{position:fixed;left:24px;bottom:24px;z-index:35;display:flex;align-items:center;gap:10px;padding:6px 6px 6px 16px;border-radius:24px;background:var(--panel);box-shadow:var(--shadow);font-size:13px;color:var(--dim)}
+.mrow.fbar{gap:12px}
+.fbar{--raise:#2a2e39}
+:root[data-theme=light] .fbar{--raise:#fff}
+.fbar .fseg{display:flex;align-items:stretch;height:56px;padding:4px;border-radius:18px;background:var(--panel2);min-width:0}
+.fbar .fseg.rel{flex:5 1 0}
+.fbar .fseg.film{flex:5 1 0}
+.fbar.one .fseg.film{flex:0 0 calc((100% - 12px) / 2)}
+.pager.slim.fixed .pg{min-width:calc(13ch + 20px);text-align:center}
+.pager.slim .clearall{width:64px;margin-right:12px;text-align:right;color:var(--acc);font-weight:500;font-size:14px;white-space:nowrap}
+.pager.slim .clearall:hover{text-decoration:underline;text-underline-offset:3px}
+.pager.slim .clearall[aria-hidden=true]{visibility:hidden}
+.fbar .sfm{position:relative;display:flex;flex:1 1 0;min-width:0}
+.fbar .sfm .mbtn{position:relative;width:100%;height:48px;padding:0 10px 0 14px;border-radius:14px;background:transparent;color:var(--ink);justify-content:space-between;gap:6px}
+.fbar .sfm .mbtn:hover{background:var(--line)}
+.fbar .sfm.open .mbtn{background:var(--raise);box-shadow:var(--shadow)}
+.fbar .sfm .mmenu{background:var(--raise)}
+.fbar .msearch{background:var(--raise)}
+.fbar .sfm .mbtn .lab{display:flex;flex-direction:column;gap:2px;line-height:1.2}
+.fbar .sfm .mbtn .sep{display:none}
+.fbar .sfm .mbtn .k{font-size:11.5px;font-weight:500;color:#fff}
+:root[data-theme=light] .fbar .sfm .mbtn .k{color:var(--ink)}
+.fbar .sfm .mbtn .v{font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fbar .sfm .mbtn .v.any{font-weight:500;color:var(--dim)}
+.fbar .sfm .mbtn svg{color:var(--dim)}
+.fbar .sfm+.sfm::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:1px;background:var(--line);pointer-events:none}
+.fbar .sfm:hover::before,.fbar .sfm:hover+.sfm::before,.fbar .sfm.open::before,.fbar .sfm.open+.sfm::before{opacity:0}
+/* set: the cell keeps the bar's ground; a coral line under the value says it is on */
+.fbar .msel.set .mbtn{background:transparent;color:var(--ink)}
+.fbar .msel.set .mbtn:hover{background:var(--line)}
+.fbar .msel.set.open .mbtn{background:var(--raise)}
+.fbar .msel.set .mbtn .k{color:#fff}
+:root[data-theme=light] .fbar .msel.set .mbtn .k{color:var(--ink)}
+.fbar .msel.set .mbtn .v{color:var(--ink)}
+.fbar .msel.set .mbtn::after{content:"";position:absolute;left:14px;right:14px;bottom:3px;height:3px;border-radius:2px;background:var(--acc)}
+.fbar .sfm .mmenu{top:58px;left:0;right:auto;min-width:max(100%,230px)}
+.fbar .sfm .mmenu.searchable{max-height:402px}
+.fbar .mrow .clearall,.mrow.fbar .clearall{align-self:center}
+/* long lists: a search field that stays at the top of the menu, the options scroll under it */
+.mmenu.searchable{padding-top:0}
+.msearch{position:sticky;top:0;z-index:1;display:flex;align-items:center;margin:0 -6px 4px;padding:10px 12px 8px;background:var(--panel);color:var(--dim)}
+.msearch svg{position:absolute;left:24px;top:50%;transform:translateY(-35%);pointer-events:none}
+.msearch input{flex:1;min-width:0;height:34px;padding:0 12px 0 34px;border:0;border-radius:17px;background:var(--panel2);color:var(--ink);font:500 13.5px Manrope,sans-serif;caret-color:var(--acc)}
+.msearch input::placeholder{color:var(--dim)}
+.msearch input:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.mitem[hidden]{display:none}
+/* the year menu in the bar: decades in three columns so the range shows without scrolling */
+.fbar .yrange .btn[disabled]{opacity:1;background:var(--panel2);color:var(--dim)}
+.fbar .ymenu>[role=menu]:first-child{display:grid;grid-template-columns:repeat(3,1fr);column-gap:2px}
+.fbar .ymenu>[role=menu]:first-child>.mitem:first-child,.fbar .ymenu>[role=menu]:first-child>.mhead{grid-column:1/-1}
+.fbar .ymenu>[role=menu]:first-child>.mitem{gap:8px;padding:0 6px}
+
+/* ---- Follow button icon (2026-09-27): a bookmark, filled solid while followed ---- */
+[data-watch][aria-pressed=true] svg.i.fill{fill:currentColor}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5m0 0 6-6m-6 6 6 6"/></symbol>
+  <symbol id="i-open" viewBox="0 0 24 24"><path d="M5 12h14m0 0-6-6m6 6-6 6"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="i-cart" viewBox="0 0 24 24"><path d="M4 5h2l2.2 10h9.3L20 8H7.2"/><circle cx="9.5" cy="19" r="1.3"/><circle cx="17" cy="19" r="1.3"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6 7 7m10 10 1.4 1.4M5.6 18.4 7 17m10-10 1.4-1.4"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-9.5v.5"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6m-6 4h6"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m4 18 5.5-5 4 3.5 2.5-2 4 3.5"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4m0 1h12l-2 4 2 4H5"/></symbol>
+  <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M7 3.5h10a1 1 0 0 1 1 1v16l-6-4-6 4v-16a1 1 0 0 1 1-1z"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 15V9.5a6 6 0 0 1 12 0V15l1.6 2.2H4.4z"/><path d="M10 20a2.2 2.2 0 0 0 4 0"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 5.2a3.2 3.2 0 0 1 0 5.6M18 14.4c1.8.9 3 2.9 3 5.6"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.4"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-tv" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 21h8M9 3l3 3 3-3"/></symbol>
+  <symbol id="i-audio" viewBox="0 0 24 24"><path d="M4 10v4h3l5 4V6l-5 4zM16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12.5-7.5z"/></symbol>
+  <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="3.5" width="18" height="17" rx="2.5"/><path d="M7.5 3.5v17M16.5 3.5v17M3 8h4.5M3 12h4.5M3 16h4.5M16.5 8H21M16.5 12H21M16.5 16H21"/></symbol>
+  <symbol id="i-sort" viewBox="0 0 24 24"><path d="m8 10 4-4 4 4M8 14l4 4 4-4"/></symbol>
+</svg>
+<header class="nav"><div class="wrap">
+  <a class="brand" href="#/">NNTmux</a>
+  <a class="l on" href="#/">Movies</a><a class="l" href="#/" data-dummy>TV</a><a class="l" href="#/" data-dummy>Music</a><a class="l" href="#/" data-dummy>Books</a>
+  <form class="sitesearch" role="search" aria-label="Site search"><label class="scope"><select aria-label="Search scope"><option>All</option><option selected>Movies</option><option>TV</option><option>Music</option><option>Books</option></select><svg class="i"><use href="#i-chev"/></svg></label><label class="field"><svg class="i"><use href="#i-search"/></svg><input type="search" placeholder="Search releases…" aria-label="Search releases"></label></form>
+  <button class="iconbtn" id="cartbtn" aria-label="Cart"><svg class="i"><use href="#i-cart"/></svg><span class="lbl">Cart</span> <em id="cartn">0</em></button>
+  <button class="iconbtn" id="theme" aria-label="Switch light or dark"><svg class="i"><use href="#i-sun"/></svg></button>
+</div></header>
+<main class="wrap" id="app"></main>
+<div id="modal"></div>
+<div class="toast" id="toast" role="status"></div>
+<script>
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const ic=n=>`<svg class="i" aria-hidden="true"><use href="#i-${n}"/></svg>`;
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const RES=['4K','1080p','720p','SD'], SRC=['WEB','Blu-ray','DVD','HDTV'];
+const SCORES=[['9','9+'],['8','8–8.9'],['7','7–7.9'],['6','6–6.9'],['5','5–5.9'],['low','Under 5'],['few','Too few votes']];
+const CERTS=['G','PG','PG-13','R','NC-17','NR'];
+const THIS_YEAR=2026, FIRST_YEAR=1900;
+const state={rsort:'posted_desc',page:1,per:50,sel:new Set(),watch:new Set(),res:new Set(),src:new Set(),cat:new Set(),genre:new Set(),score:new Set(),cert:new Set(),aud:new Set(),lang:new Set(),year:null,yin:{a:'',b:''},yerr:'',dd:null,expanded:new Set(),cart:new Set(),tab:'overview',
+  // the Films wall keeps its own filters (w-prefixed), its own sort and page
+  msq:{},fb:'bar',comp:false,wsort:'recent',wpage:1,wper:42,wgenre:new Set(),wscore:new Set(),wcert:new Set(),wlang:new Set(),wyear:null,wyin:{a:'',b:''},wyerr:'',person:null,
+  // the film page: its own Resolution / Source cells (reset when another film opens), its table sort, the demo trailers setting
+  pfilm:null,pres:new Set(),psrc:new Set(),fsort:{k:'posted',dir:-1},fper:50,trailers:false,back:'#/'};
+const NOCACHE='?t='+Date.now();
+const store={get(k,d){try{return localStorage.getItem('nntmux.movies.'+k)||d;}catch(e){return d;}},set(k,v){try{localStorage.setItem('nntmux.movies.'+k,v);}catch(e){}}};
+let MORE=null,BYFILM={},DB,REL,BYID={},NOW,NOWALL,RX={x:{},summ:{}},MEDIA=null,FILES=null,NFO=null,PV=new Set(),PEOPLE={},CATS=[],GENRES=[],CERTS_ON=[],FSTAT={},WGENRES=[],WCERTS_ON=[],ALANG={},FLANG={},AUDS=[],LANGS_ON=[],WLANGS=[];
+
+function parse(name){let codec='';
+  if(/x265|h\.?265|hevc/i.test(name))codec='H.265';else if(/x264|h\.?264|avc/i.test(name))codec='H.264';else if(/\bav1\b/i.test(name))codec='AV1';else if(/xvid/i.test(name))codec='XviD';
+  return {codec};}
+// films and release counts: the list's and the wall's, else the film page's extra films (mv/more.json, gen-film-page-data.py)
+const FILM=id=>(DB.films[id])||(MORE&&MORE.films[id])||null, STAT=id=>FSTAT[id]||(MORE&&MORE.stats[id])||[0,0,0];
+const F=r=>r.f?FILM(r.f):null;
+const filmHref=r=>'#/film/'+r.f;
+const filmLine=f=>esc(f.t)+(f.y?' · '+esc(f.y):'');
+const resChip=v=>`<span class="res r-${{'4K':'4k','1080p':'1080','720p':'720','SD':'sd'}[v]||'unk'}">${v}</span>`;
+const srcLabel=r=>r.remux?'Remux':r.src;
+const gb=b=>b>=1073741824?(b/1073741824).toFixed(b>=10737418240?1:2)+' GB':b>=1048576?Math.round(b/1048576)+' MB':Math.max(1,Math.round(b/1024))+' KB';
+const pad=n=>String(n).padStart(2,'0');
+const dayKey=t=>{const d=new Date(t*1000);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());};
+const shortDate=t=>new Date(t*1000).toLocaleDateString('en-US',{day:'numeric',month:'short',year:'numeric'});
+const poster=(f,id,eager)=>f.p?`<img src="mv/posters/${id}.webp" alt="" loading="${eager?'eager':'lazy'}">`:`<div class="np">${esc(f.t)}</div>`;
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('on'),2200);}
+const X=r=>{const a=RX.x[r.id]||[];return {guid:a[0]||'',group:a[1]||'',poster:a[2]||'',added:a[3]||r.t,nfo:!!a[4],jpg:!!a[5],pv:!!a[6],pw:!!a[7],pwChecked:true,cm:a[8]||0,files:a[9]||0,cat:a[10]||'Movies > Other',final:!!a[11]};};
+const catOf=r=>X(r).cat.replace(/^Movies > /,'');
+// the title and year a film-less release name states ("The.Killer's.Game.(2024).VFF.2160p…"), or null
+const nameTitle=n=>{if(/S\d+E\d+|\.rar|\.part\d|^["'(\[]/i.test(n))return null;const m=n.match(/^(.+?)[._ \-(\[]+((?:19|20)\d{2})[._ \-)\]]+(?:[^A-Za-z0-9]*)(2160p|1080[pi]|720p|576p|480p|UHD|BluRay|Blu-Ray|BDRip|BRRip|WEB|WEBRip|HDTV|DVD\w*|REMUX|MULTi|VFF|VFI|VOSTFR|FRENCH|GERMAN|iTALiAN|SPANiSH|HUN|DUAL|x26[45]|HEVC|AVC)\b/i);if(!m)return null;const t=m[1].replace(/[._]+/g,' ').replace(/[\s\-]+$/g,'').trim();return t?{t,y:m[2]}:null;};
+function placeholder(x,f){const nt=f?{t:f.t,y:f.y}:nameTitle(x.name);
+  return nt?`<a class="ph card" href="#/release/${x.id}" tabindex="-1" aria-hidden="true"><b>${esc(nt.t)}</b>${nt.y?`<small>${esc(nt.y)}</small>`:''}</a>`:`<a class="ph" href="#/release/${x.id}" tabindex="-1" aria-hidden="true">${ic('film')}<small>No poster</small></a>`;}
+
+/* ---------- filters ---------- */
+const scoreBand=f=>{if(!f||f.sc==null||(f.vc!=null&&f.vc<10))return 'few';const s=f.sc;return s>=9?'9':s>=8?'8':s>=7?'7':s>=6?'6':s>=5?'5':'low';};
+const yearOk=(f,y=state.year)=>{if(!y)return true;const v=f&&+f.y;if(!v)return false;
+  return y.kind==='decade'?(y.vs||[y.v]).some(d=>v>=d&&v<d+10):y.kind==='range'?v>=y.a&&v<=y.b:v===y.v;};
+const decadesOf=y=>y&&y.kind==='decade'?(y.vs||[y.v]):[];
+const isWall=()=>/^#\/films/.test(location.hash);
+const matchFilm=id=>{const f=DB.films[id];
+  return (!state.wgenre.size||f.g.some(g=>state.wgenre.has(g)))&&(!state.wscore.size||state.wscore.has(scoreBand(f)))
+   &&(!state.wcert.size||state.wcert.has(f.cert))&&yearOk(f,state.wyear)&&(!state.wlang.size||state.wlang.has(FLANG[id]))&&(!state.person||(PEOPLE[state.person]||[]).includes(id));};
+function matchRel(r){const f=F(r);
+  return (!state.cat.size||state.cat.has(catOf(r)))&&(!state.res.size||state.res.has(r.res))&&(!state.src.size||state.src.has(r.src))
+   &&(!state.genre.size||(f&&f.g.some(g=>state.genre.has(g))))&&(!state.score.size||(f&&state.score.has(scoreBand(f))))
+   &&(!state.cert.size||(f&&state.cert.has(f.cert)))&&yearOk(f)
+   &&(!state.comp||r.comp>=+state.comp)&&(!state.aud.size||audOf(r).some(a=>state.aud.has(a)))&&(!state.lang.size||(f&&state.lang.has(FLANG[r.f])));}
+// a release's audio languages (media info); none known reads Unknown, as Resolution and Source do
+const audOf=r=>ALANG[r.id]||['Unknown'];
+const OPTS=()=>({cat:CATS.map(v=>[v,v]),res:[...RES,'Unknown'].map(v=>[v,v]),src:[...SRC,'Unknown'].map(v=>[v,v]),genre:GENRES.map(v=>[v,v]),score:SCORES,cert:CERTS_ON.map(v=>[v,v]),
+  wgenre:WGENRES.map(v=>[v,v]),wscore:SCORES,wcert:WCERTS_ON.map(v=>[v,v]),aud:AUDS.map(v=>[v,v]),lang:LANGS_ON.map(v=>[v,v]),wlang:WLANGS.map(v=>[v,v]),pres:[...RES,'Unknown'].map(v=>[v,v]),psrc:[...SRC,'Unknown'].map(v=>[v,v])});
+const LABELS={cat:['Category','Any category'],res:['Resolution','Any resolution'],src:['Source','Any source'],genre:['Genre','Any genre'],score:['Score','Any score'],cert:['MPAA Rating','Any MPAA rating'],
+  wgenre:['Genre','Any genre'],wscore:['Score','Any score'],wcert:['MPAA Rating','Any MPAA rating'],aud:['Audio','Any audio'],lang:['Language','Any language'],wlang:['Language','Any language'],pres:['Resolution','Any resolution'],psrc:['Source','Any source']};
+const yearText=y=>!y?'':y.kind==='decade'?decadesOf(y).map(d=>d+'s').join(' or '):y.kind==='range'?y.a+'–'+y.b:String(y.v);
+// the Year cell: one decade names it, several read "N chosen" like the other multi-select filters
+const yearCell=y=>y&&y.kind==='decade'&&decadesOf(y).length>1?decadesOf(y).length+' chosen':yearText(y);
+const anySet=()=>['cat','res','src','aud','genre','score','cert','lang'].some(k=>state[k].size)||!!state.year||state.comp;
+const wallAnySet=()=>['wgenre','wscore','wcert','wlang'].some(k=>state[k].size)||!!state.wyear||!!state.person;
+const clearYerr=()=>{state.yerr='';state.wyerr='';};
+// the year menu's scope from any element inside it: '' for the releases list, 'w' for the Films wall
+const yScope=el=>(el.closest('[data-msel]')?.dataset.msel||'year').replace(/year$/,'');
+// a menu button's face: the filter's name, then its value ("any" when nothing is set); the three open layouts style these parts
+const lab=(k,v,none)=>`<span class="lab"><span class="k">${esc(k)}</span><span class="sep">: </span><span class="v${none?' any':''}">${esc(v)}</span></span>`;
+const SEARCH_NAME={cat:'categories',genre:'genres',aud:'audio languages',lang:'languages',wgenre:'genres',wlang:'languages'};
+const msMatch=(k,l)=>{const q=(state.msq[k]||'').trim().toLowerCase();return !q||String(l).toLowerCase().includes(q);};
+function menu(k){const [label,anyLabel]=LABELS[k],opts=OPTS()[k],set=state[k],on=opts.filter(([v])=>set.has(v)),open=state.dd===k,search=opts.length>10;if(!open)delete state.msq[k];
+  const txt=on.length>1?on.length+' chosen':on.length?on[0][1]:'any';
+  const items=`<button class="mitem" data-ddany="${k}" role="menuitemcheckbox" aria-checked="${!on.length}"><span class="box">${!on.length?ic('check'):''}</span>${anyLabel}</button>${opts.map(([v,l])=>`<button class="mitem" data-ddpick="${k}" data-v="${esc(v)}" role="menuitemcheckbox" aria-checked="${set.has(v)}"${msMatch(k,l)?'':' hidden'}><span class="box">${set.has(v)?ic('check'):''}</span>${k==='res'||k==='pres'?resChip(v):esc(l)}</button>`).join('')}`;
+  return `<div class="msel sfm${on.length?' set':''}${open?' open':''}" data-msel="${k}"><button class="mbtn" data-ddtoggle="${k}" aria-haspopup="true" aria-expanded="${open}" title="${on.length?esc(label+': '+on.map(o=>o[1]).join(', ')):''}">${lab(label,txt,!on.length)}${ic('chev')}</button>
+  ${open?(search?`<div class="mmenu searchable" role="dialog" aria-label="${label}"><div class="msearch">${ic('search')}<input data-msearch="${k}" placeholder="Search ${SEARCH_NAME[k]||label.toLowerCase()}" aria-label="Search ${SEARCH_NAME[k]||label.toLowerCase()}" value="${esc(state.msq[k]||'')}" autocomplete="off"></div><div role="menu" aria-label="${label}">${items}</div></div>`
+    :`<div class="mmenu" role="menu" aria-label="${label}">${items}</div>`):''}</div>`;}
+// Completion (his request 2026-09-26): one choice, any or 95% or more complete
+function compMenu(){const on=state.comp,open=state.dd==='comp',item=(v,l)=>`<button class="mitem" data-cpick="${v}" role="menuitemradio" aria-checked="${(v==='any'&&!on)||v===on}"><span class="dot"></span>${l}</button>`;
+  return `<div class="msel sfm${on?' set':''}${open?' open':''}" data-msel="comp"><button class="mbtn" data-ddtoggle="comp" aria-haspopup="true" aria-expanded="${open}" title="${on?'Completion: '+(on==='100'?'100% only':'95% or more'):''}">${lab('Completion',on?(on==='100'?'100%':'95%+'):'any',!on)}${ic('chev')}</button>
+  ${open?`<div class="mmenu" role="menu" aria-label="Completion">${item('any','Any completion')}${item('100','100% only')}${item('95','95% or more')}</div>`:''}</div>`;}
+// Apply works once From holds four digits; To is optional (From alone = that one year; his ruling 2026-09-26, no list of single years)
+const yearReady=yin=>/^\d{4}$/.test(yin.a)&&(yin.b===''||/^\d{4}$/.test(yin.b));
+function yearMenu(p=''){const y=state[p+'year'],yin=state[p+'yin'],yerr=state[p+'yerr'],open=state.dd===p+'year',ds=decadesOf(y),is=(kind,v)=>kind==='decade'?ds.includes(v):!y;
+  const item=(kind,v,label)=>`<button class="mitem" data-ypick="${kind}:${v}" role="menuitemcheckbox" aria-checked="${is(kind,v)}"><span class="box">${is(kind,v)?ic('check'):''}</span>${label}</button>`;
+  const decades=[];for(let d=Math.floor(THIS_YEAR/10)*10;d>=FIRST_YEAR;d-=10)decades.push(d);
+  return `<div class="msel sfm${y?' set':''}${open?' open':''}" data-msel="${p}year"><button class="mbtn" data-ddtoggle="${p}year" aria-haspopup="true" aria-expanded="${open}" title="${y?esc('Year: '+(ds.length?ds.map(d=>d+'s').join(', '):yearText(y))):''}">${lab('Year',y?yearCell(y):'any',!y)}${ic('chev')}</button>
+  ${open?`<div class="mmenu ymenu" role="dialog" aria-label="Year"><div role="menu" aria-label="Any year or decades">${item('any',0,'Any year')}
+   <div class="mhead" aria-hidden="true">Decades</div>${decades.map(d=>item('decade',d,d+'s')).join('')}</div>
+   <div class="msep"></div>${yerr?`<div class="mhead yerr" role="alert">${esc(yerr)}</div>`:'<div class="mhead">Range</div>'}
+   <form class="yrange" data-yform><input id="yfrom" inputmode="numeric" maxlength="4" placeholder="From" aria-label="From year" value="${esc(yin.a)}"><span>to</span><input id="yto" inputmode="numeric" maxlength="4" placeholder="To" aria-label="To year" value="${esc(yin.b)}"><button class="btn" type="submit" ${yearReady(yin)?'':'disabled'}>Apply</button></form>
+</div>`:''}</div>`;}
+function placeMenu(top){const m=$('.sfm .mmenu');if(!m)return;if(top!=null)m.scrollTop=top;else{const t=m.querySelector('[data-ddpick][aria-checked=true]'),sh=m.querySelector('.msearch')?.offsetHeight||0;if(t&&t.offsetTop+t.offsetHeight>m.clientHeight)m.scrollTop=t.offsetTop-sh-6;}m.style.left='';const over=m.getBoundingClientRect().right-(document.documentElement.clientWidth-16);if(over>0)m.style.left=-over+'px';}
+const mvSearch=()=>`<div class="search"><label><svg class="i"><use href="#i-search"/></svg><input id="q" placeholder="Search films or actors" autocomplete="off" aria-label="Search films or actors"></label><div class="results" id="results" hidden></div></div>`;
+function filterBar(){const any=anySet(),clear=state.fb==='bar'?'':`<button class="clearall" data-clearall ${any?'':'tabindex="-1" aria-hidden="true"'}>Clear all</button>`;
+  return `<div class="filters"><h1>Movie releases</h1><div class="seg" role="group" aria-label="View"><a href="#/" aria-current="page">Releases</a><a href="#/films">Films</a></div>${mvSearch()}<span class="grow"></span>
+   <label class="sel sortsel"><select data-rsort aria-label="Sort releases">${[['posted_desc','Posted: newest first'],['posted_asc','Posted: oldest first'],['added_desc','Added: newest first'],['added_asc','Added: oldest first']].map(([k,l])=>`<option value="${k}" ${state.rsort===k?'selected':''}>${l}</option>`).join('')}</select>${ic('chev')}</label></div>
+   ${state.fb==='bar'?`<div class="mrow fbar"><div class="fseg rel" role="group" aria-label="The release">${menu('cat')}${menu('res')}${menu('src')}${menu('aud')}${compMenu()}</div><div class="fseg film" role="group" aria-label="The film">${menu('genre')}${yearMenu()}${menu('score')}${menu('cert')}${menu('lang')}</div></div>`
+    :`<div class="mrow"><div class="mfilters"><span class="grp">Release</span>${menu('cat')}${menu('res')}${menu('src')}${menu('aud')}</div></div><div class="mrow two"><div class="mfilters"><span class="grp">Film</span>${menu('genre')}${yearMenu()}${menu('score')}${menu('cert')}${menu('lang')}</div>${clear}</div>`}`;}
+
+/* ---------- rows ---------- */
+const niceCodec=c=>({'V_MPEG4/ISO/AVC':'H.264','AVC':'H.264','V_MPEGH/ISO/HEVC':'H.265','HEVC':'H.265','V_AV1':'AV1','AV1':'AV1','V_MPEG2':'MPEG-2','MPEG Video':'MPEG-2','V_MPEG4/ISO/ASP':'MPEG-4','MPEG-4 Visual':'MPEG-4','XVID':'XviD','xvid':'XviD'}[c]||c);
+const niceCh=c=>({'1':'1.0','2':'2.0','6':'5.1','8':'7.1'}[String(c)]||c);
+function miSummary(r){const sm=RX.summ[r.id];if(!sm)return null;return sm.split(' · ').map((x,i)=>{if(i===0)return niceCodec(x);const m=x.match(/^(.*?)\s+(\d+)$/);return m?m[1]+' '+niceCh(m[2]):x;}).join(' · ');}
+function chips(r){const x=X(r),pc=Math.floor(r.comp),mi=miSummary(r);
+  return (pc>=100||pc<=0?'':`<span class="rc comp ${pc>=95?'c-ok':pc>=75?'c-mid':'c-low'}" title="${pc}% of this release's articles were seen by the indexer. ${x.final?'Repair has finished: this is as complete as it will get.':'The site may still recover more of it.'}">${pc}% complete${x.final?'':' · still repairing'}</span>`)
+   +(x.pw?`<span class="rc">${ic('lock')}Password</span>`:'')
+   +(mi!=null?`<button class="rc k-mi" data-mi="${r.id}" title="View media info">${ic('info')}${esc(mi)}</button>`:'')
+   +(x.nfo?`<button class="rc k-nfo" data-nfo="${r.id}" title="View NFO">NFO</button>`:'')
+   +(x.pv?`<button class="rc k-pv" data-img="${r.id}" data-kind="preview" title="View preview image">Preview</button>`:'')
+   +(x.jpg?`<button class="rc k-sm" data-img="${r.id}" data-kind="sample" title="View sample image">Sample</button>`:'');}
+
+// group and poster chips on a release row; og = 'a' (outline, as on the details page) or 'b' (a hue per kind)
+function rowOrigin(r){const x=X(r),cls=()=>'rc origin';
+  // the same links the current site's row chips use (origin.blade.php): the all-categories list for that group / poster, same tab
+  const link=(k,href,t,icon,label,cut)=>`<a class="${cls(k)}" href="${href}" data-applink="${href}" title="${esc(t)}">${ic(icon)}${cut?`<span class="ot">${esc(label)}</span>`:esc(label)}</a>`;
+  return `<span class="orig">`+(x.group?link('k-grp','/browse/all?group='+encodeURIComponent(x.group),'All releases in '+x.group,'users',x.group.replace('alt.binaries.','a.b.')):'')
+   +(x.poster?link('k-pst','/browse/all?poster='+encodeURIComponent(x.poster),'All posts by '+x.poster,'user',x.poster,true):'')+`</span>`;}
+// noFollow: the film page's table carries no Follow button; the film is followed from its header (his call 2026-09-27)
+function rowActions(r,stack,noFollow){const inC=state.cart.has(r.id),w=state.watch.has(r.f);
+  return `<div class="iconacts${stack?' stack':''}"><button class="ia dl" data-nzb="${r.id}" title="Download NZB" aria-label="Download NZB">${ic('down')}</button><button class="ia" data-copynzb="${r.id}" title="Copy NZB link for SABnzbd or NZBGet" aria-label="Copy NZB link for SABnzbd or NZBGet">${ic('link')}</button><button class="ia" data-cart="${r.id}" aria-pressed="${inC}" title="${inC?'In cart · click to remove':'Add to cart'}" aria-label="${inC?'Remove from cart':'Add to cart'}">${ic('cart')}</button>
+   ${r.f&&!noFollow?`<button class="ia" data-watch="${r.f}" aria-pressed="${w}" title="${w?'Following this film · click to unfollow':'Follow this film'}" aria-label="${w?'Unfollow film':'Follow film'}">${fic()}</button>`:'<span class="ia slot" aria-hidden="true"></span>'}</div>`;}
+// base '#/' (Movie releases, 50 a page) or '#/films' (the Films wall, 42 a page)
+const pageHref=(base,n)=>n===1?base:(base==='#/'?'#/p/':base+'/p/')+n;
+function pager(page,pages,total,bottom,base='#/',unit='release',per=state.per){const href=n=>pageHref(base,n);
+  if(!bottom){const from=total?(page-1)*per+1:0,to=Math.min(page*per,total);
+    return `<nav class="pager slim" aria-label="Pages, top"><span class="sum">${total===1&&unit==='film'?'Showing 1 film':total?`Showing ${from.toLocaleString()}–${to.toLocaleString()} of ${total.toLocaleString()} ${unit}${total===1?'':'s'}`:`Showing 0 ${unit}s`}</span>${page>1?`<a href="${href(page-1)}" rel="prev" aria-label="Previous page">${ic('back')}</a>`:`<button class="off" disabled aria-label="Previous page">${ic('back')}</button>`}<span class="pg">Page ${page.toLocaleString()} of ${pages.toLocaleString()}</span>${page<pages?`<a href="${href(page+1)}" rel="next" aria-label="Next page">${ic('open')}</a>`:`<button class="off" disabled aria-label="Next page">${ic('open')}</button>`}</nav>`;}
+  if(pages<=1)return '';
+  const nums=new Set([1,2,pages-1,pages,page-2,page-1,page,page+1,page+2].filter(n=>n>=1&&n<=pages));
+  let out='',prev=0;[...nums].sort((a,b)=>a-b).forEach(n=>{if(n-prev>1)out+='<span class="gap">…</span>';out+=n===page?`<span class="cur" aria-current="page">${n}</span>`:`<a href="${href(n)}" aria-label="Page ${n}">${n}</a>`;prev=n;});
+  return `<nav class="pager bottom" aria-label="Pages, bottom">${page>1?`<a href="${href(page-1)}" rel="prev">${ic('back')}&nbsp;Previous</a>`:`<button class="off" disabled>Previous</button>`}${out}${page<pages?`<a href="${href(page+1)}" rel="next">Next&nbsp;${ic('open')}</a>`:`<button class="off" disabled>Next</button>`}
+   <form data-goto data-pages="${pages}" data-base="${base}"><label for="gob">Go to page</label><input id="gob" inputmode="numeric" aria-label="Go to page"></form></nav>`;}
+function syncSelectAll(){const all=$$('.feed [data-select]'),box=$('[data-selectall]');if(!box)return;const n=all.filter(c=>c.checked).length;box.checked=n>0&&n===all.length;box.indeterminate=n>0&&n<all.length;box.setAttribute('aria-label',box.checked?'Clear selection on this page':'Select all releases on this page');}
+const DEMO_KEY='prototype0000demo0000apikey000000';
+const nzbLink=r=>location.origin+'/api/v1/api?t=get&id='+encodeURIComponent(X(r).guid)+'&apikey='+DEMO_KEY;
+function copyText(t){window.__copied=t;if(navigator.clipboard&&window.isSecureContext)return navigator.clipboard.writeText(t).then(()=>true,()=>legacyCopy(t));return Promise.resolve(legacyCopy(t));}
+function legacyCopy(t){const a=document.createElement('textarea');a.value=t;a.setAttribute('readonly','');a.style.cssText='position:fixed;top:0;left:0;opacity:0';document.body.appendChild(a);a.select();let ok=false;try{ok=document.execCommand('copy');}catch(e){}a.remove();return ok;}
+const ago=t=>{const m=Math.max(1,Math.round((NOWALL-t)/60));return m<60?m+' min ago':m<1440?Math.round(m/60)+' hr ago':shortDate(t);};
+const filterText=()=>{const parts=['cat','res','src'].map(k=>[...state[k]].join(' or ')).filter(Boolean);if(state.comp)parts.push(state.comp==='100'?'100% complete':'95%+ complete');if(state.aud.size)parts.push([...state.aud].join(' or ')+' audio');if(state.genre.size)parts.push([...state.genre].join(' or '));if(state.lang.size)parts.push('in '+[...state.lang].join(' or '));if(state.year)parts.push(yearText(state.year));if(state.score.size)parts.push(SCORES.filter(([v])=>state.score.has(v)).map(([v,l])=>v==='few'?'too few votes':'score '+l).join(' or '));if(state.cert.size)parts.push('rated '+[...state.cert].join(' or '));return parts.join(' · ');};
+// filter bar: Clear all on the Showing line, a fixed slot left of the page arrows (hidden, not removed, when nothing is set)
+const barClear=html=>state.fb!=='bar'?html:html.replace('class="pager slim"','class="pager slim fixed"').replace('</span>',`</span><button class="clearall" data-clearall ${anySet()?'':'tabindex="-1" aria-hidden="true"'}>Clear all</button>`);
+const fbSel=()=>`<aside class="varsel" aria-label="Filter layout variation"><span>Filters</span><div class="seg"><button data-fb="fallback" aria-pressed="${state.fb==='fallback'}">Grouped panels (fallback)</button><button data-fb="bar" aria-pressed="${state.fb==='bar'}">Filter bar</button></div></aside>`;
+function releasesView(){
+  const [sk,sd]=state.rsort.split('_'),tk=r=>sk==='added'?X(r).added:r.t,dir=sd==='asc'?1:-1;
+  const rs=REL.filter(matchRel).sort((a,b)=>(tk(a)-tk(b))*dir||a.id-b.id), pages=Math.max(1,Math.ceil(rs.length/state.per));
+  state.page=Math.min(Math.max(1,state.page),pages);
+  const page=rs.slice((state.page-1)*state.per,state.page*state.per);
+  let h=filterBar();
+  if(!page.length){$('#app').innerHTML=h+barClear(pager(1,1,0,false))+`<p class="empty">No releases match ${esc(filterText())}.</p>`+fbSel();return;}
+  if(state.sel.size)h+=`<div class="bulk"><span>${state.sel.size} selected</span><button class="btn" data-bulk="nzb">${ic('down')}Download NZBs</button><button class="btn sec" data-bulk="cart">${ic('cart')}Add to cart</button><button class="btn sec" data-bulk="clear">Clear selection</button></div>`;
+  h+=barClear(pager(state.page,pages,rs.length,false));
+  h+=`<table class="feed"><colgroup><col style="width:34px"><col style="width:116px"><col><col style="width:100px"><col style="width:80px"><col style="width:82px"><col style="width:112px"><col style="width:96px"></colgroup><thead><tr><th class="selall"><input type="checkbox" data-selectall aria-label="Select all releases on this page"></th><th colspan="2">Release</th><th>Resolution</th><th>Source</th><th class="num">Size</th><th class="num">${sk==='added'?'Added':'Posted'}</th><th><span class="vh">Actions</span></th></tr></thead><tbody>`;
+  let i=0;
+  while(i<page.length){
+    const r=page[i],d=dayKey(tk(r));
+    let j=i;while(j<page.length&&r.f&&page[j].f===r.f&&dayKey(tk(page[j]))===d)j++;if(j===i)j=i+1;
+    const run=page.slice(i,j),key=r.f+'|'+d+'|'+r.id,open=state.expanded.has(key),showN=open||run.length<=4?run.length:3;
+    run.slice(0,showN).forEach(x=>{const xx=X(x),f=F(x);
+      h+=`<tr${f?'':' data-nofilm'}><td><input type="checkbox" data-select="${x.id}" ${state.sel.has(x.id)?'checked':''} aria-label="Select ${esc(x.name)}"></td>
+      <td class="art">${f&&f.p?`<a href="#/release/${x.id}" tabindex="-1" aria-hidden="true" data-t="${esc(f.t)}">${poster(f,x.f,true)}</a>`:placeholder(x,f)}</td>
+      <td class="what"><a class="rname" href="#/release/${x.id}" title="${esc(x.name)}">${esc(x.name)}</a>${f?`<a class="showlink" href="${filmHref(x)}" title="Go to the film">${filmLine(f)}</a>`:''}<div class="rchips">${chips(x)}${rowOrigin(x)}</div></td>
+      <td>${resChip(x.res)}</td><td>${srcLabel(x)}</td><td class="num">${gb(x.size)}</td>
+      <td class="num" title="Posted ${new Date(x.t*1000).toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'})} · Added ${new Date(xx.added*1000).toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'})}">${ago(tk(x))}</td>
+      <td>${rowActions(x,true)}</td></tr>`;});
+    if(run.length>4){const t=esc(F(r).t);h+=`<tr class="moreof"><td colspan="8"><div><button data-expand="${key}" aria-expanded="${open}">${ic('chev').replace('<svg','<svg style="transform:rotate('+(open?'-90':'90')+'deg)"')}${open?'Show fewer from '+t:'Show '+(run.length-3)+' more from '+t+' posted in the same batch'}</button></div></td></tr>`;}
+    i=j;}
+  h+='</tbody></table>'+pager(state.page,pages,rs.length,true)+fbSel();
+  $('#app').innerHTML=h;
+  syncSelectAll();
+}
+/* ---------- Films wall ---------- */
+const WSORTS=[['recent','Newest releases first'],['newsite','Newest to the site first'],['year','Newest films first'],['az','A to Z']];
+// "8.5 · PG-13"; under 10 votes (or no score) reads "Too few votes", as the Score menu bands it; no certificate, score alone
+const scoreLine=f=>[scoreBand(f)==='few'?'Too few votes':String(+f.sc),f.cert].filter(Boolean).join(' · ');
+const relCount=n=>n.toLocaleString()+' release'+(n===1?'':'s');
+function wallBar(){const any=wallAnySet(),p=state.person;
+  return `<div class="filters"><h1>Films</h1><div class="seg" role="group" aria-label="View"><a href="#/">Releases</a><a href="#/films" aria-current="page">Films</a></div>${mvSearch()}<span class="grow"></span>
+   <label class="sel sortsel"><select data-wsort aria-label="Sort films">${WSORTS.map(([k,l])=>`<option value="${k}" ${state.wsort===k?'selected':''}>${l}</option>`).join('')}</select>${ic('chev')}</label></div>
+   <div class="mrow${state.fb==='bar'?' fbar one':''}"><div class="${state.fb==='bar'?'fseg film" role="group" aria-label="The film':'mfilters'}">${menu('wgenre')}${yearMenu('w')}${menu('wscore')}${menu('wcert')}${menu('wlang')}</div>
+   <button class="clearall" data-clearall ${any?'':'tabindex="-1" aria-hidden="true"'}>Clear all</button>
+   ${p?`<span class="person">Films with ${esc(p)}<button data-unperson aria-label="Stop showing only films with ${esc(p)}">${ic('x')}</button></span>`:''}</div>`;}
+const wallFilterText=()=>{const parts=[];if(state.wgenre.size)parts.push([...state.wgenre].join(' or '));if(state.wyear)parts.push(yearText(state.wyear));
+  if(state.wscore.size)parts.push(SCORES.filter(([v])=>state.wscore.has(v)).map(([v,l])=>v==='few'?'too few votes':'score '+l).join(' or '));
+  if(state.wcert.size)parts.push('rated '+[...state.wcert].join(' or '));if(state.wlang.size)parts.push('in '+[...state.wlang].join(' or '));if(state.person)parts.push('with '+state.person);return parts.join(' · ');};
+// two genres; a genre the Genre menu matched comes first, so the tile shows why it is there
+const tileGenres=f=>(isWall()?[...f.g].sort((a,b)=>state.wgenre.has(b)-state.wgenre.has(a)):f.g).slice(0,2);
+function filmTile(id){const f=FILM(id),n=STAT(id)[0];
+  return `<a class="tile" href="#/film/${id}"><div class="art">${f.p?`<img src="mv/posters/${id}.webp" alt="" loading="lazy">`:`<span class="ph"><span class="t">${esc(f.t)}</span>${f.y?`<small>${esc(f.y)}</small>`:''}</span>`}</div>
+   <b>${esc(f.t)}</b><div class="what">${[f.y?esc(f.y):'',tileGenres(f).map(g=>`<span class="gn">${esc(g)}</span>`).join(', ')].filter(Boolean).join(' · ')}</div><div class="m2">${esc(scoreLine(f))}</div><div class="m3">${relCount(n)}</div></a>`;}
+function filmsView(){
+  const S=FSTAT,t=id=>DB.films[id].t,byTitle=(a,b)=>t(a).localeCompare(t(b),undefined,{sensitivity:'base'})||a.localeCompare(b);
+  const ids=Object.keys(DB.films).filter(id=>S[id]&&matchFilm(id)).sort({recent:(a,b)=>S[b][1]-S[a][1]||byTitle(a,b),newsite:(a,b)=>S[b][2]-S[a][2]||byTitle(a,b),
+    year:(a,b)=>(+DB.films[b].y||0)-(+DB.films[a].y||0)||S[b][1]-S[a][1]||byTitle(a,b),az:byTitle}[state.wsort]);
+  const pages=Math.max(1,Math.ceil(ids.length/state.wper));state.wpage=Math.min(Math.max(1,state.wpage),pages);
+  const page=ids.slice((state.wpage-1)*state.wper,state.wpage*state.wper);
+  let h=`<div class="wall">`+wallBar();
+  h+=page.length?pager(state.wpage,pages,ids.length,false,'#/films','film',state.wper)+`<div class="tiles">${page.map(filmTile).join('')}</div>`+pager(state.wpage,pages,ids.length,true,'#/films','film',state.wper)
+    :pager(1,1,0,false,'#/films','film',state.wper)+`<p class="empty">No films match ${esc(wallFilterText())}.</p>`;
+  h+=`</div>`+fbSel();
+  $('#app').innerHTML=h;}
+/* ---------- film page (2026-09-27) ---------- */
+const isFilm=()=>/^#\/film\//.test(location.hash);
+const pAnySet=()=>state.pres.size||state.psrc.size;
+const needMore=()=>MORE?Promise.resolve():(needMore.p||(needMore.p=fetch('mv/more.json'+NOCACHE).then(r=>r.json()).then(m=>{
+  const rel=m.rel.map(a=>({id:a[0],f:a[1]&&(DB.films[a[1]]||m.films[a[1]])?a[1]:'',name:a[2],size:a[3],t:a[4],comp:a[5],grabs:a[6],res:a[7],src:a[8],remux:!!a[9],...parse(a[2])}));
+  rel.forEach(r=>{BYID[r.id]=r;});Object.assign(RX.x,m.x);Object.assign(RX.summ,m.summ);Object.assign(ALANG,m.audio);Object.assign(FLANG,m.lang);
+  BYFILM={};[...REL,...rel].forEach(r=>{if(r.f)(BYFILM[r.f]||(BYFILM[r.f]=[])).push(r);});MORE=m;})));
+// the film page's release table: the TV show page's (select box per row, no check-all; sortable Resolution / Size / Posted; no Grabs column;
+// the releases list's 2 x 2 tinted buttons without Follow, which lives in the header: his calls 2026-09-27)
+function filmTable(rs){const {k,dir}=state.fsort;
+  const th=(id,l,num)=>`<th class="${num?'num':''}" ${k===id?`aria-sort="${dir>0?'ascending':'descending'}"`:''}><button data-fsort="${id}">${l}${ic('sort')}</button></th>`;
+  return `<table class="rt pick"><colgroup><col style="width:34px"><col><col style="width:100px"><col style="width:80px"><col style="width:82px"><col style="width:64px"><col style="width:124px"><col style="width:96px"></colgroup>
+   <thead><tr><th class="selcol"><span class="vh">Select</span></th><th>Release</th>${th('res','Resolution')}<th>Source</th>${th('size','Size',1)}<th class="num">Files</th>${th('posted','Posted',1)}<th><span class="vh">Actions</span></th></tr></thead><tbody>${rs.map(r=>`<tr>
+   <td class="selcol"><input type="checkbox" data-select="${r.id}" ${state.sel.has(r.id)?'checked':''} aria-label="Select ${esc(r.name)}"></td><td class="name"><a class="rname" href="#/release/${r.id}">${esc(r.name)}</a><div class="rchips">${chips(r)}</div></td>
+   <td>${resChip(r.res)}</td><td class="nw">${srcLabel(r)}</td><td class="num">${gb(r.size)}</td><td class="num"><button class="filesbtn" data-files="${r.id}" title="View file list">${X(r).files}</button></td>
+   <td class="num" title="Posted ${new Date(r.t*1000).toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'})} · Added ${new Date(X(r).added*1000).toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'})}">${shortDate(r.t)}</td>
+   <td>${rowActions(r,true,true)}</td></tr>`).join('')}</tbody></table>`;}
+const trailerSel=()=>`<aside class="varsel" aria-label="Site setting (prototype only)"><span>Trailers (site setting)</span><div class="seg"><button data-trailers="off" aria-pressed="${!state.trailers}">Off</button><button data-trailers="on" aria-pressed="${state.trailers}">On</button></div></aside>`;
+function film(id,page){
+  if(!MORE){$('#app').innerHTML='<p class="loadnote">Loading the film…</p>';const h=location.hash;needMore().then(()=>{if(location.hash===h)route();});return;}
+  const f=FILM(id);if(!f){later('Film page','This film is not in the prototype.');return;}
+  if(state.pfilm!==id){state.pfilm=id;state.pres.clear();state.psrc.clear();state.fsort={k:'posted',dir:-1};}
+  const all=BYFILM[id]||[],{k,dir}=state.fsort,val={size:r=>r.size,posted:r=>r.t,res:r=>RES.indexOf(r.res)<0?9:RES.indexOf(r.res)}[k];
+  const shown=all.filter(r=>(!state.pres.size||state.pres.has(r.res))&&(!state.psrc.size||state.psrc.has(r.src))).sort((a,b)=>(val(a)-val(b))*dir||b.t-a.t||b.id-a.id);
+  const pages=Math.max(1,Math.ceil(shown.length/state.fper));page=Math.min(Math.max(1,page),pages);
+  const rows=shown.slice((page-1)*state.fper,page*state.fper),base='#/film/'+id;
+  const latest=all.length?Math.max(...all.map(r=>r.t)):0,best=RES.find(x=>all.some(r=>r.res===x));
+  const meta=[f.y?esc(f.y):'',relCount(all.length),latest?'latest '+ago(latest):'',best?'best '+resChip(best):''].filter(Boolean).join('<span aria-hidden="true">·</span>');
+  const score=scoreBand(f)==='few'?'Too few votes':'Score '+(+f.sc);
+  const tags=f.g.map(g=>`<a class="tag" href="#/films" data-setwf="wgenre" data-v="${esc(g)}">${esc(g)}</a>`).join('')+[score,f.cert,FLANG[id]].filter(Boolean).map(v=>`<span class="tag plain">${esc(v)}</span>`).join('');
+  const person=n=>`<a href="#/films?person=${encodeURIComponent(n)}">${esc(n)}</a>`;
+  const w=state.watch.has(id),back=state.back;
+  let h=`<a class="back" href="${back}">${ic('back')}${/^#\/films/.test(back)?'Films':'Movie releases'}</a>
+  <div class="showhead fhead"><div class="art">${f.p?`<img src="mv/posters/${id}.webp" alt="${esc(f.t)} poster">`:`<span class="ph"><span class="t">${esc(f.t)}</span>${f.y?`<small>${esc(f.y)}</small>`:''}</span>`}</div><div>
+   <h1>${esc(f.t)}</h1><div class="meta">${meta}</div>${f.plot?`<p>${esc(f.plot)}</p>`:''}
+   <div class="tags">${tags}</div>
+   ${f.dir.length?`<div class="starring">Directed by ${f.dir.map(person).join(', ')}</div>`:''}${f.cast.length?`<div class="starring">Starring ${f.cast.slice(0,12).map(person).join(', ')}</div>`:''}
+   <div class="dacts"><button class="btn wat" data-watch="${id}" aria-pressed="${w}" title="${w?'Following this film · click to unfollow':'Follow this film'}">${fic()}<span class="wl"><span${w?' hidden':''}>Follow film</span><span${w?'':' hidden'}>Following film</span></span></button>
+    ${state.trailers?`<button class="btn sec" data-trailer="${id}">${ic('play')}Trailer</button>`:''}
+    <a class="btn sec ext" href="https://www.imdb.com/title/tt${id}/" target="_blank" rel="noopener noreferrer">IMDb${ic('ext')}<span class="vh"> (opens in a new tab)</span></a>
+    ${f.tmdb?`<a class="btn sec ext" href="https://www.themoviedb.org/movie/${f.tmdb}" target="_blank" rel="noopener noreferrer">TMDB${ic('ext')}<span class="vh"> (opens in a new tab)</span></a>`:''}</div></div></div>
+  <section class="frel" id="releases" aria-labelledby="relh"><h2 id="relh">Releases</h2>
+   <div class="mrow fbar one pf"><div class="fseg rel" role="group" aria-label="Filter this film's releases">${menu('pres')}${menu('psrc')}</div></div>
+   ${pager(page,pages,shown.length,false,base,'release',state.fper).replace('class="pager slim"','class="pager slim fixed"').replace('</span>',`</span><button class="clearall" data-clearall ${pAnySet()?'':'tabindex="-1" aria-hidden="true"'}>Clear all</button>`)}
+   ${rows.length?filmTable(rows)+pager(page,pages,shown.length,true,base,'release',state.fper):`<p class="empty">No releases of this film match ${esc([[...state.pres].join(' or '),[...state.psrc].join(' or ')].filter(Boolean).join(' · '))}.</p>`}</section>`;
+  const sim=(MORE.sim[id]||[]).filter(FILM);
+  if(sim.length)h+=`<section class="simf" aria-labelledby="simh"><h2 id="simh">Similar films</h2><div class="tiles">${sim.map(filmTile).join('')}</div></section>`;
+  if(state.sel.size)h+=`<div class="bulk"><span>${state.sel.size} selected</span><button class="btn" data-bulk="nzb">${ic('down')}Download NZBs</button><button class="btn sec" data-bulk="cart">${ic('cart')}Add to cart</button><button class="btn sec" data-bulk="clear">Clear selection</button></div>`;
+  $('#app').innerHTML=h+trailerSel();}
+/* screens that come next in the design; they exist only so every link goes somewhere */
+function later(title,line){$('#app').innerHTML=`<div class="later"><h1>${esc(title)}</h1><p>${line}</p><p style="margin-top:18px"><a href="#/">Back to Movie releases</a></p></div>`;}
+</script>
+<script>
+const dur=ms=>{if(!ms)return null;const t=Math.round(ms/1000),h=Math.floor(t/3600),m=Math.floor(t%3600/60),x=t%60;return [h?h+' h':'',m?m+' min':'',(!h&&x)?x+' s':''].filter(Boolean).join(' ');};
+const rate=b=>!b||b<1000?null:b>=1e6?(b/1e6).toLocaleString(undefined,{maximumFractionDigits:2})+' Mb/s':Math.round(b/1000).toLocaleString()+' kb/s';
+const LANGS={en:'English',eng:'English',ko:'Korean',kor:'Korean',ja:'Japanese',jpn:'Japanese',pt:'Portuguese',por:'Portuguese',es:'Spanish',spa:'Spanish',fr:'French',fre:'French',fra:'French',de:'German',ger:'German',deu:'German',it:'Italian',ita:'Italian',nl:'Dutch',sv:'Swedish',da:'Danish',no:'Norwegian',fi:'Finnish',pl:'Polish',ru:'Russian',tr:'Turkish',ar:'Arabic',he:'Hebrew',hi:'Hindi',th:'Thai',vi:'Vietnamese',id:'Indonesian',ms:'Malay',zh:'Chinese',chi:'Chinese',zho:'Chinese',cs:'Czech',hu:'Hungarian',ro:'Romanian',el:'Greek',uk:'Ukrainian'};
+const lang=l=>{if(!l)return null;const [b,reg]=l.split(/[-_]/);const n=LANGS[b.toLowerCase()];return n?(reg?n+' ('+reg.toUpperCase()+')':n):l;};
+const VC={'AVC':'H.264','HEVC':'H.265','AV1':'AV1','MPEG Video':'MPEG-2','MPEG-4 Visual':'MPEG-4 (Xvid/DivX)','VP9':'VP9','xvid':'MPEG-4 (Xvid/DivX)'};
+const AC={'E-AC-3':'Dolby Digital Plus','E-AC-3 JOC':'Dolby Digital Plus with Atmos','AC-3':'Dolby Digital','AAC LC':'AAC','AAC LC SBR':'HE-AAC','DTS XLL':'DTS-HD Master Audio','DTS':'DTS','MLP FBA':'Dolby TrueHD','FLAC':'FLAC','Opus':'Opus','MPEG Audio':'MP2/MP3','PCM':'PCM'};
+const ACs={'E-AC-3':'E-AC-3','E-AC-3 JOC':'E-AC-3 Atmos','AC-3':'AC-3','AAC LC':'AAC','AAC LC SBR':'HE-AAC','DTS XLL':'DTS-HD MA','MLP FBA':'TrueHD'};
+const SC={'UTF-8':['SRT','text'],'ASS':['ASS','styled text'],'PGS':['PGS','image, from Blu-ray'],'Timed Text':['Timed Text','text'],'S_TEXT/WEBVTT':['WebVTT','text']};
+const chan=t=>{const n=t.ch||t.chs||({'2/0/0':2,'3/2/0.1':6,'1/0/0':1}[t.cl]);return ({'1':'Mono','2':'Stereo','6':'5.1','8':'7.1'}[String(n)])||(n?n+' channels':null);};
+const hdr=h=>{if(!h)return null;const o=[];if(/Dolby Vision/.test(h)){const p=h.match(/Profile ([\d.]+)/);o.push('Dolby Vision'+(p?' (profile '+p[1]+')':''));}if(/HDR10\+/.test(h))o.push('HDR10+');else if(/HDR10/.test(h))o.push('HDR10');return o.join(' + ')||h;};
+const hdrShort=h=>hdr(h)?hdr(h).replace(/ \(profile [\d.]+\)/,''):null;
+const miRate=(b,s)=>{if(s)return s.replace(/(\d) (\d)/g,'$1,$2');if(!b||b<1000)return null;return b>=1e6?(b/1e6).toFixed(1).replace(/\.0$/,'')+' Mb/s':Math.round(b/1000)+' kb/s';};
+const miDur=(ms,s)=>{if(s){const m=s.match(/(\d+)h:(\d+)m/);if(m)return (+m[1]?+m[1]+' h ':'')+(+m[2])+' min';return s;}if(!ms)return null;const t=Math.floor(ms/1000),h=Math.floor(t/3600),mm=Math.floor(t%3600/60);return (h?h+' h ':'')+mm+' min';};
+const obrs=s=>{const n=+s.replace(/[^\d.]/g,'');return /kb/.test(s)&&n>=1000?(n/1000).toFixed(1).replace(/\.0$/,'')+' Mb/s':s;};
+const resByPx=(w,h)=>w>=3000?'4K':w>=1800||h>=1000?'1080p':w>=1200||h>=700?'720p':'SD';
+const uniq=a=>[...new Set(a.filter(Boolean))];
+const few=(a,n=3)=>a.length<=n?a.join(', '):a.slice(0,n).join(', ')+' and '+(a.length-n)+' more';
+
+const RESC={'4K':'r-4k','1080p':'r-1080','720p':'r-720','SD':'r-sd'};
+const hdrChips=h=>{if(!h)return '';const o=[];if(/Dolby Vision/.test(h)){const p=h.match(/Profile ([\d.]+)/);o.push(`<span class="hue k-dv">Dolby Vision${p?' · profile '+p[1]:''}</span>`);}if(/HDR10\+/.test(h))o.push('<span class="hue k-hdrp">HDR10+</span>');else if(/HDR10/.test(h))o.push('<span class="hue k-hdr">HDR10</span>');return o.join('');};
+const chanChip=t=>{const c=chan(t);return c?`<span class="hue ${{'7.1':'k-71','5.1':'k-51','Stereo':'k-20'}[c]||'grey'}">${c}</span>`:'';};
+function mi2(m,relRes){const col=true,resName=(w,h)=>RES.includes(relRes)?relRes:resByPx(w,h);
+  const v=m.v[0]||{},aL=uniq(m.a.map(t=>lang(t.lang))),sL=uniq(m.s.map(t=>lang(t.lang)));
+  const bestA=[...m.a].sort((x,y)=>(+(y.ch||y.chs||0))-(+(x.ch||x.chs||0)))[0];
+  const glance=[
+    ['Video',v.w?`${resName(v.w,v.h)} · ${VC[v.fmt]||v.fmt}`:'None',[v.w&&v.h?v.w+' × '+v.h:'',hdrShort(v.hdr),v.bd?v.bd+'-bit':''].filter(Boolean).join(' · ')],
+    ['Audio',m.a.length?(aL.length?few(aL):m.a.length+' track'+(m.a.length===1?'':'s')):'None',bestA?[ACs[bestA.fmt]||bestA.fmt,chan(bestA)].filter(Boolean).join(' ')+(m.a.length>1?' · '+m.a.length+' tracks':''):''],
+    ['Subtitles',m.s.length?(sL.length===1?sL[0]:sL.length+' languages'):'None',m.s.length&&sL.length>1?few(sL):m.s.length>1?m.s.length+' tracks':''],
+    ['File',[m.cf,miDur(m.dur,m.durs)].filter(Boolean).join(' · ')||'Unknown',m.obrs?obrs(m.obrs)+' overall':'']];
+  const secChip=(k,n)=>col?`<span class="hue ${{Video:'hv',Audio:'ha',Subtitles:'hs'}[k]||'grey'}">${k}</span>`:k;
+  if(col&&v.w){glance[0][3]=`<span class="res ${RESC[resName(v.w,v.h)]}">${resName(v.w,v.h)}</span>${esc(VC[v.fmt]||v.fmt)}${hdrChips(v.hdr)}`;glance[0][2]=[v.w+' × '+v.h,v.bd?v.bd+'-bit':''].filter(Boolean).join(' · ');}
+  if(col&&bestA){glance[1][3]=`${esc(glance[1][1])}${chanChip(bestA)}${m.a.some(x=>/JOC/.test(x.fmt||''))?'<span class="hue k-atmos">Atmos</span>':''}`;glance[1][2]=(ACs[bestA.fmt]||bestA.fmt||'').replace(' Atmos','')+(m.a.length>1?' · '+m.a.length+' tracks':'');}
+  let h=`<div class="mi2 ${col?'col':''}"><dl class="glance">${glance.map(([k,a,b,rich])=>`<div><dt>${secChip(k)}</dt><dd>${rich||esc(a)}${b?`<small>${esc(b)}</small>`:''}</dd></div>`).join('')}</dl>`;
+  // video: nearly always one stream, so a labelled grid (same component as the Overview facts)
+  m.v.forEach((t,i)=>{const f=[['Codec',(VC[t.fmt]||t.fmt)+(VC[t.fmt]&&VC[t.fmt]!==t.fmt?' ('+t.fmt+')':'')],['Resolution',t.w&&t.h?t.w+' × '+t.h:null],['Aspect ratio',t.ar&&/^\d\.\d+$/.test(t.ar)?(+t.ar).toFixed(2)+':1':t.ar],['Frame rate',t.fr?(+t.fr).toFixed(3).replace(/\.?0+$/,'')+' fps':null],['HDR',hdr(t.hdr)],['Bit depth',t.bd?t.bd+'-bit':null],['Profile',t.prof],['Bit rate',miRate(t.br)],['Language',lang(t.lang)]].filter(([,x])=>x);
+    const cell=(k,x)=>col&&k==='HDR'?`<span class="chips">${hdrChips(t.hdr)}</span>`:col&&k==='Resolution'?`<span class="chips">${esc(x)}<span class="res ${RESC[resName(t.w,t.h)]}">${resName(t.w,t.h)}</span></span>`:esc(x);
+    h+=`<h3>${secChip('Video')}${m.v.length>1?' '+(i+1):''}</h3><dl class="vgrid hv">${f.map(([k,x])=>`<div><dt>${k}</dt><dd>${cell(k,x)}</dd></div>`).join('')}</dl>`;});
+  if(m.a.length){const hasT=m.a.some(t=>t.title&&t.title!==lang(t.lang)),hasB=m.a.some(t=>miRate(t.br,t.brs));
+    h+=`<h3>${secChip('Audio')}<small>${m.a.length} track${m.a.length===1?'':'s'}</small></h3><table class="ha"><thead><tr><th class="n">#</th><th style="width:24%">Language</th><th>Format</th><th style="width:14%">Channels</th>${hasB?'<th class="num" style="width:13%">Bit rate</th>':''}<th class="num" style="width:13%">Sample rate</th></tr></thead><tbody>${m.a.map((t,i)=>`<tr><td class="n">${i+1}</td><td class="lead">${esc(lang(t.lang)||'Not stated')}${hasT&&t.title&&t.title!==lang(t.lang)?`<span class="sub">${esc(t.title)}</span>`:''}</td><td>${col&&/JOC/.test(t.fmt||'')?`<span class="chips">Dolby Digital Plus<span class="hue k-atmos">Atmos</span></span>`:esc(AC[t.fmt]||t.fmt||'')}<span class="sub">${esc(t.fmt||'')}</span></td><td>${col?chanChip(t):esc(chan(t)||'')}</td>${hasB?`<td class="num">${esc(miRate(t.br,t.brs)||'')}</td>`:''}<td class="num">${esc(t.sr?(t.sr/1000)+' kHz':(t.srs||'').replace('.0',''))}</td></tr>`).join('')}</tbody></table>`;}
+  if(m.s.length){const bare=m.s.every(t=>Object.keys(t).length<=1);
+    h+=`<h3>${secChip('Subtitles')}<small>${m.s.length} track${m.s.length===1?'':'s'}${sL.length>1?' · '+sL.length+' languages':''}</small></h3>`;
+    if(bare){const c=new Map();m.s.forEach(t=>{const l=lang(t.lang)||'Not stated';c.set(l,(c.get(l)||0)+1);});
+      h+=`<div class="langs hs">${[...c].sort((a,b)=>a[0].localeCompare(b[0])).map(([l,n])=>`<div>${esc(l)}${n>1?`<span>${n} tracks</span>`:''}</div>`).join('')}</div>`;}
+    else h+=`<table class="hs"><thead><tr><th class="n">#</th><th style="width:24%">Language</th><th>Kind</th><th style="width:30%">Format</th></tr></thead><tbody>${m.s.map((t,i)=>{const ti=t.title&&t.title!==lang(t.lang)?t.title:'',sdh=/SDH|CC|hearing/i.test(ti),forced=t.f||/forced/i.test(ti),rest0=ti.replace(/[\[(]?\b(SDH|CC|Forced)\b[\])]?/ig,'').replace(/\s+/g,' ').trim(),rest=rest0===lang(t.lang)?'':rest0,sc=SC[t.fmt]||[t.fmt||'',''];
+      return `<tr><td class="n">${i+1}</td><td class="lead">${esc(lang(t.lang)||'Not stated')}${rest?`<span class="sub">${esc(rest)}</span>`:''}</td><td><span class="chips">${t.d?`<span class="${col?'hue k-def':'flag'}">Default</span>`:''}${forced?`<span class="${col?'hue k-forced':'flag f'}">Forced</span>`:''}${sdh?`<span class="${col?'hue k-sdh':'flag h'}">For hard of hearing</span>`:''}${!t.d&&!forced&&!sdh?(col?'<span class="hue grey">Full</span>':'Full'):''}</span></td><td>${col?`<span class="chips">${esc(sc[0])}${/image/.test(sc[1])?'<span class="hue k-img">Image</span>':''}</span>`:`${esc(sc[0])}${sc[1]?` <span style="color:var(--dim)">(${esc(sc[1])})</span>`:''}`}</td></tr>`;}).join('')}</tbody></table>`;}
+  return h+'</div>';
+}
+function mediaHtml(r){const m=MEDIA&&MEDIA[r.id];if(!m)return `<p class="note" style="padding:18px 0">No media information was captured for this release.</p>`;return mi2(m,r.res);}
+function filesHtml(r){const f=FILES&&FILES[r.id];if(!f||!f.length)return `<p class="note" style="padding:18px 0">This release has ${X(r).files} file${X(r).files===1?'':'s'}. The file names for it were not copied into this prototype.</p>`;
+  return `<table class="filelist"><thead><tr><th>File</th><th class="num">Size</th></tr></thead><tbody>${f.map(([n,z])=>`<tr><td>${esc(n)}</td><td class="num">${z?gb(z):'—'}</td></tr>`).join('')}</tbody></table>`;}
+let lastFocus=null;
+function openDialog(title,r,body){lastFocus=document.activeElement;$('#modal').innerHTML=`<div class="scrim" data-close><div class="dlg" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="dlghead"><div><h2>${esc(title)}</h2><p>${esc(r.name)}</p></div><button class="ia" data-close aria-label="Close">${ic('x')}</button></div><div class="body">${body}</div></div></div>`;$('#modal .ia').focus();}
+function setupImg(){const img=$('#modal .pvimg');if(!img)return;const go=()=>{const b=$('#modal .pvbar [data-full]'),dim=$('#modal .pvdim');if(dim)dim.textContent=img.naturalWidth+' × '+img.naturalHeight;if(b&&img.naturalWidth>img.clientWidth+1){b.hidden=false;$('#modal .dlg').classList.add('canfull');}};img.complete?go():img.addEventListener('load',go);}
+function toggleFull(){const d=$('#modal .dlg'),b=$('#modal .pvbar [data-full]');if(!d||!d.classList.contains('canfull'))return;const on=d.classList.toggle('full');b.setAttribute('aria-pressed',on);b.textContent=on?'Fit to window':'Full size';}
+function closeDialog(){$('#modal').innerHTML='';if(lastFocus&&document.contains(lastFocus))lastFocus.focus();}
+const needMedia=()=>MEDIA?Promise.resolve():Promise.all(['mv/media.json','mv/more-media.json'].map(u=>fetch(u+NOCACHE).then(r=>r.json()))).then(([a,b])=>{MEDIA=Object.assign(a,b);});
+const needNfo=()=>NFO?Promise.resolve():Promise.all(['mv/nfo.json','mv/more-nfo.json'].map(u=>fetch(u+NOCACHE).then(r=>r.json()))).then(([a,b])=>{NFO=Object.assign(a,b);});
+const imgFor=(r,kind)=>{const g=X(r).guid,full=kind+'/'+g+'.webp',th=kind+'/'+g+'_thumb.webp';return PV.has(full)?'mv/previews/'+full:PV.has(th)?'mv/previews/'+th:null;};
+const nfoHtml=r=>NFO&&NFO[r.id]?`<pre class="nfo">${esc(NFO[r.id])}</pre>`:`<p class="note" style="padding:18px 0">${X(r).nfo?'This release has an NFO, but its text was not found in the copy of the data.':'No NFO was posted with this release.'}</p>`;
+const imgHtml=(r,kind)=>{const u=imgFor(r,kind);return u?`<div class="pvbar"><span class="pvdim"></span><button class="btn sec" data-full aria-pressed="false" hidden>Full size</button></div><button class="pvwrap" data-full tabindex="-1" aria-hidden="true"><img class="pvimg" src="${u}" alt="${kind==='sample'?'Sample':'Preview'} image of ${esc(r.name)}"></button>`:`<p class="note" style="padding:18px 0">The ${kind} image for this release was not found on the server.</p>`;};
+const needFiles=()=>FILES?Promise.resolve():Promise.all(['mv/files.json','mv/more-files.json'].map(u=>fetch(u+NOCACHE).then(r=>r.json()))).then(([a,b])=>{FILES=Object.assign(a,b);});
+</script>
+<script>
+/* the Follow button's icon: a bookmark, filled solid while followed (his pick, 2026-09-27; it replaced the eye) */
+const fic=()=>ic('bookmark').replace('class="i"','class="i fill"');
+/* ---------- routing + events ---------- */
+function route(){
+  const rm=location.hash.match(/^#\/release\/(\d+)/);if(rm){if(!MORE){needMore().then(()=>{if(location.hash===rm[0])route();});}const r=BYID[+rm[1]];later('Release details','The details page for <b>'+esc(r?r.name:'this release')+'</b> is designed after the Films wall and the film page.');return;}
+  const fm=location.hash.match(/^#\/film\/(\d+)(?:\/p\/(\d+))?$/);if(fm){film(fm[1],+(fm[2]||1));return;}
+  const wm=location.hash.match(/^#\/films(?:\/p\/(\d+))?(?:\?person=(.+))?$/);
+  if(wm){if(wm[2]!==undefined){state.person=decodeURIComponent(wm[2]);state.wpage=1;history.replaceState(null,'','#/films');}else state.wpage=wm[1]?+wm[1]:1;
+    state.back=location.hash;filmsView();bindSearch();return;}
+  const rp=location.hash.match(/^#\/p\/(\d+)$/);state.page=rp?+rp[1]:1;state.back=location.hash||'#/';releasesView();bindSearch();}
+function firstPage(){if(isWall()){state.wpage=1;if(location.hash!=='#/films')location.hash='#/films';else route();return;}
+  state.page=1;if(location.hash!=='#/'&&location.hash!=='')location.hash='#/';else route();}
+function rerender(){const y=scrollY;route();scrollTo(0,y);}
+let lastHash='';
+addEventListener('hashchange',()=>{state.dd=null;closeDialog();const fid=h=>(h.match(/^#\/film\/(\d+)/)||[])[1];
+  if(fid(location.hash)&&fid(location.hash)===fid(lastHash)){lastHash=location.hash;route();$('#releases')?.scrollIntoView({block:'start'});return;}
+  if(fid(location.hash)&&fid(location.hash)!==fid(lastHash))scrollTo(0,0);if(lastHash.split('/').slice(0,2).join('/')!==location.hash.split('/').slice(0,2).join('/')||/^#\/(p\/|$|films($|\/p\/))/.test(location.hash)||location.hash==='')scrollTo(0,0);lastHash=location.hash;route();});
+function afterFilter(){if(isFilm()){const b='#/film/'+state.pfilm;if(location.hash!==b)history.replaceState(null,'','#/film/'+state.pfilm);lastHash='#/film/'+state.pfilm;return;}if(isWall()){state.wpage=1;if(location.hash!=='#/films')history.replaceState(null,'','#/films');return;}
+  state.page=1;state.expanded.clear();if(location.hash!=='#/'&&location.hash!=='')history.replaceState(null,'','#/');}
+document.addEventListener('click',e=>{
+  const al=e.target.closest('[data-applink]');if(al){e.preventDefault();toast('Opens '+decodeURIComponent(al.dataset.applink)+', the existing list of all releases for it (not part of this prototype)');return;}
+  if(e.target.closest('[data-full]')){toggleFull();return;}
+  const dd=e.target.closest('[data-ddtoggle],[data-ddany],[data-ddpick]');
+  if(dd){const d=dd.dataset,k=d.ddtoggle||d.ddany||d.ddpick,y=scrollY;
+    if(d.ddtoggle){state.dd=state.dd===k?null:k;clearYerr();route();scrollTo(0,y);placeMenu();($(`[data-msel="${k}"] [data-msearch]`)||$(`[data-ddtoggle="${k}"]`))?.focus();return;}
+    const mtop=$('.sfm .mmenu')?.scrollTop;if(d.ddany)state[k].clear();else state[k].has(d.v)?state[k].delete(d.v):state[k].add(d.v);
+    afterFilter();route();scrollTo(0,y);const again=d.ddany?$(`[data-ddany="${k}"]`):$(`[data-ddpick="${k}"][data-v="${CSS.escape(d.v)}"]`);placeMenu(mtop);again?.focus({preventScroll:true});return;}
+  const yp=e.target.closest('[data-ypick]');
+  if(yp){const p=yScope(yp),[kind,v]=yp.dataset.ypick.split(':'),mtop=$('.sfm .mmenu')?.scrollTop,y=scrollY;
+    if(kind==='any')state[p+'year']=null;else{const cur=new Set(decadesOf(state[p+'year']));cur.has(+v)?cur.delete(+v):cur.add(+v);state[p+'year']=cur.size?{kind:'decade',vs:[...cur].sort((a,b)=>b-a)}:null;}
+    state[p+'yin']={a:'',b:''};clearYerr();afterFilter();route();scrollTo(0,y);placeMenu(mtop);$(`[data-msel="${p}year"] [data-ypick="${yp.dataset.ypick}"]`)?.focus({preventScroll:true});return;}
+  if(state.dd&&!e.target.closest('[data-msel]')){state.dd=null;rerender();}
+  if(e.target.closest('[data-clearall]')&&isFilm()){state.pres.clear();state.psrc.clear();afterFilter();rerender();$('.pf .mbtn')?.focus({preventScroll:true});return;}
+  const fso=e.target.closest('[data-fsort]');if(fso){const k=fso.dataset.fsort;state.fsort=state.fsort.k===k?{k,dir:-state.fsort.dir}:{k,dir:-1};afterFilter();rerender();$(`[data-fsort="${k}"]`)?.focus({preventScroll:true});return;}
+  const trs=e.target.closest('[data-trailers]');if(trs){state.trailers=trs.dataset.trailers==='on';store.set('trailers',state.trailers?'on':'off');rerender();$(`[data-trailers="${trs.dataset.trailers}"]`)?.focus({preventScroll:true});return;}
+  const trl=e.target.closest('[data-trailer]');if(trl){const f=FILM(trl.dataset.trailer);openDialog('Trailer',{name:f.t+(f.y?' ('+f.y+')':'')},`<p class="note" style="padding:18px 0">The trailer plays here, in the site's existing trailer player. This prototype holds no trailers: your instance has none stored and the site setting is off there.</p>`);return;}
+  const swf=e.target.closest('[data-setwf]');if(swf){['wgenre','wscore','wcert','wlang'].forEach(k=>state[k].clear());state.wyear=null;state.wyin={a:'',b:''};state.person=null;state[swf.dataset.setwf].add(swf.dataset.v);state.wpage=1;return;}
+  if(e.target.closest('[data-clearall]')){if(isWall()){['wgenre','wscore','wcert','wlang'].forEach(k=>state[k].clear());state.wyear=null;state.wyin={a:'',b:''};state.person=null;}
+    else{['cat','res','src','aud','genre','score','cert','lang'].forEach(k=>state[k].clear());state.year=null;state.yin={a:'',b:''};state.comp=false;}afterFilter();rerender();$('.fbar .mbtn,.mfilters .mbtn')?.focus({preventScroll:true});return;}
+  const fbb=e.target.closest('[data-fb]');if(fbb){state.fb=fbb.dataset.fb;store.set('fb',state.fb);state.dd=null;rerender();$(`[data-fb="${state.fb}"]`)?.focus({preventScroll:true});return;}
+  const cpk=e.target.closest('[data-cpick]');if(cpk){state.comp=cpk.dataset.cpick==='any'?false:cpk.dataset.cpick;state.dd=null;afterFilter();rerender();$('[data-ddtoggle=comp]')?.focus({preventScroll:true});return;}
+  if(e.target.closest('[data-unperson]')){state.person=null;afterFilter();rerender();$('.mfilters .mbtn')?.focus({preventScroll:true});return;}
+  const cl=e.target.closest('[data-close]');if(cl&&(e.target===cl||cl.tagName==='BUTTON')){closeDialog();return;}
+  const cp=e.target.closest('[data-copynzb]');
+  if(cp){const r=BYID[cp.dataset.copynzb];copyText(nzbLink(r)).then(ok=>{toast(ok?'NZB link copied. It contains your API key, so only paste it into your own downloader.':'Could not copy. The link is: '+nzbLink(r));if(ok){const svg=cp.querySelector('use');if(svg){svg.setAttribute('href','#i-check');setTimeout(()=>svg.setAttribute('href','#i-link'),1600);}}});return;}
+  const u=e.target.closest('[data-nfo],[data-img],[data-mi],[data-files],[data-watch],[data-bulk],[data-stub]');
+  if(u){const d=u.dataset;
+    if(d.nfo){const r=BYID[d.nfo];needNfo().then(()=>openDialog('NFO',r,nfoHtml(r)));}
+    else if(d.img){const r=BYID[d.img];openDialog(d.kind==='sample'?'Sample image':'Preview image',r,imgHtml(r,d.kind));setupImg();}
+    else if(d.mi){const r=BYID[d.mi];needMedia().then(()=>openDialog('Media information',r,mediaHtml(r)));}
+    else if(d.files){const r=BYID[d.files];needFiles().then(()=>openDialog('Files',r,filesHtml(r)));}
+    else if(d.stub)toast(d.stub);
+    else if(d.watch){const v=d.watch,t=FILM(v).t;state.watch.has(v)?state.watch.delete(v):state.watch.add(v);toast(state.watch.has(v)?'Following '+t:'Unfollowed '+t);rerender();}
+    else if(d.bulk){const ids=[...state.sel];if(d.bulk==='cart'){ids.forEach(i=>state.cart.add(i));$('#cartn').textContent=state.cart.size;toast(ids.length+' added to the cart');}else if(d.bulk==='nzb')toast('Would download '+ids.length+' NZBs as one zip');state.sel.clear();rerender();}
+    return;}
+  const t=e.target.closest('[data-expand],[data-nzb],[data-cart],[data-dummy]');if(!t)return;
+  if(t.dataset.dummy!==undefined){e.preventDefault();toast('Only the Movies section is part of this prototype');return;}
+  if(t.dataset.expand){const k=t.dataset.expand;state.expanded.has(k)?state.expanded.delete(k):state.expanded.add(k);rerender();$(`[data-expand="${CSS.escape(k)}"]`)?.focus({preventScroll:true});}
+  else if(t.dataset.nzb){const r=BYID[t.dataset.nzb];toast('Would download the NZB: '+gb(r.size)+' '+r.res+' '+srcLabel(r));}
+  else if(t.dataset.cart){const id=+t.dataset.cart;state.cart.has(id)?state.cart.delete(id):state.cart.add(id);$('#cartn').textContent=state.cart.size;rerender();$(`[data-cart="${id}"]`)?.focus({preventScroll:true});}
+});
+document.addEventListener('change',e=>{const t=e.target;if(t.dataset.selectall!==undefined){const ids=$$('.feed [data-select]').map(c=>+c.dataset.select);ids.forEach(i=>t.checked?state.sel.add(i):state.sel.delete(i));rerender();$('[data-selectall]')?.focus();return;}
+  if(t.dataset.select){const id=+t.dataset.select;t.checked?state.sel.add(id):state.sel.delete(id);rerender();$(`[data-select="${id}"]`)?.focus({preventScroll:true});return;}
+  if(t.dataset.rsort!==undefined){state.rsort=t.value;store.set('rsort',t.value);state.expanded.clear();firstPage();return;}
+  if(t.dataset.wsort!==undefined){state.wsort=t.value;store.set('wsort',t.value);firstPage();$('[data-wsort]')?.focus();}});
+document.addEventListener('input',e=>{const ms=e.target.dataset?.msearch;if(ms){state.msq[ms]=e.target.value;const q=e.target.value.trim().toLowerCase();$$(`[data-msel="${ms}"] [data-ddpick]`).forEach(b=>{b.hidden=!!q&&!b.textContent.toLowerCase().includes(q);});return;}if(e.target.id!=='yfrom'&&e.target.id!=='yto')return;const yin=state[yScope(e.target)+'yin'];if(e.target.id==='yfrom')yin.a=e.target.value.replace(/\D/g,'');else yin.b=e.target.value.replace(/\D/g,'');const b=$('[data-yform] button');if(b)b.disabled=!yearReady(yin);});
+document.addEventListener('submit',e=>{
+  const yf=e.target.closest('[data-yform]');
+  if(yf){e.preventDefault();const p=yScope(yf),a=+state[p+'yin'].a,b=state[p+'yin'].b===''?a:+state[p+'yin'].b;
+    if(!a||!b||a<FIRST_YEAR||b>THIS_YEAR||a>b){state[p+'yerr']=`Years run ${FIRST_YEAR}–${THIS_YEAR}, earliest first`;rerender();placeMenu();$('#yfrom')?.focus({preventScroll:true});return;}
+    state[p+'year']=a===b?{kind:'year',v:a}:{kind:'range',a,b};clearYerr();state.dd=null;afterFilter();rerender();$(`[data-ddtoggle="${p}year"]`)?.focus({preventScroll:true});return;}
+  const f=e.target.closest('[data-goto]');if(f){e.preventDefault();const n=Math.min(+f.dataset.pages,Math.max(1,parseInt(f.querySelector('input').value,10)||0));if(!n)return;location.hash=pageHref(f.dataset.base||'#/',n);return;}
+  if(e.target.closest('.sitesearch')){e.preventDefault();toast('The site-wide release search stays as it is; only the Movies section is in this prototype');}});
+$('#cartbtn').addEventListener('click',()=>toast(state.cart.size?state.cart.size+' release'+(state.cart.size===1?'':'s')+' in the cart':'The cart is empty'));
+$('#theme').addEventListener('click',()=>{const r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark';});
+let hl=0;const qEl=()=>$('#q'),boxEl=()=>$('#results');
+function search(){const q=qEl(),box=boxEl();if(!q||!box)return;const v=q.value.trim().toLowerCase();if(!v){box.hidden=true;return;}
+  const hits=Object.entries(DB.films).filter(([,f])=>f.t.toLowerCase().includes(v)).sort((a,b)=>a[1].t.toLowerCase().indexOf(v)-b[1].t.toLowerCase().indexOf(v)||a[1].t.localeCompare(b[1].t)).slice(0,6);
+  const ppl=v.length<2?[]:Object.entries(PEOPLE).filter(([n])=>n.toLowerCase().includes(v)).sort((a,b)=>b[1].length-a[1].length||a[0].localeCompare(b[0])).slice(0,5);
+  const n=hits.length+ppl.length;hl=Math.min(hl,Math.max(0,n-1));let i=0;
+  box.innerHTML=n?(hits.length?`<h4>Films</h4>`+hits.map(([id,f])=>`<a href="#/film/${id}" class="${i++===hl?'hl':''}">${poster(f,id)}<div><b>${esc(f.t)}</b><span>${[f.y,f.g.slice(0,2).join(', ')].filter(Boolean).map(esc).join(' · ')}</span></div></a>`).join(''):'')
+    +(ppl.length?`<h4>People</h4>`+ppl.map(([name,ids])=>`<a href="#/films?person=${encodeURIComponent(name)}" class="p ${i++===hl?'hl':''}"><div><b>${esc(name)}</b><span>${ids.length} film${ids.length===1?'':'s'}: ${esc(ids.slice(0,3).map(x=>DB.films[x].t).join(', '))}</span></div></a>`).join(''):'')
+    :`<p>Nothing called “${esc(q.value)}” here. This prototype holds the ${Object.keys(DB.films).length.toLocaleString()} films behind the newest ${REL.length.toLocaleString()} releases, and their people.</p>`;
+  box.hidden=false;}
+function bindSearch(){const q=qEl();if(!q||q.dataset.bound)return;q.dataset.bound='1';q.addEventListener('input',()=>{hl=0;search();});q.addEventListener('focus',search);
+  q.addEventListener('keydown',e=>{const box=boxEl();const n=$$('a',box).length;if(e.key==='ArrowDown'){e.preventDefault();hl=Math.min(n-1,hl+1);search();}else if(e.key==='ArrowUp'){e.preventDefault();hl=Math.max(0,hl-1);search();}
+    else if(e.key==='Enter'){const a=$$('a',box)[hl];if(a){a.click();q.value='';box.hidden=true;q.blur();}}else if(e.key==='Escape'){box.hidden=true;q.blur();}});}
+document.addEventListener('click',e=>{const box=boxEl();if(box&&e.target.closest('#results')){qEl().value='';box.hidden=true;}});
+document.addEventListener('click',e=>{const box=boxEl();if(box&&!e.target.closest('.search'))box.hidden=true;});
+document.addEventListener('focusout',e=>{const m=e.target.closest?.('.msel');if(!m||!state.dd||!e.relatedTarget||m.contains(e.relatedTarget))return;state.dd=null;clearYerr();m.querySelector('.mmenu')?.remove();m.querySelector('[data-ddtoggle]')?.setAttribute('aria-expanded','false');});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#modal').innerHTML){closeDialog();return;}if(e.key==='Escape'&&state.dd){const k=state.dd;state.dd=null;clearYerr();rerender();$(`[data-ddtoggle="${k}"]`)?.focus();return;}});
+
+Promise.all(['mv/data.json','mv/relx.json','mv/previews.json','mv/filmstats.json','mv/langs.json'].map(u=>fetch(u+NOCACHE).then(r=>r.json()))).then(([d,rx,pv,fs,lg])=>{DB=d;RX=rx;PV=new Set(pv);FSTAT=fs;ALANG=lg.audio;FLANG=lg.film;
+  REL=d.rel.map(a=>({id:a[0],f:a[1]&&d.films[a[1]]?a[1]:'',name:a[2],size:a[3],t:a[4],comp:a[5],grabs:a[6],res:a[7],src:a[8],remux:!!a[9],...parse(a[2])}));
+  REL.forEach(r=>{BYID[r.id]=r;});
+  Object.entries(d.films).forEach(([id,f])=>[...f.dir,...f.cast].forEach(n=>{const l=PEOPLE[n]||(PEOPLE[n]=[]);if(!l.includes(id))l.push(id);}));
+  {const have=new Set(REL.map(catOf));CATS=['HD','UHD','SD','BluRay','DVD','3D','X265','Foreign','Other'].filter(c=>have.has(c));}
+  {const used=new Set(REL.map(r=>r.f).filter(Boolean));GENRES=[...new Set([...used].flatMap(id=>d.films[id].g))].sort();CERTS_ON=CERTS.filter(c=>[...used].some(id=>d.films[id].cert===c));}
+  NOW=Math.max(...REL.map(r=>r.t));NOWALL=Math.max(NOW,...REL.map(r=>X(r).added));
+  {const r=store.get('rsort','posted_desc');if(['posted_desc','posted_asc','added_desc','added_asc'].includes(r))state.rsort=r;}
+  state.fb=store.get('fb','bar')==='fallback'?'fallback':'bar';
+  {const w=store.get('wsort','recent');if(WSORTS.some(([k])=>k===w))state.wsort=w;}
+  // language menus list what is present, most releases (films on the wall) first, as the TV wall's Language menu does
+  {const byCount=vals=>{const c={};vals.forEach(v=>{if(v)c[v]=(c[v]||0)+1;});return Object.keys(c).sort((a,b)=>c[b]-c[a]||a.localeCompare(b));};
+   AUDS=[...byCount(REL.flatMap(r=>ALANG[r.id]||[])),'Unknown'];LANGS_ON=byCount(REL.map(r=>r.f&&FLANG[r.f]));WLANGS=byCount(Object.keys(d.films).filter(id=>FSTAT[id]).map(id=>FLANG[id]));}
+  {const all=Object.keys(d.films).filter(id=>FSTAT[id]);WGENRES=[...new Set(all.flatMap(id=>d.films[id].g))].sort();WCERTS_ON=CERTS.filter(c=>all.some(id=>d.films[id].cert===c));}
+  state.trailers=store.get('trailers','off')==='on';
+  lastHash=location.hash;route();window.READY=true;setTimeout(needMore,1500);});
+</script>
+</body>
+</html>
