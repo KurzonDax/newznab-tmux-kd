@@ -21,8 +21,10 @@ section (`../tv-redesign/SPEC.md` 3.0).
 | Read | For |
 |---|---|
 | [`SPEC.md`](SPEC.md) | what the section is for, the approved screens (Movie releases, Films wall, film page, release details), every decision so far with the reasons, what was rejected |
+| [`DATA-CONTRACT.md`](DATA-CONTRACT.md) | exactly what is stored, which existing code writes it, how existing rows are filled, and every read with its measured cost |
 | [`DATA-NOTES.md`](DATA-NOTES.md) | facts measured on the restored catalogue and the query experiments run so far; later storage decisions rest on them |
 | [`INVENTORY.md`](INVENTORY.md) | every feature of today's movie screens, with `path:line`; the input for the screens still to design |
+| [`evidence/`](evidence/) | the query-lab write-up the data contract cites |
 | [`prototype/`](prototype/) | the approved prototype on an **invented dataset** with placeholder art: `movies.html`, its 292 behaviour checks (`check.mjs`) and 19 reference screens in both themes (`reference/`) |
 | [`../tv-redesign/`](../tv-redesign/) | the TV specification, contracts and prototype; the Movies design inherits its rules |
 
@@ -37,7 +39,7 @@ groups and posters, NFO text, file names, and the IMDb and TMDB ids (so the IMDb
 point at made-up pages). What follows the maintainer's catalogue is only its shape: how many
 releases a film has, sizes, dates, completion, resolution, source, media-info formats, chips,
 genres, languages, ratings and scores, PreDB matches and which releases a name search finds, so
-the checks meet the same cases. Every screen is designed; no storage or schema is proposed yet:
-that is the data contract, written next.
+the checks meet the same cases. Every screen is designed, and the storage is specified in
+`DATA-CONTRACT.md`.
 
 Desktop only: phone layouts are out of scope by the maintainer's decision.
