@@ -3,15 +3,16 @@
 The specification for the redesigned TV section: the releases list, the shows wall, the show
 page, the TV release details page and their dialogs. Every screen was reviewed and approved by
 the maintainer in a clickable prototype; every query was measured on a restored production
-catalogue before being written down. The screens were built by #773–#781; the filter bar and
-the other changes of 2026-09-26 (marked *Changed 2026-09-26* in `SPEC.md`, section 3.0) are not built yet.
+catalogue before being written down. The screens were built by #773–#781; the changes approved
+afterwards (marked *Changed 2026-09-26* and *Changed 2026-09-27* in `SPEC.md`: the filter bar, the releases-list
+changes, the revised show page, the details page's release table and the "Follow" wording) are not built yet.
 
 | Read | For |
 |---|---|
 | [`SPEC.md`](SPEC.md) | what each screen does, the rules that apply everywhere, what was rejected |
 | [`DATA-CONTRACT.md`](DATA-CONTRACT.md) | exactly what is stored, which existing code writes it, the proven queries, the tests required |
 | [`VISUAL-CONTRACT.md`](VISUAL-CONTRACT.md) | how an implementation is matched to the prototype, and how that is checked mechanically |
-| [`prototype/`](prototype/) | the approved prototype on an **entirely invented dataset** with placeholder art, its 248 behaviour checks, 54 reference screenshots and the measurements of 82 named parts |
+| [`prototype/`](prototype/) | the approved prototype on an **entirely invented dataset** with placeholder art, its 268 behaviour checks, 54 reference screenshots and the measurements of 82 named parts |
 | [`evidence/`](evidence/) | the query-lab write-ups the contracts cite |
 
 ```bash

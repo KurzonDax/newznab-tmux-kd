@@ -10,8 +10,9 @@ when the Movies design is complete.
 
 Status: the **Movie releases** screen and the **Films wall** are **approved** (2026-09-26; the
 filter bar of section 5.1 was approved later the same day, "Okay, I am all right with this").
-The film page and the release details page are **not designed yet**; the decisions already taken
-for them are in section 6. Nothing in the application has been changed.
+The **film page** is **approved** (2026-09-27, section 5B: "Both the movie detail and show detail
+pages look good, I approve them"). The release details page is **not designed yet**; the
+decisions already taken for it are in section 6.5. Nothing in the application has been changed.
 
 ---
 
@@ -21,11 +22,12 @@ for them are in section 6. Nothing in the application has been changed.
 |---|---|---|---|
 | Movie releases (list) | `#/`, `#/p/N` | today's Movies Table and Cards views | approved |
 | Films (discovery wall) | `#/films`, `#/films/p/N` | today's Movies Covers view | approved |
-| Film page | `#/film/<id>` | today's movie title page | placeholder |
+| Film page | `#/film/<id>`, `#/film/<id>/p/N` | today's movie title page | approved |
 | Release details (Movies) | `#/release/<id>` | today's details page, for movie releases | placeholder |
 
-Out of scope, by his decision: phone layouts (desktop only); the watchlist page (the **Watch**
-button itself is in scope and keeps today's picker); the rest of the site.
+Out of scope, by his decision: phone layouts (desktop only); the page today called Watchlist (its
+name follows the Follow rule of section 4; the **Follow** button itself is in scope and keeps
+today's picker); the rest of the site.
 
 Hard constraints from the repository (`AGENTS.md`), unchanged from TV:
 
@@ -50,7 +52,7 @@ He opens Movies to do three jobs:
 3. **See what came in.**
 
 He did not pick "check films I follow" (the same answer as for TV). Following a film stays
-possible through the Watch button, but no screen is built around it.
+possible through the Follow button, but no screen is built around it.
 
 ---
 
@@ -87,9 +89,27 @@ rule 8 (coral):
   tab, view or page, a set filter, an open episode's releases button. It is **never** the
   pressed state of a toggle. ("Why would pressing a button make it stay coral?")
 - **Download and Copy link have no on/off state.** Download's styling never changes.
-- On the release lists, a pressed **Cart** or **Watch** button fills solid **in its own hue**,
-  not coral. The TV show page and details page were not asked about: they keep their approved
-  buttons, including a coral pressed Cart and Watch, until they are revisited.
+- In every release table (the release lists, the film page, the TV show page and details page), a
+  pressed **Cart** or **Follow** button fills solid **in its own hue**, not coral, and so do the
+  film page's and TV show page's **Follow** header buttons (2026-09-27). The TV details page's
+  header buttons keep their approved coral pressed state.
+
+His rulings of 2026-09-27 add three rules for every screen of both sections:
+
+- **"Follow", never "Watch"**, for keeping up with a film's or show's new releases: buttons,
+  tooltips, labels, toasts, menus and page names. His reason: "When a reasonable human being sees
+  'watch film' they think that means I'm going to view the film, not keep an eye on releases for
+  this film." Buttons read **Follow film** / **Following film**; tooltips "Follow this film" and
+  "Following this film · click to unfollow"; toasts "Following <title>" / "Unfollowed <title>".
+  The icon is a **bookmark**, an outline while not followed and filled solid while followed. The
+  eye and a bell were built and set aside; following alerts nobody (it keeps the title on the
+  user's list, its RSS feed and the home page section), so a bell would promise too much.
+  "Watch video preview" keeps its name: there the word means view.
+- **Every link that leaves the site opens in a new tab** (`target="_blank" rel="noopener
+  noreferrer"`, with a visually hidden "opens in a new tab"): IMDb, TMDB, Trakt, GitHub and
+  anything through the dereferrer.
+- **No "Same name posted more than once · this copy by … in …" line** under a release name in any
+  table: two releases with the same name and size are plainly two copies.
 
 ---
 
@@ -133,6 +153,8 @@ approved the final version with the rest of the day's changes ("I like all of it
     filters set, `Completion` reading `95%+` (not "95% or more") so it fits at 1280.
   - **Clear all** sits on the `Showing …` line (5.3), not in the bar, so both bars run the full
     width.
+
+### 5.2 The filters
 
 Each checkbox menu starts with its "Any …" item (`Any category`, `Any resolution`, `Any
 source`, `Any audio`, `Any genre`, `Any score`, `Any MPAA rating`, `Any language`), which clears
@@ -258,18 +280,18 @@ two rulings (2026-09-26).
 
 ### 5.7 Row buttons
 
-- Four round buttons as **2 × 2**: **Download** and **Copy link** on top, **Cart** and **Watch**
-  below. A release with no matched film has no Watch button: Cart sits alone under Download.
+- Four round buttons as **2 × 2**: **Download** and **Copy link** on top, **Cart** and **Follow**
+  below. A release with no matched film has no Follow button: Cart sits alone under Download.
 - Colours (he chose **tinted** over neutral grounds): **Download** coral, unchanged. **Copy link**
-  blue (hue 235), **Cart** green (hue 150), **Watch** violet (hue 300), each a tinted ground with
-  a coloured icon. On (in cart, watching) = a **solid fill in the button's own hue**, never
+  blue (hue 235), **Cart** green (hue 150), **Follow** violet (hue 300), each a tinted ground with
+  a coloured icon. On (in cart, following) = a **solid fill in the button's own hue**, never
   coral. Coloured outlines were rejected. Cart's green beside the completion chip's green is
   fine ("not even remotely in the same neighbourhood").
 - Download and Copy link have no on/off state.
 - Tooltips: "Download NZB", "Copy NZB link for SABnzbd or NZBGet", "Add to cart" /
-  "In cart · click to remove", "Watch this film" / "On My Movies · click to remove".
-- **Watch** follows the **film**, through today's watchlist picker (section 6.1). Every row of
-  the same film shows the same state.
+  "In cart · click to remove", "Follow this film" / "Following this film · click to unfollow".
+- **Follow** follows the **film**, through today's picker (section 6.1). Every row of the same
+  film shows the same state. Its icon is the bookmark (section 4). *Changed 2026-09-27.*
 
 ### 5.8 Batches and selection
 
@@ -333,9 +355,86 @@ certificate**, **number of releases**.
   over a badge on the poster.
 - Tiles never rank or feature films by release count; there is no count sort.
 
+---
 
+## 5B. Film page (APPROVED 2026-09-27)
 
-Taken on 2026-09-26, before those screens are prototyped. They are not asked again.
+Serves "get a specific movie": the user arrives from a film line on the Movie releases list, a
+Films wall tile, the search or a Similar films tile, and picks a release. Built to the decisions
+of 6.4 and a brief he confirmed ("Build it"); revised on his review the same day and approved:
+"Both the movie detail and show detail pages look good, I approve them." Routes `#/film/<id>` and
+`#/film/<id>/p/N`. There is no "Search films or actors" field on this page (as on the TV show page).
+
+### 5B.1 Header (like the TV show page)
+
+- A back link to the list or wall the user came from ("Movie releases" or "Films").
+- The poster (200 px wide, 2:3); a film with no artwork gets the name card with its matched title
+  and year (5.6).
+- The title, then one grey line: `2010 · 23 releases · latest Sep 16, 2026 · best` followed by the
+  resolution chip of the best resolution among the film's releases. These are today's title page's
+  Releases / Latest / Best stats, counted over the releases the viewer may see; "latest" reads
+  "2 hr ago" under a day old, a date after that.
+- The plot.
+- Tags: the genres, each linking to the Films wall filtered by that genre; then plain tags `Score
+  8.4` (the stored score, with the word Score, because a bare number among tags reads as nothing)
+  or `Too few votes` (5.2), the MPAA rating and the film's original language, each when known.
+- "Directed by" and "Starring" (the first 12 cast), each name a link to the Films wall filtered by
+  that person.
+- Buttons, in this order:
+  - **Follow film**: tinted violet (hue 300) with the bookmark icon, filled solid violet while
+    followed ("Following film"), never coral. Both labels share one width, so pressing it moves
+    nothing. It opens today's picker in the app. The film is followed **only** from here: no row
+    in the release table has a Follow button.
+  - **Trailer**, only when the site setting is on. It is off on the maintainer's instance, and no
+    trailers are stored there. It opens today's trailer player. The prototype has an Off / On
+    switch standing in for the setting.
+  - **IMDb**, always (the film is keyed by its IMDb id).
+  - **TMDB**, when its id is known. **Trakt**, when its id is known (no film has one today).
+
+  The IMDb, TMDB and Trakt links open in a new tab.
+- The right half of the header stays empty (as on the TV show page).
+
+### 5B.2 Releases
+
+- A **"Releases"** heading, then a **filter bar of two cells**, **Resolution** and **Source** (5.1's
+  bar: name above value, the coral line when set, the open cell lifting), each cell as wide as a
+  cell on the Movie releases list's bars. Options: 4K, 1080p, 720p, SD, Unknown / WEB, Blu-ray,
+  DVD, HDTV, Unknown, as on the list. The cells are the page's own: they reset when another film
+  opens.
+- The **`Showing 1–23 of 23 releases`** line with **Clear all** in its fixed slot and the page
+  arrows (5.3); **50 releases a page**, numbered, with the bottom pager and Go to page. On the
+  whole catalogue the largest film has 152 releases (`DATA-NOTES.md` section 11). A filter or sort
+  change returns to page 1; another page of the same film opens at the Releases heading; another
+  film opens at the top. No match reads `Showing 0 releases` and "No releases of this film match
+  4K · DVD."
+- **One table, not grouped**, newest posted first: a select box per row and **no check-all box**
+  (as the TV show page); columns Release, Resolution (sortable), Source, Size (sortable), Files
+  (opens the file list), Posted (sortable, the date; hovering shows posted and added), and the
+  buttons. **No Grabs column** ("one thing I want to dump is the grabs column"). The sorted
+  column's heading is in ink, the others muted; the first click on a heading sorts descending.
+- The release cell: the bold release name (at most two lines) linking to that release's details,
+  and the chip line (5.5) **without** the group and poster chips. **No "Same name posted more than
+  once" line** (section 4).
+- The buttons are the releases list's (5.7): **2 × 2**, Download (coral) and Copy link on top,
+  **Cart alone below**, tinted, a pressed Cart green, never coral; **no Follow** button ("with
+  the same rule about not showing the follow button on each release"). Column 96 px.
+- Selecting rows brings up the floating selection bar (5.8); the selection carries across pages.
+
+### 5B.3 Similar films
+
+- The last section: **"Similar films"**, six tiles identical to the Films wall's tiles (5A.3), each
+  as wide as a wall tile at that window width (a row of six keeps the wall's seven-to-a-row width),
+  opening that film's page.
+- The rule of 6.6: candidates share a genre or a person with the film and have a release; score =
+  2 × shared genres + 3 × shared people − |year gap| / 10; top 6. Candidates are **every film with a
+  release** in the catalogue, not only those on the list's pages. A film with no picks has no
+  section. The viewer's excluded categories are applied in the data contract (section 8).
+
+---
+
+## 6. Decisions taken before the screens were designed
+
+Taken on 2026-09-26, before those screens were prototyped. They are not asked again.
 
 ### 6.1 Today's features
 
@@ -349,8 +448,8 @@ Taken on 2026-09-26, before those screens are prototyped. They are not asked aga
   looks like a categorisation fault (`DATA-NOTES.md` section 1); the rule that files it as Movies
   has not been traced. The Category menu can untick Other.
 - **Releases with no matched film are listed** in date order, with the placeholder (5.6), no
-  film line and no Watch button.
-- **Watch** keeps today's picker (the Movies sub-categories to follow).
+  film line and no Follow button.
+- **Follow** keeps today's picker (the Movies sub-categories to follow).
 - **Year and Genre go on both screens**, the list and the wall (his choice over "Films wall
   only").
 
@@ -366,15 +465,19 @@ Approved: section 5A.
 
 ### 6.4 Film page
 
+Approved as section 5B (2026-09-27). The decisions taken beforehand:
+
 - A header like the TV show page, then **one release table**: the show page's release table
   (sortable Resolution / Size / Posted / Grabs headers, checkboxes, chips, the four buttons),
   with **Resolution** and **Source** menus above it. **Not grouped** by resolution or source.
+  (Changed on review, 2026-09-27: no Grabs column, the 2 × 2 buttons without Follow, the filter
+  bar's cells for the menus; 5B.)
 - **People are links, like TV**: "Directed by" and "Starring" (the first 12 cast) link to the
   Films wall filtered by that person. "Search films or actors" finds them.
 - **Kept from today's title page**: the IMDb, TMDB and Trakt links (only when that id is
   known); the **Trailer** button (only when the site setting is on; it is off on the
   maintainer's instance and no trailers are stored there); the Releases / Latest / Best stats.
-- **Dropped**: the "On your My Movies for" line with its Edit and Remove buttons. The Watch
+- **Dropped**: the "On your My Movies for" line with its Edit and Remove buttons. The Follow
   button alone, as on TV.
 - **Similar films**: a row of 6 posters (6.6).
 
@@ -407,6 +510,10 @@ specified.
 
 No schema is proposed yet (`DATA-NOTES.md`). What the approved decisions require:
 
+- **The film page reads the whole catalogue** (5B): its release list, counts, latest date and best
+  resolution come from every release of the film the viewer may see, and its Similar films
+  candidates are every film with a release (`DATA-NOTES.md` section 11).
+
 - **US certificate** (shown as **MPAA Rating**): stored **going forward**, as films are saved. No
   one-off backfill of existing films.
 - **The film's original language** (the Language filter): TMDB gives it for every film sampled;
@@ -438,7 +545,8 @@ No schema is proposed yet (`DATA-NOTES.md`). What the approved decisions require
 
 ## 8. Open items
 
-1. **Film page and release details** are still to be prototyped and approved, in that order.
+1. **Release details** is still to be prototyped and approved (the film page was approved on
+   2026-09-27, 5B).
 2. **Storage** (the columns and tables for section 7) is decided after those screens are
    designed, on measured queries, as TV's `DATA-CONTRACT.md` was.
 3. **The people key** for films on the shared people tables (section 7).
@@ -448,13 +556,23 @@ No schema is proposed yet (`DATA-NOTES.md`). What the approved decisions require
    (`DATA-NOTES.md` section 4).
 6. **The IMDb score source** (section 7): a separate piece of work.
 7. **Build issues**: when the Movies build issues are filed, they include build issues for the
-   2026-09-26 changes to the TV releases list (TV is already built).
+   changes approved after the TV build: the 2026-09-26 changes to the TV releases list and filter
+   bar, and the 2026-09-27 changes to the TV show page, the TV details page's release table and the
+   "Follow" wording and bookmark icon everywhere (`../tv-redesign/SPEC.md` 3.3, 3.4, rules 12-14),
+   plus the offsite-link fixes in today's app (the footer and admin-footer GitHub links, the IMDb
+   chip on the old Movies covers view).
 8. **Reviewer calls not applied** to the approved screen: silently swapping a backwards range
    instead of refusing it; the error red sitting close to coral; `1080p +1` instead of `2 chosen`
    in a cell. (Decades now are a three-column grid, with the filter bar.)
 9. **Every list and wall filter is proven on the full catalogue** in the data contract before a
    build issue is filed: the Audio and Language filters, Completion, the multi-decade Year, and the
-   Films wall's visibility rule, sorts and release counts.
+   Films wall's visibility rule, sorts and release counts; the Similar films and TV Similar shows
+   queries with the viewer's excluded categories.
+10. **Film page calls the reviewer raised, not taken up by him** (they stand as built): the six
+    Similar films tiles keep the wall's tile width, leaving about 205 px empty at 1600 px; the
+    Resolution and Source menus list every value, so DVD on a film with no DVD release gives an
+    empty result; a selection carries to the next film; after a Similar films click the back link
+    still returns to the list the user came from (the browser's Back returns to the previous film).
 
 ---
 
@@ -463,9 +581,17 @@ No schema is proposed yet (`DATA-NOTES.md`). What the approved decisions require
 - **Copy NZB link** is TV's (TV `SPEC.md` appendix A): the existing v1 `t=get` URL with the
   user's API key, a tick for about 1.6 seconds, and the toast "NZB link copied. It contains your
   API key, so only paste it into your own downloader." No API change.
+- **Film page** (5B): the film is followed from the header's Follow film only; its release table has
+  no Follow button, no Grabs column and no identical-name line. Its Resolution / Source cells are the
+  page's own and reset when another film opens. The page number is in the URL
+  (`#/film/<id>/p/N`); another page of the same film opens at the Releases heading, another film at
+  the top. The header's counts, latest date and best resolution come from all of the film's
+  releases the viewer may see, never from one page.
+- **Offsite links** (section 4): IMDb, TMDB and Trakt open in a new tab with `rel="noopener
+  noreferrer"`; group and poster chips stay same-tab links inside the site.
 - The film line and the placeholder are two different links: the film line opens the **film
   page**, the poster or placeholder opens the **release's details**.
-- A release with no matched film: no film line, no Watch button (Cart alone under Download), a
+- A release with no matched film: no film line, no Follow button (Cart alone under Download), a
   placeholder, never part of a batch, and excluded while Genre, Year, Score, MPAA Rating or
   Language is set.
 - The Score band "Too few votes" holds films with under 10 votes **or no score**. A film whose
@@ -514,9 +640,12 @@ No schema is proposed yet (`DATA-NOTES.md`). What the approved decisions require
 - A hue per kind for the group and poster chips on rows (outline was chosen).
 - Group and poster chips splitting across lines.
 - Neutral-ground row buttons (tinted was chosen); **coloured-outline** buttons.
-- **Coral on a pressed toggle** (Cart, Watch); an on/off state on Download or Copy link.
+- **Coral on a pressed toggle** (Cart, Follow); an on/off state on Download or Copy link.
 - **Site-tag stripping** and a **letter rule** on placeholder name cards.
 - An empty poster cell.
+- Added 2026-09-27: the word **"Watch"** for following (section 4); the **eye** and the **bell** as
+  the Follow icon; a Follow button in the film page's release rows; a **Grabs** column on the film
+  page; the **"Same name posted more than once"** line; one-line buttons in the film page's table.
 
 Not rejected: the reviewer's recommendation to use the plain film tile ("No poster") for every
 release without a poster. He chose the name card instead; the tile remains its fallback.

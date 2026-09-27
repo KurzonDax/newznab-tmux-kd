@@ -145,8 +145,16 @@ for (const r of rel) if (r[1] === FIX.longShow && /S01E01\./.test(r[3])) r[6] = 
 { const top = [...rel].sort((x, y) => y[5] - x[5] || x[0] - y[0])[0][0]; if (!media[top]) { const donor = Object.keys(media).find(k => media[k].a.length >= 1 && media[k].v.length); media[top] = JSON.parse(JSON.stringify(media[donor])); rx.summ[top] = rx.summ[donor]; } rx.x[top][4] = 1; nfo[top] = nfo[top] || 'General\r\nInvented sample NFO text for the prototype, long enough to fill the dialog and the NFO tab with a\r\nrealistic amount of monospaced content so its layout can be judged.\r\n'; }
 Object.assign(FIX, {searchQuery: 'glass mer', searchTitle: 'Glass Meridian'});
 
+// Similar shows (2026-09-27): the same rule as gen-similar-shows.py (2 x shared genres + 3 x shared people - |premiere gap| / 10,
+// top 6, ties on id) over the invented shows that have releases; no picks outside the dataset
+const tvmore = {sim: {}, shows: {}};
+{ const withRel = new Set(rel.map(r => r[1])), ids = Object.keys(meta).map(Number).filter(i => withRel.has(i));
+  for (const v of ids) { const m = meta[v], out = [];
+    for (const c of ids) { if (c === v) continue; const o = meta[c], g = m.g.filter(x => o.g.includes(x)).length, pp = m.cast.filter(x => o.cast.includes(x)).length;
+      if (!g && !pp) continue; out.push([2 * g + 3 * pp - Math.abs((+o.prem || 0) - (+m.prem || 0)) / 10, c]); }
+    tvmore.sim[v] = out.sort((a, b) => b[0] - a[0] || a[1] - b[1]).slice(0, 6).map(x => x[1]); } }
 const w = (f, d) => writeFileSync(`${out}/${f}`, JSON.stringify(d));
-w('data.json', {shows, eps, rel}); w('relx.json', rx); w('meta.json', meta); w('media.json', media); w('files.json', files); w('nfo.json', nfo); w('previews.json', previews); w('repair.json', repair);
+w('data.json', {shows, eps, rel}); w('relx.json', rx); w('meta.json', meta); w('media.json', media); w('files.json', files); w('nfo.json', nfo); w('previews.json', previews); w('repair.json', repair); w('tvmore.json', tvmore);
 writeFileSync(`${out}/fixtures.json`, JSON.stringify(FIX, null, 1));
 writeFileSync(`${out}/art.json`, JSON.stringify({posters: Object.entries(shows).filter(([, s]) => s.p).map(([id, s]) => ({id, t: s.t, hue: (id * 47) % 360})), previews: previews.map(p => ({path: p, full: !/_thumb/.test(p)}))}));
 console.log(`shows ${Object.keys(shows).length}, episodes ${Object.keys(eps).length}, releases ${rel.length}, media ${Object.keys(media).length}, previews ${previews.length}`);

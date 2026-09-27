@@ -12,7 +12,7 @@ under `docs/proposals/tv-redesign/prototype/`:
 |---|---|
 | `tv.html`, `tokens.css` | the approved prototype, byte-for-byte the one Randall reviewed |
 | `data.json` … `repair.json`, `posters/`, `previews/`, `fixtures.json` | the invented dataset (`gen-demo-data.mjs`, `make-demo-art.mjs` regenerate it) |
-| `check.mjs` | 248 behaviour checks; `0 failures` on this dataset |
+| `check.mjs` | 268 behaviour checks on this dataset (269 on the private one); `0 failures` |
 | `reference/<state>-<dark|light>.webp` | 26 screen states × 2 themes at 1600 × 1000 |
 | `reference/measurements.json` | computed type, colour, radius, padding and size of 82 named parts, per theme |
 | `reference/tokens.json` | the resolved value of every colour token and chip hue, per theme |
@@ -98,22 +98,25 @@ Two semantic tokens carry the rule the ramp alone cannot: **`--accent-surface`**
 the solid resolution chips, and under `hues` the media info block's section and value chips).
 These are status colours in `DESIGN.md`'s sense: literal and reserved, never the accent.
 
-**Releases-list row button tokens** (new 2026-09-26, on the maintainer's review; `SPEC.md`
-3.1 and appendix A). One hue per button, in OKLCH: Copy NZB link 235, Add to cart 150, Watch
-300 (the prototype's `--b-cp`, `--b-ct`, `--b-w`). With `h` the button's hue:
+**Release-table row button tokens** (new 2026-09-26, extended 2026-09-27, on the maintainer's
+review; `SPEC.md` 3.1, 3.3, 3.4 and appendix A). One hue per button, in OKLCH: Copy NZB link 235,
+Add to cart 150, Follow 300 (the prototype's `--b-cp`, `--b-ct`, `--b-w`). With `h` the button's hue:
 
 | State | Dark ground / icon | Light ground / icon |
 |---|---|---|
 | off | `oklch(0.31 0.06 h)` / `oklch(0.86 0.11 h)` | `oklch(0.92 0.045 h)` / `oklch(0.45 0.14 h)` |
 | off, hover | ground `oklch(0.37 0.08 h)` | ground `oklch(0.87 0.07 h)` |
-| on (Cart, Watch only) | `oklch(0.72 0.15 h)` / `oklch(0.18 0.04 h)` | `oklch(0.50 0.15 h)` / `#ffffff` |
+| on (Cart, Follow only) | `oklch(0.72 0.15 h)` / `oklch(0.18 0.04 h)` | `oklch(0.50 0.15 h)` / `#ffffff` |
 | on, hover | ground `oklch(0.78 0.13 h)` | ground `oklch(0.44 0.15 h)` |
 
 Download keeps `--accent-surface` / `--accent-on` and has no on state; Copy link has no on
-state. The focus ring on Copy link, Cart and Watch is `--text-default`. Every icon is at
-least 3:1 on its ground, off and on, in both themes (`check.mjs`). These apply to the
-releases list only; the show page and details tables keep the neutral round button with a
-coral pressed state.
+state. The focus ring on Copy link, Cart and Follow is `--text-default`. Every icon is at
+least 3:1 on its ground, off and on, in both themes (`check.mjs`). These apply to every release
+table: the releases list, the show page's tables and the details page's "All N releases" table
+(the last two carry no Follow button in their rows). The show page header's **Follow show**
+(a 40 px pill) uses the same Follow hue and states, with both of its labels in one grid cell so
+its width never changes; the details page header's buttons keep the neutral pill with a coral
+pressed state.
 
 **Filter bar tokens** (2026-09-26): the bar ground is `--surface-panel-alt`; hairlines between cells
 `--border-default`; the open cell and its menu use a raised ground, **`--surface-raised`**: dark
@@ -152,10 +155,16 @@ Exact values for every part are in `reference/measurements.json`; the rules behi
   → `releasesTableColumns` (34, 116, auto, 100, 80, 82, 112, 96 px: select, poster,
   release, Resolution, Source, Size, Posted / Added, the 2 × 2 buttons). There is no Files
   and no Grabs column (changed 2026-09-26 on the maintainer's review; the release column is
-  800 px at a 1600 px window). The show page and details release tables are unchanged: they
-  keep Files 64 and Grabs 76 and the one-line buttons (168 px).
-- Releases-list row buttons: a 2 × 2 grid of 32 px round buttons with 6 px gaps, Download and
-  Copy link on top, Cart and Watch below.
+  800 px at a 1600 px window). The show page's release tables keep Files 64, have no Grabs and
+  use the 2 × 2 buttons (96 px); the details page's table keeps Files 64 and Grabs 76 and uses
+  the 2 × 2 buttons (96 px) (changed 2026-09-27).
+- Release-table row buttons: a 2 × 2 grid of 32 px round buttons with 6 px gaps, Download and
+  Copy link on top, Cart and Follow below; where there is no Follow (the show page's and details
+  page's tables, a release with no show) Cart sits alone under Download.
+- Show page sections (2026-09-27): "Whole-season packs" (margin 22 px above, 26 px below), then the
+  "Episodes" heading (17 px, weight 800, hairline under it, no gap before the first episode row),
+  the episodes, "Other releases", and "Similar shows" (21 px heading, 44 px above it on every show;
+  six tiles each as wide as a TV wall tile at that window width: `repeat(6, calc((100% - 108px) / 7))`).
 - Group and poster chips on a releases-list row: the outline chip (`.rc.origin`: no fill,
   1 px `--border-default` border, `--text-muted` text, `--text-default` on hover), 8 px apart,
   as one unit (`inline-flex`, minimum 190 px) whose poster chip shortens with an ellipsis.
@@ -181,7 +190,7 @@ Exact values for every part are in `reference/measurements.json`; the rules behi
 | Group and poster chips on releases-list rows (2026-09-26) | `x-origin-chip` (`kind="group"` / `"poster"`, `href` `route('browse.all', ['group' => …])` / `['poster' => …]`, as `release-browser/origin` passes it) | at the end of the chip line on every releases-list row, wrapped together so the pair never splits and the poster name shortens with an ellipsis; the group label reads `a.b.` for `alt.binaries.`, the full name stays in the title; not on the show page or details release tables |
 | No-poster placeholder (2026-09-26) | new, in the releases list row | name card or "No poster" tile for releases with no matched show; the name is parsed per `SPEC.md` appendix A (the prototype's `showName()`) |
 | Resolution chip | new `x-resolution-chip` | new, fed by `releases.resolution` |
-| Row actions | `release-action*`, `cart-button.js`, `x-watch-button` (keeps today's picker behaviour) | restyled round; Report and Details buttons removed; **Copy NZB link** is new (`copyNzbLink` Alpine component, clipboard with an `execCommand` fallback, toast through `toast-notification.js`). On the **releases list** (2026-09-26): 2 × 2 (Download + Copy link on top, Cart + Watch below; Cart alone when there is no Watch), Copy link / Cart / Watch in their own tinted hue and a pressed Cart / Watch filled in that hue (section 2), Download unchanged. The show page and details tables keep the one-line row with a coral pressed state |
+| Row actions | `release-action*`, `cart-button.js`, `x-watch-button` (keeps today's picker behaviour) | restyled round; Report and Details buttons removed; **Copy NZB link** is new (`copyNzbLink` Alpine component, clipboard with an `execCommand` fallback, toast through `toast-notification.js`). In **every release table** (2026-09-26 / 2026-09-27): 2 × 2 (Download + Copy link on top, Cart + Follow below; Cart alone when there is no Follow), Copy link / Cart / Follow in their own tinted hue and a pressed Cart / Follow filled in that hue (section 2), Download unchanged. Only the releases list has Follow in its rows; the show page follows from a **Follow show** header button. `x-watch-button` keeps its name in code; everything it shows says Follow (`SPEC.md` rule 12) |
 | Row selection and the floating bar | `release-browser-component.js` | restyled; the bar floats (fixed), it does not push the list |
 | Same-show batch expander | new, inside the releases list component | new |
 | Shows wall tile | `tv-show-directory-component.js` | rebuilt to the tile in the reference |
@@ -210,7 +219,7 @@ Exact values for every part are in `reference/measurements.json`; the rules behi
 ## 5. Icons (prototype sprite → Font Awesome 6 Free, solid unless noted)
 
 `search` fa-magnifying-glass · `down` fa-download · `link` fa-link · `cart` fa-cart-shopping ·
-`eye` fa-eye · `check` fa-check · `info` fa-circle-info · `lock` fa-lock · `users` fa-users ·
+`bookmark` fa-bookmark (regular while not followed, solid while followed; it replaced the eye, 2026-09-27) · `check` fa-check · `info` fa-circle-info · `lock` fa-lock · `users` fa-users ·
 `user` fa-user · `x` and the rotated `plus` fa-xmark · `back` fa-arrow-left · `chev`
 fa-chevron-down / -up / -right / -left as the state needs · `sort` fa-sort · `sun` fa-sun /
 fa-moon · `tv` fa-tv · `audio` fa-volume-high · `file` fa-file-lines · `image` fa-image.
@@ -265,6 +274,8 @@ An implementation is accepted when all four hold. None of them is a judgement ca
 
 - Icons are Font Awesome (decision 4).
 - The top bar is the app's own (decision 5).
-- The watch button opens today's watch-list picker rather than toggling in place.
+- The Follow button opens today's picker rather than toggling in place.
+- The show-page reference images (`reference/show-*`) come from the 2026-09-27 prototype: packs first, the Episodes heading, ascending
+  episodes, Follow show in the header, Similar shows at the bottom.
 - Real data: long names, missing posters and shows without details render as the "thin state"
   references show.
