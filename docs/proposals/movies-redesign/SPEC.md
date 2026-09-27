@@ -5,8 +5,8 @@ rejected and decided, with his reasons) and query-lab experiments on a restored 
 catalogue. `DATA-NOTES.md` holds the measured facts; `INVENTORY.md` lists every feature of
 today's movie screens. The maintainer's clickable prototype is the visual and behavioural
 reference for the approved screen: where this document and the prototype disagree about how
-something looks or behaves, the prototype wins. A sanitized copy of it is added to this folder
-when the Movies design is complete.
+something looks or behaves, the prototype wins. A sanitized copy of it, with an invented dataset
+and placeholder art, is in `prototype/` (the release details route there is still a placeholder).
 
 Status: the **Movie releases** screen and the **Films wall** are **approved** (2026-09-26; the
 filter bar of section 5.1 was approved later the same day, "Okay, I am all right with this").
