@@ -10,16 +10,18 @@ Nothing here is implemented yet.
 |---|---|
 | Movie releases (list) | **Approved** on the maintainer's prototype, 2026-09-26 (its filter bar approved later the same day) |
 | Films (discovery wall) | **Approved** on the maintainer's prototype, 2026-09-26 |
-| Film page | Design not started; a placeholder route in the prototype |
+| Film page | **Approved** on the maintainer's prototype, 2026-09-27 |
 | Release details (Movies) | Design not started; a placeholder route in the prototype |
 
-Decisions already taken for the two screens still to design are recorded in `SPEC.md`
-section 6, so they are not asked again. The filter bar of `SPEC.md` 5.1 is shared with the TV
+Decisions already taken for the screen still to design (release details) are recorded in
+`SPEC.md` section 6.5, so they are not asked again. The rules of 2026-09-27 ("Follow" wording and
+the bookmark icon, offsite links in a new tab, no "same name posted more than once" line) apply to
+every screen of both sections (`SPEC.md` section 4). The filter bar of `SPEC.md` 5.1 is shared with the TV
 section (`../tv-redesign/SPEC.md` 3.0).
 
 | Read | For |
 |---|---|
-| [`SPEC.md`](SPEC.md) | what the section is for, the approved Movie releases screen, every decision so far with the reasons, what was rejected |
+| [`SPEC.md`](SPEC.md) | what the section is for, the approved screens (Movie releases, Films wall, film page), every decision so far with the reasons, what was rejected |
 | [`DATA-NOTES.md`](DATA-NOTES.md) | facts measured on the restored catalogue and the query experiments run so far; later storage decisions rest on them |
 | [`INVENTORY.md`](INVENTORY.md) | every feature of today's movie screens, with `path:line`; the input for the screens still to design |
 | [`../tv-redesign/`](../tv-redesign/) | the TV specification, contracts and prototype; the Movies design inherits its rules |

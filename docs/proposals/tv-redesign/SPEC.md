@@ -9,8 +9,9 @@ clickable prototype `tv.html` is the visual and behavioural reference: where thi
 and the prototype disagree about how something looks or behaves, the prototype wins; where
 they disagree about data, storage or queries, this document wins.
 
-Status: every screen below is **approved** and was built by #773–#781. Parts marked *Changed 2026-09-26* were approved
-after that build (the filter bar, section 3.0, and the releases-list changes) and are not built yet.
+Status: every screen below is **approved** and was built by #773–#781. Parts marked *Changed 2026-09-26* or *Changed
+2026-09-27* were approved after that build (the filter bar, section 3.0; the releases-list changes; on 2026-09-27 the show page,
+the details page's release table and the "Follow" wording) and are not built yet.
 
 ---
 
@@ -27,7 +28,7 @@ In scope: the four TV screens and their dialogs.
 | Dialogs: media info, NFO, preview / sample image, file list | opened from chips and counts | today's equivalents |
 
 Out of scope, by his decision: phone layouts (desktop only); comments (lowest priority of
-anything); the watchlist page (a separate, low-priority design section; the **Watch show**
+anything); the page today called Watchlist (a separate, low-priority design section; its name follows rule 12; the **Follow show**
 button itself is in scope and keeps today's behaviour); "Listen" audio previews (audio
 category only); the rest of the site (Movies, home, and so on).
 
@@ -64,16 +65,29 @@ Each is a test, not a preference.
 8. **Coral (the accent) means the primary action or "this is on / open / current"**: download,
    current view / tab / page, a set filter, an open episode's releases button, a pressed Full
    size button. Spend it on nothing else. Download NZB and Copy NZB link are actions with no
-   on / off state. On the releases list a pressed Cart or Watch fills in the button's own hue,
-   not coral ("Why would pressing a button make it stay coral?"); the show page and the details
-   page were not part of that review and keep a coral pressed cart / watch for now.
-   *Changed 2026-09-26 on the maintainer's review.*
+   on / off state. In every release table (the releases list, the show page's tables, the details
+   page's table) a pressed Cart fills in the button's own hue, not coral ("Why would pressing a
+   button make it stay coral?"), and so does the show page header's **Follow show**. The details
+   page's header buttons (Add to cart, Follow show) were not part of those reviews and keep their
+   coral pressed state. *Changed 2026-09-26 and 2026-09-27 on the maintainer's review.*
 9. No Report button anywhere. No separate details button in rows: the release name is the link.
 10. A checkbox menu closes when focus leaves it, on Escape, and on a click outside; it stays
     open while ticking and keeps its scroll position; keyboard focus stays on the control
     that was pressed after any re-render.
 11. An approved screen is frozen: a change to shared components must say exactly what changes
     on each approved screen.
+12. **"Follow", never "Watch"**, for keeping up with a show's (or film's) new releases: buttons,
+    tooltips, labels, toasts, menus and page names ("When a reasonable human being sees 'watch
+    film' they think that means I'm going to view the film, not keep an eye on releases for this
+    film"). The button reads **Follow show** / **Following show**; tooltips "Follow this show" and
+    "Following this show · click to unfollow"; toasts "Following <show>" / "Unfollowed <show>". Its
+    icon is a **bookmark**, an outline while not followed and filled solid while followed (the eye
+    and a bell were tried; following alerts nobody, so a bell would promise too much). "Watch video
+    preview" keeps its name: there the word means view. *Changed 2026-09-27.*
+13. **Every link that leaves the site opens in a new tab** (`target="_blank" rel="noopener
+    noreferrer"`, with a visually hidden "opens in a new tab"). *Changed 2026-09-27.*
+14. **No "Same name posted more than once · this copy by … in …" line** under a release name, in any
+    table: two releases with the same name and size are plainly two copies. *Changed 2026-09-27.*
 
 ---
 
@@ -150,8 +164,8 @@ same component the Movies screens use.
   the row buttons. **No Files and no Grabs column** on this list ("Neither are really that
   beneficial ... If the user wants to know the files, they can click on the release"): the
   file list is on the details page. Dropping them widens the release column so the chips fit
-  on one line. The show page and details tables keep both columns. *Changed 2026-09-26 on
-  the maintainer's review.*
+  on one line. The show page's tables keep Files but have no Grabs (2026-09-27); the details
+  page's table keeps both. *Changed 2026-09-26 on the maintainer's review.*
 - **Chip line**: the release chips (section 4), then the **group and poster chips**, outline
   style as on the details page, on every row that has a group or a poster. The group reads
   `a.b.` for `alt.binaries.`. They are same-tab links to `/browse/all?group=<group>` and
@@ -163,14 +177,15 @@ same component the Movies screens use.
   at 1366–1600 px wide. *Changed 2026-09-26 on the maintainer's review* (they were details
   page only).
 - **Row buttons, 2 × 2**: **Download NZB** and **Copy NZB link** on top, **Add to cart** and
-  **Watch this show** below; with no Watch button, Cart sits alone under Download. Download
-  is unchanged (coral). Copy link, Cart and Watch have a tinted ground and a coloured icon,
-  each in its own hue (appendix A); a pressed Cart or Watch fills solid in its own hue, not
+  **Follow this show** below; with no Follow button, Cart sits alone under Download. Download
+  is unchanged (coral). Copy link, Cart and Follow have a tinted ground and a coloured icon,
+  each in its own hue (appendix A); a pressed Cart or Follow fills solid in its own hue, not
   coral. Download and Copy link have no on / off state. Keyboard focus on Copy link, Cart and
-  Watch is drawn in the ink colour. The show page and details tables keep the four buttons on
-  one line. *Changed 2026-09-26 on the maintainer's review.*
+  Follow is drawn in the ink colour. The show page's and details page's tables use the same
+  2 × 2 buttons **without** Follow (3.3, 3.4). *Changed 2026-09-26 and 2026-09-27 on the
+  maintainer's review.*
 - **Releases with no matched show** (`videos_id = 0`; 10,464 visible ones on the production
-  copy) are listed in date order like the rest: there is no grey show line, the watch button
+  copy) are listed in date order like the rest: there is no grey show line, the Follow button
   is absent (Cart sits alone under Download) and the row never joins a same-show batch.
   Decided 2026-09-24.
 - Their poster cell holds a **poster-sized placeholder** linking to the details page like a
@@ -212,56 +227,90 @@ same component the Movies screens use.
 
 ### 3.3 Show page
 
+*Changed 2026-09-27 on the maintainer's review* (the Follow show button, the section order, the
+Episodes heading, ascending episodes, the empty-packs wording, no Grabs, the buttons, no
+identical-name line, Similar shows). Approved as revised: "Both the movie detail and show detail
+pages look good, I approve them."
+
 - Back link to the list the user came from. Poster, title, `Network · year · N seasons on
   site · N releases` (the year lives here; **no "Premiered" tag on this page**), summary,
   tags (genres link to the wall filtered by that genre; language, rating, status are plain),
-  "Starring" names linking to the wall filtered by that person. The right half of the header
-  stays empty.
-- **Seasons are tabs** sitting directly on the episode list, on a sticky bar, in the details
-  page's tab style (coral underline on the current one), with Resolution and Source menus at
-  the right of the same row. From 9 seasons up the row reads `Season  Specials 1 2 3 … 24`.
-  The tab row never wraps (it scrolls sideways if it must), so the bar's height never
-  changes. **There is no "By air date" tab** (dropped 2026-09-24): a dated daily release gets
-  its season and episode from its episode record, and providers number daily shows in
-  ordinary seasons (SmackDown is season 28 on the production copy), so daily shows list under
-  those seasons with the air date on each episode row. Numeric tabs carry the accessible name
-  "Season 22".
+  "Starring" names linking to the wall filtered by that person, then a **Follow show** button
+  (rule 12): tinted violet with the bookmark icon, filled solid violet while followed, never
+  coral; its two labels share one width so pressing it moves nothing. The show is followed
+  here only: no release row on this page has a Follow button ("I'm not sure why this isn't
+  there already"). The right half of the header stays empty.
+- **Seasons are tabs** on a sticky bar, in the details page's tab style (coral underline on
+  the current one), with Resolution and Source menus at the right of the same row. From 9
+  seasons up the row reads `Season  Specials 1 2 3 … 24`. The tab row never wraps (it scrolls
+  sideways if it must), so the bar's height never changes. **There is no "By air date" tab**
+  (dropped 2026-09-24): a dated daily release gets its season and episode from its episode
+  record, and providers number daily shows in ordinary seasons (SmackDown is season 28 on the
+  production copy), so daily shows list under those seasons with the air date on each episode
+  row. Numeric tabs carry the accessible name "Season 22".
+- Under the tabs, in this order:
+  1. **"Whole-season packs"**, first ("move the whole season packs to above the episodes
+     table"): the season's packs as a release table; a season with none keeps the heading and
+     reads **"None available for this season."** (his wording), or "None available for this
+     season with your filter." when the filters hid them.
+  2. **"Episodes"**: a heading in the packs heading's style with a hairline under it, shown
+     when at least one episode matches the filters ("There needs to be a header or something
+     separating the season packs from the episodes list").
+  3. The episode rows, **ascending: E00 (specials) first, then E01, E02, …** (decided
+     2026-09-26, #810).
+  4. **"Other releases"**, omitted when empty: the show's releases that declare no season or
+     episode and have no episode link. A show with no seasons at all shows only the filter row
+     and this section, and its header omits "N seasons on site".
+  5. **"Similar shows"**, the last section (below).
+- When nothing on the season matches the filters, the page-wide line "No releases in this
+  season match SD." comes first, above the packs section. Hiding the packs with a filter
+  changes the height above the episode list, so the list moves up (about 90 px for one pack);
+  that follows from his order.
 - Episode row: number, title, aired date, resolution chips present, size range (one size
   when all releases are the same size), and a button-shaped **`4 releases ⌄`** control at
   the right. The whole row is the click target; the arrow flips and the button turns coral
   while the row is open. Nothing is open on arrival, except the episode the user arrived
   from.
-- An open episode shows a release table: name, the chips (without group and poster),
-  Resolution, Source, Size, Files, Posted, Grabs and the four round buttons on one line
-  (a pressed cart / watch in coral), with a **select checkbox per row and no check-all box**
-  and sortable Resolution / Size / Posted / Grabs headers. The releases list's changes of
-  2026-09-26 (3.1) do not apply to this table. Identical release names get a grey line
-  naming poster and group. The same floating selection bar; the selection carries across
-  episodes and seasons.
-- "Whole-season packs" section per season.
-- **"Other releases"** section under the packs on every season tab, omitted when empty: the
-  show's releases that declare no season or episode and have no episode link. A show with no
-  seasons at all shows only the filter row and this section, and its header omits
-  "N seasons on site".
-- Empty filter result: "No releases in this season match SD." and nothing moves.
+- An open episode (and the packs and Other releases sections) shows a release table: name,
+  the chips (without group and poster), Resolution, Source, Size, Files, Posted, and the
+  releases list's **2 × 2 buttons without Follow** (Download and Copy link on top, Cart alone
+  below, tinted, a pressed Cart green, never coral; 96 px), with a **select checkbox per row and
+  no check-all box** and sortable Resolution / Size / Posted headers. **No Grabs column** (his
+  call 2026-09-27); a Grabs sort left over from the details page returns to the page's default
+  (largest first). **No line under identical release names** (rule 14). The same floating
+  selection bar; the selection carries across episodes and seasons.
+- **Similar shows** (his request 2026-09-27, "the way you did with the movies"): six tiles
+  identical to the TV shows wall's tiles (poster, title, `Year · Genre, Genre`,
+  `Language · Rating`), each as wide as a wall tile, opening that show's page. The picks follow
+  the film page's rule (Movies `SPEC.md` 6.6): candidates share a genre or a person with the
+  show and have a TV release the viewer may see; score = 2 × shared genres + 3 × shared people
+  − |premiere year gap| / 10; top 6. A show with no picks (no stored genres or cast, or nothing
+  shares them) has no section. In the lab the picks for 158 of the prototype's 170 shows come
+  from every show with a release; the query is proven, with per-user visibility, in the data
+  contract. Show details (genres, cast) are saved as each show's next release arrives (#775), so
+  the section fills in over time.
 
 ### 3.4 Release details
 
 - Breadcrumb; poster; heading `Show · S01E02 — Episode title` with the release name as the
   bold second line; resolution and source chips, the chip line, group and poster chips;
-  buttons Download NZB, Copy NZB link, Add to cart, Watch show.
+  buttons Download NZB, Copy NZB link, Add to cart, **Follow show** (rule 12; these header
+  buttons keep their approved look, a coral pressed state included).
 - Tabs: Overview (preview thumbnail, aired date and summary, facts grid), Files, Media info,
   NFO, Comments (unchanged from today; no design work).
 - Right of the tabs: **"About the show"**: `Network · N seasons on site` (no year on this
   line; **the "Premiered 2026" tag stays on this page**), the show's tags, Starring, and an
   "All seasons and episodes" link. Rows with nothing to show are omitted.
-- Underneath, full width: **"All N releases of this episode"** as the same release table as
-  the show page, **without checkboxes**; the release being viewed has a tinted row, the words
-  "The release on this page", and its name is not a link. The set is the show's visible
-  releases that share any of this release's `(season, episode)` rows (NULL matches NULL);
-  for a pack the heading reads "… of this season pack"; a release with no row shows no table.
+- Underneath, full width: **"All N releases of this episode"**, the show page's release table
+  **without checkboxes**, with its **Grabs column** (not removed here), the **2 × 2 buttons
+  without Follow** (the page header has Follow show; *changed 2026-09-27*: "it needs to use the
+  same button layout") and no identical-name line (rule 14). The release being viewed has a
+  tinted row, the words "The release on this page", and its name is not a link. The set is the
+  show's visible releases that share any of this release's `(season, episode)` rows (NULL
+  matches NULL); for a pack the heading reads "… of this season pack"; a release with no row
+  shows no table.
 - **A TV release with no matched show** (`videos_id = 0`): the release name is the heading,
-  there is no poster, no show crumb or link, no "Watch show" button, no "About the show"
+  there is no poster, no show crumb or link, no "Follow show" button, no "About the show"
   aside (the tabs and facts span the full width) and no episode table. Decided 2026-09-24.
 
 ### 3.5 Dialogs
@@ -400,7 +449,7 @@ Storage and write paths are specified in `DATA-CONTRACT.md`; the numbers below f
    and the old TV Covers / Table / Cards views.
 
 Screens 4–7 can be built against fixtures once 1–3 define the stored shapes. Each screen's
-acceptance test is the matching block of `check.mjs` (248 checks), ported to the
+acceptance test is the matching block of `check.mjs` (268 checks), ported to the
 application's test tooling, plus rule 5 ("nothing shifts") measured, not eyeballed.
 
 ---
@@ -420,16 +469,23 @@ application's test tooling, plus rule 5 ("nothing shifts") measured, not eyeball
   "Show fewer from <show>". It is an expander inside the list, not pagination.
 - The date column's heading and values follow the sort (Posted / Added); hovering a date shows
   both. Under a day old a date reads "2 hr ago", after that a date.
-- Tooltips name each round action. Cart and Watch show a pressed state; Download and Copy link
+- Tooltips name each round action. Cart and Follow show a pressed state; Download and Copy link
   have none.
-- **Releases-list button colours** (changed 2026-09-26 on the maintainer's review): Download
-  keeps the accent pair (coral). Copy link, Cart and Watch each have a hue, Copy link 235
-  (blue), Cart 150 (green), Watch 300 (violet) in OKLCH: off is a tinted ground with the icon
-  in the same hue; on (in the cart, watching) is a solid fill in that hue. Exact values are in
-  `VISUAL-CONTRACT.md` section 2. Every icon is at least 3:1 on its button, off and on, in both
-  themes. The focus ring on those three uses the ink colour. Cart's green sitting near the
-  completion chip's green was accepted. The show page and details page keep a coral pressed
-  cart / watch for now.
+- **Release-table button colours** (changed 2026-09-26 and 2026-09-27 on the maintainer's review):
+  Download keeps the accent pair (coral). Copy link, Cart and Follow each have a hue, Copy link
+  235 (blue), Cart 150 (green), Follow 300 (violet) in OKLCH: off is a tinted ground with the
+  icon in the same hue; on (in the cart, following) is a solid fill in that hue. Exact values
+  are in `VISUAL-CONTRACT.md` section 2. Every icon is at least 3:1 on its button, off and on, in
+  both themes. The focus ring on those three uses the ink colour. Cart's green sitting near the
+  completion chip's green was accepted. They apply to every release table (releases list, show
+  page, details page); only the releases list has a Follow button in its rows. The show page
+  header's Follow show uses the Follow hue; the details page header's buttons keep their coral
+  pressed state.
+- **Follow icon**: a bookmark (Font Awesome `fa-bookmark`, regular while not followed, solid while
+  followed). Following alerts nobody (it keeps the show on the user's list, its RSS feed and the
+  home page section), which is why the bell was not chosen.
+- **Offsite links** (rule 13): IMDb, TMDB, Trakt, GitHub and anything through the dereferrer open in
+  a new tab with `rel="noopener noreferrer"`.
 - A release name links to **that release's** details page, never to the show. The grey line
   under it links to the show page with that episode already open.
 - Group and poster chips (releases list and details page) link, in the same tab, to the
@@ -466,8 +522,12 @@ show releases"; opening the newest episode automatically; a tree-style arrow at 
 episode rows; a "check all" box on the show page; 16:9 episode stills instead of show posters;
 a weekly or any scheduled refresh of show details; a TV-only side table of copied release
 columns; phone layouts. Added 2026-09-26 on the maintainer's review: Files and Grabs columns
-on the releases list; coral for a pressed Cart / Watch on the releases list; coloured-outline row buttons;
-stripping site tags from, or a letter rule for, the names on no-poster placeholder cards.
+on the releases list; coral for a pressed Cart / Follow on the releases list; coloured-outline row buttons;
+stripping site tags from, or a letter rule for, the names on no-poster placeholder cards. Added
+2026-09-27: the word "Watch" for following (rule 12); the eye and the bell as the Follow icon; a
+Follow button in the show page's or details page's release rows; a Grabs column on the show page's
+tables; the "Same name posted more than once" line; whole-season packs under the episodes; episodes
+newest first; "None on site for this season"; hiding the packs section on seasons without packs.
 Filter layouts rejected on 2026-09-26 (see the Movies design, `../movies-redesign/SPEC.md`): nine
 identical grey dropdown pills ("homogenous blob"); a hue per filter ("gaudy"); a
 sidebar of filters beside the list; one all-in-one Filters pane (its long lists made it "look overbearing"); a "Show all" that stays expanded after its menu closes; grey grouped panels of

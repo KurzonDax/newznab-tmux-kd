@@ -248,3 +248,29 @@ and 90%.
 
 10,001 of the 15,548 scored films with releases (64%) have a whole-number score (written before
 #109 kept one decimal). Tiles show the score as stored (`7`), by his choice.
+
+## 11. The film page's data
+
+Measured 2026-09-27 on the restored catalogue, for the film page (`SPEC.md` 5B).
+
+- **A film page lists every release of the film**, not only those on the list's pages. The prototype
+  loads, besides the newest 6,000 movie releases the list shows, every other movie-band release of
+  its films: **13,966 more**. With them, every film page lists exactly as many releases as its Films
+  wall tile counts (checked for every film in the prototype).
+- **The largest film**: Fist of the North Star (1986), **152 releases**, which fill
+  four pages of 50. All 152 are named `Fist of the North Star - <number> …`: episodes of the TV
+  series filed under the film's IMDb id. They are listed like any release (the rule "never judge a
+  release").
+- **Similar films candidates** are every film with a release: **16,832 films**. With the rule of
+  `SPEC.md` 6.6 applied to all of them, the picks for Inception and The Conjuring equal those of the
+  2026-09-26 experiment (section 6). The prototype also carries the **2,763 films** those picks point
+  to that are not among its own; an extra film's own Similar films are drawn from the films the
+  prototype holds.
+- **The TV show page's Similar shows** uses the same rule over every show with a TV release
+  (`../tv-redesign/SPEC.md` 3.3), from the lab's copies of the #775 show-details tables (genres and
+  cast from a one-time TMDB fetch). 158 of the 170 shows in the maintainer's TV prototype get picks;
+  written as one SQL query per show the rule returns the same six as the prototype's picks for every
+  show tried. Its cost, with the viewer's excluded categories, is measured in the data contract.
+- **Show details are not stored on the production instance yet**: the #775 tables (`video_genres`,
+  `video_people`) do not exist there (checked 2026-09-27), so the Similar shows section fills in as
+  shows get details on their next release after that code is deployed.
