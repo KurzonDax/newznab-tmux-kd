@@ -319,7 +319,7 @@ amount.
 | a page of the film's releases, any sort, largest film (152) | 0.1 ms |
 | header: count, latest, best resolution | 0.1 ms |
 | details "All N releases": the film's table; the page holding this release = its rank in the table's order | 0.1 ms |
-| PreDB block: `predb` by `releases.predb_id`; Trailer: `movieinfo.trailer` through `MovieService::getTrailer()`; as today | primary key |
+| PreDB block: `predb` by `releases.predb_id`; as today | primary key |
 
 ### 4.5 Similar
 

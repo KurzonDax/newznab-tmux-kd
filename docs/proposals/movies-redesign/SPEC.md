@@ -27,8 +27,10 @@ been changed.
 | Release details (Movies) | `#/release/<id>`, `#/release/<id>/p/N` | today's details page, for movie releases | approved |
 
 Out of scope, by his decision: phone layouts (desktop only); the page today called Watchlist (its
-name follows the Follow rule of section 4; the **Follow** button itself is in scope and keeps
-today's picker); the rest of the site.
+name follows the Follow rule of section 4); the rest of the site. The **Follow** button itself is
+in scope: today's picker opens only to start following; on a followed film one click unfollows,
+with no picker and no Undo, and the toast reads "Unfollowed <title>"; after a picker save,
+"Following <title> · HD, UHD".
 
 Hard constraints from the repository (`AGENTS.md`), unchanged from TV:
 
@@ -292,7 +294,9 @@ two rulings (2026-09-26).
 - Download and Copy link have no on/off state.
 - Tooltips: "Download NZB", "Copy NZB link for SABnzbd or NZBGet", "Add to cart" /
   "In cart · click to remove", "Follow this film" / "Following this film · click to unfollow".
-- **Follow** follows the **film**, through today's picker (section 6.1). Every row of the same
+- **Follow** follows the **film**. Today's picker opens only to start following; on a followed
+  film one click unfollows, with no picker and no Undo, and the toast reads "Unfollowed <title>";
+  after a picker save, "Following <title> · HD, UHD" (section 6.1). Every row of the same
   film shows the same state. Its icon is the bookmark (section 4). *Changed 2026-09-27.*
 
 ### 5.8 Batches and selection
@@ -385,11 +389,10 @@ of 6.4 and a brief he confirmed ("Build it"); revised on his review the same day
 - Buttons, in this order:
   - **Follow film**: tinted violet (hue 300) with the bookmark icon, filled solid violet while
     followed ("Following film"), never coral. Both labels share one width, so pressing it moves
-    nothing. It opens today's picker in the app. The film is followed **only** from here: no row
+    nothing. In the app, today's picker opens only to start following; on a followed film one
+    click unfollows, with no picker and no Undo, and the toast reads "Unfollowed <title>"; after
+    a picker save, "Following <title> · HD, UHD". The film is followed **only** from here: no row
     in the release table has a Follow button.
-  - **Trailer**, only when the site setting is on. It is off on the maintainer's instance, and no
-    trailers are stored there. It opens today's trailer player. The prototype has an Off / On
-    switch standing in for the setting.
   - **IMDb**, always (the film is keyed by its IMDb id).
   - **TMDB**, when its id is known. **Trakt**, when its id is known (no film has one today).
 
@@ -451,7 +454,7 @@ this page (as on the film page).
 - The resolution and source chips and the chip line (5.5), then the group and poster outline chips on
   their own line (same-tab links to the all-categories lists, as on the list).
 - Buttons: **Download NZB** (coral), **Copy NZB link** and **Add to cart** (neutral at rest), **Follow
-  film** (violet with the bookmark, as on the film page), and **Trailer** when the site setting is on.
+  film** (violet with the bookmark, as on the film page).
   A pressed Add to cart fills **green** (the row Cart's hue) and a followed film fills **violet**: never
   coral (section 4). Each toggle's two labels share one width (`Add to cart` / `In cart`, `Follow film`
   / `Following film`) with the label next to its icon, so pressing moves nothing; the focus ring on
@@ -528,7 +531,9 @@ Taken on 2026-09-26, before those screens were prototyped. They are not asked ag
   has not been traced. The Category menu can untick Other.
 - **Releases with no matched film are listed** in date order, with the placeholder (5.6), no
   film line and no Follow button.
-- **Follow** keeps today's picker (the Movies sub-categories to follow).
+- **Follow**: today's picker (the Movies sub-categories to follow) opens only to start following;
+  on a followed film one click unfollows, with no picker and no Undo, and the toast reads
+  "Unfollowed <title>"; after a picker save, "Following <title> · HD, UHD".
 - **Year and Genre go on both screens**, the list and the wall (his choice over "Films wall
   only").
 
@@ -554,8 +559,7 @@ Approved as section 5B (2026-09-27). The decisions taken beforehand:
 - **People are links, like TV**: "Directed by" and "Starring" (the first 12 cast) link to the
   Films wall filtered by that person. "Search films or actors" finds them.
 - **Kept from today's title page**: the IMDb, TMDB and Trakt links (only when that id is
-  known); the **Trailer** button (only when the site setting is on; it is off on the
-  maintainer's instance and no trailers are stored there); the Releases / Latest / Best stats.
+  known); the Releases / Latest / Best stats.
 - **Dropped**: the "On your My Movies for" line with its Edit and Remove buttons. The Follow
   button alone, as on TV.
 - **Similar films**: a row of 6 posters (6.6).
@@ -697,8 +701,12 @@ Specified in [`DATA-CONTRACT.md`](DATA-CONTRACT.md) (2026-09-27), every read mea
 - Filter layouts tried on 2026-09-26 before the filter bar: nine identical grey dropdown pills
   ("homogenous blob"); a hue per filter, with or without labels above values ("gaudy"); a sidebar of filters beside the list (it squeezes the rows: 11 of 50 rows kept their
   chips on one line at 1366 px); one all-in-one Filters pane, alone or with chips (its long lists made it "look overbearing", "an unwieldy mess" as genres grow); a "Show all" expander that
-  stays open (he rejected it outright); grey grouped panels of pills (kept only as the fallback:
+  stays open (he rejected it outright); grey grouped panels of pills (kept for a while as the fallback:
   "unpolished").
+- The grouped panels are removed from the prototype (2026-09-27); the filter bar is the only
+  filter layout.
+- A **Trailer** button, on the film page and the details page (2026-09-27): "This app isn't a
+  movie theatre."
 - A **Certificate** label (it reads **MPAA Rating**).
 - On the Films wall: the release count as a badge on the poster; `Score 8.5 · PG-13` (the bare
   score was kept); buttons on tiles.

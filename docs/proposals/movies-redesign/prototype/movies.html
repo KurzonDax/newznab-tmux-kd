@@ -390,22 +390,8 @@ td.num{text-align:right;white-space:nowrap} th.num{text-align:right}
 @media (max-width:900px){.wrap{padding:0 16px}.nav .wrap{gap:10px}.iconbtn .lbl{display:none}.iconbtn{padding:0 12px}.search{min-width:0}.fg{flex-wrap:wrap}.filters h1{flex-basis:100%}.bar2{position:static}.bar2 h2{flex-basis:100%}.ep .n{white-space:normal;text-align:right;font-size:12.5px}.nav a.l{display:none}.search{width:auto;flex:1}.showhead{grid-template-columns:110px 1fr;gap:16px}.showhead .art{width:110px}.showhead h1{font-size:28px}.rels{padding-left:0;overflow-x:auto}.tiles{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}.ep>button{grid-template-columns:40px 1fr auto 18px}.ep .fc{display:none}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 
-/* ---- Movies: the releases list's second filter row (seven menus, one fixed width each, never wraps) ---- */
+/* ---- Movies: the filter row (the filter bar's cells, Clear all, a person chip on the wall) ---- */
 .mrow{display:flex;flex-wrap:nowrap;align-items:center;gap:10px;padding:14px 0 0}
-.mfilters{display:flex;flex-wrap:nowrap;align-items:center;gap:10px}
-.mfilters .sfm .mbtn{width:clamp(128px,calc((min(100vw,1500px) - 80px - 134px)/7),183px)}
-/* Audio + Language (2026-09-26): the release's menus, then the film's menus on a second row (he chose B) */
-.mrow.two{padding-top:10px}
-/* ---- filter look (2026-09-26): he chose C, grouped panels: each row a named panel of menus; the name regular, the value semibold ---- */
-.mfilters .grp{display:block;flex:none;width:58px;font-size:12.5px;font-weight:600;color:var(--dim)}
-.sfm .mbtn .v.any{font-weight:500}
-.mfilters{padding:6px 6px 6px 18px;border-radius:26px;background:var(--panel2)}
-.mfilters .sfm:not(.set) .mbtn{background:var(--panel)}
-.mfilters .sfm:not(.set) .mbtn:hover{background:var(--line)}
-.sfm .mbtn .k{font-weight:500;color:var(--dim)}
-.sfm .mbtn .sep{color:var(--dim)}
-.sfm .mbtn .v.any{color:var(--dim)}
-.msel.set .mbtn .k,.msel.set .mbtn .sep{color:var(--accink)}
 .mrow .clearall{flex:none;width:64px;text-align:left;color:var(--acc);font-weight:500;font-size:14px;white-space:nowrap}
 .mrow .clearall:hover{text-decoration:underline;text-underline-offset:3px}
 .mrow .clearall[aria-hidden=true]{visibility:hidden}
@@ -539,10 +525,9 @@ td.num{text-align:right;white-space:nowrap} th.num{text-align:right}
 .wall .pager.slim .pg{min-width:calc(13ch + 20px);text-align:center}
 .mrow .person{flex:none}
 
-/* ---- filter bar (2026-09-26, on trial against the grouped-panels fallback): the release's filters and the film's filters each one
+/* ---- filter bar (2026-09-26): the release's filters and the film's filters each one
    continuous bar of cells (name above value, hairline dividers), like a booking site's search bar; the open cell lifts out of the bar;
    a set filter is marked by a coral line under its value; long lists search and scroll inside their own menu ---- */
-.varsel{position:fixed;left:24px;bottom:24px;z-index:35;display:flex;align-items:center;gap:10px;padding:6px 6px 6px 16px;border-radius:24px;background:var(--panel);box-shadow:var(--shadow);font-size:13px;color:var(--dim)}
 .mrow.fbar{gap:12px}
 .fbar{--raise:#2a2e39}
 :root[data-theme=light] .fbar{--raise:#fff}
@@ -623,7 +608,6 @@ td.num{text-align:right;white-space:nowrap} th.num{text-align:right}
   <symbol id="i-audio" viewBox="0 0 24 24"><path d="M4 10v4h3l5 4V6l-5 4zM16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></symbol>
   <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
   <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
-  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12.5-7.5z"/></symbol>
   <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="3.5" width="18" height="17" rx="2.5"/><path d="M7.5 3.5v17M16.5 3.5v17M3 8h4.5M3 12h4.5M3 16h4.5M16.5 8H21M16.5 12H21M16.5 16H21"/></symbol>
   <symbol id="i-sort" viewBox="0 0 24 24"><path d="m8 10 4-4 4 4M8 14l4 4 4-4"/></symbol>
 </svg>
@@ -647,9 +631,9 @@ const CERTS=['G','PG','PG-13','R','NC-17','NR'];
 const THIS_YEAR=2026, FIRST_YEAR=1900;
 const state={rsort:'posted_desc',page:1,per:50,sel:new Set(),watch:new Set(),res:new Set(),src:new Set(),cat:new Set(),genre:new Set(),score:new Set(),cert:new Set(),aud:new Set(),lang:new Set(),year:null,yin:{a:'',b:''},yerr:'',dd:null,expanded:new Set(),cart:new Set(),tab:'overview',
   // the Films wall keeps its own filters (w-prefixed), its own sort and page
-  msq:{},fb:'bar',comp:false,wsort:'recent',wpage:1,wper:42,wgenre:new Set(),wscore:new Set(),wcert:new Set(),wlang:new Set(),wyear:null,wyin:{a:'',b:''},wyerr:'',person:null,
-  // the film page: its own Resolution / Source cells (reset when another film opens), its table sort, the demo trailers setting
-  pfilm:null,pres:new Set(),psrc:new Set(),fsort:{k:'posted',dir:-1},fper:50,trailers:false,back:'#/',
+  msq:{},comp:false,wsort:'recent',wpage:1,wper:42,wgenre:new Set(),wscore:new Set(),wcert:new Set(),wlang:new Set(),wyear:null,wyin:{a:'',b:''},wyerr:'',person:null,
+  // the film page: its own Resolution / Source cells (reset when another film opens), its table sort
+  pfilm:null,pres:new Set(),psrc:new Set(),fsort:{k:'posted',dir:-1},fper:50,back:'#/',
   // the release details page: its two tables' sorts (reset when another release opens)
   drel:null,dsort:{k:'posted',dir:-1},ssort:{k:'posted',dir:-1}};
 const NOCACHE='?t='+Date.now();
@@ -707,7 +691,7 @@ const wallAnySet=()=>['wgenre','wscore','wcert','wlang'].some(k=>state[k].size)|
 const clearYerr=()=>{state.yerr='';state.wyerr='';};
 // the year menu's scope from any element inside it: '' for the releases list, 'w' for the Films wall
 const yScope=el=>(el.closest('[data-msel]')?.dataset.msel||'year').replace(/year$/,'');
-// a menu button's face: the filter's name, then its value ("any" when nothing is set); the three open layouts style these parts
+// a menu button's face: the filter's name, then its value ("any" when nothing is set); the filter bar styles these parts
 const lab=(k,v,none)=>`<span class="lab"><span class="k">${esc(k)}</span><span class="sep">: </span><span class="v${none?' any':''}">${esc(v)}</span></span>`;
 const SEARCH_NAME={cat:'categories',genre:'genres',aud:'audio languages',lang:'languages',wgenre:'genres',wlang:'languages'};
 const msMatch=(k,l)=>{const q=(state.msq[k]||'').trim().toLowerCase();return !q||String(l).toLowerCase().includes(q);};
@@ -734,11 +718,10 @@ function yearMenu(p=''){const y=state[p+'year'],yin=state[p+'yin'],yerr=state[p+
 </div>`:''}</div>`;}
 function placeMenu(top){const m=$('.sfm .mmenu');if(!m)return;if(top!=null)m.scrollTop=top;else{const t=m.querySelector('[data-ddpick][aria-checked=true]'),sh=m.querySelector('.msearch')?.offsetHeight||0;if(t&&t.offsetTop+t.offsetHeight>m.clientHeight)m.scrollTop=t.offsetTop-sh-6;}m.style.left='';const over=m.getBoundingClientRect().right-(document.documentElement.clientWidth-16);if(over>0)m.style.left=-over+'px';}
 const mvSearch=()=>`<div class="search"><label><svg class="i"><use href="#i-search"/></svg><input id="q" placeholder="Search films or actors" autocomplete="off" aria-label="Search films or actors"></label><div class="results" id="results" hidden></div></div>`;
-function filterBar(){const any=anySet(),clear=state.fb==='bar'?'':`<button class="clearall" data-clearall ${any?'':'tabindex="-1" aria-hidden="true"'}>Clear all</button>`;
+function filterBar(){
   return `<div class="filters"><h1>Movie releases</h1><div class="seg" role="group" aria-label="View"><a href="#/" aria-current="page">Releases</a><a href="#/films">Films</a></div>${mvSearch()}<span class="grow"></span>
    <label class="sel sortsel"><select data-rsort aria-label="Sort releases">${[['posted_desc','Posted: newest first'],['posted_asc','Posted: oldest first'],['added_desc','Added: newest first'],['added_asc','Added: oldest first']].map(([k,l])=>`<option value="${k}" ${state.rsort===k?'selected':''}>${l}</option>`).join('')}</select>${ic('chev')}</label></div>
-   ${state.fb==='bar'?`<div class="mrow fbar"><div class="fseg rel" role="group" aria-label="The release">${menu('cat')}${menu('res')}${menu('src')}${menu('aud')}${compMenu()}</div><div class="fseg film" role="group" aria-label="The film">${menu('genre')}${yearMenu()}${menu('score')}${menu('cert')}${menu('lang')}</div></div>`
-    :`<div class="mrow"><div class="mfilters"><span class="grp">Release</span>${menu('cat')}${menu('res')}${menu('src')}${menu('aud')}</div></div><div class="mrow two"><div class="mfilters"><span class="grp">Film</span>${menu('genre')}${yearMenu()}${menu('score')}${menu('cert')}${menu('lang')}</div>${clear}</div>`}`;}
+   <div class="mrow fbar"><div class="fseg rel" role="group" aria-label="The release">${menu('cat')}${menu('res')}${menu('src')}${menu('aud')}${compMenu()}</div><div class="fseg film" role="group" aria-label="The film">${menu('genre')}${yearMenu()}${menu('score')}${menu('cert')}${menu('lang')}</div></div>`;}
 
 /* ---------- rows ---------- */
 const niceCodec=c=>({'V_MPEG4/ISO/AVC':'H.264','AVC':'H.264','V_MPEGH/ISO/HEVC':'H.265','HEVC':'H.265','V_AV1':'AV1','AV1':'AV1','V_MPEG2':'MPEG-2','MPEG Video':'MPEG-2','V_MPEG4/ISO/ASP':'MPEG-4','MPEG-4 Visual':'MPEG-4','XVID':'XviD','xvid':'XviD'}[c]||c);
@@ -780,15 +763,14 @@ function legacyCopy(t){const a=document.createElement('textarea');a.value=t;a.se
 const ago=t=>{const m=Math.max(1,Math.round((NOWALL-t)/60));return m<60?m+' min ago':m<1440?Math.round(m/60)+' hr ago':shortDate(t);};
 const filterText=()=>{const parts=['cat','res','src'].map(k=>[...state[k]].join(' or ')).filter(Boolean);if(state.comp)parts.push(state.comp==='100'?'100% complete':'95%+ complete');if(state.aud.size)parts.push([...state.aud].join(' or ')+' audio');if(state.genre.size)parts.push([...state.genre].join(' or '));if(state.lang.size)parts.push('in '+[...state.lang].join(' or '));if(state.year)parts.push(yearText(state.year));if(state.score.size)parts.push(SCORES.filter(([v])=>state.score.has(v)).map(([v,l])=>v==='few'?'too few votes':'score '+l).join(' or '));if(state.cert.size)parts.push('rated '+[...state.cert].join(' or '));return parts.join(' · ');};
 // filter bar: Clear all on the Showing line, a fixed slot left of the page arrows (hidden, not removed, when nothing is set)
-const barClear=html=>state.fb!=='bar'?html:html.replace('class="pager slim"','class="pager slim fixed"').replace('</span>',`</span><button class="clearall" data-clearall ${anySet()?'':'tabindex="-1" aria-hidden="true"'}>Clear all</button>`);
-const fbSel=()=>`<aside class="varsel" aria-label="Filter layout variation"><span>Filters</span><div class="seg"><button data-fb="fallback" aria-pressed="${state.fb==='fallback'}">Grouped panels (fallback)</button><button data-fb="bar" aria-pressed="${state.fb==='bar'}">Filter bar</button></div></aside>`;
+const barClear=html=>html.replace('class="pager slim"','class="pager slim fixed"').replace('</span>',`</span><button class="clearall" data-clearall ${anySet()?'':'tabindex="-1" aria-hidden="true"'}>Clear all</button>`);
 function releasesView(){
   const [sk,sd]=state.rsort.split('_'),tk=r=>sk==='added'?X(r).added:r.t,dir=sd==='asc'?1:-1;
   const rs=REL.filter(matchRel).sort((a,b)=>(tk(a)-tk(b))*dir||a.id-b.id), pages=Math.max(1,Math.ceil(rs.length/state.per));
   state.page=Math.min(Math.max(1,state.page),pages);
   const page=rs.slice((state.page-1)*state.per,state.page*state.per);
   let h=filterBar();
-  if(!page.length){$('#app').innerHTML=h+barClear(pager(1,1,0,false))+`<p class="empty">No releases match ${esc(filterText())}.</p>`+fbSel();return;}
+  if(!page.length){$('#app').innerHTML=h+barClear(pager(1,1,0,false))+`<p class="empty">No releases match ${esc(filterText())}.</p>`;return;}
   if(state.sel.size)h+=`<div class="bulk"><span>${state.sel.size} selected</span><button class="btn" data-bulk="nzb">${ic('down')}Download NZBs</button><button class="btn sec" data-bulk="cart">${ic('cart')}Add to cart</button><button class="btn sec" data-bulk="clear">Clear selection</button></div>`;
   h+=barClear(pager(state.page,pages,rs.length,false));
   h+=`<table class="feed"><colgroup><col style="width:34px"><col style="width:116px"><col><col style="width:100px"><col style="width:80px"><col style="width:82px"><col style="width:112px"><col style="width:96px"></colgroup><thead><tr><th class="selall"><input type="checkbox" data-selectall aria-label="Select all releases on this page"></th><th colspan="2">Release</th><th>Resolution</th><th>Source</th><th class="num">Size</th><th class="num">${sk==='added'?'Added':'Posted'}</th><th><span class="vh">Actions</span></th></tr></thead><tbody>`;
@@ -806,7 +788,7 @@ function releasesView(){
       <td>${rowActions(x,true)}</td></tr>`;});
     if(run.length>4){const t=esc(F(r).t);h+=`<tr class="moreof"><td colspan="8"><div><button data-expand="${key}" aria-expanded="${open}">${ic('chev').replace('<svg','<svg style="transform:rotate('+(open?'-90':'90')+'deg)"')}${open?'Show fewer from '+t:'Show '+(run.length-3)+' more from '+t+' posted in the same batch'}</button></div></td></tr>`;}
     i=j;}
-  h+='</tbody></table>'+pager(state.page,pages,rs.length,true)+fbSel();
+  h+='</tbody></table>'+pager(state.page,pages,rs.length,true);
   $('#app').innerHTML=h;
   syncSelectAll();
 }
@@ -818,7 +800,7 @@ const relCount=n=>n.toLocaleString()+' release'+(n===1?'':'s');
 function wallBar(){const any=wallAnySet(),p=state.person;
   return `<div class="filters"><h1>Films</h1><div class="seg" role="group" aria-label="View"><a href="#/">Releases</a><a href="#/films" aria-current="page">Films</a></div>${mvSearch()}<span class="grow"></span>
    <label class="sel sortsel"><select data-wsort aria-label="Sort films">${WSORTS.map(([k,l])=>`<option value="${k}" ${state.wsort===k?'selected':''}>${l}</option>`).join('')}</select>${ic('chev')}</label></div>
-   <div class="mrow${state.fb==='bar'?' fbar one':''}"><div class="${state.fb==='bar'?'fseg film" role="group" aria-label="The film':'mfilters'}">${menu('wgenre')}${yearMenu('w')}${menu('wscore')}${menu('wcert')}${menu('wlang')}</div>
+   <div class="mrow fbar one"><div class="fseg film" role="group" aria-label="The film">${menu('wgenre')}${yearMenu('w')}${menu('wscore')}${menu('wcert')}${menu('wlang')}</div>
    <button class="clearall" data-clearall ${any?'':'tabindex="-1" aria-hidden="true"'}>Clear all</button>
    ${p?`<span class="person">Films with ${esc(p)}<button data-unperson aria-label="Stop showing only films with ${esc(p)}">${ic('x')}</button></span>`:''}</div>`;}
 const wallFilterText=()=>{const parts=[];if(state.wgenre.size)parts.push([...state.wgenre].join(' or '));if(state.wyear)parts.push(yearText(state.wyear));
@@ -838,7 +820,7 @@ function filmsView(){
   let h=`<div class="wall">`+wallBar();
   h+=page.length?pager(state.wpage,pages,ids.length,false,'#/films','film',state.wper)+`<div class="tiles">${page.map(filmTile).join('')}</div>`+pager(state.wpage,pages,ids.length,true,'#/films','film',state.wper)
     :pager(1,1,0,false,'#/films','film',state.wper)+`<p class="empty">No films match ${esc(wallFilterText())}.</p>`;
-  h+=`</div>`+fbSel();
+  h+=`</div>`;
   $('#app').innerHTML=h;}
 /* ---------- film page (2026-09-27) ---------- */
 const isFilm=()=>/^#\/film\//.test(location.hash);
@@ -857,7 +839,6 @@ function filmTable(rs){const {k,dir}=state.fsort;
    <td>${resChip(r.res)}</td><td class="nw">${srcLabel(r)}</td><td class="num">${gb(r.size)}</td><td class="num"><button class="filesbtn" data-files="${r.id}" title="View file list">${X(r).files}</button></td>
    <td class="num" title="Posted ${new Date(r.t*1000).toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'})} · Added ${new Date(X(r).added*1000).toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'})}">${shortDate(r.t)}</td>
    <td>${rowActions(r,true,true)}</td></tr>`).join('')}</tbody></table>`;}
-const trailerSel=()=>`<aside class="varsel" aria-label="Site setting (prototype only)"><span>Trailers (site setting)</span><div class="seg"><button data-trailers="off" aria-pressed="${!state.trailers}">Off</button><button data-trailers="on" aria-pressed="${state.trailers}">On</button></div></aside>`;
 function film(id,page){
   if(!MORE){$('#app').innerHTML='<p class="loadnote">Loading the film…</p>';const h=location.hash;needMore().then(()=>{if(location.hash===h)route();});return;}
   const f=FILM(id);if(!f){later('Film page','This film is not in the prototype.');return;}
@@ -878,7 +859,6 @@ function film(id,page){
    <div class="tags">${tags}</div>
    ${f.dir.length?`<div class="starring">Directed by ${f.dir.map(person).join(', ')}</div>`:''}${f.cast.length?`<div class="starring">Starring ${f.cast.slice(0,12).map(person).join(', ')}</div>`:''}
    <div class="dacts"><button class="btn wat" data-watch="${id}" aria-pressed="${w}" title="${w?'Following this film · click to unfollow':'Follow this film'}">${fic()}<span class="wl"><span${w?' hidden':''}>Follow film</span><span${w?'':' hidden'}>Following film</span></span></button>
-    ${state.trailers?`<button class="btn sec" data-trailer="${id}">${ic('play')}Trailer</button>`:''}
     <a class="btn sec ext" href="https://www.imdb.com/title/tt${id}/" target="_blank" rel="noopener noreferrer">IMDb${ic('ext')}<span class="vh"> (opens in a new tab)</span></a>
     ${f.tmdb?`<a class="btn sec ext" href="https://www.themoviedb.org/movie/${f.tmdb}" target="_blank" rel="noopener noreferrer">TMDB${ic('ext')}<span class="vh"> (opens in a new tab)</span></a>`:''}</div></div></div>
   <section class="frel" id="releases" aria-labelledby="relh"><h2 id="relh">Releases</h2>
@@ -888,7 +868,7 @@ function film(id,page){
   const sim=(MORE.sim[id]||[]).filter(FILM);
   if(sim.length)h+=`<section class="simf" aria-labelledby="simh"><h2 id="simh">Similar films</h2><div class="tiles">${sim.map(filmTile).join('')}</div></section>`;
   if(state.sel.size)h+=`<div class="bulk"><span>${state.sel.size} selected</span><button class="btn" data-bulk="nzb">${ic('down')}Download NZBs</button><button class="btn sec" data-bulk="cart">${ic('cart')}Add to cart</button><button class="btn sec" data-bulk="clear">Clear selection</button></div>`;
-  $('#app').innerHTML=h+trailerSel();}
+  $('#app').innerHTML=h;}
 /* ---------- release details (2026-09-27): the approved TV details page adapted (SPEC 6.5). Data: gen-details-data.py → mv/details.json
    (PreDB; Similar releases = today's first-two-words search, run on production's index, releases of the same film left out:
    his call 2026-09-27; rows for similar hits the prototype did not hold). ---------- */
@@ -935,8 +915,7 @@ function release(id,pg){const h0=location.hash;
    <div class="rchips" style="margin-top:12px">${resChip(r.res)}<span class="chip src">${srcLabel(r)}</span>${chips(r)}</div><div class="rchips">${rowOrigin(r)}</div>
    <div class="dacts"><button class="btn" data-nzb="${r.id}">${ic('down')}Download NZB</button><button class="btn sec nt" data-copynzb="${r.id}">${ic('link')}Copy NZB link</button>
     <button class="btn sec nt ct" data-cart="${r.id}" aria-pressed="${inC}" title="${inC?'In cart · click to remove':'Add to cart'}">${ic('cart')}<span class="wl"><span${inC?' hidden':''}>Add to cart</span><span${inC?'':' hidden'}>In cart</span></span></button>
-    ${f?`<button class="btn wat" data-watch="${r.f}" aria-pressed="${w}" title="${w?'Following this film · click to unfollow':'Follow this film'}">${fic()}<span class="wl"><span${w?' hidden':''}>Follow film</span><span${w?'':' hidden'}>Following film</span></span></button>`:''}
-    ${f&&state.trailers?`<button class="btn sec" data-trailer="${r.f}">${ic('play')}Trailer</button>`:''}</div></div></div>
+    ${f?`<button class="btn wat" data-watch="${r.f}" aria-pressed="${w}" title="${w?'Following this film · click to unfollow':'Follow this film'}">${fic()}<span class="wl"><span${w?' hidden':''}>Follow film</span><span${w?'':' hidden'}>Following film</span></span></button>`:''}</div></div></div>
   <div class="dcols${f?'':' noshow'}"><div><div class="tabs" role="tablist">${tabs.map(([k,l])=>`<button role="tab" data-tab="${k}" aria-selected="${state.tab===k}">${l}</button>`).join('')}</div><div class="panel" role="tabpanel" aria-label="${esc(tabs.find(t=>t[0]===state.tab)[1])}"><h2 class="vh">${esc(tabs.find(t=>t[0]===state.tab)[1])}</h2>${panel}</div></div>${about}</div>`;
   // All N releases of this film: 50 a page; the page holding this release unless the URL names one
   const all=f?BYFILM[r.f]||[]:[];
@@ -946,7 +925,7 @@ function release(id,pg){const h0=location.hash;
      ${pages>1?pager(page,pages,rs.length,false,base,'release',per).replace('class="pager slim"','class="pager slim fixed"'):''}${detTable(rs.slice((page-1)*per,page*per),'dsort',id)}${pages>1?pager(page,pages,rs.length,true,base,'release',per):''}</section>`;}
   const sim=(DET.sim[id]||[]).map(i=>BYID[i]).filter(Boolean);
   if(sim.length)h+=`<section class="sibs simrel" aria-labelledby="simrh"><h2 id="simrh">Similar releases</h2>${detTable(detSort(sim,state.ssort),'ssort',null,true)}</section>`;
-  $('#app').innerHTML=h+'</div>'+(f?trailerSel():'');
+  $('#app').innerHTML=h+'</div>';
   // a tab whose data loads late draws again when it arrives, keeping keyboard focus on the tab and the scroll position
   const again=()=>{if(location.hash!==h0)return;const t=document.activeElement?.dataset?.tab,y=scrollY;release(id,pg);scrollTo(0,y);if(t)$(`[data-tab="${t}"]`)?.focus({preventScroll:true});};
   if(state.tab==='nfo'&&!NFO&&x.nfo)needNfo().then(again);
@@ -1058,14 +1037,11 @@ document.addEventListener('click',e=>{
   const dso=e.target.closest('[data-dsort]');if(dso){const [key,k]=dso.dataset.dsort.split(':');state[key]=state[key].k===k?{k,dir:-state[key].dir}:{k,dir:-1};
     if(key==='dsort'&&/\/p\/\d+$/.test(location.hash)){history.replaceState(null,'','#/release/'+state.drel);lastHash=location.hash;}rerender();$(`[data-dsort="${dso.dataset.dsort}"]`)?.focus({preventScroll:true});return;}
   const fso=e.target.closest('[data-fsort]');if(fso){const k=fso.dataset.fsort;state.fsort=state.fsort.k===k?{k,dir:-state.fsort.dir}:{k,dir:-1};afterFilter();rerender();$(`[data-fsort="${k}"]`)?.focus({preventScroll:true});return;}
-  const trs=e.target.closest('[data-trailers]');if(trs){state.trailers=trs.dataset.trailers==='on';store.set('trailers',state.trailers?'on':'off');rerender();$(`[data-trailers="${trs.dataset.trailers}"]`)?.focus({preventScroll:true});return;}
-  const trl=e.target.closest('[data-trailer]');if(trl){const f=FILM(trl.dataset.trailer);openDialog('Trailer',{name:f.t+(f.y?' ('+f.y+')':'')},`<p class="note" style="padding:18px 0">The trailer plays here, in the site's existing trailer player. This prototype holds no trailers: your instance has none stored and the site setting is off there.</p>`);return;}
   const swf=e.target.closest('[data-setwf]');if(swf){['wgenre','wscore','wcert','wlang'].forEach(k=>state[k].clear());state.wyear=null;state.wyin={a:'',b:''};state.person=null;state[swf.dataset.setwf].add(swf.dataset.v);state.wpage=1;return;}
   if(e.target.closest('[data-clearall]')){if(isWall()){['wgenre','wscore','wcert','wlang'].forEach(k=>state[k].clear());state.wyear=null;state.wyin={a:'',b:''};state.person=null;}
-    else{['cat','res','src','aud','genre','score','cert','lang'].forEach(k=>state[k].clear());state.year=null;state.yin={a:'',b:''};state.comp=false;}afterFilter();rerender();$('.fbar .mbtn,.mfilters .mbtn')?.focus({preventScroll:true});return;}
-  const fbb=e.target.closest('[data-fb]');if(fbb){state.fb=fbb.dataset.fb;store.set('fb',state.fb);state.dd=null;rerender();$(`[data-fb="${state.fb}"]`)?.focus({preventScroll:true});return;}
+    else{['cat','res','src','aud','genre','score','cert','lang'].forEach(k=>state[k].clear());state.year=null;state.yin={a:'',b:''};state.comp=false;}afterFilter();rerender();$('.fbar .mbtn')?.focus({preventScroll:true});return;}
   const cpk=e.target.closest('[data-cpick]');if(cpk){state.comp=cpk.dataset.cpick==='any'?false:cpk.dataset.cpick;state.dd=null;afterFilter();rerender();$('[data-ddtoggle=comp]')?.focus({preventScroll:true});return;}
-  if(e.target.closest('[data-unperson]')){state.person=null;afterFilter();rerender();$('.mfilters .mbtn')?.focus({preventScroll:true});return;}
+  if(e.target.closest('[data-unperson]')){state.person=null;afterFilter();rerender();$('.fbar .mbtn')?.focus({preventScroll:true});return;}
   const cl=e.target.closest('[data-close]');if(cl&&(e.target===cl||cl.tagName==='BUTTON')){closeDialog();return;}
   const cp=e.target.closest('[data-copynzb]');
   if(cp){const r=BYID[cp.dataset.copynzb];copyText(nzbLink(r)).then(ok=>{toast(ok?'NZB link copied. It contains your API key, so only paste it into your own downloader.':'Could not copy. The link is: '+nzbLink(r));if(ok){const svg=cp.querySelector('use');if(svg){svg.setAttribute('href','#i-check');setTimeout(()=>svg.setAttribute('href','#i-link'),1600);}}});return;}
@@ -1124,13 +1100,11 @@ Promise.all(['mv/data.json','mv/relx.json','mv/previews.json','mv/filmstats.json
   {const used=new Set(REL.map(r=>r.f).filter(Boolean));GENRES=[...new Set([...used].flatMap(id=>d.films[id].g))].sort();CERTS_ON=CERTS.filter(c=>[...used].some(id=>d.films[id].cert===c));}
   NOW=Math.max(...REL.map(r=>r.t));NOWALL=Math.max(NOW,...REL.map(r=>X(r).added));
   {const r=store.get('rsort','posted_desc');if(['posted_desc','posted_asc','added_desc','added_asc'].includes(r))state.rsort=r;}
-  state.fb=store.get('fb','bar')==='fallback'?'fallback':'bar';
   {const w=store.get('wsort','recent');if(WSORTS.some(([k])=>k===w))state.wsort=w;}
   // language menus list what is present, most releases (films on the wall) first, as the TV wall's Language menu does
   {const byCount=vals=>{const c={};vals.forEach(v=>{if(v)c[v]=(c[v]||0)+1;});return Object.keys(c).sort((a,b)=>c[b]-c[a]||a.localeCompare(b));};
    AUDS=[...byCount(REL.flatMap(r=>ALANG[r.id]||[])),'Unknown'];LANGS_ON=byCount(REL.map(r=>r.f&&FLANG[r.f]));WLANGS=byCount(Object.keys(d.films).filter(id=>FSTAT[id]).map(id=>FLANG[id]));}
   {const all=Object.keys(d.films).filter(id=>FSTAT[id]);WGENRES=[...new Set(all.flatMap(id=>d.films[id].g))].sort();WCERTS_ON=CERTS.filter(c=>all.some(id=>d.films[id].cert===c));}
-  state.trailers=store.get('trailers','off')==='on';
   lastHash=location.hash;route();window.READY=true;setTimeout(needMore,1500);});
 </script>
 </body>

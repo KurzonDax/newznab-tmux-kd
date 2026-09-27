@@ -25,7 +25,7 @@ section (`../tv-redesign/SPEC.md` 3.0).
 | [`DATA-NOTES.md`](DATA-NOTES.md) | facts measured on the restored catalogue and the query experiments run so far; later storage decisions rest on them |
 | [`INVENTORY.md`](INVENTORY.md) | every feature of today's movie screens, with `path:line`; the input for the screens still to design |
 | [`evidence/`](evidence/) | the query-lab write-up the data contract cites |
-| [`prototype/`](prototype/) | the approved prototype on an **invented dataset** with placeholder art: `movies.html`, its 292 behaviour checks (`check.mjs`) and 19 reference screens in both themes (`reference/`) |
+| [`prototype/`](prototype/) | the approved prototype on an **invented dataset** with placeholder art: `movies.html`, its 262 behaviour checks (`check.mjs`) and 19 reference screens in both themes (`reference/`) |
 | [`../tv-redesign/`](../tv-redesign/) | the TV specification, contracts and prototype; the Movies design inherits its rules |
 
 ```bash
