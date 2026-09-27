@@ -590,51 +590,30 @@ specified.
 
 ## 7. Data the design needs
 
-No schema is proposed yet (`DATA-NOTES.md`). What the approved decisions require:
+Specified in [`DATA-CONTRACT.md`](DATA-CONTRACT.md) (2026-09-27), every read measured at full catalogue size
+([`evidence/movies-data-contract.md`](evidence/movies-data-contract.md)). In short:
 
-- **The film page reads the whole catalogue** (5B): its release list, counts, latest date and best
-  resolution come from every release of the film the viewer may see, and its Similar films
-  candidates are every film with a release (`DATA-NOTES.md` section 11).
-- **The release details page** (5C) reads the film's releases the viewer may see (its table, opening
-  on the page that holds this release), the release's PreDB match (`releases.predb_id`, as today) and
-  today's Similar releases search, with the same film's releases left out (`DATA-NOTES.md` section 12).
-
-- **US certificate** (shown as **MPAA Rating**): stored **going forward**, as films are saved. No
-  one-off backfill of existing films.
-- **The film's original language** (the Language filter): TMDB gives it for every film sampled;
-  the site stores none today (`movieinfo.language` is empty everywhere). Stored **going forward**
-  with the certificate; the filter fills as films are saved again.
-- **The release's audio languages** (the Audio filter, and the same filter on TV): today in
-  `media_info_tracks.language` (codes such as `en`, `pt-BR`) and the legacy `audio_data.audiolanguage`
-  (names such as `English (US)`), on 88.5% of named movie releases and 88.7% of TV releases
-  (`DATA-NOTES.md` section 8). A normalized, indexed form of the language per release is decided in
-  the data contract; the name rule is 5.2.
-- **Completion** (the Completion filter): `releases.completion`, already stored for every release.
-- **TMDB vote count**: stored **going forward**. No backfill. It drives "Too few votes" (5.2).
-- **Score**: the stored `movieinfo.rating` stays the score. It is the first non-empty of the
-  IMDb, TMDB, Trakt and OMDb values (`app/Services/MovieService.php:478`), and its source is not
-  recorded. The IMDb source returns nothing today; the maintainer handles that in a separate
-  piece of work.
-- **Genres as rows**: the Genre filter on the list is only fast when driven from the genre side
-  (`DATA-NOTES.md` section 5), which needs a genre-to-film link rather than the comma-joined
-  `movieinfo.genre` string. **Open**, for the data contract: the natural home is the existing typed
-  `genres` table with `type = 2000` (the Movies root), as TV's genres use `type = 5000` (#775), plus a
-  film-to-genre link; not yet decided.
-- **Movie people onto the shared people tables** (#556): the directors and cast move from the
-  `movieinfo.director` and `movieinfo.actors` strings onto `people`, which TV already uses.
-  **Open**: how a film is keyed there. `video_people` is keyed by `videos_id`; films are keyed by
-  `movieinfo.imdbid` (releases link to films through `releases.imdbid`, and `videos_id` is 0 on
-  every movie release).
+- **Films' genres and people become rows** on the shared `genres` (type 2000) and `people` tables, keyed by
+  `movieinfo_id` (`movie_genres`, `movie_people`; the #556 key); the migration moves today's text into them.
+- **US certificate, TMDB vote count and original language** are three columns on `movieinfo`, stored **going forward**, and
+  a film is refreshed from TMDB whenever a new release of it arrives and its record is over 30 days old.
+- **A release's audio languages** are rows (`release_audio_languages` on a `languages` lookup), for every category, filled
+  from the media info already stored.
+- **Six filter-led indexes** on `releases` (Category, Resolution, Source × Posted, Added) keep filtered pages the same cost on
+  page 1 and page 200 despite Movies > Other; `completion` and `videos_id` join existing indexes.
+- **Score** stays the stored `movieinfo.rating`, the first non-empty of the IMDb, TMDB, Trakt and OMDb values
+  (`app/Services/MovieService.php:478`); the IMDb source returns nothing today and is a separate piece of work.
+- The frozen API keeps reading `movieinfo.genre`, `director` and `actors`, so those text columns stay; its genre list keeps
+  what it listed before the redesign.
 
 ---
 
 ## 8. Open items
 
 1. **Release details** was approved on 2026-09-27 (5C): every Movies screen is designed.
-2. **Storage** (the columns and tables for section 7) is decided now, on measured queries, as TV's
-   `DATA-CONTRACT.md` was.
-3. **The people key** for films on the shared people tables (section 7).
-4. **Similar films** needs the viewer's excluded categories added and re-measured.
+2. **Storage** is decided: `DATA-CONTRACT.md` (2026-09-27).
+3. **The people key** is decided: `movie_people` keyed by `movieinfo_id` (`DATA-CONTRACT.md` 2.4).
+4. **Similar films** with the viewer's excluded categories is measured: 14–34 ms (`DATA-CONTRACT.md` 4.5).
 5. **Movies > Other**: the rule that files 519,173 releases as Movies > Other is not traced.
    The design lists them either way; the list must still meet its cost on the full band
    (`DATA-NOTES.md` section 4).
@@ -648,18 +627,16 @@ No schema is proposed yet (`DATA-NOTES.md`). What the approved decisions require
 8. **Reviewer calls not applied** to the approved screen: silently swapping a backwards range
    instead of refusing it; the error red sitting close to coral; `1080p +1` instead of `2 chosen`
    in a cell. (Decades now are a three-column grid, with the filter bar.)
-9. **Every list and wall filter is proven on the full catalogue** in the data contract before a
-   build issue is filed: the Audio and Language filters, Completion, the multi-decade Year, and the
-   Films wall's visibility rule, sorts and release counts; the Similar films and TV Similar shows
-   queries with the viewer's excluded categories.
+9. **Every list and wall filter is proven on the full catalogue** (`DATA-CONTRACT.md` 4). Two reads stay above 60 ms:
+   the Audio filter's English (88 ms) and Unknown (100–135 ms) on the Movie releases list, because Movies > Other is in the
+   band; nothing normalized measured better.
 10. **Film page calls the reviewer raised, not taken up by him** (they stand as built): the six
     Similar films tiles keep the wall's tile width, leaving about 205 px empty at 1600 px; the
     Resolution and Source menus list every value, so DVD on a film with no DVD release gives an
     empty result; a selection carries to the next film; after a Similar films click the back link
     still returns to the list the user came from (the browser's Back returns to the previous film).
-11. **Similar releases without the same film** (5C.5): the data contract states where the same film's
-    releases are left out (in the search, or after it on its at most 50 hits, which can leave fewer
-    than 50) and measures it, with the viewer's excluded categories that today's call already passes.
+11. **Similar releases without the same film** (5C.5): left out in the search itself, in every search path
+    (`DATA-CONTRACT.md` 4.5).
 
 ---
 
