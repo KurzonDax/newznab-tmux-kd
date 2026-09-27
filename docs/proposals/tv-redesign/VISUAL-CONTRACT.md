@@ -12,7 +12,7 @@ under `docs/proposals/tv-redesign/prototype/`:
 |---|---|
 | `tv.html`, `tokens.css` | the approved prototype, byte-for-byte the one Randall reviewed |
 | `data.json` … `repair.json`, `posters/`, `previews/`, `fixtures.json` | the invented dataset (`gen-demo-data.mjs`, `make-demo-art.mjs` regenerate it) |
-| `check.mjs` | 225 behaviour checks; `0 failures` on this dataset |
+| `check.mjs` | 248 behaviour checks; `0 failures` on this dataset |
 | `reference/<state>-<dark|light>.webp` | 26 screen states × 2 themes at 1600 × 1000 |
 | `reference/measurements.json` | computed type, colour, radius, padding and size of 82 named parts, per theme |
 | `reference/tokens.json` | the resolved value of every colour token and chip hue, per theme |
@@ -115,6 +115,14 @@ least 3:1 on its ground, off and on, in both themes (`check.mjs`). These apply t
 releases list only; the show page and details tables keep the neutral round button with a
 coral pressed state.
 
+**Filter bar tokens** (2026-09-26): the bar ground is `--surface-panel-alt`; hairlines between cells
+`--border-default`; the open cell and its menu use a raised ground, **`--surface-raised`**: dark
+`#2a2e39`, light `#ffffff` (lighter than the bar in both themes, so the open cell lifts, never sinks);
+filter names **`#ffffff`** on dark and `--text-default` on light; values `--text-default`, an unset
+`any` `--text-muted`; the set marker is a 3 px `--color-primary-500`-pair accent line (the
+`--accent-surface` value) with 2 px radius, inset 14 px each side, 3 px above the cell's bottom edge;
+a disabled Apply in the Year menu is neutral (`--surface-panel-alt` ground, `--text-muted` text).
+
 **Shadows**: floating layers (menus, dialogs, search results, selection bar) use shadow and
 **no border**: light `0 14px 30px -14px rgb(30 30 20 / .35)`, dark `0 18px 40px -14px rgb(0 0 0 / .7)`.
 
@@ -128,6 +136,12 @@ Exact values for every part are in `reference/measurements.json`; the rules behi
   heading); **700 only for the release name** (15.5px) and tile titles; 600 for controls
   (13.5px); 400–500 for everything else; body 15px / 1.5. Tabular numerals for sizes, counts
   and dates. Only the release name is bold in a row.
+- **Filter bar** (2026-09-26): each bar 56 px tall, 4 px inner padding, radius 18 px, bars 12 px
+  apart; cells 48 px tall, radius 14 px, equal widths (`flex: 1 1 0`); cell padding 0 10 px 0 14 px;
+  the filter name 11.5 px weight 500 over the value 13.5 px weight 600 (an unset `any` weight 500);
+  hairline 1 px, 14 px from the cell's top and bottom; menus open 58 px below the cell's top, at
+  least the cell's width and 230 px; a searchable menu is at most 402 px tall with its search field
+  sticky at the top (34 px field, magnifier inside at 12 px, text from 34 px).
 - Controls are **pills** (radius = half the height): filter and sort buttons 38px, details
   buttons 40px, the episode "N releases" button 34px, round row actions 32px. Menu panels
   radius 14px, menu items 40px tall with radius 9px, dialogs radius 18px, posters radius 12–14px
@@ -160,6 +174,7 @@ Exact values for every part are in `reference/measurements.json`; the rules behi
 | Theme toggle | `theme-toggle.js`, `partials/theme-switcher` | scheme half removed (decision 2) |
 | Releases / Shows switch | new `x-segmented` (two links, `aria-current`) | new |
 | Category, Resolution, Source and the six Shows menus | **new** `x-checkbox-menu` + Alpine component `checkboxMenu` registered in `resources/js/alpine/lazy-loader.js` | new. One component for all nine. Behaviour rules are `SPEC.md` section 2 rule 10 and `check.mjs` |
+| **Filter bar** (2026-09-26, `SPEC.md` 3.0): the release bar and the show bar on the releases list, the show bar on the wall | `x-checkbox-menu` becomes a **bar cell** (name above value, no pill of its own; `part`/`fixed` props as built by #778); a new bar wrapper component groups the cells; Completion is a one-choice cell (radio items) | the rows of separate menu pills on `/tv` and `/tv/shows` are replaced; the menus gain the in-menu search (lists over 10 options), open-scrolled-to-first-tick, and the cut last row; Clear all moves to the Showing line on the releases list; the wall's sort moves to the title row. Audio, Completion and the show filters on the releases list are new filters |
 | Sort | `x-sort-dropdown`, `sort-dropdown.js` | restyled to the pill; writes `users.view_prefs` |
 | "Showing X–Y of N" line and bottom pager | new `x-pager-line`, `x-pager` | new; never omitted, never moves |
 | Release name / show line / chips | `x-release-facts`, `x-chip`, `x-release-completion-chips` | `x-chip` gains the tones `media`, `nfo`, `preview`, `sample`, `clip`, `listen`, `password`, `completion-ok / -mid / -low`; the separate repair chip and the Reported / Response chips are removed (`SPEC.md` 4) |

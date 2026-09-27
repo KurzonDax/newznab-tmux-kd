@@ -55,6 +55,12 @@ svg.i{width:1.1em;height:1.1em;fill:none;stroke:currentColor;stroke-width:1.8;st
 .filters{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:22px 0 6px}
 .filters h1{font:800 30px/1.1 Manrope,sans-serif;letter-spacing:-.025em;margin-right:6px}
 .filters .grow{flex:1}
+/* releases list filter row (2026-09-26, with Audio + Language): the Movie releases list's fixed-width menus */
+.mfilters{display:flex;flex-wrap:nowrap;align-items:center;gap:10px;padding:14px 0 0}
+.mfilters .sfm .mbtn{width:clamp(128px,calc((min(100vw,1500px) - 80px - 134px)/7),183px)}
+.mfilters .clearall{flex:none;width:64px;text-align:left;color:var(--acc);font-weight:500;font-size:14px;white-space:nowrap}
+.mfilters .clearall:hover{text-decoration:underline;text-underline-offset:3px}
+.mfilters .clearall[aria-hidden=true]{visibility:hidden}
 .filters .search label{height:38px;border-radius:19px}
 .filters .search input{font-size:13.5px}
 .filters .results{top:44px;z-index:12}
@@ -421,6 +427,71 @@ td.num{text-align:right;white-space:nowrap} th.num{text-align:right}
 :root[data-theme=light] .iconacts.stack .ia:not(.dl)[aria-pressed=true]{background:oklch(0.50 0.15 var(--h));color:#fff}
 :root[data-theme=light] .iconacts.stack .ia:not(.dl)[aria-pressed=true]:hover{background:oklch(0.44 0.15 var(--h))}
 .iconacts.stack .ia:not(.dl):focus-visible{outline-color:var(--ink);outline-offset:1px}
+/* ---- filter bar (2026-09-26, the Movies filter bar he accepted, carried to TV): the release's filters and the film's filters each one
+   continuous bar of cells (name above value, hairline dividers), like a booking site's search bar; the open cell lifts out of the bar;
+   a set filter is marked by a coral line under its value; long lists search and scroll inside their own menu ---- */
+.mrow.fbar{gap:12px}
+.fbar{--raise:#2a2e39}
+:root[data-theme=light] .fbar{--raise:#fff}
+.fbar .fseg{display:flex;align-items:stretch;height:56px;padding:4px;border-radius:18px;background:var(--panel2);min-width:0}
+.fbar .fseg.rel{flex:5 1 0}
+.fbar .fseg.film{flex:5 1 0}
+.fbar.one .fseg.film{flex:0 0 calc((100% - 12px) / 2)}
+.pager.slim.fixed .pg{min-width:calc(13ch + 20px);text-align:center}
+.pager.slim .clearall{width:64px;margin-right:12px;text-align:right;color:var(--acc);font-weight:500;font-size:14px;white-space:nowrap}
+.pager.slim .clearall:hover{text-decoration:underline;text-underline-offset:3px}
+.pager.slim .clearall[aria-hidden=true]{visibility:hidden}
+.fbar .sfm{position:relative;display:flex;flex:1 1 0;min-width:0}
+.fbar .sfm .mbtn{position:relative;width:100%;height:48px;padding:0 10px 0 14px;border-radius:14px;background:transparent;color:var(--ink);justify-content:space-between;gap:6px}
+.fbar .sfm .mbtn:hover{background:var(--line)}
+.fbar .sfm.open .mbtn{background:var(--raise);box-shadow:var(--shadow)}
+.fbar .sfm .mmenu{background:var(--raise)}
+.fbar .msearch{background:var(--raise)}
+.fbar .sfm .mbtn .lab{display:flex;flex-direction:column;gap:2px;line-height:1.2}
+.fbar .sfm .mbtn .sep{display:none}
+.fbar .sfm .mbtn .k{font-size:11.5px;font-weight:500;color:#fff}
+:root[data-theme=light] .fbar .sfm .mbtn .k{color:var(--ink)}
+.fbar .sfm .mbtn .v{font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fbar .sfm .mbtn .v.any{font-weight:500;color:var(--dim)}
+.fbar .sfm .mbtn svg{color:var(--dim)}
+.fbar .sfm+.sfm::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:1px;background:var(--line);pointer-events:none}
+.fbar .sfm:hover::before,.fbar .sfm:hover+.sfm::before,.fbar .sfm.open::before,.fbar .sfm.open+.sfm::before{opacity:0}
+/* set: the cell keeps the bar's ground; a coral line under the value says it is on */
+.fbar .msel.set .mbtn{background:transparent;color:var(--ink)}
+.fbar .msel.set .mbtn:hover{background:var(--line)}
+.fbar .msel.set.open .mbtn{background:var(--raise)}
+.fbar .msel.set .mbtn .k{color:#fff}
+:root[data-theme=light] .fbar .msel.set .mbtn .k{color:var(--ink)}
+.fbar .msel.set .mbtn .v{color:var(--ink)}
+.fbar .msel.set .mbtn::after{content:"";position:absolute;left:14px;right:14px;bottom:3px;height:3px;border-radius:2px;background:var(--acc)}
+.fbar .sfm .mmenu{top:58px;left:0;right:auto;min-width:max(100%,230px)}
+.fbar .sfm .mmenu.searchable{max-height:402px}
+.fbar .mrow .clearall,.mrow.fbar .clearall{align-self:center}
+/* long lists: a search field that stays at the top of the menu, the options scroll under it */
+.mmenu.searchable{padding-top:0}
+.msearch{position:sticky;top:0;z-index:1;display:flex;align-items:center;margin:0 -6px 4px;padding:10px 12px 8px;background:var(--panel);color:var(--dim)}
+.msearch svg{position:absolute;left:24px;top:50%;transform:translateY(-35%);pointer-events:none}
+.msearch input{flex:1;min-width:0;height:34px;padding:0 12px 0 34px;border:0;border-radius:17px;background:var(--panel2);color:var(--ink);font:500 13.5px Manrope,sans-serif;caret-color:var(--acc)}
+.msearch input::placeholder{color:var(--dim)}
+.msearch input:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.mitem[hidden]{display:none}
+.pager.slim.fixed .pg{min-width:calc(13ch + 20px);text-align:center}
+.pager.slim .clearall{width:64px;margin-right:12px;text-align:right;color:var(--acc);font-weight:500;font-size:14px;white-space:nowrap}
+.pager.slim .clearall:hover{text-decoration:underline;text-underline-offset:3px}
+.pager.slim .clearall[aria-hidden=true]{visibility:hidden}
+.mrow{display:flex;flex-wrap:nowrap;align-items:center;gap:10px;padding:14px 0 0}
+/* one-choice menus (Completion): round markers, as on Movie releases */
+.mitem .dot{display:grid;place-items:center;width:18px;height:18px;border-radius:9px;border:1.5px solid var(--dim);flex:none}
+.mitem[aria-checked=true] .dot{border-color:var(--acc)}
+.mitem[aria-checked=true] .dot::after{content:"";width:8px;height:8px;border-radius:4px;background:var(--acc)}
+/* TV releases: the release bar is as wide as on Movie releases; the show's Language sits in a one-cell bar beside it */
+.tvbar .fseg.rel{flex:5 1 0}
+.tvbar .fseg.show{flex:6 1 0}
+.tvwall .fseg.show{flex:0 0 calc((100% - 12px) * 6 / 11)}
+.mrow .person{flex:none}
+.mrow .clearall{flex:none;width:64px;text-align:left;color:var(--acc);font-weight:500;font-size:14px;white-space:nowrap}
+.mrow .clearall:hover{text-decoration:underline;text-underline-offset:3px}
+.mrow .clearall[aria-hidden=true]{visibility:hidden}
 </style>
 </head>
 <body>
@@ -465,12 +536,12 @@ const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelect
 const ic=n=>`<svg class="i" aria-hidden="true"><use href="#i-${n}"/></svg>`;
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const RES=['4K','1080p','720p','SD'], SRC=['WEB','Blu-ray','DVD','HDTV'];
-const state={rsort:'posted_desc',page:1,spage:1,per:50,sper:42,sel:new Set(),watch:new Set(),tab:'overview',res:new Set(),src:new Set(),cat:new Set(),dd:null,days:6,rows:150,sf:null,ssort:'recent',expanded:new Set(),list:'#/',cart:new Set(),sort:{k:'size',dir:-1},open:new Set()};
+const state={tgenre:new Set(),tdecade:new Set(),tnet:new Set(),trating:new Set(),tstatus:new Set(),comp:false,msq:{},aud:new Set(),lang:new Set(),rsort:'posted_desc',page:1,spage:1,per:50,sper:42,sel:new Set(),watch:new Set(),tab:'overview',res:new Set(),src:new Set(),cat:new Set(),dd:null,days:6,rows:150,sf:null,ssort:'recent',expanded:new Set(),list:'#/',cart:new Set(),sort:{k:'size',dir:-1},open:new Set()};
 const NOCACHE='?t='+Date.now();
 const newSf=()=>({lang:new Set(),genre:new Set(),decade:new Set(),net:new Set(),rating:new Set(),status:new Set(),person:''});state.sf=newSf();
 const fs=k=>k.startsWith('sf_')?state.sf[k.slice(3)]:state[k];
 const store={get(k,d){try{return localStorage.getItem('nntmux.tv.'+k)||d;}catch(e){return d;}},set(k,v){try{localStorage.setItem('nntmux.tv.'+k,v);}catch(e){}}};
-let DB,REL,BYSHOW={},NOW,NOWALL,META={},PEOPLE={},RX={x:{},summ:{}},MEDIA=null,FILES=null,NFO=null,PV=new Set(),REPAIRDONE=new Set(),BYID={};
+let ALANG={},AUDS=[],TLANGS=[];let DB,REL,BYSHOW={},NOW,NOWALL,META={},PEOPLE={},RX={x:{},summ:{}},MEDIA=null,FILES=null,NFO=null,PV=new Set(),REPAIRDONE=new Set(),BYID={};
 
 function parse(name){
   const n=name; let res='Unknown',src='Unknown',codec='';
@@ -501,7 +572,10 @@ function dayLabel(k){const d=new Date(k+'T12:00:00'),n=new Date(NOW*1000);n.setH
 const shortDate=t=>new Date(t*1000).toLocaleDateString('en-US',{day:'numeric',month:'short',year:'numeric'});
 const match=r=>(!state.res.size||state.res.has(r.res))&&(!state.src.size||state.src.has(r.src));
 // the TV sub-category filter belongs to the Releases list only
-let CATS=[];const catOf=r=>X(r).cat.replace(/^TV > /,''),matchRel=r=>match(r)&&(!state.cat.size||state.cat.has(catOf(r)));
+// Audio = the release's audio languages (media info; none known reads Unknown); Language = the show's original language (2026-09-26)
+const audOf=r=>ALANG[r.id]||['Unknown'];
+let CATS=[];const catOf=r=>X(r).cat.replace(/^TV > /,''),matchRel=r=>match(r)&&(!state.cat.size||state.cat.has(catOf(r)))&&(!state.comp||r.comp>=+state.comp)&&(!state.tgenre.size||(!!r.v&&M(r.v).g.some(g=>state.tgenre.has(g))))&&(!state.tdecade.size||(!!r.v&&state.tdecade.has(decadeOf(r.v))))&&(!state.tnet.size||(!!r.v&&state.tnet.has(netOf(r.v))))&&(!state.trating.size||(!!r.v&&state.trating.has(M(r.v).us)))&&(!state.tstatus.size||(!!r.v&&state.tstatus.has(M(r.v).st)))
+  &&(!state.aud.size||audOf(r).some(a=>state.aud.has(a)))&&(!state.lang.size||(!!r.v&&state.lang.has(M(r.v).lang)));
 // the show and episode (or air date) a release name with no matched show states, or null
 const showName=n=>{if(/\.rar|\.part\d|^["'(\[]/i.test(n))return null;const m=n.match(/^(.+?)[._ \-]+(?:(S\d{1,4})[ ._-]?(E\d{1,4})(?:-?(E\d{1,4}))?|(\d{4})[._ \-](\d{2})[._ \-](\d{2})|(E\d{2,4}))(?=[._ \-]|$)/i);if(!m)return null;const t=m[1].replace(/[._]+/g,' ').replace(/[\s\-]+$/g,'').trim();if(!t)return null;return {t,e:m[2]?(m[2]+m[3]+(m[4]?'–'+m[4]:'')).toUpperCase():m[5]?m[5]+'-'+m[6]+'-'+m[7]:m[8].toUpperCase()};};
 const noPoster=x=>{const nt=showName(x.name);return nt?`<a class="ph card" href="#/release/${x.id}" tabindex="-1" aria-hidden="true"><b>${esc(nt.t)}</b><small>${esc(nt.e)}</small></a>`:`<a class="ph" href="#/release/${x.id}" tabindex="-1" aria-hidden="true">${ic('tv')}<small>No poster</small></a>`;};
@@ -511,19 +585,45 @@ function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clea
 const filterDD=(k,label,opts)=>{const all=k==='cat'?opts:[...opts,'Unknown'],on=ordered(k),open=state.dd===k;
   return `<div class="msel ${on.length?'set':''}" data-msel="${k}"><button class="mbtn" data-ddtoggle="${k}" aria-haspopup="true" aria-expanded="${open}">${label}: ${on.length?esc(on.join(', ')):'any'}${ic('chev')}</button>
   ${open?`<div class="mmenu" role="group" aria-label="${label}"><button class="mitem" data-ddany="${k}" role="menuitemcheckbox" aria-checked="${!on.length}"><span class="box">${!on.length?ic('check'):''}</span>Any ${label.toLowerCase()}</button>${all.map(v=>`<button class="mitem" data-ddpick="${k}" data-v="${v}" role="menuitemcheckbox" aria-checked="${state[k].has(v)}"><span class="box">${state[k].has(v)?ic('check'):''}</span>${k==='res'?resChip(v):esc(v)}</button>`).join('')}</div>`:''}</div>`;};
-function placeMenu(top){const m=$('.sfm .mmenu');if(!m)return;if(top!=null)m.scrollTop=top;m.style.left='';const over=m.getBoundingClientRect().right-(document.documentElement.clientWidth-16);if(over>0)m.style.left=-over+'px';}
+function placeMenu(top){const m=$('.sfm .mmenu');if(!m)return;if(top!=null)m.scrollTop=top;else{const t=m.querySelector('[data-ddpick][aria-checked=true]'),sh=m.querySelector('.msearch')?.offsetHeight||0;if(t&&t.offsetTop+t.offsetHeight>m.clientHeight)m.scrollTop=t.offsetTop-sh-6;}m.style.left='';const over=m.getBoundingClientRect().right-(document.documentElement.clientWidth-16);if(over>0)m.style.left=-over+'px';}
 const tvSearch=()=>`<div class="search"><label><svg class="i"><use href="#i-search"/></svg><input id="q" placeholder="Search shows or actors" autocomplete="off" aria-label="Search shows or actors"></label><div class="results" id="results" hidden></div></div>`;
+// the releases list's filter row (2026-09-26): five fixed-width menus as on the Movie releases list, then Clear all in a fixed slot
+const lab=(k,v,none)=>`<span class="lab"><span class="k">${esc(k)}</span><span class="sep">: </span><span class="v${none?' any':''}">${esc(v)}</span></span>`;
+const SEARCH_NAME={cat:'categories',aud:'audio languages',lang:'languages',tgenre:'genres',tnet:'networks',sf_genre:'genres',sf_lang:'languages',sf_net:'networks'};
+// the show's filters (2026-09-26): the same six on the TV shows wall (sf_ keys) and on the TV releases list (list keys)
+const SHOWF=[['genre','Genre','Any genre'],['decade','Premiered','Any decade'],['lang','Language','Any language'],['net','Network','Any network'],['rating','Rating','Any rating'],['status','Status','Any status']];
+const listKey=k=>k==='lang'?'lang':'t'+k;
+let SOPTS=null;
+const showOpts=()=>SOPTS||(SOPTS=(()=>{const ids=Object.keys(DB.shows).filter(id=>BYSHOW[id]),count=a=>{const c={};a.forEach(x=>{if(x)c[x]=(c[x]||0)+1;});return Object.keys(c).sort((x,y)=>c[y]-c[x]||x.localeCompare(y));};
+  return {genre:count(ids.flatMap(id=>M(id).g)).sort(),decade:[...new Set(ids.map(decadeOf).filter(Boolean))].sort().reverse(),lang:count(ids.map(id=>M(id).lang)),
+    net:[...new Set(ids.map(netOf).filter(Boolean))].sort((a,b)=>a.localeCompare(b,undefined,{sensitivity:'base'})),rating:RATINGS.filter(r=>ids.some(id=>M(id).us===r)),status:['Running','Ended']};})());
+const showCells=wall=>SHOWF.map(([k,label,any])=>rowMenu(wall?'sf_'+k:listKey(k),label,k==='lang'&&!wall?TLANGS:showOpts()[k],any)).join('');
+const msMatch=(k,l)=>{const q=(state.msq[k]||'').trim().toLowerCase();return !q||String(l).toLowerCase().includes(q);};
+function rowMenu(k,label,opts,anyLabel){const S=fs(k),on=opts.filter(v=>S.has(v)),open=state.dd===k,txt=on.length>1?on.length+' chosen':on.length?on[0]:'any',search=opts.length>10;if(!open)delete state.msq[k];
+  const items=`<button class="mitem" data-ddany="${k}" role="menuitemcheckbox" aria-checked="${!on.length}"><span class="box">${!on.length?ic('check'):''}</span>${anyLabel||'Any '+label.toLowerCase()}</button>${opts.map(v=>`<button class="mitem" data-ddpick="${k}" data-v="${esc(v)}" role="menuitemcheckbox" aria-checked="${S.has(v)}"${msMatch(k,v)?'':' hidden'}><span class="box">${S.has(v)?ic('check'):''}</span>${k==='res'?resChip(v):esc(v)}</button>`).join('')}`;
+  return `<div class="msel sfm${on.length?' set':''}${open?' open':''}" data-msel="${k}"><button class="mbtn" data-ddtoggle="${k}" aria-haspopup="true" aria-expanded="${open}" title="${on.length?esc(label+': '+on.join(', ')):''}">${lab(label,txt,!on.length)}${ic('chev')}</button>
+  ${open?(search?`<div class="mmenu searchable" role="dialog" aria-label="${label}"><div class="msearch">${ic('search')}<input data-msearch="${k}" placeholder="Search ${SEARCH_NAME[k]||label.toLowerCase()}" aria-label="Search ${SEARCH_NAME[k]||label.toLowerCase()}" value="${esc(state.msq[k]||'')}" autocomplete="off"></div><div role="menu" aria-label="${label}">${items}</div></div>`
+    :`<div class="mmenu" role="menu" aria-label="${label}">${items}</div>`):''}</div>`;}
+// Completion (his request 2026-09-26, both release lists): one choice, any or 95% or more complete
+function compMenu(){const on=state.comp,open=state.dd==='comp',item=(v,l)=>`<button class="mitem" data-cpick="${v}" role="menuitemradio" aria-checked="${(v==='any'&&!on)||v===on}"><span class="dot"></span>${l}</button>`;
+  return `<div class="msel sfm${on?' set':''}${open?' open':''}" data-msel="comp"><button class="mbtn" data-ddtoggle="comp" aria-haspopup="true" aria-expanded="${open}" title="${on?'Completion: '+(on==='100'?'100% only':'95% or more'):''}">${lab('Completion',on?(on==='100'?'100%':'95%+'):'any',!on)}${ic('chev')}</button>
+  ${open?`<div class="mmenu" role="menu" aria-label="Completion">${item('any','Any completion')}${item('100','100% only')}${item('95','95% or more')}</div>`:''}</div>`;}
+const LIST_SETS=['cat','res','src','aud','lang','tgenre','tdecade','tnet','trating','tstatus'];
+const listAny=()=>LIST_SETS.some(k=>state[k].size)||state.comp;
+const rowMenus=()=>`<div class="mrow fbar tvbar"><div class="fseg rel" role="group" aria-label="The release">${rowMenu('cat','Category',CATS)}${rowMenu('res','Resolution',[...RES,'Unknown'])}${rowMenu('src','Source',[...SRC,'Unknown'])}${rowMenu('aud','Audio',AUDS)}${compMenu()}</div><div class="fseg show" role="group" aria-label="The show">${showCells(false)}</div></div>`;
+// Clear all on the Showing line, a fixed slot left of the page arrows (hidden, not removed, when nothing is set)
+const barClear=html=>html.replace('class="pager slim"','class="pager slim fixed"').replace('</span>',`</span><button class="clearall" data-clearall ${listAny()?'':'tabindex="-1" aria-hidden="true"'}>Clear all</button>`);
 function filterBar(title,view){const seg=`<div class="seg" role="group" aria-label="View"><a href="#/" aria-pressed="${view==='releases'}">Releases</a><a href="#/shows" aria-pressed="${view==='shows'}">Shows</a></div>`+tvSearch();
-  if(view==='shows')return `<div class="filters"><h1>${title}</h1>${seg}<span class="grow"></span></div>`;
+  if(view==='shows')return `<div class="filters"><h1>${title}</h1>${seg}<span class="grow"></span><label class="sel"><select data-ssort aria-label="Sort">${[['recent','Newest releases first'],['newsite','Newest to the site first'],['prem','Newest premiere first'],['az','A to Z']].map(([k,l])=>`<option value="${k}" ${state.ssort===k?'selected':''}>${l}</option>`).join('')}</select>${ic('chev')}</label></div>`;
   const dd=(k,label,opts)=>`<label class="sel ${state[k]!=='Any'?'set':''}"><select data-fsel="${k}" aria-label="${label}"><option value="Any">${label}: any</option>${opts.map(o=>`<option ${state[k]===o?'selected':''}>${o}</option>`).join('')}</select>${ic('chev')}</label>`;
-  if(view==='releases')return `<div class="filters"><h1>${title}</h1>${seg}<span class="grow"></span>${filterDD('cat','Category',CATS)}${filterDD('res','Resolution',RES)}${filterDD('src','Source',SRC)}<label class="sel"><select data-rsort aria-label="Sort releases">${[['posted_desc','Posted: newest first'],['posted_asc','Posted: oldest first'],['added_desc','Added: newest first'],['added_asc','Added: oldest first']].map(([k,l])=>`<option value="${k}" ${state.rsort===k?'selected':''}>${l}</option>`).join('')}</select>${ic('chev')}</label></div>`;
+  if(view==='releases')return `<div class="filters"><h1>${title}</h1>${seg}<span class="grow"></span><label class="sel"><select data-rsort aria-label="Sort releases">${[['posted_desc','Posted: newest first'],['posted_asc','Posted: oldest first'],['added_desc','Added: newest first'],['added_asc','Added: oldest first']].map(([k,l])=>`<option value="${k}" ${state.rsort===k?'selected':''}>${l}</option>`).join('')}</select>${ic('chev')}</label></div>`+rowMenus();
   return `<div class="filters"><h1>${title}</h1>
   ${seg}
   <div class="fg" role="group" aria-label="Resolution"><span>Resolution</span>${['Any',...RES].map(v=>`<button class="pill" data-f="res" data-v="${v}" aria-pressed="${state.res===v}">${v}</button>`).join('')}</div>
   <div class="fg" role="group" aria-label="Source"><span>Source</span>${['Any',...SRC].map(v=>`<button class="pill" data-f="src" data-v="${v}" aria-pressed="${state.src===v}">${v}</button>`).join('')}</div></div>`;}
 const filtered=()=>state.res.size>0||state.src.size>0;
 const ordered=(k)=>(k==='cat'?CATS:k==='res'?[...RES,'Unknown']:[...SRC,'Unknown']).filter(v=>state[k].has(v));
-const filterText=withCat=>[withCat?ordered('cat').join(' or '):'',ordered('res').join(' or '),ordered('src').join(' or ')].filter(Boolean).join(' · ');
+const filterText=withCat=>[withCat?ordered('cat').join(' or '):'',ordered('res').join(' or '),ordered('src').join(' or '),withCat&&state.comp?(state.comp==='100'?'100% complete':'95%+ complete'):'',withCat&&state.aud.size?[...state.aud].join(' or ')+' audio':'',withCat&&state.lang.size?'in '+[...state.lang].join(' or '):'',withCat?[...state.tgenre,...state.tdecade,...state.tnet,...state.trating,...state.tstatus].join(' · '):''].filter(Boolean).join(' · ');
 
 /* ---------- home ---------- */
 function spanText(rs){
@@ -581,7 +681,7 @@ function releasesView(){
   const [sk,sd]=state.rsort.split('_'),tk=r=>sk==='added'?X(r).added:r.t,dir=sd==='asc'?1:-1;
   const rs=REL.filter(matchRel).sort((a,b)=>(tk(a)-tk(b))*dir||a.id-b.id), pages=Math.max(1,Math.ceil(rs.length/state.per));
   state.page=Math.min(Math.max(1,state.page),pages);state.list=state.page>1?'#/p/'+state.page:'#/';
-  const page=rs.slice((state.page-1)*state.per,state.page*state.per), pg=b=>pager('#/',state.page,pages,rs.length,'release',b);
+  const page=rs.slice((state.page-1)*state.per,state.page*state.per), pg=b=>b?pager('#/',state.page,pages,rs.length,'release',b):barClear(pager('#/',state.page,pages,rs.length,'release',b));
   let h=filterBar('TV releases','releases');
   if(!page.length){$('#app').innerHTML=h+pg(false)+`<p class="empty">Nothing matches ${esc(filterText(true))}.</p>`;return;}
   if(state.sel.size)h+=`<div class="bulk"><span>${state.sel.size} selected</span><button class="btn" data-bulk="nzb">${ic('down')}Download NZBs</button><button class="btn sec" data-bulk="cart">${ic('cart')}Add to cart</button><button class="btn sec" data-bulk="clear">Clear selection</button></div>`;
@@ -611,24 +711,16 @@ let NETNAME={};const netOf=id=>{const n=(DB.shows[id].n||'').trim();return n?NET
 const RATINGS=['TV-Y','TV-Y7','TV-G','TV-PG','TV-14','TV-MA'];
 function showMatches(id){const f=state.sf,m=M(id);
   return (!f.net.size||f.net.has(netOf(id)))&&(!f.lang.size||f.lang.has(m.lang))&&(!f.genre.size||m.g.some(g=>f.genre.has(g)))&&(!f.decade.size||f.decade.has(decadeOf(id)))&&(!f.rating.size||f.rating.has(m.us))&&(!f.status.size||f.status.has(m.st))&&(!f.person||m.cast.includes(f.person));}
-function sel(key,label,opts,anyLabel){const k='sf_'+key,set=state.sf[key],on=opts.filter(o=>set.has(o)),open=state.dd===k;
-  return `<div class="msel sfm ${on.length?'set':''}" data-msel="${k}"><button class="mbtn" data-ddtoggle="${k}" aria-haspopup="true" aria-expanded="${open}" title="${on.length?esc(label+': '+on.join(', ')):''}"><span class="lab">${label}: ${on.length>1?on.length+' chosen':on.length?esc(on[0]):'any'}</span>${ic('chev')}</button>
-  ${open?`<div class="mmenu" role="group" aria-label="${label}"><button class="mitem" data-ddany="${k}" role="menuitemcheckbox" aria-checked="${!on.length}"><span class="box">${!on.length?ic('check'):''}</span>${anyLabel}</button>${opts.map(v=>`<button class="mitem" data-ddpick="${k}" data-v="${esc(v)}" role="menuitemcheckbox" aria-checked="${set.has(v)}"><span class="box">${set.has(v)?ic('check'):''}</span>${esc(v)}</button>`).join('')}</div>`:''}</div>`;}
 function home(){
   const ids=Object.keys(DB.shows).filter(id=>BYSHOW[id]), count=a=>{const c={};a.forEach(x=>{if(x)c[x]=(c[x]||0)+1;});return Object.keys(c).sort((x,y)=>c[y]-c[x]||x.localeCompare(y));};
-  const nets=[...new Set(ids.map(netOf).filter(Boolean))].sort((a,b)=>a.localeCompare(b,undefined,{sensitivity:'base'}));
-  const langs=count(ids.map(id=>M(id).lang)), genres=count(ids.flatMap(id=>M(id).g)).sort(), decades=[...new Set(ids.map(decadeOf).filter(Boolean))].sort().reverse(), rates=RATINGS.filter(r=>ids.some(id=>M(id).us===r));
   let list=ids.filter(showMatches).map(id=>{const all=BYSHOW[id];return {id,first:Math.min(...all.map(r=>r.t)),last:Math.max(...all.map(r=>r.t))};});
   list.sort({recent:(a,b)=>b.last-a.last,newsite:(a,b)=>b.first-a.first,prem:(a,b)=>premOf(b.id)-premOf(a.id),az:(a,b)=>DB.shows[a.id].t.localeCompare(DB.shows[b.id].t)}[state.ssort]);
   const total=list.length,spages=Math.max(1,Math.ceil(total/state.sper));state.spage=Math.min(Math.max(1,state.spage),spages);state.list=state.spage>1?'#/shows/p/'+state.spage:'#/shows';
   list=list.slice((state.spage-1)*state.sper,state.spage*state.sper);
   const any=Object.values(state.sf).some(v=>v&&(v.size===undefined||v.size>0));
-  let h=filterBar('TV shows','shows')+`<div class="dfilters">
-    ${state.sf.person?`<span class="person">Starring ${esc(state.sf.person)}<button data-unperson aria-label="Remove ${esc(state.sf.person)}">${ic('plus').replace('<svg','<svg style="transform:rotate(45deg)"')}</button></span>`:''}
-    ${sel('genre','Genre',genres,'Any genre')}${sel('decade','Premiered',decades,'Any decade')}${sel('lang','Language',langs,'Any language')}${sel('net','Network',nets,'Any network')}${sel('rating','Rating',rates,'Any rating')}${sel('status','Status',['Running','Ended'],'Any status')}
-    <button class="note" data-clearshows style="color:var(--acc);font-weight:500${any?'':';visibility:hidden'}" ${any?'':'tabindex="-1" aria-hidden="true"'}>Clear all</button>
-    <span class="count"></span>
-    <label class="sel"><select data-ssort aria-label="Sort">${[['recent','Newest releases first'],['newsite','Newest to the site first'],['prem','Newest premiere first'],['az','A to Z']].map(([k,l])=>`<option value="${k}" ${state.ssort===k?'selected':''}>${l}</option>`).join('')}</select>${ic('chev')}</label></div>`;
+  let h=filterBar('TV shows','shows')+`<div class="mrow fbar one tvwall"><div class="fseg show" role="group" aria-label="The show">${showCells(true)}</div>
+    <button class="clearall" data-clearshows ${any?'':'tabindex="-1" aria-hidden="true"'}>Clear all</button>
+    ${state.sf.person?`<span class="person">Starring ${esc(state.sf.person)}<button data-unperson aria-label="Remove ${esc(state.sf.person)}">${ic('x')}</button></span>`:''}</div>`;
   if(!list.length)h+=pager('#/shows',1,1,0,'show',false)+`<p class="empty">No shows match. Try removing one of the choices above.</p>`;
   else h+=pager('#/shows',state.spage,spages,total,'show',false)+`<div class="tiles" style="margin-top:4px">${list.map(({id})=>{const s=DB.shows[id],m=M(id);return `<a class="tile" href="#/show/${id}"><div class="art">${poster(id)}</div><b>${esc(s.t)}</b>
     <div class="what">${[premOf(id)||'',m.g.slice(0,2).join(', ')].filter(Boolean).map(esc).join(' · ')}</div><div class="m2">${[m.lang,m.us&&m.us!=='NR'?m.us:''].filter(Boolean).map(esc).join(' · ')}</div></a>`;}).join('')}</div>`+pager('#/shows',state.spage,spages,total,'show',true);
@@ -779,9 +871,11 @@ document.addEventListener('click',e=>{
   const al=e.target.closest('[data-applink]');if(al){e.preventDefault();toast('Opens '+decodeURIComponent(al.dataset.applink)+', the existing list of all releases for it (not part of this prototype)');return;}
   const o=e.target.closest('[data-open]');if(o)state.open.add(o.dataset.open);
   if(e.target.closest('[data-full]')){toggleFull();return;}
+  if(e.target.closest('[data-clearall]')){LIST_SETS.forEach(k=>state[k].clear());state.comp=false;state.page=1;state.dd=null;if(location.hash!=='#/'&&location.hash!=='')history.replaceState(null,'','#/');const y=scrollY;route();scrollTo(0,y);$('.fbar .mbtn')?.focus({preventScroll:true});return;}
+  const cpk=e.target.closest('[data-cpick]');if(cpk){state.comp=cpk.dataset.cpick==='any'?false:cpk.dataset.cpick;state.dd=null;state.page=1;if(location.hash!=='#/'&&location.hash!=='')history.replaceState(null,'','#/');const y=scrollY;route();scrollTo(0,y);$('[data-ddtoggle=comp]')?.focus({preventScroll:true});return;}
   const dd=e.target.closest('[data-ddtoggle],[data-ddany],[data-ddpick]');
   if(dd){const d=dd.dataset,k=d.ddtoggle||d.ddany||d.ddpick,y=scrollY;
-    if(d.ddtoggle){state.dd=state.dd===k?null:k;route();scrollTo(0,y);placeMenu();$(`[data-ddtoggle="${k}"]`)?.focus();return;}
+    if(d.ddtoggle){state.dd=state.dd===k?null:k;route();scrollTo(0,y);placeMenu();($(`[data-msel="${k}"] [data-msearch]`)||$(`[data-ddtoggle="${k}"]`))?.focus();return;}
     const mtop=$('.sfm .mmenu')?.scrollTop;if(d.ddany)fs(k).clear();else fs(k).has(d.v)?fs(k).delete(d.v):fs(k).add(d.v);
     state.page=1;if(/^#\/(p\/\d+)?$/.test(location.hash)&&location.hash!=='#/'){history.replaceState(null,'','#/');}
     if(k.startsWith('sf_')){state.spage=1;if(/^#\/shows\/p\//.test(location.hash))history.replaceState(null,'','#/shows');}
@@ -805,7 +899,7 @@ document.addEventListener('click',e=>{
   const t=e.target.closest('[data-unperson],[data-clearshows],[data-expand],[data-f],[data-clear],[data-ep],[data-sort],[data-nzb],[data-cart],[data-dummy]');if(!t)return;
   if(t.dataset.dummy!==undefined){e.preventDefault();toast('Only the TV section is part of this prototype');return;}
   if(t.dataset.unperson!==undefined){state.sf.person='';firstPage();}
-  else if(t.dataset.clearshows!==undefined){state.sf=newSf();firstPage();}
+  else if(t.dataset.clearshows!==undefined){state.sf=newSf();firstPage();$('.fbar .mbtn')?.focus({preventScroll:true});}
   else if(t.dataset.expand){const k=t.dataset.expand;state.expanded.has(k)?state.expanded.delete(k):state.expanded.add(k);const y=scrollY;route();scrollTo(0,y);}
   else if(t.dataset.f){state[t.dataset.f]=t.dataset.v;firstPage();}
   else if(t.dataset.clear!==undefined){state.res.clear();state.src.clear();firstPage();}
@@ -829,6 +923,7 @@ function search(){const q=qEl(),box=boxEl();if(!q||!box)return;const v=q.value.t
     +(ppl.length?`<h4>People</h4>`+ppl.map(([name,ids])=>`<a href="#/shows" class="p ${i++===hl?'hl':''}" data-setsf="person" data-v="${esc(name)}"><div><b>${esc(name)}</b><span>${ids.length} show${ids.length===1?'':'s'}: ${esc(ids.slice(0,3).map(x=>DB.shows[x].t).join(', '))}</span></div></a>`).join(''):'')
     :`<p>Nothing called “${esc(q.value)}” here. This prototype only holds the ${Object.keys(BYSHOW).length} shows that arrived most recently, and their casts.</p>`;
   box.hidden=false;}
+document.addEventListener('input',e=>{const ms=e.target.dataset?.msearch;if(!ms)return;state.msq[ms]=e.target.value;const q=e.target.value.trim().toLowerCase();$$(`[data-msel="${ms}"] [data-ddpick]`).forEach(b=>{b.hidden=!!q&&!b.textContent.toLowerCase().includes(q);});});
 function bindSearch(){const q=qEl();if(!q||q.dataset.bound)return;q.dataset.bound='1';q.addEventListener('input',()=>{hl=0;search();});q.addEventListener('focus',search);
   q.addEventListener('keydown',e=>{const box=boxEl();const n=$$('a',box).length;if(e.key==='ArrowDown'){e.preventDefault();hl=Math.min(n-1,hl+1);search();}else if(e.key==='ArrowUp'){e.preventDefault();hl=Math.max(0,hl-1);search();}
     else if(e.key==='Enter'){const a=$$('a',box)[hl];if(a){a.click();q.value='';box.hidden=true;q.blur();}}else if(e.key==='Escape'){box.hidden=true;q.blur();}});}
@@ -838,7 +933,7 @@ document.addEventListener('submit',e=>{if(e.target.closest('.sitesearch')){e.pre
 document.addEventListener('focusout',e=>{const m=e.target.closest?.('.msel');if(!m||!state.dd||!e.relatedTarget||m.contains(e.relatedTarget))return;state.dd=null;m.querySelector('.mmenu')?.remove();m.querySelector('[data-ddtoggle]')?.setAttribute('aria-expanded','false');});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#modal').innerHTML){closeDialog();return;}if(e.key==='Escape'&&state.dd){const k=state.dd;state.dd=null;const y=scrollY;route();scrollTo(0,y);$(`[data-ddtoggle="${k}"]`)?.focus();return;}if(e.key==='/'&&document.activeElement!==q){e.preventDefault();q.focus();}});
 
-Promise.all([fetch('data.json'+NOCACHE).then(r=>r.json()),fetch('meta.json'+NOCACHE).then(r=>r.json()),fetch('relx.json'+NOCACHE).then(r=>r.json()),fetch('previews.json'+NOCACHE).then(r=>r.json()).catch(()=>[]),fetch('repair.json'+NOCACHE).then(r=>r.json()).catch(()=>[])]).then(([d,meta,rx,pv,rdone])=>{REPAIRDONE=new Set(rdone);DB=d;META=meta;RX=rx;PV=new Set(pv);
+Promise.all([fetch('data.json'+NOCACHE).then(r=>r.json()),fetch('meta.json'+NOCACHE).then(r=>r.json()),fetch('relx.json'+NOCACHE).then(r=>r.json()),fetch('previews.json'+NOCACHE).then(r=>r.json()).catch(()=>[]),fetch('repair.json'+NOCACHE).then(r=>r.json()).catch(()=>[]),fetch('langs.json'+NOCACHE).then(r=>r.json()).then(l=>{ALANG=l.audio;})]).then(([d,meta,rx,pv,rdone])=>{REPAIRDONE=new Set(rdone);DB=d;META=meta;RX=rx;PV=new Set(pv);
   const G={'Science-Fiction':['Sci-Fi'],'Sci-Fi & Fantasy':['Sci-Fi','Fantasy'],'Action & Adventure':['Action','Adventure'],'War & Politics':['War'],'Kids':['Children']};
   Object.entries(META).forEach(([id,m])=>{m.g=[...new Set(m.g.flatMap(g=>G[g]||[g]))];if(m.st==='To Be Determined')m.st='Running';m.cast.forEach(n=>(PEOPLE[n]||(PEOPLE[n]=[])).push(id));});
   REL=d.rel.map(a=>{const ep=d.eps[a[2]],p=parse(a[3]);return {id:a[0],v:a[1],name:a[3],size:a[4],t:a[5],comp:a[6],grabs:a[7],s:ep?ep[1]:null,e:ep?ep[2]:null,title:ep?ep[3]:'',aired:ep?ep[4]:'',...p};});
@@ -847,7 +942,9 @@ Promise.all([fetch('data.json'+NOCACHE).then(r=>r.json()),fetch('meta.json'+NOCA
   const names=['Landesschau.Baden-Wuerttemberg.2026.09.21.German.1080p.WEB.h264-RTS','Morning.Joe.2026.09.22.1080p.WEB.h264-CLOWNS','Grand.Designs.NZ.S10E03.1080p.HDTV.H264-FTV','Ridiculousness.S45E19.1080p.WEB.h264-BTN','Sister.Wives.S20E01.Trust.Fall.1080p.WEB.h264-BTN','Kamen.Rider.Zeztz.E02.1080p.WEB-DL.AAC2.0.H.264-Lulz','Diners.Drive-Ins.and.Dives.S51E08.720p.WEB.h264-KOMPOST','Die.Anstalt.2026.09.16.German.720p.WEB.h264-UNiVERSUM','Tagesschau.20.Uhr.2026.09.22.German.1080p.WEB.h264-WvF','Bargain.Hunt.S72E11.1080p.HDTV.H264-DARKFLiX','PBS.NewsHour.2026.09.22.1080p.WEB.h264-BAE','Unforgotten.Night.S01E07.720p.WEB-DL.AAC2.0.H.264-Lulz','Big.Brother.US.S27E33.1080p.WEB.h264-BAE','Dancing.With.The.Stars.US.S34E02.1080p.WEB.h264-BAE'];
   const base=Math.max(...REL.map(r=>r.t));
   names.forEach((name,i)=>{const p=parse(name),id=9000001+i,t0=base-i*6100-1800;REL.push({id,v:0,name,size:Math.round([1.9,2.4,1.6,3.3,1.2][i%5]*1073741824),t:t0,comp:100,grabs:i%3,s:null,e:null,title:'',aired:'',...p});RX.x[id]=['',['alt.binaries.teevee','alt.binaries.multimedia','alt.binaries.hdtv'][i%3],['bob <bob@example.com>','user <user@4.localdomain>','tv <tv@post.invalid>'][i%3],t0+2400,0,0,0,0,0,[2,1,3,2,4][i%5],/German/.test(name)?'TV > Foreign':/720p/.test(name)?'TV > SD':'TV > HD'];});}
-  REL.forEach(r=>{if(r.v)(BYSHOW[r.v]||(BYSHOW[r.v]=[])).push(r);BYID[r.id]=r;});{const have=new Set(REL.map(catOf));CATS=['HD','UHD','SD','WEB-DL','X265','Foreign','Anime','Sport','Documentary','Other'].filter(c=>have.has(c));}NOW=Math.max(...REL.map(r=>r.t));NOWALL=Math.max(NOW,...REL.map(r=>X(r).added));{const r=store.get('rsort','posted_desc'),ss=store.get('ssort','recent');if(['posted_desc','posted_asc','added_desc','added_asc'].includes(r))state.rsort=r;if(['recent','newsite','prem','az'].includes(ss))state.ssort=ss;}
+  REL.forEach(r=>{if(r.v)(BYSHOW[r.v]||(BYSHOW[r.v]=[])).push(r);BYID[r.id]=r;});{const have=new Set(REL.map(catOf));CATS=['HD','UHD','SD','WEB-DL','X265','Foreign','Anime','Sport','Documentary','Other'].filter(c=>have.has(c));}
+  // language menus list what is present, most releases first, as the TV wall's Language menu does; Audio ends with Unknown
+  {const byCount=vals=>{const c={};vals.forEach(v=>{if(v)c[v]=(c[v]||0)+1;});return Object.keys(c).sort((a,b)=>c[b]-c[a]||a.localeCompare(b));};AUDS=[...byCount(REL.flatMap(r=>ALANG[r.id]||[])),'Unknown'];TLANGS=byCount(REL.filter(r=>r.v).map(r=>M(r.v).lang));}NOW=Math.max(...REL.map(r=>r.t));NOWALL=Math.max(NOW,...REL.map(r=>X(r).added));{const r=store.get('rsort','posted_desc'),ss=store.get('ssort','recent');if(['posted_desc','posted_asc','added_desc','added_asc'].includes(r))state.rsort=r;if(['recent','newsite','prem','az'].includes(ss))state.ssort=ss;}
   lastHash=location.hash;route();window.READY=true;});
 </script>
 </body>

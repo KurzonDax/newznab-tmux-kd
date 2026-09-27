@@ -8,9 +8,10 @@ reference for the approved screen: where this document and the prototype disagre
 something looks or behaves, the prototype wins. A sanitized copy of it is added to this folder
 when the Movies design is complete.
 
-Status: the **Movie releases** screen is **approved** (2026-09-26). The Films wall, the film
-page and the release details page are **not designed yet**; the decisions already taken for
-them are in section 6. Nothing in the application has been changed.
+Status: the **Movie releases** screen and the **Films wall** are **approved** (2026-09-26; the
+filter bar of section 5.1 was approved later the same day, "Okay, I am all right with this").
+The film page and the release details page are **not designed yet**; the decisions already taken
+for them are in section 6. Nothing in the application has been changed.
 
 ---
 
@@ -19,7 +20,7 @@ them are in section 6. Nothing in the application has been changed.
 | Screen | Route in the prototype | Replaces | Status |
 |---|---|---|---|
 | Movie releases (list) | `#/`, `#/p/N` | today's Movies Table and Cards views | approved |
-| Films (discovery wall) | `#/films` | today's Movies Covers view | placeholder |
+| Films (discovery wall) | `#/films`, `#/films/p/N` | today's Movies Covers view | approved |
 | Film page | `#/film/<id>` | today's movie title page | placeholder |
 | Release details (Movies) | `#/release/<id>` | today's details page, for movie releases | placeholder |
 
@@ -104,55 +105,75 @@ approved the final version with the rest of the day's changes ("I like all of it
   **sort** select with TV's four orders: `Posted: newest first` (default), `Posted: oldest
   first`, `Added: newest first`, `Added: oldest first`. The sort is remembered per user. Changing
   it returns to page 1.
-- Second row: **seven filter menus**, always in this order: **Category, Resolution, Source,
-  Genre, Year, Score, Certificate** (US certificate), then **Clear all**. TV had three menus in
-  the title row; seven need their own row.
-  - Every menu button has **one fixed width** whatever is chosen, so the row never changes
-    size or wraps. The width follows the window between 128 and 183 px; the seven fit one row
-    at 1440 px. A long value is cut with an ellipsis and the button's tooltip names every
-    chosen value.
-  - A button reads `Genre: any` when nothing is chosen, `Genre: Horror` for one value and
-    `Genre: 3 chosen` for several (the TV wall's style). A set filter turns coral.
-  - **Clear all** clears every menu. It is hidden when nothing is set but **keeps its place**
-    (a fixed 64 px slot), so nothing moves.
-  - Menus combine with AND; values inside one menu with OR.
+- Under it, **the filter bar**: the filters of one kind in one continuous rounded bar (the pattern
+  of a booking site's search bar). The **release bar** holds **Category, Resolution, Source, Audio,
+  Completion**; the **film bar** holds **Genre, Year, Score, MPAA Rating, Language**. The two bars
+  share the row equally; all ten cells have one width, divided by hairlines. His reasons: the
+  earlier row of separate dropdown pills "just blend together into this homogenous blob"; the
+  bar was the last of several designs tried (Appendix B).
+  - Each cell shows the **filter's name small above its value**: `Genre` over `any`, `Horror`,
+    `2 chosen` (several values; the tooltip names them all). Names are **white** on the dark
+    theme and ink on the light ("They're just lost in that gray-on-gray scheme"); an unset value
+    reads `any` in the muted text.
+  - The **open cell lifts out of the bar** (a lighter ground than the bar and a shadow, in both
+    themes) and the hairlines beside it hide. A **set filter** is marked by a **coral line under
+    its value**; a cell is never filled coral.
+  - Menus open under their cell. **Lists over 10 options** (Category, Genre, Audio, Language)
+    open with a **search field at the top** (magnifier inside the field, focus in it) and their
+    options **scroll inside the menu**: however many genres are added, the page never grows ("That
+    will just increase"). The search narrows the list in place, survives ticking, and is
+    **forgotten when the menu closes**. A menu opens scrolled to its first ticked option, and a
+    long list's last visible row is cut in half so it visibly continues. Nothing in a menu stays
+    expanded after it closes.
   - Checking a value keeps the menu open and keeps its scroll position; keyboard focus stays on
-    the ticked item. Long menus scroll inside themselves and stay inside the window.
-  - Any change of filter returns to page 1.
-
-### 5.2 The seven menus
+    the ticked item. Menus close on Escape, a click outside and focus leaving.
+  - Menus combine with AND; values inside one menu with OR. Any change of filter returns to
+    page 1. **Nothing moves** when a filter is set or cleared.
+  - Measured: cells 117 / 126 / 139 px at 1280 / 1366 / 1600; no value is cut short with the
+    filters set, `Completion` reading `95%+` (not "95% or more") so it fits at 1280.
+  - **Clear all** sits on the `Showing …` line (5.3), not in the bar, so both bars run the full
+    width.
 
 Each checkbox menu starts with its "Any …" item (`Any category`, `Any resolution`, `Any
-source`, `Any genre`, `Any score`, `Any certificate`), which clears that menu.
+source`, `Any audio`, `Any genre`, `Any score`, `Any MPAA rating`, `Any language`), which clears
+that menu.
 
-| Menu | Kind | Options |
-|---|---|---|
-| Category | checkboxes | the Movies sub-categories the user may see (HD, UHD, SD, BluRay, DVD, 3D, X265, Foreign, Other). This menu is how a user leaves out Movies > Other (section 6.1). |
-| Resolution | checkboxes | 4K, 1080p, 720p, SD, Unknown, each shown as its resolution chip |
-| Source | checkboxes | WEB, Blu-ray, DVD, HDTV, Unknown. A remux is listed under Blu-ray and reads "Remux" in the Source column, as on TV. |
-| Genre | checkboxes | the film genres, A to Z. A dropdown with checkboxes, the TV design (his specification). |
-| Year | **one choice** | see below |
-| Score | checkboxes | `9+`, `8–8.9`, `7–7.9`, `6–6.9`, `5–5.9`, `Under 5`, `Too few votes` |
-| Certificate | checkboxes | the US certificates present, in this order: G, PG, PG-13, R, NC-17, NR (NR included when stored) |
+| Bar | Filter | Kind | Options |
+|---|---|---|---|
+| release | Category | checkboxes, search | the Movies sub-categories the user may see (HD, UHD, SD, BluRay, DVD, 3D, X265, Foreign, Other). This menu is how a user leaves out Movies > Other (section 6.1). |
+| release | Resolution | checkboxes | 4K, 1080p, 720p, SD, Unknown, each shown as its resolution chip |
+| release | Source | checkboxes | WEB, Blu-ray, DVD, HDTV, Unknown. A remux is listed under Blu-ray and reads "Remux" in the Source column, as on TV. |
+| release | **Audio** | checkboxes, search | the languages of the release's own audio tracks (media info), most releases first, then `Unknown` (no language known). A multi-dub matches each of its languages. |
+| release | **Completion** | **one choice** | radio items in this order: `Any completion`, `100% only`, `95% or more`; the cell reads `100%` or `95%+`; picking closes the menu |
+| film | Genre | checkboxes, search | the film genres, A to Z |
+| film | Year | decades **multi-select** + a range | see below |
+| film | Score | checkboxes | `9+`, `8–8.9`, `7–7.9`, `6–6.9`, `5–5.9`, `Under 5`, `Too few votes` |
+| film | **MPAA Rating** | checkboxes | the US ratings present, in this order: G, PG, PG-13, R, NC-17, NR (NR included when stored). He renamed it: "No one knows what a certificate is." |
+| film | **Language** | checkboxes, search | the film's **original** language, most releases first |
 
-**Year** is the current site's year picker in menu form (his specification: decades at the top,
-a custom from–to range, then single years; `resources/views/components/year-picker.blade.php:21-37`).
-It is **not** a multi-select: its items are radio items, one choice at a time. Top to bottom:
+**Audio and Language** (his request, 2026-09-26, "a language filter"; he chose **both meanings**):
+Audio is what you hear in that release (a Hindi dub of an English film is Hindi); Language is the
+film's own language. Names drop the region (`English (US)`, `en`, `en-US` all read English;
+Mandarin reads Chinese); codes that are not a language (`zxx` no speech, `mul`, `und`,
+`qaa`–`qtz`) are dropped; a value not in the name table is kept as written (no junk filtering).
 
-1. `Any year` (clears the year).
-2. Heading "Decades": 2020s, 2010s, … 1900s. Picking one closes the menu; the button reads
-   `Year: 1990s`.
-3. Heading "Range": two four-digit fields, `From` `to` `To`, and **Apply**. The fields accept
-   digits only. **Apply is disabled until both fields hold four digits.** A range outside
-   1900 to the current year, or with the later year first, is refused: the error **"Years run
-   1900–2026, earliest first"** (the current year in place of 2026) **replaces the "Range"
-   heading**, so nothing below moves, and focus returns to `From`. A valid range closes the
-   menu and the button reads `Year: 1980–1989`; the same year twice is a single year.
-4. Heading "Years": every single year from the current year back to 1900, three to a row.
-   Picking one closes the menu; the button reads `Year: 2024`.
+**Completion** (his request: "only show releases that are 95% or more complete", then "an option
+for 100% only", and the order Any / 100% / 95%): it filters `releases.completion`, which is always
+recorded (`DATA-NOTES.md` section 9).
 
-**Score** (his pick of the recommended design, 2026-09-26): bands of the stored score, plus
-**Too few votes**.
+**Year** (his rulings of 2026-09-26): **decades are multi-select tick boxes** ("I want to be able to
+select more than one decade"): `Any year`, then the decades 2020s … 1900s in three columns. Ticking
+keeps the menu open; a film matches any ticked decade; the cell reads `1990s` for one and `2
+chosen` for several. Under them the **Range**: two four-digit fields, `From` `to` `To`, and
+**Apply**. Apply is enabled once **From** holds four digits; **To is optional: From alone picks
+that one year** ("If the user wants a specific year, that should be able to just fill in the from
+field"). There is **no list of single years**. A range outside 1900 to the current year, or with
+the later year first, is refused: the error **"Years run 1900–2026, earliest first"** (the current
+year in place of 2026) **replaces the "Range" heading**, so nothing below moves, and focus returns
+to `From`. A valid range closes the menu and reads `1980–1989`; **a range replaces the ticked
+decades, and ticking a decade replaces a range**.
+
+**Score** (his pick of the recommended design): bands of the stored score, plus **Too few votes**.
 
 - A film with **fewer than 10 TMDB votes, or no score**, is in "Too few votes", not in a band.
   Reason: in a sample of 8,959 films, 106 of the 107 films at 9+ had under 10 votes
@@ -160,13 +181,16 @@ It is **not** a multi-select: its items are radio items, one choice at a time. T
 - The vote count is stored going forward only (section 7). **Films saved before the count is
   stored stay in their score band** until their next release brings a count.
 
-**Genre, Year, Score and Certificate describe the film.** A release with no matched film is
-excluded while any of them is set; Category, Resolution and Source apply to every release.
+**Genre, Year, Score, MPAA Rating and Language describe the film.** A release with no matched
+film is excluded while any of them is set; Category, Resolution, Source, Audio and Completion
+apply to every release.
 
 ### 5.3 The pager line
 
 Under the header, always present and never moving: `Showing 101–150 of 8,249 releases` ·
-previous · `Page 3 of 165` · next. One page reads `Page 1 of 1` with both arrows greyed. No
+**Clear all** (a fixed slot left of the page arrows, hidden but keeping its place when nothing is
+set; the page text beside it has a fixed width so nothing moves) · previous · `Page 3 of 165` ·
+next. One page reads `Page 1 of 1` with both arrows greyed. No
 results reads `Showing 0 releases`, `Page 1 of 1`, and under it "No releases match" followed by
 the filters in words, for example `No releases match HD · 1990s · score 9+ · rated R.` The full
 pager with "Go to page" is at the bottom. 50 releases per page; the page number is in the URL.
@@ -266,7 +290,50 @@ film page; a person opens the Films wall filtered to that person's films.
 
 ---
 
-## 6. Decisions for the screens still to design
+## 5A. Films wall (APPROVED 2026-09-26)
+
+Serves "find something new". Shaped with the maintainer on 2026-09-26 (his answers below) and
+built to that brief; his verdict on the whole: "I think it's okay." Route `#/films`, pages
+`#/films/p/N`.
+
+### 5A.1 Header and filters
+
+- Title row: **"Films"**, the **Releases / Films** switch (Films current, coral), "Search films or
+  actors", and at the right the **sort**: **Newest releases first** (default), **Newest to the site
+  first**, **Newest films first**, **A to Z**. Remembered per user; changing it returns to page 1.
+- Under it, the **film bar** of 5.1 (Genre, Year, Score, MPAA Rating, Language), each cell as wide
+  as a cell on the Movie releases list; the wall's filters are its own (not shared with the list).
+  Then **Clear all** in a fixed slot and, when a person is picked, a removable coral chip **"Films
+  with <name>"** (a person can be a director or an actor). Picking a person in the search, or on a
+  film page, opens the wall filtered to that person.
+- The `Showing 1–42 of N films` line and the pagers, **42 films a page**; one film reads `Showing 1
+  film`; no match reads `Showing 0 films` and "No films match" with the filters in words.
+
+### 5A.2 Which films, and the sorts
+
+- The wall lists every film with **at least one release the viewer may see**.
+- **Newest releases first** orders by the film's latest `releases.postdate`; **Newest to the site
+  first** by its earliest `releases.adddate` (the same aggregates as the built TV wall,
+  `TvShowWall`); **Newest films first** by the film's year; **A to Z** by film title.
+
+### 5A.3 The tile
+
+His answer to "which facts should the grey lines show": **Year · two genres**, **Score ·
+certificate**, **number of releases**.
+
+- The poster (2:3); a film with no artwork gets the name card with its **matched title and year**
+  (5.6). The tile opens the **film page**. **No buttons on tiles** (as the TV wall).
+- The **title**, bold, at most two lines.
+- Grey line 1: `1994 · Drama, Comedy`: two genres; **a genre the Genre filter matched comes
+  first**, so the tile shows why it is there; a genre name never breaks across lines.
+- Grey line 2: `8.5 · PG-13`, the score **as stored** (whole numbers stay whole: `7`) and the MPAA
+  rating; a film with under 10 votes or no score reads `Too few votes`, as the Score filter bands
+  it; no rating shows the score alone. He chose this over `Score 8.5 · PG-13`.
+- Grey line 3: **`3 releases`** (the viewer's visible releases of the film). He chose a grey line
+  over a badge on the poster.
+- Tiles never rank or feature films by release count; there is no count sort.
+
+
 
 Taken on 2026-09-26, before those screens are prototyped. They are not asked again.
 
@@ -289,18 +356,13 @@ Taken on 2026-09-26, before those screens are prototyped. They are not asked aga
 
 ### 6.2 Filters and their split
 
-- **Movie releases: 7 menus**: Category, Resolution, Source, Genre, Year, Score, US certificate.
-- **Films wall: 4 menus**: Genre, Year, Score, US certificate. No Resolution, Source or
-  Category, as on the TV wall.
-- The same components on both screens: Genre, Score and Certificate multi-select checkbox menus;
-  Year the one-choice menu of 5.2.
+Settled and approved: the Movie releases list has the ten filters of 5.2 in two bars; the Films
+wall has the film bar's five (Genre, Year, Score, MPAA Rating, Language), as TV's wall has no
+Resolution, Source or Category.
 
 ### 6.3 Films wall
 
-- **Sorts: TV's four, adapted**: Newest releases first (default), Newest to the site first,
-  Newest films first (the film's year), A to Z by film title. **No score sort, no oldest-first.**
-- The Releases / Films switch and the "Search films or actors" field, as on the list.
-- Picking a person (from search or a film page) filters the wall to that person's films.
+Approved: section 5A.
 
 ### 6.4 Film page
 
@@ -320,7 +382,7 @@ Taken on 2026-09-26, before those screens are prototyped. They are not asked aga
 
 - **Plan stated to him, not objected to**: the approved TV details page adapted. The heading is
   the film title and year, with the release name as the bold second line; the same tabs; an
-  **"About the film"** aside (score, certificate, genres, Directed by, Starring, a link to the
+  **"About the film"** aside (score, MPAA rating, genres, Directed by, Starring, a link to the
   film page); **"All N releases of this film"** underneath.
 - **Files (n) and Comments (n) tabs are required.** The release list has no Files column, so the
   file list is reached from the details page only.
@@ -345,8 +407,17 @@ specified.
 
 No schema is proposed yet (`DATA-NOTES.md`). What the approved decisions require:
 
-- **US certificate**: stored **going forward**, as films are saved. No one-off backfill of
-  existing films.
+- **US certificate** (shown as **MPAA Rating**): stored **going forward**, as films are saved. No
+  one-off backfill of existing films.
+- **The film's original language** (the Language filter): TMDB gives it for every film sampled;
+  the site stores none today (`movieinfo.language` is empty everywhere). Stored **going forward**
+  with the certificate; the filter fills as films are saved again.
+- **The release's audio languages** (the Audio filter, and the same filter on TV): today in
+  `media_info_tracks.language` (codes such as `en`, `pt-BR`) and the legacy `audio_data.audiolanguage`
+  (names such as `English (US)`), on 88.5% of named movie releases and 88.7% of TV releases
+  (`DATA-NOTES.md` section 8). A normalized, indexed form of the language per release is decided in
+  the data contract; the name rule is 5.2.
+- **Completion** (the Completion filter): `releases.completion`, already stored for every release.
 - **TMDB vote count**: stored **going forward**. No backfill. It drives "Too few votes" (5.2).
 - **Score**: the stored `movieinfo.rating` stays the score. It is the first non-empty of the
   IMDb, TMDB, Trakt and OMDb values (`app/Services/MovieService.php:478`), and its source is not
@@ -367,8 +438,7 @@ No schema is proposed yet (`DATA-NOTES.md`). What the approved decisions require
 
 ## 8. Open items
 
-1. **Films wall, film page and release details** are still to be prototyped and approved, in
-   that order.
+1. **Film page and release details** are still to be prototyped and approved, in that order.
 2. **Storage** (the columns and tables for section 7) is decided after those screens are
    designed, on measured queries, as TV's `DATA-CONTRACT.md` was.
 3. **The people key** for films on the shared people tables (section 7).
@@ -379,10 +449,12 @@ No schema is proposed yet (`DATA-NOTES.md`). What the approved decisions require
 6. **The IMDb score source** (section 7): a separate piece of work.
 7. **Build issues**: when the Movies build issues are filed, they include build issues for the
    2026-09-26 changes to the TV releases list (TV is already built).
-8. **Reviewer calls not applied** to the approved screen: decades as a three-column grid so the
-   range and single years show when the Year menu opens; silently swapping a backwards range
-   instead of refusing it; the error red sitting close to coral. The approved screen stands as
-   built.
+8. **Reviewer calls not applied** to the approved screen: silently swapping a backwards range
+   instead of refusing it; the error red sitting close to coral; `1080p +1` instead of `2 chosen`
+   in a cell. (Decades now are a three-column grid, with the filter bar.)
+9. **Every list and wall filter is proven on the full catalogue** in the data contract before a
+   build issue is filed: the Audio and Language filters, Completion, the multi-decade Year, and the
+   Films wall's visibility rule, sorts and release counts.
 
 ---
 
@@ -394,18 +466,21 @@ No schema is proposed yet (`DATA-NOTES.md`). What the approved decisions require
 - The film line and the placeholder are two different links: the film line opens the **film
   page**, the poster or placeholder opens the **release's details**.
 - A release with no matched film: no film line, no Watch button (Cart alone under Download), a
-  placeholder, never part of a batch, and excluded while Genre, Year, Score or Certificate is
-  set.
+  placeholder, never part of a batch, and excluded while Genre, Year, Score, MPAA Rating or
+  Language is set.
 - The Score band "Too few votes" holds films with under 10 votes **or no score**. A film whose
   vote count is not stored yet is banded by its score alone.
-- The Year menu is the only one-choice menu; its button still has the fixed width of the others.
-  The range error replaces the "Range" heading in place.
+- Completion is the only one-choice filter. Year's decades are multi-select; a range replaces
+  them. The range error replaces the "Range" heading in place.
 - Today's year code accepts years up to next year (`app/Support/YearRange.php:30`); the
   approved menu and its range check stop at the current year.
-- The Certificate menu lists only certificates present in the data, in the fixed order G, PG,
-  PG-13, R, NC-17, NR.
-- A menu button's tooltip names every chosen value, because the fixed width can cut a long one
-  (for example `Genre: Science Fiction` at 1600 px).
+- The MPAA Rating menu lists only ratings present in the data, in the fixed order G, PG, PG-13, R,
+  NC-17, NR. Its data is TMDB's US certificate (the label changed, not the data).
+- A filter cell's tooltip names every chosen value (`Year: 2010s, 1990s`), because a cell shows
+  `2 chosen` for several and can cut a long single value.
+- Search inside a menu is per menu and forgotten on close; it never filters the list itself.
+- The Films wall's counts and "newest" dates come from all of a film's visible releases, not from
+  the page of releases being shown.
 - The date column's heading and values follow the sort (Posted or Added).
 - Group and poster chips link to the existing all-categories lists, same tab.
 - Pages are 50 releases. The page number is in the URL so Back works.
@@ -418,9 +493,18 @@ No schema is proposed yet (`DATA-NOTES.md`). What the approved decisions require
   wall.
 - The thumbnails toggle, the **Cards** view and the **Covers** view.
 - A text search inside the list.
-- The first filter proposal (Genre, a decades-only menu, "8+, 7+, 6+" scores, a language
-  filter).
-- Year as a multi-select dropdown.
+- The first filter proposal as a whole (Genre, a decades-only menu, "8+, 7+, 6+" scores, a
+  language filter). A language filter came back later at his request, as Audio and Language (5.2).
+- A list of single years in the Year picker (a year is typed in From). Year as one choice only
+  (decades became multi-select, 5.2).
+- Filter layouts tried on 2026-09-26 before the filter bar: nine identical grey dropdown pills
+  ("homogenous blob"); a hue per filter, with or without labels above values ("gaudy"); a sidebar of filters beside the list (it squeezes the rows: 11 of 50 rows kept their
+  chips on one line at 1366 px); one all-in-one Filters pane, alone or with chips (its long lists made it "look overbearing", "an unwieldy mess" as genres grow); a "Show all" expander that
+  stays open (he rejected it outright); grey grouped panels of pills (kept only as the fallback:
+  "unpolished").
+- A **Certificate** label (it reads **MPAA Rating**).
+- On the Films wall: the release count as a badge on the poster; `Score 8.5 · PG-13` (the bare
+  score was kept); buttons on tiles.
 - Year and Genre on the Films wall only.
 - A film page grouped by resolution or source.
 - The "On your My Movies for" line with Edit and Remove.
