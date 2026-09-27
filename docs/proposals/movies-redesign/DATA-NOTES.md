@@ -200,3 +200,51 @@ copy with an invented dataset is added when the Movies design is complete. The r
 - 224 of the 2,725 releases without a film have a name that states `Title.Year.quality` and get
   a name card (`SPEC.md` 5.6);
 - one-line chip rates, measured on this data: 99.9% of rows at 1600 and 1440 px, 98% at 1366 px.
+
+- the Films wall's release counts and sort dates come from **every** movie release of those 2,668
+  films in the catalogue (10,391 releases; the most for one film is 31), not from the 6,000-release
+  slice: `MAX(postdate)` for "Newest releases first" and `MIN(adddate)` for "Newest to the site
+  first", as the built TV wall.
+
+---
+
+## 8. Language data (the Audio and Language filters)
+
+Measured 2026-09-26 on the restored catalogue, and in the TMDB sample.
+
+- **The film's original language**: TMDB gives one for 8,959 of the 8,959 sampled films. The site
+  stores none (`movieinfo.language` is empty on every row).
+- **The release's audio languages** are already stored, in two places: `media_info_tracks`
+  (`type = 'audio'`, `language` as codes: `en` 15,992 tracks, `pt-BR` 3,947, `fr` 3,795, `pt` 3,028,
+  `de` 2,309, …, and 1,969 empty) and the legacy `audio_data.audiolanguage` (names: `English`
+  20,611 on named movie releases, `Hindi` 15,603, `Telugu` 11,625, `Tamil` 9,641, `French` 5,632,
+  `Malayalam` 5,050, …, `English (US)` 770, and 3,634 empty).
+- Releases with at least one known audio language, from either source:
+
+  | Band | Releases | With a language |
+  |---|---|---|
+  | Movies, named sub-categories | 55,936 | 49,514 (88.5%) |
+  | Movies > Other | 519,173 | 0 |
+  | TV | 173,152 | 153,580 (88.7%) |
+
+- A release can carry several (a multi-dub such as Hindi, Tamil and Telugu). Values need one name
+  per language: the rule is `SPEC.md` 5.2 (the base code or name before any region, looked up in
+  a name table; non-language codes dropped; unknown values kept as written).
+
+## 9. Completion
+
+`releases.completion` is recorded on every release (one release in the movie band reads 0).
+
+| Band | Releases | Under 95% | 95–99% | 100% |
+|---|---|---|---|---|
+| Movies, named sub-categories | 55,936 | 1,655 | 1,945 | 52,336 |
+| Movies > Other | 519,173 | 10,028 | 9,331 | 499,813 |
+| TV | 173,152 | 11,592 | 5,344 | 156,216 |
+
+So "95% or more" hides 3% of named movie releases and 7% of TV releases; "100% only" keeps 94%
+and 90%.
+
+## 10. Scores on the Films wall
+
+10,001 of the 15,548 scored films with releases (64%) have a whole-number score (written before
+#109 kept one decimal). Tiles show the score as stored (`7`), by his choice.

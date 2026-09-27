@@ -9,7 +9,8 @@ clickable prototype `tv.html` is the visual and behavioural reference: where thi
 and the prototype disagree about how something looks or behaves, the prototype wins; where
 they disagree about data, storage or queries, this document wins.
 
-Status: every screen below is **approved**. Nothing in the application has been changed yet.
+Status: every screen below is **approved** and was built by #773–#781. Parts marked *Changed 2026-09-26* were approved
+after that build (the filter bar, section 3.0, and the releases-list changes) and are not built yet.
 
 ---
 
@@ -81,15 +82,65 @@ Each is a test, not a preference.
 Each subsection lists what the screen must do. Exact layout, sizes and copy are in the
 prototype (`prototype/tv.html`) and its reference set (`VISUAL-CONTRACT.md`).
 
+### 3.0 The filter bar (all list and wall filters)
+
+*Changed 2026-09-26 on the maintainer's review* ("Okay, I am all right with this"). It replaces
+the rows of separate dropdown pills on the TV releases list and the TV shows wall, and is the
+same component the Movies screens use.
+
+- The filters of one kind sit in **one continuous rounded bar**: on the releases list a
+  **release bar** (Category, Resolution, Source, Audio, Completion) and a **show bar** (Genre,
+  Premiered, Language, Network, Rating, Status); on the wall the show bar alone. Every cell has
+  the **same width** (the list's eleven cells share the row; the wall's six are as wide as the
+  list's). Cells are divided by hairlines.
+- Each cell shows the **filter's name small above its value**: `Genre` over `any`, `Drama`,
+  `2 chosen` (several values; the tooltip names them all). The names are **white** on the dark
+  theme and ink on the light ("They're just lost in that gray-on-gray scheme"); an unset
+  value reads `any` in the muted text.
+- The **open cell lifts out of the bar** (a lighter ground than the bar and a shadow, in both
+  themes) and the hairlines beside it hide. A **set filter** is marked by a **coral line under
+  its value**; the cell is never filled coral.
+- Menus open under their cell. **Lists over 10 options** (Category, Audio, Genre, Network,
+  Language when long) open with a **search field at the top** (the magnifier inside the field,
+  focus in it) and the options **scroll inside the menu** under it; the search narrows the list
+  in place, survives ticking, and is **forgotten when the menu closes**. A menu opens scrolled
+  to its first ticked option, and a long list's last visible row is cut in half so it visibly
+  continues. Nothing in a menu stays expanded after it closes.
+- Multi-select menus (everything except Completion) keep the menu open while ticking, as rule 10.
+- **Completion** (his request: "only show releases that are 95% or more complete", and "an
+  option for 100% only"): one choice, radio items in this order: **Any completion**, **100%
+  only**, **95% or more**; the cell reads `100%` or `95%+`; picking closes the menu. It filters
+  `releases.completion` (always recorded: on the production copy, 11,592 of 173,152 TV releases
+  are under 95% and 156,216 are at 100%). This brings back the minimum-completion control that
+  was dropped on 2026-09-21 (appendix A), by his decision.
+- **Clear all** sits on the `Showing …` line of the releases list, in a fixed slot left of the
+  page arrows, hidden (not removed) when nothing is set; the page text there has a fixed width
+  so nothing moves. On the wall it follows the show bar, then the removable `Starring <name>`
+  chip.
+- Show filters on the releases list are the **list's own** (not shared with the wall). While any
+  show filter is set, releases with no matched show are left out; Category, Resolution, Source,
+  Audio and Completion apply to every release.
+- **Audio** is the release's own audio languages (media info; a multi-dub matches each; releases
+  with none read `Unknown`); **Language** is the show's original language. Language names drop
+  the region (`English (US)`, `en`, `en-US` → English; Mandarin reads Chinese); codes that are not
+  a language (`zxx`, `mul`, `und`, `qaa`–`qtz`) are dropped; menus list the languages present,
+  most releases first, Audio ending with `Unknown`.
+- Nothing moves when a filter is set or cleared. Measured: the eleven list cells are 107 / 114 /
+  127 px at 1280 / 1366 / 1600; with long values set, a long network name or `Portuguese` is cut
+  with an ellipsis at 1280–1366 and named in the tooltip ("I think it's okay").
+
 ### 3.1 TV releases
 
-- Header: title "TV releases", Releases / Shows switch, **Category** (the TV sub-categories the
-  user may see: HD, UHD, SD, Foreign, …; Releases list only), **Resolution** and **Source**
-  multi-select checkbox menus (OR within a menu, AND between them; button reads
-  `Resolution: 4K, 1080p` and turns coral when set; "Any resolution" clears), **Sort** with
-  four orders: Posted newest (default), Posted oldest, Added newest, Added oldest. The date
-  column follows the sort. The chosen sort is remembered per user. Changing a filter or the
-  sort returns to page 1.
+- Header: title "TV releases", Releases / Shows switch, the "Search shows or actors" field and,
+  at the right, **Sort** with four orders: Posted newest (default), Posted oldest, Added newest,
+  Added oldest. The date column follows the sort. The chosen sort is remembered per user.
+- Under it, **the filter bar** (3.0): the release bar **Category** (the TV sub-categories the user
+  may see: HD, UHD, SD, Foreign, …), **Resolution**, **Source**, **Audio**, **Completion**, and the
+  show bar **Genre**, **Premiered**, **Language**, **Network**, **Rating**, **Status** (the TV shows
+  wall's six; "why can't we bring all of the filters that are on the TV shows wall page over to
+  it?"). OR within a menu, AND between them. Changing a filter or the sort returns to page 1.
+  *Changed 2026-09-26 on the maintainer's review* (was Category, Resolution and Source menus in
+  the title row).
 - Under the header, always present and never moving: `Showing 101–150 of 8,249 releases` ·
   previous · `Page 3 of 165` · next. One page reads `Page 1 of 1` with both arrows greyed; no
   results reads `Showing 0 releases`. Full pager with "Go to page" at the bottom. 50 per page.
@@ -141,15 +192,13 @@ prototype (`prototype/tv.html`) and its reference set (`VISUAL-CONTRACT.md`).
 ### 3.2 TV shows
 
 - Title "TV shows", the same switch. **No resolution or source filters here.**
-- Six **multi-select** checkbox menus, the same component as Resolution / Source: Genre,
-  Premiered (decade), Language (the show's original language), Network, Rating (US TV
-  Parental Guidelines), Status (Running / Ended). OR within a menu, AND between menus. A set
-  filter turns coral and reads `Genre: Drama` for one value, `Genre: 2 chosen` for several;
-  **every filter button has one fixed width whatever is ticked and "Clear all" keeps its
-  place even when hidden**, so the row never changes size or wraps. Long lists scroll inside
-  the menu; menus stay inside the window and under the sticky top bar.
-- Sort: Newest releases first (default), Newest to the site first, Newest premiere first,
-  A to Z. Remembered per user.
+- Six **multi-select** filters in the show bar (3.0): Genre, Premiered (decade), Language (the
+  show's original language), Network, Rating (US TV Parental Guidelines), Status (Running /
+  Ended). OR within a menu, AND between menus. Clear all and the `Starring <name>` chip follow
+  the bar; Clear all keeps its place when hidden, so nothing moves. *Changed 2026-09-26 on the
+  maintainer's review* (was a row of six separate dropdown pills).
+- Sort, at the right of the title row (as on the Films wall): Newest releases first (default),
+  Newest to the site first, Newest premiere first, A to Z. Remembered per user.
 - The same "Showing 1–42 of N shows" line and pagers. 42 per page.
 - Tile: poster (a title card when there is none), bold title, `Year · Genre, Genre`,
   `Language · Rating`. No release counts, no resolution chips.
@@ -316,6 +365,11 @@ met (the unfiltered count and the exact middle page) are named there with their 
 6. Media info reviewer notes he has not asked for: a few chip hues sit
    close together; the Audio glance can show Atmos beside a non-Atmos track's format.
 7. `PRODUCT.md` sits untracked in the application repository root and needs his decision.
+8. **Storage for the 2026-09-26 filters** is decided with the Movies data contract: the release
+   audio languages behind Audio (today in `media_info_tracks` and the legacy `audio_data`, as
+   names and codes) need a normalized, indexed form, and every list filter (the show filters on
+   the releases list included) is proven on the full catalogue before a build issue is filed.
+   Language, Genre, Network, Rating, Status and Premiered read the show details stored by #775.
 
 ---
 
@@ -346,7 +400,7 @@ Storage and write paths are specified in `DATA-CONTRACT.md`; the numbers below f
    and the old TV Covers / Table / Cards views.
 
 Screens 4–7 can be built against fixtures once 1–3 define the stored shapes. Each screen's
-acceptance test is the matching block of `check.mjs` (225 checks), ported to the
+acceptance test is the matching block of `check.mjs` (248 checks), ported to the
 application's test tooling, plus rule 5 ("nothing shifts") measured, not eyeballed.
 
 ---
@@ -392,9 +446,10 @@ application's test tooling, plus rule 5 ("nothing shifts") measured, not eyeball
   as spaces; tokens are shown upper-case. Names that contain `.rar` or `.partN`, or begin with
   a quote or bracket, never get a card. No match gives the TV-icon tile reading "No poster".
   The prototype's `showName()` is the reference implementation.
-- Of today's browse controls, only the TV sub-category filter carries over. Dropped by decision:
-  minimum completion, "only watching", the in-list text filter, the page-size choice, the Title
-  and Grabs sorts, "only my cart".
+- Of today's browse controls, the TV sub-category filter carries over, and **minimum completion
+  is back** as the Completion filter (3.0, his request of 2026-09-26). Dropped by decision:
+  "only watching", the in-list text filter, the page-size choice, the Title and Grabs sorts,
+  "only my cart".
 - Pages are 50 releases and 42 shows. The page number is in the URL so Back works.
 
 ## Appendix B. Rejected: do not bring back
@@ -413,4 +468,8 @@ a weekly or any scheduled refresh of show details; a TV-only side table of copie
 columns; phone layouts. Added 2026-09-26 on the maintainer's review: Files and Grabs columns
 on the releases list; coral for a pressed Cart / Watch on the releases list; coloured-outline row buttons;
 stripping site tags from, or a letter rule for, the names on no-poster placeholder cards.
+Filter layouts rejected on 2026-09-26 (see the Movies design, `../movies-redesign/SPEC.md`): nine
+identical grey dropdown pills ("homogenous blob"); a hue per filter ("gaudy"); a
+sidebar of filters beside the list; one all-in-one Filters pane (its long lists made it "look overbearing"); a "Show all" that stays expanded after its menu closes; grey grouped panels of
+pills (kept only as the fallback, "unpolished"); a single-year list in the Year picker.
 

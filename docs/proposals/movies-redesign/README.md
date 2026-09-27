@@ -8,13 +8,14 @@ Nothing here is implemented yet.
 
 | Screen | Status |
 |---|---|
-| Movie releases (list) | **Approved** on the maintainer's prototype, 2026-09-26 |
-| Films (discovery wall) | Design not started; a placeholder route in the prototype |
+| Movie releases (list) | **Approved** on the maintainer's prototype, 2026-09-26 (its filter bar approved later the same day) |
+| Films (discovery wall) | **Approved** on the maintainer's prototype, 2026-09-26 |
 | Film page | Design not started; a placeholder route in the prototype |
 | Release details (Movies) | Design not started; a placeholder route in the prototype |
 
-Decisions already taken for the three screens still to design are recorded in `SPEC.md`
-section 6, so they are not asked again.
+Decisions already taken for the two screens still to design are recorded in `SPEC.md`
+section 6, so they are not asked again. The filter bar of `SPEC.md` 5.1 is shared with the TV
+section (`../tv-redesign/SPEC.md` 3.0).
 
 | Read | For |
 |---|---|
