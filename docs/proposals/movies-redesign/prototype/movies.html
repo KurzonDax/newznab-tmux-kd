@@ -222,7 +222,7 @@ input[type=checkbox]{width:16px;height:16px;accent-color:var(--acc);cursor:point
 .dlg.full{width:auto;max-width:calc(100vw - 60px);max-height:calc(100vh - 60px)}
 .dlg.full .pvwrap{cursor:zoom-out;width:auto}
 .dlg.full .pvimg{max-width:none;max-height:none}
-.pvthumb{display:block;margin-bottom:18px;border-radius:12px;overflow:hidden}
+.pvthumb{display:block;margin-bottom:18px;border-radius:12px;overflow:hidden;padding:0}
 .pvthumb img{display:block;max-width:100%;max-height:260px}
 .pvthumb:hover{filter:brightness(1.08)}
 /* release details page */
@@ -323,6 +323,8 @@ dl.vals dd{margin-top:3px;font-weight:500;font-variant-numeric:tabular-nums}
 
 
 .chip.src{background:var(--panel2);border-color:transparent}
+/* the details header's source chip sits in a flex row that stretches it: centre its label (reviewer fix 2026-09-27) */
+.dhead .rchips .chip.src{display:inline-flex;align-items:center}
 .tile .size{margin-top:6px;font-size:12.5px;color:var(--dim);font-variant-numeric:tabular-nums}
 .more{display:block;margin:34px auto 60px;height:46px;padding:0 26px;border-radius:23px;background:var(--panel2);font-weight:700}
 .more:hover{background:var(--line)}
@@ -496,6 +498,34 @@ td.num{text-align:right;white-space:nowrap} th.num{text-align:right}
 .simf{margin:44px 0 80px}
 /* six tiles as wide as the Films wall's tiles at the same window width (seven to a row there) */
 .simf .tiles{grid-template-columns:repeat(6,calc((100% - 108px) / 7));margin-top:14px}
+/* ---- Release details (2026-09-27): the approved TV details page adapted. Header buttons (his pick B): Download coral, Copy link and
+   Cart neutral, Follow film violet as on the film page; a pressed Cart fills green, a pressed Follow violet, never coral (his rule). ---- */
+.mdet .dhead .art .ph{display:grid;place-items:center;align-content:center;gap:8px;width:100%;height:100%;padding:20px 14px;background:var(--panel2);color:var(--dim);text-align:center}
+.mdet .dhead .art .ph .t{font-weight:500;font-size:16px;line-height:1.3;overflow-wrap:anywhere}
+.mdet .dhead .art .ph small{font-size:13px;font-variant-numeric:tabular-nums}
+/* Copy link and Cart neutral at rest; a pressed Cart fills green (hue 150), never coral */
+.btn.sec.nt.ct[aria-pressed=true]{background:oklch(0.72 0.15 var(--b-ct));color:oklch(0.18 0.04 var(--b-ct))}
+.btn.sec.nt.ct[aria-pressed=true]:hover{filter:none;background:oklch(0.78 0.13 var(--b-ct))}
+:root[data-theme=light] .btn.sec.nt.ct[aria-pressed=true]{background:oklch(0.50 0.15 var(--b-ct));color:#fff}
+:root[data-theme=light] .btn.sec.nt.ct[aria-pressed=true]:hover{background:oklch(0.44 0.15 var(--b-ct))}
+.btn.sec.nt .wl{display:grid}.btn.sec.nt .wl>span{grid-area:1/1}.btn.sec.nt .wl>span[hidden]{display:block;visibility:hidden}
+.btn.sec.nt:focus-visible{outline-color:var(--ink);outline-offset:1px}
+/* a shorter label (In cart, Follow film) keeps its gap to the icon inside the reserved width (details and film page) */
+.dacts .btn .wl{text-align:start}
+.mdet .epbox .tagl{font-size:16px;font-weight:600}
+.mdet .epbox .plot{color:var(--dim);font-size:14px;line-height:1.55}
+.predb{margin-top:30px}
+.predb h3{font:800 15px/1.2 Manrope,sans-serif;margin-bottom:6px}
+.predb .wide{grid-column:1/-1}.predb dd{overflow-wrap:anywhere}
+.aboutshow .starring+.starring{margin-top:2px}
+.aboutshow .tags+.starring{margin-top:14px}
+.mdet .sibs{margin:0 0 44px;scroll-margin-top:84px}
+.mdet .sibs .pager.slim{margin-top:6px}
+.mdet .sibs table.rt{margin-top:6px}
+.mdet .sibs h2{margin-bottom:6px}
+.mdet .simrel{margin-bottom:80px}
+/* the Movie releases list's film line (.showlink), on its own line under the name */
+.rt .showlink{display:block;width:fit-content}
 .loadnote{margin:80px 0;text-align:center;color:var(--dim)}
 /* ---- Films wall (2026-09-26): the TV wall's tile; lines "Year · Genre, Genre", "Score · Certificate", and the release count as a grey line (he chose A) ---- */
 .wall .tiles{margin-top:4px}
@@ -619,7 +649,9 @@ const state={rsort:'posted_desc',page:1,per:50,sel:new Set(),watch:new Set(),res
   // the Films wall keeps its own filters (w-prefixed), its own sort and page
   msq:{},fb:'bar',comp:false,wsort:'recent',wpage:1,wper:42,wgenre:new Set(),wscore:new Set(),wcert:new Set(),wlang:new Set(),wyear:null,wyin:{a:'',b:''},wyerr:'',person:null,
   // the film page: its own Resolution / Source cells (reset when another film opens), its table sort, the demo trailers setting
-  pfilm:null,pres:new Set(),psrc:new Set(),fsort:{k:'posted',dir:-1},fper:50,trailers:false,back:'#/'};
+  pfilm:null,pres:new Set(),psrc:new Set(),fsort:{k:'posted',dir:-1},fper:50,trailers:false,back:'#/',
+  // the release details page: its two tables' sorts (reset when another release opens)
+  drel:null,dsort:{k:'posted',dir:-1},ssort:{k:'posted',dir:-1}};
 const NOCACHE='?t='+Date.now();
 const store={get(k,d){try{return localStorage.getItem('nntmux.movies.'+k)||d;}catch(e){return d;}},set(k,v){try{localStorage.setItem('nntmux.movies.'+k,v);}catch(e){}}};
 let MORE=null,BYFILM={},DB,REL,BYID={},NOW,NOWALL,RX={x:{},summ:{}},MEDIA=null,FILES=null,NFO=null,PV=new Set(),PEOPLE={},CATS=[],GENRES=[],CERTS_ON=[],FSTAT={},WGENRES=[],WCERTS_ON=[],ALANG={},FLANG={},AUDS=[],LANGS_ON=[],WLANGS=[];
@@ -731,7 +763,7 @@ function rowActions(r,stack,noFollow){const inC=state.cart.has(r.id),w=state.wat
   return `<div class="iconacts${stack?' stack':''}"><button class="ia dl" data-nzb="${r.id}" title="Download NZB" aria-label="Download NZB">${ic('down')}</button><button class="ia" data-copynzb="${r.id}" title="Copy NZB link for SABnzbd or NZBGet" aria-label="Copy NZB link for SABnzbd or NZBGet">${ic('link')}</button><button class="ia" data-cart="${r.id}" aria-pressed="${inC}" title="${inC?'In cart · click to remove':'Add to cart'}" aria-label="${inC?'Remove from cart':'Add to cart'}">${ic('cart')}</button>
    ${r.f&&!noFollow?`<button class="ia" data-watch="${r.f}" aria-pressed="${w}" title="${w?'Following this film · click to unfollow':'Follow this film'}" aria-label="${w?'Unfollow film':'Follow film'}">${fic()}</button>`:'<span class="ia slot" aria-hidden="true"></span>'}</div>`;}
 // base '#/' (Movie releases, 50 a page) or '#/films' (the Films wall, 42 a page)
-const pageHref=(base,n)=>n===1?base:(base==='#/'?'#/p/':base+'/p/')+n;
+const pageHref=(base,n)=>/^#\/release\//.test(base)?base+'/p/'+n:n===1?base:(base==='#/'?'#/p/':base+'/p/')+n;
 function pager(page,pages,total,bottom,base='#/',unit='release',per=state.per){const href=n=>pageHref(base,n);
   if(!bottom){const from=total?(page-1)*per+1:0,to=Math.min(page*per,total);
     return `<nav class="pager slim" aria-label="Pages, top"><span class="sum">${total===1&&unit==='film'?'Showing 1 film':total?`Showing ${from.toLocaleString()}–${to.toLocaleString()} of ${total.toLocaleString()} ${unit}${total===1?'':'s'}`:`Showing 0 ${unit}s`}</span>${page>1?`<a href="${href(page-1)}" rel="prev" aria-label="Previous page">${ic('back')}</a>`:`<button class="off" disabled aria-label="Previous page">${ic('back')}</button>`}<span class="pg">Page ${page.toLocaleString()} of ${pages.toLocaleString()}</span>${page<pages?`<a href="${href(page+1)}" rel="next" aria-label="Next page">${ic('open')}</a>`:`<button class="off" disabled aria-label="Next page">${ic('open')}</button>`}</nav>`;}
@@ -857,6 +889,70 @@ function film(id,page){
   if(sim.length)h+=`<section class="simf" aria-labelledby="simh"><h2 id="simh">Similar films</h2><div class="tiles">${sim.map(filmTile).join('')}</div></section>`;
   if(state.sel.size)h+=`<div class="bulk"><span>${state.sel.size} selected</span><button class="btn" data-bulk="nzb">${ic('down')}Download NZBs</button><button class="btn sec" data-bulk="cart">${ic('cart')}Add to cart</button><button class="btn sec" data-bulk="clear">Clear selection</button></div>`;
   $('#app').innerHTML=h+trailerSel();}
+/* ---------- release details (2026-09-27): the approved TV details page adapted (SPEC 6.5). Data: gen-details-data.py → mv/details.json
+   (PreDB; Similar releases = today's first-two-words search, run on production's index, releases of the same film left out:
+   his call 2026-09-27; rows for similar hits the prototype did not hold). ---------- */
+let DET=null;
+const needDetails=()=>DET?Promise.resolve():(needDetails.p||(needDetails.p=needMore().then(()=>fetch('mv/details.json'+NOCACHE)).then(r=>r.json()).then(d=>{
+  d.rel.forEach(a=>{const fm=a[1]&&!FILM(a[1])&&d.mini[a[1]]?a[1]:'';BYID[a[0]]={id:a[0],f:a[1]&&FILM(a[1])?a[1]:'',fm,name:a[2],size:a[3],t:a[4],comp:a[5],grabs:a[6],res:a[7],src:a[8],remux:!!a[9],...parse(a[2])};});
+  Object.assign(RX.x,d.x);Object.assign(RX.summ,d.summ);DET=d;}).catch(e=>{needDetails.p=null;throw e;})));
+const needSimX=()=>needSimX.p||(needSimX.p=fetch('mv/sim-extra.json'+NOCACHE).then(r=>r.json()));
+const fullDate=t=>new Date(t*1000).toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'});
+const detSort=(rs,s)=>{const val={size:r=>r.size,posted:r=>r.t,res:r=>RES.indexOf(r.res)<0?9:RES.indexOf(r.res)}[s.k];return [...rs].sort((a,b)=>(val(a)-val(b))*s.dir||b.t-a.t||b.id-a.id);};
+// the details page's tables: the film page's table without the select box (as on the TV details page), no Grabs, the 2 x 2 buttons
+// without Follow (the header has Follow film). withFilm: the Movie releases list's film line under the name (Similar releases)
+function detTable(rs,key,cur,withFilm){const {k,dir}=state[key];
+  const th=(id,l,num)=>`<th class="${num?'num':''}" ${k===id?`aria-sort="${dir>0?'ascending':'descending'}"`:''}><button data-dsort="${key}:${id}">${l}${ic('sort')}</button></th>`;
+  const fl=r=>{if(!withFilm)return '';const f=F(r),m=!f&&r.fm&&DET.mini[r.fm];return f||m?`<a class="showlink" href="#/film/${r.f||r.fm}" title="Go to the film">${f?filmLine(f):esc(m[0])+(m[1]?' · '+esc(m[1]):'')}</a>`:'';};
+  return `<table class="rt"><colgroup><col><col style="width:100px"><col style="width:80px"><col style="width:82px"><col style="width:64px"><col style="width:124px"><col style="width:96px"></colgroup>
+   <thead><tr><th>Release</th>${th('res','Resolution')}<th>Source</th>${th('size','Size',1)}<th class="num">Files</th>${th('posted','Posted',1)}<th><span class="vh">Actions</span></th></tr></thead><tbody>${rs.map(r=>{const me=r.id===cur;return `<tr${me?' class="me" aria-current="true"':''}>
+   <td class="name">${me?`<span class="rname">${esc(r.name)}</span><div class="this">The release on this page</div>`:`<a class="rname" href="#/release/${r.id}">${esc(r.name)}</a>`}${fl(r)}<div class="rchips">${chips(r)}</div></td>
+   <td>${resChip(r.res)}</td><td class="nw">${srcLabel(r)}</td><td class="num">${gb(r.size)}</td><td class="num"><button class="filesbtn" data-files="${r.id}" title="View file list">${X(r).files}</button></td>
+   <td class="num" title="Posted ${fullDate(r.t)} · Added ${fullDate(X(r).added)}">${shortDate(r.t)}</td><td>${rowActions(r,true,true)}</td></tr>`;}).join('')}</tbody></table>`;}
+function release(id,pg){const h0=location.hash;
+  if(!DET){$('#app').innerHTML='<p class="loadnote">Loading the release…</p>';const h=location.hash;needDetails().then(()=>{if(location.hash===h)route();});return;}
+  const r=BYID[id];if(!r){later('Release details','This release is not in the prototype.');return;}
+  if(r.fm){const m=DET.mini[r.fm];later('Release details',`<b>${esc(r.name)}</b> is a release of ${esc(m[0])}${m[1]?' ('+esc(m[1])+')':''}, a film outside this prototype's data.`);return;}
+  if(state.drel!==id){state.drel=id;state.dsort={k:'posted',dir:-1};state.ssort={k:'posted',dir:-1};}
+  const f=F(r),x=X(r),pre=DET.predb[id];
+  const tabs=[['overview','Overview'],['files','Files ('+x.files+')'],['media','Media info'],['nfo','NFO'],['comments','Comments ('+x.cm+')']];
+  let panel='';
+  if(state.tab==='overview')panel=`${x.pv&&imgFor(r,'preview')?`<button class="pvthumb" data-img="${r.id}" data-kind="preview" aria-label="View preview image"><img src="${imgFor(r,'preview')}" alt="Preview image"></button>`:''}${f&&(f.tag||f.plot)?`<div class="epbox">${f.tag?`<b class="tagl">“${esc(f.tag)}”</b>`:''}${f.plot?`<p class="plot">${esc(f.plot)}</p>`:''}</div>`:''}
+    <dl class="vals">${[['Category',x.cat],['Size',gb(r.size)],['Files',x.files],['Completion',Math.floor(r.comp)+'%'],['Posted',fullDate(r.t)],['Added',fullDate(x.added)],['Grabs',r.grabs],['Group',x.group||'—'],['Poster',x.poster||'—'],['Password status',!x.pwChecked?'Not checked':x.pw?'Detected':'None detected']].map(([k,v])=>`<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
+    ${pre?`<section class="predb" aria-labelledby="predbh"><h3 id="predbh">PreDB</h3><dl class="vals">${[['Title',pre[0],1],['Source',pre[1]],['Pre date',pre[2]?fullDate(Date.parse(pre[2].replace(' ','T'))/1000):''],['Category',pre[3]]].filter(([,v])=>v).map(([k,v,w])=>`<div${w?' class="wide"':''}><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl></section>`:''}`;
+  else if(state.tab==='files')panel=FILES?filesHtml(r):'<p class="note">Loading the file list…</p>';
+  else if(state.tab==='media')panel=MEDIA?mediaHtml(r):'<p class="note">Loading media info…</p>';
+  else if(state.tab==='nfo')panel=NFO||!x.nfo?nfoHtml(r):'<p class="note">Loading the NFO…</p>';
+  else panel=`<p class="note">${x.cm?x.cm+' comment'+(x.cm===1?'':'s')+' — comment text was not copied into this prototype.':'No comments yet.'}</p>`;
+  const inC=state.cart.has(r.id),w=!!f&&state.watch.has(r.f),person=n=>`<a href="#/films?person=${encodeURIComponent(n)}">${esc(n)}</a>`;
+  const about=!f?'':`<aside class="aboutshow"><h2>About the film</h2>
+   <div class="tags">${f.g.map(g=>`<a class="tag" href="#/films" data-setwf="wgenre" data-v="${esc(g)}">${esc(g)}</a>`).join('')}${[scoreBand(f)==='few'?'Too few votes':'Score '+(+f.sc),f.cert,FLANG[r.f]].filter(Boolean).map(v=>`<span class="tag plain">${esc(v)}</span>`).join('')}</div>
+   ${f.dir.length?`<div class="starring">Directed by ${f.dir.map(person).join(', ')}</div>`:''}${f.cast.length?`<div class="starring">Starring ${f.cast.slice(0,8).map(person).join(', ')}</div>`:''}
+   <a class="toshow" href="#/film/${r.f}">Film page</a></aside>`;
+  let h=`<div class="mdet"><nav class="crumbs" aria-label="Breadcrumb"><a href="#/">Movie releases</a><span>›</span>${f?`<a href="#/film/${r.f}">${esc(f.t)}</a><span>›</span>`:''}<span>${esc(x.cat)}</span></nav>
+  <div class="dhead${f?'':' noshow'}">${f?`<a class="art" href="#/film/${r.f}" tabindex="-1" aria-hidden="true">${f.p?`<img src="mv/posters/${r.f}.webp" alt="">`:`<span class="ph"><span class="t">${esc(f.t)}</span>${f.y?`<small>${esc(f.y)}</small>`:''}</span>`}</a>`:''}<div>
+   ${f?`<h1><a href="#/film/${r.f}">${esc(f.t)}</a>${f.y?' · '+esc(f.y):''}</h1><div class="relname">${esc(r.name)}</div>`:`<h1 class="relonly">${esc(r.name)}</h1>`}
+   <div class="rchips" style="margin-top:12px">${resChip(r.res)}<span class="chip src">${srcLabel(r)}</span>${chips(r)}</div><div class="rchips">${rowOrigin(r)}</div>
+   <div class="dacts"><button class="btn" data-nzb="${r.id}">${ic('down')}Download NZB</button><button class="btn sec nt" data-copynzb="${r.id}">${ic('link')}Copy NZB link</button>
+    <button class="btn sec nt ct" data-cart="${r.id}" aria-pressed="${inC}" title="${inC?'In cart · click to remove':'Add to cart'}">${ic('cart')}<span class="wl"><span${inC?' hidden':''}>Add to cart</span><span${inC?'':' hidden'}>In cart</span></span></button>
+    ${f?`<button class="btn wat" data-watch="${r.f}" aria-pressed="${w}" title="${w?'Following this film · click to unfollow':'Follow this film'}">${fic()}<span class="wl"><span${w?' hidden':''}>Follow film</span><span${w?'':' hidden'}>Following film</span></span></button>`:''}
+    ${f&&state.trailers?`<button class="btn sec" data-trailer="${r.f}">${ic('play')}Trailer</button>`:''}</div></div></div>
+  <div class="dcols${f?'':' noshow'}"><div><div class="tabs" role="tablist">${tabs.map(([k,l])=>`<button role="tab" data-tab="${k}" aria-selected="${state.tab===k}">${l}</button>`).join('')}</div><div class="panel" role="tabpanel" aria-label="${esc(tabs.find(t=>t[0]===state.tab)[1])}"><h2 class="vh">${esc(tabs.find(t=>t[0]===state.tab)[1])}</h2>${panel}</div></div>${about}</div>`;
+  // All N releases of this film: 50 a page; the page holding this release unless the URL names one
+  const all=f?BYFILM[r.f]||[]:[];
+  if(all.length){const rs=detSort(all,state.dsort),per=50,pages=Math.max(1,Math.ceil(rs.length/per)),base='#/release/'+id;
+    let page=pg||Math.floor(Math.max(0,rs.findIndex(o=>o.id===id))/per)+1;page=Math.min(Math.max(1,page),pages);
+    h+=`<section class="sibs" id="sibs" aria-labelledby="sibh"><h2 id="sibh">${all.length>1?'All '+all.length.toLocaleString()+' releases of this film':'The only release of this film'}</h2>
+     ${pages>1?pager(page,pages,rs.length,false,base,'release',per).replace('class="pager slim"','class="pager slim fixed"'):''}${detTable(rs.slice((page-1)*per,page*per),'dsort',id)}${pages>1?pager(page,pages,rs.length,true,base,'release',per):''}</section>`;}
+  const sim=(DET.sim[id]||[]).map(i=>BYID[i]).filter(Boolean);
+  if(sim.length)h+=`<section class="sibs simrel" aria-labelledby="simrh"><h2 id="simrh">Similar releases</h2>${detTable(detSort(sim,state.ssort),'ssort',null,true)}</section>`;
+  $('#app').innerHTML=h+'</div>'+(f?trailerSel():'');
+  // a tab whose data loads late draws again when it arrives, keeping keyboard focus on the tab and the scroll position
+  const again=()=>{if(location.hash!==h0)return;const t=document.activeElement?.dataset?.tab,y=scrollY;release(id,pg);scrollTo(0,y);if(t)$(`[data-tab="${t}"]`)?.focus({preventScroll:true});};
+  if(state.tab==='nfo'&&!NFO&&x.nfo)needNfo().then(again);
+  if(state.tab==='media'&&!MEDIA)needMedia().then(again);
+  if(state.tab==='files'&&!FILES)needFiles().then(again);
+}
 /* screens that come next in the design; they exist only so every link goes somewhere */
 function later(title,line){$('#app').innerHTML=`<div class="later"><h1>${esc(title)}</h1><p>${line}</p><p style="margin-top:18px"><a href="#/">Back to Movie releases</a></p></div>`;}
 </script>
@@ -916,19 +1012,19 @@ function openDialog(title,r,body){lastFocus=document.activeElement;$('#modal').i
 function setupImg(){const img=$('#modal .pvimg');if(!img)return;const go=()=>{const b=$('#modal .pvbar [data-full]'),dim=$('#modal .pvdim');if(dim)dim.textContent=img.naturalWidth+' × '+img.naturalHeight;if(b&&img.naturalWidth>img.clientWidth+1){b.hidden=false;$('#modal .dlg').classList.add('canfull');}};img.complete?go():img.addEventListener('load',go);}
 function toggleFull(){const d=$('#modal .dlg'),b=$('#modal .pvbar [data-full]');if(!d||!d.classList.contains('canfull'))return;const on=d.classList.toggle('full');b.setAttribute('aria-pressed',on);b.textContent=on?'Fit to window':'Full size';}
 function closeDialog(){$('#modal').innerHTML='';if(lastFocus&&document.contains(lastFocus))lastFocus.focus();}
-const needMedia=()=>MEDIA?Promise.resolve():Promise.all(['mv/media.json','mv/more-media.json'].map(u=>fetch(u+NOCACHE).then(r=>r.json()))).then(([a,b])=>{MEDIA=Object.assign(a,b);});
-const needNfo=()=>NFO?Promise.resolve():Promise.all(['mv/nfo.json','mv/more-nfo.json'].map(u=>fetch(u+NOCACHE).then(r=>r.json()))).then(([a,b])=>{NFO=Object.assign(a,b);});
+const needMedia=()=>MEDIA?Promise.resolve():Promise.all([...['mv/media.json','mv/more-media.json'].map(u=>fetch(u+NOCACHE).then(r=>r.json())),needSimX()]).then(([a,b,x])=>{MEDIA=Object.assign(a,b,x.media);});
+const needNfo=()=>NFO?Promise.resolve():Promise.all([...['mv/nfo.json','mv/more-nfo.json'].map(u=>fetch(u+NOCACHE).then(r=>r.json())),needSimX()]).then(([a,b,x])=>{NFO=Object.assign(a,b,x.nfo);});
 const imgFor=(r,kind)=>{const g=X(r).guid,full=kind+'/'+g+'.webp',th=kind+'/'+g+'_thumb.webp';return PV.has(full)?'mv/previews/'+full:PV.has(th)?'mv/previews/'+th:null;};
 const nfoHtml=r=>NFO&&NFO[r.id]?`<pre class="nfo">${esc(NFO[r.id])}</pre>`:`<p class="note" style="padding:18px 0">${X(r).nfo?'This release has an NFO, but its text was not found in the copy of the data.':'No NFO was posted with this release.'}</p>`;
 const imgHtml=(r,kind)=>{const u=imgFor(r,kind);return u?`<div class="pvbar"><span class="pvdim"></span><button class="btn sec" data-full aria-pressed="false" hidden>Full size</button></div><button class="pvwrap" data-full tabindex="-1" aria-hidden="true"><img class="pvimg" src="${u}" alt="${kind==='sample'?'Sample':'Preview'} image of ${esc(r.name)}"></button>`:`<p class="note" style="padding:18px 0">The ${kind} image for this release was not found on the server.</p>`;};
-const needFiles=()=>FILES?Promise.resolve():Promise.all(['mv/files.json','mv/more-files.json'].map(u=>fetch(u+NOCACHE).then(r=>r.json()))).then(([a,b])=>{FILES=Object.assign(a,b);});
+const needFiles=()=>FILES?Promise.resolve():Promise.all([...['mv/files.json','mv/more-files.json'].map(u=>fetch(u+NOCACHE).then(r=>r.json())),needSimX()]).then(([a,b,x])=>{FILES=Object.assign(a,b,x.files);});
 </script>
 <script>
 /* the Follow button's icon: a bookmark, filled solid while followed (his pick, 2026-09-27; it replaced the eye) */
 const fic=()=>ic('bookmark').replace('class="i"','class="i fill"');
 /* ---------- routing + events ---------- */
 function route(){
-  const rm=location.hash.match(/^#\/release\/(\d+)/);if(rm){if(!MORE){needMore().then(()=>{if(location.hash===rm[0])route();});}const r=BYID[+rm[1]];later('Release details','The details page for <b>'+esc(r?r.name:'this release')+'</b> is designed after the Films wall and the film page.');return;}
+  const rm=location.hash.match(/^#\/release\/(\d+)(?:\/p\/(\d+))?$/);if(rm){release(+rm[1],rm[2]?+rm[2]:0);return;}
   const fm=location.hash.match(/^#\/film\/(\d+)(?:\/p\/(\d+))?$/);if(fm){film(fm[1],+(fm[2]||1));return;}
   const wm=location.hash.match(/^#\/films(?:\/p\/(\d+))?(?:\?person=(.+))?$/);
   if(wm){if(wm[2]!==undefined){state.person=decodeURIComponent(wm[2]);state.wpage=1;history.replaceState(null,'','#/films');}else state.wpage=wm[1]?+wm[1]:1;
@@ -938,7 +1034,8 @@ function firstPage(){if(isWall()){state.wpage=1;if(location.hash!=='#/films')loc
   state.page=1;if(location.hash!=='#/'&&location.hash!=='')location.hash='#/';else route();}
 function rerender(){const y=scrollY;route();scrollTo(0,y);}
 let lastHash='';
-addEventListener('hashchange',()=>{state.dd=null;closeDialog();const fid=h=>(h.match(/^#\/film\/(\d+)/)||[])[1];
+addEventListener('hashchange',()=>{state.dd=null;closeDialog();const fid=h=>(h.match(/^#\/film\/(\d+)/)||[])[1],rid=h=>(h.match(/^#\/release\/(\d+)/)||[])[1];
+  if(rid(location.hash)){const same=rid(location.hash)===rid(lastHash);lastHash=location.hash;if(!same){state.tab='overview';scrollTo(0,0);}route();if(same)$('#sibs')?.scrollIntoView({block:'start'});return;}
   if(fid(location.hash)&&fid(location.hash)===fid(lastHash)){lastHash=location.hash;route();$('#releases')?.scrollIntoView({block:'start'});return;}
   if(fid(location.hash)&&fid(location.hash)!==fid(lastHash))scrollTo(0,0);if(lastHash.split('/').slice(0,2).join('/')!==location.hash.split('/').slice(0,2).join('/')||/^#\/(p\/|$|films($|\/p\/))/.test(location.hash)||location.hash==='')scrollTo(0,0);lastHash=location.hash;route();});
 function afterFilter(){if(isFilm()){const b='#/film/'+state.pfilm;if(location.hash!==b)history.replaceState(null,'','#/film/'+state.pfilm);lastHash='#/film/'+state.pfilm;return;}if(isWall()){state.wpage=1;if(location.hash!=='#/films')history.replaceState(null,'','#/films');return;}
@@ -957,6 +1054,9 @@ document.addEventListener('click',e=>{
     state[p+'yin']={a:'',b:''};clearYerr();afterFilter();route();scrollTo(0,y);placeMenu(mtop);$(`[data-msel="${p}year"] [data-ypick="${yp.dataset.ypick}"]`)?.focus({preventScroll:true});return;}
   if(state.dd&&!e.target.closest('[data-msel]')){state.dd=null;rerender();}
   if(e.target.closest('[data-clearall]')&&isFilm()){state.pres.clear();state.psrc.clear();afterFilter();rerender();$('.pf .mbtn')?.focus({preventScroll:true});return;}
+  const tb=e.target.closest('[data-tab]');if(tb){state.tab=tb.dataset.tab;rerender();$(`[data-tab="${tb.dataset.tab}"]`)?.focus({preventScroll:true});return;}
+  const dso=e.target.closest('[data-dsort]');if(dso){const [key,k]=dso.dataset.dsort.split(':');state[key]=state[key].k===k?{k,dir:-state[key].dir}:{k,dir:-1};
+    if(key==='dsort'&&/\/p\/\d+$/.test(location.hash)){history.replaceState(null,'','#/release/'+state.drel);lastHash=location.hash;}rerender();$(`[data-dsort="${dso.dataset.dsort}"]`)?.focus({preventScroll:true});return;}
   const fso=e.target.closest('[data-fsort]');if(fso){const k=fso.dataset.fsort;state.fsort=state.fsort.k===k?{k,dir:-state.fsort.dir}:{k,dir:-1};afterFilter();rerender();$(`[data-fsort="${k}"]`)?.focus({preventScroll:true});return;}
   const trs=e.target.closest('[data-trailers]');if(trs){state.trailers=trs.dataset.trailers==='on';store.set('trailers',state.trailers?'on':'off');rerender();$(`[data-trailers="${trs.dataset.trailers}"]`)?.focus({preventScroll:true});return;}
   const trl=e.target.closest('[data-trailer]');if(trl){const f=FILM(trl.dataset.trailer);openDialog('Trailer',{name:f.t+(f.y?' ('+f.y+')':'')},`<p class="note" style="padding:18px 0">The trailer plays here, in the site's existing trailer player. This prototype holds no trailers: your instance has none stored and the site setting is off there.</p>`);return;}
