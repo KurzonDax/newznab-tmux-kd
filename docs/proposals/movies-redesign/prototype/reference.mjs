@@ -20,6 +20,10 @@ const states = [
   ['film', `location.hash='#/film/'+${FILM}.film;await new Promise(r=>setTimeout(r,2500))`],
   ['film-source-menu', `location.hash='#/film/'+${FILM}.film;await new Promise(r=>setTimeout(r,2500));state.pres.add('1080p');route();scrollTo(0,420);document.querySelector('[data-ddtoggle=psrc]').click()`],
   ['film-similar', `location.hash='#/film/'+${FILM}.film;await new Promise(r=>setTimeout(r,2500));scrollTo(0,99999)`],
+  ['details', `location.hash='#/release/'+${FILM}.release;await new Promise(r=>setTimeout(r,2500))`], ['details-tables', `location.hash='#/release/'+${FILM}.release;await new Promise(r=>setTimeout(r,2500));scrollTo(0,document.querySelector('#sibs').offsetTop-90)`],
+  ['details-pressed', `location.hash='#/release/'+${FILM}.release;await new Promise(r=>setTimeout(r,2500));document.querySelector('.dacts [data-cart]').click();document.querySelector('.dacts [data-watch]').click()`],
+  ['details-paged-table', `location.hash='#/release/'+${FILM}.bigRelease;await new Promise(r=>setTimeout(r,2500));scrollTo(0,document.querySelector('#sibs').offsetTop-90)`],
+  ['details-predb', `location.hash='#/release/'+${FILM}.predbRelease;await new Promise(r=>setTimeout(r,2500));scrollTo(0,420)`], ['details-no-film', `location.hash='#/release/'+${FILM}.noFilmRelease;await new Promise(r=>setTimeout(r,2500))`],
   ['film-last-page', `location.hash='#/film/'+${FILM}.big+'/p/'+Math.ceil(BYFILM[${FILM}.big]?.length/50||4);await new Promise(r=>setTimeout(r,2500));scrollTo(0,99999)`]];
 for (const theme of ['dark', 'light']) for (const [name, pre] of states) {
   await send('Page.navigate', {url: URL_ + '?r=' + Math.random() + '#/'}); for (let i = 0; i < 60 && !(await js('!!window.READY')); i++) await sleep(200); await sleep(400);

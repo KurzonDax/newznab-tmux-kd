@@ -6,13 +6,14 @@ catalogue. `DATA-NOTES.md` holds the measured facts; `INVENTORY.md` lists every 
 today's movie screens. The maintainer's clickable prototype is the visual and behavioural
 reference for the approved screen: where this document and the prototype disagree about how
 something looks or behaves, the prototype wins. A sanitized copy of it, with an invented dataset
-and placeholder art, is in `prototype/` (the release details route there is still a placeholder).
+and placeholder art, is in `prototype/`.
 
 Status: the **Movie releases** screen and the **Films wall** are **approved** (2026-09-26; the
 filter bar of section 5.1 was approved later the same day, "Okay, I am all right with this").
 The **film page** is **approved** (2026-09-27, section 5B: "Both the movie detail and show detail
-pages look good, I approve them"). The release details page is **not designed yet**; the
-decisions already taken for it are in section 6.5. Nothing in the application has been changed.
+pages look good, I approve them"). The **release details** page is **approved** (2026-09-27, section 5C:
+"I approve the movies details page"). Every Movies screen is now designed. Nothing in the application has
+been changed.
 
 ---
 
@@ -23,7 +24,7 @@ decisions already taken for it are in section 6.5. Nothing in the application ha
 | Movie releases (list) | `#/`, `#/p/N` | today's Movies Table and Cards views | approved |
 | Films (discovery wall) | `#/films`, `#/films/p/N` | today's Movies Covers view | approved |
 | Film page | `#/film/<id>`, `#/film/<id>/p/N` | today's movie title page | approved |
-| Release details (Movies) | `#/release/<id>` | today's details page, for movie releases | placeholder |
+| Release details (Movies) | `#/release/<id>`, `#/release/<id>/p/N` | today's details page, for movie releases | approved |
 
 Out of scope, by his decision: phone layouts (desktop only); the page today called Watchlist (its
 name follows the Follow rule of section 4; the **Follow** button itself is in scope and keeps
@@ -91,8 +92,9 @@ rule 8 (coral):
 - **Download and Copy link have no on/off state.** Download's styling never changes.
 - In every release table (the release lists, the film page, the TV show page and details page), a
   pressed **Cart** or **Follow** button fills solid **in its own hue**, not coral, and so do the
-  film page's and TV show page's **Follow** header buttons (2026-09-27). The TV details page's
-  header buttons keep their approved coral pressed state.
+  film page's and TV show page's **Follow** header buttons (2026-09-27). The **details pages' header
+  buttons** of both sections (5C.1, 2026-09-27): Copy NZB link and Add to cart neutral, a pressed Add to
+  cart green, Follow violet; the TV details page's earlier coral pressed state is gone.
 
 His rulings of 2026-09-27 add three rules for every screen of both sections:
 
@@ -432,6 +434,83 @@ of 6.4 and a brief he confirmed ("Build it"); revised on his review the same day
 
 ---
 
+## 5C. Release details (APPROVED 2026-09-27)
+
+One release. It is the approved TV details page (`../tv-redesign/SPEC.md` 3.4) adapted, as planned in
+6.5; built to that plan and approved: "I approve the movies details page." Route `#/release/<id>`,
+and `#/release/<id>/p/N` for a page of its release table. There is no "Search films or actors" field on
+this page (as on the film page).
+
+### 5C.1 Header
+
+- A breadcrumb: **Movie releases** › the film (its film page) › the category (`Movies > HD`).
+- The poster (190 px, 2:3), opening the film page; a film with no artwork gets the name card with its
+  matched title and year (5.6).
+- The heading **`Title · Year`** (the title links to the film page), then the **release name, bold**, on
+  the second line.
+- The resolution and source chips and the chip line (5.5), then the group and poster outline chips on
+  their own line (same-tab links to the all-categories lists, as on the list).
+- Buttons: **Download NZB** (coral), **Copy NZB link** and **Add to cart** (neutral at rest), **Follow
+  film** (violet with the bookmark, as on the film page), and **Trailer** when the site setting is on.
+  A pressed Add to cart fills **green** (the row Cart's hue) and a followed film fills **violet**: never
+  coral (section 4). Each toggle's two labels share one width (`Add to cart` / `In cart`, `Follow film`
+  / `Following film`) with the label next to its icon, so pressing moves nothing; the focus ring on
+  the toggles is ink. He picked this over tinting Copy link and Cart like the row buttons: with labels
+  the hue adds nothing, and a tinted Copy link read as a large chip beside the media-info and Preview
+  chips.
+- No Report button, no admin **Edit release**, no "N users reported download failure" line (6.5).
+
+### 5C.2 Tabs
+
+**Overview**, **Files (n)**, **Media info**, **NFO**, **Comments (n)**, as on TV. Files, Media info and
+NFO load when opened; the tab keeps keyboard focus when its data arrives. The file list is reached
+here only (the release list has no Files column).
+
+- **Overview**, in this order: the preview thumbnail (opens the image dialog) when the release has one;
+  a box with the film's **tagline in quotes** and its **plot**, the plot running the full width of the
+  box (his pick: a typical plot of 238 characters takes 2 lines at 1600 px); the facts grid (Category,
+  Size, Files, Completion, Posted, Added, Grabs, Group, Poster, Password status); then, when the
+  release has a PreDB match, a **PreDB** block: today's four fields (Title across the full row, Source,
+  Pre date, Category when known).
+
+### 5C.3 About the film
+
+Right of the tabs, as TV's "About the show": the genres (links to the Films wall filtered by that
+genre), then plain tags `Score 7.5` or `Too few votes`, the MPAA rating and the original language
+(each when known); **Directed by** and **Starring** (the first 8), each name a link to the Films wall
+filtered by that person; and a **Film page** link.
+
+### 5C.4 All N releases of this film
+
+- Underneath, full width: **"All N releases of this film"** ("The only release of this film" for one).
+  It is the film page's table (5B.2) **without the select boxes** (as on the TV details page): Release,
+  Resolution (sortable), Source, Size (sortable), Files (opens the file list), Posted (sortable; hover
+  shows posted and added), and the **2 × 2 buttons without Follow**. No Grabs column, no "Same name
+  posted more than once" line.
+- The release on this page has a tinted row, the words **"The release on this page"**, and its name is
+  not a link.
+- **50 releases a page**, numbered, with the Showing line and the bottom pager when there is more
+  than one page. The table **opens on the page that holds this release**; `#/release/<id>/p/N` names
+  another page, which opens at the table; a sort change returns to the page holding this release. A
+  release of another film opens at the top, on Overview.
+
+### 5C.5 Similar releases
+
+- The last section: **"Similar releases"**, today's feature (`DetailsController.php:69`): the first two
+  words of the release name (`getSimilarName()`) searched in the release names of the Movies
+  categories, newest posted first, at most 50. **Releases of the same film are left out** (his call,
+  2026-09-27): the table above lists them. A release with no other match has no section.
+- The same table as 5C.4, with the Movie releases list's grey film line (`Title · Year`, to the film
+  page) under each name. No pager: the search returns at most 50.
+
+### 5C.6 A release with no matched film
+
+As TV's unmatched releases: the release name is the heading, and there is no poster, film crumb,
+Follow film, About the film or releases table; the tabs and facts span the full width. Its Similar
+releases are shown.
+
+---
+
 ## 6. Decisions taken before the screens were designed
 
 Taken on 2026-09-26, before those screens were prototyped. They are not asked again.
@@ -483,6 +562,9 @@ Approved as section 5B (2026-09-27). The decisions taken beforehand:
 
 ### 6.5 Release details
 
+Approved as section 5C (2026-09-27). The decisions taken beforehand:
+
+
 - **Plan stated to him, not objected to**: the approved TV details page adapted. The heading is
   the film title and year, with the release name as the bold second line; the same tabs; an
   **"About the film"** aside (score, MPAA rating, genres, Directed by, Starring, a link to the
@@ -513,6 +595,9 @@ No schema is proposed yet (`DATA-NOTES.md`). What the approved decisions require
 - **The film page reads the whole catalogue** (5B): its release list, counts, latest date and best
   resolution come from every release of the film the viewer may see, and its Similar films
   candidates are every film with a release (`DATA-NOTES.md` section 11).
+- **The release details page** (5C) reads the film's releases the viewer may see (its table, opening
+  on the page that holds this release), the release's PreDB match (`releases.predb_id`, as today) and
+  today's Similar releases search, with the same film's releases left out (`DATA-NOTES.md` section 12).
 
 - **US certificate** (shown as **MPAA Rating**): stored **going forward**, as films are saved. No
   one-off backfill of existing films.
@@ -545,10 +630,9 @@ No schema is proposed yet (`DATA-NOTES.md`). What the approved decisions require
 
 ## 8. Open items
 
-1. **Release details** is still to be prototyped and approved (the film page was approved on
-   2026-09-27, 5B).
-2. **Storage** (the columns and tables for section 7) is decided after those screens are
-   designed, on measured queries, as TV's `DATA-CONTRACT.md` was.
+1. **Release details** was approved on 2026-09-27 (5C): every Movies screen is designed.
+2. **Storage** (the columns and tables for section 7) is decided now, on measured queries, as TV's
+   `DATA-CONTRACT.md` was.
 3. **The people key** for films on the shared people tables (section 7).
 4. **Similar films** needs the viewer's excluded categories added and re-measured.
 5. **Movies > Other**: the rule that files 519,173 releases as Movies > Other is not traced.
@@ -573,10 +657,20 @@ No schema is proposed yet (`DATA-NOTES.md`). What the approved decisions require
     Resolution and Source menus list every value, so DVD on a film with no DVD release gives an
     empty result; a selection carries to the next film; after a Similar films click the back link
     still returns to the list the user came from (the browser's Back returns to the previous film).
+11. **Similar releases without the same film** (5C.5): the data contract states where the same film's
+    releases are left out (in the search, or after it on its at most 50 hits, which can leave fewer
+    than 50) and measures it, with the viewer's excluded categories that today's call already passes.
 
 ---
 
 ## Appendix A. Details an implementer needs that are easy to miss
+
+- **Release details** (5C): the header's Add to cart and Follow film keep one width for both labels,
+  the label next to its icon; a pressed Add to cart is green and a followed film violet, never coral.
+  The "All N releases" table has no select boxes and opens on the page holding this release; a sort
+  change returns to that page. Similar releases never lists the film's own releases and has no pager
+  (at most 50). The PreDB block shows only with a match. A release with no film keeps its Similar
+  releases.
 
 - **Copy NZB link** is TV's (TV `SPEC.md` appendix A): the existing v1 `t=get` URL with the
   user's API key, a tick for about 1.6 seconds, and the toast "NZB link copied. It contains your
@@ -646,6 +740,10 @@ No schema is proposed yet (`DATA-NOTES.md`). What the approved decisions require
 - Added 2026-09-27: the word **"Watch"** for following (section 4); the **eye** and the **bell** as
   the Follow icon; a Follow button in the film page's release rows; a **Grabs** column on the film
   page; the **"Same name posted more than once"** line; one-line buttons in the film page's table.
+
+- Added 2026-09-27 (release details): header buttons tinted in the row buttons' hues (Copy link
+  blue, Cart green at rest); the plot capped at 75 characters a line inside a full-width box; the same
+  film's releases in Similar releases.
 
 Not rejected: the reviewer's recommendation to use the plain film tile ("No poster") for every
 release without a poster. He chose the name card instead; the tile remains its fallback.

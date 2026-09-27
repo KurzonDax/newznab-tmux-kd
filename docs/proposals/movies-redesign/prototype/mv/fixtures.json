@@ -1,4 +1,10 @@
 {
- "film": "9898123",
- "big": "9102843"
+ "film": "9821231",
+ "big": "9425856",
+ "release": "5001234",
+ "predbRelease": "5003240",
+ "bigRelease": "5002428",
+ "noFilmRelease": "5003897",
+ "outsideRelease": "5003924",
+ "ownOnlyRelease": "5001231"
 }

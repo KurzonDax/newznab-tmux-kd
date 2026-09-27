@@ -274,3 +274,30 @@ Measured 2026-09-27 on the restored catalogue, for the film page (`SPEC.md` 5B).
 - **Show details are not stored on the production instance yet**: the #775 tables (`video_genres`,
   `video_people`) do not exist there (checked 2026-09-27), so the Similar shows section fills in as
   shows get details on their next release after that code is deployed.
+
+## 12. The release details page's data
+
+Measured 2026-09-27, for the release details page (`SPEC.md` 5C).
+
+- **PreDB**: 115 of the 575,109 movie-band releases have a PreDB match (`releases.predb_id`), sources
+  `xrel` 77, `srrdb` 25, `xrelp2p` 13. The block is kept (6.5) and appears rarely; 98 of the
+  prototype's releases have one.
+- **Similar releases, today's rule on the production search index** (read-only queries, 2026-09-27):
+  the first two words of each name (`getSimilarName()`, `app/Extensions/helper/helpers.php:164`),
+  matched in `searchname` (`@@relaxed`), Movies categories, newest posted first, 50
+  (`ReleaseSearchService::searchSimilar`; fuzzy search is off on the maintainer's instance, so there is
+  no fuzzy retry). Over the review copy's 19,966 releases:
+
+  | | Releases |
+  |---|---|
+  | with any match | 13,551 |
+  | whose matches are all the same film | 4,947 |
+  | with a section once the same film is left out | 8,604 (typically 9 matches) |
+
+  A third of all matches are releases of the same film, which the "All N releases of this film" table
+  already lists; hence his call to leave them out. 1,711 releases have names with no letters (digits
+  only), so the rule searches nothing. A name such as `Inception.2010.1080p…` searches "Inception p"
+  (the `p` of `1080p`) and finds nothing today; that is left as it is.
+- **Preview thumbnails**: the maintainer's review copy holds a preview or sample thumbnail for every
+  release that flags one (20,336), so every details page he reviewed showed its real preview. The public
+  copy in `prototype/` draws placeholders instead.

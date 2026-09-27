@@ -68,8 +68,9 @@ Each is a test, not a preference.
    on / off state. In every release table (the releases list, the show page's tables, the details
    page's table) a pressed Cart fills in the button's own hue, not coral ("Why would pressing a
    button make it stay coral?"), and so does the show page header's **Follow show**. The details
-   page's header buttons (Add to cart, Follow show) were not part of those reviews and keep their
-   coral pressed state. *Changed 2026-09-26 and 2026-09-27 on the maintainer's review.*
+   page's header matches the Movies details page (his call, 2026-09-27): Copy NZB link and Add to
+   cart neutral at rest, a pressed Add to cart green, **Follow show** violet like the show page's;
+   coral only on Download NZB. *Changed 2026-09-26 and 2026-09-27 on the maintainer's review.*
 9. No Report button anywhere. No separate details button in rows: the release name is the link.
 10. A checkbox menu closes when focus leaves it, on Escape, and on a click outside; it stays
     open while ticking and keeps its scroll position; keyboard focus stays on the control
@@ -294,8 +295,10 @@ pages look good, I approve them."
 
 - Breadcrumb; poster; heading `Show · S01E02 — Episode title` with the release name as the
   bold second line; resolution and source chips, the chip line, group and poster chips;
-  buttons Download NZB, Copy NZB link, Add to cart, **Follow show** (rule 12; these header
-  buttons keep their approved look, a coral pressed state included).
+  buttons Download NZB (coral), Copy NZB link and Add to cart (neutral; a pressed Add to cart
+  fills green, its two labels share one width so nothing moves), **Follow show** (violet with the
+  bookmark, filled solid violet while followed, as on the show page; rule 12). *Changed 2026-09-27*
+  to match the Movies details page: the coral pressed state is gone (rule 8).
 - Tabs: Overview (preview thumbnail, aired date and summary, facts grid), Files, Media info,
   NFO, Comments (unchanged from today; no design work).
 - Right of the tabs: **"About the show"**: `Network · N seasons on site` (no year on this
@@ -449,7 +452,7 @@ Storage and write paths are specified in `DATA-CONTRACT.md`; the numbers below f
    and the old TV Covers / Table / Cards views.
 
 Screens 4–7 can be built against fixtures once 1–3 define the stored shapes. Each screen's
-acceptance test is the matching block of `check.mjs` (268 checks), ported to the
+acceptance test is the matching block of `check.mjs` (270 checks), ported to the
 application's test tooling, plus rule 5 ("nothing shifts") measured, not eyeballed.
 
 ---
@@ -479,8 +482,8 @@ application's test tooling, plus rule 5 ("nothing shifts") measured, not eyeball
   both themes. The focus ring on those three uses the ink colour. Cart's green sitting near the
   completion chip's green was accepted. They apply to every release table (releases list, show
   page, details page); only the releases list has a Follow button in its rows. The show page
-  header's Follow show uses the Follow hue; the details page header's buttons keep their coral
-  pressed state.
+  header's Follow show uses the Follow hue, and so does the details page header's Follow show; the
+  details header's Add to cart is neutral and fills green when pressed (2026-09-27).
 - **Follow icon**: a bookmark (Font Awesome `fa-bookmark`, regular while not followed, solid while
   followed). Following alerts nobody (it keeps the show on the user's list, its RSS feed and the
   home page section), which is why the bell was not chosen.

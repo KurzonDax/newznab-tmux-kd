@@ -228,7 +228,7 @@ input[type=checkbox]{width:16px;height:16px;accent-color:var(--acc);cursor:point
 .dlg.full{width:auto;max-width:calc(100vw - 60px);max-height:calc(100vh - 60px)}
 .dlg.full .pvwrap{cursor:zoom-out;width:auto}
 .dlg.full .pvimg{max-width:none;max-height:none}
-.pvthumb{display:block;margin-bottom:18px;border-radius:12px;overflow:hidden}
+.pvthumb{display:block;margin-bottom:18px;border-radius:12px;overflow:hidden;padding:0}
 .pvthumb img{display:block;max-width:100%;max-height:260px}
 .pvthumb:hover{filter:brightness(1.08)}
 /* release details page */
@@ -338,6 +338,8 @@ dl.vals dd{margin-top:3px;font-weight:500;font-variant-numeric:tabular-nums}
 
 
 .chip.src{background:var(--panel2);border-color:transparent}
+/* the details header's source chip sits in a flex row that stretches it: centre its label (reviewer fix 2026-09-27) */
+.dhead .rchips .chip.src{display:inline-flex;align-items:center}
 .tile .size{margin-top:6px;font-size:12.5px;color:var(--dim);font-variant-numeric:tabular-nums}
 .more{display:block;margin:34px auto 60px;height:46px;padding:0 26px;border-radius:23px;background:var(--panel2);font-weight:700}
 .more:hover{background:var(--line)}
@@ -514,6 +516,16 @@ td.num{text-align:right;white-space:nowrap} th.num{text-align:right}
 :root[data-theme=light] .btn.wat[aria-pressed=true]:hover{background:oklch(0.44 0.15 var(--h))}
 /* the two labels share one cell so the button keeps the wider one's width: nothing moves when it is pressed */
 .btn.wat .wl{display:grid}.btn.wat .wl>span{grid-area:1/1}.btn.wat .wl>span[hidden]{display:block;visibility:hidden}
+/* the details header matches the Movies details page (his call 2026-09-27): Copy link and Cart neutral, a pressed Cart fills green,
+   Follow show violet as on the show page; never coral when pressed */
+.btn.sec.nt.ct[aria-pressed=true]{background:oklch(0.72 0.15 var(--b-ct));color:oklch(0.18 0.04 var(--b-ct))}
+.btn.sec.nt.ct[aria-pressed=true]:hover{filter:none;background:oklch(0.78 0.13 var(--b-ct))}
+:root[data-theme=light] .btn.sec.nt.ct[aria-pressed=true]{background:oklch(0.50 0.15 var(--b-ct));color:#fff}
+:root[data-theme=light] .btn.sec.nt.ct[aria-pressed=true]:hover{background:oklch(0.44 0.15 var(--b-ct))}
+.btn.sec.nt .wl{display:grid}.btn.sec.nt .wl>span{grid-area:1/1}.btn.sec.nt .wl>span[hidden]{display:block;visibility:hidden}
+.btn.sec.nt:focus-visible{outline-color:var(--ink);outline-offset:1px}
+/* a shorter label keeps its gap to the icon inside the reserved width (details header and show page's Follow show) */
+.dacts .btn .wl{text-align:start}
 .btn.wat:focus-visible{outline-color:var(--ink);outline-offset:1px}
 </style>
 </head>
@@ -906,7 +918,7 @@ function release(id){
   <div class="dhead${s?'':' noshow'}">${s?`<a class="art" href="#/show/${r.v}">${poster(r.v,s.t+' poster')}</a>`:''}<div>${s?`<h1><a href="${showHref(r)}" data-open="${openKey(r)}">${esc(s.t)}</a>${lbl?' · '+lbl:''}${r.title?' — '+esc(r.title):''}</h1>
    <div class="relname">${esc(r.name)}</div>`:`<h1 class="relonly">${esc(r.name)}</h1>`}
    <div class="rchips" style="margin-top:12px">${resChip(r.res)}<span class="chip src">${srcLabel(r)}</span>${chips(r)}</div><div class="rchips">${origin(r,false)}</div>
-   <div class="dacts"><button class="btn" data-nzb="${r.id}">${ic('down')}Download NZB</button><button class="btn sec" data-copynzb="${r.id}">${ic('link')}Copy NZB link</button><button class="btn sec" data-cart="${r.id}" aria-pressed="${state.cart.has(r.id)}">${ic(state.cart.has(r.id)?'check':'cart')}${state.cart.has(r.id)?'In cart':'Add to cart'}</button>${s?`<button class="btn sec" data-watch="${r.v}" aria-pressed="${state.watch.has(r.v)}">${fic()}${state.watch.has(r.v)?'Following show':'Follow show'}</button>`:''}</div></div></div>
+   <div class="dacts"><button class="btn" data-nzb="${r.id}">${ic('down')}Download NZB</button><button class="btn sec nt" data-copynzb="${r.id}">${ic('link')}Copy NZB link</button><button class="btn sec nt ct" data-cart="${r.id}" aria-pressed="${state.cart.has(r.id)}" title="${state.cart.has(r.id)?'In cart · click to remove':'Add to cart'}">${ic('cart')}<span class="wl"><span${state.cart.has(r.id)?' hidden':''}>Add to cart</span><span${state.cart.has(r.id)?'':' hidden'}>In cart</span></span></button>${s?`<button class="btn wat" data-watch="${r.v}" aria-pressed="${state.watch.has(r.v)}" title="${state.watch.has(r.v)?'Following this show · click to unfollow':'Follow this show'}">${fic()}<span class="wl"><span${state.watch.has(r.v)?' hidden':''}>Follow show</span><span${state.watch.has(r.v)?'':' hidden'}>Following show</span></span></button>`:''}</div></div></div>
   <div class="dcols${s?'':' noshow'}"><div><div class="tabs" role="tablist">${tabs.map(([k,l])=>`<button role="tab" data-tab="${k}" aria-selected="${state.tab===k}">${l}</button>`).join('')}</div><div class="panel" role="tabpanel">${panel}</div></div>
    ${s?`<aside class="aboutshow"><h2>About the show</h2>${about}</aside>`:''}</div>
   ${sib.length?`<section class="sibs"><h2>${sib.length>1?'All '+sib.length+' releases of this '+kind:'The only release of this '+kind}</h2>${relTable(sib,'sib',r.id)}</section>`:''}`;

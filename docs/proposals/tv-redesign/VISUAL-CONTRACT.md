@@ -12,7 +12,7 @@ under `docs/proposals/tv-redesign/prototype/`:
 |---|---|
 | `tv.html`, `tokens.css` | the approved prototype, byte-for-byte the one Randall reviewed |
 | `data.json` … `repair.json`, `posters/`, `previews/`, `fixtures.json` | the invented dataset (`gen-demo-data.mjs`, `make-demo-art.mjs` regenerate it) |
-| `check.mjs` | 268 behaviour checks on this dataset (269 on the private one); `0 failures` |
+| `check.mjs` | 270 behaviour checks on this dataset (271 on the private one); `0 failures` |
 | `reference/<state>-<dark|light>.webp` | 26 screen states × 2 themes at 1600 × 1000 |
 | `reference/measurements.json` | computed type, colour, radius, padding and size of 82 named parts, per theme |
 | `reference/tokens.json` | the resolved value of every colour token and chip hue, per theme |
@@ -195,7 +195,7 @@ Exact values for every part are in `reference/measurements.json`; the rules behi
 | Same-show batch expander | new, inside the releases list component | new |
 | Shows wall tile | `tv-show-directory-component.js` | rebuilt to the tile in the reference |
 | Show page: tabs, episode rows, release tables | `title-overview-component.js`, `tab-switcher.js` | season tabs are links (`aria-current`); episode rows are one Alpine component `tvEpisodeList` |
-| Release details | `release-details-component.js`, `x-breadcrumb` | rebuilt to the reference |
+| Release details | `release-details-component.js`, `x-breadcrumb` | rebuilt to the reference. Header buttons (2026-09-27, as the Movies details page): Download NZB coral; Copy NZB link and Add to cart neutral (`.btn.sec`), a pressed Add to cart green (hue 150, the row Cart's pressed fill), its two labels in one reserved width, label start-aligned next to the icon; Follow show violet like the show page's; the focus ring on the toggles is ink. The preview thumbnail button has no padding; the header's source chip centres its label |
 | Media info block | `mediainfo-modal-component.js` + a **new PHP presenter** for the friendly names (none exist today, `DATA-CONTRACT.md` section 4) | one renderer for the tab and the dialog |
 | Image dialog with Full size | `image-modal-component.js`, `preview-modal-component.js`, `x-image-fullscreen-control`, `fullscreen-stage.js` | behaviour per the reference: pixel size shown, button only when larger than shown, grows to the window |
 | File list, NFO dialogs | `filelist-modal-component.js`, `nfo-modal.js`, `x-modal` | restyled; sizes under 1 MB in KB |
