@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\XML_Response;
 use App\Models\Category;
 use App\Services\ImdbScraper;
 use App\Services\MetadataProcessing\MovieCredits;
+use App\Services\MetadataProcessing\PeopleRows;
 use App\Services\MovieService;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
@@ -146,14 +147,14 @@ final class MovieCreditsTest extends ImdbScraperTestCase
             ['id' => 2, 'name' => 'Brad Pitt', 'tmdb_id' => 287],
             ['id' => 3, 'name' => 'Edward Norton', 'tmdb_id' => 819],
         ]);
-        $credits = app(MovieCredits::class);
+        $people = app(PeopleRows::class);
 
-        $this->assertSame(2, $credits->claim(1, 287, 'Brad Pitt'));
+        $this->assertSame(2, $people->claim(1, 287, 'Brad Pitt'));
         $this->assertNull(DB::table('people')->where('id', 1)->value('tmdb_id'));
 
         // A claim another worker already won, for the same person or another one.
-        $this->assertSame(3, $credits->claim(3, 819, 'Edward Norton'));
-        $inserted = $credits->claim(3, 820, 'Edward Norton');
+        $this->assertSame(3, $people->claim(3, 819, 'Edward Norton'));
+        $inserted = $people->claim(3, 820, 'Edward Norton');
         $this->assertSame(820, DB::table('people')->where('id', $inserted)->value('tmdb_id'));
         $this->assertSame(4, DB::table('people')->count());
     }

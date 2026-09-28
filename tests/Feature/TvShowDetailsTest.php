@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Models\Category;
+use App\Services\MetadataProcessing\PeopleRows;
 use App\Services\TvProcessing\Providers\TmdbProvider;
 use App\Services\TvProcessing\TvShowDetails;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
@@ -205,6 +207,65 @@ final class TvShowDetailsTest extends TestCase
         $this->assertNull(DB::table('people')->where('tmdb_id', 203)->value('id'));
     }
 
+    public function test_a_cast_member_claims_the_row_a_film_added_from_text_under_the_same_name(): void
+    {
+        $this->caseInsensitivePeopleNames();
+        $this->insertShow(1, tmdb: 200);
+        DB::table('people')->insert(['id' => 60, 'name' => 'jane roe', 'tmdb_id' => null]);
+        Http::fake(['*tv/200?*' => Http::response($this->show(['credits' => ['cast' => [['id' => 555, 'name' => 'Jane Roe']]]]))]);
+
+        $this->details()->refreshIfDue(1);
+
+        $this->assertSame([['id' => 60, 'name' => 'jane roe', 'tmdb_id' => 555]], $this->people());
+        $this->assertSame(['jane roe'], $this->castNames(1));
+    }
+
+    public function test_a_new_cast_member_is_added_only_while_the_people_lock_is_held(): void
+    {
+        $this->insertShow(1, tmdb: 200);
+        Http::fake(['*tv/200?*' => Http::response($this->show(['credits' => ['cast' => [['id' => 555, 'name' => 'Jane Roe']]]]))]);
+        $lockHeldAtInsert = [];
+        DB::listen(static function ($query) use (&$lockHeldAtInsert): void {
+            if (preg_match('/^\s*insert\b.*\binto "people"/is', $query->sql) !== 1) {
+                return;
+            }
+            $probe = Cache::lock(PeopleRows::LOCK, 1);
+            $free = $probe->get();
+            if ($free) {
+                $probe->release();
+            }
+            $lockHeldAtInsert[] = ! $free;
+        });
+
+        $this->details()->refreshIfDue(1);
+
+        // Held, so the insert cannot land between a film write's lookup under the lock and its insert.
+        $this->assertSame([true], $lockHeldAtInsert);
+        $this->assertSame(['Jane Roe'], $this->castNames(1));
+    }
+
+    public function test_a_film_text_row_added_after_the_cast_lookup_is_claimed_under_the_lock(): void
+    {
+        $this->caseInsensitivePeopleNames();
+        $this->insertShow(1, tmdb: 200);
+        Http::fake(['*tv/200?*' => Http::response($this->show(['credits' => ['cast' => [['id' => 555, 'name' => 'Jane Roe']]]]))]);
+        // Another worker saves a film's cast from text right after this write's first name lookup.
+        $done = false;
+        DB::listen(static function ($query) use (&$done): void {
+            if ($done || preg_match('/^\s*select\b.*\bfrom "people"\s.*"name" = \?/is', $query->sql) !== 1) {
+                return;
+            }
+            $done = true;
+            app(PeopleRows::class)->findOrAdd('JANE ROE', null);
+        });
+
+        $this->details()->refreshIfDue(1);
+
+        $this->assertTrue($done);
+        $this->assertSame([['id' => 1, 'name' => 'JANE ROE', 'tmdb_id' => 555]], $this->people());
+        $this->assertSame(['JANE ROE'], $this->castNames(1));
+    }
+
     public function test_a_second_refresh_replaces_genres_and_cast(): void
     {
         $this->insertShow(1, tmdb: 200);
@@ -385,6 +446,29 @@ final class TvShowDetailsTest extends TestCase
         return DB::table('video_genres')->join('genres', 'genres.id', '=', 'video_genres.genres_id')
             ->where('videos_id', $videosId)->where('genres.type', Category::TV_ROOT)
             ->orderBy('title')->pluck('title')->all();
+    }
+
+    /**
+     * @return list<array{id: int, name: string, tmdb_id: ?int}>
+     */
+    private function people(): array
+    {
+        return DB::table('people')->orderBy('id')->get(['id', 'name', 'tmdb_id'])
+            ->map(static fn (object $row): array => ['id' => (int) $row->id, 'name' => (string) $row->name, 'tmdb_id' => $row->tmdb_id === null ? null : (int) $row->tmdb_id])
+            ->all();
+    }
+
+    /**
+     * `people.name` is utf8mb4_unicode_ci in production, so case does not tell two names
+     * apart; the rebuilt SQLite column gets NOCASE, as in MovieCreditsTest.
+     */
+    private function caseInsensitivePeopleNames(): void
+    {
+        $statement = ProductionTables::fromAuthority()->createStatement('people');
+        $collated = preg_replace('/^(\s*"name" \w+)/m', '$1 COLLATE NOCASE', $statement, 1, $count);
+        $this->assertSame(1, $count);
+        DB::statement('DROP TABLE "people"');
+        DB::statement((string) $collated);
     }
 
     /**

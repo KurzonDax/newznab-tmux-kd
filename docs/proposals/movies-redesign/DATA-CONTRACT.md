@@ -200,16 +200,18 @@ flag: it is derived from `vote_count` and `rating`.
   - by the **admin edit form** (fact 2) with its edited text split by the same rule, so the screens follow an admin's edit.
 - **Genre names**: found by `(type 2000, title)` or inserted, under a named lock (Laravel's `Cache::lock`), because `genres`
   has no unique key and movie workers run in parallel. The Genre menu lists only genres that have a film.
-- **People**: a TMDB person is found by `tmdb_id`; else by exact name among people with no `tmdb_id`, claimed with a
-  conditional `UPDATE … SET tmdb_id = ? WHERE id = ? AND tmdb_id IS NULL` (a claim that loses the race, or a `tmdb_id`
-  another row already holds, falls back to that row); else inserted (insert-or-ignore on `ux_people_tmdb_id`, then read).
-  People from text have no `tmdb_id` and are found by exact name (the collation makes it case- and accent-insensitive), else
-  inserted. A Movies write that finds no row, from text or TMDB, inserts under one `Cache::lock` after repeating the lookups
-  inside it, so concurrent writes of the same new name (any spelling the collation treats as equal) leave one row. No row is
-  inserted with an empty name, from Movies or TV: a TMDB person whose trimmed name is empty is linked when a row already
-  holds its `tmdb_id`, else left out, and the next person takes the place among the 12 cast. A film's TMDB director or cast
-  list whose every member is left out comes from the saved text, as an empty list does. A person left with no film and no
-  show stays in `people` (as TV's).
+- **People**: one resolver (`PeopleRows`) serves film credits and TV cast writes, so a person in films and shows is one
+  row. A TMDB person, from a film or a show, is found by `tmdb_id`; else by exact name among people with no `tmdb_id`,
+  claimed with a conditional `UPDATE … SET tmdb_id = ? WHERE id = ? AND tmdb_id IS NULL` (a claim that loses the race,
+  or a `tmdb_id` another row already holds, falls back to that row); else inserted (insert-or-ignore on
+  `ux_people_tmdb_id`, then read). People from text have no `tmdb_id` and are found by exact name (the collation makes
+  it case- and accent-insensitive), else inserted. A Movies or TV write that finds no row, from text or TMDB, inserts
+  under one `Cache::lock` after repeating the lookups inside it (TV resolves its cast before its transaction opens, so
+  the row is committed when the lock is released), so concurrent writes of the same new name (any spelling the collation
+  treats as equal) leave one row. No row is inserted with an empty name, from Movies or TV: a TMDB person whose trimmed
+  name is empty is linked when a row already holds its `tmdb_id`, else left out, and the next person takes the place
+  among the 12 cast. A film's TMDB director or cast list whose every member is left out comes from the saved text, as an
+  empty list does. A person left with no film and no show stays in `people` (as TV's).
 - **When it runs.** When a film is first saved, and — **his decision, 2026-09-27** — whenever a new release of the film
   arrives and the film's record is more than 30 days old, **on both matching paths**: `fetchAndLinkMovieRecord()`
   (`app/Services/MovieService.php:1084-1093`) gains the same 30-day check as `:1051-1072`. At most one TMDB fetch per film per
