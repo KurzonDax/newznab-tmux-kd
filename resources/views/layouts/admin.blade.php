@@ -106,7 +106,7 @@
             <footer class="shrink-0">
                 <div class="px-6 py-3">
                     <div class="flex flex-wrap items-center justify-between gap-2 text-sm text-(--text-muted) dark:text-(--text-muted-dark)">
-                        <p>&copy; {{ now()->year }} <a href="https://github.com/NNTmux/newznab-tmux" class="text-primary-700 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300 transition">NNTmux</a> Admin Panel</p>
+                        <p>&copy; {{ now()->year }} <a href="https://github.com/NNTmux/newznab-tmux" target="_blank" rel="noopener noreferrer" class="text-primary-700 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300 transition">NNTmux<span class="sr-only"> (opens in a new tab)</span></a> Admin Panel</p>
                         <p>{{ config('app.name') }} v{{ config('nntmux.versions.git.tag') ?? '1.0.0' }}</p>
                     </div>
                 </div>

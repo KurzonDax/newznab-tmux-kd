@@ -77,9 +77,10 @@
                                 @if($book->url)
                                     <a href="{{ $book->url }}"
                                        target="_blank"
+                                       rel="noopener noreferrer"
                                        class="ml-3 text-green-600 dark:text-green-400 hover:text-green-900 dark:hover:text-green-300"
                                        title="View Source">
-                                        <i class="fas fa-external-link-alt"></i>
+                                        <i class="fas fa-external-link-alt" aria-hidden="true"></i><span class="sr-only">View source (opens in a new tab)</span>
                                     </a>
                                 @endif
                             </td>

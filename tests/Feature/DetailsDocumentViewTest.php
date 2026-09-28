@@ -6,18 +6,21 @@ namespace Tests\Feature;
 
 use App\Data\ReleaseEntityData;
 use App\Data\ReleaseRowData;
+use App\Models\Content;
 use App\Models\Release;
 use App\View\Composers\GlobalDataComposer;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Cache;
 use ReflectionProperty;
 use Tests\Support\Admin\InteractsWithAdminListPages;
+use Tests\Support\AssertsOffsiteLinks;
 use Tests\Support\InteractsWithPublicShell;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
 class DetailsDocumentViewTest extends TestCase
 {
+    use AssertsOffsiteLinks;
     use InteractsWithAdminListPages;
     use InteractsWithPublicShell;
     use IsolatedSqliteDatabase;
@@ -100,6 +103,41 @@ class DetailsDocumentViewTest extends TestCase
             $this->assertSame(1, $xpath->query('.//header//button[@title="Close (Esc)"]', $dialog)->length);
             $this->assertSame(0, $xpath->query('.//footer//button[normalize-space(.)="Close"]', $dialog)->length);
         }
+    }
+
+    public function test_offsite_links_on_the_details_page_and_footer_open_safely_in_a_new_tab(): void
+    {
+        foreach ([['Outside help', 'https://help.example.org/guide', 1], ['Inside help', '/inside-help/', 2]] as [$title, $url, $ordinal]) {
+            Content::query()->create(['title' => $title, 'url' => $url, 'body' => '<p>Plain text only.</p>',
+                'contenttype' => Content::TYPE_USEFUL, 'status' => Content::STATUS_ENABLED, 'ordinal' => $ordinal, 'role' => Content::ROLE_EVERYONE]);
+        }
+        $release = Release::factory()->make(['id' => 2, 'guid' => 'offsite-links', 'searchname' => 'Offsite.Release',
+            'size' => 1048576, 'adddate' => now(), 'postdate' => now()]);
+        $release->setRelation('audioTags', null);
+        $release->row_data = new ReleaseRowData(
+            id: 2, guid: 'offsite-links', name: 'Offsite.Release', category: 'Movies > HD',
+            size: '1.00 MB', files: 1, added: '1 hour ago', posted: 'Sep 13, 2026 13:00', grabs: 0, comments: 0,
+            completion: 100, repair_outcome: null, rescan_outcome: null, passworded: false,
+            has_media_info: false, media_info_summary: null, nfo: false, preview: 'none', group: 'alt.binaries.example', poster: 'A Poster',
+            renamed: true, pp_done: true, entity: null, in_basket: false, watched: false,
+        );
+
+        $html = view('details.index', ['release' => $release, 'site' => ['dereferrer_link' => ''],
+            'show' => ['title' => 'A Show', 'started' => '2020-01-01', 'tvdb' => 81189],
+            'anidb' => ['title' => 'An Anime', 'country' => 'JP', 'media_type' => 'TV', 'anilist_id' => 21, 'mal_id' => 22],
+        ])->render();
+
+        $offsite = $this->assertOffsiteLinksOpenInANewTab($html, 'The details page');
+        foreach (['https://github.com/NNTmux/newznab-tmux', 'https://help.example.org/guide', 'https://simplegate.space/',
+            'https://thetvdb.com/?tab=series&id=81189', 'https://anilist.co/anime/21', 'https://myanimelist.net/anime/22'] as $expected) {
+            $this->assertNotSame([], array_filter($offsite, fn (string $href): bool => str_contains($href, $expected)), 'Missing offsite link '.$expected);
+        }
+        $this->assertCount(2, array_filter($offsite, fn (string $href): bool => $href === 'https://github.com/NNTmux/newznab-tmux'));
+        $this->assertStringContainsString('<span class="sr-only">GitHub (opens in a new tab)</span>', $html);
+
+        $this->assertSameTabLink($html, url('/inside-help/'), 'The footer');
+        $this->assertSameTabLink($html, route('browse.all', ['group' => 'alt.binaries.example']), 'The details page');
+        $this->assertSameTabLink($html, route('browse.all', ['poster' => 'A Poster']), 'The details page');
     }
 
     public function test_anime_related_releases_paginate_when_no_title_overview_exists(): void
