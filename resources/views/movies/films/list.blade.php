@@ -10,7 +10,7 @@
 @else
     <div class="tv-tiles">
         @foreach($tiles as $tile)
-            @include('tv.partials.show-tile', ['key' => 'film', 'parts' => $loop->first])
+            @include('tv.partials.show-tile', ['kind' => 'film', 'parts' => $loop->first])
         @endforeach
     </div>
     <x-pager :page="$filters->page" :last-page="$lastPage" :url="$pageUrl" :action="route('movies.films')" :query="$filters->query(1)" />

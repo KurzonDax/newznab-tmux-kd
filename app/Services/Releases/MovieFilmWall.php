@@ -129,10 +129,10 @@ final class MovieFilmWall
                 title: (string) $film->title,
                 url: url('/movies/film/'.$id),
                 poster: $imdbId === '' ? null : getImageAssetUrl('movies', $imdbId.'-cover'),
-                year: (int) $film->year >= MovieFilmFilters::FIRST_YEAR ? (string) (int) $film->year : '',
+                year: preg_match('/^\d{4}$/', (string) $film->year) === 1 ? (string) $film->year : '',
                 genres: array_column(array_slice($own, 0, 2), 'title'),
-                line2: self::scoreLine((string) $film->rating, $film->vote_count === null ? null : (int) $film->vote_count, (string) $film->content_rating_us),
-                line3: number_format($releases).' '.($releases === 1 ? 'release' : 'releases'),
+                scoreLine: self::scoreLine((string) $film->rating, $film->vote_count === null ? null : (int) $film->vote_count, (string) $film->content_rating_us),
+                releaseCount: number_format($releases).' '.($releases === 1 ? 'release' : 'releases'),
             );
         }
 
@@ -179,16 +179,27 @@ final class MovieFilmWall
     private function probe(Builder $query, string $film = 'm.id', array $exclusions = [], ?string $password = null): Builder
     {
         return $query->where(static function (Builder $probe) use ($exclusions, $password, $film): void {
-            $probe->selectRaw('1')->from('releases as r')->whereColumn('r.movieinfo_id', $film)
-                ->whereBetween('r.categories_id', MovieReleaseList::BAND_CATEGORIES);
-            if ($password !== null) {
-                $probe->whereRaw('r.passwordstatus '.$password);
-            }
-            if ($exclusions !== []) {
-                $probe->whereNotIn('r.categories_id', $exclusions);
-            }
-            $probe->limit(1);
+            self::whereCounted($probe->selectRaw('1')->from('releases as r')->whereColumn('r.movieinfo_id', $film), 'r.', $exclusions, $password)->limit(1);
         }, '=', 1);
+    }
+
+    /**
+     * The releases that count for a film: in the Movies categories and, with a password rule,
+     * only those it allows and outside the exclusions. `$releases` prefixes the columns.
+     *
+     * @param  list<int>  $exclusions
+     */
+    private static function whereCounted(Builder $query, string $releases, array $exclusions, ?string $password): Builder
+    {
+        $query->whereBetween($releases.'categories_id', MovieReleaseList::BAND_CATEGORIES);
+        if ($password !== null) {
+            $query->whereRaw($releases.'passwordstatus '.$password);
+        }
+        if ($exclusions !== []) {
+            $query->whereNotIn($releases.'categories_id', $exclusions);
+        }
+
+        return $query;
     }
 
     /**
@@ -204,11 +215,7 @@ final class MovieFilmWall
         if ($this->isMariaDb()) {
             $query->forceIndex(MovieReleaseList::FILM_INDEX);
         }
-        $query->whereIn('movieinfo_id', $ids)->whereBetween('categories_id', MovieReleaseList::BAND_CATEGORIES)
-            ->whereRaw('passwordstatus '.$this->releases->showPasswords());
-        if ($exclusions !== []) {
-            $query->whereNotIn('categories_id', $exclusions);
-        }
+        self::whereCounted($query->whereIn('movieinfo_id', $ids), '', $exclusions, $this->releases->showPasswords());
 
         return $query->groupBy('movieinfo_id')->selectRaw('movieinfo_id, COUNT(*) AS releases')->get()
             ->mapWithKeys(static fn (object $row): array => [(int) $row->movieinfo_id => (int) $row->releases])->all();
