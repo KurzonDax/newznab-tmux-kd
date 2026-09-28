@@ -256,6 +256,108 @@ final class TvReleasesPageTest extends TestCase
         $this->assertStringNotContainsString('nfo-badge', $this->rowOf($response, 'Middling'));
     }
 
+    public function test_the_list_has_no_files_or_grabs_column(): void
+    {
+        foreach (range(1, 5) as $index) {
+            $this->tv('Batch '.$index, ['videos_id' => 11, 'postdate' => '2026-09-20 1'.$index.':00:00', 'grabs' => 7]);
+        }
+
+        $response = $this->page('/tv')->assertOk()
+            ->assertSee('<colgroup><col class="tv-col-select"><col class="tv-col-art"><col><col class="tv-col-resolution"><col class="tv-col-source"><col class="tv-col-size"><col class="tv-col-date"><col class="tv-col-actions"></colgroup>', false)
+            ->assertSee('<td colspan="8">', false)
+            ->assertDontSee('<th class="tv-num">Files</th>', false)->assertDontSee('<th class="tv-num">Grabs</th>', false)
+            ->assertDontSee('tv-col-files', false)->assertDontSee('tv-col-grabs', false)->assertDontSee('filelist-badge', false)
+            ->assertDontSee('7 grabs', false);
+        $this->assertSame(7, substr_count(strstr((string) $response->getContent(), '</thead>', true), '<th') - 1, 'seven headers over eight columns, the release header spanning two');
+        $this->assertSame(8, substr_count($this->rowOf($response, 'Batch 5'), '<td'));
+    }
+
+    public function test_group_and_poster_chips_end_the_chip_line_as_one_unit(): void
+    {
+        DB::table('usenet_groups')->insert([['id' => 1, 'name' => 'alt.binaries.teevee'], ['id' => 2, 'name' => 'misc.test']]);
+        $this->tv('Chips then origin', ['nfostatus' => 1, 'groups_id' => 1, 'fromname' => 'Uploader <up@example.invalid>']);
+        $this->tv('Origin only', ['groups_id' => 2]);
+        $this->tv('Poster only', ['fromname' => 'someone@example.invalid']);
+        $this->tv('Nothing at all');
+
+        $response = $this->page('/tv')->assertOk();
+        $row = $this->rowOf($response, 'Chips then origin');
+        $group = route('browse.all', ['group' => 'alt.binaries.teevee']);
+        $poster = route('browse.all', ['poster' => 'Uploader <up@example.invalid>']);
+        $this->assertMatchesRegularExpression('/<div class="tv-chips">.*nfo-badge.*<span class="tv-origin-pair">\s*'
+            .'<a class="tv-origin-chip" href="'.preg_quote(e($group), '/').'" title="All releases in alt\.binaries\.teevee"><i class="fas fa-users" aria-hidden="true"><\/i>a\.b\.teevee<\/a>\s*'
+            .'<a class="tv-origin-chip tv-origin-poster" href="'.preg_quote(e($poster), '/').'" title="All posts by Uploader &lt;up@example\.invalid&gt;"><i class="fas fa-user" aria-hidden="true"><\/i><span>Uploader &lt;up@example\.invalid&gt;<\/span><\/a>\s*'
+            .'<\/span>\s*<\/div>/s', $row);
+        $this->assertStringContainsString('?group=alt.binaries.teevee', $group);
+        $this->assertStringContainsString('?poster=Uploader%20%3Cup%40example.invalid%3E', $poster);
+
+        $originOnly = $this->rowOf($response, 'Origin only');
+        $this->assertMatchesRegularExpression('/<div class="tv-chips">\s*<span class="tv-origin-pair">\s*<a class="tv-origin-chip" [^>]*title="All releases in misc\.test"><i [^>]*><\/i>misc\.test<\/a>\s*<\/span>\s*<\/div>/', $originOnly);
+        $this->assertMatchesRegularExpression('/<div class="tv-chips">\s*<span class="tv-origin-pair">\s*<a class="tv-origin-chip tv-origin-poster" [^>]*title="All posts by someone@example\.invalid">/', $this->rowOf($response, 'Poster only'));
+        $this->assertStringNotContainsString('tv-chips', $this->rowOf($response, 'Nothing at all'));
+        $this->assertStringNotContainsString('target=', $row);
+    }
+
+    public function test_a_release_with_no_matched_show_gets_a_name_card_or_the_no_poster_tile(): void
+    {
+        $cards = [
+            'Grand.Designs.NZ.S10E03.1080p.WEB' => ['Grand Designs NZ', 'S10E03'],
+            'Show.Name.S01E01E02.1080p' => ['Show Name', 'S01E01–E02'],
+            'Twin.Name.s02e05-e06.720p' => ['Twin Name', 'S02E05–E06'],
+            'Days.of.Our.Lives.S59E1234.720p' => ['Days of Our Lives', 'S59E1234'],
+            'Spaced Out S03 E14 x264' => ['Spaced Out', 'S03E14'],
+            'Morning.Joe.2026.09.22.1080p.WEB' => ['Morning Joe', '2026-09-22'],
+            'Daily_Talk_2026_09_21_720p' => ['Daily Talk', '2026-09-21'],
+            'Bare.Episode.e12.720p' => ['Bare Episode', 'E12'],
+            '24.S01E01.720p' => ['24', 'S01E01'],
+            '[SiteTag].Some.Show.S01E02.1080p' => null,
+            'www.Site.Tag.Show.S04E05' => ['www Site Tag Show', 'S04E05'],
+        ];
+        $tiles = ['[1/3] - "@AnimesHunt - Blue Lock S01 E14"', 'Packed.Show.S01E01.part01.rar', 'Plain.Upload.1080p.WEB', 'Glued.Show.S01E01x264', 'Bare.Number.E5.720p',
+            // appendix A and the prototype's showName() refuse any name containing .rar or .partN, words included
+            'The.Rare.Breed.S01E01.720p', 'Show.Part1.S01E02.720p'];
+        foreach ([...array_keys($cards), ...$tiles] as $index => $name) {
+            $this->tv($name, ['postdate' => '2026-09-2'.($index % 5).' 10:0'.intdiv($index, 5).':00']);
+        }
+
+        $response = $this->page('/tv')->assertOk();
+        foreach ($cards as $name => $card) {
+            $cell = $this->posterCell($this->rowOf($response, $name));
+            $details = preg_quote(e(route('details', md5($name))), '/');
+            if ($card === null) {
+                $this->assertMatchesRegularExpression('/<a class="tv-placeholder" href="'.$details.'" tabindex="-1" aria-hidden="true">/', $cell, $name);
+
+                continue;
+            }
+            $this->assertMatchesRegularExpression('/<a class="tv-placeholder is-card" href="'.$details.'" tabindex="-1" aria-hidden="true">\s*'
+                .'<span class="tv-placeholder-title">'.preg_quote(e($card[0]), '/').'<\/span>\s*<span class="tv-placeholder-label">'.preg_quote($card[1], '/').'<\/span>\s*<\/a>/u', $cell, $name);
+        }
+        foreach ($tiles as $name) {
+            $this->assertMatchesRegularExpression('/<a class="tv-placeholder" href="[^"]+" tabindex="-1" aria-hidden="true">\s*<i class="fas fa-tv" aria-hidden="true"><\/i>\s*<span class="tv-placeholder-label">No poster<\/span>\s*<\/a>/',
+                $this->posterCell($this->rowOf($response, $name)), $name);
+        }
+    }
+
+    public function test_a_matched_show_keeps_its_poster_cell_and_the_buttons_are_two_by_two(): void
+    {
+        $this->tv('Matched.Show.S01E01.1080p', ['videos_id' => 12, 'postdate' => '2026-09-24 10:00:00']);
+        $this->tv('Unmatched.Show.S01E01.1080p', ['videos_id' => 0, 'postdate' => '2026-09-23 10:00:00']);
+        $cart = $this->browserUser();
+        DB::table('users_releases')->insert(['users_id' => $cart->id, 'releases_id' => DB::table('releases')->where('name', 'Unmatched.Show.S01E01.1080p')->value('id')]);
+
+        $response = $this->page('/tv', $cart)->assertOk();
+        $matched = $this->rowOf($response, 'Matched.Show.S01E01.1080p');
+        $this->assertStringNotContainsString('tv-placeholder', $matched);
+        $this->assertMatchesRegularExpression('/<span class="tv-no-poster"\s+data-part="row poster"\s*>Salt Harbour<\/span>/', $matched);
+        $this->assertSame(['download', 'copy', 'cart', 'watch'], $this->actions($matched));
+        $this->assertStringContainsString('<div class="tv-actions">', $matched);
+
+        $unmatched = $this->rowOf($response, 'Unmatched.Show.S01E01.1080p');
+        $this->assertSame(['download', 'copy', 'cart'], $this->actions($unmatched));
+        $this->assertMatchesRegularExpression('/data-cart="[0-9a-f]{32}" aria-pressed="true"/', $unmatched);
+        $this->assertMatchesRegularExpression('/aria-pressed="true"[^>]*><i class="fas fa-cart-shopping" aria-hidden="true"><\/i><\/button>\s*<span class="tv-action tv-action-slot" aria-hidden="true"><\/span>\s*<\/div>/', $unmatched);
+    }
+
     public function test_old_tv_browse_urls_and_header_links_lead_to_the_new_screen(): void
     {
         $this->page('/browse/tv')->assertRedirect(route('tv.releases'));
@@ -320,11 +422,19 @@ final class TvReleasesPageTest extends TestCase
     private function rowOf(TestResponse $response, string $name): string
     {
         foreach (explode('<tr data-release-row', (string) $response->getContent()) as $row) {
-            if (str_contains($row, 'title="'.$name) || str_contains($row, '>'.$name.'<')) {
+            if (str_contains($row, 'title="'.e($name)) || str_contains($row, '>'.e($name).'<')) {
                 return strstr($row, '</tr>', true) ?: $row;
             }
         }
         $this->fail('No row for '.$name);
+    }
+
+    private function posterCell(string $row): string
+    {
+        $cell = strstr((string) strstr($row, '<td class="tv-art">'), '<td class="tv-what">', true);
+        $this->assertIsString($cell);
+
+        return $cell;
     }
 
     private function openingTag(TestResponse $response, string $name): string

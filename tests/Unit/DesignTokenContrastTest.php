@@ -24,6 +24,16 @@ class DesignTokenContrastTest extends TestCase
             'muted text on the page ground' => ['--text-muted', '--surface-body'],
             'muted text on a card' => ['--text-muted', '--surface-card'],
             'accent text on the accent surface' => ['--accent-on', '--accent-surface'],
+            'Copy NZB link icon on its button' => ['--row-action-copy-fg', '--row-action-copy-bg'],
+            'Copy NZB link icon on its hovered button' => ['--row-action-copy-fg', '--row-action-copy-hover-bg'],
+            'Add to cart icon on its button' => ['--row-action-cart-fg', '--row-action-cart-bg'],
+            'Add to cart icon on its hovered button' => ['--row-action-cart-fg', '--row-action-cart-hover-bg'],
+            'Add to cart icon on its pressed button' => ['--row-action-cart-on-fg', '--row-action-cart-on-bg'],
+            'Add to cart icon on its pressed, hovered button' => ['--row-action-cart-on-fg', '--row-action-cart-on-hover-bg'],
+            'Follow icon on its button' => ['--row-action-follow-fg', '--row-action-follow-bg'],
+            'Follow icon on its hovered button' => ['--row-action-follow-fg', '--row-action-follow-hover-bg'],
+            'Follow icon on its pressed button' => ['--row-action-follow-on-fg', '--row-action-follow-on-bg'],
+            'Follow icon on its pressed, hovered button' => ['--row-action-follow-on-fg', '--row-action-follow-on-hover-bg'],
         ];
     }
 
@@ -42,6 +52,13 @@ class DesignTokenContrastTest extends TestCase
     public function test_white_on_the_dark_accent_surface_is_the_failure_the_pair_avoids(): void
     {
         $this->assertLessThan(4.5, $this->contrast('#ffffff', $this->token('--accent-surface-dark')));
+    }
+
+    public function test_a_pressed_cart_is_white_on_the_contract_green(): void
+    {
+        $this->assertSame('#ffffff', $this->token('--row-action-cart-on-fg'));
+        $this->assertSame($this->oklch(0.50, 0.15, 150), $this->token('--row-action-cart-on-bg'));
+        $this->assertGreaterThanOrEqual(4.5, $this->contrast('#ffffff', $this->oklch(0.50, 0.15, 150)));
     }
 
     public function test_the_coral_ramp_is_pinned_to_the_approved_corals(): void
@@ -63,16 +80,38 @@ class DesignTokenContrastTest extends TestCase
     {
         if (self::$tokens === null) {
             $css = (string) file_get_contents(dirname(__DIR__, 2).'/resources/css/app.css');
-            preg_match_all('/(--[a-z0-9-]+):\s*(#[0-9a-f]{6})\s*;/i', $css, $matches, PREG_SET_ORDER);
+            preg_match_all('/(--[a-z0-9-]+):\s*(#[0-9a-f]{6}|oklch\(([\d.]+) ([\d.]+) ([\d.]+)\))\s*;/i', $css, $matches, PREG_SET_ORDER);
             self::$tokens = [];
-            foreach ($matches as [, $token, $value]) {
-                self::$tokens[$token] ??= strtolower($value);
+            foreach ($matches as $match) {
+                self::$tokens[$match[1]] ??= isset($match[3]) ? $this->oklch((float) $match[3], (float) $match[4], (float) $match[5]) : strtolower($match[2]);
             }
         }
 
-        $this->assertArrayHasKey($name, self::$tokens, "app.css declares {$name} as a hex colour");
+        $this->assertArrayHasKey($name, self::$tokens, "app.css declares {$name} as a hex or OKLCH colour");
 
         return self::$tokens[$name];
+    }
+
+    /** OKLCH to the nearest sRGB hex, clipped to the gamut as a browser draws it. */
+    private function oklch(float $lightness, float $chroma, float $hue): string
+    {
+        $a = $chroma * cos(deg2rad($hue));
+        $b = $chroma * sin(deg2rad($hue));
+        $l = ($lightness + 0.3963377774 * $a + 0.2158037573 * $b) ** 3;
+        $m = ($lightness - 0.1055613458 * $a - 0.0638541728 * $b) ** 3;
+        $s = ($lightness - 0.0894841775 * $a - 1.2914855480 * $b) ** 3;
+        $linear = [
+            4.0767416621 * $l - 3.3077115913 * $m + 0.2309699292 * $s,
+            -1.2684380046 * $l + 2.6097574011 * $m - 0.3413193965 * $s,
+            -0.0041960863 * $l - 0.7034186147 * $m + 1.7076147010 * $s,
+        ];
+
+        return '#'.implode('', array_map(static function (float $channel): string {
+            $channel = min(1.0, max(0.0, $channel));
+            $encoded = $channel <= 0.0031308 ? 12.92 * $channel : 1.055 * $channel ** (1 / 2.4) - 0.055;
+
+            return sprintf('%02x', (int) round($encoded * 255));
+        }, $linear));
     }
 
     private function contrast(string $first, string $second): float

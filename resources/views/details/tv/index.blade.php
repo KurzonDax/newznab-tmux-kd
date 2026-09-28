@@ -18,7 +18,6 @@
     $commentCount = $comments->total();
     $tabs = ['overview' => 'Overview', 'files' => 'Files ('.$row->files.')', 'media' => 'Media info', 'nfo' => 'NFO', 'comments' => 'Comments ('.$commentCount.')'];
     $mediaSummary = $row->mediaInfoWithResolution();
-    $group = str_starts_with($row->group, 'alt.binaries.') ? 'a.b.'.substr($row->group, 13) : $row->group;
     $uploader = mb_strlen($row->uploader) > 26 ? mb_substr($row->uploader, 0, 25).'…' : $row->uploader;
 @endphp
 
@@ -79,7 +78,7 @@
                 @if($row->group !== '' || $row->uploader !== '')
                     <div class="tv-chips tv-details-origin">
                         @if($row->group !== '')
-                            <a class="tv-origin-chip" href="{{ route('browse.all', ['group' => $row->group]) }}" title="All releases in {{ $row->group }}"><i class="fas fa-users" aria-hidden="true"></i>{{ $group }}</a>
+                            <a class="tv-origin-chip" href="{{ route('browse.all', ['group' => $row->group]) }}" title="All releases in {{ $row->group }}"><i class="fas fa-users" aria-hidden="true"></i>{{ $row->groupLabel() }}</a>
                         @endif
                         @if($row->uploader !== '')
                             <a class="tv-origin-chip" href="{{ route('browse.all', ['poster' => $row->uploader]) }}" title="All posts by {{ $row->uploader }}"><i class="fas fa-user" aria-hidden="true"></i>{{ $uploader }}</a>

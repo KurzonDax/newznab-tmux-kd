@@ -10,6 +10,8 @@ use App\Services\Releases\TvReleaseRows;
 /** One release row of the TV screens (the releases list and the show page's release tables), ready to render. */
 final readonly class TvReleaseRow
 {
+    private const string BINARIES_PREFIX = 'alt.binaries.';
+
     /**
      * @param  array{percent: int, band: string, repairing: bool}|null  $completion  null at 100% or when never measured
      * @param  array{thumb: ?string, full: ?string}|null  $preview
@@ -56,6 +58,43 @@ final readonly class TvReleaseRow
     public function hasChips(): bool
     {
         return $this->completion !== null || $this->passworded || $this->mediaInfo !== null || $this->nfo || $this->preview !== null || $this->sample !== null;
+    }
+
+    /** The releases list's group and poster chips close the chip line when the release has either. */
+    public function hasOrigin(): bool
+    {
+        return $this->group !== '' || $this->uploader !== '';
+    }
+
+    /** The group chip's label: `a.b.` stands for `alt.binaries.`, the full name stays in its title. */
+    public function groupLabel(): string
+    {
+        return str_starts_with($this->group, self::BINARIES_PREFIX) ? 'a.b.'.substr($this->group, strlen(self::BINARIES_PREFIX)) : $this->group;
+    }
+
+    /**
+     * The no-poster placeholder's name card (SPEC appendix A, the prototype's `showName()`): the title the
+     * release name states and its episode or air date, or null for the "No poster" tile. Nothing is
+     * stripped from the title and there is no letter rule.
+     *
+     * @return array{title: string, episode: string}|null
+     */
+    public function nameCard(): ?array
+    {
+        if (preg_match('/\.rar|\.part\d|^["\'(\[]/i', $this->name) === 1
+            || preg_match('/^(.+?)[._ \-]+(?:(S\d{1,4})[ ._-]?(E\d{1,4})(?:-?(E\d{1,4}))?|(\d{4})[._ \-](\d{2})[._ \-](\d{2})|(E\d{2,4}))(?=[._ \-]|$)/iu', $this->name, $match, PREG_UNMATCHED_AS_NULL) !== 1) {
+            return null;
+        }
+        $title = trim((string) preg_replace(['/[._]+/u', '/[\s\-]+$/u'], [' ', ''], (string) $match[1]));
+        if ($title === '') {
+            return null;
+        }
+
+        return ['title' => $title, 'episode' => match (true) {
+            $match[2] !== null => strtoupper($match[2].$match[3]).($match[4] !== null ? '–'.strtoupper($match[4]) : ''),
+            $match[5] !== null => $match[5].'-'.$match[6].'-'.$match[7],
+            default => strtoupper((string) $match[8]),
+        }];
     }
 
     /** The details header's media info chip: the row's summary led by the release's resolution when both are known. */

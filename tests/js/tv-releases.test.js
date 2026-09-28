@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { checkboxMenu } from '../../resources/js/alpine/components/checkbox-menu-component.js';
 import { tvReleases } from '../../resources/js/alpine/components/tv-releases-component.js';
@@ -202,4 +203,50 @@ test('cart buttons toggle one release and the bar adds the whole selection', asy
     assert.deepEqual(JSON.parse(requests[2].body), { id: 'a,b' });
     assert.deepEqual(cartButtons.map(button => button.getAttribute('aria-pressed')), ['true', 'true']);
     assert.equal(component.selectedCount, 0);
+});
+
+function cssRules(file) {
+    const rules = new Map();
+    for (const [, selectors, body] of readFileSync(new URL(file, import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        for (const selector of selectors.split(',').map(part => part.trim().replace(/\s+/g, ' '))) {
+            rules.set(selector, [rules.get(selector) ?? '', body.trim()].filter(Boolean).join(' '));
+        }
+    }
+    return rules;
+}
+
+test('row buttons sit 2 × 2 and Copy link, Cart and Follow each keep their own hue, pressed too', () => {
+    const tv = cssRules('../../resources/css/tv.css'), app = readFileSync(new URL('../../resources/css/app.css', import.meta.url), 'utf8');
+    assert.match(tv.get('.tv-actions'), /display: grid; grid-template-columns: repeat\(2, 32px\); gap: 6px; justify-content: end;/);
+    assert.match(tv.get('.tv-action-slot'), /display: none;/);
+    assert.match(tv.get('.tv-col-actions'), /width: 96px;/);
+    assert.equal(tv.get('.tv-col-grabs'), undefined);
+
+    const off = '.tv-actions .tv-action:not(.tv-action-download)', pressed = ['.tv-actions .tv-action[aria-pressed="true"]', '.tv-actions .tv-action[data-watched="1"]'];
+    assert.match(tv.get(off), /background: var\(--tv-action-bg\); color: var\(--tv-action-fg\);/);
+    assert.match(tv.get(`${off}:hover`), /background: var\(--tv-action-hover-bg\);/);
+    for (const selector of pressed) {
+        assert.match(tv.get(selector), /background: var\(--tv-action-on-bg\); color: var\(--tv-action-on-fg\);/);
+        assert.match(tv.get(`${selector}:hover`), /background: var\(--tv-action-on-hover-bg\);/);
+    }
+    for (const [selector, body] of tv) {
+        if (/aria-pressed|data-watched/.test(selector) && selector.includes('tv-action')) assert.doesNotMatch(body, /accent/, selector);
+    }
+
+    const hues = { copy: 235, cart: 150, follow: 300 }, token = name => app.match(new RegExp(`${name}: ([^;]+);`))?.[1];
+    for (const [button, kind, states] of [['[data-copy-nzb]', 'copy', ['bg', 'fg', 'hover-bg']], ['[data-cart]', 'cart', ['bg', 'fg', 'hover-bg', 'on-bg', 'on-fg', 'on-hover-bg']], ['[data-watch-picker]', 'follow', ['bg', 'fg', 'hover-bg', 'on-bg', 'on-fg', 'on-hover-bg']]]) {
+        for (const state of states) {
+            assert.match(tv.get(`.tv-actions ${button}`), new RegExp(`--tv-action-${state}: var\\(--row-action-${kind}-${state}\\);`));
+            assert.match(tv.get(`.dark .tv-actions ${button}`), new RegExp(`--tv-action-${state}: var\\(--row-action-${kind}-${state}-dark\\);`));
+            for (const name of [`--row-action-${kind}-${state}`, `--row-action-${kind}-${state}-dark`]) {
+                const value = token(name);
+                assert.ok(value === '#ffffff' || value?.endsWith(` ${hues[kind]})`), `${name} is in the ${kind} hue: ${value}`);
+            }
+        }
+    }
+    assert.equal(token('--row-action-cart-on-bg'), 'oklch(0.50 0.15 150)');
+    assert.equal(token('--row-action-cart-on-bg-dark'), 'oklch(0.72 0.15 150)');
+    assert.equal(token('--row-action-follow-on-bg-dark'), 'oklch(0.72 0.15 300)');
+    assert.match(tv.get(`${off}:focus-visible`), /outline-color: var\(--tv-ink\);/);
+    assert.match(tv.get('.tv-action-download'), /background: var\(--tv-accent\); color: var\(--tv-accent-on\);/);
 });

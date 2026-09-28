@@ -29,6 +29,16 @@
                     <span class="tv-no-poster" @if($parts) data-part="row poster" @endif>{{ $row->showTitle }}</span>
                 @endif
             </a>
+        @elseif(($card = $row->nameCard()) !== null)
+            <a class="tv-placeholder is-card" href="{{ $details }}" tabindex="-1" aria-hidden="true">
+                <span class="tv-placeholder-title">{{ $card['title'] }}</span>
+                <span class="tv-placeholder-label">{{ $card['episode'] }}</span>
+            </a>
+        @else
+            <a class="tv-placeholder" href="{{ $details }}" tabindex="-1" aria-hidden="true">
+                <i class="fas fa-tv" aria-hidden="true"></i>
+                <span class="tv-placeholder-label">No poster</span>
+            </a>
         @endif
     </td>
     <td class="tv-what">
@@ -36,14 +46,27 @@
         @if($row->hasShow())
             <a class="tv-show-line" href="{{ $row->showUrl }}" title="Go to the show" @if($parts) data-part="show line under the name" @endif>{{ $row->showLine() }}</a>
         @endif
-        @include('tv.partials.release-chips')
+        {{-- One chip line: the release chips, then the group and poster pair that never splits (SPEC 3.1). --}}
+        @if($row->hasChips() || $row->hasOrigin())
+            <div class="tv-chips">
+                @include('tv.partials.release-chip-list')
+                @if($row->hasOrigin())
+                    <span class="tv-origin-pair">
+                        @if($row->group !== '')
+                            <a class="tv-origin-chip" href="{{ route('browse.all', ['group' => $row->group]) }}" title="All releases in {{ $row->group }}"><i class="fas fa-users" aria-hidden="true"></i>{{ $row->groupLabel() }}</a>
+                        @endif
+                        @if($row->uploader !== '')
+                            <a class="tv-origin-chip tv-origin-poster" href="{{ route('browse.all', ['poster' => $row->uploader]) }}" title="All posts by {{ $row->uploader }}"><i class="fas fa-user" aria-hidden="true"></i><span>{{ $row->uploader }}</span></a>
+                        @endif
+                    </span>
+                @endif
+            </div>
+        @endif
     </td>
     <td><x-resolution-chip :resolution="$row->resolution" :part="$parts" /></td>
     <td>{{ $row->source }}</td>
     <td class="tv-num">{{ $row->size }}</td>
-    <td class="tv-num"><button type="button" class="tv-files filelist-badge" data-guid="{{ $row->guid }}" title="View file list" @if($parts) data-part="file count button" @endif>{{ $row->files }}</button></td>
     <td class="tv-num" title="{{ $row->dateTitle }}">{{ $row->date }}</td>
-    <td class="tv-num" title="{{ $row->grabs }} grabs · {{ $row->comments }} comments">{{ $row->grabs }}</td>
     <td>
         @include('tv.partials.release-actions')
     </td>
