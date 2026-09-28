@@ -77,6 +77,7 @@ use App\Http\Controllers\GetNzbController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\MediaInfoController;
 use App\Http\Controllers\MovieController;
+use App\Http\Controllers\MovieFilmsController;
 use App\Http\Controllers\MovieReleasesController;
 use App\Http\Controllers\MusicController;
 use App\Http\Controllers\MyMoviesController;
@@ -249,6 +250,7 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         // Movies-related routes
         Route::get('movies', [MovieReleasesController::class, 'index'])->name('movies.releases');
         Route::get('movies/search', [MovieReleasesController::class, 'search'])->name('movies.search');
+        Route::get('movies/films', [MovieFilmsController::class, 'index'])->name('movies.films');
         Route::match(['GET', 'POST'], 'mymovies/browse', [MyMoviesController::class, 'browse'])->name('mymovies.browse');
         Route::match(['GET', 'POST'], 'mymovies', [MyMoviesController::class, 'show'])->name('mymovies');
     });

@@ -7,7 +7,7 @@
 --}}
 @php
     [$placeholder, $searchUrl, $wallUrl, $itemUrl, $groups] = $kind === 'film'
-        ? ['Search films or actors', route('movies.search'), url('/movies/films'), url('/movies/film'), 'Films and people']
+        ? ['Search films or actors', route('movies.search'), route('movies.films'), url('/movies/film'), 'Films and people']
         : ['Search shows or actors', route('tv.search'), route('tv.shows'), url('/tv/show'), 'Shows and people'];
 @endphp
 <div class="tv-search" x-data="tvSearch" data-kind="{{ $kind }}" data-search-url="{{ $searchUrl }}" data-shows-url="{{ $wallUrl }}" data-show-url="{{ $itemUrl }}"

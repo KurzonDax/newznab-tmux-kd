@@ -164,7 +164,7 @@ final class MovieReleaseList extends BandReleaseList
      * stored yet is banded by its score alone; DATA-CONTRACT 2.2); MPAA Rating and Language on
      * their columns.
      */
-    private function whereFilms(Builder $query, MovieFilmFilters $films): Builder
+    public function whereFilms(Builder $query, MovieFilmFilters $films): Builder
     {
         if ($films->genres !== []) {
             $query->whereExists(static fn (Builder $genre) => $genre->selectRaw('1')->from('movie_genres as mg')

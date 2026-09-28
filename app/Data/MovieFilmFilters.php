@@ -160,21 +160,24 @@ final readonly class MovieFilmFilters
      * What is set, for the empty result, as the prototype's filterText(): "Horror or Drama",
      * "in French", "1990s or 2000s", "score 9+ or too few votes", "rated R or PG-13".
      *
+     * Keyed by menu (genre, language, year, score, rating) in the list's order; the Films wall
+     * puts them in its own order. Unset menus are left out.
+     *
      * @param  array<int, string>  $genres  the Genre menu
      * @param  array<string, string>  $languages  the Language menu
-     * @return list<string>
+     * @return array<string, string>
      */
     public function describe(array $genres, array $languages): array
     {
         $name = static fn (int|string $value, array $names): string => (string) ($names[$value] ?? $value);
 
-        return array_values(array_filter([
-            implode(' or ', array_map(static fn (int $genre): string => $name($genre, $genres), $this->genres)),
-            $this->languages === [] ? '' : 'in '.implode(' or ', array_map(static fn (string $language): string => $name($language, $languages), $this->languages)),
-            $this->yearFrom !== null ? $this->rangeText() : implode(' or ', array_map(static fn (int $decade): string => $decade.'s', $this->decades)),
-            implode(' or ', array_map(static fn (string $score): string => $score === 'few' ? 'too few votes' : 'score '.self::SCORES[$score], $this->scores)),
-            $this->ratings === [] ? '' : 'rated '.implode(' or ', $this->ratings),
-        ], static fn (string $part): bool => $part !== ''));
+        return array_filter([
+            'genre' => implode(' or ', array_map(static fn (int $genre): string => $name($genre, $genres), $this->genres)),
+            'language' => $this->languages === [] ? '' : 'in '.implode(' or ', array_map(static fn (string $language): string => $name($language, $languages), $this->languages)),
+            'year' => $this->yearFrom !== null ? $this->rangeText() : implode(' or ', array_map(static fn (int $decade): string => $decade.'s', $this->decades)),
+            'score' => implode(' or ', array_map(static fn (string $score): string => $score === 'few' ? 'too few votes' : 'score '.self::SCORES[$score], $this->scores)),
+            'rating' => $this->ratings === [] ? '' : 'rated '.implode(' or ', $this->ratings),
+        ], static fn (string $part): bool => $part !== '');
     }
 
     /** @return array<string, list<int|string>|int> the URL query */

@@ -680,8 +680,9 @@ Specified in [`DATA-CONTRACT.md`](DATA-CONTRACT.md) (2026-09-27), every read mea
 - A filter cell's tooltip names every chosen value (`Year: 2010s, 1990s`), because a cell shows
   `2 chosen` for several and can cut a long single value.
 - Search inside a menu is per menu and forgotten on close; it never filters the list itself.
-- The Films wall's counts and "newest" dates come from all of a film's visible releases, not from
-  the page of releases being shown.
+- A Films wall tile's `N releases` counts the viewer's visible releases of the film. The "newest"
+  sort dates come from all of the film's releases in the Movies categories, not per viewer, as
+  the TV wall's do. Neither comes from the page of releases being shown.
 - The date column's heading and values follow the sort (Posted or Added).
 - Group and poster chips link to the existing all-categories lists, same tab.
 - Pages are 50 releases. The page number is in the URL so Back works.

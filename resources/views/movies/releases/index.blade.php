@@ -14,7 +14,7 @@
     <div class="tv-wrap" data-part="content width wrapper">
         <div class="tv-filters">
             <h1 data-part="page title">Movie releases</h1>
-            <x-segmented :items="['Releases' => route('movies.releases'), 'Films' => url('/movies/films')]" current="Releases" />
+            <x-segmented :items="['Releases' => route('movies.releases'), 'Films' => route('movies.films')]" current="Releases" />
             <x-tv-search kind="film" />
             <span class="tv-grow"></span>
             <label class="tv-sort">

@@ -15,6 +15,7 @@
                         <a href="{{ $list !== null ? route($list, ['category' => [$category['id']]]) : url('/browse/'.$root->value.'/'.$category['id']) }}">{{ $category['title'] }}</a>
                     @endforeach
                     @if($root === \App\Enums\BrowseRoot::Movies)
+                        <a href="{{ route('movies.films') }}"><i class="fas fa-film" aria-hidden="true"></i>Films</a>
                         <a href="{{ route('trending-movies') }}"><i class="fas fa-fire" aria-hidden="true"></i>Trending Movies</a>
                     @endif
                     @if($root === \App\Enums\BrowseRoot::Tv)
