@@ -1,4 +1,4 @@
-{{-- The four round row actions: Download NZB, Copy NZB link, Add to cart, Watch this show (an invisible slot without a show). --}}
+{{-- The four round row actions: Download NZB, Copy NZB link, Add to cart, Watch this show; without a show an empty slot, not drawn, leaves Cart alone under Download. --}}
 <div class="tv-actions">
     <a href="{{ route('getnzb.guid', $row->guid) }}" class="tv-action tv-action-download download-nzb" title="Download NZB" aria-label="Download NZB" @if($parts) data-part="row action: download" @endif><i class="fas fa-download" aria-hidden="true"></i></a>
     <button type="button" class="tv-action" data-copy-nzb="{{ $row->guid }}" title="Copy NZB link for SABnzbd or NZBGet" aria-label="Copy NZB link for SABnzbd or NZBGet" @if($parts) data-part="row action button" @endif><i class="fas fa-link" aria-hidden="true"></i></button>

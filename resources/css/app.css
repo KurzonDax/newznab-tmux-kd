@@ -63,6 +63,39 @@
     --shadow-floating: 0 14px 30px -14px rgb(30 30 20 / 35%);
     --shadow-floating-dark: 0 18px 40px -14px rgb(0 0 0 / 70%);
 
+    /* Release-table row buttons (VISUAL-CONTRACT 2): Copy NZB link hue 235, Add to cart 150, Follow 300; never the accent.
+       Off is a tinted ground with the icon in the same hue; on (in the cart, following) fills solid in that hue. */
+    --row-action-copy-bg: oklch(0.92 0.045 235);
+    --row-action-copy-bg-dark: oklch(0.31 0.06 235);
+    --row-action-copy-fg: oklch(0.45 0.14 235);
+    --row-action-copy-fg-dark: oklch(0.86 0.11 235);
+    --row-action-copy-hover-bg: oklch(0.87 0.07 235);
+    --row-action-copy-hover-bg-dark: oklch(0.37 0.08 235);
+    --row-action-cart-bg: oklch(0.92 0.045 150);
+    --row-action-cart-bg-dark: oklch(0.31 0.06 150);
+    --row-action-cart-fg: oklch(0.45 0.14 150);
+    --row-action-cart-fg-dark: oklch(0.86 0.11 150);
+    --row-action-cart-hover-bg: oklch(0.87 0.07 150);
+    --row-action-cart-hover-bg-dark: oklch(0.37 0.08 150);
+    --row-action-cart-on-bg: oklch(0.50 0.15 150);
+    --row-action-cart-on-bg-dark: oklch(0.72 0.15 150);
+    --row-action-cart-on-fg: #ffffff;
+    --row-action-cart-on-fg-dark: oklch(0.18 0.04 150);
+    --row-action-cart-on-hover-bg: oklch(0.44 0.15 150);
+    --row-action-cart-on-hover-bg-dark: oklch(0.78 0.13 150);
+    --row-action-follow-bg: oklch(0.92 0.045 300);
+    --row-action-follow-bg-dark: oklch(0.31 0.06 300);
+    --row-action-follow-fg: oklch(0.45 0.14 300);
+    --row-action-follow-fg-dark: oklch(0.86 0.11 300);
+    --row-action-follow-hover-bg: oklch(0.87 0.07 300);
+    --row-action-follow-hover-bg-dark: oklch(0.37 0.08 300);
+    --row-action-follow-on-bg: oklch(0.50 0.15 300);
+    --row-action-follow-on-bg-dark: oklch(0.72 0.15 300);
+    --row-action-follow-on-fg: #ffffff;
+    --row-action-follow-on-fg-dark: oklch(0.18 0.04 300);
+    --row-action-follow-on-hover-bg: oklch(0.44 0.15 300);
+    --row-action-follow-on-hover-bg-dark: oklch(0.78 0.13 300);
+
     /* Chips: tinted ground + coloured text. Status colours, never the accent. */
     --chip-media-bg: oklch(0.93 0.035 275);
     --chip-media-bg-dark: oklch(0.31 0.06 275);
