@@ -655,6 +655,16 @@ CREATE TABLE `jobs` (
   KEY `jobs_queue_index` (`queue`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `languages`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `languages` (
+  `id` smallint(5) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(64) NOT NULL COMMENT 'As LanguageNames names it: English, not en-US',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_languages_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `logging`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -2452,6 +2462,18 @@ CREATE TABLE `release_audio_evidence_tracks` (
   CONSTRAINT `release_audio_evidence_tracks_release_audio_evidence_id_foreign` FOREIGN KEY (`release_audio_evidence_id`) REFERENCES `release_audio_evidence` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `release_audio_languages`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `release_audio_languages` (
+  `releases_id` int(10) unsigned NOT NULL,
+  `languages_id` smallint(5) unsigned NOT NULL,
+  PRIMARY KEY (`languages_id`,`releases_id`),
+  KEY `ix_release_audio_languages_release` (`releases_id`),
+  CONSTRAINT `fk_release_audio_languages_languages_id` FOREIGN KEY (`languages_id`) REFERENCES `languages` (`id`),
+  CONSTRAINT `fk_release_audio_languages_releases_id` FOREIGN KEY (`releases_id`) REFERENCES `releases` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `release_audio_tags`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -4000,3 +4022,5 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (298,'2026_09_25_10
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (299,'2026_09_27_000000_add_filter_led_indexes_to_releases',16);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (300,'2026_09_27_100000_add_movie_genres_and_people',17);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (301,'2026_09_27_100100_fill_movie_genres_and_people',17);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (302,'2026_09_27_200000_add_release_audio_languages',18);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (303,'2026_09_27_200100_fill_release_audio_languages',18);

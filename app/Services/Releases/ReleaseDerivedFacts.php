@@ -7,16 +7,19 @@ namespace App\Services\Releases;
 use App\Enums\ReleaseResolution;
 use App\Enums\ReleaseSource;
 use App\Models\Category;
+use App\Services\MediaInfo\DTO\MediaInfoSnapshotData;
 use App\Services\MediaInfo\Enums\MediaInfoSourceCompleteness;
 use App\Services\MediaInfo\MediaInfoSnapshotService;
+use App\Support\LanguageNames;
 use App\Support\ReleaseQuality;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 /**
  * Keeps the per-release facts derived from other release data (`resolution`, `source`,
- * the `release_tv_episodes` rows) in step. Called only from SearchService::updateRelease(),
- * which every release change already reaches.
+ * the `release_tv_episodes` and `release_audio_languages` rows) in step. Called only from
+ * SearchService::updateRelease(), which every release change already reaches.
  */
 final class ReleaseDerivedFacts
 {
@@ -33,14 +36,16 @@ final class ReleaseDerivedFacts
             return;
         }
 
-        $this->refreshQuality($releaseId, $release);
+        $snapshot = $this->snapshots->selectedForRelease($releaseId);
+        $this->refreshQuality($releaseId, $release, $snapshot);
         $this->refreshTvEpisodes($releaseId, $release);
+        $this->refreshAudioLanguages($releaseId, $snapshot);
     }
 
-    private function refreshQuality(int $releaseId, object $release): void
+    private function refreshQuality(int $releaseId, object $release, ?MediaInfoSnapshotData $snapshot): void
     {
         $name = (string) $release->searchname;
-        [$width, $height] = $this->measuredSize($releaseId);
+        [$width, $height] = $this->measuredSize($releaseId, $snapshot);
         $facts = [
             'resolution' => ReleaseQuality::resolution($width, $height, $name)->value,
             'source' => ReleaseQuality::source($name)->value,
@@ -104,6 +109,123 @@ final class ReleaseDerivedFacts
             });
 
         return $written;
+    }
+
+    /**
+     * Replaces the release's `release_audio_languages` rows with the languages of its audio
+     * tracks, only when they differ.
+     *
+     * @return bool Whether the rows were replaced.
+     */
+    private function refreshAudioLanguages(int $releaseId, ?MediaInfoSnapshotData $snapshot): bool
+    {
+        $declared = $this->languageIds($this->audioLanguages($releaseId, $snapshot));
+        $stored = DB::table('release_audio_languages')->where('releases_id', $releaseId)->orderBy('languages_id')
+            ->pluck('languages_id')->map(static fn (mixed $id): int => (int) $id)->all();
+        if ($stored === $declared) {
+            return false;
+        }
+
+        DB::transaction(static function () use ($releaseId, $declared): void {
+            DB::table('release_audio_languages')->where('releases_id', $releaseId)->delete();
+            DB::table('release_audio_languages')->insert(array_map(
+                static fn (int $languageId): array => ['releases_id' => $releaseId, 'languages_id' => $languageId], $declared));
+        });
+
+        return true;
+    }
+
+    /**
+     * Writes `release_audio_languages` for every release with media info, in primary-key
+     * chunks, for the migration that fills the table. Each release goes through the same
+     * step as refresh(), so a re-run changes nothing.
+     *
+     * @return int The releases whose rows were replaced.
+     */
+    public function fillAudioLanguages(): int
+    {
+        $replaced = 0;
+        DB::table('releases')->select('id')
+            ->where(static fn ($query) => $query
+                ->whereExists(static fn ($probes) => $probes->select(DB::raw(1))->from('media_info_probes')
+                    ->whereColumn('media_info_probes.releases_id', 'releases.id'))
+                ->orWhereExists(static fn ($audio) => $audio->select(DB::raw(1))->from('audio_data')
+                    ->whereColumn('audio_data.releases_id', 'releases.id')))
+            ->chunkById(500, function (Collection $releases) use (&$replaced): void {
+                // Most releases have only audio_data: skip the probe read for those.
+                $probed = array_flip(DB::table('media_info_probes')->whereIn('releases_id', $releases->pluck('id')->all())
+                    ->distinct()->pluck('releases_id')->map(static fn (mixed $id): int => (int) $id)->all());
+                foreach ($releases as $release) {
+                    $id = (int) $release->id;
+                    $snapshot = isset($probed[$id]) ? $this->snapshots->selectedForRelease($id) : null;
+                    $replaced += (int) $this->refreshAudioLanguages($id, $snapshot);
+                }
+            });
+
+        return $replaced;
+    }
+
+    /**
+     * The languages of the selected probe's audio tracks; when they name none, those of the
+     * legacy `audio_data` rows.
+     *
+     * @return list<string>
+     */
+    private function audioLanguages(int $releaseId, ?MediaInfoSnapshotData $snapshot): array
+    {
+        $fromProbe = LanguageNames::distinct(array_map(
+            static fn (array $stream): ?string => is_string($stream['language'] ?? null) ? $stream['language'] : null,
+            array_filter($snapshot->streams ?? [], static fn (array $stream): bool => $stream['type'] === 'audio'),
+        ));
+        if ($fromProbe !== []) {
+            return $fromProbe;
+        }
+
+        return LanguageNames::distinct(DB::table('audio_data')->where('releases_id', $releaseId)->orderBy('audioid')
+            ->pluck('audiolanguage')->all());
+    }
+
+    /**
+     * The `languages` ids of the names, sorted, inserting any new name. The unique key
+     * decides which names are the same (case- and accent-insensitive on MariaDB), so
+     * parallel workers share one row per name. A name is read before it is inserted, so
+     * an existing name never spends an auto-increment value.
+     *
+     * @param  list<string>  $names
+     * @return list<int>
+     */
+    private function languageIds(array $names): array
+    {
+        if ($names === []) {
+            return [];
+        }
+
+        $found = DB::table('languages')->whereIn('name', $names)->pluck('id', 'name')->all();
+        $ids = [];
+        foreach ($names as $name) {
+            if (isset($found[$name])) {
+                $ids[] = (int) $found[$name];
+
+                continue;
+            }
+            $ids[] = $this->languageId($name);
+        }
+        $ids = array_values(array_unique($ids));
+        sort($ids);
+
+        return $ids;
+    }
+
+    private function languageId(string $name): int
+    {
+        $find = static fn (): mixed => DB::table('languages')->where('name', $name)->value('id');
+        $id = $find();
+        if ($id === null) {
+            DB::table('languages')->insertOrIgnore(['name' => $name]);
+            $id = $find() ?? throw new RuntimeException("Could not store the language name '{$name}'.");
+        }
+
+        return (int) $id;
     }
 
     private function isTvWithShow(object $release): bool
@@ -204,9 +326,9 @@ final class ReleaseDerivedFacts
     }
 
     /** @return array{int, int} Zeros when nothing was measured. */
-    private function measuredSize(int $releaseId): array
+    private function measuredSize(int $releaseId, ?MediaInfoSnapshotData $snapshot): array
     {
-        foreach ($this->snapshots->selectedForRelease($releaseId)->streams ?? [] as $stream) {
+        foreach ($snapshot->streams ?? [] as $stream) {
             $width = (int) ($stream['width'] ?? 0);
             $height = (int) ($stream['height'] ?? 0);
             if ($stream['type'] === 'video' && ($width > 0 || $height > 0)) {
