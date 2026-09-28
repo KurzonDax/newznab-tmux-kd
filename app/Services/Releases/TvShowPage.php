@@ -81,16 +81,29 @@ final class TvShowPage
     }
 
     /**
-     * The season of the show's newest release by postdate that declares one.
+     * The season a page opens on when its link names none the show has (SPEC.md 3.3): season 1,
+     * else the lowest-numbered season, else Specials; null for a show with no seasons.
      *
-     * @param  list<int>  $exclusions
+     * @param  list<int>  $seasons  as seasons() returns them, ascending
      */
-    public function newestSeason(int $videosId, array $exclusions): ?int
+    public function openingSeason(array $seasons): ?int
     {
-        $season = $this->declared($this->visible($videosId, $exclusions))
-            ->orderByDesc('r.postdate')->orderByDesc('r.id')->orderBy('e.season')->value('e.season');
+        if (in_array(1, $seasons, true)) {
+            return 1;
+        }
+        foreach ($seasons as $season) {
+            if ($season > 0) {
+                return $season;
+            }
+        }
 
-        return $season === null ? null : (int) $season;
+        return $seasons[0] ?? null;
+    }
+
+    /** Whether the user follows the show (a user_series row): the header's Follow show button. */
+    public function followed(int $videosId, int $userId): bool
+    {
+        return DB::table('user_series')->where('users_id', $userId)->where('videos_id', $videosId)->exists();
     }
 
     /**

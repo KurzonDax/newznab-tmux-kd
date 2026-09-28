@@ -88,9 +88,9 @@
                 <div class="tv-details-actions">
                     <a class="tv-details-button download-nzb" href="{{ route('getnzb.guid', $row->guid) }}" data-part="details primary button"><i class="fas fa-download" aria-hidden="true"></i>Download NZB</a>
                     <button type="button" class="tv-details-button is-secondary" data-copy-nzb="{{ $row->guid }}" data-part="details secondary button"><i class="fas fa-link" aria-hidden="true"></i>Copy NZB link</button>
-                    <button type="button" class="tv-details-button is-secondary" data-cart="{{ $row->guid }}" data-cart-label aria-pressed="{{ $row->inCart ? 'true' : 'false' }}"><i @class(['fas', 'fa-check' => $row->inCart, 'fa-cart-shopping' => ! $row->inCart]) aria-hidden="true"></i><span>{{ $row->inCart ? 'In cart' : 'Add to cart' }}</span></button>
+                    <button type="button" class="tv-details-button is-secondary" data-cart="{{ $row->guid }}" data-cart-label aria-pressed="{{ $row->inCart ? 'true' : 'false' }}" title="{{ $row->inCart ? 'In cart · click to remove' : 'Add to cart' }}"><i class="fas fa-cart-shopping" aria-hidden="true"></i><span class="tv-state-label"><span class="is-off">Add to cart</span><span class="is-on">In cart</span></span></button>
                     @if($show !== null)
-                        <button type="button" class="tv-details-button is-secondary" data-watch-picker="{{ route('watchlist.picker', ['root' => 'tv', 'id' => $show->id]) }}" data-watch-key="tv:{{ $show->id }}" data-watch-title="{{ $show->title }}" data-watched="{{ $row->watched ? '1' : '0' }}"><i class="fas fa-eye" aria-hidden="true"></i><span class="tv-watch-off">Watch show</span><span class="tv-watch-on">Watching show</span></button>
+                        @include('tv.partials.follow-show', ['showId' => $show->id, 'showTitle' => $show->title, 'followed' => $row->watched])
                     @endif
                 </div>
             </div>
@@ -159,7 +159,7 @@
         @if($siblings !== [])
             <section class="tv-siblings" x-ref="siblings">
                 <h2 data-part="episode releases heading">{{ count($siblings) > 1 ? 'All '.count($siblings).' releases of this '.$siblingKind : 'The only release of this '.$siblingKind }}</h2>
-                @include('tv.show.releases', ['rows' => $siblings, 'pick' => false, 'parts' => false, 'current' => $row->guid])
+                @include('tv.show.releases', ['rows' => $siblings, 'pick' => false, 'parts' => false, 'current' => $row->guid, 'grabs' => true])
             </section>
         @endif
     </div>

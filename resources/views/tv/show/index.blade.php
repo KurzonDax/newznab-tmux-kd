@@ -46,6 +46,7 @@
                 @if($show->starring !== [])
                     <div class="tv-starring" data-part="starring line">Starring @foreach($show->starring as $personId => $name)<a href="{{ route('tv.shows', ['person' => $personId]) }}">{{ $name }}</a>{{ $loop->last ? '' : ', ' }}@endforeach</div>
                 @endif
+                <div class="tv-details-actions tv-show-actions">@include('tv.partials.follow-show', ['showId' => $show->id, 'showTitle' => $show->title, 'followed' => $followed])</div>
             </div>
         </div>
         <div class="tv-season-bar" data-part="season tab bar">
@@ -74,9 +75,19 @@
                 <x-checkbox-menu name="source" label="Source" :options="\App\Data\TvReleaseFilters::sourceOptions()" :selected="$filters->sources" />
             </div>
         </div>
-        <div x-ref="list">
+        <div class="tv-show-list" x-ref="list">
             @include('tv.show.list')
         </div>
+        @if($similar !== [])
+            <section class="tv-similar" aria-labelledby="tv-similar-heading">
+                <h2 id="tv-similar-heading">Similar shows</h2>
+                <div class="tv-tiles">
+                    @foreach($similar as $tile)
+                        @include('tv.partials.show-tile', ['parts' => false])
+                    @endforeach
+                </div>
+            </section>
+        @endif
     </div>
     <div class="tv-bulk" x-show="selectedCount" x-cloak>
         <span><span x-text="selectedCount"></span> selected</span>

@@ -95,9 +95,8 @@ final class TvReleaseDetailsPageTest extends TestCase
             ->assertSee('href="'.route('browse.all', ['group' => 'alt.binaries.example.tv']).'"', false)->assertSee('a.b.example.tv')
             ->assertSee('href="'.route('browse.all', ['poster' => 'paperboat <pb@example.invalid>']).'"', false)
             ->assertSee('nfo-badge', false)->assertSee('data-has-nfo="1"', false)->assertDontSee('Report')->assertDontSee('style="', false);
-        $this->assertSame(['Download NZB', 'Copy NZB link', 'Add to cart', 'Watch show'], $this->buttons($html));
-        $response->assertSee('<span class="tv-watch-off">Watch show</span><span class="tv-watch-on">Watching show</span>', false)
-            ->assertSee('x-on:click.self="close()"', false)->assertSee('aria-label="Close"', false);
+        $this->assertSame(['Download NZB', 'Copy NZB link', 'Add to cart', 'Follow show'], $this->buttons($html));
+        $response->assertSee('x-on:click.self="close()"', false)->assertSee('aria-label="Close"', false);
         $this->assertSame(['Overview', 'Files (1)', 'Media info', 'NFO', 'Comments (0)'], $this->tabs($html));
         $this->assertSame([
             'Category' => 'TV &gt; HD', 'Size' => '1.00 GB', 'Files' => '1', 'Completion' => '100%', 'Posted' => 'Sep 20, 2026, 10:00 AM',
@@ -106,6 +105,29 @@ final class TvReleaseDetailsPageTest extends TestCase
         ], $this->facts($html));
         $response->assertSee('<span>Aired 2025-11-16</span>', false)
             ->assertSee('data-part="tab, current"', false)->assertSee('data-part="details primary button"', false);
+    }
+
+    public function test_the_header_buttons_match_the_movies_details_page_download_coral_copy_and_cart_neutral_follow_show_violet(): void
+    {
+        $id = $this->tv(7, 5);
+        $guid = (string) DB::table('releases')->where('id', $id)->value('guid');
+        $picker = route('watchlist.picker', ['root' => 'tv', 'id' => self::SHOW]);
+
+        $actions = $this->between($this->details($id)->assertOk(), '<div class="tv-details-actions">', '</div>');
+        $this->assertSame('<a class="tv-details-button download-nzb" href="'.route('getnzb.guid', $guid).'" data-part="details primary button"><i class="fas fa-download" aria-hidden="true"></i>Download NZB</a>'
+            .'<button type="button" class="tv-details-button is-secondary" data-copy-nzb="'.$guid.'" data-part="details secondary button"><i class="fas fa-link" aria-hidden="true"></i>Copy NZB link</button>'
+            .'<button type="button" class="tv-details-button is-secondary" data-cart="'.$guid.'" data-cart-label aria-pressed="false" title="Add to cart"><i class="fas fa-cart-shopping" aria-hidden="true"></i>'
+            .'<span class="tv-state-label"><span class="is-off">Add to cart</span><span class="is-on">In cart</span></span></button>'
+            .'<button type="button" class="tv-details-button tv-follow-show" data-watch-picker="'.$picker.'" data-watch-key="tv:'.self::SHOW.'" data-watch-title="The Glass Meridian" data-watched="0" title="Follow this show">'
+            .'<i class="far fa-bookmark" aria-hidden="true"></i><span class="tv-state-label"><span class="is-off">Follow show</span><span class="is-on">Following show</span></span></button>',
+            (string) preg_replace('/>\s+</', '><', $actions));
+
+        DB::table('users_releases')->insert(['users_id' => $this->user()->id, 'releases_id' => $id]);
+        DB::table('user_series')->insert(['users_id' => $this->user()->id, 'videos_id' => self::SHOW, 'categories' => '5040']);
+        $pressed = $this->between($this->details($id), '<div class="tv-details-actions">', '</div>');
+        $this->assertStringContainsString('data-cart-label aria-pressed="true" title="In cart · click to remove"><i class="fas fa-cart-shopping" aria-hidden="true"></i>', $pressed);
+        $this->assertStringContainsString('data-watched="1" title="Following this show · click to unfollow"><i class="far fa-bookmark" aria-hidden="true"></i>', $pressed);
+        $this->assertStringNotContainsString('fa-check', $pressed);
     }
 
     public function test_about_the_show_has_no_year_on_its_line_but_keeps_the_premiered_tag(): void
@@ -125,8 +147,8 @@ final class TvReleaseDetailsPageTest extends TestCase
 
     public function test_the_episode_table_lists_the_releases_sharing_the_episode_largest_first_with_this_one_marked_and_no_boxes(): void
     {
-        $small = $this->tv(7, 5, size: self::GB);
-        $large = $this->tv(7, 5, size: 3 * self::GB);
+        $small = $this->tv(7, 5, size: self::GB, name: 'The.Glass.Meridian.S07E05.1080p');
+        $large = $this->tv(7, 5, size: 3 * self::GB, name: 'The.Glass.Meridian.S07E05.1080p');
         $mine = $this->tv(7, 5, size: 2 * self::GB);
         $this->tv(7, 6);
         $this->tv(7, null);
@@ -145,6 +167,12 @@ final class TvReleaseDetailsPageTest extends TestCase
         $this->assertStringNotContainsString('href="'.route('details', $guid).'"', $table);
         $this->assertSame(2, substr_count($table, 'href="'.url('/details/')));
         $this->assertSame(3, substr_count($table, 'data-copy-nzb='));
+        $this->assertStringContainsString('<button type="button" data-sort="grabs">Grabs', $table);
+        $this->assertSame(3, substr_count($table, 'data-grabs="'));
+        $this->assertStringContainsString('<col class="tv-col-count">', $table);
+        $this->assertSame(3, substr_count($table, 'data-cart="'));
+        $this->assertStringNotContainsString('data-watch-picker', $table);
+        $this->assertStringNotContainsString('Same name posted more than once', $table);
     }
 
     public function test_a_pack_lists_the_season_packs_and_a_release_that_declares_nothing_has_no_table(): void
@@ -233,7 +261,7 @@ final class TvReleaseDetailsPageTest extends TestCase
     private function buttons(string $html): array
     {
         preg_match('/<div class="tv-details-actions">(.*?)<\/div>/s', $html, $match);
-        preg_match_all('/<\/i>(?:<span[^>]*>)?([^<]+)/', $match[1] ?? '', $labels);
+        preg_match_all('/<\/i>(?:<span[^>]*>)*([^<]+)/', $match[1] ?? '', $labels);
 
         return array_map('trim', $labels[1]);
     }

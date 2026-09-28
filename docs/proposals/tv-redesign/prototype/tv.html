@@ -803,7 +803,8 @@ function show(id,season){
   // the picks arrive after the page is drawn: add only the section, so nothing above it is rebuilt and keyboard focus stays put
   if(!TVMORE){const h=location.hash;needTvMore().then(()=>{if(location.hash!==h||$('.simf'))return;const sec=similarShows(id);if(!sec)return;const b=$('#app .bulk');b?b.insertAdjacentHTML('beforebegin',sec):$('#app').insertAdjacentHTML('beforeend',sec);},()=>{});}
   const all=BYSHOW[id]||[], seasons=[...new Set(all.map(sOf).filter(s=>s!=null))].sort((a,b)=>a-b), other=all.filter(r=>sOf(r)==null);
-  if(season==null||!seasons.includes(season)){const latest=all.filter(r=>sOf(r)!=null).sort((a,b)=>b.t-a.t)[0];season=latest?sOf(latest):seasons[0];}
+  // no season in the link, or one the show lacks: season 1, else the lowest-numbered season, else Specials (his rule 2026-09-27)
+  if(season==null||!seasons.includes(season))season=seasons.includes(1)?1:(seasons.find(n=>n>0)??seasons[0]);
   const inSeason=all.filter(r=>sOf(r)===season), epRel=inSeason.filter(r=>eOf(r)!=null), packs=inSeason.filter(r=>eOf(r)==null);
   const eps=new Map();epRel.forEach(r=>{const e=eOf(r);(eps.get(e)||eps.set(e,{e,title:r.title,aired:r.aired,rs:[]}).get(e)).rs.push(r);});
   const hiddenCount=inSeason.filter(r=>!match(r)).length;

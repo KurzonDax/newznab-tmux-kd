@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { listUrl, nextSort, selectionKey, sortRows, SWITCH_KEY, tvEpisodeList } from '../../resources/js/alpine/components/tv-episode-list-component.js';
 
@@ -49,7 +50,7 @@ function releaseRow(guid, data) {
 }
 
 function table(rows) {
-    const cells = ['resolution', 'size', 'posted', 'grabs', null].map(key => ({ ...attributes(key === 'size' ? { 'aria-sort': 'descending' } : {}), querySelector: () => (key ? { dataset: { sort: key } } : null) }));
+    const cells = ['resolution', 'size', 'posted', null].map(key => ({ ...attributes(key === 'size' ? { 'aria-sort': 'descending' } : {}), querySelector: () => (key ? { dataset: { sort: key } } : null) }));
     const body = { rows, append(...ordered) { body.rows = ordered; } };
     return { tBodies: [body], cells, querySelectorAll: () => cells };
 }
@@ -93,21 +94,21 @@ test('a header sorts largest or newest first, the same header again flips it', (
 
 test('sorting reorders every open table, moves aria-sort to the header and keeps the ticked boxes', () => {
     browser();
-    const first = table([releaseRow('a', { size: '9', grabs: '1' }), releaseRow('b', { size: '5', grabs: '8' })]);
-    const second = table([releaseRow('c', { size: '1', grabs: '4' }), releaseRow('d', { size: '2', grabs: '2' })]);
+    const first = table([releaseRow('a', { size: '9', posted: '1' }), releaseRow('b', { size: '5', posted: '8' })]);
+    const second = table([releaseRow('c', { size: '1', posted: '4' }), releaseRow('d', { size: '2', posted: '2' })]);
     const boxes = [box('b')];
     const { component } = page({ tables: [first, second], boxes });
     boxes[0].checked = true;
     component.handleChange({ target: boxes[0] });
-    const grabs = { dataset: { sort: 'grabs' } };
-    component.handleClick({ target: { closest: selector => (selector === '[data-sort]' ? grabs : null) } });
+    const posted = { dataset: { sort: 'posted' } };
+    component.handleClick({ target: { closest: selector => (selector === '[data-sort]' ? posted : null) } });
     assert.deepEqual(first.tBodies[0].rows.map(row => row.guid), ['b', 'a']);
     assert.deepEqual(second.tBodies[0].rows.map(row => row.guid), ['c', 'd']);
-    assert.equal(first.cells[3].getAttribute('aria-sort'), 'descending');
+    assert.equal(first.cells[2].getAttribute('aria-sort'), 'descending');
     assert.equal(first.cells[1].getAttribute('aria-sort'), null);
-    component.sortBy(grabs);
+    component.sortBy(posted);
     assert.deepEqual(first.tBodies[0].rows.map(row => row.guid), ['a', 'b']);
-    assert.equal(first.cells[3].getAttribute('aria-sort'), 'ascending');
+    assert.equal(first.cells[2].getAttribute('aria-sort'), 'ascending');
     assert.equal(boxes[0].checked, true);
 });
 
@@ -252,4 +253,47 @@ test('a season tab keeps keyboard focus and the scroll position across its page 
     assert.deepEqual(currentTab.focused, { preventScroll: true });
     assert.deepEqual(scrolled, [640]);
     assert.equal(session.values[SWITCH_KEY], undefined);
+});
+
+function cssRules(file) {
+    const rules = new Map();
+    for (const [, selectors, body] of readFileSync(new URL(file, import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        for (const selector of selectors.split(',').map(part => part.trim().replace(/\s+/g, ' '))) {
+            rules.set(selector, [rules.get(selector) ?? '', body.trim()].filter(Boolean).join(' '));
+        }
+    }
+    return rules;
+}
+
+test('the show page: packs first, an Episodes heading styled as the packs heading, Similar shows as wall tiles, no same-name line', () => {
+    const tv = cssRules('../../resources/css/tv.css');
+    assert.match(tv.get('.tv-packs.is-top'), /margin: 22px 0 26px;/);
+    assert.match(tv.get('.tv-packs h3'), /font-size: 17px; font-weight: 800; line-height: 1;/);
+    assert.match(tv.get('.tv-episodes-heading'), /margin: 0; padding-bottom: 12px; border-bottom: 1px solid var\(--tv-line\);.*font-size: 17px; font-weight: 800; line-height: 1;/);
+    assert.match(tv.get('.tv-similar'), /margin: 44px 0 80px;/);
+    assert.match(tv.get('.tv-similar > h2'), /font-size: 21px; font-weight: 800;/);
+    assert.match(tv.get('.tv-similar .tv-tiles'), /grid-template-columns: repeat\(6, calc\(\(100% - 108px\) \/ 7\)\);/);
+    assert.match(tv.get('.tv-tiles'), /repeat\(auto-fill, minmax\(178px, 1fr\)\); gap: 24px 18px;/);
+    assert.equal(tv.get('.tv-same-name'), undefined);
+});
+
+test('Follow show is violet with the bookmark, solid violet while followed, never coral, and its labels share one width', () => {
+    const tv = cssRules('../../resources/css/tv.css');
+    for (const state of ['bg', 'fg', 'hover-bg', 'on-bg', 'on-fg', 'on-hover-bg']) {
+        assert.match(tv.get('.tv-follow-show'), new RegExp(`--tv-toggle-${state}: var\\(--row-action-follow-${state}\\);`));
+        assert.match(tv.get('.dark .tv-follow-show'), new RegExp(`--tv-toggle-${state}: var\\(--row-action-follow-${state}-dark\\);`));
+    }
+    assert.match(tv.get('.tv-follow-show'), /background: var\(--tv-toggle-bg\); color: var\(--tv-toggle-fg\);/);
+    assert.match(tv.get('.tv-follow-show[data-watched="1"]'), /background: var\(--tv-toggle-on-bg\); color: var\(--tv-toggle-on-fg\);/);
+    assert.match(tv.get('.tv-follow-show[data-watched="1"] .fa-bookmark'), /--fa-style: 900;/);
+    assert.match(tv.get('.tv-follow-show:focus-visible'), /outline-color: var\(--tv-ink\);/);
+    assert.match(tv.get('.tv-state-label'), /display: grid;/);
+    assert.match(tv.get('.tv-state-label > span'), /grid-area: 1 \/ 1;/);
+    assert.match(tv.get('.tv-follow-show:not([data-watched="1"]) .is-on'), /visibility: hidden;/);
+    assert.match(tv.get('.tv-follow-show[data-watched="1"] .is-off'), /visibility: hidden;/);
+    assert.match(tv.get('.tv-show-actions'), /margin-top: 20px;/);
+    for (const [selector, body] of tv) {
+        if (/tv-follow-show|data-watched|aria-pressed/.test(selector) && selector.includes('tv-details-button') && !selector.startsWith('.tv-image-bar')) assert.doesNotMatch(body, /accent/, selector);
+        if (selector.includes('tv-follow-show')) assert.doesNotMatch(body, /accent/, selector);
+    }
 });

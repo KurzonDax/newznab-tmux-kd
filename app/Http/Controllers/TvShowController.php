@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Data\TvReleaseFilters;
 use App\Services\Releases\TvReleaseRows;
 use App\Services\Releases\TvShowPage;
+use App\Services\Releases\TvSimilarShows;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -16,7 +17,7 @@ final class TvShowController extends BasePageController
     /** Where the back link leads, kept while the user moves between this show's seasons. */
     private const BACK_KEY = 'tv_show_back';
 
-    public function show(Request $request, TvShowPage $page, TvReleaseRows $rows, string $videosId, ?string $season = null): View
+    public function show(Request $request, TvShowPage $page, TvReleaseRows $rows, TvSimilarShows $similar, string $videosId, ?string $season = null): View
     {
         $id = (int) $videosId;
         $exclusions = array_values(array_map('intval', (array) $this->userdata->categoryexclusions));
@@ -24,7 +25,7 @@ final class TvShowController extends BasePageController
         abort_if($header === null, 404);
         $filters = TvReleaseFilters::fromRequest($request, [], null);
         $seasons = $page->seasons($id, $exclusions);
-        $current = $season !== null && in_array((int) $season, $seasons, true) ? (int) $season : $page->newestSeason($id, $exclusions);
+        $current = $season !== null && in_array((int) $season, $seasons, true) ? (int) $season : $page->openingSeason($seasons);
         $fragment = $request->query('_fragment');
         $load = static fn (array $ids): array => $rows->load($ids, false);
 
@@ -58,7 +59,12 @@ final class TvShowController extends BasePageController
             return view('tv.show.list', $data);
         }
 
-        return view('tv.show.index', [...$data, 'back' => $this->back($request)]);
+        return view('tv.show.index', [
+            ...$data,
+            'back' => $this->back($request),
+            'followed' => $page->followed($id, (int) $this->userdata->id),
+            'similar' => $similar->tiles($id, $header->year, $exclusions),
+        ]);
     }
 
     /**

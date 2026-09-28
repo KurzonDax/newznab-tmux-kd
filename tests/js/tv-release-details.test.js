@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { tabFromHash, TABS, tvReleaseDetails } from '../../resources/js/alpine/components/tv-release-details-component.js';
 import { tvFilesDialog, tvImageDialog } from '../../resources/js/alpine/components/tv-dialogs-component.js';
@@ -149,21 +150,41 @@ test('sorting the episode table reorders its rows in place, so focus stays on th
     assert.equal(cells[1].getAttribute('aria-sort'), 'ascending');
 });
 
-test('the header cart button reads "In cart" with a tick once added, and back', () => {
+test('the header cart button presses and unpresses with its tooltip, keeping its cart icon and its labels', () => {
     browser();
-    const icon = { classList: new Set(['fa-cart-shopping']) };
-    icon.classList.toggle = function (name, on) { if (on) this.add(name); else this.delete(name); };
-    const label = { textContent: 'Add to cart' };
-    const button = { dataset: { cart: 'abc', cartLabel: '' }, ...attributes(), querySelector: selector => (selector === 'span' ? label : icon) };
+    const button = { dataset: { cart: 'abc', cartLabel: '' }, ...attributes({ 'aria-pressed': 'false', title: 'Add to cart' }), querySelector: () => { throw new Error('no markup change'); } };
+    const round = { dataset: { cart: 'abc' }, ...attributes({ 'aria-pressed': 'false' }) };
     const { component } = detailsPage();
-    component.screen.querySelectorAll = selector => (selector === '[data-cart]' ? [button] : []);
+    component.screen.querySelectorAll = selector => (selector === '[data-cart]' ? [button, round] : []);
     component.markCart(['abc'], true);
-    assert.equal(label.textContent, 'In cart');
     assert.equal(button.getAttribute('aria-pressed'), 'true');
-    assert.equal(icon.classList.has('fa-check'), true);
+    assert.equal(button.getAttribute('title'), 'In cart · click to remove');
+    assert.equal(button.getAttribute('aria-label'), null);
+    assert.equal(round.getAttribute('aria-label'), 'Remove from cart');
     component.markCart(['abc'], false);
-    assert.equal(label.textContent, 'Add to cart');
-    assert.equal(icon.classList.has('fa-cart-shopping'), true);
+    assert.equal(button.getAttribute('aria-pressed'), 'false');
+    assert.equal(button.getAttribute('title'), 'Add to cart');
+    assert.equal(round.getAttribute('aria-label'), 'Add to cart');
+});
+
+test('the header matches the Movies details page: Download coral, Copy link and Cart neutral, a pressed Cart green, Follow show violet, never coral when pressed', () => {
+    const tv = cssRules('../../resources/css/tv.css');
+    assert.match(tv.get('.tv-details-button'), /background: var\(--tv-accent\); color: var\(--tv-accent-on\);/);
+    assert.match(tv.get('.tv-details-button.is-secondary'), /background: var\(--tv-panel-alt\); color: var\(--tv-ink\);/);
+    for (const state of ['on-bg', 'on-fg', 'on-hover-bg']) {
+        assert.match(tv.get('.tv-details-button[data-cart]'), new RegExp(`--tv-toggle-${state}: var\\(--row-action-cart-${state}\\);`));
+        assert.match(tv.get('.dark .tv-details-button[data-cart]'), new RegExp(`--tv-toggle-${state}: var\\(--row-action-cart-${state}-dark\\);`));
+    }
+    assert.match(tv.get('.tv-details-button[data-cart][aria-pressed="true"]'), /background: var\(--tv-toggle-on-bg\); color: var\(--tv-toggle-on-fg\);/);
+    assert.match(tv.get('.tv-details-button[aria-pressed="false"] .is-on'), /visibility: hidden;/);
+    assert.match(tv.get('.tv-details-button[aria-pressed="true"] .is-off'), /visibility: hidden;/);
+    assert.match(tv.get('.tv-details-actions .tv-details-button.is-secondary:focus-visible'), /outline-color: var\(--tv-ink\);/);
+    assert.match(tv.get('.tv-details-chips .tv-source-chip'), /display: inline-flex; align-items: center; align-self: stretch;/);
+    assert.equal(tv.get('.tv-details-button[aria-pressed="true"]'), undefined);
+    assert.equal(tv.get('.tv-details-button[data-watched="1"]'), undefined);
+    for (const [selector, body] of tv) {
+        if (selector.includes('tv-details-button') && !selector.startsWith('.tv-image-bar') && /aria-pressed|data-watched|data-cart|tv-follow-show/.test(selector)) assert.doesNotMatch(body, /accent/, selector);
+    }
 });
 
 test('files under 1 MB are shown in KB, the rest in MB and GB', () => {
@@ -239,3 +260,13 @@ test('the image dialog shows the full-size copy, its pixel size, and Full size o
     dialog.toggleFull();
     assert.equal(dialog.full, false);
 });
+
+function cssRules(file) {
+    const rules = new Map();
+    for (const [, selectors, body] of readFileSync(new URL(file, import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        for (const selector of selectors.split(',').map(part => part.trim().replace(/\s+/g, ' '))) {
+            rules.set(selector, [rules.get(selector) ?? '', body.trim()].filter(Boolean).join(' '));
+        }
+    }
+    return rules;
+}
