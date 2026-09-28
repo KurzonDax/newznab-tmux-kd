@@ -11,31 +11,19 @@
         <div class="title-body">
             <h1>{{ $title->entity->title }} @if($title->subtitle !== '')<span>{{ $title->subtitle }}</span>@endif</h1>
             <div class="title-actions">
-                @if($watchUrl)
-                    <x-watch-button :root="$title->root->value" :id="$title->entity->id" :title="$title->entity->title" :watched="$watched" />
-                @endif
                 @foreach($title->links as $label => $url)
                     <x-button-link :href="($site['dereferrer_link'] ?? '').$url" variant="secondary" size="sm" target="_blank" rel="noopener noreferrer">{{ $label }} <i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i><span class="sr-only"> (opens in a new tab)</span></x-button-link>
                 @endforeach
-                @if($title->trailerUrl)<x-button variant="secondary" size="sm" icon="fas fa-play" :data-trailer-url="$title->trailerUrl">Trailer</x-button>@endif
             </div>
-            @if($watchUrl)
-                <div class="title-followed text-muted" data-watch-summary="{{ $title->root->value }}:{{ $title->entity->id }}" @if(!$watched) hidden @endif>On your {{ $title->root === \App\Enums\BrowseRoot::Movies ? 'My Movies' : 'My Shows' }} for:
-                    <span data-watch-categories>@foreach($watchCategories as $watchCategory)<span class="title-watched-category">{{ $watchCategory }}</span>@endforeach</span>
-                    <x-watch-button :root="$title->root->value" :id="$title->entity->id" :title="$title->entity->title" :watched="$watched" label="Edit" />
-                    <x-watch-button :root="$title->root->value" :id="$title->entity->id" :title="$title->entity->title" :watched="$watched" :remove="true" label="Remove" />
-                </div>
-            @endif
             <dl class="title-metadata">
-                @foreach($title->metadata as $label => $value)@continue($label === 'Cast')<div><dt>{{ $label }}</dt><dd>{{ $value }}</dd></div>@endforeach
+                @foreach($title->metadata as $label => $value)<div><dt>{{ $label }}</dt><dd>{{ $value }}</dd></div>@endforeach
             </dl>
             @if($title->overview !== '')<p class="title-plot">{{ $title->overview }}</p>@endif
-            @if(!empty($title->metadata['Cast']))<dl class="title-cast"><div><dt>Cast</dt><dd>{{ $title->metadata['Cast'] }}</dd></div></dl>@endif
             @if($title->tracks !== [])<div class="title-tracks"><h2>Tracks</h2><ol>@foreach($title->tracks as $track)<li>{{ $track }}</li>@endforeach</ol></div>@endif
             <dl class="title-stats">
                 <div><dt>Releases</dt><dd>{{ number_format($releaseCount) }}</dd></div>
                 @if($latestRelease)<div><dt>Latest</dt><dd>{{ userDateDiffForHumans($latestRelease) }}</dd></div>@endif
-                @if(in_array($title->root, [\App\Enums\BrowseRoot::Movies, \App\Enums\BrowseRoot::Audio], true) && $bestQuality)<div><dt>Best</dt><dd>{{ $bestQuality }}</dd></div>@endif
+                @if($title->root === \App\Enums\BrowseRoot::Audio && $bestQuality)<div><dt>Best</dt><dd>{{ $bestQuality }}</dd></div>@endif
             </dl>
         </div>
     </section>
@@ -50,5 +38,4 @@
 
 @push('modals')
     @include('partials.release-modals')
-    @if($title->trailerUrl)@include('partials.trailer-modal')@endif
 @endpush

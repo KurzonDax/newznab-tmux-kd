@@ -428,10 +428,10 @@ class RememberMeAuthenticationTest extends TestCase
 
     public function test_retired_frontend_routes_are_not_registered(): void
     {
-        foreach (['movie', 'movietrailers', '2fa', '2fa.enable', '2fa.disable', 'generate2faSecret', 'enable2fa', 'disable2fa', 'profile-disable2fa'] as $name) {
+        foreach (['movie', 'movie.view', 'movietrailers', '2fa', '2fa.enable', '2fa.disable', 'generate2faSecret', 'enable2fa', 'disable2fa', 'profile-disable2fa'] as $name) {
             self::assertFalse(Route::has($name), 'Retired route is still registered: '.$name);
         }
-        foreach (['movie.view', '2fa.verify', '2fa.post', 'profileedit.generate2faSecret', 'profileedit.enable2fa', 'profileedit.disable2fa', 'profileedit.cancel2fa'] as $name) {
+        foreach (['2fa.verify', '2fa.post', 'profileedit.generate2faSecret', 'profileedit.enable2fa', 'profileedit.disable2fa', 'profileedit.cancel2fa'] as $name) {
             self::assertTrue(Route::has($name), 'Live route is missing: '.$name);
         }
     }

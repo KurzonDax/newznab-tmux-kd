@@ -65,14 +65,15 @@ class DetailsDocumentViewTest extends TestCase
             size: '40.00 MB', files: 3, added: '1 hour ago', posted: 'Sep 13, 2026 13:00', grabs: 2, comments: 0,
             completion: 100, repair_outcome: null, rescan_outcome: null, passworded: false,
             has_media_info: false, media_info_summary: null, nfo: true, preview: 'none', group: 'alt.binaries.example', poster: 'A Poster',
-            renamed: true, pp_done: true, entity: new ReleaseEntityData('movies', '1234567', 'A Movie', '2024', null),
+            renamed: true, pp_done: true, entity: new ReleaseEntityData('movies', '1234567', 'A Movie', '2024', null, filmId: 21),
             in_basket: false, watched: false,
         );
 
         $html = view('details.index', ['release' => $release,
-            'titleEntity' => new ReleaseEntityData('movies', '1234567', 'A Movie', '2024', null),
+            'titleEntity' => new ReleaseEntityData('movies', '1234567', 'A Movie', '2024', null, filmId: 21),
         ])->render();
-        $this->assertStringContainsString('href="'.route('title', ['root' => 'movies', 'id' => '1234567']).'"', $html);
+        $this->assertStringContainsString('href="'.route('movies.film', ['movieinfoId' => 21]).'"', $html);
+        $this->assertStringNotContainsString('/title/movies/', $html);
 
         $this->assertStringStartsWith('<!DOCTYPE html>', ltrim($html));
         $this->assertSame(1, substr_count($html, 'x-data="imageModal"'));

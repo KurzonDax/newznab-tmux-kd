@@ -1,4 +1,4 @@
-<div x-data="watchlistPicker" data-watchlist-base="{{ url('/watchlist') }}">
+<div x-data="watchlistPicker">
     <x-modal name="watchlist" width="picker" close="close">
         <x-slot:title><span x-text="heading">Following</span></x-slot:title>
         <p x-show="loading" role="status">Loading categories…</p>

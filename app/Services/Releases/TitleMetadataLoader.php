@@ -40,8 +40,6 @@ final class TitleMetadataLoader
             ->first(static fn ($value): bool => trim((string) $value) !== '' && (int) $value > 0);
         $year = substr((string) $date, 0, 4);
         $metadata = match ($root) {
-            BrowseRoot::Movies => ['Year' => $year, 'Rating' => $record->rating ?? null, 'Genre' => $genre,
-                'Runtime' => empty($record->runtime) ? null : $record->runtime.' min', 'Director' => $record->director ?? null, 'Cast' => $record->actors ?? null],
             BrowseRoot::Tv => ['Network' => $info->publisher ?? null, 'First aired' => $record->started ?? null],
             BrowseRoot::Audio => ['Artist' => $record->artist ?? null, 'Year' => $year, 'Label' => $record->publisher ?? null,
                 'Genre' => $genre, 'Tracks' => $tracks === [] ? ($record->tracks ?? null) : count($tracks)],
@@ -54,18 +52,17 @@ final class TitleMetadataLoader
         $metadata = array_filter(array_map(static fn ($value): string => trim(strip_tags((string) $value)), $metadata),
             static fn (string $value): bool => $value !== '' && $value !== '0' && ! str_starts_with($value, '0000-'));
         $overview = match ($root) {
-            BrowseRoot::Movies => $record->plot ?? '', BrowseRoot::Tv => $info->summary ?? '',
+            BrowseRoot::Tv => $info->summary ?? '',
             BrowseRoot::Books => $record->overview ?? '', default => '',
         };
 
         return new TitleOverviewData(
             root: $root,
             entity: new ReleaseEntityData($root->value, $id, (string) $record->title, $year === '' ? null : $year,
-                getImageAssetUrl($source['art'], $root === BrowseRoot::Movies ? $id.'-cover' : $id)),
+                getImageAssetUrl($source['art'], $id)),
             subtitle: $root === BrowseRoot::Audio ? (string) ($record->artist ?? '') : ($root === BrowseRoot::Tv ? '' : $year),
             metadata: $metadata, links: $this->links($root, $id, $record),
             overview: trim(html_entity_decode(strip_tags((string) $overview))), tracks: $tracks,
-            trailerUrl: $root === BrowseRoot::Movies ? $this->trailerUrl((string) ($record->trailer ?? '')) : null,
         );
     }
 
@@ -86,8 +83,6 @@ final class TitleMetadataLoader
     {
         $links = [];
         $identities = match ($root) {
-            BrowseRoot::Movies => ['IMDb' => [$id, 'https://www.imdb.com/title/tt', true],
-                'TMDB' => [$record->tmdbid ?? null, 'https://www.themoviedb.org/movie/'], 'Trakt' => [$record->traktid ?? null, 'https://trakt.tv/movies/']],
             BrowseRoot::Tv => ['TVDB' => [$record->tvdb ?? null, 'https://thetvdb.com/?tab=series&id='],
                 'TVMaze' => [$record->tvmaze ?? null, 'https://www.tvmaze.com/shows/'], 'Trakt' => [$record->trakt ?? null, 'https://trakt.tv/shows/'],
                 'IMDb' => [$record->imdb ?? null, 'https://www.imdb.com/title/tt', true], 'TMDB' => [$record->tmdb ?? null, 'https://www.themoviedb.org/tv/']],

@@ -21,6 +21,5 @@ final readonly class TitleOverviewData
         public array $links,
         public string $overview,
         public array $tracks,
-        public ?string $trailerUrl = null,
     ) {}
 }

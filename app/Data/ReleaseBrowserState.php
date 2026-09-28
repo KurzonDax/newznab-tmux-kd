@@ -31,7 +31,6 @@ final readonly class ReleaseBrowserState
         public int $minCompletion,
         public bool $tableOnly = false,
         public string $letter = '',
-        public bool $trending = false,
     ) {}
 
     /** @return list<string> */
@@ -99,7 +98,7 @@ final readonly class ReleaseBrowserState
         $letter = $request->input('letter', '');
         $letter = ! $tableOnly && $view === 'covers' && in_array($root, [BrowseRoot::Audio, BrowseRoot::Books], true)
             && is_string($letter) && preg_match('/^[A-Z#]$/', $letter) ? $letter : '';
-        $filters = array_filter($request->only(['title', 'year', 'year_from', 'year_to', 'genre', 'network', 'label', 'platform', 'publisher', 'author', 'artist', 'actor', 'actors', 'director', 'plot', 'rating']), static fn ($value): bool => is_string($value) && $value !== '');
+        $filters = array_filter($request->only(['year', 'year_from', 'year_to', 'genre', 'network', 'label', 'platform', 'publisher', 'author', 'artist']), static fn ($value): bool => is_string($value) && $value !== '');
 
         return new self(
             root: $root,
@@ -119,7 +118,6 @@ final readonly class ReleaseBrowserState
             minCompletion: ReleaseCompletion::normalizeThreshold($request->input(ReleaseCompletion::REQUEST_KEY)),
             tableOnly: $tableOnly,
             letter: $letter,
-            trending: $request->boolean('trending') && ReleaseSort::resolve($sort) === ReleaseSort::Grabs,
         );
     }
 }

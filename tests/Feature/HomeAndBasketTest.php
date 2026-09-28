@@ -7,10 +7,8 @@ namespace Tests\Feature;
 use App\Http\Controllers\GetNzbController;
 use App\Http\Middleware\TrustedDevice2FAMiddleware;
 use App\Models\Content;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
 use Tests\Support\InteractsWithReleaseBrowser;
@@ -41,12 +39,6 @@ final class HomeAndBasketTest extends TestCase
             ProductionTables::fromAuthority()->create($name);
         }
         ProductionTables::fromAuthority()->create('tv_info', ['videos_id', 'publisher', 'image']);
-        Schema::create('user_downloads', function (Blueprint $table): void {
-            $table->id();
-            $table->integer('users_id');
-            $table->integer('releases_id');
-            $table->timestamp('timestamp');
-        });
         foreach (['2026_08_21_090000_create_release_audio_tags_table', '2026_08_27_150100_create_release_video_clips_table'] as $migration) {
             (require database_path('migrations/'.$migration.'.php'))->up();
         }
@@ -69,7 +61,7 @@ final class HomeAndBasketTest extends TestCase
         }
         $this->release('Pending rename', ['isrenamed' => 0]);
         $this->release('Excluded audio', ['isrenamed' => 1, 'categories_id' => 3030, 'nfostatus' => 1]);
-        $response = $this->actingAs($user)->get('/')->assertOk()->assertSee('Latest releases')->assertSee('<h2>Following</h2>', false)->assertSee('Trending this week');
+        $response = $this->actingAs($user)->get('/')->assertOk()->assertSee('Latest releases')->assertSee('<h2>Following</h2>', false)->assertDontSee('Trending');
         $this->assertNoWatchWording((string) $response->getContent(), 'Home');
         $this->assertCount(8, $response->viewData('latest'));
         $response->assertDontSee('Pending rename')->assertDontSee('Excluded audio')->assertDontSee('No Content Available');
@@ -106,19 +98,15 @@ final class HomeAndBasketTest extends TestCase
         $this->get('/basket')->assertOk()->assertSee('Your basket is empty.')->assertDontSee('Empty basket');
     }
 
-    public function test_home_limits_watched_titles_and_ranks_trending_by_downloads_in_the_last_week(): void
+    public function test_home_limits_watched_titles_to_their_newest_releases_and_links_each_film_page(): void
     {
         $user = $this->browserUser();
         foreach (range(1, 7) as $index) {
             $imdb = str_pad((string) $index, 7, '0', STR_PAD_LEFT);
-            DB::table('movieinfo')->insert(['imdbid' => $imdb, 'title' => 'Followed movie '.$index, 'year' => '2026']);
+            DB::table('movieinfo')->insert(['id' => 40 + $index, 'imdbid' => $imdb, 'title' => 'Followed movie '.$index, 'year' => '2026']);
             DB::table('user_movies')->insert(['users_id' => $user->id, 'imdbid' => $imdb, 'categories' => '2030']);
-            $this->release('Older '.$index, ['imdbid' => $imdb, 'adddate' => '2026-09-11 12:00:00']);
-            $id = $this->release('Newest '.$index, ['imdbid' => $imdb, 'adddate' => '2026-09-13 12:00:00']);
-            DB::table('user_downloads')->insert(['users_id' => $user->id, 'releases_id' => $id, 'timestamp' => now()->subDays($index === 7 ? 8 : 1)]);
-            if ($index === 3) {
-                DB::table('user_downloads')->insert(['users_id' => 99, 'releases_id' => $id, 'timestamp' => now()]);
-            }
+            $this->release('Older '.$index, ['imdbid' => $imdb, 'movieinfo_id' => 40 + $index, 'adddate' => '2026-09-11 12:00:00']);
+            $this->release('Newest '.$index, ['imdbid' => $imdb, 'movieinfo_id' => 40 + $index, 'adddate' => '2026-09-13 12:00:00']);
         }
         $this->release('Disallowed watched category', ['imdbid' => '0000007', 'categories_id' => 3030, 'adddate' => '2026-09-14 12:00:00']);
         $response = $this->actingAs($user)->get('/')->assertOk();
@@ -127,9 +115,8 @@ final class HomeAndBasketTest extends TestCase
         $this->assertCount(5, $watched->pluck('imdbid')->unique());
         foreach ($watched as $release) {
             $this->assertStringStartsWith('Newest', $release->searchname);
+            $response->assertSee('href="'.route('movies.film', ['movieinfoId' => $release->movieinfo_id]).'"', false);
         }
-        $trending = $response->viewData('homeTrending');
-        $this->assertCount(6, $trending);
-        $this->assertSame('Followed movie 3', $trending->first()->title);
+        $response->assertDontSee('/title/movies/', false);
     }
 }

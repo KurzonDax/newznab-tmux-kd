@@ -19,14 +19,6 @@
             <p class="account-muted">Follow a movie or show to see its latest release here.</p>
         @endforelse
     </section>
-    <section class="home-section home-trending">
-        <div class="home-section-heading"><h2>Trending this week</h2><div>@can('view movies')<a href="{{ route('trending-movies') }}">Movies</a>@endcan</div></div>
-        @if($homeTrending)
-            <x-release-browser :rows="$homeTrending" :state="$trendingState" :toolbar="false" :pager="false" :data-cover-url="route('browse', ['parentCategory' => $trendingState->root->value, 'view' => 'covers', 'sort' => 'grabs'])" empty-title="No trending titles yet." empty-message="Titles downloaded this week will appear here." />
-        @else
-            <div class="card p-4 account-muted">No trending titles available for your categories.</div>
-        @endif
-    </section>
     @foreach($content as $item)
         <article class="card home-content surface-prose">
             @if(filled($item->title))<h2>{{ $item->title }}</h2>@endif

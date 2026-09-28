@@ -6,8 +6,6 @@ namespace App\Services\Releases;
 
 use App\Enums\BrowseRoot;
 use App\Enums\ReleaseSort;
-use App\Support\WebSearchQuery;
-use App\Support\WebSearchText;
 use App\Support\YearRange;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -19,7 +17,7 @@ final class ReleaseBrowserMetadata
     public function fields(BrowseRoot $root): array
     {
         return match (true) {
-            $root === BrowseRoot::Movies && Schema::hasTable('movieinfo') => ['year' => 'm.year', 'genre' => 'm.genre', 'rating' => 'CAST(m.rating AS DECIMAL(4,2))'],
+            $root === BrowseRoot::Movies && Schema::hasTable('movieinfo') => ['year' => 'm.year', 'genre' => 'm.genre'],
             $root === BrowseRoot::Tv && Schema::hasTable('videos') => ['year' => 'SUBSTR(m.started, 1, 4)', ...(Schema::hasTable('tv_info') ? ['network' => 'tv_info.publisher'] : [])],
             $root === BrowseRoot::Audio && Schema::hasTable('musicinfo') => ['year' => 'm.year', 'genre' => 'genres.title', 'label' => 'm.publisher', 'artist' => 'm.artist'],
             $root === BrowseRoot::Console && Schema::hasTable('consoleinfo') => ['year' => 'SUBSTR(m.releasedate, 1, 4)', 'genre' => 'genres.title', 'platform' => 'm.platform', 'publisher' => 'm.publisher'],
@@ -76,10 +74,6 @@ final class ReleaseBrowserMetadata
             }
             if ($key === 'year') {
                 continue;
-            } elseif ($key === 'rating') {
-                if (preg_match('/^[1-9]$/', $filters[$key]) === 1) {
-                    $query->whereRaw($column.' >= ?', [(int) $filters[$key]]);
-                }
             } elseif ($key === 'genre') {
                 $normalized = "REPLACE(REPLACE(REPLACE($column, ' | ', ','), '|', ','), ', ', ',')";
                 $delimited = DB::getDriverName() === 'sqlite' ? "(',' || $normalized || ',')" : "CONCAT(',', $normalized, ',')";
@@ -91,31 +85,12 @@ final class ReleaseBrowserMetadata
         }
     }
 
-    /** @param array<string, string> $filters */
-    public function searchMovies(Builder $query, string $text, array $filters): void
-    {
-        $fields = WebSearchQuery::fromInput(['q' => $text, ...$filters])->indexTerms();
-        if ($fields === []) {
-            return;
-        }
-        $keys = app(WebSearchEntityLookup::class)->keys('movies', $fields, 'imdbid');
-        if ($keys !== []) {
-            $query->whereIn('m.imdbid', $keys);
-
-            return;
-        }
-        foreach ($fields as $field => $terms) {
-            $columns = $field === 'all' ? ['m.title', 'm.actors', 'm.director', 'm.plot'] : ['m.'.$field];
-            WebSearchText::apply($query, $columns, $terms);
-        }
-    }
-
     /** @return array<string, list<string>> */
     public function options(Builder $query, BrowseRoot $root): array
     {
         $options = [];
         foreach ($this->fields($root) as $key => $column) {
-            if (in_array($key, ['rating', 'artist'], true)) {
+            if ($key === 'artist') {
                 continue;
             }
             if ($key === 'year') {

@@ -15,10 +15,8 @@ final class LegacyCoverRedirect
     public function redirect(Request $request, BrowseRoot $root, string $categoryPath = ''): RedirectResponse
     {
         $parameters = $request->except(['t', 'ob', 'parentCategory', 'id', '_token']);
-        if ($root !== BrowseRoot::Movies) {
-            unset($parameters['title']);
-        }
-        if ($root !== BrowseRoot::Movies && ! $request->filled('q') && is_string($request->input('title'))) {
+        unset($parameters['title']);
+        if (! $request->filled('q') && is_string($request->input('title'))) {
             $parameters['q'] = $request->input('title');
         }
         if (! $request->has('sort') && $request->has('ob')) {

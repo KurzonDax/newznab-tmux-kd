@@ -37,6 +37,9 @@ class BrowseController extends BasePageController
         if ($root === BrowseRoot::Tv) {
             return redirect()->route('tv.releases', $category === null ? [] : ['category' => [(int) $category->id]]);
         }
+        if ($root === BrowseRoot::Movies) {
+            return redirect()->route('movies.releases', $category === null ? [] : ['category' => [(int) $category->id]]);
+        }
 
         return $this->renderBrowser($request, $root, $category);
     }
@@ -64,12 +67,6 @@ class BrowseController extends BasePageController
             return redirect()->to($state->pageUrl($request, $results->lastPage()));
         }
         $title = $category === null ? $root->label() : $root->label().' · '.$category->title;
-        if ($root === BrowseRoot::Movies && $state->view === 'covers' && $state->trending) {
-            $title = 'Trending '.$root->label();
-        }
-        if ($state->watching && $root === BrowseRoot::Movies) {
-            $title = $root->label().' you follow';
-        }
         if ($state->group !== '') {
             $title = 'Releases in '.$state->group;
         }

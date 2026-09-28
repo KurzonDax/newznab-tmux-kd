@@ -69,38 +69,6 @@ if (! function_exists('getRawHtml')) {
     }
 }
 
-if (! function_exists('makeFieldLinks')) {
-    /**
-     * @param  array<string, mixed>|object  $data  Array or model (ArrayAccess)
-     *
-     * @throws Exception
-     */
-    function makeFieldLinks(array|object $data, string $field, string $type): string
-    {
-        // Check if field exists and is not empty
-        if (! isset($data[$field]) || empty($data[$field])) {
-            return '';
-        }
-
-        $tmpArr = explode(', ', $data[$field]);
-        $newArr = [];
-        $i = 0;
-        foreach ($tmpArr as $ta) {
-            if (trim($ta) === '') {
-                continue;
-            }
-            if ($i > 7) {
-                break;
-            }
-            $escaped = e($ta);
-            $newArr[] = '<a href="'.url('/'.ucfirst($type).'?'.$field.'='.urlencode($ta)).'" title="'.$escaped.'">'.$escaped.'</a>';
-            $i++;
-        }
-
-        return implode(', ', $newArr);
-    }
-}
-
 if (! function_exists('getUserBrowseOrder')) {
     /**
      * @return array{0: string, 1: string}

@@ -6,12 +6,6 @@
             @if($cover->genres !== '')<div class="release-cover-genres">{{ $cover->genres }}</div>@endif
             <div class="release-cover-metadata">
                 @foreach($cover->metadata as $value)<x-chip>{{ $value }}</x-chip>@endforeach
-                @if($state->root === \App\Enums\BrowseRoot::Movies)
-                    <x-chip :href="'https://www.imdb.com/title/tt'.$cover->id.'/'" target="_blank" rel="noopener noreferrer">IMDb <i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i><span class="sr-only"> (opens in a new tab)</span></x-chip>
-                @endif
-                @if($cover->watchUrl)
-                    <x-watch-button :root="$state->root->value" :id="$cover->watchId ?? $cover->id" :title="$cover->title" :watched="$cover->watched" data-cover-watch />
-                @endif
             </div>
         </div>
         <span class="release-cover-sub shrink-0">{{ $cover->releaseCount }} releases</span>

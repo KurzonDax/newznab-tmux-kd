@@ -91,8 +91,8 @@ final class WatchlistControllerTest extends TestCase
     public function test_page_finds_unfollowed_titles_without_releases_and_shows_latest_allowed_release(): void
     {
         DB::table('movieinfo')->insert([
-            ['imdbid' => '0137523', 'title' => 'Followed Movie', 'year' => '2024'],
-            ['imdbid' => '0000001', 'title' => 'Quiet Movie', 'year' => '2025'],
+            ['id' => 7, 'imdbid' => '0137523', 'title' => 'Followed Movie', 'year' => '2024'],
+            ['id' => 8, 'imdbid' => '0000001', 'title' => 'Quiet Movie', 'year' => '2025'],
         ]);
         DB::table('categories')->insert(['id' => 2040, 'title' => 'UHD', 'root_categories_id' => 2000]);
         $user = $this->browserUser();
@@ -101,7 +101,7 @@ final class WatchlistControllerTest extends TestCase
         $this->release('Unwanted UHD', ['imdbid' => '0137523', 'categories_id' => 2040, 'adddate' => now()]);
         $page = $this->actingAs($user)->get('/watchlist?tab=movies&q=Movie')->assertOk()
             ->assertSee('Quiet Movie')->assertSee('Followed Movie')->assertSee('Allowed latest')->assertDontSee('Unwanted UHD')
-            ->assertSee('/title/movies/0137523', false)->assertSee('/rss/mymovies', false)->assertSee('data-watch-picker', false);
+            ->assertSee('/movies/film/7', false)->assertSee('/movies/film/8', false)->assertDontSee('/title/movies/', false)->assertSee('/rss/mymovies', false)->assertSee('data-watch-picker', false);
         $this->assertNoWatchWording((string) $page->getContent(), 'The Following page');
         $empty = $this->get('/watchlist?tab=tv')->assertOk()->assertSee('Nothing followed yet.')->assertSee('/rss/myshows', false)
             ->assertSeeInOrder(['<h1 class="page-heading', 'Following', '</h1>'], false)->assertSee('far fa-bookmark', false);
@@ -114,11 +114,11 @@ final class WatchlistControllerTest extends TestCase
         DB::table('movieinfo')->insert(['imdbid' => '0137523', 'title' => 'A Movie']);
         DB::table('user_movies')->insert(['users_id' => $user->id, 'imdbid' => '0137523', 'categories' => 'NULL']);
         $this->release('Legacy all categories', ['imdbid' => '0137523']);
-        $rows = $this->actingAs($user)->get('/browse/movies?watching=1&view=table')->assertOk()->assertSee('Legacy all categories')->assertSee('Movies you follow')->assertSee('Following')->assertSee('aria-label="Clear filters"', false)
+        $rows = $this->actingAs($user)->get('/browse/all?watching=1')->assertOk()->assertSee('Legacy all categories')->assertSee('Following')->assertSee('aria-label="Clear filters"', false)
             ->assertSee('aria-label="Unfollow A Movie" title="Following · click to unfollow"><i class="fas fa-bookmark" aria-hidden="true"></i>', false);
         $this->assertNoWatchWording((string) $rows->getContent(), 'Movie release rows you follow');
         DB::table('user_movies')->update(['categories' => '2000|9999']);
-        $this->get('/browse/movies?watching=1&view=table')->assertOk()->assertSee('Legacy all categories')->assertSee('Movies you follow')->assertSee('Following')->assertSee('aria-label="Clear filters"', false);
+        $this->get('/browse/all?watching=1')->assertOk()->assertSee('Legacy all categories')->assertSee('Following')->assertSee('aria-label="Clear filters"', false);
     }
 
     public function test_picker_rejects_invalid_categories_and_keeps_last_choice_after_removal(): void
@@ -139,14 +139,9 @@ final class WatchlistControllerTest extends TestCase
     public function test_legacy_pages_redirect_to_tabs_or_the_title_picker(): void
     {
         $this->actingAs($this->browserUser());
-        $this->get('/browse/movies')->assertOk()->assertSee('Only titles I follow');
         $this->get('/browse/tv')->assertRedirect(route('tv.releases'));
-        $this->get('/mymovies')->assertRedirect('/watchlist?tab=movies');
         $this->get('/myshows')->assertRedirect('/watchlist?tab=tv');
-        $this->get('/mymovies?id=add&imdb=0137523')->assertRedirect('/title/movies/0137523?watch=1');
         $this->get('/myshows?action=add&id=12')->assertRedirect(route('tv.show', ['videosId' => 12]));
-        $this->get('/mymovies/browse')->assertRedirect('/browse/movies?watching=1');
-        $this->get('/mymovies?id=browse')->assertRedirect('/browse/movies?watching=1');
         $this->get('/myshows/browse')->assertRedirect('/browse/tv?watching=1');
     }
 

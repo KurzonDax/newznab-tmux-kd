@@ -27,7 +27,7 @@ final class ReleaseRowDataLoader
         'rescan_outcome', 'passwordstatus', 'nfostatus', 'haspreview', 'jpgstatus',
         'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid',
         'videos_id', 'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id',
-        'bookinfo_id', 'anidbid',
+        'bookinfo_id', 'anidbid', 'movieinfo_id',
     ];
 
     /**

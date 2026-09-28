@@ -11,7 +11,6 @@ use App\Models\User;
 use App\Services\BookService;
 use App\Services\ConsoleService;
 use App\Services\GamesService;
-use App\Services\MovieBrowseService;
 use App\Services\MusicService;
 use App\Support\CoverBrowseResults;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -41,7 +40,6 @@ final class ReleaseCoverBrowser
     public function expanded(ReleaseBrowserState $state, User $user, string $id, int $page = 1, int $per = 24): LengthAwarePaginator
     {
         $column = match ($state->root) {
-            BrowseRoot::Movies => 'imdbid',
             BrowseRoot::Audio => 'musicinfo_id', BrowseRoot::Console => 'consoleinfo_id',
             BrowseRoot::Games => 'gamesinfo_id', BrowseRoot::Books => 'bookinfo_id',
             BrowseRoot::Adult => 'guid', default => null,
@@ -68,7 +66,6 @@ final class ReleaseCoverBrowser
         $excluded = (array) $user->categoryexclusions;
         $scope = new CoverBrowseScope(app(ReleaseBrowserQuery::class)->matchingQuery($state, $user), $state);
         $covers = match ($state->root) {
-            BrowseRoot::Movies => app(MovieBrowseService::class)->getMovieRange($state->page, $categories, $offset, $state->per, $order, excludedCats: $excluded, scope: $scope),
             BrowseRoot::Audio => app(MusicService::class)->getMusicRange($state->page, $categories, $offset, $state->per, $order, $excluded, scope: $scope),
             BrowseRoot::Console => app(ConsoleService::class)->getConsoleRange($state->page, $categories, $offset, $state->per, $order, $excluded, scope: $scope),
             BrowseRoot::Games => app(GamesService::class)->getGamesRange($state->page, $categories, $offset, $state->per, $order, excludedCats: $excluded, scope: $scope),
@@ -89,10 +86,8 @@ final class ReleaseCoverBrowser
     {
         /** @var array<int, object> $releases */
         $releases = $cover->releases;
-        $firstRow = collect($releases)->first()?->row_data;
-        $entity = $firstRow?->entity;
+        $entity = collect($releases)->first()?->row_data?->entity;
         $line = match ($root) {
-            BrowseRoot::Movies => [$cover->year ?? '', empty($cover->rating) ? '' : '★ '.$cover->rating],
             BrowseRoot::Audio => [$cover->artist ?? '', $cover->year ?? ''],
             BrowseRoot::Console => [$cover->platform ?? '', substr((string) ($cover->releasedate ?? ''), 0, 4)],
             BrowseRoot::Games => ['PC', substr((string) ($cover->releasedate ?? ''), 0, 4)],
@@ -104,15 +99,13 @@ final class ReleaseCoverBrowser
             default => $cover->genre ?? '',
         };
         $metadata = match ($root) {
-            BrowseRoot::Movies => [empty($cover->rating) ? '' : '★ '.$cover->rating, $badge],
             BrowseRoot::Audio => [$cover->artist ?? '', $badge, $cover->publisher ?? ''],
             BrowseRoot::Console => [$cover->platform ?? '', $cover->publisher ?? '', $badge],
             BrowseRoot::Games => ['PC', $cover->publisher ?? '', $badge],
             BrowseRoot::Books => [$cover->author ?? '', $cover->publisher ?? ''],
             default => [],
         };
-        $id = (string) ($root === BrowseRoot::Movies ? $cover->imdbid : $cover->id);
-        $watched = $firstRow->watched ?? false;
+        $id = (string) $cover->id;
 
         return new ReleaseCoverItem(
             id: $id,
@@ -123,8 +116,6 @@ final class ReleaseCoverBrowser
             year: $entity?->year, metadata: array_values(array_filter($metadata)),
             releases: array_values($releases),
             titleUrl: route('title', ['root' => $root->value, 'id' => $id]),
-            watchUrl: $root === BrowseRoot::Movies ? route('watchlist.picker', ['root' => $root->value, 'id' => $id]) : null,
-            watched: $watched,
         );
     }
 
