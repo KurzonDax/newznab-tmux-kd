@@ -14,7 +14,7 @@
     </section>
 @endif
 @if($titles->isEmpty())
-    <x-empty-state icon="far fa-heart" title="Nothing followed yet." message="Use the search box above, the heart on a cover or release row, or Watch on a title page." :action-url="route('browse', ['parentCategory' => $root->value])" :action-label="'Browse '.$root->label()" />
+    <x-empty-state icon="far fa-bookmark" title="Nothing followed yet." message="Use the search box above, the bookmark on a cover or release row, or Follow on a title page." :action-url="route('browse', ['parentCategory' => $root->value])" :action-label="'Browse '.$root->label()" />
 @else
     <div class="watchlist-entries">
         @foreach($titles as $item)

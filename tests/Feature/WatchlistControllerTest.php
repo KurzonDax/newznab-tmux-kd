@@ -11,6 +11,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\Admin\InteractsWithAdminListPages;
+use Tests\Support\AssertsFollowWording;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -18,6 +19,7 @@ use Tests\TestCase;
 
 final class WatchlistControllerTest extends TestCase
 {
+    use AssertsFollowWording;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -100,7 +102,10 @@ final class WatchlistControllerTest extends TestCase
         $this->actingAs($user)->get('/watchlist?tab=movies&q=Movie')->assertOk()
             ->assertSee('Quiet Movie')->assertSee('Followed Movie')->assertSee('Allowed latest')->assertDontSee('Unwanted UHD')
             ->assertSee('/title/movies/0137523', false)->assertSee('/rss/mymovies', false)->assertSee('data-watch-picker', false);
-        $this->get('/watchlist?tab=tv')->assertOk()->assertSee('Nothing followed yet.')->assertSee('/rss/myshows', false);
+        $this->assertNoWatchWording((string) $this->get('/watchlist?tab=movies&q=Movie')->getContent(), 'The Following page');
+        $empty = $this->get('/watchlist?tab=tv')->assertOk()->assertSee('Nothing followed yet.')->assertSee('/rss/myshows', false)
+            ->assertSee('<h1', false)->assertSee('Following')->assertSee('far fa-bookmark', false);
+        $this->assertNoWatchWording((string) $empty->getContent(), 'The empty Following page');
     }
 
     public function test_legacy_unrestricted_and_root_subscriptions_include_releases_in_watching_browse(): void
@@ -109,9 +114,11 @@ final class WatchlistControllerTest extends TestCase
         DB::table('movieinfo')->insert(['imdbid' => '0137523', 'title' => 'A Movie']);
         DB::table('user_movies')->insert(['users_id' => $user->id, 'imdbid' => '0137523', 'categories' => 'NULL']);
         $this->release('Legacy all categories', ['imdbid' => '0137523']);
-        $this->actingAs($user)->get('/browse/movies?watching=1&view=table')->assertOk()->assertSee('Legacy all categories')->assertSee('Movies you follow')->assertSee('Watching')->assertSee('aria-label="Clear filters"', false);
+        $rows = $this->actingAs($user)->get('/browse/movies?watching=1&view=table')->assertOk()->assertSee('Legacy all categories')->assertSee('Movies you follow')->assertSee('Following')->assertSee('aria-label="Clear filters"', false)
+            ->assertSee('aria-label="Unfollow A Movie" title="Following · click to unfollow"><i class="fas fa-bookmark" aria-hidden="true"></i>', false);
+        $this->assertNoWatchWording((string) $rows->getContent(), 'Movie release rows you follow');
         DB::table('user_movies')->update(['categories' => '2000|9999']);
-        $this->get('/browse/movies?watching=1&view=table')->assertOk()->assertSee('Legacy all categories')->assertSee('Movies you follow')->assertSee('Watching')->assertSee('aria-label="Clear filters"', false);
+        $this->get('/browse/movies?watching=1&view=table')->assertOk()->assertSee('Legacy all categories')->assertSee('Movies you follow')->assertSee('Following')->assertSee('aria-label="Clear filters"', false);
     }
 
     public function test_picker_rejects_invalid_categories_and_keeps_last_choice_after_removal(): void

@@ -10,6 +10,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\Admin\InteractsWithAdminListPages;
+use Tests\Support\AssertsFollowWording;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -18,6 +19,7 @@ use Tests\TestCase;
 /** The TV release details page, GET /details/{guid} for a TV release (issue #780; check.mjs lines 162-199). */
 final class TvReleaseDetailsPageTest extends TestCase
 {
+    use AssertsFollowWording;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -96,6 +98,7 @@ final class TvReleaseDetailsPageTest extends TestCase
             ->assertSee('href="'.route('browse.all', ['poster' => 'paperboat <pb@example.invalid>']).'"', false)
             ->assertSee('nfo-badge', false)->assertSee('data-has-nfo="1"', false)->assertDontSee('Report')->assertDontSee('style="', false);
         $this->assertSame(['Download NZB', 'Copy NZB link', 'Add to cart', 'Follow show'], $this->buttons($html));
+        $this->assertNoWatchWording($html, 'The TV details page');
         $response->assertSee('x-on:click.self="close()"', false)->assertSee('aria-label="Close"', false);
         $this->assertSame(['Overview', 'Files (1)', 'Media info', 'NFO', 'Comments (0)'], $this->tabs($html));
         $this->assertSame([
@@ -118,7 +121,7 @@ final class TvReleaseDetailsPageTest extends TestCase
             .'<button type="button" class="tv-details-button is-secondary" data-copy-nzb="'.$guid.'" data-part="details secondary button"><i class="fas fa-link" aria-hidden="true"></i>Copy NZB link</button>'
             .'<button type="button" class="tv-details-button is-secondary" data-cart="'.$guid.'" data-cart-label aria-pressed="false" title="Add to cart"><i class="fas fa-cart-shopping" aria-hidden="true"></i>'
             .'<span class="tv-state-label"><span class="is-off">Add to cart</span><span class="is-on">In cart</span></span></button>'
-            .'<button type="button" class="tv-details-button tv-follow-show" data-watch-picker="'.$picker.'" data-watch-key="tv:'.self::SHOW.'" data-watch-title="The Glass Meridian" data-watched="0" aria-pressed="false" title="Follow this show">'
+            .'<button type="button" class="tv-details-button tv-follow-show" data-watch-picker="'.$picker.'" data-watch-key="tv:'.self::SHOW.'" data-watch-title="The Glass Meridian" data-watch-off-title="Follow this show" data-watch-on-title="Following this show · click to unfollow" data-watched="0" aria-pressed="false" title="Follow this show">'
             .'<i class="far fa-bookmark" aria-hidden="true"></i><span class="tv-state-label"><span class="is-off">Follow show</span><span class="is-on">Following show</span></span></button>',
             (string) preg_replace('/>\s+</', '><', $actions));
 
@@ -126,7 +129,8 @@ final class TvReleaseDetailsPageTest extends TestCase
         DB::table('user_series')->insert(['users_id' => $this->user()->id, 'videos_id' => self::SHOW, 'categories' => '5040']);
         $pressed = $this->between($this->details($id), '<div class="tv-details-actions">', '</div>');
         $this->assertStringContainsString('data-cart-label aria-pressed="true" title="In cart · click to remove"><i class="fas fa-cart-shopping" aria-hidden="true"></i>', $pressed);
-        $this->assertStringContainsString('data-watched="1" aria-pressed="true" title="Following this show · click to unfollow"><i class="far fa-bookmark" aria-hidden="true"></i>', $pressed);
+        $this->assertStringContainsString('data-watched="1" aria-pressed="true" title="Following this show · click to unfollow"><i class="fas fa-bookmark" aria-hidden="true"></i>', $pressed);
+        $this->assertNoWatchWording((string) $this->details($id)->getContent(), 'A followed TV details page');
         $this->assertStringNotContainsString('fa-check', $pressed);
     }
 

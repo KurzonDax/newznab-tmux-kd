@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\Admin\InteractsWithAdminListPages;
+use Tests\Support\AssertsFollowWording;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -19,6 +20,7 @@ use Tests\TestCase;
 
 final class HomeAndBasketTest extends TestCase
 {
+    use AssertsFollowWording;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -67,7 +69,8 @@ final class HomeAndBasketTest extends TestCase
         }
         $this->release('Pending rename', ['isrenamed' => 0]);
         $this->release('Excluded audio', ['isrenamed' => 1, 'categories_id' => 3030, 'nfostatus' => 1]);
-        $response = $this->actingAs($user)->get('/')->assertOk()->assertSee('Latest releases')->assertSee('Watchlist')->assertSee('Trending this week');
+        $response = $this->actingAs($user)->get('/')->assertOk()->assertSee('Latest releases')->assertSee('<h2>Following</h2>', false)->assertSee('Trending this week');
+        $this->assertNoWatchWording((string) $response->getContent(), 'Home');
         $this->assertCount(8, $response->viewData('latest'));
         $response->assertDontSee('Pending rename')->assertDontSee('Excluded audio')->assertDontSee('No Content Available');
         Content::query()->create(['title' => 'Site announcement', 'body' => 'Welcome to the site', 'contenttype' => Content::TYPE_INDEX, 'status' => 1, 'role' => 0]);

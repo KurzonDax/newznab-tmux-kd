@@ -21,7 +21,7 @@ class WatchlistController extends BasePageController
         $titles->setCollection($watchlist->present($titles->getCollection(), $root, $this->userdata, true));
         $found = $find === '' ? collect() : $watchlist->present($watchlist->titles($root, $this->userdata, $find)->limit(6)->get(), $root, $this->userdata, false);
         $data = [...$this->viewData, 'userdata' => $this->userdata, 'root' => $root, 'titles' => $titles, 'found' => $found, 'find' => $find,
-            'counts' => $watchlist->counts($this->userdata), 'meta_title' => 'Watchlist'];
+            'counts' => $watchlist->counts($this->userdata), 'meta_title' => 'Following'];
 
         return view($request->input('_fragment') === 'lists' ? 'watchlist.lists' : 'watchlist.index', $data);
     }
