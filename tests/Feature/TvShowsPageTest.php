@@ -54,7 +54,7 @@ final class TvShowsPageTest extends TestCase
             'haspreview', 'jpgstatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'videos_id',
             'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'tv_info', 'networks', 'people', 'genres',
-            'video_genres', 'video_people', 'tv_episodes', 'release_tv_episodes', 'release_audio_tags', 'release_video_clips'] as $table) {
+            'video_genres', 'video_people', 'tv_episodes', 'release_tv_episodes', 'release_audio_tags', 'release_video_clips', 'languages', 'release_audio_languages'] as $table) {
             $tables->create($table);
         }
         DB::table('root_categories')->insert(['id' => 5000, 'title' => 'TV', 'status' => 1]);
@@ -151,7 +151,9 @@ final class TvShowsPageTest extends TestCase
         $this->assertSame(['TV-Y7' => 'TV-Y7', 'TV-MA' => 'TV-MA'], $options['rating']);
         $this->assertSame(['running' => 'Running', 'ended' => 'Ended'], $options['status']);
         $this->page('/tv/shows', $user)->assertSeeInOrder(['Any genre', 'Any decade', 'Any language', 'Any network', 'Any rating', 'Any status'])
-            ->assertSee('Genre: any')->assertSee('Premiered: any')->assertDontSee('Western');
+            ->assertDontSee('Western');
+        $wall = $this->page('/tv/shows', $user);
+        $this->assertSame(['Genre: any', 'Premiered: any'], [$this->cellText($wall, 'genre'), $this->cellText($wall, 'decade')]);
     }
 
     public function test_any_ticked_value_within_a_filter_matches_and_filters_combine(): void
@@ -175,10 +177,51 @@ final class TvShowsPageTest extends TestCase
         $this->assertWall('/tv/shows?status[]=bogus&genre[]=99', ['Comedy English', 'Drama English', 'Drama Korean', 'Sci-Fi Only']);
 
         $one = $this->page('/tv/shows?genre[]='.self::DRAMA)->assertSee('Showing 1–2 of 2 shows');
-        $this->assertMatchesRegularExpression('/class="checkbox-menu is-fixed is-set"[^>]*data-name="genre"/', (string) $one->getContent());
-        $one->assertSee('Genre: Drama')->assertSee('title="Genre: Drama"', false)->assertSee('data-clear-all aria-hidden="false"', false);
-        $this->page('/tv/shows?genre[]='.self::DRAMA.'&genre[]='.self::COMEDY)->assertSee('Genre: 2 chosen')->assertSee('title="Genre: Comedy, Drama"', false);
+        $this->assertMatchesRegularExpression('/class="checkbox-menu is-cell is-set"[^>]*data-name="genre"/', (string) $one->getContent());
+        $this->assertSame('Genre: Drama', $this->cellText($one, 'genre'));
+        $one->assertSee('title="Genre: Drama"', false)->assertSee('data-clear-all aria-hidden="false"', false);
+        $two = $this->page('/tv/shows?genre[]='.self::DRAMA.'&genre[]='.self::COMEDY)->assertSee('title="Genre: Comedy, Drama"', false);
+        $this->assertSame('Genre: 2 chosen', $this->cellText($two, 'genre'));
         $this->page('/tv/shows')->assertSee('data-clear-all aria-hidden="true" tabindex="-1"', false);
+    }
+
+    public function test_the_wall_has_the_show_bar_then_clear_all_then_the_starring_chip_and_the_sort_in_the_title_row(): void
+    {
+        $this->show(1, 'With Her', genres: [self::DRAMA]);
+        $this->tv(1);
+        DB::table('people')->insert([['id' => 7, 'name' => 'Ada Quill', 'tmdb_id' => 70]]);
+        DB::table('video_people')->insert([['videos_id' => 1, 'people_id' => 7, 'position' => 0]]);
+
+        $response = $this->page('/tv/shows?person=7')->assertOk();
+        $html = (string) $response->getContent();
+        $title = (string) strstr((string) strstr($html, '<div class="tv-filters">'), '<div class="filter-row tv-bar-wall">', true);
+        $this->assertStringContainsString('<select aria-label="Sort"', $title);
+        $this->assertStringNotContainsString('checkbox-menu', $title);
+        $response->assertSeeInOrder(['<div class="filter-row tv-bar-wall">', '<div class="filter-bar is-show" role="group" aria-label="The show">',
+            'data-name="status"', 'class="tv-clear-all" data-clear-all aria-hidden="false"', 'data-part="starring chip"', 'x-ref="list"'], false);
+        preg_match_all('/class="checkbox-menu is-cell[^"]*"[^>]*data-name="([a-z]+)"/', $html, $cells);
+        $this->assertSame(['genre', 'decade', 'language', 'network', 'rating', 'status'], $cells[1]);
+        $this->assertSame(1, substr_count($html, 'data-part="shows filter button"'));
+        // the wall's Showing line is unchanged: no Clear all slot and no fixed page text
+        $response->assertSee('<nav class="pager-line" aria-label="Pages">', false)->assertDontSee('pager-line-clear', false);
+        $this->page('/tv/shows')->assertSee('class="tv-clear-all is-hidden" data-clear-all aria-hidden="true" tabindex="-1">Clear all</a>', false);
+    }
+
+    public function test_languages_are_named_as_the_audio_menu_names_them_and_codes_sharing_a_name_are_one_option(): void
+    {
+        foreach ([1 => 'cn', 2 => 'nb', 3 => 'zxx', 4 => 'pt-BR', 5 => 'no', 6 => 'no'] as $id => $language) {
+            $this->show($id, 'Show '.$id, details: ['original_language' => $language]);
+            $this->tv($id);
+        }
+        $response = $this->page('/tv/shows')->assertOk();
+        // Norwegian: nb on one show, no on two; one option, valued by the code with the most shows
+        $this->assertSame(['no' => 'Norwegian', 'cn' => 'Cantonese', 'pt-BR' => 'Portuguese'], $response->viewData('options')['language']);
+        $this->assertSame(['no', 'nb'], $response->viewData('options')['language_codes']['no']);
+        $this->assertStringContainsString('<span class="tv-tile-more">Cantonese</span>', $this->tile($response, 1));
+        $this->assertStringContainsString('<span class="tv-tile-more">Norwegian</span>', $this->tile($response, 2));
+        $this->assertStringContainsString('<span class="tv-tile-more"></span>', $this->tile($response, 3));
+        $this->assertWall('/tv/shows?language[]=no', ['Show 2', 'Show 5', 'Show 6']);
+        $this->assertSame('Language: Norwegian', $this->cellText($this->page('/tv/shows?language[]=no'), 'language'));
     }
 
     public function test_the_person_filter_narrows_the_wall_and_its_chip_removes_it(): void
@@ -403,5 +446,14 @@ final class TvShowsPageTest extends TestCase
         $this->assertNotFalse($start, 'No tile for show '.$id);
 
         return substr($html, $start, strpos($html, '</a>', $start) - $start);
+    }
+
+    /** A filter cell's text as check.mjs reads it (textContent): "Genre: 2 chosen". */
+    private function cellText(TestResponse $response, string $name): string
+    {
+        $this->assertMatchesRegularExpression('/data-name="'.$name.'".*?<span class="checkbox-menu-label">(.*?)<\/span><i /s', (string) $response->getContent());
+        preg_match('/data-name="'.$name.'".*?<span class="checkbox-menu-label">(.*?)<\/span><i /s', (string) $response->getContent(), $match);
+
+        return html_entity_decode(strip_tags($match[1]), ENT_QUOTES);
     }
 }

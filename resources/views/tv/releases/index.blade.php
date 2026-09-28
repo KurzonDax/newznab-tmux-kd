@@ -17,9 +17,6 @@
             <x-segmented :items="['Releases' => route('tv.releases'), 'Shows' => route('tv.shows')]" current="Releases" />
             <x-tv-search />
             <span class="tv-grow"></span>
-            <x-checkbox-menu name="category" label="Category" :options="$categoryMenu" :selected="$filters->categories" />
-            <x-checkbox-menu name="resolution" label="Resolution" kind="resolution" :options="\App\Data\TvReleaseFilters::resolutionOptions()" :selected="$filters->resolutions" />
-            <x-checkbox-menu name="source" label="Source" :options="\App\Data\TvReleaseFilters::sourceOptions()" :selected="$filters->sources" />
             <label class="tv-sort">
                 <select aria-label="Sort releases" data-part="sort dropdown" x-on:change="changeSort">
                     @foreach(\App\Data\TvReleaseFilters::SORTS as $value => $text)
@@ -28,6 +25,16 @@
                 </select>
                 <i class="fas fa-chevron-down" aria-hidden="true"></i>
             </label>
+        </div>
+        <div class="filter-row tv-bar-list">
+            <x-filter-bar label="The release" class="is-release">
+                <x-checkbox-menu cell name="category" label="Category" noun="categories" :options="$categoryMenu" :selected="$filters->categories" />
+                <x-checkbox-menu cell name="resolution" label="Resolution" kind="resolution" :options="\App\Data\TvReleaseFilters::resolutionOptions()" :selected="$filters->resolutions" />
+                <x-checkbox-menu cell name="source" label="Source" :options="\App\Data\TvReleaseFilters::sourceOptions()" :selected="$filters->sources" />
+                <x-checkbox-menu cell name="audio" label="Audio" noun="audio languages" :options="$audioMenu" :selected="$filters->audio" />
+                <x-checkbox-menu cell single name="completion" label="Completion" any="Any completion" :options="\App\Data\TvReleaseFilters::completionOptions()" :short="\App\Data\TvReleaseFilters::completionCells()" :selected="$filters->completion === null ? [] : [$filters->completion]" />
+            </x-filter-bar>
+            @include('tv.partials.show-filters', ['options' => $showOptions, 'shows' => $filters->shows, 'firstPart' => false])
         </div>
         <div x-ref="list">
             @include('tv.releases.list')

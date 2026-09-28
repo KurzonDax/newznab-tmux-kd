@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { checkboxMenu } from '../../resources/js/alpine/components/checkbox-menu-component.js';
+import { filterUrl } from '../../resources/js/alpine/components/tv-list.js';
 import { tvReleases } from '../../resources/js/alpine/components/tv-releases-component.js';
 
 function attributes(initial = {}) {
@@ -30,9 +31,14 @@ function menu(ticked = []) {
     };
     const component = checkboxMenu();
     component.$el = root;
-    component.$refs = { summary: { textContent: '' }, button: { focused: false, focus() { this.focused = true; } } };
+    component.$refs = { value: valueRef(), button: { focused: false, focus() { this.focused = true; } } };
     component.init();
     return { component, items, any, events, classes };
+}
+
+function valueRef() {
+    const classes = new Set(['is-any']);
+    return { textContent: 'any', classes, classList: { toggle: (name, on) => (on ? classes.add(name) : classes.delete(name)) } };
 }
 
 test('ticking keeps the menu open, ORs the values in menu order and turns the button coral', () => {
@@ -41,16 +47,18 @@ test('ticking keeps the menu open, ORs the values in menu order and turns the bu
     component.pick({ currentTarget: items[1] });
     component.pick({ currentTarget: items[0] });
     assert.equal(component.open, true);
-    assert.equal(component.$refs.summary.textContent, 'Resolution: 4K, 1080p');
+    assert.equal(component.$refs.value.textContent, '4K, 1080p');
+    assert.ok(!component.$refs.value.classes.has('is-any'));
     assert.equal(any.getAttribute('aria-checked'), 'false');
     assert.ok(classes.has('is-set'));
-    assert.deepEqual(events.at(-1).detail, { name: 'resolution', values: ['4k', '1080p'] });
+    assert.deepEqual(events.at(-1).detail, { name: 'resolution', values: ['4k', '1080p'], single: false });
     assert.equal(events.at(-1).bubbles, true);
 
     component.pick({ currentTarget: items[1] });
     assert.deepEqual(events.at(-1).detail.values, ['4k']);
     component.clear();
-    assert.equal(component.$refs.summary.textContent, 'Resolution: any');
+    assert.equal(component.$refs.value.textContent, 'any');
+    assert.ok(component.$refs.value.classes.has('is-any'));
     assert.equal(any.getAttribute('aria-checked'), 'true');
     assert.ok(!classes.has('is-set'));
     assert.deepEqual(events.at(-1).detail.values, []);
@@ -249,4 +257,163 @@ test('row buttons sit 2 × 2 and Copy link, Cart and Follow each keep their own 
     assert.equal(token('--row-action-follow-on-bg-dark'), 'oklch(0.72 0.15 300)');
     assert.match(tv.get(`${off}:focus-visible`), /outline-color: var\(--tv-ink\);/);
     assert.match(tv.get('.tv-action-download'), /background: var\(--tv-accent\); color: var\(--tv-accent-on\);/);
+});
+
+/** A bar cell's menu (check.mjs 379-419): items with text, an optional search field and a scrolling panel. */
+function cell({ name = 'audio', label = 'Audio', values = ['1', '2', '3'], texts = ['English', 'Korean', 'Japanese'], ticked = [], single = false, short = {}, search = false } = {}) {
+    const items = values.map((value, index) => ({
+        ...attributes({ 'aria-checked': ticked.includes(value) ? 'true' : 'false' }), hidden: false,
+        dataset: { value, text: texts[index], ...(short[value] ? { short: short[value] } : {}) }, offsetTop: 62 + index * 40, offsetHeight: 40,
+    }));
+    const any = attributes({ 'aria-checked': ticked.length ? 'false' : 'true' });
+    const events = [], classes = new Set(['checkbox-menu', 'is-cell']);
+    const root = {
+        dataset: { name, label, summary: 'count', ...(single ? { single: 'true' } : {}) },
+        querySelectorAll: selector => (selector === '[data-value]' ? items : []),
+        querySelector: selector => (selector === '[data-any]' ? any : null),
+        classList: { toggle: (className, on) => (on ? classes.add(className) : classes.delete(className)), contains: className => classes.has(className) },
+        dispatchEvent: event => events.push(event),
+        contains: () => true,
+    };
+    const component = checkboxMenu();
+    component.$el = root;
+    component.$nextTick = callback => callback();
+    const focused = [];
+    component.$refs = {
+        value: valueRef(),
+        button: { ...attributes({ title: '' }), focus() { focused.push('button'); } },
+        panel: { scrollTop: 0, clientHeight: 402, style: {}, getBoundingClientRect: () => ({ right: 400 }) },
+        ...(search ? { search: { value: '', parentElement: { offsetHeight: 56 }, focus() { focused.push('search'); } } } : {}),
+    };
+    component.init();
+    return { component, items, any, events, classes, focused };
+}
+
+test('the open cell is marked open for the lift and the hidden hairlines, and loses it on every way of closing', () => {
+    globalThis.document = { documentElement: { clientWidth: 1600 } };
+    const { component, classes, focused } = cell();
+    component.toggle();
+    assert.ok(classes.has('is-open'));
+    assert.deepEqual(focused, [], 'a short menu has no search field to focus');
+    component.close();
+    assert.ok(!classes.has('is-open'));
+    component.toggle();
+    component.focusLeft({ relatedTarget: null });
+    assert.ok(classes.has('is-open'), 'focus leaving the window keeps it open');
+    component.closeAndFocus();
+    assert.ok(!classes.has('is-open'));
+});
+
+test('Completion is one choice: a radio pick reads 95%+, closes the menu, returns focus and sends one value', () => {
+    const { component, items, any, events, classes, focused } = cell({
+        name: 'completion', label: 'Completion', values: ['100', '95'], texts: ['100% only', '95% or more'], single: true, short: { 100: '100%', 95: '95%+' },
+    });
+    component.toggle();
+    component.pick({ currentTarget: items[1] });
+    assert.equal(component.open, false);
+    assert.deepEqual(focused, ['button']);
+    assert.equal(component.$refs.value.textContent, '95%+');
+    assert.equal(component.$refs.button.getAttribute('title'), 'Completion: 95% or more');
+    assert.deepEqual(items.map(item => item.getAttribute('aria-checked')), ['false', 'true']);
+    assert.equal(any.getAttribute('aria-checked'), 'false');
+    assert.ok(classes.has('is-set'));
+    assert.deepEqual(events.at(-1).detail, { name: 'completion', values: ['95'], single: true });
+
+    component.toggle();
+    component.pick({ currentTarget: items[0] });
+    assert.deepEqual(items.map(item => item.getAttribute('aria-checked')), ['true', 'false']);
+    assert.equal(component.$refs.value.textContent, '100%');
+    component.toggle();
+    component.pick({ currentTarget: items[0] });
+    assert.equal(events.length, 2, 'picking the ticked choice again changes nothing');
+    assert.equal(component.open, false);
+
+    component.toggle();
+    component.clear();
+    assert.equal(component.open, false);
+    assert.equal(component.$refs.value.textContent, 'any');
+    assert.ok(!classes.has('is-set'));
+    assert.deepEqual(events.at(-1).detail.values, []);
+});
+
+test('a long menu opens on its search field, which narrows in place, survives ticking and is forgotten on close', () => {
+    globalThis.document = { documentElement: { clientWidth: 1600 } };
+    const { component, items, focused } = cell({ search: true });
+    component.toggle();
+    assert.deepEqual(focused, ['search']);
+    component.$refs.search.value = ' KOR ';
+    component.narrow();
+    assert.deepEqual(items.map(item => item.hidden), [true, false, true]);
+    component.pick({ currentTarget: items[1] });
+    assert.equal(component.open, true);
+    assert.equal(component.$refs.search.value, ' KOR ');
+    assert.deepEqual(items.map(item => item.hidden), [true, false, true]);
+    assert.equal(component.$refs.value.textContent, 'Korean');
+
+    component.closeAndFocus();
+    assert.equal(component.$refs.search.value, '');
+    assert.deepEqual(items.map(item => item.hidden), [false, false, false]);
+});
+
+test('a menu opens scrolled to its first ticked option, just under the search field', () => {
+    globalThis.document = { documentElement: { clientWidth: 1600 } };
+    const values = Array.from({ length: 20 }, (_, index) => String(index + 1));
+    const { component, items } = cell({ values, texts: values.map(value => 'Language ' + value), ticked: ['15', '18'], search: true });
+    component.toggle();
+    assert.equal(component.$refs.panel.scrollTop, items[14].offsetTop - 56 - 6);
+
+    const short = cell({ values, texts: values, ticked: ['2'], search: true });
+    short.component.toggle();
+    assert.equal(short.component.$refs.panel.scrollTop, 0, 'a ticked option already in view does not scroll');
+});
+
+test('a Completion change writes one completion value, clearing it drops it, and the page is dropped', async () => {
+    const { history } = browser({ href: 'https://nntmux.test/tv?completion=100&audio%5B%5D=unknown&page=4' });
+    const { component } = screen(['a']);
+    await component.applyFilter({ detail: { name: 'completion', values: ['95'], single: true } });
+    let url = new URL(history.at(-1)[1]);
+    assert.equal(url.searchParams.get('completion'), '95');
+    assert.deepEqual(url.searchParams.getAll('completion[]'), []);
+    assert.deepEqual(url.searchParams.getAll('audio[]'), ['unknown']);
+    assert.equal(url.searchParams.get('page'), null);
+
+    url = filterUrl(url.toString(), 'completion', [], true);
+    assert.equal(url.searchParams.has('completion'), false);
+    assert.deepEqual(url.searchParams.getAll('audio[]'), ['unknown']);
+});
+
+test('the bar look lives only inside the bar: equal cells, name above value, coral line under a set value, never a fill', () => {
+    const tv = cssRules('../../resources/css/tv.css'), app = readFileSync(new URL('../../resources/css/app.css', import.meta.url), 'utf8');
+    assert.match(tv.get('.filter-bar'), /display: flex;.*height: 56px; padding: 4px; border-radius: 18px; background: var\(--tv-panel-alt\);/);
+    assert.match(tv.get('.tv-bar-list .filter-bar.is-release'), /flex: 5 1 0;/);
+    assert.match(tv.get('.tv-bar-list .filter-bar.is-show'), /flex: 6 1 0;/);
+    assert.match(tv.get('.tv-bar-wall .filter-bar.is-show'), /flex: 0 0 calc\(\(100% - 12px\) \* 6 \/ 11\);/);
+    assert.match(tv.get('.filter-bar .checkbox-menu'), /flex: 1 1 0; min-width: 0;/);
+    assert.match(tv.get('.filter-bar .checkbox-menu-button'), /height: 48px; padding: 0 10px 0 14px; border-radius: 14px; background: transparent;/);
+    assert.match(tv.get('.filter-bar .checkbox-menu-label'), /flex-direction: column;/);
+    assert.match(tv.get('.filter-bar .checkbox-menu-sep'), /display: none;/);
+    assert.match(tv.get('.filter-bar .checkbox-menu-name'), /color: var\(--tv-filter-name\); font-size: 11.5px; font-weight: 500;/);
+    assert.match(tv.get('.filter-bar .checkbox-menu-value.is-any'), /color: var\(--tv-dim\); font-weight: 500;/);
+    assert.match(tv.get('.filter-bar .checkbox-menu.is-set .checkbox-menu-button'), /background: transparent; color: var\(--tv-ink\);/);
+    assert.match(tv.get('.filter-bar .checkbox-menu.is-set .checkbox-menu-button::after'), /right: 14px; bottom: 3px; left: 14px; height: 3px; border-radius: 2px; background: var\(--tv-accent\);/);
+    assert.match(tv.get('.filter-bar .checkbox-menu.is-open .checkbox-menu-button'), /background: var\(--tv-raise\); box-shadow: var\(--tv-shadow\);/);
+    assert.match(tv.get('.filter-bar .checkbox-menu.is-open + .checkbox-menu::before'), /opacity: 0;/);
+    assert.match(tv.get('.filter-bar .checkbox-menu-panel'), /top: 58px;.*min-width: max\(100%, 230px\);/);
+    assert.match(tv.get('.filter-bar .checkbox-menu-panel.is-searchable'), /max-height: 402px;/);
+    assert.match(tv.get('.checkbox-menu-search'), /position: sticky; top: 0;/);
+    for (const [selector, body] of tv) {
+        if (/is-open|::after|is-cell|checkbox-menu-name|checkbox-menu-sep/.test(selector) && selector.includes('checkbox-menu') && !selector.includes('checkbox-menu-dot')) {
+            assert.ok(selector.startsWith('.filter-bar '), `${selector} is scoped to the bar`);
+        }
+        if (selector.startsWith('.filter-bar') && selector.includes('is-set') && !selector.endsWith('::after')) assert.doesNotMatch(body, /var\(--tv-accent\)/, selector);
+    }
+    assert.match(tv.get('.dark'), /--tv-filter-name: var\(--text-filter-name-dark\);/);
+    assert.match(tv.get(':root'), /--tv-filter-name: var\(--text-filter-name\);/);
+    assert.match(app, /--text-filter-name: #17181c;/);
+    assert.match(app, /--text-filter-name-dark: #ffffff;/);
+    assert.match(app, /--surface-raised: #ffffff;/);
+    assert.match(app, /--surface-raised-dark: #2a2e39;/);
+    assert.match(tv.get('.pager-line.is-fixed .pager-line-page'), /min-width: calc\(13ch \+ 20px\); text-align: center;/);
+    assert.match(tv.get('.pager-line a.pager-line-clear'), /width: 64px;.*margin-right: 12px;/);
+    assert.match(tv.get('.pager-line-clear.is-hidden'), /visibility: hidden;/);
 });

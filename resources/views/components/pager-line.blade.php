@@ -1,5 +1,9 @@
-@props(['page', 'lastPage', 'total', 'perPage', 'noun', 'url'])
-{{-- "Showing X–Y of N" with previous / "Page X of Y" / next: always rendered, the same size in every state. --}}
+@props(['page', 'lastPage', 'total', 'perPage', 'noun', 'url', 'clearAll' => null, 'filtered' => false])
+{{--
+    "Showing X–Y of N" with previous / "Page X of Y" / next: always rendered, the same size in every state.
+    With `clearAll` (the unfiltered URL) the line holds "Clear all" in a fixed slot left of the arrows,
+    hidden but keeping its place while nothing is `filtered`, and the page text has a fixed width.
+--}}
 @php
     /** @var \Closure(int): string $url */
     $from = $total > 0 ? ($page - 1) * $perPage + 1 : 0;
@@ -8,8 +12,11 @@
         ? 'Showing '.number_format($from).'–'.number_format($to).' of '.number_format($total).' '.($total === 1 ? $noun : \Illuminate\Support\Str::plural($noun))
         : 'Showing 0 '.\Illuminate\Support\Str::plural($noun);
 @endphp
-<nav {{ $attributes->class('pager-line') }} aria-label="Pages">
+<nav {{ $attributes->class(['pager-line', 'is-fixed' => $clearAll !== null]) }} aria-label="Pages">
     <span class="pager-line-summary" data-part="showing line">{{ $summary }}</span>
+    @if($clearAll !== null)
+        <a href="{{ $clearAll }}" @class(['pager-line-clear', 'is-hidden' => ! $filtered]) data-clear-all aria-hidden="{{ $filtered ? 'false' : 'true' }}"@unless($filtered) tabindex="-1"@endunless>Clear all</a>
+    @endif
     @if($page > 1)
         <a href="{{ $url($page - 1) }}" rel="prev" aria-label="Previous page" data-part="pager arrow"><i class="fas fa-arrow-left" aria-hidden="true"></i></a>
     @else

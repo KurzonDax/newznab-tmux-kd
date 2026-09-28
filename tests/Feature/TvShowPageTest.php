@@ -51,7 +51,7 @@ final class TvShowPageTest extends TestCase
             'haspreview', 'jpgstatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'videos_id',
             'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'tv_info', 'networks', 'people', 'genres',
-            'video_genres', 'video_people', 'tv_episodes', 'release_tv_episodes', 'release_audio_tags', 'release_video_clips'] as $table) {
+            'video_genres', 'video_people', 'tv_episodes', 'release_tv_episodes', 'release_audio_tags', 'release_video_clips', 'languages', 'release_audio_languages'] as $table) {
             $tables->create($table);
         }
         DB::table('root_categories')->insert(['id' => 5000, 'title' => 'TV', 'status' => 1]);
@@ -255,6 +255,23 @@ final class TvShowPageTest extends TestCase
         $this->assertStringNotContainsString('tv-season-bar', $list);
         $this->assertStringNotContainsString('<html', $list);
         $this->assertMatchesRegularExpression('/data-episode="1"\s+data-open/', $list);
+    }
+
+    public function test_the_page_ignores_the_list_only_filters_and_keeps_its_pill_menus(): void
+    {
+        $this->tv(1, 1, resolution: 2, source: 1);
+        $this->tv(1, 2, resolution: 1, source: 2);
+
+        $page = $this->page('/tv/show/'.self::SHOW.'/1?audio[]=unknown&completion=100&genre[]=1&language[]=en&status[]=ended')->assertOk();
+        $this->assertSame(['E02', 'E01'], $this->episodeNumbers($page));
+        $html = (string) $page->getContent();
+        $this->assertStringNotContainsString('filter-bar', $html);
+        $this->assertStringNotContainsString('is-cell', $html);
+        $this->assertStringNotContainsString('data-clear-all', $html);
+        $this->assertSame(2, substr_count($html, '<div class="checkbox-menu" x-data="checkboxMenu"'));
+        $page->assertSee('data-summary="list"', false);
+        $this->page('/tv/show/'.self::SHOW.'/1?resolution[]=720p&audio[]=unknown&completion=95&genre[]=1')
+            ->assertSee('No releases in this season match 720p.');
     }
 
     public function test_the_user_sees_only_releases_they_may_see_and_nothing_for_a_show_they_cannot_see(): void

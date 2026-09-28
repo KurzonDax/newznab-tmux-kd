@@ -34,6 +34,7 @@ final readonly class TvShowFilters
      * @param  list<int>  $networks  networks.id
      * @param  list<string>  $ratings  values of RATINGS
      * @param  list<string>  $statuses  keys of STATUSES
+     * @param  list<string>  $languageCodes  every original_language code the ticked languages name (empty: $languages)
      */
     public function __construct(
         public array $genres = [],
@@ -45,12 +46,13 @@ final readonly class TvShowFilters
         public ?int $person = null,
         public string $sort = 'recent',
         public int $page = 1,
+        public array $languageCodes = [],
     ) {}
 
     /**
      * Values that are not in the user's option lists are ignored, each list keeping menu order.
      *
-     * @param  array<string, array<int|string, string>>  $options  the option lists by URL key, as TvShowWall::options() returns them
+     * @param  array<string, array<int|string, string|list<string>>>  $options  the option lists by URL key, as TvShowWall::options() returns them
      */
     public static function fromRequest(Request $request, array $options, mixed $savedSort): self
     {
@@ -60,18 +62,31 @@ final readonly class TvShowFilters
         ));
         $person = $request->query('person');
         $page = $request->query('page');
+        $languages = $ticked('language');
+        $codes = [];
+        foreach ($languages as $language) {
+            $same = $options['language_codes'][$language] ?? [$language];
+            $codes = [...$codes, ...(is_array($same) ? $same : [$language])];
+        }
 
         return new self(
             genres: array_map('intval', $ticked('genre')),
             decades: array_map('intval', $ticked('decade')),
-            languages: $ticked('language'),
+            languages: $languages,
             networks: array_map('intval', $ticked('network')),
             ratings: $ticked('rating'),
             statuses: $ticked('status'),
             person: is_string($person) && ctype_digit($person) && (int) $person > 0 ? (int) $person : null,
             sort: is_string($savedSort) && array_key_exists($savedSort, self::SORTS) ? $savedSort : 'recent',
             page: is_string($page) && ctype_digit($page) ? max(1, (int) $page) : 1,
+            languageCodes: $codes,
         );
+    }
+
+    /** @return list<string> the original_language codes the ticked languages match */
+    public function languageValues(): array
+    {
+        return $this->languageCodes === [] ? $this->languages : $this->languageCodes;
     }
 
     /** Whether anything narrows the wall, the person included ("Clear all" shows then). */
@@ -83,7 +98,7 @@ final readonly class TvShowFilters
 
     public function withoutPerson(): self
     {
-        return new self($this->genres, $this->decades, $this->languages, $this->networks, $this->ratings, $this->statuses, null, $this->sort, $this->page);
+        return new self($this->genres, $this->decades, $this->languages, $this->networks, $this->ratings, $this->statuses, null, $this->sort, $this->page, $this->languageCodes);
     }
 
     /** @return list<int> tv_info.status values of the ticked statuses */

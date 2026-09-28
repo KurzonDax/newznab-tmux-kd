@@ -84,8 +84,8 @@ export function tvReleases() {
         },
 
         async applyFilter(event) {
-            const { name, values } = event.detail;
-            const url = filterUrl(window.location.href, name, values);
+            const { name, values, single } = event.detail;
+            const url = filterUrl(window.location.href, name, values, single);
             window.history.replaceState(null, '', url.toString());
             await this.reloadList(url);
         },
