@@ -54,7 +54,7 @@ final class DetailsControllerTest extends TestCase
         });
         ProductionTables::fromAuthority()->create('predb', ['id', 'title']);
         DB::statement('CREATE TABLE release_comments (id INTEGER PRIMARY KEY AUTOINCREMENT, releases_id INTEGER NOT NULL, text VARCHAR(2000), isvisible INTEGER DEFAULT 1, username VARCHAR(255), users_id INTEGER, created_at DATETIME, updated_at DATETIME, host VARCHAR(45))');
-        ProductionTables::fromAuthority()->create('movieinfo', ['id', 'imdbid', 'title', 'year', 'genre', 'rating', 'trailer']);
+        ProductionTables::fromAuthority()->create('movieinfo', ['id', 'imdbid', 'title', 'year', 'genre', 'director', 'actors', 'rating', 'trailer']);
         config(['nntmux_settings.covers_path' => $this->makeTempDirectory('details-artwork')]);
         $this->mock(ReleaseSearchService::class)->shouldReceive('searchSimilar')->andReturn([]);
     }
@@ -105,6 +105,22 @@ final class DetailsControllerTest extends TestCase
             ->assertSee('Original.Scene.Release')->assertSee('Original report text')->assertSee('Public staff response')
             ->assertDontSee('data-watch-picker', false);
         $this->assertNoWatchWording((string) $response->getContent(), 'Today\'s details page with a film trailer');
+    }
+
+    public function test_movie_genre_director_and_cast_are_escaped_plain_text_limited_to_eight_names(): void
+    {
+        $markup = '"><script>alert(1)</script>';
+        DB::table('movieinfo')->insert(['imdbid' => '0111162', 'title' => 'Plain Movie', 'genre' => 'Drama, '.$markup,
+            'director' => 'Tom & Jerry', 'actors' => implode(', ', ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10'])]);
+        $this->detailRelease('Plain.Movie.Release', ['imdbid' => '0111162']);
+        $response = $this->actingAs($this->browserUser())->get('/details/'.md5('Plain.Movie.Release'))->assertOk();
+        $content = (string) $response->getContent();
+        $response->assertSee('Drama, '.e($markup), false)->assertSee('Tom &amp; Jerry', false)
+            ->assertSee('A1, A2, A3, A4, A5, A6, A7, A8<', false)->assertDontSee('A9', false);
+        $this->assertStringNotContainsString('<script>alert(1)', $content);
+        $this->assertStringNotContainsString('?genre=', $content);
+        $this->assertStringNotContainsString('?actors=', $content);
+        $this->assertStringNotContainsString('?director=', $content);
     }
 
     public function test_completion_and_repair_status_stay_in_the_header_above_the_tabs(): void

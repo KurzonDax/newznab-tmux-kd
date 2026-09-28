@@ -76,12 +76,10 @@ use App\Http\Controllers\GamesController;
 use App\Http\Controllers\GetNzbController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\MediaInfoController;
-use App\Http\Controllers\MovieController;
 use App\Http\Controllers\MovieFilmController;
 use App\Http\Controllers\MovieFilmsController;
 use App\Http\Controllers\MovieReleasesController;
 use App\Http\Controllers\MusicController;
-use App\Http\Controllers\MyMoviesController;
 use App\Http\Controllers\MyShowsController;
 use App\Http\Controllers\NfoController;
 use App\Http\Controllers\PasswordSecurityController;
@@ -234,9 +232,6 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
 
     Route::middleware('clearance')->group(function () {
         Route::match(['GET', 'POST'], 'Games', [GamesController::class, 'show'])->name('Games');
-        Route::match(['GET', 'POST'], 'trending-movies', [MovieController::class, 'showTrending'])->name('trending-movies');
-        Route::match(['GET', 'POST'], 'movie/{imdbid}', [MovieController::class, 'showMovie'])->name('movie.view');
-        Route::match(['GET', 'POST'], 'Movies/{id?}', [MovieController::class, 'showMovies'])->name('Movies');
         Route::match(['GET', 'POST'], 'Audio/{id?}', [MusicController::class, 'show'])->name('Audio');
         Route::match(['GET', 'POST'], 'Console/{id?}', [ConsoleController::class, 'show'])->name('Console');
         Route::match(['GET', 'POST'], 'XXX/{id?}', [AdultController::class, 'show'])->name('XXX');
@@ -253,8 +248,6 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         Route::get('movies/search', [MovieReleasesController::class, 'search'])->name('movies.search');
         Route::get('movies/films', [MovieFilmsController::class, 'index'])->name('movies.films');
         Route::get('movies/film/{movieinfoId}', [MovieFilmController::class, 'show'])->whereNumber('movieinfoId')->name('movies.film');
-        Route::match(['GET', 'POST'], 'mymovies/browse', [MyMoviesController::class, 'browse'])->name('mymovies.browse');
-        Route::match(['GET', 'POST'], 'mymovies', [MyMoviesController::class, 'show'])->name('mymovies');
     });
 
     Route::match(['GET', 'POST'], 'nfo/{id?}', [NfoController::class, 'showNfo'])->name('nfo');

@@ -2,7 +2,7 @@
 <header class="public-header" data-public-header x-data="publicNavigation" x-on:keydown.window="handleShortcut" x-on:click.outside="closeMenus">
     <a href="{{ url('/') }}" class="public-logo"><i class="fas fa-cubes" aria-hidden="true"></i>{{ config('app.name') }}</a>
     <nav class="public-primary-nav" aria-label="Main navigation">
-        <button type="button" class="public-nav-item" x-ref="browseTrigger" x-on:click="toggleBrowse" x-bind:aria-expanded="browseOpen" aria-controls="browse-menu" aria-label="Browse categories" @if(request()->is('browse*', 'tv', 'tv/*', 'movies', 'movies/*', 'title*', 'details*') && !request()->boolean('trending')) aria-current="true" @endif>
+        <button type="button" class="public-nav-item" x-ref="browseTrigger" x-on:click="toggleBrowse" x-bind:aria-expanded="browseOpen" aria-controls="browse-menu" aria-label="Browse categories" @if(request()->is('browse*', 'tv', 'tv/*', 'movies', 'movies/*', 'title*', 'details*')) aria-current="true" @endif>
             <i class="fas fa-compass public-desktop-icon" aria-hidden="true"></i><i class="fas fa-bars public-mobile-icon" aria-hidden="true"></i><span class="public-nav-label">Browse</span><i class="fas fa-chevron-down public-nav-label" aria-hidden="true"></i>
         </button>
         <div id="browse-menu" class="card public-menu public-mega-menu" x-cloak x-show="browseOpen" x-on:click="navigate">
@@ -16,7 +16,6 @@
                     @endforeach
                     @if($root === \App\Enums\BrowseRoot::Movies)
                         <a href="{{ route('movies.films') }}"><i class="fas fa-film" aria-hidden="true"></i>Films</a>
-                        <a href="{{ route('trending-movies') }}"><i class="fas fa-fire" aria-hidden="true"></i>Trending Movies</a>
                     @endif
                     @if($root === \App\Enums\BrowseRoot::Tv)
                         <a href="{{ route('tv.shows') }}"><i class="fas fa-tv" aria-hidden="true"></i>TV Shows</a>
@@ -28,10 +27,7 @@
                 <a href="{{ route('browse.all') }}">All releases</a><a href="{{ route('browsegroup') }}">Groups</a><a href="{{ route('poster-identity') }}">Poster identities</a>
             </div>
         </div>
-        @if(collect($navigationRoots)->contains(fn ($item) => $item['root'] === \App\Enums\BrowseRoot::Movies))
-        <a href="{{ route('trending-movies') }}" class="public-nav-item public-wide-nav" @if(request()->is('trending*') || request()->boolean('trending')) aria-current="page" @endif><i class="fas fa-fire" aria-hidden="true"></i>Trending</a>
-        @endif
-        <a href="{{ route('watchlist') }}" class="public-nav-item public-wide-nav" @if(request()->is('mymovies*', 'myshows*', 'watchlist*')) aria-current="page" @endif><i class="fas fa-bookmark" aria-hidden="true"></i>Following <span data-watchlist-count @if($watchlistCount === 0) hidden @endif>{{ $watchlistCount }}</span></a>
+        <a href="{{ route('watchlist') }}" class="public-nav-item public-wide-nav" @if(request()->is('myshows*', 'watchlist*')) aria-current="page" @endif><i class="fas fa-bookmark" aria-hidden="true"></i>Following <span data-watchlist-count @if($watchlistCount === 0) hidden @endif>{{ $watchlistCount }}</span></a>
     </nav>
     <form action="{{ url('/search') }}" method="GET" role="search" class="public-search" x-ref="searchForm" data-suggest-url="{{ route('api.search.suggest') }}" x-on:submit="closeSuggestions">
         <label class="sr-only" for="header-search-scope">Search scope</label>

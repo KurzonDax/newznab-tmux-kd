@@ -186,7 +186,7 @@ final class ReleaseRowDataLoaderTest extends TestCase
             'passwordstatus' => null, 'nfostatus' => null, 'haspreview' => 0, 'jpgstatus' => 0, 'groups_id' => null,
             'fromname' => 'Poster', 'isrenamed' => 1, 'additional_pp_claim_token' => null, 'imdbid' => null,
             'videos_id' => null, 'tv_episodes_id' => null, 'musicinfo_id' => null, 'consoleinfo_id' => null,
-            'gamesinfo_id' => null, 'bookinfo_id' => null, 'anidbid' => null,
+            'gamesinfo_id' => null, 'bookinfo_id' => null, 'anidbid' => null, 'movieinfo_id' => null,
         ];
     }
 }

@@ -58,7 +58,7 @@ final class ReleaseEntityDataLoaderTest extends TestCase
         });
 
         $entities = (new ReleaseEntityDataLoader)->load(collect([(object) [
-            'id' => 1, 'categories_id' => $category, $foreignKey => 7, 'tv_episodes_id' => 3,
+            'id' => 1, 'categories_id' => $category, $foreignKey => 7, 'tv_episodes_id' => 3, 'movieinfo_id' => 21,
         ]]));
         $listening = false;
 
@@ -68,7 +68,12 @@ final class ReleaseEntityDataLoaderTest extends TestCase
         self::assertSame($root, $entities[1]->root);
         self::assertSame($root === 'tv' ? 2 : null, $entities[1]->season);
         self::assertSame($root === 'tv' ? 4 : null, $entities[1]->episode);
-        self::assertSame($root === 'tv' ? route('tv.show', ['videosId' => 7]) : route('title', ['root' => $root, 'id' => '7']), $entities[1]->titleUrl());
+        self::assertSame(match ($root) {
+            'tv' => route('tv.show', ['videosId' => 7]),
+            'movies' => route('movies.film', ['movieinfoId' => 21]),
+            default => route('title', ['root' => $root, 'id' => '7']),
+        }, $entities[1]->titleUrl());
+        self::assertSame($root === 'movies' ? 21 : null, $entities[1]->filmId);
         foreach ($queries as $query) {
             self::assertStringNotContainsString('*', $query->sql);
             self::assertStringNotContainsString('plot', $query->sql);

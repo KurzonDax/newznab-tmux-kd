@@ -12,7 +12,6 @@ use App\Models\User;
 use App\Services\BookService;
 use App\Services\ConsoleService;
 use App\Services\GamesService;
-use App\Services\MovieBrowseService;
 use App\Services\MusicService;
 use App\Services\Releases\ReleaseMediaInfoAvailabilityLoader;
 use Illuminate\Database\Schema\Blueprint;
@@ -213,7 +212,6 @@ class ReleaseMediaInfoAvailabilityLoaderTest extends TestCase
     public static function coverListings(): array
     {
         return [
-            'Movies' => [MovieBrowseService::class, 'getMovieRange', 'movieinfo', 'imdbid'],
             'Audio' => [MusicService::class, 'getMusicRange', 'musicinfo', 'musicinfo_id'],
             'Games' => [GamesService::class, 'getGamesRange', 'gamesinfo', 'gamesinfo_id'],
             'Books' => [BookService::class, 'getBookRange', 'bookinfo', 'bookinfo_id'],
@@ -230,7 +228,7 @@ class ReleaseMediaInfoAvailabilityLoaderTest extends TestCase
             foreach (['imdbid', 'musicinfo_id', 'gamesinfo_id', 'bookinfo_id', 'consoleinfo_id', 'guid', 'searchname', 'display_name', 'repair_outcome', 'rescan_outcome', 'postdate', 'adddate', 'fromname', 'additional_pp_claim_token'] as $column) {
                 $table->string($column)->nullable();
             }
-            foreach (['size', 'haspreview', 'videostatus', 'grabs', 'comments', 'totalpart', 'groups_id', 'categories_id', 'passwordstatus', 'nfostatus', 'jpgstatus', 'isrenamed', 'videos_id', 'tv_episodes_id', 'anidbid'] as $column) {
+            foreach (['size', 'haspreview', 'videostatus', 'grabs', 'comments', 'totalpart', 'groups_id', 'categories_id', 'passwordstatus', 'nfostatus', 'jpgstatus', 'isrenamed', 'videos_id', 'tv_episodes_id', 'anidbid', 'movieinfo_id'] as $column) {
                 $table->integer($column)->default(0);
             }
             $table->integer('completion')->default(100);

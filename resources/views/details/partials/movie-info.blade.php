@@ -55,19 +55,19 @@
                         @if(!empty($movieGenre))
                             <div class="md:col-span-2">
                                 <dt class="text-[11px] font-medium text-gray-600 dark:text-gray-400">Genre</dt>
-                                <dd class="mt-1 text-[13px] text-gray-900 dark:text-gray-100">{!! $movieGenre !!}</dd>
+                                <dd class="mt-1 text-[13px] text-gray-900 dark:text-gray-100">{{ $movieGenre }}</dd>
                             </div>
                         @endif
                         @if(!empty($movieDirector))
                             <div>
                                 <dt class="text-[11px] font-medium text-gray-600 dark:text-gray-400">Director</dt>
-                                <dd class="mt-1 text-[13px] text-gray-900 dark:text-gray-100">{!! $movieDirector !!}</dd>
+                                <dd class="mt-1 text-[13px] text-gray-900 dark:text-gray-100">{{ $movieDirector }}</dd>
                             </div>
                         @endif
                         @if(!empty($movieActors))
                             <div class="md:col-span-2">
                                 <dt class="text-[11px] font-medium text-gray-600 dark:text-gray-400">Cast</dt>
-                                <dd class="mt-1 text-[13px] text-gray-900 dark:text-gray-100">{!! $movieActors !!}</dd>
+                                <dd class="mt-1 text-[13px] text-gray-900 dark:text-gray-100">{{ $movieActors }}</dd>
                             </div>
                         @endif
                         @if(!empty($movieLanguage))

@@ -70,10 +70,7 @@ class ClearanceMiddleware
         }
 
         // Movies category
-        if ($this->matchesCategoryPath($path, 'Movies')
-            || $this->matchesCategoryPath($path, 'movie')
-            || $this->matchesCategoryPath($path, 'trending-movies')
-            || $this->matchesCategoryPath($path, 'mymovies')) {
+        if ($this->matchesCategoryPath($path, 'Movies')) {
             if (! $user->hasDirectPermission('view movies')) {
                 return $this->abortCategoryDisabled('Movies');
             }

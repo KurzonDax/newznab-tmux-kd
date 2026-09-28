@@ -57,12 +57,6 @@ final class ReleaseBrowserQuery
         $query = $this->baseQuery($state, $user);
         $this->metadata->filter($query, $state->root, $state->filters);
 
-        if ($state->trending && in_array($state->root, [BrowseRoot::Movies, BrowseRoot::Tv], true)) {
-            $key = $state->root === BrowseRoot::Movies ? 'r.imdbid' : 'r.videos_id';
-            $downloadedTitles = (clone $query)->joinSub(CoverBrowseScope::recentGrabs(), 'recent_grabs', 'recent_grabs.releases_id', '=', 'r.id')->select($key);
-            $query->whereIn($key, $downloadedTitles);
-        }
-
         return $query;
     }
 
@@ -118,9 +112,7 @@ final class ReleaseBrowserQuery
             });
         }
         $displayName = $this->displayName();
-        if ($state->view === 'covers' && $state->root === BrowseRoot::Movies) {
-            $this->metadata->searchMovies($query, $state->query, $state->filters);
-        } elseif ($state->query !== '') {
+        if ($state->query !== '') {
             $pattern = '%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $state->query).'%';
             if ($state->view === 'covers' && $state->root !== BrowseRoot::Adult) {
                 $query->where(function (Builder $titles) use ($state, $pattern): void {

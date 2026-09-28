@@ -9,7 +9,6 @@ export function watchlistPicker() {
         get watched() { return this.current?.watched === true; },
         get busy() { return this.loading || this.saving; },
         init() {
-            this.rootElement = this.$el;
             this.initModal();
             this._watchClick = event => {
                 const button = event.target.closest('[data-watch-picker], [data-watch-remove]');
@@ -20,15 +19,9 @@ export function watchlistPicker() {
                 this.activate(button);
             };
             document.addEventListener('click', this._watchClick);
-            const location = new URL(window.location.href), match = location.pathname.match(/^\/title\/(movies|tv)\/(\d+)$/);
-            if (location.searchParams.get('watch') === '1' && match) {
-                this.load(`${this.rootElement.dataset.watchlistBase}/${match[1]}/${match[2]}`);
-                location.searchParams.delete('watch');
-                window.history.replaceState(null, '', location);
-            }
         },
         // The picker opens only to start following: a follow button on a followed title unfollows in one click. The Edit / Add /
-        // Remove buttons (data-watch-label-kind, data-watch-remove) on the Following and title pages keep their own actions.
+        // Remove buttons (data-watch-label-kind, data-watch-remove) on the Following page keep their own actions.
         activate(button) {
             if (button.dataset.watchRemove) return this.remove(button.dataset.watchRemove);
             if (button.dataset.watched === '1' && !button.dataset.watchLabelKind) return this.unfollow(button.dataset.watchPicker);
@@ -123,14 +116,6 @@ export function watchlistPicker() {
             });
             document.querySelectorAll('[data-watchlist-count]').forEach(count => { count.textContent = data.counts.movies + data.counts.tv; count.hidden = Number(count.textContent) === 0; });
             document.querySelectorAll('[data-watch-count]').forEach(count => { count.textContent = data.counts[count.dataset.watchCount]; });
-            document.querySelectorAll('[data-watch-summary]').forEach(summary => {
-                if (summary.dataset.watchSummary !== key) return;
-                summary.hidden = !data.watched;
-                const labels = summary.querySelector('[data-watch-categories]');
-                labels?.replaceChildren(...data.categories.filter(category => data.selected.includes(category.id)).map(category => {
-                    const chip = document.createElement('span'); chip.className = 'title-watched-category'; chip.textContent = category.label; return chip;
-                }));
-            });
             window.dispatchEvent(new CustomEvent('watchlist-changed', { detail: data }));
         },
     };

@@ -23,9 +23,6 @@ final readonly class ReleaseCoverItem
         public array $metadata = [],
         public array $releases = [],
         public string $titleUrl = '',
-        public ?string $watchUrl = null,
-        public bool $watched = false,
-        public ?string $watchId = null,
         public string $genres = '',
     ) {}
 }

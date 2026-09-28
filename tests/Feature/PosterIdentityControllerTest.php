@@ -820,7 +820,7 @@ final class PosterIdentityControllerTest extends TestCase
             $table->integer('isrenamed')->default(0);
             $table->string('additional_pp_claim_token')->nullable();
             $table->string('imdbid')->nullable();
-            foreach (['tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid'] as $column) {
+            foreach (['tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'movieinfo_id'] as $column) {
                 $table->integer($column)->nullable();
             }
             $table->index(['fromname', 'postdate'], 'ix_releases_fromname_postdate');

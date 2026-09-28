@@ -49,6 +49,7 @@ final class ReleaseEntityDataLoader
                     artwork: getImageAssetUrl($artType, $root === 'movies' ? $id.'-cover' : $id, null),
                     season: isset($episodes[$release->tv_episodes_id ?? 0]) ? (int) $episodes[$release->tv_episodes_id]->series : null,
                     episode: isset($episodes[$release->tv_episodes_id ?? 0]) ? (int) $episodes[$release->tv_episodes_id]->episode : null,
+                    filmId: $root === 'movies' && (int) ($release->movieinfo_id ?? 0) > 0 ? (int) $release->movieinfo_id : null,
                 );
             }
         }

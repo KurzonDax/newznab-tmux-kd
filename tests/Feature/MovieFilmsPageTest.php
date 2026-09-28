@@ -140,8 +140,8 @@ final class MovieFilmsPageTest extends TestCase
         $this->page('/movies/films')->assertSee('class="tv-clear-all is-hidden" data-clear-all aria-hidden="true" tabindex="-1">Clear all</a>', false)
             ->assertDontSee('data-part="person chip"', false);
         // the Browse menu's Movies column links the wall where the TV column links TV Shows
-        $response->assertSeeInOrder(['<a href="'.route('movies.films').'"><i class="fas fa-film" aria-hidden="true"></i>Films</a>',
-            '<a href="'.route('trending-movies').'"><i class="fas fa-fire" aria-hidden="true"></i>Trending Movies</a>'], false);
+        $response->assertSee('<a href="'.route('movies.films').'"><i class="fas fa-film" aria-hidden="true"></i>Films</a>', false)
+            ->assertDontSee('Trending Movies');
     }
 
     public function test_a_tile_shows_the_poster_or_name_card_the_title_year_and_two_genres_the_score_line_and_the_visible_releases(): void

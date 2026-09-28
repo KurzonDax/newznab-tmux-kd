@@ -20,12 +20,6 @@
                         @endif
                     </span>
                 </button>
-                @if($cover->watchUrl)
-                    <x-watch-button :root="$state->root->value" :id="$cover->watchId ?? $cover->id" :title="$cover->title" :watched="$cover->watched" kind="heart" data-cover-watch />
-                @endif
-            @endif
-            @if($state->root === \App\Enums\BrowseRoot::Movies && $state->trending)
-                <span class="release-cover-rank" aria-label="Rank {{ ($rows->currentPage() - 1) * $rows->perPage() + $loop->iteration }}">#{{ ($rows->currentPage() - 1) * $rows->perPage() + $loop->iteration }}</span>
             @endif
         </article>
     @endforeach
