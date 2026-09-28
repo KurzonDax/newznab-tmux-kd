@@ -7,10 +7,10 @@ namespace App\Services\Releases;
 use App\Data\TvShowFilters;
 use App\Data\TvShowTile;
 use App\Models\Category;
+use App\Support\LanguageNames;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Locale;
 
 /**
  * The TV shows wall's queries (docs/proposals/tv-redesign/DATA-CONTRACT.md section 4). A show
@@ -32,7 +32,8 @@ final class TvShowWall
      * Built from one pass over the visible shows (about 30 ms at catalogue size) and cached.
      *
      * @param  list<int>  $exclusions
-     * @return array{genre: array<int, string>, decade: array<int, string>, language: array<string, string>, network: array<int, string>, rating: array<string, string>, status: array<string, string>}
+     *                                 `language_codes` lists, per Language option, every original_language code that names it.
+     * @return array{genre: array<int, string>, decade: array<int, string>, language: array<string, string>, language_codes: array<string, list<string>>, network: array<int, string>, rating: array<string, string>, status: array<string, string>}
      */
     public function options(array $exclusions): array
     {
@@ -64,10 +65,19 @@ final class TvShowWall
                 }
             }
 
-            $names = [];
+            // One option per language name: codes TMDB spells differently (no, nb) share it, the
+            // option's value is the code with the most shows and ticking it matches every code.
+            $byName = [];
+            arsort($languages);
             foreach ($languages as $code => $count) {
-                $names[] = ['code' => (string) $code, 'name' => self::languageName((string) $code), 'shows' => $count];
+                $name = LanguageNames::name((string) $code);
+                if ($name !== null) {
+                    $byName[$name] ??= ['code' => (string) $code, 'name' => $name, 'shows' => 0, 'codes' => []];
+                    $byName[$name]['shows'] += $count;
+                    $byName[$name]['codes'][] = (string) $code;
+                }
             }
+            $names = array_values($byName);
             usort($names, static fn (array $a, array $b): int => [$b['shows'], $a['name']] <=> [$a['shows'], $b['name']]);
 
             $networkNames = $networks === [] ? [] : DB::table('networks')->whereIn('id', array_keys($networks))->pluck('name', 'id')
@@ -80,6 +90,7 @@ final class TvShowWall
                 'genre' => $genres,
                 'decade' => $decades,
                 'language' => array_column($names, 'name', 'code'),
+                'language_codes' => array_column($names, 'codes', 'code'),
                 'network' => $networkNames,
                 'rating' => array_combine($ratingOptions, $ratingOptions),
                 'status' => TvShowFilters::STATUS_LABELS,
@@ -145,7 +156,7 @@ final class TvShowWall
                 url: url('/tv/show/'.$id),
                 poster: getImageAssetUrl('tvshows', (string) $id),
                 line1: implode(' · ', array_filter([(string) self::year($show->premiered, $show->started), implode(', ', array_slice($genres[$id] ?? [], 0, 2))])),
-                line2: implode(' · ', array_filter([self::languageName((string) $show->original_language), $rating === 'NR' ? '' : $rating])),
+                line2: implode(' · ', array_filter([(string) LanguageNames::name((string) $show->original_language), $rating === 'NR' ? '' : $rating])),
             );
         }
 
@@ -206,21 +217,20 @@ final class TvShowWall
         return $year >= 1900 ? $year : null;
     }
 
-    /** "ko" → "Korean"; a code ICU does not know stays as it is. */
-    public static function languageName(string $code): string
-    {
-        if ($code === '') {
-            return '';
-        }
-        $name = Locale::getDisplayLanguage($code, 'en');
-
-        return $name === '' ? $code : $name;
-    }
-
     /** @param list<int> $exclusions */
     private function shows(TvShowFilters $filters, array $exclusions): Builder
     {
-        $query = $this->whereVisible(DB::table('videos as v')->leftJoin('tv_info as t', 't.videos_id', '=', 'v.id')->where('v.type', 0), $exclusions);
+        return $this->whereVisible($this->matchingShows($filters), $exclusions);
+    }
+
+    /**
+     * The TV shows (`videos as v` with `tv_info as t`) the filters match, whatever the user may
+     * see: the TV releases list's show filters read releases through it and test visibility on
+     * the releases themselves.
+     */
+    public function matchingShows(TvShowFilters $filters): Builder
+    {
+        $query = DB::table('videos as v')->leftJoin('tv_info as t', 't.videos_id', '=', 'v.id')->where('v.type', 0);
         if ($filters->genres !== []) {
             $query->whereExists(static fn (Builder $exists) => $exists->selectRaw('1')->from('video_genres as vg')
                 ->whereColumn('vg.videos_id', 'v.id')->whereIn('vg.genres_id', $filters->genres));
@@ -237,7 +247,7 @@ final class TvShowWall
             });
         }
         if ($filters->languages !== []) {
-            $query->whereIn('t.original_language', $filters->languages);
+            $query->whereIn('t.original_language', $filters->languageValues());
         }
         if ($filters->networks !== []) {
             $query->whereIn('t.networks_id', $filters->networks);

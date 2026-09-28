@@ -15,11 +15,14 @@ export async function postJson(url, body) {
     return response.json();
 }
 
-/** The current URL with one filter's values replaced (as name[]) and the page dropped. */
-export function filterUrl(href, name, values) {
+/**
+ * The current URL with one filter's values replaced and the page dropped: name[] for a
+ * multi-select menu, name=value for a one-choice (single) menu.
+ */
+export function filterUrl(href, name, values, single = false) {
     const url = new URL(href);
     [...url.searchParams.keys()].filter(key => key === name || key.startsWith(name + '[')).forEach(key => url.searchParams.delete(key));
-    values.forEach(value => url.searchParams.append(name + '[]', value));
+    values.forEach(value => url.searchParams.append(single ? name : name + '[]', value));
     url.searchParams.delete('page');
     return url;
 }

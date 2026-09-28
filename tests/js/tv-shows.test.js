@@ -50,16 +50,16 @@ test('a counted menu reads "Genre: Drama", then "Genre: 2 chosen" with every nam
         classList: { toggle() {} },
         dispatchEvent() {},
     };
-    component.$refs = { summary: { textContent: '' }, button };
+    component.$refs = { value: { textContent: 'any', classList: { toggle() {} } }, button };
     component.init();
     component.pick({ currentTarget: items[1] });
-    assert.equal(component.$refs.summary.textContent, 'Genre: Drama');
+    assert.equal(component.$refs.value.textContent, 'Drama');
     assert.equal(button.getAttribute('title'), 'Genre: Drama');
     component.pick({ currentTarget: items[0] });
-    assert.equal(component.$refs.summary.textContent, 'Genre: 2 chosen');
+    assert.equal(component.$refs.value.textContent, '2 chosen');
     assert.equal(button.getAttribute('title'), 'Genre: Comedy, Drama');
     component.clear();
-    assert.equal(component.$refs.summary.textContent, 'Genre: any');
+    assert.equal(component.$refs.value.textContent, 'any');
     assert.equal(button.getAttribute('title'), '');
 });
 
@@ -222,4 +222,15 @@ test('a fixed-width menu near the right edge shifts left to stay 16px inside the
         component.place();
         assert.equal(panel.style.left, fixed ? expected : 'stale');
     }
+});
+
+test('the menu of a bar cell near the right edge shifts left to stay 16px inside the window', () => {
+    globalThis.document = { documentElement: { clientWidth: 1366 } };
+    const panel = { style: { left: '' }, getBoundingClientRect: () => ({ right: 1400 }) };
+    const component = checkboxMenu();
+    component.$el = { dataset: {}, classList: { contains: name => name === 'is-cell' } };
+    component.$refs = { panel };
+    component.init();
+    component.place();
+    assert.equal(panel.style.left, '-50px');
 });

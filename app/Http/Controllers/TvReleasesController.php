@@ -20,7 +20,10 @@ final class TvReleasesController extends BasePageController
     {
         $exclusions = array_map('intval', (array) $this->userdata->categoryexclusions);
         $menu = self::categoryMenu($exclusions);
-        $filters = TvReleaseFilters::fromRequest($request, array_keys($menu), $this->userdata->releaseViewPreferences('tv')['sort'] ?? null);
+        $audioMenu = $list->audioMenu();
+        $showOptions = $list->showOptions(array_values($exclusions));
+        $filters = TvReleaseFilters::forList($request, array_keys($menu), $this->userdata->releaseViewPreferences('tv')['sort'] ?? null,
+            array_keys($audioMenu), $showOptions);
         $total = $list->count($filters, $exclusions);
         $lastPage = max(1, (int) ceil($total / TvReleaseFilters::PER_PAGE));
         if ($filters->page > $lastPage) {
@@ -30,6 +33,8 @@ final class TvReleasesController extends BasePageController
             'meta_title' => 'TV releases',
             'filters' => $filters,
             'categoryMenu' => $menu,
+            'audioMenu' => $audioMenu,
+            'showOptions' => $showOptions,
             'total' => $total,
             'lastPage' => $lastPage,
             'runs' => TvReleaseBatches::group($rows->load($list->pageIds($filters, $exclusions, $total), $filters->sortsByAdded())),

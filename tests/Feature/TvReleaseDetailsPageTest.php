@@ -48,7 +48,7 @@ final class TvReleaseDetailsPageTest extends TestCase
             'haspreview', 'jpgstatus', 'videostatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'videos_id',
             'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'predb_id', 'resolution', 'source']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'tv_info', 'networks', 'people', 'genres',
-            'video_genres', 'video_people', 'tv_episodes', 'release_tv_episodes', 'release_audio_tags', 'release_video_clips',
+            'video_genres', 'video_people', 'tv_episodes', 'release_tv_episodes', 'release_audio_tags', 'release_video_clips', 'languages', 'release_audio_languages',
             'releases_groups', 'release_regexes', 'release_comments', 'release_nfos', 'video_data', 'audio_data', 'release_subtitles', 'media_infos', 'media_info_probes', 'media_info_tracks'] as $table) {
             $tables->create($table);
         }

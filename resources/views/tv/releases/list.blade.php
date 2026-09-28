@@ -3,10 +3,11 @@
     $byAdded = $filters->sortsByAdded();
     $chipBaseId = collect($runs)->flatMap(fn (array $run): array => array_slice($run['rows'], 0, $run['collapsible'] ? \App\Services\Releases\TvReleaseBatches::SHOWN : null))->first(fn ($row): bool => $row->hasChips())?->id;
 @endphp
-<x-pager-line :page="$filters->page" :last-page="$lastPage" :total="$total" :per-page="\App\Data\TvReleaseFilters::PER_PAGE" noun="release" :url="$pageUrl" />
+<x-pager-line :page="$filters->page" :last-page="$lastPage" :total="$total" :per-page="\App\Data\TvReleaseFilters::PER_PAGE" noun="release" :url="$pageUrl"
+              :clear-all="route('tv.releases')" :filtered="$filters->any()" />
 @if($runs === [])
     @php
-        $matching = $filters->describe($categoryMenu);
+        $matching = $filters->describe($categoryMenu, $audioMenu, $showOptions);
     @endphp
     <p class="tv-empty">{{ $matching === '' ? 'There are no TV releases yet.' : 'Nothing matches '.$matching.'.' }}</p>
 @else

@@ -30,6 +30,9 @@
     --surface-panel-alt-dark: #20232c;
     --surface-hover: #d3d3cb;
     --surface-hover-dark: #2b2f3a;
+    /* A layer lifted out of a panel-alt ground (the open filter-bar cell and its menu): lighter in both themes. */
+    --surface-raised: #ffffff;
+    --surface-raised-dark: #2a2e39;
     /* The bar, footer and sidebar sit on the page ground with a --border-default rule. */
     --surface-header: #f5f5f2;
     --surface-header-dark: #0f1014;
@@ -52,6 +55,9 @@
     --text-default-dark: #f4f4f6;
     --text-muted: #5c606b;
     --text-muted-dark: #a4a8b4;
+    /* Filter-bar filter names: ink on light, white on dark (VISUAL-CONTRACT 2, "Filter bar tokens"). */
+    --text-filter-name: #17181c;
+    --text-filter-name-dark: #ffffff;
 
     /* Filled accent controls: white on #ff5a3c fails contrast, so each theme has its own pair. */
     --accent-surface: #c8331a;

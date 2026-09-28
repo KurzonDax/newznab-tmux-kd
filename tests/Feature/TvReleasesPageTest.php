@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Data\TvReleaseFilters;
+use App\Data\TvShowFilters;
+use App\Enums\ReleaseSort;
 use App\Http\Middleware\TrustedDevice2FAMiddleware;
 use App\Models\Settings;
 use App\Models\User;
 use App\Services\Releases\ReleaseBrowseService;
+use App\Services\Releases\TvReleaseList;
+use App\Services\Releases\TvShowWall;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -33,6 +38,16 @@ final class TvReleasesPageTest extends TestCase
 
     private const FOREIGN = 5020;
 
+    private const DRAMA = 1;
+
+    private const COMEDY = 2;
+
+    private const SCI_FI = 3;
+
+    private const ENGLISH = 1;
+
+    private const KOREAN = 2;
+
     private ?User $user = null;
 
     protected function setUp(): void
@@ -48,7 +63,8 @@ final class TvReleasesPageTest extends TestCase
             'adddate', 'postdate', 'grabs', 'comments', 'completion', 'repair_outcome', 'rescan_outcome', 'passwordstatus', 'nfostatus',
             'haspreview', 'jpgstatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'videos_id',
             'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source']);
-        foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'tv_episodes', 'release_tv_episodes', 'release_audio_tags', 'release_video_clips'] as $table) {
+        foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'tv_info', 'networks', 'people', 'genres', 'video_genres',
+            'video_people', 'tv_episodes', 'release_tv_episodes', 'release_audio_tags', 'release_video_clips', 'languages', 'release_audio_languages'] as $table) {
             $tables->create($table);
         }
         DB::table('root_categories')->insert(['id' => 5000, 'title' => 'TV', 'status' => 1]);
@@ -181,8 +197,10 @@ final class TvReleasesPageTest extends TestCase
         $this->assertListed('/tv?category[]='.self::UHD.'&category[]='.self::SD, ['SD dvd', 'UHD web']);
         $this->assertListed('/tv?category[]='.self::SD.'&resolution[]=4k', []);
         $this->assertListed('/tv?resolution[]=8k&source[]=vhs&category[]=2040', ['HD bluray', 'HD remux', 'HD web', 'SD dvd', 'UHD web', 'Unknown everything']);
-        $this->page('/tv?resolution[]=4k&resolution[]=1080p')->assertSee('Resolution: 4K, 1080p')->assertSee('checkbox-menu is-set', false)
-            ->assertSee('Source: any')->assertSee('Category: any');
+        $set = $this->page('/tv?resolution[]=4k&resolution[]=1080p')->assertSee('title="Resolution: 4K, 1080p"', false);
+        $this->assertSame('Resolution: 2 chosen', $this->cellText($set, 'resolution'));
+        $this->assertMatchesRegularExpression('/class="checkbox-menu is-cell is-set"[^>]*data-name="resolution"/', (string) $set->getContent());
+        $this->assertSame(['Source: any', 'Category: any'], [$this->cellText($set, 'source'), $this->cellText($set, 'category')]);
         $this->page('/tv')->assertSee('HD remux')->assertSeeInOrder(['HD remux', '<td>Remux</td>'], false);
     }
 
@@ -381,6 +399,228 @@ final class TvReleasesPageTest extends TestCase
         $this->assertStringNotContainsString('tv-filters', $fragment);
     }
 
+    public function test_the_filter_bar_holds_the_release_and_show_cells_and_clear_all_sits_on_the_showing_line(): void
+    {
+        $this->tv('A release');
+        $response = $this->page('/tv')->assertOk();
+        $html = (string) $response->getContent();
+
+        // check.mjs 78, 133: no menu in the title row; the release bar then the show bar, eleven cells in order
+        $title = (string) strstr((string) strstr($html, '<div class="tv-filters">'), '<div class="filter-row tv-bar-list">', true);
+        $this->assertStringNotContainsString('checkbox-menu', $title);
+        $this->assertStringContainsString('data-part="sort dropdown"', $title);
+        $response->assertSeeInOrder(['<div class="filter-row tv-bar-list">', '<div class="filter-bar is-release" role="group" aria-label="The release">',
+            'data-name="completion"', '<div class="filter-bar is-show" role="group" aria-label="The show">', 'data-name="status"', 'x-ref="list"'], false);
+        preg_match_all('/class="checkbox-menu is-cell[^"]*"[^>]*data-name="([a-z]+)"/', $html, $cells);
+        $this->assertSame(['category', 'resolution', 'source', 'audio', 'completion', 'genre', 'decade', 'language', 'network', 'rating', 'status'], $cells[1]);
+        $this->assertSame(['Category: any', 'Resolution: any', 'Source: any', 'Audio: any', 'Completion: any', 'Genre: any', 'Premiered: any',
+            'Language: any', 'Network: any', 'Rating: any', 'Status: any'], array_map(fn (string $name): string => $this->cellText($response, $name), $cells[1]));
+        $this->assertSame(11, substr_count($html, '<span class="checkbox-menu-value is-any" x-ref="value">any</span>'));
+
+        // check.mjs 396: Completion is one choice with radio items
+        $completion = (string) strstr((string) strstr($html, 'data-name="completion"'), 'data-name="genre"', true);
+        $this->assertSame(['Any completion', '100% only', '95% or more'], array_map(static fn (string $item): string => trim(strip_tags(substr($item, (int) strpos($item, '>') + 1))),
+            array_slice(explode('<button type="button" class="checkbox-menu-item" role="menuitemradio"', $completion), 1)));
+        $this->assertSame(3, substr_count($completion, '<span class="checkbox-menu-dot"></span>'));
+        $this->assertStringContainsString('data-single="true"', $completion);
+
+        // check.mjs 124, 411: Clear all in a fixed slot on the Showing line, hidden but in place while nothing is set
+        $line = (string) strstr((string) strstr($html, '<nav class="pager-line is-fixed" aria-label="Pages">'), '</nav>', true);
+        $this->assertMatchesRegularExpression('/data-part="showing line">[^<]*<\/span>\s*<a href="'.preg_quote(route('tv.releases'), '/')
+            .'" class="pager-line-clear is-hidden" data-clear-all aria-hidden="true" tabindex="-1">Clear all<\/a>\s*<span class="is-off" data-part="pager arrow">/', $line);
+        $this->assertSame(1, substr_count($html, 'data-clear-all'));
+    }
+
+    public function test_setting_a_filter_marks_its_cell_and_shows_clear_all_while_the_bar_and_line_keep_their_parts(): void
+    {
+        $this->tv('Full', ['completion' => 100]);
+        $this->tv('Nearly', ['completion' => 96]);
+        $empty = $this->page('/tv');
+        $set = $this->page('/tv?completion=95&resolution[]=1080p&resolution[]=4k')->assertOk();
+
+        $this->assertSame('Completion: 95%+', $this->cellText($set, 'completion'));
+        $set->assertSee('title="Completion: 95% or more"', false)->assertSee('title="Resolution: 4K, 1080p"', false)
+            ->assertSee('data-value="95" data-text="95% or more" data-short="95%+" aria-checked="true"', false)
+            ->assertSee('class="pager-line-clear" data-clear-all aria-hidden="false">Clear all</a>', false);
+        $this->assertSame('Resolution: 2 chosen', $this->cellText($set, 'resolution'));
+        $this->assertSame('Completion: 100%', $this->cellText($this->page('/tv?completion=100'), 'completion'));
+        $this->assertSame('Completion: any', $this->cellText($this->page('/tv?completion=90'), 'completion'));
+
+        // check.mjs 268-271, 379-389 as markup: the same cells and Showing-line parts in the same order, set or not
+        $shape = static fn (TestResponse $response): array => [
+            preg_replace('/ is-set| is-any| is-hidden|aria-checked="[a-z]+"|aria-hidden="[a-z]+"| tabindex="-1"| title="[^"]*"|>[^<]*<|data-part="filter menu button(, set)?"/', '', (string) strstr((string) strstr((string) $response->getContent(), '<div class="filter-row'), 'x-ref="list"', true)),
+            preg_replace('/ is-hidden|aria-hidden="[a-z]+"| tabindex="-1"|>[^<]*<|data-part="filter menu button(, set)?"/', '', (string) strstr((string) strstr((string) $response->getContent(), '<nav class="pager-line'), '</nav>', true)),
+        ];
+        $this->assertSame($shape($empty), $shape($set));
+    }
+
+    public function test_long_menus_open_with_a_search_field_and_short_ones_do_not(): void
+    {
+        foreach (range(1, 6) as $extra) {
+            DB::table('categories')->insert(['id' => 5050 + $extra, 'title' => 'Extra '.$extra, 'root_categories_id' => 5000, 'status' => 1]);
+        }
+        $names = ['Arabic', 'Bengali', 'Czech', 'Danish', 'Dutch', 'English', 'Finnish', 'French', 'German', 'Greek', 'Hindi'];
+        foreach ($names as $index => $name) {
+            DB::table('languages')->insert(['id' => $index + 1, 'name' => $name]);
+            DB::table('release_audio_languages')->insert(['releases_id' => $this->tv('Dub '.$name), 'languages_id' => $index + 1]);
+        }
+        $response = $this->page('/tv')->assertOk();
+        $this->assertCount(10, $response->viewData('categoryMenu'));
+        $this->assertCount(12, $response->viewData('audioMenu'));
+        $html = (string) $response->getContent();
+        $category = (string) strstr((string) strstr($html, 'data-name="category"'), 'data-name="resolution"', true);
+        $this->assertStringNotContainsString('checkbox-menu-search', $category);
+        $this->assertStringContainsString('<div class="checkbox-menu-panel" role="menu" aria-label="Category"', $category);
+        $audio = (string) strstr((string) strstr($html, 'data-name="audio"'), 'data-name="completion"', true);
+        $this->assertStringContainsString('<div class="checkbox-menu-panel is-searchable" role="dialog" aria-label="Audio"', $audio);
+        $this->assertStringContainsString('<div class="checkbox-menu-search"><i class="fas fa-magnifying-glass" aria-hidden="true"></i><input type="text" x-ref="search" x-on:input="narrow" placeholder="Search audio languages" aria-label="Search audio languages" autocomplete="off"></div>', $audio);
+        $this->assertStringContainsString('<div role="menu" aria-label="Audio">', $audio);
+    }
+
+    public function test_the_audio_and_language_menus_list_the_most_releases_first_for_all_users(): void
+    {
+        DB::table('languages')->insert([['id' => self::ENGLISH, 'name' => 'English'], ['id' => self::KOREAN, 'name' => 'Korean'], ['id' => 3, 'name' => 'Arabic'], ['id' => 4, 'name' => 'Welsh']]);
+        DB::table('videos')->insert(['id' => 13, 'type' => 0, 'title' => 'Third Show', 'started' => '2020-01-01 00:00:00']);
+        foreach ([11 => 'ko', 12 => 'en', 13 => 'cn'] as $show => $language) {
+            DB::table('tv_info')->insert(['videos_id' => $show, 'summary' => '', 'publisher' => '', 'original_language' => $language]);
+        }
+        $audio = static fn (int $release, array $languages) => DB::table('release_audio_languages')->insert(array_map(static fn (int $language): array => ['releases_id' => $release, 'languages_id' => $language], $languages));
+        // Korean on three TV releases (one hidden from this user, one passworded), English and Arabic on two, Welsh only on a movie
+        $audio($this->tv('K1', ['videos_id' => 11]), [self::KOREAN, self::ENGLISH]);
+        $audio($this->tv('K2', ['videos_id' => 11, 'categories_id' => self::FOREIGN]), [self::KOREAN]);
+        $audio($this->tv('K3', ['videos_id' => 11, 'passwordstatus' => 1]), [self::KOREAN, 3]);
+        $audio($this->tv('E1', ['videos_id' => 12]), [self::ENGLISH, 3]);
+        $this->tv('E2', ['videos_id' => 12]);
+        $this->tv('C1', ['videos_id' => 13]);
+        $audio($this->release('A movie', ['categories_id' => 2040]), [4, 3]);
+        $user = $this->browserUser();
+        DB::table('user_excluded_categories')->insert(['users_id' => $user->id, 'categories_id' => self::FOREIGN]);
+
+        $response = $this->page('/tv', $user)->assertOk();
+        $this->assertSame([(string) self::KOREAN => 'Korean', '3' => 'Arabic', (string) self::ENGLISH => 'English', 'unknown' => 'Unknown'], $response->viewData('audioMenu'));
+        // the list orders the shows' languages by their releases (Korean 3, English 2, Cantonese 1); the wall by shows
+        $this->assertSame(['ko' => 'Korean', 'en' => 'English', 'cn' => 'Cantonese'], $response->viewData('showOptions')['language']);
+        $this->assertListed('/tv?language[]=ko', ['K1'], $user);
+        $response->assertSeeInOrder(['data-name="audio"', '>Korean<', '>Arabic<', '>English<', '>Unknown<', 'data-name="completion"'], false);
+        $this->assertSame(['cn' => 'Cantonese', 'en' => 'English', 'ko' => 'Korean'], $this->page('/tv/shows', $user)->viewData('options')['language']);
+    }
+
+    public function test_each_new_filter_returns_exactly_what_a_direct_predicate_returns_in_every_sort_and_page(): void
+    {
+        $facts = $this->filterFixture();
+        $shows = [11 => ['genre' => [self::DRAMA], 'decade' => 2000, 'language' => 'ko', 'network' => 1, 'rating' => 'TV-14', 'status' => 2],
+            12 => ['genre' => [self::COMEDY], 'decade' => 2010, 'language' => 'en', 'network' => 2, 'rating' => 'TV-MA', 'status' => 1],
+            13 => ['genre' => [self::DRAMA, self::SCI_FI], 'decade' => 1990, 'language' => 'en', 'network' => 3, 'rating' => 'TV-14', 'status' => 1]];
+        $show = static fn (callable $test): callable => static fn (array $fact): bool => isset($shows[$fact['show']]) && $test($shows[$fact['show']]);
+        $cases = [
+            'English audio' => [new TvReleaseFilters(audio: [(string) self::ENGLISH]), static fn (array $fact): bool => in_array(self::ENGLISH, $fact['audio'], true)],
+            'Unknown audio' => [new TvReleaseFilters(audio: ['unknown']), static fn (array $fact): bool => $fact['audio'] === []],
+            'Korean or Unknown audio' => [new TvReleaseFilters(audio: [(string) self::KOREAN, 'unknown']), static fn (array $fact): bool => $fact['audio'] === [] || in_array(self::KOREAN, $fact['audio'], true)],
+            '100%' => [new TvReleaseFilters(completion: 100), static fn (array $fact): bool => $fact['completion'] >= 100],
+            '95%+' => [new TvReleaseFilters(completion: 95), static fn (array $fact): bool => $fact['completion'] >= 95],
+            'Genre' => [new TvReleaseFilters(shows: new TvShowFilters(genres: [self::DRAMA])), $show(static fn (array $s): bool => in_array(self::DRAMA, $s['genre'], true))],
+            'Premiered' => [new TvReleaseFilters(shows: new TvShowFilters(decades: [2000, 2010])), $show(static fn (array $s): bool => in_array($s['decade'], [2000, 2010], true))],
+            'Language' => [new TvReleaseFilters(shows: new TvShowFilters(languages: ['en'])), $show(static fn (array $s): bool => $s['language'] === 'en')],
+            'Network' => [new TvReleaseFilters(shows: new TvShowFilters(networks: [1, 3])), $show(static fn (array $s): bool => in_array($s['network'], [1, 3], true))],
+            'Rating' => [new TvReleaseFilters(shows: new TvShowFilters(ratings: ['TV-14'])), $show(static fn (array $s): bool => $s['rating'] === 'TV-14')],
+            'Status' => [new TvReleaseFilters(shows: new TvShowFilters(statuses: ['running'])), $show(static fn (array $s): bool => $s['status'] === 1)],
+            'everything' => [new TvReleaseFilters(categories: [self::HD], completion: 95, audio: [(string) self::ENGLISH], shows: new TvShowFilters(genres: [self::DRAMA], statuses: ['running'])),
+                static fn (array $fact): bool => $fact['category'] === self::HD && $fact['completion'] >= 95 && in_array(self::ENGLISH, $fact['audio'], true) && $fact['show'] === 13],
+        ];
+        foreach ($cases as $case => [$filters, $keep]) {
+            // the show filters read from the matching shows under the threshold and from the band index at or over it
+            foreach ($filters->shows->any() ? [1_000, 1] : [TvReleaseList::SHOW_READ_LIMIT] as $limit) {
+                $list = new TvReleaseList(app(ReleaseBrowseService::class), app(TvShowWall::class), $limit);
+                foreach (ReleaseSort::cases() as $sort) {
+                    if (! array_key_exists($sort->value, TvReleaseFilters::SORTS)) {
+                        continue;
+                    }
+                    $sorted = new TvReleaseFilters($filters->categories, $filters->resolutions, $filters->sources, $sort, 1, $filters->audio, $filters->completion, $filters->shows);
+                    $expected = $this->expectedOrder($facts, $keep, $sorted);
+                    $total = $list->count($sorted, [self::FOREIGN]);
+                    $this->assertSame(count($expected), $total, $case);
+                    $read = [];
+                    foreach (range(1, max(1, (int) ceil($total / TvReleaseFilters::PER_PAGE))) as $page) {
+                        $read = [...$read, ...$list->pageIds($sorted->withPage($page), [self::FOREIGN], $total)];
+                    }
+                    $this->assertSame($expected, $read, $case.', '.$sort->value.', limit '.$limit);
+                }
+            }
+            if ($case !== 'everything') {
+                $this->assertGreaterThan(TvReleaseFilters::PER_PAGE, count($this->expectedOrder($facts, $keep, $filters)), $case.' reaches a page past the middle');
+            }
+        }
+    }
+
+    public function test_the_list_names_the_index_the_rule_chooses_for_each_filter_combination(): void
+    {
+        // 100 TV releases: HD 60, SD 30, UHD 10; 1080p 70, 4K 10, 720p 20; WEB 80, Blu-ray 15, Remux 5; a movie counts for nothing
+        foreach (range(0, 99) as $index) {
+            $this->tv('Counted '.$index, ['categories_id' => $index < 60 ? self::HD : ($index < 90 ? self::SD : self::UHD),
+                'resolution' => $index % 10 < 7 ? 2 : ($index % 10 === 7 ? 1 : 3), 'source' => $index % 20 < 16 ? 1 : ($index % 20 < 19 ? 2 : 5)]);
+        }
+        foreach (range(1, 200) as $index) {
+            $this->release('Movie '.$index, ['categories_id' => 2040, 'resolution' => 1, 'source' => 2]);
+        }
+        $list = new TvReleaseList(app(ReleaseBrowseService::class), app(TvShowWall::class), 50);
+        $index = static fn (array $filters, int $total = 100): string => $list->pageIndex(new TvReleaseFilters(...$filters), $total);
+        $added = ['sort' => ReleaseSort::AddedNewest];
+        $drama = ['shows' => new TvShowFilters(genres: [self::DRAMA])];
+
+        $this->assertSame('ix_releases_band_posted', $index([]));
+        $this->assertSame('ix_releases_band_added', $index($added));
+        $this->assertSame('ix_releases_band_posted', $index(['completion' => 95, 'audio' => ['unknown']]));
+        $this->assertSame('ix_releases_band_cat_posted', $index(['categories' => [self::UHD]]));
+        $this->assertSame('ix_releases_band_cat_added', $index(['categories' => [self::UHD], ...$added]));
+        $this->assertSame('ix_releases_band_cat_posted', $index(['categories' => [self::UHD, self::SD]]));
+        $this->assertSame('ix_releases_band_posted', $index(['categories' => [self::HD]]), 'HD holds more than half of the band');
+        $this->assertSame('ix_releases_band_res_posted', $index(['categories' => [self::HD], 'resolutions' => ['4k']]));
+        $this->assertSame('ix_releases_band_res_added', $index(['resolutions' => ['720p'], ...$added]));
+        $this->assertSame('ix_releases_band_posted', $index(['resolutions' => ['1080p']]));
+        $this->assertSame('ix_releases_band_src_posted', $index(['categories' => [self::SD], 'sources' => ['bluray']]), 'Blu-ray counts its remuxes: 20 < 30');
+        $this->assertSame('ix_releases_band_cat_posted', $index(['categories' => [self::UHD], 'resolutions' => ['1080p'], 'sources' => ['web'], 'completion' => 100]));
+        $this->assertSame('ix_releases_videos_posted', $index($drama, 49));
+        $this->assertSame('ix_releases_videos_added', $index([...$drama, ...$added], 49));
+        $this->assertSame('ix_releases_band_posted', $index($drama, 50));
+        $this->assertSame('ix_releases_band_added', $index([...$drama, ...$added], 50));
+        $this->assertSame('ix_releases_videos_posted', $index([...$drama, 'categories' => [self::UHD], 'audio' => ['unknown']], 3));
+        $this->assertSame('ix_releases_band_posted', $index([...$drama, 'categories' => [self::UHD], 'completion' => 95], 60));
+
+        // the show filters' own count decides, not the list's: 70 Drama releases (HD and UHD), 10 of them UHD
+        DB::table('genres')->insert(['id' => self::DRAMA, 'title' => 'Drama', 'type' => 5000, 'disabled' => 0]);
+        DB::table('video_genres')->insert(['videos_id' => 11, 'genres_id' => self::DRAMA]);
+        DB::table('releases')->where('name', 'like', 'Counted %')->where('categories_id', '!=', self::SD)->update(['videos_id' => 11]);
+        $uhdDrama = new TvReleaseFilters(categories: [self::UHD], shows: new TvShowFilters(genres: [self::DRAMA]));
+        $this->assertSame(10, $list->count($uhdDrama, []));
+        $this->assertSame('ix_releases_band_posted', $list->readIndex($uhdDrama, []));
+        $this->assertSame('ix_releases_videos_posted', (new TvReleaseList(app(ReleaseBrowseService::class), app(TvShowWall::class), 71))->readIndex($uhdDrama, []));
+    }
+
+    public function test_the_url_carries_the_new_filters_and_the_empty_line_names_them(): void
+    {
+        DB::table('genres')->insert([['id' => self::DRAMA, 'title' => 'Drama', 'type' => 5000, 'disabled' => 0]]);
+        DB::table('networks')->insert(['id' => 1, 'name' => 'HBO']);
+        DB::table('languages')->insert([['id' => self::ENGLISH, 'name' => 'English']]);
+        DB::table('tv_info')->insert(['videos_id' => 11, 'summary' => '', 'publisher' => '', 'original_language' => 'ko', 'premiered' => '2004-05-06',
+            'networks_id' => 1, 'content_rating_us' => 'TV-14', 'status' => 2]);
+        DB::table('video_genres')->insert(['videos_id' => 11, 'genres_id' => self::DRAMA]);
+        DB::table('release_audio_languages')->insert(['releases_id' => $this->tv('Shown', ['videos_id' => 11, 'resolution' => 3]), 'languages_id' => self::ENGLISH]);
+        $this->tv('No show', ['resolution' => 3]);
+
+        $query = 'category[]='.self::HD.'&resolution[]=1080p&source[]=bluray&completion=95&audio[]='.self::ENGLISH.'&audio[]=unknown&audio[]=99'
+            .'&language[]=ko&genre[]='.self::DRAMA.'&decade[]=2000&network[]=1&rating[]=TV-14&status[]=ended&person=4';
+        $response = $this->page('/tv?'.$query)->assertOk()->assertSee('Showing 0 releases')
+            ->assertSee('Nothing matches HD · 1080p · Blu-ray · 95%+ complete · English or Unknown audio · in Korean · Drama · 2000s · HBO · TV-14 · Ended.');
+        $filters = $response->viewData('filters');
+        $this->assertSame(['category' => [self::HD], 'resolution' => ['1080p'], 'source' => ['bluray'], 'audio' => [(string) self::ENGLISH, 'unknown'], 'completion' => 95,
+            'genre' => [self::DRAMA], 'decade' => [2000], 'language' => ['ko'], 'network' => [1], 'rating' => ['TV-14'], 'status' => ['ended'], 'page' => 2], $filters->query(2));
+        $this->assertSame('Language: Korean', $this->cellText($response, 'language'));
+        $this->assertListed('/tv?language[]=ko', ['Shown']);
+        $this->assertListed('/tv?audio[]='.self::ENGLISH, ['Shown']);
+        $this->assertListed('/tv?audio[]=unknown', ['No show']);
+        $this->assertListed('/tv?completion=95&resolution[]=720p', ['No show', 'Shown']);
+    }
+
     public function test_the_page_needs_the_tv_permission(): void
     {
         $user = $this->browserUser();
@@ -403,9 +643,9 @@ final class TvReleasesPageTest extends TestCase
     }
 
     /** @param list<string> $names */
-    private function assertListed(string $uri, array $names): void
+    private function assertListed(string $uri, array $names, ?User $user = null): void
     {
-        $response = $this->page($uri)->assertOk();
+        $response = $this->page($uri, $user)->assertOk();
         $listed = DB::table('releases')->whereIn('id', $this->listedIds($response))->orderBy('name')->pluck('name')->all();
         $this->assertSame($names, $listed, $uri);
     }
@@ -451,5 +691,73 @@ final class TvReleasesPageTest extends TestCase
             str_contains($match, 'Download') => 'download', str_contains($match, 'copy') => 'copy',
             str_contains($match, 'cart') => 'cart', default => 'watch',
         }, $matches[0]);
+    }
+
+    /**
+     * 300 TV releases over three shows and none, with an excluded category (Foreign), passworded
+     * releases, three completions and five audio mixes (none twice); posted dates with ties, added dates in
+     * another order.
+     *
+     * @return array<int, array{visible: bool, category: int, show: int, completion: int, audio: list<int>, posted: string, added: string}>
+     */
+    private function filterFixture(): array
+    {
+        DB::table('genres')->insert([['id' => self::DRAMA, 'title' => 'Drama', 'type' => 5000, 'disabled' => 0], ['id' => self::COMEDY, 'title' => 'Comedy', 'type' => 5000, 'disabled' => 0],
+            ['id' => self::SCI_FI, 'title' => 'Sci-Fi', 'type' => 5000, 'disabled' => 0]]);
+        DB::table('networks')->insert([['id' => 1, 'name' => 'HBO'], ['id' => 2, 'name' => 'abc'], ['id' => 3, 'name' => 'Channel 4']]);
+        DB::table('languages')->insert([['id' => self::ENGLISH, 'name' => 'English'], ['id' => self::KOREAN, 'name' => 'Korean'], ['id' => 3, 'name' => 'Japanese']]);
+        DB::table('videos')->insert(['id' => 13, 'type' => 0, 'title' => 'Third Show', 'started' => '2020-01-01 00:00:00']);
+        foreach ([11 => ['ko', '2004-05-06', 1, 'TV-14', 2, [self::DRAMA]], 12 => ['en', '2019-01-01', 2, 'TV-MA', 1, [self::COMEDY]],
+            13 => ['en', '1995-01-01', 3, 'TV-14', 1, [self::DRAMA, self::SCI_FI]]] as $show => [$language, $premiered, $network, $rating, $status, $genres]) {
+            DB::table('tv_info')->insert(['videos_id' => $show, 'summary' => '', 'publisher' => '', 'original_language' => $language, 'premiered' => $premiered,
+                'networks_id' => $network, 'content_rating_us' => $rating, 'status' => $status]);
+            foreach ($genres as $genre) {
+                DB::table('video_genres')->insert(['videos_id' => $show, 'genres_id' => $genre]);
+            }
+        }
+        Settings::query()->updateOrInsert(['name' => 'showpasswordedrelease'], ['value' => '0']);
+        $mixes = [[], [self::ENGLISH], [self::KOREAN], [self::ENGLISH, self::KOREAN], [], [3]];
+        $facts = [];
+        foreach (range(1, 300) as $index) {
+            $fact = ['category' => $index % 9 === 0 ? self::FOREIGN : ($index % 2 === 0 ? self::HD : self::SD), 'show' => [11, 12, 13, 0][$index % 4],
+                'completion' => [100, 97, 90][$index % 3], 'audio' => $mixes[$index % 6],
+                'posted' => Carbon::parse('2026-01-01 00:00:00')->addHours($index % 7 === 0 ? $index - 1 : $index)->toDateTimeString(),
+                'added' => Carbon::parse('2026-03-01 00:00:00')->addHours(($index * 37) % 300)->toDateTimeString()];
+            $password = $index % 11 === 0 ? 1 : 0;
+            $id = $this->tv('Filtered '.$index, ['categories_id' => $fact['category'], 'videos_id' => $fact['show'], 'completion' => $fact['completion'],
+                'passwordstatus' => $password, 'postdate' => $fact['posted'], 'adddate' => $fact['added']]);
+            foreach ($fact['audio'] as $language) {
+                DB::table('release_audio_languages')->insert(['releases_id' => $id, 'languages_id' => $language]);
+            }
+            $facts[$id] = ['visible' => $password === 0 && $fact['category'] !== self::FOREIGN, ...$fact];
+        }
+        Cache::flush();
+
+        return $facts;
+    }
+
+    /**
+     * The visible releases the predicate keeps, in the filters' sort.
+     *
+     * @param  array<int, array{visible: bool, category: int, show: int, completion: int, audio: list<int>, posted: string, added: string}>  $facts
+     * @return list<int>
+     */
+    private function expectedOrder(array $facts, callable $keep, TvReleaseFilters $filters): array
+    {
+        $kept = array_filter($facts, static fn (array $fact): bool => $fact['visible'] && $keep($fact));
+        $date = $filters->sortsByAdded() ? 'added' : 'posted';
+        uksort($kept, static fn (int $a, int $b): int => [$kept[$a][$date], $a] <=> [$kept[$b][$date], $b]);
+        $ids = array_keys($kept);
+
+        return $filters->ascending() ? $ids : array_reverse($ids);
+    }
+
+    /** A filter cell's text as check.mjs reads it (textContent): "Genre: 2 chosen". */
+    private function cellText(TestResponse $response, string $name): string
+    {
+        $this->assertMatchesRegularExpression('/data-name="'.$name.'".*?<span class="checkbox-menu-label">(.*?)<\/span><i /s', (string) $response->getContent());
+        preg_match('/data-name="'.$name.'".*?<span class="checkbox-menu-label">(.*?)<\/span><i /s', (string) $response->getContent(), $match);
+
+        return html_entity_decode(strip_tags($match[1]), ENT_QUOTES);
     }
 }

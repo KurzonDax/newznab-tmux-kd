@@ -17,6 +17,8 @@
     --tv-poster-shadow: 0 6px 14px -6px rgb(0 0 0 / 55%);
     --tv-on-accent-button: rgb(0 0 0 / 22%);
     --tv-on-accent-button-hover: rgb(0 0 0 / 40%);
+    --tv-raise: var(--surface-raised);
+    --tv-filter-name: var(--text-filter-name);
 }
 .dark {
     --tv-ground: var(--surface-body-dark);
@@ -28,6 +30,8 @@
     --tv-accent: var(--accent-surface-dark);
     --tv-accent-on: var(--accent-on-dark);
     --tv-shadow: var(--shadow-floating-dark);
+    --tv-raise: var(--surface-raised-dark);
+    --tv-filter-name: var(--text-filter-name-dark);
 }
 
 /* Page frame: the TV screens use the prototype's 1500px column with 40px gutters. */
@@ -64,11 +68,56 @@
 .checkbox-menu-item[aria-checked="true"] .checkbox-menu-box { border-color: var(--tv-accent); background: var(--tv-accent); color: var(--tv-accent-on); }
 .checkbox-menu-item[aria-checked="true"] .checkbox-menu-box i { visibility: visible; }
 
-/* Shows wall menus: one width whatever is ticked, the panel opening right under the sticky top bar */
+/* Fixed-width menus: one width whatever is ticked, the panel opening right under the sticky top bar */
 .checkbox-menu.is-fixed .checkbox-menu-button { justify-content: space-between; gap: 6px; width: clamp(132px, calc((100vw - 540px) / 6), 176px); padding: 0 12px 0 14px; }
 .checkbox-menu.is-fixed .checkbox-menu-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 .checkbox-menu.is-fixed .checkbox-menu-button i { flex: none; }
 .checkbox-menu.is-fixed .checkbox-menu-panel { right: auto; left: 0; z-index: 15; max-height: min(420px, 60vh); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--tv-line) transparent; }
+
+/* Radio items (a one-choice menu such as Completion) and the in-menu search of a long menu */
+.checkbox-menu-dot { display: grid; flex: none; place-items: center; width: 18px; height: 18px; border: 1.5px solid var(--tv-dim); border-radius: 9px; }
+.checkbox-menu-item[aria-checked="true"] .checkbox-menu-dot { border-color: var(--tv-accent); }
+.checkbox-menu-item[aria-checked="true"] .checkbox-menu-dot::after { content: ""; width: 8px; height: 8px; border-radius: 4px; background: var(--tv-accent); }
+.checkbox-menu-item[hidden] { display: none; }
+.checkbox-menu-panel.is-searchable { padding-top: 0; }
+.checkbox-menu-search { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; margin: 0 -6px 4px; padding: 10px 12px 8px; background: var(--tv-panel); color: var(--tv-dim); }
+.checkbox-menu-search i { position: absolute; top: 50%; left: 24px; font-size: 13px; transform: translateY(-35%); pointer-events: none; }
+.checkbox-menu-search input { flex: 1; min-width: 0; height: 34px; padding: 0 12px 0 34px; border: 0; border-radius: 17px; background: var(--tv-panel-alt); color: var(--tv-ink); font-size: 13.5px; font-weight: 500; line-height: normal; caret-color: var(--tv-accent); box-shadow: none; }
+.checkbox-menu-search input::placeholder { color: var(--tv-dim); }
+.checkbox-menu-search input:focus { box-shadow: none; }
+.checkbox-menu-search input:focus-visible { outline: 2px solid var(--tv-accent); outline-offset: 1px; }
+
+/*
+ * Filter bar (SPEC 3.0; VISUAL-CONTRACT 2 "Filter bar tokens" and 3): the cells of one kind in
+ * one rounded bar, the name above the value, hairlines between cells. The open cell lifts out
+ * of the bar and a set cell gets a coral line under its value, never a coral fill. Every rule
+ * is scoped to the bar, so a checkbox menu elsewhere keeps its pill.
+ */
+.filter-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 12px; padding: 14px 0 0; }
+.filter-bar { display: flex; align-items: stretch; min-width: 0; height: 56px; padding: 4px; border-radius: 18px; background: var(--tv-panel-alt); }
+.tv-bar-list .filter-bar.is-release { flex: 5 1 0; }
+.tv-bar-list .filter-bar.is-show { flex: 6 1 0; }
+.tv-bar-wall .filter-bar.is-show { flex: 0 0 calc((100% - 12px) * 6 / 11); }
+.filter-bar .checkbox-menu { position: relative; display: flex; flex: 1 1 0; min-width: 0; }
+.filter-bar .checkbox-menu-button { position: relative; justify-content: space-between; gap: 6px; width: 100%; height: 48px; padding: 0 10px 0 14px; border-radius: 14px; background: transparent; color: var(--tv-ink); }
+.filter-bar .checkbox-menu-button:hover { background: var(--tv-line); }
+.filter-bar .checkbox-menu.is-open .checkbox-menu-button { background: var(--tv-raise); box-shadow: var(--tv-shadow); }
+.filter-bar .checkbox-menu-button i { flex: none; color: var(--tv-dim); }
+.filter-bar .checkbox-menu-label { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; line-height: 1.2; text-align: left; }
+.filter-bar .checkbox-menu-sep { display: none; }
+.filter-bar .checkbox-menu-name { color: var(--tv-filter-name); font-size: 11.5px; font-weight: 500; }
+.filter-bar .checkbox-menu-value { overflow: hidden; color: var(--tv-ink); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.filter-bar .checkbox-menu-value.is-any { color: var(--tv-dim); font-weight: 500; }
+.filter-bar .checkbox-menu + .checkbox-menu::before { content: ""; position: absolute; top: 14px; bottom: 14px; left: 0; width: 1px; background: var(--tv-line); pointer-events: none; }
+.filter-bar .checkbox-menu:hover::before, .filter-bar .checkbox-menu:hover + .checkbox-menu::before,
+.filter-bar .checkbox-menu.is-open::before, .filter-bar .checkbox-menu.is-open + .checkbox-menu::before { opacity: 0; }
+.filter-bar .checkbox-menu.is-set .checkbox-menu-button { background: transparent; color: var(--tv-ink); }
+.filter-bar .checkbox-menu.is-set .checkbox-menu-button:hover { background: var(--tv-line); }
+.filter-bar .checkbox-menu.is-set.is-open .checkbox-menu-button { background: var(--tv-raise); }
+.filter-bar .checkbox-menu.is-set .checkbox-menu-button::after { content: ""; position: absolute; right: 14px; bottom: 3px; left: 14px; height: 3px; border-radius: 2px; background: var(--tv-accent); }
+.filter-bar .checkbox-menu-panel { top: 58px; right: auto; left: 0; z-index: 15; min-width: max(100%, 230px); max-height: min(420px, 60vh); overflow-y: auto; overscroll-behavior: contain; background: var(--tv-raise); scrollbar-width: thin; scrollbar-color: var(--tv-line) transparent; }
+.filter-bar .checkbox-menu-panel.is-searchable { max-height: 402px; }
+.filter-bar .checkbox-menu-search { background: var(--tv-raise); }
 
 /* Sort */
 .tv-sort { position: relative; display: inline-flex; align-items: center; }
@@ -83,6 +132,10 @@
 .pager-line a:hover { background: var(--tv-line); }
 .pager-line .is-off { color: var(--tv-dim); opacity: 0.45; }
 .pager-line-page { padding: 0 10px; color: var(--tv-ink); font-size: 14px; line-height: 1.5; white-space: nowrap; }
+.pager-line.is-fixed .pager-line-page { min-width: calc(13ch + 20px); text-align: center; }
+.pager-line a.pager-line-clear { display: inline; width: 64px; min-width: 0; height: auto; margin-right: 12px; border-radius: 0; background: none; color: var(--tv-accent); font-weight: 500; text-align: right; white-space: nowrap; }
+.pager-line a.pager-line-clear:hover { background: none; text-decoration: underline; text-underline-offset: 3px; }
+.pager-line-clear.is-hidden { visibility: hidden; }
 
 /* Bottom pager */
 .pager-full { display: flex; align-items: center; gap: 6px; margin: 26px 0 70px; font-variant-numeric: tabular-nums; }
@@ -220,11 +273,11 @@
 .tv-search-results p { margin: 0; padding: 12px; color: var(--tv-dim); font-size: 14px; }
 
 /* TV shows wall */
-.tv-show-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 14px 0 0; }
 .tv-person { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 8px 0 16px; border-radius: 19px; background: var(--tv-accent); color: var(--tv-accent-on); font-size: 13.5px; font-weight: 600; line-height: 1.5; }
 .tv-person a { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 12px; background: var(--tv-on-accent-button); font-size: 12px; }
 .tv-person a:hover { background: var(--tv-on-accent-button-hover); }
-.tv-clear-all { padding: 2px 0 0; color: var(--tv-accent); font-size: 14px; font-weight: 500; }
+.tv-bar-wall .tv-person { flex: none; }
+.tv-clear-all { flex: none; width: 64px; color: var(--tv-accent); font-size: 14px; font-weight: 500; text-align: left; white-space: nowrap; }
 .tv-clear-all:hover { text-decoration: underline; text-underline-offset: 3px; }
 .tv-clear-all.is-hidden { visibility: hidden; }
 .tv-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(178px, 1fr)); gap: 24px 18px; margin-top: 4px; }

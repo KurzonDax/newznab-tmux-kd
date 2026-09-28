@@ -10,6 +10,7 @@ use App\Data\TvShowFilters;
 use App\Data\TvShowHeader;
 use App\Enums\ReleaseResolution;
 use App\Models\Category;
+use App\Support\LanguageNames;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Query\JoinClause;
 use Illuminate\Support\Facades\DB;
@@ -58,7 +59,7 @@ final class TvShowPage
             genres: DB::table('video_genres as vg')->join('genres as g', 'g.id', '=', 'vg.genres_id')->where('g.type', Category::TV_ROOT)
                 ->where('vg.videos_id', $videosId)->orderBy('g.title')->pluck('g.title', 'g.id')->map(static fn (mixed $title): string => (string) $title)->all(),
             tags: array_values(array_filter([
-                TvShowWall::languageName((string) $show->original_language),
+                (string) LanguageNames::name((string) $show->original_language),
                 $rating === 'NR' ? '' : $rating,
                 $status === false ? '' : TvShowFilters::STATUS_LABELS[$status],
             ], static fn (string $tag): bool => $tag !== '')),
