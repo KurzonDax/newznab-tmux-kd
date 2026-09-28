@@ -67,7 +67,7 @@ const MODIFIER_KEYS = ['Shift', 'Control', 'Alt', 'Meta'];
  * (data-focus-quiet) until a key that moves around the page, Shift+Tab included, but not
  * a lone modifier or a Ctrl, Meta or Alt shortcut.
  */
-function keepFocus(tab, pointer) {
+function focusSwitchedTab(tab, pointer) {
     tab.focus({ preventScroll: true });
     if (!pointer) {
         tab.setAttribute('data-focus-ring', '');
@@ -107,12 +107,16 @@ export function tvEpisodeList() {
             this.selection = new Set(readJson(selectionKey(this.show)) ?? []);
             this.syncBoxes();
             const tab = this.screen.querySelector('.tv-season-tabs [aria-current]');
-            if (tab) revealTab(tab);
+            if (tab) {
+                revealTab(tab);
+                // Web fonts that load later can widen the tabs: check again once they are in.
+                document.fonts?.ready.then(() => revealTab(tab));
+            }
             const leaving = readJson(SWITCH_KEY);
             if (leaving && leaving.show === this.show) {
                 writeJson(SWITCH_KEY, null);
                 window.scrollTo(0, leaving.y);
-                if (tab) keepFocus(tab, leaving.pointer === true);
+                if (tab) focusSwitchedTab(tab, leaving.pointer === true);
             }
         },
 

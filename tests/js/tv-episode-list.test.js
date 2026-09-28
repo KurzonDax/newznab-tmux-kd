@@ -33,7 +33,10 @@ function browser({ href = 'https://nntmux.test/tv/show/7/1', session = storage()
     globalThis.document = {
         listeners,
         addEventListener(type, listener) { listeners.push({ type, listener }); },
-        removeEventListener(type, listener) { listeners.splice(listeners.findIndex(item => item.type === type && item.listener === listener) >>> 0, 1); },
+        removeEventListener(type, listener) {
+            const index = listeners.findIndex(item => item.type === type && item.listener === listener);
+            if (index >= 0) listeners.splice(index, 1);
+        },
         querySelector: () => ({ content: 'csrf-token' }),
         createElement: () => { const form = { fields: {}, append(input) { form.fields[input.name] = input.value; }, submit() { forms.push(form.fields); }, remove() {} }; return form; },
         body: { append() {} },
@@ -434,4 +437,18 @@ test('season tabs never shrink, a keyboard ring sits inside the tab with its rou
     assert.match(tv.get('.tv-season-tabs a:focus-visible'), /outline-offset: -2px;/);
     assert.match(tv.get('.tv-season-tabs a[data-focus-ring]'), /outline: 2px solid var\(--tv-accent\); outline-offset: -2px; border-radius: 6px;/);
     assert.match(tv.get('.tv-season-tabs a[data-focus-quiet]:focus-visible'), /outline: 0; border-radius: 0;/);
+});
+
+test('the tab row is checked again once the web fonts are in, since they can widen the tabs', async () => {
+    browser();
+    let fontsIn;
+    globalThis.document.fonts = { ready: new Promise(resolve => { fontsIn = resolve; }) };
+    const currentTab = seasonTab({ left: 500, width: 90, rowWidth: 600 });
+    page({ currentTab });
+    assert.equal(currentTab.row.scrollLeft, 0);
+    currentTab.getBoundingClientRect = () => ({ left: 100 + 540 - currentTab.row.scrollLeft, right: 100 + 640 - currentTab.row.scrollLeft });
+    fontsIn();
+    await globalThis.document.fonts.ready;
+    await Promise.resolve();
+    assert.equal(currentTab.row.scrollLeft, 40);
 });
