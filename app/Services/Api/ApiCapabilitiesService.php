@@ -11,6 +11,7 @@ use App\Models\RootCategory;
 use App\Models\Settings;
 use App\Models\UsenetGroup;
 use App\Services\RegistrationStatusService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
@@ -125,7 +126,14 @@ final readonly class ApiCapabilitiesService
             return [];
         }
 
-        return Genre::query()->enabled()->orderBy('title')->get(['id', 'title', 'type'])
+        // The Movies (2000) and TV (5000) redesign genres serve the site's own screens and
+        // stay out of this frozen list. Every other enabled genre is listed as before,
+        // including rows with no type, which a plain NOT IN would drop.
+        return Genre::query()->enabled()
+            ->where(static fn (Builder $query): Builder => $query
+                ->whereNull('type')
+                ->orWhereNotIn('type', [Category::MOVIE_ROOT, Category::TV_ROOT]))
+            ->orderBy('title')->get(['id', 'title', 'type'])
             ->map(static fn (Genre $genre): array => [
                 'id' => $genre->id,
                 'name' => $genre->title,
