@@ -289,15 +289,9 @@ class AdminContentControllerTest extends TestCase
         $this->assertContains('https://github.com/NNTmux/newznab-tmux', $offsite);
         $this->assertContains('https://outside.example.org/page', $offsite);
 
-        $document = new DOMDocument;
-        @$document->loadHTML($html);
-        $inside = null;
-        foreach ($document->getElementsByTagName('a') as $anchor) {
-            if ($anchor->getAttribute('href') === '/inside-page/') {
-                $inside = $anchor;
-            }
-        }
-        $this->assertInstanceOf(DOMElement::class, $inside);
+        $inside = $this->anchorsTo($html, '/inside-page/');
+        $this->assertCount(1, $inside);
+        $inside = $inside[0];
         $this->assertSame('_blank', $inside->getAttribute('target'));
         $this->assertFalse($inside->hasAttribute('rel'));
         $this->assertStringNotContainsString('opens in a new tab', $inside->textContent);

@@ -55,12 +55,22 @@ trait AssertsOffsiteLinks
      */
     protected function assertSameTabLink(string $html, string $href, string $page): void
     {
-        $matches = array_values(array_filter($this->documentAnchors($html), fn (\DOMElement $anchor): bool => $anchor->getAttribute('href') === $href));
+        $matches = $this->anchorsTo($html, $href);
 
         $this->assertNotSame([], $matches, $page.' has no link to '.$href);
         foreach ($matches as $anchor) {
             $this->assertFalse($anchor->hasAttribute('target'), $page.' opens '.$href.' in a new tab');
         }
+    }
+
+    /**
+     * The page's links whose href is exactly the one given.
+     *
+     * @return list<\DOMElement>
+     */
+    protected function anchorsTo(string $html, string $href): array
+    {
+        return array_values(array_filter($this->documentAnchors($html), fn (\DOMElement $anchor): bool => $anchor->getAttribute('href') === $href));
     }
 
     /**
