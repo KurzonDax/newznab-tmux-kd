@@ -50,6 +50,39 @@ function writeJson(key, value) {
     }
 }
 
+/** Scrolls the tab row, never the page, so the whole current season tab is inside its visible width. */
+function revealTab(tab) {
+    const row = tab.closest('.tv-season-tabs');
+    if (!row) return;
+    const rowBox = row.getBoundingClientRect(), tabBox = tab.getBoundingClientRect();
+    if (tabBox.left < rowBox.left) row.scrollLeft -= rowBox.left - tabBox.left;
+    else if (tabBox.right > rowBox.right) row.scrollLeft += tabBox.right - rowBox.right;
+}
+
+const MODIFIER_KEYS = ['Shift', 'Control', 'Alt', 'Meta'];
+
+/**
+ * Focuses the current season tab after a switch. A keyboard switch always shows the ring
+ * (data-focus-ring, until the tab loses focus); after a mouse switch the tab stays quiet
+ * (data-focus-quiet) until a key that moves around the page, Shift+Tab included, but not
+ * a lone modifier or a Ctrl, Meta or Alt shortcut.
+ */
+function keepFocus(tab, pointer) {
+    tab.focus({ preventScroll: true });
+    if (!pointer) {
+        tab.setAttribute('data-focus-ring', '');
+        tab.addEventListener('blur', () => tab.removeAttribute('data-focus-ring'), { once: true });
+        return;
+    }
+    tab.setAttribute('data-focus-quiet', '');
+    const wake = event => {
+        if (MODIFIER_KEYS.includes(event.key) || event.ctrlKey || event.metaKey || event.altKey) return;
+        tab.removeAttribute('data-focus-quiet');
+        document.removeEventListener('keydown', wake, true);
+    };
+    document.addEventListener('keydown', wake, true);
+}
+
 /**
  * The show page (tv/show/index.blade.php): episode rows that open their release table in
  * place, the release tables' sortable headers, the selection and its floating bar (kept per
@@ -73,11 +106,13 @@ export function tvEpisodeList() {
             this.pageUrl = this.screen.dataset.pageUrl ?? window.location.href;
             this.selection = new Set(readJson(selectionKey(this.show)) ?? []);
             this.syncBoxes();
+            const tab = this.screen.querySelector('.tv-season-tabs [aria-current]');
+            if (tab) revealTab(tab);
             const leaving = readJson(SWITCH_KEY);
             if (leaving && leaving.show === this.show) {
                 writeJson(SWITCH_KEY, null);
                 window.scrollTo(0, leaving.y);
-                this.screen.querySelector('.tv-season-tabs [aria-current]')?.focus({ preventScroll: true });
+                if (tab) keepFocus(tab, leaving.pointer === true);
             }
         },
 
@@ -98,10 +133,12 @@ export function tvEpisodeList() {
         /**
          * A plain click replaces the history entry, so Back returns to the page the show was opened from.
          * Modified and non-primary clicks (new tab, new window, download) are left to the browser.
+         * A mouse switch is recorded as `pointer`, so the next page keeps the focused tab quiet.
          */
         switchSeason(event, tab) {
             if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-            writeJson(SWITCH_KEY, { show: this.show, y: window.scrollY });
+            // A mouse click has a click count (detail); Enter on the tab has none.
+            writeJson(SWITCH_KEY, { show: this.show, y: window.scrollY, ...(event.detail > 0 ? { pointer: true } : {}) });
             event.preventDefault();
             window.location.replace(tab.href);
         },

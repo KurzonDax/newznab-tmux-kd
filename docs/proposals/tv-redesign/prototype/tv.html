@@ -357,7 +357,8 @@ dl.vals dd{margin-top:3px;font-weight:500;font-variant-numeric:tabular-nums}
 .vh{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .bar2.hastabs{align-items:flex-end;padding:8px 0 0;gap:0 26px;flex-wrap:nowrap}
 .stabs{display:flex;flex-wrap:nowrap;align-items:flex-end;gap:0 4px;margin:0 auto -1px 0;min-width:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
-.stabs a{padding:12px 16px;font-weight:600;font-size:15px;color:var(--dim);border-bottom:2px solid transparent;white-space:nowrap}
+.stabs a{padding:12px 16px;font-weight:600;font-size:15px;color:var(--dim);border-bottom:2px solid transparent;white-space:nowrap;flex:none}
+.stabs a:focus-visible{outline-offset:-2px}
 .stabs a:hover{color:var(--ink)}
 .stabs a[aria-current]{color:var(--ink);border-bottom-color:var(--acc)}
 .stabs .lbl{padding:12px 8px 12px 0;font-weight:600;font-size:15px;color:var(--dim);border-bottom:2px solid transparent}

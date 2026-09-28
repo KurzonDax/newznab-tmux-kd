@@ -319,6 +319,12 @@ a.tv-tag:hover { background: var(--tv-line); }
 .tv-season-tabs a, .tv-season-label { padding: 12px 16px; border-bottom: 2px solid transparent; color: var(--tv-dim); font-size: 15px; font-weight: 600; white-space: nowrap; }
 .tv-season-tabs a:hover { color: var(--tv-ink); }
 .tv-season-tabs a[aria-current] { border-bottom-color: var(--tv-accent); color: var(--tv-ink); }
+/* Tabs never shrink: a long row scrolls sideways. The ring sits inside the tab, so the row's clip never cuts it;
+   after a keyboard season switch the page marks the tab (data-focus-ring), after a mouse switch it stays quiet. */
+.tv-season-tabs a { flex: none; }
+.tv-season-tabs a:focus-visible { outline-offset: -2px; }
+.tv-season-tabs a[data-focus-ring] { outline: 2px solid var(--tv-accent); outline-offset: -2px; border-radius: 6px; }
+.tv-season-tabs a[data-focus-quiet]:focus-visible { outline: 0; border-radius: 0; }
 .tv-season-label { padding: 12px 8px 12px 0; }
 .tv-season-tabs.is-many { gap: 0; }
 .tv-season-tabs.is-many a { min-width: 30px; padding: 12px 8px; text-align: center; font-variant-numeric: tabular-nums; }

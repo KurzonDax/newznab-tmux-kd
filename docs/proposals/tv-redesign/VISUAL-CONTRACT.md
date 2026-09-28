@@ -10,7 +10,7 @@ under `docs/proposals/tv-redesign/prototype/`:
 
 | File | What it is |
 |---|---|
-| `tv.html`, `tokens.css` | the approved prototype, byte-for-byte the one Randall reviewed |
+| `tv.html`, `tokens.css` | the approved prototype as reviewed, plus the season-tab focus ring drawn inside the tab (#813) |
 | `data.json` … `repair.json`, `posters/`, `previews/`, `fixtures.json` | the invented dataset (`gen-demo-data.mjs`, `make-demo-art.mjs` regenerate it) |
 | `check.mjs` | 271 behaviour checks on this dataset; `0 failures` |
 | `reference/<state>-<dark|light>.webp` | 26 screen states × 2 themes at 1600 × 1000 |
