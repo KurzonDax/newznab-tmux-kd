@@ -29,7 +29,14 @@ function browser({ href = 'https://nntmux.test/tv/show/7/1', session = storage()
         scrollTo: (x, y) => scrolled.push(y),
         showToast: (message, type) => toasts.push({ message, type }),
     };
+    const listeners = [];
     globalThis.document = {
+        listeners,
+        addEventListener(type, listener) { listeners.push({ type, listener }); },
+        removeEventListener(type, listener) {
+            const index = listeners.findIndex(item => item.type === type && item.listener === listener);
+            if (index >= 0) listeners.splice(index, 1);
+        },
         querySelector: () => ({ content: 'csrf-token' }),
         createElement: () => { const form = { fields: {}, append(input) { form.fields[input.name] = input.value; }, submit() { forms.push(form.fields); }, remove() {} }; return form; },
         body: { append() {} },
@@ -38,7 +45,8 @@ function browser({ href = 'https://nntmux.test/tv/show/7/1', session = storage()
         requests.push({ url: String(url), ...options });
         return { ok: !fail, redirected: false, json: async () => ({ success: true, cartCount: 3 }), text: async () => '<table>releases</table>' };
     };
-    return { toasts, requests, history, scrolled, forms, session, replaced };
+    const keydown = event => listeners.filter(item => item.type === 'keydown').forEach(item => item.listener({ ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...event }));
+    return { toasts, requests, history, scrolled, forms, session, replaced, keydown };
 }
 
 function box(guid) {
@@ -251,13 +259,29 @@ function tabClick(overrides = {}) {
     };
 }
 
+/** The current season tab inside a tab row: `left` and `width` place it in the row's content, the row shows `rowWidth` of it from `scrollLeft`. */
+function seasonTab({ left = 0, width = 90, rowWidth = 600, scrollLeft = 0 } = {}) {
+    const row = { scrollLeft, getBoundingClientRect: () => ({ left: 100, right: 100 + rowWidth }) };
+    const handlers = {};
+    return {
+        ...attributes(),
+        row,
+        focused: null,
+        focus(options) { this.focused = options; },
+        addEventListener(type, handler) { handlers[type] = handler; },
+        blur() { handlers.blur?.(); },
+        closest: selector => (selector === '.tv-season-tabs' ? row : null),
+        getBoundingClientRect: () => ({ left: 100 + left - row.scrollLeft, right: 100 + left + width - row.scrollLeft }),
+    };
+}
+
 test('a season tab keeps keyboard focus and the scroll position across its page load', () => {
     const { session, scrolled } = browser();
     const { component } = page();
     component.handleClick(tabClick());
     assert.deepEqual(JSON.parse(session.values[SWITCH_KEY]), { show: '7', y: 640 });
 
-    const currentTab = { focused: null, focus(options) { this.focused = options; } };
+    const currentTab = seasonTab();
     page({ show: '8', currentTab });
     assert.equal(currentTab.focused, null);
     page({ currentTab });
@@ -276,6 +300,76 @@ test('a plain click on a season tab replaces the history entry, so Back skips th
     assert.deepEqual(replaced, ['https://nntmux.test/tv/show/7/2?source%5B%5D=web']);
 });
 
+test('a mouse click on a season tab records the switch as pointer-initiated, Enter on the tab records no pointer', () => {
+    const { session, replaced } = browser();
+    const { component } = page();
+    component.handleClick(tabClick({ detail: 1 }));
+    assert.deepEqual(JSON.parse(session.values[SWITCH_KEY]), { show: '7', y: 640, pointer: true });
+    component.handleClick(tabClick({ detail: 0 }));
+    assert.deepEqual(JSON.parse(session.values[SWITCH_KEY]), { show: '7', y: 640 });
+    assert.equal(replaced.length, 2);
+});
+
+test('after a mouse season switch the focused tab stays quiet until a key that moves around the page', () => {
+    const { keydown } = browser();
+    page().component.handleClick(tabClick({ detail: 1 }));
+    const currentTab = seasonTab();
+    page({ currentTab });
+    assert.deepEqual(currentTab.focused, { preventScroll: true });
+    assert.equal(currentTab.hasAttribute('data-focus-quiet'), true);
+    assert.equal(currentTab.hasAttribute('data-focus-ring'), false);
+    keydown({ key: 'c', metaKey: true });
+    keydown({ key: 'Shift', shiftKey: true });
+    keydown({ key: 'Tab', altKey: true });
+    keydown({ key: 'v', ctrlKey: true });
+    assert.equal(currentTab.hasAttribute('data-focus-quiet'), true);
+    keydown({ key: 'Tab', shiftKey: true });
+    assert.equal(currentTab.hasAttribute('data-focus-quiet'), false);
+});
+
+test('a plain Tab after a mouse season switch brings the ring back', () => {
+    const { keydown, session } = browser();
+    session.setItem(SWITCH_KEY, JSON.stringify({ show: '7', y: 0, pointer: true }));
+    const currentTab = seasonTab();
+    page({ currentTab });
+    assert.equal(currentTab.hasAttribute('data-focus-quiet'), true);
+    keydown({ key: 'Tab' });
+    assert.equal(currentTab.hasAttribute('data-focus-quiet'), false);
+});
+
+for (const name of ['Enter on the tab', 'a record written before pointer was stored']) {
+    test(`after a keyboard season switch (${name}) the focused tab carries the ring marker until it loses focus`, () => {
+        const { session } = browser();
+        if (name === 'Enter on the tab') page().component.handleClick(tabClick({ detail: 0 }));
+        else session.setItem(SWITCH_KEY, JSON.stringify({ show: '7', y: 640 }));
+        const currentTab = seasonTab();
+        page({ currentTab });
+        assert.deepEqual(currentTab.focused, { preventScroll: true });
+        assert.equal(currentTab.hasAttribute('data-focus-ring'), true);
+        assert.equal(currentTab.hasAttribute('data-focus-quiet'), false);
+        currentTab.blur();
+        assert.equal(currentTab.hasAttribute('data-focus-ring'), false);
+    });
+}
+
+test('every page load scrolls the tab row, and only the row, so the current tab is whole', () => {
+    const { scrolled } = browser();
+    const pastTheEnd = seasonTab({ left: 2758, width: 30, rowWidth: 300 });
+    page({ currentTab: pastTheEnd });
+    assert.equal(pastTheEnd.row.scrollLeft, 2488);
+    assert.equal(pastTheEnd.focused, null);
+    assert.deepEqual(scrolled, []);
+
+    const beforeTheStart = seasonTab({ left: 40, width: 30, rowWidth: 300, scrollLeft: 200 });
+    page({ currentTab: beforeTheStart });
+    assert.equal(beforeTheStart.row.scrollLeft, 40);
+
+    const inView = seasonTab({ left: 120, width: 90, rowWidth: 600, scrollLeft: 10 });
+    page({ currentTab: inView });
+    assert.equal(inView.row.scrollLeft, 10);
+    assert.equal(inView.hasAttribute('data-focus-ring'), false);
+});
+
 for (const [name, overrides] of [
     ['ctrl', { ctrlKey: true }],
     ['cmd', { metaKey: true }],
@@ -286,7 +380,7 @@ for (const [name, overrides] of [
     test(`a ${name} click on a season tab is left to the browser and leaves no switch record`, () => {
         const { session, replaced } = browser();
         const { component } = page();
-        const click = tabClick(overrides);
+        const click = tabClick({ detail: 1, ...overrides });
         component.handleClick(click);
         assert.equal(session.values[SWITCH_KEY], undefined);
         assert.equal(click.prevented, false);
@@ -335,4 +429,26 @@ test('Follow show is violet with the bookmark, solid violet while followed, neve
         if (/tv-follow-show|data-watched|aria-pressed/.test(selector) && selector.includes('tv-details-button') && !selector.startsWith('.tv-image-bar')) assert.doesNotMatch(body, /accent/, selector);
         if (selector.includes('tv-follow-show')) assert.doesNotMatch(body, /accent/, selector);
     }
+});
+
+test('season tabs never shrink, a keyboard ring sits inside the tab with its rounded corners, a quiet tab shows no ring', () => {
+    const tv = cssRules('../../resources/css/tv.css');
+    assert.match(tv.get('.tv-season-tabs a'), /flex: none;/);
+    assert.match(tv.get('.tv-season-tabs a:focus-visible'), /outline-offset: -2px;/);
+    assert.match(tv.get('.tv-season-tabs a[data-focus-ring]'), /outline: 2px solid var\(--tv-accent\); outline-offset: -2px; border-radius: 6px;/);
+    assert.match(tv.get('.tv-season-tabs a[data-focus-quiet]:focus-visible'), /outline: 0; border-radius: 0;/);
+});
+
+test('the tab row is checked again once the web fonts are in, since they can widen the tabs', async () => {
+    browser();
+    let fontsIn;
+    globalThis.document.fonts = { ready: new Promise(resolve => { fontsIn = resolve; }) };
+    const currentTab = seasonTab({ left: 500, width: 90, rowWidth: 600 });
+    page({ currentTab });
+    assert.equal(currentTab.row.scrollLeft, 0);
+    currentTab.getBoundingClientRect = () => ({ left: 100 + 540 - currentTab.row.scrollLeft, right: 100 + 640 - currentTab.row.scrollLeft });
+    fontsIn();
+    await globalThis.document.fonts.ready;
+    await Promise.resolve();
+    assert.equal(currentTab.row.scrollLeft, 40);
 });

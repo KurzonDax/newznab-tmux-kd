@@ -251,7 +251,9 @@ pages look good, I approve them."
   row. Numeric tabs carry the accessible name "Season 22". With no season in the link, the page
   opens on season 1 (else the lowest-numbered season, else Specials); a link that names a season
   the show has opens that season (maintainer's rule, 2026-09-27). A season switch replaces the
-  history entry, so Back returns to the list the show was opened from.
+  history entry, so Back returns to the list the show was opened from. A keyboard focus ring
+  on a season tab is drawn inside the tab, so the tab row never clips it; after a mouse season
+  switch the current tab shows no ring.
 - Under the tabs, in this order:
   1. **"Whole-season packs"**, first ("move the whole season packs to above the episodes
      table"): the season's packs as a release table; a season with none keeps the heading and
