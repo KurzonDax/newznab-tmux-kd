@@ -56,7 +56,9 @@
                     <div class="tv-starring" data-part="starring line">Starring {!! $people($film->cast) !!}</div>
                 @endif
                 <div class="tv-details-actions tv-show-actions">
-                    @include('tv.partials.follow-show', ['showId' => $film->imdbId, 'showTitle' => $film->title, 'followed' => $followed, 'followRoot' => 'movies', 'followNoun' => 'film'])
+                    @if($film->imdbId !== '')
+                        @include('tv.partials.follow-show', ['showId' => $film->imdbId, 'showTitle' => $film->title, 'followed' => $followed, 'followRoot' => 'movies', 'followNoun' => 'film'])
+                    @endif
                     @foreach($film->links as $label => $url)
                         <a class="tv-details-button is-secondary" href="{{ $dereferrer.$url }}" target="_blank" rel="noopener noreferrer">{{ $label }}<i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i><span class="sr-only"> (opens in a new tab)</span></a>
                     @endforeach

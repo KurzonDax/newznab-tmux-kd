@@ -196,6 +196,19 @@ final class MovieFilmPageTest extends TestCase
         $this->assertNoWatchWording((string) $this->page('/movies/film/'.self::FILM)->getContent(), 'A followed film page');
     }
 
+    public function test_a_film_with_no_imdb_id_has_no_follow_button_and_no_imdb_link(): void
+    {
+        $this->film(self::FILM, 'Keyless', '2001', ['imdbid' => '', 'tmdbid' => 77]);
+        $this->movie(self::FILM);
+
+        $response = $this->page('/movies/film/'.self::FILM)->assertOk();
+        $actions = $this->between($response, '<div class="tv-details-actions tv-show-actions">', '</div>');
+        $this->assertStringNotContainsString('tv-follow-show', $actions);
+        $this->assertStringNotContainsString('data-watch-picker', (string) $response->getContent());
+        $this->assertSame(['https://www.themoviedb.org/movie/77'], $this->assertOffsiteLinksOpenInANewTab($actions, 'A film page without an IMDb id'));
+        $this->assertStringContainsString('<div class="tv-show-card is-film">', (string) $response->getContent());
+    }
+
     public function test_imdb_always_and_tmdb_when_known_open_in_a_new_tab(): void
     {
         $this->film(self::FILM, 'Heat', '1995', ['imdbid' => '113277', 'tmdbid' => 949]);
