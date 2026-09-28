@@ -32,6 +32,9 @@ use Illuminate\Support\Facades\Cache;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property string $trailer
+ * @property int|null $vote_count TMDB vote count; NULL = not fetched since the column was added
+ * @property string $content_rating_us TMDB US certification (MPAA Rating)
+ * @property string $original_language TMDB original language (ISO 639-1)
  *
  * @method static \Illuminate\Database\Eloquent\Builder|\App\Models\MovieInfo whereActors($value)
  * @method static \Illuminate\Database\Eloquent\Builder|\App\Models\MovieInfo whereBackdrop($value)

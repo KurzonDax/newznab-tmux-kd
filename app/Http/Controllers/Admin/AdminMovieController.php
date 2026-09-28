@@ -8,6 +8,7 @@ use App\Facades\Search;
 use App\Http\Controllers\BasePageController;
 use App\Models\MovieInfo;
 use App\Models\Release;
+use App\Services\MetadataProcessing\MovieCredits;
 use App\Services\MovieService;
 use App\Services\ReleaseImageService;
 use App\Support\ReleaseSearchIndexSync;
@@ -198,8 +199,11 @@ class AdminMovieController extends BasePageController
                 ]);
 
                 // Link releases to this movie
-                $movieInfo = MovieInfo::query()->where('imdbid', $id)->first(['id']);
+                $movieInfo = MovieInfo::query()->where('imdbid', $id)->first(['id', 'genre', 'director', 'actors']);
                 if ($movieInfo !== null) {
+                    // From the text as saved (update() skips empty fields and cuts genre), so
+                    // the rows and the text agree.
+                    app(MovieCredits::class)->syncFromText((int) $movieInfo->id, (string) $movieInfo->genre, (string) $movieInfo->director, (string) $movieInfo->actors);
                     Release::query()->where('imdbid', $id)->update(['movieinfo_id' => $movieInfo->id]);
                     ReleaseSearchIndexSync::forIds(
                         Release::query()->where('imdbid', $id)->pluck('id')

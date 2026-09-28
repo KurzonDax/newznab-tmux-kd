@@ -24,6 +24,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Termwind\Termwind;
+use Tests\Support\ProductionTables;
 use Tests\Unit\ImdbScraperTestCase;
 
 class MovieServiceTest extends ImdbScraperTestCase
@@ -73,6 +74,11 @@ class MovieServiceTest extends ImdbScraperTestCase
             $table->unsignedBigInteger('movieinfo_id')->nullable();
         });
         (require database_path('migrations/2026_09_16_133405_add_movie_record_retry_state_to_releases_table.php'))->up();
+
+        // A fetched film writes its genre and people rows.
+        foreach (['genres', 'people', 'movie_genres', 'movie_people'] as $table) {
+            ProductionTables::fromAuthority()->create($table);
+        }
     }
 
     #[Test]

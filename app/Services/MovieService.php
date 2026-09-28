@@ -15,6 +15,8 @@ use App\Models\Settings;
 use App\Models\VideoData;
 use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\CollectionReconciliation\BundleIdentity;
+use App\Services\MetadataProcessing\MovieCredits;
+use App\Services\MetadataProcessing\MovieCreditsText;
 use App\Services\MetadataProcessing\MovieProcessingCandidateQuery;
 use App\Services\MetadataProcessing\MovieReleaseBackfill;
 use App\Services\ObfuscationRecovery\RecoveryCatalog;
@@ -50,6 +52,12 @@ class MovieService
     protected const MATCH_PERCENT_ALT_TITLE = 55;
 
     protected const YEAR_MATCH_PERCENT = 80;
+
+    /** Length of movieinfo.content_rating_us and movieinfo.original_language. */
+    private const int CODE_LENGTH = 8;
+
+    /** A new release of a film refreshes it when its record is older than this. */
+    private const int REFRESH_AFTER_DAYS = 30;
 
     private bool $providerAnswered = false;
 
@@ -308,6 +316,15 @@ class MovieService
         $onDuplicateKey = ['created_at' => now()];
         $found = 0;
         foreach ($values as $key => $value) {
+            // A vote count of 0 is a value: "too few votes" reads it.
+            if ($key === 'vote_count') {
+                if ($value !== null) {
+                    $query += [$key => (int) $value];
+                    $onDuplicateKey += [$key => (int) $value];
+                }
+
+                continue;
+            }
             if (! empty($value)) {
                 $found++;
                 if (\in_array($key, ['genre', 'language'], true)) {
@@ -535,7 +552,12 @@ class MovieService
             'traktid' => $mov['traktid'],
             'type' => html_entity_decode(ucwords(preg_replace('/[._]/', ' ', $mov['type'])), ENT_QUOTES, 'UTF-8'),
             'year' => $mov['year'],
+            'vote_count' => is_array($tmdb) ? ($tmdb['vote_count'] ?? null) : null,
+            'content_rating_us' => is_array($tmdb) ? ($tmdb['content_rating_us'] ?? '') : '',
+            'original_language' => is_array($tmdb) ? ($tmdb['original_language'] ?? '') : '',
         ]);
+
+        $this->syncCredits($imdbId, $tmdb);
 
         // After updating, if cover flag is still 0 but file now exists (race condition), update DB.
         if ($mov['cover'] === 0 && $this->hasCover($imdbId)) {
@@ -554,6 +576,32 @@ class MovieService
         }
 
         return $movieID;
+    }
+
+    /**
+     * Writes the film's genre and people rows from TMDB's lists; a list TMDB did not give
+     * (not configured, no match, an error, or an empty list) comes from the saved text.
+     *
+     * @param  array<string, mixed>|false  $tmdb
+     */
+    private function syncCredits(string $imdbId, array|false $tmdb): void
+    {
+        $movie = MovieInfo::query()->where('imdbid', $imdbId)->first(['id', 'genre', 'director', 'actors']);
+        if ($movie === null) {
+            return;
+        }
+
+        $tmdb = is_array($tmdb) ? $tmdb : [];
+        $genres = $tmdb['genres'] ?? [];
+        $directors = $tmdb['directors'] ?? [];
+        $cast = $tmdb['cast'] ?? [];
+
+        app(MovieCredits::class)->sync(
+            (int) $movie->id,
+            $genres !== [] ? $genres : MovieCreditsText::names((string) $movie->genre),
+            $directors !== [] ? $directors : MovieCreditsText::people((string) $movie->director),
+            $cast !== [] ? $cast : MovieCreditsText::people((string) $movie->actors),
+        );
     }
 
     /**
@@ -593,7 +641,7 @@ class MovieService
     {
         $lookupId = $text === false && (strlen($imdbId) === 7 || strlen($imdbId) === 8) ? 'tt'.$imdbId : $imdbId;
 
-        $cacheKey = 'tmdb_movie_'.md5($lookupId);
+        $cacheKey = self::tmdbCacheKey($lookupId);
         $expiresAt = now()->addDays(7);
 
         if (Cache::has($cacheKey)) {
@@ -607,7 +655,7 @@ class MovieService
                 return false;
             }
 
-            $tmdbLookup = $tmdbClient->getMovie($lookupId, ['credits']); // @phpstan-ignore argument.type
+            $tmdbLookup = $tmdbClient->getMovie($lookupId, ['credits', 'release_dates']); // @phpstan-ignore argument.type
 
             if ($tmdbLookup === null || empty($tmdbLookup)) {
                 Cache::put($cacheKey, false, $expiresAt);
@@ -667,6 +715,12 @@ class MovieService
                 'genre' => '',
                 'cover' => '',
                 'backdrop' => '',
+                'vote_count' => isset($tmdbLookup['vote_count']) && is_numeric($tmdbLookup['vote_count']) ? (int) $tmdbLookup['vote_count'] : null,
+                'content_rating_us' => mb_substr($this->usCertification($tmdbLookup), 0, self::CODE_LENGTH),
+                'original_language' => mb_substr(TmdbClient::getString($tmdbLookup, 'original_language'), 0, self::CODE_LENGTH),
+                'genres' => [],
+                'directors' => [],
+                'cast' => [],
             ];
 
             $vote = TmdbClient::getFloat($tmdbLookup, 'vote_average');
@@ -688,7 +742,10 @@ class MovieService
                 }
             }
 
+            $ret['cast'] = $this->tmdbPeople($cast, MovieCredits::CAST_LIMIT);
+
             $crew = TmdbClient::getArray($credits, 'crew');
+            $directors = [];
             foreach ($crew as $crewMember) {
                 if (! is_array($crewMember)) {
                     continue;
@@ -696,10 +753,13 @@ class MovieService
                 $department = TmdbClient::getString($crewMember, 'department');
                 $job = TmdbClient::getString($crewMember, 'job');
                 if ($department === 'Directing' && $job === 'Director') {
-                    $ret['director'] = TmdbClient::getString($crewMember, 'name');
-                    break;
+                    if ($ret['director'] === '') {
+                        $ret['director'] = TmdbClient::getString($crewMember, 'name');
+                    }
+                    $directors[] = $crewMember;
                 }
             }
+            $ret['directors'] = $this->tmdbPeople($directors, PHP_INT_MAX);
 
             if (! empty($releaseDate)) {
                 $ret['year'] = Carbon::parse($releaseDate)->year;
@@ -715,6 +775,7 @@ class MovieService
                 }
                 if (! empty($genres)) {
                     $ret['genre'] = $genres;
+                    $ret['genres'] = array_values(array_map(strval(...), $genres));
                 }
             }
 
@@ -743,6 +804,59 @@ class MovieService
 
             return false;
         }
+    }
+
+    public static function tmdbCacheKey(string $lookupId): string
+    {
+        // Versioned: arrays cached before the credits lists were added are not served.
+        return 'tmdb_movie_v2_'.md5($lookupId);
+    }
+
+    /**
+     * The first non-empty certification of the US entry of TMDB's `release_dates`.
+     *
+     * @param  array<string, mixed>  $movie
+     */
+    private function usCertification(array $movie): string
+    {
+        foreach (TmdbClient::getArray(TmdbClient::getArray($movie, 'release_dates'), 'results') as $country) {
+            if (! is_array($country) || ($country['iso_3166_1'] ?? '') !== 'US') {
+                continue;
+            }
+            foreach (TmdbClient::getArray($country, 'release_dates') as $release) {
+                $certification = is_array($release) ? trim((string) ($release['certification'] ?? '')) : '';
+                if ($certification !== '') {
+                    return $certification;
+                }
+            }
+
+            return '';
+        }
+
+        return '';
+    }
+
+    /**
+     * The first distinct TMDB people, in TMDB's order.
+     *
+     * @param  array<mixed>  $members
+     * @return list<array{name: string, tmdb_id: int}>
+     */
+    private function tmdbPeople(array $members, int $limit): array
+    {
+        $people = [];
+        foreach ($members as $member) {
+            $tmdbId = is_array($member) ? TmdbClient::getInt($member, 'id') : 0;
+            if ($tmdbId <= 0 || isset($people[$tmdbId])) {
+                continue;
+            }
+            $people[$tmdbId] = ['name' => trim(TmdbClient::getString($member, 'name')), 'tmdb_id' => $tmdbId];
+            if (count($people) === $limit) {
+                break;
+            }
+        }
+
+        return array_values($people);
     }
 
     /**
@@ -1087,6 +1201,15 @@ class MovieService
     {
         $movie = MovieInfo::query()->where('imdbid', $imdbId)->first();
         if ($movie !== null) {
+            // A new release refreshes a film whose record is over 30 days old: at most one
+            // fetch per film per 30 days, and only when a release of it arrives.
+            if ($movie->updated_at !== null && $movie->updated_at->lt(now()->subDays(self::REFRESH_AFTER_DAYS))) {
+                $this->currentTitle = '';
+                $this->currentYear = '';
+                if ($this->updateMovieInfo($imdbId)) {
+                    $movie = MovieInfo::query()->where('imdbid', $imdbId)->first() ?? $movie;
+                }
+            }
             app(MovieReleaseBackfill::class)->forMovie($movie);
 
             return;

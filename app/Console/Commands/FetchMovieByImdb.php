@@ -42,7 +42,7 @@ class FetchMovieByImdb extends Command
         $this->info('Force fetching movie data for IMDb id: tt'.$imdbId.' ...');
 
         // Clear all caches for this movie to force fresh data retrieval
-        Cache::forget('tmdb_movie_'.md5('tt'.$imdbId));
+        Cache::forget(MovieService::tmdbCacheKey('tt'.$imdbId));
         Cache::forget('trakt_movie_'.md5($imdbId));
         Cache::forget('imdb_movie_'.md5($imdbId));
         Cache::forget('imdb_scrape_id_'.$imdbId);
