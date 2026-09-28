@@ -685,6 +685,53 @@ class ApiRequestMatrixTest extends TestCase
             ->assertJsonPath('genres.0.name', 'Test Genre');
     }
 
+    public function test_v1_caps_genres_leave_out_the_movies_and_tv_redesign_genres(): void
+    {
+        $this->insertRedesignAndLegacyGenres();
+
+        $apiController = app(ApiController::class);
+        $reflection = new ReflectionClass($apiController);
+        $typeProperty = $reflection->getProperty('type');
+        $typeProperty->setAccessible(true);
+        $typeProperty->setValue($apiController, 'caps');
+
+        $menu = $apiController->getForMenu();
+
+        $this->assertSame(
+            ['Legacy Genre', 'Test Genre', 'Untyped Genre'],
+            array_column($menu['genres'], 'name'),
+        );
+    }
+
+    public function test_v2_capabilities_genres_leave_out_the_movies_and_tv_redesign_genres(): void
+    {
+        $this->insertRedesignAndLegacyGenres();
+
+        $genres = $this->getJson('/api/v2/capabilities')
+            ->assertOk()
+            ->json('genres');
+
+        $this->assertSame(
+            ['Legacy Genre', 'Test Genre', 'Untyped Genre'],
+            array_column($genres, 'name'),
+        );
+    }
+
+    /**
+     * Genres of the Movies (2000) and TV (5000) redesigns must stay out of the
+     * frozen capabilities list; the type-6000 rows older versions wrote and
+     * rows with no type were listed before the redesign and still are.
+     */
+    private function insertRedesignAndLegacyGenres(): void
+    {
+        DB::table('genres')->insert([
+            ['id' => 2, 'title' => 'Movie Genre', 'type' => Category::MOVIE_ROOT, 'disabled' => 0],
+            ['id' => 3, 'title' => 'TV Genre', 'type' => Category::TV_ROOT, 'disabled' => 0],
+            ['id' => 4, 'title' => 'Legacy Genre', 'type' => 6000, 'disabled' => 0],
+            ['id' => 5, 'title' => 'Untyped Genre', 'type' => null, 'disabled' => 0],
+        ]);
+    }
+
     public function test_v2_details_response_shape_is_unchanged(): void
     {
         $token = (string) DB::table('users')->value('api_token');
@@ -971,7 +1018,7 @@ class ApiRequestMatrixTest extends TestCase
         Schema::create('genres', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('title');
-            $table->integer('type')->default(3000);
+            $table->integer('type')->nullable();
             $table->boolean('disabled')->default(false);
         });
 
