@@ -322,13 +322,6 @@ Alpine.data('regexDelete', () => ({
     }
 }));
 
-// My Movies confirm
-Alpine.data('myMovies', () => ({
-    confirmRemove(e) {
-        if (!confirm('Are you sure you want to remove this movie from your watchlist?')) e.preventDefault();
-    }
-}));
-
 /**
  * Document-level delegation for admin and global UI handlers.
  * Replaces event-bridge.js; keeps delegation for elements that may not have x-data.
@@ -510,13 +503,6 @@ Alpine.data('myMovies', () => ({
             e.preventDefault();
             var num = seasonTab.getAttribute('data-season');
             if (num && typeof switchSeason === 'function') switchSeason(num);
-            return;
-        }
-
-        // My Movies confirm
-        var confirmAction = e.target.closest('.confirm_action');
-        if (confirmAction) {
-            if (!confirm('Are you sure you want to remove this movie from your watchlist?')) e.preventDefault();
             return;
         }
     });

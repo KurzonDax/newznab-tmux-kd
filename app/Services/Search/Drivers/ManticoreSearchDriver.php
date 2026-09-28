@@ -1502,7 +1502,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
      * @param  array<string, mixed>  $searchArray
      * @return array<string, mixed>
      */
-    public function searchIndexes(string $rt_index, ?string $searchString, array $column = [], array $searchArray = [], int $limit = 1000, ?int $afterId = null): array
+    public function searchIndexes(string $rt_index, ?string $searchString, array $column = [], array $searchArray = [], int $limit = 1000): array
     {
         if (empty($rt_index)) {
             Log::warning('ManticoreSearch: Index name is required for search');
@@ -1533,7 +1533,6 @@ class ManticoreSearchDriver implements SearchDriverInterface
             'array' => $searchArray,
             'limit' => $normalizedLimit,
             'profile' => $profile,
-            ...($afterId === null ? [] : ['after_id' => $afterId]),
         ]));
 
         $cached = Cache::get($cacheKey);
@@ -1579,16 +1578,14 @@ class ManticoreSearchDriver implements SearchDriverInterface
                 ->stripBadUtf8(true)
                 ->search($searchExpr);
 
-            if ($afterId !== null) {
-                $query->filter('id', '>', $afterId)->sort('id', 'asc');
-            } elseif (! $avoidSortForIndex) {
+            if (! $avoidSortForIndex) {
                 $query->sort('id', 'desc');
             }
 
             $results = $query->get();
         } catch (ResponseException $e) {
             // If we hit Manticore's "too many sort-by attributes" limit, retry once without explicit sorting
-            if ($afterId === null && stripos($e->getMessage(), 'too many sort-by attributes') !== false) {
+            if (stripos($e->getMessage(), 'too many sort-by attributes') !== false) {
                 try {
                     $query = (new Search($this->manticoreSearch))
                         ->setTable($rt_index)
@@ -2247,59 +2244,6 @@ class ManticoreSearchDriver implements SearchDriverInterface
 
             return ['ids' => [], 'keys' => [], 'available' => false, 'has_more' => false];
         }
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function searchMoviesByFields(array $fieldTerms, int $limit = 5000, ?int $afterId = null): array
-    {
-        $allowed = ['all' => true, 'title' => true, 'director' => true, 'actors' => true, 'plot' => true];
-        $filtered = [];
-        foreach ($fieldTerms as $key => $value) {
-            $k = (string) $key;
-            if (isset($allowed[$k]) && is_string($value) && trim($value) !== '') {
-                $filtered[$k] = trim($value);
-            }
-        }
-
-        if ($filtered === [] || ! $this->isAvailable()) {
-            return ['imdbids' => [], 'movieinfo_ids' => [], 'data' => []];
-        }
-
-        $searchTerms = [];
-        foreach ($filtered as $field => $value) {
-            $selector = $field === 'all' ? '(title,actors,director,plot)' : $field;
-            $searchTerms[$selector] = $this->expandMoviePartialTerms($value);
-        }
-
-        $raw = $this->searchIndexes($this->getMoviesIndex(), null, [], $searchTerms, $limit, $afterId);
-        $imdbids = [];
-        $movieinfoIds = [];
-        $data = $raw['data'] ?? [];
-
-        foreach (($raw['id'] ?? []) as $i => $mid) {
-            $movieinfoIds[] = (int) $mid;
-            $row = $data[$i] ?? [];
-            $imdb = (string) ($row['imdbid'] ?? '');
-            if ($imdb !== '') {
-                $imdbids[] = $imdb;
-            }
-        }
-
-        return [
-            'imdbids' => array_values(array_unique($imdbids)),
-            'movieinfo_ids' => $movieinfoIds,
-            'data' => $data,
-        ];
-    }
-
-    private function expandMoviePartialTerms(string $value): string
-    {
-        preg_match_all('/[\p{L}\p{N}]+/u', $value, $matches);
-        $words = $matches[0];
-
-        return implode(' ', array_map(static fn (string $word): string => '*'.$word.'*', $words));
     }
 
     /**
