@@ -118,7 +118,7 @@ final class TvReleaseDetailsPageTest extends TestCase
             .'<button type="button" class="tv-details-button is-secondary" data-copy-nzb="'.$guid.'" data-part="details secondary button"><i class="fas fa-link" aria-hidden="true"></i>Copy NZB link</button>'
             .'<button type="button" class="tv-details-button is-secondary" data-cart="'.$guid.'" data-cart-label aria-pressed="false" title="Add to cart"><i class="fas fa-cart-shopping" aria-hidden="true"></i>'
             .'<span class="tv-state-label"><span class="is-off">Add to cart</span><span class="is-on">In cart</span></span></button>'
-            .'<button type="button" class="tv-details-button tv-follow-show" data-watch-picker="'.$picker.'" data-watch-key="tv:'.self::SHOW.'" data-watch-title="The Glass Meridian" data-watched="0" title="Follow this show">'
+            .'<button type="button" class="tv-details-button tv-follow-show" data-watch-picker="'.$picker.'" data-watch-key="tv:'.self::SHOW.'" data-watch-title="The Glass Meridian" data-watched="0" aria-pressed="false" title="Follow this show">'
             .'<i class="far fa-bookmark" aria-hidden="true"></i><span class="tv-state-label"><span class="is-off">Follow show</span><span class="is-on">Following show</span></span></button>',
             (string) preg_replace('/>\s+</', '><', $actions));
 
@@ -126,7 +126,7 @@ final class TvReleaseDetailsPageTest extends TestCase
         DB::table('user_series')->insert(['users_id' => $this->user()->id, 'videos_id' => self::SHOW, 'categories' => '5040']);
         $pressed = $this->between($this->details($id), '<div class="tv-details-actions">', '</div>');
         $this->assertStringContainsString('data-cart-label aria-pressed="true" title="In cart · click to remove"><i class="fas fa-cart-shopping" aria-hidden="true"></i>', $pressed);
-        $this->assertStringContainsString('data-watched="1" title="Following this show · click to unfollow"><i class="far fa-bookmark" aria-hidden="true"></i>', $pressed);
+        $this->assertStringContainsString('data-watched="1" aria-pressed="true" title="Following this show · click to unfollow"><i class="far fa-bookmark" aria-hidden="true"></i>', $pressed);
         $this->assertStringNotContainsString('fa-check', $pressed);
     }
 

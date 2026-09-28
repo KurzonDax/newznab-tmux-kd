@@ -310,7 +310,7 @@ final class TvShowPageTest extends TestCase
 
         $response = $this->page('/tv/show/'.self::SHOW.'/1?open=1')->assertOk();
         $head = (string) preg_replace('/>\s+</', '><', $this->between($response, 'class="tv-show-head"', 'data-part="season tab bar"'));
-        $this->assertStringContainsString('<div class="tv-details-actions tv-show-actions"><button type="button" class="tv-details-button tv-follow-show" data-watch-picker="'.$picker.'" data-watch-key="tv:'.self::SHOW.'" data-watch-title="The Glass Meridian" data-watched="0" title="Follow this show">'
+        $this->assertStringContainsString('<div class="tv-details-actions tv-show-actions"><button type="button" class="tv-details-button tv-follow-show" data-watch-picker="'.$picker.'" data-watch-key="tv:'.self::SHOW.'" data-watch-title="The Glass Meridian" data-watched="0" aria-pressed="false" title="Follow this show">'
             .'<i class="far fa-bookmark" aria-hidden="true"></i><span class="tv-state-label"><span class="is-off">Follow show</span><span class="is-on">Following show</span></span></button></div>', $head);
         $this->assertLessThan(strpos($head, 'tv-follow-show'), strpos($head, 'data-part="starring line"'));
         $html = (string) $response->getContent();
@@ -320,7 +320,7 @@ final class TvShowPageTest extends TestCase
 
         DB::table('user_series')->insert(['users_id' => $this->user?->id, 'videos_id' => self::SHOW, 'categories' => '5040']);
         $followed = $this->between($this->page('/tv/show/'.self::SHOW.'/1')->assertOk(), 'class="tv-show-head"', 'data-part="season tab bar"');
-        $this->assertStringContainsString('data-watched="1" title="Following this show · click to unfollow">', $followed);
+        $this->assertStringContainsString('data-watched="1" aria-pressed="true" title="Following this show · click to unfollow">', $followed);
     }
 
     public function test_similar_shows_are_the_six_best_by_the_film_rule_among_shows_the_viewer_may_see(): void

@@ -52,20 +52,15 @@ final class TvSimilarShows
         $shared = DB::query()->fromSub($genres->unionAll($people), 'shared')
             ->groupBy('shared.videos_id')->selectRaw('shared.videos_id, SUM(shared.genres) AS genres, SUM(shared.people) AS people');
 
-        $candidates = $this->wall->whereVisible(
+        // The candidate's premiere year as the wall reads it (TvShowWall::year()): below 1900 means unknown.
+        $other = 'CAST(SUBSTR(COALESCE(t.premiered, v.started), 1, 4) AS INTEGER)';
+        $gap = $year === null ? '0' : 'CASE WHEN '.$other.' >= 1900 THEN ABS('.$other.' - ?) / 10.0 ELSE 0 END';
+
+        return $this->wall->whereVisible(
             DB::query()->fromSub($shared, 's')->join('videos as v', 'v.id', '=', 's.videos_id')->leftJoin('tv_info as t', 't.videos_id', '=', 'v.id')
-                ->where('v.type', 0)->select(['v.id', 's.genres', 's.people', 't.premiered', 'v.started']),
+                ->where('v.type', 0)->select('v.id'),
             $exclusions,
-        )->get();
-
-        $scored = [];
-        foreach ($candidates as $candidate) {
-            $other = TvShowWall::year($candidate->premiered, $candidate->started);
-            $gap = $year === null || $other === null ? 0 : abs($year - $other) / 10;
-            $scored[] = ['id' => (int) $candidate->id, 'score' => 2 * (int) $candidate->genres + 3 * (int) $candidate->people - $gap];
-        }
-        usort($scored, static fn (array $a, array $b): int => [$b['score'], $a['id']] <=> [$a['score'], $b['id']]);
-
-        return array_column(array_slice($scored, 0, self::LIMIT), 'id');
+        )->orderByRaw('2 * s.genres + 3 * s.people - '.$gap.' DESC', $year === null ? [] : [$year])->orderBy('v.id')
+            ->limit(self::LIMIT)->pluck('v.id')->map(static fn (mixed $id): int => (int) $id)->all();
     }
 }
