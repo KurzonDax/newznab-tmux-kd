@@ -2862,7 +2862,6 @@ CREATE TABLE `releases` (
   KEY `ix_releases_password_categories_postdate` (`passwordstatus`,`categories_id`,`postdate` DESC),
   KEY `ix_releases_adddate` (`adddate`,`categories_id`),
   KEY `ix_releases_grabs` (`grabs`,`categories_id`,`postdate`),
-  KEY `ix_releases_movieinfo_cat` (`movieinfo_id`,`categories_id`,`passwordstatus`,`postdate`),
   KEY `ix_releases_videos_categories` (`videos_id`,`categories_id`),
   KEY `ix_releases_imdbid_password_cat_postdate` (`imdbid`,`passwordstatus`,`categories_id`,`postdate` DESC),
   KEY `ix_releases_searchname` (`searchname`),
@@ -2887,11 +2886,18 @@ CREATE TABLE `releases` (
   KEY `releases_formation_queue` (`groups_id`,`nzbstatus`,`id`),
   KEY `releases_name_evidence_work` (`name_evidence_work_pending`,`isrenamed`,`predb_id`,`leftguid`,`id`),
   KEY `releases_name_direct_work` (`name_direct_work_pending`,`isrenamed`,`predb_id`,`leftguid`,`id`),
-  KEY `ix_releases_band_posted` (`category_band`,`postdate`,`id`,`resolution`,`source`,`categories_id`,`passwordstatus`),
-  KEY `ix_releases_band_added` (`category_band`,`adddate`,`id`,`resolution`,`source`,`categories_id`,`passwordstatus`),
-  KEY `ix_releases_band_count` (`category_band`,`resolution`,`source`,`categories_id`,`passwordstatus`),
   KEY `ix_releases_videos_posted` (`videos_id`,`postdate`),
-  KEY `ix_releases_videos_added` (`videos_id`,`adddate`)
+  KEY `ix_releases_videos_added` (`videos_id`,`adddate`),
+  KEY `ix_releases_band_posted` (`category_band`,`postdate`,`id`,`resolution`,`source`,`categories_id`,`passwordstatus`,`videos_id`,`completion`),
+  KEY `ix_releases_band_added` (`category_band`,`adddate`,`id`,`resolution`,`source`,`categories_id`,`passwordstatus`,`videos_id`,`completion`),
+  KEY `ix_releases_band_count` (`category_band`,`resolution`,`source`,`categories_id`,`passwordstatus`,`completion`),
+  KEY `ix_releases_movieinfo_cat` (`movieinfo_id`,`categories_id`,`passwordstatus`,`postdate`,`adddate`,`resolution`,`source`,`completion`),
+  KEY `ix_releases_band_cat_posted` (`category_band`,`categories_id`,`postdate`,`id`,`resolution`,`source`,`passwordstatus`,`completion`),
+  KEY `ix_releases_band_cat_added` (`category_band`,`categories_id`,`adddate`,`id`,`resolution`,`source`,`passwordstatus`,`completion`),
+  KEY `ix_releases_band_res_posted` (`category_band`,`resolution`,`postdate`,`id`,`source`,`categories_id`,`passwordstatus`,`completion`),
+  KEY `ix_releases_band_res_added` (`category_band`,`resolution`,`adddate`,`id`,`source`,`categories_id`,`passwordstatus`,`completion`),
+  KEY `ix_releases_band_src_posted` (`category_band`,`source`,`postdate`,`id`,`resolution`,`categories_id`,`passwordstatus`,`completion`),
+  KEY `ix_releases_band_src_added` (`category_band`,`source`,`adddate`,`id`,`resolution`,`categories_id`,`passwordstatus`,`completion`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `releases_groups`;
@@ -3959,3 +3965,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (295,'2026_09_24_10
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (296,'2026_09_24_200000_create_release_tv_episodes_table',13);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (297,'2026_09_25_000000_add_show_details_to_tv_info',14);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (298,'2026_09_25_100000_refill_release_tv_episodes',15);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (299,'2026_09_27_000000_add_filter_led_indexes_to_releases',16);
