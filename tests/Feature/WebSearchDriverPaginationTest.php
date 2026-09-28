@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Services\Search\Contracts\SearchDriverInterface;
 use App\Services\Search\Drivers\ElasticSearchDriver;
 use App\Services\Search\Drivers\ManticoreSearchDriver;
+use App\Services\Search\DTO\ReleaseSearchQuery;
 use Elastic\Elasticsearch\ClientBuilder;
 use GuzzleHttp\Client as HttpClient;
 use GuzzleHttp\Handler\MockHandler;
@@ -120,6 +121,36 @@ final class WebSearchDriverPaginationTest extends TestCase
             $this->assertStringContainsString($filter, $query);
         }
         $this->assertCount(1, $this->requests);
+    }
+
+    /** Similar releases on a Movies details page leave the film out in the search itself, fuzzy retry included (SPEC 5C.5). */
+    #[DataProvider('drivers')]
+    public function test_a_film_left_out_is_filtered_in_the_exact_search_and_its_fuzzy_retry(string $name): void
+    {
+        $driver = $this->driver($name, 0);
+        $query = ReleaseSearchQuery::fromCriteria(['phrases' => ['searchname' => 'Heat 1995'], 'category_ids' => [2030, 2040], 'excluded_movieinfo_id' => 42], 50);
+        $this->assertSame(42, $query->excludedMovieinfoId);
+        $driver->searchReleasePage($query);
+
+        $this->assertCount(2, $this->requests);
+        $leftOut = $name === 'manticore' ? '{"equals":{"movieinfo_id":42}}' : '{"bool":{"must_not":[{"term":{"movieinfo_id":42}}]}}';
+        foreach ($this->requests as $body) {
+            $this->assertStringContainsString($leftOut, json_encode($body['query'], JSON_THROW_ON_ERROR));
+        }
+        $this->assertStringNotContainsString('fuzziness', json_encode($this->requests[0], JSON_THROW_ON_ERROR));
+        if ($name === 'manticore') {
+            $this->assertStringContainsString('"must_not":[{"equals":{"movieinfo_id":42}}]', json_encode($this->requests[1]['query'], JSON_THROW_ON_ERROR));
+            $this->assertTrue($this->requests[1]['options']['fuzzy']);
+        } else {
+            $this->assertStringContainsString('fuzziness', json_encode($this->requests[1], JSON_THROW_ON_ERROR));
+        }
+
+        $this->requests = [];
+        $driver->searchReleasePage(ReleaseSearchQuery::fromCriteria(['phrases' => ['searchname' => 'Heat 1995']], 50));
+        $this->assertNotEmpty($this->requests);
+        foreach ($this->requests as $body) {
+            $this->assertStringNotContainsString('movieinfo_id', json_encode($body['query'], JSON_THROW_ON_ERROR));
+        }
     }
 
     #[DataProvider('drivers')]

@@ -47,6 +47,7 @@ class ReleaseSearchService
      * @param  array<int, int>  $excludedCats
      * @param  array<string, mixed>  $orderBy
      * @param  array<string, mixed>  $searchArr
+     * @param  int|null  $excludedMovieinfoId  a film whose releases are left out, in every path (Similar releases on a Movies details page)
      * @return array|Collection|mixed
      */
     public function search(
@@ -64,7 +65,8 @@ class ReleaseSearchService
         string $type = 'basic',
         array $cat = [-1],
         int $minSize = 0,
-        int $minCompletion = 0
+        int $minCompletion = 0,
+        ?int $excludedMovieinfoId = null
     ): mixed {
         $minCompletion = ReleaseCompletion::normalizeThreshold($minCompletion);
         if (config('app.debug')) {
@@ -120,6 +122,7 @@ class ReleaseSearchService
                 'sort_dir' => $orderBy[1] ?? 'desc',
                 'try_fuzzy' => true,
                 'min_completion' => $minCompletion,
+                'excluded_movieinfo_id' => $excludedMovieinfoId,
             ];
 
             $searchPage = Search::searchReleasePage(ReleaseSearchQuery::fromCriteria($criteria, $limit, $offset));
@@ -177,7 +180,8 @@ class ReleaseSearchService
             $excludedCats,
             $cat,
             $minSize,
-            $minCompletion
+            $minCompletion,
+            $excludedMovieinfoId
         );
 
         // Build base SQL
@@ -1413,6 +1417,30 @@ class ReleaseSearchService
     }
 
     /**
+     * Similar releases on the Movies details page (docs/proposals/movies-redesign/SPEC.md 5C.5):
+     * today's search (searchSimilar(): the first two words of the name, getSimilarName(), in the
+     * release names of the Movies categories, newest posted first, one page of the site's
+     * items-per-page setting) with the film's own releases left out in the search itself, in every
+     * path search() takes. A release without a film leaves nothing out.
+     *
+     * @param  array<int, int>  $excludedCats
+     * @return list<int> the matching release ids in order, without the release itself
+     */
+    public function searchSimilarMovies(int $releaseId, string $name, array $excludedCats, ?int $excludedMovieinfoId): array
+    {
+        $results = $this->search(['searchname' => getSimilarName($name)], -1, '', '', -1, -1, 0, (int) config('nntmux.items_per_page'), '', -1,
+            $excludedCats, 'basic', [Category::MOVIE_ROOT], excludedMovieinfoId: $excludedMovieinfoId);
+        $ids = [];
+        foreach ($results ?: [] as $result) {
+            if ((int) $result['id'] !== $releaseId) {
+                $ids[] = (int) $result['id'];
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
      * Perform index search using Elasticsearch or Manticore, with MySQL fallback
      *
      * @param  array<string, mixed>  $searchArr
@@ -1753,7 +1781,8 @@ class ReleaseSearchService
         array $excludedCats,
         array $cat,
         int $minSize,
-        int $minCompletion = 0
+        int $minCompletion = 0,
+        ?int $excludedMovieinfoId = null
     ): string {
         $conditions = [
             sprintf('r.passwordstatus %s', $this->showPasswords()),
@@ -1805,6 +1834,10 @@ class ReleaseSearchService
         if (! empty($excludedCats)) {
             $excludedCatsClean = array_map('intval', $excludedCats);
             $conditions[] = sprintf('r.categories_id NOT IN (%s)', implode(',', $excludedCatsClean));
+        }
+
+        if ($excludedMovieinfoId !== null && $excludedMovieinfoId > 0) {
+            $conditions[] = sprintf('(r.movieinfo_id IS NULL OR r.movieinfo_id <> %d)', $excludedMovieinfoId);
         }
 
         return 'WHERE '.implode(' AND ', $conditions);

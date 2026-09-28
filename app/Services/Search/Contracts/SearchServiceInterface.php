@@ -375,7 +375,8 @@ interface SearchServiceInterface
      *                                          has_media_info (bool|null), media_unique_id (string|null),
      *                                          min_video_width (int), max_video_width (int),
      *                                          min_video_height (int), max_video_height (int), min_completion (int),
-     *                                          sort_field (string), sort_dir (string), try_fuzzy (bool), release_ids (list<int>|null)
+     *                                          sort_field (string), sort_dir (string), try_fuzzy (bool), release_ids (list<int>|null),
+     *                                          excluded_movieinfo_id (int|null: a film whose releases are left out)
      * @return array{ids: list<int>, total: int, fuzzy: bool, available?: bool, has_more?: bool}
      */
     public function searchReleasesFiltered(array $criteria, int $limit, int $offset = 0): array;

@@ -17,12 +17,18 @@ use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
+/**
+ * Today's details page, which releases outside TV and Movies keep (TV and Movies have their own
+ * pages: TvReleaseDetailsPageTest, MovieReleaseDetailsPageTest). Its releases are PC > Games.
+ */
 final class DetailsControllerTest extends TestCase
 {
     use AssertsFollowWording;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
+
+    private const PC_GAMES = 4050;
 
     protected function setUp(): void
     {
@@ -35,8 +41,8 @@ final class DetailsControllerTest extends TestCase
         Schema::table('releases', function (Blueprint $table): void {
             $table->unsignedInteger('predb_id')->nullable();
         });
-        DB::table('root_categories')->insert(['id' => 2000, 'title' => 'Movies']);
-        DB::table('categories')->insert(['id' => 2030, 'title' => 'HD', 'root_categories_id' => 2000]);
+        DB::table('root_categories')->insert(['id' => 4000, 'title' => 'PC']);
+        DB::table('categories')->insert(['id' => self::PC_GAMES, 'title' => 'Games', 'root_categories_id' => 4000]);
         foreach (['2026_02_01_000000_create_release_reports_table', '2026_06_08_000000_add_response_fields_to_release_reports_table', '2026_08_21_090000_create_release_audio_tags_table', '2026_08_27_150100_create_release_video_clips_table'] as $migration) {
             (require database_path('migrations/'.$migration.'.php'))->up();
         }
@@ -63,41 +69,14 @@ final class DetailsControllerTest extends TestCase
 
     public function test_details_header_uses_the_shared_release_data_and_renders_each_tab(): void
     {
-        $this->release('Raw.Release', ['guid' => 'details-http', 'display_name' => 'Readable release', 'size' => 41943040, 'nfostatus' => 0,
+        $this->release('Raw.Release', ['categories_id' => self::PC_GAMES, 'guid' => 'details-http', 'display_name' => 'Readable release', 'size' => 41943040, 'nfostatus' => 0,
             'videos_id' => null, 'tv_episodes_id' => null, 'imdbid' => null, 'musicinfo_id' => null, 'gamesinfo_id' => null,
             'consoleinfo_id' => null, 'bookinfo_id' => null, 'anidbid' => null]);
-        $response = $this->actingAs($this->browserUser())->get('/details/details-http')->assertOk();
+        $response = $this->actingAs($this->browserUser())->get('/details/details-http')->assertOk()->assertViewIs('details.index');
         $response->assertSee('Readable release')->assertSee('40.00 MB')->assertSee('data-details-header', false)
             ->assertSee('No media info for this release.')->assertSee('No NFO for this release.')
             ->assertSee('href="#comments"', false)->assertSee('None.')->assertDontSee('Similar releases');
         $this->assertSame('Readable release', $response->viewData('release')->row_data->name);
-    }
-
-    public function test_related_releases_keep_only_other_permitted_releases_of_the_same_title(): void
-    {
-        DB::table('movieinfo')->insert(['imdbid' => '0111161', 'title' => 'A Matched Movie']);
-        DB::table('categories')->insert(['id' => 2040, 'title' => 'UHD', 'root_categories_id' => 2000]);
-        $current = $this->detailRelease('Current.1080p', ['imdbid' => '0111161']);
-        $this->detailRelease('Other.720p.WEB', ['imdbid' => '0111161', 'size' => 41943040, 'completion' => 93]);
-        $this->detailRelease('Excluded.2160p', ['imdbid' => '0111161', 'categories_id' => 2040]);
-        $this->detailRelease('Passworded.1080p', ['imdbid' => '0111161', 'passwordstatus' => 2]);
-        $this->detailRelease('Different.Title', ['imdbid' => '7654321']);
-        $user = $this->browserUser();
-        DB::table('user_excluded_categories')->insert(['users_id' => $user->id, 'categories_id' => 2040]);
-        $response = $this->actingAs($user)->get('/details/'.md5('Current.1080p'))->assertOk();
-        $response->assertSee('A Matched Movie')->assertSee('40.00 MB')->assertSee('93%')
-            ->assertSee('720p · WEB')->assertSee('/details/'.md5('Other.720p.WEB'), false)->assertDontSee('Excluded.2160p')
-            ->assertDontSee('Passworded.1080p')->assertDontSee('Different.Title');
-        $this->assertCount(1, $response->viewData('otherReleases'));
-        $this->assertNotEquals($current, $response->viewData('otherReleases')->first()->id);
-        for ($number = 1; $number <= 12; $number++) {
-            $this->detailRelease('Additional.'.$number.'.1080p', ['imdbid' => '0111161']);
-        }
-        $more = $this->get('/details/'.md5('Current.1080p'))->assertOk()->assertSee('View all 13 other releases')
-            ->assertSee('/title/movies/0111161', false);
-        $this->assertCount(10, $more->viewData('otherReleases'));
-        $this->assertSame(13, $more->viewData('otherReleases')->total());
-
     }
 
     public function test_comment_posts_return_to_the_comments_tab_and_blank_posts_do_not_change_the_count(): void
@@ -124,8 +103,8 @@ final class DetailsControllerTest extends TestCase
         $response->assertSee('data-trailer-url="https://www.youtube-nocookie.com/embed/Way9Dexny3w"', false)
             ->assertDontSee('<iframe', false)->assertSee('x-data="trailerModal"', false)
             ->assertSee('Original.Scene.Release')->assertSee('Original report text')->assertSee('Public staff response')
-            ->assertSee('title="Follow Trailer Movie"', false)->assertSee('far fa-bookmark', false);
-        $this->assertNoWatchWording((string) $response->getContent(), 'A movie details page');
+            ->assertDontSee('data-watch-picker', false);
+        $this->assertNoWatchWording((string) $response->getContent(), 'Today\'s details page with a film trailer');
     }
 
     public function test_completion_and_repair_status_stay_in_the_header_above_the_tabs(): void
@@ -141,7 +120,7 @@ final class DetailsControllerTest extends TestCase
     /** @param array<string, mixed> $attributes */
     private function detailRelease(string $name, array $attributes = []): int
     {
-        return $this->release($name, ['videos_id' => null, 'tv_episodes_id' => null, 'imdbid' => null, 'musicinfo_id' => null,
+        return $this->release($name, ['categories_id' => self::PC_GAMES, 'videos_id' => null, 'tv_episodes_id' => null, 'imdbid' => null, 'musicinfo_id' => null,
             'gamesinfo_id' => null, 'consoleinfo_id' => null, 'bookinfo_id' => null, 'anidbid' => null, ...$attributes]);
     }
 }

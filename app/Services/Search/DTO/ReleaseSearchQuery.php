@@ -11,6 +11,7 @@ final readonly class ReleaseSearchQuery
      * @param  list<int>|null  $categoryIds
      * @param  list<int>  $excludedCategoryIds
      * @param  list<int>|null  $releaseIds
+     * @param  int|null  $excludedMovieinfoId  a film whose releases are left out (Similar releases on a Movies details page)
      */
     public function __construct(
         public array|string|null $phrases = null,
@@ -40,6 +41,7 @@ final readonly class ReleaseSearchQuery
         public ?SearchCursor $cursor = null,
         public bool $trackTotal = true,
         public bool $includeDocuments = false,
+        public ?int $excludedMovieinfoId = null,
     ) {}
 
     /** @param array<string, mixed> $criteria */
@@ -75,6 +77,7 @@ final readonly class ReleaseSearchQuery
             cursor: $cursor,
             trackTotal: (bool) ($criteria['track_total'] ?? true),
             includeDocuments: (bool) ($criteria['include_documents'] ?? false),
+            excludedMovieinfoId: isset($criteria['excluded_movieinfo_id']) && (int) $criteria['excluded_movieinfo_id'] > 0 ? (int) $criteria['excluded_movieinfo_id'] : null,
         );
     }
 
@@ -107,6 +110,7 @@ final readonly class ReleaseSearchQuery
             'cursor_sort' => $this->cursor?->sortValues,
             'track_total' => $this->trackTotal,
             'include_documents' => $this->includeDocuments,
+            'excluded_movieinfo_id' => $this->excludedMovieinfoId,
         ];
     }
 

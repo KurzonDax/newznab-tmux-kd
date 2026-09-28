@@ -3053,6 +3053,11 @@ class ManticoreSearchDriver implements SearchDriverInterface
             $query->notFilter('categories_id', 'in', array_map(static fn ($id): int => (int) $id, $excluded));
         }
 
+        $excludedFilm = (int) ($criteria['excluded_movieinfo_id'] ?? 0);
+        if ($excludedFilm > 0) {
+            $query->notFilter('movieinfo_id', '=', $excludedFilm);
+        }
+
         $minSize = (int) ($criteria['min_size'] ?? 0);
         if ($minSize > 0) {
             $query->filter('size', 'gte', $minSize);

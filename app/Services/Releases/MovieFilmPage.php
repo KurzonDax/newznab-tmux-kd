@@ -44,7 +44,7 @@ final class MovieFilmPage
     public function header(int $id, array $exclusions): ?MovieFilmHeader
     {
         $film = DB::table('movieinfo')->where('id', $id)
-            ->first(['imdbid', 'tmdbid', 'traktid', 'title', 'year', 'plot', 'rating', 'vote_count', 'content_rating_us', 'original_language']);
+            ->first(['imdbid', 'tmdbid', 'traktid', 'title', 'year', 'plot', 'tagline', 'rating', 'vote_count', 'content_rating_us', 'original_language']);
         if ($film === null) {
             return null;
         }
@@ -76,6 +76,7 @@ final class MovieFilmPage
             directors: $names($people(self::ROLE_DIRECTOR)),
             cast: $names($people(self::ROLE_CAST)->limit(self::STARRING_LIMIT)),
             links: self::links($imdbId, (int) $film->tmdbid, (int) $film->traktid),
+            tagline: trim((string) $film->tagline),
         );
     }
 
@@ -105,16 +106,22 @@ final class MovieFilmPage
      */
     public function pageIds(int $id, MovieFilmPageFilters $filters, array $exclusions): array
     {
-        $direction = $filters->ascending ? 'asc' : 'desc';
-        $query = $this->filtered($id, $filters, $exclusions);
-        match ($filters->sort) {
-            'size' => $query->orderBy('size', $direction)->orderByDesc('postdate'),
-            'resolution' => $query->orderByRaw('CASE WHEN resolution = 0 THEN 9 ELSE resolution END '.$direction)->orderByDesc('postdate'),
-            default => $query->orderBy('postdate', $direction),
-        };
-
-        return $query->orderByDesc('id')->offset(($filters->page - 1) * MovieFilmPageFilters::PER_PAGE)
+        return $this->ordered($id, $filters, $exclusions)->offset(($filters->page - 1) * MovieFilmPageFilters::PER_PAGE)
             ->limit(MovieFilmPageFilters::PER_PAGE)->pluck('id')->map(static fn (mixed $release): int => (int) $release)->all();
+    }
+
+    /**
+     * The page of the table, in its order, that holds a release: where the details page's
+     * "All N releases of this film" opens (SPEC 5C.4); null when the viewer may not see it.
+     * The film's ids come from the per-film index (DATA-CONTRACT 4.4).
+     *
+     * @param  list<int>  $exclusions
+     */
+    public function pageHolding(int $id, int $releaseId, MovieFilmPageFilters $filters, array $exclusions): ?int
+    {
+        $rank = $this->ordered($id, $filters, $exclusions)->pluck('id')->search(static fn (mixed $release): bool => (int) $release === $releaseId);
+
+        return $rank === false ? null : intdiv((int) $rank, MovieFilmPageFilters::PER_PAGE) + 1;
     }
 
     /** @return array<string, string> */
@@ -127,6 +134,24 @@ final class MovieFilmPage
             'TMDB' => $tmdbId > 0 ? self::LINKS['TMDB'].$tmdbId : '',
             'Trakt' => $traktId > 0 ? self::LINKS['Trakt'].$traktId : '',
         ], static fn (string $url): bool => $url !== '');
+    }
+
+    /**
+     * The table's order: the sorted column, then newest posted first, then the higher id.
+     *
+     * @param  list<int>  $exclusions
+     */
+    private function ordered(int $id, MovieFilmPageFilters $filters, array $exclusions): Builder
+    {
+        $direction = $filters->ascending ? 'asc' : 'desc';
+        $query = $this->filtered($id, $filters, $exclusions);
+        match ($filters->sort) {
+            'size' => $query->orderBy('size', $direction)->orderByDesc('postdate'),
+            'resolution' => $query->orderByRaw('CASE WHEN resolution = 0 THEN 9 ELSE resolution END '.$direction)->orderByDesc('postdate'),
+            default => $query->orderBy('postdate', $direction),
+        };
+
+        return $query->orderByDesc('id');
     }
 
     /** @param list<int> $exclusions */

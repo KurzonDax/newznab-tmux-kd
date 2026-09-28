@@ -20,6 +20,7 @@ final readonly class MovieFilmHeader
      * @param  array<int, string>  $directors  people.id => name, in order
      * @param  array<int, string>  $cast  people.id => name, the first STARRING_LIMIT in order
      * @param  array<string, string>  $links  label => outside URL: IMDb, TMDB and Trakt, each when its id is known
+     * @param  string  $tagline  the film's tagline (the details page quotes it above the plot)
      */
     public function __construct(
         public int $id,
@@ -36,6 +37,7 @@ final readonly class MovieFilmHeader
         public array $directors,
         public array $cast,
         public array $links,
+        public string $tagline = '',
     ) {}
 
     /**
