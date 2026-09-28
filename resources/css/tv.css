@@ -408,6 +408,21 @@ a.tv-tag:hover { background: var(--tv-line); }
 .tv-similar > h2 { margin: 0; color: var(--tv-ink); font-size: 21px; font-weight: 800; line-height: 1.1; letter-spacing: -0.015em; }
 .tv-similar .tv-tiles { grid-template-columns: repeat(6, calc((100% - 108px) / 7)); margin-top: 14px; }
 
+/* Film page (Movies SPEC 5B): the name card with the title and year in the poster box; the grey line
+   ends with the best resolution's chip; "Releases" opens at its heading below the sticky top bar; the
+   bar's two cells as wide as a cell on the Movie releases list's bars (two bars of five). */
+.tv-show-card.is-film { align-content: center; gap: 8px; padding: 22px 16px; }
+.tv-show-card.is-film .tv-tile-card-title { font-size: 17px; }
+.tv-show-card.is-film small { font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.tv-film-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0 7px; font-variant-numeric: tabular-nums; }
+.tv-film-meta .resolution-chip { margin-left: 3px; }
+.tv-show-head .tv-starring + .tv-starring { margin-top: 2px; }
+.tv-film-releases { margin-top: 40px; scroll-margin-top: 84px; }
+.tv-film-releases > h2 { margin: 0; color: var(--tv-ink); font-size: 21px; font-weight: 800; line-height: 1.1; letter-spacing: -0.015em; }
+.tv-film-bar .filter-bar { flex: 0 0 calc(((100% - 12px) / 2 - 8px) * 2 / 5 + 8px); }
+.tv-film-releases .pager-line { margin-top: 10px; }
+.tv-film-releases .tv-release-table { margin-top: 6px; }
+
 @media (prefers-reduced-motion: reduce) {
     .tv-releases-button i { transition: none; }
 }

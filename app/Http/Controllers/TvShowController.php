@@ -8,6 +8,7 @@ use App\Data\TvReleaseFilters;
 use App\Services\Releases\TvReleaseRows;
 use App\Services\Releases\TvShowPage;
 use App\Services\Releases\TvSimilarShows;
+use App\Support\TitlePageBackLink;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -88,19 +89,6 @@ final class TvShowController extends BasePageController
      */
     private function back(Request $request): array
     {
-        $releases = route('tv.releases');
-        $wall = route('tv.shows');
-        $referrer = (string) $request->headers->get('referer', '');
-        $from = parse_url($referrer);
-        $sameSite = ($from['host'] ?? null) === $request->getHost();
-        $path = $sameSite ? '/'.ltrim((string) ($from['path'] ?? ''), '/') : '';
-        $url = match (true) {
-            $path === parse_url($wall, PHP_URL_PATH), $path === parse_url($releases, PHP_URL_PATH) => $referrer,
-            str_starts_with($path, parse_url(url('/tv/show'), PHP_URL_PATH).'/') => (string) $request->session()->get(self::BACK_KEY, $releases),
-            default => $releases,
-        };
-        $request->session()->put(self::BACK_KEY, $url);
-
-        return ['url' => $url, 'label' => parse_url($url, PHP_URL_PATH) === parse_url($wall, PHP_URL_PATH) ? 'Shows' : 'Releases'];
+        return TitlePageBackLink::resolve($request, self::BACK_KEY, ['Releases' => route('tv.releases'), 'Shows' => route('tv.shows')], url('/tv/show'));
     }
 }
