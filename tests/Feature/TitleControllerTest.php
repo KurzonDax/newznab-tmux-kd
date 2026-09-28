@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\Admin\InteractsWithAdminListPages;
+use Tests\Support\AssertsFollowWording;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -16,6 +17,7 @@ use Tests\TestCase;
 
 final class TitleControllerTest extends TestCase
 {
+    use AssertsFollowWording;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -187,9 +189,13 @@ final class TitleControllerTest extends TestCase
     {
         DB::table('movieinfo')->insert(['id' => 12, 'imdbid' => '1234567', 'title' => 'A Movie']);
         $user = $this->browserUser();
-        $this->actingAs($user)->get('/title/movies/1234567')->assertOk()->assertViewHas('watched', false);
+        $unfollowed = $this->actingAs($user)->get('/title/movies/1234567')->assertOk()->assertViewHas('watched', false)
+            ->assertSee('title="Follow A Movie"', false)->assertSee('far fa-bookmark', false)->assertSee('data-watch-on-label="Following"', false);
+        $this->assertNoWatchWording((string) $unfollowed->getContent(), 'A title page not followed');
         DB::table('user_movies')->insert(['users_id' => $user->id, 'imdbid' => '1234567', 'categories' => 'NULL']);
-        $response = $this->get('/title/movies/1234567')->assertOk()->assertSee('All categories')->assertViewHas('watched', true);
+        $response = $this->get('/title/movies/1234567')->assertOk()->assertSee('All categories')->assertViewHas('watched', true)
+            ->assertSee('title="Following · click to unfollow"', false)->assertSee('fas fa-bookmark', false);
+        $this->assertNoWatchWording((string) $response->getContent(), 'A followed title page');
         $response->assertSee('data-watch-remove=', false)->assertSee('/watchlist/movies/1234567', false);
         DB::table('user_movies')->update(['categories' => '2030']);
         $this->get('/title/movies/1234567')->assertOk()->assertViewHas('watchCategories', ['HD']);

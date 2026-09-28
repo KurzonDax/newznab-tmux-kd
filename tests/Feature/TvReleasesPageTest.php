@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\Admin\InteractsWithAdminListPages;
+use Tests\Support\AssertsFollowWording;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -26,6 +27,7 @@ use Tests\TestCase;
 /** The TV releases screen, GET /tv (issue #777; check.mjs lines 27-117 and 134-150). */
 final class TvReleasesPageTest extends TestCase
 {
+    use AssertsFollowWording;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -114,6 +116,9 @@ final class TvReleasesPageTest extends TestCase
         $withShow = $this->rowOf($response, 'Glass.Meridian.S01E02');
         $this->assertSame(['download', 'copy', 'cart', 'watch'], $this->actions($withShow));
         $this->assertStringContainsString('data-watch-picker="'.route('watchlist.picker', ['root' => 'tv', 'id' => 11]).'"', $withShow);
+        $this->assertStringContainsString('title="Follow this show" aria-label="Follow Glass Meridian"><i class="far fa-bookmark" aria-hidden="true"></i></button>', $withShow);
+        $this->assertStringContainsString('data-watch-on-title="Following this show · click to unfollow" data-watch-off-aria="Follow Glass Meridian" data-watch-on-aria="Unfollow Glass Meridian"', $withShow);
+        $this->assertNoWatchWording((string) $response->getContent(), 'The TV releases list');
         $this->assertStringContainsString('href="'.route('details', md5('Glass.Meridian.S01E02.1080p.WEB.h264-GRP')).'"', $withShow);
     }
 

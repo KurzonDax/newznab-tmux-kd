@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Schema;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\Admin\InteractsWithAdminListPages;
+use Tests\Support\AssertsFollowWording;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -23,6 +24,7 @@ use Tests\TestCase;
 
 final class ReleaseBrowserControllerTest extends TestCase
 {
+    use AssertsFollowWording;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -837,7 +839,8 @@ final class ReleaseBrowserControllerTest extends TestCase
         ]);
         $this->actingAs($user);
         $url = '/browse/movies?view=covers&watching=1';
-        $first = $this->get($url)->assertOk()->assertDontSee('Another user title');
+        $first = $this->get($url)->assertOk()->assertDontSee('Another user title')->assertSee('aria-label="Unfollow Followed title"', false)->assertSee('fas fa-bookmark', false);
+        $this->assertNoWatchWording((string) $first->getContent(), 'Followed movie covers');
         $this->assertSame(1, $first->viewData('results')->total());
         $this->assertSame(1, $first->viewData('results')->items()[0]->releaseCount);
         $this->get($url.'&_fragment=cover&cover=1')->assertOk()->assertSee('HD encoding')->assertDontSee('Other encoding');

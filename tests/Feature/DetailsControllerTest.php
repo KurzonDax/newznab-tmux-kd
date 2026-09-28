@@ -11,6 +11,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\Admin\InteractsWithAdminListPages;
+use Tests\Support\AssertsFollowWording;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -18,6 +19,7 @@ use Tests\TestCase;
 
 final class DetailsControllerTest extends TestCase
 {
+    use AssertsFollowWording;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -121,7 +123,9 @@ final class DetailsControllerTest extends TestCase
         $response = $this->actingAs($user)->get('/details/'.md5('Trailer.Release'))->assertOk();
         $response->assertSee('data-trailer-url="https://www.youtube-nocookie.com/embed/Way9Dexny3w"', false)
             ->assertDontSee('<iframe', false)->assertSee('x-data="trailerModal"', false)
-            ->assertSee('Original.Scene.Release')->assertSee('Original report text')->assertSee('Public staff response');
+            ->assertSee('Original.Scene.Release')->assertSee('Original report text')->assertSee('Public staff response')
+            ->assertSee('title="Follow Trailer Movie"', false)->assertSee('far fa-bookmark', false);
+        $this->assertNoWatchWording((string) $response->getContent(), 'A movie details page');
     }
 
     public function test_completion_and_repair_status_stay_in_the_header_above_the_tabs(): void
