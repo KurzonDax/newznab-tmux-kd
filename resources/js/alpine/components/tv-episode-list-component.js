@@ -12,7 +12,7 @@ export function nextSort(current, key) {
     return current.key === key ? { key, dir: -current.dir } : { key, dir: -1 };
 }
 
-/** Rows ordered by a numeric data attribute (data-size, data-posted, data-resolution, data-grabs); ties keep their order. */
+/** Rows ordered by a numeric data attribute (data-size, data-posted, data-resolution; data-grabs on the details page's table); ties keep their order. */
 export function sortRows(rows, sort) {
     return [...rows].sort((a, b) => (Number(a.dataset[sort.key]) - Number(b.dataset[sort.key])) * sort.dir);
 }

@@ -248,7 +248,9 @@ pages look good, I approve them."
   (dropped 2026-09-24): a dated daily release gets its season and episode from its episode
   record, and providers number daily shows in ordinary seasons (SmackDown is season 28 on the
   production copy), so daily shows list under those seasons with the air date on each episode
-  row. Numeric tabs carry the accessible name "Season 22".
+  row. Numeric tabs carry the accessible name "Season 22". With no season in the link, the page
+  opens on season 1 (else the lowest-numbered season, else Specials); a link that names a season
+  the show has opens that season (maintainer's rule, 2026-09-27).
 - Under the tabs, in this order:
   1. **"Whole-season packs"**, first ("move the whole season packs to above the episodes
      table"): the season's packs as a release table; a season with none keeps the heading and

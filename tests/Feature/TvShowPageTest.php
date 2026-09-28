@@ -115,7 +115,7 @@ final class TvShowPageTest extends TestCase
             ->assertSee('data-name="resolution"', false)->assertSee('<h2 class="sr-only">Releases</h2>', false);
     }
 
-    public function test_season_tabs_list_specials_first_and_open_on_the_season_of_the_newest_release(): void
+    public function test_season_tabs_list_specials_first_and_open_on_season_one_when_the_link_names_none_the_show_has(): void
     {
         $this->tv(0, 1, posted: '2026-09-01 00:00:00');
         $this->tv(1, 1, posted: '2026-09-02 00:00:00');
@@ -125,18 +125,27 @@ final class TvShowPageTest extends TestCase
 
         $response = $this->page('/tv/show/'.self::SHOW)->assertOk();
         $this->assertSame(['Specials', 'Season 1', 'Season 2', 'Season 3'], $this->tabs($response));
-        $this->assertSame('Season 3', $this->currentTab($response));
-        $response->assertSee('<h2 class="sr-only">Season 3</h2>', false)->assertSee('4 seasons on site');
-        $this->assertSame('Season 1', $this->currentTab($this->page('/tv/show/'.self::SHOW.'/1')));
-        $this->assertSame('Season 3', $this->currentTab($this->page('/tv/show/'.self::SHOW.'/9')));
+        $this->assertSame('Season 1', $this->currentTab($response));
+        $response->assertSee('<h2 class="sr-only">Season 1</h2>', false)->assertSee('4 seasons on site');
+        $this->assertSame('Season 3', $this->currentTab($this->page('/tv/show/'.self::SHOW.'/3')));
+        $this->assertSame('Season 1', $this->currentTab($this->page('/tv/show/'.self::SHOW.'/9')));
         $this->page('/tv/show/'.self::SHOW.'/0')->assertSee('<h2 class="sr-only">Specials</h2>', false);
         $this->page('/tv/show/'.self::SHOW.'?resolution[]=sd')
             ->assertSee('href="'.route('tv.show', ['videosId' => self::SHOW, 'season' => 1, 'resolution' => ['sd']]).'"', false);
+
+        // No season 1 on site: the lowest-numbered season, never Specials while a numbered season exists.
+        DB::table('release_tv_episodes')->where('season', 1)->delete();
+        $this->assertSame('Season 2', $this->currentTab($this->page('/tv/show/'.self::SHOW)));
+        $this->assertSame('Season 2', $this->currentTab($this->page('/tv/show/'.self::SHOW.'/1')));
+
+        // Only Specials on site: Specials.
+        DB::table('release_tv_episodes')->where('season', '>', 0)->delete();
+        $this->assertSame('Specials', $this->currentTab($this->page('/tv/show/'.self::SHOW)));
     }
 
     public function test_a_page_opened_without_a_season_tells_its_script_the_season_it_rendered(): void
     {
-        $this->tv(1, 1, posted: '2026-09-01 00:00:00');
+        $this->tv(4, 1, posted: '2026-09-01 00:00:00');
         $this->tv(2, 1, posted: '2026-09-20 00:00:00');
         $this->tv(3, 1, posted: '2026-09-10 00:00:00');
 
@@ -199,7 +208,14 @@ final class TvShowPageTest extends TestCase
         $this->assertStringContainsString('data-part="releases button, open"', $open);
         $this->assertSame([$big, $small], $this->rowIds($open));
         $this->assertSame(2, substr_count($open, 'data-select value="'));
-        $this->assertStringContainsString('Same name posted more than once · this copy by poster@example.invalid in unknown group', $open);
+        $this->assertStringNotContainsString('Same name posted more than once', $open);
+        $this->assertStringNotContainsString('tv-same-name', $open);
+        $this->assertStringNotContainsString('Grabs', $open);
+        $this->assertStringNotContainsString('data-grabs', $open);
+        $this->assertStringNotContainsString('data-sort="grabs"', $open);
+        $this->assertStringNotContainsString('tv-col-count', $open);
+        $this->assertStringNotContainsString('data-watch-picker', $open);
+        $this->assertSame(2, substr_count($open, 'data-cart="'));
         $this->assertStringContainsString('<th class="tv-num" aria-sort="descending"><button type="button" data-sort="size">', $open);
         $this->assertStringContainsString('<a class="tv-release-name" href="'.route('details', DB::table('releases')->where('id', $big)->value('guid')).'"', $open);
         $this->assertMatchesRegularExpression('/>\s*94% complete · still repairing\s*</', $open);
@@ -210,12 +226,15 @@ final class TvShowPageTest extends TestCase
         $fragment = $this->page('/tv/show/'.self::SHOW.'/1?_fragment=episode&episode=2')->assertOk()->getContent();
         $this->assertStringStartsWith('<table class="tv-release-table is-pick">', trim((string) $fragment));
         $this->assertSame([$big, $small], $this->rowIds((string) $fragment));
+        foreach (['Grabs', 'data-grabs', 'data-watch-picker', 'Same name posted more than once'] as $gone) {
+            $this->assertStringNotContainsString($gone, (string) $fragment);
+        }
         $this->page('/tv/show/'.self::SHOW.'/1?_fragment=episode&episode=x')->assertNotFound();
         $this->page('/tv/show/'.self::SHOW.'/5?_fragment=episode&episode=2')->assertNotFound();
         $this->page('/tv/show/'.self::SHOW.'?_fragment=episode&episode=2')->assertNotFound();
     }
 
-    public function test_packs_and_other_releases_sit_under_the_episodes_on_every_season_tab(): void
+    public function test_packs_come_first_then_the_episodes_heading_the_episodes_and_other_releases_on_every_season_tab(): void
     {
         $this->tv(1, 1);
         $this->tv(2, 1);
@@ -223,10 +242,13 @@ final class TvShowPageTest extends TestCase
         $other = $this->tv(null, null, name: 'Show.Special.Behind.The.Scenes');
 
         $one = $this->page('/tv/show/'.self::SHOW.'/1')->assertOk()
-            ->assertSeeInOrder(['data-episode="1"', 'Whole-season packs', 'Show.S01.COMPLETE.1080p', 'Other releases', 'Show.Special.Behind.The.Scenes'], false);
+            ->assertSeeInOrder(['<h3>Whole-season packs</h3>', 'Show.S01.COMPLETE.1080p', '<h3 class="tv-episodes-heading">Episodes</h3>', 'data-episode="1"',
+                '<h3>Other releases</h3>', 'Show.Special.Behind.The.Scenes'], false);
         $this->assertSame([$pack, $other], $this->rowIds((string) $one->getContent()));
-        $this->page('/tv/show/'.self::SHOW.'/2')->assertOk()->assertSee('None on site for this season.')
-            ->assertSeeInOrder(['Whole-season packs', 'Other releases', 'Show.Special.Behind.The.Scenes'])->assertDontSee('Show.S01.COMPLETE.1080p');
+        $this->assertSame(1, substr_count((string) $one->getContent(), 'tv-episodes-heading'));
+        $this->page('/tv/show/'.self::SHOW.'/2')->assertOk()->assertSee('<p class="tv-note">None available for this season.</p>', false)
+            ->assertSeeInOrder(['Whole-season packs', 'None available for this season.', 'Episodes</h3>', 'data-episode="1"', 'Other releases', 'Show.Special.Behind.The.Scenes'], false)
+            ->assertDontSee('Show.S01.COMPLETE.1080p')->assertDontSee('None on site');
 
         DB::table('releases')->where('id', $other)->delete();
         $this->page('/tv/show/'.self::SHOW.'/1')->assertDontSee('Other releases');
@@ -245,9 +267,12 @@ final class TvShowPageTest extends TestCase
         $this->assertSame(['E02'], $this->episodeNumbers($this->page('/tv/show/'.self::SHOW.'/1?source[]=bluray&resolution[]=4k')));
         $this->page('/tv/show/'.self::SHOW.'/1?source[]=bluray')->assertSee('Show.S01.2160p.REMUX');
 
+        $this->page('/tv/show/'.self::SHOW.'/1?resolution[]=1080p')->assertOk()
+            ->assertSeeInOrder(['Whole-season packs', 'None available for this season with your filter.', 'Episodes</h3>', 'data-episode="1"'], false)
+            ->assertDontSee('No releases in this season match');
         $empty = $this->page('/tv/show/'.self::SHOW.'/1?resolution[]=720p')->assertOk()
-            ->assertSee('No releases in this season match 720p.')->assertSee('None on site for this season with your filter.')
-            ->assertSee('1 season on site · 4 releases');
+            ->assertSeeInOrder(['No releases in this season match 720p.', 'Whole-season packs', 'None available for this season with your filter.'])
+            ->assertDontSee('tv-episodes-heading', false)->assertSee('1 season on site · 4 releases');
         $this->assertSame('Season 1', $this->currentTab($empty));
         $this->assertSame([], $this->episodeNumbers($empty));
 
@@ -272,6 +297,82 @@ final class TvShowPageTest extends TestCase
         $page->assertSee('data-summary="list"', false);
         $this->page('/tv/show/'.self::SHOW.'/1?resolution[]=720p&audio[]=unknown&completion=95&genre[]=1')
             ->assertSee('No releases in this season match 720p.');
+    }
+
+    public function test_follow_show_sits_in_the_header_after_starring_and_no_release_row_on_the_page_follows(): void
+    {
+        DB::table('people')->insert(['id' => 1, 'name' => 'Actor 1']);
+        DB::table('video_people')->insert(['videos_id' => self::SHOW, 'people_id' => 1, 'position' => 0]);
+        $this->tv(1, 1);
+        $this->tv(1, null);
+        $this->tv(null, null);
+        $picker = route('watchlist.picker', ['root' => 'tv', 'id' => self::SHOW]);
+
+        $response = $this->page('/tv/show/'.self::SHOW.'/1?open=1')->assertOk();
+        $head = (string) preg_replace('/>\s+</', '><', $this->between($response, 'class="tv-show-head"', 'data-part="season tab bar"'));
+        $this->assertStringContainsString('<div class="tv-details-actions tv-show-actions"><button type="button" class="tv-details-button tv-follow-show" data-watch-picker="'.$picker.'" data-watch-key="tv:'.self::SHOW.'" data-watch-title="The Glass Meridian" data-watched="0" aria-pressed="false" title="Follow this show">'
+            .'<i class="far fa-bookmark" aria-hidden="true"></i><span class="tv-state-label"><span class="is-off">Follow show</span><span class="is-on">Following show</span></span></button></div>', $head);
+        $this->assertLessThan(strpos($head, 'tv-follow-show'), strpos($head, 'data-part="starring line"'));
+        $html = (string) $response->getContent();
+        $this->assertSame(1, substr_count($html, 'data-watch-picker='), 'Only the header follows the show.');
+        $this->assertSame(3, substr_count($html, 'data-cart="'));
+        $this->assertStringNotContainsString('fa-eye', $html);
+
+        DB::table('user_series')->insert(['users_id' => $this->user?->id, 'videos_id' => self::SHOW, 'categories' => '5040']);
+        $followed = $this->between($this->page('/tv/show/'.self::SHOW.'/1')->assertOk(), 'class="tv-show-head"', 'data-part="season tab bar"');
+        $this->assertStringContainsString('data-watched="1" aria-pressed="true" title="Following this show · click to unfollow">', $followed);
+    }
+
+    public function test_similar_shows_are_the_six_best_by_the_film_rule_among_shows_the_viewer_may_see(): void
+    {
+        DB::table('genres')->insert([['id' => 2, 'title' => 'Drama', 'type' => 5000, 'disabled' => 0], ['id' => 3, 'title' => 'Crime', 'type' => 5000, 'disabled' => 0]]);
+        DB::table('people')->insert([['id' => 1, 'name' => 'Actor 1'], ['id' => 2, 'name' => 'Actor 2']]);
+        DB::table('tv_info')->insert(['videos_id' => self::SHOW, 'premiered' => '2003-05-06', 'original_language' => 'en']);
+        DB::table('video_genres')->insert([['videos_id' => self::SHOW, 'genres_id' => 2], ['videos_id' => self::SHOW, 'genres_id' => 3]]);
+        DB::table('video_people')->insert([['videos_id' => self::SHOW, 'people_id' => 1, 'position' => 0], ['videos_id' => self::SHOW, 'people_id' => 2, 'position' => 1]]);
+        $this->tv(1, 1);
+        // id => [genres, people, premiered]: score = 2 × genres + 3 × people − |year gap| / 10, no year term without both years.
+        $candidates = [
+            20 => [[2, 3], [1], '2003-01-01'],   // 7
+            21 => [[], [1, 2], '2013-01-01'],    // 5
+            22 => [[2], [], null],               // 2, no year: no year term
+            23 => [[2, 3], [], '1963-01-01'],    // 0
+            24 => [[3], [], '2003-09-09'],       // 2, ties with 22: the lower id first
+            25 => [[2], [], '2008-01-01'],       // 1.5
+            26 => [[], [2], '2033-01-01'],       // 0, ties with 23: seventh, left out
+            27 => [[2], [1], '2003-01-01'],      // 5, but nothing the viewer may see
+            28 => [[], [], '2003-01-01'],        // shares nothing
+        ];
+        foreach ($candidates as $id => [$genres, $people, $premiered]) {
+            DB::table('videos')->insert(['id' => $id, 'type' => 0, 'title' => 'Show '.$id, 'started' => $premiered === null ? '0000-00-00 00:00:00' : null]);
+            DB::table('tv_info')->insert(['videos_id' => $id, 'premiered' => $premiered, 'original_language' => 'en', 'content_rating_us' => 'TV-14']);
+            foreach ($genres as $genre) {
+                DB::table('video_genres')->insert(['videos_id' => $id, 'genres_id' => $genre]);
+            }
+            foreach ($people as $position => $person) {
+                DB::table('video_people')->insert(['videos_id' => $id, 'people_id' => $person, 'position' => $position]);
+            }
+            $this->release('Show.'.$id.'.S01E01', ['categories_id' => self::HD, 'videos_id' => $id, 'passwordstatus' => $id === 27 ? 1 : 0]);
+        }
+
+        $response = $this->page('/tv/show/'.self::SHOW.'/1')->assertOk();
+        $similar = $this->between($response, '<section class="tv-similar" aria-labelledby="tv-similar-heading">', '</section>');
+        $this->assertStringStartsWith('<h2 id="tv-similar-heading">Similar shows</h2>', $similar);
+        preg_match_all('/<a class="tv-tile" href="([^"]+)" data-show="(\d+)"/', $similar, $tiles);
+        $this->assertSame(['20', '21', '22', '24', '25', '23'], $tiles[2]);
+        $this->assertSame(url('/tv/show/20'), $tiles[1][0]);
+        $this->assertStringContainsString('>Show 20</b>', $similar);
+        $this->assertMatchesRegularExpression('/<span class="tv-tile-what"\s*>2003 · Crime, Drama<\/span>/', $similar);
+        $this->assertStringContainsString('<span class="tv-tile-more">English · TV-14</span>', $similar);
+        $this->assertLessThan(strpos((string) $response->getContent(), 'class="tv-similar"'), strrpos((string) $response->getContent(), 'data-episode='));
+
+        Settings::query()->updateOrInsert(['name' => 'showpasswordedrelease'], ['value' => '1']);
+        Cache::flush();
+        preg_match_all('/data-show="(\d+)"/', $this->between($this->page('/tv/show/'.self::SHOW.'/1'), 'class="tv-similar"', '</section>'), $visible);
+        $this->assertSame(['20', '21', '27', '22', '24', '25'], $visible[1]);
+
+        $this->page('/tv/show/28')->assertOk()->assertDontSee('Similar shows')->assertDontSee('tv-similar', false);
+        $this->assertStringNotContainsString('tv-similar', (string) $this->page('/tv/show/'.self::SHOW.'/1?_fragment=list')->getContent());
     }
 
     public function test_the_user_sees_only_releases_they_may_see_and_nothing_for_a_show_they_cannot_see(): void
@@ -382,8 +483,9 @@ final class TvShowPageTest extends TestCase
         $start = strpos($html, '<div class="tv-episode" data-episode="'.$episode.'"');
         $this->assertNotFalse($start, 'No row for episode '.$episode);
         $end = strpos($html, '<div class="tv-episode" ', $start + 10);
+        $end = $end === false ? strpos($html, '<section', $start) : $end;
 
-        return substr($html, $start, ($end === false ? strpos($html, '<section', $start) : $end) - $start);
+        return substr($html, $start, ($end === false ? strlen($html) : $end) - $start);
     }
 
     /** @return list<int> release ids in table order */

@@ -115,8 +115,10 @@ least 3:1 on its ground, off and on, in both themes (`check.mjs`). These apply t
 table: the releases list, the show page's tables and the details page's "All N releases" table
 (the last two carry no Follow button in their rows). The show page header's **Follow show**
 (a 40 px pill) uses the same Follow hue and states, with both of its labels in one grid cell so
-its width never changes; the details page header's buttons keep the neutral pill with a coral
-pressed state.
+its width never changes. The details page header matches the Movies details page (2026-09-27):
+Download NZB keeps the accent pair; Copy NZB link and Add to cart are the neutral pill, a pressed
+Add to cart fills in the Cart hue's on state with its two labels in one grid cell; Follow show is
+the show page's violet button; none of them turns the accent when pressed.
 
 **Filter bar tokens** (2026-09-26): the bar ground is `--surface-panel-alt`; hairlines between cells
 `--border-default`; the open cell and its menu use a raised ground, **`--surface-raised`**: dark
