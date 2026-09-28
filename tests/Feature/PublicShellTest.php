@@ -60,8 +60,8 @@ final class PublicShellTest extends TestCase
         $this->assertSame(0, $xpath->query('//*[@id="sidebar" or @id="mobile-sidebar-toggle"]')->length);
         $this->assertSame(['Movies', 'TV'], $this->texts($xpath, '//*[@id="browse-menu"]//a[@data-browse-root]'));
         $this->assertSame(['All', 'Movies', 'TV'], $this->texts($xpath, '//form[@role="search"]//select[@name="t"]/option'));
-        $this->assertSame(1, $xpath->query('//a[@href="'.url('/browse/movies/2040').'"]')->length);
-        $this->assertSame(0, $xpath->query('//a[@href="'.url('/browse/movies/2030').'"]')->length);
+        $this->assertSame(1, $xpath->query('//a[@href="'.route('movies.releases', ['category' => [2040]]).'"]')->length);
+        $this->assertSame(0, $xpath->query('//a[@href="'.route('movies.releases', ['category' => [2030]]).'"]')->length);
         $this->assertSame(1, $xpath->query('//form[@role="search"]')->length);
         $this->assertSame(1, $xpath->query('//form[@action="'.route('logout').'"]')->length);
     }

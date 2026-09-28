@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests;
 
-use App\Data\TvReleaseFilters;
+use App\Data\ReleaseListFilters;
 use App\Data\TvShowFilters;
 use App\Enums\BrowseRoot;
 use Illuminate\Foundation\Http\FormRequest;
@@ -24,7 +24,7 @@ final class UpdateReleaseViewRequest extends FormRequest
             'size' => ['sometimes', 'string', Rule::in($root?->coverSizes() ?? ['s'])],
             'per' => ['sometimes', 'integer', 'in:24,48,100'],
             'thumbs' => ['sometimes', 'boolean'],
-            'sort' => ['sometimes', 'string', Rule::in($root === BrowseRoot::Tv ? array_keys(TvReleaseFilters::SORTS) : [])],
+            'sort' => ['sometimes', 'string', Rule::in(in_array($root, [BrowseRoot::Tv, BrowseRoot::Movies], true) ? array_keys(ReleaseListFilters::SORTS) : [])],
             'shows_sort' => ['sometimes', 'string', Rule::in($root === BrowseRoot::Tv ? array_keys(TvShowFilters::SORTS) : [])],
         ];
     }

@@ -1,9 +1,10 @@
-import { fetchList, filterUrl, firstPageUrl, postJson } from './tv-list.js';
+import { fetchList, filterUrl, firstPageUrl, paramsUrl, postJson } from './tv-list.js';
 import { rowActions } from './tv-row-actions.js';
 
 /**
- * The TV releases screen (tv/releases/index.blade.php): row selection and the floating bar,
- * the same-show batch expander, cart and copy-link row actions, the sort preference, and
+ * A section's releases screen (tv/releases/index.blade.php, movies/releases/index.blade.php):
+ * row selection and the floating bar, the same-title batch expander, cart and copy-link row
+ * actions, the sort preference (for the root in data-preference-root, TV by default), and
  * reloading the list in place when a filter menu changes.
  */
 export function tvReleases() {
@@ -75,7 +76,7 @@ export function tvReleases() {
 
         async changeSort(event) {
             try {
-                await postJson(this.screen.dataset.preferenceUrl, { root: 'tv', sort: event.target.value });
+                await postJson(this.screen.dataset.preferenceUrl, { root: this.screen.dataset.preferenceRoot ?? 'tv', sort: event.target.value });
             } catch {
                 window.showToast('Could not save your sort order. Please try again.', 'error');
                 return;
@@ -83,9 +84,10 @@ export function tvReleases() {
             window.location.assign(firstPageUrl(window.location.href).toString());
         },
 
+        /** A menu's change: {name, values, single}, or {params} setting several URL keys at once (the Year menu). */
         async applyFilter(event) {
-            const { name, values, single } = event.detail;
-            const url = filterUrl(window.location.href, name, values, single);
+            const { name, values, single, params } = event.detail;
+            const url = params ? paramsUrl(window.location.href, params) : filterUrl(window.location.href, name, values, single);
             window.history.replaceState(null, '', url.toString());
             await this.reloadList(url);
         },

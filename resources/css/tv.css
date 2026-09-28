@@ -19,6 +19,7 @@
     --tv-on-accent-button-hover: rgb(0 0 0 / 40%);
     --tv-raise: var(--surface-raised);
     --tv-filter-name: var(--text-filter-name);
+    --tv-error: var(--text-error);
 }
 .dark {
     --tv-ground: var(--surface-body-dark);
@@ -32,6 +33,7 @@
     --tv-shadow: var(--shadow-floating-dark);
     --tv-raise: var(--surface-raised-dark);
     --tv-filter-name: var(--text-filter-name-dark);
+    --tv-error: var(--text-error-dark);
 }
 
 /* Page frame: the TV screens use the prototype's 1500px column with 40px gutters. */
@@ -97,6 +99,7 @@
 .filter-bar { display: flex; align-items: stretch; min-width: 0; height: 56px; padding: 4px; border-radius: 18px; background: var(--tv-panel-alt); }
 .tv-bar-list .filter-bar.is-release { flex: 5 1 0; }
 .tv-bar-list .filter-bar.is-show { flex: 6 1 0; }
+.tv-bar-list .filter-bar.is-film { flex: 5 1 0; }
 .tv-bar-wall .filter-bar.is-show { flex: 0 0 calc((100% - 12px) * 6 / 11); }
 .filter-bar .checkbox-menu { position: relative; display: flex; flex: 1 1 0; min-width: 0; }
 .filter-bar .checkbox-menu-button { position: relative; justify-content: space-between; gap: 6px; width: 100%; height: 48px; padding: 0 10px 0 14px; border-radius: 14px; background: transparent; color: var(--tv-ink); }
@@ -118,6 +121,26 @@
 .filter-bar .checkbox-menu-panel { top: 58px; right: auto; left: 0; z-index: 15; min-width: max(100%, 230px); max-height: min(420px, 60vh); overflow-y: auto; overscroll-behavior: contain; background: var(--tv-raise); scrollbar-width: thin; scrollbar-color: var(--tv-line) transparent; }
 .filter-bar .checkbox-menu-panel.is-searchable { max-height: 402px; }
 .filter-bar .checkbox-menu-search { background: var(--tv-raise); }
+
+/*
+ * The film bar's Year cell (Movies SPEC 5.2): "Any year" and the decades in three columns, then
+ * the Range, all without scrolling. A refused range's message takes the "Range" heading's place.
+ */
+.checkbox-menu-heading { padding: 10px 10px 4px; color: var(--tv-dim); font-size: 12px; font-weight: 600; line-height: 1.5; }
+.checkbox-menu-heading.is-error { color: var(--tv-error); }
+.checkbox-menu-rule { height: 1px; margin: 6px 4px; background: var(--tv-line); }
+.filter-bar .year-menu-panel { width: 290px; max-height: none; overflow: visible; }
+.year-menu-decades { display: grid; grid-template-columns: repeat(3, 1fr); column-gap: 2px; }
+.year-menu-decades > [data-any], .year-menu-decades > .checkbox-menu-heading { grid-column: 1 / -1; }
+.year-menu-decades > [data-value] { gap: 8px; height: 36px; padding: 0 6px; font-variant-numeric: tabular-nums; }
+.year-menu-range { display: flex; align-items: center; gap: 8px; padding: 4px 10px 8px; }
+.year-menu-range input { width: 72px; height: 34px; padding: 0; border: 0; border-radius: 17px; background: var(--tv-panel-alt); color: var(--tv-ink); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: normal; text-align: center; caret-color: var(--tv-accent); box-shadow: none; }
+.year-menu-range input::placeholder { color: var(--tv-dim); font-weight: 500; }
+.year-menu-range input:focus { box-shadow: none; }
+.year-menu-range input:focus-visible { outline: 2px solid var(--tv-accent); outline-offset: 1px; }
+.year-menu-range span { color: var(--tv-dim); font-size: 13px; }
+.year-menu-range .tv-button { height: 34px; margin-left: auto; }
+.year-menu-range .tv-button:disabled { background: var(--tv-panel-alt); color: var(--tv-dim); filter: none; cursor: default; }
 
 /* Sort */
 .tv-sort { position: relative; display: inline-flex; align-items: center; }

@@ -117,10 +117,12 @@ export function checkboxMenu() {
             this.$refs.value.classList.toggle('is-any', !ticked.length);
             if (counted) this.$refs.button.setAttribute('title', texts.length ? label + ': ' + texts.join(', ') : '');
             this.menuRoot.classList.toggle('is-set', ticked.length > 0);
-            this.menuRoot.dispatchEvent(new CustomEvent('checkbox-menu-change', {
-                bubbles: true,
-                detail: { name: this.menuRoot.dataset.name, values: ticked.map(item => item.dataset.value), single: this.single() },
-            }));
+            this.menuRoot.dispatchEvent(new CustomEvent('checkbox-menu-change', { bubbles: true, detail: this.changeDetail(ticked.map(item => item.dataset.value)) }));
+        },
+
+        /** The change event's detail: the menu's name and ticked values. */
+        changeDetail(values) {
+            return { name: this.menuRoot.dataset.name, values, single: this.single() };
         },
     };
 }
