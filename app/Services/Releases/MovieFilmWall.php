@@ -145,10 +145,18 @@ final class MovieFilmWall
      */
     public static function scoreLine(string $rating, ?int $votes, string $certificate): string
     {
-        $score = (float) $rating;
-        $few = trim($rating) === '' || $score <= 0.0 || ($votes !== null && $votes < MovieFilmFilters::MIN_VOTES);
+        return implode(' · ', array_filter([self::score($rating, $votes) ?? 'Too few votes', $certificate], static fn (string $part): bool => $part !== ''));
+    }
 
-        return implode(' · ', array_filter([$few ? 'Too few votes' : (string) $score, $certificate], static fn (string $part): bool => $part !== ''));
+    /**
+     * The stored score as shown, whole numbers whole (`8.4`, `7`); null for "Too few votes": no
+     * score, a score of 0, or under 10 votes (DATA-CONTRACT 2.2).
+     */
+    public static function score(string $rating, ?int $votes): ?string
+    {
+        $score = (float) $rating;
+
+        return trim($rating) === '' || $score <= 0.0 || ($votes !== null && $votes < MovieFilmFilters::MIN_VOTES) ? null : (string) $score;
     }
 
     public function personName(int $id): ?string

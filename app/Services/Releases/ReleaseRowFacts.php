@@ -87,7 +87,7 @@ final class ReleaseRowFacts
             'source' => $source->label(),
             'size' => self::size((float) $release->size),
             'files' => $row->files,
-            'date' => $this->date($sortDate, $now),
+            'date' => self::date($sortDate, $now),
             'dateTitle' => 'Posted '.userDate($release->postdate, 'M j, Y, g:i A').' · Added '.userDate($release->adddate, 'M j, Y, g:i A'),
             'day' => $sortDate === null ? '' : CarbonImmutable::parse($sortDate, config('app.timezone', 'UTC'))->toDateString(),
             'grabs' => $row->grabs,
@@ -133,7 +133,8 @@ final class ReleaseRowFacts
         return $parts === [] ? self::MEDIA_INFO_FALLBACK : implode(' · ', $parts);
     }
 
-    private function date(?string $value, CarbonImmutable $now): string
+    /** A date as the redesigned screens show it: "12 min ago", "2 hr ago" under a day old, then `Sep 16, 2026`. */
+    public static function date(?string $value, CarbonImmutable $now): string
     {
         if ($value === null || $value === '') {
             return '';
