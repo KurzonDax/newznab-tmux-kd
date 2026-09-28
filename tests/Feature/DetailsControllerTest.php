@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Http\Middleware\TrustedDevice2FAMiddleware;
+use App\Models\Release;
 use App\Models\ReleaseReport;
 use App\Services\Releases\ReleaseSearchService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Mockery\MockInterface;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
 use Tests\Support\InteractsWithReleaseBrowser;
@@ -29,6 +31,8 @@ final class DetailsControllerTest extends TestCase
     use IsolatedSqliteDatabase;
 
     private const PC_GAMES = 4050;
+
+    private const BOOKS_EBOOK = 7020;
 
     protected function setUp(): void
     {
@@ -131,6 +135,41 @@ final class DetailsControllerTest extends TestCase
         $response->assertSeeInOrder(['data-details-header', '93%', 'Repair Attempt(s) Pending', 'class="details-tabs"'], false);
         DB::table('releases')->where('id', $id)->update(['completion' => 0]);
         $this->get($url)->assertOk()->assertSee('Completion not measured')->assertDontSee('Repair Attempt(s) Pending');
+    }
+
+    public function test_similar_releases_lists_the_same_root_matches_without_the_release_itself(): void
+    {
+        $current = $this->detailRelease('Some.Game.v1.0-GRP');
+        $same = $this->detailRelease('Some.Game.v1.1-GRP', ['display_name' => 'Some Game update']);
+        $sibling = $this->detailRelease('Some.Game.Soundtrack.ISO', ['categories_id' => 4030, 'display_name' => 'Some Game disc image']);
+        $book = $this->detailRelease('Some.Game.Strategy.Guide', ['categories_id' => self::BOOKS_EBOOK, 'display_name' => 'Some Game strategy guide']);
+        $user = $this->browserUser();
+        DB::table('categories')->insert(['id' => 4010, 'title' => '0day', 'root_categories_id' => 4000]);
+        DB::table('user_excluded_categories')->insert(['users_id' => $user->id, 'categories_id' => 4010]);
+        $searches = [];
+        // search() runs MariaDB-only SQL; its rows carry id and categories_id and no categoryparentid.
+        // categories_id comes back as a string here so the root comparison must not depend on its type.
+        $this->partialMock(ReleaseSearchService::class, function (MockInterface $mock) use (&$searches, $current, $same, $sibling, $book): void {
+            $mock->shouldReceive('search')->andReturnUsing(function (mixed ...$arguments) use (&$searches, $current, $same, $sibling, $book) {
+                $searches[] = $arguments;
+
+                return Release::query()->whereIn('id', [$current, $same, $sibling, $book])->orderBy('id')->get()
+                    ->each(static function (Release $row): void {
+                        $row->setRawAttributes(['categories_id' => (string) $row->categories_id] + $row->getAttributes());
+                    });
+            });
+        });
+
+        $response = $this->actingAs($user)->get('/details/'.md5('Some.Game.v1.0-GRP'))->assertOk();
+
+        $this->assertSame([$same, $sibling], array_map(static fn (Release $row): int => (int) $row->id, $response->viewData('similars')));
+        $response->assertSee('Similar releases')->assertSee('Some Game update')->assertSee('Some Game disc image')->assertDontSee('Some Game strategy guide');
+        $this->assertCount(1, $searches);
+        [$phrases, $limit, $excludedCategories, $categories] = [$searches[0][0], $searches[0][7], $searches[0][10], $searches[0][12]];
+        $this->assertSame(['searchname' => getSimilarName('Some.Game.v1.0-GRP')], $phrases);
+        $this->assertSame((int) config('nntmux.items_per_page'), $limit);
+        $this->assertContains(4010, array_map('intval', $excludedCategories));
+        $this->assertSame([4000], $categories);
     }
 
     /** @param array<string, mixed> $attributes */
