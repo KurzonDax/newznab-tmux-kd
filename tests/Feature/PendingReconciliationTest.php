@@ -266,7 +266,6 @@ class PendingReconciliationTest extends TestCase
                     $table->integer($column)->default(1);
                 }
             });
-            DB::statement('CREATE TABLE audio_data (id INTEGER PRIMARY KEY, releases_id INTEGER)');
             $client = Mockery::mock(ProviderClient::class);
             $client->shouldReceive('doConnect')->andReturn(true);
             $client->shouldReceive('statArticle')->once()->with('part1of3.CourseRepair@host')->andReturn(true);
@@ -344,7 +343,6 @@ class PendingReconciliationTest extends TestCase
                 $table->integer($column)->default(1);
             }
         });
-        DB::statement('CREATE TABLE audio_data (id INTEGER PRIMARY KEY, releases_id INTEGER)');
         DB::table('releases')->where('id', $release->id)->update(['firstarticle' => 100000, 'lastarticle' => 100033]);
         $lines = [];
         foreach ($this->courseHeaders as $header) {

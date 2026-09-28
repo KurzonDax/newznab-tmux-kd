@@ -16,7 +16,10 @@ use Mockery;
 use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
-/** Every release change reaches SearchService::updateRelease(), which keeps resolution, source and release_tv_episodes in step. */
+/**
+ * Every release change reaches SearchService::updateRelease(), which keeps resolution, source,
+ * release_tv_episodes and release_audio_languages in step.
+ */
 final class ReleaseDerivedFactsTest extends TestCase
 {
     /** @var list<array{int, int}> What the search driver saw in `releases` when it was called. */
@@ -32,6 +35,9 @@ final class ReleaseDerivedFactsTest extends TestCase
         $tables->create('video_data', ['releases_id', 'videowidth', 'videoheight']);
         $tables->create('media_info_probes');
         $tables->create('media_info_tracks');
+        $tables->create('audio_data', ['id', 'releases_id', 'audioid', 'audiolanguage']);
+        $tables->create('languages');
+        $tables->create('release_audio_languages');
 
         $driver = Mockery::mock(SearchDriverInterface::class);
         $driver->shouldReceive('updateRelease')->andReturnUsing(function (int|string $id): void {
@@ -226,6 +232,115 @@ final class ReleaseDerivedFactsTest extends TestCase
         }
     }
 
+    public function test_a_release_stores_the_languages_of_the_selected_probes_audio_tracks(): void
+    {
+        $this->insertRelease(1, 'Movie.2020.1080p.BluRay.x264-GRP', categoriesId: 2040);
+        $this->insertAudioProbe(1, 1, '2026-01-01 00:00:00', 'complete', ['en', 'hin']);
+        $this->insertAudioProbe(2, 1, '2026-01-02 00:00:00', 'partial', ['fr']);
+        DB::table('audio_data')->insert(['releases_id' => 1, 'audioid' => 1, 'audiolanguage' => 'German']);
+
+        Search::updateRelease(1);
+
+        $this->assertSame(['English', 'Hindi'], $this->audioLanguages(1));
+    }
+
+    public function test_the_legacy_audio_rows_are_used_when_the_probe_names_no_language(): void
+    {
+        $this->insertRelease(1, 'Show.S01E01.1080p.WEB-DL-GRP');
+        $this->insertRelease(2, 'Show.S01E02.1080p.WEB-DL-GRP');
+        $this->insertRelease(3, 'Show.S01E03.1080p.WEB-DL-GRP');
+        $this->insertAudioProbe(1, 2, '2026-01-01 00:00:00', 'complete', ['und', 'zxx', null]);
+        $this->insertProbe(2, 3, '2026-01-01 00:00:00', 'complete', 1920, 1080);
+        foreach ([1, 2, 3] as $id) {
+            DB::table('audio_data')->insert([
+                ['releases_id' => $id, 'audioid' => 1, 'audiolanguage' => 'English (US)'],
+                ['releases_id' => $id, 'audioid' => 2, 'audiolanguage' => 'Japanese'],
+            ]);
+        }
+
+        foreach ([1, 2, 3] as $id) {
+            Search::updateRelease($id);
+        }
+
+        $this->assertSame(['English', 'Japanese'], $this->audioLanguages(1), 'No probe.');
+        $this->assertSame(['English', 'Japanese'], $this->audioLanguages(2), 'The probe names no language.');
+        $this->assertSame(['English', 'Japanese'], $this->audioLanguages(3), 'The probe has no audio track.');
+    }
+
+    public function test_audio_languages_follow_the_name_rule(): void
+    {
+        $this->insertRelease(1, 'Movie.2020.MULTi.1080p.BluRay.x264-GRP', categoriesId: 2040);
+        $this->insertRelease(2, 'Movie.2020.1080p.BluRay.x264-GRP', categoriesId: 2040);
+        $this->insertRelease(3, 'Album-2020-FLAC', categoriesId: 3040);
+        $this->insertRelease(4, 'Movie.2021.1080p.BluRay.x264-GRP', categoriesId: 2040);
+        $this->insertAudioProbe(1, 1, '2026-01-01 00:00:00', 'complete', ['en-US', 'en', 'Klingon', 'ja']);
+        DB::table('audio_data')->insert([
+            ['releases_id' => 2, 'audioid' => 1, 'audiolanguage' => 'English (US)'],
+            ['releases_id' => 2, 'audioid' => 2, 'audiolanguage' => 'English'],
+            ['releases_id' => 3, 'audioid' => 1, 'audiolanguage' => 'zxx'],
+            ['releases_id' => 3, 'audioid' => 2, 'audiolanguage' => 'und'],
+            ['releases_id' => 4, 'audioid' => 1, 'audiolanguage' => 'Unknown language'],
+            ['releases_id' => 4, 'audioid' => 2, 'audiolanguage' => 'None'],
+        ]);
+
+        foreach ([1, 2, 3, 4] as $id) {
+            Search::updateRelease($id);
+        }
+
+        $this->assertSame(['English', 'Japanese', 'Klingon'], $this->audioLanguages(1));
+        $this->assertSame(['English'], $this->audioLanguages(2));
+        $this->assertSame([], $this->audioLanguages(3));
+        $this->assertSame([], $this->audioLanguages(4));
+        $this->assertSame(['English', 'Japanese', 'Klingon'], DB::table('languages')->orderBy('name')->pluck('name')->all());
+    }
+
+    public function test_unchanged_audio_languages_cause_no_write_and_new_media_info_replaces_them(): void
+    {
+        $this->insertRelease(1, 'Movie.2020.1080p.BluRay.x264-GRP', categoriesId: 2040);
+        DB::table('audio_data')->insert(['releases_id' => 1, 'audioid' => 1, 'audiolanguage' => 'English']);
+        Search::updateRelease(1);
+        $this->assertSame(['English'], $this->audioLanguages(1));
+
+        $this->assertSame(0, $this->writesDuring(fn () => Search::updateRelease(1)));
+
+        $this->insertAudioProbe(1, 1, '2026-01-01 00:00:00', 'complete', ['fr', 'de']);
+        Search::updateRelease(1);
+        $this->assertSame(['French', 'German'], $this->audioLanguages(1));
+        $this->assertSame(1, DB::table('languages')->where('name', 'English')->count(), 'A name stays for the next release.');
+    }
+
+    public function test_the_fill_migration_writes_what_refresh_writes_and_a_second_run_changes_nothing(): void
+    {
+        $this->insertRelease(1, 'Movie.2020.1080p.BluRay.x264-GRP', categoriesId: 2040);
+        $this->insertRelease(2, 'Show.S01E01.1080p.WEB-DL-GRP');
+        $this->insertRelease(3, 'Show.S01E02.1080p.WEB-DL-GRP');
+        $this->insertRelease(4, 'Album-2020-FLAC', categoriesId: 3040);
+        $this->insertRelease(5, 'Nothing.Known.1080p-GRP');
+        $this->insertAudioProbe(1, 1, '2026-01-01 00:00:00', 'complete', ['en', 'hin', 'en-GB']);
+        $this->insertAudioProbe(2, 2, '2026-01-01 00:00:00', 'complete', ['und']);
+        DB::table('audio_data')->insert([
+            ['releases_id' => 1, 'audioid' => 1, 'audiolanguage' => 'German'],
+            ['releases_id' => 2, 'audioid' => 1, 'audiolanguage' => 'Spanish'],
+            ['releases_id' => 3, 'audioid' => 1, 'audiolanguage' => 'pt-BR'],
+            ['releases_id' => 3, 'audioid' => 2, 'audiolanguage' => 'Klingon'],
+            ['releases_id' => 4, 'audioid' => 1, 'audiolanguage' => 'zxx'],
+        ]);
+        $facts = app(ReleaseDerivedFacts::class);
+        foreach ([1, 2, 3, 4, 5] as $id) {
+            $facts->refresh($id);
+        }
+        $refreshed = $this->allAudioLanguages();
+        DB::table('release_audio_languages')->delete();
+
+        $fill = require database_path('migrations/2026_09_27_200100_fill_release_audio_languages.php');
+        $fill->up();
+
+        $this->assertSame([1 => ['English', 'Hindi'], 2 => ['Spanish'], 3 => ['Klingon', 'Portuguese']], $refreshed);
+        $this->assertSame($refreshed, $this->allAudioLanguages());
+        $this->assertSame(0, $this->writesDuring(fn () => $fill->up()));
+        $this->assertSame($refreshed, $this->allAudioLanguages());
+    }
+
     public function test_a_missing_release_is_still_handed_to_the_driver(): void
     {
         Search::updateRelease(99);
@@ -271,6 +386,40 @@ final class ReleaseDerivedFactsTest extends TestCase
             'media_info_probe_id' => $id, 'type' => 'video', 'track_index' => 0, 'width' => $width, 'height' => $height,
             'diagnostic_filtered' => 0, 'diagnostic_truncated' => 0,
         ]);
+    }
+
+    /** @param  list<?string>  $languages */
+    private function insertAudioProbe(int $id, int $releaseId, string $capturedAt, string $completeness, array $languages): void
+    {
+        DB::table('media_info_probes')->insert([
+            'id' => $id, 'releases_id' => $releaseId, 'captured_at' => $capturedAt, 'source_kind' => 'sample',
+            'source_completeness' => $completeness, 'schema_version' => 1, 'diagnostic_filtered' => 0, 'diagnostic_truncated' => 0,
+        ]);
+        foreach ($languages as $index => $language) {
+            DB::table('media_info_tracks')->insert([
+                'media_info_probe_id' => $id, 'type' => 'audio', 'track_index' => $index, 'language' => $language,
+                'diagnostic_filtered' => 0, 'diagnostic_truncated' => 0,
+            ]);
+        }
+    }
+
+    /** @return list<string> */
+    private function audioLanguages(int $releaseId): array
+    {
+        return $this->allAudioLanguages()[$releaseId] ?? [];
+    }
+
+    /** @return array<int, list<string>> Names by release, both sorted. */
+    private function allAudioLanguages(): array
+    {
+        $rows = [];
+        DB::table('release_audio_languages')->join('languages', 'languages.id', '=', 'release_audio_languages.languages_id')
+            ->orderBy('releases_id')->orderBy('name')->get(['releases_id', 'name'])
+            ->each(static function (object $row) use (&$rows): void {
+                $rows[(int) $row->releases_id][] = (string) $row->name;
+            });
+
+        return $rows;
     }
 
     /** @return array{int, int} */

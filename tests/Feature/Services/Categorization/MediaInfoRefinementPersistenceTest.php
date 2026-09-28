@@ -220,7 +220,7 @@ class MediaInfoRefinementPersistenceTest extends TestCase
             });
         }
 
-        foreach (['media_info_probes', 'media_info_tracks', 'release_tv_episodes'] as $table) {
+        foreach (['media_info_probes', 'media_info_tracks', 'release_tv_episodes', 'languages', 'release_audio_languages'] as $table) {
             if (! Schema::hasTable($table)) {
                 ProductionTables::fromAuthority()->create($table);
             }
@@ -259,6 +259,7 @@ class MediaInfoRefinementPersistenceTest extends TestCase
                 $table->unsignedInteger('releases_id');
                 $table->unsignedInteger('audioid');
                 $table->string('audioformat')->nullable();
+                $table->string('audiolanguage')->nullable();
                 $table->unique(['releases_id', 'audioid']);
             });
         }

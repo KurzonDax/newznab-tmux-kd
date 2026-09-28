@@ -26,6 +26,9 @@ final class ReleaseQualityFillTest extends TestCase
         $tables->create('media_info_probes');
         $tables->create('media_info_tracks');
         $tables->create('release_tv_episodes');
+        $tables->create('audio_data', ['id', 'releases_id', 'audioid', 'audiolanguage']);
+        $tables->create('languages');
+        $tables->create('release_audio_languages');
     }
 
     public function test_the_fill_statement_and_the_php_rule_agree(): void

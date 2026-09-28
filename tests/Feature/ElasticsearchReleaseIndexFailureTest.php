@@ -77,10 +77,9 @@ final class ElasticsearchReleaseIndexFailureTest extends TestCase
         ProductionTables::fromAuthority()->create('media_info_probes');
         ProductionTables::fromAuthority()->create('media_info_tracks');
         ProductionTables::fromAuthority()->create('release_tv_episodes');
-        Schema::create('audio_data', function (Blueprint $table): void {
-            $table->id();
-            $table->unsignedBigInteger('releases_id');
-        });
+        ProductionTables::fromAuthority()->create('audio_data', ['id', 'releases_id', 'audioid', 'audiolanguage']);
+        ProductionTables::fromAuthority()->create('languages');
+        ProductionTables::fromAuthority()->create('release_audio_languages');
 
         $this->driver = new ElasticSearchDriver(['indexes' => ['releases' => 'releases']]);
         $reflection = new ReflectionClass(ElasticSearchDriver::class);

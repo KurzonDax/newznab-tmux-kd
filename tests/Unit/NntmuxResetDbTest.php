@@ -39,6 +39,8 @@ final class NntmuxResetDbTest extends TestCase
             'release_audio_evidence',
             'release_audio_tags',
             'release_subtitles',
+            'release_tv_episodes',
+            'release_audio_languages',
             'video_data',
             'media_infos',
             'releases',
@@ -48,5 +50,6 @@ final class NntmuxResetDbTest extends TestCase
         ], NntmuxResetDb::TRUNCATE_TABLES);
         $this->assertNotContains('genres', NntmuxResetDb::TRUNCATE_TABLES);
         $this->assertNotContains('people', NntmuxResetDb::TRUNCATE_TABLES);
+        $this->assertNotContains('languages', NntmuxResetDb::TRUNCATE_TABLES);
     }
 }
