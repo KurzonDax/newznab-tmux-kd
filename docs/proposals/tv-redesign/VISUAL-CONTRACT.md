@@ -190,7 +190,7 @@ Exact values for every part are in `reference/measurements.json`; the rules behi
 | Group and poster chips on releases-list rows (2026-09-26) | `x-origin-chip` (`kind="group"` / `"poster"`, `href` `route('browse.all', ['group' => …])` / `['poster' => …]`, as `release-browser/origin` passes it) | at the end of the chip line on every releases-list row, wrapped together so the pair never splits and the poster name shortens with an ellipsis; the group label reads `a.b.` for `alt.binaries.`, the full name stays in the title; not on the show page or details release tables |
 | No-poster placeholder (2026-09-26) | new, in the releases list row | name card or "No poster" tile for releases with no matched show; the name is parsed per `SPEC.md` appendix A (the prototype's `showName()`) |
 | Resolution chip | new `x-resolution-chip` | new, fed by `releases.resolution` |
-| Row actions | `release-action*`, `cart-button.js`, `x-watch-button` (keeps today's picker behaviour) | restyled round; Report and Details buttons removed; **Copy NZB link** is new (`copyNzbLink` Alpine component, clipboard with an `execCommand` fallback, toast through `toast-notification.js`). In **every release table** (2026-09-26 / 2026-09-27): 2 × 2 (Download + Copy link on top, Cart + Follow below; Cart alone when there is no Follow), Copy link / Cart / Follow in their own tinted hue and a pressed Cart / Follow filled in that hue (section 2), Download unchanged. Only the releases list has Follow in its rows; the show page follows from a **Follow show** header button. `x-watch-button` keeps its name in code; everything it shows says Follow (`SPEC.md` rule 12) |
+| Row actions | `release-action*`, `cart-button.js`, `x-watch-button` (today's picker opens only to start following; on a followed title one click unfollows, with no picker and no Undo, and the toast reads "Unfollowed <title>"; after a picker save, "Following <title> · HD, UHD") | restyled round; Report and Details buttons removed; **Copy NZB link** is new (`copyNzbLink` Alpine component, clipboard with an `execCommand` fallback, toast through `toast-notification.js`). In **every release table** (2026-09-26 / 2026-09-27): 2 × 2 (Download + Copy link on top, Cart + Follow below; Cart alone when there is no Follow), Copy link / Cart / Follow in their own tinted hue and a pressed Cart / Follow filled in that hue (section 2), Download unchanged. Only the releases list has Follow in its rows; the show page follows from a **Follow show** header button. `x-watch-button` keeps its name in code; everything it shows says Follow (`SPEC.md` rule 12) |
 | Row selection and the floating bar | `release-browser-component.js` | restyled; the bar floats (fixed), it does not push the list |
 | Same-show batch expander | new, inside the releases list component | new |
 | Shows wall tile | `tv-show-directory-component.js` | rebuilt to the tile in the reference |
@@ -274,7 +274,9 @@ An implementation is accepted when all four hold. None of them is a judgement ca
 
 - Icons are Font Awesome (decision 4).
 - The top bar is the app's own (decision 5).
-- The Follow button opens today's picker rather than toggling in place.
+- The Follow button opens today's picker to start following, rather than toggling in place; after a
+  picker save the toast reads "Following <title> · HD, UHD". On a followed title one click unfollows,
+  with no picker and no Undo, and the toast reads "Unfollowed <title>".
 - The show-page reference images (`reference/show-*`) come from the 2026-09-27 prototype: packs first, the Episodes heading, ascending
   episodes, Follow show in the header, Similar shows at the bottom.
 - Real data: long names, missing posters and shows without details render as the "thin state"

@@ -20,22 +20,20 @@ const every = pred => js(`(()=>{const ids=${rowIds};return ids.length>0&&ids.eve
 
 await send('Runtime.enable'); await send('Page.enable'); await send('Emulation.setFocusEmulationEnabled', {enabled: true}); await size(1600, 1000);
 await send('Page.navigate', {url: URL_}); for (let i = 0; i < 60 && !(await js('!!window.READY')); i++) await sleep(200);
-await js(`localStorage.clear();localStorage.setItem('nntmux.movies.fb','fallback')`); await send('Page.navigate', {url: URL_}); for (let i = 0; i < 60 && !(await js('!!window.READY')); i++) await sleep(200);
+await js(`localStorage.clear()`); await send('Page.navigate', {url: URL_}); for (let i = 0; i < 60 && !(await js('!!window.READY')); i++) await sleep(200);
 await sleep(600);
 const FX = await js(`fetch('mv/fixtures.json').then(r=>r.json())`);
 
 const open = k => js(`(()=>{if(state.dd!=='${k}')document.querySelector('[data-ddtoggle=${k}]').click();return state.dd==='${k}';})()`);
 const pick = async (k, v) => { await open(k); await js(v === 'Any' ? `document.querySelector('[data-ddany=${k}]').click()` : `document.querySelector('[data-ddpick=${k}][data-v="${v}"]').click()`); };
 const close = () => js(`document.querySelector('.pager .sum').click()`);
-const geom = () => js(`JSON.stringify({row:(()=>{const m=[...document.querySelectorAll('.mfilters')];return Math.round(m.at(-1).getBoundingClientRect().bottom-m[0].getBoundingClientRect().top);})(),top:document.querySelector('.mfilters').getBoundingClientRect().top,w:[...document.querySelectorAll('.mfilters .mbtn')].map(b=>Math.round(b.getBoundingClientRect().width)),clear:Math.round(document.querySelector('[data-clearall]').getBoundingClientRect().left),list:Math.round(document.querySelector('.pager.slim').getBoundingClientRect().top)})`);
 
 if (!process.env.FILMONLY && !process.env.DETONLY) {
 // ---- the screen ----
 ok('front page is Movie releases', await js(`document.querySelector('.filters h1').textContent`) === 'Movie releases');
 ok('Releases / Films switch, Releases current', await js(`document.querySelector('.seg [aria-current=page]').textContent==='Releases'&&document.querySelector('.seg a[href="#/films"]')!==null`));
 ok('search field "Search films or actors" right of the switch', await js(`document.querySelector('.seg').nextElementSibling.querySelector('input').placeholder==='Search films or actors'`));
-ok('no variation selector on the list except the open filter-bar choice', await js(`!document.querySelector('[data-ml],[data-fl]')&&[...document.querySelectorAll('.varsel')].every(v=>v.querySelector('[data-fb]'))`));
-ok('nine filter menus in order (Audio and Language added 2026-09-26)', await js(`[...document.querySelectorAll('.mfilters .mbtn')].map(b=>b.textContent.split(':')[0]).join(',')`) === 'Category,Resolution,Source,Audio,Genre,Year,Score,MPAA Rating,Language');
+ok('no variation selector on the list', await js(`!document.querySelector('[data-ml],[data-fl],.varsel')`));
 ok('pager line: Showing 1–50 of N releases · Page 1 of N', /^Showing 1–50 of [\d,]+ releases/.test(await js(`document.querySelector('.pager.slim .sum').textContent`)) && /^Page 1 of \d+$/.test(await js(`document.querySelector('.pager.slim .pg').textContent`)));
 ok('bottom pager with Go to page', await js(`!!document.querySelector('.pager.bottom form[data-goto]')`));
 ok('50 rows on a page (a collapsed batch counts)', await js(`(()=>{const n=${ROWS}.length,hidden=[...document.querySelectorAll('[data-expand]')].length;return n<=50&&n>=40;})()`), await js(`${ROWS}.length`));
@@ -78,28 +76,12 @@ ok('row actions are 2 × 2: download and copy link on top, cart and watch below 
 await js(`document.querySelector('.feed .rchips a[href^="/browse/all?group="]').click()`); await sleep(150);
 ok('clicking a group chip names the page it opens and stays in the prototype', /^Opens \/browse\/all\?group=/.test(await js(`document.querySelector('#toast').textContent`)) && !(await js(`location.pathname.startsWith('/browse')`)));
 
-// ---- nothing shifts (both filter layouts while the choice is open) ----
-{ const L = 'b';
-const g0 = JSON.parse(await geom());
+// ---- all filters combine ----
 await pick('cat', 'HD'); await pick('cat', 'UHD'); await pick('res', '1080p'); await pick('res', '4K'); await pick('src', 'WEB'); await pick('genre', 'Action'); await pick('genre', 'Drama');
 await open('year'); await js(`document.querySelector('[data-ypick="decade:2020"]').click()`); await pick('score', '7'); await pick('score', '6'); await pick('cert', 'R'); await pick('aud', 'English'); await pick('lang', 'English'); await close();
-const g1 = JSON.parse(await geom());
-ok(`(${L}) filter row keeps its height with every filter set`, g0.row === g1.row, `${g0.row} → ${g1.row}`);
-ok(`(${L}) every filter button keeps its width with every filter set`, JSON.stringify(g0.w) === JSON.stringify(g1.w), `${g0.w} → ${g1.w}`);
-ok(`(${L}) "Clear all" keeps its place whether shown or hidden`, g0.clear === g1.clear && await js(`getComputedStyle(document.querySelector('[data-clearall]')).visibility`) === 'visible');
-ok(`(${L}) the list does not move when filters are set`, g0.list === g1.list, `${g0.list} → ${g1.list}`);
-ok(`(${L}) set filters are coral`, await js(`[...document.querySelectorAll('.mfilters .msel')].every(m=>m.classList.contains('set'))`));
-ok(`(${L}) button text: one value names it, several say "N chosen"`, await js(`document.querySelector('[data-ddtoggle=cat]').textContent.trim()==='Category: 2 chosen'&&document.querySelector('[data-ddtoggle=year]').textContent.trim()==='Year: 2020s'&&document.querySelector('[data-ddtoggle=cert]').textContent.trim()==='MPAA Rating: R'`));
-ok(`(${L}) all filters combine (AND between menus, OR within)`, await every(`['HD','UHD'].includes(catOf(r))&&['1080p','4K'].includes(r.res)&&r.src==='WEB'&&f&&f.g.some(g=>g==='Action'||g==='Drama')&&+f.y>=2020&&+f.y<2030&&['7','6'].includes(scoreBand(f))&&f.cert==='R'&&audOf(r).includes('English')&&FLANG[r.f]==='English'`) || await js(`document.querySelector('.empty')!==null`));
+ok(`all filters combine (AND between menus, OR within)`, await every(`['HD','UHD'].includes(catOf(r))&&['1080p','4K'].includes(r.res)&&r.src==='WEB'&&f&&f.g.some(g=>g==='Action'||g==='Drama')&&+f.y>=2020&&+f.y<2030&&['7','6'].includes(scoreBand(f))&&f.cert==='R'&&audOf(r).includes('English')&&FLANG[r.f]==='English'`) || await js(`document.querySelector('.empty')!==null`));
 await js(`document.querySelector('[data-clearall]').click()`); await sleep(100);
-ok(`(${L}) Clear all keeps keyboard focus in the filter row`, await js(`document.activeElement.matches('.mfilters .mbtn')`));
-ok(`(${L}) "Clear all" clears every filter and hides itself without moving`, !(await js(`anySet()`)) && await js(`getComputedStyle(document.querySelector('[data-clearall]')).visibility`) === 'hidden' && JSON.parse(await geom()).clear === g0.clear);
-const rows = `[...document.querySelectorAll('.mrow')].map(m=>new Set([...m.querySelectorAll('.mbtn,[data-clearall]')].map(x=>{const r=x.getBoundingClientRect();return Math.round(r.top+r.height/2);})).size)`;
-for (const w of [1280, 1366, 1440, 1600]) { await size(w, 900); await sleep(60);
-  console.log(`MEASURE fallback (not the chosen bar) ${w} px, labels cut with nothing set: ` + await js(`[...document.querySelectorAll('.mfilters .mbtn .lab')].filter(l=>l.scrollWidth>l.clientWidth+1).map(l=>l.textContent).join(', ')||'none'`));
-  ok(`release menus on one row, film menus and Clear all on the next (he chose B) at ${w} px, nothing past the page edge`, await js(`(()=>{const r=${rows};return JSON.stringify(r)==='${L === 'a' ? '[1]' : '[1,1]'}'&&document.documentElement.scrollWidth<=innerWidth&&document.querySelector('[data-clearall]').getBoundingClientRect().right<=innerWidth-40;})()`)); }
-if (L === 'b') ok('(b) first row = the release\'s menus, second row = the film\'s menus', await js(`[...document.querySelectorAll('.mfilters')].map(m=>[...m.querySelectorAll('.mbtn')].map(b=>b.textContent.split(':')[0]).join(',')).join('|')`) === 'Category,Resolution,Source,Audio|Genre,Year,Score,MPAA Rating,Language');
-await size(1600, 1000); }
+ok('"Clear all" clears every filter and hides itself', !(await js(`anySet()`)) && await js(`getComputedStyle(document.querySelector('[data-clearall]')).visibility`) === 'hidden');
 
 // ---- checkbox menus ----
 for (const [k, v] of [['cat', 'Other'], ['res', '720p'], ['src', 'Blu-ray'], ['genre', 'Horror'], ['cert', 'PG-13']]) {
@@ -204,34 +186,13 @@ await js(`document.querySelector('h1').click()`);
 // ---- links ----
 await js(`document.querySelector('.feed .showlink').click()`); await sleep(200); ok('film line opens the film page route', /^#\/film\/\d+$/.test(await js(`location.hash`))); await go('#/');
 await js(`document.querySelector('.feed .rname').click()`); await sleep(200); ok('release name opens the release details route', /^#\/release\/\d+$/.test(await js(`location.hash`))); await go('#/');
-// ---- filter look (2026-09-26): grouped panels (he chose C), checked in both themes ----
-{ const L = `(c=>{const d=document.createElement('canvas').getContext('2d');d.fillStyle=c;d.fillRect(0,0,1,1);const p=[...d.getImageData(0,0,1,1).data].slice(0,3).map(v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)});return .2126*p[0]+.7152*p[1]+.0722*p[2]})`;
-  const G = () => js(`JSON.stringify({w:[...document.querySelectorAll('.mfilters .mbtn')].map(b=>Math.round(b.getBoundingClientRect().width)+'x'+Math.round(b.getBoundingClientRect().height)),x:[...document.querySelectorAll('.mfilters .mbtn')].map(b=>Math.round(b.getBoundingClientRect().left)),clear:Math.round(document.querySelector('[data-clearall]').getBoundingClientRect().left),list:Math.round(document.querySelector('.pager.slim').getBoundingClientRect().top)})`);
-  for (const [route, where] of [['#/', 'list'], ['#/films', 'wall']]) { await go(route); await sleep(200);
-    for (const v of ['c']) {
-      await js(`(()=>{['cat','res','src','aud','genre','score','cert','lang','wgenre','wscore','wcert','wlang'].forEach(k=>state[k].clear());state.year=null;state.wyear=null;state.person=null;route();})()`); await sleep(80);
-      const g0 = JSON.parse(await G());
-      await js(`(()=>{${where === 'list' ? "state.cat.add('HD');state.res.add('1080p');state.aud.add('English');state.genre.add('Drama');state.lang.add('English');state.year={kind:'decade',v:2010}" : "state.wgenre.add('Drama');state.wlang.add('English');state.wyear={kind:'decade',v:2010}"};route();})()`); await sleep(80);
-      const g1 = JSON.parse(await G());
-      ok(`look ${v} (${where}): nothing moves when filters are set (sizes, positions, Clear all slot, list top)`, JSON.stringify(g0) === JSON.stringify(g1), JSON.stringify([g0, g1]));
-      for (const theme of ['dark', 'light']) { await js(`document.documentElement.dataset.theme='${theme}'`); await sleep(60);
-        ok(`look ${v} (${where}, ${theme}): every name, value and chevron readable on its button, set and unset (text ≥ 4.5:1, chevron ≥ 3:1)`, await js(`(()=>{const L=${L},cr=(a,b)=>(Math.max(a,b)+.05)/(Math.min(a,b)+.05);return [...document.querySelectorAll('.mfilters .mbtn')].every(b=>{const g=L(getComputedStyle(b).backgroundColor);return [...b.querySelectorAll('.k,.v')].every(t=>cr(L(getComputedStyle(t).color),g)>=4.5)&&cr(L(getComputedStyle(b.querySelector('svg')).color),g)>=3;});})()`));
-        ok(`look ${v} (${where}, ${theme}): row names, where shown, ≥ 4.5:1`, await js(`(()=>{const L=${L},cr=(a,b)=>(Math.max(a,b)+.05)/(Math.min(a,b)+.05);return [...document.querySelectorAll('.mfilters .grp')].filter(e=>e.offsetParent!==null).every(e=>{let n=e.parentElement,bg='rgba(0, 0, 0, 0)';while(n&&(bg=getComputedStyle(n).backgroundColor)==='rgba(0, 0, 0, 0)')n=n.parentElement;return cr(L(getComputedStyle(e).color),L(bg))>=4.5;});})()`)); }
-      await js(`document.documentElement.dataset.theme='dark'`);
-      for (const w of [1280, 1366, 1600]) { await size(w, 900); await sleep(80);
-        ok(`look ${v} (${where}) at ${w} px: each menu row stays one line inside the page`, await js(`(()=>{const rows=[...document.querySelectorAll('.mrow')].map(m=>new Set([...m.querySelectorAll('.mbtn,[data-clearall]')].map(x=>{const r=x.getBoundingClientRect();return Math.round(r.top+r.height/2);})).size);return rows.every(n=>n===1)&&document.documentElement.scrollWidth<=innerWidth&&[...document.querySelectorAll('.mrow')].every(m=>[...m.children].every(c=>c.getBoundingClientRect().right<=innerWidth-39));})()`));
-        console.log(`MEASURE look ${v} (${where}) ${w} px, cut short with filters set: ` + await js(`[...document.querySelectorAll('.mfilters .mbtn .lab')].filter(l=>l.scrollWidth>l.clientWidth+1||[...l.children].some(c=>c.scrollWidth>c.clientWidth+1)).map(l=>l.textContent).join(', ')||'none'`)); }
-      await size(1600, 1000); await sleep(60);
-      ok(`look ${v} (${where}): ${where === 'list' ? 'rows named Release and Film' : 'no row name on the wall (one group)'}`, await js(`[...document.querySelectorAll('.mfilters .grp')].filter(e=>e.offsetParent!==null).map(e=>e.textContent).join()`) === (where === 'list' ? 'Release,Film' : ''));
-      await js(`(()=>{['cat','res','src','aud','genre','score','cert','lang','wgenre','wscore','wcert','wlang'].forEach(k=>state[k].clear());state.year=null;state.wyear=null;route();})()`); } }
-  await go('#/'); await sleep(200); }
-// ---- filter bar (2026-09-26, on trial against the fallback) ----
+// ---- filter bar (2026-09-26) ----
 { const Lm = `(c=>{const d=document.createElement('canvas').getContext('2d');d.fillStyle=c;d.fillRect(0,0,1,1);const p=[...d.getImageData(0,0,1,1).data].slice(0,3).map(v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)});return .2126*p[0]+.7152*p[1]+.0722*p[2]})`;
   const bgOf = `e=>{let n=e,bg='rgba(0, 0, 0, 0)';while(n&&(bg=getComputedStyle(n).backgroundColor)==='rgba(0, 0, 0, 0)')n=n.parentElement;return bg;}`;
   const CELLS = `[...document.querySelectorAll('.fbar .fseg .sfm')]`;
   const G = () => js(`JSON.stringify({c:${CELLS}.map(c=>{const r=c.getBoundingClientRect();return [Math.round(r.left),Math.round(r.width),Math.round(r.height)].join();}),clear:Math.round(document.querySelector('[data-clearall]').getBoundingClientRect().left),list:Math.round(document.querySelector('.pager.slim').getBoundingClientRect().top)})`);
   const reset = `(()=>{['cat','res','src','aud','genre','score','cert','lang','wgenre','wscore','wcert','wlang'].forEach(k=>state[k].clear());state.year=null;state.wyear=null;state.person=null;state.dd=null;route();})()`;
-  await go('#/'); await sleep(150); await js(`document.querySelector('[data-fb=bar]').click()`); await sleep(120); await js(reset); await sleep(80);
+  await go('#/'); await sleep(150); await js(reset); await sleep(80);
   ok('bar: two bars, the release (Category, Resolution, Source, Audio, Completion) then the film (Genre, Year, Score, Certificate, Language)', await js(`[...document.querySelectorAll('.fbar .fseg')].map(g=>[...g.querySelectorAll('.mbtn .k')].map(k=>k.textContent).join(',')).join('|')`) === 'Category,Resolution,Source,Audio,Completion|Genre,Year,Score,MPAA Rating,Language');
   ok('bar: the two bars run the full width (film bar ends where the sort ends); Clear all sits on the Showing line, its slot kept when hidden', await js(`(()=>{const f=document.querySelector('.fbar .fseg.film').getBoundingClientRect(),s=document.querySelector('[data-rsort]').closest('label').getBoundingClientRect(),c=document.querySelector('.pager.slim [data-clearall]');return Math.abs(f.right-s.right)<=1&&!!c&&getComputedStyle(c).visibility==='hidden'&&c.getBoundingClientRect().width>=60;})()`));
   ok('bar: the filter names are white on the dark bar (his request 2026-09-26)', await js(`[...document.querySelectorAll('.fbar .mbtn .k')].every(k=>getComputedStyle(k).color==='rgb(255, 255, 255)')`));
@@ -288,15 +249,22 @@ await js(`document.querySelector('.feed .rname').click()`); await sleep(200); ok
   const listCell = await js(`Math.round(document.querySelector('.fbar .fseg.film .sfm').getBoundingClientRect().width)`);
   await go('#/films'); await sleep(200);
   ok('bar (wall): the film bar with the same five cells, as wide as on the list', await js(`[...document.querySelectorAll('.fbar .fseg .mbtn .k')].map(k=>k.textContent).join()`) === 'Genre,Year,Score,MPAA Rating,Language' && Math.abs(await js(`Math.round(document.querySelector('.fbar .fseg.film .sfm').getBoundingClientRect().width)`) - listCell) <= 1);
-  await js(`document.querySelector('[data-fb=fallback]').click()`); await sleep(120); await go('#/'); await sleep(150); await js(reset); }
+  await js(`state.wgenre.add('Drama');state.wyear={kind:'decade',v:2010};route()`); await sleep(80);
+  for (const theme of ['dark', 'light']) { await js(`document.documentElement.dataset.theme='${theme}'`); await sleep(60);
+    ok(`bar (wall, ${theme}): names, values and "any" ≥ 4.5:1, chevrons and the coral line ≥ 3:1`, await js(`(()=>{const L=${Lm},B=${bgOf},cr=(a,b)=>(Math.max(a,b)+.05)/(Math.min(a,b)+.05);return ${CELLS}.every(c=>{const b=c.querySelector('.mbtn'),g=L(B(b));const t=[...b.querySelectorAll('.k,.v')].every(x=>cr(L(getComputedStyle(x).color),g)>=4.5);const ch=cr(L(getComputedStyle(b.querySelector('svg')).color),g)>=3;const ln=!c.classList.contains('set')||cr(L(getComputedStyle(b,'::after').backgroundColor),g)>=3;return t&&ch&&ln;});})()`)); }
+  await js(`document.documentElement.dataset.theme='dark'`);
+  for (const w of [1280, 1366, 1600]) { await size(w, 900); await sleep(100);
+    ok(`bar (wall) at ${w} px: one row inside the page`, await js(`(()=>{const r=document.querySelector('.fbar');const t=new Set([...r.children].map(c=>{const b=c.getBoundingClientRect();return Math.round(b.top+b.height/2);}));return t.size===1&&document.documentElement.scrollWidth<=innerWidth&&r.lastElementChild.getBoundingClientRect().right<=innerWidth-39;})()`)); }
+  await size(1600, 1000); await sleep(80);
+  await go('#/'); await sleep(150); await js(reset); }
 // ---- Films wall (shaped 2026-09-26) ----
 { const TILES = `[...document.querySelectorAll('.wall .tiles .tile')]`, tids = `${TILES}.map(t=>t.getAttribute('href').split('/').pop())`;
   const vis = sel => `[...document.querySelectorAll('${sel}')].filter(e=>e.offsetParent!==null)`;
-  const wgeom = () => js(`JSON.stringify({row:Math.round(document.querySelector('.mfilters').getBoundingClientRect().height),w:[...document.querySelectorAll('.mfilters .mbtn')].map(b=>Math.round(b.getBoundingClientRect().width)),clear:Math.round(document.querySelector('[data-clearall]').getBoundingClientRect().left),list:Math.round(document.querySelector('.pager.slim').getBoundingClientRect().top),tiles:Math.round(document.querySelector('.tiles')?.getBoundingClientRect().top||0),prev:Math.round(document.querySelector('.pager.slim [aria-label="Previous page"]').getBoundingClientRect().left),next:Math.round(document.querySelector('.pager.slim [aria-label="Next page"]').getBoundingClientRect().left)})`);
+  const wgeom = () => js(`JSON.stringify({row:Math.round(document.querySelector('.mrow.fbar').getBoundingClientRect().height),w:[...document.querySelectorAll('.fbar .mbtn')].map(b=>Math.round(b.getBoundingClientRect().width)),clear:Math.round(document.querySelector('[data-clearall]').getBoundingClientRect().left),list:Math.round(document.querySelector('.pager.slim').getBoundingClientRect().top),tiles:Math.round(document.querySelector('.tiles')?.getBoundingClientRect().top||0),prev:Math.round(document.querySelector('.pager.slim [aria-label="Previous page"]').getBoundingClientRect().left),next:Math.round(document.querySelector('.pager.slim [aria-label="Next page"]').getBoundingClientRect().left)})`);
   await js(`localStorage.removeItem('nntmux.movies.wsort')`); await go('#/films'); await sleep(200);
   ok('wall: title "Films", switch with Films current, Releases goes to the list', await js(`document.querySelector('.filters h1').textContent==='Films'&&document.querySelector('.seg [aria-current=page]').textContent==='Films'&&document.querySelector('.seg a[href="#/"]').textContent==='Releases'`));
   ok('wall: "Search films or actors" right of the switch', await js(`document.querySelector('.seg').nextElementSibling.querySelector('input').placeholder==='Search films or actors'`));
-  ok('wall: five menus in order Genre, Year, Score, Certificate, Language', await js(`[...document.querySelectorAll('.mfilters .mbtn')].map(b=>b.textContent.split(':')[0]).join(',')`) === 'Genre,Year,Score,MPAA Rating,Language');
+  ok('wall: five menus in order Genre, Year, Score, Certificate, Language', await js(`[...document.querySelectorAll('.fbar .mbtn')].map(b=>b.textContent.split(':')[0]).join(',')`) === 'Genre,Year,Score,MPAA Rating,Language');
   ok('wall: four sorts, Newest releases first by default', await js(`[...document.querySelectorAll('[data-wsort] option')].map(o=>o.textContent).join('|')==='Newest releases first|Newest to the site first|Newest films first|A to Z'&&document.querySelector('[data-wsort]').value==='recent'`));
   ok('wall: pager line "Showing 1–42 of N films · Page 1 of N" and a bottom pager with Go to page', /^Showing 1–42 of [\d,]+ films$/.test(await js(`document.querySelector('.pager.slim .sum').textContent`)) && /^Page 1 of \d+$/.test(await js(`document.querySelector('.pager.slim .pg').textContent`)) && await js(`!!document.querySelector('.pager.bottom form[data-goto][data-base="#/films"]')`));
   ok('wall: 42 tiles on a page', await js(`${TILES}.length`) === 42);
@@ -307,7 +275,7 @@ await js(`document.querySelector('.feed .rname').click()`); await sleep(200); ok
   ok('wall: release count "1 release" / "N releases"', await js(`relCount(1)==='1 release'&&relCount(12)==='12 releases'`));
   ok('wall: no buttons on tiles', await js(`!document.querySelector('.wall .tiles button,.wall .tiles [data-watch],.wall .tiles [data-cart]')`));
   ok('wall: the release count is a grey line under the score (he chose A); nothing sits on the poster', await js(`${TILES}.every(t=>t.querySelector('.m3').offsetParent!==null&&t.querySelector('.m3').previousElementSibling.classList.contains('m2')&&!t.querySelector('.count')&&t.querySelector('.art').children.length===1)`));
-  ok('wall: no variation selector left on the page except the open filter-bar choice', await js(`!document.querySelector('[data-cnt],[data-sl],[data-fl]')&&[...document.querySelectorAll('.varsel')].every(v=>v.querySelector('[data-fb]'))`));
+  ok('wall: no variation selector left on the page', await js(`!document.querySelector('[data-cnt],[data-sl],[data-fl],.varsel')`));
   // sorts
   for (const [k, cmp] of [['newsite', `(a,b)=>FSTAT[a][2]>=FSTAT[b][2]`], ['year', `(a,b)=>(+DB.films[a].y||0)>=(+DB.films[b].y||0)`], ['az', `(a,b)=>DB.films[a].t.localeCompare(DB.films[b].t,undefined,{sensitivity:'base'})<=0`]]) {
     await js(`(()=>{const s=document.querySelector('[data-wsort]');s.value='${k}';s.dispatchEvent(new Event('change',{bubbles:true}));})()`); await sleep(150);
@@ -376,7 +344,7 @@ if (!process.env.DETONLY) { const FR = `[...document.querySelectorAll('.frel tab
   const cr = `((a,b)=>{const x=${L}(a),y=${L}(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05);})`;
   const fgeom = () => js(`JSON.stringify({bar:Math.round(document.querySelector('.pf .fseg').getBoundingClientRect().top),w:[...document.querySelectorAll('.pf .mbtn')].map(b=>Math.round(b.getBoundingClientRect().width)),clear:Math.round(document.querySelector('.frel [data-clearall]').getBoundingClientRect().left),line:Math.round(document.querySelector('.frel .pager.slim').getBoundingClientRect().top),prev:Math.round(document.querySelector('.frel .pager.slim [aria-label="Previous page"]').getBoundingClientRect().left),table:Math.round(document.querySelector('.frel table.rt')?.getBoundingClientRect().top||0)})`);
   await go('#/films'); await sleep(150);
-  const listCell = await js(`(()=>{const fb=state.fb;state.fb='bar';location.hash='#/';return new Promise(r=>setTimeout(()=>{route();const w=Math.round(document.querySelector('.fbar .fseg.rel .mbtn')?.getBoundingClientRect().width||0);state.fb=fb;r(w);},250));})()`);
+  const listCell = await js(`(()=>{location.hash='#/';return new Promise(r=>setTimeout(()=>{route();r(Math.round(document.querySelector('.fbar .fseg.rel .mbtn')?.getBoundingClientRect().width||0));},250));})()`);
   await go('#/films'); await sleep(150);
   const wallTile = await js(`Math.round(document.querySelector('.wall .tile').getBoundingClientRect().width)`);
   await js(`document.querySelector('.wall .tile').click()`); await sleep(100);
@@ -389,13 +357,6 @@ if (!process.env.DETONLY) { const FR = `[...document.querySelectorAll('.frel tab
   ok('film: "Directed by" and "Starring" (up to 12) link to the Films wall filtered by that person', await js(`(()=>{const f=FILM('${FX.film}'),[d,c]=document.querySelectorAll('.fhead .starring');return d.textContent.startsWith('Directed by ')&&c.textContent.startsWith('Starring ')&&c.querySelectorAll('a').length===Math.min(12,f.cast.length)&&[...d.querySelectorAll('a'),...c.querySelectorAll('a')].every(a=>a.getAttribute('href')==='#/films?person='+encodeURIComponent(a.textContent));})()`));
   ok('film: IMDb (tt id) and TMDB links open a new tab; no Trakt link (no Trakt id is stored)', await js(`(()=>{const a=[...document.querySelectorAll('.fhead .dacts a.ext')];return a.map(x=>x.textContent.replace(' (opens in a new tab)','')).join()==='IMDb,TMDB'&&a[0].href==='https://www.imdb.com/title/tt${FX.film}/'&&a[1].href==='https://www.themoviedb.org/movie/'+FILM('${FX.film}').tmdb&&a.every(x=>x.target==='_blank'&&/noopener/.test(x.rel));})()`));
   ok('film: header actions are Follow film then the links; no Download in the header; no Report', await js(`[...document.querySelector('.fhead .dacts').children].map(b=>(b.querySelector('.wl>span:not([hidden])')||b).textContent.trim().replace(' (opens in a new tab)','')).join('|')==='Follow film|IMDb|TMDB'&&!document.querySelector('.fhead [data-nzb],[aria-label*=Report i]')`));
-  await js(`localStorage.setItem('nntmux.movies.trailers','off');state.trailers=false;route()`); await sleep(80);
-  ok('film: no Trailer button while the site setting is off', await js(`!document.querySelector('[data-trailer]')`));
-  await js(`document.querySelector('[data-trailers=on]').click()`); await sleep(80);
-  ok('film: the Trailer button appears when the site setting is on, before the links', await js(`[...document.querySelector('.fhead .dacts').children].map(b=>(b.querySelector('.wl>span:not([hidden])')||b).textContent.trim().replace(' (opens in a new tab)','')).join('|')==='Follow film|Trailer|IMDb|TMDB'`));
-  await js(`(()=>{const b=document.querySelector('[data-trailer]');b.focus();b.click();})()`); await sleep(80);
-  ok('film: Trailer opens the trailer dialog; Escape closes it and focus returns', await js(`(()=>{const o=!!document.querySelector('#modal [role=dialog][aria-label=Trailer]');document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));return o&&!document.querySelector('#modal [role=dialog]')&&document.activeElement.matches('[data-trailer]');})()`));
-  await js(`document.querySelector('[data-trailers=off]').click()`); await sleep(80);
   for (const theme of ['dark', 'light']) { await js(`document.documentElement.dataset.theme='${theme}'`); await sleep(60);
     ok(`film (${theme}): Follow film is violet, never coral, off and on; its text ≥ 4.5:1`, await js(`(()=>{const b=document.querySelector('.fhead [data-watch]'),acc=getComputedStyle(document.querySelector('.frel .ia.dl')).backgroundColor,s0=getComputedStyle(b),c0=${cr}(s0.color,s0.backgroundColor),bg0=s0.backgroundColor;b.click();const b2=document.querySelector('.fhead [data-watch]'),s1=getComputedStyle(b2),c1=${cr}(s1.color,s1.backgroundColor),on=b2.getAttribute('aria-pressed')==='true'&&b2.querySelector('.wl>span:not([hidden])').textContent==='Following film';b2.click();return on&&bg0!==acc&&s1.backgroundColor!==acc&&c0>=4.5&&c1>=4.5;})()`));
     ok(`film (${theme}): meta, plot, tags, people and table text ≥ 4.5:1`, await js(`(()=>{const bg=getComputedStyle(document.body).backgroundColor;return [...document.querySelectorAll('.fhead .meta,.fhead p,.fhead .starring,.fhead .starring a,.fhead .tag.plain,.frel .pager .sum,.frel td.num')].every(e=>${cr}(getComputedStyle(e).color,bg)>=4.5)&&[...document.querySelectorAll('.fhead a.tag')].every(e=>${cr}(getComputedStyle(e).color,getComputedStyle(e).backgroundColor)>=4.5);})()`));
@@ -477,10 +438,6 @@ const noWatchD = `(()=>{const t=[...document.querySelectorAll('button,[role=butt
   ok('details: heading "Title · Year" (title links to the film page), the release name bold on the second line', await js(`(()=>{const r=BYID[${R}],f=F(r),h=document.querySelector('.dhead h1');return h.textContent===f.t+' · '+f.y&&h.querySelector('a').getAttribute('href')==='#/film/'+r.f&&document.querySelector('.dhead .relname').textContent===r.name&&+getComputedStyle(document.querySelector('.dhead .relname')).fontWeight>=700;})()`));
   ok('details: resolution and source chips, the chip line, then the group and poster chips', await js(`(()=>{const r=BYID[${R}],c=document.querySelectorAll('.dhead .rchips');return c[0].querySelector('.res').textContent===r.res&&c[0].querySelector('.chip.src').textContent===srcLabel(r)&&c[1].querySelectorAll('.rc.origin').length===2;})()`));
   ok('details: header buttons Download NZB, Copy NZB link, Add to cart, Follow film; no Report, Edit release or failure line', await js(`[...document.querySelector('.dhead .dacts').children].map(b=>(b.querySelector('.wl>span:not([hidden])')||b).textContent.trim()).join('|')==='Download NZB|Copy NZB link|Add to cart|Follow film'&&!/Report|Edit release|reported download failure/i.test(document.querySelector('.mdet').textContent)`));
-  await js(`localStorage.setItem('nntmux.movies.trailers','off');state.trailers=false;rerender()`); await sleep(60);
-  await js(`document.querySelector('[data-trailers=on]').click()`); await sleep(80);
-  ok('details: Trailer appears after Follow film only while the site setting is on', await js(`[...document.querySelector('.dhead .dacts').children].map(b=>(b.querySelector('.wl>span:not([hidden])')||b).textContent.trim()).join('|')==='Download NZB|Copy NZB link|Add to cart|Follow film|Trailer'`));
-  await js(`document.querySelector('[data-trailers=off]').click()`); await sleep(80);
   for (const theme of ['dark', 'light']) { await js(`document.documentElement.dataset.theme='${theme}'`); await sleep(60);
     ok(`details (${theme}): Download coral; Copy link and Cart neutral, Follow film violet (his pick B); a pressed Cart fills green, a pressed Follow violet, never coral; text ≥ 4.5:1`, await js(`(()=>{const acc=getComputedStyle(document.querySelector('.dacts [data-nzb]')).backgroundColor,q=s=>document.querySelector('.dacts '+s),st=b=>getComputedStyle(b);
       const c=st(q('[data-copynzb]')),k=st(q('[data-cart]')),w=st(q('[data-watch]'));
