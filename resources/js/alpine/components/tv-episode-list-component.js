@@ -87,12 +87,23 @@ export function tvEpisodeList() {
             const sort = event.target.closest('[data-sort]');
             if (sort) return this.sortBy(sort);
             const tab = event.target.closest('.tv-season-tabs a');
-            if (tab) return writeJson(SWITCH_KEY, { show: this.show, y: window.scrollY });
+            if (tab) return this.switchSeason(event, tab);
             const copy = event.target.closest('[data-copy-nzb]');
             if (copy) return this.copyLink(copy);
             const cart = event.target.closest('[data-cart]');
             if (cart) return this.toggleCart(cart);
             return undefined;
+        },
+
+        /**
+         * A plain click replaces the history entry, so Back returns to the page the show was opened from.
+         * Modified and non-primary clicks (new tab, new window, download) are left to the browser.
+         */
+        switchSeason(event, tab) {
+            if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+            writeJson(SWITCH_KEY, { show: this.show, y: window.scrollY });
+            event.preventDefault();
+            window.location.replace(tab.href);
         },
 
         handleChange(event) {

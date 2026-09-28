@@ -20,9 +20,9 @@ function storage(initial = {}) {
 }
 
 function browser({ href = 'https://nntmux.test/tv/show/7/1', session = storage(), fail = false } = {}) {
-    const toasts = [], requests = [], history = [], scrolled = [], forms = [];
+    const toasts = [], requests = [], history = [], scrolled = [], forms = [], replaced = [];
     globalThis.window = {
-        location: { href },
+        location: { href, replace: url => replaced.push(url) },
         history: { replaceState: (state, title, url) => history.push(url) },
         sessionStorage: session,
         scrollY: 640,
@@ -38,7 +38,7 @@ function browser({ href = 'https://nntmux.test/tv/show/7/1', session = storage()
         requests.push({ url: String(url), ...options });
         return { ok: !fail, redirected: false, json: async () => ({ success: true, cartCount: 3 }), text: async () => '<table>releases</table>' };
     };
-    return { toasts, requests, history, scrolled, forms, session };
+    return { toasts, requests, history, scrolled, forms, session, replaced };
 }
 
 function box(guid) {
@@ -240,10 +240,21 @@ test('filter changes build on the season the page rendered and on each other, an
     assert.deepEqual(opened.searchParams.getAll('source[]'), ['web']);
 });
 
+function tabClick(overrides = {}) {
+    const tab = { href: 'https://nntmux.test/tv/show/7/2?source%5B%5D=web' };
+    return {
+        target: { closest: selector => (selector === '.tv-season-tabs a' ? tab : null) },
+        button: 0, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false,
+        prevented: false,
+        preventDefault() { this.prevented = true; },
+        ...overrides,
+    };
+}
+
 test('a season tab keeps keyboard focus and the scroll position across its page load', () => {
     const { session, scrolled } = browser();
     const { component } = page();
-    component.handleClick({ target: { closest: selector => (selector === '.tv-season-tabs a' ? {} : null) } });
+    component.handleClick(tabClick());
     assert.deepEqual(JSON.parse(session.values[SWITCH_KEY]), { show: '7', y: 640 });
 
     const currentTab = { focused: null, focus(options) { this.focused = options; } };
@@ -254,6 +265,34 @@ test('a season tab keeps keyboard focus and the scroll position across its page 
     assert.deepEqual(scrolled, [640]);
     assert.equal(session.values[SWITCH_KEY], undefined);
 });
+
+test('a plain click on a season tab replaces the history entry, so Back skips the seasons', () => {
+    const { session, replaced } = browser();
+    const { component } = page();
+    const click = tabClick();
+    component.handleClick(click);
+    assert.deepEqual(JSON.parse(session.values[SWITCH_KEY]), { show: '7', y: 640 });
+    assert.equal(click.prevented, true);
+    assert.deepEqual(replaced, ['https://nntmux.test/tv/show/7/2?source%5B%5D=web']);
+});
+
+for (const [name, overrides] of [
+    ['ctrl', { ctrlKey: true }],
+    ['cmd', { metaKey: true }],
+    ['shift', { shiftKey: true }],
+    ['alt', { altKey: true }],
+    ['middle-button', { button: 1 }],
+]) {
+    test(`a ${name} click on a season tab is left to the browser and leaves no switch record`, () => {
+        const { session, replaced } = browser();
+        const { component } = page();
+        const click = tabClick(overrides);
+        component.handleClick(click);
+        assert.equal(session.values[SWITCH_KEY], undefined);
+        assert.equal(click.prevented, false);
+        assert.deepEqual(replaced, []);
+    });
+}
 
 function cssRules(file) {
     const rules = new Map();

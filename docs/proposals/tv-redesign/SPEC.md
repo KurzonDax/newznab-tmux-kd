@@ -250,7 +250,8 @@ pages look good, I approve them."
   production copy), so daily shows list under those seasons with the air date on each episode
   row. Numeric tabs carry the accessible name "Season 22". With no season in the link, the page
   opens on season 1 (else the lowest-numbered season, else Specials); a link that names a season
-  the show has opens that season (maintainer's rule, 2026-09-27).
+  the show has opens that season (maintainer's rule, 2026-09-27). A season switch replaces the
+  history entry, so Back returns to the list the show was opened from.
 - Under the tabs, in this order:
   1. **"Whole-season packs"**, first ("move the whole season packs to above the episodes
      table"): the season's packs as a release table; a season with none keeps the heading and
@@ -454,7 +455,7 @@ Storage and write paths are specified in `DATA-CONTRACT.md`; the numbers below f
    and the old TV Covers / Table / Cards views.
 
 Screens 4–7 can be built against fixtures once 1–3 define the stored shapes. Each screen's
-acceptance test is the matching block of `check.mjs` (270 checks), ported to the
+acceptance test is the matching block of `check.mjs` (271 checks), ported to the
 application's test tooling, plus rule 5 ("nothing shifts") measured, not eyeballed.
 
 ---
