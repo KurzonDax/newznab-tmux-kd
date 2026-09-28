@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests;
 
+use App\Data\MovieFilmWallFilters;
 use App\Data\ReleaseListFilters;
 use App\Data\TvShowFilters;
 use App\Enums\BrowseRoot;
@@ -26,10 +27,11 @@ final class UpdateReleaseViewRequest extends FormRequest
             'thumbs' => ['sometimes', 'boolean'],
             'sort' => ['sometimes', 'string', Rule::in(in_array($root, [BrowseRoot::Tv, BrowseRoot::Movies], true) ? array_keys(ReleaseListFilters::SORTS) : [])],
             'shows_sort' => ['sometimes', 'string', Rule::in($root === BrowseRoot::Tv ? array_keys(TvShowFilters::SORTS) : [])],
+            'films_sort' => ['sometimes', 'string', Rule::in($root === BrowseRoot::Movies ? array_keys(MovieFilmWallFilters::SORTS) : [])],
         ];
     }
 
-    /** @return array{view?: string, size?: string, per?: int, thumbs?: bool, sort?: string, shows_sort?: string} */
+    /** @return array{view?: string, size?: string, per?: int, thumbs?: bool, sort?: string, shows_sort?: string, films_sort?: string} */
     public function preferences(): array
     {
         $preferences = $this->safe()->except('root');

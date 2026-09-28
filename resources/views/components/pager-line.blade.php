@@ -1,18 +1,22 @@
-@props(['page', 'lastPage', 'total', 'perPage', 'noun', 'url', 'clearAll' => null, 'filtered' => false])
+@props(['page', 'lastPage', 'total', 'perPage', 'noun', 'url', 'clearAll' => null, 'filtered' => false, 'single' => false, 'fixed' => false])
 {{--
     "Showing X–Y of N" with previous / "Page X of Y" / next: always rendered, the same size in every state.
     With `clearAll` (the unfiltered URL) the line holds "Clear all" in a fixed slot left of the arrows,
     hidden but keeping its place while nothing is `filtered`, and the page text has a fixed width.
+    `fixed` gives the page text its fixed width without the slot. With `single`, one result reads
+    "Showing 1 film" rather than "Showing 1–1 of 1 film" (the Films wall's wording).
 --}}
 @php
     /** @var \Closure(int): string $url */
     $from = $total > 0 ? ($page - 1) * $perPage + 1 : 0;
     $to = min($page * $perPage, $total);
-    $summary = $total > 0
-        ? 'Showing '.number_format($from).'–'.number_format($to).' of '.number_format($total).' '.($total === 1 ? $noun : \Illuminate\Support\Str::plural($noun))
-        : 'Showing 0 '.\Illuminate\Support\Str::plural($noun);
+    $summary = match (true) {
+        $single && $total === 1 => 'Showing 1 '.$noun,
+        $total > 0 => 'Showing '.number_format($from).'–'.number_format($to).' of '.number_format($total).' '.($total === 1 ? $noun : \Illuminate\Support\Str::plural($noun)),
+        default => 'Showing 0 '.\Illuminate\Support\Str::plural($noun),
+    };
 @endphp
-<nav {{ $attributes->class(['pager-line', 'is-fixed' => $clearAll !== null]) }} aria-label="Pages">
+<nav {{ $attributes->class(['pager-line', 'is-fixed' => $clearAll !== null || $fixed]) }} aria-label="Pages">
     <span class="pager-line-summary" data-part="showing line">{{ $summary }}</span>
     @if($clearAll !== null)
         <a href="{{ $clearAll }}" @class(['pager-line-clear', 'is-hidden' => ! $filtered]) data-clear-all aria-hidden="{{ $filtered ? 'false' : 'true' }}"@unless($filtered) tabindex="-1"@endunless>Clear all</a>

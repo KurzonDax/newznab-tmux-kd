@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services\Releases;
 
 use App\Data\MovieFilmFilters;
-use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -27,7 +26,7 @@ final class MovieFilmSearch
 
     private const int PERSON_FILMS = 3;
 
-    public function __construct(private readonly ReleaseBrowseService $releases) {}
+    public function __construct(private readonly MovieFilmWall $wall) {}
 
     /**
      * @param  list<int>  $exclusions
@@ -45,31 +44,12 @@ final class MovieFilmSearch
     }
 
     /**
-     * Keeps the films (`$film`, a movieinfo.id column) with a Movies release the user may see.
-     *
-     * @param  list<int>  $exclusions
-     */
-    private function whereVisible(Builder $query, array $exclusions, string $film = 'm.id'): Builder
-    {
-        $password = $this->releases->showPasswords();
-
-        return $query->where(static function (Builder $probe) use ($exclusions, $password, $film): void {
-            $probe->selectRaw('1')->from('releases as r')->whereColumn('r.movieinfo_id', $film)
-                ->whereBetween('r.categories_id', MovieReleaseList::BAND_CATEGORIES)->whereRaw('r.passwordstatus '.$password);
-            if ($exclusions !== []) {
-                $probe->whereNotIn('r.categories_id', $exclusions);
-            }
-            $probe->limit(1);
-        }, '=', 1);
-    }
-
-    /**
      * @param  list<int>  $exclusions
      * @return list<array{id: int, title: string, year: ?int, genres: list<string>, poster: ?string}>
      */
     private function films(string $text, string $pattern, array $exclusions): array
     {
-        $rows = $this->whereVisible(DB::table('movieinfo as m')->whereRaw('m.title LIKE ? ESCAPE ?', [$pattern, '\\']), $exclusions)
+        $rows = $this->wall->whereVisible(DB::table('movieinfo as m')->whereRaw('m.title LIKE ? ESCAPE ?', [$pattern, '\\']), $exclusions)
             ->orderByRaw('INSTR(LOWER(m.title), LOWER(?))', [$text])->orderBy('m.title')->limit(self::FILMS)
             ->get(['m.id', 'm.imdbid', 'm.title', 'm.year']);
         $genres = [];
@@ -102,7 +82,7 @@ final class MovieFilmSearch
             ->whereRaw('p.name LIKE ? ESCAPE ?', [$pattern, '\\'])->groupBy('p.id', 'p.name')
             ->select('p.id', 'p.name')->selectRaw('COUNT(DISTINCT mp.movieinfo_id) AS films')
             ->orderByDesc('films')->orderBy('p.name')->limit(self::PEOPLE_PROBED);
-        $people = $this->whereVisible(DB::query()->fromSub($candidates, 'c')->join('movie_people as vp', 'vp.people_id', '=', 'c.id'), $exclusions, 'vp.movieinfo_id')
+        $people = $this->wall->whereVisible(DB::query()->fromSub($candidates, 'c')->join('movie_people as vp', 'vp.people_id', '=', 'c.id'), $exclusions, 'vp.movieinfo_id')
             ->groupBy('c.id', 'c.name')->select('c.id', 'c.name')->selectRaw('COUNT(DISTINCT vp.movieinfo_id) AS films')
             ->orderByDesc('films')->orderBy('c.name')->limit(self::PEOPLE)->get();
         if ($people->isEmpty()) {
@@ -110,7 +90,7 @@ final class MovieFilmSearch
         }
         $titles = [];
         $credits = DB::table('movie_people as mp')->join('movieinfo as m', 'm.id', '=', 'mp.movieinfo_id')->whereIn('mp.people_id', $people->pluck('id')->all());
-        foreach ($this->whereVisible($credits, $exclusions)->distinct()->orderBy('mp.people_id')->orderBy('m.title')->orderBy('m.id')->get(['mp.people_id', 'm.id', 'm.title']) as $row) {
+        foreach ($this->wall->whereVisible($credits, $exclusions)->distinct()->orderBy('mp.people_id')->orderBy('m.title')->orderBy('m.id')->get(['mp.people_id', 'm.id', 'm.title']) as $row) {
             $person = (int) $row->people_id;
             if (count($titles[$person] ?? []) < self::PERSON_FILMS) {
                 $titles[$person][] = (string) $row->title;
