@@ -7,6 +7,7 @@ namespace App\Services\MetadataProcessing;
 use App\Models\Category;
 use App\Models\Genre;
 use App\Models\Person;
+use Illuminate\Cache\Lock;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -33,12 +34,22 @@ final class MovieCredits
 
     /**
      * `people.name` has no unique key and the collation makes two spellings one name, so a
-     * lock keyed on the name could not cover them: every insert of a person found by name is
-     * serialised, text and TMDB alike, and the lookup repeats under the lock.
+     * lock keyed on the name could not cover them: every insert of a person no lookup found
+     * is serialised, text and TMDB alike (a text row and a TMDB row can be one person), and
+     * the lookups repeat under the lock.
      */
     private const string PERSON_LOCK = 'movie_credits:person_create';
 
+    /** How long a held lock lives if its worker dies without releasing it. */
     private const int PERSON_LOCK_SECONDS = 10;
+
+    /**
+     * A holder keeps the lock for a lookup and an insert, so waiters retry often, and wait
+     * past the lifetime of a lock a dead worker left, rather than abort the film.
+     */
+    private const int PERSON_LOCK_WAIT_SECONDS = 15;
+
+    private const int PERSON_LOCK_RETRY_MILLISECONDS = 20;
 
     private const int GENRE_TITLE_LENGTH = 255;
 
@@ -153,19 +164,23 @@ final class MovieCredits
         $name = mb_substr(trim($name), 0, Person::NAME_LENGTH);
         $tmdbId = $tmdbId !== null && $tmdbId > 0 ? $tmdbId : null;
 
-        $id = $this->findPersonId($name, $tmdbId);
+        $id = $this->findOrClaimPersonId($name, $tmdbId);
         if ($id !== null || $name === '') {
             return $id;
         }
 
-        return (int) Cache::lock(self::PERSON_LOCK, self::PERSON_LOCK_SECONDS)->block(
-            self::PERSON_LOCK_SECONDS,
-            fn (): int => $this->findPersonId($name, $tmdbId)
-                ?? ($tmdbId === null ? (int) Person::query()->insertGetId(['name' => $name, 'tmdb_id' => null]) : $this->tmdbPersonId($tmdbId, $name)),
-        );
+        $lock = Cache::lock(self::PERSON_LOCK, self::PERSON_LOCK_SECONDS);
+        if ($lock instanceof Lock) {
+            $lock->betweenBlockedAttemptsSleepFor(self::PERSON_LOCK_RETRY_MILLISECONDS);
+        }
+
+        return (int) $lock->block(self::PERSON_LOCK_WAIT_SECONDS, fn (): int => $this->findOrClaimPersonId($name, $tmdbId) ?? $this->insertPerson($name, $tmdbId));
     }
 
-    private function findPersonId(string $name, ?int $tmdbId): ?int
+    /**
+     * The person's existing row. A TMDB person found only by name claims that row (a write).
+     */
+    private function findOrClaimPersonId(string $name, ?int $tmdbId): ?int
     {
         if ($tmdbId !== null) {
             $id = Person::query()->where('tmdb_id', $tmdbId)->value('id');
@@ -183,6 +198,13 @@ final class MovieCredits
         $unclaimed = Person::query()->where('name', $name)->whereNull('tmdb_id')->orderBy('id')->value('id');
 
         return $unclaimed !== null ? $this->claim((int) $unclaimed, $tmdbId, $name) : null;
+    }
+
+    private function insertPerson(string $name, ?int $tmdbId): int
+    {
+        return $tmdbId === null
+            ? (int) Person::query()->insertGetId(['name' => $name, 'tmdb_id' => null])
+            : $this->tmdbPersonId($tmdbId, $name);
     }
 
     /**

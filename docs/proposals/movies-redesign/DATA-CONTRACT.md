@@ -187,14 +187,16 @@ flag: it is derived from `vote_count` and `rating`.
 - **Fetch.** `fetchTMDBProperties()` asks for `['credits', 'release_dates']` in its one details request and returns, besides
   today's values, `vote_count`, `original_language`, the US certification (the first non-empty `certification` of the `US`
   entry of `release_dates.results`), the genre names, every director and every distinct cast member (the cast is cut to 12
-  when the names resolve to people, below). Its cache key gains a version (`tmdb_movie_v2_<md5>`) so arrays cached in the
-  old shape are not served, and `FetchMovieByImdb:45` clears the new key.
+  when the names resolve to people, below). Its cache key gains a version (`tmdb_movie_v3_<md5>`; v2 held the cast cut to
+  12 before the names were checked) so arrays cached in an old shape are not served, and `FetchMovieByImdb:45` clears the
+  new key.
 - **Save.** `update()` writes `vote_count` even when it is 0 (outside the non-empty rule at `:311`), and the two text columns
   as before.
-- **Links.** One method (`MovieCredits::sync(int $movieinfoId, array $genres, array $directors, array $cast)`, name
-  indicative) replaces the film's `movie_genres` and `movie_people` in one transaction when they differ. It is called:
-  - by `updateMovieInfo()` after `update()`, with TMDB's lists; when TMDB returns nothing (not configured, no match, or an
-    error) with the saved text split by the rule of 5.2;
+- **Links.** One method (`MovieCredits::sync(int $movieinfoId, array $genres, array $directors, array $cast, array
+  $directorsFallback = [], array $castFallback = [])`) replaces the film's `movie_genres` and `movie_people` in one
+  transaction when they differ; a people list that resolves to nobody is replaced by its fallback. It is called:
+  - by `updateMovieInfo()` after `update()`, with TMDB's lists and the saved director and cast text as the fallbacks; when
+    TMDB returns nothing (not configured, no match, or an error) with the saved text split by the rule of 5.2;
   - by the **admin edit form** (fact 2) with its edited text split by the same rule, so the screens follow an admin's edit.
 - **Genre names**: found by `(type 2000, title)` or inserted, under a named lock (Laravel's `Cache::lock`), because `genres`
   has no unique key and movie workers run in parallel. The Genre menu lists only genres that have a film.

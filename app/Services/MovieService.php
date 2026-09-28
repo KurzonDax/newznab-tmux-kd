@@ -812,8 +812,9 @@ class MovieService
 
     public static function tmdbCacheKey(string $lookupId): string
     {
-        // Versioned: arrays cached before the credits lists were added are not served.
-        return 'tmdb_movie_v2_'.md5($lookupId);
+        // Versioned: arrays cached in an older shape are not served (v2 added the credits
+        // lists; v3 keeps the whole cast, cut to twelve only when the names resolve).
+        return 'tmdb_movie_v3_'.md5($lookupId);
     }
 
     /**
