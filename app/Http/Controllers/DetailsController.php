@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Data\MovieFilmPageFilters;
 use App\Data\ReleaseRowData;
 use App\Enums\BrowseRoot;
 use App\Models\Country;
@@ -21,6 +22,7 @@ use App\Services\GamesService;
 use App\Services\MovieService;
 use App\Services\MusicService;
 use App\Services\PopulateAniListService;
+use App\Services\Releases\MovieReleaseDetails;
 use App\Services\Releases\RelatedReleaseBrowser;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Releases\ReleaseReportPresentation;
@@ -63,8 +65,12 @@ class DetailsController extends BasePageController
         }
 
         $comments = ReleaseComment::getComments($data['id']);
-        if (BrowseRoot::fromCategoryId((int) $data['categories_id']) === BrowseRoot::Tv) {
+        $root = BrowseRoot::fromCategoryId((int) $data['categories_id']);
+        if ($root === BrowseRoot::Tv) {
             return $this->showTv($data, $comments);
+        }
+        if ($root === BrowseRoot::Movies) {
+            return $this->showMovies($request, $data, $comments);
         }
         $similars = $this->releaseSearchService->searchSimilar($data['id'], $data['searchname'], (array) $this->userdata->categoryexclusions);
         $failed = DnzbFailure::getFailedCount($data['id']);
@@ -200,6 +206,37 @@ class DetailsController extends BasePageController
             'comments' => $comments,
             'nzbLinkBase' => url('/api/v1/api'),
             'apiToken' => (string) $this->userdata->api_token,
+            'meta_title' => 'View NZB',
+            'meta_keywords' => 'view,nzb,description,details',
+            'meta_description' => 'View NZB for '.$release['searchname'],
+        ]));
+    }
+
+    /**
+     * Movies releases get their own page (docs/proposals/movies-redesign/SPEC.md 5C); comments post
+     * back here as before. `?sort=` and `?page=` belong to "All N releases of this film", and
+     * `?_fragment=releases` returns that section alone for a sort change or another page.
+     */
+    private function showMovies(Request $request, Release $release, mixed $comments): View
+    {
+        $this->releaseBrowseService->loadReleaseRows([$release]);
+        /** @var ReleaseRowData $row */
+        $row = $release->getAttribute('row_data');
+        $exclusions = array_values(array_map('intval', (array) $this->userdata->categoryexclusions));
+        $requested = MovieFilmPageFilters::fromRequest($request);
+        $table = new MovieFilmPageFilters(sort: $requested->sort, ascending: $requested->ascending, page: $requested->page);
+        $pageNamed = $request->query('page') !== null;
+        $details = app(MovieReleaseDetails::class);
+        $shared = ['release' => $release, 'nzbLinkBase' => url('/api/v1/api'), 'apiToken' => (string) $this->userdata->api_token];
+        if ($request->query('_fragment') === 'releases') {
+            $section = $details->releasesTable($release, $exclusions, $table, $pageNamed);
+            abort_if($section['table'] === null, 404);
+
+            return view('details.movies.releases', [...$shared, ...$section]);
+        }
+
+        return view('details.movies.index', array_merge($this->viewData, $details->forRelease($release, $row->category, $exclusions, $table, $pageNamed), $shared, [
+            'comments' => $comments,
             'meta_title' => 'View NZB',
             'meta_keywords' => 'view,nzb,description,details',
             'meta_description' => 'View NZB for '.$release['searchname'],

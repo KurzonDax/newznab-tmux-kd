@@ -35,13 +35,14 @@
         <x-slot:title><span x-text="title">Preview image</span></x-slot:title>
         <x-slot:subtitle><span x-text="releaseName"></span></x-slot:subtitle>
         <p x-show="failed" class="tv-note" role="alert">The image for this release was not found on the server.</p>
-        <div x-show="!failed">
+        <div x-show="showImage()">
             <div class="tv-image-bar">
                 <span x-text="dimensions"></span>
                 <button type="button" class="tv-details-button is-secondary is-small" x-show="canFull" x-on:click="toggleFull()" x-bind:aria-pressed="fullPressed()" x-text="fullLabel()">Full size</button>
             </div>
             <button type="button" class="tv-image-frame" tabindex="-1" aria-hidden="true" x-on:click="toggleFull()"><img x-ref="image" x-bind:src="imageUrl" x-bind:alt="title" x-on:load="measure()" x-on:error="imageFailed()"></button>
         </div>
+        <div class="tv-image-player" x-show="video" x-ref="player"></div>
         <x-slot:footer>
             <span class="tv-grow"></span>
             <a class="tv-details-button is-secondary" x-bind:href="detailsUrl()"><i class="fas fa-circle-info" aria-hidden="true"></i>Details</a>

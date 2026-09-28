@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Releases;
 
-use App\Data\TvReleaseRow;
 use App\Models\Release;
-use App\Support\ReleaseCompletion;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -46,7 +44,7 @@ final class TvReleaseDetails
             'showLink' => $show === null ? null : ['url' => $row->showUrl, 'label' => $declared === null ? 'All releases of this show' : 'All seasons and episodes'],
             'siblings' => $siblings,
             'siblingKind' => $declared !== null && $declared['episode'] === null ? 'season pack' : 'episode',
-            'facts' => $this->facts($release, $row, $category),
+            'facts' => ReleaseDetailsFacts::grid($release, $row, $category),
         ];
     }
 
@@ -93,25 +91,5 @@ final class TvReleaseDetails
         $label = $declared['episode'] === null ? 'Season '.$declared['season'].' pack' : sprintf('S%02dE%02d', $declared['season'], $declared['episode']);
 
         return ' · '.$label.($title === '' ? '' : ' — '.$title);
-    }
-
-    /** @return list<array{string, string}> */
-    private function facts(Release $release, TvReleaseRow $row, string $category): array
-    {
-        $when = static fn (mixed $date): string => $date === null || $date === '' ? '—' : userDate((string) $date, 'M j, Y, g:i A');
-        $status = (int) $release->passwordstatus;
-
-        return [
-            ['Category', $category],
-            ['Size', $row->size],
-            ['Files', (string) $row->files],
-            ['Completion', ReleaseCompletion::isMeasured($release->completion) ? ReleaseCompletion::percent($release->completion).'%' : 'Not measured'],
-            ['Posted', $when($release->postdate)],
-            ['Added', $when($release->adddate)],
-            ['Grabs', (string) $row->grabs],
-            ['Group', $row->group === '' ? '—' : $row->group],
-            ['Poster', $row->uploader === '' ? '—' : $row->uploader],
-            ['Password status', $status < 0 ? 'Not checked' : ($row->passworded ? 'Detected' : 'None detected')],
-        ];
     }
 }

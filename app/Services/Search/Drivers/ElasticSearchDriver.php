@@ -3259,6 +3259,11 @@ class ElasticSearchDriver implements SearchDriverInterface
             ]]];
         }
 
+        $excludedFilm = (int) ($criteria['excluded_movieinfo_id'] ?? 0);
+        if ($excludedFilm > 0) {
+            $filter[] = ['bool' => ['must_not' => [['term' => ['movieinfo_id' => $excludedFilm]]]]];
+        }
+
         $minSize = (int) ($criteria['min_size'] ?? 0);
         if ($minSize > 0) {
             $filter[] = ['range' => ['size' => ['gte' => $minSize]]];

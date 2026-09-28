@@ -64,7 +64,9 @@ export function tvFilesDialog() {
  * The preview / sample image dialog: the full-size copy when one is on disk, else the thumb; its
  * pixel size; and a Full size button, offered only when the image is larger than shown, that
  * grows the dialog to the window at real pixels and turns into "Fit to window". Clicking the
- * image toggles too.
+ * image toggles too. A Clip chip (data-video-url) opens it with a video player instead, which,
+ * as today's preview modal, fetches nothing until play is pressed; the player is built here and
+ * removed on close.
  */
 export function tvImageDialog() {
     return {
@@ -78,6 +80,7 @@ export function tvImageDialog() {
         canFull: false,
         full: false,
         failed: false,
+        video: false,
 
         show(trigger) {
             const sample = trigger.classList.contains('sample-badge');
@@ -88,12 +91,41 @@ export function tvImageDialog() {
             this.canFull = false;
             this.full = false;
             this.failed = false;
-            this.imageUrl = trigger.dataset.fullUrl || trigger.dataset.imageUrl || '';
+            this.removePlayer();
+            this.video = Boolean(trigger.dataset.videoUrl);
+            this.imageUrl = this.video ? '' : trigger.dataset.fullUrl || trigger.dataset.imageUrl || '';
             this.open = true;
             this.$nextTick(() => {
+                if (this.video) return this.addPlayer(trigger.dataset.videoUrl, trigger.dataset.videoType || '');
                 const image = this.$refs.image;
                 if (image?.complete && image.naturalWidth) this.measure();
+                return undefined;
             });
+        },
+
+        addPlayer(url, type) {
+            const player = document.createElement('video');
+            player.controls = true;
+            player.preload = 'none';
+            player.tabIndex = 0;
+            const source = document.createElement('source');
+            source.src = url;
+            if (type) source.type = type;
+            player.append(source);
+            this.$refs.player?.replaceChildren(player);
+        },
+
+        removePlayer() {
+            const player = this.$refs.player?.querySelector('video');
+            if (!player) return;
+            player.pause();
+            player.replaceChildren();
+            player.load();
+            this.$refs.player.replaceChildren();
+        },
+
+        showImage() {
+            return !this.failed && !this.video;
         },
 
         /** Runs when the image has loaded: its natural size, and whether it is larger than shown. */
@@ -134,12 +166,14 @@ export function tvImageDialog() {
             this.open = false;
             this.full = false;
             this.imageUrl = '';
+            this.removePlayer();
+            this.video = false;
         },
 
         init() {
             this.initModal();
             this._click = event => {
-                const trigger = event.target.closest('.preview-badge, .sample-badge');
+                const trigger = event.target.closest('.preview-badge, .sample-badge, .clip-badge');
                 if (!trigger) return;
                 event.preventDefault();
                 this.show(trigger);
@@ -149,6 +183,7 @@ export function tvImageDialog() {
 
         destroy() {
             this._modalTeardown?.();
+            this.removePlayer();
             document.removeEventListener('click', this._click);
         },
     };
