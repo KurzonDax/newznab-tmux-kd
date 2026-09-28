@@ -167,7 +167,7 @@ final class TvShowPageTest extends TestCase
         $this->assertSame(['Specials', 'Season 1', 'Season 2', 'Season 3', 'Season 4', 'Season 5', 'Season 6', 'Season 7'], $this->tabs($this->page('/tv/show/'.self::SHOW.'/3')));
     }
 
-    public function test_episode_rows_come_from_what_releases_declare_newest_first_with_titles_by_min_id(): void
+    public function test_episode_rows_come_from_what_releases_declare_ascending_e00_first_with_titles_by_min_id(): void
     {
         DB::table('tv_episodes')->insert([
             ['id' => 20, 'videos_id' => self::SHOW, 'series' => 1, 'episode' => 2, 'title' => 'Second copy', 'firstaired' => '2022-07-15', 'se_complete' => '', 'summary' => ''],
@@ -182,7 +182,7 @@ final class TvShowPageTest extends TestCase
         DB::table('release_tv_episodes')->insert(['releases_id' => $multi, 'season' => 1, 'episode' => 4]);
 
         $response = $this->page('/tv/show/'.self::SHOW.'/1')->assertOk();
-        $this->assertSame(['E05', 'E04', 'E03', 'E02', 'E00'], $this->episodeNumbers($response));
+        $this->assertSame(['E00', 'E02', 'E03', 'E04', 'E05'], $this->episodeNumbers($response));
         $response->assertSee('Night Old<small>Aired 2022-07-14</small>', false)->assertDontSee('Second copy')
             ->assertSee('>Episode 5</span>', false)->assertSee('>Episode 0</span>', false)->assertSee('>Episode 4</span>', false)
             ->assertSee('540 MB – 1.64 GB')->assertSee('<span class="tv-episode-sizes">2.41 GB</span>', false)
@@ -288,7 +288,7 @@ final class TvShowPageTest extends TestCase
         $this->tv(1, 2, resolution: 1, source: 2);
 
         $page = $this->page('/tv/show/'.self::SHOW.'/1?audio[]=unknown&completion=100&genre[]=1&language[]=en&status[]=ended')->assertOk();
-        $this->assertSame(['E02', 'E01'], $this->episodeNumbers($page));
+        $this->assertSame(['E01', 'E02'], $this->episodeNumbers($page));
         $html = (string) $page->getContent();
         $this->assertStringNotContainsString('filter-bar', $html);
         $this->assertStringNotContainsString('is-cell', $html);
@@ -383,15 +383,15 @@ final class TvShowPageTest extends TestCase
         DB::table('videos')->insert(['id' => 8, 'type' => 0, 'title' => 'Nothing Visible']);
         $this->release('Hidden', ['categories_id' => self::FOREIGN, 'videos_id' => 8, 'passwordstatus' => 0]);
 
-        $this->assertSame(['E02', 'E01'], $this->episodeNumbers($this->page('/tv/show/'.self::SHOW)->assertSee('2 releases')));
+        $this->assertSame(['E01', 'E02'], $this->episodeNumbers($this->page('/tv/show/'.self::SHOW)->assertSee('2 releases')));
         $this->page('/tv/show/8')->assertOk();
         Settings::query()->updateOrInsert(['name' => 'showpasswordedrelease'], ['value' => '1']);
         Cache::flush();
-        $this->assertSame(['E03', 'E02', 'E01'], $this->episodeNumbers($this->page('/tv/show/'.self::SHOW)));
+        $this->assertSame(['E01', 'E02', 'E03'], $this->episodeNumbers($this->page('/tv/show/'.self::SHOW)));
 
         DB::table('user_excluded_categories')->insert(['users_id' => $this->user?->id, 'categories_id' => self::FOREIGN]);
         Cache::flush();
-        $this->assertSame(['E03', 'E01'], $this->episodeNumbers($this->page('/tv/show/'.self::SHOW)));
+        $this->assertSame(['E01', 'E03'], $this->episodeNumbers($this->page('/tv/show/'.self::SHOW)));
         $this->page('/tv/show/8')->assertNotFound();
         $this->page('/tv/show/404')->assertNotFound();
         $this->page('/tv/show/abc')->assertNotFound();

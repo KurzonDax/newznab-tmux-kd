@@ -107,8 +107,8 @@ final class TvShowPage
     }
 
     /**
-     * One row per declared episode of the season that has a release matching the filters, newest
-     * episode first: its count, the known resolutions present (no chip for Unknown) and the size range.
+     * One row per declared episode of the season that has a release matching the filters, listed
+     * ascending, E00 first: its count, the known resolutions present (no chip for Unknown) and the size range.
      *
      * @param  list<int>  $exclusions
      * @return list<TvShowEpisode>
@@ -131,7 +131,7 @@ final class TvShowPage
             $found[$episode]['smallest'] = min($found[$episode]['smallest'], (float) $group->smallest);
             $found[$episode]['largest'] = max($found[$episode]['largest'], (float) $group->largest);
         }
-        krsort($found);
+        ksort($found);
         $known = [];
         foreach (DB::table('tv_episodes')->where('videos_id', $videosId)->where('series', $season)->whereIn('episode', array_keys($found))
             ->orderBy('id')->get(['episode', 'title', 'firstaired']) as $row) {
