@@ -941,6 +941,8 @@ let lastHash='';
 addEventListener('hashchange',()=>{state.dd=null;if(/^#\/(p\/|shows|$)/.test(location.hash)||location.hash==='')scrollTo(0,0);if(/^#\/release\//.test(location.hash)&&lastHash!==location.hash)state.tab='overview';closeDialog();const base=h=>h.split('/').slice(0,3).join('/');if(base(lastHash)!==base(location.hash))scrollTo(0,0);lastHash=location.hash;const fromTab=!!document.activeElement?.closest?.('.stabs');route();if(fromTab)$('.stabs a[aria-current]')?.focus({preventScroll:true});});
 document.addEventListener('click',e=>{
   const al=e.target.closest('[data-applink]');if(al){e.preventDefault();toast('Opens '+decodeURIComponent(al.dataset.applink)+', the existing list of all releases for it (not part of this prototype)');return;}
+  // a plain click on a season tab replaces the history entry, so Back returns to the list the show was opened from (#814)
+  const stab=e.target.closest('.stabs a');if(stab&&e.button===0&&!(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)){e.preventDefault();location.replace(stab.href);return;}
   const o=e.target.closest('[data-open]');if(o)state.open.add(o.dataset.open);
   if(e.target.closest('[data-full]')){toggleFull();return;}
   if(e.target.closest('[data-clearall]')){LIST_SETS.forEach(k=>state[k].clear());state.comp=false;state.page=1;state.dd=null;if(location.hash!=='#/'&&location.hash!=='')history.replaceState(null,'','#/');const y=scrollY;route();scrollTo(0,y);$('.fbar .mbtn')?.focus({preventScroll:true});return;}

@@ -12,7 +12,7 @@ under `docs/proposals/tv-redesign/prototype/`:
 |---|---|
 | `tv.html`, `tokens.css` | the approved prototype, byte-for-byte the one Randall reviewed |
 | `data.json` … `repair.json`, `posters/`, `previews/`, `fixtures.json` | the invented dataset (`gen-demo-data.mjs`, `make-demo-art.mjs` regenerate it) |
-| `check.mjs` | 270 behaviour checks on this dataset (271 on the private one); `0 failures` |
+| `check.mjs` | 271 behaviour checks on this dataset; `0 failures` |
 | `reference/<state>-<dark|light>.webp` | 26 screen states × 2 themes at 1600 × 1000 |
 | `reference/measurements.json` | computed type, colour, radius, padding and size of 82 named parts, per theme |
 | `reference/tokens.json` | the resolved value of every colour token and chip hue, per theme |

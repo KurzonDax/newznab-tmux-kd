@@ -12,7 +12,7 @@ changes, the revised show page, the details page's release table and header butt
 | [`SPEC.md`](SPEC.md) | what each screen does, the rules that apply everywhere, what was rejected |
 | [`DATA-CONTRACT.md`](DATA-CONTRACT.md) | exactly what is stored, which existing code writes it, the proven queries, the tests required |
 | [`VISUAL-CONTRACT.md`](VISUAL-CONTRACT.md) | how an implementation is matched to the prototype, and how that is checked mechanically |
-| [`prototype/`](prototype/) | the approved prototype on an **entirely invented dataset** with placeholder art, its 270 behaviour checks, 54 reference screenshots and the measurements of 82 named parts |
+| [`prototype/`](prototype/) | the approved prototype on an **entirely invented dataset** with placeholder art, its 271 behaviour checks, 54 reference screenshots and the measurements of 82 named parts |
 | [`evidence/`](evidence/) | the query-lab write-ups the contracts cite |
 
 ```bash
