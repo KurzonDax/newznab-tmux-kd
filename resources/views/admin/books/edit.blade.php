@@ -97,8 +97,8 @@
                                    value="{{ $book['url'] ?? '' }}"
                                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-md focus:ring-primary-500 focus:border-primary-500">
                             @if(!empty($book['url']))
-                                <a href="{{ $book['url'] }}" target="_blank" class="text-sm text-primary-600 dark:text-primary-400 hover:underline mt-1 inline-block">
-                                    <i class="fas fa-external-link-alt mr-1"></i>View Source
+                                <a href="{{ $book['url'] }}" target="_blank" rel="noopener noreferrer" class="text-sm text-primary-600 dark:text-primary-400 hover:underline mt-1 inline-block">
+                                    <i class="fas fa-external-link-alt mr-1"></i>View Source<span class="sr-only"> (opens in a new tab)</span>
                                 </a>
                             @endif
                         </div>

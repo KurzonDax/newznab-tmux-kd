@@ -23,12 +23,14 @@ use ReflectionClass;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Support\AssertsOffsiteLinks;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
 class AdminContentControllerTest extends TestCase
 {
+    use AssertsOffsiteLinks;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
 
@@ -271,6 +273,28 @@ class AdminContentControllerTest extends TestCase
         $response->assertSee('Untitled');
         $response->assertSee('x-data="contentToggle"', false);
         $response->assertSee('x-on:click.prevent="deleteContent(', false);
+    }
+
+    public function test_admin_layout_and_content_list_open_offsite_links_safely_in_a_new_tab(): void
+    {
+        $admin = $this->createUserWithRole('Admin');
+        /** @var Authenticatable $authenticatedAdmin */
+        $authenticatedAdmin = $admin;
+        $this->createContent(['title' => 'Outside', 'url' => 'https://outside.example.org/page', 'ordinal' => 1]);
+        $this->createContent(['title' => 'Inside', 'url' => '/inside-page/', 'ordinal' => 2]);
+
+        $html = $this->actingAs($authenticatedAdmin)->get(route('admin.content-list'))->assertOk()->getContent();
+
+        $offsite = $this->assertOffsiteLinksOpenInANewTab($html, 'The admin content list');
+        $this->assertContains('https://github.com/NNTmux/newznab-tmux', $offsite);
+        $this->assertContains('https://outside.example.org/page', $offsite);
+
+        $inside = $this->anchorsTo($html, '/inside-page/');
+        $this->assertCount(1, $inside);
+        $inside = $inside[0];
+        $this->assertSame('_blank', $inside->getAttribute('target'));
+        $this->assertFalse($inside->hasAttribute('rel'));
+        $this->assertStringNotContainsString('opens in a new tab', $inside->textContent);
     }
 
     public function test_admin_can_delete_content_via_ajax(): void

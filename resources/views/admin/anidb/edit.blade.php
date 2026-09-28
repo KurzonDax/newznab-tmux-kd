@@ -155,13 +155,13 @@
                                 </label>
                                 <div class="flex flex-wrap gap-2">
                                     @if(!empty($anilistId))
-                                        <a href="{{ $site['dereferrer_link'] ?? '' }}https://anilist.co/anime/{{ $anilistId }}" target="_blank" class="inline-flex items-center px-3 py-2 bg-primary-100 text-primary-800 rounded-lg hover:bg-primary-200 transition text-sm">
-                                            <i class="fas fa-external-link-alt mr-2"></i> AniList
+                                        <a href="{{ $site['dereferrer_link'] ?? '' }}https://anilist.co/anime/{{ $anilistId }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center px-3 py-2 bg-primary-100 text-primary-800 rounded-lg hover:bg-primary-200 transition text-sm">
+                                            <i class="fas fa-external-link-alt mr-2"></i> AniList<span class="sr-only"> (opens in a new tab)</span>
                                         </a>
                                     @endif
                                     @if(!empty($malId))
-                                        <a href="{{ $site['dereferrer_link'] ?? '' }}https://myanimelist.net/anime/{{ $malId }}" target="_blank" class="inline-flex items-center px-3 py-2 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200 transition text-sm">
-                                            <i class="fas fa-external-link-alt mr-2"></i> MyAnimeList
+                                        <a href="{{ $site['dereferrer_link'] ?? '' }}https://myanimelist.net/anime/{{ $malId }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center px-3 py-2 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200 transition text-sm">
+                                            <i class="fas fa-external-link-alt mr-2"></i> MyAnimeList<span class="sr-only"> (opens in a new tab)</span>
                                         </a>
                                     @endif
                                 </div>

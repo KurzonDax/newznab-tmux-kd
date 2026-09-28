@@ -119,9 +119,10 @@
                                    class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-100 dark:bg-gray-700 dark:text-gray-300">
                             <x-button-link href="{{ $site['dereferrer_link'] }}https://www.imdb.com/title/tt{{ $movie['imdbid'] ?? $movie->imdbid ?? '' }}"
                                target="_blank"
+                               rel="noopener noreferrer"
                                variant="warning"
                                icon="fas fa-external-link">
-                                View on IMDB
+                                View on IMDB<span class="sr-only"> (opens in a new tab)</span>
                             </x-button-link>
                         </div>
                     </div>
@@ -315,8 +316,8 @@
                         @foreach($movielist as $movie)
                             <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-200">
-                                    <a href="{{ $site['dereferrer_link'] }}https://www.imdb.com/title/tt{{ $movie->imdbid }}" target="_blank" class="text-primary-600 dark:text-primary-400 hover:underline">
-                                        {{ $movie->imdbid }}
+                                    <a href="{{ $site['dereferrer_link'] }}https://www.imdb.com/title/tt{{ $movie->imdbid }}" target="_blank" rel="noopener noreferrer" class="text-primary-600 dark:text-primary-400 hover:underline">
+                                        {{ $movie->imdbid }}<span class="sr-only"> (opens in a new tab)</span>
                                     </a>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">

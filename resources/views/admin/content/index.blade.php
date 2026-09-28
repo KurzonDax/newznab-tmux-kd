@@ -65,8 +65,8 @@
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                         @if(!empty($item->url))
-                                            <a href="{{ $item->url }}" target="_blank" class="text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300">
-                                                {{ Str::limit($item->url, 30) }}
+                                            <a href="{{ $item->url }}" target="_blank" @if($item->is_external_url) rel="noopener noreferrer" @endif class="text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300">
+                                                {{ Str::limit($item->url, 30) }}@if($item->is_external_url)<span class="sr-only"> (opens in a new tab)</span>@endif
                                             </a>
                                         @else
                                             <span class="text-gray-400 dark:text-gray-500">N/A</span>

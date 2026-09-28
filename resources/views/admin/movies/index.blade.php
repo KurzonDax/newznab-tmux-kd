@@ -51,8 +51,8 @@
                 @foreach($movielist as $movie)
                     <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                            <a href="{{ $site['dereferrer_link'] }}https://www.imdb.com/title/tt{{ $movie->imdbid }}" target="_blank" class="text-primary-600 dark:text-primary-400 hover:underline">
-                                {{ $movie->imdbid }}
+                            <a href="{{ $site['dereferrer_link'] }}https://www.imdb.com/title/tt{{ $movie->imdbid }}" target="_blank" rel="noopener noreferrer" class="text-primary-600 dark:text-primary-400 hover:underline">
+                                {{ $movie->imdbid }}<span class="sr-only"> (opens in a new tab)</span>
                             </a>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap">

@@ -70,7 +70,7 @@
                 </div>
                 <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
                     Regex to use when grouping binaries into collections.<br>
-                    The regex delimiters are not added, you MUST add them. See <a href="http://php.net/manual/en/regexp.reference.delimiters" target="_blank" class="text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300">this</a> page.<br>
+                    The regex delimiters are not added, you MUST add them. See <a href="http://php.net/manual/en/regexp.reference.delimiters" target="_blank" rel="noopener noreferrer" class="text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-300">this<span class="sr-only"> (opens in a new tab)</span></a> page.<br>
                     To make the regex case insensitive, add <code class="bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-2 py-1 rounded">i</code> after the last delimiter.
                 </p>
             </div>

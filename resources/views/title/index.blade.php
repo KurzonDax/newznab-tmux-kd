@@ -15,7 +15,7 @@
                     <x-watch-button :root="$title->root->value" :id="$title->entity->id" :title="$title->entity->title" :watched="$watched" />
                 @endif
                 @foreach($title->links as $label => $url)
-                    <x-button-link :href="($site['dereferrer_link'] ?? '').$url" variant="secondary" size="sm" target="_blank" rel="noopener noreferrer">{{ $label }} <i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i></x-button-link>
+                    <x-button-link :href="($site['dereferrer_link'] ?? '').$url" variant="secondary" size="sm" target="_blank" rel="noopener noreferrer">{{ $label }} <i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i><span class="sr-only"> (opens in a new tab)</span></x-button-link>
                 @endforeach
                 @if($title->trailerUrl)<x-button variant="secondary" size="sm" icon="fas fa-play" :data-trailer-url="$title->trailerUrl">Trailer</x-button>@endif
             </div>
