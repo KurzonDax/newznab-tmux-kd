@@ -136,9 +136,12 @@ ranges compare it as text.
 |---|---|
 | `movieinfo_id` | `unsignedInteger`, FK `movieinfo.id` `ON DELETE CASCADE` |
 | `genres_id` | `unsignedInteger`, FK `genres.id` `ON DELETE CASCADE` |
+| `position` | `unsignedTinyInteger`: the genre's order for the film, 0 = first (his decision, 2026-09-27) |
 
 Primary key `(genres_id, movieinfo_id)`; index `ix_movie_genres_movie (movieinfo_id)`. Genres are `genres` rows with
-`type = 2000` (the Movies root), as TV's are `type = 5000`. 38,291 links at full size.
+`type = 2000` (the Movies root), as TV's are `type = 5000`. 38,291 links at full size. `position` keeps TMDB's order of the
+film's genres (from text, the text's order, the fill included): the Films wall tiles show the first two, and the film page's
+genre tags follow it.
 
 ### 2.4 `movie_people` (film ↔ person) — the #556 key
 

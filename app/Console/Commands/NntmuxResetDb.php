@@ -16,6 +16,46 @@ use Illuminate\Support\Facades\DB;
 class NntmuxResetDb extends Command
 {
     /**
+     * Tables emptied by a reset, with foreign-key checks off. Truncation restarts ids, so a
+     * link table left off this list would re-attach to new rows. The shared name tables
+     * (`genres`, `people`) are kept.
+     */
+    public const array TRUNCATE_TABLES = [
+        'binaries',
+        'collections',
+        'parts',
+        'missed_parts',
+        'videos',
+        'tv_episodes',
+        'tv_info',
+        'video_genres',
+        'video_people',
+        'release_nfos',
+        'release_comments',
+        'users_releases',
+        'user_movies',
+        'user_series',
+        'movieinfo',
+        'movie_genres',
+        'movie_people',
+        'musicinfo',
+        'release_files',
+        'audio_data',
+        'release_music_candidate_attempts',
+        'release_music_identifications',
+        'release_audio_evidence_tracks',
+        'release_audio_evidence',
+        'release_audio_tags',
+        'release_subtitles',
+        'video_data',
+        'media_infos',
+        'releases',
+        'anidb_titles',
+        'anidb_info',
+        'releases_groups',
+    ];
+
+    /**
      * The name and signature of the console command.
      *
      * @var string
@@ -65,41 +105,10 @@ class NntmuxResetDb extends Command
                 ]);
                 $this->info('Reseting all groups completed.');
 
-                $arr = [
-                    'binaries',
-                    'collections',
-                    'parts',
-                    'missed_parts',
-                    'videos',
-                    'tv_episodes',
-                    'tv_info',
-                    'release_nfos',
-                    'release_comments',
-                    'users_releases',
-                    'user_movies',
-                    'user_series',
-                    'movieinfo',
-                    'musicinfo',
-                    'release_files',
-                    'audio_data',
-                    'release_music_candidate_attempts',
-                    'release_music_identifications',
-                    'release_audio_evidence_tracks',
-                    'release_audio_evidence',
-                    'release_audio_tags',
-                    'release_subtitles',
-                    'video_data',
-                    'media_infos',
-                    'releases',
-                    'anidb_titles',
-                    'anidb_info',
-                    'releases_groups',
-                ];
-                foreach ($arr as &$value) {
+                foreach (self::TRUNCATE_TABLES as $value) {
                     DB::statement("TRUNCATE TABLE $value");
                     $this->info('Truncating '.$value.' completed.');
                 }
-                unset($value);
 
                 if (config('search.default') === 'elasticsearch') {
                     /** @var ElasticsearchClient $client */

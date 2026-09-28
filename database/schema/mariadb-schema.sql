@@ -799,6 +799,33 @@ CREATE TABLE `model_has_roles` (
   CONSTRAINT `model_has_roles_role_id_foreign` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `movie_genres`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `movie_genres` (
+  `movieinfo_id` int(10) unsigned NOT NULL,
+  `genres_id` int(10) unsigned NOT NULL,
+  `position` tinyint(3) unsigned NOT NULL COMMENT '0-based order of the genre as the source lists it',
+  PRIMARY KEY (`genres_id`,`movieinfo_id`),
+  KEY `ix_movie_genres_movie` (`movieinfo_id`),
+  CONSTRAINT `fk_movie_genres_genres_id` FOREIGN KEY (`genres_id`) REFERENCES `genres` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_movie_genres_movieinfo_id` FOREIGN KEY (`movieinfo_id`) REFERENCES `movieinfo` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `movie_people`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `movie_people` (
+  `movieinfo_id` int(10) unsigned NOT NULL,
+  `people_id` int(10) unsigned NOT NULL,
+  `role` tinyint(3) unsigned NOT NULL COMMENT '0 director, 1 cast',
+  `position` tinyint(3) unsigned NOT NULL COMMENT '0-based order within the role',
+  PRIMARY KEY (`people_id`,`movieinfo_id`,`role`),
+  KEY `ix_movie_people_movie` (`movieinfo_id`,`role`,`position`),
+  CONSTRAINT `fk_movie_people_movieinfo_id` FOREIGN KEY (`movieinfo_id`) REFERENCES `movieinfo` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_movie_people_people_id` FOREIGN KEY (`people_id`) REFERENCES `people` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `movieinfo`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -823,11 +850,15 @@ CREATE TABLE `movieinfo` (
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,
   `trailer` varchar(255) NOT NULL DEFAULT '',
+  `vote_count` int(10) unsigned DEFAULT NULL COMMENT 'TMDB vote_count, 0 kept; NULL = not fetched since this column was added',
+  `content_rating_us` varchar(8) NOT NULL DEFAULT '' COMMENT 'TMDB US certification from release_dates (MPAA Rating); empty = none',
+  `original_language` varchar(8) NOT NULL DEFAULT '' COMMENT 'TMDB original_language (ISO 639-1); empty = unknown',
   PRIMARY KEY (`id`),
   UNIQUE KEY `ix_movieinfo_imdbid` (`imdbid`),
   KEY `ix_movieinfo_title` (`title`),
   KEY `ix_movieinfo_tmdbid` (`tmdbid`),
-  KEY `ix_movieinfo_traktid` (`traktid`)
+  KEY `ix_movieinfo_traktid` (`traktid`),
+  KEY `ix_movieinfo_year` (`year`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `musicinfo`;
@@ -1914,7 +1945,8 @@ CREATE TABLE `people` (
   `name` varchar(120) NOT NULL,
   `tmdb_id` int(10) unsigned DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `ux_people_tmdb_id` (`tmdb_id`)
+  UNIQUE KEY `ux_people_tmdb_id` (`tmdb_id`),
+  KEY `ix_people_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `permissions`;
@@ -3966,3 +3998,5 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (296,'2026_09_24_20
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (297,'2026_09_25_000000_add_show_details_to_tv_info',14);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (298,'2026_09_25_100000_refill_release_tv_episodes',15);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (299,'2026_09_27_000000_add_filter_led_indexes_to_releases',16);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (300,'2026_09_27_100000_add_movie_genres_and_people',17);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (301,'2026_09_27_100100_fill_movie_genres_and_people',17);
