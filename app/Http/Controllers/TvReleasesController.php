@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Data\TvReleaseFilters;
+use App\Data\TvReleaseRow;
 use App\Models\Category;
-use App\Services\Releases\TvReleaseBatches;
+use App\Services\Releases\ReleaseBatches;
 use App\Services\Releases\TvReleaseList;
 use App\Services\Releases\TvReleaseRows;
 use Illuminate\Http\RedirectResponse;
@@ -37,7 +38,8 @@ final class TvReleasesController extends BasePageController
             'showOptions' => $showOptions,
             'total' => $total,
             'lastPage' => $lastPage,
-            'runs' => TvReleaseBatches::group($rows->load($list->pageIds($filters, $exclusions, $total), $filters->sortsByAdded())),
+            'runs' => ReleaseBatches::group($rows->load($list->pageIds($filters, $exclusions, $total), $filters->sortsByAdded()),
+                static fn (TvReleaseRow $row): ?int => $row->showId, static fn (TvReleaseRow $row): string => $row->showTitle),
             'nzbLinkBase' => url('/api/v1/api'),
             'apiToken' => (string) $this->userdata->api_token,
         ]);

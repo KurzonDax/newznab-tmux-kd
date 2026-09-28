@@ -1,15 +1,16 @@
 @php
-    $pageUrl = fn (int $page): string => route('tv.releases', $filters->query($page));
+    $pageUrl = fn (int $page): string => route('movies.releases', $filters->query($page));
     $byAdded = $filters->sortsByAdded();
-    $chipBaseId = collect($runs)->flatMap(fn (array $run): array => array_slice($run['rows'], 0, $run['collapsible'] ? \App\Services\Releases\ReleaseBatches::SHOWN : null))->first(fn ($row): bool => $row->hasChips())?->id;
+    $shown = \App\Services\Releases\ReleaseBatches::SHOWN;
+    $chipBaseId = collect($runs)->flatMap(fn (array $run): array => array_slice($run['rows'], 0, $run['collapsible'] ? $shown : null))->first(fn ($row): bool => $row->hasChips())?->id;
 @endphp
-<x-pager-line :page="$filters->page" :last-page="$lastPage" :total="$total" :per-page="\App\Data\TvReleaseFilters::PER_PAGE" noun="release" :url="$pageUrl"
-              :clear-all="route('tv.releases')" :filtered="$filters->any()" />
+<x-pager-line :page="$filters->page" :last-page="$lastPage" :total="$total" :per-page="\App\Data\MovieReleaseFilters::PER_PAGE" noun="release" :url="$pageUrl"
+              :clear-all="route('movies.releases')" :filtered="$filters->any()" />
 @if($runs === [])
     @php
-        $matching = $filters->describe($categoryMenu, $audioMenu, $showOptions);
+        $matching = $filters->describe($categoryMenu, $audioMenu, $filmOptions);
     @endphp
-    <p class="tv-empty">{{ $matching === '' ? 'There are no TV releases yet.' : 'Nothing matches '.$matching.'.' }}</p>
+    <p class="tv-empty">{{ $matching === '' ? 'There are no movie releases yet.' : 'No releases match '.$matching.'.' }}</p>
 @else
     <table class="tv-feed" data-list-page="{{ $filters->page }}">
         <colgroup><col class="tv-col-select"><col class="tv-col-art"><col><col class="tv-col-resolution"><col class="tv-col-source"><col class="tv-col-size"><col class="tv-col-date"><col class="tv-col-actions"></colgroup>
@@ -27,11 +28,11 @@
         <tbody>
             @foreach($runs as $run)
                 @foreach($run['rows'] as $row)
-                    @include('tv.releases.row', ['row' => $row, 'batch' => $run['collapsible'] && $loop->index >= \App\Services\Releases\ReleaseBatches::SHOWN ? $run['key'] : null, 'first' => $loop->parent->first && $loop->first, 'chipBaseId' => $chipBaseId])
+                    @include('movies.releases.row', ['row' => $row, 'batch' => $run['collapsible'] && $loop->index >= $shown ? $run['key'] : null, 'first' => $loop->parent->first && $loop->first, 'chipBaseId' => $chipBaseId])
                 @endforeach
                 @if($run['collapsible'])
                     @php
-                        $more = 'Show '.(count($run['rows']) - \App\Services\Releases\ReleaseBatches::SHOWN).' more from '.$run['title'].' posted in the same batch';
+                        $more = 'Show '.(count($run['rows']) - $shown).' more from '.$run['title'].' posted in the same batch';
                     @endphp
                     <tr class="tv-batch">
                         <td colspan="8"><div><button type="button" data-expand="{{ $run['key'] }}" aria-expanded="false" data-label-closed="{{ $more }}" data-label-open="Show fewer from {{ $run['title'] }}" data-part="batch expander"><i class="fas fa-chevron-down" aria-hidden="true"></i><span>{{ $more }}</span></button></div></td>
@@ -40,5 +41,5 @@
             @endforeach
         </tbody>
     </table>
-    <x-pager :page="$filters->page" :last-page="$lastPage" :url="$pageUrl" :action="route('tv.releases')" :query="$filters->query(1)" />
+    <x-pager :page="$filters->page" :last-page="$lastPage" :url="$pageUrl" :action="route('movies.releases')" :query="$filters->query(1)" />
 @endif

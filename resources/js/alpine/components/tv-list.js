@@ -27,6 +27,20 @@ export function filterUrl(href, name, values, single = false) {
     return url;
 }
 
+/**
+ * The current URL with several filters replaced and the page dropped: a list sets name[], a
+ * value sets name=value, and an empty list or value removes the filter.
+ */
+export function paramsUrl(href, params) {
+    let url = new URL(href);
+    Object.entries(params).forEach(([name, value]) => {
+        const list = Array.isArray(value);
+        url = filterUrl(url.toString(), name, list ? value : [value].filter(item => item !== null && item !== ''), !list);
+    });
+    url.searchParams.delete('page');
+    return url;
+}
+
 /** The current URL without its page, for a new sort. */
 export function firstPageUrl(href) {
     const url = new URL(href);

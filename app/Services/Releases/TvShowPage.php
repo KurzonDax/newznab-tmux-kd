@@ -150,8 +150,8 @@ final class TvShowPage
                 aired: $aired === '' || str_starts_with($aired, '0000') ? '' : substr($aired, 0, 10),
                 releases: $episode['releases'],
                 resolutions: $resolutions,
-                smallest: TvReleaseRows::size($episode['smallest']),
-                largest: TvReleaseRows::size($episode['largest']),
+                smallest: ReleaseRowFacts::size($episode['smallest']),
+                largest: ReleaseRowFacts::size($episode['largest']),
             );
         }
 

@@ -58,6 +58,9 @@
     /* Filter-bar filter names: ink on light, white on dark (VISUAL-CONTRACT 2, "Filter bar tokens"). */
     --text-filter-name: #17181c;
     --text-filter-name-dark: #ffffff;
+    /* A refused value in place of a heading (the film bar's Year range, Movies SPEC 5.2): the prototypes' --bad. */
+    --text-error: #b3261e;
+    --text-error-dark: #ff7a7a;
 
     /* Filled accent controls: white on #ff5a3c fails contrast, so each theme has its own pair. */
     --accent-surface: #c8331a;

@@ -59,6 +59,7 @@ const lazyComponentMap = {
     'releaseBrowser':  () => import('./components/release-browser.js'),
     'tvReleases':      () => import('./components/tv-releases.js'),
     'checkboxMenu':    () => import('./components/checkbox-menu.js'),
+    'yearMenu':        () => import('./components/year-menu.js'),
     'tvShows':         () => import('./components/tv-shows.js'),
     'tvSearch':        () => import('./components/tv-search.js'),
     'tvEpisodeList':   () => import('./components/tv-episode-list.js'),

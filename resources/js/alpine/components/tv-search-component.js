@@ -1,29 +1,35 @@
 /**
- * The results of GET /tv/search as one list in display order: shows first, then people.
- * A show opens its show page; a person opens the wall filtered to their shows.
+ * The results of a section's search (GET /tv/search, GET /movies/search) as one list in display
+ * order: titles first (`shows` or `films`, by `kind`), then people. A title opens its page; a
+ * person opens the wall filtered to their titles. A person lists their first three titles and
+ * their count (`count`, else every title is listed).
  */
-export function resultItems(data, urls) {
-    const shows = (data.shows ?? []).map(show => ({
-        kind: 'show',
-        href: urls.show + '/' + show.id,
-        title: show.title,
-        detail: [show.year ?? '', (show.genres ?? []).join(', ')].filter(Boolean).join(' · '),
-        poster: show.poster ?? null,
+export function resultItems(data, urls, kind = 'show') {
+    const plural = kind + 's';
+    const titles = (data[plural] ?? []).map(title => ({
+        kind,
+        href: urls.show + '/' + title.id,
+        title: title.title,
+        detail: [title.year ?? '', (title.genres ?? []).join(', ')].filter(Boolean).join(' · '),
+        poster: title.poster ?? null,
     }));
-    const people = (data.people ?? []).map(person => ({
-        kind: 'person',
-        href: urls.shows + '?person=' + person.id,
-        title: person.name,
-        detail: person.shows.length + (person.shows.length === 1 ? ' show: ' : ' shows: ') + person.shows.slice(0, 3).join(', '),
-        poster: null,
-    }));
-    return [...shows, ...people];
+    const people = (data.people ?? []).map(person => {
+        const credits = person[plural] ?? [], count = person.count ?? credits.length;
+        return {
+            kind: 'person',
+            href: urls.shows + '?person=' + person.id,
+            title: person.name,
+            detail: count + ' ' + (count === 1 ? kind : plural) + ': ' + credits.slice(0, 3).join(', '),
+            poster: null,
+        };
+    });
+    return [...titles, ...people];
 }
 
 /**
- * The TV section's "Search shows or actors" field (x-tv-search): asks the TV search as the
- * user types, lists Shows then People under the field, and supports the arrow keys, Enter
- * and Escape. The site's top-bar search is separate and unchanged.
+ * A section's "Search shows or actors" / "Search films or actors" field (x-tv-search): asks the
+ * section's search as the user types, lists Shows (Films) then People under the field, and
+ * supports the arrow keys, Enter and Escape. The site's top-bar search is separate and unchanged.
  */
 export function tvSearch() {
     return {
@@ -63,7 +69,7 @@ export function tvSearch() {
                 if (!response.ok) throw new Error('Search failed');
                 const data = await response.json();
                 if (request.signal.aborted) return;
-                this.items = resultItems(data, { show: this.root.dataset.showUrl, shows: this.root.dataset.showsUrl });
+                this.items = resultItems(data, { show: this.root.dataset.showUrl, shows: this.root.dataset.showsUrl }, this.root.dataset.kind ?? 'show');
                 this.highlighted = 0;
                 this.render(text);
                 this.open = true;
@@ -85,7 +91,7 @@ export function tvSearch() {
             let group = null;
             this.items.forEach((item, index) => {
                 if (group === null || item.kind !== group.dataset.kind) {
-                    const name = item.kind === 'show' ? 'Shows' : 'People';
+                    const name = item.kind === 'person' ? 'People' : (item.kind === 'film' ? 'Films' : 'Shows');
                     group = document.createElement('div');
                     group.dataset.kind = item.kind;
                     group.setAttribute('role', 'group');

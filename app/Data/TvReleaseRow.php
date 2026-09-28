@@ -5,12 +5,11 @@ declare(strict_types=1);
 namespace App\Data;
 
 use App\Enums\ReleaseResolution;
-use App\Services\Releases\TvReleaseRows;
 
 /** One release row of the TV screens (the releases list and the show page's release tables), ready to render. */
 final readonly class TvReleaseRow
 {
-    private const string BINARIES_PREFIX = 'alt.binaries.';
+    use ReleaseRowParts;
 
     /**
      * @param  array{percent: int, band: string, repairing: bool}|null  $completion  null at 100% or when never measured
@@ -55,23 +54,6 @@ final readonly class TvReleaseRow
         return $this->showId !== null;
     }
 
-    public function hasChips(): bool
-    {
-        return $this->completion !== null || $this->passworded || $this->mediaInfo !== null || $this->nfo || $this->preview !== null || $this->sample !== null;
-    }
-
-    /** The releases list's group and poster chips close the chip line when the release has either. */
-    public function hasOrigin(): bool
-    {
-        return $this->group !== '' || $this->uploader !== '';
-    }
-
-    /** The group chip's label: `a.b.` stands for `alt.binaries.`, the full name stays in its title. */
-    public function groupLabel(): string
-    {
-        return str_starts_with($this->group, self::BINARIES_PREFIX) ? 'a.b.'.substr($this->group, strlen(self::BINARIES_PREFIX)) : $this->group;
-    }
-
     /**
      * The no-poster placeholder's name card (SPEC appendix A, the prototype's `showName()`): the title the
      * release name states and its episode or air date, or null for the "No poster" tile. Nothing is
@@ -95,16 +77,6 @@ final readonly class TvReleaseRow
             $match[5] !== null => $match[5].'-'.$match[6].'-'.$match[7],
             default => strtoupper((string) $match[8]),
         }];
-    }
-
-    /** The details header's media info chip: the row's summary led by the release's resolution when both are known. */
-    public function mediaInfoWithResolution(): ?string
-    {
-        if ($this->mediaInfo === null || $this->mediaInfo === TvReleaseRows::MEDIA_INFO_FALLBACK || $this->resolution === ReleaseResolution::Unknown) {
-            return $this->mediaInfo;
-        }
-
-        return $this->resolution->label().' · '.$this->mediaInfo;
     }
 
     /** `Show · S01E02 · Episode title`, or just the show when the release declares nothing. */
