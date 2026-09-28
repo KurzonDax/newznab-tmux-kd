@@ -7,6 +7,7 @@ namespace App\Services\MetadataProcessing;
 use App\Models\Category;
 use App\Models\Genre;
 use App\Models\Person;
+use Illuminate\Cache\Lock;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -31,20 +32,42 @@ final class MovieCredits
 
     private const int GENRE_LOCK_SECONDS = 10;
 
+    /**
+     * `people.name` has no unique key and the collation makes two spellings one name, so a
+     * lock keyed on the name could not cover them: every insert of a person no lookup found
+     * is serialised, text and TMDB alike (a text row and a TMDB row can be one person), and
+     * the lookups repeat under the lock.
+     */
+    private const string PERSON_LOCK = 'movie_credits:person_create';
+
+    /** How long a held lock lives if its worker dies without releasing it. */
+    private const int PERSON_LOCK_SECONDS = 10;
+
+    /**
+     * A holder keeps the lock for a lookup and an insert, so waiters retry often, and wait
+     * past the lifetime of a lock a dead worker left, rather than abort the film.
+     */
+    private const int PERSON_LOCK_WAIT_SECONDS = 15;
+
+    private const int PERSON_LOCK_RETRY_MILLISECONDS = 20;
+
     private const int GENRE_TITLE_LENGTH = 255;
 
     /**
      * Replaces the film's genre and people rows, in one transaction and only when they
      * differ. Directors are all kept; the cast is the first twelve distinct people, counted
      * after the names resolve to rows (two spellings the collation treats as one name are one
-     * person, and the next name takes the place).
+     * person, a TMDB person with an empty name and no row is left out, and the next name
+     * takes the place). A people list that resolves to nobody is replaced by its fallback.
      *
      * @param  list<string>  $genres
      * @param  list<array{name: string, tmdb_id: ?int}>  $directors
      * @param  list<array{name: string, tmdb_id: ?int}>  $cast
+     * @param  list<array{name: string, tmdb_id: ?int}>  $directorsFallback
+     * @param  list<array{name: string, tmdb_id: ?int}>  $castFallback
      * @return bool Whether any row changed.
      */
-    public function sync(int $movieinfoId, array $genres, array $directors, array $cast): bool
+    public function sync(int $movieinfoId, array $genres, array $directors, array $cast, array $directorsFallback = [], array $castFallback = []): bool
     {
         // Found or created before the transaction opens, so no transaction holds a new
         // genre another worker cannot see yet.
@@ -54,9 +77,13 @@ final class MovieCredits
         }
 
         $peopleRows = [];
-        foreach ([self::ROLE_DIRECTOR => [$directors, PHP_INT_MAX], self::ROLE_CAST => [$cast, self::CAST_LIMIT]] as $role => [$people, $limit]) {
-            $ids = array_map(fn (array $person): ?int => $this->personId($person['name'], $person['tmdb_id']), $people);
-            foreach ($this->distinct($ids, $limit) as $position => $personId) {
+        $lists = [
+            self::ROLE_DIRECTOR => [$directors, $directorsFallback, PHP_INT_MAX],
+            self::ROLE_CAST => [$cast, $castFallback, self::CAST_LIMIT],
+        ];
+        foreach ($lists as $role => [$people, $fallback, $limit]) {
+            $ids = $this->personIds($people, $limit);
+            foreach ($ids !== [] ? $ids : $this->personIds($fallback, $limit) as $position => $personId) {
                 $peopleRows[] = ['people_id' => $personId, 'role' => $role, 'position' => $position];
             }
         }
@@ -104,24 +131,80 @@ final class MovieCredits
         return $claimed === 1 ? $personId : $this->tmdbPersonId($tmdbId, $name);
     }
 
+    /**
+     * The people's rows in order, each once, up to the limit. Names resolve one at a time
+     * and stop at the limit, so no row is added for a person past it.
+     *
+     * @param  list<array{name: string, tmdb_id: ?int}>  $people
+     * @return list<int>
+     */
+    private function personIds(array $people, int $limit): array
+    {
+        $kept = [];
+        foreach ($people as $person) {
+            if (count($kept) === $limit) {
+                break;
+            }
+            $id = $this->personId($person['name'], $person['tmdb_id']);
+            if ($id !== null && ! in_array($id, $kept, true)) {
+                $kept[] = $id;
+            }
+        }
+
+        return $kept;
+    }
+
+    /**
+     * The person's row, found or added. A TMDB person is found by TMDB id, else claims an
+     * unclaimed row of the same name; a name from text is found among all people. Only a
+     * person with a name is added: an empty name with no row gives null.
+     */
     private function personId(string $name, ?int $tmdbId): ?int
     {
         $name = mb_substr(trim($name), 0, Person::NAME_LENGTH);
-        if ($tmdbId === null || $tmdbId <= 0) {
-            return $name === '' ? null : $this->textPersonId($name);
+        $tmdbId = $tmdbId !== null && $tmdbId > 0 ? $tmdbId : null;
+
+        $id = $this->findOrClaimPersonId($name, $tmdbId);
+        if ($id !== null || $name === '') {
+            return $id;
         }
 
-        $id = Person::query()->where('tmdb_id', $tmdbId)->value('id');
-        if ($id !== null) {
-            return (int) $id;
+        $lock = Cache::lock(self::PERSON_LOCK, self::PERSON_LOCK_SECONDS);
+        if ($lock instanceof Lock) {
+            $lock->betweenBlockedAttemptsSleepFor(self::PERSON_LOCK_RETRY_MILLISECONDS);
+        }
+
+        return (int) $lock->block(self::PERSON_LOCK_WAIT_SECONDS, fn (): int => $this->findOrClaimPersonId($name, $tmdbId) ?? $this->insertPerson($name, $tmdbId));
+    }
+
+    /**
+     * The person's existing row. A TMDB person found only by name claims that row (a write).
+     */
+    private function findOrClaimPersonId(string $name, ?int $tmdbId): ?int
+    {
+        if ($tmdbId !== null) {
+            $id = Person::query()->where('tmdb_id', $tmdbId)->value('id');
+            if ($id !== null) {
+                return (int) $id;
+            }
+        }
+        if ($name === '') {
+            return null;
+        }
+        if ($tmdbId === null) {
+            return $this->textPersonId($name);
         }
 
         $unclaimed = Person::query()->where('name', $name)->whereNull('tmdb_id')->orderBy('id')->value('id');
-        if ($unclaimed !== null) {
-            return $this->claim((int) $unclaimed, $tmdbId, $name);
-        }
 
-        return $this->tmdbPersonId($tmdbId, $name);
+        return $unclaimed !== null ? $this->claim((int) $unclaimed, $tmdbId, $name) : null;
+    }
+
+    private function insertPerson(string $name, ?int $tmdbId): int
+    {
+        return $tmdbId === null
+            ? (int) Person::query()->insertGetId(['name' => $name, 'tmdb_id' => null])
+            : $this->tmdbPersonId($tmdbId, $name);
     }
 
     /**
@@ -138,11 +221,11 @@ final class MovieCredits
      * A name from text is looked up among all people, preferring one TMDB already
      * identified, then the lowest id, so text never re-creates a person TMDB has claimed.
      */
-    private function textPersonId(string $name): int
+    private function textPersonId(string $name): ?int
     {
         $id = Person::query()->where('name', $name)->orderByRaw('tmdb_id IS NULL')->orderBy('id')->value('id');
 
-        return $id !== null ? (int) $id : (int) Person::query()->insertGetId(['name' => $name, 'tmdb_id' => null]);
+        return $id !== null ? (int) $id : null;
     }
 
     private function genreId(string $title): ?int
