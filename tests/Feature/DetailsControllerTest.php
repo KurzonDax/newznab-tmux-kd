@@ -141,32 +141,35 @@ final class DetailsControllerTest extends TestCase
     {
         $current = $this->detailRelease('Some.Game.v1.0-GRP');
         $same = $this->detailRelease('Some.Game.v1.1-GRP', ['display_name' => 'Some Game update']);
+        $sibling = $this->detailRelease('Some.Game.Soundtrack.ISO', ['categories_id' => 4030, 'display_name' => 'Some Game disc image']);
         $book = $this->detailRelease('Some.Game.Strategy.Guide', ['categories_id' => self::BOOKS_EBOOK, 'display_name' => 'Some Game strategy guide']);
         $user = $this->browserUser();
         DB::table('categories')->insert(['id' => 4010, 'title' => '0day', 'root_categories_id' => 4000]);
         DB::table('user_excluded_categories')->insert(['users_id' => $user->id, 'categories_id' => 4010]);
         $searches = [];
         // search() runs MariaDB-only SQL; its rows carry id and categories_id and no categoryparentid.
-        $this->partialMock(ReleaseSearchService::class, function (MockInterface $mock) use (&$searches, $current, $same, $book): void {
-            $mock->shouldReceive('search')->andReturnUsing(function (mixed ...$arguments) use (&$searches, $current, $same, $book) {
+        // categories_id comes back as a string here so the root comparison must not depend on its type.
+        $this->partialMock(ReleaseSearchService::class, function (MockInterface $mock) use (&$searches, $current, $same, $sibling, $book): void {
+            $mock->shouldReceive('search')->andReturnUsing(function (mixed ...$arguments) use (&$searches, $current, $same, $sibling, $book) {
                 $searches[] = $arguments;
 
-                return Release::query()->whereIn('id', [$current, $same, $book])->orderBy('id')->get()
+                return Release::query()->whereIn('id', [$current, $same, $sibling, $book])->orderBy('id')->get()
                     ->each(static function (Release $row): void {
-                        $row->setRawAttributes(['id' => (string) $row->id, 'categories_id' => (string) $row->categories_id] + $row->getAttributes());
+                        $row->setRawAttributes(['categories_id' => (string) $row->categories_id] + $row->getAttributes());
                     });
             });
         });
 
         $response = $this->actingAs($user)->get('/details/'.md5('Some.Game.v1.0-GRP'))->assertOk();
 
-        $this->assertSame([$same], array_map(static fn (Release $row): int => (int) $row->id, $response->viewData('similars')));
-        $response->assertSee('Similar releases')->assertSee('Some Game update')->assertDontSee('Some Game strategy guide');
+        $this->assertSame([$same, $sibling], array_map(static fn (Release $row): int => (int) $row->id, $response->viewData('similars')));
+        $response->assertSee('Similar releases')->assertSee('Some Game update')->assertSee('Some Game disc image')->assertDontSee('Some Game strategy guide');
         $this->assertCount(1, $searches);
-        $this->assertSame(['searchname' => getSimilarName('Some.Game.v1.0-GRP')], $searches[0][0]);
-        $this->assertSame((int) config('nntmux.items_per_page'), $searches[0][7]);
-        $this->assertContains(4010, array_map('intval', $searches[0][10]));
-        $this->assertSame([4000], $searches[0][12]);
+        [$phrases, $limit, $excludedCategories, $categories] = [$searches[0][0], $searches[0][7], $searches[0][10], $searches[0][12]];
+        $this->assertSame(['searchname' => getSimilarName('Some.Game.v1.0-GRP')], $phrases);
+        $this->assertSame((int) config('nntmux.items_per_page'), $limit);
+        $this->assertContains(4010, array_map('intval', $excludedCategories));
+        $this->assertSame([4000], $categories);
     }
 
     /** @param array<string, mixed> $attributes */
