@@ -99,12 +99,12 @@ final class WatchlistControllerTest extends TestCase
         DB::table('user_movies')->insert(['users_id' => $user->id, 'imdbid' => '0137523', 'categories' => '2030']);
         $this->release('Allowed latest', ['imdbid' => '0137523']);
         $this->release('Unwanted UHD', ['imdbid' => '0137523', 'categories_id' => 2040, 'adddate' => now()]);
-        $this->actingAs($user)->get('/watchlist?tab=movies&q=Movie')->assertOk()
+        $page = $this->actingAs($user)->get('/watchlist?tab=movies&q=Movie')->assertOk()
             ->assertSee('Quiet Movie')->assertSee('Followed Movie')->assertSee('Allowed latest')->assertDontSee('Unwanted UHD')
             ->assertSee('/title/movies/0137523', false)->assertSee('/rss/mymovies', false)->assertSee('data-watch-picker', false);
-        $this->assertNoWatchWording((string) $this->get('/watchlist?tab=movies&q=Movie')->getContent(), 'The Following page');
+        $this->assertNoWatchWording((string) $page->getContent(), 'The Following page');
         $empty = $this->get('/watchlist?tab=tv')->assertOk()->assertSee('Nothing followed yet.')->assertSee('/rss/myshows', false)
-            ->assertSee('<h1', false)->assertSee('Following')->assertSee('far fa-bookmark', false);
+            ->assertSeeInOrder(['<h1 class="page-heading', 'Following', '</h1>'], false)->assertSee('far fa-bookmark', false);
         $this->assertNoWatchWording((string) $empty->getContent(), 'The empty Following page');
     }
 
