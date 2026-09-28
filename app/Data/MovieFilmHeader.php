@@ -19,7 +19,7 @@ final readonly class MovieFilmHeader
      * @param  list<string>  $tags  the plain tags: `Score 8.4` or `Too few votes`, the MPAA rating, the language
      * @param  array<int, string>  $directors  people.id => name, in order
      * @param  array<int, string>  $cast  people.id => name, the first STARRING_LIMIT in order
-     * @param  array<string, string>  $links  label => outside URL: IMDb always, TMDB and Trakt when known
+     * @param  array<string, string>  $links  label => outside URL: IMDb, TMDB and Trakt, each when its id is known
      */
     public function __construct(
         public int $id,

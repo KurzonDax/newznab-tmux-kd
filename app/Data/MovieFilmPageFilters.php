@@ -55,11 +55,6 @@ final readonly class MovieFilmPageFilters
         );
     }
 
-    public function withPage(int $page): self
-    {
-        return new self($this->resolutions, $this->sources, $this->sort, $this->ascending, $page);
-    }
-
     /** The same sort with no filter: where "Clear all" leads. */
     public function withoutFilters(): self
     {

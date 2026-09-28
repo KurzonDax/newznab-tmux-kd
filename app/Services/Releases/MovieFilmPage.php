@@ -25,6 +25,11 @@ final class MovieFilmPage
     /** "Starring" names at most this many people, in TMDB's order (as TV's CAST_LIMIT). */
     public const STARRING_LIMIT = 12;
 
+    /** `movie_people.role` (DATA-CONTRACT 2.4): "Directed by" lists role 0, "Starring" role 1. */
+    public const ROLE_DIRECTOR = 0;
+
+    public const ROLE_CAST = 1;
+
     /** Outside links as today's title page builds them (TitleMetadataLoader): label => URL prefix. */
     private const LINKS = ['IMDb' => 'https://www.imdb.com/title/tt', 'TMDB' => 'https://www.themoviedb.org/movie/', 'Trakt' => 'https://trakt.tv/movies/'];
 
@@ -68,8 +73,8 @@ final class MovieFilmPage
                 (string) $film->content_rating_us,
                 (string) LanguageNames::name((string) $film->original_language),
             ], static fn (string $tag): bool => $tag !== '')),
-            directors: $names($people(0)),
-            cast: $names($people(1)->limit(self::STARRING_LIMIT)),
+            directors: $names($people(self::ROLE_DIRECTOR)),
+            cast: $names($people(self::ROLE_CAST)->limit(self::STARRING_LIMIT)),
             links: self::links($imdbId, (int) $film->tmdbid, (int) $film->traktid),
         );
     }

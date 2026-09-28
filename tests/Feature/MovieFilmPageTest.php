@@ -403,7 +403,9 @@ final class MovieFilmPageTest extends TestCase
         $this->genreOf(self::FILM, self::CRIME);
         $this->genreOf(self::FILM, self::DRAMA, 1);
         DB::table('people')->insert([['id' => 1, 'name' => 'Person 1'], ['id' => 2, 'name' => 'Person 2']]);
-        DB::table('movie_people')->insert([['movieinfo_id' => self::FILM, 'people_id' => 1, 'role' => 0, 'position' => 0], ['movieinfo_id' => self::FILM, 'people_id' => 2, 'role' => 1, 'position' => 0]]);
+        // Person 1 directs and acts: a person counts once however many roles they hold in either film.
+        DB::table('movie_people')->insert([['movieinfo_id' => self::FILM, 'people_id' => 1, 'role' => 0, 'position' => 0], ['movieinfo_id' => self::FILM, 'people_id' => 2, 'role' => 1, 'position' => 0],
+            ['movieinfo_id' => self::FILM, 'people_id' => 1, 'role' => 1, 'position' => 1]]);
         $this->movie(self::FILM);
         // id => [genres, people, year]: score = 2 × genres + 3 × people − |year gap| / 10, no year term without both years.
         $candidates = [
@@ -417,6 +419,8 @@ final class MovieFilmPageTest extends TestCase
             27 => [[self::DRAMA], [1], '1995'],               // 5, but nothing the viewer may see
             28 => [[], [], '1995'],                           // shares nothing
             29 => [[self::THRILLER], [], '1995'],             // shares a genre the film does not have
+            30 => [[], [1], '1995'],                          // 3: person 1 directs and acts here too, counted once
+            31 => [[self::CRIME, self::DRAMA], [2], '1995'],  // 7, but only in a category the viewer excludes
         ];
         foreach ($candidates as $id => [$genres, $people, $year]) {
             $this->film($id, 'Film '.$id, $year, ['rating' => '7.5', 'vote_count' => 100, 'content_rating_us' => 'R']);
@@ -426,14 +430,16 @@ final class MovieFilmPageTest extends TestCase
             foreach ($people as $position => $person) {
                 DB::table('movie_people')->insert(['movieinfo_id' => $id, 'people_id' => $person, 'role' => 1, 'position' => $position]);
             }
-            $this->movie($id, password: $id === 27 ? 1 : 0);
+            $this->movie($id, categories: $id === 31 ? self::FOREIGN : self::HD, password: $id === 27 ? 1 : 0);
         }
+        DB::table('movie_people')->insert(['movieinfo_id' => 30, 'people_id' => 1, 'role' => 0, 'position' => 0]);
         $this->movie(20);
+        $this->excludeForUser(self::FOREIGN);
 
         $response = $this->page('/movies/film/'.self::FILM)->assertOk();
         $similar = $this->between($response, '<section class="tv-similar" aria-labelledby="tv-similar-heading">', '</section>');
         $this->assertStringStartsWith('<h2 id="tv-similar-heading">Similar films</h2>', $similar);
-        $this->assertSame([20, 21, 22, 24, 25, 23], $this->similarIds($response));
+        $this->assertSame([20, 21, 30, 22, 24, 25], $this->similarIds($response));
         // the Films wall's tile
         $this->assertMatchesRegularExpression('/<a class="tv-tile is-film" href="'.preg_quote(url('/movies/film/20'), '/').'" data-film="20"\s*>/', $similar);
         $this->assertMatchesRegularExpression('/<span class="tv-tile-what"\s*>1995 · <span class="tv-tile-genre">Crime<\/span>, <span class="tv-tile-genre">Drama<\/span><\/span>/', $similar);
@@ -443,9 +449,25 @@ final class MovieFilmPageTest extends TestCase
 
         Settings::query()->updateOrInsert(['name' => 'showpasswordedrelease'], ['value' => '1']);
         Cache::flush();
-        $this->assertSame([20, 21, 27, 22, 24, 25], $this->similarIds($this->page('/movies/film/'.self::FILM)));
+        $this->assertSame([20, 21, 27, 30, 22, 24], $this->similarIds($this->page('/movies/film/'.self::FILM)));
 
         $this->page('/movies/film/28')->assertOk()->assertDontSee('Similar films')->assertDontSee('tv-similar', false);
+    }
+
+    public function test_another_film_opens_with_its_cells_and_sort_reset(): void
+    {
+        $this->film(self::FILM, 'Heat', '1995');
+        $this->genreOf(self::FILM, self::CRIME);
+        $this->movie(self::FILM);
+        $this->similarTo(self::FILM, 20, [self::CRIME]);
+
+        $filtered = $this->page('/movies/film/'.self::FILM.'?resolution[]=4k&source[]=web&sort=size_asc')->assertOk();
+        $this->assertMatchesRegularExpression('/<a class="tv-tile is-film" href="'.preg_quote(route('movies.film', ['movieinfoId' => 20]), '/').'" data-film="20"/', (string) $filtered->getContent());
+
+        $other = $this->page('/movies/film/20')->assertOk();
+        $section = $this->between($other, '<section class="tv-film-releases"', '</section>');
+        $this->assertDoesNotMatchRegularExpression('/checkbox-menu is-cell is-set/', $section);
+        $this->assertSame(['posted' => 'descending'], $this->sortedHeadings($section));
     }
 
     public function test_the_back_link_follows_the_list_or_wall_the_user_came_from_across_film_pages(): void

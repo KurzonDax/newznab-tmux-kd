@@ -21,7 +21,7 @@ final class SimilarTitles
 
     /**
      * Every other title sharing a genre (of the section's genre type) or a person with the
-     * title, one row each: its id under `$key`, and how many genres and people it shares.
+     * title, one row each: its id under `$key`, and how many distinct genres and people it shares.
      *
      * @param  string  $genreLinks  title ↔ genre table (`video_genres`, `movie_genres`)
      * @param  string  $peopleLinks  title ↔ person table (`video_people`, `movie_people`)
@@ -34,9 +34,11 @@ final class SimilarTitles
         })->join($genreLinks.' as other', 'other.genres_id', '=', 'mine.genres_id')
             ->where('mine.'.$key, $id)->where('other.'.$key, '<>', $id)
             ->selectRaw('other.'.$key.' AS '.$key.', 1 AS genres, 0 AS people');
-        $people = DB::table($peopleLinks.' as mine')->join($peopleLinks.' as other', 'other.people_id', '=', 'mine.people_id')
+        // A person counts once per candidate, whatever roles they hold in either title (a film's director who also acts).
+        $pairs = DB::table($peopleLinks.' as mine')->join($peopleLinks.' as other', 'other.people_id', '=', 'mine.people_id')
             ->where('mine.'.$key, $id)->where('other.'.$key, '<>', $id)
-            ->selectRaw('other.'.$key.' AS '.$key.', 0 AS genres, 1 AS people');
+            ->distinct()->select(['other.'.$key.' as '.$key, 'other.people_id']);
+        $people = DB::query()->fromSub($pairs, 'pairs')->selectRaw('pairs.'.$key.' AS '.$key.', 0 AS genres, 1 AS people');
 
         return DB::query()->fromSub($genres->unionAll($people), 'shared')
             ->groupBy('shared.'.$key)->selectRaw('shared.'.$key.', SUM(shared.genres) AS genres, SUM(shared.people) AS people');
