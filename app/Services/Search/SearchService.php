@@ -399,17 +399,6 @@ class SearchService extends Manager implements SearchServiceInterface
         return $this->driver()->searchMovieByExternalIds($externalIds);
     }
 
-    /**
-     * @param  array<string, string>  $fieldTerms
-     * @return array{imdbids: list<string>, movieinfo_ids: list<int>, data: list<array<string, mixed>>}
-     */
-    public function searchMoviesByFields(array $fieldTerms, int $limit = 5000, ?int $afterId = null): array
-    {
-        return $afterId === null
-            ? $this->driver()->searchMoviesByFields($fieldTerms, $limit)
-            : $this->driver()->searchMoviesByFields($fieldTerms, $limit, $afterId);
-    }
-
     /** {@inheritdoc} */
     public function searchEntityFields(string $index, array $fields, string $key, int $limit = 500, int $afterId = 0): array
     {

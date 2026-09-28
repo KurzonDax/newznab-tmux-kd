@@ -45,7 +45,6 @@ use Illuminate\Support\Facades\Facade;
  * @method static array bulkInsertSecondary(\App\Enums\SecondarySearchIndex $index, array $documents)
  * @method static array searchSecondary(\App\Enums\SecondarySearchIndex $index, string $query, int $limit = 100)
  * @method static array searchAnimeTitle(string $query, int $limit = 100)
- * @method static array searchMoviesByFields(array $fieldTerms, int $limit = 5000)
  *
  * @see SearchService
  */

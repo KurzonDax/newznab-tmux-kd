@@ -24,7 +24,6 @@ function fixture({ watched = false } = {}) {
     const buttons = [
         button(key, { watched: state, dataset: { watchPicker: '/watchlist/movies/0137523', watchOffTitle: 'Follow this show', watchOnTitle: 'Following this show · click to unfollow', watchOffAria: 'Follow <A Movie>', watchOnAria: 'Unfollow <A Movie>' } }),
         button(key, { watched: state, pressed: true, dataset: { watchPicker: '/watchlist/movies/0137523', watchOffTitle: 'Follow this show', watchOnTitle: 'Following this show · click to unfollow' } }),
-        button(key, { watched: state, label: watched ? 'Following' : 'Follow', dataset: { watchPicker: '/watchlist/movies/0137523', watchOffLabel: 'Follow', watchOnLabel: 'Following', watchOffTitle: 'Follow <A Movie>', watchOnTitle: 'Following · click to unfollow' } }),
     ];
     const count = { textContent: '0', hidden: true };
     globalThis.document = { querySelector: () => ({ content: 'csrf' }), querySelectorAll: selector => selector === '[data-watch-key]' ? buttons : selector === '[data-watchlist-count]' ? [count] : [] };
@@ -56,9 +55,9 @@ test('saving picker choices updates title, cover and row controls and offers the
 });
 
 test('a picker save swaps each follow button to its own followed wording and the solid bookmark', async () => {
-    const { picker, buttons: [row, header, legacy] } = fixture();
+    const { picker, buttons: [row, header] } = fixture();
     await picker.save();
-    for (const followed of [row, header, legacy]) {
+    for (const followed of [row, header]) {
         assert.ok(followed.bookmark.classes.has('fas') && !followed.bookmark.classes.has('far'));
     }
     assert.equal(row.getAttribute('title'), 'Following this show · click to unfollow');
@@ -66,19 +65,16 @@ test('a picker save swaps each follow button to its own followed wording and the
     assert.equal(header.getAttribute('title'), 'Following this show · click to unfollow');
     assert.equal(header.getAttribute('aria-pressed'), 'true');
     assert.equal(header.getAttribute('aria-label'), null, 'Follow show is named by its visible label');
-    assert.equal(legacy.labelElement.textContent, 'Following');
-    assert.equal(legacy.getAttribute('title'), 'Following · click to unfollow');
-    assert.equal(legacy.getAttribute('aria-pressed'), null);
 });
 
 test('a click on a followed follow button unfollows it without the picker and without Undo', async () => {
-    const { picker, requests, buttons: [row, header, legacy], messages } = fixture({ watched: true });
+    const { picker, requests, buttons: [row, header], messages } = fixture({ watched: true });
     picker.open = false; picker.current = null;
     await picker.activate(header);
     assert.deepEqual(requests.map(request => [request.method, request.url]), [['DELETE', '/watchlist/movies/0137523']]);
     assert.equal(picker.open, false);
     assert.deepEqual(messages, [{ message: 'Unfollowed <A Movie>', type: 'info', action: undefined }]);
-    for (const unfollowed of [row, header, legacy]) {
+    for (const unfollowed of [row, header]) {
         assert.equal(unfollowed.dataset.watched, '0');
         assert.ok(unfollowed.bookmark.classes.has('far') && !unfollowed.bookmark.classes.has('fas'));
     }
@@ -86,8 +82,6 @@ test('a click on a followed follow button unfollows it without the picker and wi
     assert.equal(header.getAttribute('title'), 'Follow this show');
     assert.equal(row.getAttribute('aria-label'), 'Follow <A Movie>');
     assert.equal(row.getAttribute('title'), 'Follow this show');
-    assert.equal(legacy.labelElement.textContent, 'Follow');
-    assert.equal(legacy.getAttribute('title'), 'Follow <A Movie>');
 });
 
 test('the picker opens on a follow button that is not followed, and on the Following page Edit of a followed title', async () => {

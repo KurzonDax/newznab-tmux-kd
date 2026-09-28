@@ -115,18 +115,6 @@ parameters:
 			path: app/Facades/Search.php
 
 		-
-			message: '#^Class App\\Facades\\Search has PHPDoc tag @method for method searchMoviesByFields\(\) parameter \#1 \$fieldTerms with no value type specified in iterable type array\.$#'
-			identifier: missingType.iterableValue
-			count: 1
-			path: app/Facades/Search.php
-
-		-
-			message: '#^Class App\\Facades\\Search has PHPDoc tag @method for method searchMoviesByFields\(\) return type with no value type specified in iterable type array\.$#'
-			identifier: missingType.iterableValue
-			count: 1
-			path: app/Facades/Search.php
-
-		-
 			message: '#^Class App\\Facades\\Search has PHPDoc tag @method for method searchPredb\(\) parameter \#1 \$searchTerm with no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1

@@ -1405,11 +1405,6 @@ body.public-shell { display: flex; flex-direction: column; min-height: 100vh; mi
 .watchlist-picker-form { display: grid; gap: 8px; font-size: 13px; }
 .watchlist-picker-form label { display: flex; gap: 8px; align-items: center; }
 .watchlist-picker-form input { accent-color: var(--color-primary-600); width: 16px; height: 16px; }
-.watchlist-button[data-watch-picker]:not([data-watch-label-kind])[data-watched="1"] { background: var(--accent-surface); border-color: var(--accent-surface); color: var(--accent-on); }
-.dark .watchlist-button[data-watch-picker]:not([data-watch-label-kind])[data-watched="1"] { background: var(--accent-surface-dark); border-color: var(--accent-surface-dark); color: var(--accent-on-dark); }
-.watchlist-button[data-watch-picker]:not([data-watch-label-kind])[data-watched="0"] { background: var(--surface-card); border-color: var(--border-default); color: var(--color-gray-700); }
-.dark .watchlist-button[data-watch-picker]:not([data-watch-label-kind])[data-watched="0"] { background: var(--surface-card-dark); border-color: var(--border-default-dark); color: var(--color-gray-200); }
-.watchlist-button[data-watched="0"] .fa-chevron-down { display: none; }
 .watchlist-button[data-watch-remove], .watchlist-remove { color: var(--color-red-600); }
 .dark .watchlist-button[data-watch-remove], .dark .watchlist-remove { color: var(--color-red-400); }
 .watchlist-page [data-watchlist-fragment] > .text-center { padding: 36px 20px; font-size: 13px; }

@@ -72,24 +72,6 @@ final class WebSearchDriverPaginationTest extends TestCase
     }
 
     #[DataProvider('drivers')]
-    public function test_movie_pages_use_id_boundaries_without_changing_default_queries(string $name): void
-    {
-        $driver = $this->driver($name);
-        $page = $driver->searchMoviesByFields(['actors' => 'Emily Blunt'], 500, 500);
-        $this->assertSame([501], $page['movieinfo_ids']);
-        $this->assertSame(['0123456'], $page['imdbids']);
-        $this->assertSame($name === 'manticore' ? [['id' => 'asc']] : [['id' => ['order' => 'asc']]], $this->requests[0]['sort']);
-        $this->assertStringContainsString('"id":{"gt":500}', json_encode($this->requests[0]['query'], JSON_THROW_ON_ERROR));
-        $driver->searchMoviesByFields(['actors' => 'Emily Blunt'], 500);
-        $this->assertStringNotContainsString('"id":{"gt":', json_encode($this->requests[1]['query'], JSON_THROW_ON_ERROR));
-        if ($name === 'manticore') {
-            $this->assertSame([['id' => 'desc']], $this->requests[1]['sort']);
-        } else {
-            $this->assertArrayNotHasKey('sort', $this->requests[1]);
-        }
-    }
-
-    #[DataProvider('drivers')]
     public function test_all_web_sorts_keep_exact_totals_and_descending_id_ties(string $name): void
     {
         $driver = $this->driver($name, 1000000);

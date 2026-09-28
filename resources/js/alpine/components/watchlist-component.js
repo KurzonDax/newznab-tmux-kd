@@ -107,8 +107,7 @@ export function watchlistPicker() {
                 icon?.classList.toggle('fas', data.watched); icon?.classList.toggle('far', !data.watched);
                 if (button.hasAttribute('aria-pressed')) button.setAttribute('aria-pressed', data.watched ? 'true' : 'false');
                 // Each button renders its own wording for both states (data-watch-on-* / data-watch-off-*); this only swaps between them.
-                const state = data.watched ? 'On' : 'Off', label = button.querySelector('[data-watch-label]'), text = button.dataset[`watch${state}Label`];
-                if (label && text !== undefined) label.textContent = text;
+                const state = data.watched ? 'On' : 'Off';
                 [['title', 'Title'], ['aria-label', 'Aria']].forEach(([attribute, name]) => {
                     const value = button.dataset[`watch${state}${name}`];
                     if (value !== undefined) button.setAttribute(attribute, value);

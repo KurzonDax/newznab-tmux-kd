@@ -48,7 +48,6 @@ final class SearchControllerTest extends TestCase
         config(['nntmux.mysql_search_fallback' => true]);
         $search->shouldReceive('searchReleasesFiltered')->andReturn(['ids' => [], 'total' => 0, 'fuzzy' => false, 'available' => false])->byDefault();
         $search->shouldReceive('searchEntityFields')->andReturn(['ids' => [], 'keys' => [], 'available' => false, 'has_more' => false])->byDefault();
-        $search->shouldReceive('searchMoviesByFields')->andReturn(['imdbids' => [], 'movieinfo_ids' => [], 'data' => []])->byDefault();
         $search->shouldReceive('isFuzzyEnabled')->andReturn(false)->byDefault();
         $search->shouldReceive('isSuggestEnabled')->andReturn(false)->byDefault();
         $search->shouldReceive('isAutocompleteEnabled')->andReturn(false)->byDefault();
@@ -378,7 +377,6 @@ final class SearchControllerTest extends TestCase
         $arrival = $this->release('Unknown two', ['imdbid' => '2222222']);
         $both = $this->release('Unknown three', ['imdbid' => '3333333']);
         $this->release('Dune.CAM', ['imdbid' => '1111111']);
-        app(SearchServiceInterface::class)->shouldReceive('searchMoviesByFields')->never();
         $response = $this->actingAs($this->browserUser())->get('/search?q=dune%20-cam')->assertOk();
         $this->assertEqualsCanonicalizing([$dune, $both], $response->viewData('results')->pluck('id')->all());
         $response = $this->get('/search?q='.rawurlencode('(dune | arrival) -(cam | ts)'))->assertOk();

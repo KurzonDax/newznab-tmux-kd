@@ -256,14 +256,6 @@ interface SearchServiceInterface
     public function searchMovieByExternalIds(array $externalIds): ?array;
 
     /**
-     * Search movies index by field-specific terms (title, director, actors, genre).
-     *
-     * @param  array<string, string>  $fieldTerms
-     * @return array{imdbids: list<string>, movieinfo_ids: list<int>, data: list<array<string, mixed>>}
-     */
-    public function searchMoviesByFields(array $fieldTerms, int $limit = 5000, ?int $afterId = null): array;
-
-    /**
      * @param  array<string, string>  $fields
      * @return array{ids:list<int>, keys:list<int|string>, available:bool, has_more:bool}
      */
