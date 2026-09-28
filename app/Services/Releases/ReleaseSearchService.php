@@ -1405,9 +1405,10 @@ class ReleaseSearchService
                 return $ret;
             }
 
+            // The search rows carry categories_id but no parent id, so the root is resolved here.
             $ret = [];
             foreach ($results as $res) {
-                if ($res['id'] !== $currentID && $res['categoryparentid'] === $parentCat) {
+                if ((int) $res['id'] !== (int) $currentID && Category::rootCategoryFor((int) $res['categories_id']) === (int) $parentCat) {
                     $ret[] = $res;
                 }
             }
