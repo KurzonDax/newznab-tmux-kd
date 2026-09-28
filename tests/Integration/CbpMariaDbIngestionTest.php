@@ -997,6 +997,77 @@ final class CbpMariaDbIngestionTest extends TestCase
         DB::statement('CREATE UNIQUE INDEX ix_collection_collectionhash ON collections (collectionhash(20))');
     }
 
+    public function test_filter_led_release_indexes_migrate_up_and_down_in_one_alter(): void
+    {
+        $bandCount = ['category_band', 'resolution', 'source', 'categories_id', 'passwordstatus'];
+        $before = [
+            'ix_releases_band_added' => ['category_band', 'adddate', 'id', 'resolution', 'source', 'categories_id', 'passwordstatus'],
+            'ix_releases_band_count' => $bandCount,
+            'ix_releases_band_posted' => ['category_band', 'postdate', 'id', 'resolution', 'source', 'categories_id', 'passwordstatus'],
+            'ix_releases_movieinfo_cat' => ['movieinfo_id', 'categories_id', 'passwordstatus', 'postdate'],
+        ];
+        $after = [
+            'ix_releases_band_added' => [...$before['ix_releases_band_added'], 'videos_id', 'completion'],
+            'ix_releases_band_cat_added' => ['category_band', 'categories_id', 'adddate', 'id', 'resolution', 'source', 'passwordstatus', 'completion'],
+            'ix_releases_band_cat_posted' => ['category_band', 'categories_id', 'postdate', 'id', 'resolution', 'source', 'passwordstatus', 'completion'],
+            'ix_releases_band_count' => [...$bandCount, 'completion'],
+            'ix_releases_band_posted' => [...$before['ix_releases_band_posted'], 'videos_id', 'completion'],
+            'ix_releases_band_res_added' => ['category_band', 'resolution', 'adddate', 'id', 'source', 'categories_id', 'passwordstatus', 'completion'],
+            'ix_releases_band_res_posted' => ['category_band', 'resolution', 'postdate', 'id', 'source', 'categories_id', 'passwordstatus', 'completion'],
+            'ix_releases_band_src_added' => ['category_band', 'source', 'adddate', 'id', 'resolution', 'categories_id', 'passwordstatus', 'completion'],
+            'ix_releases_band_src_posted' => ['category_band', 'source', 'postdate', 'id', 'resolution', 'categories_id', 'passwordstatus', 'completion'],
+            'ix_releases_movieinfo_cat' => [...$before['ix_releases_movieinfo_cat'], 'adddate', 'resolution', 'source', 'completion'],
+        ];
+        $shape = static function (): array {
+            $indexes = [];
+            foreach (DB::select('SHOW INDEX FROM releases') as $row) {
+                if (str_starts_with($row->Key_name, 'ix_releases_band') || str_starts_with($row->Key_name, 'ix_releases_movie')) {
+                    $indexes[$row->Key_name][(int) $row->Seq_in_index] = $row->Column_name;
+                }
+            }
+            ksort($indexes);
+
+            return array_map(static function (array $columns): array {
+                ksort($columns);
+
+                return array_values($columns);
+            }, $indexes);
+        };
+        $alters = 0;
+        DB::listen(static function (QueryExecuted $query) use (&$alters): void {
+            $alters += (int) str_starts_with($query->sql, 'ALTER TABLE');
+        });
+        $migration = require database_path('migrations/2026_09_27_000000_add_filter_led_indexes_to_releases.php');
+        preg_match('/CREATE TABLE `releases` \(.*?\) ENGINE=[^;]*/s', (string) file_get_contents(database_path('schema/mariadb-schema.sql')), $create);
+        DB::statement('DROP TABLE IF EXISTS releases');
+        DB::statement($create[0]);
+
+        try {
+            $this->assertSame($after, $shape(), 'The schema dump carries the migrated indexes.');
+            $migration->down();
+            $this->assertSame($before, $shape());
+            $migration->up();
+            $this->assertSame($after, $shape());
+            $migration->down();
+            $this->assertSame($before, $shape());
+            $this->assertSame(3, $alters, 'Each direction alters releases in one statement.');
+
+            // An install that indexed the old columns under another name has no ix_releases_movieinfo_cat.
+            DB::statement('ALTER TABLE releases RENAME INDEX ix_releases_movieinfo_cat TO ix_releases_movie_legacy');
+            $migration->up();
+            $expected = ['ix_releases_movie_legacy' => $before['ix_releases_movieinfo_cat'], ...$after];
+            ksort($expected);
+            $this->assertSame($expected, $shape());
+            $migration->down();
+            $expected = ['ix_releases_movie_legacy' => $before['ix_releases_movieinfo_cat'], ...$before];
+            unset($expected['ix_releases_movieinfo_cat']);
+            ksort($expected);
+            $this->assertSame($expected, $shape());
+        } finally {
+            DB::statement('DROP TABLE IF EXISTS releases');
+        }
+    }
+
     /** @return array<string, mixed> */
     private function header(int $number, int $part, int $bytes): array
     {
