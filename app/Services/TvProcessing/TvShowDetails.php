@@ -7,8 +7,8 @@ namespace App\Services\TvProcessing;
 use App\Models\Category;
 use App\Models\Genre;
 use App\Models\Network;
-use App\Models\Person;
 use App\Models\TvInfo;
+use App\Services\MetadataProcessing\PeopleRows;
 use App\Services\TmdbClient;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Sleep;
@@ -62,7 +62,7 @@ final class TvShowDetails
         'Canceled' => self::STATUS_ENDED,
     ];
 
-    public function __construct(private readonly TmdbClient $tmdb) {}
+    public function __construct(private readonly TmdbClient $tmdb, private readonly PeopleRows $people) {}
 
     /**
      * The genre titles TMDB's TV genres are stored as.
@@ -109,7 +109,9 @@ final class TvShowDetails
             return;
         }
 
-        DB::transaction(fn () => $this->store($videosId, $show));
+        // People are found or added before the transaction opens (see PeopleRows).
+        $cast = $this->castPersonIds($show);
+        DB::transaction(fn () => $this->store($videosId, $show, $cast));
     }
 
     private function resolveTmdbId(object $video): ?int
@@ -145,8 +147,9 @@ final class TvShowDetails
      * Overwrites the show's details with what TMDB returned.
      *
      * @param  array<string, mixed>  $show
+     * @param  list<int>  $cast
      */
-    private function store(int $videosId, array $show): void
+    private function store(int $videosId, array $show, array $cast): void
     {
         $publisher = (string) DB::table('tv_info')->where('videos_id', $videosId)->value('publisher');
 
@@ -165,7 +168,6 @@ final class TvShowDetails
             $this->genreIds($show),
         ));
 
-        $cast = $this->castPersonIds($show);
         DB::table('video_people')->where('videos_id', $videosId)->delete();
         DB::table('video_people')->insert(array_map(
             fn (int $personId, int $position): array => ['videos_id' => $videosId, 'people_id' => $personId, 'position' => $position],
@@ -264,7 +266,8 @@ final class TvShowDetails
     }
 
     /**
-     * The first twelve distinct TMDB people in TMDB's cast order. A person with an empty
+     * The first twelve distinct TMDB people in TMDB's cast order, found or added as a film's
+     * TMDB credit is, so a person in films and shows is one row. A person with an empty
      * name is linked only when a row already holds the TMDB id; else the next one takes
      * the place.
      *
@@ -281,16 +284,11 @@ final class TvShowDetails
                 continue;
             }
             $seen[$tmdbId] = true;
-            $name = mb_substr(trim((string) ($member['name'] ?? '')), 0, Person::NAME_LENGTH);
-            if ($name !== '') {
-                // Ignore-then-read: TV workers run in parallel and may add the same person at once.
-                Person::query()->insertOrIgnore(['tmdb_id' => $tmdbId, 'name' => $name]);
-            }
-            $id = Person::query()->where('tmdb_id', $tmdbId)->value('id');
+            $id = $this->people->findOrAdd((string) ($member['name'] ?? ''), $tmdbId);
             if ($id === null) {
                 continue;
             }
-            $ids[] = (int) $id;
+            $ids[] = $id;
             if (count($ids) === self::CAST_LIMIT) {
                 break;
             }
