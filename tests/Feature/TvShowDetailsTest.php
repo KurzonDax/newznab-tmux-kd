@@ -173,6 +173,38 @@ final class TvShowDetailsTest extends TestCase
         $this->assertSame('Existing Spelling', DB::table('people')->where('id', 50)->value('name'));
     }
 
+    public function test_a_cast_member_with_an_empty_name_is_linked_only_when_a_row_holds_its_tmdb_id(): void
+    {
+        $this->insertShow(1, tmdb: 200);
+        DB::table('people')->insert(['id' => 40, 'name' => 'Known Person', 'tmdb_id' => 103]);
+        Http::fake(['*tv/200?*' => Http::response($this->show(['credits' => ['cast' => [
+            ['id' => 101, 'name' => ''],
+            ['id' => 102, 'name' => '   '],
+            ['id' => 103, 'name' => ''],
+            ['id' => 104, 'name' => 'Named'],
+        ]]]))]);
+
+        $this->details()->refreshIfDue(1);
+
+        $this->assertSame([103, 104], DB::table('people')->orderBy('id')->pluck('tmdb_id')->map(intval(...))->all());
+        $this->assertSame(['Known Person', 'Named'], $this->castNames(1));
+    }
+
+    public function test_a_cast_member_left_out_for_an_empty_name_gives_the_place_to_the_next_one(): void
+    {
+        $this->insertShow(1, tmdb: 200);
+        $cast = [];
+        foreach (range(201, 213) as $id) {
+            $cast[] = ['id' => $id, 'name' => $id === 203 ? '' : 'Actor '.$id];
+        }
+        Http::fake(['*tv/200?*' => Http::response($this->show(['credits' => ['cast' => $cast]]))]);
+
+        $this->details()->refreshIfDue(1);
+
+        $this->assertSame(array_map(static fn (int $id): string => 'Actor '.$id, [201, 202, ...range(204, 213)]), $this->castNames(1));
+        $this->assertNull(DB::table('people')->where('tmdb_id', 203)->value('id'));
+    }
+
     public function test_a_second_refresh_replaces_genres_and_cast(): void
     {
         $this->insertShow(1, tmdb: 200);

@@ -580,7 +580,8 @@ class MovieService
 
     /**
      * Writes the film's genre and people rows from TMDB's lists; a list TMDB did not give
-     * (not configured, no match, an error, or an empty list) comes from the saved text.
+     * (not configured, no match, an error, or an empty list) comes from the saved text, as
+     * does a people list whose every member is left out for an empty name.
      *
      * @param  array<string, mixed>|false  $tmdb
      */
@@ -599,8 +600,10 @@ class MovieService
         app(MovieCredits::class)->sync(
             (int) $movie->id,
             $genres !== [] ? $genres : MovieCreditsText::names((string) $movie->genre),
-            $directors !== [] ? $directors : MovieCreditsText::people((string) $movie->director),
-            $cast !== [] ? $cast : MovieCreditsText::people((string) $movie->actors),
+            $directors,
+            $cast,
+            MovieCreditsText::people((string) $movie->director),
+            MovieCreditsText::people((string) $movie->actors),
         );
     }
 
@@ -742,7 +745,8 @@ class MovieService
                 }
             }
 
-            $ret['cast'] = $this->tmdbPeople($cast, MovieCredits::CAST_LIMIT);
+            // Cut to twelve when the names resolve, after empty names are left out.
+            $ret['cast'] = $this->tmdbPeople($cast);
 
             $crew = TmdbClient::getArray($credits, 'crew');
             $directors = [];
@@ -759,7 +763,7 @@ class MovieService
                     $directors[] = $crewMember;
                 }
             }
-            $ret['directors'] = $this->tmdbPeople($directors, PHP_INT_MAX);
+            $ret['directors'] = $this->tmdbPeople($directors);
 
             if (! empty($releaseDate)) {
                 $ret['year'] = Carbon::parse($releaseDate)->year;
@@ -837,12 +841,13 @@ class MovieService
     }
 
     /**
-     * The first distinct TMDB people, in TMDB's order.
+     * The distinct TMDB people, in TMDB's order. An empty name is passed on:
+     * {@see MovieCredits::sync()} decides whether the person is linked.
      *
      * @param  array<mixed>  $members
      * @return list<array{name: string, tmdb_id: int}>
      */
-    private function tmdbPeople(array $members, int $limit): array
+    private function tmdbPeople(array $members): array
     {
         $people = [];
         foreach ($members as $member) {
@@ -851,9 +856,6 @@ class MovieService
                 continue;
             }
             $people[$tmdbId] = ['name' => trim(TmdbClient::getString($member, 'name')), 'tmdb_id' => $tmdbId];
-            if (count($people) === $limit) {
-                break;
-            }
         }
 
         return array_values($people);

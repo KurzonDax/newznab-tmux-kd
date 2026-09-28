@@ -186,9 +186,9 @@ flag: it is derived from `vote_count` and `rating`.
 
 - **Fetch.** `fetchTMDBProperties()` asks for `['credits', 'release_dates']` in its one details request and returns, besides
   today's values, `vote_count`, `original_language`, the US certification (the first non-empty `certification` of the `US`
-  entry of `release_dates.results`), the genre names, every director and the first 12 distinct cast. Its cache key gains a
-  version (`tmdb_movie_v2_<md5>`) so arrays cached in the old shape are not served, and `FetchMovieByImdb:45` clears the new
-  key.
+  entry of `release_dates.results`), the genre names, every director and every distinct cast member (the cast is cut to 12
+  when the names resolve to people, below). Its cache key gains a version (`tmdb_movie_v2_<md5>`) so arrays cached in the
+  old shape are not served, and `FetchMovieByImdb:45` clears the new key.
 - **Save.** `update()` writes `vote_count` even when it is 0 (outside the non-empty rule at `:311`), and the two text columns
   as before.
 - **Links.** One method (`MovieCredits::sync(int $movieinfoId, array $genres, array $directors, array $cast)`, name
@@ -196,13 +196,18 @@ flag: it is derived from `vote_count` and `rating`.
   - by `updateMovieInfo()` after `update()`, with TMDB's lists; when TMDB returns nothing (not configured, no match, or an
     error) with the saved text split by the rule of 5.2;
   - by the **admin edit form** (fact 2) with its edited text split by the same rule, so the screens follow an admin's edit.
-- **Genre names**: found by `(type 2000, title)` or inserted, under a named lock (`GET_LOCK`), because `genres` has no unique
-  key and movie workers run in parallel. The Genre menu lists only genres that have a film.
+- **Genre names**: found by `(type 2000, title)` or inserted, under a named lock (Laravel's `Cache::lock`), because `genres`
+  has no unique key and movie workers run in parallel. The Genre menu lists only genres that have a film.
 - **People**: a TMDB person is found by `tmdb_id`; else by exact name among people with no `tmdb_id`, claimed with a
   conditional `UPDATE … SET tmdb_id = ? WHERE id = ? AND tmdb_id IS NULL` (a claim that loses the race, or a `tmdb_id`
   another row already holds, falls back to that row); else inserted (insert-or-ignore on `ux_people_tmdb_id`, then read).
   People from text have no `tmdb_id` and are found by exact name (the collation makes it case- and accent-insensitive), else
-  inserted. A person left with no film and no show stays in `people` (as TV's).
+  inserted. A Movies write that finds no row, from text or TMDB, inserts under one `Cache::lock` after repeating the lookups
+  inside it, so concurrent writes of the same new name (any spelling the collation treats as equal) leave one row. No row is
+  inserted with an empty name, from Movies or TV: a TMDB person whose trimmed name is empty is linked when a row already
+  holds its `tmdb_id`, else left out, and the next person takes the place among the 12 cast. A film's TMDB director or cast
+  list whose every member is left out comes from the saved text, as an empty list does. A person left with no film and no
+  show stays in `people` (as TV's).
 - **When it runs.** When a film is first saved, and — **his decision, 2026-09-27** — whenever a new release of the film
   arrives and the film's record is more than 30 days old, **on both matching paths**: `fetchAndLinkMovieRecord()`
   (`app/Services/MovieService.php:1084-1093`) gains the same 30-day check as `:1051-1072`. At most one TMDB fetch per film per

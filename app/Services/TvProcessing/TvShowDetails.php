@@ -264,7 +264,9 @@ final class TvShowDetails
     }
 
     /**
-     * The first twelve distinct TMDB people in TMDB's cast order.
+     * The first twelve distinct TMDB people in TMDB's cast order. A person with an empty
+     * name is linked only when a row already holds the TMDB id; else the next one takes
+     * the place.
      *
      * @param  array<string, mixed>  $show
      * @return list<int>
@@ -279,12 +281,16 @@ final class TvShowDetails
                 continue;
             }
             $seen[$tmdbId] = true;
-            // Ignore-then-read: TV workers run in parallel and may add the same person at once.
-            Person::query()->insertOrIgnore([
-                'tmdb_id' => $tmdbId,
-                'name' => mb_substr(trim((string) ($member['name'] ?? '')), 0, Person::NAME_LENGTH),
-            ]);
-            $ids[] = (int) Person::query()->where('tmdb_id', $tmdbId)->value('id');
+            $name = mb_substr(trim((string) ($member['name'] ?? '')), 0, Person::NAME_LENGTH);
+            if ($name !== '') {
+                // Ignore-then-read: TV workers run in parallel and may add the same person at once.
+                Person::query()->insertOrIgnore(['tmdb_id' => $tmdbId, 'name' => $name]);
+            }
+            $id = Person::query()->where('tmdb_id', $tmdbId)->value('id');
+            if ($id === null) {
+                continue;
+            }
+            $ids[] = (int) $id;
             if (count($ids) === self::CAST_LIMIT) {
                 break;
             }

@@ -223,6 +223,101 @@ final class MovieCreditsTest extends ImdbScraperTestCase
         $this->assertSame(array_map(static fn (int $n): string => 'Actor '.$n, range(1, 12)), $this->names($id, MovieCredits::ROLE_CAST));
     }
 
+    public function test_a_text_name_another_writer_adds_from_text_after_the_lookup_is_one_person_whatever_its_case(): void
+    {
+        $this->caseInsensitivePeopleNames();
+        $film = $this->insertFilm();
+        $other = $this->insertFilm(['imdbid' => '0000002']);
+        $this->interleaveAfterFirstNameLookup(static fn (): bool => app(MovieCredits::class)->syncFromText($other, '', '', 'jose garcia'));
+
+        app(MovieCredits::class)->syncFromText($film, '', '', 'JOSE GARCIA');
+
+        $this->assertSame(1, DB::table('people')->count());
+        $this->assertSame(['jose garcia'], $this->names($film, MovieCredits::ROLE_CAST));
+        $this->assertSame(['jose garcia'], $this->names($other, MovieCredits::ROLE_CAST));
+    }
+
+    public function test_a_text_name_another_writer_adds_from_tmdb_after_the_lookup_is_one_person(): void
+    {
+        $this->caseInsensitivePeopleNames();
+        $film = $this->insertFilm();
+        $other = $this->insertFilm(['imdbid' => '0000002']);
+        $this->interleaveAfterFirstNameLookup(static fn (): bool => app(MovieCredits::class)->sync($other, [], [], [['name' => 'Jane Roe', 'tmdb_id' => 500]]));
+
+        app(MovieCredits::class)->syncFromText($film, '', '', 'JANE ROE');
+
+        $this->assertSame([['name' => 'Jane Roe', 'tmdb_id' => 500]], $this->people());
+        $this->assertSame(['Jane Roe'], $this->names($film, MovieCredits::ROLE_CAST));
+        $this->assertSame(['Jane Roe'], $this->names($other, MovieCredits::ROLE_CAST));
+    }
+
+    public function test_a_tmdb_person_another_writer_adds_from_text_after_the_lookup_is_one_person(): void
+    {
+        $this->caseInsensitivePeopleNames();
+        $film = $this->insertFilm();
+        $other = $this->insertFilm(['imdbid' => '0000002']);
+        $this->interleaveAfterFirstNameLookup(static fn (): bool => app(MovieCredits::class)->syncFromText($other, '', '', 'JANE ROE'));
+
+        app(MovieCredits::class)->sync($film, [], [], [['name' => 'Jane Roe', 'tmdb_id' => 500]]);
+
+        $this->assertSame([['name' => 'JANE ROE', 'tmdb_id' => 500]], $this->people());
+        $this->assertSame(['JANE ROE'], $this->names($film, MovieCredits::ROLE_CAST));
+        $this->assertSame(['JANE ROE'], $this->names($other, MovieCredits::ROLE_CAST));
+    }
+
+    public function test_a_tmdb_person_with_an_empty_name_is_linked_only_when_a_row_holds_its_tmdb_id(): void
+    {
+        DB::table('people')->insert(['id' => 40, 'name' => 'Known Person', 'tmdb_id' => 902]);
+        $id = $this->insertFilm();
+
+        app(MovieCredits::class)->sync($id, [], [['name' => '  ', 'tmdb_id' => 900]], [
+            ['name' => '', 'tmdb_id' => 901],
+            ['name' => ' ', 'tmdb_id' => 902],
+            ['name' => 'Named', 'tmdb_id' => 903],
+        ]);
+
+        $this->assertSame([['name' => 'Known Person', 'tmdb_id' => 902], ['name' => 'Named', 'tmdb_id' => 903]], $this->people());
+        $this->assertSame([], $this->names($id, MovieCredits::ROLE_DIRECTOR));
+        $this->assertSame(['Known Person', 'Named'], $this->names($id, MovieCredits::ROLE_CAST));
+    }
+
+    public function test_a_tmdb_cast_member_left_out_for_an_empty_name_gives_the_place_to_the_next_one(): void
+    {
+        $cast = [];
+        foreach (range(201, 213) as $tmdbId) {
+            $cast[] = ['id' => $tmdbId, 'name' => $tmdbId === 203 ? '' : 'Actor '.$tmdbId];
+        }
+        $this->fakeTmdb($this->tmdbMovie(['credits' => ['cast' => $cast, 'crew' => $this->tmdbMovie()['credits']['crew']]]));
+
+        $this->service()->updateMovieInfo(self::IMDB_ID);
+
+        $this->assertSame(
+            array_map(static fn (int $tmdbId): string => 'Actor '.$tmdbId, [201, 202, ...range(204, 213)]),
+            $this->names($this->filmId(), MovieCredits::ROLE_CAST),
+        );
+        $this->assertNull(DB::table('people')->where('tmdb_id', 203)->value('id'));
+    }
+
+    public function test_a_tmdb_cast_whose_every_member_is_left_out_comes_from_the_saved_text(): void
+    {
+        $this->fakeTmdb($this->tmdbMovie(['credits' => [
+            'cast' => [['id' => 201, 'name' => ''], ['id' => 202, 'name' => '  ']],
+            'crew' => $this->tmdbMovie()['credits']['crew'],
+        ]]));
+        $this->mock(ImdbScraper::class)->shouldReceive('fetchById')->andReturn([
+            'title' => 'Fight Club',
+            'year' => '1999',
+            'genre' => 'Imdb Genre',
+            'director' => 'Imdb Director',
+            'actors' => 'Brad Pitt, Edward Norton',
+        ])->byDefault();
+
+        $this->service()->updateMovieInfo(self::IMDB_ID);
+
+        $this->assertSame(['Brad Pitt', 'Edward Norton'], $this->names($this->filmId(), MovieCredits::ROLE_CAST));
+        $this->assertSame(0, DB::table('people')->whereIn('tmdb_id', [201, 202])->count());
+    }
+
     public function test_a_new_release_refreshes_a_film_whose_record_is_over_30_days_old(): void
     {
         $id = $this->insertFilm(['title' => 'Fight Club', 'updated_at' => '2026-08-28 11:59:59']);
@@ -400,6 +495,52 @@ final class MovieCreditsTest extends ImdbScraperTestCase
             'genres' => DB::table('movie_genres')->orderBy('movieinfo_id')->orderBy('position')->get()->map(static fn (object $row): array => (array) $row)->all(),
             'people' => DB::table('movie_people')->orderBy('movieinfo_id')->orderBy('role')->orderBy('position')->get()->map(static fn (object $row): array => (array) $row)->all(),
         ];
+    }
+
+    /**
+     * @return list<array{name: string, tmdb_id: ?int}>
+     */
+    private function people(): array
+    {
+        return DB::table('people')->orderBy('id')->get(['name', 'tmdb_id'])
+            ->map(static fn (object $row): array => ['name' => (string) $row->name, 'tmdb_id' => $row->tmdb_id === null ? null : (int) $row->tmdb_id])
+            ->all();
+    }
+
+    /**
+     * `people.name` is utf8mb4_unicode_ci in production, so case (and accents) do not tell
+     * two names apart. SQLite compares bytes; the rebuilt column gets SQLite's NOCASE, which
+     * ignores ASCII case. (An ICU collation would cover accents too, but registering one
+     * crashes PHP 8.5's Pdo\Sqlite on shutdown.) The writer serialises every insert by name
+     * under one lock, whatever the spelling, so an accent difference takes the same path.
+     */
+    private function caseInsensitivePeopleNames(): void
+    {
+        $statement = ProductionTables::fromAuthority()->createStatement('people');
+        $collated = preg_replace('/^(\s*"name" \w+)/m', '$1 COLLATE NOCASE', $statement, 1, $count);
+        $this->assertSame(1, $count);
+        DB::statement('DROP TABLE "people"');
+        DB::statement((string) $collated);
+        DB::table('people')->insert(['name' => 'Jose Garcia']);
+        $this->assertSame(1, DB::table('people')->where('name', 'JOSE GARCIA')->count());
+        DB::table('people')->delete();
+    }
+
+    /**
+     * Runs the other writer once, right after this writer's first name lookup on `people`
+     * returns: as another worker adding the same person between that lookup and this
+     * writer's insert.
+     */
+    private function interleaveAfterFirstNameLookup(\Closure $otherWriter): void
+    {
+        $done = false;
+        DB::listen(static function ($query) use (&$done, $otherWriter): void {
+            if ($done || preg_match('/^\s*select\b.*\bfrom "people"\s.*"name" = \?/is', $query->sql) !== 1) {
+                return;
+            }
+            $done = true;
+            $otherWriter();
+        });
     }
 
     /**
