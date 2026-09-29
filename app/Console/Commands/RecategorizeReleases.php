@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Facades\Search;
 use App\Models\Category;
 use App\Models\Release;
-use App\Services\Categorization\CategorizationService;
-use App\Services\Releases\PreviewGenerationPolicy;
+use App\Services\Categorization\ReleaseRecategorizer;
 use Illuminate\Console\Command;
 
 class RecategorizeReleases extends Command
@@ -65,43 +63,23 @@ class RecategorizeReleases extends Command
 
         $count = $countQuery->count();
 
-        $categorizationService = new CategorizationService;
-        $previewPolicy = new PreviewGenerationPolicy;
+        $recategorizer = new ReleaseRecategorizer;
         $bar = $this->output->createProgressBar($count);
         $bar->start();
         $countQuery
             ->select(['id', 'searchname', 'fromname', 'groups_id', 'categories_id', 'iscategorized'])
-            ->eachById(function (Release $release) use ($bar, $categorizationService, $previewPolicy): void {
+            ->eachById(function (Release $release) use ($bar, $recategorizer): void {
                 $bar->advance();
-                $categoryResult = $categorizationService->determineCategory(
-                    $release->groups_id,
-                    $release->searchname,
-                    $release->fromname,
-                    releaseId: (int) $release->id,
-                );
+                $newCategoryId = $recategorizer->categoryFor($release);
 
-                if ((int) $release->categories_id !== (int) $categoryResult['categories_id']) {
+                if ((int) $release->categories_id !== $newCategoryId) {
                     if ($this->option('test')) {
-                        $this->info('Would have changed '.$release->searchname.' from '.$release->categories_id.' to '.$categoryResult['categories_id']);
+                        $this->info('Would have changed '.$release->searchname.' from '.$release->categories_id.' to '.$newCategoryId);
                     } else {
-                        Release::query()->where('id', $release->id)->update([
-                            'iscategorized' => 1,
-                            'videos_id' => 0,
-                            'tv_episodes_id' => 0,
-                            'imdbid' => null,
-                            'musicinfo_id' => null,
-                            'consoleinfo_id' => null,
-                            'gamesinfo_id' => 0,
-                            'bookinfo_id' => null,
-                            'anidbid' => null,
-                            'categories_id' => $categoryResult['categories_id'],
-                        ]);
-
-                        $previewPolicy->restoreOwedPreviews([(int) $release->id]);
-                        Search::updateRelease((int) $release->id);
+                        $recategorizer->moveTo((int) $release->id, $newCategoryId);
 
                         /** @var Category|null $newCategory */
-                        $newCategory = Category::query()->where('id', $categoryResult['categories_id'])->first();
+                        $newCategory = Category::query()->where('id', $newCategoryId)->first();
 
                         $this->line('');
                         $this->output->writeln('<fg=yellow>ID       :</> '.$release->id);
