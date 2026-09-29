@@ -1101,9 +1101,11 @@ Promise.all(['mv/data.json','mv/relx.json','mv/previews.json','mv/filmstats.json
   NOW=Math.max(...REL.map(r=>r.t));NOWALL=Math.max(NOW,...REL.map(r=>X(r).added));
   {const r=store.get('rsort','posted_desc');if(['posted_desc','posted_asc','added_desc','added_asc'].includes(r))state.rsort=r;}
   {const w=store.get('wsort','recent');if(WSORTS.some(([k])=>k===w))state.wsort=w;}
-  // language menus list what is present, most releases (films on the wall) first, as the TV wall's Language menu does
+  // language menus list what is present, most releases (films on the wall) first, as the TV wall's Language menu does;
+  // Audio lists the languages present, English first, then A to Z, then Unknown
   {const byCount=vals=>{const c={};vals.forEach(v=>{if(v)c[v]=(c[v]||0)+1;});return Object.keys(c).sort((a,b)=>c[b]-c[a]||a.localeCompare(b));};
-   AUDS=[...byCount(REL.flatMap(r=>ALANG[r.id]||[])),'Unknown'];LANGS_ON=byCount(REL.map(r=>r.f&&FLANG[r.f]));WLANGS=byCount(Object.keys(d.films).filter(id=>FSTAT[id]).map(id=>FLANG[id]));}
+   const enAz=vals=>[...new Set(vals.filter(Boolean))].sort((a,b)=>(a!=='English')-(b!=='English')||a.localeCompare(b));
+   AUDS=[...enAz(REL.flatMap(r=>ALANG[r.id]||[])),'Unknown'];LANGS_ON=byCount(REL.map(r=>r.f&&FLANG[r.f]));WLANGS=byCount(Object.keys(d.films).filter(id=>FSTAT[id]).map(id=>FLANG[id]));}
   {const all=Object.keys(d.films).filter(id=>FSTAT[id]);WGENRES=[...new Set(all.flatMap(id=>d.films[id].g))].sort();WCERTS_ON=CERTS.filter(c=>all.some(id=>d.films[id].cert===c));}
   lastHash=location.hash;route();window.READY=true;setTimeout(needMore,1500);});
 </script>

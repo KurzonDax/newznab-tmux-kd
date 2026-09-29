@@ -486,7 +486,7 @@ final class MovieReleasesPageTest extends TestCase
         $this->assertStringNotContainsString('checkbox-menu-search', $resolution);
     }
 
-    public function test_the_audio_rating_and_language_menus_list_what_is_present_most_releases_first_for_all_users(): void
+    public function test_the_audio_menu_lists_english_first_then_a_to_z_and_the_rating_and_language_menus_most_releases_first_for_all_users(): void
     {
         DB::table('languages')->insert([['id' => self::ENGLISH, 'name' => 'English'], ['id' => self::HINDI, 'name' => 'Hindi'], ['id' => 3, 'name' => 'Arabic'], ['id' => 4, 'name' => 'Welsh']]);
         $this->film(23, '0333333', 'Third Film', '2001', ['original_language' => 'hi', 'content_rating_us' => 'NR']);
@@ -508,15 +508,48 @@ final class MovieReleasesPageTest extends TestCase
         DB::table('user_excluded_categories')->insert(['users_id' => $user->id, 'categories_id' => self::THREE_D]);
 
         $response = $this->page('/movies', $user)->assertOk();
-        $this->assertSame([self::HINDI => 'Hindi', 3 => 'Arabic', self::ENGLISH => 'English', 'unknown' => 'Unknown'], $response->viewData('audioMenu'));
+        // the languages present for all users (Welsh is only on a TV release): English first, then A to Z, then Unknown
+        $this->assertSame([self::ENGLISH => 'English', 3 => 'Arabic', self::HINDI => 'Hindi', 'unknown' => 'Unknown'], $response->viewData('audioMenu'));
         // Hindi 3 releases, Norwegian 3 (no and nb share the name, no has more), ties by name, English 2
         $options = $response->viewData('filmOptions');
         $this->assertSame(['hi' => 'Hindi', 'no' => 'Norwegian', 'en' => 'English'], $options['language']);
         $this->assertSame(['G' => 'G', 'PG-13' => 'PG-13', 'R' => 'R', 'NR' => 'NR'], $options['rating']);
-        $response->assertSeeInOrder(['data-name="audio"', '>Hindi<', '>Arabic<', '>English<', '>Unknown<', 'data-name="completion"'], false);
+        $response->assertSeeInOrder(['data-name="audio"', '>English<', '>Arabic<', '>Hindi<', '>Unknown<', 'data-name="completion"'], false);
         $this->assertListed('/movies?language[]=no', ['C1', 'C2', 'Z1'], $user);
         $this->assertListed('/movies?audio[]='.self::HINDI, ['H1'], $user);
         $this->assertListed('/movies?audio[]=unknown', ['C1', 'C2', 'E2', 'Z1'], $user);
+    }
+
+    public function test_a_section_with_no_english_audio_lists_its_languages_a_to_z_then_unknown(): void
+    {
+        DB::table('languages')->insert([['id' => self::ENGLISH, 'name' => 'English'], ['id' => self::HINDI, 'name' => 'Hindi'], ['id' => 3, 'name' => 'Arabic'], ['id' => 4, 'name' => 'Welsh']]);
+        $audio = static fn (int $release, array $languages) => DB::table('release_audio_languages')->insert(array_map(static fn (int $language): array => ['releases_id' => $release, 'languages_id' => $language], $languages));
+        // Welsh on the most Movies releases, then Hindi, then Arabic; English only on a TV release
+        $audio($this->movie('W1'), [4, self::HINDI]);
+        $audio($this->movie('W2'), [4, self::HINDI]);
+        $audio($this->movie('W3'), [4, 3]);
+        $audio($this->release('A TV show', ['categories_id' => 5040]), [self::ENGLISH]);
+
+        $response = $this->page('/movies')->assertOk();
+        $this->assertSame([3 => 'Arabic', self::HINDI => 'Hindi', 4 => 'Welsh', 'unknown' => 'Unknown'], $response->viewData('audioMenu'));
+        $response->assertSeeInOrder(['data-name="audio"', '>Arabic<', '>Hindi<', '>Welsh<', '>Unknown<', 'data-name="completion"'], false);
+        // a menu cached by the old code, most releases first, is served in the new order
+        Cache::put('movie_releases_audio_menu', [4 => 'Welsh', self::HINDI => 'Hindi', 3 => 'Arabic'], 3600);
+        $this->assertSame([3 => 'Arabic', self::HINDI => 'Hindi', 4 => 'Welsh', 'unknown' => 'Unknown'], $this->page('/movies')->viewData('audioMenu'));
+    }
+
+    public function test_the_empty_line_names_the_chosen_audio_languages_english_first_then_a_to_z(): void
+    {
+        DB::table('languages')->insert([['id' => self::ENGLISH, 'name' => 'English'], ['id' => self::HINDI, 'name' => 'Hindi'], ['id' => 3, 'name' => 'Arabic']]);
+        $audio = static fn (int $release, array $languages) => DB::table('release_audio_languages')->insert(array_map(static fn (int $language): array => ['releases_id' => $release, 'languages_id' => $language], $languages));
+        $audio($this->movie('H1'), [self::HINDI, 3]);
+        $audio($this->movie('H2'), [self::HINDI]);
+        $audio($this->movie('E1'), [self::ENGLISH]);
+
+        $query = 'resolution[]=4k&audio[]=unknown&audio[]='.self::HINDI.'&audio[]=3&audio[]='.self::ENGLISH;
+        $response = $this->page('/movies?'.$query)->assertOk()->assertSee('Showing 0 releases')
+            ->assertSee('No releases match 4K · English or Arabic or Hindi or Unknown audio.');
+        $this->assertSame([(string) self::ENGLISH, '3', (string) self::HINDI, 'unknown'], $response->viewData('filters')->query()['audio']);
     }
 
     public function test_each_filter_returns_exactly_what_a_direct_predicate_returns_in_every_sort_and_page(): void

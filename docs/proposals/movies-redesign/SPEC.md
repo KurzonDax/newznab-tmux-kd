@@ -169,7 +169,7 @@ that menu.
 | release | Category | checkboxes, search | the Movies sub-categories the user may see (HD, UHD, SD, BluRay, DVD, 3D, X265, Foreign, Other). This menu is how a user leaves out Movies > Other (section 6.1). |
 | release | Resolution | checkboxes | 4K, 1080p, 720p, SD, Unknown, each shown as its resolution chip |
 | release | Source | checkboxes | WEB, Blu-ray, DVD, HDTV, Unknown. A remux is listed under Blu-ray and reads "Remux" in the Source column, as on TV. |
-| release | **Audio** | checkboxes, search | the languages of the release's own audio tracks (media info), most releases first, then `Unknown` (no language known). A multi-dub matches each of its languages. |
+| release | **Audio** | checkboxes, search | the languages of the release's own audio tracks (media info), `English` first, then A to Z, then `Unknown` (no language known). A multi-dub matches each of its languages. |
 | release | **Completion** | **one choice** | radio items in this order: `Any completion`, `100% only`, `95% or more`; the cell reads `100%` or `95%+`; picking closes the menu |
 | film | Genre | checkboxes, search | the film genres, A to Z |
 | film | Year | decades **multi-select** + a range | see below |

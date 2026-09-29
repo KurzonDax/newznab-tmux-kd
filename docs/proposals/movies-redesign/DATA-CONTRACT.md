@@ -290,8 +290,8 @@ from the list index instead costs 0.1 ms on page 1 but 222 ms on page 200, so it
 reads in this contract above 60 ms; nothing measured normalized does better, and both cost what they do because Movies >
 Other (519,173 releases, none with a known language) is in the band.
 
-**Menus.** Category: the Movies sub-categories not excluded (as today). Resolution, Source: fixed lists. Audio, "most releases
-first": languages by release count in the section **for all users**, cached for an hour (220 ms uncached, Movies or TV).
+**Menus.** Category: the Movies sub-categories not excluded (as today). Resolution, Source: fixed lists. Audio, `English` first,
+then A to Z, then `Unknown`: the languages in the section **for all users**, cached for an hour (220 ms uncached, Movies or TV).
 Language: `original_language` by film count (2.4 ms). MPAA Rating: the ratings present, `SELECT DISTINCT content_rating_us`
 (17,320 rows). Genre: `genres` of type 2000 that have a film.
 

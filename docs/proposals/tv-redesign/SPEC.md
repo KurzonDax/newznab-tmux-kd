@@ -138,8 +138,8 @@ same component the Movies screens use.
 - **Audio** is the release's own audio languages (media info; a multi-dub matches each; releases
   with none read `Unknown`); **Language** is the show's original language. Language names drop
   the region (`English (US)`, `en`, `en-US` → English; Mandarin reads Chinese); codes that are not
-  a language (`zxx`, `mul`, `und`, `qaa`–`qtz`) are dropped; menus list the languages present,
-  most releases first, Audio ending with `Unknown`.
+  a language (`zxx`, `mul`, `und`, `qaa`–`qtz`) are dropped; menus list the languages present:
+  Language most releases first; Audio `English` first, then A to Z, then `Unknown`.
 - Nothing moves when a filter is set or cleared. Measured: the eleven list cells are 107 / 114 /
   127 px at 1280 / 1366 / 1600; with long values set, a long network name or `Portuguese` is cut
   with an ellipsis at 1280–1366 and named in the tooltip ("I think it's okay").
