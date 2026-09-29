@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Http\Middleware\TrustedDevice2FAMiddleware;
 use App\Models\Settings;
 use App\Models\User;
+use App\Services\Releases\TvShowPage;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -14,6 +15,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
+use Tests\Support\AssertsOffsiteLinks;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -23,6 +25,7 @@ use Tests\TestCase;
 final class TvShowPageTest extends TestCase
 {
     use AssertsFollowWording;
+    use AssertsOffsiteLinks;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -327,6 +330,59 @@ final class TvShowPageTest extends TestCase
         $this->assertNoWatchWording((string) $this->page('/tv/show/'.self::SHOW.'/1')->getContent(), 'A followed TV show page');
     }
 
+    public function test_imdb_tmdb_tvdb_tvmaze_and_trakt_follow_follow_show_through_the_dereferrer_in_a_new_tab(): void
+    {
+        Settings::query()->updateOrInsert(['name' => 'dereferrer_link'], ['value' => 'https://deref.example/?']);
+        DB::table('videos')->where('id', self::SHOW)->update(['imdb' => '12345', 'tmdb' => 1412, 'tvdb' => 257655, 'tvmaze' => 4, 'trakt' => 1390]);
+        $this->tv(1, 1);
+
+        $response = $this->page('/tv/show/'.self::SHOW)->assertOk();
+        $actions = $this->between($response, '<div class="tv-details-actions tv-show-actions">', 'data-part="season tab bar"');
+        $this->assertOffsiteLinksOpenInANewTab((string) $response->getContent(), 'The TV show page');
+        $this->assertSame([
+            'https://deref.example/?https://www.imdb.com/title/tt0012345/',
+            'https://deref.example/?https://www.themoviedb.org/tv/1412',
+            'https://deref.example/?https://thetvdb.com/?tab=series&id=257655',
+            'https://deref.example/?https://www.tvmaze.com/shows/4',
+            'https://deref.example/?https://trakt.tv/shows/1390',
+        ], $this->assertOffsiteLinksOpenInANewTab($actions, 'The TV show page header'));
+        $this->assertSame(['IMDb', 'TMDB', 'TVDB', 'TVMaze', 'Trakt'], $this->headerLinkLabels($actions));
+        $this->assertLessThan(strpos($actions, '>IMDb<'), strpos($actions, 'tv-follow-show'));
+    }
+
+    public function test_a_show_gets_a_button_only_for_each_id_it_has(): void
+    {
+        DB::table('videos')->where('id', self::SHOW)->update(['imdb' => '', 'tmdb' => 1412, 'tvdb' => 257655]);
+        $this->tv(1, 1);
+        $header = fn (): string => $this->between($this->page('/tv/show/'.self::SHOW)->assertOk(), '<div class="tv-details-actions tv-show-actions">', 'data-part="season tab bar"');
+
+        $this->assertSame(['https://www.themoviedb.org/tv/1412', 'https://thetvdb.com/?tab=series&id=257655'], $this->assertOffsiteLinksOpenInANewTab($header(), 'A show with two ids'));
+        $this->assertSame(['TMDB', 'TVDB'], $this->headerLinkLabels($header()));
+
+        DB::table('videos')->where('id', self::SHOW)->update(['imdb' => '0', 'tmdb' => 0, 'tvdb' => 0]);
+        $this->assertSame([], $this->headerLinkLabels($header()), 'imdb = 0 and no other id give no button.');
+        DB::table('videos')->where('id', self::SHOW)->update(['imdb' => '']);
+        $this->assertSame([], $this->headerLinkLabels($header()), 'An empty imdb gives no button.');
+        DB::table('videos')->where('id', self::SHOW)->update(['imdb' => 'tt2193021']);
+        $this->assertSame(['https://www.imdb.com/title/tt2193021/'], $this->assertOffsiteLinksOpenInANewTab($header(), 'A show whose imdb keeps its tt'));
+    }
+
+    public function test_the_header_reads_the_ids_in_its_existing_queries(): void
+    {
+        DB::table('videos')->where('id', self::SHOW)->update(['imdb' => '12345', 'tmdb' => 1412, 'tvdb' => 257655, 'tvmaze' => 4, 'trakt' => 1390]);
+        $this->tv(1, 1);
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $header = app(TvShowPage::class)->header(self::SHOW, []);
+        $queries = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        $this->assertNotNull($header);
+        $this->assertCount(5, $header->links);
+        $this->assertSame(5, $queries, 'The show, the password setting, its visible release count, its genres and Starring: no query for the links.');
+    }
+
     public function test_similar_shows_are_the_six_best_by_the_film_rule_among_shows_the_viewer_may_see(): void
     {
         DB::table('genres')->insert([['id' => 2, 'title' => 'Drama', 'type' => 5000, 'disabled' => 0], ['id' => 3, 'title' => 'Crime', 'type' => 5000, 'disabled' => 0]]);
@@ -499,6 +555,18 @@ final class TvShowPageTest extends TestCase
         $ids = DB::table('releases')->whereIn('guid', $matches[1])->pluck('id', 'guid');
 
         return array_map(static fn (string $guid): int => (int) $ids[$guid], $matches[1]);
+    }
+
+    /**
+     * The labels of the header's outside-link buttons, each in the film page's markup.
+     *
+     * @return list<string>
+     */
+    private function headerLinkLabels(string $actions): array
+    {
+        preg_match_all('/<a class="tv-details-button is-secondary" href="[^"]+" target="_blank" rel="noopener noreferrer">([A-Za-z]+)<i class="fas fa-arrow-up-right-from-square" aria-hidden="true"><\/i><span class="sr-only"> \(opens in a new tab\)<\/span><\/a>/', $actions, $links);
+
+        return $links[1];
     }
 
     private function between(TestResponse $response, string $from, string $to): string
