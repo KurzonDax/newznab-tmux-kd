@@ -106,7 +106,9 @@ The Movie releases list (Movies `SPEC.md` section 5) without its film parts, wit
 - **"Exclude Other"** (his request and wording, 2026-09-29, on every release list: Adult, TV and Movies):
   an item under "Any category", then a separator, then the sub-categories. Picking it ticks every
   category but Other; the cell then reads **Exclude Other** (its tooltip "Category: Exclude Other");
-  picking it again clears the category filter; ticking Other as well turns the cell into "N chosen".
+  picking it again clears the category filter; ticking Other as well turns the cell into "N chosen". It is a mode,
+  not a list of ticked ids: remembered, it keeps meaning every category but Other, including a sub-category that gains
+  its first release later (`DATA-CONTRACT.md` 4.1).
   The empty-result line names it "excluding Other". Why: Other holds 55% of the adult catalogue, mostly
   unprocessed or passworded posts, and "Manually checking every single category except Other is a poor
   user experience". His wording is binding: never "All except Other" or "Except Other".
@@ -184,8 +186,8 @@ whose lists rejected an in-list text search.
 
 ### 5.10 The Clip chip and dialog
 
-- A release with a video clip (today's `videostatus = 1` with a `release_video_clips` row) shows a
-  **Clip** chip, last in the chip line, in **magenta 305** (his pick of three built, 2026-09-29):
+- A release with a video clip (today's `videostatus = 1`; today's player also plays an older clip that has no
+  `release_video_clips` row) shows a **Clip** chip, last in the chip line, in **magenta 305** (his pick of three built, 2026-09-29):
   dark theme fill `oklch(0.31 0.085 305)`, text `oklch(0.87 0.09 305)`; light theme fill
   `oklch(0.93 0.03 305)`, text `oklch(0.40 0.17 305)`. Rejected: teal-green 172 (looked like Preview
   beside it), orange 45 (near the coral Download colour, and read like a warning beside a red

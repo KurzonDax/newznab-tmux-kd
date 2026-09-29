@@ -3,8 +3,8 @@
 The design of the redesigned Adult section (the XXX root, category band 6000): the releases list and the
 release details page. It follows the process of the TV and Movies sections
 ([`../tv-redesign/`](../tv-redesign/), [`../movies-redesign/`](../movies-redesign/)): each screen was
-prototyped on the maintainer's real data, reviewed in a clickable prototype and approved; the queries are
-measured on a restored production catalogue before they are written into a data contract. Nothing here is
+prototyped on the maintainer's real data, reviewed in a clickable prototype and approved, and every query was
+measured on a restored production catalogue before it was written into the data contract. Nothing here is
 implemented yet.
 
 | Screen | Status |
@@ -18,7 +18,9 @@ title page: adult releases carry no title, performer or studio data.
 | Read | For |
 |---|---|
 | [`SPEC.md`](SPEC.md) | what the section is for, the two approved screens, every decision with the reasons, what was rejected |
+| [`DATA-CONTRACT.md`](DATA-CONTRACT.md) | where every value the screens read is already stored (no new storage), which code writes it, and every read measured at full catalogue size |
 | [`DATA-NOTES.md`](DATA-NOTES.md) | facts measured on the restored catalogue that shaped the design |
+| [`evidence/`](evidence/) | the query-lab write-up the data contract cites |
 | [`INVENTORY.md`](INVENTORY.md) | every feature of today's Adult screens, with `path:line` |
 | [`prototype/`](prototype/) | the approved prototype on an **invented dataset** with placeholder pictures and no clips: `adult.html`, its behaviour checks (`check.mjs`) and 18 reference screens in both themes (`reference/`) |
 

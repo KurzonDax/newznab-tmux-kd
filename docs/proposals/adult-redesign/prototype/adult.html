@@ -935,8 +935,8 @@ addEventListener('hashchange',()=>{state.dd=null;closeDialog();const rid=h=>(h.m
   scrollTo(0,0);lastHash=location.hash;route();});
 // the list remembers its last dropdown filters for the user (his call 2026-09-29; the app keeps them in the profile, here
 // localStorage stands in); the name search is never remembered, and neither is the page
-const saveFilters=()=>store.set('filters',JSON.stringify({cat:[...state.cat],res:[...state.res],aud:[...state.aud],comp:state.comp}));
-function loadFilters(){try{const f=JSON.parse(store.get('filters','{}'));['cat','res','aud'].forEach(k=>{state[k]=new Set((f[k]||[]).filter(v=>(k==='cat'?CATS:k==='res'?[...RES,'Unknown']:AUDS).includes(v)));});state.comp=['100','95'].includes(f.comp)?f.comp:false;}catch(e){}}
+const saveFilters=()=>store.set('filters',JSON.stringify({cat:isExo()?'exo':[...state.cat],res:[...state.res],aud:[...state.aud],comp:state.comp}));
+function loadFilters(){try{const f=JSON.parse(store.get('filters','{}'));['cat','res','aud'].forEach(k=>{state[k]=new Set((k==='cat'&&f.cat==='exo'?EXO():(f[k]||[])).filter(v=>(k==='cat'?CATS:k==='res'?[...RES,'Unknown']:AUDS).includes(v)));});state.comp=['100','95'].includes(f.comp)?f.comp:false;}catch(e){}}
 function afterFilter(){state.page=1;saveFilters();if(location.hash!=='#/'&&location.hash!=='')history.replaceState(null,'','#/');}
 document.addEventListener('click',e=>{
   const al=e.target.closest('[data-applink]');if(al){e.preventDefault();toast('Opens '+decodeURIComponent(al.dataset.applink)+', the existing list of all releases for it (not part of this prototype)');return;}
