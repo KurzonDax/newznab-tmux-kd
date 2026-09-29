@@ -178,7 +178,7 @@
             @endif
         </div>
         @if($table !== null)
-            <section class="tv-siblings" id="releases" aria-labelledby="film-releases-heading" x-ref="releases" data-film-releases>
+            <section @class(['tv-siblings', 'tv-list-end' => $similar === []]) id="releases" aria-labelledby="film-releases-heading" x-ref="releases" data-film-releases>
                 @include('details.movies.releases')
             </section>
         @endif

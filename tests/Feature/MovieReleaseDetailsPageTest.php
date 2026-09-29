@@ -222,7 +222,7 @@ final class MovieReleaseDetailsPageTest extends TestCase
         $this->excludeForUser(self::SD);
 
         $response = $this->details($current)->assertOk();
-        $table = $this->between($response, '<section class="tv-siblings" id="releases" aria-labelledby="film-releases-heading" x-ref="releases" data-film-releases>', '</section>');
+        $table = $this->between($response, '<section class="tv-siblings tv-list-end" id="releases" aria-labelledby="film-releases-heading" x-ref="releases" data-film-releases>', '</section>');
         $this->assertStringContainsString('<h2 id="film-releases-heading" data-part="film releases heading">All 2 releases of this film</h2>', $table);
         $this->assertSame([$other, $current], $this->rowIds($table));
         $this->assertSame(['Other.720p.WEB'], $this->linkedNames($table));
@@ -313,9 +313,12 @@ final class MovieReleaseDetailsPageTest extends TestCase
             $this->assertStringNotContainsString($absent, $similar);
         }
         $this->assertSeeInOrderOf($response, ['data-film-releases', 'data-similar-releases']);
+        // The releases end the page only without Similar releases; then they carry its 70px end space.
+        $response->assertSee('<section class="tv-siblings" id="releases"', false)->assertDontSee('tv-list-end', false);
 
         $this->similarIds = [];
-        $this->details($current)->assertOk()->assertDontSee('Similar releases');
+        $this->details($current)->assertOk()->assertDontSee('Similar releases')
+            ->assertSee('<section class="tv-siblings tv-list-end" id="releases"', false);
     }
 
     public function test_a_release_with_no_matched_film_has_its_name_as_the_heading_and_none_of_the_film_s_parts_but_keeps_similar_releases(): void

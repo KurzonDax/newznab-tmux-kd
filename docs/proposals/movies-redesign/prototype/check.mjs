@@ -514,6 +514,48 @@ const noWatch = `(()=>{const t=[...document.querySelectorAll('button,[role=butto
 for (const h of ['#/','#/films','#/film/'+FX.film]) { await js(`location.hash=${JSON.stringify(h)}`); for (let i=0;i<30&&!(await js(`!isFilm()||!!document.querySelector('.fhead')`));i++) await sleep(200); await sleep(200);
   await js(`document.querySelectorAll('[data-watch]').forEach(b=>{if(b.getAttribute('aria-pressed')!=='true')b.click();})`); await sleep(100);
   ok(`no "watch" wording on ${h} (buttons, tooltips, labels, toasts; following and not following): it reads Follow (his ruling 2026-09-27)`, await js(noWatch)); await js(`state.watch.clear();route()`); }
+{ // #870: a page that ends in a list keeps 70 px at its end with or without the bottom pager; a drawn pager keeps 26 px above it.
+  // The Releases of a film page and All N releases of a details page end the page only without Similar films / Similar releases;
+  // with one, the space above it is unchanged (44 px, or the pager's 70 px). A short window makes every one-page list taller than it.
+  await size(1440, 300);
+  const endGap = sel => js(`(()=>{const e=[...document.querySelectorAll(${JSON.stringify(sel)})].pop();return e?Math.round(document.documentElement.scrollHeight-(e.getBoundingClientRect().bottom+scrollY)):'missing';})()`);
+  const between = (a, b) => js(`(()=>{const x=document.querySelector(${JSON.stringify(a)}),y=document.querySelector(${JSON.stringify(b)});return x&&y?Math.round(y.getBoundingClientRect().top-x.lastElementChild.getBoundingClientRect().bottom):'missing';})()`);
+  const abovePager = () => js(`(()=>{const p=document.querySelector('.pager.bottom');return p?Math.round(p.getBoundingClientRect().top-p.previousElementSibling.getBoundingClientRect().bottom):'no pager';})()`);
+  const pagerDrawn = () => js(`!!document.querySelector('.pager.bottom')`);
+  const view = async hash => { await go(hash); await js(`route()`); await sleep(400); };
+  await view('#/');
+  let above = await abovePager(), gap = await endGap('.pager.bottom');
+  ok('#870 releases, more than one page: 26 px above the bottom pager and 70 px below it', above === 26 && gap === 70, `${above} / ${gap}`);
+  const n = await js(`(()=>{for(const [a,b] of new Map(REL.map(r=>[r.res+'|'+r.src,[r.res,r.src]])).values()){state.res.clear();state.src.clear();state.res.add(a);state.src.add(b);const n=REL.filter(matchRel).length;if(n>=8&&n<=state.per)return n;}state.res.clear();state.src.clear();return 0;})()`);
+  await js(`route()`); await sleep(300); gap = await endGap('table.feed');
+  ok('#870 releases filtered to one page: no bottom pager, the table ends 70 px above the bottom of the page', n > 0 && !(await pagerDrawn()) && gap === 70, `${n} releases, ${gap}`);
+  await js(`state.res.clear();state.src.clear()`); await view('#/films');
+  above = await abovePager(); gap = await endGap('.pager.bottom');
+  ok('#870 films wall, more than one page: 26 px above the bottom pager and 70 px below it', above === 26 && gap === 70, `${above} / ${gap}`);
+  const m = await js(`(()=>{for(const g of new Set(Object.values(DB.films).flatMap(f=>f.g))){state.wgenre.clear();state.wgenre.add(g);const n=Object.keys(DB.films).filter(id=>FSTAT[id]&&matchFilm(id)).length;if(n>=8&&n<=state.wper)return n;}state.wgenre.clear();return 0;})()`);
+  await js(`route()`); await sleep(300); gap = await endGap('.wall .tiles');
+  ok('#870 films wall filtered to one page: no bottom pager, the tiles end 70 px above the bottom of the page', m > 0 && !(await pagerDrawn()) && gap === 70, `${m} films, ${gap}`);
+  await js(`state.wgenre.clear()`); await js(`needMore()`);
+  const film = pick => js(`(()=>{const id=Object.keys(BYFILM).find(i=>FILM(i)&&(${pick})((MORE.sim[i]||[]).filter(FILM).length,BYFILM[i].length));return id??null;})()`);
+  for (const [label, pick, similar, pager] of [['one page, no Similar films', '(s,n)=>!s&&n>=3&&n<=state.fper', false, false], ['one page, Similar films', '(s,n)=>s&&n>=3&&n<=state.fper', true, false], ['more than one page, Similar films', '(s,n)=>s&&n>state.fper', true, true]]) {
+    const id = await film(pick);
+    await view('#/film/' + id);
+    const drawn = await pagerDrawn(), space = similar ? await between('.frel', '.simf') : await endGap('.frel');
+    const want = similar && !pager ? 44 : 70;
+    ok(`#870 film page, ${label}: ${similar ? 'the space above Similar films is unchanged' : 'the releases end 70 px above the bottom of the page'} (${want} px)`, id !== null && drawn === pager && space === want, `film ${id}, ${space}`);
+  }
+  await js(`needDetails()`); await sleep(300);
+  const release = pick => js(`(()=>{const r=Object.values(BYID).find(r=>r.f&&FILM(r.f)&&BYFILM[r.f]&&(${pick})((DET.sim[r.id]||[]).map(i=>BYID[i]).filter(Boolean).length,BYFILM[r.f].length));return r?r.id:null;})()`);
+  for (const [label, pick, similar, pager] of [['one page, no Similar releases', '(s,n)=>!s&&n>=2&&n<=50', false, false], ['one page, Similar releases', '(s,n)=>s&&n>=2&&n<=50', true, false], ['more than one page, Similar releases', '(s,n)=>s&&n>50', true, true], ['more than one page, no Similar releases', '(s,n)=>!s&&n>50', false, true]]) {
+    const id = await release(pick);
+    if (id === null) { ok(`#870 details page, ${label}: no such release in this dataset`, true); continue; }
+    await view('#/release/' + id);
+    const drawn = await pagerDrawn(), space = similar ? await between('.sibs', '.simrel') : await endGap('.sibs');
+    const want = similar && !pager ? 44 : 70;
+    ok(`#870 details page, ${label}: ${similar ? 'the space above Similar releases is unchanged' : 'All N releases ends 70 px above the bottom of the page'} (${want} px)`, drawn === pager && space === want, `release ${id}, ${space}`);
+  }
+  await size(1600, 1000); await go('#/');
+}
 ok('no script errors', errors.length === 0, errors.join(' | ').slice(0, 300));
 
 const fails = results.filter(r => r[0] === 'FAIL');

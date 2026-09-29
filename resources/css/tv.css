@@ -162,6 +162,9 @@
 
 /* Bottom pager */
 .pager-full { display: flex; align-items: center; gap: 6px; margin: 26px 0 70px; font-variant-numeric: tabular-nums; }
+/* A list that ends the page keeps the pager's 70px above the footer when everything fits on one page and
+   no pager is drawn: its last child (the pager, the last row or the empty state) carries the space. */
+.tv-list-end > :last-child { margin-bottom: 70px; }
 .pager-full a, .pager-full .is-off, .pager-full-current, .pager-full-gap { display: inline-flex; align-items: center; justify-content: center; min-width: 38px; height: 38px; padding: 0 12px; border-radius: 19px; font-size: 14px; font-weight: 600; line-height: 1.5; }
 .pager-full a { gap: 6px; background: var(--tv-panel-alt); color: var(--tv-ink); }
 .pager-full a:hover { background: var(--tv-line); }

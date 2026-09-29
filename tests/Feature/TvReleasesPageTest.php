@@ -415,7 +415,7 @@ final class TvReleasesPageTest extends TestCase
         $this->assertStringNotContainsString('checkbox-menu', $title);
         $this->assertStringContainsString('data-part="sort dropdown"', $title);
         $response->assertSeeInOrder(['<div class="filter-row tv-bar-list">', '<div class="filter-bar is-release" role="group" aria-label="The release">',
-            'data-name="completion"', '<div class="filter-bar is-show" role="group" aria-label="The show">', 'data-name="status"', 'x-ref="list"'], false);
+            'data-name="completion"', '<div class="filter-bar is-show" role="group" aria-label="The show">', 'data-name="status"', 'x-ref="list" class="tv-list-end"'], false);
         preg_match_all('/class="checkbox-menu is-cell[^"]*"[^>]*data-name="([a-z]+)"/', $html, $cells);
         $this->assertSame(['category', 'resolution', 'source', 'audio', 'completion', 'genre', 'decade', 'language', 'network', 'rating', 'status'], $cells[1]);
         $this->assertSame(['Category: any', 'Resolution: any', 'Source: any', 'Audio: any', 'Completion: any', 'Genre: any', 'Premiered: any',

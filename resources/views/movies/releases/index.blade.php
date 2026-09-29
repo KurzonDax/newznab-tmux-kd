@@ -36,7 +36,7 @@
             </x-filter-bar>
             @include('movies.partials.film-filters', ['options' => $filmOptions, 'films' => $filters->films])
         </div>
-        <div x-ref="list">
+        <div x-ref="list" class="tv-list-end">
             @include('movies.releases.list')
         </div>
     </div>

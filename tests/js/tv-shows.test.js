@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { checkboxMenu } from '../../resources/js/alpine/components/checkbox-menu-component.js';
 import { hasFilters, tvShows } from '../../resources/js/alpine/components/tv-shows-component.js';
@@ -233,4 +234,10 @@ test('the menu of a bar cell near the right edge shifts left to stay 16px inside
     component.init();
     component.place();
     assert.equal(panel.style.left, '-50px');
+});
+
+test('a list that ends the page keeps 70px above the footer with or without the bottom pager', () => {
+    const css = readFileSync(new URL('../../resources/css/tv.css', import.meta.url), 'utf8');
+    assert.match(css, /\.pager-full \{ display: flex; align-items: center; gap: 6px; margin: 26px 0 70px;/, 'the drawn pager keeps 26px above and 70px below');
+    assert.match(css, /\.tv-list-end > :last-child \{ margin-bottom: 70px; \}/, 'the last row, the pager or the empty state ends 70px above the footer');
 });

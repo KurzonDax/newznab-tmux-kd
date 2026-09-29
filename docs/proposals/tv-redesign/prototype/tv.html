@@ -119,6 +119,8 @@ a.tag:hover{background:var(--line)}
 /* pager */
 .pager{display:flex;align-items:center;gap:6px;margin:22px 0;font-variant-numeric:tabular-nums}
 .pager.bottom{margin:26px 0 70px}
+/* a list that ends the page keeps 70px at its end when it fits on one page and no bottom pager is drawn (#870) */
+#app .list-end{margin-bottom:70px}
 .pager a,.pager span.cur,.pager span.gap,.pager span.off{display:inline-flex;align-items:center;justify-content:center;min-width:38px;height:38px;padding:0 12px;border-radius:19px;font-weight:600;font-size:14px}
 .pager a{background:var(--panel2)}
 .pager a:hover{background:var(--line)}
@@ -721,10 +723,10 @@ function releasesView(){
   state.page=Math.min(Math.max(1,state.page),pages);state.list=state.page>1?'#/p/'+state.page:'#/';
   const page=rs.slice((state.page-1)*state.per,state.page*state.per), pg=b=>b?pager('#/',state.page,pages,rs.length,'release',b):barClear(pager('#/',state.page,pages,rs.length,'release',b));
   let h=filterBar('TV releases','releases');
-  if(!page.length){$('#app').innerHTML=h+pg(false)+`<p class="empty">Nothing matches ${esc(filterText(true))}.</p>`;return;}
+  if(!page.length){$('#app').innerHTML=h+pg(false)+`<p class="empty list-end">Nothing matches ${esc(filterText(true))}.</p>`;return;}
   if(state.sel.size)h+=`<div class="bulk"><span>${state.sel.size} selected</span><button class="btn" data-bulk="nzb">${ic('down')}Download NZBs</button><button class="btn sec" data-bulk="cart">${ic('cart')}Add to cart</button><button class="btn sec" data-bulk="clear">Clear selection</button></div>`;
   h+=pg(false);
-  h+=`<table class="feed"><colgroup><col style="width:34px"><col style="width:116px"><col><col style="width:100px"><col style="width:80px"><col style="width:82px"><col style="width:112px"><col style="width:96px"></colgroup><thead><tr><th class="selall"><input type="checkbox" data-selectall aria-label="Select all releases on this page"></th><th colspan="2">Release</th><th>Resolution</th><th>Source</th><th class="num">Size</th><th class="num">${sk==='added'?'Added':'Posted'}</th><th></th></tr></thead><tbody>`;
+  h+=`<table class="feed${pages>1?'':' list-end'}"><colgroup><col style="width:34px"><col style="width:116px"><col><col style="width:100px"><col style="width:80px"><col style="width:82px"><col style="width:112px"><col style="width:96px"></colgroup><thead><tr><th class="selall"><input type="checkbox" data-selectall aria-label="Select all releases on this page"></th><th colspan="2">Release</th><th>Resolution</th><th>Source</th><th class="num">Size</th><th class="num">${sk==='added'?'Added':'Posted'}</th><th></th></tr></thead><tbody>`;
   let day='',i=0;
   while(i<page.length){
     const r=page[i],d=dayKey(tk(r));
@@ -759,8 +761,8 @@ function home(){
   let h=filterBar('TV shows','shows')+`<div class="mrow fbar one tvwall"><div class="fseg show" role="group" aria-label="The show">${showCells(true)}</div>
     <button class="clearall" data-clearshows ${any?'':'tabindex="-1" aria-hidden="true"'}>Clear all</button>
     ${state.sf.person?`<span class="person">Starring ${esc(state.sf.person)}<button data-unperson aria-label="Remove ${esc(state.sf.person)}">${ic('x')}</button></span>`:''}</div>`;
-  if(!list.length)h+=pager('#/shows',1,1,0,'show',false)+`<p class="empty">No shows match. Try removing one of the choices above.</p>`;
-  else h+=pager('#/shows',state.spage,spages,total,'show',false)+`<div class="tiles" style="margin-top:4px">${list.map(({id})=>{const s=DB.shows[id],m=M(id);return `<a class="tile" href="#/show/${id}"><div class="art">${poster(id)}</div><b>${esc(s.t)}</b>
+  if(!list.length)h+=pager('#/shows',1,1,0,'show',false)+`<p class="empty list-end">No shows match. Try removing one of the choices above.</p>`;
+  else h+=pager('#/shows',state.spage,spages,total,'show',false)+`<div class="tiles${spages>1?'':' list-end'}" style="margin-top:4px">${list.map(({id})=>{const s=DB.shows[id],m=M(id);return `<a class="tile" href="#/show/${id}"><div class="art">${poster(id)}</div><b>${esc(s.t)}</b>
     <div class="what">${[premOf(id)||'',m.g.slice(0,2).join(', ')].filter(Boolean).map(esc).join(' · ')}</div><div class="m2">${[m.lang,m.us&&m.us!=='NR'?m.us:''].filter(Boolean).map(esc).join(' · ')}</div></a>`;}).join('')}</div>`+pager('#/shows',state.spage,spages,total,'show',true);
   $('#app').innerHTML=h;
 }

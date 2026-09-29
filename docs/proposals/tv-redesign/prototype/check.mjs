@@ -467,6 +467,28 @@ const noWatch = `(()=>{const t=[...document.querySelectorAll('button,[role=butto
   for (const h of ['#/','#/shows','#/show/'+first,'#/release/'+rel]) { await js(`location.hash=${JSON.stringify(h)}`); await sleep(400);
     await js(`document.querySelectorAll('[data-watch]').forEach(b=>{if(b.getAttribute('aria-pressed')!=='true')b.click();})`); await sleep(150);
     ok(`no "watch" wording on ${h} (buttons, tooltips, labels, toasts; following and not following): it reads Follow (his ruling 2026-09-27)`, await js(noWatch)); await js(`state.watch.clear();route()`); } }
+{ // #870: a page that ends in a list keeps 70 px at its end with or without the bottom pager; a drawn pager keeps 26 px above it.
+  // A short window makes every one-page list taller than it.
+  await size(1440, 300);
+  const endGap = sel => js(`(()=>{const e=[...document.querySelectorAll(${JSON.stringify(sel)})].pop();return e?Math.round(document.documentElement.scrollHeight-(e.getBoundingClientRect().bottom+scrollY)):'missing';})()`);
+  const abovePager = () => js(`(()=>{const p=document.querySelector('.pager.bottom');return p?Math.round(p.getBoundingClientRect().top-p.previousElementSibling.getBoundingClientRect().bottom):'no pager';})()`);
+  const view = async hash => { await js(`location.hash=${JSON.stringify(hash)}`); await sleep(300); await js(`route()`); await sleep(200); };
+  await view('#/');
+  let above = await abovePager(), gap = await endGap('.pager.bottom');
+  ok('releases, more than one page: 26 px above the bottom pager and 70 px below it', above === 26 && gap === 70, `${above} / ${gap}`);
+  const n = await js(`(()=>{for(const [a,b] of new Map(REL.map(r=>[r.res+'|'+r.src,[r.res,r.src]])).values()){state.res.clear();state.src.clear();state.res.add(a);state.src.add(b);const n=REL.filter(matchRel).length;if(n>=8&&n<=state.per)return n;}state.res.clear();state.src.clear();return 0;})()`);
+  await js(`route()`); await sleep(200); gap = await endGap('table.feed');
+  ok('releases filtered to one page: no bottom pager, the table ends 70 px above the bottom of the page', n > 0 && !(await js(`!!document.querySelector('.pager.bottom')`)) && gap === 70, `${n} releases, ${gap}`);
+  // this dataset's wall may fit on one page: 12 a page draws the bottom pager for the check
+  const sper = await js(`state.sper`); await js(`state.res.clear();state.src.clear();state.sper=12`); await view('#/shows');
+  above = await abovePager(); gap = await endGap('.pager.bottom');
+  ok('shows wall, more than one page: 26 px above the bottom pager and 70 px below it', above === 26 && gap === 70, `${above} / ${gap}`);
+  await js(`state.sper=${sper}`);
+  const m = await js(`(()=>{const ids=Object.keys(DB.shows).filter(id=>BYSHOW[id]);for(const l of new Set(ids.map(id=>M(id).lang).filter(Boolean))){state.sf.lang.clear();state.sf.lang.add(l);const n=ids.filter(showMatches).length;if(n>=8&&n<=state.sper)return n;}state.sf.lang.clear();return 0;})()`);
+  await js(`route()`); await sleep(200); gap = await endGap('.tiles');
+  ok('shows wall filtered to one page: no bottom pager, the tiles end 70 px above the bottom of the page', m > 0 && !(await js(`!!document.querySelector('.pager.bottom')`)) && gap === 70, `${m} shows, ${gap}`);
+  await js(`state.sf.lang.clear()`); await size(1440, 900); await view('#/');
+}
 ok('no JS errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 for (const r of results) console.log(r.join('  '));
 console.log(results.filter(r => r[0] === 'FAIL').length + ' failures of ' + results.length);

@@ -198,7 +198,7 @@ final class TvShowsPageTest extends TestCase
         $this->assertStringContainsString('<select aria-label="Sort"', $title);
         $this->assertStringNotContainsString('checkbox-menu', $title);
         $response->assertSeeInOrder(['<div class="filter-row tv-bar-wall">', '<div class="filter-bar is-show" role="group" aria-label="The show">',
-            'data-name="status"', 'class="tv-clear-all" data-clear-all aria-hidden="false"', 'data-part="starring chip"', 'x-ref="list"'], false);
+            'data-name="status"', 'class="tv-clear-all" data-clear-all aria-hidden="false"', 'data-part="starring chip"', 'x-ref="list" class="tv-list-end"'], false);
         preg_match_all('/class="checkbox-menu is-cell[^"]*"[^>]*data-name="([a-z]+)"/', $html, $cells);
         $this->assertSame(['genre', 'decade', 'language', 'network', 'rating', 'status'], $cells[1]);
         $this->assertSame(1, substr_count($html, 'data-part="shows filter button"'));

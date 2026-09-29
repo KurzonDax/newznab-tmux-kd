@@ -27,7 +27,7 @@
                 <span class="tv-person" data-part="starring chip">Starring {{ $person }}<a href="{{ route('tv.shows', $filters->withoutPerson()->query(1)) }}" data-remove-person aria-label="Remove {{ $person }}"><i class="fas fa-xmark" aria-hidden="true"></i></a></span>
             @endif
         </div>
-        <div x-ref="list">
+        <div x-ref="list" class="tv-list-end">
             @include('tv.shows.list')
         </div>
     </div>

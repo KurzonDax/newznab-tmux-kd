@@ -113,6 +113,8 @@ a.tag:hover{background:var(--line)}
 /* pager */
 .pager{display:flex;align-items:center;gap:6px;margin:22px 0;font-variant-numeric:tabular-nums}
 .pager.bottom{margin:26px 0 70px}
+/* a list that ends the page keeps 70px at its end when it fits on one page and no bottom pager is drawn (#870) */
+#app .list-end{margin-bottom:70px}
 .pager a,.pager span.cur,.pager span.gap,.pager .off{display:inline-flex;align-items:center;justify-content:center;min-width:38px;height:38px;padding:0 12px;border-radius:19px;font-weight:600;font-size:14px}
 .pager a{background:var(--panel2)}
 .pager a:hover{background:var(--line)}
@@ -770,10 +772,10 @@ function releasesView(){
   state.page=Math.min(Math.max(1,state.page),pages);
   const page=rs.slice((state.page-1)*state.per,state.page*state.per);
   let h=filterBar();
-  if(!page.length){$('#app').innerHTML=h+barClear(pager(1,1,0,false))+`<p class="empty">No releases match ${esc(filterText())}.</p>`;return;}
+  if(!page.length){$('#app').innerHTML=h+barClear(pager(1,1,0,false))+`<p class="empty list-end">No releases match ${esc(filterText())}.</p>`;return;}
   if(state.sel.size)h+=`<div class="bulk"><span>${state.sel.size} selected</span><button class="btn" data-bulk="nzb">${ic('down')}Download NZBs</button><button class="btn sec" data-bulk="cart">${ic('cart')}Add to cart</button><button class="btn sec" data-bulk="clear">Clear selection</button></div>`;
   h+=barClear(pager(state.page,pages,rs.length,false));
-  h+=`<table class="feed"><colgroup><col style="width:34px"><col style="width:116px"><col><col style="width:100px"><col style="width:80px"><col style="width:82px"><col style="width:112px"><col style="width:96px"></colgroup><thead><tr><th class="selall"><input type="checkbox" data-selectall aria-label="Select all releases on this page"></th><th colspan="2">Release</th><th>Resolution</th><th>Source</th><th class="num">Size</th><th class="num">${sk==='added'?'Added':'Posted'}</th><th><span class="vh">Actions</span></th></tr></thead><tbody>`;
+  h+=`<table class="feed${pages>1?'':' list-end'}"><colgroup><col style="width:34px"><col style="width:116px"><col><col style="width:100px"><col style="width:80px"><col style="width:82px"><col style="width:112px"><col style="width:96px"></colgroup><thead><tr><th class="selall"><input type="checkbox" data-selectall aria-label="Select all releases on this page"></th><th colspan="2">Release</th><th>Resolution</th><th>Source</th><th class="num">Size</th><th class="num">${sk==='added'?'Added':'Posted'}</th><th><span class="vh">Actions</span></th></tr></thead><tbody>`;
   let i=0;
   while(i<page.length){
     const r=page[i],d=dayKey(tk(r));
@@ -817,7 +819,7 @@ function filmsView(){
     year:(a,b)=>(+DB.films[b].y||0)-(+DB.films[a].y||0)||S[b][1]-S[a][1]||byTitle(a,b),az:byTitle}[state.wsort]);
   const pages=Math.max(1,Math.ceil(ids.length/state.wper));state.wpage=Math.min(Math.max(1,state.wpage),pages);
   const page=ids.slice((state.wpage-1)*state.wper,state.wpage*state.wper);
-  let h=`<div class="wall">`+wallBar();
+  let h=`<div class="wall list-end">`+wallBar();
   h+=page.length?pager(state.wpage,pages,ids.length,false,'#/films','film',state.wper)+`<div class="tiles">${page.map(filmTile).join('')}</div>`+pager(state.wpage,pages,ids.length,true,'#/films','film',state.wper)
     :pager(1,1,0,false,'#/films','film',state.wper)+`<p class="empty">No films match ${esc(wallFilterText())}.</p>`;
   h+=`</div>`;
@@ -852,7 +854,7 @@ function film(id,page){
   const score=scoreBand(f)==='few'?'Too few votes':'Score '+(+f.sc);
   const tags=f.g.map(g=>`<a class="tag" href="#/films" data-setwf="wgenre" data-v="${esc(g)}">${esc(g)}</a>`).join('')+[score,f.cert,FLANG[id]].filter(Boolean).map(v=>`<span class="tag plain">${esc(v)}</span>`).join('');
   const person=n=>`<a href="#/films?person=${encodeURIComponent(n)}">${esc(n)}</a>`;
-  const w=state.watch.has(id),back=state.back;
+  const w=state.watch.has(id),back=state.back,sim=(MORE.sim[id]||[]).filter(FILM);
   let h=`<a class="back" href="${back}">${ic('back')}${/^#\/films/.test(back)?'Films':'Movie releases'}</a>
   <div class="showhead fhead"><div class="art">${f.p?`<img src="mv/posters/${id}.webp" alt="${esc(f.t)} poster">`:`<span class="ph"><span class="t">${esc(f.t)}</span>${f.y?`<small>${esc(f.y)}</small>`:''}</span>`}</div><div>
    <h1>${esc(f.t)}</h1><div class="meta">${meta}</div>${f.plot?`<p>${esc(f.plot)}</p>`:''}
@@ -861,11 +863,10 @@ function film(id,page){
    <div class="dacts"><button class="btn wat" data-watch="${id}" aria-pressed="${w}" title="${w?'Following this film · click to unfollow':'Follow this film'}">${fic()}<span class="wl"><span${w?' hidden':''}>Follow film</span><span${w?'':' hidden'}>Following film</span></span></button>
     <a class="btn sec ext" href="https://www.imdb.com/title/tt${id}/" target="_blank" rel="noopener noreferrer">IMDb${ic('ext')}<span class="vh"> (opens in a new tab)</span></a>
     ${f.tmdb?`<a class="btn sec ext" href="https://www.themoviedb.org/movie/${f.tmdb}" target="_blank" rel="noopener noreferrer">TMDB${ic('ext')}<span class="vh"> (opens in a new tab)</span></a>`:''}</div></div></div>
-  <section class="frel" id="releases" aria-labelledby="relh"><h2 id="relh">Releases</h2>
+  <section class="frel${sim.length?'':' list-end'}" id="releases" aria-labelledby="relh"><h2 id="relh">Releases</h2>
    <div class="mrow fbar one pf"><div class="fseg rel" role="group" aria-label="Filter this film's releases">${menu('pres')}${menu('psrc')}</div></div>
    ${pager(page,pages,shown.length,false,base,'release',state.fper).replace('class="pager slim"','class="pager slim fixed"').replace('</span>',`</span><button class="clearall" data-clearall ${pAnySet()?'':'tabindex="-1" aria-hidden="true"'}>Clear all</button>`)}
    ${rows.length?filmTable(rows)+pager(page,pages,shown.length,true,base,'release',state.fper):`<p class="empty">No releases of this film match ${esc([[...state.pres].join(' or '),[...state.psrc].join(' or ')].filter(Boolean).join(' · '))}.</p>`}</section>`;
-  const sim=(MORE.sim[id]||[]).filter(FILM);
   if(sim.length)h+=`<section class="simf" aria-labelledby="simh"><h2 id="simh">Similar films</h2><div class="tiles">${sim.map(filmTile).join('')}</div></section>`;
   if(state.sel.size)h+=`<div class="bulk"><span>${state.sel.size} selected</span><button class="btn" data-bulk="nzb">${ic('down')}Download NZBs</button><button class="btn sec" data-bulk="cart">${ic('cart')}Add to cart</button><button class="btn sec" data-bulk="clear">Clear selection</button></div>`;
   $('#app').innerHTML=h;}
@@ -919,11 +920,11 @@ function release(id,pg){const h0=location.hash;
   <div class="dcols${f?'':' noshow'}"><div><div class="tabs" role="tablist">${tabs.map(([k,l])=>`<button role="tab" data-tab="${k}" aria-selected="${state.tab===k}">${l}</button>`).join('')}</div><div class="panel" role="tabpanel" aria-label="${esc(tabs.find(t=>t[0]===state.tab)[1])}"><h2 class="vh">${esc(tabs.find(t=>t[0]===state.tab)[1])}</h2>${panel}</div></div>${about}</div>`;
   // All N releases of this film: 50 a page; the page holding this release unless the URL names one
   const all=f?BYFILM[r.f]||[]:[];
+  const sim=(DET.sim[id]||[]).map(i=>BYID[i]).filter(Boolean);
   if(all.length){const rs=detSort(all,state.dsort),per=50,pages=Math.max(1,Math.ceil(rs.length/per)),base='#/release/'+id;
     let page=pg||Math.floor(Math.max(0,rs.findIndex(o=>o.id===id))/per)+1;page=Math.min(Math.max(1,page),pages);
-    h+=`<section class="sibs" id="sibs" aria-labelledby="sibh"><h2 id="sibh">${all.length>1?'All '+all.length.toLocaleString()+' releases of this film':'The only release of this film'}</h2>
+    h+=`<section class="sibs${sim.length?'':' list-end'}" id="sibs" aria-labelledby="sibh"><h2 id="sibh">${all.length>1?'All '+all.length.toLocaleString()+' releases of this film':'The only release of this film'}</h2>
      ${pages>1?pager(page,pages,rs.length,false,base,'release',per).replace('class="pager slim"','class="pager slim fixed"'):''}${detTable(rs.slice((page-1)*per,page*per),'dsort',id)}${pages>1?pager(page,pages,rs.length,true,base,'release',per):''}</section>`;}
-  const sim=(DET.sim[id]||[]).map(i=>BYID[i]).filter(Boolean);
   if(sim.length)h+=`<section class="sibs simrel" aria-labelledby="simrh"><h2 id="simrh">Similar releases</h2>${detTable(detSort(sim,state.ssort),'ssort',null,true)}</section>`;
   $('#app').innerHTML=h+'</div>';
   // a tab whose data loads late draws again when it arrives, keeping keyboard focus on the tab and the scroll position
