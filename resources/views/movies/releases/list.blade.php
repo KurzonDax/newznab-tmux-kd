@@ -5,7 +5,7 @@
     $chipBaseId = collect($runs)->flatMap(fn (array $run): array => array_slice($run['rows'], 0, $run['collapsible'] ? $shown : null))->first(fn ($row): bool => $row->hasChips())?->id;
 @endphp
 <x-pager-line :page="$filters->page" :last-page="$lastPage" :total="$total" :per-page="\App\Data\MovieReleaseFilters::PER_PAGE" noun="release" :url="$pageUrl"
-              :clear-all="route('movies.releases')" :filtered="$filters->any()" />
+              :clear-all="route('movies.releases', [\App\Services\Releases\RememberedListFilters::CLEAR => 1])" :filtered="$filters->any()" />
 @if($runs === [])
     @php
         $matching = $filters->describe($categoryMenu, $audioMenu, $filmOptions);

@@ -89,7 +89,7 @@ use Spatie\Permission\Traits\HasRoles;
  * @property Carbon|null $email_verified_at
  * @property bool $verified
  * @property string|null $verification_token
- * @property array<string, array{view: string, size: string, per: int, thumbs: bool}>|null $view_prefs
+ * @property array<string, array{view: string, size: string, per: int, thumbs: bool, sort?: string, filters?: mixed, filters_at?: int}>|null $view_prefs
  * @property string|null $timezone
  * @property bool $can_post
  * @property array<int>|string|null $categoryexclusions Computed from join/subquery for category exclusion lists
@@ -206,7 +206,7 @@ final class User extends Authenticatable implements CanResetPasswordContract, Ha
         ];
     }
 
-    /** @return array{view: string, size: string, per: int, thumbs: bool, sort?: string} */
+    /** @return array{view: string, size: string, per: int, thumbs: bool, sort?: string, filters?: mixed, filters_at?: int} */
     public function releaseViewPreferences(string $root): array
     {
         return array_replace(

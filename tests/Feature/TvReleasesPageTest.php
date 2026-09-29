@@ -206,6 +206,7 @@ final class TvReleasesPageTest extends TestCase
         $this->assertSame('Resolution: 2 chosen', $this->cellText($set, 'resolution'));
         $this->assertMatchesRegularExpression('/class="checkbox-menu is-cell is-set"[^>]*data-name="resolution"/', (string) $set->getContent());
         $this->assertSame(['Source: any', 'Category: any'], [$this->cellText($set, 'source'), $this->cellText($set, 'category')]);
+        $this->page('/tv?clear=1')->assertRedirect(route('tv.releases')); // Clear all, so the bare list is unfiltered (#881)
         $this->page('/tv')->assertSee('HD remux')->assertSeeInOrder(['HD remux', '<td>Remux</td>'], false);
     }
 
@@ -431,7 +432,7 @@ final class TvReleasesPageTest extends TestCase
 
         // check.mjs 124, 411: Clear all in a fixed slot on the Showing line, hidden but in place while nothing is set
         $line = (string) strstr((string) strstr($html, '<nav class="pager-line is-fixed" aria-label="Pages">'), '</nav>', true);
-        $this->assertMatchesRegularExpression('/data-part="showing line">[^<]*<\/span>\s*<a href="'.preg_quote(route('tv.releases'), '/')
+        $this->assertMatchesRegularExpression('/data-part="showing line">[^<]*<\/span>\s*<a href="'.preg_quote(route('tv.releases', ['clear' => 1]), '/')
             .'" class="pager-line-clear is-hidden" data-clear-all aria-hidden="true" tabindex="-1">Clear all<\/a>\s*<span class="is-off" data-part="pager arrow">/', $line);
         $this->assertSame(1, substr_count($html, 'data-clear-all'));
     }
@@ -627,11 +628,206 @@ final class TvReleasesPageTest extends TestCase
         $this->assertListed('/tv?completion=95&resolution[]=720p', ['No show', 'Shown']);
     }
 
+    public function test_the_last_dropdown_filters_are_remembered_and_a_bare_open_shows_them(): void
+    {
+        $this->rememberedFixture();
+        $user = $this->user = $this->browserUser();
+
+        // #881: each menu pick refreshes the list with every filter on screen, and that set is remembered
+        $query = '';
+        foreach (['category[]='.self::HD, 'resolution[]=1080p', 'audio[]='.self::ENGLISH, 'completion=95', 'genre[]='.self::DRAMA] as $pick) {
+            $query .= ($query === '' ? '' : '&').$pick;
+            $this->page('/tv?_fragment=list&'.$query)->assertOk();
+        }
+        $expected = ['category' => [self::HD], 'resolution' => ['1080p'], 'audio' => [(string) self::ENGLISH], 'completion' => 95, 'genre' => [self::DRAMA]];
+        $this->assertSame($expected, $this->remembered($user, 'tv'));
+
+        // a bare open puts them in the address bar and shows them on page 1: cells, rows, Clear all
+        $this->page('/tv')->assertRedirect(route('tv.releases', $expected));
+        $response = $this->opened('/tv')->assertOk()
+            ->assertSee('class="pager-line-clear" data-clear-all aria-hidden="false">Clear all</a>', false)
+            ->assertSee('data-filters-clock="'.Carbon::now()->getTimestampMs().'"', false);
+        $this->assertSame(['Match'], $this->listedNames($response));
+        $this->assertSame(['Category: HD', 'Resolution: 1080p', 'Audio: English', 'Completion: 95%+', 'Genre: Drama', 'Source: any'],
+            array_map(fn (string $name): string => $this->cellText($response, $name), ['category', 'resolution', 'audio', 'completion', 'genre', 'source']));
+        $this->assertSame(1, $response->viewData('filters')->page);
+    }
+
+    public function test_each_list_remembers_its_own_filters(): void
+    {
+        $this->tv('A release');
+        $user = $this->user = $this->browserUser();
+        $this->remember($user, 'movies', ['resolution' => ['4k']]);
+
+        $this->page('/tv')->assertOk()->assertSee('class="pager-line-clear is-hidden"', false);
+        $this->page('/tv?resolution[]=1080p')->assertOk();
+        $this->assertSame(['resolution' => ['1080p']], $this->remembered($user, 'tv'));
+        $this->assertSame(['resolution' => ['4k']], $this->remembered($user, 'movies'));
+    }
+
+    public function test_a_url_that_carries_filters_becomes_the_remembered_set_exactly_without_the_page_or_person(): void
+    {
+        $this->tv('HD release', ['postdate' => '2026-09-24 00:00:00']);
+        $this->tv('SD release', ['categories_id' => self::SD, 'resolution' => 4]);
+        $user = $this->user = $this->browserUser();
+        $this->page('/tv?resolution[]=1080p&source[]=web&completion=100&genre[]='.self::DRAMA)->assertOk();
+
+        // a header sub-category link, a bookmark, a show page's back link: its filters replace the whole set
+        $this->page('/tv?category[]='.self::SD)->assertOk();
+        $this->assertSame(['category' => [self::SD]], $this->remembered($user, 'tv'));
+        $this->page('/tv')->assertRedirect(route('tv.releases', ['category' => [self::SD]]));
+        $this->assertSame(['SD release'], $this->listedNames($this->opened('/tv')));
+
+        $this->page('/tv?category[]='.self::HD.'&page=2&person=4')->assertRedirect(route('tv.releases', ['category' => [self::HD]]));
+        $this->assertSame(['category' => [self::HD]], $this->remembered($user, 'tv'));
+    }
+
+    public function test_clear_all_forgets_the_remembered_filters(): void
+    {
+        $this->tv('A release');
+        $user = $this->user = $this->browserUser();
+        $filtered = $this->page('/tv?resolution[]=1080p&completion=100')->assertOk();
+
+        preg_match('/<a href="([^"]+)" class="pager-line-clear" data-clear-all/', (string) $filtered->getContent(), $clearAll);
+        $this->page(html_entity_decode($clearAll[1]))->assertRedirect(route('tv.releases'));
+        $this->assertSame([], $this->remembered($user, 'tv'));
+        $bare = $this->page('/tv')->assertOk()->assertSee('class="pager-line-clear is-hidden"', false);
+        $this->assertFalse($bare->viewData('filters')->any());
+    }
+
+    public function test_a_remembered_value_no_longer_in_its_menu_is_dropped_without_an_error(): void
+    {
+        $this->tv('A release');
+        $user = $this->user = $this->browserUser();
+        $this->remember($user, 'tv', ['category' => [9999], 'resolution' => ['8k', '1080p'], 'audio' => ['77'], 'genre' => [42], 'status' => [['nested']], 'completion' => 90]);
+        $this->page('/tv')->assertRedirect(route('tv.releases', ['resolution' => ['1080p']]));
+
+        $this->remember($user, 'tv', ['category' => [9999], 'network' => [42]]);
+        $this->assertFalse($this->page('/tv')->assertOk()->viewData('filters')->any());
+        $this->remember($user, 'tv', 'not a list');
+        $this->assertFalse($this->page('/tv')->assertOk()->viewData('filters')->any());
+    }
+
+    public function test_a_menu_pick_after_a_bare_open_keeps_the_remembered_filters(): void
+    {
+        $this->rememberedFixture();
+        $user = $this->user = $this->browserUser();
+        $this->page('/tv?category[]='.self::HD.'&resolution[]=1080p')->assertOk();
+
+        // the page's own URL carries the remembered set, so the Audio pick's refresh keeps it
+        $address = (string) $this->page('/tv')->headers->get('Location');
+        $fragment = $this->page($address.'&audio[]='.self::ENGLISH.'&_fragment=list')->assertOk();
+        $this->assertSame(['Low completion', 'Match', 'Not drama'], $this->listedNames($fragment));
+        $expected = ['category' => [self::HD], 'resolution' => ['1080p'], 'audio' => [(string) self::ENGLISH]];
+        $this->assertSame($expected, $this->remembered($user, 'tv'));
+        $this->page('/tv')->assertRedirect(route('tv.releases', $expected));
+        $this->assertSame('Audio: English', $this->cellText($this->opened('/tv'), 'audio'));
+    }
+
+    public function test_emptying_the_only_set_menu_clears_it(): void
+    {
+        $this->tv('HD release');
+        $this->tv('SD release', ['categories_id' => self::SD, 'resolution' => 4]);
+        $user = $this->user = $this->browserUser();
+        $this->page('/tv?resolution[]=1080p')->assertOk();
+
+        // unticking its only value, or picking "Any resolution", refreshes the list with no filter parameter
+        $this->assertSame(['HD release', 'SD release'], $this->listedNames($this->page('/tv?_fragment=list')->assertOk()));
+        $this->assertSame([], $this->remembered($user, 'tv'));
+        $this->assertFalse($this->page('/tv')->assertOk()->viewData('filters')->any());
+    }
+
+    public function test_a_page_or_sort_in_the_url_keeps_the_remembered_set_and_the_page_is_honoured(): void
+    {
+        foreach (range(1, 120) as $index) {
+            $this->tv('Wanted '.$index);
+        }
+        $this->tv('Unwanted', ['resolution' => 3]);
+        $user = $this->user = $this->browserUser();
+        $this->page('/tv?resolution[]=1080p')->assertOk();
+
+        $this->page('/tv?page=3')->assertRedirect(route('tv.releases', ['resolution' => ['1080p'], 'page' => 3]));
+        $third = $this->opened('/tv?page=3')->assertOk()->assertSee('Showing 101–120 of 120 releases');
+        $this->assertSame(3, $third->viewData('filters')->page);
+        foreach (['/tv?sort=oldest', '/tv?person=4', '/tv?page=1'] as $uri) {
+            $this->page($uri)->assertRedirect(route('tv.releases', ['resolution' => ['1080p']]));
+            $this->assertSame(['resolution' => ['1080p']], $this->remembered($user, 'tv'), $uri);
+        }
+    }
+
+    public function test_a_save_from_an_older_list_request_never_replaces_a_newer_one(): void
+    {
+        $this->tv('A release');
+        $user = $this->user = $this->browserUser();
+        $now = Carbon::now()->getTimestampMs();
+
+        // the page abandons the older request in the browser only; the server finishes it after the newer one
+        $this->page('/tv?_fragment=list&resolution[]=1080p&_filters_at='.($now - 100))->assertOk();
+        $this->page('/tv?_fragment=list&resolution[]=720p&_filters_at='.($now - 200))->assertOk();
+        $this->assertSame(['resolution' => ['1080p']], $this->remembered($user, 'tv'));
+
+        // a time ahead of the server's clock counts as now, so it never shuts later changes out
+        $this->page('/tv?_fragment=list&source[]=web&_filters_at='.($now + 3_600_000))->assertOk();
+        Carbon::setTestNow(Carbon::now()->addSecond());
+        $this->page('/tv?_fragment=list&source[]=dvd&_filters_at='.Carbon::now()->getTimestampMs())->assertOk();
+        $this->assertSame(['source' => ['dvd']], $this->remembered($user, 'tv'));
+
+        // opening the list from a URL is later than every refresh the earlier page sent
+        $this->page('/tv?category[]='.self::HD)->assertOk();
+        $this->page('/tv?_fragment=list&source[]=web&_filters_at='.(Carbon::now()->getTimestampMs() - 1))->assertOk();
+        $this->assertSame(['category' => [self::HD]], $this->remembered($user, 'tv'));
+    }
+
     public function test_the_page_needs_the_tv_permission(): void
     {
         $user = $this->browserUser();
         $user->revokePermissionTo('view tv');
         $this->page('/tv', $user)->assertForbidden();
+    }
+
+    /** #881's rows: one release matching every remembered filter, and one missing each. */
+    private function rememberedFixture(): void
+    {
+        DB::table('genres')->insert(['id' => self::DRAMA, 'title' => 'Drama', 'type' => 5000, 'disabled' => 0]);
+        DB::table('networks')->insert(['id' => 1, 'name' => 'HBO']);
+        DB::table('languages')->insert(['id' => self::ENGLISH, 'name' => 'English']);
+        foreach ([11, 12] as $show) {
+            DB::table('tv_info')->insert(['videos_id' => $show, 'summary' => '', 'publisher' => '', 'original_language' => 'en', 'premiered' => '2004-05-06',
+                'networks_id' => 1, 'content_rating_us' => 'TV-14', 'status' => 1]);
+        }
+        DB::table('video_genres')->insert(['videos_id' => 11, 'genres_id' => self::DRAMA]);
+        foreach (['Match' => [], 'Wrong category' => ['categories_id' => self::SD], 'Wrong resolution' => ['resolution' => 3], 'Low completion' => ['completion' => 90],
+            'Not drama' => ['videos_id' => 12], 'No audio' => []] as $name => $attributes) {
+            $id = $this->tv($name, ['videos_id' => 11, ...$attributes]);
+            if ($name !== 'No audio') {
+                DB::table('release_audio_languages')->insert(['releases_id' => $id, 'languages_id' => self::ENGLISH]);
+            }
+        }
+    }
+
+    /** The response after the one redirect a bare open answers with while filters are remembered (#881). */
+    private function opened(string $uri): TestResponse
+    {
+        $response = $this->page($uri);
+
+        return $response->isRedirect() ? $this->page((string) $response->headers->get('Location')) : $response;
+    }
+
+    private function remember(User $user, string $root, mixed $filters): void
+    {
+        $user->view_prefs = [...($user->view_prefs ?? []), $root => ['filters' => $filters, 'filters_at' => 1]];
+        $user->save();
+    }
+
+    private function remembered(User $user, string $root): mixed
+    {
+        return User::query()->findOrFail($user->id)->releaseViewPreferences($root)['filters'] ?? null;
+    }
+
+    /** @return list<string> the listed releases' names, A to Z */
+    private function listedNames(TestResponse $response): array
+    {
+        return DB::table('releases')->whereIn('id', $this->listedIds($response))->orderBy('name')->pluck('name')->all();
     }
 
     /** @param array<string, mixed> $attributes */

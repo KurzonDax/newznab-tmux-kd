@@ -42,7 +42,8 @@ Hard constraints from the repository (`AGENTS.md`):
 - Colours route through the existing token layer (`DESIGN.md`): the accent is a per-user
   setting; no view hardcodes a hue. `tokens.css` lists the prototype's values.
 - Settings, if any are needed, are declared in `app/Support/Settings/` section providers.
-- Per-user remembered choices (the two sort orders) go in the existing view preferences
+- Per-user remembered choices (the two sort orders and, by his decision of 2026-09-29, the
+  releases list's dropdown filters, #881) go in the existing view preferences
   (`users.view_prefs` via `User::releaseViewPreferences()`), not a cookie.
 
 ---

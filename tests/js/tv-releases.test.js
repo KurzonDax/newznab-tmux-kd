@@ -82,13 +82,13 @@ function row(guid, hidden = false) {
     return { value: guid, checked: false, closest: () => tr, tr };
 }
 
-function screen(guids, { batchRows = [] } = {}) {
+function screen(guids, { batchRows = [], clock } = {}) {
     const boxes = guids.map(guid => row(guid));
     batchRows.forEach(guid => { const box = row(guid, true); box.tr.dataset.batch = 'run'; boxes.push(box); });
     const header = { checked: false, indeterminate: false, ...attributes() };
     const cartButtons = guids.map(guid => ({ dataset: { cart: guid }, ...attributes({ 'aria-pressed': 'false' }) }));
     const root = {
-        dataset: { nzbLinkBase: 'https://nntmux.test/api/v1/api', apiToken: 'secret-key', preferenceUrl: '/profile/update-view' },
+        dataset: { nzbLinkBase: 'https://nntmux.test/api/v1/api', apiToken: 'secret-key', preferenceUrl: '/profile/update-view', ...(clock === undefined ? {} : { filtersClock: String(clock) }) },
         querySelectorAll(selector) {
             if (selector === '[data-select]') return boxes;
             if (selector === '[data-batch]') return boxes.filter(box => box.tr.dataset.batch).map(box => box.tr);
@@ -183,6 +183,34 @@ test('a filter change replaces the URL on page 1 and reloads only the list', asy
     assert.equal(url.searchParams.get('page'), null);
     assert.equal(new URL(requests[0].url).searchParams.get('_fragment'), 'list');
     assert.equal(component.$refs.list.innerHTML, '<nav>new list</nav>');
+});
+
+test('a filter change after a bare open keeps the remembered filters in the address bar and the refresh, stamped in order', async () => {
+    // #881: the bare open redirected to the URL carrying the remembered Category and Resolution
+    const { history, requests } = browser({ href: 'https://nntmux.test/tv?category%5B0%5D=5040&resolution%5B0%5D=1080p' });
+    const { component } = screen(['a'], { clock: 1_000_000 });
+    await component.applyFilter({ detail: { name: 'audio', values: ['1'] } });
+    const kept = url => [url.searchParams.getAll('category[0]'), url.searchParams.getAll('resolution[0]'), url.searchParams.getAll('audio[]')];
+    const address = new URL(history[0][1]), refresh = new URL(requests[0].url);
+    assert.deepEqual(kept(address), [['5040'], ['1080p'], ['1']]);
+    assert.deepEqual(kept(refresh), [['5040'], ['1080p'], ['1']]);
+    assert.equal(address.searchParams.has('_filters_at'), false);
+    assert.equal(refresh.searchParams.get('_fragment'), 'list');
+    const first = Number(refresh.searchParams.get('_filters_at'));
+    assert.ok(first >= 1_000_000);
+
+    // unticking the only Audio value refreshes without it; each refresh is stamped later than the one before
+    await component.applyFilter({ detail: { name: 'audio', values: [] } });
+    const second = new URL(requests[1].url);
+    assert.deepEqual(kept(second), [['5040'], ['1080p'], []]);
+    assert.ok(Number(second.searchParams.get('_filters_at')) > first);
+});
+
+test('without a clock on the page a refresh carries no time and the server uses its own', async () => {
+    const { requests } = browser({ href: 'https://nntmux.test/tv' });
+    const { component } = screen(['a']);
+    await component.applyFilter({ detail: { name: 'source', values: ['web'] } });
+    assert.equal(new URL(requests[0].url).searchParams.has('_filters_at'), false);
 });
 
 test('changing the sort saves the preference and returns to page 1', async () => {

@@ -26,6 +26,9 @@ final readonly class MovieFilmFilters
     /** The MPAA Rating menu's order; it lists only the ratings present. */
     public const RATINGS = ['G', 'PG', 'PG-13', 'R', 'NC-17', 'NR'];
 
+    /** The film menus' URL keys; the Year menu writes decade[] or year_from / year_to. */
+    public const MENU_KEYS = ['genre', 'decade', 'year_from', 'year_to', 'score', 'rating', 'language'];
+
     /**
      * @param  list<int>  $genres  ticked genres.id (type 2000), in menu order
      * @param  list<int>  $decades  ticked decades (1990 for the 1990s), newest first
