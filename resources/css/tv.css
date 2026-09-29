@@ -512,6 +512,20 @@ a.tv-tag:hover { background: var(--tv-line); }
 .tv-details-preview { display: block; margin-bottom: 18px; padding: 0; overflow: hidden; border: 0; border-radius: 12px; background: none; cursor: pointer; }
 .tv-details-preview img { display: block; max-width: 100%; max-height: 260px; }
 .tv-details-preview:hover { filter: brightness(1.08); }
+/*
+ * The Adult details page's pictures (docs/proposals/adult-redesign/SPEC.md 5A.3): the preview then the
+ * sample, side by side at 220px high, each labelled bottom-left. A preview that plays a clip has a 56px
+ * round play button in the middle (magenta 305 on hover and keyboard focus) and the Clip chip's magenta
+ * tag bottom-right, in the dark chip values in both themes because it sits on the picture.
+ */
+.tv-details-pictures { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 22px; }
+.tv-details-pictures .tv-details-preview { position: relative; margin: 0; }
+.tv-details-pictures .tv-details-preview img { max-height: 220px; }
+.tv-details-picture-label { position: absolute; bottom: 8px; left: 8px; padding: 2px 9px; border-radius: 7px; background: rgb(10 10 14 / 80%); color: #fff; font-size: 12px; font-weight: 600; line-height: 1.5; }
+.tv-details-picture-label.is-clip { right: 8px; left: auto; background: var(--chip-clip-bg-dark); color: var(--chip-clip-fg-dark); }
+.tv-details-play { position: absolute; top: 50%; left: 50%; display: grid; place-items: center; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%; background: rgb(10 10 14 / 72%); color: #fff; font-size: 22px; box-shadow: 0 6px 18px -6px rgb(0 0 0 / 60%); transition: background 0.2s, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+.tv-details-play i { margin-left: 3px; }
+.tv-details-preview.has-clip:hover .tv-details-play, .tv-details-preview.has-clip:focus-visible .tv-details-play { background: oklch(0.55 0.17 305); transform: scale(1.06); }
 .tv-details-episode { display: grid; gap: 4px; margin-bottom: 22px; padding: 16px 18px; border: 1px solid var(--tv-line); border-radius: 14px; background: var(--tv-panel); }
 .tv-details-episode span { color: var(--tv-dim); font-size: 14px; }
 .tv-details-tagline { color: var(--tv-ink); font-size: 16px; font-weight: 600; }
@@ -569,4 +583,6 @@ a.tv-tag:hover { background: var(--tv-line); }
 .tv-image-dialog.is-full { width: auto; max-width: calc(100vw - 60px); max-height: calc(100vh - 60px); }
 .tv-image-dialog.is-full .tv-image-frame { width: auto; cursor: zoom-out; }
 .tv-image-dialog.is-full .tv-image-frame img { max-width: none; max-height: none; }
+/* A picture opening at full size (data-open-full) shows only once it is measured and laid out so. */
+.tv-image-dialog.is-measuring .tv-image-bar, .tv-image-dialog.is-measuring .tv-image-frame { visibility: hidden; }
 .tv-image-player video { display: block; width: 100%; max-height: 70vh; margin: 12px auto 0; border-radius: 10px; background: var(--tv-ground); }

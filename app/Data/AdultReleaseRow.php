@@ -53,6 +53,12 @@ final readonly class AdultReleaseRow
         return $this->hasReleaseChips() || $this->clip !== null;
     }
 
+    /** The file count as the details page shows it: "—" when none is stored (SPEC 5A.2, appendix A). */
+    public function filesShown(): string
+    {
+        return $this->files === 0 ? '—' : (string) $this->files;
+    }
+
     /**
      * The row's picture (SPEC 5.6): the preview thumbnail, else the sample thumbnail, each only
      * when its file exists; null for the "No picture" tile.
