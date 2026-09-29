@@ -180,6 +180,21 @@ final class TvShowDetailsTest extends TestCase
         $this->assertSame('Actor 105', DB::table('people')->where('tmdb_id', 105)->value('name'));
     }
 
+    public function test_a_cast_entry_that_is_not_a_person_is_skipped(): void
+    {
+        $this->insertShow(1, tmdb: 200);
+        Http::fake(['*tv/200?*' => Http::response($this->show(['aggregate_credits' => ['cast' => [
+            null,
+            ['id' => 101, 'name' => 'Few', 'total_episode_count' => 2],
+            'not a person',
+            ['id' => 102, 'name' => 'Many', 'total_episode_count' => 9],
+        ]]]))]);
+
+        $this->details()->refreshIfDue(1);
+
+        $this->assertSame(['Many', 'Few'], $this->castNames(1));
+    }
+
     public function test_a_cast_member_with_an_empty_name_is_linked_only_when_a_row_holds_its_tmdb_id(): void
     {
         $this->insertShow(1, tmdb: 200);

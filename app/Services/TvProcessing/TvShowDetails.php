@@ -277,8 +277,9 @@ final class TvShowDetails
     private function castPersonIds(array $show): array
     {
         $cast = $show['aggregate_credits']['cast'] ?? [];
+        $cast = array_filter(is_array($cast) ? $cast : [], is_array(...));
         // usort is stable, so people with equal episode counts keep TMDB's order.
-        usort($cast, static fn (array $a, array $b): int => (int) ($b['total_episode_count'] ?? 0) <=> (int) ($a['total_episode_count'] ?? 0));
+        usort($cast, static fn (array $a, array $b): int => self::episodeCount($b) <=> self::episodeCount($a));
 
         $ids = [];
         $seen = [];
@@ -299,5 +300,13 @@ final class TvShowDetails
         }
 
         return $ids;
+    }
+
+    /**
+     * @param  array<mixed>  $member
+     */
+    private static function episodeCount(array $member): int
+    {
+        return (int) ($member['total_episode_count'] ?? 0);
     }
 }

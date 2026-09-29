@@ -195,9 +195,10 @@ video_people  (videos_id, people_id, position unsignedTinyInteger)
 `networks.name` is matched case-insensitively after trimming (two capitalisations of one network are one row);
 the displayed spelling is the first one stored. Cast = the 12 distinct people of TMDB's
 all-seasons cast (`aggregate_credits.cast`) with the most episodes (`total_episode_count`),
-highest first, ties in TMDB's order; `people.tmdb_id` makes two actors with one name distinct and one actor with two
-spellings the same. Genres use TMDB names after this mapping: `Sci-Fi & Fantasy` → Sci-Fi +
-Fantasy, `Action & Adventure` → Action + Adventure, `War & Politics` → War, `Kids` → Children.
+highest first, ties in TMDB's order; `people.tmdb_id` makes two actors with one name
+distinct and one actor with two spellings the same. Genres use TMDB names after this
+mapping: `Sci-Fi & Fantasy` → Sci-Fi + Fantasy, `Action & Adventure` → Action + Adventure,
+`War & Politics` → War, `Kids` → Children.
 
 **Not stored:** any per-show "newest release", "first added" or release count. They are read
 from `ix_releases_videos_posted` / `ix_releases_videos_added` (section 4).
@@ -357,8 +358,8 @@ Downtime is not a concern, so the migrations fill what they add. No command.
 7. `TvShowDetails::refreshIfDue()`: first match fetches; a second within 24 hours does not;
    TMDB failure leaves `details_refreshed_at` untouched; no TMDB id resolves through TVDB then
    IMDb; genres mapped; cast is the 12 with the most episodes, ties in TMDB's order, and
-   de-duplicated by `tmdb_id`; two network
-   spellings become one row; never called inside the match transaction.
+   de-duplicated by `tmdb_id`; two network spellings become one row; never called inside
+   the match transaction.
 8. Query schema evidence (`.ai/rules/testing.md:101-107`): each query cites the dump's columns
    and keys, independent of the fixture; MariaDB `EXPLAIN` shows the named index for the page,
    count and group-by queries.
