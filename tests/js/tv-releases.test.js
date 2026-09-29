@@ -445,3 +445,89 @@ test('the bar look lives only inside the bar: equal cells, name above value, cor
     assert.match(tv.get('.pager-line a.pager-line-clear'), /width: 64px;.*margin-right: 12px;/);
     assert.match(tv.get('.pager-line-clear.is-hidden'), /visibility: hidden;/);
 });
+
+/** The releases list's Category cell with its "Exclude Other" item (issue #886): HD, SD, Other. */
+function categoryCell(ticked = []) {
+    const items = [['5040', 'HD'], ['5030', 'SD'], ['5999', 'Other']].map(([value, text]) => ({
+        ...attributes({ 'aria-checked': ticked.includes(value) ? 'true' : 'false' }), hidden: false, dataset: { value, text },
+    }));
+    const any = attributes({ 'aria-checked': ticked.length ? 'false' : 'true' });
+    const exclude = { ...attributes({ 'aria-checked': 'false' }), dataset: { excludeOther: '5999', mode: 'exclude-other' } };
+    const events = [], classes = new Set(['checkbox-menu', 'is-cell']);
+    const root = {
+        dataset: { name: 'category', label: 'Category', summary: 'count' },
+        querySelectorAll: selector => (selector === '[data-value]' ? items : []),
+        querySelector: selector => ({ '[data-any]': any, '[data-exclude-other]': exclude })[selector] ?? null,
+        classList: { toggle: (className, on) => (on ? classes.add(className) : classes.delete(className)), contains: className => classes.has(className) },
+        dispatchEvent: event => events.push(event),
+        contains: () => true,
+    };
+    const component = checkboxMenu();
+    component.$el = root;
+    component.$refs = { value: valueRef(), button: { ...attributes({ title: '' }), focus() {} } };
+    component.init();
+    component.open = true;
+    return { component, items, any, exclude, events, classes };
+}
+
+test('Exclude Other ticks every category but Other, reads "Exclude Other" and sends the mode, not the ids', () => {
+    const { component, items, any, exclude, events, classes } = categoryCell();
+    component.excludeOther();
+    assert.deepEqual(items.map(item => item.getAttribute('aria-checked')), ['true', 'true', 'false']);
+    assert.equal(exclude.getAttribute('aria-checked'), 'true');
+    assert.equal(any.getAttribute('aria-checked'), 'false');
+    assert.equal(component.$refs.value.textContent, 'Exclude Other');
+    assert.equal(component.$refs.button.getAttribute('title'), 'Category: Exclude Other');
+    assert.ok(classes.has('is-set'));
+    assert.equal(component.open, true);
+    assert.deepEqual(events.at(-1).detail, { name: 'category', values: ['exclude-other'], single: true });
+
+    // ticking Other as well is the explicit list; picking Exclude Other then sets the mode again
+    component.pick({ currentTarget: items[2] });
+    assert.equal(component.$refs.value.textContent, '3 chosen');
+    assert.equal(exclude.getAttribute('aria-checked'), 'false');
+    assert.deepEqual(events.at(-1).detail, { name: 'category', values: ['5040', '5030', '5999'], single: false });
+    component.excludeOther();
+    assert.deepEqual(events.at(-1).detail.values, ['exclude-other']);
+
+    // picking it again while it is set clears the Category filter
+    component.excludeOther();
+    assert.deepEqual(items.map(item => item.getAttribute('aria-checked')), ['false', 'false', 'false']);
+    assert.equal(exclude.getAttribute('aria-checked'), 'false');
+    assert.equal(any.getAttribute('aria-checked'), 'true');
+    assert.equal(component.$refs.value.textContent, 'any');
+    assert.ok(!classes.has('is-set'));
+    assert.deepEqual(events.at(-1).detail, { name: 'category', values: [], single: false });
+});
+
+test('ticking every category but Other by hand becomes Exclude Other; unticking one while it is set is the explicit list', () => {
+    const { component, items, exclude, events } = categoryCell(['5040']);
+    component.pick({ currentTarget: items[1] });
+    assert.equal(component.$refs.value.textContent, 'Exclude Other');
+    assert.equal(exclude.getAttribute('aria-checked'), 'true');
+    assert.deepEqual(events.at(-1).detail.values, ['exclude-other']);
+
+    component.pick({ currentTarget: items[0] });
+    assert.equal(component.$refs.value.textContent, 'SD');
+    assert.equal(exclude.getAttribute('aria-checked'), 'false');
+    assert.deepEqual(events.at(-1).detail, { name: 'category', values: ['5030'], single: false });
+});
+
+test('the Exclude Other mode is one category value in the URL, replacing the ticked ids, and the page is dropped', async () => {
+    const { history } = browser({ href: 'https://nntmux.test/movies?category%5B0%5D=2040&category%5B1%5D=2030&resolution%5B%5D=1080p&page=3' });
+    const { component } = screen(['a']);
+    await component.applyFilter({ detail: { name: 'category', values: ['exclude-other'], single: true } });
+    const url = new URL(history.at(-1)[1]);
+    assert.equal(url.searchParams.get('category'), 'exclude-other');
+    assert.deepEqual([...url.searchParams.keys()].filter(key => key.startsWith('category')), ['category']);
+    assert.deepEqual(url.searchParams.getAll('resolution[]'), ['1080p']);
+    assert.equal(url.searchParams.get('page'), null);
+    assert.deepEqual(filterUrl(url.toString(), 'category', ['2040'], false).searchParams.getAll('category[]'), ['2040']);
+    assert.equal(filterUrl(url.toString(), 'category', ['2040'], false).searchParams.has('category'), false);
+});
+
+test('the Exclude Other separator mixes from the ink, since the line colour matches the raised menu ground in dark', () => {
+    const tv = cssRules('../../resources/css/tv.css');
+    assert.match(tv.get('.checkbox-menu-rule.is-ink'), /background: color-mix\(in oklab, var\(--tv-ink\) 16%, transparent\);/);
+    assert.match(tv.get('.checkbox-menu-rule'), /background: var\(--tv-line\);/);
+});

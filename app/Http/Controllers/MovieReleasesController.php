@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Data\MovieReleaseFilters;
 use App\Data\MovieReleaseRow;
+use App\Models\Category;
 use App\Services\Releases\MovieFilmSearch;
 use App\Services\Releases\MovieReleaseList;
 use App\Services\Releases\MovieReleaseRows;
@@ -40,6 +41,7 @@ final class MovieReleasesController extends BasePageController
             'meta_title' => 'Movie releases',
             'filters' => $filters,
             'categoryMenu' => $menu,
+            'excludableOther' => MovieReleaseFilters::excludableOther(array_keys($menu), Category::MOVIE_ROOT),
             'audioMenu' => $audioMenu,
             'filmOptions' => $filmOptions,
             'total' => $total,

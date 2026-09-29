@@ -39,6 +39,7 @@ final class TvReleasesController extends BasePageController
             'meta_title' => 'TV releases',
             'filters' => $filters,
             'categoryMenu' => $menu,
+            'excludableOther' => TvReleaseFilters::excludableOther(array_keys($menu), Category::TV_ROOT),
             'audioMenu' => $audioMenu,
             'showOptions' => $showOptions,
             'total' => $total,
