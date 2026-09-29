@@ -66,7 +66,7 @@ final class AdminMovieEditCreditsTest extends TestCase
 
         $id = (int) DB::table('movieinfo')->where('imdbid', self::IMDB_ID)->value('id');
         $this->assertSame(substr($longGenre, 0, 64), DB::table('movieinfo')->where('id', $id)->value('genre'));
-        $this->assertSame(['Action', 'Adventure', 'Comedy', 'Crime', 'Documentary', 'Drama', 'Family', 'Sc'], $this->genreTitles($id));
+        $this->assertSame(['Action', 'Adventure', 'Comedy', 'Crime', 'Documentary', 'Drama', 'Family'], $this->genreTitles($id));
         $this->assertSame(['Joe Russo', 'Anthony Russo'], $this->names($id, MovieCredits::ROLE_DIRECTOR));
         $this->assertSame(['Robert Downey Jr.', 'Chris Evans'], $this->names($id, MovieCredits::ROLE_CAST));
 

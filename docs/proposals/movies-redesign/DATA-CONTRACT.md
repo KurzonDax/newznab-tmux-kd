@@ -369,10 +369,16 @@ Downtime is not a concern, so the migrations fill what they add. **No command.**
 2. **`movie_genres`, `movie_people`, `genres` (type 2000), `people`** (his decision, 2026-09-27: "Yes, move today's text
    now"): the migration splits today's `movieinfo.genre`, `director` and `actors` of every film (17,320) by the rule below and
    writes the rows through the same method as 3.1. Each film's next refresh replaces them from TMDB.
-   **Split rule** (one structural rule; no junk filtering): control characters become spaces; split on commas; trim; drop
-   empty parts; a part that is only a name suffix (`Jr.`, `Sr.`, `II`, `III`, `IV`, with or without the dot) joins the name
-   before it; every director; the first 12 distinct cast. The six genre strings cut at 64 characters give a stub such as
-   "Science F", listed as written (the Genre menu lists only genres with a film).
+   **Split rule**: control characters become spaces; split on commas; trim; drop empty parts; a part that is only a name
+   suffix (`Jr.`, `Sr.`, `II`, `III`, `IV`, with or without the dot) joins the name before it; every director; the first 12
+   distinct cast. **Genres** (his decision, 2026-09-28: film genres are TMDB's standard movie genres only): a name is a
+   genre only when it is one of TMDB's 19 movie genres (Action, Adventure, Animation, Comedy, Crime, Documentary, Drama,
+   Family, Fantasy, History, Horror, Music, Mystery, Romance, Science Fiction, TV Movie, Thriller, War, Western), matched
+   ignoring case and stored in that spelling; any other name is dropped, so the six genre strings cut at 64 bytes give no
+   stub such as "Science F", and a cut after a space gives no "Science" or "TV". **Directors**: a director text that has
+   reached 64 characters, where the column cuts it, loses its last part before the names become people (an empty last
+   part, from a cut just after a comma, costs no name); a shorter text keeps every part. Cast names are not filtered.
+   The rule is the same for the fill, the admin edit and the TMDB fallback (3.1); the saved text itself is not changed.
 3. **`release_audio_languages`, `languages`**: the migration runs the 3.2 rule over every release with media info, in
    primary-key chunks, re-runnable. Its run time on the full-width table is not measured here (the lab filled 369,752 rows
    from a script).

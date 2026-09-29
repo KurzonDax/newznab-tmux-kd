@@ -199,6 +199,26 @@ final class MovieCreditsTest extends ImdbScraperTestCase
         $this->assertSame(['Brad Pitt', 'Edward Norton'], $this->names($id, MovieCredits::ROLE_CAST));
     }
 
+    public function test_a_fetch_with_no_tmdb_genres_links_the_saved_genres_on_tmdbs_list_and_drops_a_cut_off_director(): void
+    {
+        $this->fakeTmdb($this->tmdbMovie(['genres' => [], 'credits' => ['cast' => $this->tmdbMovie()['credits']['cast'], 'crew' => []]]));
+        $this->mock(ImdbScraper::class)->shouldReceive('fetchById')->andReturn([
+            'title' => 'Fight Club',
+            'year' => '1999',
+            'genre' => 'Action, Adventure, Science F',
+            'director' => 'Pedro Almodóvar, Alejandro González Iñárritu, Alfonso Cuarón, Gu',
+            'actors' => 'Brad Pitt',
+        ])->byDefault();
+
+        $this->service()->updateMovieInfo(self::IMDB_ID);
+
+        $id = $this->filmId();
+        $this->assertSame('Action, Adventure, Science F', DB::table('movieinfo')->where('id', $id)->value('genre'));
+        $this->assertSame(['Action', 'Adventure'], $this->genreTitles($id));
+        $this->assertSame(['Pedro Almodóvar', 'Alejandro González Iñárritu', 'Alfonso Cuarón'], $this->names($id, MovieCredits::ROLE_DIRECTOR));
+        $this->assertSame(0, DB::table('genres')->where('title', 'Science F')->count());
+    }
+
     public function test_a_name_from_text_prefers_the_person_tmdb_identified_then_the_lowest_id(): void
     {
         DB::table('people')->insert([
@@ -354,7 +374,7 @@ final class MovieCreditsTest extends ImdbScraperTestCase
     {
         DB::table('people')->insert(['id' => 1, 'name' => 'Robert Downey Jr.', 'tmdb_id' => 3223]);
         $first = $this->insertFilm(['imdbid' => '0000001', 'genre' => 'Action, Adventure, Science F', 'director' => 'Joe Russo, Anthony Russo', 'actors' => "Robert Downey, Jr., Chris\tEvans, Chris Evans"]);
-        $second = $this->insertFilm(['imdbid' => '0000002', 'genre' => 'Drama', 'director' => 'Jon Favreau', 'actors' => 'Robert Downey Jr., Gwyneth Paltrow']);
+        $second = $this->insertFilm(['imdbid' => '0000002', 'genre' => 'Drama', 'director' => 'Pedro Almodóvar, Alejandro González Iñárritu, Alfonso Cuarón, Gu', 'actors' => 'Robert Downey Jr., Gwyneth Paltrow']);
         $this->insertFilm(['imdbid' => '0000003']);
         $fill = require database_path('migrations/2026_09_27_100100_fill_movie_genres_and_people.php');
 
@@ -368,9 +388,10 @@ final class MovieCreditsTest extends ImdbScraperTestCase
             $credits->syncFromText((int) $film->id, $film->genre, $film->director, $film->actors);
         }
         $this->assertSame($filled, $this->linkRows());
-        $this->assertSame(['Action', 'Adventure', 'Science F'], $this->genreTitles($first));
+        $this->assertSame(['Action', 'Adventure'], $this->genreTitles($first));
         $this->assertSame(['Robert Downey Jr.', 'Chris Evans'], $this->names($first, MovieCredits::ROLE_CAST));
         $this->assertSame(['Robert Downey Jr.', 'Gwyneth Paltrow'], $this->names($second, MovieCredits::ROLE_CAST));
+        $this->assertSame(['Pedro Almodóvar', 'Alejandro González Iñárritu', 'Alfonso Cuarón'], $this->names($second, MovieCredits::ROLE_DIRECTOR));
         $this->assertSame(1, (int) DB::table('movie_people')->where(['movieinfo_id' => $first, 'role' => MovieCredits::ROLE_CAST, 'position' => 0])->value('people_id'));
 
         $writes = $this->recordLinkWrites();
