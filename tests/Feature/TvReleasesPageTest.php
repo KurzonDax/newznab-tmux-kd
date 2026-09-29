@@ -482,7 +482,7 @@ final class TvReleasesPageTest extends TestCase
         $this->assertStringContainsString('<div role="menu" aria-label="Audio">', $audio);
     }
 
-    public function test_the_audio_and_language_menus_list_the_most_releases_first_for_all_users(): void
+    public function test_the_audio_menu_lists_english_first_then_a_to_z_and_the_language_menu_most_releases_first_for_all_users(): void
     {
         DB::table('languages')->insert([['id' => self::ENGLISH, 'name' => 'English'], ['id' => self::KOREAN, 'name' => 'Korean'], ['id' => 3, 'name' => 'Arabic'], ['id' => 4, 'name' => 'Welsh']]);
         DB::table('videos')->insert(['id' => 13, 'type' => 0, 'title' => 'Third Show', 'started' => '2020-01-01 00:00:00']);
@@ -502,11 +502,12 @@ final class TvReleasesPageTest extends TestCase
         DB::table('user_excluded_categories')->insert(['users_id' => $user->id, 'categories_id' => self::FOREIGN]);
 
         $response = $this->page('/tv', $user)->assertOk();
-        $this->assertSame([(string) self::KOREAN => 'Korean', '3' => 'Arabic', (string) self::ENGLISH => 'English', 'unknown' => 'Unknown'], $response->viewData('audioMenu'));
+        // the languages present for all users (Welsh is only on a movie): English first, then A to Z, then Unknown
+        $this->assertSame([(string) self::ENGLISH => 'English', '3' => 'Arabic', (string) self::KOREAN => 'Korean', 'unknown' => 'Unknown'], $response->viewData('audioMenu'));
         // the list orders the shows' languages by their releases (Korean 3, English 2, Cantonese 1); the wall by shows
         $this->assertSame(['ko' => 'Korean', 'en' => 'English', 'cn' => 'Cantonese'], $response->viewData('showOptions')['language']);
         $this->assertListed('/tv?language[]=ko', ['K1'], $user);
-        $response->assertSeeInOrder(['data-name="audio"', '>Korean<', '>Arabic<', '>English<', '>Unknown<', 'data-name="completion"'], false);
+        $response->assertSeeInOrder(['data-name="audio"', '>English<', '>Arabic<', '>Korean<', '>Unknown<', 'data-name="completion"'], false);
         $this->assertSame(['cn' => 'Cantonese', 'en' => 'English', 'ko' => 'Korean'], $this->page('/tv/shows', $user)->viewData('options')['language']);
     }
 

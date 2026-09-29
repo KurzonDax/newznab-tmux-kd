@@ -127,8 +127,9 @@ abstract class BandReleaseList
     }
 
     /**
-     * The Audio menu: the languages the section's releases have, most releases first (counted
-     * for all users), then Unknown.
+     * The Audio menu: the languages the section's releases have (for all users), English first,
+     * then A to Z by name, then Unknown. The order is applied after the cache, so a menu cached
+     * in another order is served in this one.
      *
      * @return array<int|string, string> URL value (languages.id, or AUDIO_UNKNOWN) => name
      */
@@ -137,9 +138,9 @@ abstract class BandReleaseList
         $languages = Cache::remember($this->cachePrefix().'_audio_menu', self::MENU_SECONDS, function (): array {
             return DB::table('release_audio_languages as a')->join('releases as r', 'r.id', '=', 'a.releases_id')
                 ->join('languages as l', 'l.id', '=', 'a.languages_id')->where('r.category_band', $this->band())
-                ->groupBy('a.languages_id', 'l.name')->orderByRaw('COUNT(*) DESC')->orderBy('l.name')
-                ->pluck('l.name', 'a.languages_id')->mapWithKeys(static fn (mixed $name, mixed $id): array => [(int) $id => (string) $name])->all();
+                ->groupBy('a.languages_id', 'l.name')->pluck('l.name', 'a.languages_id')->mapWithKeys(static fn (mixed $name, mixed $id): array => [(int) $id => (string) $name])->all();
         });
+        uasort($languages, static fn (string $a, string $b): int => [$a !== 'English', mb_strtolower($a), $a] <=> [$b !== 'English', mb_strtolower($b), $b]);
 
         return $languages + [ReleaseListFilters::AUDIO_UNKNOWN => 'Unknown'];
     }
