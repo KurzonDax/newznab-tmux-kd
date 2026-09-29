@@ -122,6 +122,19 @@ abstract readonly class ReleaseListFilters
     }
 
     /**
+     * The sub-category ids a request ticks (category[]), before any menu is applied: the Category
+     * menu keeps a chosen sub-category that holds no release (issue #887).
+     *
+     * @return list<int>
+     */
+    public static function chosenCategories(Request $request): array
+    {
+        $category = $request->query('category', []);
+
+        return is_array($category) ? array_values(array_map('intval', array_filter($category, 'is_scalar'))) : [];
+    }
+
+    /**
      * The release filters in a request, as constructor arguments. Unknown values, categories
      * outside the user's menu and Audio values outside the Audio menu are ignored; without an
      * Audio menu, Audio and Completion are left out. With a $root, the Category filter may be

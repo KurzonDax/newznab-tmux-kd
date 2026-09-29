@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Releases;
 
 use App\Data\ReleaseListFilters;
+use App\Models\Category;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -143,6 +144,36 @@ abstract class BandReleaseList
         uasort($languages, static fn (string $a, string $b): int => [$a !== 'English', mb_strtolower($a), $a] <=> [$b !== 'English', mb_strtolower($b), $b]);
 
         return $languages + [ReleaseListFilters::AUDIO_UNKNOWN => 'Unknown'];
+    }
+
+    /**
+     * A Category menu: the band's sub-categories the user may see, in $order and then any other,
+     * kept while they hold releases (counted for all users) or are chosen. A chosen sub-category
+     * with no release stays listed, so the list shows its empty result rather than every release
+     * (issue #887); a hidden one is never listed.
+     *
+     * @param  list<int>  $order
+     * @param  list<int>  $exclusions
+     * @param  list<int>  $chosen  the sub-categories the URL or the remembered filters tick
+     * @return array<int, string> id => title, in menu order
+     */
+    protected function orderedCategoryMenu(array $order, array $exclusions, array $chosen): array
+    {
+        $visible = [];
+        foreach (Category::getForMenu($exclusions) as $root) {
+            if ((int) $root['id'] === $this->band()) {
+                $visible = array_column($root['categories'], 'title', 'id');
+            }
+        }
+        $held = $this->valueCounts()['category'];
+        $menu = [];
+        foreach ([...$order, ...array_keys($visible)] as $id) {
+            if (isset($visible[$id]) && (($held[$id] ?? 0) > 0 || in_array((int) $id, $chosen, true))) {
+                $menu[(int) $id] ??= (string) $visible[$id];
+            }
+        }
+
+        return $menu;
     }
 
     /**

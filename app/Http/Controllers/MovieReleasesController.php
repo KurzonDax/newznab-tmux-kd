@@ -23,12 +23,17 @@ final class MovieReleasesController extends BasePageController
     public function index(Request $request, MovieReleaseList $list, MovieReleaseRows $rows): View|RedirectResponse
     {
         $exclusions = $this->exclusions();
-        $menu = $list->categoryMenu($exclusions);
+        $menu = [];
         $audioMenu = $list->audioMenu();
         $filmOptions = $list->filmOptions();
         $sort = $this->userdata->releaseViewPreferences('movies')['sort'] ?? null;
+        // The Category menu keeps the sub-categories the filters read choose, empty or not (issue #887).
         $filters = (new RememberedListFilters('movies', 'movies.releases', MovieReleaseFilters::KEYS))->open($request, $this->userdata,
-            static fn (Request $source): MovieReleaseFilters => MovieReleaseFilters::forList($source, array_keys($menu), $sort, array_keys($audioMenu), $filmOptions));
+            static function (Request $source) use ($list, $exclusions, $sort, $audioMenu, $filmOptions, &$menu): MovieReleaseFilters {
+                $menu = $list->categoryMenu($exclusions, MovieReleaseFilters::chosenCategories($source));
+
+                return MovieReleaseFilters::forList($source, array_keys($menu), $sort, array_keys($audioMenu), $filmOptions);
+            });
         if ($filters instanceof RedirectResponse) {
             return $filters;
         }

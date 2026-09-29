@@ -62,29 +62,16 @@ final class MovieReleaseList extends BandReleaseList
 
     /**
      * The Category menu: the Movies sub-categories the user may see that hold releases (counted
-     * for all users), in the order HD, UHD, SD, BluRay, DVD, 3D, X265, Foreign, Other, then any
-     * other such sub-category.
+     * for all users) or are chosen, in the order HD, UHD, SD, BluRay, DVD, 3D, X265, Foreign,
+     * Other, then any other such sub-category.
      *
      * @param  list<int>  $exclusions
+     * @param  list<int>  $chosen  the sub-categories the URL or the remembered filters tick
      * @return array<int, string> id => title, in menu order
      */
-    public function categoryMenu(array $exclusions): array
+    public function categoryMenu(array $exclusions, array $chosen = []): array
     {
-        $visible = [];
-        foreach (Category::getForMenu($exclusions) as $root) {
-            if ((int) $root['id'] === Category::MOVIE_ROOT) {
-                $visible = array_column($root['categories'], 'title', 'id');
-            }
-        }
-        $held = $this->valueCounts()['category'];
-        $menu = [];
-        foreach ([...self::CATEGORY_ORDER, ...array_keys($visible)] as $id) {
-            if (isset($visible[$id]) && ($held[$id] ?? 0) > 0) {
-                $menu[(int) $id] ??= (string) $visible[$id];
-            }
-        }
-
-        return $menu;
+        return $this->orderedCategoryMenu(self::CATEGORY_ORDER, $exclusions, $chosen);
     }
 
     /**

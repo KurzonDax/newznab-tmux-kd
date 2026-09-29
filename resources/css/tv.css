@@ -300,6 +300,28 @@
 .tv-search-results b + span { color: var(--tv-dim); font-size: 12.5px; }
 .tv-search-results p { margin: 0; padding: 12px; color: var(--tv-dim); font-size: 14px; }
 
+/*
+ * Adult releases (docs/proposals/adult-redesign/SPEC.md 5): the Movie releases list without the film
+ * parts. Four release cells, each as wide as a Movie releases release-bar cell; the name search in
+ * the search field's size and place, its clear button keeping its place while hidden (a class,
+ * since the base styles force display: none on [hidden]); the picture
+ * column's whole 16:9 frame and its dashed "No picture" tile; with no Source column Size is the
+ * fifth cell (ink) and the date the sixth (dim); the group and poster pair wraps to its own line
+ * before the poster name would be cut below 96 px.
+ */
+.tv-bar-list.is-adult .filter-bar.is-release { flex: 0 0 calc(((100% - 12px) / 2 - 8px) * 4 / 5 + 8px); }
+.tv-name-search-clear { display: grid; flex: none; place-items: center; width: 24px; height: 24px; margin-right: -8px; padding: 0; border: 0; border-radius: 12px; background: none; color: var(--tv-dim); cursor: pointer; }
+.tv-name-search-clear:hover { background: var(--tv-line); color: var(--tv-ink); }
+.tv-name-search-clear.is-hidden { visibility: hidden; }
+.tv-col-picture { width: 196px; }
+.tv-feed td.tv-art.is-picture { width: 176px; }
+.tv-art.is-picture a { width: 176px; height: 99px; }
+.tv-art a.is-no-picture { gap: 6px; background: transparent; box-shadow: none; border-style: dashed; }
+.tv-feed.is-adult tbody td:nth-child(5) { color: var(--tv-ink); }
+.tv-feed.is-adult tbody td:nth-child(6) { color: var(--tv-dim); }
+.tv-feed.is-adult .tv-origin-pair { min-width: min-content; }
+.tv-feed.is-adult .tv-origin-poster { min-width: 96px; }
+
 /* TV shows wall */
 .tv-person { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 8px 0 16px; border-radius: 19px; background: var(--tv-accent); color: var(--tv-accent-on); font-size: 13.5px; font-weight: 600; line-height: 1.5; }
 .tv-person a { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 12px; background: var(--tv-on-accent-button); font-size: 12px; }
