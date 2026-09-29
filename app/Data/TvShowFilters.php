@@ -15,6 +15,9 @@ final readonly class TvShowFilters
 {
     public const PER_PAGE = 42;
 
+    /** The show menus' URL keys (the person is not a menu). */
+    public const MENU_KEYS = ['genre', 'decade', 'language', 'network', 'rating', 'status'];
+
     /** The four orders, default first; labels are the prototype's. */
     public const SORTS = ['recent' => 'Newest releases first', 'newsite' => 'Newest to the site first', 'prem' => 'Newest premiere first', 'az' => 'A to Z'];
 

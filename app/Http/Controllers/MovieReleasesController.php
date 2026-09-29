@@ -10,6 +10,7 @@ use App\Services\Releases\MovieFilmSearch;
 use App\Services\Releases\MovieReleaseList;
 use App\Services\Releases\MovieReleaseRows;
 use App\Services\Releases\ReleaseBatches;
+use App\Services\Releases\RememberedListFilters;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -24,8 +25,12 @@ final class MovieReleasesController extends BasePageController
         $menu = $list->categoryMenu($exclusions);
         $audioMenu = $list->audioMenu();
         $filmOptions = $list->filmOptions();
-        $filters = MovieReleaseFilters::forList($request, array_keys($menu), $this->userdata->releaseViewPreferences('movies')['sort'] ?? null,
-            array_keys($audioMenu), $filmOptions);
+        $sort = $this->userdata->releaseViewPreferences('movies')['sort'] ?? null;
+        $filters = (new RememberedListFilters('movies', 'movies.releases', MovieReleaseFilters::KEYS))->open($request, $this->userdata,
+            static fn (Request $source): MovieReleaseFilters => MovieReleaseFilters::forList($source, array_keys($menu), $sort, array_keys($audioMenu), $filmOptions));
+        if ($filters instanceof RedirectResponse) {
+            return $filters;
+        }
         $total = $list->count($filters, $exclusions);
         $lastPage = max(1, (int) ceil($total / MovieReleaseFilters::PER_PAGE));
         if ($filters->page > $lastPage) {
@@ -43,6 +48,7 @@ final class MovieReleasesController extends BasePageController
                 static fn (MovieReleaseRow $row): ?int => $row->filmId, static fn (MovieReleaseRow $row): string => $row->filmTitle),
             'nzbLinkBase' => url('/api/v1/api'),
             'apiToken' => (string) $this->userdata->api_token,
+            'filtersClock' => RememberedListFilters::clock(),
         ]);
 
         return view($request->query('_fragment') === 'list' ? 'movies.releases.list' : 'movies.releases.index', $data);

@@ -229,6 +229,7 @@ final class MovieReleasesPageTest extends TestCase
         $set = $this->page('/movies?resolution[]=4k&resolution[]=1080p')->assertSee('title="Resolution: 4K, 1080p"', false);
         $this->assertSame('Resolution: 2 chosen', $this->cellText($set, 'resolution'));
         $this->assertSame(['Source: any', 'Category: any'], [$this->cellText($set, 'source'), $this->cellText($set, 'category')]);
+        $this->page('/movies?clear=1')->assertRedirect(route('movies.releases')); // Clear all, so the bare list is unfiltered (#881)
         $this->page('/movies')->assertSeeInOrder(['HD remux', '<td>Remux</td>'], false);
     }
 
@@ -412,7 +413,7 @@ final class MovieReleasesPageTest extends TestCase
         $this->assertSame(['9+', '8–8.9', '7–7.9', '6–6.9', '5–5.9', 'Under 5', 'Too few votes'], $scores[1]);
 
         $line = (string) strstr((string) strstr($html, '<nav class="pager-line is-fixed" aria-label="Pages">'), '</nav>', true);
-        $this->assertMatchesRegularExpression('/data-part="showing line">[^<]*<\/span>\s*<a href="'.preg_quote(route('movies.releases'), '/')
+        $this->assertMatchesRegularExpression('/data-part="showing line">[^<]*<\/span>\s*<a href="'.preg_quote(route('movies.releases', ['clear' => 1]), '/')
             .'" class="pager-line-clear is-hidden" data-clear-all aria-hidden="true" tabindex="-1">Clear all<\/a>\s*<span class="is-off" data-part="pager arrow">/', $line);
         $this->assertSame(1, substr_count($html, 'data-clear-all'));
     }
@@ -662,6 +663,81 @@ final class MovieReleasesPageTest extends TestCase
         $this->page('/movies?year_from=2000&year_to=2010')->assertSee('No releases match 2000–2010.');
     }
 
+    public function test_the_last_dropdown_filters_are_remembered_and_a_bare_open_shows_them(): void
+    {
+        $this->genre(self::DRAMA, 'Drama', [21, 22]);
+        $this->movie('Match', ['movieinfo_id' => 21]);
+        $this->movie('Too new', ['movieinfo_id' => 22]);
+        $this->movie('No film');
+        $user = $this->user = $this->browserUser();
+
+        // #881: each menu pick refreshes the list with every filter on screen, and that set is remembered
+        $this->page('/movies?_fragment=list&genre[]='.self::DRAMA)->assertOk();
+        $this->page('/movies?_fragment=list&genre[]='.self::DRAMA.'&year_from=1990&year_to=1999')->assertOk();
+        $expected = ['genre' => [self::DRAMA], 'year_from' => 1990, 'year_to' => 1999];
+        $this->assertSame($expected, $this->remembered($user, 'movies'));
+
+        // a bare open puts them in the address bar and shows them on page 1: cells, rows, Clear all
+        $this->page('/movies')->assertRedirect(route('movies.releases', $expected));
+        $response = $this->opened('/movies')->assertOk()
+            ->assertSee('class="pager-line-clear" data-clear-all aria-hidden="false">Clear all</a>', false)
+            ->assertSee('data-filters-clock="'.Carbon::now()->getTimestampMs().'"', false);
+        $this->assertSame(['Match'], $this->listedNames($response));
+        $this->assertSame('Genre: Drama', $this->cellText($response, 'genre'));
+        $this->assertMatchesRegularExpression('/class="checkbox-menu is-cell year-menu is-set"/', (string) $response->getContent());
+        $this->assertSame([1990, 1999], $response->viewData('filters')->films->yearBounds());
+    }
+
+    public function test_each_list_remembers_its_own_filters(): void
+    {
+        $this->movie('A release');
+        $user = $this->user = $this->browserUser();
+        $user->view_prefs = ['tv' => ['sort' => 'oldest', 'filters' => ['resolution' => ['4k']], 'filters_at' => 1]];
+        $user->save();
+
+        $this->page('/movies')->assertOk()->assertSee('class="pager-line-clear is-hidden"', false);
+        $this->page('/movies?resolution[]=1080p')->assertOk();
+        $this->assertSame(['resolution' => ['1080p']], $this->remembered($user, 'movies'));
+        $this->assertSame(['resolution' => ['4k']], $this->remembered($user, 'tv'));
+        $this->assertSame('oldest', User::query()->findOrFail($user->id)->releaseViewPreferences('tv')['sort']);
+    }
+
+    public function test_clear_all_forgets_the_remembered_filters(): void
+    {
+        $this->genre(self::DRAMA, 'Drama', [21]);
+        $this->movie('A release', ['movieinfo_id' => 21]);
+        $user = $this->user = $this->browserUser();
+        $filtered = $this->page('/movies?genre[]='.self::DRAMA.'&decade[]=1990')->assertOk();
+
+        preg_match('/<a href="([^"]+)" class="pager-line-clear" data-clear-all/', (string) $filtered->getContent(), $clearAll);
+        $this->page(html_entity_decode($clearAll[1]))->assertRedirect(route('movies.releases'));
+        $this->assertSame([], $this->remembered($user, 'movies'));
+        $bare = $this->page('/movies')->assertOk()->assertSee('class="pager-line-clear is-hidden"', false);
+        $this->assertFalse($bare->viewData('filters')->any());
+    }
+
+    public function test_a_menu_pick_after_a_bare_open_keeps_the_remembered_filters(): void
+    {
+        DB::table('languages')->insert(['id' => self::ENGLISH, 'name' => 'English']);
+        foreach (['Match' => [], 'Wrong category' => ['categories_id' => self::SD], 'Wrong resolution' => ['resolution' => 3], 'No audio' => []] as $name => $attributes) {
+            $id = $this->movie($name, $attributes);
+            if ($name !== 'No audio') {
+                DB::table('release_audio_languages')->insert(['releases_id' => $id, 'languages_id' => self::ENGLISH]);
+            }
+        }
+        $user = $this->user = $this->browserUser();
+        $this->page('/movies?category[]='.self::HD.'&resolution[]=1080p')->assertOk();
+
+        // the page's own URL carries the remembered set, so the Audio pick's refresh keeps it
+        $address = (string) $this->page('/movies')->headers->get('Location');
+        $fragment = $this->page($address.'&audio[]='.self::ENGLISH.'&_fragment=list')->assertOk();
+        $this->assertSame(['Match'], $this->listedNames($fragment));
+        $expected = ['category' => [self::HD], 'resolution' => ['1080p'], 'audio' => [(string) self::ENGLISH]];
+        $this->assertSame($expected, $this->remembered($user, 'movies'));
+        $this->page('/movies')->assertRedirect(route('movies.releases', $expected));
+        $this->assertSame('Audio: English', $this->cellText($this->opened('/movies'), 'audio'));
+    }
+
     public function test_the_search_finds_films_then_people_the_user_may_see(): void
     {
         $this->film(23, '0333333', 'The Glass House', '2001');
@@ -706,6 +782,25 @@ final class MovieReleasesPageTest extends TestCase
         $user->revokePermissionTo('view movies');
         $this->page('/movies', $user)->assertForbidden();
         $this->actingAs($user)->get('/movies/search?q=glass')->assertForbidden();
+    }
+
+    /** The response after the one redirect a bare open answers with while filters are remembered (#881). */
+    private function opened(string $uri): TestResponse
+    {
+        $response = $this->page($uri);
+
+        return $response->isRedirect() ? $this->page((string) $response->headers->get('Location')) : $response;
+    }
+
+    private function remembered(User $user, string $root): mixed
+    {
+        return User::query()->findOrFail($user->id)->releaseViewPreferences($root)['filters'] ?? null;
+    }
+
+    /** @return list<string> the listed releases' names, A to Z */
+    private function listedNames(TestResponse $response): array
+    {
+        return DB::table('releases')->whereIn('id', $this->listedIds($response))->orderBy('name')->pluck('name')->all();
     }
 
     /** @param array<string, mixed> $attributes */

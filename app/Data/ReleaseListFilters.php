@@ -12,13 +12,16 @@ use Illuminate\Http\Request;
 /**
  * The release filters every section's releases list shares (TV and Movies): the ticked
  * Category / Resolution / Source / Audio values, the Completion choice, the sort and the page.
- * Filters live in the URL and are never remembered; the sort is remembered per user and read
- * from the view preferences by the caller. Each section adds its own title filters (the show
- * bar, the film bar).
+ * Filters live in the URL; the list's last dropdown filters and the sort are remembered per user
+ * in the view preferences (RememberedListFilters, issue #881; the sort is read by the caller).
+ * Each section adds its own title filters (the show bar, the film bar).
  */
 abstract readonly class ReleaseListFilters
 {
     public const PER_PAGE = 50;
+
+    /** The release filters' URL keys: the dropdown menus every releases list has. */
+    public const RELEASE_KEYS = ['category', 'resolution', 'source', 'audio', 'completion'];
 
     /** Menu order and URL values of the Resolution menu. */
     public const RESOLUTIONS = ['4k' => ReleaseResolution::Uhd, '1080p' => ReleaseResolution::FullHd, '720p' => ReleaseResolution::Hd, 'sd' => ReleaseResolution::Sd, 'unknown' => ReleaseResolution::Unknown];

@@ -211,6 +211,31 @@ test('changing the sort saves it under the Movies root and returns to page 1', a
     assert.deepEqual(history, ['https://nntmux.test/movies?genre%5B%5D=3']);
 });
 
+test('an Audio pick after a bare open keeps the remembered Movies filters in the address bar and the refresh', async () => {
+    // #881: the bare open redirected to the URL carrying the remembered Genre and Year range
+    const requests = [], history = [];
+    globalThis.window = {
+        location: { href: 'https://nntmux.test/movies?genre%5B0%5D=3&year_from=1990&year_to=1999' },
+        history: { replaceState: (state, title, url) => history.push(url) },
+        showToast() {},
+    };
+    globalThis.fetch = async url => {
+        requests.push(String(url));
+        return { ok: true, redirected: false, text: async () => '<nav>new list</nav>' };
+    };
+    const component = tvReleases();
+    component.$el = { dataset: { preferenceUrl: '/profile/update-view', preferenceRoot: 'movies', filtersClock: '5000' }, querySelectorAll: () => [], querySelector: () => null };
+    component.$refs = { list: { innerHTML: '' } };
+    component.init();
+    await component.applyFilter({ detail: { name: 'audio', values: ['1'] } });
+    for (const url of [new URL(history[0]), new URL(requests[0])]) {
+        assert.deepEqual([url.searchParams.getAll('genre[0]'), url.searchParams.get('year_from'), url.searchParams.get('year_to'), url.searchParams.getAll('audio[]')],
+            [['3'], '1990', '1999', ['1']]);
+    }
+    assert.ok(Number(new URL(requests[0]).searchParams.get('_filters_at')) >= 5000);
+    assert.equal(component.$refs.list.innerHTML, '<nav>new list</nav>');
+});
+
 test('the Year menu shows decades in three columns and the range without scrolling; a refusal takes the heading red', () => {
     const css = readFileSync(new URL('../../resources/css/tv.css', import.meta.url), 'utf8');
     const app = readFileSync(new URL('../../resources/css/app.css', import.meta.url), 'utf8');

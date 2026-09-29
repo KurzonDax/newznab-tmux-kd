@@ -5,16 +5,21 @@ import { rowActions } from './tv-row-actions.js';
  * A section's releases screen (tv/releases/index.blade.php, movies/releases/index.blade.php):
  * row selection and the floating bar, the same-title batch expander, cart and copy-link row
  * actions, the sort preference (for the root in data-preference-root, TV by default), and
- * reloading the list in place when a filter menu changes.
+ * reloading the list in place when a filter menu changes. The server remembers the filters each
+ * reload carries (issue #881); a reload sends when it was made, counted from the page's
+ * data-filters-clock, so a slower earlier reload never replaces a later change.
  */
 export function tvReleases() {
     return {
         selectedCount: 0,
         screen: null,
         request: null,
+        loadedAt: 0,
+        lastStamp: 0,
 
         init() {
             this.screen = this.$el;
+            this.loadedAt = Date.now();
             this.selectionChanged();
         },
 
@@ -97,13 +102,23 @@ export function tvReleases() {
             const request = new AbortController();
             this.request = request;
             try {
-                const html = await fetchList(url, request.signal);
+                const html = await fetchList(this.stamped(url), request.signal);
                 if (request.signal.aborted) return;
                 this.$refs.list.innerHTML = html;
                 this.selectionChanged();
             } catch (error) {
                 if (error.name !== 'AbortError') window.showToast('Could not load the releases. Reload the page and try again.', 'error');
             }
+        },
+
+        /** The reload URL with when it was made (the server's clock at render plus the time since), always later than the last. */
+        stamped(url) {
+            const clock = Number(this.screen.dataset.filtersClock);
+            if (!clock) return url;
+            this.lastStamp = Math.max(this.lastStamp + 1, Math.round(clock + Date.now() - this.loadedAt));
+            const stamped = new URL(url.toString());
+            stamped.searchParams.set('_filters_at', String(this.lastStamp));
+            return stamped;
         },
     };
 }

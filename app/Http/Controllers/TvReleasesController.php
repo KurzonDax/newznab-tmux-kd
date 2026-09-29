@@ -8,6 +8,7 @@ use App\Data\TvReleaseFilters;
 use App\Data\TvReleaseRow;
 use App\Models\Category;
 use App\Services\Releases\ReleaseBatches;
+use App\Services\Releases\RememberedListFilters;
 use App\Services\Releases\TvReleaseList;
 use App\Services\Releases\TvReleaseRows;
 use Illuminate\Http\RedirectResponse;
@@ -23,8 +24,12 @@ final class TvReleasesController extends BasePageController
         $menu = self::categoryMenu($exclusions);
         $audioMenu = $list->audioMenu();
         $showOptions = $list->showOptions(array_values($exclusions));
-        $filters = TvReleaseFilters::forList($request, array_keys($menu), $this->userdata->releaseViewPreferences('tv')['sort'] ?? null,
-            array_keys($audioMenu), $showOptions);
+        $sort = $this->userdata->releaseViewPreferences('tv')['sort'] ?? null;
+        $filters = (new RememberedListFilters('tv', 'tv.releases', TvReleaseFilters::KEYS))->open($request, $this->userdata,
+            static fn (Request $source): TvReleaseFilters => TvReleaseFilters::forList($source, array_keys($menu), $sort, array_keys($audioMenu), $showOptions));
+        if ($filters instanceof RedirectResponse) {
+            return $filters;
+        }
         $total = $list->count($filters, $exclusions);
         $lastPage = max(1, (int) ceil($total / TvReleaseFilters::PER_PAGE));
         if ($filters->page > $lastPage) {
@@ -42,6 +47,7 @@ final class TvReleasesController extends BasePageController
                 static fn (TvReleaseRow $row): ?int => $row->showId, static fn (TvReleaseRow $row): string => $row->showTitle),
             'nzbLinkBase' => url('/api/v1/api'),
             'apiToken' => (string) $this->userdata->api_token,
+            'filtersClock' => RememberedListFilters::clock(),
         ]);
 
         return view($request->query('_fragment') === 'list' ? 'tv.releases.list' : 'tv.releases.index', $data);

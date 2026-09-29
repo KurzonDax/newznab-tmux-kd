@@ -13,6 +13,9 @@ use Illuminate\Http\Request;
  */
 final readonly class MovieReleaseFilters extends ReleaseListFilters
 {
+    /** The list's dropdown filter URL keys: the release menus, then the film menus. */
+    public const KEYS = [...self::RELEASE_KEYS, ...MovieFilmFilters::MENU_KEYS];
+
     /**
      * @param  list<int>  $categories  ticked Movies sub-category ids, in menu order
      * @param  list<string>  $resolutions  ticked keys of RESOLUTIONS, in menu order

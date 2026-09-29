@@ -40,7 +40,8 @@ Hard constraints from the repository (`AGENTS.md`), unchanged from TV:
   command.** This spec proposes none. Two values are stored "going forward" with no backfill
   (section 7), by his decision.
 - Colours route through the existing token layer; the accent is a per-user setting.
-- Per-user remembered choices (the sort) go in the existing view preferences
+- Per-user remembered choices (the sort and, by his decision of 2026-09-29, the releases list's
+  dropdown filters, #881) go in the existing view preferences
   (`users.view_prefs` via `User::releaseViewPreferences()`, `app/Models/User.php:209-215`),
   not a cookie.
 

@@ -8,7 +8,7 @@
 
 @section('content')
 <div class="tv-screen" data-part="page ground and body text" x-data="tvReleases"
-     data-preference-url="{{ route('profile.update-view') }}"
+     data-preference-url="{{ route('profile.update-view') }}" data-filters-clock="{{ $filtersClock }}"
      data-nzb-link-base="{{ $nzbLinkBase }}" data-api-token="{{ $apiToken }}"
      x-on:click="handleClick" x-on:change="handleChange" x-on:checkbox-menu-change="applyFilter">
     <div class="tv-wrap" data-part="content width wrapper">
