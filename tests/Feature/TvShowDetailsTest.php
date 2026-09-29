@@ -62,7 +62,7 @@ final class TvShowDetailsTest extends TestCase
         $this->assertSame('Home Box Office', $info->publisher);
         $this->assertSame(['Children', 'Drama', 'Fantasy', 'Sci-Fi'], $this->genreTitles(1));
         $this->assertSame(['Bryan', 'Aaron'], $this->castNames(1));
-        Http::assertSent(fn (Request $request): bool => str_contains($request->url(), 'append_to_response=content_ratings%2Ccredits'));
+        Http::assertSent(fn (Request $request): bool => str_contains($request->url(), 'append_to_response=content_ratings%2Caggregate_credits'));
         Sleep::assertSleptTimes(1);
     }
 
@@ -155,31 +155,36 @@ final class TvShowDetailsTest extends TestCase
         $this->assertNull(DB::table('tv_info')->where('videos_id', 1)->value('details_refreshed_at'));
     }
 
-    public function test_cast_is_the_first_twelve_distinct_people_in_tmdb_order(): void
+    public function test_cast_is_the_twelve_distinct_people_in_the_most_episodes_ties_in_tmdb_order(): void
     {
         $this->insertShow(1, tmdb: 200);
         DB::table('people')->insert(['id' => 50, 'name' => 'Existing Spelling', 'tmdb_id' => 103]);
-        $cast = [['name' => 'No TMDB id']];
-        foreach ([101, 102, 101, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113] as $id) {
-            $cast[] = ['id' => $id, 'name' => 'Actor '.$id];
+        $cast = [['name' => 'No TMDB id', 'total_episode_count' => 500]];
+        // TMDB order, not sorted by episode count; 105 appears twice.
+        $episodes = [101 => 5, 102 => 40, 103 => 40, 104 => 12, 105 => 80, 106 => 5, 107 => 1, 108 => 40, 109 => 22, 110 => 5, 111 => 9, 112 => 5, 113 => 5, 114 => 30];
+        foreach ($episodes as $id => $count) {
+            $cast[] = ['id' => $id, 'name' => 'Actor '.$id, 'total_episode_count' => $count];
         }
-        Http::fake(['*tv/200?*' => Http::response($this->show(['credits' => ['cast' => $cast]]))]);
+        $cast[] = ['id' => 105, 'name' => 'Actor 105 again', 'total_episode_count' => 2];
+        Http::fake(['*tv/200?*' => Http::response($this->show(['aggregate_credits' => ['cast' => $cast]]))]);
 
         $this->details()->refreshIfDue(1);
 
         $rows = DB::table('video_people')->join('people', 'people.id', '=', 'video_people.people_id')
             ->where('videos_id', 1)->orderBy('position')->get(['position', 'tmdb_id', 'people.id']);
         $this->assertSame(range(0, 11), $rows->pluck('position')->map(intval(...))->all());
-        $this->assertSame([101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112], $rows->pluck('tmdb_id')->map(intval(...))->all());
+        // 113 ties 101, 106, 110 and 112 on five episodes and comes last of them in TMDB's order.
+        $this->assertSame([105, 102, 103, 108, 114, 109, 104, 111, 101, 106, 110, 112], $rows->pluck('tmdb_id')->map(intval(...))->all());
         $this->assertSame(50, (int) $rows[2]->id);
         $this->assertSame('Existing Spelling', DB::table('people')->where('id', 50)->value('name'));
+        $this->assertSame('Actor 105', DB::table('people')->where('tmdb_id', 105)->value('name'));
     }
 
     public function test_a_cast_member_with_an_empty_name_is_linked_only_when_a_row_holds_its_tmdb_id(): void
     {
         $this->insertShow(1, tmdb: 200);
         DB::table('people')->insert(['id' => 40, 'name' => 'Known Person', 'tmdb_id' => 103]);
-        Http::fake(['*tv/200?*' => Http::response($this->show(['credits' => ['cast' => [
+        Http::fake(['*tv/200?*' => Http::response($this->show(['aggregate_credits' => ['cast' => [
             ['id' => 101, 'name' => ''],
             ['id' => 102, 'name' => '   '],
             ['id' => 103, 'name' => ''],
@@ -199,7 +204,7 @@ final class TvShowDetailsTest extends TestCase
         foreach (range(201, 213) as $id) {
             $cast[] = ['id' => $id, 'name' => $id === 203 ? '' : 'Actor '.$id];
         }
-        Http::fake(['*tv/200?*' => Http::response($this->show(['credits' => ['cast' => $cast]]))]);
+        Http::fake(['*tv/200?*' => Http::response($this->show(['aggregate_credits' => ['cast' => $cast]]))]);
 
         $this->details()->refreshIfDue(1);
 
@@ -212,7 +217,7 @@ final class TvShowDetailsTest extends TestCase
         $this->caseInsensitivePeopleNames();
         $this->insertShow(1, tmdb: 200);
         DB::table('people')->insert(['id' => 60, 'name' => 'jane roe', 'tmdb_id' => null]);
-        Http::fake(['*tv/200?*' => Http::response($this->show(['credits' => ['cast' => [['id' => 555, 'name' => 'Jane Roe']]]]))]);
+        Http::fake(['*tv/200?*' => Http::response($this->show(['aggregate_credits' => ['cast' => [['id' => 555, 'name' => 'Jane Roe']]]]))]);
 
         $this->details()->refreshIfDue(1);
 
@@ -223,7 +228,7 @@ final class TvShowDetailsTest extends TestCase
     public function test_a_new_cast_member_is_added_only_while_the_people_lock_is_held(): void
     {
         $this->insertShow(1, tmdb: 200);
-        Http::fake(['*tv/200?*' => Http::response($this->show(['credits' => ['cast' => [['id' => 555, 'name' => 'Jane Roe']]]]))]);
+        Http::fake(['*tv/200?*' => Http::response($this->show(['aggregate_credits' => ['cast' => [['id' => 555, 'name' => 'Jane Roe']]]]))]);
         $lockHeldAtInsert = [];
         DB::listen(static function ($query) use (&$lockHeldAtInsert): void {
             if (preg_match('/^\s*insert\b.*\binto "people"/is', $query->sql) !== 1) {
@@ -248,7 +253,7 @@ final class TvShowDetailsTest extends TestCase
     {
         $this->caseInsensitivePeopleNames();
         $this->insertShow(1, tmdb: 200);
-        Http::fake(['*tv/200?*' => Http::response($this->show(['credits' => ['cast' => [['id' => 555, 'name' => 'Jane Roe']]]]))]);
+        Http::fake(['*tv/200?*' => Http::response($this->show(['aggregate_credits' => ['cast' => [['id' => 555, 'name' => 'Jane Roe']]]]))]);
         // Another worker saves a film's cast from text right after this write's first name lookup.
         $done = false;
         DB::listen(static function ($query) use (&$done): void {
@@ -271,7 +276,7 @@ final class TvShowDetailsTest extends TestCase
         $this->insertShow(1, tmdb: 200);
         Http::fake(['*tv/200?*' => Http::sequence()
             ->push($this->show())
-            ->push($this->show(['genres' => [['id' => 35, 'name' => 'Comedy']], 'credits' => ['cast' => [['id' => 9, 'name' => 'Solo']]]]))]);
+            ->push($this->show(['genres' => [['id' => 35, 'name' => 'Comedy']], 'aggregate_credits' => ['cast' => [['id' => 9, 'name' => 'Solo']]]]))]);
 
         $this->details()->refreshIfDue(1);
         Carbon::setTestNow('2026-09-27 12:00:00');
@@ -434,7 +439,7 @@ final class TvShowDetailsTest extends TestCase
             'networks' => [['id' => 49, 'name' => 'HBO']],
             'genres' => [['id' => 18, 'name' => 'Drama'], ['id' => 10765, 'name' => 'Sci-Fi & Fantasy'], ['id' => 10762, 'name' => 'Kids']],
             'content_ratings' => ['results' => [['iso_3166_1' => 'DE', 'rating' => '16'], ['iso_3166_1' => 'US', 'rating' => 'TV-MA']]],
-            'credits' => ['cast' => [['id' => 17419, 'name' => 'Bryan'], ['id' => 84497, 'name' => 'Aaron']]],
+            'aggregate_credits' => ['cast' => [['id' => 17419, 'name' => 'Bryan', 'total_episode_count' => 62], ['id' => 84497, 'name' => 'Aaron', 'total_episode_count' => 62]]],
         ], $overrides);
     }
 
