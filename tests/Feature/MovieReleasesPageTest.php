@@ -716,6 +716,20 @@ final class MovieReleasesPageTest extends TestCase
         $this->assertFalse($bare->viewData('filters')->any());
     }
 
+    public function test_a_remembered_value_no_longer_in_its_menu_is_dropped_without_an_error(): void
+    {
+        $this->genre(self::DRAMA, 'Drama', [21]);
+        $this->movie('A release', ['movieinfo_id' => 21]);
+        $user = $this->user = $this->browserUser();
+        $user->view_prefs = ['movies' => ['filters' => ['genre' => [42, self::DRAMA], 'score' => ['11'], 'rating' => ['X'], 'language' => ['zz'], 'year_from' => 'soon', 'decade' => [1850]], 'filters_at' => 1]];
+        $user->save();
+        $this->page('/movies')->assertRedirect(route('movies.releases', ['genre' => [self::DRAMA]]));
+
+        $user->view_prefs = ['movies' => ['filters' => ['genre' => [42], 'year_to' => [['nested']]], 'filters_at' => 1]];
+        $user->save();
+        $this->assertFalse($this->page('/movies')->assertOk()->viewData('filters')->any());
+    }
+
     public function test_a_menu_pick_after_a_bare_open_keeps_the_remembered_filters(): void
     {
         DB::table('languages')->insert(['id' => self::ENGLISH, 'name' => 'English']);

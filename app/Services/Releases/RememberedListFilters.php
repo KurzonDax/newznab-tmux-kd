@@ -110,7 +110,9 @@ final readonly class RememberedListFilters
 
     /**
      * Remembers the set; a refresh ($stamp) only when it is not older than the remembered one, an
-     * open always (it follows every refresh the page before it sent).
+     * open always (it follows every refresh the page before it sent). The layout's cached user
+     * (composer_user_*) is left alone: nothing reads the filters from it, and clearing it on every
+     * list load would rebuild it on every page.
      *
      * @param  array<string, mixed>  $filters
      */
