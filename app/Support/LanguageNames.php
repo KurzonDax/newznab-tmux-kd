@@ -46,10 +46,10 @@ final class LanguageNames
      * Not a language: the standard's codes (zxx no speech, mul multiple, und undetermined,
      * qaa-qtz local use) and the spelled-out "no language" values media info writes.
      */
-    private const string NOT_A_LANGUAGE = '/^(zxx|mul|und|q[a-t][a-z]|unknown|unknown language|unk|none|multiple languages)$/i';
+    private const string NOT_A_LANGUAGE = '/^('.self::NOT_A_LANGUAGE_CODES.'|unknown|unknown language|unk|none|multiple languages)$/i';
 
-    /** The standard's not-a-language codes, however the value was identified as one. */
-    private const string NOT_A_LANGUAGE_CODE = '/^(zxx|mul|und|q[a-t][a-z])$/';
+    /** The standard's not-a-language codes, also dropped however a value was identified as one. */
+    private const string NOT_A_LANGUAGE_CODES = 'zxx|mul|und|q[a-t][a-z]';
 
     /** @var array{names: array<string, string>, twoLetter: array<string, string>}|null */
     private static ?array $index = null;
@@ -64,7 +64,7 @@ final class LanguageNames
         }
 
         $code = self::identify($base);
-        if ($code === null || preg_match(self::NOT_A_LANGUAGE_CODE, $code) === 1) {
+        if ($code === null || preg_match('/^('.self::NOT_A_LANGUAGE_CODES.')$/', $code) === 1) {
             return null;
         }
         $code = self::index()['twoLetter'][$code] ?? $code;
@@ -95,19 +95,18 @@ final class LanguageNames
     private static function identify(string $base): ?string
     {
         $lower = mb_strtolower($base);
-        if (array_key_exists($lower, self::NAMES)) {
-            return $lower;
-        }
-        if (self::nameable($lower)) {
+        if (array_key_exists($lower, self::NAMES) || self::nameable($lower)) {
             return $lower;
         }
 
-        return self::index()['names'][self::key($base)] ?? null;
+        return self::index()['names'][self::fold($base)] ?? null;
     }
 
     /**
-     * Name key => code for every English name (`intl`, then the ISO 639-2 list) and own
-     * name (`intl`) of a code `intl` can name, and three-letter code => ISO 639-1 code.
+     * Folded name => code for every English name (`intl`, then the ISO 639-2 list) and own
+     * name (`intl`) of a code `intl` can name, and three-letter code => ISO 639-1 code. The
+     * codes tried are the ISO 639-2 list's, the languages `intl` has locale data, English
+     * names or aliases for.
      *
      * @return array{names: array<string, string>, twoLetter: array<string, string>}
      */
@@ -132,11 +131,14 @@ final class LanguageNames
         foreach (ResourceBundle::getLocales('') ?: [] as $locale) {
             $ownNamed[] = (string) Locale::getPrimaryLanguage($locale);
         }
-        $codes = array_values(array_filter(array_unique([...$codes, ...$ownNamed]), self::nameable(...)));
+        $codes = array_values(array_filter(
+            array_unique([...$codes, ...$ownNamed, ...self::bundleKeys('en', 'ICUDATA-lang', 'Languages'), ...self::bundleKeys('metadata', 'ICUDATA', 'alias', 'language')]),
+            self::nameable(...),
+        ));
 
         $names = [];
         $add = static function (string $name, string $code) use (&$names): void {
-            $key = self::key($name);
+            $key = self::fold($name);
             if ($key !== '' && ! isset($names[$key])) {
                 $names[$key] = $code;
             }
@@ -159,6 +161,27 @@ final class LanguageNames
         return self::$index = ['names' => $names, 'twoLetter' => $twoLetter];
     }
 
+    /**
+     * The keys of an `intl` resource bundle table, empty when the bundle is missing.
+     *
+     * @return list<string>
+     */
+    private static function bundleKeys(string $locale, string $bundle, string ...$path): array
+    {
+        $table = ResourceBundle::create($locale, $bundle);
+        foreach ($path as $key) {
+            $table = $table instanceof ResourceBundle ? $table->get($key) : null;
+        }
+        $keys = [];
+        if ($table instanceof ResourceBundle) {
+            foreach ($table as $key => $unused) {
+                $keys[] = (string) $key;
+            }
+        }
+
+        return $keys;
+    }
+
     /** Whether the value is two or three ASCII letters that `intl` names as a language. */
     private static function nameable(string $code): bool
     {
@@ -172,7 +195,7 @@ final class LanguageNames
     }
 
     /** The name folded for matching: lower case, accents dropped from Latin letters. */
-    private static function key(string $name): string
+    private static function fold(string $name): string
     {
         $decomposed = Normalizer::normalize($name, Normalizer::FORM_D);
         $bare = (string) preg_replace('/(?<=[A-Za-z])\p{Mn}+/u', '', is_string($decomposed) ? $decomposed : $name);

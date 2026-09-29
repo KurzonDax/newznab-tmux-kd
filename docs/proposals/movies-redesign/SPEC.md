@@ -179,12 +179,15 @@ that menu.
 
 **Audio and Language** (his request, 2026-09-26, "a language filter"; he chose **both meanings**):
 Audio is what you hear in that release (a Hindi dub of an English film is Hindi); Language is the
-film's own language. Names drop the region (`English (US)`, `en`, `en-US` all read English;
-Mandarin reads Chinese); codes that are not a language (`zxx` no speech, `mul`, `und`,
-`qaa`–`qtz`) and "Multiple languages" are dropped. A value we cannot identify as a language is
-Unknown (his decision, 2026-09-28): a value is identified, case- and accent-insensitively, as a code
-`intl` can name, a language's English name (`intl` or the ISO 639-2 list, so "Panjabi" reads
-Punjabi), its own name ("Deutsch", "日本語") or a name-table entry; anything else names no language.
+film's own language. A value is trimmed, stripped of surrounding quotes and cut before " / "
+(`'eng'` and "English / English" read English). Names drop the region (`English (US)`, `en`,
+`en-US` all read English; Mandarin reads Chinese); codes that are not a language (`zxx` no speech,
+`mul`, `und`, `qaa`–`qtz`) and "Multiple languages" are dropped. A value we cannot identify as a
+language is Unknown (his decision, 2026-09-28): a value is identified, case- and
+accent-insensitively, as a code `intl` can name, a language's English name (`intl` or the ISO 639-2
+list, so "Panjabi" reads Punjabi), its own name ("Deutsch", "日本語") or a name-table entry; anything
+else names no language. One name per language: the code is reduced to its ISO 639-1 code when it
+has one and named by the name table, else by `intl` in English (`ben` and "Bengali" read Bengali).
 
 **Completion** (his request: "only show releases that are 95% or more complete", then "an option
 for 100% only", and the order Any / 100% / 95%): it filters `releases.completion`, which is always

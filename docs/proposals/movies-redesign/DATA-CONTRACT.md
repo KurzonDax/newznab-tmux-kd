@@ -171,12 +171,11 @@ Cantonese); codes that are not a language (`zxx`, `mul`, `und`, `qaa`–`qtz`) a
 is identified, case- and accent-insensitively, as a code `intl` can name, a language's English name from `intl` or the ISO
 639-2 list, its own name from `intl`, or a name-table entry; the code is reduced to its ISO 639-1 code when it has one and
 named by the table, else by `intl` in English (`ben` and "Bengali" → Bengali, "Panjabi" → Punjabi). A value not identified
-names no language, so a release whose audio values all name none is Unknown. One PHP class holds the table and the rule
-(the ISO 639-2 names beside it); the Audio menus list
-`languages` names, and the Language menus list `original_language` codes shown through the same table. At full size (the
-lab took every probe's audio languages plus `audio_data`; the contract's rule, 3.2, reads the chosen probe else `audio_data`,
-which can differ only on the 24,136 releases with probe languages): 369,752 rows, 141 names, 49,480 movie releases and
-153,567 TV releases with at least one language.
+names no language, so a release whose audio values all name none is Unknown. One PHP class holds the table and the rule (the
+ISO 639-2 names beside it); the Audio menus list `languages` names, and the Language menus list `original_language` codes
+shown through the same table. At full size (the lab took every probe's audio languages plus `audio_data`; the contract's
+rule, 3.2, reads the chosen probe else `audio_data`, which can differ only on the 24,136 releases with probe languages):
+369,752 rows, 141 names, 49,480 movie releases and 153,567 TV releases with at least one language.
 
 ### 2.6 What is not stored
 

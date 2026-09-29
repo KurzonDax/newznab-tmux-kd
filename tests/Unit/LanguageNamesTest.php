@@ -51,6 +51,8 @@ final class LanguageNamesTest extends TestCase
         yield 'a table spelling of an own name' => ['हिंदी', 'Hindi'];
         yield 'an own name in its script' => ['日本語', 'Japanese'];
         yield 'an own name' => ['Deutsch', 'German'];
+        yield 'an English name of a code off the ISO 639-2 list' => ['Moroccan Arabic', 'Moroccan Arabic'];
+        yield 'an English name of an aliased code' => ['Dari', 'Dari'];
         yield 'a quoted code' => ["'eng'", 'English'];
         yield 'a doubled name' => ['English / English', 'English'];
         yield 'Bengali by its code' => ['bn', 'Bengali'];
