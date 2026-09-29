@@ -158,6 +158,8 @@ await load();
 ok('after a reload the dropdown filters are back', await js(`state.cat.has('x264')&&state.cat.size===1&&state.res.has('1080p')&&state.comp==='95'`));
 ok('the name search is not remembered', await js(`state.q===''&&document.querySelector('#q').value===''`));
 ok('the page starts at 1 with the remembered filters', await js(`state.page===1`) && /^Showing 1–/.test(await js(`document.querySelector('.pager.slim .sum').textContent`)));
+await js(`(()=>{state.cat.clear();EXO().forEach(c=>state.cat.add(c));saveFilters();})()`); await load();
+ok('a remembered "Exclude Other" comes back as Exclude Other (a mode, not ids)', await js(`isExo()&&JSON.parse(localStorage.getItem('nntmux.adult.filters')).cat==='exo'`));
 await js(`document.querySelector('[data-clearall]').click()`); await sleep(150); await load();
 ok('Clear all is remembered too: after a reload nothing is set', await js(`!anySet()`));
 
