@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Models\Release;
 use App\Models\ReleaseAudioTag;
+use App\Services\Releases\HiddenCategoryGate;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\ResponseHeaderBag;
@@ -34,6 +36,9 @@ class AudioPreviewController extends Controller
         if (! $tag instanceof ReleaseAudioTag) {
             abort(404);
         }
+
+        $categoryId = Release::query()->whereKey((int) $tag->releases_id)->value('categories_id');
+        abort_if(app(HiddenCategoryGate::class)->hides($request->user()?->id, $categoryId), 403);
 
         $extension = $tag->previewExtension();
         $mimeType = $tag->previewMimeType();

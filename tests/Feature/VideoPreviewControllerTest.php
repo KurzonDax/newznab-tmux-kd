@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -216,6 +217,8 @@ class VideoPreviewControllerTest extends TestCase
         $user->email = 'tester@example.test';
         $user->email_verified_at = now();
         $user->exists = true;
+        // The preview checks the viewer's hidden categories; this viewer hides none.
+        Cache::put(User::categoryExclusionCacheKey(1), [], 300);
 
         return $user;
     }

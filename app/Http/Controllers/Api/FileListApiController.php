@@ -8,14 +8,16 @@ use App\Http\Controllers\Controller;
 use App\Models\Release;
 use App\Services\Nzb\NzbParserService;
 use App\Services\Nzb\NzbService;
+use App\Services\Releases\HiddenCategoryGate;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class FileListApiController extends Controller
 {
     /**
      * Get file list for a release
      */
-    public function getFileList(string $guid): JsonResponse
+    public function getFileList(Request $request, string $guid, HiddenCategoryGate $hiddenCategories): JsonResponse
     {
         $nzb = app(NzbService::class);
         $nzbParser = app(NzbParserService::class);
@@ -24,6 +26,7 @@ class FileListApiController extends Controller
         if (! $rel) {
             return response()->json(['error' => 'Release not found'], 404);
         }
+        abort_if($hiddenCategories->hides($request->user()?->id, $rel['categories_id']), 403);
 
         $nzbpath = $nzb->nzbPath($guid);
 

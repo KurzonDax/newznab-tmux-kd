@@ -59,13 +59,37 @@ class GetNzbController extends BasePageController
             return $releaseId; // Return error response
         }
 
+        $hiddenCategoryIds = $this->hiddenCategoryIdsForSessionDownload($request);
+
         // Handle zip download request
         if ($this->isZipRequest($request)) {
-            return $this->handleZipDownload($request, $uid, $userName, $maxDownloads, $releaseId);
+            return $this->handleZipDownload($request, $uid, $userName, $maxDownloads, $releaseId, $hiddenCategoryIds);
         }
 
         // Handle single NZB download
-        return $this->handleSingleNzbDownload($request, $uid, $rssToken, $releaseId);
+        return $this->handleSingleNzbDownload($request, $uid, $rssToken, $releaseId, $hiddenCategoryIds);
+    }
+
+    /**
+     * The signed-in user's hidden categories, applied only to a download the
+     * web session authenticates. A download resolved by the API, by an RSS
+     * token, or a feed link (with a verified user's `r` token) opened in a
+     * signed-in browser keeps serving every category: the API and RSS are
+     * frozen, and the category feed does not apply hidden categories.
+     *
+     * @return list<int>
+     */
+    private function hiddenCategoryIdsForSessionDownload(Request $request): array
+    {
+        if ($request->attributes->get(self::REQUEST_USER_ATTRIBUTE) instanceof User || ! $request->user()) {
+            return [];
+        }
+
+        if ($request->filled('r') && User::findVerifiedByApiToken((string) $request->input('r')) !== null) {
+            return [];
+        }
+
+        return (array) ($this->userdata->categoryexclusions ?? []);
     }
 
     /**
@@ -218,7 +242,9 @@ class GetNzbController extends BasePageController
     }
 
     /**
-     * Handle zip download of multiple releases
+     * Handle zip download of multiple releases, leaving out hidden categories
+     *
+     * @param  list<int>  $hiddenCategoryIds
      *
      * @throws Exception
      */
@@ -227,12 +253,21 @@ class GetNzbController extends BasePageController
         int $uid,
         string $userName,
         int $maxDownloads,
-        string $releaseId
+        string $releaseId,
+        array $hiddenCategoryIds
     ): JsonResponse|Response|StreamedResponse {
-        $archive = app(NzbArchiveStream::class)->prepare(explode(',', $releaseId));
+        $guids = explode(',', $releaseId);
+        $archive = app(NzbArchiveStream::class)->prepare($guids, $hiddenCategoryIds);
         $releaseIds = $archive['releaseIds'];
         if ($releaseIds === []) {
-            return response()->json(['message' => 'Unable to create .zip file'], 404);
+            $hiddenCategoryId = $hiddenCategoryIds === [] ? null : Release::query()
+                ->whereIn('guid', $guids)
+                ->whereIn('categories_id', $hiddenCategoryIds)
+                ->value('categories_id');
+
+            return $hiddenCategoryId === null
+                ? response()->json(['message' => 'Unable to create .zip file'], 404)
+                : $this->hiddenCategoryPage((int) $hiddenCategoryId);
         }
 
         $requests = UserDownload::getDownloadRequests($uid);
@@ -274,12 +309,15 @@ class GetNzbController extends BasePageController
 
     /**
      * Handle single NZB file download
+     *
+     * @param  list<int>  $hiddenCategoryIds
      */
     private function handleSingleNzbDownload(
         Request $request,
         int $uid,
         string $rssToken,
-        string $releaseId
+        string $releaseId,
+        array $hiddenCategoryIds
     ): Response|StreamedResponse {
         // Get NZB file path and validate
         $nzbPath = app(NzbService::class)->nzbPath($releaseId);
@@ -291,6 +329,10 @@ class GetNzbController extends BasePageController
         $releaseData = Release::getByGuid($releaseId);
         if ($releaseData === null) {
             return showApiError(300, 'Release not found!');
+        }
+
+        if (in_array((int) $releaseData->categories_id, $hiddenCategoryIds, true)) {
+            return $this->hiddenCategoryPage((int) $releaseData->categories_id);
         }
 
         // Update statistics

@@ -337,12 +337,6 @@ parameters:
 			path: app/Http/Controllers/Auth/ResetPasswordController.php
 
 		-
-			message: '#^Unable to resolve the template type TCacheValue in call to static method Illuminate\\Cache\\Repository\:\:remember\(\)$#'
-			identifier: argument.templateType
-			count: 1
-			path: app/Http/Controllers/BasePageController.php
-
-		-
 			message: '#^Using nullsafe method call on non\-nullable type App\\Models\\User\. Use \-\> instead\.$#'
 			identifier: nullsafe.neverNull
 			count: 1

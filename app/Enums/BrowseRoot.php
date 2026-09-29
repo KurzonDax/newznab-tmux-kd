@@ -55,6 +55,32 @@ enum BrowseRoot: string
         };
     }
 
+    /**
+     * The account permission that shows this root; null for All.
+     */
+    public function permission(): ?string
+    {
+        return match ($this) {
+            self::All => null,
+            self::Movies => 'view movies',
+            self::Tv => 'view tv',
+            self::Audio => 'view audio',
+            self::Console => 'view console',
+            self::Games => 'view pc',
+            self::Books => 'view books',
+            self::Adult => 'view adult',
+            self::Other => 'view other',
+        };
+    }
+
+    /**
+     * The root's name on the category-disabled page.
+     */
+    public function hiddenName(): string
+    {
+        return $this === self::Games ? 'PC' : $this->label();
+    }
+
     public function label(): string
     {
         return match ($this) {

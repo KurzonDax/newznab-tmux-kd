@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Models\Release;
 use App\Services\Nzb\NzbFileSummaryReader;
 use App\Services\Nzb\NzbService;
+use App\Services\Releases\HiddenCategoryGate;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,14 +17,15 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 final class ReleaseFilesController extends Controller
 {
-    public function __invoke(Request $request, string $guid, NzbService $nzb, NzbFileSummaryReader $reader): JsonResponse|View
+    public function __invoke(Request $request, string $guid, NzbService $nzb, NzbFileSummaryReader $reader, HiddenCategoryGate $hiddenCategories): JsonResponse|View
     {
         $validator = Validator::make($request->query(), [
             'page' => ['sometimes', 'integer', 'min:1', 'max:'.intdiv(PHP_INT_MAX, 100)],
             'per' => ['sometimes', 'integer', 'in:24,48,100'],
         ]);
         abort_if($validator->fails(), 422, 'Invalid file list page.');
-        $release = Release::query()->where('guid', $guid)->firstOrFail(['guid', 'searchname']);
+        $release = Release::query()->where('guid', $guid)->firstOrFail(['guid', 'searchname', 'categories_id']);
+        abort_if($hiddenCategories->hides($request->user()?->id, $release->categories_id), 403);
         $path = $nzb->nzbPath($guid);
         abort_unless(is_string($path), 404, 'NZB file not found.');
         try {

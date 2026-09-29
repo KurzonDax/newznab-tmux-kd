@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Enums\BrowseRoot;
 use App\Models\Category;
-use App\Models\RootCategory;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -50,7 +50,7 @@ class ClearanceMiddleware
             if (strtolower($subcategoryName) !== 'all') {
                 $blockedSubcategory = $this->checkSubcategoryExclusion($user, $parentCategoryName, $subcategoryName);
                 if ($blockedSubcategory) {
-                    return $this->abortSubcategoryDisabled($parentCategoryName, $blockedSubcategory);
+                    return $this->abortSubcategoryDisabled($blockedSubcategory);
                 }
             }
 
@@ -139,61 +139,38 @@ class ClearanceMiddleware
     /**
      * Check if the user has permission to view a main category.
      *
+     * The route segment resolves through {@see BrowseRoot::fromRoute()}, so an
+     * alias (music, adult, pc) gets exactly the check its canonical name gets.
+     *
      * @return string|null The blocked category name, or null if allowed
      */
     protected function checkMainCategoryPermission(mixed $user, string $parentCategoryName): ?string
     {
-        $categoryPermissions = [
-            'movies' => 'view movies',
-            'console' => 'view console',
-            'books' => 'view books',
-            'audio' => 'view audio',
-            'xxx' => 'view adult',
-            'games' => 'view pc',
-            'pc' => 'view pc',
-            'tv' => 'view tv',
-        ];
-
-        $categoryDisplayNames = [
-            'movies' => 'Movies',
-            'console' => 'Console',
-            'books' => 'Books',
-            'audio' => 'Audio',
-            'xxx' => 'Adult',
-            'games' => 'PC',
-            'pc' => 'PC',
-            'tv' => 'TV',
-        ];
-
-        $lowerName = strtolower($parentCategoryName);
-        if (isset($categoryPermissions[$lowerName])) {
-            if (! $user->hasDirectPermission($categoryPermissions[$lowerName])) {
-                return $categoryDisplayNames[$lowerName];
-            }
+        $root = BrowseRoot::fromRoute($parentCategoryName);
+        $permission = $root?->permission();
+        if ($root === null || $permission === null) {
+            return null;
         }
 
-        return null;
+        return $user->hasDirectPermission($permission) ? null : $root->hiddenName();
     }
 
     /**
      * Check if the user has excluded a specific subcategory.
      *
-     * @return string|null The blocked subcategory name, or null if allowed
+     * @return string|null The blocked "Root - Sub-category" name, or null if allowed
      */
     protected function checkSubcategoryExclusion(mixed $user, string $parentCategoryName, string $subcategoryName): ?string
     {
-        // Get the root category ID
-        $rootCategory = RootCategory::query()
-            ->whereRaw('LOWER(title) = ?', [strtolower($parentCategoryName)])
-            ->first();
-
-        if (! $rootCategory) {
+        $root = BrowseRoot::fromRoute($parentCategoryName);
+        $rootId = $root?->categoryId();
+        if ($root === null || $rootId === null) {
             return null;
         }
 
         // Get the subcategory
         $subcategory = Category::query()
-            ->where('root_categories_id', $rootCategory->id)
+            ->where('root_categories_id', $rootId)
             ->whereRaw('LOWER(title) = ?', [strtolower($subcategoryName)])
             ->first();
 
@@ -207,7 +184,7 @@ class ClearanceMiddleware
             ->exists();
 
         if ($isExcluded) {
-            return $subcategory->title;
+            return $root->hiddenName().' - '.$subcategory->title;
         }
 
         return null;
@@ -241,10 +218,10 @@ class ClearanceMiddleware
     /**
      * Abort with a subcategory disabled response.
      */
-    protected function abortSubcategoryDisabled(string $parentCategory, string $subcategory): Response
+    protected function abortSubcategoryDisabled(string $category): Response
     {
         return response()->view('errors.category-disabled', [
-            'category' => $parentCategory.' - '.$subcategory,
+            'category' => $category,
             'isSubcategory' => true,
         ], 403);
     }

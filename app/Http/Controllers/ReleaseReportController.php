@@ -6,6 +6,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Release;
 use App\Models\ReleaseReport;
+use App\Models\User;
+use App\Services\Releases\HiddenCategoryGate;
 use App\Services\Releases\ReleaseBrowseService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -34,6 +36,11 @@ class ReleaseReportController extends BasePageController
                 'success' => false,
                 'message' => 'Release not found.',
             ], 404);
+        }
+
+        $hiddenCategories = app(HiddenCategoryGate::class);
+        if ($hiddenCategories->hides($userId, $release->categories_id)) {
+            return $hiddenCategories->deniedJson(User::query()->findOrFail($userId), (int) $release->categories_id);
         }
 
         // Check if user already reported this release
