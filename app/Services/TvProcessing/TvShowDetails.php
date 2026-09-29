@@ -103,7 +103,7 @@ final class TvShowDetails
             return;
         }
 
-        $show = $this->tmdb->getTvShow($tmdbId, ['content_ratings', 'credits']);
+        $show = $this->tmdb->getTvShow($tmdbId, ['content_ratings', 'aggregate_credits']);
         Sleep::sleep(1);
         if ($show === null) {
             return;
@@ -266,19 +266,24 @@ final class TvShowDetails
     }
 
     /**
-     * The first twelve distinct TMDB people in TMDB's cast order, found or added as a film's
-     * TMDB credit is, so a person in films and shows is one row. A person with an empty
-     * name is linked only when a row already holds the TMDB id; else the next one takes
-     * the place.
+     * The twelve distinct TMDB people in the most episodes of the show's all-seasons cast
+     * (`aggregate_credits`), ties in TMDB's order, found or added as a film's TMDB credit
+     * is, so a person in films and shows is one row. A person with an empty name is linked
+     * only when a row already holds the TMDB id; else the next one takes the place.
      *
      * @param  array<string, mixed>  $show
      * @return list<int>
      */
     private function castPersonIds(array $show): array
     {
+        $cast = $show['aggregate_credits']['cast'] ?? [];
+        $cast = array_filter(is_array($cast) ? $cast : [], is_array(...));
+        // usort is stable, so people with equal episode counts keep TMDB's order.
+        usort($cast, static fn (array $a, array $b): int => self::episodeCount($b) <=> self::episodeCount($a));
+
         $ids = [];
         $seen = [];
-        foreach ($show['credits']['cast'] ?? [] as $member) {
+        foreach ($cast as $member) {
             $tmdbId = (int) ($member['id'] ?? 0);
             if ($tmdbId <= 0 || isset($seen[$tmdbId])) {
                 continue;
@@ -295,5 +300,13 @@ final class TvShowDetails
         }
 
         return $ids;
+    }
+
+    /**
+     * @param  array<mixed>  $member
+     */
+    private static function episodeCount(array $member): int
+    {
+        return (int) ($member['total_episode_count'] ?? 0);
     }
 }
