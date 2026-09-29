@@ -36,7 +36,7 @@
             </x-filter-bar>
             @include('tv.partials.show-filters', ['options' => $showOptions, 'shows' => $filters->shows, 'firstPart' => false])
         </div>
-        <div x-ref="list">
+        <div x-ref="list" class="tv-list-end">
             @include('tv.releases.list')
         </div>
     </div>

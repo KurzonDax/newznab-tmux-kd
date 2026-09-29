@@ -73,7 +73,7 @@
                     <x-checkbox-menu cell name="source" label="Source" :options="\App\Data\ReleaseListFilters::sourceOptions()" :selected="$filters->sources" />
                 </x-filter-bar>
             </div>
-            <div x-ref="list">
+            <div x-ref="list"@if($similar === []) class="tv-list-end"@endif>
                 @include('movies.film.list')
             </div>
         </section>

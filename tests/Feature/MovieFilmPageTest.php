@@ -446,12 +446,15 @@ final class MovieFilmPageTest extends TestCase
         $this->assertStringContainsString('<span class="tv-tile-more">7.5 · R</span>', $similar);
         $this->assertStringContainsString('<span class="tv-tile-more is-count">2 releases</span>', $similar);
         $this->assertLessThan(strpos((string) $response->getContent(), 'class="tv-similar"'), strpos((string) $response->getContent(), 'class="tv-film-releases"'));
+        // The release list ends the page only without Similar films; then it carries its 70px end space.
+        $response->assertSee('<div x-ref="list">', false)->assertDontSee('tv-list-end', false);
 
         Settings::query()->updateOrInsert(['name' => 'showpasswordedrelease'], ['value' => '1']);
         Cache::flush();
         $this->assertSame([20, 21, 27, 30, 22, 24], $this->similarIds($this->page('/movies/film/'.self::FILM)));
 
-        $this->page('/movies/film/28')->assertOk()->assertDontSee('Similar films')->assertDontSee('tv-similar', false);
+        $this->page('/movies/film/28')->assertOk()->assertDontSee('Similar films')->assertDontSee('tv-similar', false)
+            ->assertSee('<div x-ref="list" class="tv-list-end">', false);
     }
 
     public function test_another_film_opens_with_its_cells_and_sort_reset(): void

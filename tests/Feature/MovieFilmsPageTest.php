@@ -131,7 +131,7 @@ final class MovieFilmsPageTest extends TestCase
         $this->assertSame(['Newest releases first', 'Newest to the site first', 'Newest films first', 'A to Z'], $this->sortOptions($response));
         $response->assertSee('<option value="recent" selected', false);
         $response->assertSeeInOrder(['<div class="filter-row tv-bar-wall">', '<div class="filter-bar is-film" role="group" aria-label="The film">',
-            'data-name="language"', 'class="tv-clear-all" data-clear-all aria-hidden="false"', 'data-part="person chip"', 'x-ref="list"'], false);
+            'data-name="language"', 'class="tv-clear-all" data-clear-all aria-hidden="false"', 'data-part="person chip"', 'x-ref="list" class="tv-list-end"'], false);
         preg_match_all('/class="checkbox-menu is-cell[^"]*"[^>]*data-name="([a-z]+)"/', $html, $cells);
         $this->assertSame(['genre', 'year', 'score', 'rating', 'language'], $cells[1]);
         preg_match_all('/<span class="checkbox-menu-name">([^<]+)<\/span>/', (string) strstr($html, '<div class="filter-row tv-bar-wall">'), $names);
