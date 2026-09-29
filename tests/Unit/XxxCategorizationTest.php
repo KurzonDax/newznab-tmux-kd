@@ -20,6 +20,7 @@ use App\Services\Categorization\Pipes\XxxPipe;
 use App\Services\Categorization\ReleaseContext;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use ReflectionClass;
 
 class XxxCategorizationTest extends TestCase
 {
@@ -131,6 +132,33 @@ class XxxCategorizationTest extends TestCase
 
         $this->assertNotSame(Category::XXX_VR, $passable->bestResult->categoryId, "Should not be XXX VR: {$releaseName}");
         $this->assertSame($expectedCategoryId, $passable->bestResult->categoryId, "Wrong category for: {$releaseName}");
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function onlyFansReleasesProvider(): array
+    {
+        return [
+            'onlyfans in the name' => ['Model.Name.OnlyFans.2024.1080p.mp4'],
+            'onlyfans first' => ['OnlyFans.Model.Name.Solo.2160p.mp4'],
+        ];
+    }
+
+    #[DataProvider('onlyFansReleasesProvider')]
+    public function test_onlyfans_releases_are_filed_in_another_xxx_category(string $releaseName): void
+    {
+        $result = (new XxxCategorizer)->categorize(new ReleaseContext(releaseName: $releaseName, groupId: 0));
+        $pipelineCategory = $this->runPipeline($releaseName, 'alt.binaries.multimedia')->bestResult->categoryId;
+
+        $this->assertNotSame(6047, $result->categoryId, "'{$releaseName}' filed in the dropped OnlyFans category");
+        $this->assertNotSame(6047, $pipelineCategory, "'{$releaseName}' filed in the dropped OnlyFans category");
+        $this->assertSame(Category::XXX_ROOT, Category::rootCategoryFor($pipelineCategory), "'{$releaseName}' left the XXX root");
+    }
+
+    public function test_no_category_constant_names_the_dropped_onlyfans_category(): void
+    {
+        $this->assertNotContains(6047, (new ReflectionClass(Category::class))->getConstants());
     }
 
     public function test_lady_lyne_dotted_name_is_recognized_as_adult(): void

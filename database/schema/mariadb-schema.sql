@@ -4024,3 +4024,5 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (300,'2026_09_27_10
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (301,'2026_09_27_100100_fill_movie_genres_and_people',17);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (302,'2026_09_27_200000_add_release_audio_languages',18);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (303,'2026_09_27_200100_fill_release_audio_languages',18);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (304,'2026_09_29_000000_add_xxx_vr_category_where_missing',19);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (305,'2026_09_29_000100_refile_onlyfans_releases',19);

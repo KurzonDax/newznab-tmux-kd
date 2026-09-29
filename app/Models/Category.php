@@ -167,8 +167,6 @@ class Category extends Model
 
     public const int XXX_VR = 6046;
 
-    public const int XXX_ONLYFANS = 6047;
-
     public const int XXX_PACK = 6050;
 
     public const int XXX_IMAGESET = 6060;

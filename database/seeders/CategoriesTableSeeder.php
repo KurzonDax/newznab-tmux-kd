@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class CategoriesTableSeeder extends Seeder
 {
@@ -12,7 +13,7 @@ class CategoriesTableSeeder extends Seeder
      */
     public function run(): void
     {
-        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+        Schema::disableForeignKeyConstraints();
 
         DB::table('categories')->delete();
 
@@ -503,6 +504,15 @@ class CategoriesTableSeeder extends Seeder
                 'minsizetoformrelease' => 0,
                 'maxsizetoformrelease' => 0,
             ],
+            76 => [
+                'id' => 6046,
+                'title' => 'VR',
+                'root_categories_id' => 6000,
+                'status' => 1,
+                'description' => null,
+                'minsizetoformrelease' => 0,
+                'maxsizetoformrelease' => 0,
+            ],
             61 => [
                 'id' => 6060,
                 'title' => 'Imageset',
@@ -631,6 +641,6 @@ class CategoriesTableSeeder extends Seeder
             ],
         ]);
 
-        DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+        Schema::enableForeignKeyConstraints();
     }
 }
