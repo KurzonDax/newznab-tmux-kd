@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data;
 
 use App\Enums\ReleaseSort;
+use App\Models\Category;
 use Illuminate\Http\Request;
 
 /**
@@ -22,6 +23,7 @@ final readonly class MovieReleaseFilters extends ReleaseListFilters
      * @param  list<string>  $sources  ticked keys of SOURCES, in menu order
      * @param  list<string>  $audio  ticked Audio values (languages.id, or AUDIO_UNKNOWN), in menu order
      * @param  int|null  $completion  a key of COMPLETIONS, the lowest completion listed
+     * @param  bool  $excludeOther  the Category filter is the Exclude Other mode (ReleaseListFilters)
      */
     public function __construct(
         array $categories = [],
@@ -32,8 +34,9 @@ final readonly class MovieReleaseFilters extends ReleaseListFilters
         array $audio = [],
         ?int $completion = null,
         public MovieFilmFilters $films = new MovieFilmFilters,
+        bool $excludeOther = false,
     ) {
-        parent::__construct($categories, $resolutions, $sources, $sort, $page, $audio, $completion);
+        parent::__construct($categories, $resolutions, $sources, $sort, $page, $audio, $completion, $excludeOther);
     }
 
     /**
@@ -45,7 +48,7 @@ final readonly class MovieReleaseFilters extends ReleaseListFilters
      */
     public static function forList(Request $request, array $menuCategories, mixed $savedSort, array $audioMenu, array $filmOptions): self
     {
-        return new self(...self::releaseArguments($request, $menuCategories, $savedSort, $audioMenu),
+        return new self(...self::releaseArguments($request, $menuCategories, $savedSort, $audioMenu, Category::MOVIE_ROOT),
             films: MovieFilmFilters::fromRequest($request, $filmOptions));
     }
 
@@ -69,16 +72,16 @@ final readonly class MovieReleaseFilters extends ReleaseListFilters
 
     public function withPage(int $page): static
     {
-        return new self($this->categories, $this->resolutions, $this->sources, $this->sort, $page, $this->audio, $this->completion, $this->films);
+        return new self($this->categories, $this->resolutions, $this->sources, $this->sort, $page, $this->audio, $this->completion, $this->films, $this->excludeOther);
     }
 
-    /** @return array<string, list<int|string>|int> the URL query for this page; page 1 carries no page */
+    /** @return array<string, list<int|string>|int|string> the URL query for this page; page 1 carries no page */
     public function query(?int $page = null): array
     {
         $page ??= $this->page;
 
         return array_filter([...$this->releaseQuery(), ...$this->films->query(), 'page' => $page > 1 ? $page : []],
-            static fn (array|int $value): bool => $value !== []);
+            static fn (array|int|string $value): bool => $value !== []);
     }
 
     public function countKey(): string

@@ -28,7 +28,7 @@
         </div>
         <div class="filter-row tv-bar-list">
             <x-filter-bar label="The release" class="is-release">
-                <x-checkbox-menu cell name="category" label="Category" noun="categories" :options="$categoryMenu" :selected="$filters->categories" />
+                <x-checkbox-menu cell name="category" label="Category" noun="categories" :options="$categoryMenu" :selected="$filters->categories" :exclude-other="$excludableOther" />
                 <x-checkbox-menu cell name="resolution" label="Resolution" kind="resolution" :options="\App\Data\TvReleaseFilters::resolutionOptions()" :selected="$filters->resolutions" />
                 <x-checkbox-menu cell name="source" label="Source" :options="\App\Data\TvReleaseFilters::sourceOptions()" :selected="$filters->sources" />
                 <x-checkbox-menu cell name="audio" label="Audio" noun="audio languages" :options="$audioMenu" :selected="$filters->audio" />

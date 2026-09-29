@@ -7,6 +7,10 @@
  * place, survives ticking and is forgotten when the menu closes; a menu opens scrolled to its
  * first ticked item. Every change dispatches a bubbling `checkbox-menu-change` event with
  * {name, values, single} for the page.
+ *
+ * A releases list's Category cell may offer "Exclude Other" ([data-exclude-other], issue #886):
+ * it ticks every option but Other, or clears the menu when that set is ticked. That set, however
+ * it was ticked, reads "Exclude Other" and is sent as the mode, one value ({single: true}).
  */
 export function checkboxMenu() {
     return {
@@ -101,6 +105,28 @@ export function checkboxMenu() {
             return this.menuRoot.dataset.single === 'true';
         },
 
+        /** The "Exclude Other" item, or null in a menu without it. */
+        excludeItem() {
+            const item = this.menuRoot.querySelector('[data-exclude-other]');
+            return item?.dataset?.excludeOther ? item : null;
+        },
+
+        /** Picks "Exclude Other": ticks every option but Other, or clears the menu when that is ticked. */
+        excludeOther() {
+            const exclude = this.excludeItem();
+            const on = exclude.getAttribute('aria-checked') === 'true';
+            this.items().forEach(item => item.setAttribute('aria-checked', !on && item.dataset.value !== exclude.dataset.excludeOther ? 'true' : 'false'));
+            this.changed();
+        },
+
+        /** Whether the ticked items are every option but Other in a menu offering "Exclude Other". */
+        excludesOther(ticked) {
+            const exclude = this.excludeItem();
+            if (!exclude) return false;
+            const other = exclude.dataset.excludeOther;
+            return ticked.length === this.items().length - 1 && ticked.every(item => item.dataset.value !== other);
+        },
+
         items() {
             return Array.from(this.menuRoot.querySelectorAll('[data-value]'));
         },
@@ -109,15 +135,20 @@ export function checkboxMenu() {
             const ticked = this.items().filter(item => item.getAttribute('aria-checked') === 'true');
             const label = this.menuRoot.dataset.label, texts = ticked.map(item => item.dataset.text);
             const counted = this.menuRoot.dataset.summary === 'count';
+            const excluding = this.excludesOther(ticked);
             const reads = !ticked.length ? 'any'
+                : excluding ? 'Exclude Other'
                 : ticked.length === 1 ? (ticked[0].dataset.short ?? texts[0])
                 : counted ? ticked.length + ' chosen' : texts.join(', ');
             this.menuRoot.querySelector('[data-any]').setAttribute('aria-checked', ticked.length ? 'false' : 'true');
+            const exclude = this.excludeItem();
+            exclude?.setAttribute('aria-checked', excluding ? 'true' : 'false');
             this.$refs.value.textContent = reads;
             this.$refs.value.classList.toggle('is-any', !ticked.length);
-            if (counted) this.$refs.button.setAttribute('title', texts.length ? label + ': ' + texts.join(', ') : '');
+            if (counted) this.$refs.button.setAttribute('title', texts.length ? label + ': ' + (excluding ? 'Exclude Other' : texts.join(', ')) : '');
             this.menuRoot.classList.toggle('is-set', ticked.length > 0);
-            this.menuRoot.dispatchEvent(new CustomEvent('checkbox-menu-change', { bubbles: true, detail: this.changeDetail(ticked.map(item => item.dataset.value)) }));
+            const detail = excluding ? { ...this.changeDetail([exclude.dataset.mode]), single: true } : this.changeDetail(ticked.map(item => item.dataset.value));
+            this.menuRoot.dispatchEvent(new CustomEvent('checkbox-menu-change', { bubbles: true, detail }));
         },
 
         /** The change event's detail: the menu's name and ticked values. */

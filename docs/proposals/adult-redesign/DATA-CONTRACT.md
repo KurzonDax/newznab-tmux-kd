@@ -121,7 +121,15 @@ visible releases, a page past offset 6,531 is read mirrored from the other end (
   Kept as ids, a remembered "Exclude Other" would stop meaning "everything but Other" the day a sub-category gains its
   first release (the menu lists only sub-categories that hold releases; WEBDL holds none in the lab), which is not what
   he asked for ("essentially shows all categories except Other"). Ticking or unticking a sub-category while it is set
-  turns it into that explicit list; with no Other in the menu there is no Exclude Other item.
+  turns it into that explicit list. A set ticked by hand that equals every sub-category the menu lists except Other
+  becomes the mode: the cell reads "Exclude Other" and the URL and the remembered filters carry the mode (his decision,
+  2026-09-29). The item shows only while the menu lists Other and at least one other sub-category (his decision,
+  2026-09-29). While the item is not shown (the user hides Other under Account → Appearance, or the menu lists no Other,
+  or only Other), a mode in the URL or the remembered filters sleeps: it filters nothing, the cell reads "any", it counts
+  as no filter for the Showing line and Clear all, and it stays in the URL and the remembered set until the user changes
+  the Category menu or uses Clear all; when the item shows again, the mode applies again (his decision, 2026-09-29). It
+  never resolves to an empty list of ids, which the list reads as no Category filter. Built for TV and Movies in #886:
+  the URL value is `category=exclude-other` (`ReleaseListFilters::EXCLUDE_OTHER`).
 - **Its index.** `releaseIndex()` weighs the chosen values with `valueCounts()`, which counts every release of the band
   whatever its password status: Exclude Other is 7,170 of 16,007 (45%), under half, so the `_cat_` index is read and its
   ranges sorted: every page reads the chosen categories' entries (7,204) once, 1.1 ms. The cost grows with the band's
@@ -198,7 +206,10 @@ resolution or no audio language read "Unknown", as TV and Movies do.
    OR within a filter and AND between filters.
 3. "Exclude Other" is a mode: set, it lists no Other release and the cell reads "Exclude Other"; remembered, it still reads
    "Exclude Other" and includes a sub-category that gained its first release after it was chosen; ticking Other as well
-   turns it into the explicit list; with no Other sub-category in the menu there is no "Exclude Other" item.
+   turns it into the explicit list; ticking by hand every sub-category but Other reads "Exclude Other" and puts the
+   mode, not the ids, in the URL; with no Other sub-category in the menu, or Other alone, there is no "Exclude Other"
+   item; remembered while the user hides Other, it filters nothing and the cell reads "any", and once Other is visible
+   again the list opens with it applied.
 4. The name search keeps only releases whose `display_name`, or `searchname` when that is empty, contains the text,
    with `%`, `_` and `!` taken literally; it combines with the filters; its count matches the rows.
 5. A release with `videostatus = 1` and a `release_video_clips` row with seconds shows "Clip · N s" (chip and details

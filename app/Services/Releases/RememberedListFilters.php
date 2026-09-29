@@ -21,7 +21,8 @@ use Illuminate\Support\Facades\DB;
  * Only the list's dropdown filter keys count. A full-page open whose URL carries none of them
  * shows the remembered set by redirecting to the list URL that carries it (the page kept). A URL
  * that carries any of them, and every list refresh (?_fragment=list), becomes the remembered set
- * exactly, menus it leaves empty included. A refresh sends the time it was made (STAMP, from the
+ * exactly, menus it leaves empty included. A value no longer in its menu is dropped, except a
+ * sleeping Exclude Other mode (ReleaseListFilters::EXCLUDE_OTHER), which is kept. A refresh sends the time it was made (STAMP, from the
  * page's data-filters-clock), so a refresh the server finishes after a newer change never
  * replaces it. Clear all (?clear) forgets the set and opens the bare list.
  */
@@ -60,12 +61,23 @@ final readonly class RememberedListFilters
         if (! $fragment && ! $this->carries($request)) {
             $filters = $read($this->recalled($request, $user));
 
-            return $filters->any() ? redirect()->route($this->route, $filters->query()) : $filters;
+            return $this->rememberedQuery($filters) !== [] ? redirect()->route($this->route, $filters->query()) : $filters;
         }
         $filters = $read($request);
-        $this->store($user->id, array_intersect_key($filters->query(1), array_flip($this->keys)), $fragment ? $this->stamp($request) : null);
+        $this->store($user->id, $this->rememberedQuery($filters), $fragment ? $this->stamp($request) : null);
 
         return $filters;
+    }
+
+    /**
+     * The filters' remembered part: their dropdown keys in the URL query. A sleeping Exclude Other
+     * (issue #886) filters nothing yet is kept, so a bare open carries it into the address bar.
+     *
+     * @return array<string, mixed>
+     */
+    private function rememberedQuery(ReleaseListFilters $filters): array
+    {
+        return array_intersect_key($filters->query(1), array_flip($this->keys));
     }
 
     /** The time to render as the page's data-filters-clock, which its refreshes count on from. */

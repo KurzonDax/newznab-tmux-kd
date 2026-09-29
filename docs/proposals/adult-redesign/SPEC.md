@@ -108,7 +108,13 @@ The Movie releases list (Movies `SPEC.md` section 5) without its film parts, wit
   category but Other; the cell then reads **Exclude Other** (its tooltip "Category: Exclude Other");
   picking it again clears the category filter; ticking Other as well turns the cell into "N chosen". It is a mode,
   not a list of ticked ids: remembered, it keeps meaning every category but Other, including a sub-category that gains
-  its first release later (`DATA-CONTRACT.md` 4.1).
+  its first release later (`DATA-CONTRACT.md` 4.1). Ticking by hand every category but Other is the same mode: the cell
+  reads "Exclude Other" and the URL and the remembered filters carry the mode, not the ids (his decision, 2026-09-29).
+  The item shows only while the menu lists Other and at least one other category (his decision, 2026-09-29). While it
+  is not shown (the user hides Other under Account → Appearance, or the menu has no Other, or only Other), a remembered
+  or linked Exclude Other sleeps: it filters nothing, the cell reads "any", it counts as no filter for the Showing line
+  and Clear all, and it stays in the URL and the remembered filters until the Category menu changes or Clear all; when
+  the item shows again it applies again (his decision, 2026-09-29). It never resolves to an empty list of categories.
   The empty-result line names it "excluding Other". Why: Other holds 55% of the adult catalogue, mostly
   unprocessed or passworded posts, and "Manually checking every single category except Other is a poor
   user experience". His wording is binding: never "All except Other" or "Except Other".

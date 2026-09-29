@@ -752,6 +752,117 @@ final class MovieReleasesPageTest extends TestCase
         $this->assertSame('Audio: English', $this->cellText($this->opened('/movies'), 'audio'));
     }
 
+    public function test_exclude_other_lists_every_category_but_other_and_the_url_carries_the_mode(): void
+    {
+        $this->movie('In HD');
+        $this->movie('In SD', ['categories_id' => self::SD]);
+        $this->movie('In Other', ['categories_id' => self::OTHER]);
+
+        // the item sits under "Any category", then a separator, then the sub-categories
+        $this->page('/movies')->assertOk()->assertSeeInOrder(['data-any', 'Any category', 'data-exclude-other', 'Exclude Other', 'checkbox-menu-rule', 'data-value="'.self::HD.'"'], false);
+        $set = $this->page('/movies?category=exclude-other')->assertOk()->assertSee('title="Category: Exclude Other"', false)
+            ->assertSee('class="pager-line-clear" data-clear-all aria-hidden="false">Clear all</a>', false);
+        $this->assertSame(['In HD', 'In SD'], $this->listedNames($set));
+        $this->assertSame('Category: Exclude Other', $this->cellText($set, 'category'));
+        $this->assertMatchesRegularExpression('/data-exclude-other="'.self::OTHER.'"[^>]*aria-checked="true"/', (string) $set->getContent());
+        $filters = $set->viewData('filters');
+        $this->assertSame(['category' => 'exclude-other', 'page' => 2], $filters->query(2));
+        $this->assertNotSame((new MovieReleaseFilters(categories: [self::HD, self::SD]))->countKey(), $filters->countKey());
+        $this->page('/movies?category=exclude-other&resolution[]=4k')->assertSee('No releases match excluding Other · 4K.');
+    }
+
+    public function test_ticking_every_category_but_other_by_hand_becomes_exclude_other(): void
+    {
+        $this->movie('In HD');
+        $this->movie('In SD', ['categories_id' => self::SD]);
+        $this->movie('In Other', ['categories_id' => self::OTHER]);
+        $user = $this->user = $this->browserUser();
+
+        $fragment = $this->page('/movies?_fragment=list&category[]='.self::HD.'&category[]='.self::SD)->assertOk();
+        $this->assertSame(['In HD', 'In SD'], $this->listedNames($fragment));
+        $this->assertSame(['category' => 'exclude-other'], $this->remembered($user, 'movies'));
+        $set = $this->page('/movies?category[]='.self::SD.'&category[]='.self::HD)->assertOk();
+        $this->assertSame('Category: Exclude Other', $this->cellText($set, 'category'));
+        $this->assertSame(['category' => 'exclude-other'], $set->viewData('filters')->query());
+    }
+
+    public function test_a_remembered_exclude_other_includes_a_category_that_gains_its_first_release(): void
+    {
+        $this->movie('In HD');
+        $this->movie('In Other', ['categories_id' => self::OTHER]);
+        $user = $this->user = $this->browserUser();
+        $this->page('/movies?_fragment=list&category=exclude-other')->assertOk();
+        $this->assertSame(['category' => 'exclude-other'], $this->remembered($user, 'movies'));
+
+        // WEB-DL gains its first release after the choice: the menu lists it and the mode takes it in
+        $this->movie('In WEB-DL', ['categories_id' => self::WEBDL]);
+        Cache::flush();
+        $this->page('/movies')->assertRedirect(route('movies.releases', ['category' => 'exclude-other']));
+        $opened = $this->opened('/movies')->assertOk();
+        $this->assertSame(['In HD', 'In WEB-DL'], $this->listedNames($opened));
+        $this->assertSame('Category: Exclude Other', $this->cellText($opened, 'category'));
+        $this->assertSame([self::HD, self::WEBDL], $opened->viewData('filters')->categories);
+    }
+
+    public function test_ticking_other_while_exclude_other_is_set_turns_it_into_the_explicit_list(): void
+    {
+        $this->movie('In HD');
+        $this->movie('In SD', ['categories_id' => self::SD]);
+        $this->movie('In Other', ['categories_id' => self::OTHER]);
+
+        $all = $this->page('/movies?category[]='.self::HD.'&category[]='.self::SD.'&category[]='.self::OTHER)->assertOk()
+            ->assertSee('title="Category: HD, SD, Other"', false);
+        $this->assertSame(['In HD', 'In Other', 'In SD'], $this->listedNames($all));
+        $this->assertSame('Category: 3 chosen', $this->cellText($all, 'category'));
+        $this->assertSame(['category' => [self::HD, self::SD, self::OTHER]], $all->viewData('filters')->query());
+        $this->assertMatchesRegularExpression('/data-exclude-other="'.self::OTHER.'"[^>]*aria-checked="false"/', (string) $all->getContent());
+    }
+
+    public function test_a_remembered_exclude_other_sleeps_while_the_user_hides_other_and_applies_again_once_other_is_visible(): void
+    {
+        $this->movie('In HD');
+        $this->movie('In SD', ['categories_id' => self::SD]);
+        $this->movie('In Other', ['categories_id' => self::OTHER]);
+        $user = $this->user = $this->browserUser();
+        $this->page('/movies?_fragment=list&category=exclude-other')->assertOk();
+        DB::table('user_excluded_categories')->insert(['users_id' => $user->id, 'categories_id' => self::OTHER]);
+        Cache::flush();
+
+        // hidden Other: no item, the cell reads "any", nothing counts as set, but the mode stays in the URL and the remembered set
+        $this->page('/movies')->assertRedirect(route('movies.releases', ['category' => 'exclude-other']));
+        $asleep = $this->opened('/movies')->assertOk()->assertDontSee('data-exclude-other', false)
+            ->assertSee('class="pager-line-clear is-hidden"', false)->assertSee('Showing 1–2 of 2 releases');
+        $this->assertSame('Category: any', $this->cellText($asleep, 'category'));
+        $this->assertFalse($asleep->viewData('filters')->any());
+        $this->assertSame(['category' => 'exclude-other'], $asleep->viewData('filters')->query());
+        $this->assertSame(['In HD', 'In SD'], $this->listedNames($this->page('/movies?_fragment=list&category=exclude-other&resolution[]=1080p')));
+        $this->assertSame(['category' => 'exclude-other', 'resolution' => ['1080p']], $this->remembered($user, 'movies'));
+
+        // Other visible again: the list opens with Exclude Other applied
+        DB::table('user_excluded_categories')->where('users_id', $user->id)->delete();
+        Cache::flush();
+        $awake = $this->opened('/movies')->assertOk();
+        $this->assertSame(['In HD', 'In SD'], $this->listedNames($awake));
+        $this->assertSame('Category: Exclude Other', $this->cellText($awake, 'category'));
+        $this->assertTrue($awake->viewData('filters')->any());
+    }
+
+    public function test_a_menu_without_other_or_with_only_other_has_no_exclude_other_item(): void
+    {
+        $this->movie('In HD');
+        $this->movie('In SD', ['categories_id' => self::SD]);
+        $noOther = $this->page('/movies?category=exclude-other')->assertOk()->assertDontSee('data-exclude-other', false)->assertDontSee('Exclude Other');
+        $this->assertSame('Category: any', $this->cellText($noOther, 'category'));
+        $this->assertSame(['In HD', 'In SD'], $this->listedNames($noOther));
+
+        DB::table('releases')->update(['categories_id' => self::OTHER]);
+        Cache::flush();
+        $onlyOther = $this->page('/movies?category=exclude-other')->assertOk()->assertDontSee('data-exclude-other', false);
+        $this->assertSame([self::OTHER => 'Other'], $onlyOther->viewData('categoryMenu'));
+        $this->assertSame(['In HD', 'In SD'], $this->listedNames($onlyOther));
+        $this->assertFalse($onlyOther->viewData('filters')->any());
+    }
+
     public function test_the_search_finds_films_then_people_the_user_may_see(): void
     {
         $this->film(23, '0333333', 'The Glass House', '2001');

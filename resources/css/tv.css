@@ -129,6 +129,8 @@
 .checkbox-menu-heading { padding: 10px 10px 4px; color: var(--tv-dim); font-size: 12px; font-weight: 600; line-height: 1.5; }
 .checkbox-menu-heading.is-error { color: var(--tv-error); }
 .checkbox-menu-rule { height: 1px; margin: 6px 4px; background: var(--tv-line); }
+/* the Category cell's rule under "Exclude Other" (#886): --tv-line matches the raised menu ground in dark, so mix from the ink */
+.checkbox-menu-rule.is-ink { background: color-mix(in oklab, var(--tv-ink) 16%, transparent); }
 .filter-bar .year-menu-panel { width: 290px; max-height: none; overflow: visible; }
 .year-menu-decades { display: grid; grid-template-columns: repeat(3, 1fr); column-gap: 2px; }
 .year-menu-decades > [data-any], .year-menu-decades > .checkbox-menu-heading { grid-column: 1 / -1; }

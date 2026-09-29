@@ -7,6 +7,7 @@ namespace App\Data;
 use App\Enums\ReleaseResolution;
 use App\Enums\ReleaseSort;
 use App\Enums\ReleaseSource;
+use App\Models\Category;
 use Illuminate\Http\Request;
 
 /**
@@ -39,11 +40,21 @@ abstract readonly class ReleaseListFilters
     public const AUDIO_UNKNOWN = 'unknown';
 
     /**
-     * @param  list<int>  $categories  ticked sub-category ids, in menu order
+     * The Category filter's "Exclude Other" mode in the URL (?category=exclude-other) and the
+     * remembered filters: every sub-category the user's Category menu lists except the root's
+     * Other, resolved when the filters are read (issue #886).
+     */
+    public const EXCLUDE_OTHER = 'exclude-other';
+
+    /**
+     * @param  list<int>  $categories  ticked sub-category ids, in menu order (Exclude Other's resolved)
      * @param  list<string>  $resolutions  ticked keys of RESOLUTIONS, in menu order
      * @param  list<string>  $sources  ticked keys of SOURCES, in menu order
      * @param  list<string>  $audio  ticked Audio values (languages.id, or AUDIO_UNKNOWN), in menu order
      * @param  int|null  $completion  a key of COMPLETIONS, the lowest completion listed
+     * @param  bool  $excludeOther  the Category filter is the Exclude Other mode: it applies while
+     *                              $categories holds its ids, and sleeps (filters nothing, stays in
+     *                              the URL) while the menu shows no Exclude Other item
      */
     public function __construct(
         public array $categories = [],
@@ -53,6 +64,7 @@ abstract readonly class ReleaseListFilters
         public int $page = 1,
         public array $audio = [],
         public ?int $completion = null,
+        public bool $excludeOther = false,
     ) {}
 
     /** The same filters on another page. */
@@ -97,28 +109,50 @@ abstract readonly class ReleaseListFilters
     }
 
     /**
+     * The root's Other sub-category when the Category menu shows the "Exclude Other" item: the
+     * menu lists Other and at least one other sub-category; null otherwise.
+     *
+     * @param  list<int>  $menuCategories  the sub-category ids the menu lists
+     */
+    public static function excludableOther(array $menuCategories, int $root): ?int
+    {
+        $other = Category::otherForRootCategory($root);
+
+        return $other !== null && in_array($other, $menuCategories, true) && count($menuCategories) > 1 ? $other : null;
+    }
+
+    /**
      * The release filters in a request, as constructor arguments. Unknown values, categories
      * outside the user's menu and Audio values outside the Audio menu are ignored; without an
-     * Audio menu, Audio and Completion are left out.
+     * Audio menu, Audio and Completion are left out. With a $root, the Category filter may be
+     * the Exclude Other mode: set in the URL, or ticked by hand as every sub-category the menu
+     * lists but Other. Its ids are resolved from the menu, none while the menu has no Exclude
+     * Other item (the mode sleeps).
      *
      * @param  list<int>  $menuCategories  the sub-category ids the user may see, in menu order
      * @param  list<int|string>|null  $audioMenu  the Audio menu's values, in menu order
-     * @return array{categories: list<int>, resolutions: list<string>, sources: list<string>, sort: ReleaseSort, page: int, audio: list<string>, completion: ?int}
+     * @param  int|null  $root  the list's root category, whose Other the mode excludes; null: no mode
+     * @return array{categories: list<int>, resolutions: list<string>, sources: list<string>, sort: ReleaseSort, page: int, audio: list<string>, completion: ?int, excludeOther: bool}
      */
-    protected static function releaseArguments(Request $request, array $menuCategories, mixed $savedSort, ?array $audioMenu): array
+    protected static function releaseArguments(Request $request, array $menuCategories, mixed $savedSort, ?array $audioMenu, ?int $root = null): array
     {
         $ticked = static fn (string $key): array => array_map('strval', array_filter((array) $request->query($key, []), 'is_scalar'));
         $page = $request->query('page');
         $completion = $request->query('completion');
+        $categories = array_values(array_intersect($menuCategories, array_map('intval', $ticked('category'))));
+        $other = $root === null ? null : self::excludableOther($menuCategories, $root);
+        $allButOther = $other === null ? [] : array_values(array_diff($menuCategories, [$other]));
+        $excludeOther = $root !== null && ($request->query('category') === self::EXCLUDE_OTHER || ($allButOther !== [] && $categories === $allButOther));
 
         return [
-            'categories' => array_values(array_intersect($menuCategories, array_map('intval', $ticked('category')))),
+            'categories' => $excludeOther ? $allButOther : $categories,
             'resolutions' => array_values(array_intersect(array_keys(self::RESOLUTIONS), $ticked('resolution'))),
             'sources' => array_values(array_intersect(array_keys(self::SOURCES), $ticked('source'))),
             'sort' => self::sort($savedSort),
             'page' => is_string($page) && ctype_digit($page) ? max(1, (int) $page) : 1,
             'audio' => $audioMenu === null ? [] : array_values(array_intersect(array_map('strval', $audioMenu), $ticked('audio'))),
             'completion' => $audioMenu !== null && is_string($completion) && ctype_digit($completion) && array_key_exists((int) $completion, self::COMPLETIONS) ? (int) $completion : null,
+            'excludeOther' => $excludeOther,
         ];
     }
 
@@ -135,7 +169,7 @@ abstract readonly class ReleaseListFilters
         $audio = implode(' or ', self::named($this->audio, $audioMenu));
 
         return array_values(array_filter([
-            implode(' or ', self::named($this->categories, $categoryMenu)),
+            $this->excludesOther() ? 'excluding Other' : implode(' or ', self::named($this->categories, $categoryMenu)),
             implode(' or ', self::named($this->resolutions, self::resolutionOptions())),
             implode(' or ', self::named($this->sources, self::sourceOptions())),
             $this->completion === null ? '' : self::COMPLETIONS[$this->completion][2],
@@ -182,7 +216,13 @@ abstract readonly class ReleaseListFilters
         return in_array($this->sort, [ReleaseSort::PostedOldest, ReleaseSort::AddedOldest], true);
     }
 
-    /** Whether a release filter is set. */
+    /** Whether the Exclude Other mode applies: set, and not sleeping. */
+    public function excludesOther(): bool
+    {
+        return $this->excludeOther && $this->categories !== [];
+    }
+
+    /** Whether a release filter is set; a sleeping Exclude Other is not. */
     public function anyRelease(): bool
     {
         return $this->categories !== [] || $this->resolutions !== [] || $this->sources !== [] || $this->audio !== [] || $this->completion !== null;
@@ -199,18 +239,18 @@ abstract readonly class ReleaseListFilters
         return in_array(self::AUDIO_UNKNOWN, $this->audio, true);
     }
 
-    /** @return array<string, list<int|string>|int> the release filters' URL query */
+    /** @return array<string, list<int|string>|int|string> the release filters' URL query */
     protected function releaseQuery(): array
     {
         return array_filter([
-            'category' => $this->categories, 'resolution' => $this->resolutions, 'source' => $this->sources,
+            'category' => $this->excludeOther ? self::EXCLUDE_OTHER : $this->categories, 'resolution' => $this->resolutions, 'source' => $this->sources,
             'audio' => $this->audio, 'completion' => $this->completion ?? [],
-        ], static fn (array|int $value): bool => $value !== []);
+        ], static fn (array|int|string $value): bool => $value !== []);
     }
 
     /** @return list<mixed> the release filters' part of countKey() */
     protected function releaseCountKey(): array
     {
-        return [$this->categories, $this->resolutionValues(), $this->sourceValues(), $this->audio, $this->completion];
+        return [$this->categories, $this->resolutionValues(), $this->sourceValues(), $this->audio, $this->completion, $this->excludesOther()];
     }
 }

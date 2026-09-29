@@ -40,6 +40,8 @@ final class TvReleasesPageTest extends TestCase
 
     private const FOREIGN = 5020;
 
+    private const OTHER = 5999;
+
     private const DRAMA = 1;
 
     private const COMEDY = 2;
@@ -776,6 +778,79 @@ final class TvReleasesPageTest extends TestCase
         $this->page('/tv?category[]='.self::HD)->assertOk();
         $this->page('/tv?_fragment=list&source[]=web&_filters_at='.(Carbon::now()->getTimestampMs() - 1))->assertOk();
         $this->assertSame(['category' => [self::HD]], $this->remembered($user, 'tv'));
+    }
+
+    public function test_exclude_other_lists_every_category_but_other_and_the_url_carries_the_mode(): void
+    {
+        DB::table('categories')->insert(['id' => self::OTHER, 'title' => 'Other', 'root_categories_id' => 5000, 'status' => 1]);
+        $this->tv('In HD');
+        $this->tv('In SD', ['categories_id' => self::SD]);
+        $this->tv('In Other', ['categories_id' => self::OTHER]);
+        $user = $this->user = $this->browserUser();
+
+        // the item sits under "Any category", then a separator, then the sub-categories
+        $this->page('/tv')->assertOk()->assertSeeInOrder(['data-any', 'Any category', 'data-exclude-other="'.self::OTHER.'"', 'Exclude Other', 'checkbox-menu-rule', 'data-value="'], false);
+        $set = $this->page('/tv?_fragment=list&category=exclude-other')->assertOk();
+        $this->assertSame(['In HD', 'In SD'], $this->listedNames($set));
+        $this->assertSame(['category' => 'exclude-other'], $this->remembered($user, 'tv'));
+        $this->assertNotSame((new TvReleaseFilters(categories: $set->viewData('filters')->categories))->countKey(), $set->viewData('filters')->countKey());
+
+        // a remembered Exclude Other comes back as Exclude Other, the mode in the URL, not the ids
+        $this->page('/tv')->assertRedirect(route('tv.releases', ['category' => 'exclude-other']));
+        $opened = $this->opened('/tv')->assertOk()->assertSee('title="Category: Exclude Other"', false);
+        $this->assertSame('Category: Exclude Other', $this->cellText($opened, 'category'));
+        $this->assertSame(['In HD', 'In SD'], $this->listedNames($opened));
+
+        // ticked by hand, every sub-category the menu lists but Other becomes the mode; Other as well is the explicit list
+        $menu = array_keys($opened->viewData('categoryMenu'));
+        $byHand = implode('&', array_map(static fn (int $id): string => 'category[]='.$id, array_diff($menu, [self::OTHER])));
+        $this->assertSame(['category' => 'exclude-other'], $this->page('/tv?'.$byHand)->viewData('filters')->query());
+        $every = $this->page('/tv?'.$byHand.'&category[]='.self::OTHER)->assertOk();
+        $this->assertSame('Category: '.count($menu).' chosen', $this->cellText($every, 'category'));
+        $this->assertSame(['In HD', 'In Other', 'In SD'], $this->listedNames($every));
+        $this->page('/tv?category=exclude-other&resolution[]=4k')->assertSee('Nothing matches excluding Other · 4K.');
+    }
+
+    public function test_a_remembered_exclude_other_sleeps_while_the_user_hides_other_and_applies_again_once_other_is_visible(): void
+    {
+        DB::table('categories')->insert(['id' => self::OTHER, 'title' => 'Other', 'root_categories_id' => 5000, 'status' => 1]);
+        $this->tv('In HD');
+        $this->tv('In Other', ['categories_id' => self::OTHER]);
+        $user = $this->user = $this->browserUser();
+        $this->remember($user, 'tv', ['category' => 'exclude-other']);
+        DB::table('user_excluded_categories')->insert(['users_id' => $user->id, 'categories_id' => self::OTHER]);
+        Cache::flush();
+
+        $asleep = $this->opened('/tv')->assertOk()->assertDontSee('data-exclude-other', false)->assertSee('class="pager-line-clear is-hidden"', false);
+        $this->assertSame('Category: any', $this->cellText($asleep, 'category'));
+        $this->assertSame(['category' => 'exclude-other'], $asleep->viewData('filters')->query());
+        $this->assertSame(['category' => 'exclude-other'], $this->remembered($user, 'tv'));
+
+        DB::table('user_excluded_categories')->where('users_id', $user->id)->delete();
+        Cache::flush();
+        $awake = $this->opened('/tv')->assertOk();
+        $this->assertSame('Category: Exclude Other', $this->cellText($awake, 'category'));
+        $this->assertSame(['In HD'], $this->listedNames($awake));
+    }
+
+    public function test_a_menu_without_other_or_with_only_other_has_no_exclude_other_item(): void
+    {
+        $this->tv('In HD');
+        $user = $this->user = $this->browserUser();
+        $response = $this->page('/tv?category=exclude-other')->assertOk()->assertDontSee('data-exclude-other', false)->assertDontSee('Exclude Other');
+        $this->assertSame('Category: any', $this->cellText($response, 'category'));
+        $this->assertSame(['In HD'], $this->listedNames($response));
+
+        DB::table('categories')->insert(['id' => self::OTHER, 'title' => 'Other', 'root_categories_id' => 5000, 'status' => 1]);
+        $this->tv('In Other', ['categories_id' => self::OTHER]);
+        foreach ([self::HD, self::UHD, self::SD, self::FOREIGN] as $hidden) {
+            DB::table('user_excluded_categories')->insert(['users_id' => $user->id, 'categories_id' => $hidden]);
+        }
+        Cache::flush();
+        $onlyOther = $this->page('/tv?category=exclude-other')->assertOk()->assertDontSee('data-exclude-other', false);
+        $this->assertSame([self::OTHER => 'Other'], $onlyOther->viewData('categoryMenu'));
+        $this->assertSame(['In Other'], $this->listedNames($onlyOther));
+        $this->assertFalse($onlyOther->viewData('filters')->any());
     }
 
     public function test_the_page_needs_the_tv_permission(): void
