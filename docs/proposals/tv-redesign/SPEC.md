@@ -138,7 +138,10 @@ same component the Movies screens use.
 - **Audio** is the release's own audio languages (media info; a multi-dub matches each; releases
   with none read `Unknown`); **Language** is the show's original language. Language names drop
   the region (`English (US)`, `en`, `en-US` → English; Mandarin reads Chinese); codes that are not
-  a language (`zxx`, `mul`, `und`, `qaa`–`qtz`) are dropped; menus list the languages present:
+  a language (`zxx`, `mul`, `und`, `qaa`–`qtz`) and "Multiple languages" are dropped; a value we
+  cannot identify as a language names none (Movies SPEC 5.2's rule: a code `intl` can name, an
+  English name from `intl` or the ISO 639-2 list, an own name or a name-table entry), so `mr`
+  reads Marathi and "Original" is Unknown; menus list the languages present:
   Language most releases first; Audio `English` first, then A to Z, then `Unknown`.
 - Nothing moves when a filter is set or cleared. Measured: the eleven list cells are 107 / 114 /
   127 px at 1280 / 1366 / 1600; with long values set, a long network name or `Portuguese` is cut

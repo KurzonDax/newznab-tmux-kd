@@ -165,13 +165,17 @@ keyed by `movieinfo_id` (fact 1) rather than `video_people`. **Every director, a
 | `languages` | `id` smallint, `name` string(64) | unique `ux_languages_name (name)` |
 | `release_audio_languages` | `releases_id` (FK `releases.id` `ON DELETE CASCADE`), `languages_id` (FK) | PK `(languages_id, releases_id)`, `ix_release_audio_languages_release (releases_id)` |
 
-The name rule is `SPEC.md` 5.2: the base code or name before any region names the language (`en`, `en-US`, `English (US)` →
-English; Mandarin → Chinese; TMDB's `cn` → Cantonese), codes that are not a language (`zxx`, `mul`, `und`, `qaa`–`qtz`) are
-dropped, a value not in the name table is kept as written. One PHP class holds the table and the rule; the Audio menus list
-`languages` names, and the Language menus list `original_language` codes shown through the same table. At full size (the
-lab took every probe's audio languages plus `audio_data`; the contract's rule, 3.2, reads the chosen probe else `audio_data`,
-which can differ only on the 24,136 releases with probe languages): 369,752 rows, 141 names, 49,480 movie releases and
-153,567 TV releases with at least one language.
+The name rule is `SPEC.md` 5.2: the value is trimmed, stripped of surrounding quotes and cut before " / "; the base code or
+name before any region names the language (`en`, `en-US`, `English (US)` → English; Mandarin → Chinese; TMDB's `cn` →
+Cantonese); codes that are not a language (`zxx`, `mul`, `und`, `qaa`–`qtz`) and "Multiple languages" are dropped. The rest
+is identified, case- and accent-insensitively, as a code `intl` can name, a language's English name from `intl` or the ISO
+639-2 list, its own name from `intl`, or a name-table entry; the code is reduced to its ISO 639-1 code when it has one and
+named by the table, else by `intl` in English (`ben` and "Bengali" → Bengali, "Panjabi" → Punjabi). A value not identified
+names no language, so a release whose audio values all name none is Unknown. One PHP class holds the table and the rule (the
+ISO 639-2 names beside it); the Audio menus list `languages` names, and the Language menus list `original_language` codes
+shown through the same table. At full size (the lab took every probe's audio languages plus `audio_data`; the contract's
+rule, 3.2, reads the chosen probe else `audio_data`, which can differ only on the 24,136 releases with probe languages):
+369,752 rows, 141 names, 49,480 movie releases and 153,567 TV releases with at least one language.
 
 ### 2.6 What is not stored
 
@@ -401,7 +405,8 @@ Downtime is not a concern, so the migrations fill what they add. **No command.**
    form's text reaches the rows.
 4. `fetchAndLinkMovieRecord()` refreshes a film whose record is over 30 days old and not one refreshed within 30 days.
 5. `ReleaseDerivedFacts::refresh()` writes audio languages from the selected probe, falls back to `audio_data`, applies the
-   name rule (region dropped, `zxx`/`und` dropped, unknown kept), and does nothing when unchanged.
+   name rule (region dropped, `zxx`/`und` dropped, a value not identified as a language dropped), and does nothing when
+   unchanged.
 6. The fill migrations are idempotent on a fixture and give the same rows as the write paths for the same data; the split rule
    keeps "Robert Downey, Jr." as one person.
 7. The wall lists a film only when the viewer may see one of its releases; Similar films and Similar shows skip a candidate

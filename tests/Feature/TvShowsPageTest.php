@@ -224,6 +224,18 @@ final class TvShowsPageTest extends TestCase
         $this->assertSame('Language: Norwegian', $this->cellText($this->page('/tv/shows?language[]=no'), 'language'));
     }
 
+    public function test_the_language_menu_names_a_code_missing_from_the_table_and_drops_a_value_naming_no_language(): void
+    {
+        foreach ([1 => 'mr', 2 => 'xx'] as $id => $language) {
+            $this->show($id, 'Show '.$id, details: ['original_language' => $language]);
+            $this->tv($id);
+        }
+        $response = $this->page('/tv/shows')->assertOk();
+        $this->assertSame(['mr' => 'Marathi'], $response->viewData('options')['language']);
+        $this->assertStringContainsString('<span class="tv-tile-more">Marathi</span>', $this->tile($response, 1));
+        $this->assertStringContainsString('<span class="tv-tile-more"></span>', $this->tile($response, 2));
+    }
+
     public function test_the_person_filter_narrows_the_wall_and_its_chip_removes_it(): void
     {
         $this->show(1, 'With Her');

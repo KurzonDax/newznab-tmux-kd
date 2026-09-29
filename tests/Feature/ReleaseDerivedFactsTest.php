@@ -294,6 +294,25 @@ final class ReleaseDerivedFactsTest extends TestCase
         $this->assertSame(['English', 'Japanese', 'Klingon'], DB::table('languages')->orderBy('name')->pluck('name')->all());
     }
 
+    public function test_an_unrecognised_audio_value_names_no_language_so_the_release_is_unknown(): void
+    {
+        $this->insertRelease(1, 'Movie.2020.1080p.BluRay.x264-GRP', categoriesId: 2040);
+        $this->insertRelease(2, 'Movie.2021.1080p.BluRay.x264-GRP', categoriesId: 2040);
+        DB::table('audio_data')->insert([
+            ['releases_id' => 1, 'audioid' => 1, 'audiolanguage' => 'Original'],
+            ['releases_id' => 2, 'audioid' => 1, 'audiolanguage' => 'English'],
+            ['releases_id' => 2, 'audioid' => 2, 'audiolanguage' => 'e (A)'],
+        ]);
+
+        foreach ([1, 2] as $id) {
+            Search::updateRelease($id);
+        }
+
+        $this->assertSame(0, DB::table('release_audio_languages')->where('releases_id', 1)->count(), 'Unknown in the Audio filter.');
+        $this->assertSame(['English'], $this->audioLanguages(2));
+        $this->assertSame(['English'], DB::table('languages')->pluck('name')->all());
+    }
+
     public function test_unchanged_audio_languages_cause_no_write_and_new_media_info_replaces_them(): void
     {
         $this->insertRelease(1, 'Movie.2020.1080p.BluRay.x264-GRP', categoriesId: 2040);
