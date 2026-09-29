@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace App\Data;
 
-/** The show page's header: poster, title, `Network · year · N seasons on site · N releases`, summary, tags and Starring. */
+/** The show page's header: poster, title, `Network · year · N seasons on site · N releases`, summary, tags, Starring and outside links. */
 final readonly class TvShowHeader
 {
     /**
      * @param  array<int, string>  $genres  genres.id => title, alphabetical
      * @param  list<string>  $tags  language, US rating and status, each only when known
      * @param  array<int, string>  $starring  people.id => name, in TMDB's order
+     * @param  array<string, string>  $links  label => outside URL: IMDb, TMDB, TVDB, TVMaze and Trakt, each when its id is known
      */
     public function __construct(
         public int $id,
@@ -23,6 +24,7 @@ final readonly class TvShowHeader
         public array $genres,
         public array $tags,
         public array $starring,
+        public array $links,
     ) {}
 
     /** Network · year · N seasons on site · N releases, leaving out what is unknown or zero. */

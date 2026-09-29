@@ -529,6 +529,8 @@ td.num{text-align:right;white-space:nowrap} th.num{text-align:right}
 .btn.sec.nt:focus-visible{outline-color:var(--ink);outline-offset:1px}
 /* a shorter label keeps its gap to the icon inside the reserved width (details header and show page's Follow show) */
 .dacts .btn .wl{text-align:start}
+/* outside links after Follow show (issue #872), as the Movies film page */
+.ext .i{width:14px;height:14px;opacity:.75}
 .btn.wat:focus-visible{outline-color:var(--ink);outline-offset:1px}
 </style>
 </head>
@@ -557,6 +559,7 @@ td.num{text-align:right;white-space:nowrap} th.num{text-align:right}
   <symbol id="i-audio" viewBox="0 0 24 24"><path d="M4 10v4h3l5 4V6l-5 4zM16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></symbol>
   <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
   <symbol id="i-sort" viewBox="0 0 24 24"><path d="m8 10 4-4 4 4M8 14l4 4 4-4"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
 </svg>
 
 <header class="nav"><div class="wrap">
@@ -746,6 +749,9 @@ function releasesView(){
   syncSelectAll();
 }
 const M=id=>META[id]||{g:[],cast:[],lang:'',us:'',st:'',prem:''};
+// the show page's outside links (issue #872): one per id the show has, in this order, opening in a new tab
+const EXT=[['IMDb','imdb',v=>`https://www.imdb.com/title/tt${String(v).padStart(7,'0')}/`],['TMDB','tmdb',v=>`https://www.themoviedb.org/tv/${v}`],['TVDB','tvdb',v=>`https://thetvdb.com/?tab=series&id=${v}`],['TVMaze','tvmaze',v=>`https://www.tvmaze.com/shows/${v}`],['Trakt','trakt',v=>`https://trakt.tv/shows/${v}`]];
+const extLinks=m=>EXT.filter(([,k])=>+m[k]>0).map(([l,k,u])=>`<a class="btn sec ext" href="${esc(u(m[k]))}" target="_blank" rel="noopener noreferrer">${l}${ic('ext')}<span class="vh"> (opens in a new tab)</span></a>`).join('');
 const premOf=id=>+(M(id).prem||DB.shows[id]?.y)||0, decadeOf=id=>{const y=premOf(id);return y?Math.floor(y/10)*10+'s':'';};
 let NETNAME={};const netOf=id=>{const n=(DB.shows[id].n||'').trim();return n?NETNAME[n.toLowerCase()]||n:'';};
 const RATINGS=['TV-Y','TV-Y7','TV-G','TV-PG','TV-14','TV-MA'];
@@ -816,7 +822,7 @@ function show(id,season){
   <div class="showhead"><div class="art">${poster(id,s.t+' poster')}</div><div><h1>${esc(s.t)}</h1><div class="meta">${[s.n,s.y&&s.y!=='NULL'?s.y:(M(id).prem||''),seasons.length?seasons.length+' season'+(seasons.length===1?'':'s')+' on site':'',all.length+' releases'].filter(Boolean).map(esc).join(' · ')}</div>${s.s?`<p>${esc(s.s)}</p>`:''}
   <div class="tags">${M(id).g.map(g=>`<a class="tag" href="#/shows" data-setsf="genre" data-v="${esc(g)}">${esc(g)}</a>`).join('')}${[M(id).lang,M(id).us&&M(id).us!=='NR'?M(id).us:'',M(id).st].filter(Boolean).map(x=>`<span class="tag plain">${esc(x)}</span>`).join('')}</div>
   ${M(id).cast.length?`<div class="starring">Starring ${M(id).cast.slice(0,8).map(n=>`<a href="#/shows" data-setsf="person" data-v="${esc(n)}">${esc(n)}</a>`).join(', ')}</div>`:''}
-  <div class="dacts"><button class="btn wat" data-watch="${id}" aria-pressed="${state.watch.has(+id)}" title="${state.watch.has(+id)?'Following this show · click to unfollow':'Follow this show'}">${fic()}<span class="wl"><span${state.watch.has(+id)?' hidden':''}>Follow show</span><span${state.watch.has(+id)?'':' hidden'}>Following show</span></span></button></div></div></div>
+  <div class="dacts"><button class="btn wat" data-watch="${id}" aria-pressed="${state.watch.has(+id)}" title="${state.watch.has(+id)?'Following this show · click to unfollow':'Follow this show'}">${fic()}<span class="wl"><span${state.watch.has(+id)?' hidden':''}>Follow show</span><span${state.watch.has(+id)?'':' hidden'}>Following show</span></span></button>${extLinks(M(id))}</div></div></div>
   <div class="bar2 hastabs"><h2 class="vh">${season==null?'Releases':seasonName(season)}</h2>${seasons.length?`<nav class="stabs ${many?'many':''}" aria-label="Seasons">${many?'<span class="lbl">Season</span>':''}${seasons.map(n=>`<a href="#/show/${id}/${n}" ${n===season?'aria-current="page"':''} title="${seasonName(n)}" aria-label="${seasonName(n)}">${many&&n>0?n:seasonName(n)}</a>`).join('')}</nav>`:''}
    <div class="sfil">${filterDD('res','Resolution',RES)}${filterDD('src','Source',SRC)}</div></div>`;
   const list=[...eps.values()].sort((a,b)=>a.e-b.e);

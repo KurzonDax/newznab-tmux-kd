@@ -450,6 +450,16 @@ await js(`location.hash='#/show/${FX.longShow}/1'`); await sleep(400); await js(
   await js(`location.hash='#/show/${FX.longShow}/1'`); await sleep(400);
   ok('show page: "Whole-season packs" sits above the first episode row; "Other releases" stays under the episodes', await js(`(()=>{const p=document.querySelector('.packs.top'),e=document.querySelector('.ep'),o=document.querySelector('.packs.other');return !!p&&!!e&&p.getBoundingClientRect().bottom<=e.getBoundingClientRect().top&&p.querySelector('h3').textContent==='Whole-season packs'&&(!o||o.getBoundingClientRect().top>=[...document.querySelectorAll('.ep')].at(-1).getBoundingClientRect().bottom);})()`));
 }
+{ // issue #872: IMDb, TMDB, TVDB, TVMaze and Trakt after Follow show, one per id the show has, each in a new tab
+  const labels = `[...document.querySelectorAll('.showhead .dacts a.ext')].map(e=>e.firstChild.textContent).join()`;
+  await js(`location.hash='#/show/${FX.longShow}/1'`); await sleep(400);
+  ok('show page: IMDb, TMDB, TVDB, TVMaze and Trakt follow Follow show as secondary buttons, each opening in a new tab with rel="noopener noreferrer" and saying so to screen readers', await js(`(()=>{const d=[...document.querySelector('.showhead .dacts').children],a=d.slice(1),m=META[${FX.longShow}];return d[0].matches('[data-watch]')&&a.every(e=>e.matches('a.btn.sec.ext')&&e.target==='_blank'&&e.rel==='noopener noreferrer'&&/\\(opens in a new tab\\)$/.test(e.querySelector('.vh')?.textContent||''))&&(${labels})==='IMDb,TMDB,TVDB,TVMaze,Trakt'&&a.map(e=>e.getAttribute('href')).join(' ')===['https://www.imdb.com/title/tt'+String(m.imdb).padStart(7,'0')+'/','https://www.themoviedb.org/tv/'+m.tmdb,'https://thetvdb.com/?tab=series&id='+m.tvdb,'https://www.tvmaze.com/shows/'+m.tvmaze,'https://trakt.tv/shows/'+m.trakt].join(' ');})()`));
+  const two = await js(`Object.keys(META).find(i=>DB.shows[i]&&(BYSHOW[i]||[]).length&&EXT.filter(([,k])=>+META[i][k]>0).length===2)`);
+  await js(`location.hash='#/show/${two}'`); await sleep(400);
+  ok('show page: a show with two ids shows just those two buttons', !!two && (await js(labels)) === (await js(`EXT.filter(([,k])=>+META[${two}][k]>0).map(([l])=>l).join()`)) && (await js(labels)).split(',').length === 2);
+  await js(`location.hash='#/show/${FX.thinShow}'`); await sleep(400);
+  ok('show page: a show with no ids shows no outside-link buttons', await js(`!!document.querySelector('.showhead [data-watch]')&&!document.querySelector('.showhead a.ext')`));
+}
 { // Similar shows (his request 2026-09-27): the film page's rule over every show with a release; six TV-wall tiles at the very bottom of the show page
   await js(`location.hash='#/shows'`); await sleep(400);
   const wallTile = await js(`Math.round(document.querySelector('.tiles .tile').getBoundingClientRect().width)`);

@@ -153,6 +153,11 @@ const tvmore = {sim: {}, shows: {}};
     for (const c of ids) { if (c === v) continue; const o = meta[c], g = m.g.filter(x => o.g.includes(x)).length, pp = m.cast.filter(x => o.cast.includes(x)).length;
       if (!g && !pp) continue; out.push([2 * g + 3 * pp - Math.abs((+o.prem || 0) - (+m.prem || 0)) / 10, c]); }
     tvmore.sim[v] = out.sort((a, b) => b[0] - a[0] || a[1] - b[1]).slice(0, 6).map(x => x[1]); } }
+// Outside-link ids (issue #872): invented, worked out from the show id so the seeded stream above is
+// untouched. The long show has all five; the others lack some, so a header shows fewer buttons.
+for (const [id, m] of Object.entries(meta)) { const n = +id, all = n === FIX.longShow;
+  if (all || n % 7) m.imdb = String(1000000 + n * 37); if (all || n % 5) m.tmdb = 10000 + n * 13; if (all || n % 9) m.tvdb = 70000 + n * 29;
+  if (all || n % 3 === 0) m.tvmaze = 100 + n; if (all || n % 4 === 0) m.trakt = 2000 + n * 3; }
 const w = (f, d) => writeFileSync(`${out}/${f}`, JSON.stringify(d));
 w('data.json', {shows, eps, rel}); w('relx.json', rx); w('meta.json', meta); w('media.json', media); w('files.json', files); w('nfo.json', nfo); w('previews.json', previews); w('repair.json', repair); w('tvmore.json', tvmore);
 writeFileSync(`${out}/fixtures.json`, JSON.stringify(FIX, null, 1));

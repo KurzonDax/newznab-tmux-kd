@@ -243,7 +243,10 @@ pages look good, I approve them."
   (rule 12): tinted violet with the bookmark icon, filled solid violet while followed, never
   coral; its two labels share one width so pressing it moves nothing. The show is followed
   here only: no release row on this page has a Follow button ("I'm not sure why this isn't
-  there already"). The right half of the header stays empty.
+  there already"). After Follow show come the **outside links** (decided 2026-09-28, #872),
+  styled as the film page's: one secondary button per service whose id the show has, in the
+  order IMDb, TMDB, TVDB, TVMaze, Trakt; a missing id means no button. Each goes through the
+  site dereferrer and opens in a new tab (rule 13). The right half of the header stays empty.
 - **Seasons are tabs** on a sticky bar, in the details page's tab style (coral underline on
   the current one), with Resolution and Source menus at the right of the same row. From 9
   seasons up the row reads `Season  Specials 1 2 3 … 24`. The tab row never wraps (it scrolls
@@ -495,8 +498,8 @@ application's test tooling, plus rule 5 ("nothing shifts") measured, not eyeball
 - **Follow icon**: a bookmark (Font Awesome `fa-bookmark`, regular while not followed, solid while
   followed). Following alerts nobody (it keeps the show on the user's list, its RSS feed and the
   home page section), which is why the bell was not chosen.
-- **Offsite links** (rule 13): IMDb, TMDB, Trakt, GitHub and anything through the dereferrer open in
-  a new tab with `rel="noopener noreferrer"`.
+- **Offsite links** (rule 13): IMDb, TMDB, TVDB, TVMaze, Trakt, GitHub and anything through the
+  dereferrer open in a new tab with `rel="noopener noreferrer"`.
 - A release name links to **that release's** details page, never to the show. The grey line
   under it links to the show page with that episode already open.
 - Group and poster chips (releases list and details page) link, in the same tab, to the

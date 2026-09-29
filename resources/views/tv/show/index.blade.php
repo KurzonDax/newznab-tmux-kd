@@ -8,6 +8,7 @@
 
 @php
     /** @var \App\Data\TvShowHeader $show */
+    $dereferrer = (string) ($site['dereferrer_link'] ?? '');
     $many = count($seasons) > 8;
     $seasonName = static fn (int $number): string => $number === 0 ? 'Specials' : 'Season '.$number;
 @endphp
@@ -46,7 +47,12 @@
                 @if($show->starring !== [])
                     <div class="tv-starring" data-part="starring line">Starring @foreach($show->starring as $personId => $name)<a href="{{ route('tv.shows', ['person' => $personId]) }}">{{ $name }}</a>{{ $loop->last ? '' : ', ' }}@endforeach</div>
                 @endif
-                <div class="tv-details-actions tv-show-actions">@include('tv.partials.follow-show', ['showId' => $show->id, 'showTitle' => $show->title, 'followed' => $followed])</div>
+                <div class="tv-details-actions tv-show-actions">
+                    @include('tv.partials.follow-show', ['showId' => $show->id, 'showTitle' => $show->title, 'followed' => $followed])
+                    @foreach($show->links as $label => $url)
+                        <a class="tv-details-button is-secondary" href="{{ $dereferrer.$url }}" target="_blank" rel="noopener noreferrer">{{ $label }}<i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i><span class="sr-only"> (opens in a new tab)</span></a>
+                    @endforeach
+                </div>
             </div>
         </div>
         <div class="tv-season-bar" data-part="season tab bar">

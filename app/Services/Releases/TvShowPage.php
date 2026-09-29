@@ -26,6 +26,10 @@ final class TvShowPage
     /** The Starring line names at most this many people, in TMDB's order. */
     public const STARRING_LIMIT = 8;
 
+    /** Outside links' URL prefixes, the show ones TitleMetadataLoader uses: label => prefix, in the header's order. */
+    private const LINKS = ['IMDb' => 'https://www.imdb.com/title/tt', 'TMDB' => 'https://www.themoviedb.org/tv/', 'TVDB' => 'https://thetvdb.com/?tab=series&id=',
+        'TVMaze' => 'https://www.tvmaze.com/shows/', 'Trakt' => 'https://trakt.tv/shows/'];
+
     public function __construct(private readonly ReleaseBrowseService $releases) {}
 
     /**
@@ -37,7 +41,7 @@ final class TvShowPage
     {
         $show = DB::table('videos as v')->leftJoin('tv_info as t', 't.videos_id', '=', 'v.id')->leftJoin('networks as n', 'n.id', '=', 't.networks_id')
             ->where('v.id', $videosId)->where('v.type', 0)
-            ->first(['v.title', 'v.started', 't.summary', 't.publisher', 't.original_language', 't.status', 't.content_rating_us', 't.premiered', 'n.name as network']);
+            ->first(['v.title', 'v.started', 'v.imdb', 'v.tmdb', 'v.tvdb', 'v.tvmaze', 'v.trakt', 't.summary', 't.publisher', 't.original_language', 't.status', 't.content_rating_us', 't.premiered', 'n.name as network']);
         if ($show === null) {
             return null;
         }
@@ -65,7 +69,25 @@ final class TvShowPage
             ], static fn (string $tag): bool => $tag !== '')),
             starring: DB::table('video_people as vp')->join('people as p', 'p.id', '=', 'vp.people_id')->where('vp.videos_id', $videosId)
                 ->orderBy('vp.position')->limit(self::STARRING_LIMIT)->pluck('p.name', 'p.id')->map(static fn (mixed $name): string => (string) $name)->all(),
+            links: self::links((string) $show->imdb, ['TMDB' => (int) $show->tmdb, 'TVDB' => (int) $show->tvdb, 'TVMaze' => (int) $show->tvmaze, 'Trakt' => (int) $show->trakt]),
         );
+    }
+
+    /**
+     * One link per service whose id the show has; IMDb as the film page builds it (7-digit padded, trailing slash).
+     *
+     * @param  array<string, int>  $ids  TMDB, TVDB, TVMaze and Trakt ids, 0 when unknown
+     * @return array<string, string>
+     */
+    private static function links(string $imdbId, array $ids): array
+    {
+        $imdb = preg_replace('/^tt/', '', $imdbId) ?? '';
+        $links = ['IMDb' => ctype_digit($imdb) && (int) $imdb > 0 ? self::LINKS['IMDb'].str_pad($imdb, 7, '0', STR_PAD_LEFT).'/' : ''];
+        foreach ($ids as $label => $id) {
+            $links[$label] = $id > 0 ? self::LINKS[$label].$id : '';
+        }
+
+        return array_filter($links, static fn (string $url): bool => $url !== '');
     }
 
     /**
