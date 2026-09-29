@@ -57,6 +57,10 @@ class DetailsController extends BasePageController
             return redirect()->back();
         }
 
+        if ($this->hidesCategory($data['categories_id'])) {
+            return $this->hiddenCategoryPage((int) $data['categories_id']);
+        }
+
         if ($this->isPostBack($request)) {
             $validated = $request->validate(['txtAddComment' => ['required', 'string', 'max:2000']]);
             ReleaseComment::addComment((int) $data['id'], $validated['txtAddComment'], (int) $this->userdata->id, $request->ip());

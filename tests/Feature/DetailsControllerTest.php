@@ -12,6 +12,8 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Mockery\MockInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
 use Tests\Support\InteractsWithReleaseBrowser;
@@ -170,6 +172,44 @@ final class DetailsControllerTest extends TestCase
         $this->assertSame((int) config('nntmux.items_per_page'), $limit);
         $this->assertContains(4010, array_map('intval', $excludedCategories));
         $this->assertSame([4000], $categories);
+    }
+
+    /** @return array<string, array{string, string}> */
+    public static function hidingModes(): array
+    {
+        return [
+            'the whole root switched off' => ['root', 'PC'],
+            'only the sub-category unticked' => ['sub', 'PC - Games'],
+        ];
+    }
+
+    #[DataProvider('hidingModes')]
+    public function test_a_release_in_a_hidden_category_is_refused_and_takes_no_comment(string $mode, string $name): void
+    {
+        DB::table('root_categories')->insert(['id' => 7000, 'title' => 'Books']);
+        DB::table('categories')->insert(['id' => self::BOOKS_EBOOK, 'title' => 'Ebook', 'root_categories_id' => 7000]);
+        $this->detailRelease('Hidden.Game-GRP');
+        $this->detailRelease('Visible.Book-GRP', ['categories_id' => self::BOOKS_EBOOK]);
+        $user = $this->browserUser();
+        if ($mode === 'root') {
+            $user->revokePermissionTo('view pc');
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
+            $user = $user->fresh();
+        } else {
+            DB::table('user_excluded_categories')->insert(['users_id' => $user->id, 'categories_id' => self::PC_GAMES]);
+        }
+        $hidden = '/details/'.md5('Hidden.Game-GRP');
+
+        foreach ([$this->actingAs($user)->get($hidden), $this->post($hidden, ['txtAddComment' => 'Should not land.'])] as $response) {
+            $response->assertForbidden()->assertViewIs('errors.category-disabled')->assertViewHas('category', $name)
+                ->assertSee($name.' is hidden in your account preferences.')->assertDontSee('Hidden.Game-GRP');
+        }
+        $this->assertSame(0, DB::table('release_comments')->count());
+
+        $visible = '/details/'.md5('Visible.Book-GRP');
+        $this->get($visible)->assertOk()->assertViewIs('details.index')->assertSee('Visible.Book-GRP');
+        $this->post($visible, ['txtAddComment' => 'Lands.'])->assertRedirect($visible.'#comments');
+        $this->assertSame(1, DB::table('release_comments')->count());
     }
 
     /** @param array<string, mixed> $attributes */

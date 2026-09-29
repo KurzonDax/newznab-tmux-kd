@@ -6,15 +6,15 @@ namespace App\Http\Controllers;
 
 use App\Models\Category;
 use App\Models\User;
+use App\Services\Releases\HiddenCategoryGate;
 use App\Support\ReleaseCompletion;
 use App\Support\SiteViewSettings;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 
 class BasePageController extends Controller
@@ -78,12 +78,8 @@ class BasePageController extends Controller
                     return $next($request);
                 }
 
-                // Cache category exclusions per user (5 minutes)
-                $this->userdata->categoryexclusions = $this->rememberWithCacheFallback(
-                    User::categoryExclusionCacheKey($userId),
-                    300,
-                    fn () => User::getCategoryExclusionById($userId)
-                );
+                // Category exclusions per user, cached for 5 minutes
+                $this->userdata->categoryexclusions = app(HiddenCategoryGate::class)->hiddenCategoryIds((int) $userId);
             }
 
             return $next($request);
@@ -91,21 +87,19 @@ class BasePageController extends Controller
     }
 
     /**
-     * Use the cache when available; if the store is unreachable (e.g. Redis down), run the callback directly.
-     *
-     * @param  callable(): mixed  $callback
+     * Whether the signed-in user has hidden this release category.
      */
-    private function rememberWithCacheFallback(string $key, int|\DateInterval $ttl, callable $callback): mixed
+    protected function hidesCategory(mixed $categoryId): bool
     {
-        try {
-            return Cache::remember($key, $ttl, $callback);
-        } catch (\Throwable $e) {
-            if (config('app.debug')) {
-                Log::debug('BasePageController cache bypassed: '.$e->getMessage());
-            }
+        return in_array((int) $categoryId, (array) ($this->userdata->categoryexclusions ?? []), true);
+    }
 
-            return $callback();
-        }
+    /**
+     * The category-disabled page, status 403, for a release in a hidden category.
+     */
+    protected function hiddenCategoryPage(int $categoryId): Response
+    {
+        return app(HiddenCategoryGate::class)->deniedPage($this->userdata, $categoryId);
     }
 
     /**

@@ -280,16 +280,18 @@ final class MovieReleaseDetailsPageTest extends TestCase
         $this->page('/details/'.$this->guid($current).'?page=9')->assertOk()->assertSee('Page 2 of 2');
     }
 
-    public function test_a_release_the_viewer_may_not_see_opens_the_table_on_page_one_with_no_tinted_row(): void
+    public function test_a_release_the_viewer_may_not_see_is_refused_and_left_out_of_its_film_table(): void
     {
         $visible = $this->movie(self::FILM, '2026-09-21 10:00:00', name: 'Visible.1080p');
         $hidden = $this->movie(self::FILM, '2026-09-20 10:00:00', categories: self::SD, name: 'Hidden.SD');
         $this->excludeForUser(self::SD);
 
-        $table = $this->between($this->details($hidden)->assertOk(), 'data-film-releases>', '</section>');
+        $this->details($hidden)->assertForbidden()->assertViewIs('errors.category-disabled')->assertViewHas('category', 'Movies - SD')
+            ->assertSee('Movies - SD is hidden in your account preferences.')->assertDontSee('Hidden.SD');
+
+        $table = $this->between($this->details($visible)->assertOk(), 'data-film-releases>', '</section>');
         $this->assertStringContainsString('The only release of this film', $table);
         $this->assertSame([$visible], $this->rowIds($table));
-        $this->assertStringNotContainsString('is-current', $table);
     }
 
     public function test_similar_releases_search_without_the_film_and_show_each_row_s_film_line_or_no_section(): void

@@ -18,15 +18,21 @@ final class NzbArchiveStream
     /**
      * Resolve the archive once, without opening or retaining decompressed NZB bodies.
      *
+     * Releases in $hiddenCategoryIds are left out.
+     *
      * @param  list<string>  $guids
+     * @param  list<int>  $hiddenCategoryIds
      * @return array{response: StreamedResponse, releaseIds: list<int>}
      */
-    public function prepare(array $guids): array
+    public function prepare(array $guids, array $hiddenCategoryIds = []): array
     {
         $entries = [];
         $releaseIds = [];
         foreach (array_chunk(array_unique($guids), 500) as $batch) {
-            $releases = Release::query()->whereIn('guid', $batch)->get(['id', 'guid', 'searchname']);
+            $releases = Release::query()
+                ->whereIn('guid', $batch)
+                ->when($hiddenCategoryIds !== [], static fn ($query) => $query->whereNotIn('categories_id', $hiddenCategoryIds))
+                ->get(['id', 'guid', 'searchname']);
             foreach ($releases as $release) {
                 $id = (int) $release->id;
                 if (isset($entries[$id])) {

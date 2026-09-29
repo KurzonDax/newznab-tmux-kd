@@ -22,6 +22,10 @@ class NfoController extends BasePageController
                 abort(404, 'Release does not exist');
             }
 
+            if ($this->hidesCategory($rel['categories_id'])) {
+                return $this->hiddenCategoryPage((int) $rel['categories_id']);
+            }
+
             $nfo = ReleaseNfo::getReleaseNfo($rel['id']);
 
             if ($nfo !== null) {

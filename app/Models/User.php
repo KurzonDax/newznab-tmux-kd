@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\BrowseRoot;
 use App\Enums\SignupError;
 use App\Enums\UserRole;
 use App\Jobs\SendAccountExpiredEmail;
@@ -1733,28 +1734,7 @@ final class User extends Authenticatable implements CanResetPasswordContract, Ha
     public static function getCategoryExclusionById(int $userId): array
     {
         $user = static::findOrFail($userId);
-
-        $userAllowed = $user->getDirectPermissions()->pluck('name')->toArray();
-        $roleAllowed = $user->getAllPermissions()->pluck('name')->toArray();
-        $allowed = array_intersect($roleAllowed, $userAllowed);
-
-        $categoryPermissions = [
-            'view console' => 1000,
-            'view movies' => 2000,
-            'view audio' => 3000,
-            'view pc' => 4000,
-            'view tv' => 5000,
-            'view adult' => 6000,
-            'view books' => 7000,
-            'view other' => 1,
-        ];
-
-        $excludedRoots = [];
-        foreach ($categoryPermissions as $permission => $rootId) {
-            if (! in_array($permission, $allowed, true)) {
-                $excludedRoots[] = $rootId;
-            }
-        }
+        $excludedRoots = $user->hiddenRootCategoryIds();
 
         // Get all subcategories that belong to excluded root categories
         $permissionExclusions = Category::whereIn('root_categories_id', $excludedRoots)
@@ -1779,6 +1759,30 @@ final class User extends Authenticatable implements CanResetPasswordContract, Ha
             static fn (mixed $categoryId): int => (int) $categoryId,
             array_merge($permissionExclusions, $filteredUserExclusions)
         )));
+    }
+
+    /**
+     * The root category ids this user may not view: every root whose
+     * `view …` permission the user lacks.
+     *
+     * @return list<int>
+     */
+    public function hiddenRootCategoryIds(): array
+    {
+        $userAllowed = $this->getDirectPermissions()->pluck('name')->toArray();
+        $roleAllowed = $this->getAllPermissions()->pluck('name')->toArray();
+        $allowed = array_intersect($roleAllowed, $userAllowed);
+
+        $excludedRoots = [];
+        foreach (BrowseRoot::cases() as $root) {
+            $permission = $root->permission();
+            $rootId = $root->categoryId();
+            if ($permission !== null && $rootId !== null && ! in_array($permission, $allowed, true)) {
+                $excludedRoots[] = $rootId;
+            }
+        }
+
+        return $excludedRoots;
     }
 
     /**

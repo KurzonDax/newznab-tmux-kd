@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Release;
 use App\Models\ReleaseVideoClip;
+use App\Services\Releases\HiddenCategoryGate;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\ResponseHeaderBag;
@@ -30,11 +31,13 @@ class VideoPreviewController extends Controller
 
         $release = Release::query()
             ->where('guid', '=', $guid)
-            ->first(['id', 'videostatus']);
+            ->first(['id', 'videostatus', 'categories_id']);
 
         if (! $release instanceof Release || (int) $release->videostatus !== 1) {
             abort(404);
         }
+
+        abort_if(app(HiddenCategoryGate::class)->hides($request->user()?->id, $release->categories_id), 403);
 
         $clip = ReleaseVideoClip::query()
             ->where('releases_id', '=', (int) $release->id)

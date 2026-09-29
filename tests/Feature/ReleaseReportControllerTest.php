@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Models\ReleaseReport;
+use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -100,6 +101,8 @@ class ReleaseReportControllerTest extends TestCase
     {
         Auth::shouldReceive('check')->andReturn(false);
         Auth::shouldReceive('id')->andReturn($userId);
+        // A report checks the reporter's hidden categories; this reporter hides none.
+        Cache::put(User::categoryExclusionCacheKey($userId), [], 300);
     }
 
     private function createRelease(int $id = 1): int

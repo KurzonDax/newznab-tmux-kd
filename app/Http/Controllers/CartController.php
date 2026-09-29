@@ -8,6 +8,7 @@ use App\Data\ReleaseBrowserState;
 use App\Enums\BrowseRoot;
 use App\Models\Release;
 use App\Models\UsersRelease;
+use App\Services\Releases\HiddenCategoryGate;
 use App\Services\Releases\ReleaseBrowserQuery;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -76,17 +77,23 @@ class CartController extends BasePageController
             ->unique()
             ->values();
 
-        $releaseIds = Release::query()
-            ->whereIn('guid', $guids)
-            ->pluck('id')
-            ->map(static fn ($id): int => (int) $id)
-            ->all();
+        $releases = Release::query()->whereIn('guid', $guids)->get(['id', 'categories_id']);
 
-        if ($releaseIds === []) {
+        if ($releases->isEmpty()) {
             return $request->ajax() || $request->wantsJson()
                 ? response()->json(['success' => false, 'message' => 'No releases found'], 404)
                 : redirect()->route('basket');
         }
+
+        // Releases in categories the user has hidden are never added.
+        [$hidden, $visible] = $releases->partition(fn (Release $release): bool => $this->hidesCategory($release->categories_id));
+        if ($visible->isEmpty()) {
+            return $request->ajax() || $request->wantsJson()
+                ? app(HiddenCategoryGate::class)->deniedJson($this->userdata, (int) $hidden->first()->categories_id)
+                : redirect()->route('basket');
+        }
+
+        $releaseIds = $visible->map(static fn (Release $release): int => (int) $release->id)->values()->all();
 
         $existingReleaseIds = UsersRelease::query()
             ->where('users_id', $this->userdata->id)
