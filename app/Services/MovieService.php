@@ -599,10 +599,10 @@ class MovieService
 
         app(MovieCredits::class)->sync(
             (int) $movie->id,
-            $genres !== [] ? $genres : MovieCreditsText::names((string) $movie->genre),
+            $genres !== [] ? $genres : MovieCreditsText::genres((string) $movie->genre),
             $directors,
             $cast,
-            MovieCreditsText::people((string) $movie->director),
+            MovieCreditsText::directors((string) $movie->director),
             MovieCreditsText::people((string) $movie->actors),
         );
     }

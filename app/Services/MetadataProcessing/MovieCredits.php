@@ -89,8 +89,8 @@ final class MovieCredits
     {
         return $this->sync(
             $movieinfoId,
-            MovieCreditsText::names($genre),
-            MovieCreditsText::people($director),
+            MovieCreditsText::genres($genre),
+            MovieCreditsText::directors($director),
             MovieCreditsText::people($actors),
         );
     }
