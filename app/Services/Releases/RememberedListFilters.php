@@ -35,11 +35,14 @@ final readonly class RememberedListFilters
     public const STAMP = '_filters_at';
 
     /**
-     * @param  string  $root  the list's view_prefs root (tv, movies)
+     * @param  string  $root  the list's view_prefs root (tv, movies, xxx)
      * @param  string  $route  the list's route name
      * @param  list<string>  $keys  the list's dropdown filter URL keys
+     * @param  list<string>  $carried  URL keys that are not remembered and never decide whether the
+     *                                 URL carries filters, yet travel through a bare open's redirect
+     *                                 (the Adult name search)
      */
-    public function __construct(private string $root, private string $route, private array $keys) {}
+    public function __construct(private string $root, private string $route, private array $keys, private array $carried = []) {}
 
     /**
      * The list's filters for this request, or the redirect that opens it: to the bare list after
@@ -97,7 +100,7 @@ final readonly class RememberedListFilters
         return false;
     }
 
-    /** The request with the remembered set in place of its query, the page kept. */
+    /** The request with the remembered set in place of its query, the page and the carried keys kept. */
     private function recalled(Request $request, User $user): Request
     {
         $stored = $user->releaseViewPreferences($this->root)['filters'] ?? [];
@@ -105,8 +108,10 @@ final readonly class RememberedListFilters
         foreach (is_array($stored) ? array_intersect_key($stored, array_flip($this->keys)) : [] as $key => $value) {
             $query[$key] = is_array($value) ? array_map('strval', array_filter($value, 'is_scalar')) : (is_scalar($value) ? (string) $value : null);
         }
-        if (is_string($request->query('page'))) {
-            $query['page'] = $request->query('page');
+        foreach (['page', ...$this->carried] as $key) {
+            if (is_string($request->query($key))) {
+                $query[$key] = $request->query($key);
+            }
         }
 
         return $request->duplicate(array_filter($query, static fn (mixed $value): bool => $value !== null));

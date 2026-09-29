@@ -50,6 +50,7 @@ use App\Http\Controllers\Admin\AdminUserRoleHistoryController;
 use App\Http\Controllers\Admin\DeletedUsersController;
 use App\Http\Controllers\Admin\GdprRequestController;
 use App\Http\Controllers\AdultController;
+use App\Http\Controllers\AdultReleasesController;
 use App\Http\Controllers\AjaxController;
 use App\Http\Controllers\Api\FileListApiController;
 use App\Http\Controllers\ApiHelpController;
@@ -248,6 +249,8 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         Route::get('movies/search', [MovieReleasesController::class, 'search'])->name('movies.search');
         Route::get('movies/films', [MovieFilmsController::class, 'index'])->name('movies.films');
         Route::get('movies/film/{movieinfoId}', [MovieFilmController::class, 'show'])->whereNumber('movieinfoId')->name('movies.film');
+        // Adult-related routes
+        Route::get('adult', [AdultReleasesController::class, 'index'])->name('adult.releases');
     });
 
     Route::match(['GET', 'POST'], 'nfo/{id?}', [NfoController::class, 'showNfo'])->name('nfo');

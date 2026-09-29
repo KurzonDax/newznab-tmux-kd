@@ -161,6 +161,24 @@ final class MovieReleasesPageTest extends TestCase
         $this->page('/movies?category[]='.self::THREE_D, $user)->assertSee('Showing 1–7 of 7 releases');
     }
 
+    public function test_a_chosen_sub_category_with_no_release_stays_ticked_and_shows_its_empty_result(): void
+    {
+        $this->movie('In HD');
+        $this->movie('In SD', ['categories_id' => self::SD]);
+        $user = $this->user = $this->browserUser();
+
+        // #887: WEB-DL holds no release, so the menu leaves it out until it is chosen; chosen, it is ticked and lists nothing
+        $this->assertArrayNotHasKey(self::WEBDL, $this->page('/movies')->assertOk()->viewData('categoryMenu'));
+        $chosen = $this->page('/movies?category[]='.self::WEBDL)->assertOk()->assertSee('Showing 0 releases')->assertSee('No releases match WEB-DL.')
+            ->assertDontSee('<table', false);
+        $this->assertSame([self::HD => 'HD', self::SD => 'SD', self::WEBDL => 'WEB-DL'], $chosen->viewData('categoryMenu'));
+        $this->assertSame('Category: WEB-DL', $this->cellText($chosen, 'category'));
+        $this->assertMatchesRegularExpression('/data-value="'.self::WEBDL.'"[^>]*aria-checked="true"/', (string) $chosen->getContent());
+        $this->assertSame(['category' => [self::WEBDL]], $this->remembered($user, 'movies'));
+        $this->page('/movies')->assertRedirect(route('movies.releases', ['category' => [self::WEBDL]]));
+        $this->assertSame([], $this->listedNames($this->opened('/movies')));
+    }
+
     public function test_the_password_setting_decides_whether_passworded_releases_are_listed(): void
     {
         $this->movie('Clean release', ['passwordstatus' => 0]);

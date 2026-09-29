@@ -7,7 +7,10 @@ import { rowActions } from './tv-row-actions.js';
  * actions, the sort preference (for the root in data-preference-root, TV by default), and
  * reloading the list in place when a filter menu changes. The server remembers the filters each
  * reload carries (issue #881); a reload sends when it was made, counted from the page's
- * data-filters-clock, so a slower earlier reload never replaces a later change.
+ * data-filters-clock, so a slower earlier reload never replaces a later change. The Adult list's
+ * name search (docs/proposals/adult-redesign/SPEC.md 5.9) reloads the list the same way after a
+ * 180 ms pause, with the text in the URL (q) and the page dropped; focus and caret stay in the
+ * field, which sits above the list that is replaced.
  */
 export function tvReleases() {
     return {
@@ -16,6 +19,7 @@ export function tvReleases() {
         request: null,
         loadedAt: 0,
         lastStamp: 0,
+        nameTimer: null,
 
         init() {
             this.screen = this.$el;
@@ -79,6 +83,11 @@ export function tvReleases() {
 
         ...rowActions(),
 
+        destroy() {
+            clearTimeout(this.nameTimer);
+            this.request?.abort();
+        },
+
         async changeSort(event) {
             try {
                 await postJson(this.screen.dataset.preferenceUrl, { root: this.screen.dataset.preferenceRoot ?? 'tv', sort: event.target.value });
@@ -109,6 +118,47 @@ export function tvReleases() {
             } catch (error) {
                 if (error.name !== 'AbortError') window.showToast('Could not load the releases. Reload the page and try again.', 'error');
             }
+        },
+
+        /** The name search's input: shows its clear button and reloads the list after today's 180 ms pause. */
+        searchNames(event) {
+            const value = event.target.value;
+            this.showNameClear(value !== '');
+            clearTimeout(this.nameTimer);
+            this.nameTimer = setTimeout(() => this.applyNameSearch(value), 180);
+        },
+
+        /** The clear button and Escape: empties the field, keeps focus in it and reloads the list at once. */
+        clearNameSearch() {
+            const field = this.$refs.nameSearch;
+            if (!field) return undefined;
+            clearTimeout(this.nameTimer);
+            const had = field.value !== '' || new URL(window.location.href).searchParams.has('q');
+            field.value = '';
+            field.focus();
+            this.showNameClear(false);
+            return had ? this.applyNameSearch('') : undefined;
+        },
+
+        showNameClear(shown) {
+            const button = this.$refs.nameClear;
+            if (!button) return;
+            // A class, not the hidden attribute: the button keeps its place, so the field never changes width.
+            button.classList.toggle('is-hidden', !shown);
+            if (shown) {
+                button.removeAttribute('tabindex');
+                button.removeAttribute('aria-hidden');
+            } else {
+                button.setAttribute('tabindex', '-1');
+                button.setAttribute('aria-hidden', 'true');
+            }
+        },
+
+        async applyNameSearch(value) {
+            const text = value.trim();
+            const url = filterUrl(window.location.href, 'q', text === '' ? [] : [text], true);
+            window.history.replaceState(null, '', url.toString());
+            await this.reloadList(url);
         },
 
         /** The reload URL with when it was made (the server's clock at render plus the time since), always later than the last. */

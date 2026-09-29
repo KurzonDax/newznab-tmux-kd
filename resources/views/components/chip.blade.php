@@ -16,6 +16,7 @@
         'nfo' => 'chip-tone-nfo',
         'preview' => 'chip-tone-preview',
         'sample' => 'chip-tone-sample',
+        'clip' => 'chip-tone-clip',
         'password' => 'chip-tone-password',
         'completion-ok' => 'chip-tone-completion-ok',
         'completion-mid' => 'chip-tone-completion-mid',

@@ -140,9 +140,9 @@ visible releases, a page past offset 6,531 is read mirrored from the other end (
   1, count 17.9 ms. The TV and Movies lists are built, so adding it there is their own build issue.
 - The Category menu is fact 11's for root 6000 with `CATEGORY_ORDER` DVD, WMV, XviD, x264, HD Clips, SD Clips, UHD, VR,
   Packs, Imageset, SD, WEBDL, Other (6010, 6020, 6030, 6040, 6041, 6042, 6045, 6046, 6050, 6060, 6080, 6090, 6999); a
-  sub-category with no release is not listed. `valueCounts()` is 2.6 ms uncached (32,192 rows read) and the Audio menu
-  `audioMenu()` 7.1 ms (34,700 rows read), both cached an hour. Adult's cache prefix is its own (`adult_releases`), so
-  its counts and menus never share TV's or Movies' keys.
+  sub-category with no release is not listed unless it is chosen. `valueCounts()` is 2.6 ms uncached (32,192 rows read)
+  and the Audio menu `audioMenu()` 7.1 ms (34,700 rows read), both cached an hour. Adult's cache prefix is its own
+  (`adult_releases`), so its counts and menus never share TV's or Movies' keys.
 
 ### 4.2 The name search
 
@@ -170,13 +170,13 @@ read); the worst case was also run on the untouched full-width copy (77 columns,
 | Read | ms | rows read |
 |---|---:|---:|
 | clip, preview and sample flags for the page's 50 ids (primary key) | 0.1 | 151 |
-| clip seconds for the page's ids with a clip (`release_video_clips`, unique `releases_id`) | 0.3 | 324 |
+| clip seconds for the details page's release (`release_video_clips`, unique `releases_id`) | 0.3 | 324 |
 
-- The Adult rows add a clip to the shared row facts: present when `videostatus = 1` (today's player plays it, fact 6),
-  with its seconds from `release_video_clips.duration_seconds` when there is a row and a value; otherwise the chip and
-  the details tag read "Clip" and the preview's accessible name "Preview, play the video clip". One query per page for
-  the list and one for the Similar releases table (both show the Clip chip); how it is shared is the implementer's
-  choice.
+- The Adult rows add a clip to the shared row facts: present when `videostatus = 1` (today's player plays it, fact 6).
+  The list's and the Similar releases table's Clip chip reads "Clip" (`SPEC.md` 5.10 and the approved prototype), so
+  the lists read no seconds. The details page's tag reads "Clip · N s" with the seconds from
+  `release_video_clips.duration_seconds` when there is a row and a value; otherwise it reads "Clip" and the preview's
+  accessible name "Preview, play the video clip".
 
 ### 4.4 The details page
 
@@ -212,8 +212,9 @@ resolution or no audio language read "Unknown", as TV and Movies do.
    again the list opens with it applied.
 4. The name search keeps only releases whose `display_name`, or `searchname` when that is empty, contains the text,
    with `%`, `_` and `!` taken literally; it combines with the filters; its count matches the rows.
-5. A release with `videostatus = 1` and a `release_video_clips` row with seconds shows "Clip · N s" (chip and details
-   tag); with no row or no seconds it reads "Clip"; with `videostatus = 0` there is no chip, tag or play button.
+5. A release with `videostatus = 1` shows a list Clip chip reading "Clip"; its details tag reads "Clip · N s" when it has
+   a `release_video_clips` row with seconds, and "Clip" with no row or no seconds; with `videostatus = 0` there is no
+   chip, tag or play button.
 6. A row's picture is the preview thumbnail when its URL is not null, else the sample thumbnail, else the "No picture"
    tile.
 7. The details page: a release with a clip has the preview's clip marker and its preview opens the clip dialog; a

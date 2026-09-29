@@ -1,7 +1,7 @@
 {{--
     The Movie releases list's four round row actions (SPEC 5.7), TV's buttons and classes: Download NZB, Copy NZB link,
-    Add to cart, Follow the film. Without a film, or with $follow false (the film page's table: its header follows the film),
-    an empty slot, not drawn, leaves Cart alone under Download. Follow opens
+    Add to cart, Follow the film. Without a film, or with $follow false (the film page's table: its header follows the film;
+    the Adult releases list, whose releases have no title), an empty slot, not drawn, leaves Cart alone under Download. Follow opens
     today's picker to start following; on a followed film one click unfollows (watchlist-component.js swaps the state
     between the two wordings this button carries).
 --}}

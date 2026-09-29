@@ -66,7 +66,9 @@ export function tvFilesDialog() {
  * grows the dialog to the window at real pixels and turns into "Fit to window". Clicking the
  * image toggles too. A Clip chip (data-video-url) opens it with a video player instead, which,
  * as today's preview modal, fetches nothing until play is pressed; the player is built here and
- * removed on close.
+ * removed on close. An Adult row's picture (data-picture: preview or sample) opens the dialog of
+ * its row's matching chip, which takes focus so closing returns there; a Ctrl-, Cmd- or
+ * Shift-click follows the picture's link to the details page as a browser does.
  */
 export function tvImageDialog() {
     return {
@@ -173,12 +175,23 @@ export function tvImageDialog() {
         init() {
             this.initModal();
             this._click = event => {
+                const picture = event.target.closest('[data-picture]');
+                if (picture) return this.showPicture(event, picture);
                 const trigger = event.target.closest('.preview-badge, .sample-badge, .clip-badge');
-                if (!trigger) return;
+                if (!trigger) return undefined;
                 event.preventDefault();
-                this.show(trigger);
+                return this.show(trigger);
             };
             document.addEventListener('click', this._click);
+        },
+
+        showPicture(event, picture) {
+            if (event.ctrlKey || event.metaKey || event.shiftKey || event.button > 0) return;
+            const chip = picture.closest('[data-release-row]')?.querySelector(picture.dataset.picture === 'sample' ? '.sample-badge' : '.preview-badge');
+            if (!chip) return;
+            event.preventDefault();
+            chip.focus();
+            this.show(chip);
         },
 
         destroy() {
