@@ -50,7 +50,6 @@ final readonly class ReleaseBrowserState
             BrowseRoot::Audio => 'albums',
             BrowseRoot::Console, BrowseRoot::Games => 'games',
             BrowseRoot::Books => 'books',
-            BrowseRoot::Adult => 'releases',
             default => 'titles',
         };
     }

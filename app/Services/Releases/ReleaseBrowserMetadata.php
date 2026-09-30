@@ -23,7 +23,6 @@ final class ReleaseBrowserMetadata
             $root === BrowseRoot::Console && Schema::hasTable('consoleinfo') => ['year' => 'SUBSTR(m.releasedate, 1, 4)', 'genre' => 'genres.title', 'platform' => 'm.platform', 'publisher' => 'm.publisher'],
             $root === BrowseRoot::Games && Schema::hasTable('gamesinfo') => ['year' => 'SUBSTR(m.releasedate, 1, 4)', 'genre' => 'genres.title', 'platform' => "'PC'", 'publisher' => 'm.publisher'],
             $root === BrowseRoot::Books && Schema::hasTable('bookinfo') => ['year' => 'SUBSTR(m.publishdate, 1, 4)', 'genre' => 'm.genre', 'author' => 'm.author'],
-            $root === BrowseRoot::Adult => ['year' => 'SUBSTR(r.postdate, 1, 4)'],
             default => [],
         };
     }

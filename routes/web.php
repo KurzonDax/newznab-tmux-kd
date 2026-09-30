@@ -49,7 +49,6 @@ use App\Http\Controllers\Admin\AdminUserController;
 use App\Http\Controllers\Admin\AdminUserRoleHistoryController;
 use App\Http\Controllers\Admin\DeletedUsersController;
 use App\Http\Controllers\Admin\GdprRequestController;
-use App\Http\Controllers\AdultController;
 use App\Http\Controllers\AdultReleasesController;
 use App\Http\Controllers\AjaxController;
 use App\Http\Controllers\Api\FileListApiController;
@@ -235,7 +234,6 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         Route::match(['GET', 'POST'], 'Games', [GamesController::class, 'show'])->name('Games');
         Route::match(['GET', 'POST'], 'Audio/{id?}', [MusicController::class, 'show'])->name('Audio');
         Route::match(['GET', 'POST'], 'Console/{id?}', [ConsoleController::class, 'show'])->name('Console');
-        Route::match(['GET', 'POST'], 'XXX/{id?}', [AdultController::class, 'show'])->name('XXX');
         Route::match(['GET', 'POST'], 'Books/{id?}', [BooksController::class, 'index'])->name('Books');
         // TV-related routes
         Route::get('tv', [TvReleasesController::class, 'index'])->name('tv.releases');

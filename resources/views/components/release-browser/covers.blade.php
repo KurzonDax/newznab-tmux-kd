@@ -1,4 +1,4 @@
-<div class="release-cover-grid" data-cover-grid data-size="{{ $state->size }}" data-shape="{{ match ($state->root) { \App\Enums\BrowseRoot::Audio => 'square', \App\Enums\BrowseRoot::Adult => 'wide', default => 'tall' } }}">
+<div class="release-cover-grid" data-cover-grid data-size="{{ $state->size }}" data-shape="{{ match ($state->root) { \App\Enums\BrowseRoot::Audio => 'square', default => 'tall' } }}">
     @foreach($rows as $cover)
         <article class="release-cover-tile" data-cover-tile="{{ $cover->id }}">
             @if($state->size === 'xl')
@@ -6,9 +6,7 @@
             @else
                 <button type="button" class="release-cover-open" data-cover-open @click="openCover" aria-expanded="false" aria-controls="cover-expansion" aria-label="Show releases for {{ $cover->title }}">
                     @include('components.release-browser.cover-art')
-                    @if($state->root !== \App\Enums\BrowseRoot::Adult)
-                        <span data-cover-count class="release-cover-count" title="{{ $cover->releaseCount }} releases">{{ $cover->releaseCount }}</span>
-                    @endif
+                    <span data-cover-count class="release-cover-count" title="{{ $cover->releaseCount }} releases">{{ $cover->releaseCount }}</span>
                     <span class="release-cover-body">
                         <span class="release-cover-title">{{ $cover->title }}</span>
                         <span class="release-cover-sub">{{ $cover->identifyingLine }}</span>

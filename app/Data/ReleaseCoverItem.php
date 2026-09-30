@@ -16,7 +16,6 @@ final readonly class ReleaseCoverItem
         public ?string $artwork,
         public string $identifyingLine,
         public int $releaseCount,
-        public string $artworkTag = '',
         public string $footerBadge = '',
         public string $footerValue = '',
         public ?string $year = null,

@@ -64,7 +64,7 @@ with sync_playwright() as pw:
     context.route('**/*', respond)
     page = context.new_page()
     page.on('pageerror', lambda error: errors.append(str(error)))
-    contexts = [(f'/browse/{category}', view) for category in ['audio', 'console', 'games', 'books', 'xxx']
+    contexts = [(f'/browse/{category}', view) for category in ['audio', 'console', 'games', 'books']
                 for view in (['table', 'covers'] if category == 'games' else ['table', 'cards', 'covers'])]
     if args.match: contexts = [item for item in contexts if args.match in item[0]]
     for path, view in contexts:

@@ -105,8 +105,8 @@ class ClearanceMiddleware
             return $next($request);
         }
 
-        // Adult (XXX) category, and the Adult releases list at /adult
-        if ($this->matchesCategoryPath($path, 'XXX') || $this->matchesCategoryPath($path, 'adult')) {
+        // The Adult releases list at /adult
+        if ($this->matchesCategoryPath($path, 'adult')) {
             if (! $user->hasDirectPermission('view adult')) {
                 return $this->abortCategoryDisabled('Adult');
             }
