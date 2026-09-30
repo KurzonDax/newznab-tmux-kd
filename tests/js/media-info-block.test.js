@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { renderMediaInfo } from "../../resources/js/alpine/components/media-info-block.js";
@@ -108,4 +109,29 @@ test("music tags keep their facts and do not invent subtitles", () => {
   assert.match(html, /<dt>Album artist<\/dt><dd>Northbound Quartet<\/dd>/);
   assert.match(html, /<dt>Track<\/dt><dd>3 of 9<\/dd>/);
   assert.doesNotMatch(html, /mi-table-subtitles|file-completeness|probe history/i);
+});
+
+test("the Bit rate and Sample rate headings are right-aligned over their numbers", () => {
+  const css = readFileSync(new URL("../../resources/css/media-info.css", import.meta.url), "utf8");
+  const rules = [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^}]*)\}/g)].map(([, selectors, body]) => ({
+    selectors: selectors.split(",").map((selector) => selector.trim()),
+    body,
+  }));
+  // [classes, elements] is enough for these class-and-element selectors
+  const specificity = (selector) => [
+    (selector.match(/\.[\w-]+/g) || []).length,
+    (selector.replace(/\.[\w-]+/g, "").match(/(^|[\s>+~])[a-z]+/g) || []).length,
+  ];
+  const outranks = ([classes, elements], [otherClasses, otherElements]) =>
+    classes > otherClasses || (classes === otherClasses && elements > otherElements);
+  const heading = rules.find((rule) => rule.selectors.includes(".mi-block .mi-table th"));
+  assert.ok(heading, "the general heading rule is still there");
+  assert.match(heading.body, /text-align:\s*left/, "other headings stay left-aligned");
+
+  const numberHeading = rules.find((rule) =>
+    rule.selectors.some((selector) => /th\.mi-num\b/.test(selector) && outranks(specificity(selector), specificity(".mi-block .mi-table th"))),
+  );
+  assert.ok(numberHeading, "a th.mi-num rule outranks the general heading rule");
+  assert.match(numberHeading.body, /text-align:\s*right/);
+  assert.match(numberHeading.body, /padding-right:\s*0\s*[;}]?/);
 });
