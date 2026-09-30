@@ -68,6 +68,7 @@
 .mi-table .mi-n { width: 34px; color: var(--mi-dim); }
 .mi-table .mi-lead { font-size: 14px; font-weight: 600; }
 .mi-table .mi-num { padding-right: 0; text-align: right; }
+.mi-block .mi-table th.mi-num { padding-right: 0; text-align: right; }
 .mi-col-language { width: 24%; }
 .mi-col-channels { width: 14%; }
 .mi-col-rate { width: 13%; }

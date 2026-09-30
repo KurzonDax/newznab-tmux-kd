@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { renderMediaInfo } from "../../resources/js/alpine/components/media-info-block.js";
@@ -108,4 +109,14 @@ test("music tags keep their facts and do not invent subtitles", () => {
   assert.match(html, /<dt>Album artist<\/dt><dd>Northbound Quartet<\/dd>/);
   assert.match(html, /<dt>Track<\/dt><dd>3 of 9<\/dd>/);
   assert.doesNotMatch(html, /mi-table-subtitles|file-completeness|probe history/i);
+});
+
+test("the Bit rate and Sample rate headings are right-aligned over their numbers", () => {
+  const html = renderMediaInfo(media, "4K");
+  const css = readFileSync(new URL("../../resources/css/media-info.css", import.meta.url), "utf8");
+
+  assert.match(html, /<th class="mi-num mi-col-rate">Sample rate<\/th>/);
+  // three classes and an element outrank the general heading rule's two classes and an element
+  assert.match(css, /\.mi-block \.mi-table th\.mi-num \{ padding-right: 0; text-align: right; \}/);
+  assert.match(css, /\.mi-block \.mi-table th \{[^}]*text-align: left;/, "other headings stay left-aligned");
 });
