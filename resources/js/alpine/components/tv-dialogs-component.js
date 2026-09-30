@@ -68,7 +68,10 @@ export function tvFilesDialog() {
  * as today's preview modal, fetches nothing until play is pressed; the player is built here and
  * removed on close. An Adult row's picture (data-picture: preview or sample) opens the dialog of
  * its row's matching chip, which takes focus so closing returns there; a Ctrl-, Cmd- or
- * Shift-click follows the picture's link to the details page as a browser does.
+ * Shift-click follows the picture's link to the details page as a browser does. A trigger with
+ * data-open-full (the Adult details page's Sample picture) opens straight in the Full size state
+ * when the image is larger than the dialog; its image stays hidden until it is measured and laid
+ * out so, and a failed load shows the failed note at once.
  */
 export function tvImageDialog() {
     return {
@@ -83,6 +86,8 @@ export function tvImageDialog() {
         full: false,
         failed: false,
         video: false,
+        openFull: false,
+        measuring: false,
 
         show(trigger) {
             const sample = trigger.classList.contains('sample-badge');
@@ -95,6 +100,8 @@ export function tvImageDialog() {
             this.failed = false;
             this.removePlayer();
             this.video = Boolean(trigger.dataset.videoUrl);
+            this.openFull = !this.video && trigger.dataset.openFull !== undefined;
+            this.measuring = this.openFull;
             this.imageUrl = this.video ? '' : trigger.dataset.fullUrl || trigger.dataset.imageUrl || '';
             this.open = true;
             this.$nextTick(() => {
@@ -133,15 +140,21 @@ export function tvImageDialog() {
         /** Runs when the image has loaded: its natural size, and whether it is larger than shown. */
         measure() {
             const image = this.$refs.image;
-            if (!image || !image.naturalWidth) return;
+            if (!image || !image.naturalWidth) {
+                this.measuring = false;
+                return;
+            }
             this.dimensions = image.naturalWidth + ' × ' + image.naturalHeight;
             window.requestAnimationFrame(() => {
                 this.canFull = image.naturalWidth > image.clientWidth + 1 || image.naturalHeight > image.clientHeight + 1;
+                if (this.openFull && this.canFull) this.full = true;
+                this.measuring = false;
             });
         },
 
         imageFailed() {
             this.failed = true;
+            this.measuring = false;
         },
 
         toggleFull() {
@@ -158,7 +171,7 @@ export function tvImageDialog() {
         },
 
         dialogClass() {
-            return 'tv-dialog tv-image-dialog' + (this.canFull ? ' can-full' : '') + (this.full ? ' is-full' : '');
+            return 'tv-dialog tv-image-dialog' + (this.canFull ? ' can-full' : '') + (this.full ? ' is-full' : '') + (this.measuring ? ' is-measuring' : '');
         },
 
         detailsUrl() { return '/details/' + encodeURIComponent(this.guid); },
@@ -167,6 +180,8 @@ export function tvImageDialog() {
         close() {
             this.open = false;
             this.full = false;
+            this.openFull = false;
+            this.measuring = false;
             this.imageUrl = '';
             this.removePlayer();
             this.video = false;

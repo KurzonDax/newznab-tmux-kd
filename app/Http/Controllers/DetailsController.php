@@ -22,6 +22,7 @@ use App\Services\GamesService;
 use App\Services\MovieService;
 use App\Services\MusicService;
 use App\Services\PopulateAniListService;
+use App\Services\Releases\AdultReleaseDetails;
 use App\Services\Releases\MovieReleaseDetails;
 use App\Services\Releases\RelatedReleaseBrowser;
 use App\Services\Releases\ReleaseBrowseService;
@@ -75,6 +76,9 @@ class DetailsController extends BasePageController
         }
         if ($root === BrowseRoot::Movies) {
             return $this->showMovies($request, $data, $comments);
+        }
+        if ($root === BrowseRoot::Adult) {
+            return $this->showAdult($data, $comments);
         }
         $similars = $this->releaseSearchService->searchSimilar($data['id'], $data['searchname'], (array) $this->userdata->categoryexclusions);
         $failed = DnzbFailure::getFailedCount($data['id']);
@@ -237,6 +241,25 @@ class DetailsController extends BasePageController
 
         return view('details.movies.index', array_merge($this->viewData, $details->forRelease($release, $row->category, $exclusions, $table, $pageNamed), $shared, [
             'comments' => $comments,
+            'meta_title' => 'View NZB',
+            'meta_keywords' => 'view,nzb,description,details',
+            'meta_description' => 'View NZB for '.$release['searchname'],
+        ]));
+    }
+
+    /** Adult releases get their own page (docs/proposals/adult-redesign/SPEC.md 5A); comments post back here as before. */
+    private function showAdult(Release $release, mixed $comments): View
+    {
+        $this->releaseBrowseService->loadReleaseRows([$release]);
+        /** @var ReleaseRowData $row */
+        $row = $release->getAttribute('row_data');
+        $exclusions = array_values(array_map('intval', (array) $this->userdata->categoryexclusions));
+
+        return view('details.adult.index', array_merge($this->viewData, app(AdultReleaseDetails::class)->forRelease($release, $row->category, $exclusions), [
+            'release' => $release,
+            'comments' => $comments,
+            'nzbLinkBase' => url('/api/v1/api'),
+            'apiToken' => (string) $this->userdata->api_token,
             'meta_title' => 'View NZB',
             'meta_keywords' => 'view,nzb,description,details',
             'meta_description' => 'View NZB for '.$release['searchname'],

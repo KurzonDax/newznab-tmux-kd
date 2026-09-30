@@ -53,6 +53,18 @@ final readonly class AdultReleaseRow
         return $this->hasReleaseChips() || $this->clip !== null;
     }
 
+    /** Whether the release has a stored file count; without one the details page reads "Files" and "—" (SPEC 5A.2, appendix A). */
+    public function hasFileCount(): bool
+    {
+        return $this->files > 0;
+    }
+
+    /** The file count as the details page's facts and Similar releases show it: "—" when none is stored. */
+    public function filesShown(): string
+    {
+        return $this->hasFileCount() ? (string) $this->files : '—';
+    }
+
     /**
      * The row's picture (SPEC 5.6): the preview thumbnail, else the sample thumbnail, each only
      * when its file exists; null for the "No picture" tile.

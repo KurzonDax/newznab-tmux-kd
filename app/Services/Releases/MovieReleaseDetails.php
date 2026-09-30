@@ -7,7 +7,6 @@ namespace App\Services\Releases;
 use App\Data\MovieFilmHeader;
 use App\Data\MovieFilmPageFilters;
 use App\Data\MovieReleaseRow;
-use App\Models\Predb;
 use App\Models\Release;
 use App\Models\ReleaseVideoClip;
 
@@ -44,7 +43,7 @@ final class MovieReleaseDetails
             'starring' => $film === null ? [] : array_slice($film->cast, 0, self::STARRING_LIMIT, true),
             'clip' => $this->clip($release),
             'facts' => ReleaseDetailsFacts::grid($release, $row, $category),
-            'predb' => $this->predb((int) $release->predb_id),
+            'predb' => ReleaseDetailsFacts::predb((int) $release->predb_id),
             'similar' => $this->similar($release, $exclusions, $row->filmId),
             ...$this->table($row, $film, $exclusions, $table, $pageNamed),
         ];
@@ -128,26 +127,5 @@ final class MovieReleaseDetails
         $clip = ReleaseVideoClip::query()->where('releases_id', $release->id)->first(['releases_id', 'extension', 'mime']);
 
         return ['url' => route('preview.video', $release->guid), 'type' => $clip?->clipMimeType() ?? ReleaseVideoClip::VIDEO_MIME_TYPES['ogv']];
-    }
-
-    /**
-     * Today's PreDB fields, each when known: Title, Source, Pre date, Category.
-     *
-     * @return list<array{string, string}>
-     */
-    private function predb(int $predbId): array
-    {
-        /** @var Predb|null $pre today's read (DetailsController) */
-        $pre = $predbId > 0 ? Predb::getOne($predbId) : null;
-        if ($pre === null) {
-            return [];
-        }
-
-        return array_values(array_filter([
-            ['Title', trim((string) $pre->title)],
-            ['Source', trim((string) ($pre->source ?? ''))],
-            ['Pre date', empty($pre->predate) ? '' : ReleaseDetailsFacts::when($pre->predate)],
-            ['Category', trim((string) ($pre->category ?? ''))],
-        ], static fn (array $fact): bool => $fact[1] !== ''));
     }
 }
