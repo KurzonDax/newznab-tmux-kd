@@ -833,33 +833,10 @@ class TrustedDonorNameFixingTest extends TestCase
     {
         $this->insertRelease(1, 'Canonical.Release.2026.1080p-GROUP', Category::MOVIE_HD, trusted: true);
         $this->insertRelease(2, '6f0c31cb66a544c1912a0fc16e3d7b73');
-
-        if ($source === 'crc') {
-            DB::table('release_files')->insert([
-                ['releases_id' => 1, 'name' => 'movie.mkv', 'crc32' => '0053CA13', 'size' => 900_000],
-                ['releases_id' => 2, 'name' => 'movie.mkv', 'crc32' => '0053CA13', 'size' => 900_000],
-            ]);
-        } elseif ($source === 'uid') {
-            DB::table('media_infos')->insert([
-                ['releases_id' => 1, 'unique_id' => '9988776655443322'],
-                ['releases_id' => 2, 'unique_id' => '9988776655443322'],
-            ]);
-        } else {
-            DB::table('par_hashes')->insert([
-                ['releases_id' => 1, 'hash' => '1234567890abcdef1234567890abcdef'],
-                ['releases_id' => 2, 'hash' => '1234567890abcdef1234567890abcdef'],
-            ]);
-        }
+        $this->shareDonorEvidence($source, [1, 2]);
 
         Search::shouldReceive('updateRelease')->once()->with(2);
-        $service = app(NameFixingService::class);
-
-        match ($source) {
-            'crc' => $service->fixNamesWithCrc(2, true, 2, true, false),
-            'uid' => $service->fixNamesWithMedia(2, true, 2, true, false),
-            'hash' => $service->fixNamesWithParHash(2, true, 2, true, false),
-            default => throw new \InvalidArgumentException("Unsupported source [{$source}]."),
-        };
+        $this->runDonorSource($source);
 
         $target = DB::table('releases')->where('id', 2)->first();
         $this->assertSame('Canonical.Release.2026.1080p-GROUP', $target->searchname);

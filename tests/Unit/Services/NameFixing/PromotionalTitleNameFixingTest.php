@@ -124,6 +124,7 @@ class PromotionalTitleNameFixingTest extends TestCase
         $service = $this->serviceWith($updater);
         $release = $this->release('5da7b5393d4f4445ac4db1ee8e95f567 1080p WEB-DL', Category::OTHER_HASHED);
         $release->name = 'Example.Upload.1080p.WEB-DL.x264';
+        $this->assertTrue((new FileNameCleaner)->isDescriptiveTitle('example.org - HEVC x265 Porn Downloads.mp4'));
 
         (new ReflectionClass(NameFixingService::class))->getMethod('processFileCandidates')->invoke(
             $service,

@@ -131,7 +131,7 @@ class FileNameCleaner
      * @var list<string>
      */
     private const PROMOTIONAL_TITLE_PATTERNS = [
-        '~^(?:downloaded\s+from|uploaded\s+by|ripped\s+by|encoded\s+by)\s+(?:'.self::PROMOTIONAL_DOMAIN.'|[\p{L}\p{N}]+(?:[_-][\p{L}\p{N}]+)*(?:\s*&\s*team)?)$~iu',
+        '~^(?:downloaded\s+from|uploaded\s+by|ripped\s+by|encoded\s+by)\s+(?:'.self::PROMOTIONAL_DOMAIN.'|[\p{L}\p{N}]+(?:\s*&\s*team)?)$~iu',
         '~^'.self::PROMOTIONAL_DOMAIN.'\s*[-:|]\s*(?:(?:free|full|hd|uhd|4k|720p|1080p|2160p|hevc|x264|x265|h264|h265|h\.264|h\.265|videos?|movies?|porn|xxx)\s+)*downloads?$~iu',
     ];
 
